@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "laravel": {
+      "command": "node",
+      "args": [".claude/mcp/laravel-mcp-server/dist/index.js"],
+      "env": {
+        "LARAVEL_PATH": "./backend"
+      }
+    }
+  }
+}
