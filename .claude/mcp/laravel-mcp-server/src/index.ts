@@ -15,6 +15,8 @@ const execFileAsync = promisify(execFile);
 
 // Get Laravel path from environment or use default
 const LARAVEL_PATH = process.env.LARAVEL_PATH || "./backend";
+// Get PHP path from environment or use default
+const PHP_PATH = process.env.PHP_PATH || "php";
 
 interface ToolInput {
   table?: string;
@@ -173,7 +175,7 @@ foreach ($tables as $table) {
       }
 
       const { stdout } = await execFileAsync(
-        "php",
+        PHP_PATH,
         ["artisan", "tinker", "--execute", phpCode],
         {
           cwd: LARAVEL_PATH,
@@ -213,7 +215,7 @@ foreach ($tables as $table) {
         args.push("--name=" + filter);
       }
 
-      const { stdout } = await execFileAsync("php", ["artisan", ...args], {
+      const { stdout } = await execFileAsync(PHP_PATH, ["artisan", ...args], {
         cwd: LARAVEL_PATH,
         encoding: "utf-8",
       });
@@ -254,7 +256,7 @@ foreach ($tables as $table) {
 
     try {
       const { stdout } = await execFileAsync(
-        "php",
+        PHP_PATH,
         ["artisan", "tinker", "--execute", phpCode],
         {
           cwd: LARAVEL_PATH,
