@@ -2,9 +2,12 @@ import { createBrowserRouter, Navigate } from "react-router"
 import { RootLayout } from "@/components/layout/RootLayout"
 import { AuthLayout } from "@/components/layout/AuthLayout"
 import { ProtectedRoute, GuestRoute } from "@/components/auth"
-import { HomePage } from "@/pages/HomePage"
 import { LoginPage } from "@/pages/auth/LoginPage"
 import { RegisterPage } from "@/pages/auth/RegisterPage"
+import { DashboardPage } from "@/pages/DashboardPage"
+import { BotsPage } from "@/pages/BotsPage"
+import { ChatPage } from "@/pages/ChatPage"
+import { SettingsPage } from "@/pages/SettingsPage"
 
 export const router = createBrowserRouter([
   // Auth routes (guest only)
@@ -41,7 +44,19 @@ export const router = createBrowserRouter([
           },
           {
             path: "dashboard",
-            element: <HomePage />,
+            element: <DashboardPage />,
+          },
+          {
+            path: "bots",
+            element: <BotsPage />,
+          },
+          {
+            path: "chat",
+            element: <ChatPage />,
+          },
+          {
+            path: "settings",
+            element: <SettingsPage />,
           },
         ],
       },
