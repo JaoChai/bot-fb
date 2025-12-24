@@ -1,0 +1,203 @@
+<?php
+
+namespace App\Services;
+
+use App\Exceptions\OpenRouterException;
+use App\Models\Bot;
+use App\Models\Conversation;
+use App\Models\Message;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
+
+class AIService
+{
+    public function __construct(
+        protected OpenRouterService $openRouter
+    ) {}
+
+    /**
+     * Generate a response for a bot given a user message.
+     */
+    public function generateResponse(
+        Bot $bot,
+        string $userMessage,
+        ?Conversation $conversation = null
+    ): array {
+        // Get conversation history if available
+        $history = $conversation
+            ? $this->getConversationHistory($conversation, $bot->context_window)
+            : [];
+
+        // Generate response using bot's LLM settings
+        $result = $this->openRouter->generateBotResponse(
+            userMessage: $userMessage,
+            systemPrompt: $bot->system_prompt ?? $this->getDefaultSystemPrompt($bot),
+            conversationHistory: $history,
+            model: $bot->llm_model,
+            temperature: $bot->llm_temperature,
+            maxTokens: $bot->llm_max_tokens
+        );
+
+        // Calculate cost
+        $result['cost'] = $this->openRouter->estimateCost(
+            $result['usage']['prompt_tokens'],
+            $result['usage']['completion_tokens'],
+            $result['model']
+        );
+
+        return $result;
+    }
+
+    /**
+     * Generate a response and save it to the conversation.
+     */
+    public function generateAndSaveResponse(
+        Bot $bot,
+        Conversation $conversation,
+        Message $userMessage
+    ): Message {
+        try {
+            $result = $this->generateResponse(
+                $bot,
+                $userMessage->content,
+                $conversation
+            );
+
+            // Create bot response message
+            $botMessage = $conversation->messages()->create([
+                'sender' => 'bot',
+                'content' => $result['content'],
+                'type' => 'text',
+                'model_used' => $result['model'],
+                'prompt_tokens' => $result['usage']['prompt_tokens'],
+                'completion_tokens' => $result['usage']['completion_tokens'],
+                'cost' => $result['cost'],
+            ]);
+
+            // Update bot stats
+            $bot->increment('total_messages');
+            $bot->update(['last_active_at' => now()]);
+
+            return $botMessage;
+        } catch (OpenRouterException $e) {
+            Log::error('AI response generation failed', [
+                'bot_id' => $bot->id,
+                'conversation_id' => $conversation->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            // Create error message
+            return $conversation->messages()->create([
+                'sender' => 'bot',
+                'content' => $this->getErrorMessage($e),
+                'type' => 'text',
+            ]);
+        }
+    }
+
+    /**
+     * Get conversation history for context.
+     */
+    protected function getConversationHistory(Conversation $conversation, int $limit = 10): array
+    {
+        return $conversation->messages()
+            ->whereIn('sender', ['user', 'bot'])
+            ->latest()
+            ->take($limit)
+            ->get()
+            ->reverse()
+            ->map(fn (Message $msg) => [
+                'sender' => $msg->sender,
+                'content' => $msg->content,
+            ])
+            ->values()
+            ->toArray();
+    }
+
+    /**
+     * Get default system prompt for a bot.
+     */
+    protected function getDefaultSystemPrompt(Bot $bot): string
+    {
+        return <<<PROMPT
+You are a helpful AI assistant for {$bot->name}.
+Be friendly, professional, and helpful.
+Respond in the same language as the user's message.
+If you don't know something, be honest about it.
+Keep responses concise but informative.
+PROMPT;
+    }
+
+    /**
+     * Get user-friendly error message.
+     */
+    protected function getErrorMessage(OpenRouterException $e): string
+    {
+        if ($e->isRateLimited()) {
+            return 'I\'m receiving too many messages right now. Please try again in a moment.';
+        }
+
+        if ($e->isAuthError()) {
+            return 'I\'m having trouble connecting. Please contact support.';
+        }
+
+        return 'I apologize, but I\'m having trouble processing your request. Please try again.';
+    }
+
+    /**
+     * Test bot configuration.
+     */
+    public function testBotConfiguration(Bot $bot, string $testMessage = 'Hello!'): array
+    {
+        return $this->generateResponse($bot, $testMessage);
+    }
+
+    /**
+     * Check if AI service is available.
+     */
+    public function isAvailable(): bool
+    {
+        return $this->openRouter->isConfigured() && $this->openRouter->testConnection();
+    }
+
+    /**
+     * List available models.
+     */
+    public function listModels(): array
+    {
+        return $this->openRouter->listModels();
+    }
+
+    /**
+     * Get recommended models for different use cases.
+     */
+    public function getRecommendedModels(): array
+    {
+        return [
+            'quality' => [
+                'id' => 'anthropic/claude-3.5-sonnet',
+                'name' => 'Claude 3.5 Sonnet',
+                'description' => 'Best quality responses',
+                'cost_per_million_tokens' => 3.00,
+            ],
+            'balanced' => [
+                'id' => 'openai/gpt-4o',
+                'name' => 'GPT-4o',
+                'description' => 'Good balance of quality and cost',
+                'cost_per_million_tokens' => 2.50,
+            ],
+            'economical' => [
+                'id' => 'openai/gpt-4o-mini',
+                'name' => 'GPT-4o Mini',
+                'description' => 'Cost-effective for simple tasks',
+                'cost_per_million_tokens' => 0.15,
+            ],
+            'open_source' => [
+                'id' => 'meta-llama/llama-3.1-70b-instruct',
+                'name' => 'Llama 3.1 70B',
+                'description' => 'Open source alternative',
+                'cost_per_million_tokens' => 0.52,
+            ],
+        ];
+    }
+}

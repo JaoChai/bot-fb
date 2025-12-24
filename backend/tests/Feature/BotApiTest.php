@@ -151,6 +151,7 @@ class BotApiTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('input', 'Hello bot!')
+            ->assertJsonPath('bot_id', $bot->id)
             ->assertJsonStructure(['message', 'input', 'response', 'bot_id']);
     }
 }
