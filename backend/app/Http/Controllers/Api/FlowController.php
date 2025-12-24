@@ -1,0 +1,302 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Flow\StoreFlowRequest;
+use App\Http\Requests\Flow\UpdateFlowRequest;
+use App\Http\Resources\FlowResource;
+use App\Models\Bot;
+use App\Models\Flow;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+
+class FlowController extends Controller
+{
+    /**
+     * List all flows for a bot.
+     */
+    public function index(Request $request, Bot $bot): AnonymousResourceCollection
+    {
+        $this->authorize('view', $bot);
+
+        $flows = $bot->flows()
+            ->with('knowledgeBase:id,name')
+            ->latest()
+            ->paginate($request->input('per_page', 15));
+
+        return FlowResource::collection($flows);
+    }
+
+    /**
+     * Create a new flow for a bot.
+     */
+    public function store(StoreFlowRequest $request, Bot $bot): JsonResponse
+    {
+        $this->authorize('update', $bot);
+
+        $data = $request->validated();
+
+        // If this is marked as default, unset other defaults
+        if ($data['is_default'] ?? false) {
+            $bot->flows()->update(['is_default' => false]);
+        }
+
+        // If this is the first flow, make it default
+        if ($bot->flows()->count() === 0) {
+            $data['is_default'] = true;
+        }
+
+        $flow = $bot->flows()->create($data);
+
+        // Update bot's default flow if this is the default
+        if ($flow->is_default) {
+            $bot->update(['default_flow_id' => $flow->id]);
+        }
+
+        return response()->json([
+            'message' => 'Flow created successfully',
+            'data' => new FlowResource($flow),
+        ], 201);
+    }
+
+    /**
+     * Get a specific flow.
+     */
+    public function show(Request $request, Bot $bot, Flow $flow): FlowResource
+    {
+        $this->authorize('view', $bot);
+        $this->ensureFlowBelongsToBot($flow, $bot);
+
+        return new FlowResource($flow->load('knowledgeBase'));
+    }
+
+    /**
+     * Update a flow.
+     */
+    public function update(UpdateFlowRequest $request, Bot $bot, Flow $flow): JsonResponse
+    {
+        $this->authorize('update', $bot);
+        $this->ensureFlowBelongsToBot($flow, $bot);
+
+        $data = $request->validated();
+
+        // If setting as default, unset other defaults
+        if ($data['is_default'] ?? false) {
+            $bot->flows()->where('id', '!=', $flow->id)->update(['is_default' => false]);
+        }
+
+        $flow->update($data);
+
+        // Update bot's default flow if this is now the default
+        if ($flow->is_default) {
+            $bot->update(['default_flow_id' => $flow->id]);
+        }
+
+        return response()->json([
+            'message' => 'Flow updated successfully',
+            'data' => new FlowResource($flow->fresh()),
+        ]);
+    }
+
+    /**
+     * Delete a flow.
+     */
+    public function destroy(Request $request, Bot $bot, Flow $flow): JsonResponse
+    {
+        $this->authorize('update', $bot);
+        $this->ensureFlowBelongsToBot($flow, $bot);
+
+        // Don't allow deleting the only flow
+        if ($bot->flows()->count() === 1) {
+            return response()->json([
+                'message' => 'Cannot delete the only flow. Create another flow first.',
+            ], 422);
+        }
+
+        $wasDefault = $flow->is_default;
+        $flow->delete();
+
+        // If deleted flow was default, set another as default
+        if ($wasDefault) {
+            $newDefault = $bot->flows()->first();
+            if ($newDefault) {
+                $newDefault->update(['is_default' => true]);
+                $bot->update(['default_flow_id' => $newDefault->id]);
+            }
+        }
+
+        return response()->json([
+            'message' => 'Flow deleted successfully',
+        ]);
+    }
+
+    /**
+     * Set a flow as the default for a bot.
+     */
+    public function setDefault(Request $request, Bot $bot, Flow $flow): JsonResponse
+    {
+        $this->authorize('update', $bot);
+        $this->ensureFlowBelongsToBot($flow, $bot);
+
+        // Unset other defaults
+        $bot->flows()->update(['is_default' => false]);
+
+        // Set this flow as default
+        $flow->update(['is_default' => true]);
+        $bot->update(['default_flow_id' => $flow->id]);
+
+        return response()->json([
+            'message' => 'Flow set as default successfully',
+            'data' => new FlowResource($flow->fresh()),
+        ]);
+    }
+
+    /**
+     * Duplicate a flow.
+     */
+    public function duplicate(Request $request, Bot $bot, Flow $flow): JsonResponse
+    {
+        $this->authorize('update', $bot);
+        $this->ensureFlowBelongsToBot($flow, $bot);
+
+        $newFlow = $flow->replicate();
+        $newFlow->name = $flow->name . ' (Copy)';
+        $newFlow->is_default = false;
+        $newFlow->save();
+
+        return response()->json([
+            'message' => 'Flow duplicated successfully',
+            'data' => new FlowResource($newFlow),
+        ], 201);
+    }
+
+    /**
+     * Get available prompt templates.
+     */
+    public function templates(): JsonResponse
+    {
+        $templates = [
+            [
+                'id' => 'customer_support',
+                'name' => 'Customer Support Assistant',
+                'description' => 'Helpful, empathetic support agent',
+                'system_prompt' => $this->getCustomerSupportPrompt(),
+                'temperature' => 0.7,
+                'language' => 'th',
+            ],
+            [
+                'id' => 'sales_assistant',
+                'name' => 'Sales Assistant',
+                'description' => 'Persuasive yet helpful sales representative',
+                'system_prompt' => $this->getSalesPrompt(),
+                'temperature' => 0.8,
+                'language' => 'th',
+            ],
+            [
+                'id' => 'faq_bot',
+                'name' => 'FAQ Bot',
+                'description' => 'Concise, accurate information provider',
+                'system_prompt' => $this->getFaqPrompt(),
+                'temperature' => 0.3,
+                'language' => 'th',
+            ],
+            [
+                'id' => 'general_assistant',
+                'name' => 'General Assistant',
+                'description' => 'Versatile helper for various tasks',
+                'system_prompt' => $this->getGeneralPrompt(),
+                'temperature' => 0.7,
+                'language' => 'th',
+            ],
+        ];
+
+        return response()->json([
+            'data' => $templates,
+        ]);
+    }
+
+    /**
+     * Ensure the flow belongs to the bot.
+     */
+    protected function ensureFlowBelongsToBot(Flow $flow, Bot $bot): void
+    {
+        if ($flow->bot_id !== $bot->id) {
+            abort(404, 'Flow not found');
+        }
+    }
+
+    protected function getCustomerSupportPrompt(): string
+    {
+        return <<<'PROMPT'
+คุณเป็นเจ้าหน้าที่ดูแลลูกค้าที่เป็นมิตรและเข้าใจความรู้สึกของลูกค้า
+
+## หน้าที่ของคุณ:
+- ช่วยเหลือลูกค้าด้วยความใส่ใจและเข้าใจ
+- ตอบคำถามเกี่ยวกับผลิตภัณฑ์และบริการ
+- แก้ไขปัญหาอย่างมีประสิทธิภาพ
+- หากไม่แน่ใจ ให้สอบถามข้อมูลเพิ่มเติม
+
+## แนวทางการสนทนา:
+- ใช้ภาษาที่สุภาพและเป็นกันเอง
+- แสดงความเห็นอกเห็นใจเมื่อลูกค้ามีปัญหา
+- ตอบให้กระชับแต่ครบถ้วน
+- ขอบคุณลูกค้าที่ติดต่อเข้ามา
+PROMPT;
+    }
+
+    protected function getSalesPrompt(): string
+    {
+        return <<<'PROMPT'
+คุณเป็นที่ปรึกษาด้านการขายที่มีความเชี่ยวชาญ
+
+## หน้าที่ของคุณ:
+- ให้ข้อมูลเกี่ยวกับผลิตภัณฑ์และบริการ
+- แนะนำสินค้าที่เหมาะสมกับความต้องการ
+- ตอบคำถามและแก้ข้อสงสัยของลูกค้า
+- ช่วยลูกค้าตัดสินใจซื้อ
+
+## แนวทางการสนทนา:
+- เป็นมิตรและน่าเชื่อถือ
+- เน้นประโยชน์ที่ลูกค้าจะได้รับ
+- ไม่กดดันลูกค้า
+- ให้ข้อมูลที่ถูกต้องและโปร่งใส
+PROMPT;
+    }
+
+    protected function getFaqPrompt(): string
+    {
+        return <<<'PROMPT'
+คุณเป็นระบบตอบคำถามอัตโนมัติ
+
+## หน้าที่ของคุณ:
+- ตอบคำถามที่พบบ่อยอย่างตรงประเด็น
+- ให้ข้อมูลที่ถูกต้องและเป็นปัจจุบัน
+- นำทางลูกค้าไปยังข้อมูลที่ต้องการ
+
+## แนวทางการสนทนา:
+- ตอบสั้นกระชับ ตรงประเด็น
+- ใช้ข้อมูลจาก Knowledge Base เป็นหลัก
+- หากไม่พบคำตอบ ให้แนะนำติดต่อเจ้าหน้าที่
+PROMPT;
+    }
+
+    protected function getGeneralPrompt(): string
+    {
+        return <<<'PROMPT'
+คุณเป็นผู้ช่วยอัจฉริยะที่พร้อมช่วยเหลือในทุกเรื่อง
+
+## หน้าที่ของคุณ:
+- ตอบคำถามทั่วไป
+- ให้ข้อมูลและคำแนะนำ
+- ช่วยแก้ปัญหาต่างๆ
+
+## แนวทางการสนทนา:
+- เป็นมิตรและเข้าถึงง่าย
+- ตอบในภาษาเดียวกับที่ลูกค้าใช้
+- ให้ข้อมูลที่เป็นประโยชน์
+- ยอมรับเมื่อไม่รู้คำตอบ
+PROMPT;
+    }
+}
