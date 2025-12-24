@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BotController;
 use App\Http\Controllers\Api\FlowController;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -75,3 +76,6 @@ Route::get('/health', function () {
         'timestamp' => now()->toIso8601String(),
     ]);
 })->name('health');
+
+// Broadcasting authentication endpoint
+Broadcast::routes(['middleware' => ['auth:sanctum']]);
