@@ -24,6 +24,12 @@ class Bot extends Model
         'webhook_url',
         'page_id',
         'default_flow_id',
+        'llm_model',
+        'llm_fallback_model',
+        'system_prompt',
+        'llm_temperature',
+        'llm_max_tokens',
+        'context_window',
         'total_conversations',
         'total_messages',
         'last_active_at',
@@ -31,6 +37,9 @@ class Bot extends Model
 
     protected $casts = [
         'last_active_at' => 'datetime',
+        'llm_temperature' => 'float',
+        'llm_max_tokens' => 'integer',
+        'context_window' => 'integer',
     ];
 
     protected $hidden = [

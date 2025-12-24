@@ -7,6 +7,7 @@ use App\Http\Requests\Bot\StoreBotRequest;
 use App\Http\Requests\Bot\UpdateBotRequest;
 use App\Http\Resources\BotResource;
 use App\Models\Bot;
+use App\Services\AIService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -99,7 +100,7 @@ class BotController extends Controller
     /**
      * Test bot with a sample message.
      */
-    public function test(Request $request, Bot $bot): JsonResponse
+    public function test(Request $request, Bot $bot, AIService $aiService): JsonResponse
     {
         $this->authorize('update', $bot);
 
@@ -107,12 +108,38 @@ class BotController extends Controller
             'message' => 'required|string|max:1000',
         ]);
 
-        // TODO: Implement actual bot testing with AI response
-        // For now, return a placeholder response
+        $userMessage = $request->input('message');
+
+        // Use AI service if configured, otherwise return placeholder
+        if ($aiService->isAvailable()) {
+            try {
+                $result = $aiService->testBotConfiguration($bot, $userMessage);
+
+                return response()->json([
+                    'message' => 'Test completed successfully',
+                    'input' => $userMessage,
+                    'response' => $result['content'],
+                    'bot_id' => $bot->id,
+                    'model' => $result['model'],
+                    'usage' => $result['usage'],
+                    'cost' => $result['cost'],
+                ]);
+            } catch (\Exception $e) {
+                return response()->json([
+                    'message' => 'AI service error',
+                    'input' => $userMessage,
+                    'response' => 'Failed to generate AI response: ' . $e->getMessage(),
+                    'bot_id' => $bot->id,
+                    'error' => true,
+                ], 500);
+            }
+        }
+
+        // Placeholder response when AI not configured
         return response()->json([
             'message' => 'Test message received',
-            'input' => $request->input('message'),
-            'response' => 'This is a placeholder response. AI integration coming soon.',
+            'input' => $userMessage,
+            'response' => 'AI service not configured. Add OPENROUTER_API_KEY to enable AI responses.',
             'bot_id' => $bot->id,
         ]);
     }
