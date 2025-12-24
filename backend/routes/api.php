@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BotController;
+use App\Http\Controllers\Api\FlowController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -46,8 +47,21 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{bot}/test', [BotController::class, 'test'])->name('bots.test');
     });
 
+    // Flow routes (nested under bots)
+    Route::prefix('bots/{bot}/flows')->group(function () {
+        Route::get('/', [FlowController::class, 'index'])->name('flows.index');
+        Route::post('/', [FlowController::class, 'store'])->name('flows.store');
+        Route::get('/{flow}', [FlowController::class, 'show'])->name('flows.show');
+        Route::put('/{flow}', [FlowController::class, 'update'])->name('flows.update');
+        Route::delete('/{flow}', [FlowController::class, 'destroy'])->name('flows.destroy');
+        Route::post('/{flow}/set-default', [FlowController::class, 'setDefault'])->name('flows.set-default');
+        Route::post('/{flow}/duplicate', [FlowController::class, 'duplicate'])->name('flows.duplicate');
+    });
+
+    // Flow templates (not nested)
+    Route::get('/flow-templates', [FlowController::class, 'templates'])->name('flows.templates');
+
     // Future routes will be added here:
-    // - Flows CRUD
     // - Conversations
     // - Messages
     // - Knowledge Bases
