@@ -12,7 +12,10 @@ return new class extends Migration
      */
     public function up()
     {
-        DB::statement('CREATE EXTENSION IF NOT EXISTS vector');
+        // Only create pgvector extension on PostgreSQL
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement('CREATE EXTENSION IF NOT EXISTS vector');
+        }
     }
 
     /**
@@ -22,6 +25,9 @@ return new class extends Migration
      */
     public function down()
     {
-        DB::statement('DROP EXTENSION vector');
+        // Only drop pgvector extension on PostgreSQL
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement('DROP EXTENSION vector');
+        }
     }
 };

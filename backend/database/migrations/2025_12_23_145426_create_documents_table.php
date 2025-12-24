@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -45,7 +46,12 @@ return new class extends Migration
             $table->unsignedInteger('end_char')->nullable();
 
             // Vector embedding (1536 dimensions for OpenAI text-embedding-3-small)
-            $table->vector('embedding', 1536)->nullable();
+            // Only add vector column on PostgreSQL, use text on SQLite for testing
+            if (DB::connection()->getDriverName() === 'pgsql') {
+                $table->vector('embedding', 1536)->nullable();
+            } else {
+                $table->text('embedding')->nullable();
+            }
 
             // Metadata
             $table->json('metadata')->nullable(); // page number, section, etc.
@@ -56,13 +62,17 @@ return new class extends Migration
             $table->index(['document_id', 'chunk_index']);
         });
 
-        // Create HNSW index for fast vector similarity search on chunks
-        DB::statement('CREATE INDEX document_chunks_embedding_idx ON document_chunks USING hnsw (embedding vector_cosine_ops)');
+        // Create HNSW index for fast vector similarity search on chunks (PostgreSQL only)
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement('CREATE INDEX document_chunks_embedding_idx ON document_chunks USING hnsw (embedding vector_cosine_ops)');
+        }
     }
 
     public function down(): void
     {
-        DB::statement('DROP INDEX IF EXISTS document_chunks_embedding_idx');
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement('DROP INDEX IF EXISTS document_chunks_embedding_idx');
+        }
         Schema::dropIfExists('document_chunks');
         Schema::dropIfExists('documents');
     }
