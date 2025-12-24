@@ -2,6 +2,8 @@
 
 namespace App\Jobs;
 
+use App\Events\ConversationUpdated;
+use App\Events\MessageSent;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
@@ -97,6 +99,9 @@ class ProcessLINEWebhook implements ShouldQueue
             // Save user message
             $userMessage = $this->saveUserMessage($conversation, $messageData);
 
+            // Broadcast user message to connected clients
+            broadcast(new MessageSent($userMessage))->toOthers();
+
             // Skip AI response if conversation is in handover mode
             if ($conversation->is_handover) {
                 Log::info('Conversation in handover mode, skipping AI response', [
@@ -112,6 +117,9 @@ class ProcessLINEWebhook implements ShouldQueue
                 $userMessage
             );
 
+            // Broadcast bot message to connected clients
+            broadcast(new MessageSent($botMessage))->toOthers();
+
             // Send reply to LINE
             if ($replyToken && $botMessage->content) {
                 $lineService->reply($this->bot, $replyToken, [$botMessage->content]);
@@ -119,6 +127,9 @@ class ProcessLINEWebhook implements ShouldQueue
 
             // Update conversation stats
             $this->updateConversationStats($conversation);
+
+            // Broadcast conversation update
+            broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
         });
     }
 
@@ -175,7 +186,7 @@ class ProcessLINEWebhook implements ShouldQueue
         $customerProfile = $this->findOrCreateCustomerProfile($userId, $lineService);
 
         // Create new conversation
-        return Conversation::create([
+        $conversation = Conversation::create([
             'bot_id' => $this->bot->id,
             'customer_profile_id' => $customerProfile?->id,
             'external_customer_id' => $userId,
@@ -184,6 +195,11 @@ class ProcessLINEWebhook implements ShouldQueue
             'current_flow_id' => $this->bot->default_flow_id,
             'message_count' => 0,
         ]);
+
+        // Broadcast new conversation event
+        broadcast(new ConversationUpdated($conversation, 'created'))->toOthers();
+
+        return $conversation;
     }
 
     /**
