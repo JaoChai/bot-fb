@@ -36,6 +36,11 @@ export const queryKeys = {
     all: ['auth'] as const,
     user: () => [...queryKeys.auth.all, 'user'] as const,
   },
+  // User Settings
+  settings: {
+    all: ['settings'] as const,
+    user: () => [...queryKeys.settings.all, 'user'] as const,
+  },
   // Bots
   bots: {
     all: ['bots'] as const,

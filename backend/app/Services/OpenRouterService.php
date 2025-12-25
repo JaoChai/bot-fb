@@ -32,20 +32,29 @@ class OpenRouterService
 
     /**
      * Send a chat completion request to OpenRouter.
+     *
+     * @param array $messages Chat messages
+     * @param string|null $model Model ID (e.g., 'openai/gpt-4o-mini')
+     * @param float|null $temperature Sampling temperature
+     * @param int|null $maxTokens Maximum tokens in response
+     * @param bool $useFallback Whether to try fallback model on failure
+     * @param string|null $apiKeyOverride Override API key (from user settings)
      */
     public function chat(
         array $messages,
         ?string $model = null,
         ?float $temperature = null,
         ?int $maxTokens = null,
-        bool $useFallback = true
+        bool $useFallback = true,
+        ?string $apiKeyOverride = null
     ): array {
         $model = $model ?? $this->defaultModel;
         $temperature = $temperature ?? 0.7;
         $maxTokens = $maxTokens ?? $this->maxTokens;
+        $apiKey = $apiKeyOverride ?? $this->apiKey;
 
         try {
-            $response = $this->client()->post('/chat/completions', [
+            $response = $this->client($apiKey)->post('/chat/completions', [
                 'model' => $model,
                 'messages' => $messages,
                 'temperature' => $temperature,
@@ -63,7 +72,7 @@ class OpenRouterService
 
                 if ($useFallback && $model !== $this->fallbackModel) {
                     Log::info('Attempting fallback model', ['fallback' => $this->fallbackModel]);
-                    return $this->chat($messages, $this->fallbackModel, $temperature, $maxTokens, false);
+                    return $this->chat($messages, $this->fallbackModel, $temperature, $maxTokens, false, $apiKeyOverride);
                 }
 
                 throw new OpenRouterException("OpenRouter API error: {$error}", $response->status());
@@ -92,7 +101,7 @@ class OpenRouterService
 
             if ($useFallback && $model !== $this->fallbackModel) {
                 Log::info('Attempting fallback model after exception', ['fallback' => $this->fallbackModel]);
-                return $this->chat($messages, $this->fallbackModel, $temperature, $maxTokens, false);
+                return $this->chat($messages, $this->fallbackModel, $temperature, $maxTokens, false, $apiKeyOverride);
             }
 
             throw new OpenRouterException("OpenRouter request failed: {$e->getMessage()}", 500, $e);
@@ -120,7 +129,8 @@ class OpenRouterService
         array $conversationHistory = [],
         ?string $model = null,
         ?float $temperature = null,
-        ?int $maxTokens = null
+        ?int $maxTokens = null,
+        ?string $apiKeyOverride = null
     ): array {
         $messages = [];
 
@@ -146,7 +156,7 @@ class OpenRouterService
             'content' => $userMessage,
         ];
 
-        return $this->chat($messages, $model, $temperature, $maxTokens);
+        return $this->chat($messages, $model, $temperature, $maxTokens, true, $apiKeyOverride);
     }
 
     /**
@@ -233,12 +243,16 @@ class OpenRouterService
 
     /**
      * Get configured HTTP client.
+     *
+     * @param string|null $apiKey API key (uses default from config if not provided)
      */
-    protected function client(): PendingRequest
+    protected function client(?string $apiKey = null): PendingRequest
     {
+        $key = $apiKey ?? $this->apiKey;
+
         return Http::baseUrl($this->baseUrl)
             ->withHeaders([
-                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Authorization' => 'Bearer ' . $key,
                 'HTTP-Referer' => $this->siteUrl,
                 'X-Title' => $this->siteName,
             ])

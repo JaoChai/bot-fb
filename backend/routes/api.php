@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\FlowController;
 use App\Http\Controllers\Api\KnowledgeBaseController;
+use App\Http\Controllers\Api\UserSettingController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
@@ -38,6 +39,17 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/refresh', [AuthController::class, 'refresh'])->name('auth.refresh');
         Route::get('/tokens', [AuthController::class, 'tokens'])->name('auth.tokens');
         Route::delete('/tokens/{tokenId}', [AuthController::class, 'revokeToken'])->name('auth.tokens.revoke');
+    });
+
+    // User Settings routes
+    Route::prefix('settings')->group(function () {
+        Route::get('/', [UserSettingController::class, 'show'])->name('settings.show');
+        Route::put('/openrouter', [UserSettingController::class, 'updateOpenRouter'])->name('settings.openrouter.update');
+        Route::put('/line', [UserSettingController::class, 'updateLine'])->name('settings.line.update');
+        Route::post('/test-openrouter', [UserSettingController::class, 'testOpenRouter'])->name('settings.openrouter.test');
+        Route::post('/test-line', [UserSettingController::class, 'testLine'])->name('settings.line.test');
+        Route::delete('/openrouter', [UserSettingController::class, 'clearOpenRouter'])->name('settings.openrouter.clear');
+        Route::delete('/line', [UserSettingController::class, 'clearLine'])->name('settings.line.clear');
     });
 
     // Bot routes

@@ -349,3 +349,29 @@ export interface UpdateConversationData {
   tags?: string[];
   memory_notes?: Record<string, unknown> | null;
 }
+
+// User Settings Types
+export interface UserSettings {
+  openrouter_configured: boolean;
+  openrouter_api_key_masked: string | null;
+  openrouter_model: string;
+  line_configured: boolean;
+  line_channel_secret_masked: string | null;
+  line_channel_access_token_masked: string | null;
+}
+
+export interface UpdateOpenRouterSettings {
+  api_key?: string;
+  model: string;
+}
+
+export interface UpdateLineSettings {
+  channel_secret?: string;
+  channel_access_token?: string;
+}
+
+export interface TestConnectionResponse {
+  success: boolean;
+  message: string;
+  bot_name?: string;
+}
