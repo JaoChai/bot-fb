@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\KnowledgeBase\StoreDocumentRequest;
 use App\Http\Resources\DocumentResource;
+use App\Jobs\ProcessDocument;
 use App\Models\Bot;
 use App\Models\Document;
 use App\Models\KnowledgeBase;
@@ -71,14 +72,17 @@ class DocumentController extends Controller
             'mime_type' => $file->getMimeType(),
             'file_size' => $file->getSize(),
             'storage_path' => $path,
-            'status' => 'pending', // Will be processed by Issue #18
+            'status' => 'pending',
         ]);
 
         // Update document count
         $kb->increment('document_count');
 
+        // Dispatch processing job
+        ProcessDocument::dispatch($document);
+
         return response()->json([
-            'message' => 'Document uploaded successfully',
+            'message' => 'Document uploaded successfully. Processing will begin shortly.',
             'data' => new DocumentResource($document),
         ], 201);
     }
@@ -96,6 +100,46 @@ class DocumentController extends Controller
         }
 
         return new DocumentResource($document);
+    }
+
+    /**
+     * Reprocess a failed document.
+     */
+    public function reprocess(Request $request, Bot $bot, Document $document): JsonResponse
+    {
+        $this->authorize('update', $bot);
+
+        // Ensure document belongs to this bot's KB
+        if ($document->knowledge_base_id !== $bot->knowledgeBase?->id) {
+            return response()->json([
+                'message' => 'Document not found',
+            ], 404);
+        }
+
+        if ($document->status !== 'failed') {
+            return response()->json([
+                'message' => 'Only failed documents can be reprocessed',
+            ], 422);
+        }
+
+        // Clear existing chunks
+        $document->chunks()->delete();
+        $kb = $document->knowledgeBase;
+        $kb->decrement('chunk_count', $document->chunk_count);
+
+        // Reset status and dispatch job
+        $document->update([
+            'status' => 'pending',
+            'error_message' => null,
+            'chunk_count' => 0,
+        ]);
+
+        ProcessDocument::dispatch($document);
+
+        return response()->json([
+            'message' => 'Document reprocessing started',
+            'data' => new DocumentResource($document->fresh()),
+        ]);
     }
 
     /**
