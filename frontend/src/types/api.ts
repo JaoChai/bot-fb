@@ -213,3 +213,109 @@ export interface SearchResponse {
   count: number;
   message?: string;
 }
+
+// Conversation Types
+export interface CustomerProfile {
+  id: number;
+  external_id: string;
+  channel_type: 'line' | 'facebook' | 'demo';
+  display_name: string | null;
+  picture_url: string | null;
+  phone: string | null;
+  email: string | null;
+  interaction_count: number;
+  first_interaction_at: string | null;
+  last_interaction_at: string | null;
+  metadata: Record<string, unknown> | null;
+  tags: string[];
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Message {
+  id: number;
+  conversation_id: number;
+  sender: 'user' | 'bot' | 'agent';
+  content: string;
+  type: 'text' | 'image' | 'file' | 'sticker' | 'location' | 'audio' | 'video' | 'template' | 'flex';
+  media_url: string | null;
+  media_type: string | null;
+  media_metadata: Record<string, unknown> | null;
+  model_used: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  cost: number | null;
+  external_message_id: string | null;
+  reply_to_message_id: string | null;
+  sentiment: string | null;
+  intents: string[] | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Conversation {
+  id: number;
+  bot_id: number;
+  customer_profile_id: number | null;
+  external_customer_id: string;
+  channel_type: 'line' | 'facebook' | 'demo';
+  status: 'active' | 'closed' | 'handover';
+  is_handover: boolean;
+  assigned_user_id: number | null;
+  memory_notes: Record<string, unknown> | null;
+  tags: string[];
+  context: Record<string, unknown> | null;
+  current_flow_id: number | null;
+  message_count: number;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+  // Relationships
+  bot?: Bot;
+  customer_profile?: CustomerProfile;
+  assigned_user?: User;
+  current_flow?: Flow;
+  messages?: Message[];
+  last_message?: Message;
+}
+
+export interface ConversationStatusCounts {
+  active: number;
+  closed: number;
+  handover: number;
+  total: number;
+}
+
+export interface ConversationStats {
+  total: number;
+  active: number;
+  closed: number;
+  handover: number;
+  messages_today: number;
+  avg_messages_per_conversation: number;
+  by_channel: Record<string, number>;
+}
+
+export interface ConversationFilters {
+  status?: string | string[];
+  channel_type?: string;
+  is_handover?: boolean;
+  assigned_user_id?: number;
+  tags?: string[];
+  search?: string;
+  from_date?: string;
+  to_date?: string;
+  sort_by?: 'last_message_at' | 'created_at' | 'message_count' | 'status';
+  sort_direction?: 'asc' | 'desc';
+  per_page?: number;
+  page?: number;
+}
+
+export interface UpdateConversationData {
+  status?: 'active' | 'closed' | 'handover';
+  is_handover?: boolean;
+  assigned_user_id?: number | null;
+  tags?: string[];
+  memory_notes?: Record<string, unknown> | null;
+}
