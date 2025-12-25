@@ -99,14 +99,21 @@ export function BotsPage() {
 
               {/* Actions */}
               <div className="border-t p-4 mt-auto">
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" asChild className="flex-1">
-                    <Link to={`/bots/${bot.id}/settings`}>
-                      <Settings className="h-4 w-4 mr-2" />
-                      Settings
-                    </Link>
-                  </Button>
-                  <Button variant="outline" size="sm" asChild className="flex-1">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" asChild className="flex-1">
+                      <Link to={`/bots/${bot.id}/settings`}>
+                        <Settings className="h-4 w-4 mr-2" />
+                        Settings
+                      </Link>
+                    </Button>
+                    <Button variant="outline" size="sm" asChild className="flex-1">
+                      <Link to={`/flows?botId=${bot.id}`}>
+                        Flows
+                      </Link>
+                    </Button>
+                  </div>
+                  <Button variant="outline" size="sm" asChild className="w-full">
                     <Link to={`/knowledge-base?botId=${bot.id}`}>
                       Knowledge Base
                     </Link>

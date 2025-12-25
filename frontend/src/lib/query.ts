@@ -64,4 +64,12 @@ export const queryKeys = {
     list: (botId: number) => [...queryKeys.knowledgeBase.lists(), botId] as const,
     detail: (id: number) => [...queryKeys.knowledgeBase.all, 'detail', id] as const,
   },
+  // Flows
+  flows: {
+    all: ['flows'] as const,
+    lists: () => [...queryKeys.flows.all, 'list'] as const,
+    list: (botId: number) => [...queryKeys.flows.lists(), botId] as const,
+    detail: (botId: number, flowId: number) => [...queryKeys.flows.all, 'detail', botId, flowId] as const,
+    templates: () => [...queryKeys.flows.all, 'templates'] as const,
+  },
 } as const;

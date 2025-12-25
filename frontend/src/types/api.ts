@@ -145,6 +145,57 @@ export interface Document {
   updated_at: string;
 }
 
+// Flow Types
+export interface Flow {
+  id: number;
+  bot_id: number;
+  name: string;
+  description: string | null;
+  system_prompt: string;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  agentic_mode: boolean;
+  max_tool_calls: number;
+  enabled_tools: string[] | null;
+  knowledge_base_id: number | null;
+  knowledge_base?: KnowledgeBase;
+  kb_top_k: number;
+  kb_similarity_threshold: number;
+  language: 'th' | 'en' | 'zh' | 'ja' | 'ko';
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FlowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  temperature: number;
+  language: string;
+}
+
+export interface CreateFlowData {
+  name: string;
+  description?: string;
+  system_prompt: string;
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+  agentic_mode?: boolean;
+  max_tool_calls?: number;
+  enabled_tools?: string[];
+  knowledge_base_id?: number | null;
+  kb_top_k?: number;
+  kb_similarity_threshold?: number;
+  language?: string;
+  is_default?: boolean;
+}
+
+export interface UpdateFlowData extends Partial<CreateFlowData> {}
+
 // Semantic Search Types
 export interface SearchResult {
   id: number;
