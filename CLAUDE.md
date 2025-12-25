@@ -42,6 +42,43 @@ This is a new/empty repository. The project structure and codebase have not been
 - Never use `--force` with package managers
 - Always review lockfile changes before committing
 
+## MANDATORY: Post-Implementation Review (ห้ามลืม!)
+
+**ทุกครั้งหลัง implement feature ต้องทำครบทั้ง 2 ขั้นตอนนี้ก่อน commit:**
+
+### 1. Code Review (REQUIRED)
+```bash
+# รัน code review agent บน files ที่เปลี่ยน
+git diff --name-only  # ดู files ที่เปลี่ยน
+# แล้วใช้ Task tool กับ feature-dev:code-reviewer
+```
+- ตรวจ security vulnerabilities
+- ตรวจ error handling
+- ตรวจ race conditions
+- ตรวจ input validation
+- **FIX ทุก Critical Issues ก่อน commit**
+
+### 2. UX/UI Review with Playwright (REQUIRED)
+```bash
+# ใช้ Playwright MCP ทดสอบ UI จริง
+mcp__plugin_playwright_playwright__browser_navigate
+```
+- ทดสอบ flow หลักทำงานได้จริง
+- ทดสอบ edge cases (empty state, error state)
+- ทดสอบ responsive (ถ้ามี)
+- **Screenshot/snapshot เป็นหลักฐาน**
+
+### Workflow Pattern (บังคับ)
+```
+1. Implement feature
+2. Build & verify no errors
+3. CODE REVIEW → Fix issues
+4. UX/UI REVIEW with Playwright → Fix issues
+5. Commit & Push
+```
+
+**ถ้าลืมทำ review → ผู้ใช้จะด่า → ต้องกลับมาทำใหม่ → เสียเวลา**
+
 ## Git Commit Format
 
 ```
