@@ -18,8 +18,8 @@ export function useUser() {
   return useQuery({
     queryKey: queryKeys.auth.user(),
     queryFn: async () => {
-      const response = await apiGet<ApiResponse<User>>('/user');
-      return response.data;
+      const response = await apiGet<User>('/auth/user');
+      return response;
     },
     enabled: !!token,
     retry: false,
@@ -46,7 +46,7 @@ export function useLogin() {
 
   return useMutation({
     mutationFn: async (credentials: LoginCredentials) => {
-      const response = await apiPost<AuthResponse>('/login', credentials);
+      const response = await apiPost<AuthResponse>('/auth/login', credentials);
       return response;
     },
     onSuccess: (data) => {
@@ -65,7 +65,7 @@ export function useRegister() {
 
   return useMutation({
     mutationFn: async (credentials: RegisterCredentials) => {
-      const response = await apiPost<AuthResponse>('/register', credentials);
+      const response = await apiPost<AuthResponse>('/auth/register', credentials);
       return response;
     },
     onSuccess: (data) => {
@@ -84,7 +84,7 @@ export function useLogout() {
 
   return useMutation({
     mutationFn: async () => {
-      await apiPost('/logout');
+      await apiPost('/auth/logout');
     },
     onSettled: () => {
       // Always logout locally, even if API call fails

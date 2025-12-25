@@ -36,6 +36,12 @@ class LINEWebhookController extends Controller
             return response()->json(['message' => 'Missing X-Line-Signature header'], 401);
         }
 
+        // Check if channel_secret is configured
+        if (empty($bot->channel_secret)) {
+            Log::warning('LINE webhook: Channel secret not configured', ['bot_id' => $bot->id]);
+            return response()->json(['message' => 'Bot channel secret not configured'], 500);
+        }
+
         try {
             $this->lineService->validateSignature(
                 $request->getContent(),
