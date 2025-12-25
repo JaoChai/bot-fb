@@ -215,6 +215,36 @@ export interface SearchResponse {
 }
 
 // Conversation Types
+
+// Note/Memory types
+export interface ConversationNote {
+  id: string;
+  content: string;
+  type: 'note' | 'memory' | 'reminder';
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateNoteData {
+  content: string;
+  type?: 'note' | 'memory' | 'reminder';
+}
+
+export interface UpdateNoteData {
+  content: string;
+  type?: 'note' | 'memory' | 'reminder';
+}
+
+export interface AddTagsData {
+  tags: string[];
+}
+
+export interface BulkTagsData {
+  conversation_ids: number[];
+  tags: string[];
+}
+
 export interface CustomerProfile {
   id: number;
   external_id: string;
@@ -263,7 +293,7 @@ export interface Conversation {
   status: 'active' | 'closed' | 'handover';
   is_handover: boolean;
   assigned_user_id: number | null;
-  memory_notes: Record<string, unknown> | null;
+  memory_notes: ConversationNote[] | null;
   tags: string[];
   context: Record<string, unknown> | null;
   current_flow_id: number | null;
