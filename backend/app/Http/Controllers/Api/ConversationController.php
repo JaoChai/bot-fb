@@ -2,14 +2,19 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\ConversationUpdated;
+use App\Events\MessageSent;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ConversationResource;
 use App\Http\Resources\MessageResource;
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\Message;
+use App\Services\LINEService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Log;
 
 class ConversationController extends Controller
 {
@@ -492,6 +497,70 @@ class ConversationController extends Controller
         return response()->json([
             'data' => array_values($uniqueTags),
         ]);
+    }
+
+    /**
+     * Send a message from agent to customer (HITL).
+     */
+    public function sendAgentMessage(Request $request, Bot $bot, Conversation $conversation, LINEService $lineService): JsonResponse
+    {
+        $this->authorize('update', $bot);
+        $this->validateConversationBelongsToBot($conversation, $bot);
+
+        // Must be in handover mode
+        if (!$conversation->is_handover) {
+            return response()->json([
+                'message' => 'Conversation must be in handover mode to send agent messages',
+            ], 400);
+        }
+
+        $validated = $request->validate([
+            'content' => 'required|string|max:5000',
+            'type' => 'sometimes|in:text,image,file',
+            'media_url' => 'sometimes|url|max:2048',
+        ]);
+
+        // Create the message in database
+        $message = Message::create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'agent',
+            'content' => $validated['content'],
+            'type' => $validated['type'] ?? 'text',
+            'media_url' => $validated['media_url'] ?? null,
+        ]);
+
+        // Send to customer via LINE (or other channel)
+        $sendError = null;
+        try {
+            if ($conversation->channel_type === 'line') {
+                $lineService->push($bot, $conversation->external_customer_id, [
+                    $lineService->textMessage($validated['content']),
+                ]);
+            }
+            // Add other channel implementations here (Facebook, etc.)
+        } catch (\Exception $e) {
+            Log::error('Failed to send agent message to customer', [
+                'conversation_id' => $conversation->id,
+                'error' => $e->getMessage(),
+            ]);
+            $sendError = $e->getMessage();
+        }
+
+        // Update conversation stats
+        $conversation->update([
+            'last_message_at' => now(),
+            'message_count' => $conversation->message_count + 1,
+        ]);
+
+        // Broadcast the message for real-time updates
+        broadcast(new MessageSent($message))->toOthers();
+        broadcast(new ConversationUpdated($conversation))->toOthers();
+
+        return response()->json([
+            'message' => 'Message sent successfully',
+            'data' => new MessageResource($message),
+            'delivery_error' => $sendError,
+        ], 201);
     }
 
     /**

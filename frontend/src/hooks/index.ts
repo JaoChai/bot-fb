@@ -51,4 +51,6 @@ export {
   useAddTags,
   useRemoveTag,
   useBulkAddTags,
+  // HITL Agent hooks
+  useSendAgentMessage,
 } from './useConversations';

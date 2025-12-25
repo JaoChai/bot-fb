@@ -444,3 +444,47 @@ export function useBulkAddTags(botId: number | undefined) {
     },
   });
 }
+
+// =====================
+// HITL Agent Message Hooks
+// =====================
+
+interface SendAgentMessageData {
+  content: string;
+  type?: 'text' | 'image' | 'file';
+  media_url?: string;
+}
+
+interface AgentMessageResponse {
+  message: string;
+  data: Message;
+  delivery_error?: string | null;
+}
+
+/**
+ * Hook to send a message from agent to customer (HITL mode)
+ */
+export function useSendAgentMessage(botId: number | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      conversationId,
+      data,
+    }: {
+      conversationId: number;
+      data: SendAgentMessageData;
+    }) => {
+      const response = await api.post<AgentMessageResponse>(
+        `/bots/${botId}/conversations/${conversationId}/agent-message`,
+        data
+      );
+      return response.data;
+    },
+    onSuccess: (_, { conversationId }) => {
+      queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversation-messages', botId, conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+    },
+  });
+}

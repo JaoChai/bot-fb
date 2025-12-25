@@ -112,6 +112,9 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         // Tag routes
         Route::post('/{conversation}/tags', [ConversationController::class, 'addTags'])->name('conversations.tags.store');
         Route::delete('/{conversation}/tags/{tag}', [ConversationController::class, 'removeTag'])->name('conversations.tags.destroy');
+
+        // HITL Agent message route
+        Route::post('/{conversation}/agent-message', [ConversationController::class, 'sendAgentMessage'])->name('conversations.agent-message');
     });
 });
 
