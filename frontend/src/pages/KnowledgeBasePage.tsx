@@ -17,6 +17,7 @@ import {
 import { useBots, useKnowledgeBaseOperations } from '@/hooks/useKnowledgeBase';
 import { DocumentUpload } from '@/components/knowledge-base/DocumentUpload';
 import { DocumentList } from '@/components/knowledge-base/DocumentList';
+import { SemanticSearch } from '@/components/knowledge-base/SemanticSearch';
 
 export function KnowledgeBasePage() {
   const [selectedBotId, setSelectedBotId] = useState<number | null>(null);
@@ -176,6 +177,12 @@ export function KnowledgeBasePage() {
               </Card>
             </div>
           )}
+
+          {/* Semantic Search */}
+          <SemanticSearch
+            botId={selectedBotId}
+            hasChunks={(knowledgeBase?.chunk_count ?? 0) > 0}
+          />
 
           {/* Upload section */}
           <DocumentUpload

@@ -57,6 +57,7 @@ return [
         'dimensions' => env('EMBEDDING_DIMENSIONS', 1536),
         'chunk_size' => env('EMBEDDING_CHUNK_SIZE', 500),
         'chunk_overlap' => env('EMBEDDING_CHUNK_OVERLAP', 50),
+        'relevance_threshold' => env('EMBEDDING_RELEVANCE_THRESHOLD', 0.7),
     ],
 
 ];
