@@ -72,6 +72,7 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
     Route::prefix('bots/{bot}/knowledge-base')->group(function () {
         Route::get('/', [KnowledgeBaseController::class, 'show'])->name('kb.show');
         Route::put('/', [KnowledgeBaseController::class, 'update'])->name('kb.update');
+        Route::post('/search', [KnowledgeBaseController::class, 'search'])->name('kb.search');
 
         // Document routes with upload rate limiting
         Route::get('/documents', [DocumentController::class, 'index'])->name('kb.documents.index');

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, apiGet, apiDelete } from '@/lib/api';
+import { api, apiGet, apiDelete, apiPost } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
-import type { ApiResponse, Bot, Document, KnowledgeBase, PaginatedResponse } from '@/types/api';
+import type { ApiResponse, Bot, Document, KnowledgeBase, PaginatedResponse, SearchResponse } from '@/types/api';
 
 // Fetch all bots for the user
 export function useBots() {
@@ -80,6 +80,25 @@ export function useDeleteDocument(botId: number) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.knowledgeBase.detail(botId),
       });
+    },
+  });
+}
+
+// Semantic search mutation
+export interface SearchParams {
+  query: string;
+  limit?: number;
+  threshold?: number;
+}
+
+export function useSemanticSearch(botId: number) {
+  return useMutation({
+    mutationFn: async (params: SearchParams): Promise<SearchResponse> => {
+      const response = await apiPost<SearchResponse>(
+        `/bots/${botId}/knowledge-base/search`,
+        params
+      );
+      return response;
     },
   });
 }

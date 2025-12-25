@@ -8,7 +8,6 @@ import type {
   LoginCredentials,
   RegisterCredentials,
   AuthResponse,
-  ApiResponse,
 } from '@/types/api';
 
 // Fetch current user

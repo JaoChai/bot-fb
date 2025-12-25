@@ -91,3 +91,21 @@ export interface Document {
   created_at: string;
   updated_at: string;
 }
+
+// Semantic Search Types
+export interface SearchResult {
+  id: number;
+  document_id: number;
+  document_name: string;
+  content: string;
+  chunk_index: number;
+  similarity: number;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface SearchResponse {
+  query: string;
+  results: SearchResult[];
+  count: number;
+  message?: string;
+}
