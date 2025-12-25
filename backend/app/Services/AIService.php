@@ -12,11 +12,15 @@ use Illuminate\Support\Facades\Log;
 class AIService
 {
     public function __construct(
-        protected OpenRouterService $openRouter
+        protected OpenRouterService $openRouter,
+        protected RAGService $ragService
     ) {}
 
     /**
      * Generate a response for a bot given a user message.
+     *
+     * Uses RAG (Retrieval Augmented Generation) when the bot has
+     * Knowledge Base enabled, enhancing responses with relevant context.
      */
     public function generateResponse(
         Bot $bot,
@@ -28,14 +32,11 @@ class AIService
             ? $this->getConversationHistory($conversation, $bot->context_window)
             : [];
 
-        // Generate response using bot's LLM settings
-        $result = $this->openRouter->generateBotResponse(
+        // Use RAGService to generate response (handles KB integration automatically)
+        $result = $this->ragService->generateResponse(
+            bot: $bot,
             userMessage: $userMessage,
-            systemPrompt: $bot->system_prompt ?? $this->getDefaultSystemPrompt($bot),
-            conversationHistory: $history,
-            model: $bot->llm_model,
-            temperature: $bot->llm_temperature,
-            maxTokens: $bot->llm_max_tokens
+            conversationHistory: $history
         );
 
         // Calculate cost
@@ -63,8 +64,8 @@ class AIService
                 $conversation
             );
 
-            // Create bot response message
-            $botMessage = $conversation->messages()->create([
+            // Build message data with RAG metadata
+            $messageData = [
                 'sender' => 'bot',
                 'content' => $result['content'],
                 'type' => 'text',
@@ -72,7 +73,17 @@ class AIService
                 'prompt_tokens' => $result['usage']['prompt_tokens'],
                 'completion_tokens' => $result['usage']['completion_tokens'],
                 'cost' => $result['cost'],
-            ]);
+            ];
+
+            // Include RAG metadata if KB was used
+            if (!empty($result['rag']) && $result['rag']['enabled']) {
+                $messageData['metadata'] = [
+                    'rag' => $result['rag'],
+                ];
+            }
+
+            // Create bot response message
+            $botMessage = $conversation->messages()->create($messageData);
 
             // Update bot stats
             $bot->increment('total_messages');
