@@ -30,6 +30,11 @@ class Bot extends Model
         'llm_temperature',
         'llm_max_tokens',
         'context_window',
+        // Knowledge Base (RAG) settings
+        'kb_enabled',
+        'kb_relevance_threshold',
+        'kb_max_results',
+        // Stats
         'total_conversations',
         'total_messages',
         'last_active_at',
@@ -40,6 +45,10 @@ class Bot extends Model
         'llm_temperature' => 'float',
         'llm_max_tokens' => 'integer',
         'context_window' => 'integer',
+        // KB settings
+        'kb_enabled' => 'boolean',
+        'kb_relevance_threshold' => 'float',
+        'kb_max_results' => 'integer',
     ];
 
     protected $hidden = [
