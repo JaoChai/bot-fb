@@ -96,10 +96,9 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
-            // Disable prepared statements for Neon.tech connection pooling (PgBouncer)
-            'options' => [
-                \PDO::ATTR_EMULATE_PREPARES => true,
-            ],
+            // Note: ATTR_EMULATE_PREPARES was disabled for better PostgreSQL boolean support
+            // If connection issues occur with Neon.tech PgBouncer, consider re-enabling
+            'options' => [],
         ],
 
         'sqlsrv' => [

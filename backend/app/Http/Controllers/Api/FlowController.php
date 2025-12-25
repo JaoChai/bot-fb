@@ -38,6 +38,9 @@ class FlowController extends Controller
 
         $data = $request->validated();
 
+        // Cast boolean fields for PostgreSQL compatibility
+        $data = $this->castBooleanFields($data);
+
         // If this is marked as default, unset other defaults
         if ($data['is_default'] ?? false) {
             $bot->flows()->update(['is_default' => false]);
@@ -81,6 +84,9 @@ class FlowController extends Controller
         $this->ensureFlowBelongsToBot($flow, $bot);
 
         $data = $request->validated();
+
+        // Cast boolean fields for PostgreSQL compatibility
+        $data = $this->castBooleanFields($data);
 
         // If setting as default, unset other defaults
         if ($data['is_default'] ?? false) {
@@ -225,6 +231,21 @@ class FlowController extends Controller
         if ($flow->bot_id !== $bot->id) {
             abort(404, 'Flow not found');
         }
+    }
+
+    /**
+     * Cast boolean fields for PostgreSQL compatibility.
+     * Ensures values are proper PHP booleans before database insert.
+     */
+    protected function castBooleanFields(array $data): array
+    {
+        if (array_key_exists('agentic_mode', $data)) {
+            $data['agentic_mode'] = filter_var($data['agentic_mode'], FILTER_VALIDATE_BOOLEAN);
+        }
+        if (array_key_exists('is_default', $data)) {
+            $data['is_default'] = filter_var($data['is_default'], FILTER_VALIDATE_BOOLEAN);
+        }
+        return $data;
     }
 
     protected function getCustomerSupportPrompt(): string

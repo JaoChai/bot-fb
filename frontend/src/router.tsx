@@ -10,6 +10,8 @@ import { BotSettingsPage } from "@/pages/BotSettingsPage"
 import { KnowledgeBasePage } from "@/pages/KnowledgeBasePage"
 import { ChatPage } from "@/pages/ChatPage"
 import { SettingsPage } from "@/pages/SettingsPage"
+import { FlowsPage } from "@/pages/FlowsPage"
+import { FlowEditorPage } from "@/pages/FlowEditorPage"
 
 export const router = createBrowserRouter([
   // Auth routes (guest only)
@@ -67,6 +69,18 @@ export const router = createBrowserRouter([
           {
             path: "settings",
             element: <SettingsPage />,
+          },
+          {
+            path: "flows",
+            element: <FlowsPage />,
+          },
+          {
+            path: "flows/new",
+            element: <FlowEditorPage />,
+          },
+          {
+            path: "flows/:flowId/edit",
+            element: <FlowEditorPage />,
           },
         ],
       },
