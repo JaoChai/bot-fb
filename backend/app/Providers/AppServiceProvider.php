@@ -3,7 +3,11 @@
 namespace App\Providers;
 
 use App\Models\Bot;
+use App\Models\Document;
+use App\Models\KnowledgeBase;
 use App\Policies\BotPolicy;
+use App\Policies\DocumentPolicy;
+use App\Policies\KnowledgeBasePolicy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -26,6 +30,8 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::policy(Bot::class, BotPolicy::class);
+        Gate::policy(KnowledgeBase::class, KnowledgeBasePolicy::class);
+        Gate::policy(Document::class, DocumentPolicy::class);
 
         $this->configureRateLimiting();
     }

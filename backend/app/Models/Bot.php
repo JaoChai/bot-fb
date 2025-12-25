@@ -71,4 +71,9 @@ class Bot extends Model
     {
         return $this->hasOne(BotSetting::class);
     }
+
+    public function knowledgeBase(): HasOne
+    {
+        return $this->hasOne(KnowledgeBase::class);
+    }
 }

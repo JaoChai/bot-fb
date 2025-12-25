@@ -2,7 +2,9 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BotController;
+use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\FlowController;
+use App\Http\Controllers\Api\KnowledgeBaseController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
@@ -66,10 +68,23 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
     // Flow templates (not nested)
     Route::get('/flow-templates', [FlowController::class, 'templates'])->name('flows.templates');
 
+    // Knowledge Base routes (nested under bots)
+    Route::prefix('bots/{bot}/knowledge-base')->group(function () {
+        Route::get('/', [KnowledgeBaseController::class, 'show'])->name('kb.show');
+        Route::put('/', [KnowledgeBaseController::class, 'update'])->name('kb.update');
+
+        // Document routes with upload rate limiting
+        Route::get('/documents', [DocumentController::class, 'index'])->name('kb.documents.index');
+        Route::post('/documents', [DocumentController::class, 'store'])
+            ->middleware('throttle.uploads')
+            ->name('kb.documents.store');
+        Route::get('/documents/{document}', [DocumentController::class, 'show'])->name('kb.documents.show');
+        Route::delete('/documents/{document}', [DocumentController::class, 'destroy'])->name('kb.documents.destroy');
+    });
+
     // Future routes will be added here:
     // - Conversations
     // - Messages
-    // - Knowledge Bases (with throttle.uploads middleware)
     // - Settings
 });
 
