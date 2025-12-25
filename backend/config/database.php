@@ -96,6 +96,10 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // Disable prepared statements for Neon.tech connection pooling (PgBouncer)
+            'options' => [
+                \PDO::ATTR_EMULATE_PREPARES => true,
+            ],
         ],
 
         'sqlsrv' => [

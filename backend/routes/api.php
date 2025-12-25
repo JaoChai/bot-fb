@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BotController;
+use App\Http\Controllers\Api\BotSettingController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\FlowController;
 use App\Http\Controllers\Api\KnowledgeBaseController;
@@ -52,6 +53,10 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/{bot}/test', [BotController::class, 'test'])
             ->middleware('throttle.bot-test')
             ->name('bots.test');
+
+        // Bot settings routes
+        Route::get('/{bot}/settings', [BotSettingController::class, 'show'])->name('bots.settings.show');
+        Route::put('/{bot}/settings', [BotSettingController::class, 'update'])->name('bots.settings.update');
     });
 
     // Flow routes (nested under bots)
