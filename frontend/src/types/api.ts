@@ -58,6 +58,59 @@ export interface Bot {
   status: 'active' | 'inactive' | 'paused';
   channel_type: 'line' | 'facebook' | 'telegram';
   webhook_url: string;
+  // LLM Settings
+  llm_model: string | null;
+  llm_fallback_model: string | null;
+  system_prompt: string | null;
+  llm_temperature: number;
+  llm_max_tokens: number;
+  context_window: number;
+  // Knowledge Base Settings
+  kb_enabled: boolean;
+  kb_relevance_threshold: number;
+  kb_max_results: number;
+  // Stats
+  total_conversations: number;
+  total_messages: number;
+  last_active_at: string | null;
+  // Relationships
+  settings?: BotSettings;
+  created_at: string;
+  updated_at: string;
+}
+
+// Bot Settings Types
+export interface BotSettings {
+  id: number;
+  bot_id: number;
+  // Usage limits
+  daily_message_limit: number;
+  per_user_limit: number;
+  rate_limit_per_minute: number;
+  max_tokens_per_response: number;
+  // HITL settings
+  hitl_enabled: boolean;
+  hitl_triggers: string[] | null;
+  // Response hours
+  response_hours_enabled: boolean;
+  response_hours: Record<string, { start: string; end: string }> | null;
+  offline_message: string | null;
+  // Auto-responses
+  welcome_message: string | null;
+  fallback_message: string | null;
+  typing_indicator: boolean;
+  typing_delay_ms: number;
+  // Content moderation
+  content_filter_enabled: boolean;
+  blocked_keywords: string[] | null;
+  // Analytics
+  analytics_enabled: boolean;
+  save_conversations: boolean;
+  // Language and style
+  language: 'th' | 'en' | 'zh' | 'ja' | 'ko';
+  response_style: 'professional' | 'casual' | 'friendly' | 'formal';
+  // Conversation management
+  auto_archive_days: number | null;
   created_at: string;
   updated_at: string;
 }

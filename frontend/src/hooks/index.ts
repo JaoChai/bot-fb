@@ -13,3 +13,9 @@ export {
   useEchoConnection,
   useBotPresence,
 } from './useEcho';
+
+export {
+  useBotSettings,
+  useUpdateBotSettings,
+  useBotSettingsOperations,
+} from './useBotSettings';

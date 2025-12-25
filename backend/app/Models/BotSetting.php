@@ -12,6 +12,7 @@ class BotSetting extends Model
         'daily_message_limit',
         'per_user_limit',
         'rate_limit_per_minute',
+        'max_tokens_per_response',
         'hitl_enabled',
         'hitl_triggers',
         'response_hours_enabled',
@@ -25,6 +26,9 @@ class BotSetting extends Model
         'blocked_keywords',
         'analytics_enabled',
         'save_conversations',
+        'language',
+        'response_style',
+        'auto_archive_days',
     ];
 
     protected $casts = [

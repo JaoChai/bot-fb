@@ -44,6 +44,7 @@ export const queryKeys = {
       [...queryKeys.bots.lists(), filters] as const,
     details: () => [...queryKeys.bots.all, 'detail'] as const,
     detail: (id: number) => [...queryKeys.bots.details(), id] as const,
+    settings: (id: number) => [...queryKeys.bots.detail(id), 'settings'] as const,
   },
   // Conversations
   conversations: {
