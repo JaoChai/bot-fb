@@ -17,14 +17,14 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-// Public routes (no authentication required)
-Route::prefix('auth')->group(function () {
+// Public routes with auth rate limiting (stricter limits)
+Route::prefix('auth')->middleware('throttle.auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register'])->name('auth.register');
     Route::post('/login', [AuthController::class, 'login'])->name('auth.login');
 });
 
-// Protected routes (authentication required)
-Route::middleware('auth:sanctum')->group(function () {
+// Protected routes (authentication required) with API rate limiting
+Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
 
     // Auth routes
     Route::prefix('auth')->group(function () {
@@ -45,7 +45,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{bot}', [BotController::class, 'destroy'])->name('bots.destroy');
         Route::get('/{bot}/webhook-url', [BotController::class, 'webhookUrl'])->name('bots.webhook-url');
         Route::post('/{bot}/regenerate-webhook', [BotController::class, 'regenerateWebhook'])->name('bots.regenerate-webhook');
-        Route::post('/{bot}/test', [BotController::class, 'test'])->name('bots.test');
+
+        // Bot test endpoint with stricter rate limiting
+        Route::post('/{bot}/test', [BotController::class, 'test'])
+            ->middleware('throttle.bot-test')
+            ->name('bots.test');
     });
 
     // Flow routes (nested under bots)
@@ -65,11 +69,11 @@ Route::middleware('auth:sanctum')->group(function () {
     // Future routes will be added here:
     // - Conversations
     // - Messages
-    // - Knowledge Bases
+    // - Knowledge Bases (with throttle.uploads middleware)
     // - Settings
 });
 
-// Health check endpoint
+// Health check endpoint (no rate limiting needed)
 Route::get('/health', function () {
     return response()->json([
         'status' => 'ok',
