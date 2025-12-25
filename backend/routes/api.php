@@ -113,8 +113,10 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/{conversation}/tags', [ConversationController::class, 'addTags'])->name('conversations.tags.store');
         Route::delete('/{conversation}/tags/{tag}', [ConversationController::class, 'removeTag'])->name('conversations.tags.destroy');
 
-        // HITL Agent message route
-        Route::post('/{conversation}/agent-message', [ConversationController::class, 'sendAgentMessage'])->name('conversations.agent-message');
+        // HITL Agent message route (rate limited to prevent spam)
+        Route::post('/{conversation}/agent-message', [ConversationController::class, 'sendAgentMessage'])
+            ->middleware('throttle:60,1') // 60 messages per minute per user
+            ->name('conversations.agent-message');
     });
 });
 

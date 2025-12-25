@@ -14,6 +14,7 @@ use App\Services\LINEService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ConversationController extends Controller
@@ -515,22 +516,37 @@ class ConversationController extends Controller
         }
 
         $validated = $request->validate([
-            'content' => 'required|string|max:5000',
+            'content' => ['required', 'string', 'max:5000', function ($attribute, $value, $fail) {
+                // LINE API has 5000 byte limit, not character limit
+                if (strlen($value) > 5000) {
+                    $fail('The message is too long (max 5000 bytes for LINE).');
+                }
+            }],
             'type' => 'sometimes|in:text,image,file',
             'media_url' => 'sometimes|url|max:2048',
         ]);
 
-        // Create the message in database
-        $message = Message::create([
-            'conversation_id' => $conversation->id,
-            'sender' => 'agent',
-            'content' => $validated['content'],
-            'type' => $validated['type'] ?? 'text',
-            'media_url' => $validated['media_url'] ?? null,
-        ]);
-
-        // Send to customer via LINE (or other channel)
         $sendError = null;
+
+        // Use transaction for data consistency
+        $message = DB::transaction(function () use ($validated, $conversation) {
+            // Create the message in database
+            $message = Message::create([
+                'conversation_id' => $conversation->id,
+                'sender' => 'agent',
+                'content' => $validated['content'],
+                'type' => $validated['type'] ?? 'text',
+                'media_url' => $validated['media_url'] ?? null,
+            ]);
+
+            // Update conversation stats atomically
+            $conversation->update(['last_message_at' => now()]);
+            $conversation->increment('message_count');
+
+            return $message;
+        });
+
+        // Send to customer via LINE (outside transaction - external API call)
         try {
             if ($conversation->channel_type === 'line') {
                 $lineService->push($bot, $conversation->external_customer_id, [
@@ -541,20 +557,15 @@ class ConversationController extends Controller
         } catch (\Exception $e) {
             Log::error('Failed to send agent message to customer', [
                 'conversation_id' => $conversation->id,
-                'error' => $e->getMessage(),
+                'bot_id' => $bot->id,
+                'error_type' => get_class($e),
             ]);
-            $sendError = $e->getMessage();
+            $sendError = 'Failed to deliver message to customer';
         }
-
-        // Update conversation stats
-        $conversation->update([
-            'last_message_at' => now(),
-            'message_count' => $conversation->message_count + 1,
-        ]);
 
         // Broadcast the message for real-time updates
         broadcast(new MessageSent($message))->toOthers();
-        broadcast(new ConversationUpdated($conversation))->toOthers();
+        broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
 
         return response()->json([
             'message' => 'Message sent successfully',
