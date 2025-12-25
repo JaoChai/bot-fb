@@ -59,14 +59,19 @@ class RAGService
             $kbContext
         );
 
+        // Get model and API key from user settings (centralized)
+        $model = $this->getModelForBot($bot);
+        $apiKey = $this->getApiKeyForBot($bot);
+
         // Send to OpenRouter
         $result = $this->openRouter->generateBotResponse(
             userMessage: $userMessage,
             systemPrompt: $systemPrompt,
             conversationHistory: $conversationHistory,
-            model: $bot->llm_model,
+            model: $model,
             temperature: $bot->llm_temperature,
-            maxTokens: $bot->llm_max_tokens
+            maxTokens: $bot->llm_max_tokens,
+            apiKeyOverride: $apiKey
         );
 
         // Add RAG metadata to result
@@ -216,6 +221,49 @@ class RAGService
 
         // Append KB context to the system prompt
         return $basePrompt . "\n\n" . $kbContext;
+    }
+
+    /**
+     * Get the LLM model to use for a bot.
+     *
+     * Priority:
+     * 1. User Settings model (centralized - recommended for single-user)
+     * 2. Bot-specific model (legacy/override)
+     * 3. Config default model
+     */
+    protected function getModelForBot(Bot $bot): ?string
+    {
+        // Priority 1: User Settings (centralized model)
+        $user = $bot->user;
+        if ($user && $user->settings && $user->settings->openrouter_model) {
+            return $user->settings->openrouter_model;
+        }
+
+        // Priority 2: Bot-specific model (legacy support)
+        if ($bot->llm_model) {
+            return $bot->llm_model;
+        }
+
+        // Priority 3: Config default (handled by OpenRouterService)
+        return null;
+    }
+
+    /**
+     * Get the API key to use for a bot.
+     *
+     * Priority:
+     * 1. User Settings API key (centralized - recommended)
+     * 2. Config/env fallback (handled by OpenRouterService)
+     */
+    protected function getApiKeyForBot(Bot $bot): ?string
+    {
+        $user = $bot->user;
+        if ($user && $user->settings && $user->settings->hasOpenRouterKey()) {
+            return $user->settings->openrouter_api_key;
+        }
+
+        // Let OpenRouterService use its default from config
+        return null;
     }
 
     /**

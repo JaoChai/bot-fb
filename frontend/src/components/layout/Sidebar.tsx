@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 
 const navItems = [
   {
-    title: 'Dashboard',
+    title: 'แดชบอร์ด',
     href: '/dashboard',
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -17,7 +17,7 @@ const navItems = [
     ),
   },
   {
-    title: 'Bots',
+    title: 'การเชื่อมต่อ',
     href: '/bots',
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -31,17 +31,7 @@ const navItems = [
     ),
   },
   {
-    title: 'Flows',
-    href: '/flows',
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 3v16a2 2 0 0 0 2 2h16" />
-        <path d="m19 9-5 5-4-4-3 3" />
-      </svg>
-    ),
-  },
-  {
-    title: 'Knowledge Base',
+    title: 'ฐานความรู้',
     href: '/knowledge-base',
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -52,7 +42,7 @@ const navItems = [
     ),
   },
   {
-    title: 'Chat',
+    title: 'แชท',
     href: '/chat',
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -62,7 +52,7 @@ const navItems = [
     ),
   },
   {
-    title: 'Settings',
+    title: 'ตั้งค่า',
     href: '/settings',
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

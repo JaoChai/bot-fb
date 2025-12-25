@@ -54,3 +54,14 @@ export {
   // HITL Agent hooks
   useSendAgentMessage,
 } from './useConversations';
+
+export {
+  useUserSettings,
+  useUpdateOpenRouter,
+  useUpdateLine,
+  useTestOpenRouter,
+  useTestLine,
+  useClearOpenRouter,
+  useClearLine,
+  useUserSettingsOperations,
+} from './useUserSettings';
