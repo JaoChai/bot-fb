@@ -27,10 +27,12 @@ import {
   useCloseConversation,
   useReopenConversation,
   useToggleHandover,
+  useSendAgentMessage,
 } from '@/hooks/useConversations';
 import { useToast } from '@/hooks/use-toast';
 import { NotesPanel } from '@/components/conversation/NotesPanel';
 import { TagsPanel } from '@/components/conversation/TagsPanel';
+import { Input } from '@/components/ui/input';
 import {
   Loader2,
   ArrowLeft,
@@ -49,6 +51,7 @@ import {
   Hash,
   Clock,
   MessagesSquare,
+  Send,
 } from 'lucide-react';
 import type { Message, Conversation } from '@/types/api';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -93,6 +96,9 @@ export function ConversationDetailPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
+  // State for agent message input
+  const [messageInput, setMessageInput] = useState('');
+
   // Queries
   const { data: conversation, isLoading, error } = useConversation(botId, convId);
   const { data: messagesResponse, isLoading: isLoadingMessages } = useConversationMessages(
@@ -107,6 +113,7 @@ export function ConversationDetailPage() {
   const closeConversation = useCloseConversation(botId);
   const reopenConversation = useReopenConversation(botId);
   const toggleHandover = useToggleHandover(botId);
+  const sendAgentMessage = useSendAgentMessage(botId);
 
   // Auto scroll to bottom when messages change
   useEffect(() => {
@@ -164,6 +171,36 @@ export function ConversationDetailPage() {
       toast({
         title: 'Error',
         description: 'Failed to toggle handover mode.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!convId || !messageInput.trim()) return;
+
+    const content = messageInput.trim();
+    setMessageInput(''); // Clear immediately for responsiveness
+
+    try {
+      const result = await sendAgentMessage.mutateAsync({
+        conversationId: convId,
+        data: { content },
+      });
+
+      if (result.delivery_error) {
+        toast({
+          title: 'Message saved but delivery failed',
+          description: result.delivery_error,
+          variant: 'destructive',
+        });
+      }
+    } catch {
+      setMessageInput(content); // Restore on error
+      toast({
+        title: 'Error',
+        description: 'Failed to send message.',
         variant: 'destructive',
       });
     }
@@ -349,23 +386,53 @@ export function ConversationDetailPage() {
         </Button>
       )}
 
-      {/* Footer - Status info */}
-      <div className="border-t p-4 bg-muted/50">
-        <div className="max-w-3xl mx-auto text-center text-sm text-muted-foreground">
-          {conversation.status === 'closed' ? (
+      {/* Footer - Chat Input or Status */}
+      <div className="border-t bg-background">
+        {conversation.status === 'closed' ? (
+          <div className="p-4 text-center text-sm text-muted-foreground">
             <p>This conversation is closed. Reopen it to continue.</p>
-          ) : conversation.is_handover ? (
-            <p>
-              <UserCheck className="h-4 w-4 inline-block mr-1" />
-              You are handling this conversation (Handover mode)
+          </div>
+        ) : conversation.is_handover ? (
+          <form onSubmit={handleSendMessage} className="p-4">
+            <div className="max-w-3xl mx-auto flex gap-2">
+              <div className="flex-1 relative">
+                <Input
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  placeholder="Type your message..."
+                  disabled={sendAgentMessage.isPending}
+                  className="pr-12"
+                  autoFocus
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                  <Headphones className="h-4 w-4 inline-block text-yellow-600" />
+                </div>
+              </div>
+              <Button
+                type="submit"
+                disabled={!messageInput.trim() || sendAgentMessage.isPending}
+              >
+                {sendAgentMessage.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                <span className="ml-2 hidden sm:inline">Send</span>
+              </Button>
+            </div>
+            <p className="text-center text-xs text-muted-foreground mt-2">
+              <UserCheck className="h-3 w-3 inline-block mr-1" />
+              Handover mode - Messages will be sent directly to customer
             </p>
-          ) : (
+          </form>
+        ) : (
+          <div className="p-4 text-center text-sm text-muted-foreground">
             <p>
               <Bot className="h-4 w-4 inline-block mr-1" />
               Bot is handling this conversation
             </p>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
