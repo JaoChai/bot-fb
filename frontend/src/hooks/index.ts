@@ -41,4 +41,14 @@ export {
   useCloseConversation,
   useReopenConversation,
   useToggleHandover,
+  // Notes/Memory hooks
+  useConversationNotes,
+  useAddNote,
+  useUpdateNote,
+  useDeleteNote,
+  // Tags hooks
+  useBotTags,
+  useAddTags,
+  useRemoveTag,
+  useBulkAddTags,
 } from './useConversations';

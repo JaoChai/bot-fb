@@ -27,9 +27,10 @@ import {
   useCloseConversation,
   useReopenConversation,
   useToggleHandover,
-  useUpdateConversation,
 } from '@/hooks/useConversations';
 import { useToast } from '@/hooks/use-toast';
+import { NotesPanel } from '@/components/conversation/NotesPanel';
+import { TagsPanel } from '@/components/conversation/TagsPanel';
 import {
   Loader2,
   ArrowLeft,
@@ -46,7 +47,6 @@ import {
   Phone,
   Calendar,
   Hash,
-  Tag,
   Clock,
   MessagesSquare,
 } from 'lucide-react';
@@ -107,7 +107,6 @@ export function ConversationDetailPage() {
   const closeConversation = useCloseConversation(botId);
   const reopenConversation = useReopenConversation(botId);
   const toggleHandover = useToggleHandover(botId);
-  const updateConversation = useUpdateConversation(botId);
 
   // Auto scroll to bottom when messages change
   useEffect(() => {
@@ -165,27 +164,6 @@ export function ConversationDetailPage() {
       toast({
         title: 'Error',
         description: 'Failed to toggle handover mode.',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const handleAddTag = async (tag: string) => {
-    if (!convId || !conversation) return;
-    const newTags = [...(conversation.tags || []), tag];
-    try {
-      await updateConversation.mutateAsync({
-        conversationId: convId,
-        data: { tags: newTags },
-      });
-      toast({
-        title: 'Tag added',
-        description: `Tag "${tag}" has been added.`,
-      });
-    } catch {
-      toast({
-        title: 'Error',
-        description: 'Failed to add tag.',
         variant: 'destructive',
       });
     }
@@ -263,12 +241,12 @@ export function ConversationDetailPage() {
                 Customer Info
               </Button>
             </SheetTrigger>
-            <SheetContent>
+            <SheetContent className="overflow-y-auto">
               <SheetHeader>
                 <SheetTitle>Customer Information</SheetTitle>
                 <SheetDescription>Details about this customer</SheetDescription>
               </SheetHeader>
-              <CustomerInfoPanel conversation={conversation} onAddTag={handleAddTag} />
+              <CustomerInfoPanel botId={botId!} conversation={conversation} />
             </SheetContent>
           </Sheet>
 
@@ -509,13 +487,12 @@ function MessageBubble({ message, previousMessage }: MessageBubbleProps) {
 }
 
 interface CustomerInfoPanelProps {
+  botId: number;
   conversation: Conversation;
-  onAddTag: (tag: string) => void;
 }
 
-function CustomerInfoPanel({ conversation, onAddTag }: CustomerInfoPanelProps) {
+function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProps) {
   const customer = conversation.customer_profile;
-  const [newTag, setNewTag] = useState('');
 
   return (
     <div className="mt-6 space-y-6">
@@ -618,67 +595,20 @@ function CustomerInfoPanel({ conversation, onAddTag }: CustomerInfoPanelProps) {
 
       <Separator />
 
-      {/* Tags */}
-      <div className="space-y-3">
-        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-          Tags
-        </h4>
+      {/* Tags Panel */}
+      <TagsPanel
+        botId={botId}
+        conversationId={conversation.id}
+        currentTags={conversation.tags || []}
+      />
 
-        <div className="flex flex-wrap gap-2">
-          {conversation.tags && conversation.tags.length > 0 ? (
-            conversation.tags.map((tag) => (
-              <Badge key={tag} variant="secondary">
-                <Tag className="h-3 w-3 mr-1" />
-                {tag}
-              </Badge>
-            ))
-          ) : (
-            <p className="text-sm text-muted-foreground">No tags</p>
-          )}
-        </div>
+      <Separator />
 
-        {/* Add tag input */}
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Add tag..."
-            value={newTag}
-            onChange={(e) => setNewTag(e.target.value)}
-            className="flex-1 px-3 py-1 text-sm border rounded-md"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && newTag.trim()) {
-                onAddTag(newTag.trim());
-                setNewTag('');
-              }
-            }}
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              if (newTag.trim()) {
-                onAddTag(newTag.trim());
-                setNewTag('');
-              }
-            }}
-          >
-            Add
-          </Button>
-        </div>
-      </div>
-
-      {/* Notes */}
-      {customer?.notes && (
-        <>
-          <Separator />
-          <div className="space-y-3">
-            <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-              Notes
-            </h4>
-            <p className="text-sm whitespace-pre-wrap">{customer.notes}</p>
-          </div>
-        </>
-      )}
+      {/* Notes Panel */}
+      <NotesPanel
+        botId={botId}
+        conversationId={conversation.id}
+      />
     </div>
   );
 }

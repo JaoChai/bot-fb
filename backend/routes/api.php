@@ -94,12 +94,24 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
     Route::prefix('bots/{bot}/conversations')->group(function () {
         Route::get('/', [ConversationController::class, 'index'])->name('conversations.index');
         Route::get('/stats', [ConversationController::class, 'stats'])->name('conversations.stats');
+        Route::get('/tags', [ConversationController::class, 'getAllTags'])->name('conversations.tags.all');
+        Route::post('/bulk-tags', [ConversationController::class, 'bulkAddTags'])->name('conversations.bulk-tags');
         Route::get('/{conversation}', [ConversationController::class, 'show'])->name('conversations.show');
         Route::put('/{conversation}', [ConversationController::class, 'update'])->name('conversations.update');
         Route::get('/{conversation}/messages', [ConversationController::class, 'messages'])->name('conversations.messages');
         Route::post('/{conversation}/close', [ConversationController::class, 'close'])->name('conversations.close');
         Route::post('/{conversation}/reopen', [ConversationController::class, 'reopen'])->name('conversations.reopen');
         Route::post('/{conversation}/toggle-handover', [ConversationController::class, 'toggleHandover'])->name('conversations.toggle-handover');
+
+        // Notes/Memory routes
+        Route::get('/{conversation}/notes', [ConversationController::class, 'getNotes'])->name('conversations.notes.index');
+        Route::post('/{conversation}/notes', [ConversationController::class, 'addNote'])->name('conversations.notes.store');
+        Route::put('/{conversation}/notes/{noteId}', [ConversationController::class, 'updateNote'])->name('conversations.notes.update');
+        Route::delete('/{conversation}/notes/{noteId}', [ConversationController::class, 'deleteNote'])->name('conversations.notes.destroy');
+
+        // Tag routes
+        Route::post('/{conversation}/tags', [ConversationController::class, 'addTags'])->name('conversations.tags.store');
+        Route::delete('/{conversation}/tags/{tag}', [ConversationController::class, 'removeTag'])->name('conversations.tags.destroy');
     });
 });
 
