@@ -52,4 +52,11 @@ return [
         'channel_access_token' => env('LINE_CHANNEL_ACCESS_TOKEN'),
     ],
 
+    'embeddings' => [
+        'model' => env('EMBEDDING_MODEL', 'openai/text-embedding-3-small'),
+        'dimensions' => env('EMBEDDING_DIMENSIONS', 1536),
+        'chunk_size' => env('EMBEDDING_CHUNK_SIZE', 500),
+        'chunk_overlap' => env('EMBEDDING_CHUNK_OVERLAP', 50),
+    ],
+
 ];

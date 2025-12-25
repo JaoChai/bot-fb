@@ -79,6 +79,7 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
             ->middleware('throttle.uploads')
             ->name('kb.documents.store');
         Route::get('/documents/{document}', [DocumentController::class, 'show'])->name('kb.documents.show');
+        Route::post('/documents/{document}/reprocess', [DocumentController::class, 'reprocess'])->name('kb.documents.reprocess');
         Route::delete('/documents/{document}', [DocumentController::class, 'destroy'])->name('kb.documents.destroy');
     });
 
