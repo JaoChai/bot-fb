@@ -31,3 +31,14 @@ export {
   useSetDefaultFlow,
   useFlowOperations,
 } from './useFlows';
+
+export {
+  useConversations,
+  useConversation,
+  useConversationMessages,
+  useConversationStats,
+  useUpdateConversation,
+  useCloseConversation,
+  useReopenConversation,
+  useToggleHandover,
+} from './useConversations';

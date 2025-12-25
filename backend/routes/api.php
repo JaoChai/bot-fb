@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BotController;
 use App\Http\Controllers\Api\BotSettingController;
+use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\FlowController;
 use App\Http\Controllers\Api\KnowledgeBaseController;
@@ -89,10 +90,17 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::delete('/documents/{document}', [DocumentController::class, 'destroy'])->name('kb.documents.destroy');
     });
 
-    // Future routes will be added here:
-    // - Conversations
-    // - Messages
-    // - Settings
+    // Conversation routes (nested under bots)
+    Route::prefix('bots/{bot}/conversations')->group(function () {
+        Route::get('/', [ConversationController::class, 'index'])->name('conversations.index');
+        Route::get('/stats', [ConversationController::class, 'stats'])->name('conversations.stats');
+        Route::get('/{conversation}', [ConversationController::class, 'show'])->name('conversations.show');
+        Route::put('/{conversation}', [ConversationController::class, 'update'])->name('conversations.update');
+        Route::get('/{conversation}/messages', [ConversationController::class, 'messages'])->name('conversations.messages');
+        Route::post('/{conversation}/close', [ConversationController::class, 'close'])->name('conversations.close');
+        Route::post('/{conversation}/reopen', [ConversationController::class, 'reopen'])->name('conversations.reopen');
+        Route::post('/{conversation}/toggle-handover', [ConversationController::class, 'toggleHandover'])->name('conversations.toggle-handover');
+    });
 });
 
 // Health check endpoint (no rate limiting needed)

@@ -8,7 +8,8 @@ import { DashboardPage } from "@/pages/DashboardPage"
 import { BotsPage } from "@/pages/BotsPage"
 import { BotSettingsPage } from "@/pages/BotSettingsPage"
 import { KnowledgeBasePage } from "@/pages/KnowledgeBasePage"
-import { ChatPage } from "@/pages/ChatPage"
+import { ConversationsPage } from "@/pages/ConversationsPage"
+import { ConversationDetailPage } from "@/pages/ConversationDetailPage"
 import { SettingsPage } from "@/pages/SettingsPage"
 import { FlowsPage } from "@/pages/FlowsPage"
 import { FlowEditorPage } from "@/pages/FlowEditorPage"
@@ -64,7 +65,11 @@ export const router = createBrowserRouter([
           },
           {
             path: "chat",
-            element: <ChatPage />,
+            element: <ConversationsPage />,
+          },
+          {
+            path: "conversations/:conversationId",
+            element: <ConversationDetailPage />,
           },
           {
             path: "settings",
