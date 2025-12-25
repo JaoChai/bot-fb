@@ -39,11 +39,12 @@ export function useDocuments(botId: number | null) {
 }
 
 // Upload document mutation
-export function useUploadDocument(botId: number) {
+export function useUploadDocument(botId: number | null) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (file: File) => {
+      if (!botId) throw new Error('Bot ID is required');
       const formData = new FormData();
       formData.append('file', file);
 
@@ -60,6 +61,7 @@ export function useUploadDocument(botId: number) {
       return response.data;
     },
     onSuccess: () => {
+      if (!botId) return;
       // Invalidate both documents and knowledge base queries
       queryClient.invalidateQueries({
         queryKey: queryKeys.knowledgeBase.detail(botId),
@@ -69,14 +71,16 @@ export function useUploadDocument(botId: number) {
 }
 
 // Delete document mutation
-export function useDeleteDocument(botId: number) {
+export function useDeleteDocument(botId: number | null) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (documentId: number) => {
+      if (!botId) throw new Error('Bot ID is required');
       await apiDelete(`/bots/${botId}/knowledge-base/documents/${documentId}`);
     },
     onSuccess: () => {
+      if (!botId) return;
       queryClient.invalidateQueries({
         queryKey: queryKeys.knowledgeBase.detail(botId),
       });
@@ -107,8 +111,9 @@ export function useSemanticSearch(botId: number) {
 export function useKnowledgeBaseOperations(botId: number | null) {
   const knowledgeBase = useKnowledgeBase(botId);
   const documents = useDocuments(botId);
-  const uploadMutation = botId ? useUploadDocument(botId) : null;
-  const deleteMutation = botId ? useDeleteDocument(botId) : null;
+  // Always call hooks unconditionally to respect React rules of hooks
+  const uploadMutation = useUploadDocument(botId);
+  const deleteMutation = useDeleteDocument(botId);
 
   return {
     // Data
@@ -117,17 +122,17 @@ export function useKnowledgeBaseOperations(botId: number | null) {
 
     // Loading states
     isLoading: knowledgeBase.isLoading || documents.isLoading,
-    isUploading: uploadMutation?.isPending ?? false,
-    isDeleting: deleteMutation?.isPending ?? false,
+    isUploading: uploadMutation.isPending,
+    isDeleting: deleteMutation.isPending,
 
     // Errors
     error: knowledgeBase.error || documents.error,
-    uploadError: uploadMutation?.error,
-    deleteError: deleteMutation?.error,
+    uploadError: uploadMutation.error,
+    deleteError: deleteMutation.error,
 
-    // Actions
-    uploadDocument: uploadMutation?.mutateAsync,
-    deleteDocument: deleteMutation?.mutateAsync,
+    // Actions - only expose when botId is valid
+    uploadDocument: botId ? uploadMutation.mutateAsync : undefined,
+    deleteDocument: botId ? deleteMutation.mutateAsync : undefined,
 
     // Refetch
     refetch: () => {
