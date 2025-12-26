@@ -19,6 +19,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { useFlow, useCreateFlow, useUpdateFlow, useFlowTemplates, useFlowOperations } from '@/hooks/useFlows';
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase';
 import { useToast } from '@/hooks/use-toast';
@@ -37,6 +38,11 @@ import {
   HelpCircle,
   BookOpen,
   X,
+  Zap,
+  Paperclip,
+  Image as ImageIcon,
+  Trash2,
+  Code,
 } from 'lucide-react';
 import type { CreateFlowData, FlowTemplate } from '@/types/api';
 
@@ -131,9 +137,21 @@ export function FlowEditorPage() {
   const [isChatOpen, setIsChatOpen] = useState(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const systemPromptRef = useRef<HTMLTextAreaElement>(null);
 
   // Collapsible sections
   const [isBaseFlowInfoOpen, setIsBaseFlowInfoOpen] = useState(false);
+
+  // Issue #56 - Flow Editor Improvements
+  const [isSystemPromptPreview, setIsSystemPromptPreview] = useState(false);
+  const [agenticSecondAIEnabled, setAgenticSecondAIEnabled] = useState(false);
+  const [secondAIOptions, setSecondAIOptions] = useState({
+    factCheck: false,
+    policy: false,
+    personality: false,
+  });
+  const [plugins, setPlugins] = useState<Array<{ id: string; name: string }>>([]);
+  const [externalDataSources, setExternalDataSources] = useState<string>('');
 
   // Auto-redirect in editor entry mode
   useEffect(() => {
@@ -250,6 +268,92 @@ export function FlowEditorPage() {
         variant: 'destructive',
       });
     }
+  };
+
+  // Validate external data source URL
+  const validateExternalDataSource = (url: string): boolean => {
+    if (!url.trim()) return true; // empty is ok
+
+    try {
+      const parsed = new URL(url);
+      // Only allow https
+      if (parsed.protocol !== 'https:') {
+        toast({
+          title: 'Invalid URL',
+          description: 'Only HTTPS URLs are allowed',
+          variant: 'destructive',
+        });
+        return false;
+      }
+      // Prevent localhost/internal IPs
+      if (['localhost', '127.0.0.1', '0.0.0.0'].includes(parsed.hostname)) {
+        toast({
+          title: 'Invalid URL',
+          description: 'Internal URLs are not allowed',
+          variant: 'destructive',
+        });
+        return false;
+      }
+      return true;
+    } catch {
+      toast({
+        title: 'Invalid URL',
+        description: 'Please enter a valid URL',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  };
+
+  // Handle markdown toolbar actions
+  const handleMarkdownAction = (action: string) => {
+    const textarea = systemPromptRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = formData.system_prompt;
+    const selectedText = text.substring(start, end);
+
+    let insertText = '';
+    let finalText = '';
+
+    switch (action) {
+      case 'bold':
+        insertText = selectedText ? `**${selectedText}**` : '**bold text**';
+        break;
+      case 'italic':
+        insertText = selectedText ? `*${selectedText}*` : '*italic text*';
+        break;
+      case 'strikethrough':
+        insertText = selectedText ? `~~${selectedText}~~` : '~~strikethrough text~~';
+        break;
+      case 'h1':
+        insertText = selectedText ? `# ${selectedText}` : '# Heading 1';
+        break;
+      case 'h2':
+        insertText = selectedText ? `## ${selectedText}` : '## Heading 2';
+        break;
+      case 'h3':
+        insertText = selectedText ? `### ${selectedText}` : '### Heading 3';
+        break;
+      case 'bullet':
+        insertText = selectedText ? `- ${selectedText}` : '- Bullet point';
+        break;
+      case 'numbered':
+        insertText = selectedText ? `1. ${selectedText}` : '1. Numbered item';
+        break;
+      case 'code':
+        insertText = selectedText ? `\`${selectedText}\`` : '`code`';
+        break;
+      case 'link':
+        insertText = selectedText ? `[${selectedText}](url)` : '[link text](url)';
+        break;
+    }
+
+    finalText = text.substring(0, start) + insertText + text.substring(end);
+    handleChange('system_prompt', finalText);
+    setHasChanges(true);
   };
 
   // Handle chat emulator
@@ -560,25 +664,53 @@ export function FlowEditorPage() {
                 </div>
 
                 {/* System Prompt */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">
-                      เขียนคำสั่งให้ AI สร้างการตอบกลับ - คุณสามารถดูตัวอย่างการเขียนคำสั่งได้ใน{' '}
-                      <a href="#" className="text-amber-600 hover:underline">
-                        คู่มือการใช้งาน & Prompts Library
-                      </a>
-                    </span>
+                <div className="space-y-3 border rounded-lg overflow-hidden">
+                  <div className="px-4 pt-4 pb-2">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-sm font-medium">
+                        เขียนคำสั่งให้ AI สร้างการตอบกลับ - คุณสามารถดูตัวอย่างการเขียนคำสั่งได้ใน{' '}
+                        <a href="#" className="text-amber-600 hover:underline">
+                          คู่มือการใช้งาน & Prompts Library
+                        </a>
+                      </span>
+                    </div>
+                    {/* Markdown Toolbar */}
+                    <MarkdownToolbar
+                      onBold={() => handleMarkdownAction('bold')}
+                      onItalic={() => handleMarkdownAction('italic')}
+                      onStrikethrough={() => handleMarkdownAction('strikethrough')}
+                      onHeading={(level) => handleMarkdownAction(`h${level}`)}
+                      onBulletList={() => handleMarkdownAction('bullet')}
+                      onNumberedList={() => handleMarkdownAction('numbered')}
+                      onLink={() => handleMarkdownAction('link')}
+                      onCode={() => handleMarkdownAction('code')}
+                      onPreviewToggle={() => setIsSystemPromptPreview(!isSystemPromptPreview)}
+                      onFullscreen={() => {
+                        // Placeholder for fullscreen functionality
+                        toast({ title: 'Feature coming soon', description: 'Fullscreen mode will be available in next update' });
+                      }}
+                      isPreviewMode={isSystemPromptPreview}
+                    />
                   </div>
-                  <Textarea
-                    placeholder="คุณคือผู้ช่วยที่เป็นมิตร..."
-                    className="min-h-[300px] font-mono text-sm"
-                    value={formData.system_prompt}
-                    onChange={(e) => handleChange('system_prompt', e.target.value)}
-                  />
-                  <div className="flex justify-end gap-4 text-xs text-muted-foreground">
-                    <span>lines: {formData.system_prompt.split('\n').length}</span>
-                    <span>words: {formData.system_prompt.split(/\s+/).filter(Boolean).length}</span>
-                  </div>
+                  {!isSystemPromptPreview ? (
+                    <>
+                      <Textarea
+                        ref={systemPromptRef}
+                        placeholder="คุณคือผู้ช่วยที่เป็นมิตร..."
+                        className="min-h-[300px] font-mono text-sm border-0 rounded-none focus-visible:ring-0"
+                        value={formData.system_prompt}
+                        onChange={(e) => handleChange('system_prompt', e.target.value)}
+                      />
+                      <div className="flex justify-end gap-4 text-xs text-muted-foreground px-4 pb-4">
+                        <span>lines: {formData.system_prompt.split('\n').length}</span>
+                        <span>words: {formData.system_prompt.split(/\s+/).filter(Boolean).length}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="px-4 py-4 min-h-[300px] bg-muted/30 prose prose-sm max-w-none">
+                      <p className="text-sm text-muted-foreground">Preview mode coming soon</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Model Settings */}
@@ -646,6 +778,171 @@ export function FlowEditorPage() {
                   />
                   <Label htmlFor="is_default">ตั้งเป็น Flow เริ่มต้น</Label>
                 </div>
+              </div>
+
+              {/* Issue #56: Second AI for Improvement */}
+              <div className="border rounded-lg p-6">
+                <div className="flex items-start gap-4">
+                  <Switch
+                    id="agentic_second_ai"
+                    checked={agenticSecondAIEnabled}
+                    onCheckedChange={setAgenticSecondAIEnabled}
+                  />
+                  <div className="flex-1">
+                    <Label htmlFor="agentic_second_ai" className="font-medium">
+                      Second AI for Improvement
+                    </Label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      ใช้ AI ตัวที่สองเพื่อตรวจสอบและปรับปรุงคำตอบ เช่น การตรวจสอบข้อเท็จจริง นโยบาย หรือบุคลิกภาพ
+                    </p>
+                  </div>
+                </div>
+
+                {agenticSecondAIEnabled && (
+                  <div className="mt-4 space-y-3 pt-4 border-t">
+                    <div className="grid grid-cols-3 gap-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={secondAIOptions.factCheck}
+                          onChange={(e) => {
+                            setSecondAIOptions(prev => ({ ...prev, factCheck: e.target.checked }));
+                            setHasChanges(true);
+                          }}
+                          className="rounded border-gray-300"
+                        />
+                        <span className="text-sm">✓ Fact Check</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={secondAIOptions.policy}
+                          onChange={(e) => {
+                            setSecondAIOptions(prev => ({ ...prev, policy: e.target.checked }));
+                            setHasChanges(true);
+                          }}
+                          className="rounded border-gray-300"
+                        />
+                        <span className="text-sm">🚦 Policy</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={secondAIOptions.personality}
+                          onChange={(e) => {
+                            setSecondAIOptions(prev => ({ ...prev, personality: e.target.checked }));
+                            setHasChanges(true);
+                          }}
+                          className="rounded border-gray-300"
+                        />
+                        <span className="text-sm">💬 Personality</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Issue #56: External Data Sources */}
+              <div className="border rounded-lg p-6">
+                <div className="flex items-start gap-4">
+                  <div className="flex-1">
+                    <Label className="font-medium flex items-center gap-2">
+                      <Code className="h-4 w-4" />
+                      External Data Sources
+                    </Label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      เชื่อมต่อแหล่งข้อมูลภายนอกเพื่อให้ AI สามารถเรียกใช้ข้อมูลแบบ Real-time
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <Input
+                    placeholder="ค้นหาหรือใส่ URL ของ API endpoint..."
+                    value={externalDataSources}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (validateExternalDataSource(value)) {
+                        setExternalDataSources(value);
+                        setHasChanges(true);
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    • JSON API endpoints ต่าง ๆ สามารถใช้ได้ (HTTPS only)
+                    <br />• ใช้ `{'{'}data{'}'}` syntax ในคำสั่ง AI เพื่อเรียกใช้ข้อมูล
+                  </p>
+                </div>
+              </div>
+
+              {/* Issue #56: Plugins */}
+              <div className="border rounded-lg p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <Label className="font-medium flex items-center gap-2">
+                      <Zap className="h-4 w-4" />
+                      Plugins
+                    </Label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      เพิ่มฟังก์ชันเพิ่มเติมให้ AI ผ่าน plugins
+                    </p>
+                  </div>
+                </div>
+
+                {plugins.length === 0 ? (
+                  <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                    <Plus className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground mb-3">ยังไม่มี plugins</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const newPlugin = {
+                          id: generateId(),
+                          name: `Plugin ${plugins.length + 1}`,
+                        };
+                        setPlugins([...plugins, newPlugin]);
+                      }}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      เพิ่ม Plugin
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {plugins.map((plugin) => (
+                      <div
+                        key={plugin.id}
+                        className="flex items-center justify-between p-3 border rounded-lg bg-muted/30"
+                      >
+                        <span className="text-sm font-medium">{plugin.name}</span>
+                        <button
+                          onClick={() =>
+                            setPlugins(plugins.filter((p) => p.id !== plugin.id))
+                          }
+                          className="text-destructive hover:text-destructive/80"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full mt-3"
+                      onClick={() => {
+                        const newPlugin = {
+                          id: generateId(),
+                          name: `Plugin ${plugins.length + 1}`,
+                        };
+                        setPlugins([...plugins, newPlugin]);
+                      }}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      เพิ่ม Plugin
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* Templates Section */}
@@ -718,28 +1015,73 @@ export function FlowEditorPage() {
             </div>
 
             {/* Input */}
-            <div className="border-t p-3 flex gap-2">
-              <input
-                type="text"
-                placeholder="พิมพ์ข้อความ..."
-                className="flex-1 px-3 py-2 rounded-lg border bg-background text-sm"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-              />
-              <Button
-                size="sm"
-                onClick={handleSendMessage}
-                disabled={!chatInput.trim()}
-                className="bg-amber-500 hover:bg-amber-600"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
+            <div className="border-t p-3 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="พิมพ์ข้อความ..."
+                  className="flex-1 px-3 py-2 rounded-lg border bg-background text-sm"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                />
+                <Button
+                  size="sm"
+                  onClick={handleSendMessage}
+                  disabled={!chatInput.trim()}
+                  className="bg-amber-500 hover:bg-amber-600"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="flex gap-2 justify-between">
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 text-muted-foreground cursor-not-allowed"
+                    title="Attach File (Coming Soon)"
+                    disabled
+                    onClick={() => {
+                      toast({
+                        title: 'Feature Coming Soon',
+                        description: 'File attachment will be available in the next update',
+                      });
+                    }}
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 text-muted-foreground cursor-not-allowed"
+                    title="Attach Image (Coming Soon)"
+                    disabled
+                    onClick={() => {
+                      toast({
+                        title: 'Feature Coming Soon',
+                        description: 'Image attachment will be available in the next update',
+                      });
+                    }}
+                  >
+                    <ImageIcon className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 w-8 p-0 text-destructive hover:text-destructive/80"
+                  onClick={() => setChatMessages([])}
+                  title="Clear Chat"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </>
         )}
