@@ -392,12 +392,13 @@ export function FlowEditorPage() {
       });
 
       if (result.success && result.response) {
+        const aiResponse = result.response;
         setChatMessages((prev) => [
           ...prev,
           {
             id: generateId(),
-            role: 'assistant',
-            content: result.response,
+            role: 'assistant' as const,
+            content: aiResponse,
           },
         ]);
       } else {
