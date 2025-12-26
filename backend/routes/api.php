@@ -81,6 +81,11 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::delete('/{flow}', [FlowController::class, 'destroy'])->name('flows.destroy');
         Route::post('/{flow}/set-default', [FlowController::class, 'setDefault'])->name('flows.set-default');
         Route::post('/{flow}/duplicate', [FlowController::class, 'duplicate'])->name('flows.duplicate');
+
+        // Flow test endpoint for Chat Emulator
+        Route::post('/{flow}/test', [FlowController::class, 'test'])
+            ->middleware('throttle.bot-test')
+            ->name('flows.test');
     });
 
     // Flow templates (not nested)

@@ -141,8 +141,8 @@ export function BotsPage() {
         /* Empty state - dabby.io style */
         <Card className="bg-white dark:bg-card">
           <CardHeader className="text-center py-12">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-50 dark:bg-amber-950/30">
-              <BotIcon className="h-8 w-8 text-amber-500" />
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[oklch(0.953_0.06_63.612)] dark:bg-[oklch(0.2_0.1_63.612)]">
+              <BotIcon className="h-8 w-8" style={{ color: 'var(--warning)' }} />
             </div>
             <CardTitle className="text-xl">ยังไม่มีการเชื่อมต่อ</CardTitle>
             <p className="text-muted-foreground mt-2">
@@ -168,20 +168,14 @@ export function BotsPage() {
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-4">
                     {/* Channel Icon */}
-                    <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-gray-50 dark:bg-gray-800 rounded-lg">
+                    <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-[oklch(0.961_0_0)] dark:bg-[oklch(0.15_0_0)] rounded-lg">
                       {getChannelIcon(bot.channel_type)}
                     </div>
 
                     {/* Bot Name & Status */}
                     <div>
                       <h3 className="text-lg font-semibold">{bot.name}</h3>
-                      <Badge
-                        variant="outline"
-                        className={bot.status === 'active'
-                          ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800'
-                          : 'bg-gray-50 text-gray-600 border-gray-200'
-                        }
-                      >
+                      <Badge variant={bot.status === 'active' ? 'success' : 'inactive'}>
                         {getStatusText(bot.status)}
                       </Badge>
                     </div>
@@ -218,7 +212,7 @@ export function BotsPage() {
                       <Input
                         readOnly
                         value={bot.webhook_url}
-                        className="flex-1 bg-gray-50 dark:bg-gray-800 text-sm font-mono"
+                        className="flex-1 bg-[oklch(0.961_0_0)] dark:bg-[oklch(0.15_0_0)] text-sm font-mono"
                       />
                       <Button
                         variant="orange-outline"

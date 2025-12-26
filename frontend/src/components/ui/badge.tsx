@@ -17,6 +17,14 @@ const badgeVariants = cva(
           "border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:
           "text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+        success:
+          "border border-[color:color-mix(in_oklch,var(--success)_100%,transparent)] bg-[color:color-mix(in_oklch,var(--success)_10%,transparent)] text-success-foreground [a&]:hover:bg-[color:color-mix(in_oklch,var(--success)_15%,transparent)]",
+        warning:
+          "border border-[color:color-mix(in_oklch,var(--warning)_100%,transparent)] bg-[color:color-mix(in_oklch,var(--warning)_10%,transparent)] text-warning-foreground [a&]:hover:bg-[color:color-mix(in_oklch,var(--warning)_15%,transparent)]",
+        info:
+          "border border-[color:color-mix(in_oklch,var(--info)_100%,transparent)] bg-[color:color-mix(in_oklch,var(--info)_10%,transparent)] text-info-foreground [a&]:hover:bg-[color:color-mix(in_oklch,var(--info)_15%,transparent)]",
+        inactive:
+          "border border-[color:color-mix(in_oklch,var(--inactive)_100%,transparent)] bg-[color:color-mix(in_oklch,var(--inactive)_10%,transparent)] text-inactive-foreground [a&]:hover:bg-[color:color-mix(in_oklch,var(--inactive)_15%,transparent)]",
       },
     },
     defaultVariants: {
