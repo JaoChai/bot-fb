@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { useBots } from '@/hooks/useKnowledgeBase';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -13,7 +14,8 @@ import {
   Copy,
   Check,
   Workflow,
-  Pencil
+  Pencil,
+  MoreHorizontal
 } from 'lucide-react';
 
 // LINE icon component
@@ -112,112 +114,115 @@ export function BotsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Header - dabby.io style */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">การเชื่อมต่อ</h1>
-          <p className="text-muted-foreground">
-            จัดการการเชื่อมต่อ Chatbot กับช่องทางต่างๆ
-          </p>
-        </div>
-        <Button>
-          <Plus className="h-4 w-4 mr-2" />
+        <h1 className="text-2xl font-bold tracking-tight">การเชื่อมต่อ</h1>
+        <Button variant="orange">
+          <Plus className="h-4 w-4" />
           เพิ่มการเชื่อมต่อ
         </Button>
       </div>
 
       {bots.length === 0 ? (
-        /* Empty state */
-        <Card>
-          <CardHeader className="text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-              <BotIcon className="h-6 w-6 text-muted-foreground" />
+        /* Empty state - dabby.io style */
+        <Card className="bg-white dark:bg-card">
+          <CardHeader className="text-center py-12">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-50 dark:bg-amber-950/30">
+              <BotIcon className="h-8 w-8 text-amber-500" />
             </div>
-            <CardTitle>ยังไม่มีการเชื่อมต่อ</CardTitle>
+            <CardTitle className="text-xl">ยังไม่มีการเชื่อมต่อ</CardTitle>
             <p className="text-muted-foreground mt-2">
               สร้างการเชื่อมต่อใหม่เพื่อเริ่มใช้งาน AI Chatbot
             </p>
           </CardHeader>
-          <CardContent className="text-center">
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
+          <CardContent className="text-center pb-12">
+            <Button variant="orange" size="lg">
+              <Plus className="h-4 w-4" />
               สร้างการเชื่อมต่อแรก
             </Button>
           </CardContent>
         </Card>
       ) : (
-        /* Bot list */
+        /* Bot list - dabby.io style */
         <div className="grid gap-4">
           {bots.map(bot => (
-            <Card key={bot.id}>
+            <Card key={bot.id} className="bg-white dark:bg-card">
               <CardContent className="p-6">
-                <div className="flex items-start gap-4">
-                  {/* Channel Icon */}
-                  <div className="flex-shrink-0">
-                    {getChannelIcon(bot.channel_type)}
-                  </div>
+                {/* Top row: Icon, Name, Status, Action buttons */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-4">
+                    {/* Channel Icon */}
+                    <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-gray-50 dark:bg-gray-800 rounded-lg">
+                      {getChannelIcon(bot.channel_type)}
+                    </div>
 
-                  {/* Bot Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-1">
-                      <h3 className="text-lg font-semibold truncate">{bot.name}</h3>
+                    {/* Bot Name & Status */}
+                    <div>
+                      <h3 className="text-lg font-semibold">{bot.name}</h3>
                       <Badge
-                        variant={bot.status === 'active' ? 'default' : 'secondary'}
-                        className={bot.status === 'active' ? 'bg-green-500 hover:bg-green-600' : ''}
+                        variant="outline"
+                        className={bot.status === 'active'
+                          ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800'
+                          : 'bg-gray-50 text-gray-600 border-gray-200'
+                        }
                       >
                         {getStatusText(bot.status)}
                       </Badge>
                     </div>
-
-                    {bot.description && (
-                      <p className="text-sm text-muted-foreground mb-3 line-clamp-1">
-                        {bot.description}
-                      </p>
-                    )}
-
-                    {/* Webhook URL */}
-                    {bot.webhook_url && (
-                      <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md">
-                        <code className="flex-1 text-xs text-muted-foreground truncate">
-                          {bot.webhook_url}
-                        </code>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 flex-shrink-0"
-                          onClick={() => copyWebhookUrl(bot.id, bot.webhook_url!)}
-                        >
-                          {copiedId === bot.id ? (
-                            <Check className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                    )}
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex-shrink-0 flex gap-2">
+                  {/* Action Buttons - dabby.io style */}
+                  <div className="flex items-center gap-2">
                     <Button variant="outline" size="sm" asChild>
-                      <Link to={`/bots/${bot.id}/settings`}>
-                        <Pencil className="h-4 w-4 mr-2" />
+                      <Link to={`/bots/${bot.id}/edit`}>
+                        <Pencil className="h-4 w-4" />
                         แก้ไขการเชื่อมต่อ
                       </Link>
                     </Button>
-                    <Button variant="outline" size="sm" asChild>
+                    <Button variant="orange" size="sm" asChild>
                       <Link to={`/bots/${bot.id}/settings`}>
-                        <Settings className="h-4 w-4 mr-2" />
+                        <Settings className="h-4 w-4" />
                         ตั้งค่า Bot
                       </Link>
                     </Button>
-                    <Button variant="outline" size="sm" asChild>
+                    <Button variant="orange-outline" size="sm" asChild>
                       <Link to={`/flows?botId=${bot.id}`}>
-                        <Workflow className="h-4 w-4 mr-2" />
+                        <Workflow className="h-4 w-4" />
                         แก้ไข AI Flow
                       </Link>
                     </Button>
                   </div>
                 </div>
+
+                {/* Webhook URL Section - dabby.io style */}
+                {bot.webhook_url && (
+                  <div className="space-y-2">
+                    <label className="text-sm text-muted-foreground">Webhook URL</label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        readOnly
+                        value={bot.webhook_url}
+                        className="flex-1 bg-gray-50 dark:bg-gray-800 text-sm font-mono"
+                      />
+                      <Button
+                        variant="orange-outline"
+                        size="sm"
+                        onClick={() => copyWebhookUrl(bot.id, bot.webhook_url!)}
+                        className="flex-shrink-0"
+                      >
+                        {copiedId === bot.id ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                        คัดลอก Webhook URL
+                      </Button>
+                      <Button variant="ghost" size="icon-sm" className="flex-shrink-0">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}

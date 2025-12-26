@@ -7,6 +7,7 @@ import { RegisterPage } from "@/pages/auth/RegisterPage"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { BotsPage } from "@/pages/BotsPage"
 import { BotSettingsPage } from "@/pages/BotSettingsPage"
+import { BotEditPage } from "@/pages/BotEditPage"
 import { KnowledgeBasePage } from "@/pages/KnowledgeBasePage"
 import { ConversationsPage } from "@/pages/ConversationsPage"
 import { ConversationDetailPage } from "@/pages/ConversationDetailPage"
@@ -58,6 +59,10 @@ export const router = createBrowserRouter([
           {
             path: "bots/:botId/settings",
             element: <BotSettingsPage />,
+          },
+          {
+            path: "bots/:botId/edit",
+            element: <BotEditPage />,
           },
           {
             path: "knowledge-base",

@@ -49,7 +49,7 @@ export const useUIStore = create<UIStore>()(
   persist(
     (set) => ({
       // Initial state
-      sidebarOpen: true,
+      sidebarOpen: false,
       sidebarCollapsed: false,
       theme: 'system',
       toasts: [],
