@@ -54,11 +54,24 @@ function generateId() {
   return `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+// Default system prompt for new flows
+const DEFAULT_SYSTEM_PROMPT = `คุณคือผู้ช่วย AI ที่เป็นมิตรและช่วยเหลือลูกค้าอย่างมืออาชีพ
+
+## บทบาทของคุณ:
+- ตอบคำถามอย่างชัดเจน กระชับ และเป็นมิตร
+- ให้ข้อมูลที่ถูกต้องและเป็นประโยชน์
+- หากไม่ทราบคำตอบ ให้ยอมรับตรงๆ และแนะนำวิธีหาข้อมูลเพิ่มเติม
+
+## แนวทางการสื่อสาร:
+- ใช้ภาษาที่สุภาพและเข้าใจง่าย
+- ตอบในภาษาเดียวกับที่ลูกค้าใช้
+- ถามคำถามเพื่อทำความเข้าใจหากข้อมูลไม่ชัดเจน`;
+
 // Initial form data constant
 const INITIAL_FORM_DATA: CreateFlowData = {
   name: '',
   description: '',
-  system_prompt: '',
+  system_prompt: DEFAULT_SYSTEM_PROMPT,
   model: 'claude-3-5-sonnet-20241022',
   temperature: 0.7,
   max_tokens: 2048,
