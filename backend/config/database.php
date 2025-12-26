@@ -96,6 +96,9 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // Note: ATTR_EMULATE_PREPARES was disabled for better PostgreSQL boolean support
+            // If connection issues occur with Neon.tech PgBouncer, consider re-enabling
+            'options' => [],
         ],
 
         'sqlsrv' => [

@@ -36,6 +36,11 @@ export const queryKeys = {
     all: ['auth'] as const,
     user: () => [...queryKeys.auth.all, 'user'] as const,
   },
+  // User Settings
+  settings: {
+    all: ['settings'] as const,
+    user: () => [...queryKeys.settings.all, 'user'] as const,
+  },
   // Bots
   bots: {
     all: ['bots'] as const,
@@ -44,6 +49,7 @@ export const queryKeys = {
       [...queryKeys.bots.lists(), filters] as const,
     details: () => [...queryKeys.bots.all, 'detail'] as const,
     detail: (id: number) => [...queryKeys.bots.details(), id] as const,
+    settings: (id: number) => [...queryKeys.bots.detail(id), 'settings'] as const,
   },
   // Conversations
   conversations: {
@@ -62,5 +68,13 @@ export const queryKeys = {
     lists: () => [...queryKeys.knowledgeBase.all, 'list'] as const,
     list: (botId: number) => [...queryKeys.knowledgeBase.lists(), botId] as const,
     detail: (id: number) => [...queryKeys.knowledgeBase.all, 'detail', id] as const,
+  },
+  // Flows
+  flows: {
+    all: ['flows'] as const,
+    lists: () => [...queryKeys.flows.all, 'list'] as const,
+    list: (botId: number) => [...queryKeys.flows.lists(), botId] as const,
+    detail: (botId: number, flowId: number) => [...queryKeys.flows.all, 'detail', botId, flowId] as const,
+    templates: () => [...queryKeys.flows.all, 'templates'] as const,
   },
 } as const;

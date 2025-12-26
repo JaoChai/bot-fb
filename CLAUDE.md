@@ -42,6 +42,43 @@ This is a new/empty repository. The project structure and codebase have not been
 - Never use `--force` with package managers
 - Always review lockfile changes before committing
 
+## MANDATORY: Post-Implementation Review (ห้ามลืม!)
+
+**ทุกครั้งหลัง implement feature ต้องทำครบทั้ง 2 ขั้นตอนนี้ก่อน commit:**
+
+### 1. Code Review (REQUIRED)
+```bash
+# รัน code review agent บน files ที่เปลี่ยน
+git diff --name-only  # ดู files ที่เปลี่ยน
+# แล้วใช้ Task tool กับ feature-dev:code-reviewer
+```
+- ตรวจ security vulnerabilities
+- ตรวจ error handling
+- ตรวจ race conditions
+- ตรวจ input validation
+- **FIX ทุก Critical Issues ก่อน commit**
+
+### 2. UX/UI Review with Playwright (REQUIRED)
+```bash
+# ใช้ Playwright MCP ทดสอบ UI จริง
+mcp__plugin_playwright_playwright__browser_navigate
+```
+- ทดสอบ flow หลักทำงานได้จริง
+- ทดสอบ edge cases (empty state, error state)
+- ทดสอบ responsive (ถ้ามี)
+- **Screenshot/snapshot เป็นหลักฐาน**
+
+### Workflow Pattern (บังคับ)
+```
+1. Implement feature
+2. Build & verify no errors
+3. CODE REVIEW → Fix issues
+4. UX/UI REVIEW with Playwright → Fix issues
+5. Commit & Push
+```
+
+**ถ้าลืมทำ review → ผู้ใช้จะด่า → ต้องกลับมาทำใหม่ → เสียเวลา**
+
 ## Git Commit Format
 
 ```
@@ -212,6 +249,22 @@ These sections are **REQUIRED** - never skip them.
   python3 .claude/skills/ui-ux-pro-max/scripts/search.py "modern professional" --domain typography
   ```
 
+#### 7. `/e2e-test` - Comprehensive E2E Testing
+- **When**: After completing a feature, before deployment, or when you want to verify everything works
+- **What it does**: Runs automated tests for Backend APIs + Frontend UI using Playwright MCP
+- **Invocation**: Manual - type `/e2e-test`
+- **Test Coverage**:
+  - Backend: Health, Auth, Bots, Flows, Webhooks, Security (27 tests)
+  - Frontend: Login, Register, Dashboard, Responsive (16 tests)
+  - Integration: Registration flow, Login flow, Logout flow (3 tests)
+- **Example**:
+  ```bash
+  /e2e-test           # Full test suite (46 tests)
+  /e2e-test backend   # Backend APIs only
+  /e2e-test frontend  # Frontend UI only
+  /e2e-test auth      # Auth tests only
+  ```
+
 ### Auto-Activation Behaviors
 
 | Skill | When it Auto-Activates | Your Role |
@@ -220,6 +273,7 @@ These sections are **REQUIRED** - never skip them.
 | `ui-ux-pro-max` | Requesting UI/UX work (design, build, create) | Describe what you want; system searches design DB |
 | Hooks (code-review suggest) | After editing backend/frontend code | System suggests `/code-review`; you can invoke or skip |
 | Hooks (commit suggest) | After code changes | System reminds you to `/commit` |
+| Hooks (e2e-test suggest) | After successful commit | System suggests `/e2e-test`; you can invoke or skip |
 
 ### MCP Servers (Always Available)
 
@@ -412,6 +466,14 @@ Claude: Uses Laravel Boost MCP to query database schema
 
 # List hooks configured
 /hookify:list
+
+# Run E2E tests (full suite)
+/e2e-test
+
+# Run E2E tests (specific scope)
+/e2e-test backend
+/e2e-test frontend
+/e2e-test auth
 ```
 
 ---
@@ -472,6 +534,7 @@ npm run test:e2e
 ### Hooks Configuration
 - **Auto Code Review Suggestion**: `.claude/hooks/post-code-review-suggest.md`
 - **Auto Commit Suggestion**: `.claude/hooks/post-commit-suggest.md`
+- **Auto E2E Test Suggestion**: `.claude/hooks/post-e2e-test-suggest.md`
 - **Frontend Design Notice**: `.claude/hooks/post-frontend-design-note.md`
 - **UI/UX Pro Max Auto-Activate**: `.claude/hooks/post-ui-ux-auto-activate.md`
 
@@ -482,3 +545,9 @@ Located at `.claude/skills/ui-ux-pro-max/` with:
 - **SKILL.md**: Main skill definition
 - **data/**: Design databases (styles, colors, typography, etc.)
 - **scripts/**: Python search scripts
+
+### E2E Test Skill
+Located at `.claude/skills/e2e-test/` with:
+- **SKILL.md**: Test suite definitions and workflow
+- **Coverage**: 46 tests across Backend API, Frontend UI, and Integration
+- **Usage**: `/e2e-test` for full suite, `/e2e-test [scope]` for partial tests
