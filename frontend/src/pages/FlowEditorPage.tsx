@@ -8,13 +8,6 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -84,13 +77,6 @@ const INITIAL_FORM_DATA: CreateFlowData = {
   language: 'th',
   is_default: false,
 };
-
-const AVAILABLE_MODELS = [
-  { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' },
-  { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' },
-  { id: 'gpt-4o', name: 'GPT-4o' },
-  { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
-];
 
 export function FlowEditorPage() {
   const { flowId } = useParams();
@@ -742,25 +728,6 @@ export function FlowEditorPage() {
                       <p className="text-sm text-muted-foreground">Preview mode coming soon</p>
                     </div>
                   )}
-                </div>
-
-                {/* Model Settings */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>AI Model</Label>
-                    <Select value={formData.model} onValueChange={(v) => handleChange('model', v)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {AVAILABLE_MODELS.map((model) => (
-                          <SelectItem key={model.id} value={model.id}>
-                            {model.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
                 </div>
 
                 {/* Temperature */}
