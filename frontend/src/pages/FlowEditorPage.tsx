@@ -132,7 +132,6 @@ export function FlowEditorPage() {
   // Chat emulator state
   const [chatMessages, setChatMessages] = useState<Array<{ id: string; role: 'user' | 'assistant'; content: string }>>([]);
   const [chatInput, setChatInput] = useState('');
-  const [isChatOpen, setIsChatOpen] = useState(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const systemPromptRef = useRef<HTMLTextAreaElement>(null);
@@ -532,21 +531,23 @@ export function FlowEditorPage() {
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {!showEditor ? (
-          /* Empty State */
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-lg" style={{ color: 'var(--warning)' }}>เลือกหรือสร้างโฟลว์เพื่อเริ่มต้น</p>
-          </div>
-        ) : isLoadingFlow ? (
-          <div className="flex-1 flex items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          /* Editor Content - Single Column (dabby.io style) */
-          <div className="flex-1 overflow-y-auto">
-            <div className="max-w-4xl mx-auto p-6 space-y-6">
+      {/* Main Content Area - Split into Editor + Chat Emulator */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Editor Panel */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {!showEditor ? (
+            /* Empty State */
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-lg" style={{ color: 'var(--warning)' }}>เลือกหรือสร้างโฟลว์เพื่อเริ่มต้น</p>
+            </div>
+          ) : isLoadingFlow ? (
+            <div className="flex-1 flex items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            /* Editor Content - Single Column (dabby.io style) */
+            <div className="flex-1 overflow-y-auto">
+              <div className="max-w-4xl mx-auto p-6 space-y-6">
               {/* Header - Flow Name + Save Button */}
               <div className="flex items-center gap-4">
                 <div className="flex-1">
@@ -958,132 +959,119 @@ export function FlowEditorPage() {
             </div>
           </div>
         )}
-      </div>
+        </div>
 
-      {/* Chat Emulator - Floating Panel (dabby.io style) */}
-      <div
-        className={`fixed bottom-4 right-4 w-80 bg-card border rounded-lg shadow-xl transition-all duration-300 ${
-          isChatOpen ? 'h-96' : 'h-auto'
-        }`}
-      >
-        {/* Header */}
-        <button
-          onClick={() => setIsChatOpen(!isChatOpen)}
-          className="w-full flex items-center justify-between px-4 py-3 text-white rounded-t-lg"
-          style={{ backgroundColor: 'var(--warning)' }}
-        >
-          <div className="flex items-center gap-2">
-            <MessageCircle className="h-4 w-4" />
-            <span className="font-medium text-sm">แชทจำลอง</span>
+        {/* Chat Emulator - Right Panel (Full Height) */}
+        <div className="w-96 border-l bg-card flex flex-col">
+          {/* Header */}
+          <div
+            className="flex items-center justify-between px-4 py-3 text-white border-b"
+            style={{ backgroundColor: 'var(--warning)' }}
+          >
+            <div className="flex items-center gap-2">
+              <MessageCircle className="h-5 w-5" />
+              <span className="font-semibold">แชทจำลอง</span>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 w-8 p-0 text-white hover:bg-white/20"
+              onClick={() => setChatMessages([])}
+              title="ล้างแชท"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </div>
-          {isChatOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-        </button>
 
-        {isChatOpen && (
-          <>
-            {/* Messages */}
-            <div className="h-56 overflow-y-auto p-3 space-y-2">
-              {chatMessages.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-8">
-                  เริ่มพิมพ์เพื่อทดสอบ
+          {/* Messages Area */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {chatMessages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center">
+                <MessageCircle className="h-12 w-12 text-muted-foreground/30 mb-3" />
+                <p className="text-sm text-muted-foreground">
+                  ทดสอบการตอบกลับของ AI
                 </p>
-              )}
-              {chatMessages.map((msg) => (
+                <p className="text-xs text-muted-foreground/70 mt-1">
+                  พิมพ์ข้อความด้านล่างเพื่อเริ่มต้น
+                </p>
+              </div>
+            ) : (
+              chatMessages.map((msg) => (
                 <div
                   key={msg.id}
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                    className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
                       msg.role === 'user'
-                        ? 'text-white'
-                        : 'bg-muted'
+                        ? 'text-white rounded-br-md'
+                        : 'bg-muted rounded-bl-md'
                     }`}
                     style={msg.role === 'user' ? { backgroundColor: 'var(--warning)' } : {}}
                   >
                     {msg.content}
                   </div>
                 </div>
-              ))}
-              <div ref={chatEndRef} />
-            </div>
+              ))
+            )}
+            <div ref={chatEndRef} />
+          </div>
 
-            {/* Input */}
-            <div className="border-t p-3 space-y-2">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder={testFlowMutation.isPending ? 'กำลังประมวลผล...' : 'พิมพ์ข้อความ...'}
-                  className="flex-1 px-3 py-2 rounded-lg border bg-background text-sm"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey && !testFlowMutation.isPending) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
-                  disabled={testFlowMutation.isPending}
-                />
-                <Button
-                  size="sm"
-                  onClick={handleSendMessage}
-                  disabled={!chatInput.trim() || testFlowMutation.isPending}
-                  variant="orange"
-                >
-                  {testFlowMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-              <div className="flex gap-2 justify-between">
-                <div className="flex gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0 text-muted-foreground cursor-not-allowed"
-                    title="Attach File (Coming Soon)"
-                    disabled
-                    onClick={() => {
-                      toast({
-                        title: 'Feature Coming Soon',
-                        description: 'File attachment will be available in the next update',
-                      });
-                    }}
-                  >
-                    <Paperclip className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0 text-muted-foreground cursor-not-allowed"
-                    title="Attach Image (Coming Soon)"
-                    disabled
-                    onClick={() => {
-                      toast({
-                        title: 'Feature Coming Soon',
-                        description: 'Image attachment will be available in the next update',
-                      });
-                    }}
-                  >
-                    <ImageIcon className="h-4 w-4" />
-                  </Button>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 w-8 p-0 text-destructive hover:text-destructive/80"
-                  onClick={() => setChatMessages([])}
-                  title="Clear Chat"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
+          {/* Input Area */}
+          <div className="border-t p-4 space-y-3 bg-background/50">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder={testFlowMutation.isPending ? 'กำลังประมวลผล...' : 'พิมพ์ข้อความ...'}
+                className="flex-1 px-4 py-2.5 rounded-full border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-warning/50"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && !testFlowMutation.isPending) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
+                disabled={testFlowMutation.isPending}
+              />
+              <Button
+                size="icon"
+                onClick={handleSendMessage}
+                disabled={!chatInput.trim() || testFlowMutation.isPending}
+                variant="orange"
+                className="rounded-full h-10 w-10"
+              >
+                {testFlowMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
             </div>
-          </>
-        )}
+            <div className="flex gap-2 justify-center">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 px-3 text-muted-foreground cursor-not-allowed"
+                title="Attach File (Coming Soon)"
+                disabled
+              >
+                <Paperclip className="h-4 w-4 mr-1" />
+                <span className="text-xs">ไฟล์</span>
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 px-3 text-muted-foreground cursor-not-allowed"
+                title="Attach Image (Coming Soon)"
+                disabled
+              >
+                <ImageIcon className="h-4 w-4 mr-1" />
+                <span className="text-xs">รูปภาพ</span>
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Unsaved changes toast */}
