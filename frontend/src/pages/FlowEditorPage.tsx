@@ -20,7 +20,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
-import { useFlow, useCreateFlow, useUpdateFlow, useFlowTemplates, useFlowOperations, useTestFlow } from '@/hooks/useFlows';
+import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations, useTestFlow } from '@/hooks/useFlows';
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -44,7 +44,7 @@ import {
   Trash2,
   Code,
 } from 'lucide-react';
-import type { CreateFlowData, FlowTemplate } from '@/types/api';
+import type { CreateFlowData } from '@/types/api';
 
 // Helper to generate unique IDs
 function generateId() {
@@ -85,24 +85,11 @@ const INITIAL_FORM_DATA: CreateFlowData = {
   is_default: false,
 };
 
-// Type guard for language validation
-function isValidLanguage(value: string): value is 'th' | 'en' | 'zh' | 'ja' | 'ko' {
-  return ['th', 'en', 'zh', 'ja', 'ko'].includes(value);
-}
-
 const AVAILABLE_MODELS = [
   { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' },
   { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' },
   { id: 'gpt-4o', name: 'GPT-4o' },
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
-];
-
-const LANGUAGES = [
-  { id: 'th', name: 'ไทย' },
-  { id: 'en', name: 'English' },
-  { id: 'zh', name: '中文' },
-  { id: 'ja', name: '日本語' },
-  { id: 'ko', name: '한국어' },
 ];
 
 export function FlowEditorPage() {
@@ -132,9 +119,6 @@ export function FlowEditorPage() {
 
   // Fetch knowledge base
   const { data: knowledgeBase } = useKnowledgeBase(botId);
-
-  // Fetch templates
-  const { data: templates } = useFlowTemplates();
 
   // Mutations
   const createMutation = useCreateFlow(botId);
@@ -222,26 +206,6 @@ export function FlowEditorPage() {
   const handleChange = <K extends keyof CreateFlowData>(field: K, value: CreateFlowData[K]) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     setHasChanges(true);
-  };
-
-  // Apply template
-  const handleApplyTemplate = (template: FlowTemplate) => {
-    const validLanguage = isValidLanguage(template.language)
-      ? template.language
-      : 'th';
-
-    setFormData((prev) => ({
-      ...prev,
-      name: prev.name || template.name,
-      system_prompt: template.system_prompt,
-      temperature: template.temperature,
-      language: validLanguage,
-    }));
-    setHasChanges(true);
-    toast({
-      title: 'ใช้ Template แล้ว',
-      description: `นำ "${template.name}" มาใช้เรียบร้อย`,
-    });
   };
 
   // Handle save
@@ -796,26 +760,6 @@ export function FlowEditorPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label>ภาษา</Label>
-                    <Select
-                      value={formData.language}
-                      onValueChange={(v) => {
-                        if (isValidLanguage(v)) handleChange('language', v);
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {LANGUAGES.map((lang) => (
-                          <SelectItem key={lang.id} value={lang.id}>
-                            {lang.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
                 </div>
 
                 {/* Temperature */}
@@ -1011,27 +955,6 @@ export function FlowEditorPage() {
                 )}
               </div>
 
-              {/* Templates Section */}
-              {templates && templates.length > 0 && (
-                <div className="border rounded-lg p-6">
-                  <h3 className="font-medium mb-4">Templates</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    {templates.slice(0, 4).map((template) => (
-                      <button
-                        key={template.id}
-                        onClick={() => handleApplyTemplate(template)}
-                        className="text-left p-3 border rounded-lg transition-colors"
-                        style={{ '--hover-border-color': 'var(--warning)' } as any}
-                        onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--warning)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}
-                      >
-                        <p className="font-medium text-sm">{template.name}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{template.description}</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}
