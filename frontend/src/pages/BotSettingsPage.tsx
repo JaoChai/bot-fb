@@ -1,166 +1,76 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router';
-import { useToast } from '@/hooks/use-toast';
-
-// UI Components
+import { useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Slider } from '@/components/ui/slider';
+import { useToast } from '@/hooks/use-toast';
+import { ArrowLeft, Loader2, Clock } from 'lucide-react';
 
-// Hooks
-import { useBots } from '@/hooks/useKnowledgeBase';
-
-// Icons
-import { ArrowLeft, Save, Loader2, Clock, MessageSquare, Bot, Zap, Sticker, Info } from 'lucide-react';
-
-// ResponseHoursGrid Component
-function ResponseHoursGrid({
-  value,
-  onChange: _onChange,
-}: {
-  value: Record<string, { start: number; end: number }[]>;
-  onChange: (value: Record<string, { start: number; end: number }[]>) => void;
-}) {
-  const days = [
-    { key: 'sunday', label: 'อาทิตย์' },
-    { key: 'monday', label: 'จันทร์' },
-    { key: 'tuesday', label: 'อังคาร' },
-    { key: 'wednesday', label: 'พุธ' },
-    { key: 'thursday', label: 'พฤหัสบดี' },
-    { key: 'friday', label: 'ศุกร์' },
-    { key: 'saturday', label: 'เสาร์' },
-  ];
-
-  const getBarStyle = (dayKey: string) => {
-    const daySchedule = value[dayKey] || [{ start: 7, end: 23 }];
-    const firstSlot = daySchedule[0] || { start: 7, end: 23 };
-    const startPercent = (firstSlot.start / 24) * 100;
-    const widthPercent = ((firstSlot.end - firstSlot.start) / 24) * 100;
-    return {
-      left: `${startPercent}%`,
-      width: `${widthPercent}%`,
-    };
-  };
-
-  return (
-    <div className="space-y-2">
-      {/* Time labels */}
-      <div className="flex items-center ml-20">
-        <div className="flex-1 flex justify-between text-xs text-muted-foreground">
-          <span>00:00</span>
-          <span>06:00</span>
-          <span>12:00</span>
-          <span>18:00</span>
-          <span>24:00</span>
-        </div>
-      </div>
-
-      {/* Days grid */}
-      <div className="space-y-1">
-        {days.map((day) => (
-          <div key={day.key} className="flex items-center gap-2">
-            <span className="w-16 text-sm text-muted-foreground text-right">{day.label}</span>
-            <div className="flex-1 h-6 bg-gray-100 dark:bg-gray-800 rounded relative">
-              <div
-                className="absolute h-full bg-amber-500 rounded transition-all"
-                style={getBarStyle(day.key)}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-interface BotSettingsState {
-  // Usage limits
-  enableDailyLimit: boolean;
-  dailyMessageLimit: number;
-
-  // HITL
-  enableHITL: boolean;
-
-  // Bot invocation
-  respondOnlyWhenCalled: boolean;
-
-  // Lead Recovery
-  enableLeadRecovery: boolean;
-
-  // Multi-balloon
-  enableMultiBalloon: boolean;
-  minBalloons: number;
-  maxBalloons: number;
-
-  // Wait for reading
-  enableWaitReading: boolean;
-  waitSeconds: number;
-
-  // Sticker response
-  enableStickerResponse: boolean;
-
-  // Response hours
-  enableResponseHours: boolean;
-  timezone: string;
-  responseHours: Record<string, { start: number; end: number }[]>;
+interface BotSettingsFormData {
+  daily_message_limit: number;
+  message_limit_per_user: number;
+  easy_slip_enabled: boolean;
+  hitl_enabled: boolean;
+  reply_when_called_only: boolean;
+  reply_when_called_only_override_hitl: boolean;
+  lead_recovery_enabled: boolean;
+  lead_recovery_description: string;
+  multiple_bubbles_enabled: boolean;
+  multiple_bubbles_min: number;
+  multiple_bubbles_max: number;
+  wait_multiple_bubbles_enabled: boolean;
+  wait_multiple_bubbles_seconds: number;
+  reply_sticker_enabled: boolean;
+  response_hours_enabled: boolean;
 }
 
 export function BotSettingsPage() {
-  const { botId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const numericBotId = botId ? parseInt(botId, 10) : null;
 
-  const { data: botsResponse, isLoading: isLoadingBots } = useBots();
   const [isSaving, setIsSaving] = useState(false);
-
-  const currentBot = botsResponse?.data?.find(b => b.id === numericBotId);
-
-  const [settings, setSettings] = useState<BotSettingsState>({
-    enableDailyLimit: true,
-    dailyMessageLimit: 25,
-    enableHITL: false,
-    respondOnlyWhenCalled: false,
-    enableLeadRecovery: false,
-    enableMultiBalloon: true,
-    minBalloons: 1,
-    maxBalloons: 3,
-    enableWaitReading: true,
-    waitSeconds: 20,
-    enableStickerResponse: true,
-    enableResponseHours: true,
-    timezone: 'Asia/Bangkok',
-    responseHours: {
-      sunday: [{ start: 7, end: 23 }],
-      monday: [{ start: 7, end: 23 }],
-      tuesday: [{ start: 7, end: 23 }],
-      wednesday: [{ start: 7, end: 23 }],
-      thursday: [{ start: 7, end: 23 }],
-      friday: [{ start: 7, end: 23 }],
-      saturday: [{ start: 7, end: 23 }],
-    },
+  const [formData, setFormData] = useState<BotSettingsFormData>({
+    daily_message_limit: 100,
+    message_limit_per_user: 10,
+    easy_slip_enabled: false,
+    hitl_enabled: false,
+    reply_when_called_only: false,
+    reply_when_called_only_override_hitl: false,
+    lead_recovery_enabled: false,
+    lead_recovery_description: 'ติดตามลูกค้าอัตโนมัติเมื่อบทสนทนาเงียบ',
+    multiple_bubbles_enabled: false,
+    multiple_bubbles_min: 1,
+    multiple_bubbles_max: 3,
+    wait_multiple_bubbles_enabled: false,
+    wait_multiple_bubbles_seconds: 10,
+    reply_sticker_enabled: false,
+    response_hours_enabled: false,
   });
 
-  const updateSetting = <K extends keyof BotSettingsState>(key: K, value: BotSettingsState[K]) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
+  const handleChange = <K extends keyof BotSettingsFormData>(
+    field: K,
+    value: BotSettingsFormData[K]
+  ) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // TODO: Implement actual save API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // TODO: Call API to save bot settings
+      console.log('Saving bot settings:', formData);
       toast({
         title: 'บันทึกสำเร็จ',
-        description: 'การตั้งค่าถูกบันทึกเรียบร้อยแล้ว',
+        description: 'ตั้งค่าบอทได้รับการบันทึกแล้ว',
       });
-    } catch {
+    } catch (error) {
       toast({
-        title: 'เกิดข้อผิดพลาด',
-        description: 'ไม่สามารถบันทึกการตั้งค่าได้',
+        title: 'ข้อผิดพลาด',
+        description: 'ไม่สามารถบันทึกตั้งค่าบอทได้',
         variant: 'destructive',
       });
     } finally {
@@ -168,353 +78,320 @@ export function BotSettingsPage() {
     }
   };
 
-  if (!numericBotId || isNaN(numericBotId)) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Bot ID ไม่ถูกต้อง</p>
-      </div>
-    );
-  }
-
-  if (isLoadingBots) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
-      {/* Header - dabby.io style */}
-      <div className="space-y-4">
-        <button
-          onClick={() => navigate('/bots')}
-          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          กลับไปหน้าการเชื่อมต่อ
-        </button>
+    <div className="min-h-screen bg-background">
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-8">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/bots')}
+            aria-label="กลับไปหน้าการเชื่อมต่อ"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">ตั้งค่าบอท</h1>
+            <p className="text-muted-foreground mt-1">กำหนดพฤติกรรมและตัวเลือกเพิ่มเติมสำหรับบอท</p>
+          </div>
+        </div>
 
-        <h1 className="text-2xl font-bold tracking-tight">
-          ตั้งค่าการเชื่อมต่อ: {currentBot?.name || 'Bot'}
-        </h1>
-      </div>
-
-      {/* Settings Sections */}
-      <div className="space-y-6">
-        {/* 1. Usage Limits - การจำกัดการใช้งาน */}
-        <Card className="bg-white dark:bg-card">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <MessageSquare className="h-5 w-5" />
-              การจำกัดการใช้งาน
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={settings.enableDailyLimit}
-                onCheckedChange={(checked) => updateSetting('enableDailyLimit', checked)}
-                className="data-[state=checked]:bg-green-500"
-              />
-              <Label>จำกัดจำนวนข้อความ ต่อวัน+ต่อคน</Label>
-            </div>
-
-            {settings.enableDailyLimit && (
-              <div className="ml-10 space-y-2">
-                <Label>จำนวนข้อความต่อวัน+ต่อคน</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    value={settings.dailyMessageLimit}
-                    onChange={(e) => updateSetting('dailyMessageLimit', parseInt(e.target.value) || 0)}
-                    className="w-24"
-                    min={1}
-                  />
-                  <span className="text-sm text-muted-foreground">ข้อความ</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  บอทจะตอบข้อความได้ไม่เกินจำนวนที่กำหนด ต่อวัน+ต่อคน เท่านั้น มีประโยชน์เพื่อใช้ป้องกันบอทคุยกับคนเดิมมากเกินไป หรือป้องกัน spam หรือประหยัดค่า token ของบอท
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 2. EasySlip - เช็คสลิป */}
-        <Card className="bg-white dark:bg-card opacity-60">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">เช็คสลิป</CardTitle>
-              <div className="flex items-center gap-2 text-amber-600 bg-amber-50 dark:bg-amber-950/30 px-3 py-1 rounded-full text-xs">
-                <Info className="h-3 w-3" />
-                EasySlip จะเปิดให้ใช้บริการเร็วๆ นี้
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-3">
-              <Switch disabled className="opacity-50" />
-              <Label className="text-muted-foreground">ตรวจสอบสลิปด้วย EasySlip API</Label>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 3. HITL - การควบคุมบอท */}
-        <Card className="bg-white dark:bg-card">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Bot className="h-5 w-5" />
-              การควบคุมบอท (HITL)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={settings.enableHITL}
-                onCheckedChange={(checked) => updateSetting('enableHITL', checked)}
-                className="data-[state=checked]:bg-green-500"
-              />
-              <Label>เปิดใช้งานการควบคุมบอท</Label>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 4. Bot Invocation - การเรียกบอท */}
-        <Card className="bg-white dark:bg-card">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg">การเรียกบอท</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={settings.respondOnlyWhenCalled}
-                onCheckedChange={(checked) => updateSetting('respondOnlyWhenCalled', checked)}
-                className="data-[state=checked]:bg-green-500"
-              />
-              <Label>บอทจะตอบเมื่อถูกเรียกเท่านั้น</Label>
-            </div>
-            <p className="text-xs text-muted-foreground ml-10">
-              เมื่อเปิดใช้งานการเรียกบอท การควบคุมบอทจะถูกปิดการใช้งาน เนื่องจากบอทจะตอบเฉพาะเมื่อถูกเรียกเท่านั้น
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* 5. Lead Recovery */}
-        <Card className="bg-white dark:bg-card">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-amber-100 dark:bg-amber-950/30 rounded-full flex items-center justify-center">
-                  <Zap className="h-5 w-5 text-amber-600" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg">Lead Recovery</CardTitle>
-                  <CardDescription>ติดตามลูกค้าอัตโนมัติเมื่อบทสนทนาเงียบ</CardDescription>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Switch
-                  checked={settings.enableLeadRecovery}
-                  onCheckedChange={(checked) => updateSetting('enableLeadRecovery', checked)}
-                  className="data-[state=checked]:bg-green-500"
-                />
-                <Label className="text-sm">เปิดใช้งาน</Label>
-              </div>
-            </div>
-          </CardHeader>
-        </Card>
-
-        {/* 6. Multi-balloon - การตอบแบบหลายบอลลูน */}
-        <Card className="bg-white dark:bg-card">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg">การตอบแบบหลายบอลลูน</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={settings.enableMultiBalloon}
-                onCheckedChange={(checked) => updateSetting('enableMultiBalloon', checked)}
-                className="data-[state=checked]:bg-green-500"
-              />
-              <Label>เปิดใช้งานการตอบแบบหลายบอลลูน</Label>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">
-                เมื่อเปิดใช้งาน AI จะสามารถแยกคำตอบที่ยาวเป็นหลายๆ บอลลูนแยกกันเพื่อความอ่านง่าย
-                <span className="ml-2 text-xs bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded">
-                  Agentic mode only
-                </span>
-              </p>
-              <p className="text-sm text-muted-foreground">
-                เมื่อปิดใช้งาน AI จะตอบแบบบอลลูนเดียว
-              </p>
-            </div>
-
-            {settings.enableMultiBalloon && (
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                <div className="space-y-2">
-                  <Label>จำนวนบอลลูนขั้นต่ำในการตอบ</Label>
-                  <Input
-                    type="number"
-                    value={settings.minBalloons}
-                    onChange={(e) => updateSetting('minBalloons', parseInt(e.target.value) || 1)}
-                    min={1}
-                    max={3}
-                  />
-                  <p className="text-xs text-muted-foreground">ค่าที่อนุญาต: 1-3 บอลลูน</p>
-                </div>
-                <div className="space-y-2">
-                  <Label>จำนวนบอลลูนสูงสุดในการตอบ</Label>
-                  <Input
-                    type="number"
-                    value={settings.maxBalloons}
-                    onChange={(e) => updateSetting('maxBalloons', parseInt(e.target.value) || 3)}
-                    min={2}
-                    max={5}
-                  />
-                  <p className="text-xs text-muted-foreground">ค่าที่อนุญาต: 2-5 บอลลูน</p>
-                </div>
-              </div>
-            )}
-
-            <p className="text-xs text-muted-foreground">
-              หมายเหตุ: จำนวนขั้นต่ำต้องไม่เกินจำนวนสูงสุด การตั้งค่านี้ใช้ได้เฉพาะในโหมด Agentic Mode เท่านั้น
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* 7. Wait Reading - รออ่านหลายบอลลูน */}
-        <Card className="bg-white dark:bg-card">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg">รออ่านหลายบอลลูน</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={settings.enableWaitReading}
-                onCheckedChange={(checked) => updateSetting('enableWaitReading', checked)}
-                className="data-[state=checked]:bg-green-500"
-              />
-              <Label>เปิดใช้งานการรออ่านหลายบอลลูน</Label>
-            </div>
-
-            {settings.enableWaitReading && (
+        <div className="space-y-6">
+          {/* Rate Limiting */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">จำกัดการใช้งาน</CardTitle>
+              <p className="text-sm text-muted-foreground mt-2">ป้องกันสแปมและการใช้ประโยชน์มากเกินไป</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>เวลารอ (วินาที)</Label>
-                <div className="flex items-center gap-2">
+                <Label htmlFor="daily-limit" className="font-semibold">
+                  จำนวนข้อความต่อวัน: {formData.daily_message_limit}
+                </Label>
+                <Slider
+                  id="daily-limit"
+                  min={10}
+                  max={1000}
+                  step={10}
+                  value={[formData.daily_message_limit]}
+                  onValueChange={(value) => handleChange('daily_message_limit', value[0])}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="user-limit" className="font-semibold">
+                  จำนวนข้อความต่อคนต่อวัน: {formData.message_limit_per_user}
+                </Label>
+                <Slider
+                  id="user-limit"
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={[formData.message_limit_per_user]}
+                  onValueChange={(value) => handleChange('message_limit_per_user', value[0])}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Easy Slip */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                เช็คสลิป
+                <Badge variant="outline" className="bg-amber-100 text-amber-700">Coming soon</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="easy-slip" className="font-semibold">
+                  เปิดใช้งาน Easy Slip Verification
+                </Label>
+                <Switch
+                  id="easy-slip"
+                  checked={formData.easy_slip_enabled}
+                  onCheckedChange={(checked) => handleChange('easy_slip_enabled', checked)}
+                  disabled
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* HITL */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">HITL (Human in the Loop)</CardTitle>
+              <p className="text-sm text-muted-foreground mt-2">อนุญาตให้ผู้คนแทรกแซงในการสนทนา</p>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="hitl" className="font-semibold">
+                  เปิดใช้งาน HITL
+                </Label>
+                <Switch
+                  id="hitl"
+                  checked={formData.hitl_enabled}
+                  onCheckedChange={(checked) => handleChange('hitl_enabled', checked)}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Reply When Called Only */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">การเรียกบอท</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="called-only" className="font-semibold">
+                  บอทจะตอบเมื่อถูกเรียกเท่านั้น
+                </Label>
+                <Switch
+                  id="called-only"
+                  checked={formData.reply_when_called_only}
+                  onCheckedChange={(checked) => handleChange('reply_when_called_only', checked)}
+                />
+              </div>
+
+              {formData.reply_when_called_only && (
+                <p className="text-sm text-amber-600 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg">
+                  ℹ️ ถ้า HITL เปิดอยู่ ตัวเลือกนี้จะถูกปิด
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Lead Recovery */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Lead Recovery</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="lead-recovery" className="font-semibold">
+                  เปิดใช้งาน Lead Recovery
+                </Label>
+                <Switch
+                  id="lead-recovery"
+                  checked={formData.lead_recovery_enabled}
+                  onCheckedChange={(checked) => handleChange('lead_recovery_enabled', checked)}
+                />
+              </div>
+
+              {formData.lead_recovery_enabled && (
+                <div className="space-y-2">
+                  <Label htmlFor="lead-recovery-desc" className="font-semibold">
+                    คำอธิบาย
+                  </Label>
                   <Input
-                    type="number"
-                    value={settings.waitSeconds}
-                    onChange={(e) => updateSetting('waitSeconds', parseInt(e.target.value) || 5)}
-                    className="w-24"
+                    id="lead-recovery-desc"
+                    placeholder="ติดตามลูกค้าอัตโนมัติเมื่อบทสนทนาเงียบ"
+                    value={formData.lead_recovery_description}
+                    onChange={(e) => handleChange('lead_recovery_description', e.target.value)}
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Multiple Bubbles */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                การตอบแบบหลายบอลลูน
+                <Badge variant="outline" className="text-xs">Agentic mode only</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="bubbles" className="font-semibold">
+                  เปิดใช้งาน Multiple Bubbles
+                </Label>
+                <Switch
+                  id="bubbles"
+                  checked={formData.multiple_bubbles_enabled}
+                  onCheckedChange={(checked) => handleChange('multiple_bubbles_enabled', checked)}
+                />
+              </div>
+
+              {formData.multiple_bubbles_enabled && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="bubbles-min" className="font-semibold">
+                      จำนวนบอลลูนขั้นต่ำ: {formData.multiple_bubbles_min}
+                    </Label>
+                    <Slider
+                      id="bubbles-min"
+                      min={1}
+                      max={3}
+                      step={1}
+                      value={[formData.multiple_bubbles_min]}
+                      onValueChange={(value) => handleChange('multiple_bubbles_min', value[0])}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="bubbles-max" className="font-semibold">
+                      จำนวนบอลลูนสูงสุด: {formData.multiple_bubbles_max}
+                    </Label>
+                    <Slider
+                      id="bubbles-max"
+                      min={2}
+                      max={5}
+                      step={1}
+                      value={[formData.multiple_bubbles_max]}
+                      onValueChange={(value) => handleChange('multiple_bubbles_max', value[0])}
+                    />
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Wait Multiple Bubbles */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">รออ่านหลายบอลลูน</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="wait-bubbles" className="font-semibold">
+                  เปิดใช้งาน
+                </Label>
+                <Switch
+                  id="wait-bubbles"
+                  checked={formData.wait_multiple_bubbles_enabled}
+                  onCheckedChange={(checked) => handleChange('wait_multiple_bubbles_enabled', checked)}
+                />
+              </div>
+
+              {formData.wait_multiple_bubbles_enabled && (
+                <div className="space-y-2">
+                  <Label htmlFor="wait-seconds" className="font-semibold">
+                    เวลารอ: {formData.wait_multiple_bubbles_seconds} วินาที
+                  </Label>
+                  <Slider
+                    id="wait-seconds"
                     min={5}
                     max={20}
-                  />
-                  <span className="text-sm text-muted-foreground">วินาที</span>
-                </div>
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <p>* ตั้งค่าได้ระหว่าง 5 วินาที ถึง 20 วินาที</p>
-                  <p>** ระบบจะรออ่านข้อความจากลูกค้า ตามเวลาที่กำหนดก่อนที่จะเริ่มทำการคิดและตอบลูกค้าในครั้งเดียว</p>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 8. Sticker Response - การตอบกลับ Sticker */}
-        <Card className="bg-white dark:bg-card">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Sticker className="h-5 w-5" />
-              การตอบกลับ Sticker
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={settings.enableStickerResponse}
-                onCheckedChange={(checked) => updateSetting('enableStickerResponse', checked)}
-                className="data-[state=checked]:bg-green-500"
-              />
-              <Label>เปิดใช้งาน AI ตอบกลับ Sticker</Label>
-            </div>
-            <div className="text-sm text-muted-foreground ml-10 space-y-1">
-              <p>เมื่อเปิดใช้งาน: AI chatbot จะตอบกลับ sticker</p>
-              <p>เมื่อปิดใช้งาน: AI chatbot จะไม่ตอบกลับ sticker</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 9. Response Hours - เวลาทำงาน */}
-        <Card className="bg-white dark:bg-card">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              เปิดใช้งาน Response Hours
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={settings.enableResponseHours}
-                onCheckedChange={(checked) => updateSetting('enableResponseHours', checked)}
-                className="data-[state=checked]:bg-green-500"
-              />
-              <Label>บอทจะตอบตามวันและเวลาที่กำหนด</Label>
-            </div>
-
-            {settings.enableResponseHours && (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>เขตเวลา</Label>
-                  <Select
-                    value={settings.timezone}
-                    onValueChange={(value) => updateSetting('timezone', value)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Asia/Bangkok">(UTC+07:00) Asia/Bangkok</SelectItem>
-                      <SelectItem value="Asia/Tokyo">(UTC+09:00) Asia/Tokyo</SelectItem>
-                      <SelectItem value="Asia/Shanghai">(UTC+08:00) Asia/Shanghai</SelectItem>
-                      <SelectItem value="America/New_York">(UTC-05:00) America/New_York</SelectItem>
-                      <SelectItem value="Europe/London">(UTC+00:00) Europe/London</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>วันที่และเวลา</Label>
-                  <ResponseHoursGrid
-                    value={settings.responseHours}
-                    onChange={(value) => updateSetting('responseHours', value)}
+                    step={1}
+                    value={[formData.wait_multiple_bubbles_seconds]}
+                    onValueChange={(value) => handleChange('wait_multiple_bubbles_seconds', value[0])}
                   />
                 </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Reply Sticker */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">การตอบกลับ Sticker</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="sticker" className="font-semibold">
+                  เปิดใช้งาน Reply Sticker
+                </Label>
+                <Switch
+                  id="sticker"
+                  checked={formData.reply_sticker_enabled}
+                  onCheckedChange={(checked) => handleChange('reply_sticker_enabled', checked)}
+                />
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          {/* Response Hours */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Response Hours
+              </CardTitle>
+              <p className="text-sm text-muted-foreground mt-2">บอทจะตอบตามวันและเวลาที่กำหนด</p>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="response-hours" className="font-semibold">
+                  เปิดใช้งาน Response Hours
+                </Label>
+                <Switch
+                  id="response-hours"
+                  checked={formData.response_hours_enabled}
+                  onCheckedChange={(checked) => handleChange('response_hours_enabled', checked)}
+                />
+              </div>
+
+              {formData.response_hours_enabled && (
+                <p className="text-sm text-muted-foreground mt-4 p-4 bg-muted rounded-lg">
+                  💡 Response Hours UI จะถูกเพิ่มในเวอร์ชันถัดไป
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Save Button */}
+          <div className="flex gap-3 pt-4">
+            <Button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="bg-amber-500 hover:bg-amber-600 flex-1"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  บันทึก...
+                </>
+              ) : (
+                'บันทึกตั้งค่า'
+              )}
+            </Button>
+          </div>
+        </div>
       </div>
-
-      {/* Save Button */}
-      <Button
-        variant="orange"
-        onClick={handleSave}
-        disabled={isSaving}
-        size="lg"
-        className="w-full"
-      >
-        {isSaving ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Save className="h-4 w-4" />
-        )}
-        บันทึกการตั้งค่า
-      </Button>
     </div>
   );
 }
