@@ -15,6 +15,7 @@ import { SettingsPage } from "@/pages/SettingsPage"
 import { FlowsPage } from "@/pages/FlowsPage"
 import { FlowEditorPage } from "@/pages/FlowEditorPage"
 import { AddConnectionPage } from "@/pages/AddConnectionPage"
+import { EditConnectionPage } from "@/pages/EditConnectionPage"
 
 export const router = createBrowserRouter([
   // Auth routes (guest only)
@@ -67,6 +68,10 @@ export const router = createBrowserRouter([
           },
           {
             path: "bots/:botId/edit",
+            element: <EditConnectionPage />,
+          },
+          {
+            path: "bots/:botId/edit-old",
             element: <BotEditPage />,
           },
           {
