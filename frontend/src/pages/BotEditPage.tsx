@@ -211,9 +211,9 @@ export function BotEditPage() {
             <Switch
               checked={formState.status === 'active'}
               onCheckedChange={(checked) => updateField('status', checked ? 'active' : 'inactive')}
-              className="data-[state=checked]:bg-green-500"
+              className="data-[state=checked]:bg-[color:var(--success)]"
             />
-            <Label className={formState.status === 'active' ? 'text-green-600 font-medium' : 'text-muted-foreground'}>
+            <Label className={formState.status === 'active' ? 'font-medium' : 'text-muted-foreground'} style={formState.status === 'active' ? { color: 'var(--success)' } : {}}>
               {formState.status === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}
             </Label>
           </div>
@@ -272,7 +272,7 @@ export function BotEditPage() {
               </div>
               {/* dabby.io style - Show existing API key indicator */}
               {hasExistingApiKey && (
-                <div className="flex items-center gap-2 text-sm text-green-600">
+                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--success)' }}>
                   <CheckCircle2 className="h-4 w-4" />
                   <span>API key ที่ใช้งานอยู่ปัจจุบัน: {maskedApiKey}</span>
                 </div>
@@ -389,11 +389,23 @@ export function BotEditPage() {
             <div className="grid grid-cols-3 gap-4">
               {/* LINE */}
               <div
-                className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                  formState.channelType === 'line'
-                    ? 'border-green-500 bg-green-50 dark:bg-green-950/20'
-                    : 'border-border hover:border-muted-foreground/50'
-                }`}
+                className="p-4 border-2 rounded-lg cursor-pointer transition-all"
+                style={formState.channelType === 'line' ? {
+                  borderColor: 'var(--success)',
+                  backgroundColor: formState.channelType === 'line' ? 'color-mix(in oklch, var(--success) 10%, transparent)' : undefined
+                } : {
+                  borderColor: 'var(--border)'
+                }}
+                onMouseEnter={(e) => {
+                  if (formState.channelType !== 'line') {
+                    e.currentTarget.style.borderColor = 'var(--muted-foreground)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (formState.channelType !== 'line') {
+                    e.currentTarget.style.borderColor = 'var(--border)';
+                  }
+                }}
                 onClick={() => updateField('channelType', 'line')}
               >
                 <div className="flex items-center gap-3">
@@ -407,11 +419,23 @@ export function BotEditPage() {
 
               {/* Facebook */}
               <div
-                className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                  formState.channelType === 'facebook'
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20'
-                    : 'border-border hover:border-muted-foreground/50'
-                }`}
+                className="p-4 border-2 rounded-lg cursor-pointer transition-all"
+                style={formState.channelType === 'facebook' ? {
+                  borderColor: 'var(--info)',
+                  backgroundColor: formState.channelType === 'facebook' ? 'color-mix(in oklch, var(--info) 10%, transparent)' : undefined
+                } : {
+                  borderColor: 'var(--border)'
+                }}
+                onMouseEnter={(e) => {
+                  if (formState.channelType !== 'facebook') {
+                    e.currentTarget.style.borderColor = 'var(--muted-foreground)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (formState.channelType !== 'facebook') {
+                    e.currentTarget.style.borderColor = 'var(--border)';
+                  }
+                }}
                 onClick={() => updateField('channelType', 'facebook')}
               >
                 <div className="flex items-center gap-3">
@@ -497,8 +521,9 @@ export function BotEditPage() {
 
                     <Button
                       variant="outline"
-                      className="text-blue-600 border-blue-600 hover:bg-blue-50"
                       onClick={handleTestConnection}
+                      style={{ color: 'var(--info)', borderColor: 'var(--info)' }}
+                      className="hover:bg-[oklch(0.927_0.063_257.528)] dark:hover:bg-[oklch(0.2_0.15_257.528)]"
                     >
                       ทดสอบการเชื่อมต่อกับ LINE OA นี้
                     </Button>
@@ -537,8 +562,9 @@ export function BotEditPage() {
 
                     <Button
                       variant="outline"
-                      className="text-blue-600 border-blue-600 hover:bg-blue-50"
                       onClick={handleTestConnection}
+                      style={{ color: 'var(--info)', borderColor: 'var(--info)' }}
+                      className="hover:bg-[oklch(0.927_0.063_257.528)] dark:hover:bg-[oklch(0.2_0.15_257.528)]"
                     >
                       ทดสอบการเชื่อมต่อกับ Facebook Page นี้
                     </Button>

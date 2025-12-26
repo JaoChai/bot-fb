@@ -142,6 +142,40 @@ export function useSetDefaultFlow(botId: number | null) {
   });
 }
 
+// Test flow response interface
+export interface FlowTestResponse {
+  success: boolean;
+  response?: string;
+  model?: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+  error?: string;
+  error_code?: string;
+}
+
+// Test flow message interface
+export interface FlowTestMessage {
+  message: string;
+  conversation_history?: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+  }>;
+}
+
+// Test flow mutation - sends message to AI and gets response
+export function useTestFlow(botId: number | null, flowId: number | null) {
+  return useMutation({
+    mutationFn: async (data: FlowTestMessage): Promise<FlowTestResponse> => {
+      if (!botId || !flowId) throw new Error('Bot ID and Flow ID are required');
+      const response = await apiPost<FlowTestResponse>(`/bots/${botId}/flows/${flowId}/test`, data);
+      return response;
+    },
+  });
+}
+
 // Convenience hook combining all flow operations
 export function useFlowOperations(botId: number | null) {
   const flows = useFlows(botId);

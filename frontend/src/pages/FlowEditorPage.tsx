@@ -20,7 +20,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
-import { useFlow, useCreateFlow, useUpdateFlow, useFlowTemplates, useFlowOperations } from '@/hooks/useFlows';
+import { useFlow, useCreateFlow, useUpdateFlow, useFlowTemplates, useFlowOperations, useTestFlow } from '@/hooks/useFlows';
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -126,6 +126,7 @@ export function FlowEditorPage() {
   // Mutations
   const createMutation = useCreateFlow(botId);
   const updateMutation = useUpdateFlow(botId, selectedFlowId);
+  const testFlowMutation = useTestFlow(botId, selectedFlowId);
 
   // Form state
   const [formData, setFormData] = useState<CreateFlowData>(INITIAL_FORM_DATA);
@@ -356,32 +357,71 @@ export function FlowEditorPage() {
     setHasChanges(true);
   };
 
-  // Handle chat emulator
-  const handleSendMessage = () => {
+  // Handle chat emulator - now calls real AI API
+  const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
+    if (!selectedFlowId) {
+      toast({
+        title: 'ยังไม่ได้บันทึก Flow',
+        description: 'กรุณาบันทึก Flow ก่อนทดสอบ',
+        variant: 'destructive',
+      });
+      return;
+    }
 
-    const newMessage = {
+    const userMessage = chatInput.trim();
+    const userMsgObj = {
       id: generateId(),
       role: 'user' as const,
-      content: chatInput,
+      content: userMessage,
     };
 
-    setChatMessages((prev) => [...prev, newMessage]);
+    setChatMessages((prev) => [...prev, userMsgObj]);
     setChatInput('');
 
-    // Simulate assistant response
-    const timeoutId = setTimeout(() => {
+    // Build conversation history for context (exclude the current message)
+    const conversationHistory = chatMessages.map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+    }));
+
+    try {
+      const result = await testFlowMutation.mutateAsync({
+        message: userMessage,
+        conversation_history: conversationHistory,
+      });
+
+      if (result.success && result.response) {
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: generateId(),
+            role: 'assistant',
+            content: result.response,
+          },
+        ]);
+      } else {
+        // Show error message as assistant response
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: generateId(),
+            role: 'assistant',
+            content: `❌ ${result.error || 'เกิดข้อผิดพลาด'}`,
+          },
+        ]);
+      }
+    } catch (error) {
+      console.error('Chat test error:', error);
       setChatMessages((prev) => [
         ...prev,
         {
           id: generateId(),
           role: 'assistant',
-          content: 'นี่คือการตอบทดสอบจากบอท (Emulator)',
+          content: '❌ ไม่สามารถเชื่อมต่อ AI ได้ กรุณาตรวจสอบ API Key ใน Settings',
         },
       ]);
-    }, 500);
-
-    timeoutsRef.current.push(timeoutId);
+    }
   };
 
   // Show loading during editor entry mode redirect
@@ -389,7 +429,7 @@ export function FlowEditorPage() {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-amber-500 mx-auto mb-4" />
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" style={{ color: 'var(--warning)' }} />
           <p className="text-muted-foreground">กำลังโหลด Flow Editor...</p>
         </div>
       </div>
@@ -417,13 +457,13 @@ export function FlowEditorPage() {
       <div className="w-52 border-r bg-card flex flex-col">
         {/* Logo */}
         <div className="h-14 flex items-center px-4 border-b">
-          <span className="font-bold text-lg text-amber-500">BotFacebook</span>
+          <span className="font-bold text-lg" style={{ color: 'var(--warning)' }}>BotFacebook</span>
         </div>
 
         {/* Create New Flow Button */}
         <div className="p-3">
           <Button
-            className="w-full bg-amber-500 hover:bg-amber-600 text-white"
+            variant="orange"
             onClick={() => navigate(`/flows/new?botId=${botId}`)}
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -445,11 +485,22 @@ export function FlowEditorPage() {
                 <button
                   key={flow.id}
                   onClick={() => navigate(`/flows/${flow.id}/edit?botId=${botId}`)}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                    selectedFlowId === flow.id
-                      ? 'bg-amber-100 text-amber-900 font-medium'
-                      : 'hover:bg-muted'
-                  }`}
+                  className="w-full text-left px-3 py-2 rounded-lg text-sm transition-colors"
+                  style={selectedFlowId === flow.id ? {
+                    backgroundColor: 'color-mix(in oklch, var(--warning) 10%, transparent)',
+                    color: 'var(--warning)',
+                    fontWeight: '500'
+                  } : {}}
+                  onMouseEnter={(e) => {
+                    if (selectedFlowId !== flow.id) {
+                      e.currentTarget.style.backgroundColor = 'var(--muted)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (selectedFlowId !== flow.id) {
+                      e.currentTarget.style.backgroundColor = '';
+                    }
+                  }}
                 >
                   <div className="flex items-center gap-2">
                     {flow.is_default && <span>📌</span>}
@@ -457,7 +508,7 @@ export function FlowEditorPage() {
                   </div>
                   {flow.is_default && (
                     <div className="flex items-center gap-1 mt-1">
-                      <span className="text-amber-600 text-xs">★ Flow เริ่มต้น</span>
+                      <span className="text-xs" style={{ color: 'var(--warning)' }}>★ Flow เริ่มต้น</span>
                     </div>
                   )}
                 </button>
@@ -468,7 +519,7 @@ export function FlowEditorPage() {
 
         {/* Bottom Action Buttons */}
         <div className="p-3 border-t space-y-2">
-          <Button variant="outline" size="sm" className="w-full justify-start text-amber-600 border-amber-300">
+          <Button variant="outline" size="sm" className="w-full justify-start" style={{ color: 'var(--warning)', borderColor: 'var(--warning)' }}>
             <Link2 className="h-4 w-4 mr-2" />
             Link ภายใน
           </Button>
@@ -493,7 +544,8 @@ export function FlowEditorPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start text-amber-600"
+            className="w-full justify-start"
+            style={{ color: 'var(--warning)' }}
             onClick={() => navigate('/bots')}
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -507,7 +559,7 @@ export function FlowEditorPage() {
         {!showEditor ? (
           /* Empty State */
           <div className="flex-1 flex items-center justify-center">
-            <p className="text-amber-500 text-lg">เลือกหรือสร้างโฟลว์เพื่อเริ่มต้น</p>
+            <p className="text-lg" style={{ color: 'var(--warning)' }}>เลือกหรือสร้างโฟลว์เพื่อเริ่มต้น</p>
           </div>
         ) : isLoadingFlow ? (
           <div className="flex-1 flex items-center justify-center">
@@ -529,9 +581,9 @@ export function FlowEditorPage() {
                   />
                 </div>
                 <Button
+                  variant="orange"
                   onClick={handleSave}
                   disabled={isSaving || !hasChanges}
-                  className="bg-amber-500 hover:bg-amber-600"
                 >
                   {isSaving ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -581,7 +633,7 @@ export function FlowEditorPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">Agentic Mode</span>
-                      <Badge variant="secondary" className="bg-amber-100 text-amber-700">
+                      <Badge variant="warning">
                         AI ที่ฉลาดขึ้น
                       </Badge>
                     </div>
@@ -669,7 +721,7 @@ export function FlowEditorPage() {
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-sm font-medium">
                         เขียนคำสั่งให้ AI สร้างการตอบกลับ - คุณสามารถดูตัวอย่างการเขียนคำสั่งได้ใน{' '}
-                        <a href="#" className="text-amber-600 hover:underline">
+                        <a href="#" className="hover:underline" style={{ color: 'var(--warning)' }}>
                           คู่มือการใช้งาน & Prompts Library
                         </a>
                       </span>
@@ -809,7 +861,7 @@ export function FlowEditorPage() {
                             setSecondAIOptions(prev => ({ ...prev, factCheck: e.target.checked }));
                             setHasChanges(true);
                           }}
-                          className="rounded border-gray-300"
+                          className="rounded border-border"
                         />
                         <span className="text-sm">✓ Fact Check</span>
                       </label>
@@ -821,7 +873,7 @@ export function FlowEditorPage() {
                             setSecondAIOptions(prev => ({ ...prev, policy: e.target.checked }));
                             setHasChanges(true);
                           }}
-                          className="rounded border-gray-300"
+                          className="rounded border-border"
                         />
                         <span className="text-sm">🚦 Policy</span>
                       </label>
@@ -833,7 +885,7 @@ export function FlowEditorPage() {
                             setSecondAIOptions(prev => ({ ...prev, personality: e.target.checked }));
                             setHasChanges(true);
                           }}
-                          className="rounded border-gray-300"
+                          className="rounded border-border"
                         />
                         <span className="text-sm">💬 Personality</span>
                       </label>
@@ -954,7 +1006,10 @@ export function FlowEditorPage() {
                       <button
                         key={template.id}
                         onClick={() => handleApplyTemplate(template)}
-                        className="text-left p-3 border rounded-lg hover:border-amber-500 transition-colors"
+                        className="text-left p-3 border rounded-lg transition-colors"
+                        style={{ '--hover-border-color': 'var(--warning)' } as any}
+                        onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--warning)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}
                       >
                         <p className="font-medium text-sm">{template.name}</p>
                         <p className="text-xs text-muted-foreground mt-1">{template.description}</p>
@@ -977,7 +1032,8 @@ export function FlowEditorPage() {
         {/* Header */}
         <button
           onClick={() => setIsChatOpen(!isChatOpen)}
-          className="w-full flex items-center justify-between px-4 py-3 bg-amber-500 text-white rounded-t-lg"
+          className="w-full flex items-center justify-between px-4 py-3 text-white rounded-t-lg"
+          style={{ backgroundColor: 'var(--warning)' }}
         >
           <div className="flex items-center gap-2">
             <MessageCircle className="h-4 w-4" />
@@ -1003,9 +1059,10 @@ export function FlowEditorPage() {
                   <div
                     className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
                       msg.role === 'user'
-                        ? 'bg-amber-500 text-white'
+                        ? 'text-white'
                         : 'bg-muted'
                     }`}
+                    style={msg.role === 'user' ? { backgroundColor: 'var(--warning)' } : {}}
                   >
                     {msg.content}
                   </div>
@@ -1019,24 +1076,29 @@ export function FlowEditorPage() {
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="พิมพ์ข้อความ..."
+                  placeholder={testFlowMutation.isPending ? 'กำลังประมวลผล...' : 'พิมพ์ข้อความ...'}
                   className="flex-1 px-3 py-2 rounded-lg border bg-background text-sm"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
+                    if (e.key === 'Enter' && !e.shiftKey && !testFlowMutation.isPending) {
                       e.preventDefault();
                       handleSendMessage();
                     }
                   }}
+                  disabled={testFlowMutation.isPending}
                 />
                 <Button
                   size="sm"
                   onClick={handleSendMessage}
-                  disabled={!chatInput.trim()}
-                  className="bg-amber-500 hover:bg-amber-600"
+                  disabled={!chatInput.trim() || testFlowMutation.isPending}
+                  variant="orange"
                 >
-                  <Send className="h-4 w-4" />
+                  {testFlowMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
                 </Button>
               </div>
               <div className="flex gap-2 justify-between">
