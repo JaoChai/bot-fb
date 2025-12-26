@@ -1,0 +1,5 @@
+# Railway configuration for monorepo
+
+# This file is at root level but each service has its own config
+# Backend service should set rootDirectory = "backend" in Railway Dashboard
+# Frontend service should set rootDirectory = "frontend" in Railway Dashboard
