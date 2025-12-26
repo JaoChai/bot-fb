@@ -14,6 +14,7 @@ import { ConversationDetailPage } from "@/pages/ConversationDetailPage"
 import { SettingsPage } from "@/pages/SettingsPage"
 import { FlowsPage } from "@/pages/FlowsPage"
 import { FlowEditorPage } from "@/pages/FlowEditorPage"
+import { AddConnectionPage } from "@/pages/AddConnectionPage"
 
 export const router = createBrowserRouter([
   // Auth routes (guest only)
@@ -36,7 +37,7 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // Protected routes (authenticated only)
+  // Protected routes (authenticated only) - with main sidebar
   {
     element: <ProtectedRoute />,
     children: [
@@ -55,6 +56,10 @@ export const router = createBrowserRouter([
           {
             path: "bots",
             element: <BotsPage />,
+          },
+          {
+            path: "connections/add",
+            element: <AddConnectionPage />,
           },
           {
             path: "bots/:botId/settings",
@@ -84,15 +89,26 @@ export const router = createBrowserRouter([
             path: "flows",
             element: <FlowsPage />,
           },
-          {
-            path: "flows/new",
-            element: <FlowEditorPage />,
-          },
-          {
-            path: "flows/:flowId/edit",
-            element: <FlowEditorPage />,
-          },
         ],
+      },
+    ],
+  },
+
+  // Flow Editor routes - standalone layout (no main sidebar, dabby.io style)
+  {
+    element: <ProtectedRoute />,
+    children: [
+      {
+        path: "/flows/editor",
+        element: <FlowEditorPage />,
+      },
+      {
+        path: "/flows/new",
+        element: <FlowEditorPage />,
+      },
+      {
+        path: "/flows/:flowId/edit",
+        element: <FlowEditorPage />,
       },
     ],
   },

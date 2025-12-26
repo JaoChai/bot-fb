@@ -54,6 +54,18 @@ export function BotsPage() {
   const bots = botsResponse?.data || [];
 
   const copyWebhookUrl = async (botId: number, webhookUrl: string) => {
+    // Validate URL format
+    try {
+      new URL(webhookUrl);
+    } catch {
+      toast({
+        title: 'ข้อผิดพลาด',
+        description: 'Webhook URL ไม่ถูกต้อง',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
       await navigator.clipboard.writeText(webhookUrl);
       setCopiedId(botId);
@@ -117,9 +129,11 @@ export function BotsPage() {
       {/* Header - dabby.io style */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">การเชื่อมต่อ</h1>
-        <Button variant="orange">
-          <Plus className="h-4 w-4" />
-          เพิ่มการเชื่อมต่อ
+        <Button variant="orange" asChild>
+          <Link to="/connections/add">
+            <Plus className="h-4 w-4" />
+            เพิ่มการเชื่อมต่อ
+          </Link>
         </Button>
       </div>
 
@@ -136,9 +150,11 @@ export function BotsPage() {
             </p>
           </CardHeader>
           <CardContent className="text-center pb-12">
-            <Button variant="orange" size="lg">
-              <Plus className="h-4 w-4" />
-              สร้างการเชื่อมต่อแรก
+            <Button variant="orange" size="lg" asChild>
+              <Link to="/connections/add">
+                <Plus className="h-4 w-4" />
+                สร้างการเชื่อมต่อแรก
+              </Link>
             </Button>
           </CardContent>
         </Card>
@@ -186,7 +202,7 @@ export function BotsPage() {
                       </Link>
                     </Button>
                     <Button variant="orange-outline" size="sm" asChild>
-                      <Link to={`/flows?botId=${bot.id}`}>
+                      <Link to={`/flows/editor?botId=${bot.id}`}>
                         <Workflow className="h-4 w-4" />
                         แก้ไข AI Flow
                       </Link>
@@ -217,7 +233,12 @@ export function BotsPage() {
                         )}
                         คัดลอก Webhook URL
                       </Button>
-                      <Button variant="ghost" size="icon-sm" className="flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="flex-shrink-0"
+                        aria-label="ตัวเลือกเพิ่มเติม"
+                      >
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </div>
