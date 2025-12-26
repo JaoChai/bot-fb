@@ -17,11 +17,30 @@ class BotResource extends JsonResource
             'channel_type' => $this->channel_type,
             'page_id' => $this->page_id,
             'webhook_url' => $this->webhook_url,
+
+            // LLM Settings
+            'llm_model' => $this->llm_model,
+            'llm_fallback_model' => $this->llm_fallback_model,
+            'system_prompt' => $this->system_prompt,
+            'llm_temperature' => $this->llm_temperature,
+            'llm_max_tokens' => $this->llm_max_tokens,
+            'context_window' => $this->context_window,
+
+            // Knowledge Base (RAG) Settings
+            'kb_enabled' => $this->kb_enabled ?? false,
+            'kb_relevance_threshold' => $this->kb_relevance_threshold ?? 0.7,
+            'kb_max_results' => $this->kb_max_results ?? 3,
+
+            // Stats
             'total_conversations' => $this->total_conversations ?? 0,
             'total_messages' => $this->total_messages ?? 0,
             'last_active_at' => $this->last_active_at?->toISOString(),
+
+            // Relationships
             'settings' => $this->whenLoaded('settings'),
             'default_flow' => $this->whenLoaded('defaultFlow'),
+            'knowledge_base' => new KnowledgeBaseResource($this->whenLoaded('knowledgeBase')),
+
             'created_at' => $this->created_at->toISOString(),
             'updated_at' => $this->updated_at->toISOString(),
         ];

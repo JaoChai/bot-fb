@@ -2,15 +2,18 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\OpenRouterException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Flow\StoreFlowRequest;
 use App\Http\Requests\Flow\UpdateFlowRequest;
 use App\Http\Resources\FlowResource;
 use App\Models\Bot;
 use App\Models\Flow;
+use App\Services\OpenRouterService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Log;
 
 class FlowController extends Controller
 {
@@ -37,6 +40,9 @@ class FlowController extends Controller
         $this->authorize('update', $bot);
 
         $data = $request->validated();
+
+        // Cast boolean fields for PostgreSQL compatibility
+        $data = $this->castBooleanFields($data);
 
         // If this is marked as default, unset other defaults
         if ($data['is_default'] ?? false) {
@@ -81,6 +87,9 @@ class FlowController extends Controller
         $this->ensureFlowBelongsToBot($flow, $bot);
 
         $data = $request->validated();
+
+        // Cast boolean fields for PostgreSQL compatibility
+        $data = $this->castBooleanFields($data);
 
         // If setting as default, unset other defaults
         if ($data['is_default'] ?? false) {
@@ -173,6 +182,134 @@ class FlowController extends Controller
     }
 
     /**
+     * Test a flow with a message using the Chat Emulator.
+     * Uses the flow's system_prompt and model settings to generate an AI response.
+     */
+    public function test(Request $request, Bot $bot, Flow $flow, OpenRouterService $openRouter): JsonResponse
+    {
+        $this->authorize('view', $bot);
+        $this->ensureFlowBelongsToBot($flow, $bot);
+
+        $request->validate([
+            'message' => 'required|string|max:2000',
+            'conversation_history' => 'array',
+            'conversation_history.*.role' => 'required|string|in:user,assistant',
+            'conversation_history.*.content' => 'required|string',
+        ]);
+
+        $userMessage = $request->input('message');
+        $conversationHistory = $request->input('conversation_history', []);
+
+        // Get API key from user settings (centralized)
+        $user = $bot->user;
+        $apiKey = null;
+        if ($user && $user->settings && $user->settings->hasOpenRouterKey()) {
+            $apiKey = $user->settings->openrouter_api_key;
+        }
+
+        if (!$apiKey && !config('services.openrouter.api_key')) {
+            return response()->json([
+                'success' => false,
+                'error' => 'ไม่พบ OpenRouter API Key กรุณาตั้งค่าใน Settings',
+                'error_code' => 'NO_API_KEY',
+            ], 422);
+        }
+
+        // Build messages array for OpenRouter
+        $messages = [];
+
+        // Add system prompt
+        $systemPrompt = $flow->system_prompt ?: $this->getDefaultSystemPrompt($bot);
+        $messages[] = [
+            'role' => 'system',
+            'content' => $systemPrompt,
+        ];
+
+        // Add conversation history
+        foreach ($conversationHistory as $msg) {
+            $messages[] = [
+                'role' => $msg['role'],
+                'content' => $msg['content'],
+            ];
+        }
+
+        // Add current user message
+        $messages[] = [
+            'role' => 'user',
+            'content' => $userMessage,
+        ];
+
+        try {
+            $result = $openRouter->chat(
+                messages: $messages,
+                model: $flow->model,
+                temperature: $flow->temperature ? (float) $flow->temperature : 0.7,
+                maxTokens: $flow->max_tokens ?? 2048,
+                useFallback: true,
+                apiKeyOverride: $apiKey
+            );
+
+            Log::info('Flow test successful', [
+                'flow_id' => $flow->id,
+                'bot_id' => $bot->id,
+                'model' => $result['model'],
+                'tokens' => $result['usage']['total_tokens'] ?? 0,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'response' => $result['content'],
+                'model' => $result['model'],
+                'usage' => $result['usage'],
+            ]);
+        } catch (OpenRouterException $e) {
+            Log::error('Flow test failed', [
+                'flow_id' => $flow->id,
+                'bot_id' => $bot->id,
+                'error' => $e->getMessage(),
+                'status' => $e->getCode(),
+            ]);
+
+            $errorMessage = 'เกิดข้อผิดพลาดในการเชื่อมต่อ AI';
+            if ($e->isAuthError()) {
+                $errorMessage = 'API Key ไม่ถูกต้อง กรุณาตรวจสอบใน Settings';
+            } elseif ($e->isRateLimited()) {
+                $errorMessage = 'เกินอัตราการใช้งาน กรุณารอสักครู่';
+            }
+
+            return response()->json([
+                'success' => false,
+                'error' => $errorMessage,
+                'error_code' => $e->isAuthError() ? 'AUTH_ERROR' : ($e->isRateLimited() ? 'RATE_LIMITED' : 'API_ERROR'),
+            ], $e->getCode() >= 400 && $e->getCode() < 600 ? $e->getCode() : 500);
+        } catch (\Exception $e) {
+            Log::error('Flow test unexpected error', [
+                'flow_id' => $flow->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'เกิดข้อผิดพลาดที่ไม่คาดคิด',
+                'error_code' => 'UNEXPECTED_ERROR',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get default system prompt for testing.
+     */
+    protected function getDefaultSystemPrompt(Bot $bot): string
+    {
+        return <<<PROMPT
+คุณเป็นผู้ช่วย AI สำหรับ {$bot->name}
+ตอบอย่างเป็นมิตร ชัดเจน และกระชับ
+ตอบในภาษาเดียวกับที่ผู้ใช้ถาม
+หากไม่ทราบคำตอบ ให้บอกตรงๆ
+PROMPT;
+    }
+
+    /**
      * Get available prompt templates.
      */
     public function templates(): JsonResponse
@@ -225,6 +362,21 @@ class FlowController extends Controller
         if ($flow->bot_id !== $bot->id) {
             abort(404, 'Flow not found');
         }
+    }
+
+    /**
+     * Cast boolean fields for PostgreSQL compatibility.
+     * Ensures values are proper PHP booleans before database insert.
+     */
+    protected function castBooleanFields(array $data): array
+    {
+        if (array_key_exists('agentic_mode', $data)) {
+            $data['agentic_mode'] = filter_var($data['agentic_mode'], FILTER_VALIDATE_BOOLEAN);
+        }
+        if (array_key_exists('is_default', $data)) {
+            $data['is_default'] = filter_var($data['is_default'], FILTER_VALIDATE_BOOLEAN);
+        }
+        return $data;
     }
 
     protected function getCustomerSupportPrompt(): string

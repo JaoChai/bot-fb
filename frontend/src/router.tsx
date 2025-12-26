@@ -6,8 +6,16 @@ import { LoginPage } from "@/pages/auth/LoginPage"
 import { RegisterPage } from "@/pages/auth/RegisterPage"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { BotsPage } from "@/pages/BotsPage"
-import { ChatPage } from "@/pages/ChatPage"
+import { BotSettingsPage } from "@/pages/BotSettingsPage"
+import { BotEditPage } from "@/pages/BotEditPage"
+import { KnowledgeBasePage } from "@/pages/KnowledgeBasePage"
+import { ConversationsPage } from "@/pages/ConversationsPage"
+import { ConversationDetailPage } from "@/pages/ConversationDetailPage"
 import { SettingsPage } from "@/pages/SettingsPage"
+import { FlowsPage } from "@/pages/FlowsPage"
+import { FlowEditorPage } from "@/pages/FlowEditorPage"
+import { AddConnectionPage } from "@/pages/AddConnectionPage"
+import { EditConnectionPage } from "@/pages/EditConnectionPage"
 
 export const router = createBrowserRouter([
   // Auth routes (guest only)
@@ -30,7 +38,7 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // Protected routes (authenticated only)
+  // Protected routes (authenticated only) - with main sidebar
   {
     element: <ProtectedRoute />,
     children: [
@@ -51,14 +59,61 @@ export const router = createBrowserRouter([
             element: <BotsPage />,
           },
           {
+            path: "connections/add",
+            element: <AddConnectionPage />,
+          },
+          {
+            path: "bots/:botId/settings",
+            element: <BotSettingsPage />,
+          },
+          {
+            path: "bots/:botId/edit",
+            element: <EditConnectionPage />,
+          },
+          {
+            path: "bots/:botId/edit-old",
+            element: <BotEditPage />,
+          },
+          {
+            path: "knowledge-base",
+            element: <KnowledgeBasePage />,
+          },
+          {
             path: "chat",
-            element: <ChatPage />,
+            element: <ConversationsPage />,
+          },
+          {
+            path: "conversations/:conversationId",
+            element: <ConversationDetailPage />,
           },
           {
             path: "settings",
             element: <SettingsPage />,
           },
+          {
+            path: "flows",
+            element: <FlowsPage />,
+          },
         ],
+      },
+    ],
+  },
+
+  // Flow Editor routes - standalone layout (no main sidebar, dabby.io style)
+  {
+    element: <ProtectedRoute />,
+    children: [
+      {
+        path: "/flows/editor",
+        element: <FlowEditorPage />,
+      },
+      {
+        path: "/flows/new",
+        element: <FlowEditorPage />,
+      },
+      {
+        path: "/flows/:flowId/edit",
+        element: <FlowEditorPage />,
       },
     ],
   },

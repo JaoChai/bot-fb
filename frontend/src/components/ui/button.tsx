@@ -19,6 +19,11 @@ const buttonVariants = cva(
         ghost:
           "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
         link: "text-primary underline-offset-4 hover:underline",
+        // dabby.io style variants
+        orange:
+          "bg-amber-500 text-white hover:bg-amber-600 focus-visible:ring-amber-500/20",
+        "orange-outline":
+          "border-2 border-amber-500 text-amber-600 bg-transparent hover:bg-amber-50 dark:hover:bg-amber-950/20",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",

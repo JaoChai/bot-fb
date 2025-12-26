@@ -21,7 +21,42 @@ class StoreBotRequest extends FormRequest
             'channel_access_token' => ['nullable', 'string'],
             'channel_secret' => ['nullable', 'string'],
             'page_id' => ['nullable', 'string'],
+            // Support nested api_keys format
+            'api_keys' => ['nullable', 'array'],
+            'api_keys.channel_access_token' => ['nullable', 'string'],
+            'api_keys.channel_secret' => ['nullable', 'string'],
         ];
+    }
+
+    /**
+     * Prepare the data for validation.
+     * Extract api_keys into top-level fields if provided.
+     */
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('api_keys') && is_array($this->api_keys)) {
+            $apiKeys = $this->api_keys;
+
+            // Merge api_keys values into top-level if not already set
+            $this->merge([
+                'channel_access_token' => $this->channel_access_token ?? ($apiKeys['channel_access_token'] ?? null),
+                'channel_secret' => $this->channel_secret ?? ($apiKeys['channel_secret'] ?? null),
+            ]);
+        }
+    }
+
+    /**
+     * Get the validated data, excluding api_keys wrapper.
+     */
+    public function validated($key = null, $default = null): mixed
+    {
+        $validated = parent::validated($key, $default);
+
+        if (is_array($validated)) {
+            unset($validated['api_keys']);
+        }
+
+        return $validated;
     }
 
     public function messages(): array
