@@ -83,7 +83,8 @@ export function FlowEditorPage() {
   const location = useLocation();
   const { toast } = useToast();
 
-  const botIdParam = searchParams.get('botId');
+  // Support both botId and botid (case-insensitive)
+  const botIdParam = searchParams.get('botId') || searchParams.get('botid');
   const parsedBotId = botIdParam ? parseInt(botIdParam, 10) : null;
   const botId = parsedBotId && !isNaN(parsedBotId) ? parsedBotId : null;
 
@@ -91,7 +92,7 @@ export function FlowEditorPage() {
   const isEditorEntryMode = location.pathname === '/flows/editor';
 
   // Get flows list
-  const { flows, isLoading: isLoadingFlows } = useFlowOperations(botId);
+  const { flows, isLoading: isLoadingFlows, isSuccess: isFlowsSuccess } = useFlowOperations(botId);
 
   // Current flow being edited
   const parsedFlowId = flowId && flowId !== 'new' ? parseInt(flowId, 10) : null;
@@ -135,8 +136,9 @@ export function FlowEditorPage() {
   const [externalDataSources, setExternalDataSources] = useState<string>('');
 
   // Auto-redirect in editor entry mode
+  // Wait for isSuccess to ensure flows data is actually loaded (not just cached/stale)
   useEffect(() => {
-    if (isEditorEntryMode && !isLoadingFlows && botId) {
+    if (isEditorEntryMode && isFlowsSuccess && botId) {
       if (flows.length > 0) {
         // Find default flow or use first flow
         const defaultFlow = flows.find(f => f.is_default);
@@ -147,7 +149,7 @@ export function FlowEditorPage() {
         navigate(`/flows/new?botId=${botId}`, { replace: true });
       }
     }
-  }, [isEditorEntryMode, isLoadingFlows, flows, botId, navigate]);
+  }, [isEditorEntryMode, isFlowsSuccess, flows, botId, navigate]);
 
   // Load existing flow data
   useEffect(() => {
