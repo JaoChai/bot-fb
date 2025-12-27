@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -32,14 +31,7 @@ import {
   useDeleteConnection,
 } from '@/hooks/useConnections';
 import { ArrowLeft, Loader2, Eye, EyeOff, ExternalLink, Trash2 } from 'lucide-react';
-
-const LLM_MODELS = [
-  { id: 'google/gemini-2.5-flash-preview', name: 'Google Gemini 2.5 Flash (แนะนำ)' },
-  { id: 'google/gemini-2.0-flash-001', name: 'Google Gemini 2.0 Flash' },
-  { id: 'openai/gpt-4o-mini', name: 'OpenAI GPT-4o Mini (แนะนำสำหรับ Chatbot)' },
-  { id: 'openai/gpt-4o', name: 'OpenAI GPT-4o' },
-  { id: 'anthropic/claude-3-5-sonnet', name: 'Anthropic Claude 3.5 Sonnet' },
-];
+import { ModelConfiguration } from '@/components/ModelSelector';
 
 const PLATFORMS = [
   { id: 'line', name: 'LINE Official Account' },
@@ -421,96 +413,20 @@ export function EditConnectionPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">LLM Models</CardTitle>
-              <p className="text-sm text-muted-foreground mt-2">เลือก model สำหรับแต่ละงาน</p>
+              <p className="text-sm text-muted-foreground mt-2">เลือก model สำหรับแต่ละงาน หรือใส่ model ID แบบกำหนดเอง</p>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Primary Chat Model */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="primary-model" className="font-semibold">
-                    Primary Chat Model
-                  </Label>
-                  <Badge variant="outline" className="text-xs">สนทนา & Personality</Badge>
-                </div>
-                <Select value={formData.primary_chat_model} onValueChange={(value) => handleChange('primary_chat_model', value)}>
-                  <SelectTrigger id="primary-model">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LLM_MODELS.map((model) => (
-                      <SelectItem key={model.id} value={model.id}>
-                        {model.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Fallback Chat Model */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="fallback-model" className="font-semibold">
-                    Fallback Chat Model
-                  </Label>
-                  <Badge variant="outline" className="text-xs">สำรองเมื่อ Primary ล้มเหลว</Badge>
-                </div>
-                <Select value={formData.fallback_chat_model} onValueChange={(value) => handleChange('fallback_chat_model', value)}>
-                  <SelectTrigger id="fallback-model">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LLM_MODELS.map((model) => (
-                      <SelectItem key={model.id} value={model.id}>
-                        {model.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Decision Model */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="decision-model" className="font-semibold">
-                    Decision Model
-                  </Label>
-                  <Badge variant="outline" className="text-xs">Agentic Mode</Badge>
-                </div>
-                <Select value={formData.decision_model} onValueChange={(value) => handleChange('decision_model', value)}>
-                  <SelectTrigger id="decision-model">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LLM_MODELS.map((model) => (
-                      <SelectItem key={model.id} value={model.id}>
-                        {model.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Fallback Decision Model */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="fallback-decision-model" className="font-semibold">
-                    Fallback Decision Model
-                  </Label>
-                  <Badge variant="outline" className="text-xs">สำรอง</Badge>
-                </div>
-                <Select value={formData.fallback_decision_model} onValueChange={(value) => handleChange('fallback_decision_model', value)}>
-                  <SelectTrigger id="fallback-decision-model">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LLM_MODELS.map((model) => (
-                      <SelectItem key={model.id} value={model.id}>
-                        {model.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <CardContent>
+              <ModelConfiguration
+                primaryModel={formData.primary_chat_model}
+                fallbackModel={formData.fallback_chat_model}
+                decisionModel={formData.decision_model}
+                fallbackDecisionModel={formData.fallback_decision_model}
+                onPrimaryChange={(value) => handleChange('primary_chat_model', value)}
+                onFallbackChange={(value) => handleChange('fallback_chat_model', value)}
+                onDecisionChange={(value) => handleChange('decision_model', value)}
+                onFallbackDecisionChange={(value) => handleChange('fallback_decision_model', value)}
+                showDecisionModels={true}
+              />
             </CardContent>
           </Card>
 

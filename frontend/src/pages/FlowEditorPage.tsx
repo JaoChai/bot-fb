@@ -13,7 +13,6 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
-import { ModelConfiguration } from '@/components/ModelSelector';
 import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations, useTestFlow } from '@/hooks/useFlows';
 import { useAllKnowledgeBases } from '@/hooks/useKnowledgeBase';
 import { useToast } from '@/hooks/use-toast';
@@ -600,20 +599,6 @@ export function FlowEditorPage() {
                   <span className="font-medium">AI Chatbot</span>
                 </div>
 
-                {/* Model Configuration */}
-                <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
-                  <ModelConfiguration
-                    primaryModel={formData.model || ''}
-                    fallbackModel={formData.fallback_model || ''}
-                    decisionModel={formData.decision_model || ''}
-                    fallbackDecisionModel={formData.fallback_decision_model || ''}
-                    onPrimaryChange={(v) => handleChange('model', v)}
-                    onFallbackChange={(v) => handleChange('fallback_model', v)}
-                    onDecisionChange={(v) => handleChange('decision_model', v)}
-                    onFallbackDecisionChange={(v) => handleChange('fallback_decision_model', v)}
-                    showDecisionModels={formData.agentic_mode}
-                  />
-                </div>
 
                 {/* Agentic Mode Toggle */}
                 <div className="flex items-start gap-4 p-4 border rounded-lg">
