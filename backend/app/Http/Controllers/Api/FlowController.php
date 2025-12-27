@@ -240,17 +240,13 @@ class FlowController extends Controller
         $userMessage = $request->input('message');
         $conversationHistory = $request->input('conversation_history', []);
 
-        // Get API key from user settings (centralized)
-        $user = $bot->user;
-        $apiKey = null;
-        if ($user && $user->settings && $user->settings->hasOpenRouterKey()) {
-            $apiKey = $user->settings->openrouter_api_key;
-        }
+        // Get API key from Bot connection (per-bot setting)
+        $apiKey = $bot->openrouter_api_key;
 
         if (!$apiKey && !config('services.openrouter.api_key')) {
             return response()->json([
                 'success' => false,
-                'error' => 'ไม่พบ OpenRouter API Key กรุณาตั้งค่าใน Settings',
+                'error' => 'ไม่พบ OpenRouter API Key กรุณาตั้งค่าใน การเชื่อมต่อ',
                 'error_code' => 'NO_API_KEY',
             ], 422);
         }
