@@ -18,12 +18,25 @@ class UpdateBotRequest extends FormRequest
             'name' => ['sometimes', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
             'status' => ['sometimes', Rule::in(['active', 'inactive', 'paused'])],
+            'channel_type' => ['sometimes', Rule::in(['line', 'facebook', 'testing', 'demo'])],
             'channel_access_token' => ['nullable', 'string'],
             'channel_secret' => ['nullable', 'string'],
             'page_id' => ['nullable', 'string'],
             'default_flow_id' => ['nullable', 'exists:flows,id'],
 
-            // LLM Settings
+            // OpenRouter API
+            'openrouter_api_key' => ['nullable', 'string'],
+
+            // Multi-model LLM configuration
+            'primary_chat_model' => ['nullable', 'string', 'max:100'],
+            'fallback_chat_model' => ['nullable', 'string', 'max:100'],
+            'decision_model' => ['nullable', 'string', 'max:100'],
+            'fallback_decision_model' => ['nullable', 'string', 'max:100'],
+
+            // Webhook forwarder
+            'webhook_forwarder_enabled' => ['sometimes', 'boolean'],
+
+            // LLM Settings (legacy)
             'llm_model' => ['sometimes', 'string', 'max:100'],
             'llm_fallback_model' => ['sometimes', 'string', 'max:100'],
             'system_prompt' => ['nullable', 'string', 'max:10000'],

@@ -56,9 +56,15 @@ export interface Bot {
   name: string;
   description: string | null;
   status: 'active' | 'inactive' | 'paused';
-  channel_type: 'line' | 'facebook' | 'telegram';
+  channel_type: 'line' | 'facebook' | 'testing';
   webhook_url: string;
-  // LLM Settings
+  webhook_forwarder_enabled: boolean;
+  // Multi-model LLM configuration
+  primary_chat_model: string | null;
+  fallback_chat_model: string | null;
+  decision_model: string | null;
+  fallback_decision_model: string | null;
+  // LLM Settings (legacy)
   llm_model: string | null;
   llm_fallback_model: string | null;
   system_prompt: string | null;
@@ -77,6 +83,35 @@ export interface Bot {
   settings?: BotSettings;
   created_at: string;
   updated_at: string;
+}
+
+// Connection/Bot creation data
+export interface CreateConnectionData {
+  name: string;
+  channel_type: 'line' | 'facebook' | 'testing';
+  openrouter_api_key?: string;
+  primary_chat_model?: string;
+  fallback_chat_model?: string;
+  decision_model?: string;
+  fallback_decision_model?: string;
+  channel_access_token?: string;
+  channel_secret?: string;
+  webhook_forwarder_enabled?: boolean;
+}
+
+// Connection/Bot update data
+export interface UpdateConnectionData {
+  name?: string;
+  status?: 'active' | 'inactive' | 'paused';
+  channel_type?: 'line' | 'facebook' | 'testing';
+  openrouter_api_key?: string;
+  primary_chat_model?: string;
+  fallback_chat_model?: string;
+  decision_model?: string;
+  fallback_decision_model?: string;
+  channel_access_token?: string;
+  channel_secret?: string;
+  webhook_forwarder_enabled?: boolean;
 }
 
 // Bot Settings Types

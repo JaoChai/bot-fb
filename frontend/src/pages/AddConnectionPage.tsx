@@ -59,12 +59,7 @@ export function AddConnectionPage() {
   ];
 
   const handleSelectPlatform = (platformId: string) => {
-    // TODO: Navigate to edit connection page with platform preset
-    // For now, just show a notification that this will be implemented in next step
-    console.log('Selected platform:', platformId);
-    // This will be updated in Issue #54 (Edit Connection Page)
-    // navigate(`/bots/new?platform=${platformId}`);
-    alert(`เลือก ${platformId} แล้ว (จะสมบูรณ์ใน Issue #54)`);
+    navigate(`/connections/new?platform=${platformId}`);
   };
 
   return (
