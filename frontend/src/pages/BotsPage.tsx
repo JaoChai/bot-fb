@@ -172,7 +172,6 @@ export function BotsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header - dabby.io style */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">การเชื่อมต่อ</h1>
         <Button variant="orange" asChild>
@@ -184,11 +183,10 @@ export function BotsPage() {
       </div>
 
       {bots.length === 0 ? (
-        /* Empty state - dabby.io style */
         <Card className="bg-white dark:bg-card">
           <CardHeader className="text-center py-12">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[oklch(0.953_0.06_63.612)] dark:bg-[oklch(0.2_0.1_63.612)]">
-              <BotIcon className="h-8 w-8" style={{ color: 'var(--warning)' }} />
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+              <BotIcon className="h-8 w-8 text-slate-600 dark:text-slate-400" />
             </div>
             <CardTitle className="text-xl">ยังไม่มีการเชื่อมต่อ</CardTitle>
             <p className="text-muted-foreground mt-2">
@@ -205,20 +203,16 @@ export function BotsPage() {
           </CardContent>
         </Card>
       ) : (
-        /* Bot list - dabby.io style */
         <div className="grid gap-4">
           {bots.map(bot => (
             <Card key={bot.id} className="bg-white dark:bg-card">
               <CardContent className="p-6">
-                {/* Top row: Icon, Name, Status, Action buttons */}
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-4">
-                    {/* Channel Icon */}
-                    <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-[oklch(0.961_0_0)] dark:bg-[oklch(0.15_0_0)] rounded-lg">
+                    <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-slate-100 dark:bg-slate-800 rounded-lg">
                       {getChannelIcon(bot.channel_type)}
                     </div>
 
-                    {/* Bot Name & Status */}
                     <div>
                       <h3 className="text-lg font-semibold">{bot.name}</h3>
                       <Badge variant={bot.status === 'active' ? 'success' : 'inactive'}>
@@ -226,8 +220,6 @@ export function BotsPage() {
                       </Badge>
                     </div>
                   </div>
-
-                  {/* Action Buttons - dabby.io style */}
                   <div className="flex items-center gap-2">
                     <Button variant="outline" size="sm" asChild>
                       <Link to={`/bots/${bot.id}/edit`}>
@@ -250,7 +242,6 @@ export function BotsPage() {
                   </div>
                 </div>
 
-                {/* Webhook URL Section - dabby.io style */}
                 {bot.webhook_url && (
                   <div className="space-y-2">
                     <label className="text-sm text-muted-foreground">Webhook URL</label>

@@ -21,7 +21,7 @@ function getSimilarityColor(similarity: number): string {
   if (similarity >= 0.9) return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400';
   if (similarity >= 0.8) return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400';
   if (similarity >= 0.7) return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400';
-  return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400';
+  return 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400';
 }
 
 function highlightMatch(content: string, maxLength: number = 300): string {

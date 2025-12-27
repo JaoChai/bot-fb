@@ -236,7 +236,7 @@ export function EditConnectionPage() {
                 <p className="text-sm text-muted-foreground">
                   API Key จะแสดงเป็น {maskApiKey(formData.openrouter_api_key || 'sk-or-example')}
                 </p>
-                <Button variant="link" className="text-amber-600 h-auto p-0" asChild>
+                <Button variant="link" className="text-slate-600 h-auto p-0" asChild>
                   <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer">
                     ไปสร้าง API Key <ExternalLink className="h-3 w-3 ml-1" />
                   </a>
@@ -405,7 +405,7 @@ export function EditConnectionPage() {
                       className="font-mono"
                     />
                   </div>
-                  <Button variant="link" className="text-amber-600 h-auto p-0" asChild>
+                  <Button variant="link" className="text-slate-600 h-auto p-0" asChild>
                     <a href="https://developers.line.biz" target="_blank" rel="noopener noreferrer">
                       วิธีการเชื่อมต่อ LINE OA <ExternalLink className="h-3 w-3 ml-1" />
                     </a>
@@ -439,7 +439,7 @@ export function EditConnectionPage() {
             <Button
               onClick={handleSave}
               disabled={isSaving}
-              className="bg-amber-500 hover:bg-amber-600 flex-1"
+              className="bg-slate-500 hover:bg-amber-600 flex-1"
             >
               {isSaving ? (
                 <>
