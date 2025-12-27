@@ -349,14 +349,14 @@ class RAGService
      * Get the API key to use for a bot.
      *
      * Priority:
-     * 1. User Settings API key (centralized - recommended)
+     * 1. Bot's own API key (per-connection setting)
      * 2. Config/env fallback (handled by OpenRouterService)
      */
     protected function getApiKeyForBot(Bot $bot): ?string
     {
-        $user = $bot->user;
-        if ($user && $user->settings && $user->settings->hasOpenRouterKey()) {
-            return $user->settings->openrouter_api_key;
+        // Use Bot's own API key from connection settings
+        if (!empty($bot->openrouter_api_key)) {
+            return $bot->openrouter_api_key;
         }
 
         // Let OpenRouterService use its default from config
