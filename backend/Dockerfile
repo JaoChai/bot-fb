@@ -11,6 +11,7 @@ RUN apk add --no-cache \
     postgresql-dev \
     oniguruma-dev \
     libxml2-dev \
+    gettext \
     && docker-php-ext-install pdo pdo_pgsql pgsql mbstring exif pcntl bcmath gd zip
 
 # Install Composer
@@ -35,11 +36,11 @@ RUN composer dump-autoload --optimize
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html/storage
 
-# Create nginx config
+# Create nginx config template (PORT will be substituted at runtime)
 RUN mkdir -p /run/nginx
-COPY <<'NGINX' /etc/nginx/http.d/default.conf
+COPY <<'NGINX' /etc/nginx/http.d/default.conf.template
 server {
-    listen 80;
+    listen ${PORT};
     server_name _;
     root /var/www/html/public;
     index index.php;
@@ -86,9 +87,9 @@ SUPERVISOR
 # Expose port
 EXPOSE 80
 
-# Health check
+# Health check using PORT env variable
 HEALTHCHECK --interval=30s --timeout=3s \
-    CMD curl -f http://localhost/up || exit 1
+    CMD curl -f http://localhost:${PORT:-80}/up || exit 1
 
-# Start command
-CMD ["sh", "-c", "php artisan config:cache && php artisan route:cache && php artisan migrate --force && supervisord -c /etc/supervisor/conf.d/laravel.conf"]
+# Start command - substitute PORT in nginx config then start supervisord
+CMD ["sh", "-c", "envsubst '${PORT}' < /etc/nginx/http.d/default.conf.template > /etc/nginx/http.d/default.conf && php artisan config:cache && php artisan route:cache && php artisan migrate --force && supervisord -c /etc/supervisor/conf.d/laravel.conf"]
