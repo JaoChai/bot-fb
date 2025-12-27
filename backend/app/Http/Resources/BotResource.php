@@ -18,13 +18,22 @@ class BotResource extends JsonResource
             'page_id' => $this->page_id,
             'webhook_url' => $this->webhook_url,
 
-            // LLM Settings
+            // LLM Settings (legacy)
             'llm_model' => $this->llm_model,
             'llm_fallback_model' => $this->llm_fallback_model,
             'system_prompt' => $this->system_prompt,
             'llm_temperature' => $this->llm_temperature,
             'llm_max_tokens' => $this->llm_max_tokens,
             'context_window' => $this->context_window,
+
+            // Multi-model LLM configuration
+            'primary_chat_model' => $this->primary_chat_model,
+            'fallback_chat_model' => $this->fallback_chat_model,
+            'decision_model' => $this->decision_model,
+            'fallback_decision_model' => $this->fallback_decision_model,
+
+            // Webhook forwarder
+            'webhook_forwarder_enabled' => $this->webhook_forwarder_enabled ?? false,
 
             // Knowledge Base (RAG) Settings
             'kb_enabled' => $this->kb_enabled ?? false,
