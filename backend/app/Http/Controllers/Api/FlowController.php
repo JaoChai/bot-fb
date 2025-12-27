@@ -25,7 +25,8 @@ class FlowController extends Controller
         $this->authorize('view', $bot);
 
         $flows = $bot->flows()
-            ->with('knowledgeBase:id,name')
+            ->with('knowledgeBases:knowledge_bases.id,knowledge_bases.name')
+            ->orderByDesc('is_default')  // Base flow always first
             ->latest()
             ->paginate($request->input('per_page', 15));
 
@@ -54,7 +55,23 @@ class FlowController extends Controller
             $data['is_default'] = true;
         }
 
+        // Extract knowledge_bases before creating flow
+        $knowledgeBases = $data['knowledge_bases'] ?? [];
+        unset($data['knowledge_bases']);
+
         $flow = $bot->flows()->create($data);
+
+        // Sync knowledge bases with pivot data
+        if (!empty($knowledgeBases)) {
+            $syncData = [];
+            foreach ($knowledgeBases as $kb) {
+                $syncData[$kb['id']] = [
+                    'kb_top_k' => $kb['kb_top_k'] ?? 5,
+                    'kb_similarity_threshold' => $kb['kb_similarity_threshold'] ?? 0.7,
+                ];
+            }
+            $flow->knowledgeBases()->sync($syncData);
+        }
 
         // Update bot's default flow if this is the default
         if ($flow->is_default) {
@@ -63,7 +80,7 @@ class FlowController extends Controller
 
         return response()->json([
             'message' => 'Flow created successfully',
-            'data' => new FlowResource($flow),
+            'data' => new FlowResource($flow->load('knowledgeBases')),
         ], 201);
     }
 
@@ -75,7 +92,7 @@ class FlowController extends Controller
         $this->authorize('view', $bot);
         $this->ensureFlowBelongsToBot($flow, $bot);
 
-        return new FlowResource($flow->load('knowledgeBase'));
+        return new FlowResource($flow->load('knowledgeBases'));
     }
 
     /**
@@ -96,7 +113,23 @@ class FlowController extends Controller
             $bot->flows()->where('id', '!=', $flow->id)->update(['is_default' => false]);
         }
 
+        // Extract knowledge_bases before updating flow
+        $knowledgeBases = $data['knowledge_bases'] ?? null;
+        unset($data['knowledge_bases']);
+
         $flow->update($data);
+
+        // Sync knowledge bases if provided
+        if ($knowledgeBases !== null) {
+            $syncData = [];
+            foreach ($knowledgeBases as $kb) {
+                $syncData[$kb['id']] = [
+                    'kb_top_k' => $kb['kb_top_k'] ?? 5,
+                    'kb_similarity_threshold' => $kb['kb_similarity_threshold'] ?? 0.7,
+                ];
+            }
+            $flow->knowledgeBases()->sync($syncData);
+        }
 
         // Update bot's default flow if this is now the default
         if ($flow->is_default) {
@@ -105,7 +138,7 @@ class FlowController extends Controller
 
         return response()->json([
             'message' => 'Flow updated successfully',
-            'data' => new FlowResource($flow->fresh()),
+            'data' => new FlowResource($flow->fresh()->load('knowledgeBases')),
         ]);
     }
 
@@ -117,6 +150,13 @@ class FlowController extends Controller
         $this->authorize('update', $bot);
         $this->ensureFlowBelongsToBot($flow, $bot);
 
+        // Prevent deleting Base Flow (default flow)
+        if ($flow->is_default) {
+            return response()->json([
+                'message' => 'ไม่สามารถลบ Base Flow ได้ Base Flow เป็น Flow หลักของ Bot หากต้องการลบ กรุณาตั้ง Flow อื่นเป็น Default ก่อน',
+            ], 422);
+        }
+
         // Don't allow deleting the only flow
         if ($bot->flows()->count() === 1) {
             return response()->json([
@@ -124,17 +164,7 @@ class FlowController extends Controller
             ], 422);
         }
 
-        $wasDefault = $flow->is_default;
         $flow->delete();
-
-        // If deleted flow was default, set another as default
-        if ($wasDefault) {
-            $newDefault = $bot->flows()->first();
-            if ($newDefault) {
-                $newDefault->update(['is_default' => true]);
-                $bot->update(['default_flow_id' => $newDefault->id]);
-            }
-        }
 
         return response()->json([
             'message' => 'Flow deleted successfully',
@@ -175,9 +205,19 @@ class FlowController extends Controller
         $newFlow->is_default = false;
         $newFlow->save();
 
+        // Copy knowledge base associations
+        $kbData = [];
+        foreach ($flow->knowledgeBases as $kb) {
+            $kbData[$kb->id] = [
+                'kb_top_k' => $kb->pivot->kb_top_k,
+                'kb_similarity_threshold' => $kb->pivot->kb_similarity_threshold,
+            ];
+        }
+        $newFlow->knowledgeBases()->sync($kbData);
+
         return response()->json([
             'message' => 'Flow duplicated successfully',
-            'data' => new FlowResource($newFlow),
+            'data' => new FlowResource($newFlow->load('knowledgeBases')),
         ], 201);
     }
 

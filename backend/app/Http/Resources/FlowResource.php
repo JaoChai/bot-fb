@@ -26,16 +26,15 @@ class FlowResource extends JsonResource
             'max_tool_calls' => $this->max_tool_calls,
             'enabled_tools' => $this->enabled_tools ?? [],
 
-            // Knowledge Base
-            'knowledge_base_id' => $this->knowledge_base_id,
-            'knowledge_base' => $this->whenLoaded('knowledgeBase', function () {
-                return [
-                    'id' => $this->knowledgeBase->id,
-                    'name' => $this->knowledgeBase->name,
-                ];
+            // Knowledge Bases (Many-to-Many)
+            'knowledge_bases' => $this->whenLoaded('knowledgeBases', function () {
+                return $this->knowledgeBases->map(fn ($kb) => [
+                    'id' => $kb->id,
+                    'name' => $kb->name,
+                    'kb_top_k' => $kb->pivot->kb_top_k,
+                    'kb_similarity_threshold' => (float) $kb->pivot->kb_similarity_threshold,
+                ]);
             }),
-            'kb_top_k' => $this->kb_top_k,
-            'kb_similarity_threshold' => (float) $this->kb_similarity_threshold,
 
             // Settings
             'language' => $this->language,

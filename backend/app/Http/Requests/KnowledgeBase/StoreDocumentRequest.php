@@ -14,22 +14,18 @@ class StoreDocumentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'file' => [
-                'required',
-                'file',
-                'max:10240', // 10MB
-                'mimes:pdf,txt,md,docx,doc',
-            ],
+            'title' => ['required', 'string', 'max:255'],
+            'content' => ['required', 'string', 'max:100000'],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'file.required' => 'Please select a file to upload.',
-            'file.file' => 'The uploaded file is invalid.',
-            'file.max' => 'File size must not exceed 10MB.',
-            'file.mimes' => 'File must be PDF, TXT, MD, or Word document.',
+            'title.required' => 'Please provide a title for the document.',
+            'title.max' => 'Title must not exceed 255 characters.',
+            'content.required' => 'Please provide content for the document.',
+            'content.max' => 'Content must not exceed 100,000 characters.',
         ];
     }
 }

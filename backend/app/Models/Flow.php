@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -23,16 +24,12 @@ class Flow extends Model
         'agentic_mode',
         'max_tool_calls',
         'enabled_tools',
-        'knowledge_base_id',
-        'kb_top_k',
-        'kb_similarity_threshold',
         'language',
         'is_default',
     ];
 
     protected $casts = [
         'temperature' => 'decimal:2',
-        'kb_similarity_threshold' => 'decimal:3',
         'agentic_mode' => 'boolean',
         'is_default' => 'boolean',
         'enabled_tools' => 'array',
@@ -43,9 +40,11 @@ class Flow extends Model
         return $this->belongsTo(Bot::class);
     }
 
-    public function knowledgeBase(): BelongsTo
+    public function knowledgeBases(): BelongsToMany
     {
-        return $this->belongsTo(KnowledgeBase::class);
+        return $this->belongsToMany(KnowledgeBase::class)
+            ->withPivot(['kb_top_k', 'kb_similarity_threshold'])
+            ->withTimestamps();
     }
 
     public function conversations(): HasMany

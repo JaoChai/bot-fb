@@ -21,6 +21,31 @@ class KnowledgeBaseController extends Controller
     {
         $this->searchService = $searchService;
     }
+
+    /**
+     * List all knowledge bases for the authenticated user.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $knowledgeBases = KnowledgeBase::where('user_id', $request->user()->id)
+            ->with('bot:id,name')
+            ->withCount('documents')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json([
+            'data' => $knowledgeBases->map(fn ($kb) => [
+                'id' => $kb->id,
+                'name' => $kb->name,
+                'description' => $kb->description,
+                'bot_id' => $kb->bot_id,
+                'bot_name' => $kb->bot?->name,
+                'document_count' => $kb->documents_count,
+                'chunk_count' => $kb->chunk_count,
+            ]),
+        ]);
+    }
+
     /**
      * Get or create the knowledge base for a bot.
      */

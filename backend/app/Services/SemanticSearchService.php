@@ -79,6 +79,73 @@ class SemanticSearchService
     }
 
     /**
+     * Search multiple knowledge bases and merge results by similarity score.
+     *
+     * @param array $kbConfigs Array of KB configs: [['id' => int, 'kb_top_k' => int, 'kb_similarity_threshold' => float], ...]
+     * @param string $query The search query
+     * @param int $totalLimit Maximum total results to return across all KBs
+     */
+    public function searchMultiple(
+        array $kbConfigs,
+        string $query,
+        int $totalLimit = 10
+    ): Collection {
+        if (empty($kbConfigs)) {
+            return collect([]);
+        }
+
+        // Generate embedding once for all searches
+        $queryEmbedding = $this->embeddingService->generate($query);
+
+        $allResults = collect([]);
+
+        foreach ($kbConfigs as $config) {
+            $kbId = $config['id'];
+            $limit = $config['kb_top_k'] ?? 5;
+            $threshold = $config['kb_similarity_threshold'] ?? $this->relevanceThreshold;
+
+            $results = DocumentChunk::query()
+                ->select([
+                    'document_chunks.*',
+                    'documents.original_filename',
+                    'documents.knowledge_base_id',
+                ])
+                ->join('documents', 'documents.id', '=', 'document_chunks.document_id')
+                ->where('documents.knowledge_base_id', $kbId)
+                ->where('documents.status', 'completed')
+                ->whereNotNull('document_chunks.embedding')
+                ->nearestNeighbors('embedding', $queryEmbedding, Distance::Cosine)
+                ->take($limit * 2)
+                ->get()
+                ->map(function ($chunk) use ($kbId) {
+                    $distance = $chunk->neighbor_distance ?? 0;
+                    $similarity = 1 - ($distance / 2);
+
+                    return [
+                        'id' => $chunk->id,
+                        'document_id' => $chunk->document_id,
+                        'knowledge_base_id' => $kbId,
+                        'document_name' => $chunk->original_filename,
+                        'content' => $chunk->content,
+                        'chunk_index' => $chunk->chunk_index,
+                        'similarity' => round($similarity, 4),
+                        'metadata' => $chunk->metadata,
+                    ];
+                })
+                ->filter(fn ($item) => $item['similarity'] >= $threshold)
+                ->take($limit);
+
+            $allResults = $allResults->concat($results);
+        }
+
+        // Sort all results by similarity (descending) and take top N
+        return $allResults
+            ->sortByDesc('similarity')
+            ->take($totalLimit)
+            ->values();
+    }
+
+    /**
      * Search and return full chunk models for internal use.
      */
     public function searchChunks(

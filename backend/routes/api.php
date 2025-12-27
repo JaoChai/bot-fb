@@ -91,6 +91,9 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
     // Flow templates (not nested)
     Route::get('/flow-templates', [FlowController::class, 'templates'])->name('flows.templates');
 
+    // Knowledge Bases list (all user's KBs for Flow multi-select)
+    Route::get('/knowledge-bases', [KnowledgeBaseController::class, 'index'])->name('kb.index');
+
     // Knowledge Base routes (nested under bots)
     Route::prefix('bots/{bot}/knowledge-base')->group(function () {
         Route::get('/', [KnowledgeBaseController::class, 'show'])->name('kb.show');

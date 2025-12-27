@@ -28,10 +28,10 @@ export function KnowledgeBasePage() {
     knowledgeBase,
     documents,
     isLoading,
-    isUploading,
+    isSubmitting,
     isDeleting,
     error,
-    uploadDocument,
+    createDocument,
     deleteDocument,
     refetch,
   } = useKnowledgeBaseOperations(selectedBotId);
@@ -40,13 +40,13 @@ export function KnowledgeBasePage() {
     setSelectedBotId(Number(value));
   }, []);
 
-  const handleUpload = useCallback(
-    async (file: File) => {
-      if (uploadDocument) {
-        await uploadDocument(file);
+  const handleSubmit = useCallback(
+    async (data: { title: string; content: string }) => {
+      if (createDocument) {
+        await createDocument(data);
       }
     },
-    [uploadDocument]
+    [createDocument]
   );
 
   const handleDelete = useCallback(
@@ -63,9 +63,9 @@ export function KnowledgeBasePage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Knowledge Base</h1>
+          <h1 className="text-2xl font-bold tracking-tight">ฐานความรู้</h1>
           <p className="text-muted-foreground">
-            Upload and manage documents for your bots
+            จัดการข้อมูลความรู้สำหรับ Bot ของคุณ
           </p>
         </div>
 
@@ -111,9 +111,9 @@ export function KnowledgeBasePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Knowledge Base</h1>
+          <h1 className="text-2xl font-bold tracking-tight">ฐานความรู้</h1>
           <p className="text-muted-foreground">
-            Upload and manage documents for your bots
+            จัดการข้อมูลความรู้สำหรับ Bot ของคุณ
           </p>
         </div>
       </div>
@@ -184,10 +184,10 @@ export function KnowledgeBasePage() {
             hasChunks={(knowledgeBase?.chunk_count ?? 0) > 0}
           />
 
-          {/* Upload section */}
+          {/* Create document section */}
           <DocumentUpload
-            onUpload={handleUpload}
-            isUploading={isUploading}
+            onSubmit={handleSubmit}
+            isSubmitting={isSubmitting}
           />
 
           {/* Document list */}
