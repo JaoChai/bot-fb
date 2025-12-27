@@ -113,6 +113,7 @@ class OpenRouterService
 
     /**
      * Stream a chat completion request to OpenRouter using SSE.
+     * Uses Laravel HTTP client with streaming support.
      *
      * @param array $messages Chat messages
      * @param string|null $model Model ID
@@ -133,127 +134,103 @@ class OpenRouterService
         $maxTokens = $maxTokens ?? $this->maxTokens;
         $apiKey = $apiKeyOverride ?? $this->apiKey;
 
-        $url = $this->baseUrl . '/chat/completions';
-
-        $payload = json_encode([
-            'model' => $model,
-            'messages' => $messages,
-            'temperature' => $temperature,
-            'max_tokens' => $maxTokens,
-            'stream' => true,
-        ]);
-
-        // Use cURL for streaming
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $url,
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $payload,
-            CURLOPT_HTTPHEADER => [
-                'Content-Type: application/json',
-                'Authorization: Bearer ' . $apiKey,
-                'HTTP-Referer: ' . $this->siteUrl,
-                'X-Title: ' . $this->siteName,
-                'Accept: text/event-stream',
-            ],
-            CURLOPT_RETURNTRANSFER => false,
-            CURLOPT_TIMEOUT => $this->timeout,
-            CURLOPT_CONNECTTIMEOUT => 30,
-        ]);
-
-        // Buffer for incomplete SSE data
-        $buffer = '';
-        $usage = null;
         $modelUsed = $model;
+        $usage = null;
 
-        // Set up streaming callback
-        curl_setopt($ch, CURLOPT_WRITEFUNCTION, function ($ch, $data) use (&$buffer) {
-            $buffer .= $data;
-            return strlen($data);
-        });
+        try {
+            // Use Laravel HTTP client with stream option
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $apiKey,
+                'HTTP-Referer' => $this->siteUrl,
+                'X-Title' => $this->siteName,
+            ])
+            ->timeout($this->timeout)
+            ->withOptions(['stream' => true])
+            ->post($this->baseUrl . '/chat/completions', [
+                'model' => $model,
+                'messages' => $messages,
+                'temperature' => $temperature,
+                'max_tokens' => $maxTokens,
+                'stream' => true,
+            ]);
 
-        // Run the request
-        $result = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlError = curl_error($ch);
-        curl_close($ch);
-
-        if ($curlError) {
-            yield ['type' => 'error', 'data' => "Connection error: {$curlError}"];
-            return;
-        }
-
-        if ($httpCode !== 200) {
-            $errorData = json_decode($buffer, true);
-            $errorMsg = $errorData['error']['message'] ?? "HTTP error: {$httpCode}";
-            yield ['type' => 'error', 'data' => $errorMsg];
-            return;
-        }
-
-        // Parse SSE data from buffer
-        $lines = explode("\n", $buffer);
-
-        foreach ($lines as $line) {
-            $line = trim($line);
-
-            // Skip empty lines and comments
-            if (empty($line) || str_starts_with($line, ':')) {
-                continue;
+            if ($response->failed()) {
+                $errorData = $response->json();
+                $errorMsg = $errorData['error']['message'] ?? "HTTP error: {$response->status()}";
+                yield ['type' => 'error', 'data' => $errorMsg];
+                return;
             }
 
-            // Parse SSE data line
-            if (str_starts_with($line, 'data: ')) {
-                $jsonData = substr($line, 6);
+            // Get the response body as string and parse SSE
+            $body = $response->body();
+            $lines = explode("\n", $body);
 
-                // Check for stream end
-                if ($jsonData === '[DONE]') {
-                    break;
-                }
+            foreach ($lines as $line) {
+                $line = trim($line);
 
-                $data = json_decode($jsonData, true);
-                if (!$data) {
+                // Skip empty lines and comments
+                if (empty($line) || str_starts_with($line, ':')) {
                     continue;
                 }
 
-                // Extract model info
-                if (isset($data['model'])) {
-                    $modelUsed = $data['model'];
-                }
+                // Parse SSE data line
+                if (str_starts_with($line, 'data: ')) {
+                    $jsonData = substr($line, 6);
 
-                // Extract usage info (usually in final chunk)
-                if (isset($data['usage'])) {
-                    $usage = $data['usage'];
-                }
+                    // Check for stream end
+                    if ($jsonData === '[DONE]') {
+                        break;
+                    }
 
-                // Extract delta content
-                $delta = $data['choices'][0]['delta'] ?? [];
+                    $data = json_decode($jsonData, true);
+                    if (!$data) {
+                        continue;
+                    }
 
-                // Check for reasoning/thinking content
-                if (isset($delta['reasoning']) || isset($delta['reasoning_content'])) {
-                    $thinking = $delta['reasoning'] ?? $delta['reasoning_content'] ?? '';
-                    if ($thinking) {
-                        yield ['type' => 'thinking', 'data' => $thinking];
+                    // Extract model info
+                    if (isset($data['model'])) {
+                        $modelUsed = $data['model'];
+                    }
+
+                    // Extract usage info (usually in final chunk)
+                    if (isset($data['usage'])) {
+                        $usage = $data['usage'];
+                    }
+
+                    // Extract delta content
+                    $delta = $data['choices'][0]['delta'] ?? [];
+
+                    // Check for reasoning/thinking content
+                    if (isset($delta['reasoning']) || isset($delta['reasoning_content'])) {
+                        $thinking = $delta['reasoning'] ?? $delta['reasoning_content'] ?? '';
+                        if ($thinking) {
+                            yield ['type' => 'thinking', 'data' => $thinking];
+                        }
+                    }
+
+                    // Check for regular content
+                    if (isset($delta['content']) && $delta['content'] !== '') {
+                        yield ['type' => 'content', 'data' => $delta['content']];
                     }
                 }
-
-                // Check for regular content
-                if (isset($delta['content']) && $delta['content'] !== '') {
-                    yield ['type' => 'content', 'data' => $delta['content']];
-                }
             }
-        }
 
-        // Yield done event with metadata
-        yield [
-            'type' => 'done',
-            'data' => '',
-            'model' => $modelUsed,
-            'usage' => $usage ?? [
-                'prompt_tokens' => 0,
-                'completion_tokens' => 0,
-                'total_tokens' => 0,
-            ],
-        ];
+            // Yield done event with metadata
+            yield [
+                'type' => 'done',
+                'data' => '',
+                'model' => $modelUsed,
+                'usage' => $usage ?? [
+                    'prompt_tokens' => 0,
+                    'completion_tokens' => 0,
+                    'total_tokens' => 0,
+                ],
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('OpenRouter stream error', ['error' => $e->getMessage()]);
+            yield ['type' => 'error', 'data' => 'Connection error: ' . $e->getMessage()];
+        }
     }
 
     /**
