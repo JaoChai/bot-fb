@@ -12,7 +12,6 @@ import { KnowledgeBasePage } from "@/pages/KnowledgeBasePage"
 import { ConversationsPage } from "@/pages/ConversationsPage"
 import { ConversationDetailPage } from "@/pages/ConversationDetailPage"
 import { SettingsPage } from "@/pages/SettingsPage"
-import { FlowsPage } from "@/pages/FlowsPage"
 import { FlowEditorPage } from "@/pages/FlowEditorPage"
 import { AddConnectionPage } from "@/pages/AddConnectionPage"
 import { EditConnectionPage } from "@/pages/EditConnectionPage"
@@ -93,10 +92,6 @@ export const router = createBrowserRouter([
           {
             path: "settings",
             element: <SettingsPage />,
-          },
-          {
-            path: "flows",
-            element: <FlowsPage />,
           },
         ],
       },
