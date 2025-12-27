@@ -22,10 +22,6 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-// Handle OPTIONS (CORS preflight) for all API routes
-Route::match(['options'], '/{any}', function () {
-    return response('', 204);
-})->where('any', '.*');
 
 // Public routes with auth rate limiting (stricter limits)
 Route::prefix('auth')->middleware('throttle.auth')->group(function () {
@@ -34,7 +30,9 @@ Route::prefix('auth')->middleware('throttle.auth')->group(function () {
 });
 
 // Protected routes (authentication required) with API rate limiting
-Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
+Route::middleware(['throttle.api'])->group(function () {
+    // Allow unauthenticated OPTIONS requests for CORS preflight
+    Route::middleware(['auth:sanctum'])->group(function () {
 
     // Auth routes
     Route::prefix('auth')->group(function () {
@@ -140,7 +138,8 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
             ->middleware('throttle:60,1') // 60 messages per minute per user
             ->name('conversations.agent-message');
     });
-});
+    }); // Close auth:sanctum group
+}); // Close throttle.api group
 
 // Health check endpoint (no rate limiting needed)
 Route::get('/health', function () {
