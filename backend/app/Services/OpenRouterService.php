@@ -205,7 +205,7 @@ class OpenRouterService
     /**
      * Estimate cost based on token usage.
      */
-    public function estimateCost(int $promptTokens, int $completionTokens, string $model = null): float
+    public function estimateCost(int $promptTokens, int $completionTokens, ?string $model = null): float
     {
         // Pricing per 1M tokens (approximate, check OpenRouter for current prices)
         $pricing = [
