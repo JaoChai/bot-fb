@@ -22,6 +22,11 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+// Handle OPTIONS (CORS preflight) for all API routes
+Route::match(['options'], '/{any}', function () {
+    return response('', 204);
+})->where('any', '.*');
+
 // Public routes with auth rate limiting (stricter limits)
 Route::prefix('auth')->middleware('throttle.auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register'])->name('auth.register');
