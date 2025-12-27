@@ -192,6 +192,8 @@ export function useFlowOperations(botId: number | null) {
 
     // Loading states
     isLoading: flows.isLoading,
+    isFetching: flows.isFetching,
+    isSuccess: flows.isSuccess,
     isTemplatesLoading: templates.isLoading,
     isCreating: createMutation.isPending,
     isDeleting: deleteMutation.isPending,
