@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -7,199 +7,128 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { FileText, Loader2 } from 'lucide-react';
 
-interface DocumentUploadProps {
-  onUpload: (file: File) => Promise<void>;
-  isUploading: boolean;
+interface DocumentData {
+  title: string;
+  content: string;
 }
 
-const ACCEPTED_FILE_TYPES = [
-  'application/pdf',
-  'text/plain',
-  'text/markdown',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/msword',
-];
+interface DocumentUploadProps {
+  onSubmit: (data: DocumentData) => Promise<void>;
+  isSubmitting: boolean;
+}
 
-const ACCEPTED_EXTENSIONS = '.pdf,.txt,.md,.docx,.doc';
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_CONTENT_LENGTH = 100000;
 
-export function DocumentUpload({ onUpload, isUploading }: DocumentUploadProps) {
-  const [isDragOver, setIsDragOver] = useState(false);
+export function DocumentUpload({ onSubmit, isSubmitting }: DocumentUploadProps) {
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const validateFile = useCallback((file: File): string | null => {
-    if (!ACCEPTED_FILE_TYPES.includes(file.type) && !file.name.match(/\.(pdf|txt|md|docx|doc)$/i)) {
-      return 'File type not supported. Please upload PDF, TXT, MD, or Word documents.';
-    }
-    if (file.size > MAX_FILE_SIZE) {
-      return 'File size exceeds 10MB limit.';
-    }
-    return null;
-  }, []);
-
-  const handleFile = useCallback(
-    async (file: File) => {
-      setError(null);
-      const validationError = validateFile(file);
-      if (validationError) {
-        setError(validationError);
-        return;
-      }
-
-      try {
-        await onUpload(file);
-      } catch (err) {
-        setError((err as Error).message || 'Upload failed');
-      }
-    },
-    [onUpload, validateFile]
-  );
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsDragOver(true);
-  }, []);
+    setError(null);
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  }, []);
+    if (!title.trim()) {
+      setError('Please provide a title');
+      return;
+    }
 
-  const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragOver(false);
+    if (!content.trim()) {
+      setError('Please provide content');
+      return;
+    }
 
-      const file = e.dataTransfer.files[0];
-      if (file) {
-        await handleFile(file);
-      }
-    },
-    [handleFile]
-  );
+    if (content.length > MAX_CONTENT_LENGTH) {
+      setError(`Content must not exceed ${MAX_CONTENT_LENGTH.toLocaleString()} characters`);
+      return;
+    }
 
-  const handleFileSelect = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-        await handleFile(file);
-      }
-      // Reset input to allow re-uploading same file
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    },
-    [handleFile]
-  );
+    try {
+      await onSubmit({ title: title.trim(), content: content.trim() });
+      // Clear form on success
+      setTitle('');
+      setContent('');
+    } catch (err) {
+      setError((err as Error).message || 'Failed to create document');
+    }
+  };
 
-  const handleButtonClick = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
+  const characterCount = content.length;
+  const characterPercentage = (characterCount / MAX_CONTENT_LENGTH) * 100;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Upload Document</CardTitle>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <FileText className="h-5 w-5" />
+          เพิ่มเอกสาร
+        </CardTitle>
         <CardDescription>
-          Drag and drop a file or click to browse. Supports PDF, TXT, MD, and
-          Word documents up to 10MB.
+          เพิ่มข้อมูลความรู้ใหม่เข้าสู่ฐานความรู้ของ Bot
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          className={cn(
-            'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors',
-            isDragOver
-              ? 'border-primary bg-primary/5'
-              : 'border-muted-foreground/25 hover:border-muted-foreground/50',
-            isUploading && 'pointer-events-none opacity-50'
-          )}
-        >
-          <div className="mb-4 rounded-full bg-muted p-3">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-muted-foreground"
-            >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="title">ชื่อเอกสาร</Label>
+            <Input
+              id="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="เช่น: คำถามที่พบบ่อย, ข้อมูลสินค้า"
+              disabled={isSubmitting}
+              maxLength={255}
+            />
           </div>
 
-          <p className="mb-2 text-sm text-muted-foreground">
-            {isDragOver ? 'Drop file here' : 'Drag and drop your file here'}
-          </p>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="content">เนื้อหา</Label>
+              <span
+                className={`text-xs ${
+                  characterPercentage > 90
+                    ? 'text-destructive'
+                    : characterPercentage > 75
+                    ? 'text-yellow-500'
+                    : 'text-muted-foreground'
+                }`}
+              >
+                {characterCount.toLocaleString()} / {MAX_CONTENT_LENGTH.toLocaleString()}
+              </span>
+            </div>
+            <Textarea
+              id="content"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="วางหรือพิมพ์เนื้อหาที่ต้องการให้ Bot เรียนรู้..."
+              disabled={isSubmitting}
+              rows={10}
+              className="resize-y min-h-[200px]"
+            />
+          </div>
 
-          <p className="mb-4 text-xs text-muted-foreground">or</p>
+          {error && (
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={ACCEPTED_EXTENSIONS}
-            onChange={handleFileSelect}
-            className="hidden"
-            disabled={isUploading}
-          />
-
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleButtonClick}
-            disabled={isUploading}
-          >
-            {isUploading ? (
+          <Button type="submit" disabled={isSubmitting || !title.trim() || !content.trim()}>
+            {isSubmitting ? (
               <>
-                <svg
-                  className="mr-2 h-4 w-4 animate-spin"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                Uploading...
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                กำลังบันทึก...
               </>
             ) : (
-              'Browse files'
+              'บันทึกเอกสาร'
             )}
           </Button>
-
-          <p className="mt-4 text-xs text-muted-foreground">
-            PDF, TXT, MD, DOCX (max 10MB)
-          </p>
-        </div>
-
-        {error && (
-          <div className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-            {error}
-          </div>
-        )}
+        </form>
       </CardContent>
     </Card>
   );

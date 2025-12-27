@@ -1,7 +1,29 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, apiGet, apiDelete, apiPost } from '@/lib/api';
+import { apiGet, apiDelete, apiPost } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import type { ApiResponse, Bot, Document, KnowledgeBase, PaginatedResponse, SearchResponse } from '@/types/api';
+
+// Knowledge base list item type
+export interface KnowledgeBaseListItem {
+  id: number;
+  name: string;
+  description: string | null;
+  bot_id: number;
+  bot_name: string | null;
+  document_count: number;
+  chunk_count: number;
+}
+
+// Fetch all knowledge bases for the user
+export function useAllKnowledgeBases() {
+  return useQuery({
+    queryKey: ['knowledge-bases'],
+    queryFn: async () => {
+      const response = await apiGet<{ data: KnowledgeBaseListItem[] }>('/knowledge-bases');
+      return response.data;
+    },
+  });
+}
 
 // Fetch all bots for the user
 export function useBots() {
@@ -38,27 +60,25 @@ export function useDocuments(botId: number | null) {
   });
 }
 
-// Upload document mutation
-export function useUploadDocument(botId: number | null) {
+// Create document mutation
+export interface CreateDocumentData {
+  title: string;
+  content: string;
+}
+
+export function useCreateDocument(botId: number | null) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async (data: CreateDocumentData) => {
       if (!botId) throw new Error('Bot ID is required');
-      const formData = new FormData();
-      formData.append('file', file);
 
-      const response = await api.post<ApiResponse<Document>>(
+      const response = await apiPost<ApiResponse<Document>>(
         `/bots/${botId}/knowledge-base/documents`,
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        }
+        data
       );
 
-      return response.data;
+      return response;
     },
     onSuccess: () => {
       if (!botId) return;
@@ -112,7 +132,7 @@ export function useKnowledgeBaseOperations(botId: number | null) {
   const knowledgeBase = useKnowledgeBase(botId);
   const documents = useDocuments(botId);
   // Always call hooks unconditionally to respect React rules of hooks
-  const uploadMutation = useUploadDocument(botId);
+  const createMutation = useCreateDocument(botId);
   const deleteMutation = useDeleteDocument(botId);
 
   return {
@@ -122,16 +142,16 @@ export function useKnowledgeBaseOperations(botId: number | null) {
 
     // Loading states
     isLoading: knowledgeBase.isLoading || documents.isLoading,
-    isUploading: uploadMutation.isPending,
+    isSubmitting: createMutation.isPending,
     isDeleting: deleteMutation.isPending,
 
     // Errors
     error: knowledgeBase.error || documents.error,
-    uploadError: uploadMutation.error,
+    createError: createMutation.error,
     deleteError: deleteMutation.error,
 
     // Actions - only expose when botId is valid
-    uploadDocument: botId ? uploadMutation.mutateAsync : undefined,
+    createDocument: botId ? createMutation.mutateAsync : undefined,
     deleteDocument: botId ? deleteMutation.mutateAsync : undefined,
 
     // Refetch

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -37,8 +38,10 @@ class KnowledgeBase extends Model
         return $this->hasMany(Document::class);
     }
 
-    public function flows(): HasMany
+    public function flows(): BelongsToMany
     {
-        return $this->hasMany(Flow::class);
+        return $this->belongsToMany(Flow::class)
+            ->withPivot(['kb_top_k', 'kb_similarity_threshold'])
+            ->withTimestamps();
     }
 }

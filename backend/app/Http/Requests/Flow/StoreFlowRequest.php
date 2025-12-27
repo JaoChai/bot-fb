@@ -24,9 +24,10 @@ class StoreFlowRequest extends FormRequest
             'max_tool_calls' => ['nullable', 'integer', 'min:1', 'max:20'],
             'enabled_tools' => ['nullable', 'array'],
             'enabled_tools.*' => ['string', 'max:100'],
-            'knowledge_base_id' => ['nullable', 'exists:knowledge_bases,id'],
-            'kb_top_k' => ['nullable', 'integer', 'min:1', 'max:20'],
-            'kb_similarity_threshold' => ['nullable', 'numeric', 'between:0,1'],
+            'knowledge_bases' => ['nullable', 'array'],
+            'knowledge_bases.*.id' => ['required', 'exists:knowledge_bases,id'],
+            'knowledge_bases.*.kb_top_k' => ['nullable', 'integer', 'min:1', 'max:20'],
+            'knowledge_bases.*.kb_similarity_threshold' => ['nullable', 'numeric', 'between:0,1'],
             'language' => ['nullable', 'string', 'max:10'],
             'is_default' => ['nullable', 'boolean'],
         ];
@@ -38,7 +39,7 @@ class StoreFlowRequest extends FormRequest
             'name.required' => 'Flow name is required',
             'system_prompt.required' => 'System prompt is required',
             'temperature.between' => 'Temperature must be between 0 and 2',
-            'kb_similarity_threshold.between' => 'Similarity threshold must be between 0 and 1',
+            'knowledge_bases.*.kb_similarity_threshold.between' => 'Similarity threshold must be between 0 and 1',
         ];
     }
 }

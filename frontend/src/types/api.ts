@@ -181,6 +181,13 @@ export interface Document {
 }
 
 // Flow Types
+export interface FlowKnowledgeBase {
+  id: number;
+  name: string;
+  kb_top_k: number;
+  kb_similarity_threshold: number;
+}
+
 export interface Flow {
   id: number;
   bot_id: number;
@@ -193,10 +200,7 @@ export interface Flow {
   agentic_mode: boolean;
   max_tool_calls: number;
   enabled_tools: string[] | null;
-  knowledge_base_id: number | null;
-  knowledge_base?: KnowledgeBase;
-  kb_top_k: number;
-  kb_similarity_threshold: number;
+  knowledge_bases?: FlowKnowledgeBase[];
   language: 'th' | 'en' | 'zh' | 'ja' | 'ko';
   is_default: boolean;
   created_at: string;
@@ -212,6 +216,12 @@ export interface FlowTemplate {
   language: string;
 }
 
+export interface CreateFlowKnowledgeBaseData {
+  id: number;
+  kb_top_k?: number;
+  kb_similarity_threshold?: number;
+}
+
 export interface CreateFlowData {
   name: string;
   description?: string;
@@ -222,9 +232,7 @@ export interface CreateFlowData {
   agentic_mode?: boolean;
   max_tool_calls?: number;
   enabled_tools?: string[];
-  knowledge_base_id?: number | null;
-  kb_top_k?: number;
-  kb_similarity_threshold?: number;
+  knowledge_bases?: CreateFlowKnowledgeBaseData[];
   language?: string;
   is_default?: boolean;
 }

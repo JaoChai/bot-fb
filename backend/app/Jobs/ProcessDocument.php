@@ -40,10 +40,17 @@ class ProcessDocument implements ShouldQueue
         try {
             $this->document->update(['status' => 'processing']);
 
-            $text = $parser->parse(
-                $this->document->storage_path,
-                $this->document->mime_type
-            );
+            // Use content directly for text-only documents, parse file for legacy
+            if (!empty($this->document->content)) {
+                $text = $this->document->content;
+            } elseif ($this->document->storage_path) {
+                $text = $parser->parse(
+                    $this->document->storage_path,
+                    $this->document->mime_type
+                );
+            } else {
+                throw new \RuntimeException('Document has no content or file');
+            }
 
             if (empty($text)) {
                 throw new \RuntimeException('Document contains no extractable text');

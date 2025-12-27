@@ -38,7 +38,7 @@ class DocumentController extends Controller
     }
 
     /**
-     * Upload a document to a bot's knowledge base.
+     * Create a text document in a bot's knowledge base.
      */
     public function store(StoreDocumentRequest $request, Bot $bot): JsonResponse
     {
@@ -54,24 +54,12 @@ class DocumentController extends Controller
             ]);
         }
 
-        $file = $request->file('file');
-        $originalName = $file->getClientOriginalName();
-        $filename = Str::uuid() . '.' . $file->getClientOriginalExtension();
-
-        // Determine storage disk (R2 in production, local in dev)
-        $disk = $this->getStorageDisk();
-        $path = "knowledge-bases/{$kb->id}/{$filename}";
-
-        // Store the file
-        Storage::disk($disk)->put($path, file_get_contents($file));
-
-        // Create document record
+        // Create document record with text content
         $document = $kb->documents()->create([
-            'filename' => $filename,
-            'original_filename' => $originalName,
-            'mime_type' => $file->getMimeType(),
-            'file_size' => $file->getSize(),
-            'storage_path' => $path,
+            'original_filename' => $request->input('title'),
+            'content' => $request->input('content'),
+            'mime_type' => 'text/plain',
+            'file_size' => strlen($request->input('content')),
             'status' => 'pending',
         ]);
 
@@ -82,7 +70,7 @@ class DocumentController extends Controller
         ProcessDocument::dispatch($document);
 
         return response()->json([
-            'message' => 'Document uploaded successfully. Processing will begin shortly.',
+            'message' => 'Document created successfully. Processing will begin shortly.',
             'data' => new DocumentResource($document),
         ], 201);
     }
@@ -157,10 +145,12 @@ class DocumentController extends Controller
             ], 404);
         }
 
-        // Delete file from storage
-        $disk = $this->getStorageDisk();
-        if (Storage::disk($disk)->exists($document->storage_path)) {
-            Storage::disk($disk)->delete($document->storage_path);
+        // Delete file from storage if exists (for legacy file-based documents)
+        if ($document->storage_path) {
+            $disk = $this->getStorageDisk();
+            if (Storage::disk($disk)->exists($document->storage_path)) {
+                Storage::disk($disk)->delete($document->storage_path);
+            }
         }
 
         // Update counts

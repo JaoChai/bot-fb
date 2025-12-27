@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/collapsible';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations, useTestFlow } from '@/hooks/useFlows';
-import { useKnowledgeBase } from '@/hooks/useKnowledgeBase';
+import { useAllKnowledgeBases } from '@/hooks/useKnowledgeBase';
 import { useToast } from '@/hooks/use-toast';
 import {
   Loader2,
@@ -37,7 +37,7 @@ import {
   Trash2,
   Code,
 } from 'lucide-react';
-import type { CreateFlowData } from '@/types/api';
+import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
 
 // Helper to generate unique IDs
 function generateId() {
@@ -71,9 +71,7 @@ const INITIAL_FORM_DATA: CreateFlowData = {
   agentic_mode: false,
   max_tool_calls: 10,
   enabled_tools: [],
-  knowledge_base_id: null,
-  kb_top_k: 5,
-  kb_similarity_threshold: 0.7,
+  knowledge_bases: [],
   language: 'th',
   is_default: false,
 };
@@ -98,13 +96,13 @@ export function FlowEditorPage() {
   // Current flow being edited
   const parsedFlowId = flowId && flowId !== 'new' ? parseInt(flowId, 10) : null;
   const selectedFlowId = parsedFlowId && !isNaN(parsedFlowId) ? parsedFlowId : null;
-  const isCreatingNew = flowId === 'new';
+  const isCreatingNew = flowId === 'new' || location.pathname === '/flows/new';
 
   // Fetch existing flow if editing
   const { data: existingFlow, isLoading: isLoadingFlow } = useFlow(botId, selectedFlowId);
 
-  // Fetch knowledge base
-  const { data: knowledgeBase } = useKnowledgeBase(botId);
+  // Fetch all knowledge bases for multi-select
+  const { data: allKnowledgeBases = [], isLoading: isLoadingKBs } = useAllKnowledgeBases();
 
   // Mutations
   const createMutation = useCreateFlow(botId);
@@ -154,6 +152,13 @@ export function FlowEditorPage() {
   // Load existing flow data
   useEffect(() => {
     if (existingFlow) {
+      // Map knowledge_bases from existing flow
+      const kbData: CreateFlowKnowledgeBaseData[] = existingFlow.knowledge_bases?.map(kb => ({
+        id: kb.id,
+        kb_top_k: kb.kb_top_k,
+        kb_similarity_threshold: kb.kb_similarity_threshold,
+      })) ?? [];
+
       setFormData({
         name: existingFlow.name,
         description: existingFlow.description || '',
@@ -164,9 +169,7 @@ export function FlowEditorPage() {
         agentic_mode: existingFlow.agentic_mode,
         max_tool_calls: existingFlow.max_tool_calls,
         enabled_tools: existingFlow.enabled_tools || [],
-        knowledge_base_id: existingFlow.knowledge_base_id,
-        kb_top_k: existingFlow.kb_top_k,
-        kb_similarity_threshold: existingFlow.kb_similarity_threshold,
+        knowledge_bases: kbData,
         language: existingFlow.language,
         is_default: existingFlow.is_default,
       });
@@ -443,34 +446,35 @@ export function FlowEditorPage() {
             <p className="text-sm text-muted-foreground text-center py-4">ยังไม่มี Flow</p>
           ) : (
             <div className="space-y-1 px-2">
-              {flows.map((flow) => (
+              {[...flows]
+                .sort((a, b) => {
+                  // Base flow always first
+                  if (a.is_default && !b.is_default) return -1;
+                  if (!a.is_default && b.is_default) return 1;
+                  return 0;
+                })
+                .map((flow) => (
                 <button
                   key={flow.id}
                   onClick={() => navigate(`/flows/${flow.id}/edit?botId=${botId}`)}
-                  className="w-full text-left px-3 py-2 rounded-lg text-sm transition-colors"
-                  style={selectedFlowId === flow.id ? {
-                    backgroundColor: 'color-mix(in oklch, var(--warning) 10%, transparent)',
-                    color: 'var(--warning)',
-                    fontWeight: '500'
-                  } : {}}
-                  onMouseEnter={(e) => {
-                    if (selectedFlowId !== flow.id) {
-                      e.currentTarget.style.backgroundColor = 'var(--muted)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (selectedFlowId !== flow.id) {
-                      e.currentTarget.style.backgroundColor = '';
-                    }
-                  }}
+                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all duration-200 cursor-pointer
+                    ${flow.is_default ? 'border-l-4 border-l-orange-500' : 'border-l-4 border-l-transparent'}
+                    ${selectedFlowId === flow.id
+                      ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium'
+                      : 'hover:bg-muted'
+                    }`}
                 >
                   <div className="flex items-center gap-2">
-                    {flow.is_default && <span>📌</span>}
-                    <span className="truncate">{flow.name}</span>
+                    {flow.is_default && (
+                      <svg className="h-4 w-4 text-orange-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
+                      </svg>
+                    )}
+                    <span className="truncate font-medium">{flow.name}</span>
                   </div>
                   {flow.is_default && (
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-xs" style={{ color: 'var(--warning)' }}>★ Flow เริ่มต้น</span>
+                    <div className="mt-1 ml-6">
+                      <span className="text-xs text-orange-500 font-medium">Base Flow</span>
                     </div>
                   )}
                 </button>
@@ -628,52 +632,122 @@ export function FlowEditorPage() {
                   </div>
                 </div>
 
-                {/* Knowledge Base */}
+                {/* Knowledge Bases (Multi-Select) */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <BookOpen className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-medium">ฐานความรู้ที่เชื่อมต่อ</span>
+                    <Badge variant="outline" className="text-xs">
+                      {formData.knowledge_bases?.length || 0} เลือก
+                    </Badge>
                   </div>
-                  {knowledgeBase ? (
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className="gap-2">
-                        {knowledgeBase.name}
-                        <button
-                          onClick={() => handleChange('knowledge_base_id', null)}
-                          className="hover:text-destructive"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    </div>
-                  ) : (
-                    <Input placeholder="ค้นหาฐานความรู้..." className="max-w-md" />
-                  )}
 
-                  {formData.knowledge_base_id && (
-                    <div className="grid grid-cols-2 gap-4 mt-4">
-                      <div>
-                        <Label className="text-xs">Top K Results: {formData.kb_top_k}</Label>
-                        <Slider
-                          value={[formData.kb_top_k || 5]}
-                          onValueChange={([v]) => handleChange('kb_top_k', v)}
-                          min={1}
-                          max={20}
-                          step={1}
-                          className="mt-2"
-                        />
+                  {/* KB Selection Dropdown */}
+                  <div className="border rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
+                    {isLoadingKBs ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                       </div>
-                      <div>
-                        <Label className="text-xs">Similarity Threshold: {formData.kb_similarity_threshold}</Label>
-                        <Slider
-                          value={[formData.kb_similarity_threshold || 0.7]}
-                          onValueChange={([v]) => handleChange('kb_similarity_threshold', v)}
-                          min={0.1}
-                          max={1}
-                          step={0.05}
-                          className="mt-2"
-                        />
-                      </div>
+                    ) : allKnowledgeBases.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        ยังไม่มีฐานความรู้ กรุณาสร้างฐานความรู้ก่อน
+                      </p>
+                    ) : (
+                      allKnowledgeBases.map((kb) => {
+                        const isSelected = formData.knowledge_bases?.some(k => k.id === kb.id);
+                        return (
+                          <label
+                            key={kb.id}
+                            className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                              isSelected ? 'bg-warning/10 border border-warning/30' : 'hover:bg-muted'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                const currentKBs = formData.knowledge_bases || [];
+                                if (e.target.checked) {
+                                  // Add KB with default settings
+                                  handleChange('knowledge_bases', [
+                                    ...currentKBs,
+                                    { id: kb.id, kb_top_k: 5, kb_similarity_threshold: 0.7 }
+                                  ]);
+                                } else {
+                                  // Remove KB
+                                  handleChange('knowledge_bases', currentKBs.filter(k => k.id !== kb.id));
+                                }
+                              }}
+                              className="rounded border-border"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm truncate">{kb.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {kb.bot_name} • {kb.document_count} เอกสาร • {kb.chunk_count} chunks
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Per-KB Settings */}
+                  {formData.knowledge_bases && formData.knowledge_bases.length > 0 && (
+                    <div className="space-y-4 mt-4">
+                      <Label className="text-xs text-muted-foreground">ตั้งค่าแต่ละฐานความรู้</Label>
+                      {formData.knowledge_bases.map((kbConfig, index) => {
+                        const kbInfo = allKnowledgeBases.find(k => k.id === kbConfig.id);
+                        return (
+                          <div key={kbConfig.id} className="border rounded-lg p-3 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">{kbInfo?.name || `KB #${kbConfig.id}`}</span>
+                              <button
+                                onClick={() => {
+                                  const newKBs = [...(formData.knowledge_bases || [])];
+                                  newKBs.splice(index, 1);
+                                  handleChange('knowledge_bases', newKBs);
+                                }}
+                                className="text-muted-foreground hover:text-destructive"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <Label className="text-xs">Top K: {kbConfig.kb_top_k || 5}</Label>
+                                <Slider
+                                  value={[kbConfig.kb_top_k || 5]}
+                                  onValueChange={([v]) => {
+                                    const newKBs = [...(formData.knowledge_bases || [])];
+                                    newKBs[index] = { ...newKBs[index], kb_top_k: v };
+                                    handleChange('knowledge_bases', newKBs);
+                                  }}
+                                  min={1}
+                                  max={20}
+                                  step={1}
+                                  className="mt-2"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Threshold: {kbConfig.kb_similarity_threshold || 0.7}</Label>
+                                <Slider
+                                  value={[kbConfig.kb_similarity_threshold || 0.7]}
+                                  onValueChange={([v]) => {
+                                    const newKBs = [...(formData.knowledge_bases || [])];
+                                    newKBs[index] = { ...newKBs[index], kb_similarity_threshold: v };
+                                    handleChange('knowledge_bases', newKBs);
+                                  }}
+                                  min={0.1}
+                                  max={1}
+                                  step={0.05}
+                                  className="mt-2"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1049,6 +1123,13 @@ export function FlowEditorPage() {
               size="sm"
               onClick={() => {
                 if (existingFlow) {
+                  // Map knowledge_bases from existing flow
+                  const kbData: CreateFlowKnowledgeBaseData[] = existingFlow.knowledge_bases?.map(kb => ({
+                    id: kb.id,
+                    kb_top_k: kb.kb_top_k,
+                    kb_similarity_threshold: kb.kb_similarity_threshold,
+                  })) ?? [];
+
                   setFormData({
                     name: existingFlow.name,
                     description: existingFlow.description || '',
@@ -1059,9 +1140,7 @@ export function FlowEditorPage() {
                     agentic_mode: existingFlow.agentic_mode,
                     max_tool_calls: existingFlow.max_tool_calls,
                     enabled_tools: existingFlow.enabled_tools || [],
-                    knowledge_base_id: existingFlow.knowledge_base_id,
-                    kb_top_k: existingFlow.kb_top_k,
-                    kb_similarity_threshold: existingFlow.kb_similarity_threshold,
+                    knowledge_bases: kbData,
                     language: existingFlow.language,
                     is_default: existingFlow.is_default,
                   });

@@ -39,10 +39,47 @@ class BotController extends Controller
             'status' => 'inactive',
         ]);
 
+        // Auto-create Base Flow for the new bot
+        $baseFlow = $bot->flows()->create([
+            'name' => 'Base Flow',
+            'description' => 'Flow เริ่มต้นของ Bot - ใช้ตอบกลับเมื่อไม่มี Flow อื่นที่เหมาะสม',
+            'system_prompt' => $this->getDefaultBaseFlowPrompt($bot),
+            'model' => 'claude-3-5-sonnet-20241022',
+            'temperature' => 0.7,
+            'max_tokens' => 2048,
+            'agentic_mode' => false,
+            'max_tool_calls' => 10,
+            'enabled_tools' => [],
+            'language' => 'th',
+            'is_default' => true,
+        ]);
+
+        $bot->update(['default_flow_id' => $baseFlow->id]);
+
         return response()->json([
             'message' => 'Bot created successfully',
-            'data' => new BotResource($bot),
+            'data' => new BotResource($bot->load('defaultFlow')),
         ], 201);
+    }
+
+    /**
+     * Get default system prompt for Base Flow.
+     */
+    private function getDefaultBaseFlowPrompt(Bot $bot): string
+    {
+        return <<<PROMPT
+คุณคือผู้ช่วย AI ของ {$bot->name} ที่เป็นมิตรและช่วยเหลือลูกค้าอย่างมืออาชีพ
+
+## บทบาทของคุณ:
+- ตอบคำถามอย่างชัดเจน กระชับ และเป็นมิตร
+- ให้ข้อมูลที่ถูกต้องและเป็นประโยชน์
+- หากไม่ทราบคำตอบ ให้ยอมรับตรงๆ และแนะนำวิธีหาข้อมูลเพิ่มเติม
+
+## แนวทางการสื่อสาร:
+- ใช้ภาษาที่สุภาพและเข้าใจง่าย
+- ตอบในภาษาเดียวกับที่ลูกค้าใช้
+- ถามคำถามเพื่อทำความเข้าใจหากข้อมูลไม่ชัดเจน
+PROMPT;
     }
 
     /**

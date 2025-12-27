@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\Flow;
 use App\Models\Message;
 use Illuminate\Support\Facades\Log;
 
@@ -522,6 +523,75 @@ Respond in the same language as the user's message.
 If you don't know something, be honest about it.
 Keep responses concise but informative.
 PROMPT;
+    }
+
+    /**
+     * Get context from a Flow's Knowledge Bases (Many-to-Many).
+     * Searches all attached KBs and merges results by similarity score.
+     */
+    public function getFlowKnowledgeBaseContext(
+        Flow $flow,
+        string $query,
+        array &$metadata
+    ): string {
+        $knowledgeBases = $flow->knowledgeBases;
+
+        if ($knowledgeBases->isEmpty()) {
+            return '';
+        }
+
+        try {
+            // Build KB configs from pivot data
+            $kbConfigs = $knowledgeBases->map(fn ($kb) => [
+                'id' => $kb->id,
+                'name' => $kb->name,
+                'kb_top_k' => $kb->pivot->kb_top_k ?? 5,
+                'kb_similarity_threshold' => $kb->pivot->kb_similarity_threshold ?? 0.7,
+            ])->toArray();
+
+            // Search all KBs and merge results
+            $results = $this->searchService->searchMultiple(
+                kbConfigs: $kbConfigs,
+                query: $query,
+                totalLimit: config('rag.max_results', 5)
+            );
+
+            if ($results->isEmpty()) {
+                Log::debug('No relevant results from Flow KBs', [
+                    'flow_id' => $flow->id,
+                    'kb_count' => count($kbConfigs),
+                    'query' => substr($query, 0, 100),
+                ]);
+                return '';
+            }
+
+            // Update metadata
+            $metadata['enabled'] = true;
+            $metadata['results_count'] = $results->count();
+            $metadata['kb_count'] = $knowledgeBases->count();
+            $metadata['chunks_used'] = $results->map(fn ($r) => [
+                'document' => $r['document_name'],
+                'knowledge_base_id' => $r['knowledge_base_id'],
+                'similarity' => $r['similarity'],
+            ])->toArray();
+
+            // Format context for prompt
+            return $this->formatKnowledgeBaseContext($results);
+        } catch (\Exception $e) {
+            Log::error('Flow KB search failed', [
+                'flow_id' => $flow->id,
+                'error' => $e->getMessage(),
+            ]);
+            return '';
+        }
+    }
+
+    /**
+     * Check if a Flow has Knowledge Bases attached.
+     */
+    public function flowHasKnowledgeBases(Flow $flow): bool
+    {
+        return $flow->knowledgeBases()->exists();
     }
 
     /**

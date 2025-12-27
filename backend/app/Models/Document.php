@@ -18,6 +18,7 @@ class Document extends Model
         'mime_type',
         'file_size',
         'storage_path',
+        'content',
         'status',
         'error_message',
         'chunk_count',

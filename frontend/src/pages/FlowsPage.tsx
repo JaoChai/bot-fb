@@ -286,17 +286,39 @@ export function FlowsPage() {
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {flows.map((flow) => (
-            <Card key={flow.id} className="flex flex-col">
+          {[...flows]
+            .sort((a, b) => {
+              // Base flow (is_default) always first
+              if (a.is_default && !b.is_default) return -1;
+              if (!a.is_default && b.is_default) return 1;
+              return 0;
+            })
+            .map((flow) => (
+            <Card
+              key={flow.id}
+              className={`flex flex-col transition-all duration-200 hover:shadow-md cursor-pointer ${
+                flow.is_default
+                  ? 'border-l-4 border-l-orange-500 ring-1 ring-orange-500/20 bg-orange-50/30 dark:bg-orange-950/10'
+                  : ''
+              }`}
+            >
+              {/* Orange gradient header for Base Flow */}
+              {flow.is_default && (
+                <div className="h-1 bg-gradient-to-r from-orange-500 to-orange-400" />
+              )}
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1 flex-1 min-w-0">
                     <div className="flex items-center gap-2">
+                      {flow.is_default && (
+                        <svg className="h-4 w-4 text-orange-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
+                        </svg>
+                      )}
                       <CardTitle className="text-lg truncate">{flow.name}</CardTitle>
                       {flow.is_default && (
-                        <Badge variant="secondary" className="shrink-0">
-                          <Star className="h-3 w-3 mr-1 fill-yellow-500 text-yellow-500" />
-                          Default
+                        <Badge className="shrink-0 bg-orange-500 hover:bg-orange-600 text-white">
+                          Base Flow
                         </Badge>
                       )}
                     </div>
@@ -325,23 +347,25 @@ export function FlowsPage() {
                         Duplicate
                       </DropdownMenuItem>
                       {!flow.is_default && (
-                        <DropdownMenuItem
-                          onClick={() => handleSetDefault(flow)}
-                          disabled={isSettingDefault}
-                        >
-                          <Star className="h-4 w-4 mr-2" />
-                          Set as Default
-                        </DropdownMenuItem>
+                        <>
+                          <DropdownMenuItem
+                            onClick={() => handleSetDefault(flow)}
+                            disabled={isSettingDefault}
+                          >
+                            <Star className="h-4 w-4 mr-2" />
+                            Set as Default
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteClick(flow)}
+                            className="text-destructive focus:text-destructive"
+                            disabled={isDeleting}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </>
                       )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => handleDeleteClick(flow)}
-                        className="text-destructive focus:text-destructive"
-                        disabled={isDeleting}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -353,10 +377,14 @@ export function FlowsPage() {
                     <Thermometer className="h-4 w-4" />
                     <span>Temp: {flow.temperature}</span>
                   </div>
-                  {flow.knowledge_base && (
+                  {flow.knowledge_bases && flow.knowledge_bases.length > 0 && (
                     <div className="flex items-center gap-1">
                       <BookOpen className="h-4 w-4" />
-                      <span className="truncate max-w-[120px]">{flow.knowledge_base.name}</span>
+                      <span className="truncate max-w-[120px]">
+                        {flow.knowledge_bases.length === 1
+                          ? flow.knowledge_bases[0].name
+                          : `${flow.knowledge_bases.length} KBs`}
+                      </span>
                     </div>
                   )}
                 </div>
