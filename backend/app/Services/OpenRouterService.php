@@ -3,8 +3,6 @@
 namespace App\Services;
 
 use App\Exceptions\OpenRouterException;
-use GuzzleHttp\Client;
-use GuzzleHttp\Exception\RequestException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -115,7 +113,7 @@ class OpenRouterService
 
     /**
      * Stream a chat completion request to OpenRouter using SSE.
-     * Uses Guzzle HTTP client for true streaming support.
+     * Uses Laravel HTTP client and processes response chunks.
      *
      * @param array $messages Chat messages
      * @param string|null $model Model ID
@@ -140,73 +138,68 @@ class OpenRouterService
         $usage = null;
 
         try {
-            $client = new Client(['timeout' => $this->timeout]);
-
-            $response = $client->post($this->baseUrl . '/chat/completions', [
-                'headers' => [
-                    'Authorization' => 'Bearer ' . $apiKey,
-                    'Content-Type' => 'application/json',
-                    'HTTP-Referer' => $this->siteUrl,
-                    'X-Title' => $this->siteName,
-                ],
-                'json' => [
-                    'model' => $model,
-                    'messages' => $messages,
-                    'temperature' => $temperature,
-                    'max_tokens' => $maxTokens,
-                    'stream' => true,
-                ],
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $apiKey,
+                'HTTP-Referer' => $this->siteUrl,
+                'X-Title' => $this->siteName,
+            ])
+            ->timeout($this->timeout)
+            ->post($this->baseUrl . '/chat/completions', [
+                'model' => $model,
+                'messages' => $messages,
+                'temperature' => $temperature,
+                'max_tokens' => $maxTokens,
                 'stream' => true,
             ]);
 
-            $body = $response->getBody();
-            $buffer = '';
+            if ($response->failed()) {
+                $errorData = $response->json();
+                $errorMsg = $errorData['error']['message'] ?? "HTTP error: {$response->status()}";
+                yield ['type' => 'error', 'data' => $errorMsg];
+                return;
+            }
 
-            while (!$body->eof()) {
-                $chunk = $body->read(1024);
-                $buffer .= $chunk;
+            $body = $response->body();
+            $lines = explode("\n", $body);
 
-                // Process complete lines
-                while (($pos = strpos($buffer, "\n")) !== false) {
-                    $line = trim(substr($buffer, 0, $pos));
-                    $buffer = substr($buffer, $pos + 1);
+            foreach ($lines as $line) {
+                $line = trim($line);
 
-                    if (empty($line) || str_starts_with($line, ':')) {
+                if (empty($line) || str_starts_with($line, ':')) {
+                    continue;
+                }
+
+                if (str_starts_with($line, 'data: ')) {
+                    $jsonData = substr($line, 6);
+
+                    if ($jsonData === '[DONE]') {
+                        break;
+                    }
+
+                    $data = json_decode($jsonData, true);
+                    if (!$data) {
                         continue;
                     }
 
-                    if (str_starts_with($line, 'data: ')) {
-                        $jsonData = substr($line, 6);
+                    if (isset($data['model'])) {
+                        $modelUsed = $data['model'];
+                    }
 
-                        if ($jsonData === '[DONE]') {
-                            break 2;
+                    if (isset($data['usage'])) {
+                        $usage = $data['usage'];
+                    }
+
+                    $delta = $data['choices'][0]['delta'] ?? [];
+
+                    if (isset($delta['reasoning']) || isset($delta['reasoning_content'])) {
+                        $thinking = $delta['reasoning'] ?? $delta['reasoning_content'] ?? '';
+                        if ($thinking) {
+                            yield ['type' => 'thinking', 'data' => $thinking];
                         }
+                    }
 
-                        $data = json_decode($jsonData, true);
-                        if (!$data) {
-                            continue;
-                        }
-
-                        if (isset($data['model'])) {
-                            $modelUsed = $data['model'];
-                        }
-
-                        if (isset($data['usage'])) {
-                            $usage = $data['usage'];
-                        }
-
-                        $delta = $data['choices'][0]['delta'] ?? [];
-
-                        if (isset($delta['reasoning']) || isset($delta['reasoning_content'])) {
-                            $thinking = $delta['reasoning'] ?? $delta['reasoning_content'] ?? '';
-                            if ($thinking) {
-                                yield ['type' => 'thinking', 'data' => $thinking];
-                            }
-                        }
-
-                        if (isset($delta['content']) && $delta['content'] !== '') {
-                            yield ['type' => 'content', 'data' => $delta['content']];
-                        }
+                    if (isset($delta['content']) && $delta['content'] !== '') {
+                        yield ['type' => 'content', 'data' => $delta['content']];
                     }
                 }
             }
@@ -222,15 +215,6 @@ class OpenRouterService
                 ],
             ];
 
-        } catch (RequestException $e) {
-            $errorMsg = 'Connection error';
-            if ($e->hasResponse()) {
-                $body = $e->getResponse()->getBody()->getContents();
-                $errorData = json_decode($body, true);
-                $errorMsg = $errorData['error']['message'] ?? "HTTP error: " . $e->getResponse()->getStatusCode();
-            }
-            Log::error('OpenRouter stream error', ['error' => $errorMsg]);
-            yield ['type' => 'error', 'data' => $errorMsg];
         } catch (\Exception $e) {
             Log::error('OpenRouter stream error', ['error' => $e->getMessage()]);
             yield ['type' => 'error', 'data' => 'Connection error: ' . $e->getMessage()];
