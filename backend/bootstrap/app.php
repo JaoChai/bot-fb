@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Middleware\AllowOptionsRequests;
 use App\Http\Middleware\SanitizeInput;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TrustProxies;
@@ -22,7 +21,6 @@ return Application::configure(basePath: dirname(__DIR__))
         // Global middleware applied to all requests
         $middleware->prepend([
             TrustProxies::class,
-            AllowOptionsRequests::class, // Must run before auth middleware to allow CORS preflight
             HandleCors::class,
             SecurityHeaders::class,
         ]);
