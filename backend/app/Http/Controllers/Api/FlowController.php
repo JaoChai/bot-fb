@@ -14,7 +14,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Log;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class FlowController extends Controller
 {
@@ -331,112 +330,6 @@ class FlowController extends Controller
                 'error_code' => 'UNEXPECTED_ERROR',
             ], 500);
         }
-    }
-
-    /**
-     * Test a flow with streaming response using SSE.
-     * Displays thinking process and streams content in real-time.
-     */
-    public function testStream(Request $request, Bot $bot, Flow $flow, OpenRouterService $openRouter): StreamedResponse
-    {
-        $this->authorize('view', $bot);
-        $this->ensureFlowBelongsToBot($flow, $bot);
-
-        $request->validate([
-            'message' => 'required|string|max:2000',
-            'conversation_history' => 'array',
-            'conversation_history.*.role' => 'required|string|in:user,assistant',
-            'conversation_history.*.content' => 'required|string',
-        ]);
-
-        $userMessage = $request->input('message');
-        $conversationHistory = $request->input('conversation_history', []);
-
-        // Get API key from Bot connection
-        $apiKey = $bot->openrouter_api_key;
-
-        if (!$apiKey && !config('services.openrouter.api_key')) {
-            return $this->streamError('ไม่พบ OpenRouter API Key กรุณาตั้งค่าใน การเชื่อมต่อ');
-        }
-
-        // Build messages array
-        $messages = [];
-
-        // Add system prompt
-        $systemPrompt = $flow->system_prompt ?: $this->getDefaultSystemPrompt($bot);
-        $messages[] = [
-            'role' => 'system',
-            'content' => $systemPrompt,
-        ];
-
-        // Add conversation history
-        foreach ($conversationHistory as $msg) {
-            $messages[] = [
-                'role' => $msg['role'],
-                'content' => $msg['content'],
-            ];
-        }
-
-        // Add current user message
-        $messages[] = [
-            'role' => 'user',
-            'content' => $userMessage,
-        ];
-
-        return new StreamedResponse(function () use ($openRouter, $messages, $flow, $bot, $apiKey) {
-            // Disable output buffering
-            if (ob_get_level()) {
-                ob_end_clean();
-            }
-
-            try {
-                $generator = $openRouter->chatStream(
-                    messages: $messages,
-                    model: $flow->model,
-                    temperature: $flow->temperature ? (float) $flow->temperature : 0.7,
-                    maxTokens: $flow->max_tokens ?? 2048,
-                    apiKeyOverride: $apiKey
-                );
-
-                foreach ($generator as $chunk) {
-                    echo "data: " . json_encode($chunk) . "\n\n";
-                    flush();
-                }
-            } catch (\Exception $e) {
-                Log::error('Flow stream error', [
-                    'flow_id' => $flow->id,
-                    'error' => $e->getMessage(),
-                ]);
-
-                echo "data: " . json_encode([
-                    'type' => 'error',
-                    'data' => 'เกิดข้อผิดพลาดในการเชื่อมต่อ AI',
-                ]) . "\n\n";
-                flush();
-            }
-        }, 200, [
-            'Content-Type' => 'text/event-stream',
-            'Cache-Control' => 'no-cache',
-            'Connection' => 'keep-alive',
-            'X-Accel-Buffering' => 'no',
-        ]);
-    }
-
-    /**
-     * Helper to create an error stream response.
-     */
-    protected function streamError(string $message): StreamedResponse
-    {
-        return new StreamedResponse(function () use ($message) {
-            echo "data: " . json_encode([
-                'type' => 'error',
-                'data' => $message,
-            ]) . "\n\n";
-            flush();
-        }, 200, [
-            'Content-Type' => 'text/event-stream',
-            'Cache-Control' => 'no-cache',
-        ]);
     }
 
     /**

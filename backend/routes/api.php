@@ -86,11 +86,6 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/{flow}/test', [FlowController::class, 'test'])
             ->middleware('throttle.bot-test')
             ->name('flows.test');
-
-        // Flow test with streaming (SSE) for extended thinking display
-        Route::post('/{flow}/test-stream', [FlowController::class, 'testStream'])
-            ->middleware('throttle.bot-test')
-            ->name('flows.test-stream');
     });
 
     // Flow templates (not nested)
