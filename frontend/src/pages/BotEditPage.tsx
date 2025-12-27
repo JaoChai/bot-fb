@@ -79,7 +79,6 @@ export function BotEditPage() {
   const [showChannelSecret, setShowChannelSecret] = useState(false);
   const [showAccessToken, setShowAccessToken] = useState(false);
 
-  // Mock existing API key indicator (dabby.io style)
   const hasExistingApiKey = true; // TODO: Get from backend
   const maskedApiKey = '**** **** **** d08d'; // TODO: Get from backend
 
@@ -189,7 +188,6 @@ export function BotEditPage() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
-      {/* Header - dabby.io style */}
       <div className="space-y-4">
         {/* Back link */}
         <button
@@ -206,7 +204,6 @@ export function BotEditPage() {
 
       <Card className="bg-white dark:bg-card">
         <CardContent className="p-6 space-y-8">
-          {/* Enable/Disable Toggle - dabby.io style at top */}
           <div className="flex items-center gap-3">
             <Switch
               checked={formState.status === 'active'}
@@ -270,7 +267,6 @@ export function BotEditPage() {
                   {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
-              {/* dabby.io style - Show existing API key indicator */}
               {hasExistingApiKey && (
                 <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--success)' }}>
                   <CheckCircle2 className="h-4 w-4" />
@@ -576,7 +572,6 @@ export function BotEditPage() {
         </CardContent>
       </Card>
 
-      {/* Save Button - dabby.io style orange */}
       <Button
         variant="orange"
         onClick={handleSave}
@@ -592,7 +587,6 @@ export function BotEditPage() {
         อัพเดทข้อมูล
       </Button>
 
-      {/* Delete Button - dabby.io style */}
       <Button
         variant="destructive"
         onClick={handleDelete}

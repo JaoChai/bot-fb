@@ -140,7 +140,7 @@ export function BotSettingsPage() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 เช็คสลิป
-                <Badge variant="outline" className="bg-amber-100 text-amber-700">Coming soon</Badge>
+                <Badge variant="outline" className="bg-slate-100 text-slate-700">Coming soon</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -196,7 +196,7 @@ export function BotSettingsPage() {
               </div>
 
               {formData.reply_when_called_only && (
-                <p className="text-sm text-amber-600 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg">
+                <p className="text-sm text-slate-600 bg-slate-50 dark:bg-slate-900/30 p-3 rounded-lg">
                   ℹ️ ถ้า HITL เปิดอยู่ ตัวเลือกนี้จะถูกปิด
                 </p>
               )}
@@ -378,7 +378,7 @@ export function BotSettingsPage() {
             <Button
               onClick={handleSave}
               disabled={isSaving}
-              className="bg-amber-500 hover:bg-amber-600 flex-1"
+              className="bg-slate-500 hover:bg-amber-600 flex-1"
             >
               {isSaving ? (
                 <>

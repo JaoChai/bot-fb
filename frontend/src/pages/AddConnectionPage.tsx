@@ -91,7 +91,7 @@ export function AddConnectionPage() {
           {platforms.map((platform) => (
             <Card
               key={platform.id}
-              className="cursor-pointer transition-all duration-200 hover:border-amber-500 hover:shadow-lg"
+              className="cursor-pointer transition-all duration-200 hover:border-slate-600 hover:shadow-lg"
               onClick={() => handleSelectPlatform(platform.id)}
             >
               <CardHeader className="text-center pb-2">

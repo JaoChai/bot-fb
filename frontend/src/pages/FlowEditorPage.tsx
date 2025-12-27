@@ -416,7 +416,6 @@ export function FlowEditorPage() {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      {/* Left Sidebar - Flow List (dabby.io style) */}
       <div className="w-52 border-r bg-card flex flex-col">
         {/* Logo */}
         <div className="h-14 flex items-center px-4 border-b">
@@ -531,7 +530,6 @@ export function FlowEditorPage() {
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            /* Editor Content - Single Column (dabby.io style) */
             <div className="flex-1 overflow-y-auto">
               <div className="max-w-4xl mx-auto p-6 space-y-6">
               {/* Header - Flow Name + Save Button */}
