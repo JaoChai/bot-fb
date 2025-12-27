@@ -63,6 +63,10 @@ export const router = createBrowserRouter([
             element: <AddConnectionPage />,
           },
           {
+            path: "connections/new",
+            element: <EditConnectionPage />,
+          },
+          {
             path: "bots/:botId/settings",
             element: <BotSettingsPage />,
           },

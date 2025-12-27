@@ -22,10 +22,19 @@ class Bot extends Model
         'channel_access_token',
         'channel_secret',
         'webhook_url',
+        'webhook_forwarder_enabled',
         'page_id',
         'default_flow_id',
+        // OpenRouter API
+        'openrouter_api_key',
+        // LLM Models (legacy)
         'llm_model',
         'llm_fallback_model',
+        // LLM Models (new multi-model)
+        'primary_chat_model',
+        'fallback_chat_model',
+        'decision_model',
+        'fallback_decision_model',
         'system_prompt',
         'llm_temperature',
         'llm_max_tokens',
@@ -45,6 +54,7 @@ class Bot extends Model
         'llm_temperature' => 'float',
         'llm_max_tokens' => 'integer',
         'context_window' => 'integer',
+        'webhook_forwarder_enabled' => 'boolean',
         // KB settings
         'kb_enabled' => 'boolean',
         'kb_relevance_threshold' => 'float',
@@ -54,6 +64,7 @@ class Bot extends Model
     protected $hidden = [
         'channel_access_token',
         'channel_secret',
+        'openrouter_api_key',
     ];
 
     public function user(): BelongsTo

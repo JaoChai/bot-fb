@@ -65,3 +65,11 @@ export {
   useClearLine,
   useUserSettingsOperations,
 } from './useUserSettings';
+
+export {
+  useConnection,
+  useCreateConnection,
+  useUpdateConnection,
+  useDeleteConnection,
+  useConnectionOperations,
+} from './useConnections';

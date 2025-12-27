@@ -17,10 +17,23 @@ class StoreBotRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
-            'channel_type' => ['required', Rule::in(['line', 'facebook', 'telegram'])],
+            'channel_type' => ['required', Rule::in(['line', 'facebook', 'testing', 'demo'])],
             'channel_access_token' => ['nullable', 'string'],
             'channel_secret' => ['nullable', 'string'],
             'page_id' => ['nullable', 'string'],
+
+            // OpenRouter API
+            'openrouter_api_key' => ['nullable', 'string'],
+
+            // Multi-model LLM configuration
+            'primary_chat_model' => ['nullable', 'string', 'max:100'],
+            'fallback_chat_model' => ['nullable', 'string', 'max:100'],
+            'decision_model' => ['nullable', 'string', 'max:100'],
+            'fallback_decision_model' => ['nullable', 'string', 'max:100'],
+
+            // Webhook forwarder
+            'webhook_forwarder_enabled' => ['nullable', 'boolean'],
+
             // Support nested api_keys format
             'api_keys' => ['nullable', 'array'],
             'api_keys.channel_access_token' => ['nullable', 'string'],
