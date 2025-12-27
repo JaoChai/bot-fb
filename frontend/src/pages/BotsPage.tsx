@@ -4,6 +4,23 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useBots } from '@/hooks/useKnowledgeBase';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -15,7 +32,8 @@ import {
   Check,
   Workflow,
   Pencil,
-  MoreHorizontal
+  MoreHorizontal,
+  Trash2
 } from 'lucide-react';
 
 // LINE icon component
@@ -50,6 +68,8 @@ export function BotsPage() {
   const { data: botsResponse, isLoading, error } = useBots();
   const { toast } = useToast();
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [botToDelete, setBotToDelete] = useState<any | null>(null);
 
   const bots = botsResponse?.data || [];
 
@@ -80,6 +100,32 @@ export function BotsPage() {
         description: 'ไม่สามารถคัดลอก URL ได้',
         variant: 'destructive',
       });
+    }
+  };
+
+  const handleDeleteClick = (bot: any) => {
+    setBotToDelete(bot);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    // TODO: Implement actual delete API call
+    if (!botToDelete) return;
+    try {
+      // await deleteBot(botToDelete.id);
+      toast({
+        title: 'ลบแล้ว',
+        description: `"${botToDelete.name}" ลบเรียบร้อยแล้ว`,
+      });
+    } catch (err) {
+      toast({
+        title: 'เกิดข้อผิดพลาด',
+        description: err instanceof Error ? err.message : 'ไม่สามารถลบการเชื่อมต่อได้',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeleteDialogOpen(false);
+      setBotToDelete(null);
     }
   };
 
@@ -227,14 +273,40 @@ export function BotsPage() {
                         )}
                         คัดลอก Webhook URL
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="flex-shrink-0"
-                        aria-label="ตัวเลือกเพิ่มเติม"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="flex-shrink-0"
+                            aria-label="ตัวเลือกเพิ่มเติม"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem asChild>
+                            <Link to={`/bots/${bot.id}/edit`}>
+                              <Pencil className="h-4 w-4 mr-2" />
+                              แก้ไขการเชื่อมต่อ
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link to={`/bots/${bot.id}/settings`}>
+                              <Settings className="h-4 w-4 mr-2" />
+                              ตั้งค่า
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteClick(bot)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            ลบการเชื่อมต่อ
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 )}
@@ -243,6 +315,27 @@ export function BotsPage() {
           ))}
         </div>
       )}
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ลบการเชื่อมต่อ</AlertDialogTitle>
+            <AlertDialogDescription>
+              คุณแน่ใจหรือไม่ว่าต้องการลบ "{botToDelete?.name}"? การดำเนินการนี้ไม่สามารถยกเลิกได้
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              ลบ
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

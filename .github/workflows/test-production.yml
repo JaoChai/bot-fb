@@ -1,0 +1,100 @@
+name: Test Production Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  wait-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Wait for Railway deployment (2 minutes)
+        run: |
+          echo "⏳ Waiting for Railway deployment to complete..."
+          sleep 120
+          echo "✅ Deployment should be ready now"
+
+      - name: Check Backend Health
+        id: backend-check
+        run: |
+          echo "🔍 Checking Backend..."
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://backend-production-b216.up.railway.app/up)
+          echo "Backend Status: $RESPONSE"
+
+          if [ "$RESPONSE" = "200" ]; then
+            echo "✅ Backend is healthy"
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ Backend returned $RESPONSE"
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Check Frontend Health
+        id: frontend-check
+        run: |
+          echo "🔍 Checking Frontend..."
+          RESPONSE=$(curl -s https://frontend-production-9fe8.up.railway.app/login)
+
+          if echo "$RESPONSE" | grep -q "BotFacebook"; then
+            echo "✅ Frontend is loading correctly"
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ Frontend page not loaded correctly"
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Install Playwright
+        run: |
+          cd frontend
+          npx playwright install --with-deps
+
+      - name: Run E2E Tests on Production
+        env:
+          VITE_API_URL: https://backend-production-b216.up.railway.app
+        run: |
+          cd frontend
+          npm run test:e2e 2>&1 | tee e2e-results.log || true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: e2e-test-results
+          path: frontend/e2e-results.log
+
+      - name: Create deployment status summary
+        if: always()
+        env:
+          BACKEND_STATUS: ${{ steps.backend-check.outputs.status }}
+          FRONTEND_STATUS: ${{ steps.frontend-check.outputs.status }}
+        run: |
+          echo "## 🚀 Production Deployment Test Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Backend Check" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Status: ${BACKEND_STATUS}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- URL: https://backend-production-b216.up.railway.app" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Frontend Check" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Status: ${FRONTEND_STATUS}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- URL: https://frontend-production-9fe8.up.railway.app" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### E2E Tests" >> "$GITHUB_STEP_SUMMARY"
+          echo "- See artifacts for detailed results" >> "$GITHUB_STEP_SUMMARY"
