@@ -13,6 +13,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
+import { ModelConfiguration } from '@/components/ModelSelector';
 import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations, useTestFlow } from '@/hooks/useFlows';
 import { useAllKnowledgeBases } from '@/hooks/useKnowledgeBase';
 import { useToast } from '@/hooks/use-toast';
@@ -65,7 +66,10 @@ const INITIAL_FORM_DATA: CreateFlowData = {
   name: '',
   description: '',
   system_prompt: DEFAULT_SYSTEM_PROMPT,
-  model: 'claude-3-5-sonnet-20241022',
+  model: 'google/gemini-2.0-flash-exp:free',
+  fallback_model: 'openai/gpt-4o-mini',
+  decision_model: 'openai/gpt-4o-mini',
+  fallback_decision_model: 'google/gemini-2.0-flash-exp:free',
   temperature: 0.7,
   max_tokens: 2048,
   agentic_mode: false,
@@ -166,6 +170,9 @@ export function FlowEditorPage() {
         description: existingFlow.description || '',
         system_prompt: existingFlow.system_prompt,
         model: existingFlow.model,
+        fallback_model: existingFlow.fallback_model || '',
+        decision_model: existingFlow.decision_model || '',
+        fallback_decision_model: existingFlow.fallback_decision_model || '',
         temperature: existingFlow.temperature,
         max_tokens: existingFlow.max_tokens,
         agentic_mode: existingFlow.agentic_mode,
@@ -591,6 +598,21 @@ export function FlowEditorPage() {
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Bot className="h-5 w-5" />
                   <span className="font-medium">AI Chatbot</span>
+                </div>
+
+                {/* Model Configuration */}
+                <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
+                  <ModelConfiguration
+                    primaryModel={formData.model || ''}
+                    fallbackModel={formData.fallback_model || ''}
+                    decisionModel={formData.decision_model || ''}
+                    fallbackDecisionModel={formData.fallback_decision_model || ''}
+                    onPrimaryChange={(v) => handleChange('model', v)}
+                    onFallbackChange={(v) => handleChange('fallback_model', v)}
+                    onDecisionChange={(v) => handleChange('decision_model', v)}
+                    onFallbackDecisionChange={(v) => handleChange('fallback_decision_model', v)}
+                    showDecisionModels={formData.agentic_mode}
+                  />
                 </div>
 
                 {/* Agentic Mode Toggle */}
@@ -1137,6 +1159,9 @@ export function FlowEditorPage() {
                     description: existingFlow.description || '',
                     system_prompt: existingFlow.system_prompt,
                     model: existingFlow.model,
+                    fallback_model: existingFlow.fallback_model || '',
+                    decision_model: existingFlow.decision_model || '',
+                    fallback_decision_model: existingFlow.fallback_decision_model || '',
                     temperature: existingFlow.temperature,
                     max_tokens: existingFlow.max_tokens,
                     agentic_mode: existingFlow.agentic_mode,
