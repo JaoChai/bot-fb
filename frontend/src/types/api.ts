@@ -424,3 +424,27 @@ export interface TestConnectionResponse {
   message: string;
   bot_name?: string;
 }
+
+// Streaming/Extended Thinking Types
+export interface ChatMessageWithThinking {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  thinking?: string;
+  isStreaming?: boolean;
+  model?: string;
+  usage?: StreamUsage;
+}
+
+export interface StreamUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+export interface StreamEvent {
+  type: 'thinking' | 'content' | 'done' | 'error';
+  data: string;
+  model?: string;
+  usage?: StreamUsage;
+}

@@ -112,6 +112,151 @@ class OpenRouterService
     }
 
     /**
+     * Stream a chat completion request to OpenRouter using SSE.
+     *
+     * @param array $messages Chat messages
+     * @param string|null $model Model ID
+     * @param float|null $temperature Sampling temperature
+     * @param int|null $maxTokens Maximum tokens in response
+     * @param string|null $apiKeyOverride Override API key
+     * @return \Generator Yields SSE-formatted chunks
+     */
+    public function chatStream(
+        array $messages,
+        ?string $model = null,
+        ?float $temperature = null,
+        ?int $maxTokens = null,
+        ?string $apiKeyOverride = null
+    ): \Generator {
+        $model = $model ?? $this->defaultModel;
+        $temperature = $temperature ?? 0.7;
+        $maxTokens = $maxTokens ?? $this->maxTokens;
+        $apiKey = $apiKeyOverride ?? $this->apiKey;
+
+        $url = $this->baseUrl . '/chat/completions';
+
+        $payload = json_encode([
+            'model' => $model,
+            'messages' => $messages,
+            'temperature' => $temperature,
+            'max_tokens' => $maxTokens,
+            'stream' => true,
+        ]);
+
+        // Use cURL for streaming
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $apiKey,
+                'HTTP-Referer: ' . $this->siteUrl,
+                'X-Title: ' . $this->siteName,
+                'Accept: text/event-stream',
+            ],
+            CURLOPT_RETURNTRANSFER => false,
+            CURLOPT_TIMEOUT => $this->timeout,
+            CURLOPT_CONNECTTIMEOUT => 30,
+        ]);
+
+        // Buffer for incomplete SSE data
+        $buffer = '';
+        $usage = null;
+        $modelUsed = $model;
+
+        // Set up streaming callback
+        curl_setopt($ch, CURLOPT_WRITEFUNCTION, function ($ch, $data) use (&$buffer) {
+            $buffer .= $data;
+            return strlen($data);
+        });
+
+        // Run the request
+        $result = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($curlError) {
+            yield ['type' => 'error', 'data' => "Connection error: {$curlError}"];
+            return;
+        }
+
+        if ($httpCode !== 200) {
+            $errorData = json_decode($buffer, true);
+            $errorMsg = $errorData['error']['message'] ?? "HTTP error: {$httpCode}";
+            yield ['type' => 'error', 'data' => $errorMsg];
+            return;
+        }
+
+        // Parse SSE data from buffer
+        $lines = explode("\n", $buffer);
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            // Skip empty lines and comments
+            if (empty($line) || str_starts_with($line, ':')) {
+                continue;
+            }
+
+            // Parse SSE data line
+            if (str_starts_with($line, 'data: ')) {
+                $jsonData = substr($line, 6);
+
+                // Check for stream end
+                if ($jsonData === '[DONE]') {
+                    break;
+                }
+
+                $data = json_decode($jsonData, true);
+                if (!$data) {
+                    continue;
+                }
+
+                // Extract model info
+                if (isset($data['model'])) {
+                    $modelUsed = $data['model'];
+                }
+
+                // Extract usage info (usually in final chunk)
+                if (isset($data['usage'])) {
+                    $usage = $data['usage'];
+                }
+
+                // Extract delta content
+                $delta = $data['choices'][0]['delta'] ?? [];
+
+                // Check for reasoning/thinking content
+                if (isset($delta['reasoning']) || isset($delta['reasoning_content'])) {
+                    $thinking = $delta['reasoning'] ?? $delta['reasoning_content'] ?? '';
+                    if ($thinking) {
+                        yield ['type' => 'thinking', 'data' => $thinking];
+                    }
+                }
+
+                // Check for regular content
+                if (isset($delta['content']) && $delta['content'] !== '') {
+                    yield ['type' => 'content', 'data' => $delta['content']];
+                }
+            }
+        }
+
+        // Yield done event with metadata
+        yield [
+            'type' => 'done',
+            'data' => '',
+            'model' => $modelUsed,
+            'usage' => $usage ?? [
+                'prompt_tokens' => 0,
+                'completion_tokens' => 0,
+                'total_tokens' => 0,
+            ],
+        ];
+    }
+
+    /**
      * Simple chat method that returns just the response content.
      */
     public function chatSimple(
