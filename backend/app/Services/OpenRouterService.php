@@ -39,6 +39,7 @@ class OpenRouterService
      * @param int|null $maxTokens Maximum tokens in response
      * @param bool $useFallback Whether to try fallback model on failure
      * @param string|null $apiKeyOverride Override API key (from user settings)
+     * @param string|null $fallbackModelOverride Override fallback model (from bot settings)
      */
     public function chat(
         array $messages,
@@ -46,12 +47,14 @@ class OpenRouterService
         ?float $temperature = null,
         ?int $maxTokens = null,
         bool $useFallback = true,
-        ?string $apiKeyOverride = null
+        ?string $apiKeyOverride = null,
+        ?string $fallbackModelOverride = null
     ): array {
         $model = $model ?? $this->defaultModel;
         $temperature = $temperature ?? 0.7;
         $maxTokens = $maxTokens ?? $this->maxTokens;
         $apiKey = $apiKeyOverride ?? $this->apiKey;
+        $fallbackModel = $fallbackModelOverride ?? $this->fallbackModel;
 
         try {
             $response = $this->client($apiKey)->post('/chat/completions', [
@@ -70,9 +73,9 @@ class OpenRouterService
                     'error' => $error,
                 ]);
 
-                if ($useFallback && $model !== $this->fallbackModel) {
-                    Log::info('Attempting fallback model', ['fallback' => $this->fallbackModel]);
-                    return $this->chat($messages, $this->fallbackModel, $temperature, $maxTokens, false, $apiKeyOverride);
+                if ($useFallback && $model !== $fallbackModel) {
+                    Log::info('Attempting fallback model', ['fallback' => $fallbackModel]);
+                    return $this->chat($messages, $fallbackModel, $temperature, $maxTokens, false, $apiKeyOverride, null);
                 }
 
                 throw new OpenRouterException("OpenRouter API error: {$error}", $response->status());
@@ -99,9 +102,9 @@ class OpenRouterService
                 'error' => $e->getMessage(),
             ]);
 
-            if ($useFallback && $model !== $this->fallbackModel) {
-                Log::info('Attempting fallback model after exception', ['fallback' => $this->fallbackModel]);
-                return $this->chat($messages, $this->fallbackModel, $temperature, $maxTokens, false, $apiKeyOverride);
+            if ($useFallback && $model !== $fallbackModel) {
+                Log::info('Attempting fallback model after exception', ['fallback' => $fallbackModel]);
+                return $this->chat($messages, $fallbackModel, $temperature, $maxTokens, false, $apiKeyOverride, null);
             }
 
             throw new OpenRouterException("OpenRouter request failed: {$e->getMessage()}", 500, $e);
@@ -122,12 +125,22 @@ class OpenRouterService
 
     /**
      * Generate a bot response with system prompt and conversation history.
+     *
+     * @param string $userMessage The user's message
+     * @param string|null $systemPrompt System prompt for the bot
+     * @param array $conversationHistory Previous messages
+     * @param string|null $model Primary model to use
+     * @param string|null $fallbackModel Fallback model if primary fails
+     * @param float|null $temperature Sampling temperature
+     * @param int|null $maxTokens Maximum tokens in response
+     * @param string|null $apiKeyOverride Override API key
      */
     public function generateBotResponse(
         string $userMessage,
         ?string $systemPrompt = null,
         array $conversationHistory = [],
         ?string $model = null,
+        ?string $fallbackModel = null,
         ?float $temperature = null,
         ?int $maxTokens = null,
         ?string $apiKeyOverride = null
@@ -156,7 +169,7 @@ class OpenRouterService
             'content' => $userMessage,
         ];
 
-        return $this->chat($messages, $model, $temperature, $maxTokens, true, $apiKeyOverride);
+        return $this->chat($messages, $model, $temperature, $maxTokens, true, $apiKeyOverride, $fallbackModel);
     }
 
     /**

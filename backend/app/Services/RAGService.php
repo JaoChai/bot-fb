@@ -25,18 +25,30 @@ class RAGService
     ) {}
 
     /**
-     * Generate a response using RAG if KB is enabled.
+     * Generate a response using multi-model architecture.
+     *
+     * Flow:
+     * 1. Analyze intent using Decision Model
+     * 2. Get KB context if intent is 'knowledge' and KB enabled
+     * 3. Generate response using Chat Model
      *
      * @param Bot $bot The bot to respond as
      * @param string $userMessage The user's message
      * @param array $conversationHistory Previous messages for context
-     * @return array Response with content, usage stats, and RAG metadata
+     * @return array Response with content, usage stats, intent, and RAG metadata
      */
     public function generateResponse(
         Bot $bot,
         string $userMessage,
         array $conversationHistory = []
     ): array {
+        // Get API key first (used for both decision and chat models)
+        $apiKey = $this->getApiKeyForBot($bot);
+
+        // Step 1: Analyze intent using Decision Model
+        $intent = $this->analyzeIntent($bot, $userMessage, $apiKey);
+
+        // Step 2: Initialize KB metadata
         $kbContext = '';
         $kbMetadata = [
             'enabled' => false,
@@ -44,8 +56,12 @@ class RAGService
             'chunks_used' => [],
         ];
 
-        // Check if KB is enabled and bot has a knowledge base
-        if ($this->shouldUseKnowledgeBase($bot)) {
+        // Step 3: Get KB context if intent is 'knowledge' and KB enabled
+        // Also get KB context if intent was skipped and KB is enabled (backward compatibility)
+        $shouldUseKB = ($intent['intent'] === 'knowledge' || isset($intent['skipped']))
+            && $this->shouldUseKnowledgeBase($bot);
+
+        if ($shouldUseKB) {
             $kbContext = $this->getKnowledgeBaseContext(
                 $bot,
                 $userMessage,
@@ -53,29 +69,35 @@ class RAGService
             );
         }
 
-        // Build enhanced system prompt with KB context
+        // Step 4: Build enhanced system prompt with KB context
         $systemPrompt = $this->buildEnhancedPrompt(
             $bot->system_prompt ?? $this->getDefaultSystemPrompt($bot),
             $kbContext
         );
 
-        // Get model and API key from user settings (centralized)
-        $model = $this->getModelForBot($bot);
-        $apiKey = $this->getApiKeyForBot($bot);
+        // Step 5: Get chat models
+        $chatModel = $this->getChatModelForBot($bot);
+        $fallbackChatModel = $this->getFallbackChatModelForBot($bot);
 
-        // Send to OpenRouter
+        // Step 6: Generate response using Chat Model
         $result = $this->openRouter->generateBotResponse(
             userMessage: $userMessage,
             systemPrompt: $systemPrompt,
             conversationHistory: $conversationHistory,
-            model: $model,
+            model: $chatModel,
+            fallbackModel: $fallbackChatModel,
             temperature: $bot->llm_temperature,
             maxTokens: $bot->llm_max_tokens,
             apiKeyOverride: $apiKey
         );
 
-        // Add RAG metadata to result
+        // Add metadata to result
+        $result['intent'] = $intent;
         $result['rag'] = $kbMetadata;
+        $result['models_used'] = [
+            'decision' => $intent['model_used'] ?? null,
+            'chat' => $result['model'] ?? $chatModel,
+        ];
 
         return $result;
     }
@@ -224,28 +246,102 @@ class RAGService
     }
 
     /**
-     * Get the LLM model to use for a bot.
+     * Get the primary chat model to use for a bot.
      *
      * Priority:
-     * 1. User Settings model (centralized - recommended for single-user)
-     * 2. Bot-specific model (legacy/override)
-     * 3. Config default model
+     * 1. Bot-specific primary_chat_model (new multi-model)
+     * 2. User Settings model (centralized)
+     * 3. Bot-specific llm_model (legacy)
+     * 4. Config default model
      */
-    protected function getModelForBot(Bot $bot): ?string
+    protected function getChatModelForBot(Bot $bot): ?string
     {
-        // Priority 1: User Settings (centralized model)
+        // Priority 1: Bot-specific primary chat model (new)
+        if ($bot->primary_chat_model) {
+            return $bot->primary_chat_model;
+        }
+
+        // Priority 2: User Settings (centralized model)
         $user = $bot->user;
         if ($user && $user->settings && $user->settings->openrouter_model) {
             return $user->settings->openrouter_model;
         }
 
-        // Priority 2: Bot-specific model (legacy support)
+        // Priority 3: Bot-specific model (legacy support)
         if ($bot->llm_model) {
             return $bot->llm_model;
         }
 
-        // Priority 3: Config default (handled by OpenRouterService)
+        // Priority 4: Config default (handled by OpenRouterService)
         return null;
+    }
+
+    /**
+     * Get the fallback chat model for a bot.
+     *
+     * Priority:
+     * 1. Bot-specific fallback_chat_model (new)
+     * 2. Bot-specific llm_fallback_model (legacy)
+     * 3. Config fallback (handled by OpenRouterService)
+     */
+    protected function getFallbackChatModelForBot(Bot $bot): ?string
+    {
+        // Priority 1: Bot-specific fallback chat model (new)
+        if ($bot->fallback_chat_model) {
+            return $bot->fallback_chat_model;
+        }
+
+        // Priority 2: Bot legacy fallback
+        if ($bot->llm_fallback_model) {
+            return $bot->llm_fallback_model;
+        }
+
+        // Priority 3: Config fallback (handled by OpenRouterService)
+        return null;
+    }
+
+    /**
+     * Get the decision model for a bot (for intent analysis).
+     *
+     * Priority:
+     * 1. Bot-specific decision_model
+     * 2. Falls back to chat model if not set
+     */
+    protected function getDecisionModelForBot(Bot $bot): ?string
+    {
+        // Priority 1: Bot-specific decision model
+        if ($bot->decision_model) {
+            return $bot->decision_model;
+        }
+
+        // Priority 2: Fall back to chat model
+        return $this->getChatModelForBot($bot);
+    }
+
+    /**
+     * Get the fallback decision model for a bot.
+     *
+     * Priority:
+     * 1. Bot-specific fallback_decision_model
+     * 2. Falls back to fallback chat model
+     */
+    protected function getFallbackDecisionModelForBot(Bot $bot): ?string
+    {
+        // Priority 1: Bot-specific fallback decision model
+        if ($bot->fallback_decision_model) {
+            return $bot->fallback_decision_model;
+        }
+
+        // Priority 2: Fall back to fallback chat model
+        return $this->getFallbackChatModelForBot($bot);
+    }
+
+    /**
+     * @deprecated Use getChatModelForBot() instead
+     */
+    protected function getModelForBot(Bot $bot): ?string
+    {
+        return $this->getChatModelForBot($bot);
     }
 
     /**
@@ -264,6 +360,154 @@ class RAGService
 
         // Let OpenRouterService use its default from config
         return null;
+    }
+
+    /**
+     * Analyze user message intent using the decision model.
+     *
+     * @param Bot $bot The bot
+     * @param string $userMessage The user's message
+     * @param string|null $apiKey API key override
+     * @return array Intent analysis result with 'intent' and 'confidence'
+     */
+    protected function analyzeIntent(Bot $bot, string $userMessage, ?string $apiKey): array
+    {
+        $decisionModel = $this->getDecisionModelForBot($bot);
+        $fallbackDecision = $this->getFallbackDecisionModelForBot($bot);
+
+        // Skip decision model if not configured (use default behavior)
+        if (!$decisionModel && !$bot->decision_model) {
+            // Default: use knowledge if KB enabled, otherwise chat
+            return [
+                'intent' => $this->shouldUseKnowledgeBase($bot) ? 'knowledge' : 'chat',
+                'confidence' => 1.0,
+                'model_used' => null,
+                'skipped' => true,
+            ];
+        }
+
+        $prompt = $this->buildIntentAnalysisPrompt($bot);
+
+        try {
+            $result = $this->openRouter->chat(
+                messages: [
+                    ['role' => 'system', 'content' => $prompt],
+                    ['role' => 'user', 'content' => $userMessage],
+                ],
+                model: $decisionModel,
+                temperature: 0.1, // Low temp for consistent decisions
+                maxTokens: 150,
+                useFallback: true,
+                apiKeyOverride: $apiKey,
+                fallbackModelOverride: $fallbackDecision
+            );
+
+            $parsed = $this->parseIntentResponse($result['content']);
+            $parsed['model_used'] = $result['model'] ?? $decisionModel;
+            $parsed['usage'] = $result['usage'] ?? null;
+
+            Log::debug('Intent analysis completed', [
+                'bot_id' => $bot->id,
+                'intent' => $parsed['intent'],
+                'confidence' => $parsed['confidence'],
+                'model' => $parsed['model_used'],
+            ]);
+
+            return $parsed;
+        } catch (\Exception $e) {
+            Log::warning('Intent analysis failed, defaulting to chat', [
+                'bot_id' => $bot->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            // Default to knowledge if KB enabled, otherwise chat
+            return [
+                'intent' => $this->shouldUseKnowledgeBase($bot) ? 'knowledge' : 'chat',
+                'confidence' => 0,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Build the system prompt for intent analysis.
+     */
+    protected function buildIntentAnalysisPrompt(Bot $bot): string
+    {
+        $hasKB = $bot->kb_enabled && $bot->knowledgeBase;
+        $kbNote = $hasKB ? ' (Knowledge Base available for factual queries)' : '';
+
+        return <<<PROMPT
+You are an intent classifier. Analyze the user's message and determine the appropriate intent.
+Respond with JSON only: {"intent": "chat|knowledge", "confidence": 0.0-1.0}
+
+Available intents:
+- "chat": General conversation, greetings, opinions, casual talk, or when unsure
+- "knowledge": Questions requiring factual information, specific data, or documentation{$kbNote}
+
+Classification rules:
+- Use "knowledge" for: questions about facts, how-to queries, data lookups, technical questions
+- Use "chat" for: greetings (hi, hello), opinions, casual conversation, follow-up responses
+- When uncertain, prefer "chat" (safer default)
+- Confidence should reflect how certain you are (0.0 = uncertain, 1.0 = very certain)
+
+Examples:
+User: "สวัสดี" → {"intent": "chat", "confidence": 0.95}
+User: "ราคาสินค้า A เท่าไหร่" → {"intent": "knowledge", "confidence": 0.9}
+User: "ขอบคุณครับ" → {"intent": "chat", "confidence": 0.95}
+User: "วิธีใช้งานระบบ" → {"intent": "knowledge", "confidence": 0.85}
+
+Respond with JSON only, no explanation.
+PROMPT;
+    }
+
+    /**
+     * Parse the intent analysis response from the LLM.
+     */
+    protected function parseIntentResponse(string $content): array
+    {
+        // Try to extract JSON from the response
+        $content = trim($content);
+
+        // Remove markdown code blocks if present
+        if (preg_match('/```(?:json)?\s*(\{.*?\})\s*```/s', $content, $matches)) {
+            $content = $matches[1];
+        }
+
+        // Try to find JSON object in the response
+        if (preg_match('/\{[^}]+\}/', $content, $matches)) {
+            $content = $matches[0];
+        }
+
+        try {
+            $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
+
+            $intent = $data['intent'] ?? 'chat';
+            $confidence = (float) ($data['confidence'] ?? 0.5);
+
+            // Validate intent value
+            if (!in_array($intent, ['chat', 'knowledge', 'flow'])) {
+                $intent = 'chat';
+            }
+
+            // Clamp confidence to 0-1
+            $confidence = max(0, min(1, $confidence));
+
+            return [
+                'intent' => $intent,
+                'confidence' => $confidence,
+            ];
+        } catch (\Exception $e) {
+            Log::warning('Failed to parse intent response', [
+                'content' => substr($content, 0, 200),
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'intent' => 'chat',
+                'confidence' => 0,
+            ];
+        }
     }
 
     /**
