@@ -13,7 +13,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
-import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations, useTestFlow } from '@/hooks/useFlows';
+import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations } from '@/hooks/useFlows';
 import { useAllKnowledgeBases } from '@/hooks/useKnowledgeBase';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -37,7 +37,9 @@ import {
   Trash2,
   Code,
 } from 'lucide-react';
-import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
+import type { CreateFlowData, CreateFlowKnowledgeBaseData, ChatMessageWithThinking } from '@/types/api';
+import { apiStreamPost } from '@/lib/api';
+import { ThinkingDisplay } from '@/components/ThinkingDisplay';
 
 // Helper to generate unique IDs
 function generateId() {
@@ -111,17 +113,19 @@ export function FlowEditorPage() {
   // Mutations
   const createMutation = useCreateFlow(botId);
   const updateMutation = useUpdateFlow(botId, selectedFlowId);
-  const testFlowMutation = useTestFlow(botId, selectedFlowId);
 
   // Form state
   const [formData, setFormData] = useState<CreateFlowData>(INITIAL_FORM_DATA);
   const [hasChanges, setHasChanges] = useState(false);
 
   // Chat emulator state
-  const [chatMessages, setChatMessages] = useState<Array<{ id: string; role: 'user' | 'assistant'; content: string }>>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessageWithThinking[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [enableThinking, setEnableThinking] = useState(true);
+  const [isStreaming, setIsStreaming] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const systemPromptRef = useRef<HTMLTextAreaElement>(null);
 
   // Collapsible sections
@@ -330,7 +334,7 @@ export function FlowEditorPage() {
     setHasChanges(true);
   };
 
-  // Handle chat emulator - now calls real AI API
+  // Handle chat emulator - now uses streaming with extended thinking
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
     if (!selectedFlowId) {
@@ -343,58 +347,108 @@ export function FlowEditorPage() {
     }
 
     const userMessage = chatInput.trim();
-    const userMsgObj = {
-      id: generateId(),
-      role: 'user' as const,
-      content: userMessage,
-    };
+    const userMsgId = generateId();
+    const assistantMsgId = generateId();
 
-    setChatMessages((prev) => [...prev, userMsgObj]);
+    // Add user message
+    setChatMessages((prev) => [
+      ...prev,
+      { id: userMsgId, role: 'user' as const, content: userMessage },
+    ]);
     setChatInput('');
 
-    // Build conversation history for context (exclude the current message)
+    // Build conversation history for context
     const conversationHistory = chatMessages.map((msg) => ({
       role: msg.role,
       content: msg.content,
     }));
 
-    try {
-      const result = await testFlowMutation.mutateAsync({
-        message: userMessage,
-        conversation_history: conversationHistory,
-      });
+    // Create placeholder for assistant message
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        id: assistantMsgId,
+        role: 'assistant' as const,
+        content: '',
+        thinking: '',
+        isStreaming: true,
+      },
+    ]);
 
-      if (result.success && result.response) {
-        const aiResponse = result.response;
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: generateId(),
-            role: 'assistant' as const,
-            content: aiResponse,
-          },
-        ]);
-      } else {
-        // Show error message as assistant response
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: generateId(),
-            role: 'assistant',
-            content: `❌ ${result.error || 'เกิดข้อผิดพลาด'}`,
-          },
-        ]);
-      }
-    } catch (error) {
-      console.error('Chat test error:', error);
-      setChatMessages((prev) => [
-        ...prev,
+    // Start streaming
+    setIsStreaming(true);
+    abortControllerRef.current = new AbortController();
+
+    try {
+      await apiStreamPost(
+        `/bots/${botId}/flows/${selectedFlowId}/test-stream`,
         {
-          id: generateId(),
-          role: 'assistant',
-          content: '❌ ไม่สามารถเชื่อมต่อ AI ได้ กรุณาตรวจสอบ API Key ใน Settings',
+          message: userMessage,
+          conversation_history: conversationHistory,
         },
-      ]);
+        (event) => {
+          setChatMessages((prev) =>
+            prev.map((msg) => {
+              if (msg.id !== assistantMsgId) return msg;
+
+              switch (event.type) {
+                case 'thinking':
+                  return {
+                    ...msg,
+                    thinking: (msg.thinking || '') + event.data,
+                  };
+                case 'content':
+                  return {
+                    ...msg,
+                    content: msg.content + event.data,
+                  };
+                case 'done':
+                  return {
+                    ...msg,
+                    isStreaming: false,
+                    model: event.model,
+                    usage: event.usage,
+                  };
+                case 'error':
+                  return {
+                    ...msg,
+                    content: `❌ ${event.data}`,
+                    isStreaming: false,
+                  };
+                default:
+                  return msg;
+              }
+            })
+          );
+        },
+        abortControllerRef.current.signal
+      );
+    } catch (error) {
+      // Handle abort or network errors
+      if ((error as Error).name !== 'AbortError') {
+        console.error('Chat stream error:', error);
+        setChatMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMsgId
+              ? {
+                  ...msg,
+                  content: '❌ ไม่สามารถเชื่อมต่อ AI ได้ กรุณาตรวจสอบ API Key',
+                  isStreaming: false,
+                }
+              : msg
+          )
+        );
+      }
+    } finally {
+      setIsStreaming(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  // Cancel streaming
+  const handleCancelStream = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
   };
 
@@ -1020,15 +1074,29 @@ export function FlowEditorPage() {
               <MessageCircle className="h-5 w-5" />
               <span className="font-semibold">แชทจำลอง</span>
             </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 w-8 p-0 text-white hover:bg-white/20"
-              onClick={() => setChatMessages([])}
-              title="ล้างแชท"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Thinking Toggle */}
+              <div className="flex items-center gap-1.5">
+                <Switch
+                  id="thinking-mode"
+                  checked={enableThinking}
+                  onCheckedChange={setEnableThinking}
+                  className="h-4 w-7 data-[state=checked]:bg-white/30"
+                />
+                <Label htmlFor="thinking-mode" className="text-xs text-white/80 cursor-pointer">
+                  Thinking
+                </Label>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 p-0 text-white hover:bg-white/20"
+                onClick={() => setChatMessages([])}
+                title="ล้างแชท"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           {/* Messages Area */}
@@ -1049,16 +1117,29 @@ export function FlowEditorPage() {
                   key={msg.id}
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
-                  <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
-                      msg.role === 'user'
-                        ? 'text-white rounded-br-md'
-                        : 'bg-muted rounded-bl-md'
-                    }`}
-                    style={msg.role === 'user' ? { backgroundColor: 'var(--warning)' } : {}}
-                  >
-                    {msg.content}
-                  </div>
+                  {msg.role === 'user' ? (
+                    <div
+                      className="max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm text-white"
+                      style={{ backgroundColor: 'var(--warning)' }}
+                    >
+                      {msg.content}
+                    </div>
+                  ) : (
+                    <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-muted overflow-hidden">
+                      {/* Thinking Display */}
+                      {enableThinking && (msg.thinking || msg.isStreaming) && (
+                        <ThinkingDisplay
+                          thinking={msg.thinking || ''}
+                          isStreaming={msg.isStreaming && !msg.content}
+                        />
+                      )}
+                      {/* Content */}
+                      <div className="px-4 py-2.5 text-sm">
+                        {msg.content || (msg.isStreaming ? '' : '')}
+                        {msg.isStreaming && <span className="animate-pulse text-muted-foreground">|</span>}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))
             )}
@@ -1070,31 +1151,39 @@ export function FlowEditorPage() {
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder={testFlowMutation.isPending ? 'กำลังประมวลผล...' : 'พิมพ์ข้อความ...'}
+                placeholder={isStreaming ? 'AI กำลังตอบ...' : 'พิมพ์ข้อความ...'}
                 className="flex-1 px-4 py-2.5 rounded-full border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-warning/50"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey && !testFlowMutation.isPending) {
+                  if (e.key === 'Enter' && !e.shiftKey && !isStreaming) {
                     e.preventDefault();
                     handleSendMessage();
                   }
                 }}
-                disabled={testFlowMutation.isPending}
+                disabled={isStreaming}
               />
-              <Button
-                size="icon"
-                onClick={handleSendMessage}
-                disabled={!chatInput.trim() || testFlowMutation.isPending}
-                variant="orange"
-                className="rounded-full h-10 w-10"
-              >
-                {testFlowMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
+              {isStreaming ? (
+                <Button
+                  size="icon"
+                  onClick={handleCancelStream}
+                  variant="destructive"
+                  className="rounded-full h-10 w-10"
+                  title="หยุด"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  size="icon"
+                  onClick={handleSendMessage}
+                  disabled={!chatInput.trim()}
+                  variant="orange"
+                  className="rounded-full h-10 w-10"
+                >
                   <Send className="h-4 w-4" />
-                )}
-              </Button>
+                </Button>
+              )}
             </div>
             <div className="flex gap-2 justify-center">
               <Button
