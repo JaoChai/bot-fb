@@ -18,6 +18,9 @@ class FlowResource extends JsonResource
             // AI Configuration
             'system_prompt' => $this->system_prompt,
             'model' => $this->model,
+            'fallback_model' => $this->fallback_model,
+            'decision_model' => $this->decision_model,
+            'fallback_decision_model' => $this->fallback_decision_model,
             'temperature' => (float) $this->temperature,
             'max_tokens' => $this->max_tokens,
 
