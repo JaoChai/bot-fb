@@ -15,13 +15,6 @@ use Illuminate\Validation\ValidationException;
 
 class KnowledgeBaseController extends Controller
 {
-    protected SemanticSearchService $searchService;
-
-    public function __construct(SemanticSearchService $searchService)
-    {
-        $this->searchService = $searchService;
-    }
-
     /**
      * List all knowledge bases for the authenticated user.
      */
@@ -95,8 +88,9 @@ class KnowledgeBaseController extends Controller
 
     /**
      * Search knowledge base using semantic similarity.
+     * SemanticSearchService is injected via method injection to avoid loading it for other endpoints.
      */
-    public function search(Request $request, Bot $bot): JsonResponse
+    public function search(Request $request, Bot $bot, SemanticSearchService $searchService): JsonResponse
     {
         $this->authorize('view', $bot);
 
@@ -127,7 +121,7 @@ class KnowledgeBaseController extends Controller
         }
 
         try {
-            $results = $this->searchService->search(
+            $results = $searchService->search(
                 $kb->id,
                 $validated['query'],
                 $validated['limit'] ?? 5,
