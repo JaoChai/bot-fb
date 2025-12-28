@@ -11,6 +11,9 @@ use App\Policies\KnowledgeBasePolicy;
 use App\Services\HybridSearchService;
 use App\Services\JinaRerankerService;
 use App\Services\KeywordSearchService;
+use App\Services\OpenRouterService;
+use App\Services\QueryEnhancementService;
+use App\Services\RAGService;
 use App\Services\SemanticSearchService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -31,6 +34,16 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(SemanticSearchService::class),
                 $app->make(KeywordSearchService::class),
                 $app->make(JinaRerankerService::class)
+            );
+        });
+
+        // Register RAGService with QueryEnhancementService dependency
+        $this->app->singleton(RAGService::class, function ($app) {
+            return new RAGService(
+                $app->make(SemanticSearchService::class),
+                $app->make(HybridSearchService::class),
+                $app->make(OpenRouterService::class),
+                $app->make(QueryEnhancementService::class)
             );
         });
     }

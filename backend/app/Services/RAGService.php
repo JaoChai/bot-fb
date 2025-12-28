@@ -26,7 +26,8 @@ class RAGService
     public function __construct(
         protected SemanticSearchService $semanticSearchService,
         protected HybridSearchService $hybridSearchService,
-        protected OpenRouterService $openRouter
+        protected OpenRouterService $openRouter,
+        protected ?QueryEnhancementService $queryEnhancement = null
     ) {}
 
     /**
@@ -133,6 +134,7 @@ class RAGService
      * Get context from Knowledge Base for the given query.
      *
      * Uses hybrid search (semantic + keyword) with RRF for better retrieval.
+     * Optionally enhances queries with LLM-based expansion for better recall.
      */
     protected function getKnowledgeBaseContext(
         Bot $bot,
@@ -142,38 +144,80 @@ class RAGService
         $kb = $bot->knowledgeBase;
 
         try {
-            // Search KB using hybrid search (semantic + keyword with RRF)
-            $results = $this->hybridSearchService->search(
-                knowledgeBaseId: $kb->id,
-                query: $query,
-                limit: $bot->kb_max_results ?? config('rag.max_results', 3),
-                threshold: $bot->kb_relevance_threshold ?? config('rag.default_threshold', 0.7)
-            );
+            // Step 1: Enhance query if enabled
+            $queryVariations = [$query];
+            $enhancementMetadata = null;
 
-            if ($results->isEmpty()) {
+            if ($this->queryEnhancement?->isEnabled()) {
+                $enhanced = $this->queryEnhancement->enhance($query, [
+                    'bot_name' => $bot->name,
+                    'kb_topics' => $kb->description ?? '',
+                ]);
+
+                $queryVariations = $enhanced['variations'];
+                $enhancementMetadata = [
+                    'was_enhanced' => $enhanced['was_enhanced'],
+                    'variations_count' => count($enhanced['variations']),
+                    'reasoning' => $enhanced['reasoning'],
+                ];
+            }
+
+            // Step 2: Search with all query variations
+            $allResults = collect([]);
+            $limit = $bot->kb_max_results ?? config('rag.max_results', 3);
+            $threshold = $bot->kb_relevance_threshold ?? config('rag.default_threshold', 0.7);
+
+            foreach ($queryVariations as $variation) {
+                $results = $this->hybridSearchService->search(
+                    knowledgeBaseId: $kb->id,
+                    query: $variation,
+                    limit: $limit,
+                    threshold: $threshold
+                );
+
+                // Add results, will deduplicate later
+                $allResults = $allResults->concat($results);
+            }
+
+            // Step 3: Deduplicate and rank by best score
+            $dedupedResults = $allResults
+                ->groupBy('id')
+                ->map(function ($group) {
+                    // Keep the result with the highest similarity/relevance score
+                    return $group->sortByDesc(fn($r) =>
+                        $r['relevance_score'] ?? $r['similarity'] ?? 0
+                    )->first();
+                })
+                ->values()
+                ->sortByDesc(fn($r) => $r['relevance_score'] ?? $r['similarity'] ?? 0)
+                ->take($limit);
+
+            if ($dedupedResults->isEmpty()) {
                 Log::debug('No relevant KB results found', [
                     'bot_id' => $bot->id,
                     'kb_id' => $kb->id,
                     'query' => substr($query, 0, 100),
+                    'query_variations' => count($queryVariations),
                     'search_mode' => $this->hybridSearchService->isEnabled() ? 'hybrid' : 'semantic',
                 ]);
                 return '';
             }
 
-            // Update metadata with hybrid search info
+            // Update metadata with search info
             $metadata['enabled'] = true;
-            $metadata['results_count'] = $results->count();
+            $metadata['results_count'] = $dedupedResults->count();
             $metadata['search_mode'] = $this->hybridSearchService->isEnabled() ? 'hybrid' : 'semantic';
-            $metadata['chunks_used'] = $results->map(fn ($r) => [
+            $metadata['query_enhancement'] = $enhancementMetadata;
+            $metadata['chunks_used'] = $dedupedResults->map(fn ($r) => [
                 'document' => $r['document_name'],
                 'similarity' => $r['similarity'],
+                'relevance_score' => $r['relevance_score'] ?? null,
                 'rrf_score' => $r['rrf_score'] ?? null,
-                'semantic_rank' => $r['semantic_rank'] ?? null,
-                'keyword_rank' => $r['keyword_rank'] ?? null,
+                'reranked' => $r['reranked'] ?? false,
             ])->toArray();
 
             // Format context for prompt
-            return $this->formatKnowledgeBaseContext($results);
+            return $this->formatKnowledgeBaseContext($dedupedResults);
         } catch (\Exception $e) {
             Log::error('KB search failed', [
                 'bot_id' => $bot->id,
@@ -618,6 +662,7 @@ PROMPT;
             'results_count' => 0,
             'chunks_used' => [],
             'search_mode' => 'none',
+            'query_enhancement' => null,
         ];
 
         $context = '';
@@ -634,6 +679,8 @@ PROMPT;
             'context_preview' => substr($context, 0, 500) . (strlen($context) > 500 ? '...' : ''),
             'metadata' => $metadata,
             'hybrid_search_enabled' => $this->hybridSearchService->isEnabled(),
+            'query_enhancement_enabled' => $this->queryEnhancement?->isEnabled() ?? false,
+            'reranking_enabled' => $this->hybridSearchService->isRerankingEnabled(),
         ];
     }
 }
