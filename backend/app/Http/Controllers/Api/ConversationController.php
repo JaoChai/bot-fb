@@ -61,16 +61,17 @@ class ConversationController extends Controller
         }
 
         // Search by external customer ID or customer profile name
+        // Using LEFT JOIN instead of whereHas for better performance
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('external_customer_id', 'ilike', "%{$search}%")
-                  ->orWhereHas('customerProfile', function ($q) use ($search) {
-                      $q->where('display_name', 'ilike', "%{$search}%")
-                        ->orWhere('email', 'ilike', "%{$search}%")
-                        ->orWhere('phone', 'ilike', "%{$search}%");
-                  });
-            });
+            $query->leftJoin('customer_profiles as cp_search', 'conversations.customer_profile_id', '=', 'cp_search.id')
+                ->where(function ($q) use ($search) {
+                    $q->where('conversations.external_customer_id', 'ilike', "%{$search}%")
+                        ->orWhere('cp_search.display_name', 'ilike', "%{$search}%")
+                        ->orWhere('cp_search.email', 'ilike', "%{$search}%")
+                        ->orWhere('cp_search.phone', 'ilike', "%{$search}%");
+                })
+                ->select('conversations.*'); // Ensure only conversation columns are returned
         }
 
         // Date range filters
@@ -230,7 +231,7 @@ class ConversationController extends Controller
         $this->authorize('update', $bot);
         $this->validateConversationBelongsToBot($conversation, $bot);
 
-        $isHandover = !$conversation->is_handover;
+        $isHandover = ! $conversation->is_handover;
 
         $updateData = [
             'is_handover' => $isHandover,
@@ -238,12 +239,12 @@ class ConversationController extends Controller
         ];
 
         // Assign to current user when enabling handover
-        if ($isHandover && !$conversation->assigned_user_id) {
+        if ($isHandover && ! $conversation->assigned_user_id) {
             $updateData['assigned_user_id'] = $request->user()->id;
         }
 
         // Optionally unassign when disabling handover
-        if (!$isHandover && $request->boolean('unassign', false)) {
+        if (! $isHandover && $request->boolean('unassign', false)) {
             $updateData['assigned_user_id'] = null;
         }
 
@@ -257,34 +258,72 @@ class ConversationController extends Controller
 
     /**
      * Get conversation statistics for a bot.
+     * Optimized: Single query with CTE instead of 6 separate queries.
      */
     public function stats(Request $request, Bot $bot): JsonResponse
     {
         $this->authorize('view', $bot);
 
-        $stats = [
-            'total' => $bot->conversations()->count(),
-            'active' => $bot->conversations()->where('status', 'active')->count(),
-            'closed' => $bot->conversations()->where('status', 'closed')->count(),
-            'handover' => $bot->conversations()->where('status', 'handover')->count(),
-            'messages_today' => $bot->conversations()
-                ->join('messages', 'conversations.id', '=', 'messages.conversation_id')
-                ->whereDate('messages.created_at', today())
-                ->count(),
-            'avg_messages_per_conversation' => round(
-                $bot->conversations()->avg('message_count') ?? 0,
-                1
+        // Use a single optimized query with PostgreSQL aggregations
+        $stats = DB::selectOne("
+            WITH conv_base AS (
+                SELECT
+                    id,
+                    status,
+                    channel_type,
+                    message_count
+                FROM conversations
+                WHERE bot_id = ? AND deleted_at IS NULL
             ),
-        ];
+            status_counts AS (
+                SELECT
+                    COUNT(*) as total,
+                    COUNT(*) FILTER (WHERE status = 'active') as active,
+                    COUNT(*) FILTER (WHERE status = 'closed') as closed,
+                    COUNT(*) FILTER (WHERE status = 'handover') as handover,
+                    COALESCE(AVG(message_count), 0) as avg_messages
+                FROM conv_base
+            ),
+            channel_counts AS (
+                SELECT jsonb_object_agg(channel_type, cnt) as by_channel
+                FROM (
+                    SELECT channel_type, COUNT(*) as cnt
+                    FROM conv_base
+                    GROUP BY channel_type
+                ) sub
+            ),
+            messages_today AS (
+                SELECT COUNT(*) as count
+                FROM messages m
+                INNER JOIN conversations c ON m.conversation_id = c.id
+                WHERE c.bot_id = ? AND c.deleted_at IS NULL
+                    AND m.created_at >= CURRENT_DATE
+                    AND m.created_at < CURRENT_DATE + INTERVAL '1 day'
+            )
+            SELECT
+                sc.total,
+                sc.active,
+                sc.closed,
+                sc.handover,
+                sc.avg_messages,
+                mt.count as messages_today,
+                COALESCE(cc.by_channel, '{}'::jsonb) as by_channel
+            FROM status_counts sc
+            CROSS JOIN messages_today mt
+            CROSS JOIN channel_counts cc
+        ", [$bot->id, $bot->id]);
 
-        // Channel breakdown
-        $stats['by_channel'] = $bot->conversations()
-            ->selectRaw('channel_type, COUNT(*) as count')
-            ->groupBy('channel_type')
-            ->pluck('count', 'channel_type')
-            ->toArray();
-
-        return response()->json(['data' => $stats]);
+        return response()->json([
+            'data' => [
+                'total' => (int) ($stats->total ?? 0),
+                'active' => (int) ($stats->active ?? 0),
+                'closed' => (int) ($stats->closed ?? 0),
+                'handover' => (int) ($stats->handover ?? 0),
+                'messages_today' => (int) ($stats->messages_today ?? 0),
+                'avg_messages_per_conversation' => round((float) ($stats->avg_messages ?? 0), 1),
+                'by_channel' => json_decode($stats->by_channel ?? '{}', true),
+            ],
+        ]);
     }
 
     /**
@@ -478,25 +517,25 @@ class ConversationController extends Controller
 
     /**
      * Get all unique tags used in bot conversations.
+     * Optimized: SQL aggregation instead of fetching all rows.
      */
     public function getAllTags(Request $request, Bot $bot): JsonResponse
     {
         $this->authorize('view', $bot);
 
-        $conversations = $bot->conversations()
-            ->whereNotNull('tags')
-            ->pluck('tags');
-
-        $allTags = [];
-        foreach ($conversations as $tags) {
-            $allTags = array_merge($allTags, $tags ?? []);
-        }
-
-        $uniqueTags = array_unique($allTags);
-        sort($uniqueTags);
+        // Use PostgreSQL jsonb_array_elements_text for efficient tag extraction
+        $tags = DB::select('
+            SELECT DISTINCT jsonb_array_elements_text(tags) as tag
+            FROM conversations
+            WHERE bot_id = ?
+                AND deleted_at IS NULL
+                AND tags IS NOT NULL
+                AND jsonb_array_length(tags) > 0
+            ORDER BY tag
+        ', [$bot->id]);
 
         return response()->json([
-            'data' => array_values($uniqueTags),
+            'data' => array_column($tags, 'tag'),
         ]);
     }
 
@@ -509,7 +548,7 @@ class ConversationController extends Controller
         $this->validateConversationBelongsToBot($conversation, $bot);
 
         // Must be in handover mode
-        if (!$conversation->is_handover) {
+        if (! $conversation->is_handover) {
             return response()->json([
                 'message' => 'Conversation must be in handover mode to send agent messages',
             ], 400);

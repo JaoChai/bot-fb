@@ -6,6 +6,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools"
 import { Toaster } from "@/components/ui/sonner"
 import { queryClient } from "./lib/query"
 import { router } from "./router"
+import { reportWebVitals } from "./lib/webVitals"
 import "./index.css"
 
 createRoot(document.getElementById("root")!).render(
@@ -17,3 +18,6 @@ createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </StrictMode>
 )
+
+// Report Web Vitals for performance monitoring
+reportWebVitals()

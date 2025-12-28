@@ -60,4 +60,54 @@ class Conversation extends Model
     {
         return $this->hasMany(Message::class);
     }
+
+    // Query scopes for common patterns
+
+    /**
+     * Scope a query to only include active conversations.
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('status', 'active');
+    }
+
+    /**
+     * Scope a query to only include conversations in handover mode.
+     */
+    public function scopeHandover($query)
+    {
+        return $query->where('is_handover', true);
+    }
+
+    /**
+     * Scope a query to filter by bot.
+     */
+    public function scopeForBot($query, int $botId)
+    {
+        return $query->where('bot_id', $botId);
+    }
+
+    /**
+     * Scope a query to filter by channel type.
+     */
+    public function scopeOfChannel($query, string $channelType)
+    {
+        return $query->where('channel_type', $channelType);
+    }
+
+    /**
+     * Scope a query to filter by assigned user.
+     */
+    public function scopeAssignedTo($query, int $userId)
+    {
+        return $query->where('assigned_user_id', $userId);
+    }
+
+    /**
+     * Scope a query to order by most recent message.
+     */
+    public function scopeRecentFirst($query)
+    {
+        return $query->orderByDesc('last_message_at');
+    }
 }
