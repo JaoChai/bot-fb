@@ -17,7 +17,7 @@ import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations } from '@/hook
 import { useStreamingChat } from '@/hooks/useStreamingChat';
 import { useAllKnowledgeBases } from '@/hooks/useKnowledgeBase';
 import { useToast } from '@/hooks/use-toast';
-import { ThinkingDisplay } from '@/components/ThinkingDisplay';
+import { ProcessDisplay } from '@/components/ProcessDisplay';
 import {
   Loader2,
   Save,
@@ -39,7 +39,6 @@ import {
   Trash2,
   Code,
   Square,
-  Brain,
 } from 'lucide-react';
 import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
 
@@ -124,8 +123,6 @@ export function FlowEditorPage() {
   const {
     messages: chatMessages,
     isStreaming,
-    enableThinking,
-    setEnableThinking,
     sendMessage: sendStreamingMessage,
     cancelStream,
     clearMessages,
@@ -977,17 +974,6 @@ export function FlowEditorPage() {
               <span className="font-semibold">แชทจำลอง</span>
             </div>
             <div className="flex items-center gap-2">
-              {/* Thinking Toggle */}
-              <button
-                onClick={() => setEnableThinking(!enableThinking)}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
-                  enableThinking ? 'bg-purple-500/30 text-white' : 'bg-white/10 text-white/70'
-                }`}
-                title={enableThinking ? 'Thinking Mode เปิด' : 'Thinking Mode ปิด'}
-              >
-                <Brain className="h-3 w-3" />
-                <span>Think</span>
-              </button>
               {/* Clear Button */}
               <Button
                 size="sm"
@@ -1012,11 +998,6 @@ export function FlowEditorPage() {
                 <p className="text-xs text-muted-foreground/70 mt-1">
                   พิมพ์ข้อความด้านล่างเพื่อเริ่มต้น
                 </p>
-                {enableThinking && (
-                  <p className="text-xs text-purple-500 mt-2">
-                    🧠 Thinking Mode เปิดอยู่
-                  </p>
-                )}
               </div>
             ) : (
               chatMessages.map((msg) => (
@@ -1025,10 +1006,11 @@ export function FlowEditorPage() {
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div className={`max-w-[85%] ${msg.role === 'assistant' ? 'w-full' : ''}`}>
-                    {/* Show thinking display for assistant messages */}
-                    {msg.role === 'assistant' && (msg.thinking || msg.isStreaming) && (
-                      <ThinkingDisplay
-                        thinking={msg.thinking || ''}
+                    {/* Show process display for assistant messages */}
+                    {msg.role === 'assistant' && (msg.processLogs?.length || msg.isStreaming) && (
+                      <ProcessDisplay
+                        logs={msg.processLogs || []}
+                        summary={msg.summary}
                         isStreaming={msg.isStreaming}
                       />
                     )}

@@ -1,11 +1,12 @@
 import { useState, useRef, useCallback } from 'react';
-import { streamFlowTest, createStreamAbortController } from '@/lib/stream';
+import { streamFlowTest, createStreamAbortController, type ProcessLog, type DoneSummary } from '@/lib/stream';
 
 export interface StreamingMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  thinking?: string;
+  processLogs?: ProcessLog[];
+  summary?: DoneSummary;
   isStreaming?: boolean;
 }
 
@@ -17,7 +18,6 @@ interface UseStreamingChatOptions {
 export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
   const [messages, setMessages] = useState<StreamingMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [enableThinking, setEnableThinking] = useState(true);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   /**
@@ -53,10 +53,16 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
       content: m.content,
     }));
 
-    // Add placeholder for assistant
+    // Add placeholder for assistant with empty process logs
     setMessages(prev => [
       ...prev,
-      { id: assistantMsgId, role: 'assistant', content: '', thinking: '', isStreaming: true }
+      {
+        id: assistantMsgId,
+        role: 'assistant',
+        content: '',
+        processLogs: [],
+        isStreaming: true
+      }
     ]);
 
     setIsStreaming(true);
@@ -70,12 +76,12 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
         flowId,
         message.trim(),
         history,
-        enableThinking,
+        false, // enableThinking deprecated
         {
-          onThinking: (text) => {
+          onProcessLog: (log) => {
             setMessages(prev => prev.map(m =>
               m.id === assistantMsgId
-                ? { ...m, thinking: (m.thinking || '') + text }
+                ? { ...m, processLogs: [...(m.processLogs || []), log] }
                 : m
             ));
           },
@@ -93,10 +99,10 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
                 : m
             ));
           },
-          onDone: () => {
+          onDone: (summary) => {
             setMessages(prev => prev.map(m =>
               m.id === assistantMsgId
-                ? { ...m, isStreaming: false }
+                ? { ...m, summary, isStreaming: false }
                 : m
             ));
           },
@@ -123,7 +129,7 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
       setIsStreaming(false);
       abortControllerRef.current = null;
     }
-  }, [botId, flowId, messages, enableThinking, isStreaming, generateId]);
+  }, [botId, flowId, messages, isStreaming, generateId]);
 
   /**
    * Cancel the current stream
@@ -145,20 +151,14 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
     setMessages([]);
   }, [isStreaming, cancelStream]);
 
-  /**
-   * Toggle thinking mode
-   */
-  const toggleThinking = useCallback((enabled: boolean) => {
-    setEnableThinking(enabled);
-  }, []);
-
   return {
     messages,
     isStreaming,
-    enableThinking,
-    setEnableThinking: toggleThinking,
     sendMessage,
     cancelStream,
     clearMessages,
   };
 }
+
+// Re-export ProcessLog type for components
+export type { ProcessLog, DoneSummary };
