@@ -17,6 +17,8 @@ export function useConnection(botId: number | null) {
       return response.data;
     },
     enabled: !!botId,
+    refetchOnWindowFocus: true,
+    staleTime: 30 * 1000, // 30 seconds
   });
 }
 
