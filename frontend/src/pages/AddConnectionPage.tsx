@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, MessageCircle } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { ArrowLeft, MessageCircle, Check, ArrowRight, Info } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 // LINE icon component
 function LineIcon({ className }: { className?: string }) {
@@ -33,38 +35,52 @@ function MessengerIcon({ className }: { className?: string }) {
 
 export function AddConnectionPage() {
   const navigate = useNavigate();
+  const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
 
   const platforms = [
     {
-      id: 'facebook',
-      name: 'Facebook Page',
-      description: 'เชื่อมต่อ Facebook Page ของคุณ',
-      icon: <MessengerIcon className="h-12 w-12" />,
-      color: 'text-blue-600',
+      id: 'line',
+      name: 'LINE OA',
+      fullName: 'LINE Official Account',
+      description: 'เชื่อมต่อกับ LINE Official Account',
+      icon: <LineIcon className="h-10 w-10" />,
+      bgColor: 'bg-[#06C755]/10',
+      borderColor: 'border-[#06C755]',
+      requirements: ['LINE Official Account (ฟรีหรือ Premium)', 'Channel ID และ Channel Secret', 'Channel Access Token'],
     },
     {
-      id: 'line',
-      name: 'LINE Official Account',
-      description: 'เชื่อมต่อ LINE OA ของคุณ',
-      icon: <LineIcon className="h-12 w-12" />,
-      color: 'text-green-600',
+      id: 'facebook',
+      name: 'Facebook',
+      fullName: 'Facebook Page',
+      description: 'เชื่อมต่อกับ Facebook Page',
+      icon: <MessengerIcon className="h-10 w-10" />,
+      bgColor: 'bg-[#0084FF]/10',
+      borderColor: 'border-[#0084FF]',
+      requirements: ['Facebook Page ที่เป็นเจ้าของ', 'สิทธิ์การเข้าถึง Page Access Token', 'การอนุมัติจาก Meta (สำหรับ Production)'],
     },
     {
       id: 'testing',
-      name: 'Just Testing',
-      description: 'ทดสอบบอทโดยไม่เชื่อม Platform',
-      icon: <MessageCircle className="h-12 w-12 text-muted-foreground" />,
-      color: 'text-muted-foreground',
+      name: 'ทดสอบ',
+      fullName: 'Just Testing',
+      description: 'ทดสอบก่อนเชื่อม Platform จริง',
+      icon: <MessageCircle className="h-10 w-10 text-slate-500" />,
+      bgColor: 'bg-slate-100 dark:bg-slate-800',
+      borderColor: 'border-slate-400',
+      requirements: ['ไม่ต้องมี API Key หรือ Credentials', 'ทดสอบผ่าน Chat Simulator ในระบบ', 'เหมาะสำหรับพัฒนาและทดสอบ Flow'],
     },
   ];
 
-  const handleSelectPlatform = (platformId: string) => {
-    navigate(`/connections/new?platform=${platformId}`);
+  const handleContinue = () => {
+    if (selectedPlatform) {
+      navigate(`/connections/new?platform=${selectedPlatform}`);
+    }
   };
+
+  const selectedPlatformData = platforms.find(p => p.id === selectedPlatform);
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-6xl mx-auto px-4 py-8">
+      <div className="max-w-3xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <Button
@@ -76,51 +92,91 @@ export function AddConnectionPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">เพิ่มการเชื่อมต่อใหม่</h1>
-            <p className="text-muted-foreground mt-1">เลือก Platform ที่คุณต้องการเชื่อมต่อ</p>
+            <h1 className="text-2xl font-bold tracking-tight">เพิ่มการเชื่อมต่อใหม่</h1>
+            <p className="text-muted-foreground text-sm mt-1">เลือก Platform ที่ต้องการเชื่อมต่อกับ AI Chatbot</p>
           </div>
         </div>
 
-        {/* Platform Selection Cards */}
-        <div className="grid gap-6 md:grid-cols-3 sm:grid-cols-1">
+        {/* Platform Selection - Horizontal Cards */}
+        <div className="grid grid-cols-3 gap-4 mb-6">
           {platforms.map((platform) => (
-            <Card
+            <button
               key={platform.id}
-              className="cursor-pointer transition-all duration-200 hover:border-slate-600 hover:shadow-lg"
-              onClick={() => handleSelectPlatform(platform.id)}
+              onClick={() => setSelectedPlatform(platform.id)}
+              className={cn(
+                'relative flex flex-col items-center p-6 rounded-xl border-2 transition-all duration-200 cursor-pointer',
+                'hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary',
+                selectedPlatform === platform.id
+                  ? `${platform.borderColor} ${platform.bgColor} shadow-md`
+                  : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-card'
+              )}
             >
-              <CardHeader className="text-center pb-2">
-                <div className={`flex justify-center mb-4 ${platform.color}`}>
-                  {platform.icon}
+              {/* Selected Indicator */}
+              {selectedPlatform === platform.id && (
+                <div className="absolute top-3 right-3 w-6 h-6 bg-primary rounded-full flex items-center justify-center">
+                  <Check className="h-4 w-4 text-primary-foreground" />
                 </div>
-                <CardTitle className="text-lg">{platform.name}</CardTitle>
-              </CardHeader>
-              <CardContent className="text-center">
-                <p className="text-sm text-muted-foreground mb-6">{platform.description}</p>
-                <Button
-                  variant="orange"
-                  className="w-full"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSelectPlatform(platform.id);
-                  }}
-                >
-                  เลือก {platform.name}
-                </Button>
-              </CardContent>
-            </Card>
+              )}
+
+              {/* Icon */}
+              <div className={cn(
+                'w-16 h-16 rounded-xl flex items-center justify-center mb-3',
+                selectedPlatform === platform.id ? 'bg-white dark:bg-slate-900' : platform.bgColor
+              )}>
+                {platform.icon}
+              </div>
+
+              {/* Name */}
+              <span className="font-semibold text-base">{platform.name}</span>
+              <span className="text-xs text-muted-foreground mt-1">{platform.description}</span>
+            </button>
           ))}
         </div>
 
-        {/* Additional Info */}
-        <div className="mt-12 p-6 bg-card border rounded-lg">
-          <h3 className="font-semibold mb-3">💡 คำแนะนำ</h3>
-          <ul className="space-y-2 text-sm text-muted-foreground">
-            <li>• <strong>Facebook Page</strong>: ต้องมี Facebook Page และการอนุมัติจาก Meta</li>
-            <li>• <strong>LINE Official Account</strong>: ต้องมี LINE OA และ Channel ID & Access Token</li>
-            <li>• <strong>Just Testing</strong>: ใช้สำหรับทดสอบ โดยไม่ต้องเชื่อมต่อ Platform จริง</li>
-          </ul>
+        {/* Requirements Info Panel */}
+        {selectedPlatformData && (
+          <Card className="mb-6 border-l-4 border-l-primary animate-in fade-in slide-in-from-top-2 duration-200">
+            <CardContent className="p-5">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                  <Info className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold mb-2">สิ่งที่ต้องมีสำหรับ {selectedPlatformData.fullName}</h3>
+                  <ul className="space-y-1.5">
+                    {selectedPlatformData.requirements.map((req, index) => (
+                      <li key={index} className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <span className="w-1.5 h-1.5 bg-primary rounded-full flex-shrink-0" />
+                        {req}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Continue Button */}
+        <div className="flex justify-end">
+          <Button
+            variant="orange"
+            size="lg"
+            onClick={handleContinue}
+            disabled={!selectedPlatform}
+            className="min-w-[180px]"
+          >
+            ถัดไป
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
         </div>
+
+        {/* Help Text */}
+        {!selectedPlatform && (
+          <p className="text-center text-sm text-muted-foreground mt-8">
+            เลือก Platform ด้านบนเพื่อดำเนินการต่อ
+          </p>
+        )}
       </div>
     </div>
   );

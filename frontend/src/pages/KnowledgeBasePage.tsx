@@ -14,12 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Badge } from '@/components/ui/badge';
 import { useBots, useKnowledgeBaseOperations } from '@/hooks/useKnowledgeBase';
 import { DocumentUpload } from '@/components/knowledge-base/DocumentUpload';
 import { DocumentList } from '@/components/knowledge-base/DocumentList';
@@ -29,10 +24,10 @@ import {
   FileText,
   Layers,
   Cpu,
-  HelpCircle,
   BookOpen,
-  ArrowRight,
-  Sparkles,
+  Search,
+  Plus,
+  Database,
 } from 'lucide-react';
 
 export function KnowledgeBasePage() {
@@ -111,145 +106,107 @@ export function KnowledgeBasePage() {
   }
 
   return (
-    <TooltipProvider>
-      <div className="space-y-6">
+    <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">ฐานความรู้</h1>
-            <p className="text-muted-foreground">
+            <p className="text-muted-foreground text-sm mt-1">
               เพิ่มข้อมูลให้ Bot เรียนรู้และตอบคำถามได้อย่างแม่นยำ
             </p>
           </div>
           {selectedBot && (
-            <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-full px-4 py-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <span>Smart RAG: Hybrid + Reranking + Query Enhancement</span>
-            </div>
+            <Badge variant="outline" className="hidden sm:flex gap-1.5 px-3 py-1.5">
+              <Database className="h-3.5 w-3.5 text-primary" />
+              Smart RAG
+            </Badge>
           )}
         </div>
 
-        {/* Step 1: เลือก Bot */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
-                1
-              </div>
-              <div>
-                <CardTitle className="text-lg">เลือก Bot</CardTitle>
-                <CardDescription>
-                  เลือก Bot ที่ต้องการจัดการฐานความรู้
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Select
-              value={selectedBotId?.toString() ?? ''}
-              onValueChange={handleBotChange}
-            >
-              <SelectTrigger className="w-full md:w-[350px]">
-                <SelectValue placeholder="คลิกเพื่อเลือก Bot..." />
-              </SelectTrigger>
-              <SelectContent>
-                {bots.map((bot) => (
-                  <SelectItem key={bot.id} value={bot.id.toString()}>
-                    <div className="flex items-center gap-2">
-                      <Bot className="h-4 w-4" />
-                      {bot.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </CardContent>
-        </Card>
+        {/* Bot Selector - Compact */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Bot className="h-4 w-4 text-muted-foreground" />
+            เลือก Bot:
+          </div>
+          <Select
+            value={selectedBotId?.toString() ?? ''}
+            onValueChange={handleBotChange}
+          >
+            <SelectTrigger className="w-[280px]">
+              <SelectValue placeholder="คลิกเพื่อเลือก Bot..." />
+            </SelectTrigger>
+            <SelectContent>
+              {bots.map((bot) => (
+                <SelectItem key={bot.id} value={bot.id.toString()}>
+                  <div className="flex items-center gap-2">
+                    <Bot className="h-4 w-4" />
+                    {bot.name}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-        {/* เลือก Bot แล้ว - แสดง Content */}
-        {selectedBotId && (
-          <>
-            {/* Stats Cards */}
+        {/* Main Content Area */}
+        {selectedBotId ? (
+          <div className="space-y-6">
+            {/* Stats Overview - Horizontal */}
             {knowledgeBase && (
-              <div className="grid gap-4 md:grid-cols-3">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardDescription className="flex items-center gap-1">
-                        <FileText className="h-4 w-4" />
-                        เอกสาร
-                      </CardDescription>
-                      <Tooltip>
-                        <TooltipTrigger>
-                          <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>จำนวนเอกสารทั้งหมดในฐานความรู้</p>
-                        </TooltipContent>
-                      </Tooltip>
+              <div className="grid grid-cols-3 gap-4">
+                <Card className="bg-gradient-to-br from-blue-50 to-white dark:from-blue-950/30 dark:to-card border-blue-100 dark:border-blue-900/50">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-shrink-0 w-12 h-12 bg-blue-100 dark:bg-blue-900/50 rounded-xl flex items-center justify-center">
+                        <FileText className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold tabular-nums">{knowledgeBase.document_count}</p>
+                        <p className="text-xs text-muted-foreground">เอกสาร</p>
+                      </div>
                     </div>
-                    <CardTitle className="text-3xl tabular-nums">
-                      {knowledgeBase.document_count}
-                    </CardTitle>
-                  </CardHeader>
+                  </CardContent>
                 </Card>
 
-                <Card>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardDescription className="flex items-center gap-1">
-                        <Layers className="h-4 w-4" />
-                        Chunks
-                      </CardDescription>
-                      <Tooltip>
-                        <TooltipTrigger>
-                          <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-xs">
-                          <p>
-                            เอกสารถูกแบ่งเป็นชิ้นเล็กๆ (Chunks) เพื่อให้ AI ค้นหาได้แม่นยำ
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
+                <Card className="bg-gradient-to-br from-purple-50 to-white dark:from-purple-950/30 dark:to-card border-purple-100 dark:border-purple-900/50">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-shrink-0 w-12 h-12 bg-purple-100 dark:bg-purple-900/50 rounded-xl flex items-center justify-center">
+                        <Layers className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold tabular-nums">{knowledgeBase.chunk_count}</p>
+                        <p className="text-xs text-muted-foreground">Chunks</p>
+                      </div>
                     </div>
-                    <CardTitle className="text-3xl tabular-nums">
-                      {knowledgeBase.chunk_count}
-                    </CardTitle>
-                  </CardHeader>
+                  </CardContent>
                 </Card>
 
-                <Card>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardDescription className="flex items-center gap-1">
-                        <Cpu className="h-4 w-4" />
-                        โมเดล Embedding
-                      </CardDescription>
-                      <Tooltip>
-                        <TooltipTrigger>
-                          <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-xs">
-                          <p>
-                            AI Model ที่ใช้แปลงข้อความเป็น Vector เพื่อค้นหาความหมาย
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
+                <Card className="bg-gradient-to-br from-green-50 to-white dark:from-green-950/30 dark:to-card border-green-100 dark:border-green-900/50">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-shrink-0 w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-xl flex items-center justify-center">
+                        <Cpu className="h-6 w-6 text-green-600 dark:text-green-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-mono font-medium truncate max-w-[120px]">
+                          {(knowledgeBase.embedding_model || 'text-embedding-3-small').split('/').pop()}
+                        </p>
+                        <p className="text-xs text-muted-foreground">Embedding</p>
+                      </div>
                     </div>
-                    <CardTitle className="text-sm font-mono truncate">
-                      {knowledgeBase.embedding_model || 'text-embedding-3-small'}
-                    </CardTitle>
-                  </CardHeader>
+                  </CardContent>
                 </Card>
               </div>
             )}
 
-            {/* Step 2: เพิ่มเอกสาร */}
+            {/* Add Document Section */}
             <Card>
               <CardHeader className="pb-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
-                    2
+                <div className="flex items-center gap-3">
+                  <div className="flex-shrink-0 w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                    <Plus className="h-5 w-5 text-primary" />
                   </div>
                   <div>
                     <CardTitle className="text-lg">เพิ่มข้อมูลความรู้</CardTitle>
@@ -267,18 +224,18 @@ export function KnowledgeBasePage() {
               </CardContent>
             </Card>
 
-            {/* Step 3: รายการเอกสาร */}
+            {/* Document List Section */}
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
-                      3
+                  <div className="flex items-center gap-3">
+                    <div className="flex-shrink-0 w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                      <FileText className="h-5 w-5 text-primary" />
                     </div>
                     <div>
                       <CardTitle className="text-lg">รายการเอกสาร</CardTitle>
                       <CardDescription>
-                        {documents.length} เอกสารในฐานความรู้
+                        {documents.length === 0 ? 'ยังไม่มีเอกสาร' : `${documents.length} เอกสารในฐานความรู้`}
                       </CardDescription>
                     </div>
                   </div>
@@ -295,13 +252,13 @@ export function KnowledgeBasePage() {
               </CardContent>
             </Card>
 
-            {/* Step 4: ทดสอบค้นหา */}
+            {/* Search Section */}
             {(knowledgeBase?.chunk_count ?? 0) > 0 && (
               <Card>
                 <CardHeader className="pb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
-                      4
+                  <div className="flex items-center gap-3">
+                    <div className="flex-shrink-0 w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                      <Search className="h-5 w-5 text-primary" />
                     </div>
                     <div>
                       <CardTitle className="text-lg">ทดสอบค้นหา</CardTitle>
@@ -319,37 +276,39 @@ export function KnowledgeBasePage() {
                 </CardContent>
               </Card>
             )}
-          </>
-        )}
-
-        {/* ยังไม่ได้เลือก Bot */}
-        {!selectedBotId && (
-          <Card className="border-dashed">
-            <CardHeader className="text-center pb-2">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                <BookOpen className="h-8 w-8 text-muted-foreground" />
+          </div>
+        ) : (
+          /* Empty State - No Bot Selected */
+          <Card className="border-dashed border-2">
+            <CardContent className="flex flex-col items-center justify-center py-16">
+              <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-primary/10 to-primary/5">
+                <BookOpen className="h-10 w-10 text-primary" />
               </div>
-              <CardTitle className="text-xl">เลือก Bot เพื่อเริ่มต้น</CardTitle>
-              <CardDescription className="max-w-md mx-auto">
-                เลือก Bot จากด้านบนเพื่อจัดการฐานความรู้ เพิ่มเอกสาร และทดสอบการค้นหา
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-center pb-6">
-              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs">1</span>
-                  เลือก Bot
-                </span>
-                <ArrowRight className="h-4 w-4" />
-                <span className="flex items-center gap-1">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-muted-foreground text-xs">2</span>
-                  เพิ่มเอกสาร
-                </span>
-                <ArrowRight className="h-4 w-4" />
-                <span className="flex items-center gap-1">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-muted-foreground text-xs">3</span>
-                  ทดสอบ
-                </span>
+              <h2 className="text-xl font-semibold mb-2">เลือก Bot เพื่อเริ่มต้น</h2>
+              <p className="text-muted-foreground text-center max-w-md mb-6">
+                เลือก Bot จากเมนูด้านบนเพื่อจัดการฐานความรู้ เพิ่มเอกสาร และทดสอบการค้นหา
+              </p>
+              <div className="flex items-center gap-6 text-sm text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Bot className="h-4 w-4 text-primary" />
+                  </div>
+                  <span>เลือก Bot</span>
+                </div>
+                <div className="w-8 h-px bg-border" />
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                    <Plus className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <span>เพิ่มเอกสาร</span>
+                </div>
+                <div className="w-8 h-px bg-border" />
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                    <Search className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <span>ทดสอบ</span>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -361,7 +320,6 @@ export function KnowledgeBasePage() {
             {(error as Error).message || 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง'}
           </div>
         )}
-      </div>
-    </TooltipProvider>
+    </div>
   );
 }

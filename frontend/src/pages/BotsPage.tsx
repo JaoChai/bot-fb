@@ -1,9 +1,14 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,9 +36,10 @@ import {
   Copy,
   Check,
   Workflow,
-  Pencil,
   MoreHorizontal,
-  Trash2
+  Trash2,
+  ExternalLink,
+  MessageCircle,
 } from 'lucide-react';
 
 // LINE icon component
@@ -171,127 +177,180 @@ export function BotsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">การเชื่อมต่อ</h1>
-        <Button variant="orange" asChild>
-          <Link to="/connections/add">
-            <Plus className="h-4 w-4" />
-            เพิ่มการเชื่อมต่อ
-          </Link>
-        </Button>
-      </div>
-
-      {bots.length === 0 ? (
-        <Card className="bg-white dark:bg-card">
-          <CardHeader className="text-center py-12">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-              <BotIcon className="h-8 w-8 text-slate-600 dark:text-slate-400" />
-            </div>
-            <CardTitle className="text-xl">ยังไม่มีการเชื่อมต่อ</CardTitle>
-            <p className="text-muted-foreground mt-2">
-              สร้างการเชื่อมต่อใหม่เพื่อเริ่มใช้งาน AI Chatbot
+    <TooltipProvider>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">การเชื่อมต่อ</h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              จัดการการเชื่อมต่อ Chatbot กับ Platform ต่างๆ
             </p>
-          </CardHeader>
-          <CardContent className="text-center pb-12">
-            <Button variant="orange" size="lg" asChild>
-              <Link to="/connections/add">
-                <Plus className="h-4 w-4" />
-                สร้างการเชื่อมต่อแรก
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4">
-          {bots.map(bot => (
-            <Card key={bot.id} className="bg-white dark:bg-card">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-4">
-                    <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-slate-100 dark:bg-slate-800 rounded-lg">
+          </div>
+          <Button variant="orange" asChild>
+            <Link to="/connections/add">
+              <Plus className="h-4 w-4" />
+              เพิ่มการเชื่อมต่อ
+            </Link>
+          </Button>
+        </div>
+
+        {bots.length === 0 ? (
+          /* Empty State */
+          <Card className="border-dashed border-2">
+            <CardContent className="flex flex-col items-center justify-center py-16">
+              <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900">
+                <BotIcon className="h-10 w-10 text-blue-600 dark:text-blue-400" />
+              </div>
+              <h2 className="text-xl font-semibold mb-2">เริ่มต้นใช้งาน AI Chatbot</h2>
+              <p className="text-muted-foreground text-center max-w-md mb-6">
+                สร้างการเชื่อมต่อแรกเพื่อเชื่อม AI Chatbot กับ LINE, Facebook หรือทดสอบก่อนใช้งานจริง
+              </p>
+              <Button variant="orange" size="lg" asChild>
+                <Link to="/connections/add">
+                  <Plus className="h-5 w-5" />
+                  สร้างการเชื่อมต่อแรก
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          /* Bot List */
+          <div className="space-y-3">
+            {bots.map(bot => (
+              <Card
+                key={bot.id}
+                className="group hover:shadow-md transition-all duration-200 hover:border-slate-300 dark:hover:border-slate-600"
+              >
+                <CardContent className="p-5">
+                  <div className="flex items-start gap-4">
+                    {/* Platform Icon */}
+                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
                       {getChannelIcon(bot.channel_type)}
                     </div>
 
-                    <div>
-                      <h3 className="text-lg font-semibold">{bot.name}</h3>
-                      <Badge variant={bot.status === 'active' ? 'success' : 'inactive'}>
-                        {getStatusText(bot.status)}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to={`/bots/${bot.id}/edit`}>
-                        <Pencil className="h-4 w-4" />
-                        แก้ไขการเชื่อมต่อ
-                      </Link>
-                    </Button>
-                    <Button variant="orange" size="sm" asChild>
-                      <Link to={`/bots/${bot.id}/settings`}>
-                        <Settings className="h-4 w-4" />
-                        ตั้งค่า Bot
-                      </Link>
-                    </Button>
-                    <Button variant="orange-outline" size="sm" asChild>
-                      <Link to={`/flows/editor?botId=${bot.id}`}>
-                        <Workflow className="h-4 w-4" />
-                        แก้ไข AI Flow
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
+                    {/* Bot Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-1">
+                        <h3 className="text-lg font-semibold truncate">{bot.name}</h3>
+                        <Badge
+                          variant={bot.status === 'active' ? 'success' : 'inactive'}
+                          className="flex-shrink-0"
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${bot.status === 'active' ? 'bg-green-500' : 'bg-slate-400'}`} />
+                          {getStatusText(bot.status)}
+                        </Badge>
+                      </div>
 
-                {bot.webhook_url && (
-                  <div className="space-y-2">
-                    <label className="text-sm text-muted-foreground">Webhook URL</label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        readOnly
-                        value={bot.webhook_url}
-                        className="flex-1 bg-[oklch(0.961_0_0)] dark:bg-[oklch(0.15_0_0)] text-sm font-mono"
-                      />
-                      <Button
-                        variant="orange-outline"
-                        size="sm"
-                        onClick={() => copyWebhookUrl(bot.id, bot.webhook_url!)}
-                        className="flex-shrink-0"
-                      >
-                        {copiedId === bot.id ? (
-                          <Check className="h-4 w-4" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                        คัดลอก Webhook URL
-                      </Button>
+                      {/* Webhook URL - Compact */}
+                      {bot.webhook_url && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <code className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded font-mono truncate max-w-md">
+                            {bot.webhook_url}
+                          </code>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => copyWebhookUrl(bot.id, bot.webhook_url!)}
+                                className="flex-shrink-0 h-7 w-7"
+                              >
+                                {copiedId === bot.id ? (
+                                  <Check className="h-3.5 w-3.5 text-green-600" />
+                                ) : (
+                                  <Copy className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>คัดลอก Webhook URL</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="flex-shrink-0 h-7 w-7"
+                                asChild
+                              >
+                                <a href={bot.webhook_url} target="_blank" rel="noopener noreferrer">
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </a>
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>เปิดใน Tab ใหม่</TooltipContent>
+                          </Tooltip>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {/* Primary Actions */}
+                      <div className="hidden md:flex items-center gap-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="outline" size="sm" asChild>
+                              <Link to={`/bots/${bot.id}/settings`}>
+                                <Settings className="h-4 w-4" />
+                                <span className="ml-1.5">ตั้งค่า</span>
+                              </Link>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>ตั้งค่า Bot และ Prompt</TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="orange" size="sm" asChild>
+                              <Link to={`/flows/editor?botId=${bot.id}`}>
+                                <Workflow className="h-4 w-4" />
+                                <span className="ml-1.5">AI Flow</span>
+                              </Link>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>แก้ไข AI Flow และทดสอบ Chat</TooltipContent>
+                        </Tooltip>
+                      </div>
+
+                      {/* More Menu */}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            className="flex-shrink-0"
+                            className="h-8 w-8"
                             aria-label="ตัวเลือกเพิ่มเติม"
                           >
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem asChild>
-                            <Link to={`/bots/${bot.id}/edit`}>
-                              <Pencil className="h-4 w-4 mr-2" />
-                              แก้ไขการเชื่อมต่อ
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
+                        <DropdownMenuContent align="end" className="w-48">
+                          {/* Mobile-only items */}
+                          <DropdownMenuItem asChild className="md:hidden">
                             <Link to={`/bots/${bot.id}/settings`}>
                               <Settings className="h-4 w-4 mr-2" />
-                              ตั้งค่า
+                              ตั้งค่า Bot
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild className="md:hidden">
+                            <Link to={`/flows/editor?botId=${bot.id}`}>
+                              <Workflow className="h-4 w-4 mr-2" />
+                              แก้ไข AI Flow
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator className="md:hidden" />
+
+                          <DropdownMenuItem asChild>
+                            <Link to={`/bots/${bot.id}/edit`}>
+                              <MessageCircle className="h-4 w-4 mr-2" />
+                              แก้ไข API & Models
                             </Link>
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() => handleDeleteClick(bot)}
-                            className="text-destructive focus:text-destructive"
+                            className="text-destructive focus:text-destructive focus:bg-destructive/10"
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
                             ลบการเชื่อมต่อ
@@ -300,12 +359,11 @@ export function BotsPage() {
                       </DropdownMenu>
                     </div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
 
       {/* Delete confirmation dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -327,6 +385,7 @@ export function BotsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }
