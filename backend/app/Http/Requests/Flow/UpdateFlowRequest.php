@@ -16,7 +16,7 @@ class UpdateFlowRequest extends FormRequest
         return [
             'name' => ['sometimes', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
-            'system_prompt' => ['sometimes', 'string', 'max:10000'],
+            'system_prompt' => ['sometimes', 'string', 'max:50000'],
             'model' => ['nullable', 'string', 'max:100'],
             'temperature' => ['nullable', 'numeric', 'between:0,2'],
             'max_tokens' => ['nullable', 'integer', 'min:1', 'max:128000'],
