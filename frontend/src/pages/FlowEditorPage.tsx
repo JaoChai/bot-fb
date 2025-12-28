@@ -580,6 +580,80 @@ export function FlowEditorPage() {
 
                     {formData.agentic_mode && (
                       <div className="mt-4 space-y-4">
+                        {/* Tool Selection */}
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">เลือก Tools ที่ AI สามารถใช้ได้</Label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <label
+                              className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
+                                formData.enabled_tools?.includes('search_kb')
+                                  ? 'bg-cyan-500/10 border-cyan-500/30'
+                                  : 'hover:bg-muted'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.enabled_tools?.includes('search_kb') || false}
+                                onChange={(e) => {
+                                  const current = formData.enabled_tools || [];
+                                  if (e.target.checked) {
+                                    handleChange('enabled_tools', [...current, 'search_kb']);
+                                  } else {
+                                    handleChange('enabled_tools', current.filter(t => t !== 'search_kb'));
+                                  }
+                                }}
+                                className="rounded border-muted-foreground/50"
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center gap-1.5 text-sm font-medium">
+                                  <span>🔍</span>
+                                  <span>ค้นหาฐานความรู้</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  ค้นหาข้อมูลจาก KB ที่เชื่อมต่อ
+                                </p>
+                              </div>
+                            </label>
+
+                            <label
+                              className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
+                                formData.enabled_tools?.includes('calculate')
+                                  ? 'bg-cyan-500/10 border-cyan-500/30'
+                                  : 'hover:bg-muted'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.enabled_tools?.includes('calculate') || false}
+                                onChange={(e) => {
+                                  const current = formData.enabled_tools || [];
+                                  if (e.target.checked) {
+                                    handleChange('enabled_tools', [...current, 'calculate']);
+                                  } else {
+                                    handleChange('enabled_tools', current.filter(t => t !== 'calculate'));
+                                  }
+                                }}
+                                className="rounded border-muted-foreground/50"
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center gap-1.5 text-sm font-medium">
+                                  <span>🧮</span>
+                                  <span>คำนวณ</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  คำนวณตัวเลข ราคา เปอร์เซ็นต์
+                                </p>
+                              </div>
+                            </label>
+                          </div>
+                          {(!formData.enabled_tools || formData.enabled_tools.length === 0) && (
+                            <p className="text-xs text-amber-600 mt-1">
+                              ⚠️ กรุณาเลือกอย่างน้อย 1 tool เพื่อใช้งาน Agentic Mode
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Max Tool Calls */}
                         <div className="flex items-center gap-4">
                           <Label className="text-sm">จำนวนครั้งสูงสุดในการเรียกใช้ Tools</Label>
                           <Input

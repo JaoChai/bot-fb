@@ -8,6 +8,7 @@ use App\Models\Flow;
 use App\Models\User;
 use App\Services\HybridSearchService;
 use App\Services\OpenRouterService;
+use App\Services\ToolService;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Http\Request;
@@ -29,6 +30,7 @@ class StreamController extends Controller
 {
     protected OpenRouterService $openRouter;
     protected HybridSearchService $hybridSearch;
+    protected ToolService $toolService;
 
     // Track process metrics
     protected array $metrics = [
@@ -36,12 +38,17 @@ class StreamController extends Controller
         'models_used' => [],
         'prompt_tokens' => 0,
         'completion_tokens' => 0,
+        'tool_calls' => 0,
     ];
 
-    public function __construct(OpenRouterService $openRouter, HybridSearchService $hybridSearch)
-    {
+    public function __construct(
+        OpenRouterService $openRouter,
+        HybridSearchService $hybridSearch,
+        ToolService $toolService
+    ) {
         $this->openRouter = $openRouter;
         $this->hybridSearch = $hybridSearch;
+        $this->toolService = $toolService;
     }
 
     /**
@@ -103,16 +110,24 @@ class StreamController extends Controller
                 $this->sendSSE('process_start', [
                     'timestamp' => now()->toISOString(),
                     'message' => $message,
+                    'agentic_mode' => $flow->agentic_mode,
                 ]);
 
-                // === STEP 2: Decision Model - Intent Analysis ===
-                $intent = $this->runDecisionModel($bot, $message, $apiKey);
+                // === AGENTIC MODE: Use Agent Loop ===
+                if ($flow->agentic_mode && !empty($flow->enabled_tools)) {
+                    $this->runAgentLoop($bot, $flow, $message, $conversationHistory, $apiKey);
+                } else {
+                    // === STANDARD MODE: Decision → KB → Chat ===
 
-                // === STEP 3: Knowledge Base Search ===
-                $kbContext = $this->runKnowledgeBaseSearch($bot, $flow, $message, $intent);
+                    // === STEP 2: Decision Model - Intent Analysis ===
+                    $intent = $this->runDecisionModel($bot, $message, $apiKey);
 
-                // === STEP 4: Chat Model - Generate Response ===
-                $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey);
+                    // === STEP 3: Knowledge Base Search ===
+                    $kbContext = $this->runKnowledgeBaseSearch($bot, $flow, $message, $intent);
+
+                    // === STEP 4: Chat Model - Generate Response ===
+                    $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey);
+                }
 
                 // === STEP 5: Done ===
                 $totalTime = round((microtime(true) - $this->metrics['start_time']) * 1000);
@@ -121,6 +136,7 @@ class StreamController extends Controller
                     'prompt_tokens' => $this->metrics['prompt_tokens'],
                     'completion_tokens' => $this->metrics['completion_tokens'],
                     'models_used' => $this->metrics['models_used'],
+                    'tool_calls' => $this->metrics['tool_calls'],
                 ]);
 
             } catch (\Exception $e) {
@@ -658,6 +674,215 @@ Respond in the same language as the user's message.
 If you don't know something, be honest about it.
 Keep responses concise but informative.
 PROMPT;
+    }
+
+    /**
+     * Run Agent Loop with tool calling (Agentic Mode).
+     *
+     * Implements ReAct pattern: Think → Act → Observe → Repeat
+     */
+    protected function runAgentLoop(
+        Bot $bot,
+        Flow $flow,
+        string $message,
+        array $conversationHistory,
+        string $apiKey
+    ): void {
+        $maxIterations = $flow->max_tool_calls ?? 10;
+        $tools = $this->toolService->getToolDefinitions($flow->enabled_tools ?? []);
+        $chatModel = $this->getChatModel($bot);
+
+        // Build initial messages
+        $systemPrompt = $this->buildAgentSystemPrompt($bot, $flow);
+        $messages = $this->buildMessages($systemPrompt, $conversationHistory, $message);
+
+        $this->sendSSE('agent_start', [
+            'max_iterations' => $maxIterations,
+            'tools' => array_map(fn($t) => $t['function']['name'] ?? 'unknown', $tools),
+            'model' => $chatModel,
+        ]);
+
+        $iteration = 0;
+
+        while ($iteration < $maxIterations) {
+            $iteration++;
+            $iterationStart = microtime(true);
+
+            $this->sendSSE('agent_thinking', [
+                'iteration' => $iteration,
+            ]);
+
+            try {
+                // Call LLM with tools
+                $response = $this->openRouter->chatWithTools(
+                    messages: $messages,
+                    tools: $tools,
+                    model: $chatModel,
+                    temperature: $flow->temperature ?? 0.7,
+                    maxTokens: $flow->max_tokens ?? 4096,
+                    apiKeyOverride: $apiKey,
+                    toolChoice: 'auto'
+                );
+
+                $this->metrics['models_used'][] = $response['model'] ?? $chatModel;
+                $this->metrics['prompt_tokens'] += $response['usage']['prompt_tokens'] ?? 0;
+                $this->metrics['completion_tokens'] += $response['usage']['completion_tokens'] ?? 0;
+
+                $finishReason = $response['finish_reason'] ?? 'stop';
+
+                // Check if we should execute tools
+                if ($finishReason === 'tool_calls' && !empty($response['tool_calls'])) {
+                    // Process each tool call
+                    foreach ($response['tool_calls'] as $toolCall) {
+                        $this->metrics['tool_calls']++;
+
+                        $toolId = $toolCall['id'] ?? 'tool_' . $iteration;
+                        $toolName = $toolCall['function']['name'] ?? 'unknown';
+                        $toolArgs = json_decode($toolCall['function']['arguments'] ?? '{}', true) ?: [];
+
+                        // Send tool call event
+                        $this->sendSSE('tool_call', [
+                            'iteration' => $iteration,
+                            'tool_id' => $toolId,
+                            'tool_name' => $toolName,
+                            'arguments' => $toolArgs,
+                        ]);
+
+                        // Execute tool
+                        $toolResult = $this->toolService->executeTool(
+                            $toolName,
+                            $toolArgs,
+                            ['flow' => $flow, 'bot' => $bot]
+                        );
+
+                        // Send tool result event
+                        $this->sendSSE('tool_result', [
+                            'iteration' => $iteration,
+                            'tool_id' => $toolId,
+                            'tool_name' => $toolName,
+                            'status' => $toolResult['status'],
+                            'result_preview' => $this->truncateForPreview($toolResult['result'] ?? $toolResult['error'] ?? ''),
+                            'time_ms' => $toolResult['time_ms'] ?? 0,
+                        ]);
+
+                        // Add assistant message with tool call
+                        $messages[] = [
+                            'role' => 'assistant',
+                            'content' => null,
+                            'tool_calls' => [$toolCall],
+                        ];
+
+                        // Add tool result message
+                        $messages[] = [
+                            'role' => 'tool',
+                            'tool_call_id' => $toolId,
+                            'content' => $toolResult['status'] === 'success'
+                                ? ($toolResult['result'] ?? '')
+                                : ('Error: ' . ($toolResult['error'] ?? 'Unknown error')),
+                        ];
+                    }
+
+                    // Continue loop to process tool results
+                    continue;
+                }
+
+                // No more tool calls - generate final response
+                $this->sendSSE('agent_done', [
+                    'iterations' => $iteration,
+                    'total_tool_calls' => $this->metrics['tool_calls'],
+                ]);
+
+                // Stream final response if available
+                if (!empty($response['content'])) {
+                    $this->sendSSE('chat_start', [
+                        'model' => $response['model'] ?? $chatModel,
+                        'source' => 'agent_final_response',
+                    ]);
+
+                    // Send content in chunks to simulate streaming
+                    $content = $response['content'];
+                    $chunkSize = 50;
+                    $offset = 0;
+
+                    while ($offset < mb_strlen($content)) {
+                        $chunk = mb_substr($content, $offset, $chunkSize);
+                        $this->sendSSE('content', ['text' => $chunk]);
+                        $offset += $chunkSize;
+                        usleep(10000); // 10ms delay for smooth streaming effect
+                    }
+                }
+
+                break; // Exit loop - we're done
+
+            } catch (\Exception $e) {
+                Log::error('Agent loop error', [
+                    'iteration' => $iteration,
+                    'error' => $e->getMessage(),
+                ]);
+
+                $this->sendSSE('agent_error', [
+                    'iteration' => $iteration,
+                    'error' => $e->getMessage(),
+                ]);
+
+                // Try to generate a response without tools
+                $this->sendSSE('agent_fallback', [
+                    'reason' => 'Tool calling failed, generating direct response',
+                ]);
+
+                // Fall back to regular chat
+                $fallbackMessages = $this->buildMessages(
+                    $this->getDefaultSystemPrompt($bot),
+                    $conversationHistory,
+                    $message
+                );
+                $this->streamFromOpenRouter($fallbackMessages, $chatModel, $apiKey);
+                break;
+            }
+        }
+
+        // Max iterations reached
+        if ($iteration >= $maxIterations) {
+            $this->sendSSE('agent_max_iterations', [
+                'iterations' => $iteration,
+                'message' => 'ถึงจำนวนรอบสูงสุดแล้ว',
+            ]);
+        }
+    }
+
+    /**
+     * Build system prompt for agent mode.
+     */
+    protected function buildAgentSystemPrompt(Bot $bot, Flow $flow): string
+    {
+        $basePrompt = $flow->system_prompt ?: $this->getDefaultSystemPrompt($bot);
+
+        $toolsInfo = '';
+        $enabledTools = $flow->enabled_tools ?? [];
+
+        if (in_array('search_kb', $enabledTools)) {
+            $toolsInfo .= "\n- search_knowledge_base: ใช้เมื่อต้องการค้นหาข้อมูลในฐานความรู้";
+        }
+        if (in_array('calculate', $enabledTools)) {
+            $toolsInfo .= "\n- calculate: ใช้เมื่อต้องการคำนวณตัวเลข";
+        }
+
+        if (!empty($toolsInfo)) {
+            $basePrompt .= "\n\n## Available Tools:{$toolsInfo}\n\nUse tools when needed to provide accurate information.";
+        }
+
+        return $basePrompt;
+    }
+
+    /**
+     * Truncate text for preview in SSE events.
+     */
+    protected function truncateForPreview(string $text, int $maxLength = 200): string
+    {
+        if (mb_strlen($text) <= $maxLength) {
+            return $text;
+        }
+        return mb_substr($text, 0, $maxLength) . '...';
     }
 
     protected function sendSSE(string $event, array $data): void
