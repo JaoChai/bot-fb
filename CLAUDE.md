@@ -17,6 +17,20 @@
 
 ## Debugging Strategy (MANDATORY)
 
+### ⛔ STOP! ก่อนแก้ error ต้องทำสิ่งนี้ก่อน:
+```
+1. หา ACTUAL ERROR MESSAGE ก่อน (ไม่ใช่แค่เห็น 500/502)
+   - ถ้า logs timeout → สร้าง debug endpoint
+   - ถ้าเห็น HTML error → หา exception message จริง
+
+2. เข้าใจว่า error เกิดที่ไหน:
+   - DI/Service instantiation? → ทดสอบ new Service()
+   - Controller logic? → ดู stack trace
+   - View/Response? → ดู response format
+
+3. ทดสอบสมมติฐานก่อนแก้ (ไม่ใช่เดาแล้วแก้)
+```
+
 ### Before Fixing Any Error:
 ```
 1. curl /api/health → ยืนยัน backend ทำงาน
@@ -111,3 +125,5 @@ railway up --service backend   # Deploy
 3. **One change at a time** - ไม่แก้หลายอย่างพร้อมกัน
 4. **Explain strategy** - บอกว่าจะทำอะไรก่อนลงมือ
 5. **Stop if stuck** - ถ้าแก้ 2 ครั้งไม่สำเร็จ ต้อง step back
+6. **Get ACTUAL error first** - เห็น 500 ไม่พอ ต้องหา exception message จริง ก่อนวิเคราะห์
+7. **Laravel config() gotcha** - `config('key', '')` คืน null ไม่ใช่ '' → ใช้ `config('key') ?? ''` แทน
