@@ -134,6 +134,7 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/{conversation}/close', [ConversationController::class, 'close'])->name('conversations.close');
         Route::post('/{conversation}/reopen', [ConversationController::class, 'reopen'])->name('conversations.reopen');
         Route::post('/{conversation}/toggle-handover', [ConversationController::class, 'toggleHandover'])->name('conversations.toggle-handover');
+        Route::post('/{conversation}/mark-as-read', [ConversationController::class, 'markAsRead'])->name('conversations.mark-as-read');
 
         // Notes/Memory routes
         Route::get('/{conversation}/notes', [ConversationController::class, 'getNotes'])->name('conversations.notes.index');

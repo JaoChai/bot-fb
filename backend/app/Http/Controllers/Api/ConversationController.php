@@ -224,7 +224,7 @@ class ConversationController extends Controller
     }
 
     /**
-     * Toggle handover mode (human-in-the-loop).
+     * Toggle handover mode (human-in-the-loop) with auto-enable timer.
      */
     public function toggleHandover(Request $request, Bot $bot, Conversation $conversation): JsonResponse
     {
@@ -233,26 +233,64 @@ class ConversationController extends Controller
 
         $isHandover = ! $conversation->is_handover;
 
+        // Auto-enable timeout in minutes (default: 30)
+        $autoEnableMinutes = $request->input('auto_enable_minutes', 30);
+
         $updateData = [
             'is_handover' => $isHandover,
             'status' => $isHandover ? 'handover' : 'active',
         ];
 
-        // Assign to current user when enabling handover
-        if ($isHandover && ! $conversation->assigned_user_id) {
-            $updateData['assigned_user_id'] = $request->user()->id;
-        }
-
-        // Optionally unassign when disabling handover
-        if (! $isHandover && $request->boolean('unassign', false)) {
-            $updateData['assigned_user_id'] = null;
+        // When enabling handover (disabling bot)
+        if ($isHandover) {
+            // Assign to current user if not assigned
+            if (! $conversation->assigned_user_id) {
+                $updateData['assigned_user_id'] = $request->user()->id;
+            }
+            // Set auto-enable timer (bot will auto-enable after X minutes)
+            if ($autoEnableMinutes > 0) {
+                $updateData['bot_auto_enable_at'] = now()->addMinutes($autoEnableMinutes);
+            } else {
+                $updateData['bot_auto_enable_at'] = null;
+            }
+        } else {
+            // When disabling handover (enabling bot)
+            $updateData['bot_auto_enable_at'] = null; // Clear timer
+            // Optionally unassign
+            if ($request->boolean('unassign', false)) {
+                $updateData['assigned_user_id'] = null;
+            }
         }
 
         $conversation->update($updateData);
 
+        // Broadcast the update for real-time sync
+        broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
+
         return response()->json([
-            'message' => $isHandover ? 'Handover mode enabled' : 'Handover mode disabled',
+            'message' => $isHandover ? 'Handover mode enabled' : 'Bot mode enabled',
             'data' => new ConversationResource($conversation->fresh(['customerProfile', 'assignedUser'])),
+        ]);
+    }
+
+    /**
+     * Mark conversation as read (reset unread count).
+     */
+    public function markAsRead(Request $request, Bot $bot, Conversation $conversation): JsonResponse
+    {
+        $this->authorize('view', $bot);
+        $this->validateConversationBelongsToBot($conversation, $bot);
+
+        if ($conversation->unread_count > 0) {
+            $conversation->update(['unread_count' => 0]);
+
+            // Broadcast the update for real-time sync
+            broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
+        }
+
+        return response()->json([
+            'message' => 'Conversation marked as read',
+            'data' => new ConversationResource($conversation->fresh(['customerProfile'])),
         ]);
     }
 

@@ -349,7 +349,10 @@ export interface Conversation {
   context: Record<string, unknown> | null;
   current_flow_id: number | null;
   message_count: number;
+  unread_count: number;
   last_message_at: string | null;
+  bot_auto_enable_at: string | null;
+  bot_auto_enable_remaining_seconds: number | null;
   created_at: string;
   updated_at: string;
   // Relationships

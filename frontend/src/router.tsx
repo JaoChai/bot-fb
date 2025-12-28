@@ -17,6 +17,7 @@ const BotEditPage = lazy(() => import("@/pages/BotEditPage").then(m => ({ defaul
 const KnowledgeBasePage = lazy(() => import("@/pages/KnowledgeBasePage").then(m => ({ default: m.KnowledgeBasePage })))
 const ConversationsPage = lazy(() => import("@/pages/ConversationsPage").then(m => ({ default: m.ConversationsPage })))
 const ConversationDetailPage = lazy(() => import("@/pages/ConversationDetailPage").then(m => ({ default: m.ConversationDetailPage })))
+const ChatPage = lazy(() => import("@/pages/ChatPage").then(m => ({ default: m.ChatPage })))
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ default: m.SettingsPage })))
 const FlowEditorPage = lazy(() => import("@/pages/FlowEditorPage").then(m => ({ default: m.FlowEditorPage })))
 const AddConnectionPage = lazy(() => import("@/pages/AddConnectionPage").then(m => ({ default: m.AddConnectionPage })))
@@ -94,6 +95,10 @@ export const router = createBrowserRouter([
           },
           {
             path: "chat",
+            element: <LazyPage><ChatPage /></LazyPage>,
+          },
+          {
+            path: "conversations",
             element: <LazyPage><ConversationsPage /></LazyPage>,
           },
           {

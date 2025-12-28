@@ -200,7 +200,7 @@ export function useReopenConversation(botId: number | undefined) {
 }
 
 /**
- * Hook to toggle handover mode
+ * Hook to toggle handover mode with auto-enable timer
  */
 export function useToggleHandover(botId: number | undefined) {
   const queryClient = useQueryClient();
@@ -209,13 +209,15 @@ export function useToggleHandover(botId: number | undefined) {
     mutationFn: async ({
       conversationId,
       unassign = false,
+      autoEnableMinutes = 30,
     }: {
       conversationId: number;
       unassign?: boolean;
+      autoEnableMinutes?: number;
     }) => {
       const response = await api.post<ConversationResponse>(
         `/bots/${botId}/conversations/${conversationId}/toggle-handover`,
-        { unassign }
+        { unassign, auto_enable_minutes: autoEnableMinutes }
       );
       return response.data;
     },
@@ -223,6 +225,26 @@ export function useToggleHandover(botId: number | undefined) {
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
+    },
+  });
+}
+
+/**
+ * Hook to mark conversation as read
+ */
+export function useMarkAsRead(botId: number | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (conversationId: number) => {
+      const response = await api.post<ConversationResponse>(
+        `/bots/${botId}/conversations/${conversationId}/mark-as-read`
+      );
+      return response.data;
+    },
+    onSuccess: (_, conversationId) => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
     },
   });
 }
