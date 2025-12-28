@@ -24,26 +24,23 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-// Debug endpoint - NO MIDDLEWARE - TEMPORARY
-Route::get('/debug-raw', function () {
+// Debug endpoint - test auth - TEMPORARY
+Route::get('/debug-auth', function (\Illuminate\Http\Request $request) {
     try {
-        // Test 1: Basic response
-        $tests = ['basic' => 'ok'];
+        $tests = ['token_present' => $request->bearerToken() !== null];
 
-        // Test 2: Database connection
-        $tests['db'] = \DB::connection()->getPdo() ? 'ok' : 'fail';
+        // Test sanctum auth
+        $user = auth('sanctum')->user();
+        $tests['sanctum_user'] = $user ? $user->email : null;
 
-        // Test 3: User model
-        $tests['user_count'] = \App\Models\User::count();
+        if ($user) {
+            // Test bots query
+            $bots = $user->bots()->latest()->get();
+            $tests['bots_count'] = $bots->count();
 
-        // Test 4: Bot model
-        $tests['bot_count'] = \App\Models\Bot::count();
-
-        // Test 5: BotResource instantiation
-        $bot = \App\Models\Bot::first();
-        if ($bot) {
-            $resource = new \App\Http\Resources\BotResource($bot);
-            $tests['bot_resource'] = 'ok';
+            // Test BotResource collection
+            $collection = \App\Http\Resources\BotResource::collection($bots);
+            $tests['collection'] = 'ok';
         }
 
         return response()->json($tests);
@@ -52,9 +49,10 @@ Route::get('/debug-raw', function () {
             'error' => $e->getMessage(),
             'file' => $e->getFile(),
             'line' => $e->getLine(),
+            'trace' => collect($e->getTrace())->take(3)->map(fn($t) => ($t['file'] ?? '') . ':' . ($t['line'] ?? ''))->toArray()
         ], 500);
     }
-});
+})->middleware(['auth:sanctum']);
 
 // Public routes with auth rate limiting (stricter limits)
 Route::prefix('auth')->middleware('throttle.auth')->group(function () {
