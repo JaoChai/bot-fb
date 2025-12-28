@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Document;
 use App\Models\DocumentChunk;
+use App\Models\User;
 use App\Services\ChunkingService;
 use App\Services\DocumentParserService;
 use App\Services\EmbeddingService;
@@ -24,13 +25,13 @@ class ProcessDocument implements ShouldQueue
     public int $timeout = 300;
 
     public function __construct(
-        public Document $document
+        public Document $document,
+        public ?int $userId = null
     ) {}
 
     public function handle(
         DocumentParserService $parser,
-        ChunkingService $chunker,
-        EmbeddingService $embedder
+        ChunkingService $chunker
     ): void {
         Log::info('Processing document', [
             'document_id' => $this->document->id,
@@ -39,6 +40,10 @@ class ProcessDocument implements ShouldQueue
 
         try {
             $this->document->update(['status' => 'processing']);
+
+            // Get user's API key from their settings
+            $apiKey = $this->getUserApiKey();
+            $embedder = new EmbeddingService($apiKey);
 
             // Use content directly for text-only documents, parse file for legacy
             if (!empty($this->document->content)) {
@@ -128,6 +133,26 @@ class ProcessDocument implements ShouldQueue
                 'chunks' => count($batch),
             ]);
         }
+    }
+
+    /**
+     * Get the API key for embedding generation.
+     * Priority: 1) Specified user's key, 2) Document owner's key, 3) null (falls back to env)
+     */
+    protected function getUserApiKey(): ?string
+    {
+        // Try specified user first
+        if ($this->userId) {
+            $user = User::find($this->userId);
+            $apiKey = $user?->settings?->openrouter_api_key;
+            if ($apiKey) {
+                return $apiKey;
+            }
+        }
+
+        // Fallback to document owner's API key
+        $owner = $this->document->knowledgeBase?->user;
+        return $owner?->settings?->openrouter_api_key;
     }
 
     public function failed(Throwable $exception): void

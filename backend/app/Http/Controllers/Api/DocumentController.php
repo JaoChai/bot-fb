@@ -66,8 +66,8 @@ class DocumentController extends Controller
         // Update document count
         $kb->increment('document_count');
 
-        // Dispatch processing job
-        ProcessDocument::dispatch($document);
+        // Dispatch processing job with user's ID for API key lookup
+        ProcessDocument::dispatch($document, $request->user()->id);
 
         return response()->json([
             'message' => 'Document created successfully. Processing will begin shortly.',
@@ -122,7 +122,8 @@ class DocumentController extends Controller
             'chunk_count' => 0,
         ]);
 
-        ProcessDocument::dispatch($document);
+        // Dispatch with user's ID for API key lookup
+        ProcessDocument::dispatch($document, $request->user()->id);
 
         return response()->json([
             'message' => 'Document reprocessing started',

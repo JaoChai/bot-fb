@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -16,6 +17,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useBots, useKnowledgeBaseOperations } from '@/hooks/useKnowledgeBase';
+import { useUserSettings } from '@/hooks/useUserSettings';
 import { DocumentUpload } from '@/components/knowledge-base/DocumentUpload';
 import { DocumentList } from '@/components/knowledge-base/DocumentList';
 import { SemanticSearch } from '@/components/knowledge-base/SemanticSearch';
@@ -28,12 +30,16 @@ import {
   Search,
   Plus,
   Database,
+  AlertTriangle,
+  Settings,
 } from 'lucide-react';
 
 export function KnowledgeBasePage() {
   const [selectedBotId, setSelectedBotId] = useState<number | null>(null);
   const { data: botsResponse, isLoading: isLoadingBots } = useBots();
+  const { data: userSettings } = useUserSettings();
   const bots = botsResponse?.data ?? [];
+  const isApiKeyConfigured = userSettings?.openrouter_configured ?? false;
 
   const {
     knowledgeBase,
@@ -148,6 +154,31 @@ export function KnowledgeBasePage() {
             </SelectContent>
           </Select>
         </div>
+
+        {/* API Key Warning */}
+        {selectedBotId && !isApiKeyConfigured && (
+          <Card className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
+            <CardContent className="flex items-center gap-4 p-4">
+              <div className="flex-shrink-0 w-10 h-10 bg-amber-100 dark:bg-amber-900/50 rounded-full flex items-center justify-center">
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-amber-800 dark:text-amber-200">
+                  OpenRouter API Key ยังไม่ได้ตั้งค่า
+                </p>
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  การประมวลผลเอกสารต้องใช้ API Key สำหรับสร้าง embeddings
+                </p>
+              </div>
+              <Button asChild variant="outline" className="border-amber-300 hover:bg-amber-100 dark:border-amber-700 dark:hover:bg-amber-900/50">
+                <Link to="/settings" className="flex items-center gap-2">
+                  <Settings className="h-4 w-4" />
+                  ตั้งค่า API Key
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Main Content Area */}
         {selectedBotId ? (
