@@ -14,12 +14,16 @@ class EmbeddingService
     protected string $apiKey;
     protected string $baseUrl;
 
-    public function __construct()
+    /**
+     * @param string|null $apiKey User's API key (takes priority over env config)
+     */
+    public function __construct(?string $apiKey = null)
     {
         // Use ?? to ensure string type even when config returns null
         $this->model = config('services.embeddings.model') ?? 'openai/text-embedding-3-small';
         $this->dimensions = (int) (config('services.embeddings.dimensions') ?? 1536);
-        $this->apiKey = config('services.openrouter.api_key') ?? '';
+        // User's API key takes priority, fallback to env config
+        $this->apiKey = $apiKey ?? config('services.openrouter.api_key') ?? '';
         $this->baseUrl = config('services.openrouter.base_url') ?? 'https://openrouter.ai/api/v1';
     }
 
