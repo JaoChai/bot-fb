@@ -13,9 +13,11 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
-import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations, useTestFlow } from '@/hooks/useFlows';
+import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations } from '@/hooks/useFlows';
+import { useStreamingChat } from '@/hooks/useStreamingChat';
 import { useAllKnowledgeBases } from '@/hooks/useKnowledgeBase';
 import { useToast } from '@/hooks/use-toast';
+import { ThinkingDisplay } from '@/components/ThinkingDisplay';
 import {
   Loader2,
   Save,
@@ -36,6 +38,8 @@ import {
   Image as ImageIcon,
   Trash2,
   Code,
+  Square,
+  Brain,
 } from 'lucide-react';
 import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
 
@@ -111,17 +115,25 @@ export function FlowEditorPage() {
   // Mutations
   const createMutation = useCreateFlow(botId);
   const updateMutation = useUpdateFlow(botId, selectedFlowId);
-  const testFlowMutation = useTestFlow(botId, selectedFlowId);
 
   // Form state
   const [formData, setFormData] = useState<CreateFlowData>(INITIAL_FORM_DATA);
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Chat emulator state
-  const [chatMessages, setChatMessages] = useState<Array<{ id: string; role: 'user' | 'assistant'; content: string }>>([]);
+  // Streaming chat hook
+  const {
+    messages: chatMessages,
+    isStreaming,
+    enableThinking,
+    setEnableThinking,
+    sendMessage: sendStreamingMessage,
+    cancelStream,
+    clearMessages,
+  } = useStreamingChat({ botId, flowId: selectedFlowId });
+
+  // Chat input state
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const systemPromptRef = useRef<HTMLTextAreaElement>(null);
 
   // Collapsible sections
@@ -185,13 +197,6 @@ export function FlowEditorPage() {
     }
   }, [existingFlow]);
 
-  // Cleanup timeouts on unmount
-  useEffect(() => {
-    return () => {
-      timeoutsRef.current.forEach(clearTimeout);
-      timeoutsRef.current = [];
-    };
-  }, []);
 
   // Scroll to bottom of chat
   useEffect(() => {
@@ -330,7 +335,7 @@ export function FlowEditorPage() {
     setHasChanges(true);
   };
 
-  // Handle chat emulator - now calls real AI API
+  // Handle chat emulator - uses streaming API
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
     if (!selectedFlowId) {
@@ -343,59 +348,10 @@ export function FlowEditorPage() {
     }
 
     const userMessage = chatInput.trim();
-    const userMsgObj = {
-      id: generateId(),
-      role: 'user' as const,
-      content: userMessage,
-    };
-
-    setChatMessages((prev) => [...prev, userMsgObj]);
     setChatInput('');
 
-    // Build conversation history for context (exclude the current message)
-    const conversationHistory = chatMessages.map((msg) => ({
-      role: msg.role,
-      content: msg.content,
-    }));
-
-    try {
-      const result = await testFlowMutation.mutateAsync({
-        message: userMessage,
-        conversation_history: conversationHistory,
-      });
-
-      if (result.success && result.response) {
-        const aiResponse = result.response;
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: generateId(),
-            role: 'assistant' as const,
-            content: aiResponse,
-          },
-        ]);
-      } else {
-        // Show error message as assistant response
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: generateId(),
-            role: 'assistant',
-            content: `❌ ${result.error || 'เกิดข้อผิดพลาด'}`,
-          },
-        ]);
-      }
-    } catch (error) {
-      console.error('Chat test error:', error);
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          id: generateId(),
-          role: 'assistant',
-          content: '❌ ไม่สามารถเชื่อมต่อ AI ได้ กรุณาตรวจสอบ API Key ใน Settings',
-        },
-      ]);
-    }
+    // Use streaming hook to send message
+    await sendStreamingMessage(userMessage);
   };
 
   // Show loading during editor entry mode redirect
@@ -1020,15 +976,29 @@ export function FlowEditorPage() {
               <MessageCircle className="h-5 w-5" />
               <span className="font-semibold">แชทจำลอง</span>
             </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 w-8 p-0 text-white hover:bg-white/20"
-              onClick={() => setChatMessages([])}
-              title="ล้างแชท"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Thinking Toggle */}
+              <button
+                onClick={() => setEnableThinking(!enableThinking)}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
+                  enableThinking ? 'bg-purple-500/30 text-white' : 'bg-white/10 text-white/70'
+                }`}
+                title={enableThinking ? 'Thinking Mode เปิด' : 'Thinking Mode ปิด'}
+              >
+                <Brain className="h-3 w-3" />
+                <span>Think</span>
+              </button>
+              {/* Clear Button */}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 p-0 text-white hover:bg-white/20"
+                onClick={clearMessages}
+                title="ล้างแชท"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           {/* Messages Area */}
@@ -1042,6 +1012,11 @@ export function FlowEditorPage() {
                 <p className="text-xs text-muted-foreground/70 mt-1">
                   พิมพ์ข้อความด้านล่างเพื่อเริ่มต้น
                 </p>
+                {enableThinking && (
+                  <p className="text-xs text-purple-500 mt-2">
+                    🧠 Thinking Mode เปิดอยู่
+                  </p>
+                )}
               </div>
             ) : (
               chatMessages.map((msg) => (
@@ -1049,15 +1024,34 @@ export function FlowEditorPage() {
                   key={msg.id}
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
-                  <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
-                      msg.role === 'user'
-                        ? 'text-white rounded-br-md'
-                        : 'bg-muted rounded-bl-md'
-                    }`}
-                    style={msg.role === 'user' ? { backgroundColor: 'var(--warning)' } : {}}
-                  >
-                    {msg.content}
+                  <div className={`max-w-[85%] ${msg.role === 'assistant' ? 'w-full' : ''}`}>
+                    {/* Show thinking display for assistant messages */}
+                    {msg.role === 'assistant' && (msg.thinking || msg.isStreaming) && (
+                      <ThinkingDisplay
+                        thinking={msg.thinking || ''}
+                        isStreaming={msg.isStreaming}
+                      />
+                    )}
+                    <div
+                      className={`rounded-2xl px-4 py-2.5 text-sm ${
+                        msg.role === 'user'
+                          ? 'text-white rounded-br-md'
+                          : 'bg-muted rounded-bl-md'
+                      }`}
+                      style={msg.role === 'user' ? { backgroundColor: 'var(--warning)' } : {}}
+                    >
+                      {msg.content}
+                      {/* Show streaming cursor */}
+                      {msg.role === 'assistant' && msg.isStreaming && !msg.content && (
+                        <span className="flex items-center gap-1 text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <span>กำลังตอบ...</span>
+                        </span>
+                      )}
+                      {msg.role === 'assistant' && msg.isStreaming && msg.content && (
+                        <span className="animate-pulse text-warning">|</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))
@@ -1070,31 +1064,39 @@ export function FlowEditorPage() {
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder={testFlowMutation.isPending ? 'กำลังประมวลผล...' : 'พิมพ์ข้อความ...'}
+                placeholder={isStreaming ? 'กำลังประมวลผล...' : 'พิมพ์ข้อความ...'}
                 className="flex-1 px-4 py-2.5 rounded-full border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-warning/50"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey && !testFlowMutation.isPending) {
+                  if (e.key === 'Enter' && !e.shiftKey && !isStreaming) {
                     e.preventDefault();
                     handleSendMessage();
                   }
                 }}
-                disabled={testFlowMutation.isPending}
+                disabled={isStreaming}
               />
-              <Button
-                size="icon"
-                onClick={handleSendMessage}
-                disabled={!chatInput.trim() || testFlowMutation.isPending}
-                variant="orange"
-                className="rounded-full h-10 w-10"
-              >
-                {testFlowMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
+              {isStreaming ? (
+                <Button
+                  size="icon"
+                  onClick={cancelStream}
+                  variant="destructive"
+                  className="rounded-full h-10 w-10"
+                  title="หยุดการตอบ"
+                >
+                  <Square className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  size="icon"
+                  onClick={handleSendMessage}
+                  disabled={!chatInput.trim()}
+                  variant="orange"
+                  className="rounded-full h-10 w-10"
+                >
                   <Send className="h-4 w-4" />
-                )}
-              </Button>
+                </Button>
+              )}
             </div>
             <div className="flex gap-2 justify-center">
               <Button

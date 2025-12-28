@@ -276,13 +276,17 @@ class FlowController extends Controller
         ];
 
         try {
+            // Use model from Bot Connection Settings (not from Flow)
+            $chatModel = $bot->primary_chat_model ?? config('services.openrouter.default_model');
+
             $result = $openRouter->chat(
                 messages: $messages,
-                model: $flow->model,
+                model: $chatModel,
                 temperature: $flow->temperature ? (float) $flow->temperature : 0.7,
                 maxTokens: $flow->max_tokens ?? 2048,
                 useFallback: true,
-                apiKeyOverride: $apiKey
+                apiKeyOverride: $apiKey,
+                fallbackModelOverride: $bot->fallback_chat_model
             );
 
             Log::info('Flow test successful', [
