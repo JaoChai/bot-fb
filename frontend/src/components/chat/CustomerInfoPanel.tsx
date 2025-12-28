@@ -85,15 +85,15 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
     try {
       await toggleHandover.mutateAsync({ conversationId: conversation.id });
       toast({
-        title: conversation.is_handover ? 'Bot enabled' : 'Handover enabled',
+        title: conversation.is_handover ? 'เปิด Bot แล้ว' : 'เปิดโหมดรอตอบ',
         description: conversation.is_handover
-          ? 'Bot will now handle this conversation.'
-          : 'You can now reply directly. Bot will auto-enable in 30 minutes.',
+          ? 'Bot จะตอบข้อความในการสนทนานี้'
+          : 'คุณสามารถตอบข้อความได้โดยตรง Bot จะเปิดอัตโนมัติใน 30 นาที',
       });
     } catch {
       toast({
-        title: 'Error',
-        description: 'Failed to toggle bot mode.',
+        title: 'เกิดข้อผิดพลาด',
+        description: 'ไม่สามารถสลับโหมด Bot ได้',
         variant: 'destructive',
       });
     }
@@ -111,7 +111,7 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
         </Avatar>
         <div>
           <h3 className="font-semibold text-lg">
-            {customer?.display_name || 'Unknown Customer'}
+            {customer?.display_name || 'ลูกค้า'}
           </h3>
           <p className="text-sm text-muted-foreground">
             {channelLabels[conversation.channel_type]}
@@ -131,13 +131,13 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
               <Bot className="h-5 w-5 text-green-600" />
             )}
             <span className="font-medium">
-              {conversation.is_handover ? 'Handover Mode' : 'Bot Active'}
+              {conversation.is_handover ? 'โหมดรอตอบ' : 'Bot เปิด'}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <Label htmlFor="bot-toggle" className="text-sm">
-              {conversation.is_handover ? 'Enable Bot' : 'Bot Enabled'}
+              {conversation.is_handover ? 'เปิด Bot' : 'Bot เปิดอยู่'}
             </Label>
             <Switch
               id="bot-toggle"
@@ -151,14 +151,14 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
           {conversation.is_handover && remainingSeconds !== null && remainingSeconds > 0 && (
             <div className="flex items-center gap-2 text-sm text-amber-600">
               <Timer className="h-4 w-4" />
-              <span>Auto-enable in {formatCountdown(remainingSeconds)}</span>
+              <span>เปิดอัตโนมัติใน {formatCountdown(remainingSeconds)}</span>
             </div>
           )}
 
           <p className="text-xs text-muted-foreground">
             {conversation.is_handover
-              ? 'Bot is paused. You can reply directly to the customer.'
-              : 'Bot will respond automatically to messages.'}
+              ? 'Bot หยุดทำงาน คุณสามารถตอบลูกค้าได้โดยตรง'
+              : 'Bot จะตอบข้อความโดยอัตโนมัติ'}
           </p>
         </CardContent>
       </Card>
@@ -168,7 +168,7 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
       {/* Contact Info */}
       <div className="space-y-3">
         <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-          Contact Information
+          ข้อมูลติดต่อ
         </h4>
 
         {customer?.email && (
@@ -196,7 +196,7 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
       {/* Interaction Stats */}
       <div className="space-y-3">
         <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-          Interaction Stats
+          สถิติการโต้ตอบ
         </h4>
 
         <div className="grid grid-cols-2 gap-3">
@@ -206,7 +206,7 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
                 <MessagesSquare className="h-4 w-4 text-muted-foreground" />
                 <div>
                   <p className="text-2xl font-bold">{conversation.message_count}</p>
-                  <p className="text-xs text-muted-foreground">Messages</p>
+                  <p className="text-xs text-muted-foreground">ข้อความ</p>
                 </div>
               </div>
             </CardContent>
@@ -218,7 +218,7 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
                 <Hash className="h-4 w-4 text-muted-foreground" />
                 <div>
                   <p className="text-2xl font-bold">{customer?.interaction_count || 1}</p>
-                  <p className="text-xs text-muted-foreground">Interactions</p>
+                  <p className="text-xs text-muted-foreground">ครั้ง</p>
                 </div>
               </div>
             </CardContent>
@@ -228,26 +228,26 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
         <div className="flex items-center gap-2 text-sm">
           <Calendar className="h-4 w-4 text-muted-foreground" />
           <span>
-            First seen:{' '}
+            เริ่มคุยครั้งแรก:{' '}
             {customer?.first_interaction_at
               ? formatDistanceToNow(new Date(customer.first_interaction_at), {
                   addSuffix: true,
                   locale: th,
                 })
-              : 'N/A'}
+              : 'ไม่ระบุ'}
           </span>
         </div>
 
         <div className="flex items-center gap-2 text-sm">
           <Clock className="h-4 w-4 text-muted-foreground" />
           <span>
-            Last message:{' '}
+            ข้อความล่าสุด:{' '}
             {conversation.last_message_at
               ? formatDistanceToNow(new Date(conversation.last_message_at), {
                   addSuffix: true,
                   locale: th,
                 })
-              : 'N/A'}
+              : 'ไม่ระบุ'}
           </span>
         </div>
       </div>

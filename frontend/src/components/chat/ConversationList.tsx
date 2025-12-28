@@ -45,7 +45,7 @@ export function ConversationList({
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search..."
+            placeholder="ค้นหา..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             className="pl-9"
@@ -58,7 +58,7 @@ export function ConversationList({
         <Tabs value={statusFilter} onValueChange={onStatusFilterChange}>
           <TabsList className="w-full grid grid-cols-3 h-8">
             <TabsTrigger value="all" className="text-xs h-7">
-              All
+              ทั้งหมด
               {statusCounts && (
                 <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4">
                   {statusCounts.total}
@@ -66,7 +66,7 @@ export function ConversationList({
               )}
             </TabsTrigger>
             <TabsTrigger value="active" className="text-xs h-7">
-              Active
+              กำลังใช้งาน
               {statusCounts && (
                 <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4">
                   {statusCounts.active}
@@ -74,7 +74,7 @@ export function ConversationList({
               )}
             </TabsTrigger>
             <TabsTrigger value="handover" className="text-xs h-7">
-              Handover
+              รอตอบ
               {statusCounts && (
                 <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4">
                   {statusCounts.handover}
@@ -93,7 +93,7 @@ export function ConversationList({
           </div>
         ) : conversations.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
-            No conversations found
+            ไม่พบการสนทนา
           </div>
         ) : (
           <div className="p-2 space-y-1">
@@ -165,7 +165,7 @@ function ConversationItem({ conversation, isSelected, onSelect }: ConversationIt
             )}
           />
           <span className="text-xs text-muted-foreground truncate">
-            {conversation.message_count} messages
+            {conversation.message_count} ข้อความ
           </span>
         </div>
 
@@ -174,17 +174,17 @@ function ConversationItem({ conversation, isSelected, onSelect }: ConversationIt
           {conversation.is_handover ? (
             <Badge variant="outline" className="text-xs h-5 gap-1 text-amber-600 border-amber-300">
               <Headphones className="h-3 w-3" />
-              Handover
+              รอตอบ
             </Badge>
           ) : (
             <Badge variant="outline" className="text-xs h-5 gap-1 text-green-600 border-green-300">
               <Bot className="h-3 w-3" />
-              Bot ON
+              Bot เปิด
             </Badge>
           )}
           {hasUnread && (
             <Badge className="text-xs h-5 bg-green-500 hover:bg-green-500">
-              {conversation.unread_count} new
+              {conversation.unread_count} ใหม่
             </Badge>
           )}
         </div>
