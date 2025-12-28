@@ -76,8 +76,9 @@ class RAGService
         }
 
         // Step 4: Build enhanced system prompt with KB context
+        // Priority: Bot system_prompt > Flow system_prompt > Default
         $systemPrompt = $this->buildEnhancedPrompt(
-            $bot->system_prompt ?? $this->getDefaultSystemPrompt($bot),
+            $this->getSystemPromptForBot($bot),
             $kbContext
         );
 
@@ -567,8 +568,35 @@ PROMPT;
     }
 
     /**
-     * Get default system prompt for a bot.
+     * Get system prompt for a bot with fallback chain:
+     * 1. Bot's own system_prompt (if set)
+     * 2. Default Flow's system_prompt (if bot has default_flow_id)
+     * 3. Default system prompt
      */
+    protected function getSystemPromptForBot(Bot $bot): string
+    {
+        // 1. Use bot's own system_prompt if set
+        if (!empty($bot->system_prompt)) {
+            return $bot->system_prompt;
+        }
+
+        // 2. Use default flow's system_prompt if available
+        if ($bot->default_flow_id) {
+            $flow = Flow::find($bot->default_flow_id);
+            if ($flow && !empty($flow->system_prompt)) {
+                Log::debug('Using system_prompt from Flow', [
+                    'bot_id' => $bot->id,
+                    'flow_id' => $flow->id,
+                    'flow_name' => $flow->name,
+                ]);
+                return $flow->system_prompt;
+            }
+        }
+
+        // 3. Fallback to default
+        return $this->getDefaultSystemPrompt($bot);
+    }
+
     protected function getDefaultSystemPrompt(Bot $bot): string
     {
         return <<<PROMPT
