@@ -8,6 +8,10 @@ use App\Models\KnowledgeBase;
 use App\Policies\BotPolicy;
 use App\Policies\DocumentPolicy;
 use App\Policies\KnowledgeBasePolicy;
+use App\Services\HybridSearchService;
+use App\Services\JinaRerankerService;
+use App\Services\KeywordSearchService;
+use App\Services\SemanticSearchService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -21,7 +25,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Register HybridSearchService with JinaRerankerService dependency
+        $this->app->singleton(HybridSearchService::class, function ($app) {
+            return new HybridSearchService(
+                $app->make(SemanticSearchService::class),
+                $app->make(KeywordSearchService::class),
+                $app->make(JinaRerankerService::class)
+            );
+        });
     }
 
     /**
