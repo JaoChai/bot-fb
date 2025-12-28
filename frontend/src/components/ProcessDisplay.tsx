@@ -13,6 +13,10 @@ import {
   Loader2,
   Clock,
   Zap,
+  Wrench,
+  Bot,
+  Sparkles,
+  Calculator,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { ProcessLog, DoneSummary } from '@/hooks/useStreamingChat';
@@ -24,7 +28,7 @@ interface ProcessDisplayProps {
 }
 
 // Get icon for each event type
-function getEventIcon(event: string) {
+function getEventIcon(event: string, data?: Record<string, unknown>) {
   switch (event) {
     case 'process_start':
       return <Activity className="h-3.5 w-3.5 text-blue-500" />;
@@ -48,16 +52,40 @@ function getEventIcon(event: string) {
       return <AlertTriangle className="h-3.5 w-3.5 text-red-500" />;
     case 'done':
       return <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />;
+    // Agentic Mode events
+    case 'agent_start':
+      return <Bot className="h-3.5 w-3.5 text-indigo-500" />;
+    case 'agent_thinking':
+      return <Sparkles className="h-3.5 w-3.5 text-indigo-500 animate-pulse" />;
+    case 'agent_done':
+      return <Bot className="h-3.5 w-3.5 text-green-500" />;
+    case 'agent_error':
+    case 'agent_max_iterations':
+      return <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />;
+    case 'agent_fallback':
+      return <RefreshCw className="h-3.5 w-3.5 text-amber-500" />;
+    case 'tool_call': {
+      const toolName = data?.tool_name as string;
+      if (toolName === 'search_knowledge_base') {
+        return <Search className="h-3.5 w-3.5 text-cyan-500" />;
+      }
+      if (toolName === 'calculate') {
+        return <Calculator className="h-3.5 w-3.5 text-cyan-500" />;
+      }
+      return <Wrench className="h-3.5 w-3.5 text-cyan-500" />;
+    }
+    case 'tool_result':
+      return <CheckCircle2 className="h-3.5 w-3.5 text-cyan-500" />;
     default:
       return <Activity className="h-3.5 w-3.5 text-gray-500" />;
   }
 }
 
 // Get label for each event type
-function getEventLabel(event: string): string {
+function getEventLabel(event: string, data?: Record<string, unknown>): string {
   switch (event) {
     case 'process_start':
-      return 'เริ่มประมวลผล';
+      return data?.agentic_mode ? '🤖 Agentic Mode' : 'เริ่มประมวลผล';
     case 'decision_start':
       return 'Decision Model กำลังวิเคราะห์...';
     case 'decision_result':
@@ -80,6 +108,33 @@ function getEventLabel(event: string): string {
       return 'ข้อผิดพลาด';
     case 'done':
       return 'เสร็จสิ้น';
+    // Agentic Mode events
+    case 'agent_start':
+      return '🤖 Agent เริ่มทำงาน';
+    case 'agent_thinking':
+      return `💭 กำลังคิด... (รอบ ${data?.iteration || '?'})`;
+    case 'agent_done':
+      return '✅ Agent ทำงานเสร็จ';
+    case 'agent_error':
+      return '⚠️ Agent พบข้อผิดพลาด';
+    case 'agent_fallback':
+      return '🔄 Fallback to direct response';
+    case 'agent_max_iterations':
+      return '⚠️ ถึงจำนวนรอบสูงสุด';
+    case 'tool_call': {
+      const toolName = data?.tool_name as string;
+      if (toolName === 'search_knowledge_base') {
+        return '🔍 ค้นหาฐานความรู้...';
+      }
+      if (toolName === 'calculate') {
+        return '🧮 คำนวณ...';
+      }
+      return `🔧 เรียกใช้ Tool: ${toolName || 'unknown'}`;
+    }
+    case 'tool_result': {
+      const status = data?.status as string;
+      return status === 'success' ? '✅ ผลลัพธ์ Tool' : '❌ Tool ล้มเหลว';
+    }
     default:
       return event;
   }
@@ -127,7 +182,47 @@ function formatDetails(event: string, data: Record<string, unknown>): string {
       const timeMs = data.total_time_ms as number || 0;
       const promptTokens = data.prompt_tokens as number || 0;
       const completionTokens = data.completion_tokens as number || 0;
-      return `รวม ${(timeMs / 1000).toFixed(1)}s • Tokens: ${promptTokens + completionTokens}`;
+      const toolCalls = data.tool_calls as number || 0;
+      let result = `รวม ${(timeMs / 1000).toFixed(1)}s • Tokens: ${promptTokens + completionTokens}`;
+      if (toolCalls > 0) {
+        result += ` • Tools: ${toolCalls}`;
+      }
+      return result;
+    }
+
+    // Agentic Mode events
+    case 'agent_start': {
+      const tools = data.tools as string[] || [];
+      return `Model: ${data.model || 'N/A'} • Max: ${data.max_iterations || '?'} รอบ • Tools: ${tools.length}`;
+    }
+
+    case 'agent_thinking':
+      return '';
+
+    case 'agent_done':
+      return `${data.iterations || 0} รอบ • ${data.total_tool_calls || 0} tool calls`;
+
+    case 'agent_error':
+      return data.error as string || 'Unknown error';
+
+    case 'agent_fallback':
+      return data.reason as string || '';
+
+    case 'agent_max_iterations':
+      return data.message as string || '';
+
+    case 'tool_call': {
+      const args = data.arguments as Record<string, unknown> || {};
+      const argStr = Object.entries(args)
+        .map(([k, v]) => `${k}: ${JSON.stringify(v).slice(0, 30)}`)
+        .join(', ');
+      return argStr || '';
+    }
+
+    case 'tool_result': {
+      const preview = data.result_preview as string || '';
+      const timeMs = data.time_ms as number || 0;
+      return `${preview.slice(0, 100)}${preview.length > 100 ? '...' : ''} • ${timeMs}ms`;
     }
 
     default:
@@ -156,6 +251,19 @@ function getEventBgColor(event: string): string {
       return 'bg-red-500/10 border-red-500/20';
     case 'done':
       return 'bg-green-500/10 border-green-500/20';
+    // Agentic Mode events
+    case 'agent_start':
+    case 'agent_thinking':
+      return 'bg-indigo-500/10 border-indigo-500/20';
+    case 'agent_done':
+      return 'bg-green-500/10 border-green-500/20';
+    case 'agent_error':
+    case 'agent_fallback':
+    case 'agent_max_iterations':
+      return 'bg-amber-500/10 border-amber-500/20';
+    case 'tool_call':
+    case 'tool_result':
+      return 'bg-cyan-500/10 border-cyan-500/20';
     default:
       return 'bg-muted/50';
   }
@@ -205,11 +313,11 @@ export function ProcessDisplay({ logs, summary, isStreaming }: ProcessDisplayPro
               className={`flex items-start gap-2 p-2 rounded-md border text-xs ${getEventBgColor(log.event)}`}
             >
               <div className="mt-0.5 shrink-0">
-                {getEventIcon(log.event)}
+                {getEventIcon(log.event, log.data)}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-foreground">
-                  {getEventLabel(log.event)}
+                  {getEventLabel(log.event, log.data)}
                 </div>
                 {formatDetails(log.event, log.data) && (
                   <div className="text-muted-foreground mt-0.5 truncate">

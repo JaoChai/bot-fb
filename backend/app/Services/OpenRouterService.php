@@ -125,6 +125,99 @@ class OpenRouterService
     }
 
     /**
+     * Send a chat completion request with tools (function calling).
+     *
+     * Used for agentic mode where AI can decide to call tools.
+     *
+     * @param array $messages Chat messages
+     * @param array $tools Tool definitions in OpenAI format
+     * @param string|null $model Model ID
+     * @param float|null $temperature Sampling temperature
+     * @param int|null $maxTokens Maximum tokens in response
+     * @param string|null $apiKeyOverride Override API key
+     * @param string $toolChoice Tool calling behavior: 'auto', 'none', 'required'
+     * @return array Response with possible tool_calls
+     */
+    public function chatWithTools(
+        array $messages,
+        array $tools,
+        ?string $model = null,
+        ?float $temperature = null,
+        ?int $maxTokens = null,
+        ?string $apiKeyOverride = null,
+        string $toolChoice = 'auto'
+    ): array {
+        $model = $model ?? $this->defaultModel;
+        $temperature = $temperature ?? 0.7;
+        $maxTokens = $maxTokens ?? $this->maxTokens;
+        $apiKey = $apiKeyOverride ?? $this->apiKey;
+
+        try {
+            $payload = [
+                'model' => $model,
+                'messages' => $messages,
+                'temperature' => $temperature,
+                'max_tokens' => $maxTokens,
+            ];
+
+            // Add tools if provided
+            if (!empty($tools)) {
+                $payload['tools'] = $tools;
+                $payload['tool_choice'] = $toolChoice;
+            }
+
+            $response = $this->client($apiKey)->post('/chat/completions', $payload);
+
+            if ($response->failed()) {
+                $error = $response->json('error.message', 'Unknown error');
+
+                Log::warning('OpenRouter API with tools failed', [
+                    'model' => $model,
+                    'status' => $response->status(),
+                    'error' => $error,
+                ]);
+
+                throw new OpenRouterException("OpenRouter API error: {$error}", $response->status());
+            }
+
+            $data = $response->json();
+            $choice = $data['choices'][0] ?? [];
+            $message = $choice['message'] ?? [];
+            $finishReason = $choice['finish_reason'] ?? 'stop';
+
+            // Build response
+            $result = [
+                'content' => $message['content'] ?? '',
+                'model' => $data['model'] ?? $model,
+                'usage' => [
+                    'prompt_tokens' => $data['usage']['prompt_tokens'] ?? 0,
+                    'completion_tokens' => $data['usage']['completion_tokens'] ?? 0,
+                    'total_tokens' => $data['usage']['total_tokens'] ?? 0,
+                ],
+                'id' => $data['id'] ?? null,
+                'finish_reason' => $finishReason,
+                'tool_calls' => null,
+            ];
+
+            // Include tool calls if present
+            if ($finishReason === 'tool_calls' && isset($message['tool_calls'])) {
+                $result['tool_calls'] = $message['tool_calls'];
+            }
+
+            return $result;
+        } catch (OpenRouterException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error('OpenRouter request with tools failed', [
+                'model' => $model,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new OpenRouterException("OpenRouter request failed: {$e->getMessage()}", 500, $e);
+        }
+    }
+
+    /**
      * Generate a bot response with system prompt and conversation history.
      *
      * @param string $userMessage The user's message

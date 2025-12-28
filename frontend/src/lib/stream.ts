@@ -15,6 +15,16 @@ export type ProcessEventType =
   | 'kb_skip'
   | 'chat_start'
   | 'chat_fallback'
+  // Agentic Mode events
+  | 'agent_start'
+  | 'agent_thinking'
+  | 'agent_done'
+  | 'agent_error'
+  | 'agent_fallback'
+  | 'agent_max_iterations'
+  | 'tool_call'
+  | 'tool_result'
+  // Standard events
   | 'content'
   | 'error'
   | 'done';
@@ -39,6 +49,7 @@ export interface DoneSummary {
   prompt_tokens: number;
   completion_tokens: number;
   models_used: string[];
+  tool_calls?: number;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -186,6 +197,7 @@ function processSSEEvent(eventBlock: string, options: StreamOptions): void {
           prompt_tokens: parsed.prompt_tokens || 0,
           completion_tokens: parsed.completion_tokens || 0,
           models_used: parsed.models_used || [],
+          tool_calls: parsed.tool_calls || 0,
         });
         break;
 
@@ -200,6 +212,15 @@ function processSSEEvent(eventBlock: string, options: StreamOptions): void {
       case 'kb_skip':
       case 'chat_start':
       case 'chat_fallback':
+      // Agentic mode events
+      case 'agent_start':
+      case 'agent_thinking':
+      case 'agent_done':
+      case 'agent_error':
+      case 'agent_fallback':
+      case 'agent_max_iterations':
+      case 'tool_call':
+      case 'tool_result':
         // Already handled by onProcessLog above
         break;
     }
