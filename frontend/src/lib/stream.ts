@@ -1,29 +1,60 @@
 /**
  * Streaming API helper using Server-Sent Events (SSE)
- * Handles real-time AI responses with thinking tokens support
+ * Handles real-time AI responses with System Process Logging
  */
 
-export interface StreamEvent {
-  event: 'thinking' | 'content' | 'error' | 'done';
-  data: {
-    text?: string;
-    message?: string;
-    status?: string;
-  };
+// Process Log Event Types
+export type ProcessEventType =
+  | 'process_start'
+  | 'decision_start'
+  | 'decision_result'
+  | 'decision_fallback'
+  | 'decision_skip'
+  | 'kb_search'
+  | 'kb_result'
+  | 'kb_skip'
+  | 'chat_start'
+  | 'chat_fallback'
+  | 'content'
+  | 'error'
+  | 'done';
+
+export interface ProcessLog {
+  id: string;
+  event: ProcessEventType;
+  timestamp: number;
+  data: Record<string, unknown>;
 }
 
 export interface StreamOptions {
-  onThinking?: (text: string) => void;
+  onProcessLog?: (log: ProcessLog) => void;
   onContent?: (text: string) => void;
   onError?: (message: string) => void;
-  onDone?: () => void;
+  onDone?: (summary: DoneSummary) => void;
   signal?: AbortSignal;
+}
+
+export interface DoneSummary {
+  total_time_ms: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  models_used: string[];
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 /**
- * Stream AI response with extended thinking support.
+ * Generate unique ID for process logs
+ */
+function generateLogId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+/**
+ * Stream AI response with System Process Logging.
  * Uses native fetch API for SSE streaming.
  */
 export async function streamFlowTest(
@@ -31,7 +62,7 @@ export async function streamFlowTest(
   flowId: number,
   message: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
-  enableThinking: boolean,
+  _enableThinking: boolean, // Deprecated - kept for backward compatibility
   options: StreamOptions
 ): Promise<void> {
   const token = localStorage.getItem('auth_token');
@@ -53,7 +84,6 @@ export async function streamFlowTest(
       body: JSON.stringify({
         message,
         conversation_history: conversationHistory,
-        enable_thinking: enableThinking,
       }),
       signal: options.signal,
     }
@@ -77,7 +107,6 @@ export async function streamFlowTest(
       const { done, value } = await reader.read();
 
       if (done) {
-        // Process any remaining buffer
         if (buffer.trim()) {
           processSSEBuffer(buffer, options);
         }
@@ -88,7 +117,7 @@ export async function streamFlowTest(
 
       // Process complete events (each event ends with \n\n)
       const events = buffer.split('\n\n');
-      buffer = events.pop() || ''; // Keep incomplete event in buffer
+      buffer = events.pop() || '';
 
       for (const eventBlock of events) {
         if (!eventBlock.trim()) continue;
@@ -121,22 +150,50 @@ function processSSEEvent(eventBlock: string, options: StreamOptions): void {
   try {
     const parsed = JSON.parse(data);
 
+    // Create process log for all events except content
+    if (eventType !== 'content') {
+      const log: ProcessLog = {
+        id: generateLogId(),
+        event: eventType as ProcessEventType,
+        timestamp: Date.now(),
+        data: parsed,
+      };
+      options.onProcessLog?.(log);
+    }
+
+    // Handle specific events
     switch (eventType) {
-      case 'thinking':
-        if (parsed.text) {
-          options.onThinking?.(parsed.text);
-        }
-        break;
       case 'content':
         if (parsed.text) {
           options.onContent?.(parsed.text);
         }
         break;
+
       case 'error':
         options.onError?.(parsed.message || 'Unknown error');
         break;
+
       case 'done':
-        options.onDone?.();
+        options.onDone?.({
+          total_time_ms: parsed.total_time_ms || 0,
+          prompt_tokens: parsed.prompt_tokens || 0,
+          completion_tokens: parsed.completion_tokens || 0,
+          models_used: parsed.models_used || [],
+        });
+        break;
+
+      // Process events are handled by onProcessLog
+      case 'process_start':
+      case 'decision_start':
+      case 'decision_result':
+      case 'decision_fallback':
+      case 'decision_skip':
+      case 'kb_search':
+      case 'kb_result':
+      case 'kb_skip':
+      case 'chat_start':
+      case 'chat_fallback':
+        // Already handled by onProcessLog above
         break;
     }
   } catch (e) {
@@ -148,7 +205,6 @@ function processSSEEvent(eventBlock: string, options: StreamOptions): void {
  * Process remaining buffer (for incomplete events at end of stream)
  */
 function processSSEBuffer(buffer: string, options: StreamOptions): void {
-  // Try to process as event
   processSSEEvent(buffer, options);
 }
 
