@@ -24,6 +24,25 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+// Debug endpoint - TEMPORARY
+Route::get('/debug-bots', function (\Illuminate\Http\Request $request) {
+    try {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['error' => 'No authenticated user', 'token_present' => $request->bearerToken() !== null]);
+        }
+        $bots = $user->bots()->latest()->paginate(15);
+        return response()->json(['status' => 'ok', 'bots_count' => $bots->count()]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => collect($e->getTrace())->take(5)->toArray()
+        ], 500);
+    }
+})->middleware(['auth:sanctum']);
+
 // Public routes with auth rate limiting (stricter limits)
 Route::prefix('auth')->middleware('throttle.auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register'])->name('auth.register');
