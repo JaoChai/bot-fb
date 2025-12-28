@@ -125,7 +125,7 @@ export function EditConnectionPage() {
         enabled: existingBot.status === 'active',
         connection_name: existingBot.name,
         platform: existingBot.channel_type,
-        openrouter_api_key: '', // Hidden field - don't populate
+        openrouter_api_key: existingBot.openrouter_api_key || '',
         primary_chat_model: existingBot.primary_chat_model || DEFAULT_FORM_DATA.primary_chat_model,
         fallback_chat_model: existingBot.fallback_chat_model || DEFAULT_FORM_DATA.fallback_chat_model,
         decision_model: existingBot.decision_model || DEFAULT_FORM_DATA.decision_model,

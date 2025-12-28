@@ -59,6 +59,8 @@ export interface Bot {
   channel_type: 'line' | 'facebook' | 'testing';
   webhook_url: string;
   webhook_forwarder_enabled: boolean;
+  // Credentials
+  openrouter_api_key?: string;
   // Multi-model LLM configuration
   primary_chat_model: string | null;
   fallback_chat_model: string | null;
