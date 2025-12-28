@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\FlowController;
 use App\Http\Controllers\Api\KnowledgeBaseController;
+use App\Http\Controllers\Api\StreamController;
 use App\Http\Controllers\Api\UserSettingController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -150,3 +151,17 @@ Route::get('/health', function () {
 
 // Broadcasting authentication endpoint
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
+
+/*
+|--------------------------------------------------------------------------
+| Streaming Routes (Outside auth middleware for SSE support)
+|--------------------------------------------------------------------------
+|
+| These routes handle authentication manually to support Server-Sent Events.
+| Normal middleware interferes with SSE streaming responses.
+|
+*/
+
+Route::post('/bots/{botId}/flows/{flowId}/stream', [StreamController::class, 'streamTest'])
+    ->middleware('throttle.bot-test')
+    ->name('flows.stream');
