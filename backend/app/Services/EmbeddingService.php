@@ -16,10 +16,11 @@ class EmbeddingService
 
     public function __construct()
     {
-        $this->model = config('services.embeddings.model', 'openai/text-embedding-3-small');
-        $this->dimensions = config('services.embeddings.dimensions', 1536);
-        $this->apiKey = config('services.openrouter.api_key', '');
-        $this->baseUrl = config('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
+        // Use ?? to ensure string type even when config returns null
+        $this->model = config('services.embeddings.model') ?? 'openai/text-embedding-3-small';
+        $this->dimensions = (int) (config('services.embeddings.dimensions') ?? 1536);
+        $this->apiKey = config('services.openrouter.api_key') ?? '';
+        $this->baseUrl = config('services.openrouter.base_url') ?? 'https://openrouter.ai/api/v1';
     }
 
     public function generate(string $text): array
