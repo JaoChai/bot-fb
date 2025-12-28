@@ -51,7 +51,7 @@ export const useUIStore = create<UIStore>()(
       // Initial state
       sidebarOpen: false,
       sidebarCollapsed: false,
-      theme: 'system',
+      theme: 'dark',
       toasts: [],
       globalLoading: false,
 
