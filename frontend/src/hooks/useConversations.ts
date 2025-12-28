@@ -66,7 +66,9 @@ export function useConversations(botId: number | undefined, filters: Conversatio
       return response.data;
     },
     enabled: !!botId,
-    staleTime: 30000, // 30 seconds
+    staleTime: 10000, // 10 seconds
+    refetchInterval: 10000, // Poll every 10 seconds for real-time updates
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -110,7 +112,9 @@ export function useConversationMessages(
       return response.data;
     },
     enabled: !!botId && !!conversationId,
-    staleTime: 10000,
+    staleTime: 5000,
+    refetchInterval: 5000, // Poll every 5 seconds for real-time updates
+    refetchOnWindowFocus: true,
   });
 }
 
