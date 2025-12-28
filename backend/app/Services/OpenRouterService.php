@@ -20,14 +20,15 @@ class OpenRouterService
 
     public function __construct()
     {
-        $this->apiKey = config('services.openrouter.api_key', '');
-        $this->baseUrl = config('services.openrouter.base_url');
-        $this->defaultModel = config('services.openrouter.default_model');
-        $this->fallbackModel = config('services.openrouter.fallback_model');
-        $this->siteUrl = config('services.openrouter.site_url');
-        $this->siteName = config('services.openrouter.site_name');
-        $this->timeout = config('services.openrouter.timeout');
-        $this->maxTokens = config('services.openrouter.max_tokens');
+        // Use ?? to ensure string type even when config returns null
+        $this->apiKey = config('services.openrouter.api_key') ?? '';
+        $this->baseUrl = config('services.openrouter.base_url') ?? 'https://openrouter.ai/api/v1';
+        $this->defaultModel = config('services.openrouter.default_model') ?? 'anthropic/claude-3.5-sonnet';
+        $this->fallbackModel = config('services.openrouter.fallback_model') ?? 'openai/gpt-4o-mini';
+        $this->siteUrl = config('services.openrouter.site_url') ?? config('app.url') ?? '';
+        $this->siteName = config('services.openrouter.site_name') ?? config('app.name') ?? 'BotFacebook';
+        $this->timeout = (int) (config('services.openrouter.timeout') ?? 60);
+        $this->maxTokens = (int) (config('services.openrouter.max_tokens') ?? 4096);
     }
 
     /**
