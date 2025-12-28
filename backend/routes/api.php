@@ -24,16 +24,26 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-// Debug endpoint - test pagination - TEMPORARY
-Route::get('/debug-paginate', function (\Illuminate\Http\Request $request) {
+// Debug endpoint - test cache/throttle - TEMPORARY
+Route::get('/debug-cache', function () {
     try {
-        $user = auth('sanctum')->user();
-        if (!$user) return response()->json(['error' => 'no user']);
+        $tests = [];
 
-        // Test exact same code as BotController
-        $bots = $user->bots()->latest()->paginate($request->input('per_page', 15));
+        // Test cache driver
+        $tests['cache_driver'] = config('cache.default');
 
-        return \App\Http\Resources\BotResource::collection($bots);
+        // Test cache table exists
+        $tests['cache_table_exists'] = \Schema::hasTable('cache');
+        $tests['cache_locks_table_exists'] = \Schema::hasTable('cache_locks');
+
+        // Test cache write/read
+        \Cache::put('test_key', 'test_value', 60);
+        $tests['cache_write'] = \Cache::get('test_key') === 'test_value' ? 'ok' : 'fail';
+
+        // Test rate limiter key generation
+        $tests['rate_limiter_key'] = 'would be: ' . (auth('sanctum')->user()?->id ?? 'ip-based');
+
+        return response()->json($tests);
     } catch (\Throwable $e) {
         return response()->json([
             'error' => $e->getMessage(),
@@ -41,24 +51,7 @@ Route::get('/debug-paginate', function (\Illuminate\Http\Request $request) {
             'line' => $e->getLine(),
         ], 500);
     }
-})->middleware(['auth:sanctum']);
-
-// Debug endpoint - test with throttle - TEMPORARY
-Route::get('/debug-throttle', function (\Illuminate\Http\Request $request) {
-    try {
-        $user = auth('sanctum')->user();
-        if (!$user) return response()->json(['error' => 'no user']);
-
-        $bots = $user->bots()->latest()->paginate(15);
-        return \App\Http\Resources\BotResource::collection($bots);
-    } catch (\Throwable $e) {
-        return response()->json([
-            'error' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-        ], 500);
-    }
-})->middleware(['auth:sanctum', 'throttle.api']);
+});
 
 // Public routes with auth rate limiting (stricter limits)
 Route::prefix('auth')->middleware('throttle.auth')->group(function () {
