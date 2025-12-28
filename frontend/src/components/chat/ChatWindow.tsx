@@ -37,9 +37,9 @@ const senderIcons = {
 };
 
 const senderLabels = {
-  user: 'Customer',
+  user: 'ลูกค้า',
   bot: 'Bot',
-  agent: 'Agent',
+  agent: 'แอดมิน',
 };
 
 interface ChatWindowProps {
@@ -89,7 +89,7 @@ export function ChatWindow({ botId, conversation, onShowInfo }: ChatWindowProps)
 
       if (result.delivery_error) {
         toast({
-          title: 'Message saved but delivery failed',
+          title: 'บันทึกข้อความแล้ว แต่ส่งไม่สำเร็จ',
           description: result.delivery_error,
           variant: 'destructive',
         });
@@ -97,8 +97,8 @@ export function ChatWindow({ botId, conversation, onShowInfo }: ChatWindowProps)
     } catch {
       setMessageInput(content);
       toast({
-        title: 'Error',
-        description: 'Failed to send message.',
+        title: 'เกิดข้อผิดพลาด',
+        description: 'ไม่สามารถส่งข้อความได้',
         variant: 'destructive',
       });
     }
@@ -109,21 +109,21 @@ export function ChatWindow({ botId, conversation, onShowInfo }: ChatWindowProps)
     try {
       await toggleHandover.mutateAsync({ conversationId: conversation.id });
       toast({
-        title: conversation.is_handover ? 'Bot enabled' : 'Handover enabled',
+        title: conversation.is_handover ? 'เปิด Bot แล้ว' : 'เปิดโหมดรอตอบ',
         description: conversation.is_handover
-          ? 'Bot will now handle this conversation.'
-          : 'You can now reply directly. Bot will auto-enable in 30 minutes.',
+          ? 'Bot จะตอบข้อความในการสนทนานี้'
+          : 'คุณสามารถตอบข้อความได้โดยตรง Bot จะเปิดอัตโนมัติใน 30 นาที',
       });
     } catch {
       toast({
-        title: 'Error',
-        description: 'Failed to toggle bot mode.',
+        title: 'เกิดข้อผิดพลาด',
+        description: 'ไม่สามารถสลับโหมด Bot ได้',
         variant: 'destructive',
       });
     }
   };
 
-  const customerName = conversation.customer_profile?.display_name || 'Unknown Customer';
+  const customerName = conversation.customer_profile?.display_name || 'ลูกค้า';
   const customerInitial = customerName.charAt(0).toUpperCase();
 
   return (
@@ -141,17 +141,17 @@ export function ChatWindow({ botId, conversation, onShowInfo }: ChatWindowProps)
               {conversation.is_handover ? (
                 <Badge variant="outline" className="text-amber-600 border-amber-300">
                   <Headphones className="h-3 w-3 mr-1" />
-                  Handover
+                  รอตอบ
                 </Badge>
               ) : (
                 <Badge variant="outline" className="text-green-600 border-green-300">
                   <Bot className="h-3 w-3 mr-1" />
-                  Bot Active
+                  Bot เปิด
                 </Badge>
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              {channelLabels[conversation.channel_type]} - {conversation.message_count} messages
+              {channelLabels[conversation.channel_type]} - {conversation.message_count} ข้อความ
             </p>
           </div>
         </div>
@@ -169,12 +169,12 @@ export function ChatWindow({ botId, conversation, onShowInfo }: ChatWindowProps)
             ) : conversation.is_handover ? (
               <>
                 <Bot className="h-4 w-4 mr-1" />
-                Enable Bot
+                เปิด Bot
               </>
             ) : (
               <>
                 <Headphones className="h-4 w-4 mr-1" />
-                Take Over
+                ตอบเอง
               </>
             )}
           </Button>
@@ -200,7 +200,7 @@ export function ChatWindow({ botId, conversation, onShowInfo }: ChatWindowProps)
             </div>
           ) : messages.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              No messages in this conversation yet.
+              ยังไม่มีข้อความในการสนทนานี้
             </div>
           ) : (
             <>
@@ -239,7 +239,7 @@ export function ChatWindow({ botId, conversation, onShowInfo }: ChatWindowProps)
           }}
         >
           <ChevronDown className="h-4 w-4 mr-2" />
-          New messages
+          ข้อความใหม่
         </Button>
       )}
 
@@ -247,7 +247,7 @@ export function ChatWindow({ botId, conversation, onShowInfo }: ChatWindowProps)
       <div className="border-t bg-background">
         {conversation.status === 'closed' ? (
           <div className="p-4 text-center text-sm text-muted-foreground">
-            This conversation is closed.
+            การสนทนานี้ปิดแล้ว
           </div>
         ) : conversation.is_handover ? (
           <form onSubmit={handleSendMessage} className="p-3">
@@ -256,7 +256,7 @@ export function ChatWindow({ botId, conversation, onShowInfo }: ChatWindowProps)
                 <Input
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
-                  placeholder="Type your message..."
+                  placeholder="พิมพ์ข้อความ..."
                   disabled={sendAgentMessage.isPending}
                   className="pr-12"
                   autoFocus
@@ -277,13 +277,13 @@ export function ChatWindow({ botId, conversation, onShowInfo }: ChatWindowProps)
               </Button>
             </div>
             <p className="text-center text-xs text-muted-foreground mt-2">
-              Handover mode - Messages will be sent directly to customer
+              โหมดตอบเอง - ข้อความจะส่งถึงลูกค้าโดยตรง
             </p>
           </form>
         ) : (
           <div className="p-4 text-center text-sm text-muted-foreground">
             <Bot className="h-4 w-4 inline-block mr-1" />
-            Bot is handling this conversation. Click "Take Over" to reply manually.
+            Bot กำลังตอบการสนทนานี้ กด "ตอบเอง" เพื่อตอบด้วยตนเอง
           </div>
         )}
       </div>

@@ -94,14 +94,14 @@ export function ChatPage() {
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-muted">
             <MessageSquare className="h-8 w-8 text-muted-foreground" />
           </div>
-          <h1 className="text-2xl font-bold">Select a Bot</h1>
-          <p className="text-muted-foreground">Choose a bot to view its conversations</p>
+          <h1 className="text-2xl font-bold">เลือก Bot</h1>
+          <p className="text-muted-foreground">เลือก Bot เพื่อดูรายการสนทนา</p>
           {isBotsLoading ? (
             <Loader2 className="h-6 w-6 animate-spin mx-auto" />
           ) : (
             <Select onValueChange={handleBotSelect}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a bot..." />
+                <SelectValue placeholder="เลือก Bot..." />
               </SelectTrigger>
               <SelectContent>
                 {bots.map((bot) => (
@@ -118,14 +118,14 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-64px)] overflow-hidden bg-background">
+    <div className="-m-4 md:-m-6 flex h-[calc(100vh-64px+32px)] md:h-[calc(100vh-64px+48px)] overflow-hidden bg-background">
       {/* Left Panel: Conversation List */}
       <div className="w-80 flex-shrink-0 border-r flex flex-col">
         {/* Bot Selector */}
         <div className="p-3 border-b bg-muted/30">
           <Select value={botId.toString()} onValueChange={handleBotSelect}>
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select bot" />
+              <SelectValue placeholder="เลือก Bot" />
             </SelectTrigger>
             <SelectContent>
               {bots.map((bot) => (
@@ -163,7 +163,7 @@ export function ChatPage() {
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
             <div className="text-center">
               <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Select a conversation to start chatting</p>
+              <p>เลือกการสนทนาเพื่อเริ่มแชท</p>
             </div>
           </div>
         )}
