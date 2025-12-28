@@ -80,4 +80,54 @@ return [
     |
     */
     'cache_ttl' => env('RAG_CACHE_TTL', 60),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Hybrid Search Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Hybrid search combines semantic (vector) search with keyword (full-text)
+    | search using Reciprocal Rank Fusion (RRF) for ~48% better retrieval.
+    |
+    | Requires PostgreSQL with the GIN index on document_chunks.content.
+    |
+    */
+    'hybrid_search' => [
+        // Enable/disable hybrid search (falls back to semantic-only if disabled)
+        'enabled' => env('RAG_HYBRID_ENABLED', true),
+
+        // RRF constant (k). Standard value is 60.
+        // Higher k = more weight to lower-ranked items.
+        'rrf_k' => env('RAG_RRF_K', 60),
+
+        // Multiplier for candidate retrieval before RRF fusion
+        // e.g., if limit=5 and multiplier=4, fetch 20 candidates from each method
+        'candidate_multiplier' => env('RAG_CANDIDATE_MULTIPLIER', 4),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Reranking Configuration (Phase 2)
+    |--------------------------------------------------------------------------
+    |
+    | Reranking uses a cross-encoder model to rescore results for
+    | ~67% better accuracy. Supports Jina AI (recommended) or Cohere.
+    |
+    | Jina AI: Free 10M tokens, 96.30 Recall@20
+    | Cohere: 1000 free calls/month, 96.10 Recall@20
+    |
+    */
+    'reranking' => [
+        // Enable/disable reranking
+        'enabled' => env('RAG_RERANKING_ENABLED', false),
+
+        // Reranking provider: 'jina' or 'cohere'
+        'provider' => env('RAG_RERANKER_PROVIDER', 'jina'),
+
+        // Number of candidates to fetch before reranking
+        'candidates' => env('RAG_RERANK_CANDIDATES', 20),
+
+        // Final number of results after reranking
+        'top_n' => env('RAG_RERANK_TOP_N', 5),
+    ],
 ];

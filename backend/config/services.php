@@ -60,4 +60,11 @@ return [
         'relevance_threshold' => env('EMBEDDING_RELEVANCE_THRESHOLD', 0.7),
     ],
 
+    'jina' => [
+        'api_key' => env('JINA_API_KEY'),
+        'base_url' => env('JINA_BASE_URL', 'https://api.jina.ai/v1'),
+        'rerank_model' => env('JINA_RERANK_MODEL', 'jina-reranker-v2-base-multilingual'),
+        'timeout' => env('JINA_TIMEOUT', 30),
+    ],
+
 ];

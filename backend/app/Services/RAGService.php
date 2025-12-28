@@ -11,17 +11,21 @@ use Illuminate\Support\Facades\Log;
 /**
  * RAG (Retrieval Augmented Generation) Service
  *
- * Integrates Knowledge Base semantic search into bot responses.
+ * Integrates Knowledge Base search into bot responses using hybrid search
+ * (semantic + keyword) with Reciprocal Rank Fusion for optimal retrieval.
+ *
  * When a user sends a message, the service:
- * 1. Searches the bot's KB for relevant documents
- * 2. Builds context from matching chunks
- * 3. Enhances the system prompt with KB context
- * 4. Generates an informed response via the LLM
+ * 1. Analyzes intent using Decision Model
+ * 2. Searches the bot's KB using hybrid search (vector + full-text)
+ * 3. Builds context from matching chunks
+ * 4. Enhances the system prompt with KB context
+ * 5. Generates an informed response via the LLM
  */
 class RAGService
 {
     public function __construct(
-        protected SemanticSearchService $searchService,
+        protected SemanticSearchService $semanticSearchService,
+        protected HybridSearchService $hybridSearchService,
         protected OpenRouterService $openRouter
     ) {}
 
@@ -127,6 +131,8 @@ class RAGService
 
     /**
      * Get context from Knowledge Base for the given query.
+     *
+     * Uses hybrid search (semantic + keyword) with RRF for better retrieval.
      */
     protected function getKnowledgeBaseContext(
         Bot $bot,
@@ -136,8 +142,8 @@ class RAGService
         $kb = $bot->knowledgeBase;
 
         try {
-            // Search KB using bot's configured settings
-            $results = $this->searchService->search(
+            // Search KB using hybrid search (semantic + keyword with RRF)
+            $results = $this->hybridSearchService->search(
                 knowledgeBaseId: $kb->id,
                 query: $query,
                 limit: $bot->kb_max_results ?? config('rag.max_results', 3),
@@ -149,16 +155,21 @@ class RAGService
                     'bot_id' => $bot->id,
                     'kb_id' => $kb->id,
                     'query' => substr($query, 0, 100),
+                    'search_mode' => $this->hybridSearchService->isEnabled() ? 'hybrid' : 'semantic',
                 ]);
                 return '';
             }
 
-            // Update metadata
+            // Update metadata with hybrid search info
             $metadata['enabled'] = true;
             $metadata['results_count'] = $results->count();
+            $metadata['search_mode'] = $this->hybridSearchService->isEnabled() ? 'hybrid' : 'semantic';
             $metadata['chunks_used'] = $results->map(fn ($r) => [
                 'document' => $r['document_name'],
                 'similarity' => $r['similarity'],
+                'rrf_score' => $r['rrf_score'] ?? null,
+                'semantic_rank' => $r['semantic_rank'] ?? null,
+                'keyword_rank' => $r['keyword_rank'] ?? null,
             ])->toArray();
 
             // Format context for prompt
@@ -527,7 +538,7 @@ PROMPT;
 
     /**
      * Get context from a Flow's Knowledge Bases (Many-to-Many).
-     * Searches all attached KBs and merges results by similarity score.
+     * Searches all attached KBs using hybrid search and merges results.
      */
     public function getFlowKnowledgeBaseContext(
         Flow $flow,
@@ -549,8 +560,8 @@ PROMPT;
                 'kb_similarity_threshold' => $kb->pivot->kb_similarity_threshold ?? 0.7,
             ])->toArray();
 
-            // Search all KBs and merge results
-            $results = $this->searchService->searchMultiple(
+            // Search all KBs using hybrid search and merge results
+            $results = $this->hybridSearchService->searchMultiple(
                 kbConfigs: $kbConfigs,
                 query: $query,
                 totalLimit: config('rag.max_results', 5)
@@ -561,18 +572,21 @@ PROMPT;
                     'flow_id' => $flow->id,
                     'kb_count' => count($kbConfigs),
                     'query' => substr($query, 0, 100),
+                    'search_mode' => $this->hybridSearchService->isEnabled() ? 'hybrid' : 'semantic',
                 ]);
                 return '';
             }
 
-            // Update metadata
+            // Update metadata with hybrid search info
             $metadata['enabled'] = true;
             $metadata['results_count'] = $results->count();
             $metadata['kb_count'] = $knowledgeBases->count();
+            $metadata['search_mode'] = $this->hybridSearchService->isEnabled() ? 'hybrid' : 'semantic';
             $metadata['chunks_used'] = $results->map(fn ($r) => [
                 'document' => $r['document_name'],
                 'knowledge_base_id' => $r['knowledge_base_id'],
                 'similarity' => $r['similarity'],
+                'rrf_score' => $r['rrf_score'] ?? null,
             ])->toArray();
 
             // Format context for prompt
@@ -603,6 +617,7 @@ PROMPT;
             'enabled' => false,
             'results_count' => 0,
             'chunks_used' => [],
+            'search_mode' => 'none',
         ];
 
         $context = '';
@@ -618,6 +633,7 @@ PROMPT;
             'context_generated' => !empty($context),
             'context_preview' => substr($context, 0, 500) . (strlen($context) > 500 ? '...' : ''),
             'metadata' => $metadata,
+            'hybrid_search_enabled' => $this->hybridSearchService->isEnabled(),
         ];
     }
 }
