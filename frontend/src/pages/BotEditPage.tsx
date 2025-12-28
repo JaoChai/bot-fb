@@ -14,6 +14,9 @@ import { Separator } from '@/components/ui/separator';
 // Hooks
 import { useBots } from '@/hooks/useKnowledgeBase';
 
+// API
+import { apiPost } from '@/lib/api';
+
 // Icons
 import { ArrowLeft, Save, Loader2, CheckCircle2, Eye, EyeOff, Trash2, ShieldCheck } from 'lucide-react';
 
@@ -75,6 +78,7 @@ export function BotEditPage() {
   const { data: botsResponse, isLoading: isLoadingBots } = useBots();
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [showChannelSecret, setShowChannelSecret] = useState(false);
   const [showAccessToken, setShowAccessToken] = useState(false);
@@ -140,11 +144,48 @@ export function BotEditPage() {
   };
 
   const handleTestConnection = async () => {
-    toast({
-      title: 'กำลังทดสอบ...',
-      description: 'กำลังทดสอบการเชื่อมต่อกับ LINE OA',
-    });
-    // TODO: Implement actual test
+    if (!numericBotId) return;
+
+    setIsTestingConnection(true);
+
+    try {
+      const response = await apiPost<{
+        success: boolean;
+        message: string;
+        bot_info?: {
+          display_name: string | null;
+          basic_id: string | null;
+          picture_url: string | null;
+        };
+        error_code?: number;
+      }>(`/bots/${numericBotId}/test-line`);
+
+      if (response.success) {
+        toast({
+          title: 'เชื่อมต่อสำเร็จ',
+          description: response.bot_info?.display_name
+            ? `LINE OA: ${response.bot_info.display_name}`
+            : 'เชื่อมต่อกับ LINE OA สำเร็จ',
+        });
+      } else {
+        toast({
+          title: 'เชื่อมต่อไม่สำเร็จ',
+          description: response.message,
+          variant: 'destructive',
+        });
+      }
+    } catch (error: unknown) {
+      const errorMessage = error && typeof error === 'object' && 'message' in error
+        ? (error as { message: string }).message
+        : 'ไม่สามารถทดสอบการเชื่อมต่อได้';
+      toast({
+        title: 'เกิดข้อผิดพลาด',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsTestingConnection(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -518,10 +559,18 @@ export function BotEditPage() {
                     <Button
                       variant="outline"
                       onClick={handleTestConnection}
+                      disabled={isTestingConnection}
                       style={{ color: 'var(--info)', borderColor: 'var(--info)' }}
                       className="hover:bg-[oklch(0.927_0.063_257.528)] dark:hover:bg-[oklch(0.2_0.15_257.528)]"
                     >
-                      ทดสอบการเชื่อมต่อกับ LINE OA นี้
+                      {isTestingConnection ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          กำลังทดสอบ...
+                        </>
+                      ) : (
+                        'ทดสอบการเชื่อมต่อกับ LINE OA นี้'
+                      )}
                     </Button>
                   </>
                 )}

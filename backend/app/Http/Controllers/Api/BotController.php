@@ -10,6 +10,7 @@ use App\Models\Bot;
 use App\Services\AIService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Str;
 
@@ -179,6 +180,71 @@ PROMPT;
             'response' => 'AI service not configured. Add OPENROUTER_API_KEY to enable AI responses.',
             'bot_id' => $bot->id,
         ]);
+    }
+
+    /**
+     * Test LINE connection for a specific bot.
+     * Verifies that the channel_access_token is valid by calling LINE Bot Info API.
+     */
+    public function testLineConnection(Request $request, Bot $bot): JsonResponse
+    {
+        $this->authorize('view', $bot);
+
+        if ($bot->channel_type !== 'line') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bot ไม่ได้ตั้งค่าสำหรับ LINE',
+            ], 400);
+        }
+
+        if (empty($bot->channel_access_token)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'ยังไม่ได้ตั้งค่า Channel Access Token',
+            ], 400);
+        }
+
+        try {
+            // Call LINE Bot Info API to verify credentials
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $bot->channel_access_token,
+            ])->timeout(10)->get('https://api.line.me/v2/bot/info');
+
+            if ($response->successful()) {
+                $botInfo = $response->json();
+                return response()->json([
+                    'success' => true,
+                    'message' => 'เชื่อมต่อสำเร็จ',
+                    'bot_info' => [
+                        'display_name' => $botInfo['displayName'] ?? null,
+                        'user_id' => $botInfo['userId'] ?? null,
+                        'basic_id' => $botInfo['basicId'] ?? null,
+                        'picture_url' => $botInfo['pictureUrl'] ?? null,
+                        'premium_id' => $botInfo['premiumId'] ?? null,
+                    ],
+                ]);
+            }
+
+            // Handle specific LINE API errors
+            $errorMessage = match ($response->status()) {
+                401 => 'Channel Access Token ไม่ถูกต้องหรือหมดอายุ',
+                403 => 'ไม่มีสิทธิ์เข้าถึง - กรุณาตรวจสอบการตั้งค่า Channel',
+                429 => 'เกินอัตราการเรียกใช้ API - กรุณาลองใหม่ภายหลัง',
+                default => 'ไม่สามารถเชื่อมต่อได้ - กรุณาตรวจสอบ Channel Access Token',
+            };
+
+            return response()->json([
+                'success' => false,
+                'message' => $errorMessage,
+                'error_code' => $response->status(),
+            ], 400);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'เกิดข้อผิดพลาดในการเชื่อมต่อ: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**

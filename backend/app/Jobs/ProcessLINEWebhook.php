@@ -91,6 +91,11 @@ class ProcessLINEWebhook implements ShouldQueue
             return;
         }
 
+        // Show loading indicator immediately (before AI processing)
+        // This runs outside the transaction for immediate user feedback
+        // Non-blocking - if it fails, we continue processing
+        $lineService->showLoadingIndicator($this->bot, $userId, 30);
+
         // Process in transaction
         DB::transaction(function () use ($lineService, $aiService, $userId, $replyToken, $messageData) {
             // Find or create conversation

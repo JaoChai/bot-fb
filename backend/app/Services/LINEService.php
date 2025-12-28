@@ -183,6 +183,48 @@ class LINEService
     }
 
     /**
+     * Display loading indicator to user.
+     * Shows typing animation while bot is processing.
+     *
+     * @param Bot $bot
+     * @param string $userId LINE User ID (chatId)
+     * @param int $seconds Duration 5-60 seconds (default: 20)
+     * @return bool
+     */
+    public function showLoadingIndicator(Bot $bot, string $userId, int $seconds = 20): bool
+    {
+        // Clamp seconds to valid range (LINE API constraint: 5-60)
+        $seconds = max(5, min(60, $seconds));
+
+        try {
+            $response = $this->client($bot)->post('/bot/chat/loading/start', [
+                'chatId' => $userId,
+                'loadingSeconds' => $seconds,
+            ]);
+
+            if ($response->failed()) {
+                Log::warning('Failed to show LINE loading indicator', [
+                    'bot_id' => $bot->id,
+                    'user_id' => $userId,
+                    'status' => $response->status(),
+                    'error' => $response->json('message'),
+                ]);
+                return false;
+            }
+
+            return true;
+        } catch (\Exception $e) {
+            // Non-critical - don't let loading indicator failure break the flow
+            Log::warning('LINE loading indicator exception', [
+                'bot_id' => $bot->id,
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
+    /**
      * Get message content (for images, videos, audio, files).
      *
      * @throws LINEException
