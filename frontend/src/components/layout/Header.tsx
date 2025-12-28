@@ -33,7 +33,7 @@ export function Header() {
     : 'U';
 
   return (
-    <header className="flex h-16 items-center justify-between border-b bg-card px-4">
+    <header className="flex h-16 items-center justify-between border-b bg-card px-4 shadow-sm">
       {/* Mobile menu button */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetTrigger asChild className="md:hidden">

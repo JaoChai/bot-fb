@@ -41,7 +41,7 @@ function getEventIcon(event: string, data?: Record<string, unknown>) {
       return <RefreshCw className="h-3.5 w-3.5 text-amber-500" />;
     case 'kb_search':
     case 'kb_result':
-      return <Search className="h-3.5 w-3.5 text-green-500" />;
+      return <Search className="h-3.5 w-3.5 text-emerald-500" />;
     case 'kb_skip':
       return <SkipForward className="h-3.5 w-3.5 text-gray-400" />;
     case 'chat_start':
@@ -49,16 +49,16 @@ function getEventIcon(event: string, data?: Record<string, unknown>) {
     case 'chat_fallback':
       return <RefreshCw className="h-3.5 w-3.5 text-amber-500" />;
     case 'error':
-      return <AlertTriangle className="h-3.5 w-3.5 text-red-500" />;
+      return <AlertTriangle className="h-3.5 w-3.5 text-destructive" />;
     case 'done':
-      return <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />;
+      return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />;
     // Agentic Mode events
     case 'agent_start':
       return <Bot className="h-3.5 w-3.5 text-indigo-500" />;
     case 'agent_thinking':
       return <Sparkles className="h-3.5 w-3.5 text-indigo-500 animate-pulse" />;
     case 'agent_done':
-      return <Bot className="h-3.5 w-3.5 text-green-500" />;
+      return <Bot className="h-3.5 w-3.5 text-emerald-500" />;
     case 'agent_error':
     case 'agent_max_iterations':
       return <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />;
@@ -238,7 +238,7 @@ function getEventBgColor(event: string): string {
       return 'bg-purple-500/10 border-purple-500/20';
     case 'kb_search':
     case 'kb_result':
-      return 'bg-green-500/10 border-green-500/20';
+      return 'bg-emerald-500/10 border-emerald-500/20';
     case 'chat_start':
       return 'bg-blue-500/10 border-blue-500/20';
     case 'decision_fallback':
@@ -246,17 +246,17 @@ function getEventBgColor(event: string): string {
       return 'bg-amber-500/10 border-amber-500/20';
     case 'decision_skip':
     case 'kb_skip':
-      return 'bg-gray-500/10 border-gray-500/20';
+      return 'bg-slate-500/10 border-slate-500/20';
     case 'error':
-      return 'bg-red-500/10 border-red-500/20';
+      return 'bg-destructive/10 border-destructive/20';
     case 'done':
-      return 'bg-green-500/10 border-green-500/20';
+      return 'bg-emerald-500/10 border-emerald-500/20';
     // Agentic Mode events
     case 'agent_start':
     case 'agent_thinking':
       return 'bg-indigo-500/10 border-indigo-500/20';
     case 'agent_done':
-      return 'bg-green-500/10 border-green-500/20';
+      return 'bg-emerald-500/10 border-emerald-500/20';
     case 'agent_error':
     case 'agent_fallback':
     case 'agent_max_iterations':
@@ -287,13 +287,13 @@ export function ProcessDisplay({ logs, summary, isStreaming }: ProcessDisplayPro
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-1.5">
-          <Zap className="h-3 w-3 text-orange-500" />
+          <Zap className="h-3 w-3 text-warning" />
           <span>กระบวนการทำงาน</span>
           {isStreaming && (
-            <Loader2 className="h-3 w-3 animate-spin text-orange-500" />
+            <Loader2 className="h-3 w-3 animate-spin text-warning" />
           )}
           {summary && (
-            <span className="text-orange-500">
+            <span className="text-warning">
               ({(summary.total_time_ms / 1000).toFixed(1)}s)
             </span>
           )}
@@ -337,17 +337,17 @@ export function ProcessDisplay({ logs, summary, isStreaming }: ProcessDisplayPro
           {/* Streaming indicator */}
           {isStreaming && displayLogs.length === 0 && (
             <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50 text-xs">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-warning" />
               <span className="text-muted-foreground">กำลังประมวลผล...</span>
             </div>
           )}
 
           {/* Summary */}
           {summary && (
-            <div className="flex items-center justify-between p-2 rounded-md bg-green-500/10 border border-green-500/20 text-xs">
+            <div className="flex items-center justify-between p-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                <span className="text-green-700 dark:text-green-400 font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                <span className="text-emerald-700 dark:text-emerald-400 font-medium">
                   เสร็จสิ้น
                 </span>
               </div>

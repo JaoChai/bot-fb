@@ -424,3 +424,57 @@ export interface TestConnectionResponse {
   message: string;
   bot_name?: string;
 }
+
+// Cost Analytics Types
+export interface CostSummary {
+  total_responses: number;
+  total_cost: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  avg_cost_per_response: number;
+  today_cost: number;
+  week_cost: number;
+  month_cost: number;
+}
+
+export interface CostByModel {
+  model_used: string | null;
+  response_count: number;
+  total_cost: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+}
+
+export interface CostTimeSeries {
+  period: string;
+  response_count: number;
+  total_cost: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+}
+
+export interface CostByBot {
+  bot_id: number;
+  bot_name: string;
+  response_count: number;
+  total_cost: number;
+}
+
+export interface CostAnalyticsData {
+  summary: CostSummary;
+  by_model: CostByModel[];
+  time_series: CostTimeSeries[];
+  by_bot: CostByBot[] | null;
+  period: {
+    from: string;
+    to: string;
+    group_by: 'day' | 'week' | 'month';
+  };
+}
+
+export interface CostAnalyticsFilters {
+  from_date?: string;
+  to_date?: string;
+  group_by?: 'day' | 'week' | 'month';
+  bot_id?: number;
+}

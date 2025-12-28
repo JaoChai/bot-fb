@@ -523,7 +523,7 @@ export function EditConnectionPage() {
           <Button
             onClick={handleSave}
             disabled={isSaving}
-            variant="orange"
+            variant="cta"
             size="lg"
             className="min-w-[180px]"
           >

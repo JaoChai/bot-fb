@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BotController;
 use App\Http\Controllers\Api\BotSettingController;
@@ -40,6 +41,11 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/refresh', [AuthController::class, 'refresh'])->name('auth.refresh');
         Route::get('/tokens', [AuthController::class, 'tokens'])->name('auth.tokens');
         Route::delete('/tokens/{tokenId}', [AuthController::class, 'revokeToken'])->name('auth.tokens.revoke');
+    });
+
+    // Analytics routes
+    Route::prefix('analytics')->group(function () {
+        Route::get('/costs', [AnalyticsController::class, 'costs'])->name('analytics.costs');
     });
 
     // User Settings routes

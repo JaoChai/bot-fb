@@ -153,7 +153,7 @@ export function DocumentUpload({ onSubmit, isSubmitting }: DocumentUploadProps) 
           {/* Submit Button */}
           <Button
             type="submit"
-            variant="orange"
+            variant="cta"
             disabled={isSubmitting || !title.trim() || !content.trim()}
             className="min-w-[160px]"
           >
