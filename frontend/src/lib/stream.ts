@@ -90,6 +90,13 @@ export async function streamFlowTest(
   );
 
   if (!response.ok) {
+    // Handle 401 Unauthorized - redirect to login
+    if (response.status === 401) {
+      localStorage.removeItem('auth_token');
+      window.location.href = '/login';
+      throw new Error('Session expired. Please login again.');
+    }
+
     const errorText = await response.text();
     throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
   }

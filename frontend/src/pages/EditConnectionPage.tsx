@@ -1,17 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,14 +24,47 @@ import {
   useUpdateConnection,
   useDeleteConnection,
 } from '@/hooks/useConnections';
-import { ArrowLeft, Loader2, Eye, EyeOff, ExternalLink, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Eye, EyeOff, ExternalLink, Trash2, MessageCircle, Settings, Cpu, Key, Zap } from 'lucide-react';
 import { ModelConfiguration } from '@/components/ModelSelector';
+import { cn } from '@/lib/utils';
 
 const PLATFORMS = [
-  { id: 'line', name: 'LINE Official Account' },
-  { id: 'facebook', name: 'Facebook Page' },
-  { id: 'testing', name: 'Just Testing' },
+  { id: 'line', name: 'LINE Official Account', icon: 'line' },
+  { id: 'facebook', name: 'Facebook Page', icon: 'facebook' },
+  { id: 'testing', name: 'Just Testing', icon: 'testing' },
 ];
+
+// Reusable Section Component
+function Section({
+  icon: Icon,
+  title,
+  description,
+  children,
+  className,
+}: {
+  icon: React.ElementType;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn('space-y-4', className)}>
+      <div className="flex items-center gap-3">
+        <div className="flex-shrink-0 w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+          <Icon className="h-5 w-5 text-primary" />
+        </div>
+        <div>
+          <h3 className="font-semibold">{title}</h3>
+          {description && (
+            <p className="text-sm text-muted-foreground">{description}</p>
+          )}
+        </div>
+      </div>
+      <div className="pl-[52px]">{children}</div>
+    </div>
+  );
+}
 
 interface ConnectionFormData {
   enabled: boolean;
@@ -115,12 +142,6 @@ export function EditConnectionPage() {
     value: ConnectionFormData[K]
   ) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const maskApiKey = (key: string) => {
-    if (!key) return '';
-    if (key.length <= 4) return key;
-    return '*'.repeat(key.length - 4) + key.slice(-4);
   };
 
   const handleSave = async () => {
@@ -227,9 +248,26 @@ export function EditConnectionPage() {
     );
   }
 
+  const getPlatformBadge = () => {
+    const platformData = PLATFORMS.find(p => p.id === formData.platform);
+    if (!platformData) return null;
+
+    const colors: Record<string, string> = {
+      line: 'bg-[#06C755]/10 text-[#06C755] border-[#06C755]/30',
+      facebook: 'bg-[#0084FF]/10 text-[#0084FF] border-[#0084FF]/30',
+      testing: 'bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400',
+    };
+
+    return (
+      <Badge variant="outline" className={cn('ml-3', colors[formData.platform])}>
+        {platformData.name}
+      </Badge>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="max-w-3xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <Button
@@ -240,182 +278,178 @@ export function EditConnectionPage() {
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              {isEditMode ? 'แก้ไขการเชื่อมต่อ' : 'สร้างการเชื่อมต่อใหม่'}
-            </h1>
-            <p className="text-muted-foreground mt-1">กำหนดค่า API และ LLM Models สำหรับการเชื่อมต่อ</p>
+          <div className="flex-1">
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold tracking-tight">
+                {isEditMode ? 'แก้ไขการเชื่อมต่อ' : 'สร้างการเชื่อมต่อใหม่'}
+              </h1>
+              {isEditMode && getPlatformBadge()}
+            </div>
+            <p className="text-muted-foreground text-sm mt-1">กำหนดค่า API และ LLM Models</p>
           </div>
+          {isEditMode && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">สถานะ</span>
+              <Switch
+                id="enabled"
+                checked={formData.enabled}
+                onCheckedChange={(checked) => handleChange('enabled', checked)}
+              />
+              <span className={cn('text-sm font-medium', formData.enabled ? 'text-green-600' : 'text-slate-500')}>
+                {formData.enabled ? 'เปิด' : 'ปิด'}
+              </span>
+            </div>
+          )}
         </div>
 
-        <div className="space-y-6">
-          {/* Connection Enabled Toggle - Only show in edit mode */}
-          {isEditMode && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">สถานะการเชื่อมต่อ</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="enabled" className="font-semibold">
-                    เปิดใช้งานการเชื่อมต่อ
-                  </Label>
-                  <Switch
-                    id="enabled"
-                    checked={formData.enabled}
-                    onCheckedChange={(checked) => handleChange('enabled', checked)}
+        <Card>
+          <CardContent className="p-6 space-y-8">
+            {/* Basic Info Section */}
+            <Section
+              icon={MessageCircle}
+              title="ข้อมูลพื้นฐาน"
+              description="ตั้งชื่อให้จำง่ายและสื่อความหมาย"
+            >
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="connection_name">ชื่อการเชื่อมต่อ</Label>
+                  <Input
+                    id="connection_name"
+                    placeholder="เช่น LINE Bot สำหรับร้านกาแฟ"
+                    value={formData.connection_name}
+                    onChange={(e) => handleChange('connection_name', e.target.value)}
+                    className="max-w-md"
                   />
                 </div>
-              </CardContent>
-            </Card>
-          )}
 
-          {/* Connection Name */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">ชื่อการเชื่อมต่อ</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Input
-                placeholder="เช่น My Facebook Bot"
-                value={formData.connection_name}
-                onChange={(e) => handleChange('connection_name', e.target.value)}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Platform Selection */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Platform</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="platform" className="font-semibold">
-                  เลือก Platform
-                </Label>
-                <Select
-                  value={formData.platform}
-                  onValueChange={(value) => handleChange('platform', value as 'line' | 'facebook' | 'testing')}
-                  disabled={isEditMode} // Can't change platform in edit mode
-                >
-                  <SelectTrigger id="platform">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PLATFORMS.map((platform) => (
-                      <SelectItem key={platform.id} value={platform.id}>
-                        {platform.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {isEditMode && (
-                  <p className="text-sm text-muted-foreground">ไม่สามารถเปลี่ยน Platform ได้หลังสร้างแล้ว</p>
+                {!isEditMode && (
+                  <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 max-w-md">
+                    Platform: <strong>{PLATFORMS.find(p => p.id === formData.platform)?.name}</strong>
+                    <span className="text-muted-foreground"> (เลือกจากหน้าก่อนหน้า)</span>
+                  </div>
                 )}
               </div>
+            </Section>
 
-              {/* LINE Credentials */}
-              {formData.platform === 'line' && (
-                <div className="space-y-4 pt-4 border-t">
-                  <div className="space-y-2">
-                    <Label htmlFor="line-secret" className="font-semibold">
-                      LINE Channel Secret
-                      {isEditMode && <span className="text-muted-foreground font-normal ml-2">(เว้นว่างถ้าไม่ต้องการเปลี่ยน)</span>}
-                    </Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="line-secret"
-                        type={showLineSecretToggle ? 'text' : 'password'}
-                        placeholder={isEditMode ? '••••••••' : 'Channel Secret'}
-                        value={formData.line_channel_secret}
-                        onChange={(e) => handleChange('line_channel_secret', e.target.value)}
-                        className="font-mono"
-                      />
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => setShowLineSecretToggle(!showLineSecretToggle)}
-                        aria-label="Toggle visibility"
-                      >
-                        {showLineSecretToggle ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </Button>
+            {/* LINE Credentials Section */}
+            {formData.platform === 'line' && (
+              <>
+                <div className="border-t" />
+                <Section
+                  icon={Key}
+                  title="LINE Credentials"
+                  description="ข้อมูลจาก LINE Developers Console"
+                >
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="line-secret">
+                        Channel Secret
+                        {isEditMode && (
+                          <span className="text-muted-foreground font-normal ml-2 text-xs">
+                            (เว้นว่างถ้าไม่เปลี่ยน)
+                          </span>
+                        )}
+                      </Label>
+                      <div className="flex gap-2 max-w-md">
+                        <Input
+                          id="line-secret"
+                          type={showLineSecretToggle ? 'text' : 'password'}
+                          placeholder={isEditMode ? '••••••••' : 'Channel Secret'}
+                          value={formData.line_channel_secret}
+                          onChange={(e) => handleChange('line_channel_secret', e.target.value)}
+                          className="font-mono text-sm"
+                        />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          type="button"
+                          onClick={() => setShowLineSecretToggle(!showLineSecretToggle)}
+                          aria-label="Toggle visibility"
+                        >
+                          {showLineSecretToggle ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
                     </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="line-token">
+                        Channel Access Token
+                        {isEditMode && (
+                          <span className="text-muted-foreground font-normal ml-2 text-xs">
+                            (เว้นว่างถ้าไม่เปลี่ยน)
+                          </span>
+                        )}
+                      </Label>
+                      <Input
+                        id="line-token"
+                        type="password"
+                        placeholder={isEditMode ? '••••••••' : 'Channel Access Token'}
+                        value={formData.line_channel_access_token}
+                        onChange={(e) => handleChange('line_channel_access_token', e.target.value)}
+                        className="font-mono text-sm max-w-md"
+                      />
+                    </div>
+                    <Button variant="link" className="text-primary h-auto p-0 text-sm" asChild>
+                      <a href="https://developers.line.biz" target="_blank" rel="noopener noreferrer">
+                        ดูวิธีการเชื่อมต่อ LINE OA <ExternalLink className="h-3 w-3 ml-1" />
+                      </a>
+                    </Button>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="line-token" className="font-semibold">
-                      LINE Channel Access Token
-                      {isEditMode && <span className="text-muted-foreground font-normal ml-2">(เว้นว่างถ้าไม่ต้องการเปลี่ยน)</span>}
-                    </Label>
-                    <Input
-                      id="line-token"
-                      type="password"
-                      placeholder={isEditMode ? '••••••••' : 'Channel Access Token'}
-                      value={formData.line_channel_access_token}
-                      onChange={(e) => handleChange('line_channel_access_token', e.target.value)}
-                      className="font-mono"
-                    />
-                  </div>
-                  <Button variant="link" className="text-slate-600 h-auto p-0" asChild>
-                    <a href="https://developers.line.biz" target="_blank" rel="noopener noreferrer">
-                      วิธีการเชื่อมต่อ LINE OA <ExternalLink className="h-3 w-3 ml-1" />
-                    </a>
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                </Section>
+              </>
+            )}
 
-          {/* OpenRouter API Settings */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">OpenRouter API Settings</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="api-key" className="font-semibold">
-                  OpenRouter API Key
-                  {isEditMode && <span className="text-muted-foreground font-normal ml-2">(เว้นว่างถ้าไม่ต้องการเปลี่ยน)</span>}
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="api-key"
-                    type={showApiKey ? 'text' : 'password'}
-                    placeholder={isEditMode ? '••••••••' : 'sk-or-...'}
-                    value={formData.openrouter_api_key}
-                    onChange={(e) => handleChange('openrouter_api_key', e.target.value)}
-                    className="font-mono"
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    aria-label={showApiKey ? 'Hide API Key' : 'Show API Key'}
-                  >
-                    {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
+            {/* OpenRouter API Section */}
+            <div className="border-t" />
+            <Section
+              icon={Key}
+              title="OpenRouter API"
+              description="API Key สำหรับเชื่อมต่อกับ AI Models"
+            >
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="api-key">
+                    API Key
+                    {isEditMode && (
+                      <span className="text-muted-foreground font-normal ml-2 text-xs">
+                        (เว้นว่างถ้าไม่เปลี่ยน)
+                      </span>
+                    )}
+                  </Label>
+                  <div className="flex gap-2 max-w-md">
+                    <Input
+                      id="api-key"
+                      type={showApiKey ? 'text' : 'password'}
+                      placeholder={isEditMode ? '••••••••' : 'sk-or-...'}
+                      value={formData.openrouter_api_key}
+                      onChange={(e) => handleChange('openrouter_api_key', e.target.value)}
+                      className="font-mono text-sm"
+                    />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      aria-label={showApiKey ? 'Hide API Key' : 'Show API Key'}
+                    >
+                      {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
-                {formData.openrouter_api_key && (
-                  <p className="text-sm text-muted-foreground">
-                    API Key จะแสดงเป็น {maskApiKey(formData.openrouter_api_key)}
-                  </p>
-                )}
-                <Button variant="link" className="text-slate-600 h-auto p-0" asChild>
-                  <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer">
-                    ไปสร้าง API Key <ExternalLink className="h-3 w-3 ml-1" />
+                <Button variant="link" className="text-primary h-auto p-0 text-sm" asChild>
+                  <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">
+                    สร้าง API Key ที่ OpenRouter <ExternalLink className="h-3 w-3 ml-1" />
                   </a>
                 </Button>
               </div>
-            </CardContent>
-          </Card>
+            </Section>
 
-          {/* LLM Models Selection */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">LLM Models</CardTitle>
-              <p className="text-sm text-muted-foreground mt-2">เลือก model สำหรับแต่ละงาน หรือใส่ model ID แบบกำหนดเอง</p>
-            </CardHeader>
-            <CardContent>
+            {/* LLM Models Section */}
+            <div className="border-t" />
+            <Section
+              icon={Cpu}
+              title="AI Models"
+              description="เลือก model สำหรับตอบคำถามและตัดสินใจ"
+            >
               <ModelConfiguration
                 primaryModel={formData.primary_chat_model}
                 fallbackModel={formData.fallback_chat_model}
@@ -427,78 +461,84 @@ export function EditConnectionPage() {
                 onFallbackDecisionChange={(value) => handleChange('fallback_decision_model', value)}
                 showDecisionModels={true}
               />
-            </CardContent>
-          </Card>
+            </Section>
 
-          {/* Additional Settings */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">ตัวเลือกเพิ่มเติม</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="webhook-forwarder" className="font-semibold">
-                  Webhook Forwarder
-                </Label>
+            {/* Advanced Options Section */}
+            <div className="border-t" />
+            <Section
+              icon={Settings}
+              title="ตัวเลือกขั้นสูง"
+            >
+              <div className="flex items-center justify-between max-w-md">
+                <div>
+                  <Label htmlFor="webhook-forwarder" className="font-normal">Webhook Forwarder</Label>
+                  <p className="text-xs text-muted-foreground">ส่ง webhook ไปยัง URL อื่นด้วย</p>
+                </div>
                 <Switch
                   id="webhook-forwarder"
                   checked={formData.webhook_forwarder_enabled}
                   onCheckedChange={(checked) => handleChange('webhook_forwarder_enabled', checked)}
                 />
               </div>
-            </CardContent>
-          </Card>
+            </Section>
+          </CardContent>
+        </Card>
 
-          {/* Action Buttons */}
-          <div className="flex gap-3 pt-4">
-            <Button
-              onClick={handleSave}
-              disabled={isSaving}
-              variant="orange"
-              className="flex-1"
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  {isEditMode ? 'กำลังบันทึก...' : 'กำลังสร้าง...'}
-                </>
-              ) : (
-                isEditMode ? 'บันทึกการเปลี่ยนแปลง' : 'สร้างการเชื่อมต่อ'
-              )}
-            </Button>
-
-            {isEditMode && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive" disabled={isDeleting}>
-                    {isDeleting ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4 mr-2" />
-                    )}
+        {/* Action Buttons - Fixed at bottom */}
+        <div className="flex items-center justify-between mt-6 pt-6 border-t">
+          {isEditMode ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" disabled={isDeleting}>
+                  {isDeleting ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4 mr-2" />
+                  )}
+                  ลบการเชื่อมต่อ
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>ยืนยันการลบ</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    คุณต้องการลบการเชื่อมต่อนี้หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDelete}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
                     ลบ
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>ยืนยันการลบ</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      คุณต้องการลบการเชื่อมต่อนี้หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDelete}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      ลบ
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : (
+            <div />
+          )}
+
+          <Button
+            onClick={handleSave}
+            disabled={isSaving}
+            variant="orange"
+            size="lg"
+            className="min-w-[180px]"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                {isEditMode ? 'กำลังบันทึก...' : 'กำลังสร้าง...'}
+              </>
+            ) : (
+              <>
+                <Zap className="h-4 w-4 mr-2" />
+                {isEditMode ? 'บันทึกการเปลี่ยนแปลง' : 'สร้างการเชื่อมต่อ'}
+              </>
             )}
-          </div>
+          </Button>
         </div>
       </div>
     </div>

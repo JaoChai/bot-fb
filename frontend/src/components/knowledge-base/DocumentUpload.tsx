@@ -3,14 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
-import { FileText, Upload, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { FileText, Upload, Loader2, CheckCircle2, AlertCircle, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface DocumentData {
@@ -69,121 +62,115 @@ export function DocumentUpload({ onSubmit, isSubmitting }: DocumentUploadProps) 
 
   return (
     <div className="space-y-4">
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 max-w-[300px]">
-          <TabsTrigger value="text" className="flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            พิมพ์ข้อความ
-          </TabsTrigger>
-          <TabsTrigger value="file" className="flex items-center gap-2" disabled>
-            <Upload className="h-4 w-4" />
-            อัพโหลดไฟล์
-          </TabsTrigger>
-        </TabsList>
+      {/* Mode Toggle */}
+      <div className="flex items-center gap-2 mb-4">
+        <button
+          type="button"
+          onClick={() => setActiveTab('text')}
+          className={cn(
+            'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
+            activeTab === 'text'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+          )}
+        >
+          <FileText className="h-4 w-4" />
+          พิมพ์ข้อความ
+        </button>
+        <button
+          type="button"
+          disabled
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-muted/30 text-muted-foreground cursor-not-allowed opacity-50"
+        >
+          <Upload className="h-4 w-4" />
+          อัพโหลดไฟล์
+          <span className="text-xs">(เร็วๆ นี้)</span>
+        </button>
+      </div>
 
-        <TabsContent value="text" className="mt-4">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="title">ชื่อเอกสาร</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="เช่น: คำถามที่พบบ่อย, ข้อมูลสินค้า, นโยบายบริษัท"
-                disabled={isSubmitting}
-                maxLength={255}
-                className="max-w-xl"
-              />
+      {activeTab === 'text' && (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Title Input */}
+          <div className="space-y-2">
+            <Label htmlFor="title" className="text-sm font-medium">ชื่อเอกสาร</Label>
+            <Input
+              id="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="เช่น: FAQ, ข้อมูลสินค้า, นโยบายการคืนสินค้า"
+              disabled={isSubmitting}
+              maxLength={255}
+              className="max-w-lg"
+            />
+          </div>
+
+          {/* Content Textarea */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="content" className="text-sm font-medium">เนื้อหา</Label>
+              <span
+                className={cn(
+                  'text-xs tabular-nums px-2 py-0.5 rounded',
+                  characterPercentage > 90
+                    ? 'text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-950'
+                    : characterPercentage > 75
+                    ? 'text-yellow-600 bg-yellow-50 dark:text-yellow-400 dark:bg-yellow-950'
+                    : 'text-muted-foreground bg-muted/50'
+                )}
+              >
+                {characterCount.toLocaleString()} / {MAX_CONTENT_LENGTH.toLocaleString()}
+              </span>
             </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="content">เนื้อหา</Label>
-                <span
-                  className={cn(
-                    'text-xs tabular-nums',
-                    characterPercentage > 90
-                      ? 'text-destructive font-medium'
-                      : characterPercentage > 75
-                      ? 'text-yellow-600 dark:text-yellow-400'
-                      : 'text-muted-foreground'
-                  )}
-                >
-                  {characterCount.toLocaleString()} / {MAX_CONTENT_LENGTH.toLocaleString()}
-                </span>
-              </div>
-              <Textarea
-                id="content"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder="วางหรือพิมพ์เนื้อหาที่ต้องการให้ Bot เรียนรู้..."
-                disabled={isSubmitting}
-                rows={8}
-                className="resize-y min-h-[180px] font-mono text-sm"
-              />
-              {characterPercentage > 0 && (
-                <Progress
-                  value={characterPercentage}
-                  className={cn(
-                    'h-1',
-                    characterPercentage > 90 && '[&>div]:bg-destructive',
-                    characterPercentage > 75 && characterPercentage <= 90 && '[&>div]:bg-yellow-500'
-                  )}
-                />
-              )}
-              <p className="text-xs text-muted-foreground">
-                เนื้อหาจะถูกแบ่งเป็น chunks และแปลงเป็น vector เพื่อให้ Bot ค้นหาได้
-              </p>
-            </div>
-
-            {/* Error */}
-            {error && (
-              <div className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
-                <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                {error}
-              </div>
-            )}
-
-            {/* Success */}
-            {success && (
-              <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 p-3 text-sm text-green-700 dark:text-green-300">
-                <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-                บันทึกเอกสารสำเร็จ กำลังประมวลผล...
-              </div>
-            )}
-
-            <Button
-              type="submit"
-              disabled={isSubmitting || !title.trim() || !content.trim()}
-              className="min-w-[140px]"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  กำลังบันทึก...
-                </>
-              ) : (
-                <>
-                  <FileText className="mr-2 h-4 w-4" />
-                  บันทึกเอกสาร
-                </>
-              )}
-            </Button>
-          </form>
-        </TabsContent>
-
-        <TabsContent value="file" className="mt-4">
-          <div className="flex flex-col items-center justify-center py-10 border-2 border-dashed rounded-lg bg-muted/30">
-            <Upload className="h-10 w-10 text-muted-foreground mb-3" />
-            <p className="text-sm text-muted-foreground mb-1">
-              ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์
-            </p>
+            <Textarea
+              id="content"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="วางหรือพิมพ์เนื้อหาที่ต้องการให้ Bot เรียนรู้..."
+              disabled={isSubmitting}
+              rows={6}
+              className="resize-y min-h-[150px] text-sm"
+            />
             <p className="text-xs text-muted-foreground">
-              รองรับ: PDF, TXT, DOCX (เร็วๆ นี้)
+              เนื้อหาจะถูกแบ่งเป็น chunks และแปลงเป็น vector เพื่อให้ Bot ค้นหาความหมายได้
             </p>
           </div>
-        </TabsContent>
-      </Tabs>
+
+          {/* Messages */}
+          {error && (
+            <div className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950/50 border border-green-200 dark:border-green-800 p-3 text-sm text-green-700 dark:text-green-300">
+              <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+              บันทึกเอกสารสำเร็จ! กำลังประมวลผล...
+            </div>
+          )}
+
+          {/* Submit Button */}
+          <Button
+            type="submit"
+            variant="orange"
+            disabled={isSubmitting || !title.trim() || !content.trim()}
+            className="min-w-[160px]"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                กำลังบันทึก...
+              </>
+            ) : (
+              <>
+                <Send className="mr-2 h-4 w-4" />
+                บันทึกเอกสาร
+              </>
+            )}
+          </Button>
+        </form>
+      )}
     </div>
   );
 }
