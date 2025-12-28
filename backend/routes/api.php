@@ -24,35 +24,6 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-// Debug endpoint - test cache/throttle - TEMPORARY
-Route::get('/debug-cache', function () {
-    try {
-        $tests = [];
-
-        // Test cache driver
-        $tests['cache_driver'] = config('cache.default');
-
-        // Test cache table exists
-        $tests['cache_table_exists'] = \Schema::hasTable('cache');
-        $tests['cache_locks_table_exists'] = \Schema::hasTable('cache_locks');
-
-        // Test cache write/read
-        \Cache::put('test_key', 'test_value', 60);
-        $tests['cache_write'] = \Cache::get('test_key') === 'test_value' ? 'ok' : 'fail';
-
-        // Test rate limiter key generation
-        $tests['rate_limiter_key'] = 'would be: ' . (auth('sanctum')->user()?->id ?? 'ip-based');
-
-        return response()->json($tests);
-    } catch (\Throwable $e) {
-        return response()->json([
-            'error' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-        ], 500);
-    }
-});
-
 // Public routes with auth rate limiting (stricter limits)
 Route::prefix('auth')->middleware('throttle.auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register'])->name('auth.register');
