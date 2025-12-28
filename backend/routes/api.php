@@ -68,6 +68,11 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
             ->middleware('throttle.bot-test')
             ->name('bots.test');
 
+        // LINE connection test endpoint
+        Route::post('/{bot}/test-line', [BotController::class, 'testLineConnection'])
+            ->middleware('throttle:10,1') // 10 requests per minute per user
+            ->name('bots.test-line');
+
         // Bot settings routes
         Route::get('/{bot}/settings', [BotSettingController::class, 'show'])->name('bots.settings.show');
         Route::put('/{bot}/settings', [BotSettingController::class, 'update'])->name('bots.settings.update');
