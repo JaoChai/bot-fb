@@ -19,12 +19,14 @@ class Conversation extends Model
         'channel_type',
         'status',
         'is_handover',
+        'bot_auto_enable_at',
         'assigned_user_id',
         'memory_notes',
         'tags',
         'context',
         'current_flow_id',
         'message_count',
+        'unread_count',
         'last_message_at',
     ];
 
@@ -34,6 +36,7 @@ class Conversation extends Model
         'tags' => 'array',
         'context' => 'array',
         'last_message_at' => 'datetime',
+        'bot_auto_enable_at' => 'datetime',
     ];
 
     public function bot(): BelongsTo
@@ -109,5 +112,45 @@ class Conversation extends Model
     public function scopeRecentFirst($query)
     {
         return $query->orderByDesc('last_message_at');
+    }
+
+    /**
+     * Scope a query to only include conversations with unread messages.
+     */
+    public function scopeUnread($query)
+    {
+        return $query->where('unread_count', '>', 0);
+    }
+
+    /**
+     * Scope a query to only include conversations needing bot auto-enable.
+     */
+    public function scopeNeedsBotAutoEnable($query)
+    {
+        return $query->where('is_handover', true)
+            ->whereNotNull('bot_auto_enable_at')
+            ->where('bot_auto_enable_at', '<=', now());
+    }
+
+    /**
+     * Check if bot auto-enable timer is active.
+     */
+    public function hasBotAutoEnableTimer(): bool
+    {
+        return $this->is_handover && $this->bot_auto_enable_at !== null;
+    }
+
+    /**
+     * Get remaining seconds until bot auto-enables.
+     */
+    public function getBotAutoEnableRemainingSeconds(): ?int
+    {
+        if (! $this->hasBotAutoEnableTimer()) {
+            return null;
+        }
+
+        $remaining = $this->bot_auto_enable_at->diffInSeconds(now(), false);
+
+        return $remaining > 0 ? null : abs($remaining);
     }
 }

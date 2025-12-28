@@ -244,6 +244,9 @@ class ProcessLINEWebhook implements ShouldQueue
      */
     protected function saveUserMessage(Conversation $conversation, array $messageData): Message
     {
+        // Increment unread count for admin notification
+        $conversation->increment('unread_count');
+
         return $conversation->messages()->create([
             'sender' => 'user',
             'content' => $messageData['text'],
