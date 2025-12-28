@@ -24,24 +24,37 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-// Debug endpoint - TEMPORARY
-Route::get('/debug-bots', function (\Illuminate\Http\Request $request) {
+// Debug endpoint - NO MIDDLEWARE - TEMPORARY
+Route::get('/debug-raw', function () {
     try {
-        $user = $request->user();
-        if (!$user) {
-            return response()->json(['error' => 'No authenticated user', 'token_present' => $request->bearerToken() !== null]);
+        // Test 1: Basic response
+        $tests = ['basic' => 'ok'];
+
+        // Test 2: Database connection
+        $tests['db'] = \DB::connection()->getPdo() ? 'ok' : 'fail';
+
+        // Test 3: User model
+        $tests['user_count'] = \App\Models\User::count();
+
+        // Test 4: Bot model
+        $tests['bot_count'] = \App\Models\Bot::count();
+
+        // Test 5: BotResource instantiation
+        $bot = \App\Models\Bot::first();
+        if ($bot) {
+            $resource = new \App\Http\Resources\BotResource($bot);
+            $tests['bot_resource'] = 'ok';
         }
-        $bots = $user->bots()->latest()->paginate(15);
-        return response()->json(['status' => 'ok', 'bots_count' => $bots->count()]);
+
+        return response()->json($tests);
     } catch (\Throwable $e) {
         return response()->json([
             'error' => $e->getMessage(),
             'file' => $e->getFile(),
             'line' => $e->getLine(),
-            'trace' => collect($e->getTrace())->take(5)->toArray()
         ], 500);
     }
-})->middleware(['auth:sanctum']);
+});
 
 // Public routes with auth rate limiting (stricter limits)
 Route::prefix('auth')->middleware('throttle.auth')->group(function () {
