@@ -149,6 +149,41 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
+// DEBUG: Test services instantiation
+Route::get('/debug/services', function () {
+    $results = [];
+
+    try {
+        $openRouter = app(\App\Services\OpenRouterService::class);
+        $results['OpenRouterService'] = 'OK';
+    } catch (\Throwable $e) {
+        $results['OpenRouterService'] = 'ERROR: ' . $e->getMessage();
+    }
+
+    try {
+        $hybridSearch = app(\App\Services\HybridSearchService::class);
+        $results['HybridSearchService'] = 'OK';
+    } catch (\Throwable $e) {
+        $results['HybridSearchService'] = 'ERROR: ' . $e->getMessage();
+    }
+
+    try {
+        $semantic = app(\App\Services\SemanticSearchService::class);
+        $results['SemanticSearchService'] = 'OK';
+    } catch (\Throwable $e) {
+        $results['SemanticSearchService'] = 'ERROR: ' . $e->getMessage();
+    }
+
+    try {
+        $embedding = app(\App\Services\EmbeddingService::class);
+        $results['EmbeddingService'] = 'OK';
+    } catch (\Throwable $e) {
+        $results['EmbeddingService'] = 'ERROR: ' . $e->getMessage();
+    }
+
+    return response()->json($results);
+})->name('debug.services');
+
 // Broadcasting authentication endpoint
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
