@@ -2,64 +2,44 @@ import { NavLink } from 'react-router';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/uiStore';
 import { Button } from '@/components/ui/button';
+import {
+  LayoutDashboard,
+  Bot,
+  BookOpen,
+  MessageSquare,
+  Settings,
+  ChevronLeft,
+  Sparkles,
+} from 'lucide-react';
 
-const navItems = [
+const mainNavItems = [
   {
     title: 'แดชบอร์ด',
     href: '/dashboard',
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect width="7" height="9" x="3" y="3" rx="1" />
-        <rect width="7" height="5" x="14" y="3" rx="1" />
-        <rect width="7" height="9" x="14" y="12" rx="1" />
-        <rect width="7" height="5" x="3" y="16" rx="1" />
-      </svg>
-    ),
+    icon: LayoutDashboard,
   },
   {
     title: 'การเชื่อมต่อ',
     href: '/bots',
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 8V4H8" />
-        <rect width="16" height="12" x="4" y="8" rx="2" />
-        <path d="M2 14h2" />
-        <path d="M20 14h2" />
-        <path d="M15 13v2" />
-        <path d="M9 13v2" />
-      </svg>
-    ),
+    icon: Bot,
   },
   {
     title: 'ฐานความรู้',
     href: '/knowledge-base',
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" />
-        <path d="M8 11h8" />
-        <path d="M8 7h6" />
-      </svg>
-    ),
+    icon: BookOpen,
   },
   {
     title: 'แชท',
     href: '/chat',
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z" />
-        <path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1" />
-      </svg>
-    ),
+    icon: MessageSquare,
   },
+];
+
+const bottomNavItems = [
   {
     title: 'ตั้งค่า',
     href: '/settings',
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-        <circle cx="12" cy="12" r="3" />
-      </svg>
-    ),
+    icon: Settings,
   },
 ];
 
@@ -76,53 +56,90 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex h-16 items-center justify-between border-b px-4">
         {!sidebarCollapsed && (
-          <span className="text-lg font-semibold">BotFacebook</span>
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold leading-none">BotFacebook</span>
+              <span className="text-[10px] text-muted-foreground">AI Chatbot Platform</span>
+            </div>
+          </div>
+        )}
+        {sidebarCollapsed && (
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground mx-auto">
+            <Sparkles className="h-4 w-4" />
+          </div>
         )}
         <Button
           variant="ghost"
           size="icon"
           onClick={toggleSidebarCollapsed}
-          className="h-8 w-8"
+          className={cn("h-8 w-8 text-muted-foreground hover:text-foreground", sidebarCollapsed && "hidden")}
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={cn('transition-transform', sidebarCollapsed && 'rotate-180')}
-          >
-            <path d="m15 18-6-6 6-6" />
-          </svg>
+          <ChevronLeft
+            className={cn('h-4 w-4 transition-transform', sidebarCollapsed && 'rotate-180')}
+          />
         </Button>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-1 p-2">
-        {navItems.map((item) => (
+      {/* Main Navigation */}
+      <nav className="flex-1 space-y-1 p-3">
+        {mainNavItems.map((item) => (
           <NavLink
             key={item.href}
             to={item.href}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                'hover:bg-accent hover:text-accent-foreground',
+                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
+                'hover:bg-accent/50',
                 isActive
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground',
-                sidebarCollapsed && 'justify-center px-2'
+                  ? 'bg-primary/10 text-primary border-l-2 border-primary ml-0 pl-[10px]'
+                  : 'text-muted-foreground hover:text-foreground',
+                sidebarCollapsed && 'justify-center px-2 border-l-0 pl-2'
               )
             }
           >
-            {item.icon}
+            <item.icon className="h-5 w-5 shrink-0" />
             {!sidebarCollapsed && <span>{item.title}</span>}
           </NavLink>
         ))}
       </nav>
+
+      {/* Bottom Navigation */}
+      <div className="border-t p-3">
+        {bottomNavItems.map((item) => (
+          <NavLink
+            key={item.href}
+            to={item.href}
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
+                'hover:bg-accent/50',
+                isActive
+                  ? 'bg-primary/10 text-primary border-l-2 border-primary ml-0 pl-[10px]'
+                  : 'text-muted-foreground hover:text-foreground',
+                sidebarCollapsed && 'justify-center px-2 border-l-0 pl-2'
+              )
+            }
+          >
+            <item.icon className="h-5 w-5 shrink-0" />
+            {!sidebarCollapsed && <span>{item.title}</span>}
+          </NavLink>
+        ))}
+
+        {/* Expand button when collapsed */}
+        {sidebarCollapsed && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleSidebarCollapsed}
+            className="w-full h-9 mt-2 text-muted-foreground hover:text-foreground"
+          >
+            <ChevronLeft className="h-4 w-4 rotate-180" />
+          </Button>
+        )}
+      </div>
     </aside>
   );
 }

@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-  "inline-flex items-center justify-center rounded-full border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden",
+  "inline-flex items-center justify-center rounded-full border px-2.5 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1.5 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden",
   {
     variants: {
       variant: {
@@ -14,17 +14,18 @@ const badgeVariants = cva(
         secondary:
           "border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",
         destructive:
-          "border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+          "border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
         outline:
-          "text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+          "text-foreground border-border [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+        // Status badges with subtle background
         success:
-          "border border-[color:color-mix(in_oklch,var(--success)_100%,transparent)] bg-[color:color-mix(in_oklch,var(--success)_10%,transparent)] text-success-foreground [a&]:hover:bg-[color:color-mix(in_oklch,var(--success)_15%,transparent)]",
+          "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 [a&]:hover:bg-emerald-100 dark:[a&]:hover:bg-emerald-900",
         warning:
-          "border border-[color:color-mix(in_oklch,var(--warning)_100%,transparent)] bg-[color:color-mix(in_oklch,var(--warning)_10%,transparent)] text-warning-foreground [a&]:hover:bg-[color:color-mix(in_oklch,var(--warning)_15%,transparent)]",
+          "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300 [a&]:hover:bg-amber-100 dark:[a&]:hover:bg-amber-900",
         info:
-          "border border-[color:color-mix(in_oklch,var(--info)_100%,transparent)] bg-[color:color-mix(in_oklch,var(--info)_10%,transparent)] text-info-foreground [a&]:hover:bg-[color:color-mix(in_oklch,var(--info)_15%,transparent)]",
+          "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300 [a&]:hover:bg-blue-100 dark:[a&]:hover:bg-blue-900",
         inactive:
-          "border border-[color:color-mix(in_oklch,var(--inactive)_100%,transparent)] bg-[color:color-mix(in_oklch,var(--inactive)_10%,transparent)] text-inactive-foreground [a&]:hover:bg-[color:color-mix(in_oklch,var(--inactive)_15%,transparent)]",
+          "border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 [a&]:hover:bg-slate-200 dark:[a&]:hover:bg-slate-700",
       },
     },
     defaultVariants: {

@@ -309,7 +309,7 @@ export function BotEditPage() {
                 </Button>
               </div>
               {hasExistingApiKey && (
-                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--success)' }}>
+                <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
                   <CheckCircle2 className="h-4 w-4" />
                   <span>API key ที่ใช้งานอยู่ปัจจุบัน: {maskedApiKey}</span>
                 </div>
@@ -560,8 +560,7 @@ export function BotEditPage() {
                       variant="outline"
                       onClick={handleTestConnection}
                       disabled={isTestingConnection}
-                      style={{ color: 'var(--info)', borderColor: 'var(--info)' }}
-                      className="hover:bg-[oklch(0.927_0.063_257.528)] dark:hover:bg-[oklch(0.2_0.15_257.528)]"
+                      className="text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
                     >
                       {isTestingConnection ? (
                         <>
@@ -608,8 +607,7 @@ export function BotEditPage() {
                     <Button
                       variant="outline"
                       onClick={handleTestConnection}
-                      style={{ color: 'var(--info)', borderColor: 'var(--info)' }}
-                      className="hover:bg-[oklch(0.927_0.063_257.528)] dark:hover:bg-[oklch(0.2_0.15_257.528)]"
+                      className="text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
                     >
                       ทดสอบการเชื่อมต่อกับ Facebook Page นี้
                     </Button>
@@ -622,7 +620,7 @@ export function BotEditPage() {
       </Card>
 
       <Button
-        variant="orange"
+        variant="cta"
         onClick={handleSave}
         disabled={isSaving}
         size="lg"

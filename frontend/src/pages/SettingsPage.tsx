@@ -132,10 +132,10 @@ export function SettingsPage() {
               <span className="text-sm text-muted-foreground">Key ปัจจุบัน:</span>
               <code className="font-mono text-sm">{settings.openrouter_api_key_masked}</code>
               {testStatus === 'success' && (
-                <CheckCircle className="h-4 w-4 text-green-500 ml-auto" />
+                <CheckCircle className="h-4 w-4 text-emerald-500 dark:text-emerald-400 ml-auto" />
               )}
               {testStatus === 'error' && (
-                <XCircle className="h-4 w-4 text-red-500 ml-auto" />
+                <XCircle className="h-4 w-4 text-destructive ml-auto" />
               )}
             </div>
           )}

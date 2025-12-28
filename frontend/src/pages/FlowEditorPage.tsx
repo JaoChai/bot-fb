@@ -364,7 +364,7 @@ export function FlowEditorPage() {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" style={{ color: 'var(--warning)' }} />
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
           <p className="text-muted-foreground">กำลังโหลด Flow Editor...</p>
         </div>
       </div>
@@ -391,13 +391,13 @@ export function FlowEditorPage() {
       <div className="w-52 border-r bg-card flex flex-col">
         {/* Logo */}
         <div className="h-14 flex items-center px-4 border-b">
-          <span className="font-bold text-lg" style={{ color: 'var(--warning)' }}>BotFacebook</span>
+          <span className="font-bold text-lg text-primary">BotFacebook</span>
         </div>
 
         {/* Create New Flow Button */}
         <div className="p-3">
           <Button
-            variant="orange"
+            variant="cta"
             onClick={() => navigate(`/flows/new?botId=${botId}`)}
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -427,15 +427,15 @@ export function FlowEditorPage() {
                   key={flow.id}
                   onClick={() => navigate(`/flows/${flow.id}/edit?botId=${botId}`)}
                   className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all duration-200 cursor-pointer
-                    ${flow.is_default ? 'border-l-4 border-l-orange-500' : 'border-l-4 border-l-transparent'}
+                    ${flow.is_default ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-transparent'}
                     ${selectedFlowId === flow.id
-                      ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium'
+                      ? 'bg-primary/10 text-primary font-medium'
                       : 'hover:bg-muted'
                     }`}
                 >
                   <div className="flex items-center gap-2">
                     {flow.is_default && (
-                      <svg className="h-4 w-4 text-orange-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <svg className="h-4 w-4 text-primary shrink-0" fill="currentColor" viewBox="0 0 20 20">
                         <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
                       </svg>
                     )}
@@ -443,7 +443,7 @@ export function FlowEditorPage() {
                   </div>
                   {flow.is_default && (
                     <div className="mt-1 ml-6">
-                      <span className="text-xs text-orange-500 font-medium">Base Flow</span>
+                      <span className="text-xs text-primary font-medium">Base Flow</span>
                     </div>
                   )}
                 </button>
@@ -454,7 +454,7 @@ export function FlowEditorPage() {
 
         {/* Bottom Action Buttons */}
         <div className="p-3 border-t space-y-2">
-          <Button variant="outline" size="sm" className="w-full justify-start" style={{ color: 'var(--warning)', borderColor: 'var(--warning)' }}>
+          <Button variant="cta-outline" size="sm" className="w-full justify-start">
             <Link2 className="h-4 w-4 mr-2" />
             Link ภายใน
           </Button>
@@ -479,8 +479,7 @@ export function FlowEditorPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start"
-            style={{ color: 'var(--warning)' }}
+            className="w-full justify-start text-primary hover:text-primary"
             onClick={() => navigate('/bots')}
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -496,7 +495,7 @@ export function FlowEditorPage() {
           {!showEditor ? (
             /* Empty State */
             <div className="flex-1 flex items-center justify-center">
-              <p className="text-lg" style={{ color: 'var(--warning)' }}>เลือกหรือสร้างโฟลว์เพื่อเริ่มต้น</p>
+              <p className="text-lg text-primary">เลือกหรือสร้างโฟลว์เพื่อเริ่มต้น</p>
             </div>
           ) : isLoadingFlow ? (
             <div className="flex-1 flex items-center justify-center">
@@ -517,7 +516,7 @@ export function FlowEditorPage() {
                   />
                 </div>
                 <Button
-                  variant="orange"
+                  variant="cta"
                   onClick={handleSave}
                   disabled={isSaving || !hasChanges}
                 >
@@ -802,7 +801,7 @@ export function FlowEditorPage() {
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-sm font-medium">
                         เขียนคำสั่งให้ AI สร้างการตอบกลับ - คุณสามารถดูตัวอย่างการเขียนคำสั่งได้ใน{' '}
-                        <a href="#" className="hover:underline" style={{ color: 'var(--warning)' }}>
+                        <a href="#" className="text-primary hover:underline">
                           คู่มือการใช้งาน & Prompts Library
                         </a>
                       </span>
@@ -1044,10 +1043,7 @@ export function FlowEditorPage() {
         {/* Chat Emulator - Right Panel (Full Height) */}
         <div className="w-96 border-l bg-card flex flex-col">
           {/* Header */}
-          <div
-            className="flex items-center justify-between px-4 py-3 text-white border-b"
-            style={{ backgroundColor: 'var(--warning)' }}
-          >
+          <div className="flex items-center justify-between px-4 py-3 text-warning-foreground bg-warning border-b">
             <div className="flex items-center gap-2">
               <MessageCircle className="h-5 w-5" />
               <span className="font-semibold">แชทจำลอง</span>
@@ -1096,10 +1092,9 @@ export function FlowEditorPage() {
                     <div
                       className={`rounded-2xl px-4 py-2.5 text-sm ${
                         msg.role === 'user'
-                          ? 'text-white rounded-br-md'
+                          ? 'bg-warning text-warning-foreground rounded-br-md'
                           : 'bg-muted rounded-bl-md'
                       }`}
-                      style={msg.role === 'user' ? { backgroundColor: 'var(--warning)' } : {}}
                     >
                       {msg.content}
                       {/* Show streaming cursor */}
@@ -1152,7 +1147,7 @@ export function FlowEditorPage() {
                   size="icon"
                   onClick={handleSendMessage}
                   disabled={!chatInput.trim()}
-                  variant="orange"
+                  variant="cta"
                   className="rounded-full h-10 w-10"
                 >
                   <Send className="h-4 w-4" />
@@ -1265,7 +1260,7 @@ export function FlowEditorPage() {
                 <span>words: {formData.system_prompt.split(/\s+/).filter(Boolean).length}</span>
               </div>
               <Button
-                variant="orange"
+                variant="cta"
                 onClick={() => setIsFullscreenPrompt(false)}
               >
                 เสร็จสิ้น

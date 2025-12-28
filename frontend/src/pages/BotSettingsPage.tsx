@@ -378,7 +378,8 @@ export function BotSettingsPage() {
             <Button
               onClick={handleSave}
               disabled={isSaving}
-              className="bg-slate-500 hover:bg-amber-600 flex-1"
+              variant="cta"
+              className="flex-1"
             >
               {isSaving ? (
                 <>

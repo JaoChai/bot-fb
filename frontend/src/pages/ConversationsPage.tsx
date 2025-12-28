@@ -43,16 +43,16 @@ import type { Conversation, ConversationFilters } from '@/types/api';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 
-const statusColors: Record<string, string> = {
-  active: 'bg-green-500',
-  closed: 'bg-gray-500',
-  handover: 'bg-yellow-500',
+const statusVariants: Record<string, 'success' | 'default' | 'warning' | 'inactive'> = {
+  active: 'success',
+  closed: 'inactive',
+  handover: 'warning',
 };
 
-const channelIcons: Record<string, string> = {
-  line: '🟢',
-  facebook: '🔵',
-  demo: '🔴',
+const channelColors: Record<string, string> = {
+  line: 'text-[#06C755]',
+  facebook: 'text-[#0084FF]',
+  demo: 'text-destructive',
 };
 
 export function ConversationsPage() {
@@ -495,12 +495,14 @@ function ConversationCard({
           >
             <div className="flex items-center gap-2 mb-1">
               <span className="font-medium truncate">{customerName}</span>
-              <span className="text-lg" title={conversation.channel_type}>
-                {channelIcons[conversation.channel_type] || '💬'}
+              <span title={conversation.channel_type}>
+                <MessageCircle
+                  className={`h-4 w-4 ${channelColors[conversation.channel_type] || 'text-muted-foreground'}`}
+                />
               </span>
               <Badge
-                variant="secondary"
-                className={`${statusColors[conversation.status]} text-white text-xs`}
+                variant={statusVariants[conversation.status] || 'default'}
+                className="text-xs capitalize"
               >
                 {conversation.status}
               </Badge>

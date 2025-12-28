@@ -58,10 +58,10 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 
-const statusColors: Record<string, string> = {
-  active: 'bg-green-500',
-  closed: 'bg-gray-500',
-  handover: 'bg-yellow-500',
+const statusVariants: Record<string, 'success' | 'default' | 'warning' | 'inactive'> = {
+  active: 'success',
+  closed: 'inactive',
+  handover: 'warning',
 };
 
 const channelLabels: Record<string, string> = {
@@ -251,8 +251,8 @@ export function ConversationDetailPage() {
             <div className="flex items-center gap-2">
               <h1 className="font-semibold">{customerName}</h1>
               <Badge
-                variant="secondary"
-                className={`${statusColors[conversation.status]} text-white text-xs`}
+                variant={statusVariants[conversation.status] || 'default'}
+                className="text-xs capitalize"
               >
                 {conversation.status}
               </Badge>
@@ -405,7 +405,7 @@ export function ConversationDetailPage() {
                   autoFocus
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                  <Headphones className="h-4 w-4 inline-block text-yellow-600" />
+                  <Headphones className="h-4 w-4 inline-block text-amber-600 dark:text-amber-400" />
                 </div>
               </div>
               <Button
@@ -492,7 +492,7 @@ function MessageBubble({ message, previousMessage }: MessageBubbleProps) {
             isUser
               ? 'bg-muted text-foreground'
               : message.sender === 'agent'
-              ? 'bg-yellow-100 dark:bg-yellow-900 text-foreground'
+              ? 'bg-amber-50 dark:bg-amber-950 text-foreground border border-amber-200 dark:border-amber-800'
               : 'bg-primary text-primary-foreground'
           )}
         >
@@ -543,8 +543,8 @@ function MessageBubble({ message, previousMessage }: MessageBubbleProps) {
         {/* Bot/Agent avatar */}
         {!isUser && (
           <Avatar className="h-8 w-8 shrink-0">
-            <AvatarFallback className={message.sender === 'agent' ? 'bg-yellow-200' : 'bg-primary'}>
-              <SenderIcon className={cn('h-4 w-4', message.sender !== 'agent' && 'text-primary-foreground')} />
+            <AvatarFallback className={message.sender === 'agent' ? 'bg-amber-100 dark:bg-amber-900' : 'bg-primary'}>
+              <SenderIcon className={cn('h-4 w-4', message.sender === 'agent' ? 'text-amber-700 dark:text-amber-300' : 'text-primary-foreground')} />
             </AvatarFallback>
           </Avatar>
         )}

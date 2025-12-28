@@ -37,7 +37,7 @@ const STATUS_CONFIG = {
   pending: {
     label: 'รอดำเนินการ',
     icon: Clock,
-    className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800',
+    className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800',
   },
   processing: {
     label: 'กำลังประมวลผล',
@@ -48,7 +48,7 @@ const STATUS_CONFIG = {
   completed: {
     label: 'สำเร็จ',
     icon: CheckCircle2,
-    className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800',
+    className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800',
   },
   failed: {
     label: 'ล้มเหลว',

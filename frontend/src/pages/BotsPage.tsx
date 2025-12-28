@@ -187,7 +187,7 @@ export function BotsPage() {
               จัดการการเชื่อมต่อ Chatbot กับ Platform ต่างๆ
             </p>
           </div>
-          <Button variant="orange" asChild>
+          <Button variant="cta" asChild>
             <Link to="/connections/add">
               <Plus className="h-4 w-4" />
               เพิ่มการเชื่อมต่อ
@@ -206,7 +206,7 @@ export function BotsPage() {
               <p className="text-muted-foreground text-center max-w-md mb-6">
                 สร้างการเชื่อมต่อแรกเพื่อเชื่อม AI Chatbot กับ LINE, Facebook หรือทดสอบก่อนใช้งานจริง
               </p>
-              <Button variant="orange" size="lg" asChild>
+              <Button variant="cta" size="lg" asChild>
                 <Link to="/connections/add">
                   <Plus className="h-5 w-5" />
                   สร้างการเชื่อมต่อแรก
@@ -237,7 +237,7 @@ export function BotsPage() {
                           variant={bot.status === 'active' ? 'success' : 'inactive'}
                           className="flex-shrink-0"
                         >
-                          <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${bot.status === 'active' ? 'bg-green-500' : 'bg-slate-400'}`} />
+                          <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${bot.status === 'active' ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-slate-400 dark:bg-slate-500'}`} />
                           {getStatusText(bot.status)}
                         </Badge>
                       </div>
@@ -302,7 +302,7 @@ export function BotsPage() {
 
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="orange" size="sm" asChild>
+                            <Button variant="cta" size="sm" asChild>
                               <Link to={`/flows/editor?botId=${bot.id}`}>
                                 <Workflow className="h-4 w-4" />
                                 <span className="ml-1.5">AI Flow</span>
