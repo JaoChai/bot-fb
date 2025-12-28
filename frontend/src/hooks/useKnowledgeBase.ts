@@ -22,6 +22,8 @@ export function useAllKnowledgeBases() {
       const response = await apiGet<{ data: KnowledgeBaseListItem[] }>('/knowledge-bases');
       return response.data;
     },
+    refetchOnWindowFocus: true,
+    staleTime: 30 * 1000, // 30 seconds
   });
 }
 
@@ -33,6 +35,8 @@ export function useBots() {
       const response = await apiGet<PaginatedResponse<Bot>>('/bots');
       return response;
     },
+    refetchOnWindowFocus: true,
+    staleTime: 30 * 1000, // 30 seconds
   });
 }
 
@@ -45,6 +49,8 @@ export function useKnowledgeBase(botId: number | null) {
       return response.data;
     },
     enabled: !!botId,
+    refetchOnWindowFocus: true,
+    staleTime: 30 * 1000, // 30 seconds
   });
 }
 
@@ -57,6 +63,14 @@ export function useDocuments(botId: number | null) {
       return response;
     },
     enabled: !!botId,
+    // Smart polling: refetch every 3 seconds if any document is processing
+    refetchInterval: (query) => {
+      const documents = query.state.data?.data ?? [];
+      const hasProcessing = documents.some(
+        (doc) => doc.status === 'pending' || doc.status === 'processing'
+      );
+      return hasProcessing ? 3000 : false;
+    },
   });
 }
 
