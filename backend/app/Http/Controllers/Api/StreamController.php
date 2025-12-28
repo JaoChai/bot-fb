@@ -50,21 +50,11 @@ class StreamController extends Controller
      */
     public function streamTest(Request $request, int $botId, int $flowId): StreamedResponse
     {
-        // DEBUG: Log entry point
-        Log::info('StreamController::streamTest ENTRY', [
-            'botId' => $botId,
-            'flowId' => $flowId,
-            'hasToken' => $request->bearerToken() ? 'YES' : 'NO',
-        ]);
-
-        try {
-            // 1. Manual authentication (before streaming starts)
-            $user = $this->authenticateFromToken($request);
-            if (!$user) {
-                Log::warning('StreamController: Authentication failed');
-                return $this->errorResponse('Unauthorized', 401);
-            }
-            Log::info('StreamController: User authenticated', ['userId' => $user->id]);
+        // 1. Manual authentication (before streaming starts)
+        $user = $this->authenticateFromToken($request);
+        if (!$user) {
+            return $this->errorResponse('Unauthorized', 401);
+        }
 
         // 2. Validate input
         $message = $request->input('message');
@@ -153,33 +143,6 @@ class StreamController extends Controller
             'Access-Control-Allow-Headers' => 'Authorization, Content-Type',
             'Access-Control-Allow-Credentials' => 'true',
         ]);
-
-        } catch (\Throwable $e) {
-            // DEBUG: Catch any exception that occurs before streaming starts
-            Log::error('StreamController FATAL ERROR', [
-                'botId' => $botId,
-                'flowId' => $flowId,
-                'error' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            // Return error as JSON for debugging
-            return new StreamedResponse(function () use ($e) {
-                $this->sendSSE('error', [
-                    'message' => 'Server error: ' . $e->getMessage(),
-                    'debug' => [
-                        'file' => basename($e->getFile()),
-                        'line' => $e->getLine(),
-                    ],
-                ]);
-            }, 500, [
-                'Content-Type' => 'text/event-stream',
-                'Cache-Control' => 'no-cache',
-                'Access-Control-Allow-Origin' => config('app.frontend_url', '*'),
-            ]);
-        }
     }
 
     /**
