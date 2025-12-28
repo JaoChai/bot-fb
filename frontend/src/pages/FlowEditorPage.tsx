@@ -12,6 +12,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations } from '@/hooks/useFlows';
 import { useStreamingChat } from '@/hooks/useStreamingChat';
@@ -39,6 +45,7 @@ import {
   Trash2,
   Code,
   Square,
+  Minimize2,
 } from 'lucide-react';
 import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
 
@@ -138,6 +145,7 @@ export function FlowEditorPage() {
 
   // Issue #56 - Flow Editor Improvements
   const [isSystemPromptPreview, setIsSystemPromptPreview] = useState(false);
+  const [isFullscreenPrompt, setIsFullscreenPrompt] = useState(false);
   const [agenticSecondAIEnabled, setAgenticSecondAIEnabled] = useState(false);
   const [secondAIOptions, setSecondAIOptions] = useState({
     factCheck: false,
@@ -736,10 +744,7 @@ export function FlowEditorPage() {
                       onLink={() => handleMarkdownAction('link')}
                       onCode={() => handleMarkdownAction('code')}
                       onPreviewToggle={() => setIsSystemPromptPreview(!isSystemPromptPreview)}
-                      onFullscreen={() => {
-                        // Placeholder for fullscreen functionality
-                        toast({ title: 'Feature coming soon', description: 'Fullscreen mode will be available in next update' });
-                      }}
+                      onFullscreen={() => setIsFullscreenPrompt(true)}
                       isPreviewMode={isSystemPromptPreview}
                     />
                   </div>
@@ -748,7 +753,7 @@ export function FlowEditorPage() {
                       <Textarea
                         ref={systemPromptRef}
                         placeholder="คุณคือผู้ช่วยที่เป็นมิตร..."
-                        className="min-h-[300px] font-mono text-sm border-0 rounded-none focus-visible:ring-0"
+                        className="min-h-[300px] max-h-[500px] overflow-y-auto font-mono text-sm border-0 rounded-none focus-visible:ring-0 resize-y"
                         value={formData.system_prompt}
                         onChange={(e) => handleChange('system_prompt', e.target.value)}
                       />
@@ -1154,6 +1159,47 @@ export function FlowEditorPage() {
           </div>
         </div>
       )}
+
+      {/* Fullscreen System Prompt Editor Dialog */}
+      <Dialog open={isFullscreenPrompt} onOpenChange={setIsFullscreenPrompt}>
+        <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh] flex flex-col p-0">
+          <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-lg font-semibold">
+                แก้ไข System Prompt - {formData.name || 'Flow ใหม่'}
+              </DialogTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsFullscreenPrompt(false)}
+                className="h-8 w-8 p-0"
+              >
+                <Minimize2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 flex flex-col overflow-hidden p-6">
+            <Textarea
+              placeholder="คุณคือผู้ช่วยที่เป็นมิตร..."
+              className="flex-1 font-mono text-sm resize-none"
+              value={formData.system_prompt}
+              onChange={(e) => handleChange('system_prompt', e.target.value)}
+            />
+            <div className="flex justify-between items-center mt-4 pt-4 border-t">
+              <div className="flex gap-4 text-xs text-muted-foreground">
+                <span>lines: {formData.system_prompt.split('\n').length}</span>
+                <span>words: {formData.system_prompt.split(/\s+/).filter(Boolean).length}</span>
+              </div>
+              <Button
+                variant="orange"
+                onClick={() => setIsFullscreenPrompt(false)}
+              >
+                เสร็จสิ้น
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
