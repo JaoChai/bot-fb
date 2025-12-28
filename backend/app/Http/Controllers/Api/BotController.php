@@ -40,11 +40,11 @@ class BotController extends Controller
         ]);
 
         // Auto-create Base Flow for the new bot
+        // Note: Model is NOT stored in Flow - it uses Bot Connection Settings (primary_chat_model)
         $baseFlow = $bot->flows()->create([
             'name' => 'Base Flow',
             'description' => 'Flow เริ่มต้นของ Bot - ใช้ตอบกลับเมื่อไม่มี Flow อื่นที่เหมาะสม',
             'system_prompt' => $this->getDefaultBaseFlowPrompt($bot),
-            'model' => 'claude-3-5-sonnet-20241022',
             'temperature' => 0.7,
             'max_tokens' => 2048,
             'agentic_mode' => false,
