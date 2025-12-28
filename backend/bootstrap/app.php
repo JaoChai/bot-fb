@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\CompressResponse;
 use App\Http\Middleware\SanitizeInput;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TrustProxies;
@@ -31,6 +32,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(prepend: [
             ValidateJsonContent::class,
             SanitizeInput::class,
+        ]);
+
+        // Append compression middleware (runs after response is generated)
+        $middleware->api(append: [
+            CompressResponse::class,
         ]);
 
         // Exclude webhook routes from CSRF protection

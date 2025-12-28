@@ -42,4 +42,54 @@ class Message extends Model
     {
         return $this->belongsTo(Conversation::class);
     }
+
+    // Query scopes for common patterns
+
+    /**
+     * Scope a query to only include messages from bot.
+     */
+    public function scopeFromBot($query)
+    {
+        return $query->where('sender', 'bot');
+    }
+
+    /**
+     * Scope a query to only include messages from user.
+     */
+    public function scopeFromUser($query)
+    {
+        return $query->where('sender', 'user');
+    }
+
+    /**
+     * Scope a query to only include messages from agent.
+     */
+    public function scopeFromAgent($query)
+    {
+        return $query->where('sender', 'agent');
+    }
+
+    /**
+     * Scope a query to only include messages with cost data.
+     */
+    public function scopeWithCost($query)
+    {
+        return $query->whereNotNull('cost');
+    }
+
+    /**
+     * Scope a query to order by creation time descending.
+     */
+    public function scopeRecentFirst($query)
+    {
+        return $query->orderByDesc('created_at');
+    }
+
+    /**
+     * Scope a query to filter by date range.
+     */
+    public function scopeInDateRange($query, $from, $to)
+    {
+        return $query->whereBetween('created_at', [$from, $to]);
+    }
 }
