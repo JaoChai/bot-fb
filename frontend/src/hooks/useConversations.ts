@@ -489,6 +489,7 @@ interface AgentMessageResponse {
 
 /**
  * Hook to send a message from agent to customer (HITL mode)
+ * Includes optimistic updates for instant UI feedback
  */
 export function useSendAgentMessage(botId: number | undefined) {
   const queryClient = useQueryClient();
@@ -507,7 +508,65 @@ export function useSendAgentMessage(botId: number | undefined) {
       );
       return response.data;
     },
-    onSuccess: (_, { conversationId }) => {
+    onMutate: async ({ conversationId, data }) => {
+      // Cancel any outgoing refetches to avoid overwriting optimistic update
+      await queryClient.cancelQueries({
+        queryKey: ['conversation-messages', botId, conversationId],
+      });
+
+      // Snapshot previous messages
+      const previousMessages = queryClient.getQueryData<MessagesResponse>([
+        'conversation-messages',
+        botId,
+        conversationId,
+        { order: 'asc', perPage: 100 },
+      ]);
+
+      // Optimistically add the new message
+      if (previousMessages) {
+        const optimisticMessage: Message = {
+          id: Date.now(), // Temporary ID
+          conversation_id: conversationId,
+          sender: 'agent',
+          content: data.content,
+          type: data.type || 'text',
+          media_url: data.media_url || null,
+          media_type: null,
+          media_metadata: null,
+          model_used: null,
+          prompt_tokens: null,
+          completion_tokens: null,
+          cost: null,
+          external_message_id: null,
+          reply_to_message_id: null,
+          sentiment: null,
+          intents: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        queryClient.setQueryData<MessagesResponse>(
+          ['conversation-messages', botId, conversationId, { order: 'asc', perPage: 100 }],
+          {
+            ...previousMessages,
+            data: [...previousMessages.data, optimisticMessage],
+          }
+        );
+      }
+
+      return { previousMessages };
+    },
+    onError: (_err, { conversationId }, context) => {
+      // Rollback on error
+      if (context?.previousMessages) {
+        queryClient.setQueryData(
+          ['conversation-messages', botId, conversationId, { order: 'asc', perPage: 100 }],
+          context.previousMessages
+        );
+      }
+    },
+    onSettled: (_, __, { conversationId }) => {
+      // Always refetch after mutation to sync with server
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversation-messages', botId, conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
