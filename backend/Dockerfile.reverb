@@ -37,12 +37,11 @@ RUN chown -R www-data:www-data /var/www/html \
 # Railway handles health checks via TCP port binding instead
 
 # Start Reverb WebSocket server with debug output
-CMD ["sh", "-c", "\
-    echo 'Starting Reverb WebSocket Server...' && \
-    echo 'PORT: '${PORT:-8080} && \
-    echo 'REVERB_APP_ID: '${REVERB_APP_ID:-'NOT SET'} && \
-    echo 'REVERB_HOST: '${REVERB_HOST:-'NOT SET'} && \
+# Using shell form to avoid JSON escaping issues
+CMD echo 'Starting Reverb WebSocket Server...' && \
+    echo "PORT: ${PORT:-8080}" && \
+    echo "REVERB_APP_ID: ${REVERB_APP_ID:-NOT_SET}" && \
+    echo "REVERB_HOST: ${REVERB_HOST:-NOT_SET}" && \
     php artisan config:cache && \
     echo 'Config cached. Starting reverb:start...' && \
-    php artisan reverb:start --host=0.0.0.0 --port=${PORT:-8080} --debug \
-"]
+    exec php artisan reverb:start --host=0.0.0.0 --port=${PORT:-8080} --debug
