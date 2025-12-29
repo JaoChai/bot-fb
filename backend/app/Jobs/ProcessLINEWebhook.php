@@ -96,22 +96,53 @@ class ProcessLINEWebhook implements ShouldQueue
         // Non-blocking - if it fails, we continue processing
         $lineService->showLoadingIndicator($this->bot, $userId, 30);
 
-        // Process in transaction
-        DB::transaction(function () use ($lineService, $aiService, $userId, $replyToken, $messageData) {
+        // Variables to collect for broadcasting after transaction
+        $userMessage = null;
+        $botMessage = null;
+        $conversation = null;
+        $isHandover = false;
+        $isNewConversation = false;
+
+        // Process in transaction (no broadcasts inside to prevent blocking)
+        DB::transaction(function () use ($lineService, $aiService, $userId, $replyToken, $messageData, &$userMessage, &$botMessage, &$conversation, &$isHandover, &$isNewConversation) {
             // Find or create conversation
-            $conversation = $this->findOrCreateConversation($userId, $lineService);
+            $existingConversation = Conversation::where('bot_id', $this->bot->id)
+                ->where('external_customer_id', $userId)
+                ->where('channel_type', 'line')
+                ->where('status', 'active')
+                ->first();
 
-            // Save user message
-            $userMessage = $this->saveUserMessage($conversation, $messageData);
+            $isNewConversation = !$existingConversation;
+            $conversation = $existingConversation ?? $this->createNewConversation($userId, $lineService);
 
-            // Broadcast user message to connected clients
-            broadcast(new MessageSent($userMessage))->toOthers();
+            // Check for duplicate message (LINE may send webhook multiple times)
+            if ($messageData['id'] && Message::where('conversation_id', $conversation->id)
+                ->where('external_message_id', $messageData['id'])
+                ->exists()) {
+                Log::info('Duplicate webhook ignored', [
+                    'conversation_id' => $conversation->id,
+                    'message_id' => $messageData['id'],
+                ]);
+                return;
+            }
 
-            // Skip AI response if conversation is in handover mode
-            if ($conversation->is_handover) {
+            // Save user message (without separate increment)
+            $userMessage = $conversation->messages()->create([
+                'sender' => 'user',
+                'content' => $messageData['text'],
+                'type' => 'text',
+                'external_message_id' => $messageData['id'],
+            ]);
+
+            // Check handover status
+            $isHandover = $conversation->is_handover;
+
+            if ($isHandover) {
                 Log::info('Conversation in handover mode, skipping AI response', [
                     'conversation_id' => $conversation->id,
                 ]);
+                // Update stats for user message only (1 message)
+                $this->updateStatsForUserMessageOnly($conversation);
                 return;
             }
 
@@ -122,20 +153,95 @@ class ProcessLINEWebhook implements ShouldQueue
                 $userMessage
             );
 
-            // Broadcast bot message to connected clients
-            broadcast(new MessageSent($botMessage))->toOthers();
-
             // Send reply to LINE
             if ($replyToken && $botMessage->content) {
                 $lineService->reply($this->bot, $replyToken, [$botMessage->content]);
             }
 
-            // Update conversation stats
-            $this->updateConversationStats($conversation);
-
-            // Broadcast conversation update
-            broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
+            // Update conversation and bot stats in batch (2 messages: user + bot)
+            $this->updateStatsInBatch($conversation, $isNewConversation);
         });
+
+        // Broadcasts AFTER transaction commits (non-blocking)
+        if ($userMessage) {
+            broadcast(new MessageSent($userMessage))->toOthers();
+        }
+        if ($botMessage) {
+            broadcast(new MessageSent($botMessage))->toOthers();
+        }
+        if ($conversation) {
+            broadcast(new ConversationUpdated($conversation->fresh(), 'message_received'))->toOthers();
+        }
+    }
+
+    /**
+     * Create a new conversation.
+     */
+    protected function createNewConversation(string $userId, LINEService $lineService): Conversation
+    {
+        // Create or update customer profile
+        $customerProfile = $this->findOrCreateCustomerProfile($userId, $lineService);
+
+        // Create new conversation
+        $conversation = Conversation::create([
+            'bot_id' => $this->bot->id,
+            'customer_profile_id' => $customerProfile?->id,
+            'external_customer_id' => $userId,
+            'channel_type' => 'line',
+            'status' => 'active',
+            'current_flow_id' => $this->bot->default_flow_id,
+            'message_count' => 0,
+        ]);
+
+        // Broadcast new conversation event
+        broadcast(new ConversationUpdated($conversation, 'created'))->toOthers();
+
+        return $conversation;
+    }
+
+    /**
+     * Update stats for user message only (handover mode).
+     */
+    protected function updateStatsForUserMessageOnly(Conversation $conversation): void
+    {
+        // Batch update conversation stats (1 query instead of 2)
+        $conversation->update([
+            'unread_count' => DB::raw('unread_count + 1'),
+            'message_count' => DB::raw('message_count + 1'),
+            'last_message_at' => now(),
+        ]);
+
+        // Batch update bot stats (1 query instead of 3)
+        $this->bot->update([
+            'total_messages' => DB::raw('total_messages + 1'),
+            'last_active_at' => now(),
+        ]);
+    }
+
+    /**
+     * Update conversation and bot statistics in batch.
+     */
+    protected function updateStatsInBatch(Conversation $conversation, bool $isNewConversation): void
+    {
+        // Batch update conversation stats (1 query instead of 3)
+        $conversation->update([
+            'unread_count' => DB::raw('unread_count + 1'),
+            'message_count' => DB::raw('message_count + 2'),
+            'last_message_at' => now(),
+        ]);
+
+        // Batch update bot stats (1 query instead of 3)
+        $botUpdate = [
+            'total_messages' => DB::raw('total_messages + 2'),
+            'last_active_at' => now(),
+        ];
+
+        // Only increment total_conversations for new conversations
+        if ($isNewConversation) {
+            $botUpdate['total_conversations'] = DB::raw('total_conversations + 1');
+        }
+
+        $this->bot->update($botUpdate);
     }
 
     /**
@@ -172,42 +278,6 @@ class ProcessLINEWebhook implements ShouldQueue
     }
 
     /**
-     * Find or create conversation for the LINE user.
-     */
-    protected function findOrCreateConversation(string $userId, LINEService $lineService): Conversation
-    {
-        // Try to find existing active conversation
-        $conversation = Conversation::where('bot_id', $this->bot->id)
-            ->where('external_customer_id', $userId)
-            ->where('channel_type', 'line')
-            ->where('status', 'active')
-            ->first();
-
-        if ($conversation) {
-            return $conversation;
-        }
-
-        // Create or update customer profile
-        $customerProfile = $this->findOrCreateCustomerProfile($userId, $lineService);
-
-        // Create new conversation
-        $conversation = Conversation::create([
-            'bot_id' => $this->bot->id,
-            'customer_profile_id' => $customerProfile?->id,
-            'external_customer_id' => $userId,
-            'channel_type' => 'line',
-            'status' => 'active',
-            'current_flow_id' => $this->bot->default_flow_id,
-            'message_count' => 0,
-        ]);
-
-        // Broadcast new conversation event
-        broadcast(new ConversationUpdated($conversation, 'created'))->toOthers();
-
-        return $conversation;
-    }
-
-    /**
      * Find or create customer profile.
      */
     protected function findOrCreateCustomerProfile(string $userId, LINEService $lineService): ?CustomerProfile
@@ -237,36 +307,6 @@ class ProcessLINEWebhook implements ShouldQueue
                 'status_message' => $lineProfile['statusMessage'] ?? null,
             ],
         ]);
-    }
-
-    /**
-     * Save user message to database.
-     */
-    protected function saveUserMessage(Conversation $conversation, array $messageData): Message
-    {
-        // Increment unread count for admin notification
-        $conversation->increment('unread_count');
-
-        return $conversation->messages()->create([
-            'sender' => 'user',
-            'content' => $messageData['text'],
-            'type' => 'text',
-            'external_message_id' => $messageData['id'],
-        ]);
-    }
-
-    /**
-     * Update conversation statistics.
-     */
-    protected function updateConversationStats(Conversation $conversation): void
-    {
-        $conversation->increment('message_count', 2); // User + Bot messages
-        $conversation->update(['last_message_at' => now()]);
-
-        // Update bot stats
-        $this->bot->increment('total_messages', 2);
-        $this->bot->increment('total_conversations');
-        $this->bot->update(['last_active_at' => now()]);
     }
 
     /**
