@@ -1,0 +1,41 @@
+# Laravel Reverb WebSocket Server Dockerfile
+FROM php:8.4-cli-alpine
+
+# Install system dependencies
+RUN apk add --no-cache \
+    curl \
+    libpng-dev \
+    libzip-dev \
+    postgresql-dev \
+    oniguruma-dev \
+    libxml2-dev \
+    && docker-php-ext-install pdo pdo_pgsql pgsql mbstring bcmath pcntl
+
+# Install Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# Set working directory
+WORKDIR /var/www/html
+
+# Copy composer files
+COPY composer.json composer.lock ./
+
+# Install PHP dependencies
+RUN composer install --no-dev --optimize-autoloader --no-scripts --no-interaction
+
+# Copy application
+COPY . .
+
+# Run composer scripts after copying all files
+RUN composer dump-autoload --optimize
+
+# Set permissions
+RUN chown -R www-data:www-data /var/www/html \
+    && chmod -R 755 /var/www/html/storage
+
+# Health check for WebSocket
+HEALTHCHECK --interval=30s --timeout=3s \
+    CMD curl -f http://localhost:${PORT:-8080}/ || exit 1
+
+# Start Reverb WebSocket server
+CMD ["sh", "-c", "php artisan config:cache && php artisan reverb:start --host=0.0.0.0 --port=${PORT:-8080}"]
