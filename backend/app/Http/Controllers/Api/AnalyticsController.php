@@ -148,7 +148,14 @@ class AnalyticsController extends Controller
             ')
             ->groupBy('messages.model_used')
             ->orderByDesc('total_cost')
-            ->get();
+            ->get()
+            ->map(fn ($item) => [
+                'model_used' => $item->model_used,
+                'response_count' => (int) $item->response_count,
+                'total_cost' => (float) $item->total_cost,
+                'prompt_tokens' => (int) $item->prompt_tokens,
+                'completion_tokens' => (int) $item->completion_tokens,
+            ]);
 
         // Time series data
         $timeSeries = (clone $baseQuery)
@@ -161,7 +168,14 @@ class AnalyticsController extends Controller
             ")
             ->groupByRaw("TO_CHAR(messages.created_at, '{$dateFormat}')")
             ->orderBy('period')
-            ->get();
+            ->get()
+            ->map(fn ($item) => [
+                'period' => $item->period,
+                'response_count' => (int) $item->response_count,
+                'total_cost' => (float) $item->total_cost,
+                'prompt_tokens' => (int) $item->prompt_tokens,
+                'completion_tokens' => (int) $item->completion_tokens,
+            ]);
 
         // Cost by bot (if not filtered to single bot)
         $byBot = null;
@@ -175,7 +189,13 @@ class AnalyticsController extends Controller
                 ')
                 ->groupBy('bots.id', 'bots.name')
                 ->orderByDesc('total_cost')
-                ->get();
+                ->get()
+                ->map(fn ($item) => [
+                    'bot_id' => (int) $item->bot_id,
+                    'bot_name' => $item->bot_name,
+                    'response_count' => (int) $item->response_count,
+                    'total_cost' => (float) $item->total_cost,
+                ]);
         }
 
         return [
