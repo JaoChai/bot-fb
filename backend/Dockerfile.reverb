@@ -33,15 +33,12 @@ RUN composer dump-autoload --optimize
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html/storage
 
+# Copy and prepare startup script
+COPY docker/start-reverb.sh /usr/local/bin/start-reverb.sh
+RUN chmod +x /usr/local/bin/start-reverb.sh
+
 # No HEALTHCHECK - WebSocket servers don't respond to HTTP GET
 # Railway handles health checks via TCP port binding instead
 
-# Start Reverb WebSocket server with debug output
-# Using shell form to avoid JSON escaping issues
-CMD echo 'Starting Reverb WebSocket Server...' && \
-    echo "PORT: ${PORT:-8080}" && \
-    echo "REVERB_APP_ID: ${REVERB_APP_ID:-NOT_SET}" && \
-    echo "REVERB_HOST: ${REVERB_HOST:-NOT_SET}" && \
-    php artisan config:cache && \
-    echo 'Config cached. Starting reverb:start...' && \
-    exec php artisan reverb:start --host=0.0.0.0 --port=${PORT:-8080} --debug
+# Start Reverb WebSocket server using startup script
+CMD ["/usr/local/bin/start-reverb.sh"]
