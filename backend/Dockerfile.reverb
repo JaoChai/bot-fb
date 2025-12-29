@@ -33,9 +33,16 @@ RUN composer dump-autoload --optimize
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html/storage
 
-# Health check for WebSocket
-HEALTHCHECK --interval=30s --timeout=3s \
-    CMD curl -f http://localhost:${PORT:-8080}/ || exit 1
+# No HEALTHCHECK - WebSocket servers don't respond to HTTP GET
+# Railway handles health checks via port binding
 
-# Start Reverb WebSocket server
-CMD ["sh", "-c", "php artisan config:cache && php artisan reverb:start --host=0.0.0.0 --port=${PORT:-8080}"]
+# Start Reverb WebSocket server with debug output
+CMD ["sh", "-c", "\
+    echo 'Starting Reverb WebSocket Server...' && \
+    echo 'PORT: '${PORT:-8080} && \
+    echo 'REVERB_APP_ID: '${REVERB_APP_ID:-'NOT SET'} && \
+    echo 'REVERB_HOST: '${REVERB_HOST:-'NOT SET'} && \
+    php artisan config:cache && \
+    echo 'Config cached. Starting reverb:start...' && \
+    php artisan reverb:start --host=0.0.0.0 --port=${PORT:-8080} --debug \
+"]

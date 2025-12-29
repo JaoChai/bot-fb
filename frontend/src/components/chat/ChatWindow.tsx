@@ -11,6 +11,7 @@ import {
 } from '@/hooks/useConversations';
 import { useToast } from '@/hooks/use-toast';
 import {
+  ArrowLeft,
   Loader2,
   Send,
   Info,
@@ -46,9 +47,10 @@ interface ChatWindowProps {
   botId: number;
   conversation: Conversation;
   onShowInfo: () => void;
+  onBack?: () => void;
 }
 
-export function ChatWindow({ botId, conversation, onShowInfo }: ChatWindowProps) {
+export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWindowProps) {
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -131,6 +133,17 @@ export function ChatWindow({ botId, conversation, onShowInfo }: ChatWindowProps)
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b bg-background">
         <div className="flex items-center gap-3">
+          {/* Back button - mobile only */}
+          {onBack && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden h-10 w-10"
+              onClick={onBack}
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          )}
           <Avatar className="h-10 w-10">
             <AvatarImage src={conversation.customer_profile?.picture_url || undefined} />
             <AvatarFallback>{customerInitial}</AvatarFallback>

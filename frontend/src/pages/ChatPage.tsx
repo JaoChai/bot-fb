@@ -16,6 +16,7 @@ import { ConversationList } from '@/components/chat/ConversationList';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { CustomerInfoPanel } from '@/components/chat/CustomerInfoPanel';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types/api';
 
 export function ChatPage() {
@@ -35,6 +36,9 @@ export function ChatPage() {
 
   // Mobile info panel
   const [showInfoPanel, setShowInfoPanel] = useState(false);
+
+  // Mobile chat view (master-detail navigation)
+  const [showMobileChat, setShowMobileChat] = useState(false);
 
   // Bots query
   const { data: botsResponse, isLoading: isBotsLoading } = useBots();
@@ -108,11 +112,13 @@ export function ChatPage() {
   const handleBotSelect = (value: string) => {
     setSearchParams({ botId: value });
     setSelectedConversationId(null);
+    setShowMobileChat(false); // Reset to list view when changing bot
   };
 
   // Handle conversation selection
   const handleConversationSelect = (conversation: Conversation) => {
     setSelectedConversationId(conversation.id);
+    setShowMobileChat(true); // Switch to chat view on mobile
 
     // Mark as read if has unread messages
     if (conversation.unread_count > 0) {
@@ -120,9 +126,15 @@ export function ChatPage() {
     }
   };
 
-  // Auto-select first conversation if none selected
+  // Handle back to list (mobile)
+  const handleBackToList = () => {
+    setShowMobileChat(false);
+  };
+
+  // Auto-select first conversation if none selected (desktop only)
   useEffect(() => {
-    if (conversations.length > 0 && !selectedConversationId) {
+    const isDesktop = window.matchMedia('(min-width: 768px)').matches;
+    if (isDesktop && conversations.length > 0 && !selectedConversationId) {
       const firstConv = conversations[0];
       setSelectedConversationId(firstConv.id);
       if (firstConv.unread_count > 0) {
@@ -165,7 +177,10 @@ export function ChatPage() {
   return (
     <div className="-m-4 md:-m-6 flex h-[calc(100vh-64px)] overflow-hidden bg-background">
       {/* Left Panel: Conversation List */}
-      <div className="w-80 flex-shrink-0 border-r flex flex-col">
+      <div className={cn(
+        'w-full md:w-80 flex-shrink-0 border-r flex flex-col',
+        showMobileChat && 'hidden md:flex'
+      )}>
         {/* Bot Selector */}
         <div className="p-3 border-b bg-muted/30">
           <Select value={botId.toString()} onValueChange={handleBotSelect}>
@@ -197,12 +212,16 @@ export function ChatPage() {
       </div>
 
       {/* Center Panel: Chat Window */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className={cn(
+        'flex-1 flex flex-col min-w-0',
+        !showMobileChat && 'hidden md:flex'
+      )}>
         {selectedConversation ? (
           <ChatWindow
             botId={botId}
             conversation={selectedConversation}
             onShowInfo={() => setShowInfoPanel(true)}
+            onBack={handleBackToList}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">

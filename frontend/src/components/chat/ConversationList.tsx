@@ -56,8 +56,8 @@ export function ConversationList({
       {/* Status Tabs */}
       <div className="p-2 border-b">
         <Tabs value={statusFilter} onValueChange={onStatusFilterChange}>
-          <TabsList className="w-full grid grid-cols-3 h-8">
-            <TabsTrigger value="all" className="text-xs h-7">
+          <TabsList className="w-full grid grid-cols-3 h-10">
+            <TabsTrigger value="all" className="text-xs h-9">
               ทั้งหมด
               {statusCounts && (
                 <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4">
@@ -65,7 +65,7 @@ export function ConversationList({
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="active" className="text-xs h-7">
+            <TabsTrigger value="active" className="text-xs h-9">
               กำลังใช้งาน
               {statusCounts && (
                 <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4">
@@ -73,7 +73,7 @@ export function ConversationList({
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="handover" className="text-xs h-7">
+            <TabsTrigger value="handover" className="text-xs h-9">
               รอตอบ
               {statusCounts && (
                 <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4">
@@ -131,13 +131,14 @@ function ConversationItem({ conversation, isSelected, onSelect }: ConversationIt
       onClick={onSelect}
       className={cn(
         'w-full p-3 rounded-lg flex items-start gap-3 text-left transition-colors cursor-pointer',
-        'hover:bg-accent/50',
+        'hover:bg-accent/50 active:bg-accent',
+        'min-h-[72px]',
         isSelected && 'bg-accent'
       )}
     >
       {/* Avatar with unread indicator */}
       <div className="relative">
-        <Avatar className="h-10 w-10">
+        <Avatar className="h-12 w-12 md:h-10 md:w-10">
           <AvatarImage src={conversation.customer_profile?.picture_url || undefined} />
           <AvatarFallback>{customerInitial}</AvatarFallback>
         </Avatar>
