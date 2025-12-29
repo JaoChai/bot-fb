@@ -1,7 +1,7 @@
 # Nixpacks configuration for Laravel on Railway
 
 [phases.setup]
-nixPkgs = ["php84", "php84Extensions.pdo", "php84Extensions.pdo_pgsql", "php84Extensions.pgsql", "php84Extensions.mbstring", "php84Extensions.xml", "php84Extensions.curl", "php84Extensions.zip", "php84Extensions.bcmath", "php84Extensions.tokenizer", "php84Extensions.fileinfo", "php84Extensions.openssl"]
+nixPkgs = ["php84", "php84Extensions.pdo", "php84Extensions.pdo_pgsql", "php84Extensions.pgsql", "php84Extensions.mbstring", "php84Extensions.xml", "php84Extensions.curl", "php84Extensions.zip", "php84Extensions.bcmath", "php84Extensions.tokenizer", "php84Extensions.fileinfo", "php84Extensions.openssl", "php84Extensions.pcntl"]
 
 [phases.install]
 cmds = ["composer install --no-dev --optimize-autoloader"]
@@ -14,4 +14,6 @@ cmds = [
 ]
 
 [start]
-cmd = "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=${PORT:-8080}"
+# Run queue worker in background, then start web server
+# Queue worker: processes webhooks asynchronously for better scalability
+cmd = "php artisan migrate --force && (php artisan queue:work database --queue=webhooks,default --sleep=3 --tries=3 --backoff=5 --max-jobs=500 --max-time=3600 >> /tmp/queue.log 2>&1 &) && php artisan serve --host=0.0.0.0 --port=${PORT:-8080}"
