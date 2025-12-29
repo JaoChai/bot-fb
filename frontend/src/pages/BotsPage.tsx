@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useBots } from '@/hooks/useKnowledgeBase';
 import { useToast } from '@/hooks/use-toast';
+import { apiDelete } from '@/lib/api';
 import {
   Loader2,
   Settings,
@@ -71,7 +72,7 @@ function MessengerIcon({ className }: { className?: string }) {
 }
 
 export function BotsPage() {
-  const { data: botsResponse, isLoading, error } = useBots();
+  const { data: botsResponse, isLoading, error, refetch } = useBots();
   const { toast } = useToast();
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -115,14 +116,14 @@ export function BotsPage() {
   };
 
   const handleDeleteConfirm = async () => {
-    // TODO: Implement actual delete API call
     if (!botToDelete) return;
     try {
-      // await deleteBot(botToDelete.id);
+      await apiDelete(`/bots/${botToDelete.id}`);
       toast({
         title: 'ลบแล้ว',
         description: `"${botToDelete.name}" ลบเรียบร้อยแล้ว`,
       });
+      refetch();
     } catch (err) {
       toast({
         title: 'เกิดข้อผิดพลาด',
