@@ -58,12 +58,22 @@ export function CostAnalytics() {
 
   if (!data) return null;
 
-  const formatCost = (value: number) => `$${value.toFixed(4)}`;
-  const formatCostShort = (value: number) => `$${value.toFixed(2)}`;
-  const formatTokens = (value: number) => value.toLocaleString();
+  const formatCost = (value: number | string | null | undefined) => {
+    const num = Number(value) || 0;
+    return `$${num.toFixed(4)}`;
+  };
+  const formatCostShort = (value: number | string | null | undefined) => {
+    const num = Number(value) || 0;
+    return `$${num.toFixed(2)}`;
+  };
+  const formatTokens = (value: number | string | null | undefined) => {
+    const num = Number(value) || 0;
+    return num.toLocaleString();
+  };
 
   const totalTokens =
-    data.summary.total_prompt_tokens + data.summary.total_completion_tokens;
+    (Number(data.summary.total_prompt_tokens) || 0) +
+    (Number(data.summary.total_completion_tokens) || 0);
 
   return (
     <div className="space-y-6">
@@ -205,7 +215,7 @@ export function CostAnalytics() {
                     tick={{ fill: 'currentColor' }}
                   />
                   <YAxis
-                    tickFormatter={(v) => `$${v.toFixed(2)}`}
+                    tickFormatter={(v) => `$${(Number(v) || 0).toFixed(2)}`}
                     className="text-xs"
                     tick={{ fill: 'currentColor' }}
                   />
@@ -293,7 +303,7 @@ export function CostAnalytics() {
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis
                       type="number"
-                      tickFormatter={(v) => `$${v.toFixed(2)}`}
+                      tickFormatter={(v) => `$${(Number(v) || 0).toFixed(2)}`}
                       className="text-xs"
                       tick={{ fill: 'currentColor' }}
                     />
