@@ -1,1 +1,2 @@
 web: php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan serve --host=0.0.0.0 --port=$PORT
+worker: php artisan queue:work database --queue=webhooks,default --sleep=3 --tries=3 --backoff=5 --max-jobs=1000 --max-time=3600
