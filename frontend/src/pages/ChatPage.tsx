@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Select,
   SelectContent,
@@ -10,6 +11,7 @@ import {
 import { Loader2, MessageSquare } from 'lucide-react';
 import { useBots } from '@/hooks/useKnowledgeBase';
 import { useConversations, useMarkAsRead } from '@/hooks/useConversations';
+import { useBotChannel } from '@/hooks/useEcho';
 import { ConversationList } from '@/components/chat/ConversationList';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { CustomerInfoPanel } from '@/components/chat/CustomerInfoPanel';
@@ -18,6 +20,7 @@ import type { Conversation, ConversationFilters } from '@/types/api';
 
 export function ChatPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const queryClient = useQueryClient();
 
   // Get botId from URL
   const botIdParam = searchParams.get('botId');
@@ -58,6 +61,48 @@ export function ChatPage() {
 
   // Mark as read mutation
   const markAsRead = useMarkAsRead(botId ?? undefined);
+
+  // Real-time WebSocket callbacks (memoized to prevent re-subscriptions)
+  const handleRealtimeMessage = useCallback(
+    (event: { conversation_id: number }) => {
+      // Invalidate messages for the specific conversation
+      queryClient.invalidateQueries({
+        queryKey: ['conversation-messages', botId, event.conversation_id],
+      });
+      // Also update conversation list (for last_message_at, unread_count)
+      queryClient.invalidateQueries({
+        queryKey: ['conversations', botId],
+      });
+    },
+    [queryClient, botId]
+  );
+
+  const handleConversationUpdate = useCallback(
+    () => {
+      // Invalidate conversation list
+      queryClient.invalidateQueries({
+        queryKey: ['conversations', botId],
+      });
+    },
+    [queryClient, botId]
+  );
+
+  const handleNewConversation = useCallback(
+    () => {
+      // Invalidate conversation list to show new conversation
+      queryClient.invalidateQueries({
+        queryKey: ['conversations', botId],
+      });
+    },
+    [queryClient, botId]
+  );
+
+  // Subscribe to bot channel for real-time updates
+  useBotChannel(botId, {
+    onMessage: handleRealtimeMessage,
+    onConversationUpdate: handleConversationUpdate,
+    onNewConversation: handleNewConversation,
+  });
 
   // Handle bot selection
   const handleBotSelect = (value: string) => {
