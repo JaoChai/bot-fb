@@ -163,7 +163,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="-m-4 md:-m-6 flex h-[calc(100vh-64px+32px)] md:h-[calc(100vh-64px+48px)] overflow-hidden bg-background">
+    <div className="-m-4 md:-m-6 flex h-[calc(100vh-64px)] overflow-hidden bg-background">
       {/* Left Panel: Conversation List */}
       <div className="w-80 flex-shrink-0 border-r flex flex-col">
         {/* Bot Selector */}
