@@ -34,7 +34,7 @@ RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html/storage
 
 # No HEALTHCHECK - WebSocket servers don't respond to HTTP GET
-# Railway handles health checks via port binding
+# Railway handles health checks via TCP port binding instead
 
 # Start Reverb WebSocket server with debug output
 CMD ["sh", "-c", "\
