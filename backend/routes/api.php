@@ -162,6 +162,30 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
+// Temporary debug endpoint for /api/bots 500 error
+Route::get('/debug-bots', function () {
+    try {
+        // Test database connection
+        \Illuminate\Support\Facades\DB::connection()->getPdo();
+
+        // Test Bot model
+        $count = \App\Models\Bot::count();
+
+        return response()->json([
+            'status' => 'ok',
+            'bot_count' => $count,
+            'db_connection' => 'ok'
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => collect(explode("\n", $e->getTraceAsString()))->take(10)->all()
+        ], 500);
+    }
+});
+
 // Broadcasting authentication endpoint
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
