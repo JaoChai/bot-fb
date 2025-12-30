@@ -135,6 +135,8 @@ export interface BotSettings {
   // Auto-responses
   welcome_message: string | null;
   fallback_message: string | null;
+  rate_limit_bot_message: string | null;
+  rate_limit_user_message: string | null;
   typing_indicator: boolean;
   typing_delay_ms: number;
   // Content moderation

@@ -10,6 +10,7 @@ use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\LINEService;
+use App\Services\RateLimitService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -43,10 +44,10 @@ class ProcessLINEWebhook implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(LINEService $lineService, AIService $aiService): void
+    public function handle(LINEService $lineService, AIService $aiService, RateLimitService $rateLimitService): void
     {
         try {
-            $this->processEvent($lineService, $aiService);
+            $this->processEvent($lineService, $aiService, $rateLimitService);
         } catch (\Exception $e) {
             Log::error('LINE webhook processing failed', [
                 'bot_id' => $this->bot->id,
@@ -62,7 +63,7 @@ class ProcessLINEWebhook implements ShouldQueue
     /**
      * Process the LINE event.
      */
-    protected function processEvent(LINEService $lineService, AIService $aiService): void
+    protected function processEvent(LINEService $lineService, AIService $aiService, RateLimitService $rateLimitService): void
     {
         // Only process message events
         if (!$lineService->isMessageEvent($this->event)) {
@@ -91,6 +92,13 @@ class ProcessLINEWebhook implements ShouldQueue
             return;
         }
 
+        // Check rate limit before processing
+        $rateLimitResult = $rateLimitService->checkRateLimit($this->bot, $userId);
+        if (!$rateLimitResult['allowed']) {
+            $this->handleRateLimitExceeded($lineService, $rateLimitService, $replyToken, $rateLimitResult['status']);
+            return;
+        }
+
         // Show loading indicator immediately (before AI processing)
         // This runs outside the transaction for immediate user feedback
         // Non-blocking - if it fails, we continue processing
@@ -104,7 +112,7 @@ class ProcessLINEWebhook implements ShouldQueue
         $isNewConversation = false;
 
         // Process in transaction (no broadcasts inside to prevent blocking)
-        DB::transaction(function () use ($lineService, $aiService, $userId, $replyToken, $messageData, &$userMessage, &$botMessage, &$conversation, &$isHandover, &$isNewConversation) {
+        DB::transaction(function () use ($lineService, $aiService, $rateLimitService, $userId, $replyToken, $messageData, &$userMessage, &$botMessage, &$conversation, &$isHandover, &$isNewConversation) {
             // Find or create conversation
             $existingConversation = Conversation::where('bot_id', $this->bot->id)
                 ->where('external_customer_id', $userId)
@@ -133,6 +141,9 @@ class ProcessLINEWebhook implements ShouldQueue
                 'type' => 'text',
                 'external_message_id' => $messageData['id'],
             ]);
+
+            // Increment rate limit counters after successful message save
+            $rateLimitService->incrementCounters($this->bot, $userId);
 
             // Check handover status
             $isHandover = $conversation->is_handover;
@@ -272,6 +283,36 @@ class ProcessLINEWebhook implements ShouldQueue
             $lineService->reply($this->bot, $replyToken, [$response]);
         } catch (\Exception $e) {
             Log::warning('Failed to send non-text message response', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Handle rate limit exceeded.
+     * Sends custom message if configured, otherwise stays silent.
+     */
+    protected function handleRateLimitExceeded(
+        LINEService $lineService,
+        RateLimitService $rateLimitService,
+        ?string $replyToken,
+        string $status
+    ): void {
+        // Get custom message from bot settings (null = silent)
+        $message = $rateLimitService->getRateLimitMessage($status, $this->bot->settings);
+
+        // If no custom message, stay silent (default behavior)
+        if (!$message || !$replyToken) {
+            return;
+        }
+
+        // Send custom rate limit message to user
+        try {
+            $lineService->reply($this->bot, $replyToken, [$message]);
+        } catch (\Exception $e) {
+            Log::warning('Failed to send rate limit message', [
+                'bot_id' => $this->bot->id,
+                'status' => $status,
                 'error' => $e->getMessage(),
             ]);
         }

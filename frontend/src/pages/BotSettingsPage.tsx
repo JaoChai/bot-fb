@@ -7,12 +7,15 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Loader2, Clock } from 'lucide-react';
 
 interface BotSettingsFormData {
   daily_message_limit: number;
-  message_limit_per_user: number;
+  per_user_limit: number;
+  rate_limit_bot_message: string;
+  rate_limit_user_message: string;
   easy_slip_enabled: boolean;
   hitl_enabled: boolean;
   reply_when_called_only: boolean;
@@ -35,7 +38,9 @@ export function BotSettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState<BotSettingsFormData>({
     daily_message_limit: 100,
-    message_limit_per_user: 10,
+    per_user_limit: 10,
+    rate_limit_bot_message: '',
+    rate_limit_user_message: '',
     easy_slip_enabled: false,
     hitl_enabled: false,
     reply_when_called_only: false,
@@ -121,16 +126,50 @@ export function BotSettingsPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="user-limit" className="font-semibold">
-                  จำนวนข้อความต่อคนต่อวัน: {formData.message_limit_per_user}
+                  จำนวนข้อความต่อคนต่อวัน: {formData.per_user_limit}
                 </Label>
                 <Slider
                   id="user-limit"
                   min={1}
                   max={100}
                   step={1}
-                  value={[formData.message_limit_per_user]}
-                  onValueChange={(value) => handleChange('message_limit_per_user', value[0])}
+                  value={[formData.per_user_limit]}
+                  onValueChange={(value) => handleChange('per_user_limit', value[0])}
                 />
+              </div>
+
+              <div className="border-t pt-4 mt-4">
+                <p className="text-sm text-muted-foreground mb-4">
+                  ข้อความเมื่อถูกจำกัด (เว้นว่างไว้ = บอทจะไม่ตอบ)
+                </p>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="rate-limit-bot-msg" className="font-semibold">
+                      ข้อความเมื่อบอทถูกจำกัด (รวมทุกคน)
+                    </Label>
+                    <Textarea
+                      id="rate-limit-bot-msg"
+                      placeholder="ตัวอย่าง: ขออภัยครับ บอทได้รับข้อความจำนวนมากในวันนี้ กรุณาลองใหม่พรุ่งนี้ครับ"
+                      value={formData.rate_limit_bot_message}
+                      onChange={(e) => handleChange('rate_limit_bot_message', e.target.value)}
+                      rows={2}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="rate-limit-user-msg" className="font-semibold">
+                      ข้อความเมื่อผู้ใช้ถูกจำกัด (ต่อคน)
+                    </Label>
+                    <Textarea
+                      id="rate-limit-user-msg"
+                      placeholder="ตัวอย่าง: ขออภัยครับ คุณส่งข้อความครบจำนวนที่กำหนดต่อวันแล้ว กรุณาลองใหม่พรุ่งนี้ครับ"
+                      value={formData.rate_limit_user_message}
+                      onChange={(e) => handleChange('rate_limit_user_message', e.target.value)}
+                      rows={2}
+                    />
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
