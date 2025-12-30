@@ -96,9 +96,11 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
-            // Note: ATTR_EMULATE_PREPARES was disabled for better PostgreSQL boolean support
-            // If connection issues occur with Neon.tech PgBouncer, consider re-enabling
-            'options' => [],
+            // Enable ATTR_EMULATE_PREPARES for Neon.tech PgBouncer compatibility
+            // This prevents "cached plan must not change result type" errors after schema changes
+            'options' => [
+                \PDO::ATTR_EMULATE_PREPARES => true,
+            ],
         ],
 
         'sqlsrv' => [
