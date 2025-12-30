@@ -162,6 +162,46 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
+// Temporary debug endpoint - remove after debugging
+Route::get('/debug/bot-settings/{botId}', function ($botId, \Illuminate\Http\Request $request) {
+    try {
+        $user = $request->user();
+        $bot = \App\Models\Bot::find($botId);
+
+        $debug = [
+            'step' => 'start',
+            'user_id' => $user?->id,
+            'user_email' => $user?->email,
+            'bot_exists' => $bot !== null,
+            'bot_id' => $bot?->id,
+            'bot_user_id' => $bot?->user_id,
+            'is_owner' => $user && $bot && $user->id === $bot->user_id,
+        ];
+
+        if ($bot) {
+            $debug['step'] = 'loading_settings';
+            $settings = $bot->settings;
+            $debug['settings_exists'] = $settings !== null;
+            $debug['settings_id'] = $settings?->id;
+
+            if ($settings) {
+                $debug['step'] = 'serializing';
+                $debug['settings_json_length'] = strlen($settings->toJson());
+            }
+        }
+
+        $debug['step'] = 'complete';
+        return response()->json($debug);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => collect(explode("\n", $e->getTraceAsString()))->take(10)->toArray(),
+        ], 500);
+    }
+})->middleware('auth:sanctum');
+
 // Broadcasting authentication endpoint
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
