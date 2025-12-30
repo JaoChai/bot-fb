@@ -184,6 +184,36 @@ Route::get('/debug-schema', function () {
     }
 });
 
+// Debug conversations - TEMPORARY
+Route::get('/debug-conversations/{botId}', function ($botId) {
+    try {
+        $bot = \App\Models\Bot::findOrFail($botId);
+        $conversation = $bot->conversations()
+            ->with(['customerProfile'])
+            ->first();
+
+        if (!$conversation) {
+            return response()->json(['message' => 'No conversations found']);
+        }
+
+        // Test ConversationResource
+        $resource = new \App\Http\Resources\ConversationResource($conversation);
+
+        return response()->json([
+            'conversation_id' => $conversation->id,
+            'context_cleared_at' => $conversation->context_cleared_at,
+            'resource_works' => true,
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => collect(explode("\n", $e->getTraceAsString()))->take(10)->toArray(),
+        ], 500);
+    }
+});
+
 // Broadcasting authentication endpoint
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
