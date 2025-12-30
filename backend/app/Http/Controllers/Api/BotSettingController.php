@@ -15,32 +15,14 @@ class BotSettingController extends Controller
      */
     public function show(Request $request, Bot $bot): JsonResponse
     {
-        try {
-            $this->authorize('view', $bot);
+        $this->authorize('view', $bot);
 
-            // Get or create settings for this bot
-            $settings = $bot->settings ?? $this->createDefaultSettings($bot);
+        // Get or create settings for this bot
+        $settings = $bot->settings ?? $this->createDefaultSettings($bot);
 
-            return response()->json([
-                'data' => $settings,
-            ]);
-        } catch (\Throwable $e) {
-            \Log::error('BotSettingController@show error', [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'bot_id' => $bot->id ?? 'unknown',
-                'user_id' => $request->user()?->id ?? 'unknown',
-            ]);
-
-            return response()->json([
-                'error' => $e->getMessage(),
-                'debug' => [
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine(),
-                ],
-            ], 500);
-        }
+        return response()->json([
+            'data' => $settings,
+        ]);
     }
 
     /**
