@@ -168,13 +168,24 @@ Route::get('/debug-bots', function () {
         // Test database connection
         \Illuminate\Support\Facades\DB::connection()->getPdo();
 
-        // Test Bot model
-        $count = \App\Models\Bot::count();
+        // Test Bot model with relationships
+        $bot = \App\Models\Bot::with(['settings', 'defaultFlow'])->first();
+
+        // Test BotResource
+        if ($bot) {
+            $resource = new \App\Http\Resources\BotResource($bot);
+            $resourceArray = $resource->toArray(request());
+        }
 
         return response()->json([
             'status' => 'ok',
-            'bot_count' => $count,
-            'db_connection' => 'ok'
+            'bot_count' => \App\Models\Bot::count(),
+            'db_connection' => 'ok',
+            'relationships' => $bot ? [
+                'has_settings' => $bot->settings !== null,
+                'has_default_flow' => $bot->defaultFlow !== null,
+            ] : null,
+            'resource_test' => isset($resourceArray) ? 'ok' : 'no_bots',
         ]);
     } catch (\Throwable $e) {
         return response()->json([
