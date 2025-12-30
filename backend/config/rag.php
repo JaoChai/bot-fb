@@ -159,4 +159,62 @@ return [
         // Timeout in seconds for enhancement LLM call
         'timeout' => 5,
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Chain-of-Thought (CoT) Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Automatically detects complex questions and instructs the LLM to use
+    | step-by-step reasoning for better accuracy.
+    |
+    | Research shows: CoT improves accuracy on reasoning tasks by 10-30%
+    | Cost: No additional API calls (uses heuristics-based detection)
+    |
+    */
+    'chain_of_thought' => [
+        // Enable/disable Chain-of-Thought auto-detection
+        'enabled' => env('RAG_COT_ENABLED', true),
+
+        // Minimum complexity score to trigger CoT (0-5 scale)
+        // Score is calculated from: message length, question marks, keywords
+        'complexity_threshold' => env('RAG_COT_THRESHOLD', 2),
+
+        // Multiplier for max_tokens when CoT is active
+        // Complex questions need more tokens for reasoning
+        'max_tokens_multiplier' => env('RAG_COT_TOKENS_MULTIPLIER', 1.5),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Contextual Retrieval Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Adds contextual information to chunks before embedding for better
+    | retrieval accuracy. Based on Anthropic's Contextual Retrieval technique.
+    |
+    | Research shows: Reduces retrieval failure by ~49%
+    | Cost: ~$0.001-0.005 per document (1 summary + N/5 context calls)
+    |
+    */
+    'contextual_retrieval' => [
+        // Enable/disable contextual retrieval for new documents
+        'enabled' => env('RAG_CONTEXTUAL_ENABLED', true),
+
+        // LLM model for context generation (cheap, fast model recommended)
+        // Options: openai/gpt-4o-mini (cheaper), openai/gpt-5-mini (better reasoning)
+        'model' => env('RAG_CONTEXT_MODEL', 'openai/gpt-5-mini'),
+
+        // Maximum tokens for document summary
+        'max_summary_tokens' => env('RAG_CONTEXT_SUMMARY_TOKENS', 200),
+
+        // Maximum tokens for each chunk context
+        'max_context_tokens' => env('RAG_CONTEXT_CHUNK_TOKENS', 100),
+
+        // Number of chunks to process per LLM call (batch size)
+        'batch_size' => env('RAG_CONTEXT_BATCH_SIZE', 5),
+
+        // Timeout in seconds for context generation
+        'timeout' => 30,
+    ],
 ];

@@ -71,6 +71,7 @@ class SemanticSearchService
                     'chunk_index' => $chunk->chunk_index,
                     'similarity' => round($similarity, 4),
                     'metadata' => $chunk->metadata,
+                    'has_context' => !empty($chunk->context_text),
                 ];
             })
             ->filter(fn ($item) => $item['similarity'] >= $threshold)
@@ -130,6 +131,7 @@ class SemanticSearchService
                         'chunk_index' => $chunk->chunk_index,
                         'similarity' => round($similarity, 4),
                         'metadata' => $chunk->metadata,
+                        'has_context' => !empty($chunk->context_text),
                     ];
                 })
                 ->filter(fn ($item) => $item['similarity'] >= $threshold)

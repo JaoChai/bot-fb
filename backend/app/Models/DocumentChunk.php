@@ -14,6 +14,7 @@ class DocumentChunk extends Model
     protected $fillable = [
         'document_id',
         'content',
+        'context_text',  // Contextual Retrieval: LLM-generated context for better embedding
         'chunk_index',
         'start_char',
         'end_char',

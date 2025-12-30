@@ -35,8 +35,9 @@ class RAGService
      *
      * Flow:
      * 1. Analyze intent using Decision Model
-     * 2. Get KB context if intent is 'knowledge' and KB enabled
-     * 3. Generate response using Chat Model
+     * 2. Detect question complexity for Chain-of-Thought
+     * 3. Get KB context if intent is 'knowledge' and KB enabled
+     * 4. Generate response using Chat Model (with CoT if complex)
      *
      * @param Bot $bot The bot to respond as
      * @param string $userMessage The user's message
@@ -54,7 +55,10 @@ class RAGService
         // Step 1: Analyze intent using Decision Model
         $intent = $this->analyzeIntent($bot, $userMessage, $apiKey);
 
-        // Step 2: Initialize KB metadata
+        // Step 2: Detect complexity for Chain-of-Thought
+        $complexity = $this->detectComplexity($userMessage);
+
+        // Step 3: Initialize KB metadata
         $kbContext = '';
         $kbMetadata = [
             'enabled' => false,
@@ -62,7 +66,7 @@ class RAGService
             'chunks_used' => [],
         ];
 
-        // Step 3: Get KB context if intent is 'knowledge' and KB enabled
+        // Step 4: Get KB context if intent is 'knowledge' and KB enabled
         // Also get KB context if intent was skipped and KB is enabled (backward compatibility)
         $shouldUseKB = ($intent['intent'] === 'knowledge' || isset($intent['skipped']))
             && $this->shouldUseKnowledgeBase($bot);
@@ -75,7 +79,7 @@ class RAGService
             );
         }
 
-        // Step 4: Build enhanced system prompt with KB context and multiple bubbles
+        // Step 5: Build enhanced system prompt with KB context and multiple bubbles
         // Priority: Bot system_prompt > Flow system_prompt > Default
         $systemPrompt = $this->buildEnhancedPrompt(
             $this->getSystemPromptForBot($bot),
@@ -83,11 +87,31 @@ class RAGService
             $bot
         );
 
-        // Step 5: Get chat models
+        // Step 6: Add Chain-of-Thought instruction if question is complex
+        if ($complexity['is_complex'] && config('rag.chain_of_thought.enabled', true)) {
+            $language = $this->detectLanguage($userMessage);
+            $systemPrompt .= $this->buildChainOfThoughtInstruction($language);
+
+            Log::debug('Chain-of-Thought activated', [
+                'bot_id' => $bot->id,
+                'complexity_score' => $complexity['score'],
+                'reasons' => $complexity['reasons'],
+                'language' => $language,
+            ]);
+        }
+
+        // Step 7: Get chat models
         $chatModel = $this->getChatModelForBot($bot);
         $fallbackChatModel = $this->getFallbackChatModelForBot($bot);
 
-        // Step 6: Generate response using Chat Model
+        // Step 8: Calculate max tokens (increase for complex questions)
+        $maxTokens = $bot->llm_max_tokens;
+        if ($complexity['is_complex']) {
+            $multiplier = config('rag.chain_of_thought.max_tokens_multiplier', 1.5);
+            $maxTokens = (int) min($maxTokens * $multiplier, 4096);
+        }
+
+        // Step 9: Generate response using Chat Model
         $result = $this->openRouter->generateBotResponse(
             userMessage: $userMessage,
             systemPrompt: $systemPrompt,
@@ -95,13 +119,14 @@ class RAGService
             model: $chatModel,
             fallbackModel: $fallbackChatModel,
             temperature: $bot->llm_temperature,
-            maxTokens: $bot->llm_max_tokens,
+            maxTokens: $maxTokens,
             apiKeyOverride: $apiKey
         );
 
         // Add metadata to result
         $result['intent'] = $intent;
         $result['rag'] = $kbMetadata;
+        $result['complexity'] = $complexity;
         $result['models_used'] = [
             'decision' => $intent['model_used'] ?? null,
             'chat' => $result['model'] ?? $chatModel,
@@ -722,5 +747,148 @@ PROMPT;
             'query_enhancement_enabled' => $this->queryEnhancement?->isEnabled() ?? false,
             'reranking_enabled' => $this->hybridSearchService->isRerankingEnabled(),
         ];
+    }
+
+    // =========================================================================
+    // Chain-of-Thought (CoT) Methods
+    // =========================================================================
+
+    /**
+     * Detect if a user message requires complex reasoning (Chain-of-Thought).
+     *
+     * Uses heuristics-based detection to avoid additional LLM calls.
+     * Returns complexity score and reasons for activation.
+     *
+     * @param string $userMessage The user's message
+     * @return array{is_complex: bool, score: int, reasons: array}
+     */
+    protected function detectComplexity(string $userMessage): array
+    {
+        $score = 0;
+        $reasons = [];
+        $threshold = config('rag.chain_of_thought.complexity_threshold', 2);
+
+        // 1. Message length > 100 characters (indicates detailed question)
+        if (mb_strlen($userMessage) > 100) {
+            $score += 1;
+            $reasons[] = 'long_message';
+        }
+
+        // 2. Multiple questions (multiple question marks)
+        $questionMarkCount = substr_count($userMessage, '?');
+        if ($questionMarkCount > 1) {
+            $score += 2;
+            $reasons[] = 'multiple_questions';
+        }
+
+        // 3. Reasoning keywords that require step-by-step thinking
+        $reasoningKeywords = [
+            // English
+            'compare', 'comparison', 'versus', 'vs',
+            'analyze', 'analysis', 'evaluate', 'assessment',
+            'why', 'how come', 'reason',
+            'explain', 'elaborate', 'describe in detail',
+            'pros and cons', 'advantages and disadvantages',
+            'step by step', 'steps to', 'process',
+            'calculate', 'compute', 'solve',
+            'if', 'assuming', 'suppose', 'what if',
+            'difference between', 'similarities',
+            'best', 'recommend', 'suggest', 'which one',
+            // Thai
+            'เปรียบเทียบ', 'เทียบกับ',
+            'วิเคราะห์', 'ประเมิน',
+            'ทำไม', 'เพราะอะไร', 'สาเหตุ',
+            'อธิบาย', 'ขยายความ',
+            'ข้อดีข้อเสีย', 'ข้อดี', 'ข้อเสีย',
+            'ทีละขั้นตอน', 'ขั้นตอน', 'วิธีการ',
+            'คำนวณ', 'หาค่า',
+            'ถ้า', 'สมมติ', 'หาก',
+            'ความแตกต่าง', 'ต่างกันยังไง',
+            'ดีที่สุด', 'แนะนำ', 'เลือกอันไหน',
+        ];
+
+        $lowerMessage = mb_strtolower($userMessage);
+        foreach ($reasoningKeywords as $keyword) {
+            if (mb_stripos($lowerMessage, $keyword) !== false) {
+                $score += 2;
+                $reasons[] = "keyword:{$keyword}";
+                break; // Only count once for keywords
+            }
+        }
+
+        // 4. Contains numbers with operations (likely calculation)
+        if (preg_match('/\d+\s*[\+\-\*\/\%]\s*\d+/', $userMessage)) {
+            $score += 1;
+            $reasons[] = 'contains_calculation';
+        }
+
+        // 5. Contains list indicators (enumeration questions)
+        if (preg_match('/\d+[\.\)]\s|\b(first|second|third|firstly|secondly|อันดับ|ประการ)\b/i', $userMessage)) {
+            $score += 1;
+            $reasons[] = 'enumeration';
+        }
+
+        return [
+            'is_complex' => $score >= $threshold,
+            'score' => $score,
+            'reasons' => $reasons,
+        ];
+    }
+
+    /**
+     * Build Chain-of-Thought instruction to append to system prompt.
+     *
+     * Instructs the LLM to think step-by-step for complex questions.
+     *
+     * @param string $language 'thai' or 'english'
+     * @return string The CoT instruction to append
+     */
+    protected function buildChainOfThoughtInstruction(string $language = 'thai'): string
+    {
+        if ($language === 'thai') {
+            return <<<PROMPT
+
+
+## คำแนะนำสำหรับคำถามซับซ้อน
+คำถามนี้ต้องการการวิเคราะห์อย่างละเอียด กรุณา:
+1. **แยกประเด็น**: ระบุประเด็นสำคัญที่ต้องพิจารณา
+2. **วิเคราะห์ทีละขั้น**: อธิบายเหตุผลหรือขั้นตอนอย่างชัดเจน
+3. **สรุปคำตอบ**: ให้คำตอบที่ชัดเจนและครบถ้วน
+
+PROMPT;
+        }
+
+        return <<<PROMPT
+
+
+## Instructions for Complex Questions
+This question requires detailed analysis. Please:
+1. **Identify Key Points**: Break down the important aspects to consider
+2. **Analyze Step by Step**: Explain your reasoning or process clearly
+3. **Provide Conclusion**: Give a clear and comprehensive answer
+
+PROMPT;
+    }
+
+    /**
+     * Detect the primary language of a message.
+     *
+     * Simple detection based on Thai character presence.
+     *
+     * @param string $message The message to analyze
+     * @return string 'thai' or 'english'
+     */
+    protected function detectLanguage(string $message): string
+    {
+        // Count Thai characters (Unicode range: \x{0E00}-\x{0E7F})
+        $thaiCharCount = preg_match_all('/[\x{0E00}-\x{0E7F}]/u', $message);
+
+        // If more than 20% Thai characters, consider it Thai
+        $totalChars = mb_strlen($message);
+        if ($totalChars > 0 && ($thaiCharCount / $totalChars) > 0.2) {
+            return 'thai';
+        }
+
+        return 'english';
     }
 }
