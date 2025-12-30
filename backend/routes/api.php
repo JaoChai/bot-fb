@@ -162,6 +162,28 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
+// Debug endpoint - TEMPORARY for diagnosing 500 error
+Route::get('/debug-schema', function () {
+    try {
+        $hasColumn = \Illuminate\Support\Facades\Schema::hasColumn('conversations', 'context_cleared_at');
+        $migrations = \Illuminate\Support\Facades\DB::table('migrations')
+            ->where('migration', 'like', '%context_cleared%')
+            ->pluck('migration');
+
+        return response()->json([
+            'has_context_cleared_at' => $hasColumn,
+            'related_migrations' => $migrations,
+            'last_migration' => \Illuminate\Support\Facades\DB::table('migrations')->orderByDesc('id')->first(),
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+        ], 500);
+    }
+});
+
 // Broadcasting authentication endpoint
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
