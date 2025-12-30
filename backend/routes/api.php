@@ -162,6 +162,11 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
+// Super simple test endpoint
+Route::get('/debug-test', function () {
+    return response()->json(['status' => 'debug-test-ok']);
+})->name('debug.test');
+
 // Debug endpoint - TEMPORARY (tests BEFORE route model binding)
 Route::get('/debug-settings/{botId}', function ($botId) {
     try {
