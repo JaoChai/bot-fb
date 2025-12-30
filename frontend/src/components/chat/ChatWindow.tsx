@@ -5,9 +5,21 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
   useConversationMessages,
   useSendAgentMessage,
   useToggleHandover,
+  useClearContext,
 } from '@/hooks/useConversations';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -19,6 +31,7 @@ import {
   User,
   Headphones,
   ChevronDown,
+  RotateCcw,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
@@ -67,6 +80,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
   // Mutations
   const sendAgentMessage = useSendAgentMessage(botId);
   const toggleHandover = useToggleHandover(botId);
+  const clearContext = useClearContext(botId);
 
   // Auto scroll to bottom when messages change
   useEffect(() => {
@@ -120,6 +134,23 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
       toast({
         title: 'เกิดข้อผิดพลาด',
         description: 'ไม่สามารถสลับโหมด Bot ได้',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Handle clear context
+  const handleClearContext = async () => {
+    try {
+      await clearContext.mutateAsync(conversation.id);
+      toast({
+        title: 'Reset บริบทสำเร็จ',
+        description: 'Bot จะเริ่มต้นใหม่โดยไม่อ้างอิงประวัติก่อนหน้า',
+      });
+    } catch {
+      toast({
+        title: 'เกิดข้อผิดพลาด',
+        description: 'ไม่สามารถ reset บริบทได้',
         variant: 'destructive',
       });
     }
@@ -192,6 +223,38 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
             )}
           </Button>
 
+          {/* Clear Context Button */}
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={clearContext.isPending}
+                title="Reset บริบท Bot"
+              >
+                {clearContext.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-4 w-4" />
+                )}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset บริบท Bot?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Bot จะเริ่มบริบทใหม่ ไม่อ้างอิงประวัติเก่า แต่คุณยังดูประวัติย้อนหลังได้
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                <AlertDialogAction onClick={handleClearContext}>
+                  Reset บริบท
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
           {/* Info Button (for tablet) */}
           <Button
             variant="outline"
@@ -225,13 +288,44 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
               </div>
 
               {/* Messages */}
-              {messages.map((message, index) => (
-                <MessageBubble
-                  key={message.id}
-                  message={message}
-                  previousMessage={index > 0 ? messages[index - 1] : undefined}
-                />
-              ))}
+              {messages.map((message, index) => {
+                const previousMessage = index > 0 ? messages[index - 1] : undefined;
+
+                // Check if context was cleared between this and previous message
+                const contextClearedAt = conversation.context_cleared_at
+                  ? new Date(conversation.context_cleared_at)
+                  : null;
+                const messageTime = new Date(message.created_at);
+                const previousMessageTime = previousMessage
+                  ? new Date(previousMessage.created_at)
+                  : null;
+
+                // Show separator if context was cleared after previous message and before/at this message
+                const showContextSeparator = contextClearedAt && (
+                  (!previousMessageTime && messageTime >= contextClearedAt) ||
+                  (previousMessageTime && previousMessageTime < contextClearedAt && messageTime >= contextClearedAt)
+                );
+
+                return (
+                  <div key={message.id}>
+                    {/* Context cleared separator */}
+                    {showContextSeparator && (
+                      <div className="flex items-center gap-3 py-3 my-2">
+                        <div className="flex-1 h-px bg-amber-300 dark:bg-amber-700" />
+                        <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 px-3 py-1 rounded-full border border-amber-200 dark:border-amber-800">
+                          <RotateCcw className="h-3 w-3" />
+                          <span>Bot เริ่มบริบทใหม่ - {format(contextClearedAt, 'PPp', { locale: th })}</span>
+                        </div>
+                        <div className="flex-1 h-px bg-amber-300 dark:bg-amber-700" />
+                      </div>
+                    )}
+                    <MessageBubble
+                      message={message}
+                      previousMessage={previousMessage}
+                    />
+                  </div>
+                );
+              })}
 
               {/* Scroll anchor */}
               <div ref={messagesEndRef} />

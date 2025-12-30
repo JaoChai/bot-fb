@@ -253,6 +253,27 @@ export function useMarkAsRead(botId: number | undefined) {
   });
 }
 
+/**
+ * Hook to clear bot context for a conversation
+ * Bot will not reference messages before the cleared timestamp
+ */
+export function useClearContext(botId: number | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (conversationId: number) => {
+      const response = await api.post<ConversationResponse>(
+        `/bots/${botId}/conversations/${conversationId}/clear-context`
+      );
+      return response.data;
+    },
+    onSuccess: (_, conversationId) => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
+    },
+  });
+}
+
 // =====================
 // Notes/Memory Hooks
 // =====================

@@ -28,6 +28,7 @@ class Conversation extends Model
         'message_count',
         'unread_count',
         'last_message_at',
+        'context_cleared_at',
     ];
 
     protected $casts = [
@@ -37,6 +38,7 @@ class Conversation extends Model
         'context' => 'array',
         'last_message_at' => 'datetime',
         'bot_auto_enable_at' => 'datetime',
+        'context_cleared_at' => 'datetime',
     ];
 
     public function bot(): BelongsTo

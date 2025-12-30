@@ -353,6 +353,7 @@ export interface Conversation {
   last_message_at: string | null;
   bot_auto_enable_at: string | null;
   bot_auto_enable_remaining_seconds: number | null;
+  context_cleared_at: string | null;
   created_at: string;
   updated_at: string;
   // Relationships

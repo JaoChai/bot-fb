@@ -111,9 +111,15 @@ class AIService
      */
     protected function getConversationHistory(Conversation $conversation, int $limit = 10): array
     {
-        return $conversation->messages()
-            ->whereIn('sender', ['user', 'bot'])
-            ->latest()
+        $query = $conversation->messages()
+            ->whereIn('sender', ['user', 'bot']);
+
+        // Filter out messages before context was cleared
+        if ($conversation->context_cleared_at) {
+            $query->where('created_at', '>', $conversation->context_cleared_at);
+        }
+
+        return $query->latest()
             ->take($limit)
             ->get()
             ->reverse()

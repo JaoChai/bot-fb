@@ -32,6 +32,7 @@ class ConversationResource extends JsonResource
             'last_message_at' => $this->last_message_at?->toIso8601String(),
             'bot_auto_enable_at' => $this->bot_auto_enable_at?->toIso8601String(),
             'bot_auto_enable_remaining_seconds' => $this->getBotAutoEnableRemainingSeconds(),
+            'context_cleared_at' => $this->context_cleared_at?->toIso8601String(),
             'created_at' => $this->created_at->toIso8601String(),
             'updated_at' => $this->updated_at->toIso8601String(),
 
