@@ -162,17 +162,25 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
-// Debug endpoint - TEMPORARY
-Route::get('/debug-settings/{botId}', function ($botId) {
+// Debug endpoint - TEMPORARY (tests full controller flow)
+Route::get('/debug-settings/{bot}', function (\App\Models\Bot $bot) {
     try {
-        $bot = \App\Models\Bot::find($botId);
-        if (!$bot) {
-            return response()->json(['error' => 'Bot not found', 'bot_id' => $botId], 404);
+        // Step 1: Get user from token (simulating auth:sanctum)
+        $user = auth('sanctum')->user();
+        if (!$user) {
+            return response()->json(['step' => 1, 'error' => 'No authenticated user'], 401);
         }
 
+        // Step 2: Check authorization
+        if ($user->id !== $bot->user_id) {
+            return response()->json(['step' => 2, 'error' => 'Authorization failed', 'user_id' => $user->id, 'bot_user_id' => $bot->user_id], 403);
+        }
+
+        // Step 3: Get settings (using same logic as controller)
         $settings = $bot->settings;
+
+        // Step 4: If no settings, create defaults
         if (!$settings) {
-            // Try to create default settings
             $settings = \App\Models\BotSetting::create([
                 'bot_id' => $bot->id,
                 'daily_message_limit' => 1000,
@@ -181,11 +189,11 @@ Route::get('/debug-settings/{botId}', function ($botId) {
             ]);
         }
 
+        // Step 5: Return data (same as controller)
         return response()->json([
+            'step' => 5,
             'status' => 'ok',
-            'bot_id' => $bot->id,
-            'settings_id' => $settings->id ?? null,
-            'settings' => $settings,
+            'data' => $settings,
         ]);
     } catch (\Throwable $e) {
         return response()->json([
@@ -195,7 +203,7 @@ Route::get('/debug-settings/{botId}', function ($botId) {
             'trace' => collect(explode("\n", $e->getTraceAsString()))->take(10)->toArray(),
         ], 500);
     }
-})->name('debug.settings');
+})->middleware('auth:sanctum')->name('debug.settings');
 
 // Broadcasting authentication endpoint
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
