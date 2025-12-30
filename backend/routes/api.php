@@ -184,33 +184,56 @@ Route::get('/debug-schema', function () {
     }
 });
 
-// Debug conversations - TEMPORARY
-Route::get('/debug-conversations/{botId}', function ($botId) {
+// Debug conversations - TEMPORARY - test full controller flow
+Route::get('/debug-conversations/{botId}', function ($botId, \Illuminate\Http\Request $request) {
     try {
         $bot = \App\Models\Bot::findOrFail($botId);
 
-        // Simulate exact same query as ConversationController@index
+        // Simulate EXACT same flow as ConversationController@index
         $query = $bot->conversations()
             ->with(['customerProfile', 'assignedUser']);
 
-        // Get paginated results
-        $conversations = $query->orderByDesc('last_message_at')->paginate(20);
+        // Sorting - same as controller
+        $sortField = $request->input('sort_by', 'last_message_at');
+        $sortDirection = $request->input('sort_direction', 'desc');
+        $allowedSortFields = ['last_message_at', 'created_at', 'message_count', 'status'];
 
-        // Test ConversationResource collection
-        $resource = \App\Http\Resources\ConversationResource::collection($conversations);
+        if (in_array($sortField, $allowedSortFields)) {
+            $query->orderBy($sortField, $sortDirection === 'asc' ? 'asc' : 'desc');
+        } else {
+            $query->orderByDesc('last_message_at');
+        }
 
-        return response()->json([
-            'count' => $conversations->count(),
-            'total' => $conversations->total(),
-            'resource_works' => true,
-            'first_id' => $conversations->first()?->id,
-        ]);
+        // Status counts
+        $statusCounts = $bot->conversations()
+            ->selectRaw('status, COUNT(*) as count')
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+
+        $conversations = $query->paginate($request->input('per_page', 20));
+
+        // Test the EXACT resource output
+        $resource = \App\Http\Resources\ConversationResource::collection($conversations)
+            ->additional([
+                'meta' => [
+                    'status_counts' => [
+                        'active' => $statusCounts['active'] ?? 0,
+                        'closed' => $statusCounts['closed'] ?? 0,
+                        'handover' => $statusCounts['handover'] ?? 0,
+                        'total' => array_sum($statusCounts),
+                    ],
+                ],
+            ]);
+
+        // Force resolve to catch any serialization errors
+        return $resource->toResponse($request);
     } catch (\Throwable $e) {
         return response()->json([
             'error' => $e->getMessage(),
             'file' => $e->getFile(),
             'line' => $e->getLine(),
-            'trace' => collect(explode("\n", $e->getTraceAsString()))->take(10)->toArray(),
+            'trace' => collect(explode("\n", $e->getTraceAsString()))->take(15)->toArray(),
         ], 500);
     }
 });
