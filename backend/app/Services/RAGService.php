@@ -194,12 +194,18 @@ class RAGService
             $limit = $bot->kb_max_results ?? config('rag.max_results', 3);
             $threshold = $bot->kb_relevance_threshold ?? config('rag.default_threshold', 0.7);
 
+            // Get API key: Bot-level > User-level > ENV
+            $apiKey = $bot->openrouter_api_key
+                ?: $bot->user?->settings?->openrouter_api_key
+                ?: config('services.openrouter.api_key');
+
             foreach ($queryVariations as $variation) {
                 $results = $this->hybridSearchService->search(
                     knowledgeBaseId: $kb->id,
                     query: $variation,
                     limit: $limit,
-                    threshold: $threshold
+                    threshold: $threshold,
+                    apiKey: $apiKey
                 );
 
                 // Add results, will deduplicate later
@@ -669,11 +675,17 @@ PROMPT;
                 'kb_similarity_threshold' => $kb->pivot->kb_similarity_threshold ?? 0.7,
             ])->toArray();
 
+            // Get API key: Bot-level > User-level > ENV
+            $apiKey = $flow->bot?->openrouter_api_key
+                ?: $flow->bot?->user?->settings?->openrouter_api_key
+                ?: config('services.openrouter.api_key');
+
             // Search all KBs using hybrid search and merge results
             $results = $this->hybridSearchService->searchMultiple(
                 kbConfigs: $kbConfigs,
                 query: $query,
-                totalLimit: config('rag.max_results', 5)
+                totalLimit: config('rag.max_results', 5),
+                apiKey: $apiKey
             );
 
             if ($results->isEmpty()) {

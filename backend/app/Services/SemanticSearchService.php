@@ -25,17 +25,24 @@ class SemanticSearchService
      * @param string $query The search query
      * @param int $limit Maximum number of results
      * @param float|null $threshold Minimum similarity score (0-1)
+     * @param string|null $apiKey Optional API key to use (from user settings)
      */
     public function search(
         int $knowledgeBaseId,
         string $query,
         int $limit = 5,
-        ?float $threshold = null
+        ?float $threshold = null,
+        ?string $apiKey = null
     ): Collection {
         $threshold = $threshold ?? $this->relevanceThreshold;
 
+        // Use user's API key if provided, otherwise use default
+        $embeddingService = $apiKey
+            ? $this->embeddingService->withApiKey($apiKey)
+            : $this->embeddingService;
+
         // Generate embedding for the search query
-        $queryEmbedding = $this->embeddingService->generate($query);
+        $queryEmbedding = $embeddingService->generate($query);
 
         // Find nearest neighbors using pgvector
         // The HasNeighbors trait provides nearestNeighbors() method
@@ -85,18 +92,25 @@ class SemanticSearchService
      * @param array $kbConfigs Array of KB configs: [['id' => int, 'kb_top_k' => int, 'kb_similarity_threshold' => float], ...]
      * @param string $query The search query
      * @param int $totalLimit Maximum total results to return across all KBs
+     * @param string|null $apiKey Optional API key to use (from user settings)
      */
     public function searchMultiple(
         array $kbConfigs,
         string $query,
-        int $totalLimit = 10
+        int $totalLimit = 10,
+        ?string $apiKey = null
     ): Collection {
         if (empty($kbConfigs)) {
             return collect([]);
         }
 
+        // Use user's API key if provided, otherwise use default
+        $embeddingService = $apiKey
+            ? $this->embeddingService->withApiKey($apiKey)
+            : $this->embeddingService;
+
         // Generate embedding once for all searches
-        $queryEmbedding = $this->embeddingService->generate($query);
+        $queryEmbedding = $embeddingService->generate($query);
 
         $allResults = collect([]);
 

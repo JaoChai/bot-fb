@@ -121,11 +121,17 @@ class KnowledgeBaseController extends Controller
         }
 
         try {
+            // Get API key: Bot-level > User-level > ENV
+            $apiKey = $bot->openrouter_api_key
+                ?: $bot->user?->settings?->openrouter_api_key
+                ?: config('services.openrouter.api_key');
+
             $results = $searchService->search(
                 $kb->id,
                 $validated['query'],
                 $validated['limit'] ?? 5,
-                $validated['threshold'] ?? null
+                $validated['threshold'] ?? null,
+                $apiKey
             );
 
             return response()->json([
