@@ -162,6 +162,41 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
+// Debug endpoint - TEMPORARY
+Route::get('/debug-settings/{botId}', function ($botId) {
+    try {
+        $bot = \App\Models\Bot::find($botId);
+        if (!$bot) {
+            return response()->json(['error' => 'Bot not found', 'bot_id' => $botId], 404);
+        }
+
+        $settings = $bot->settings;
+        if (!$settings) {
+            // Try to create default settings
+            $settings = \App\Models\BotSetting::create([
+                'bot_id' => $bot->id,
+                'daily_message_limit' => 1000,
+                'per_user_limit' => 100,
+                'rate_limit_per_minute' => 20,
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'ok',
+            'bot_id' => $bot->id,
+            'settings_id' => $settings->id ?? null,
+            'settings' => $settings,
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => collect(explode("\n", $e->getTraceAsString()))->take(10)->toArray(),
+        ], 500);
+    }
+})->name('debug.settings');
+
 // Broadcasting authentication endpoint
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
