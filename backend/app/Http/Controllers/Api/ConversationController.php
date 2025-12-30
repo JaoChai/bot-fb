@@ -295,6 +295,25 @@ class ConversationController extends Controller
     }
 
     /**
+     * Clear bot context - bot will not reference messages before this point.
+     */
+    public function clearContext(Request $request, Bot $bot, Conversation $conversation): JsonResponse
+    {
+        $this->authorize('update', $bot);
+        $this->validateConversationBelongsToBot($conversation, $bot);
+
+        $conversation->update(['context_cleared_at' => now()]);
+
+        // Broadcast the update for real-time sync
+        broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
+
+        return response()->json([
+            'message' => 'Bot context cleared successfully',
+            'data' => new ConversationResource($conversation->fresh(['customerProfile'])),
+        ]);
+    }
+
+    /**
      * Get conversation statistics for a bot.
      * Optimized: Single query with CTE instead of 6 separate queries.
      */
