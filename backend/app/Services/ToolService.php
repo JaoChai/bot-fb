@@ -140,6 +140,10 @@ class ToolService
             return 'ไม่พบการตั้งค่า Flow';
         }
 
+        // Get bot from context (already loaded) or from flow relationship
+        /** @var \App\Models\Bot|null $bot */
+        $bot = $context['bot'] ?? $flow->bot;
+
         // Get knowledge bases from flow
         $knowledgeBases = $flow->knowledgeBases;
 
@@ -148,8 +152,8 @@ class ToolService
         }
 
         // Get API key: Bot-level > User-level > ENV config
-        $apiKey = $flow->bot?->openrouter_api_key
-            ?: $flow->bot?->user?->settings?->openrouter_api_key
+        $apiKey = $bot?->openrouter_api_key
+            ?: $bot?->user?->settings?->openrouter_api_key
             ?: config('services.openrouter.api_key');
 
         if (empty($apiKey)) {
