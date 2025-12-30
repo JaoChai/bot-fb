@@ -114,7 +114,7 @@ export function DocumentUpload({ onSubmit, isSubmitting }: DocumentUploadProps) 
                   characterPercentage > 90
                     ? 'text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-950'
                     : characterPercentage > 75
-                    ? 'text-yellow-600 bg-yellow-50 dark:text-yellow-400 dark:bg-yellow-950'
+                    ? 'text-foreground bg-muted font-medium'
                     : 'text-muted-foreground bg-muted/50'
                 )}
               >

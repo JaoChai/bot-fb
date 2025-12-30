@@ -18,17 +18,17 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
         ghost:
           "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
-        link: "text-primary underline-offset-4 hover:underline",
-        // CTA - Orange for call-to-action buttons
+        link: "text-foreground underline-offset-4 hover:underline",
+        // CTA - Same as default (black button)
         cta:
-          "bg-warning text-warning-foreground shadow-md hover:bg-warning/90 focus-visible:ring-warning/30",
+          "bg-primary text-primary-foreground shadow-md hover:bg-primary/90",
         "cta-outline":
-          "border-2 border-warning text-warning bg-transparent hover:bg-warning/10 focus-visible:ring-warning/30",
-        // Legacy aliases (for backward compatibility)
+          "border-2 border-foreground text-foreground bg-transparent hover:bg-accent",
+        // Legacy aliases (same as default)
         orange:
-          "bg-warning text-warning-foreground shadow-md hover:bg-warning/90 focus-visible:ring-warning/30",
+          "bg-primary text-primary-foreground shadow-md hover:bg-primary/90",
         "orange-outline":
-          "border-2 border-warning text-warning bg-transparent hover:bg-warning/10 focus-visible:ring-warning/30",
+          "border-2 border-foreground text-foreground bg-transparent hover:bg-accent",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",

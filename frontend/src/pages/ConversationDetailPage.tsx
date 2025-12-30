@@ -405,7 +405,7 @@ export function ConversationDetailPage() {
                   autoFocus
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                  <Headphones className="h-4 w-4 inline-block text-amber-600 dark:text-amber-400" />
+                  <Headphones className="h-4 w-4 inline-block text-foreground" />
                 </div>
               </div>
               <Button
@@ -492,7 +492,7 @@ function MessageBubble({ message, previousMessage }: MessageBubbleProps) {
             isUser
               ? 'bg-muted text-foreground'
               : message.sender === 'agent'
-              ? 'bg-amber-50 dark:bg-amber-950 text-foreground border border-amber-200 dark:border-amber-800'
+              ? 'bg-accent text-foreground border border-border'
               : 'bg-primary text-primary-foreground'
           )}
         >
@@ -543,8 +543,8 @@ function MessageBubble({ message, previousMessage }: MessageBubbleProps) {
         {/* Bot/Agent avatar */}
         {!isUser && (
           <Avatar className="h-8 w-8 shrink-0">
-            <AvatarFallback className={message.sender === 'agent' ? 'bg-amber-100 dark:bg-amber-900' : 'bg-primary'}>
-              <SenderIcon className={cn('h-4 w-4', message.sender === 'agent' ? 'text-amber-700 dark:text-amber-300' : 'text-primary-foreground')} />
+            <AvatarFallback className={message.sender === 'agent' ? 'bg-accent' : 'bg-primary'}>
+              <SenderIcon className={cn('h-4 w-4', message.sender === 'agent' ? 'text-foreground' : 'text-primary-foreground')} />
             </AvatarFallback>
           </Avatar>
         )}

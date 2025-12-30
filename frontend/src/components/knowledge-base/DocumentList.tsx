@@ -37,12 +37,12 @@ const STATUS_CONFIG = {
   pending: {
     label: 'รอดำเนินการ',
     icon: Clock,
-    className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800',
+    className: 'bg-muted text-muted-foreground border-border',
   },
   processing: {
     label: 'กำลังประมวลผล',
     icon: Loader2,
-    className: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800',
+    className: 'bg-muted text-foreground border-border',
     animate: true,
   },
   completed: {
@@ -59,9 +59,9 @@ const STATUS_CONFIG = {
 
 function getFileIcon(mimeType: string) {
   if (mimeType === 'application/pdf') {
-    return <File className="h-5 w-5 text-red-500" />;
+    return <File className="h-5 w-5 text-foreground" />;
   }
-  return <FileText className="h-5 w-5 text-blue-500" />;
+  return <FileText className="h-5 w-5 text-foreground" />;
 }
 
 export function DocumentList({

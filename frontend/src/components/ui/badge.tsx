@@ -17,15 +17,15 @@ const badgeVariants = cva(
           "border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
         outline:
           "text-foreground border-border [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
-        // Status badges with subtle background
+        // Status badges - neutral black & white theme
         success:
-          "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 [a&]:hover:bg-emerald-100 dark:[a&]:hover:bg-emerald-900",
+          "border-foreground bg-foreground text-background [a&]:hover:bg-foreground/90",
         warning:
-          "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300 [a&]:hover:bg-amber-100 dark:[a&]:hover:bg-amber-900",
+          "border-border bg-muted text-foreground [a&]:hover:bg-accent",
         info:
-          "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300 [a&]:hover:bg-blue-100 dark:[a&]:hover:bg-blue-900",
+          "border-border bg-accent text-foreground [a&]:hover:bg-muted",
         inactive:
-          "border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 [a&]:hover:bg-slate-200 dark:[a&]:hover:bg-slate-700",
+          "border-border bg-muted text-muted-foreground [a&]:hover:bg-accent",
       },
     },
     defaultVariants: {

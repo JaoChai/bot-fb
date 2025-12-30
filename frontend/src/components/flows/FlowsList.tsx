@@ -37,15 +37,15 @@ const FlowListItem = memo(function FlowListItem({
     <button
       onClick={onClick}
       className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all duration-200 cursor-pointer
-        ${flow.is_default ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-transparent'}
+        ${flow.is_default ? 'border-l-4 border-l-foreground' : 'border-l-4 border-l-transparent'}
         ${isSelected
-          ? 'bg-primary/10 text-primary font-medium'
+          ? 'bg-foreground text-background font-medium'
           : 'hover:bg-muted'
         }`}
     >
       <div className="flex items-center gap-2">
         {flow.is_default && (
-          <svg className="h-4 w-4 text-primary shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <svg className={`h-4 w-4 shrink-0 ${isSelected ? 'text-background' : 'text-foreground'}`} fill="currentColor" viewBox="0 0 20 20">
             <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
           </svg>
         )}
@@ -53,7 +53,7 @@ const FlowListItem = memo(function FlowListItem({
       </div>
       {flow.is_default && (
         <div className="mt-1 ml-6">
-          <span className="text-xs text-primary font-medium">Base Flow</span>
+          <span className={`text-xs font-medium ${isSelected ? 'text-background/70' : 'text-muted-foreground'}`}>Base Flow</span>
         </div>
       )}
     </button>
@@ -103,14 +103,14 @@ export const FlowsList = memo(function FlowsList({
     <div className="w-52 border-r bg-card flex flex-col">
       {/* Logo */}
       <div className="h-14 flex items-center px-4 border-b">
-        <span className="font-bold text-lg text-primary">BotFacebook</span>
+        <span className="font-bold text-lg">BotFacebook</span>
       </div>
 
       {/* Create New Flow Button */}
       <div className="p-3">
         <Button
           className="w-full"
-          variant="cta"
+          variant="default"
           onClick={handleCreateNew}
         >
           <Plus className="h-4 w-4 mr-2" />
@@ -142,7 +142,7 @@ export const FlowsList = memo(function FlowsList({
 
       {/* Bottom Action Buttons */}
       <div className="p-3 border-t space-y-2">
-        <Button variant="cta-outline" size="sm" className="w-full justify-start">
+        <Button variant="outline" size="sm" className="w-full justify-start">
           <Link2 className="h-4 w-4 mr-2" />
           Link ภายใน
         </Button>
@@ -167,7 +167,7 @@ export const FlowsList = memo(function FlowsList({
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start text-primary hover:text-primary"
+          className="w-full justify-start"
           onClick={handleBackToBots}
         >
           <ArrowLeft className="h-4 w-4 mr-2" />

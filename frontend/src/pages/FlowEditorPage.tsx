@@ -454,7 +454,7 @@ export function FlowEditorPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">Agentic Mode</span>
-                      <Badge variant="warning">
+                      <Badge variant="secondary">
                         AI ที่ฉลาดขึ้น
                       </Badge>
                     </div>

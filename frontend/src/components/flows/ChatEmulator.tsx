@@ -42,7 +42,7 @@ const ChatMessageItem = memo(function ChatMessageItem({
         <div
           className={`rounded-2xl px-4 py-2.5 text-sm ${
             message.role === 'user'
-              ? 'bg-warning text-warning-foreground rounded-br-md'
+              ? 'bg-foreground text-background rounded-br-md'
               : 'bg-muted rounded-bl-md'
           }`}
         >
@@ -55,7 +55,7 @@ const ChatMessageItem = memo(function ChatMessageItem({
             </span>
           )}
           {message.role === 'assistant' && message.isStreaming && message.content && (
-            <span className="animate-pulse text-warning">|</span>
+            <span className="animate-pulse text-foreground">|</span>
           )}
         </div>
       </div>
@@ -102,7 +102,7 @@ export const ChatEmulator = memo(function ChatEmulator({
   return (
     <div className="w-96 border-l bg-card flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 text-warning-foreground bg-warning border-b">
+      <div className="flex items-center justify-between px-4 py-3 text-background bg-foreground border-b">
         <div className="flex items-center gap-2">
           <MessageCircle className="h-5 w-5" />
           <span className="font-semibold">แชทจำลอง</span>
@@ -146,7 +146,7 @@ export const ChatEmulator = memo(function ChatEmulator({
           <input
             type="text"
             placeholder={isStreaming ? 'กำลังประมวลผล...' : disabled ? disabledReason : 'พิมพ์ข้อความ...'}
-            className="flex-1 px-4 py-2.5 rounded-full border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-warning/50"
+            className="flex-1 px-4 py-2.5 rounded-full border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -167,7 +167,7 @@ export const ChatEmulator = memo(function ChatEmulator({
               size="icon"
               onClick={handleSend}
               disabled={!input.trim() || disabled}
-              variant="cta"
+              variant="default"
               className="rounded-full h-10 w-10"
             >
               <Send className="h-4 w-4" />

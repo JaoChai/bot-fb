@@ -60,9 +60,9 @@ const noteTypeLabels = {
 };
 
 const noteTypeColors = {
-  note: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-  memory: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-  reminder: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+  note: 'bg-muted text-foreground',
+  memory: 'bg-foreground text-background',
+  reminder: 'bg-accent text-accent-foreground border border-border',
 };
 
 export function NotesPanel({ botId, conversationId }: NotesPanelProps) {
