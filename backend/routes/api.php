@@ -30,44 +30,6 @@ Route::prefix('auth')->middleware('throttle.auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login'])->name('auth.login');
 });
 
-// Temporary debug route - REMOVE after debugging
-Route::middleware(['auth:sanctum'])->get('/debug-bot-settings-auth/{botId}', function ($botId, \Illuminate\Http\Request $request) {
-    try {
-        $user = $request->user();
-        $bot = \App\Models\Bot::findOrFail($botId);
-
-        // Check authorization manually
-        $isOwner = $user->id === $bot->user_id;
-
-        if (!$isOwner) {
-            return response()->json([
-                'error' => 'Not authorized',
-                'user_id' => $user->id,
-                'bot_user_id' => $bot->user_id,
-            ], 403);
-        }
-
-        $settings = $bot->settings;
-        if (!$settings) {
-            $settings = \App\Models\BotSetting::create([
-                'bot_id' => $bot->id,
-                'daily_message_limit' => 1000,
-                'per_user_limit' => 100,
-                'rate_limit_per_minute' => 20,
-                'max_tokens_per_response' => 2000,
-            ]);
-        }
-        return response()->json(['status' => 'ok', 'data' => $settings]);
-    } catch (\Throwable $e) {
-        return response()->json([
-            'error' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-            'trace' => collect($e->getTrace())->take(5)->toArray(),
-        ], 500);
-    }
-});
-
 // Protected routes (authentication required) with API rate limiting
 Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
 
