@@ -162,30 +162,32 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
-// Debug endpoint - WITH middleware to test middleware errors
-Route::get('/debug-with-middleware/{botId}', function ($botId) {
+// Debug endpoint - WITH auth:sanctum ONLY
+Route::get('/debug-auth-only/{botId}', function ($botId) {
     try {
         $user = auth('sanctum')->user();
         $bot = \App\Models\Bot::find($botId);
         if (!$bot) {
             return response()->json(['step' => 1, 'error' => 'Bot not found', 'bot_id' => $botId], 404);
         }
-        $settings = $bot->settings;
-        return response()->json([
-            'status' => 'ok',
-            'user_id' => $user?->id,
-            'bot_id' => $bot->id,
-            'settings_id' => $settings?->id,
-            'settings' => $settings,
-        ]);
+        return response()->json(['status' => 'ok', 'user_id' => $user?->id, 'bot_id' => $bot->id]);
     } catch (\Throwable $e) {
-        return response()->json([
-            'error' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-        ], 500);
+        return response()->json(['error' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()], 500);
     }
-})->middleware(['auth:sanctum', 'throttle.api'])->name('debug.with-middleware');
+})->middleware('auth:sanctum')->name('debug.auth-only');
+
+// Debug endpoint - WITH throttle.api ONLY
+Route::get('/debug-throttle-only/{botId}', function ($botId) {
+    try {
+        $bot = \App\Models\Bot::find($botId);
+        if (!$bot) {
+            return response()->json(['step' => 1, 'error' => 'Bot not found', 'bot_id' => $botId], 404);
+        }
+        return response()->json(['status' => 'ok', 'bot_id' => $bot->id]);
+    } catch (\Throwable $e) {
+        return response()->json(['error' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()], 500);
+    }
+})->middleware('throttle.api')->name('debug.throttle-only');
 
 // Debug endpoint - NO MIDDLEWARE (works fine)
 Route::get('/debug-settings/{botId}', function ($botId) {
