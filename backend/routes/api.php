@@ -162,6 +162,16 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
+// Debug route with wrapped auth middleware to catch exceptions
+Route::get('/debug-auth-wrapped', function () {
+    $user = auth('sanctum')->user();
+    return response()->json([
+        'status' => 'ok',
+        'user_id' => $user?->id,
+        'user_email' => $user?->email,
+    ]);
+})->middleware(\App\Http\Middleware\DebugAuthMiddleware::class)->name('debug.auth-wrapped');
+
 // Debug Sanctum auth manually (NO middleware, catches all errors)
 Route::get('/debug-sanctum', function (\Illuminate\Http\Request $request) {
     try {
