@@ -17,7 +17,9 @@ use App\Services\RAGService;
 use App\Services\SemanticSearchService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -58,6 +60,32 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Document::class, DocumentPolicy::class);
 
         $this->configureRateLimiting();
+        $this->configureQueryLogging();
+    }
+
+    /**
+     * Configure slow query logging for performance monitoring.
+     * Only enabled in local/development environment.
+     */
+    protected function configureQueryLogging(): void
+    {
+        // Only log slow queries in local environment
+        if (! app()->environment('local')) {
+            return;
+        }
+
+        $slowQueryThreshold = (int) config('app.slow_query_threshold', 100); // ms
+
+        DB::listen(function ($query) use ($slowQueryThreshold) {
+            if ($query->time >= $slowQueryThreshold) {
+                Log::channel('single')->warning('Slow query detected', [
+                    'sql' => $query->sql,
+                    'bindings' => $query->bindings,
+                    'time_ms' => $query->time,
+                    'connection' => $query->connectionName,
+                ]);
+            }
+        });
     }
 
     /**

@@ -103,7 +103,7 @@ export const FlowsList = memo(function FlowsList({
     <div className="w-52 border-r bg-card flex flex-col">
       {/* Logo */}
       <div className="h-14 flex items-center px-4 border-b">
-        <span className="font-bold text-lg">BotFacebook</span>
+        <span className="font-bold text-lg">BotJao</span>
       </div>
 
       {/* Create New Flow Button */}
