@@ -116,13 +116,8 @@ class BotSettingController extends Controller
             'save_conversations' => true,
             'language' => 'th',
             'response_style' => 'professional',
-            // Multiple bubbles defaults
-            'multiple_bubbles_enabled' => false,
-            'multiple_bubbles_min' => 1,
-            'multiple_bubbles_max' => 3,
-            'multiple_bubbles_delimiter' => '|||',
-            'wait_multiple_bubbles_enabled' => false,
-            'wait_multiple_bubbles_ms' => 1500,
+            // Note: multiple_bubbles fields use database defaults
+            // They will be set automatically after migration runs
         ]);
     }
 }
