@@ -560,7 +560,6 @@ export function BotEditPage() {
                       variant="outline"
                       onClick={handleTestConnection}
                       disabled={isTestingConnection}
-                      className="text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
                     >
                       {isTestingConnection ? (
                         <>
@@ -607,7 +606,6 @@ export function BotEditPage() {
                     <Button
                       variant="outline"
                       onClick={handleTestConnection}
-                      className="text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
                     >
                       ทดสอบการเชื่อมต่อกับ Facebook Page นี้
                     </Button>
