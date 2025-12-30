@@ -162,45 +162,45 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b bg-background">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between p-2 sm:p-3 border-b bg-background">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
           {/* Back button - mobile only */}
           {onBack && (
             <Button
               variant="ghost"
               size="icon"
-              className="md:hidden h-10 w-10"
+              className="md:hidden h-9 w-9 flex-shrink-0"
               onClick={onBack}
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
           )}
-          <Avatar className="h-10 w-10">
+          <Avatar className="h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0">
             <AvatarImage src={conversation.customer_profile?.picture_url || undefined} />
             <AvatarFallback>{customerInitial}</AvatarFallback>
           </Avatar>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-semibold">{customerName}</h2>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="font-semibold text-sm sm:text-base truncate max-w-[120px] sm:max-w-none">{customerName}</h2>
               {conversation.is_handover ? (
-                <Badge variant="outline" className="border-dashed">
-                  <Headphones className="h-3 w-3 mr-1" />
+                <Badge variant="outline" className="border-dashed text-xs flex-shrink-0">
+                  <Headphones className="h-3 w-3 mr-1 hidden sm:inline" />
                   รอตอบ
                 </Badge>
               ) : (
-                <Badge variant="secondary">
-                  <Bot className="h-3 w-3 mr-1" />
-                  Bot เปิด
+                <Badge variant="secondary" className="text-xs flex-shrink-0">
+                  <Bot className="h-3 w-3 mr-1 hidden sm:inline" />
+                  Bot
                 </Badge>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground truncate">
               {channelLabels[conversation.channel_type]} - {conversation.message_count} ข้อความ
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
           {/* Toggle Bot Button */}
           <Button
             variant={conversation.is_handover ? 'default' : 'outline'}
@@ -357,7 +357,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
             การสนทนานี้ปิดแล้ว
           </div>
         ) : conversation.is_handover ? (
-          <form onSubmit={handleSendMessage} className="p-3">
+          <form onSubmit={handleSendMessage} className="p-2 sm:p-3">
             <div className="flex gap-2 max-w-3xl mx-auto">
               <div className="flex-1 relative">
                 <Input
@@ -365,7 +365,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
                   onChange={(e) => setMessageInput(e.target.value)}
                   placeholder="พิมพ์ข้อความ..."
                   disabled={sendAgentMessage.isPending}
-                  className="pr-12"
+                  className="pr-12 min-h-[44px] text-base sm:text-sm"
                   autoFocus
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -375,6 +375,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
               <Button
                 type="submit"
                 disabled={!messageInput.trim() || sendAgentMessage.isPending}
+                className="h-11 w-11 p-0"
               >
                 {sendAgentMessage.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -383,7 +384,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
                 )}
               </Button>
             </div>
-            <p className="text-center text-xs text-muted-foreground mt-2">
+            <p className="text-center text-xs text-muted-foreground mt-2 hidden sm:block">
               โหมดตอบเอง - ข้อความจะส่งถึงลูกค้าโดยตรง
             </p>
           </form>
@@ -441,7 +442,7 @@ function MessageBubble({ message, previousMessage }: MessageBubbleProps) {
         {/* Message bubble */}
         <div
           className={cn(
-            'max-w-[70%] rounded-lg px-4 py-2',
+            'max-w-[85%] sm:max-w-[70%] rounded-lg px-3 sm:px-4 py-2 break-words overflow-hidden',
             isUser
               ? 'bg-muted text-foreground'
               : message.sender === 'agent'

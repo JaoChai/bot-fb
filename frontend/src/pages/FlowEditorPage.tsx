@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -41,6 +42,9 @@ import {
   Trash2,
   Code,
   Minimize2,
+  List,
+  Settings,
+  MessageSquare,
 } from 'lucide-react';
 import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
 
@@ -135,6 +139,9 @@ export function FlowEditorPage() {
 
   // Collapsible sections
   const [isBaseFlowInfoOpen, setIsBaseFlowInfoOpen] = useState(false);
+
+  // Mobile navigation state
+  const [mobileActiveTab, setMobileActiveTab] = useState<'flows' | 'editor' | 'test'>('editor');
 
   // Issue #56 - Flow Editor Improvements
   const [isSystemPromptPreview, setIsSystemPromptPreview] = useState(false);
@@ -364,18 +371,87 @@ export function FlowEditorPage() {
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const showEditor = selectedFlowId || isCreatingNew;
 
+  // Mobile tab navigation component
+  const MobileBottomTabs = () => (
+    <div className="fixed bottom-0 left-0 right-0 border-t bg-background md:hidden z-50">
+      <div className="grid grid-cols-3 h-14">
+        <button
+          onClick={() => setMobileActiveTab('flows')}
+          className={cn(
+            'flex flex-col items-center justify-center gap-0.5 transition-colors',
+            mobileActiveTab === 'flows'
+              ? 'text-foreground bg-muted'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <List className="h-5 w-5" />
+          <span className="text-xs">Flows</span>
+        </button>
+        <button
+          onClick={() => setMobileActiveTab('editor')}
+          className={cn(
+            'flex flex-col items-center justify-center gap-0.5 transition-colors',
+            mobileActiveTab === 'editor'
+              ? 'text-foreground bg-muted'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Settings className="h-5 w-5" />
+          <span className="text-xs">Editor</span>
+        </button>
+        <button
+          onClick={() => setMobileActiveTab('test')}
+          className={cn(
+            'flex flex-col items-center justify-center gap-0.5 transition-colors',
+            mobileActiveTab === 'test'
+              ? 'text-foreground bg-muted'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <MessageSquare className="h-5 w-5" />
+          <span className="text-xs">ทดสอบ</span>
+        </button>
+      </div>
+    </div>
+  );
+
+  // Mobile header component
+  const MobileHeader = () => (
+    <div className="flex items-center justify-between px-4 py-3 border-b bg-background md:hidden">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        <span className="font-bold text-lg truncate">
+          {formData.name || 'Flow ใหม่'}
+        </span>
+        {formData.is_default && (
+          <span className="text-xs bg-muted px-2 py-0.5 rounded flex-shrink-0">Base</span>
+        )}
+      </div>
+      <Button
+        size="sm"
+        onClick={handleSave}
+        disabled={isSaving || !hasChanges}
+        className="flex-shrink-0"
+      >
+        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+      </Button>
+    </div>
+  );
+
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      {/* Left Sidebar - Flows List */}
-      <FlowsList
-        flows={flows}
-        isLoading={isLoadingFlows}
-        selectedFlowId={selectedFlowId}
-        botId={botId}
-      />
+      {/* ============ DESKTOP LAYOUT ============ */}
+      {/* Left Sidebar - Flows List (Desktop) */}
+      <div className="hidden md:block">
+        <FlowsList
+          flows={flows}
+          isLoading={isLoadingFlows}
+          selectedFlowId={selectedFlowId}
+          botId={botId}
+        />
+      </div>
 
-      {/* Main Content Area - Split into Editor + Chat Emulator */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Main Content Area - Split into Editor + Chat Emulator (Desktop) */}
+      <div className="hidden md:flex flex-1 overflow-hidden">
         {/* Editor Panel */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {!showEditor ? (
@@ -813,7 +889,7 @@ export function FlowEditorPage() {
         )}
         </div>
 
-        {/* Chat Emulator - Right Panel */}
+        {/* Chat Emulator - Right Panel (Desktop) */}
         <ChatEmulator
           messages={chatMessages}
           isStreaming={isStreaming}
@@ -825,10 +901,270 @@ export function FlowEditorPage() {
         />
       </div>
 
+      {/* ============ MOBILE LAYOUT ============ */}
+      <div className="flex flex-col flex-1 md:hidden pb-14">
+        {/* Mobile Header */}
+        <MobileHeader />
+
+        {/* Mobile Tab Content */}
+        <div className="flex-1 overflow-hidden">
+          {/* Flows Tab */}
+          {mobileActiveTab === 'flows' && (
+            <div className="h-full overflow-y-auto">
+              {/* Create New Flow Button */}
+              <div className="p-4 border-b">
+                <Button
+                  className="w-full"
+                  variant="default"
+                  onClick={() => navigate(`/flows/new?botId=${botId}`)}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  สร้างโฟลว์ใหม่
+                </Button>
+              </div>
+
+              {/* Flow List */}
+              {isLoadingFlows ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : flows.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">ยังไม่มี Flow</p>
+              ) : (
+                <div className="p-2 space-y-1">
+                  {[...flows].sort((a, b) => {
+                    if (a.is_default && !b.is_default) return -1;
+                    if (!a.is_default && b.is_default) return 1;
+                    return 0;
+                  }).map((flow) => (
+                    <button
+                      key={flow.id}
+                      onClick={() => {
+                        navigate(`/flows/${flow.id}/edit?botId=${botId}`);
+                        setMobileActiveTab('editor');
+                      }}
+                      className={cn(
+                        'w-full text-left px-4 py-3 rounded-lg text-sm transition-all',
+                        flow.is_default ? 'border-l-4 border-l-foreground' : 'border-l-4 border-l-transparent',
+                        selectedFlowId === flow.id
+                          ? 'bg-foreground text-background font-medium'
+                          : 'hover:bg-muted'
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        {flow.is_default && (
+                          <svg className={cn('h-4 w-4 shrink-0', selectedFlowId === flow.id ? 'text-background' : 'text-foreground')} fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
+                          </svg>
+                        )}
+                        <span className="truncate font-medium">{flow.name}</span>
+                      </div>
+                      {flow.is_default && (
+                        <span className={cn('text-xs mt-1 block ml-6', selectedFlowId === flow.id ? 'text-background/70' : 'text-muted-foreground')}>
+                          Base Flow
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Bottom Actions */}
+              <div className="p-4 border-t mt-auto space-y-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start"
+                  onClick={() => navigate(`/bots/${botId}/edit`)}
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  แก้ไขการเชื่อมต่อ
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start"
+                  onClick={() => navigate('/bots')}
+                >
+                  <List className="h-4 w-4 mr-2" />
+                  กลับไปหน้า Bots
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Editor Tab */}
+          {mobileActiveTab === 'editor' && (
+            <div className="h-full overflow-y-auto">
+              {!showEditor ? (
+                <div className="flex-1 flex flex-col items-center justify-center h-full p-8">
+                  <p className="text-muted-foreground text-center mb-4">เลือกหรือสร้างโฟลว์เพื่อเริ่มต้น</p>
+                  <Button onClick={() => setMobileActiveTab('flows')}>
+                    <List className="h-4 w-4 mr-2" />
+                    ดู Flows ทั้งหมด
+                  </Button>
+                </div>
+              ) : isLoadingFlow ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <div className="p-4 space-y-4">
+                  {/* Flow Name Input (Mobile) */}
+                  <div className="space-y-2">
+                    <Label>ชื่อโฟลว์</Label>
+                    <Input
+                      placeholder="ชื่อโฟลว์"
+                      value={formData.name}
+                      onChange={(e) => handleChange('name', e.target.value)}
+                      disabled={formData.is_default}
+                      className="text-base"
+                    />
+                  </div>
+
+                  {/* Agentic Mode (Mobile) */}
+                  <div className="border rounded-lg p-4 space-y-4">
+                    <div className="flex items-start gap-3">
+                      <Switch
+                        checked={formData.agentic_mode}
+                        onCheckedChange={(checked) => handleChange('agentic_mode', checked)}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm">Agentic Mode</span>
+                          <Badge variant="secondary" className="text-xs">AI ฉลาดขึ้น</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          AI สามารถค้นหาและตัดสินใจได้อัตโนมัติ
+                        </p>
+                      </div>
+                    </div>
+
+                    {formData.agentic_mode && (
+                      <div className="space-y-3 pt-3 border-t">
+                        <Label className="text-xs">เลือก Tools</Label>
+                        <div className="space-y-2">
+                          <label className={cn(
+                            'flex items-center gap-3 p-3 rounded-lg border cursor-pointer',
+                            formData.enabled_tools?.includes('search_kb') ? 'bg-accent border-foreground' : ''
+                          )}>
+                            <input
+                              type="checkbox"
+                              checked={formData.enabled_tools?.includes('search_kb') || false}
+                              onChange={(e) => {
+                                const current = formData.enabled_tools || [];
+                                if (e.target.checked) {
+                                  handleChange('enabled_tools', [...current, 'search_kb']);
+                                } else {
+                                  handleChange('enabled_tools', current.filter(t => t !== 'search_kb'));
+                                }
+                              }}
+                            />
+                            <div>
+                              <span className="text-sm font-medium">🔍 ค้นหาฐานความรู้</span>
+                            </div>
+                          </label>
+                          <label className={cn(
+                            'flex items-center gap-3 p-3 rounded-lg border cursor-pointer',
+                            formData.enabled_tools?.includes('calculate') ? 'bg-accent border-foreground' : ''
+                          )}>
+                            <input
+                              type="checkbox"
+                              checked={formData.enabled_tools?.includes('calculate') || false}
+                              onChange={(e) => {
+                                const current = formData.enabled_tools || [];
+                                if (e.target.checked) {
+                                  handleChange('enabled_tools', [...current, 'calculate']);
+                                } else {
+                                  handleChange('enabled_tools', current.filter(t => t !== 'calculate'));
+                                }
+                              }}
+                            />
+                            <div>
+                              <span className="text-sm font-medium">🧮 คำนวณ</span>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Knowledge Base Selector (Mobile) */}
+                  <KnowledgeBaseSelector
+                    allKnowledgeBases={allKnowledgeBases}
+                    selectedKnowledgeBases={formData.knowledge_bases || []}
+                    isLoading={isLoadingKBs}
+                    onChange={handleKnowledgeBasesChange}
+                  />
+
+                  {/* System Prompt (Mobile) */}
+                  <div className="space-y-2">
+                    <Label>System Prompt</Label>
+                    <Textarea
+                      placeholder="คุณคือผู้ช่วยที่เป็นมิตร..."
+                      className="min-h-[200px] text-base font-mono"
+                      value={formData.system_prompt}
+                      onChange={(e) => handleChange('system_prompt', e.target.value)}
+                    />
+                  </div>
+
+                  {/* Temperature (Mobile) */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Temperature: {formData.temperature}</Label>
+                    </div>
+                    <Slider
+                      value={[formData.temperature || 0.7]}
+                      onValueChange={([v]) => handleChange('temperature', v)}
+                      min={0}
+                      max={1}
+                      step={0.1}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      ต่ำ = ตอบตรงประเด็น, สูง = สร้างสรรค์
+                    </p>
+                  </div>
+
+                  {/* Set as Default (Mobile) */}
+                  <div className="flex items-center gap-3 p-4 border rounded-lg">
+                    <Switch
+                      id="is_default_mobile"
+                      checked={formData.is_default}
+                      onCheckedChange={(checked) => handleChange('is_default', checked)}
+                    />
+                    <Label htmlFor="is_default_mobile">ตั้งเป็น Flow เริ่มต้น</Label>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Test Chat Tab */}
+          {mobileActiveTab === 'test' && (
+            <div className="h-full flex flex-col">
+              <ChatEmulator
+                messages={chatMessages}
+                isStreaming={isStreaming}
+                onSendMessage={handleSendChatMessage}
+                onCancelStream={cancelStream}
+                onClearMessages={clearMessages}
+                disabled={!selectedFlowId}
+                disabledReason={!selectedFlowId ? 'บันทึก Flow ก่อนทดสอบ' : undefined}
+                className="flex-1 w-full border-0"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Mobile Bottom Tabs */}
+        <MobileBottomTabs />
+      </div>
+
       {/* Unsaved changes toast */}
       {hasChanges && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-background border rounded-lg shadow-lg px-4 py-3 flex items-center gap-4 z-50">
-          <span className="text-sm text-muted-foreground">มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก</span>
+        <div className="fixed bottom-20 md:bottom-4 left-1/2 -translate-x-1/2 bg-background border rounded-lg shadow-lg px-4 py-3 flex items-center gap-4 z-50">
+          <span className="text-sm text-muted-foreground hidden sm:inline">มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก</span>
+          <span className="text-sm text-muted-foreground sm:hidden">ยังไม่ได้บันทึก</span>
           <div className="flex gap-2">
             <Button
               variant="ghost"
