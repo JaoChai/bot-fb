@@ -605,6 +605,37 @@ export function FlowEditorPage() {
                                 </p>
                               </div>
                             </label>
+
+                            <label
+                              className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
+                                formData.enabled_tools?.includes('think')
+                                  ? 'bg-accent border-foreground'
+                                  : 'hover:bg-muted'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.enabled_tools?.includes('think') || false}
+                                onChange={(e) => {
+                                  const current = formData.enabled_tools || [];
+                                  if (e.target.checked) {
+                                    handleChange('enabled_tools', [...current, 'think']);
+                                  } else {
+                                    handleChange('enabled_tools', current.filter(t => t !== 'think'));
+                                  }
+                                }}
+                                className="rounded border-muted-foreground/50"
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center gap-1.5 text-sm font-medium">
+                                  <span>🧠</span>
+                                  <span>คิดก่อนตอบ</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  ให้ AI หยุดคิด วิเคราะห์ก่อนตอบ
+                                </p>
+                              </div>
+                            </label>
                           </div>
                           {(!formData.enabled_tools || formData.enabled_tools.length === 0) && (
                             <p className="text-xs text-muted-foreground mt-1">
@@ -1082,6 +1113,26 @@ export function FlowEditorPage() {
                             />
                             <div>
                               <span className="text-sm font-medium">🧮 คำนวณ</span>
+                            </div>
+                          </label>
+                          <label className={cn(
+                            'flex items-center gap-3 p-3 rounded-lg border cursor-pointer',
+                            formData.enabled_tools?.includes('think') ? 'bg-accent border-foreground' : ''
+                          )}>
+                            <input
+                              type="checkbox"
+                              checked={formData.enabled_tools?.includes('think') || false}
+                              onChange={(e) => {
+                                const current = formData.enabled_tools || [];
+                                if (e.target.checked) {
+                                  handleChange('enabled_tools', [...current, 'think']);
+                                } else {
+                                  handleChange('enabled_tools', current.filter(t => t !== 'think'));
+                                }
+                              }}
+                            />
+                            <div>
+                              <span className="text-sm font-medium">🧠 คิดก่อนตอบ</span>
                             </div>
                           </label>
                         </div>

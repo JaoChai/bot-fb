@@ -866,9 +866,21 @@ PROMPT;
         if (in_array('calculate', $enabledTools)) {
             $toolsInfo .= "\n- calculate: ใช้เมื่อต้องการคำนวณตัวเลข";
         }
+        if (in_array('think', $enabledTools)) {
+            $toolsInfo .= "\n- think: ใช้เพื่อหยุดคิดและวิเคราะห์ก่อนตอบ";
+        }
 
         if (!empty($toolsInfo)) {
             $basePrompt .= "\n\n## Available Tools:{$toolsInfo}\n\nUse tools when needed to provide accurate information.";
+        }
+
+        // Add think tool guidance if enabled
+        if (in_array('think', $enabledTools)) {
+            $basePrompt .= "\n\n## วิธีใช้ Think Tool:";
+            $basePrompt .= "\n- ใช้ think ก่อนตอบคำถามที่ซับซ้อนหรือต้องวิเคราะห์หลายขั้นตอน";
+            $basePrompt .= "\n- ใช้ think หลังได้ผลลัพธ์จาก search_knowledge_base เพื่อวิเคราะห์ข้อมูล";
+            $basePrompt .= "\n- ใช้ think เพื่อวางแผนขั้นตอนการตอบคำถาม";
+            $basePrompt .= "\n- ใช้ think เพื่อตรวจสอบความถูกต้องก่อนให้คำตอบสุดท้าย";
         }
 
         return $basePrompt;
