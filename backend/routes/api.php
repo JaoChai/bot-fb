@@ -162,6 +162,47 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
+// Debug endpoint - Test search query specifically
+Route::get('/debug-search/{botId}', function ($botId, \Illuminate\Http\Request $request) {
+    try {
+        $bot = \App\Models\Bot::findOrFail($botId);
+        $search = $request->input('search', 'test');
+
+        // Test the EXACT search query from ConversationController
+        $query = $bot->conversations()
+            ->with(['customerProfile', 'assignedUser']);
+
+        $query->leftJoin('customer_profiles as cp_search', 'conversations.customer_profile_id', '=', 'cp_search.id')
+            ->where(function ($q) use ($search) {
+                $q->where('conversations.external_customer_id', 'ilike', "%{$search}%")
+                    ->orWhere('cp_search.display_name', 'ilike', "%{$search}%")
+                    ->orWhere('cp_search.email', 'ilike', "%{$search}%")
+                    ->orWhere('cp_search.phone', 'ilike', "%{$search}%");
+            })
+            ->select('conversations.*');
+
+        // Get the SQL for debugging
+        $sql = $query->toRawSql();
+
+        // Execute
+        $results = $query->limit(5)->get();
+
+        return response()->json([
+            'success' => true,
+            'sql' => $sql,
+            'count' => $results->count(),
+            'sample' => $results->take(2)->map(fn($c) => ['id' => $c->id, 'external_customer_id' => $c->external_customer_id]),
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => collect(explode("\n", $e->getTraceAsString()))->take(10)->toArray(),
+        ], 500);
+    }
+});
+
 // Debug endpoint - Check customer_profiles schema
 Route::get('/debug-customer-profiles-schema', function () {
     try {
