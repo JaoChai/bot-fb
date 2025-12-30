@@ -162,6 +162,13 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
+// Debug endpoint - List bot IDs (TEMPORARY)
+Route::get('/debug-bots', function () {
+    return response()->json([
+        'bots' => \App\Models\Bot::select('id', 'name')->limit(10)->get(),
+    ]);
+});
+
 // Debug endpoint - Test search query specifically
 Route::get('/debug-search/{botId}', function ($botId, \Illuminate\Http\Request $request) {
     try {
