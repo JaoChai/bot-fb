@@ -102,7 +102,8 @@ export function BotSettingsPage() {
     };
 
     fetchSettings();
-  }, [botId, toast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [botId]); // Remove toast from deps - it causes infinite loop
 
   const handleChange = <K extends keyof BotSettingsFormData>(
     field: K,
