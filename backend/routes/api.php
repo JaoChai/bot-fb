@@ -184,23 +184,31 @@ Route::get('/debug-sanctum', function (\Illuminate\Http\Request $request) {
             return response()->json(['step' => 3, 'error' => 'Token not found in database', 'token_id' => $tokenId]);
         }
 
-        // Step 4: Verify token hash
-        if (!hash_equals($accessToken->token, hash('sha256', $parts[1]))) {
-            return response()->json(['step' => 4, 'error' => 'Token hash mismatch']);
-        }
+        // Step 3b: Check token details
+        $tokenDetails = [
+            'token_id' => $accessToken->id,
+            'tokenable_type' => $accessToken->tokenable_type,
+            'tokenable_id' => $accessToken->tokenable_id,
+            'name' => $accessToken->name,
+            'abilities' => $accessToken->abilities,
+            'last_used' => $accessToken->last_used_at?->toISOString(),
+            'expires_at' => $accessToken->expires_at?->toISOString(),
+        ];
+
+        // Step 4: Verify token hash (BUT CONTINUE TO SHOW MORE INFO)
+        $hashMatch = hash_equals($accessToken->token, hash('sha256', $parts[1]));
 
         // Step 5: Get user from token
         $user = $accessToken->tokenable;
-        if (!$user) {
-            return response()->json(['step' => 5, 'error' => 'User not found for token']);
-        }
 
         return response()->json([
-            'status' => 'ok',
-            'user_id' => $user->id,
-            'user_email' => $user->email,
-            'token_name' => $accessToken->name,
-            'token_abilities' => $accessToken->abilities,
+            'token_details' => $tokenDetails,
+            'hash_matches' => $hashMatch,
+            'user_exists' => $user !== null,
+            'user_id' => $user?->id,
+            'user_email' => $user?->email,
+            'db_token_preview' => substr($accessToken->token, 0, 10) . '...',
+            'provided_hash_preview' => substr(hash('sha256', $parts[1]), 0, 10) . '...',
         ]);
     } catch (\Throwable $e) {
         return response()->json([
