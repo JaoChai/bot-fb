@@ -139,7 +139,7 @@ export const FlowsList = memo(function FlowsList({
         )}
       </div>
 
-      {/* Bottom Action Buttons */}
+      {/* Settings Buttons */}
       <div className="p-3 border-t space-y-1">
         <Button
           variant="ghost"
@@ -167,6 +167,10 @@ export const FlowsList = memo(function FlowsList({
           <Bot className="h-4 w-4 mr-2" />
           ตั้งค่า Bot
         </Button>
+      </div>
+
+      {/* Back Navigation - Separated for clarity */}
+      <div className="p-3 pt-0">
         <Button
           variant="ghost"
           size="sm"
