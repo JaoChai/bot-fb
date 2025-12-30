@@ -90,8 +90,8 @@ export function KnowledgeBasePage() {
 
         <Card className="border-dashed">
           <CardHeader className="text-center pb-2">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-              <Bot className="h-8 w-8 text-primary" />
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+              <Bot className="h-8 w-8 text-muted-foreground" />
             </div>
             <CardTitle className="text-xl">ยังไม่มี Bot</CardTitle>
             <CardDescription className="max-w-sm mx-auto">
@@ -123,7 +123,7 @@ export function KnowledgeBasePage() {
           </div>
           {selectedBot && (
             <Badge variant="outline" className="hidden sm:flex gap-1.5 px-3 py-1.5">
-              <Database className="h-3.5 w-3.5 text-primary" />
+              <Database className="h-3.5 w-3.5" />
               Smart RAG
             </Badge>
           )}
@@ -157,20 +157,20 @@ export function KnowledgeBasePage() {
 
         {/* API Key Warning */}
         {selectedBotId && !isApiKeyConfigured && (
-          <Card className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
+          <Card className="border-destructive/50 bg-destructive/5">
             <CardContent className="flex items-center gap-4 p-4">
-              <div className="flex-shrink-0 w-10 h-10 bg-amber-100 dark:bg-amber-900/50 rounded-full flex items-center justify-center">
-                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              <div className="flex-shrink-0 w-10 h-10 bg-muted rounded-full flex items-center justify-center">
+                <AlertTriangle className="h-5 w-5 text-muted-foreground" />
               </div>
               <div className="flex-1">
-                <p className="font-medium text-amber-800 dark:text-amber-200">
+                <p className="font-medium">
                   OpenRouter API Key ยังไม่ได้ตั้งค่า
                 </p>
-                <p className="text-sm text-amber-700 dark:text-amber-300">
+                <p className="text-sm text-muted-foreground">
                   การประมวลผลเอกสารต้องใช้ API Key สำหรับสร้าง embeddings
                 </p>
               </div>
-              <Button asChild variant="outline" className="border-amber-300 hover:bg-amber-100 dark:border-amber-700 dark:hover:bg-amber-900/50">
+              <Button asChild variant="outline">
                 <Link to="/settings" className="flex items-center gap-2">
                   <Settings className="h-4 w-4" />
                   ตั้งค่า API Key
@@ -186,11 +186,11 @@ export function KnowledgeBasePage() {
             {/* Stats Overview - Horizontal */}
             {knowledgeBase && (
               <div className="grid grid-cols-3 gap-4">
-                <Card className="bg-gradient-to-br from-blue-50 to-white dark:from-blue-950/30 dark:to-card border-blue-100 dark:border-blue-900/50">
+                <Card className="border">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
-                      <div className="flex-shrink-0 w-12 h-12 bg-blue-100 dark:bg-blue-900/50 rounded-xl flex items-center justify-center">
-                        <FileText className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                      <div className="flex-shrink-0 w-12 h-12 bg-muted rounded-xl flex items-center justify-center">
+                        <FileText className="h-6 w-6 text-muted-foreground" />
                       </div>
                       <div>
                         <p className="text-2xl font-bold tabular-nums">{knowledgeBase.document_count}</p>
@@ -200,11 +200,11 @@ export function KnowledgeBasePage() {
                   </CardContent>
                 </Card>
 
-                <Card className="bg-gradient-to-br from-purple-50 to-white dark:from-purple-950/30 dark:to-card border-purple-100 dark:border-purple-900/50">
+                <Card className="border">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
-                      <div className="flex-shrink-0 w-12 h-12 bg-purple-100 dark:bg-purple-900/50 rounded-xl flex items-center justify-center">
-                        <Layers className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                      <div className="flex-shrink-0 w-12 h-12 bg-muted rounded-xl flex items-center justify-center">
+                        <Layers className="h-6 w-6 text-muted-foreground" />
                       </div>
                       <div>
                         <p className="text-2xl font-bold tabular-nums">{knowledgeBase.chunk_count}</p>
@@ -214,11 +214,11 @@ export function KnowledgeBasePage() {
                   </CardContent>
                 </Card>
 
-                <Card className="bg-gradient-to-br from-green-50 to-white dark:from-green-950/30 dark:to-card border-green-100 dark:border-green-900/50">
+                <Card className="border">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
-                      <div className="flex-shrink-0 w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-xl flex items-center justify-center">
-                        <Cpu className="h-6 w-6 text-green-600 dark:text-green-400" />
+                      <div className="flex-shrink-0 w-12 h-12 bg-muted rounded-xl flex items-center justify-center">
+                        <Cpu className="h-6 w-6 text-muted-foreground" />
                       </div>
                       <div>
                         <p className="text-sm font-mono font-medium truncate max-w-[120px]">
@@ -236,8 +236,8 @@ export function KnowledgeBasePage() {
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-3">
-                  <div className="flex-shrink-0 w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                    <Plus className="h-5 w-5 text-primary" />
+                  <div className="flex-shrink-0 w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
+                    <Plus className="h-5 w-5 text-foreground" />
                   </div>
                   <div>
                     <CardTitle className="text-lg">เพิ่มข้อมูลความรู้</CardTitle>
@@ -260,8 +260,8 @@ export function KnowledgeBasePage() {
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="flex-shrink-0 w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                      <FileText className="h-5 w-5 text-primary" />
+                    <div className="flex-shrink-0 w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
+                      <FileText className="h-5 w-5 text-foreground" />
                     </div>
                     <div>
                       <CardTitle className="text-lg">รายการเอกสาร</CardTitle>
@@ -288,8 +288,8 @@ export function KnowledgeBasePage() {
               <Card>
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-3">
-                    <div className="flex-shrink-0 w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                      <Search className="h-5 w-5 text-primary" />
+                    <div className="flex-shrink-0 w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
+                      <Search className="h-5 w-5 text-foreground" />
                     </div>
                     <div>
                       <CardTitle className="text-lg">ทดสอบค้นหา</CardTitle>
@@ -312,8 +312,8 @@ export function KnowledgeBasePage() {
           /* Empty State - No Bot Selected */
           <Card className="border-dashed border-2">
             <CardContent className="flex flex-col items-center justify-center py-16">
-              <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-primary/10 to-primary/5">
-                <BookOpen className="h-10 w-10 text-primary" />
+              <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-muted">
+                <BookOpen className="h-10 w-10 text-muted-foreground" />
               </div>
               <h2 className="text-xl font-semibold mb-2">เลือก Bot เพื่อเริ่มต้น</h2>
               <p className="text-muted-foreground text-center max-w-md mb-6">
@@ -321,8 +321,8 @@ export function KnowledgeBasePage() {
               </p>
               <div className="flex items-center gap-6 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-primary" />
+                  <div className="w-8 h-8 rounded-full bg-foreground flex items-center justify-center">
+                    <Bot className="h-4 w-4 text-background" />
                   </div>
                   <span>เลือก Bot</span>
                 </div>

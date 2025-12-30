@@ -378,7 +378,6 @@ export function BotSettingsPage() {
             <Button
               onClick={handleSave}
               disabled={isSaving}
-              variant="cta"
               className="flex-1"
             >
               {isSaving ? (

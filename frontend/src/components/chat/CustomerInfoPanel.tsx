@@ -122,13 +122,13 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
       <Separator />
 
       {/* Bot Control */}
-      <Card className={conversation.is_handover ? 'border-amber-300 bg-amber-50/50 dark:bg-amber-950/20' : 'border-green-300 bg-green-50/50 dark:bg-green-950/20'}>
+      <Card className={conversation.is_handover ? 'border-2 border-dashed' : 'border-2 border-foreground'}>
         <CardContent className="p-4 space-y-3">
           <div className="flex items-center gap-2">
             {conversation.is_handover ? (
-              <Headphones className="h-5 w-5 text-amber-600" />
+              <Headphones className="h-5 w-5 text-muted-foreground" />
             ) : (
-              <Bot className="h-5 w-5 text-green-600" />
+              <Bot className="h-5 w-5" />
             )}
             <span className="font-medium">
               {conversation.is_handover ? 'โหมดรอตอบ' : 'Bot เปิด'}
@@ -149,7 +149,7 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
 
           {/* Auto-enable countdown */}
           {conversation.is_handover && remainingSeconds !== null && remainingSeconds > 0 && (
-            <div className="flex items-center gap-2 text-sm text-amber-600">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Timer className="h-4 w-4" />
               <span>เปิดอัตโนมัติใน {formatCountdown(remainingSeconds)}</span>
             </div>

@@ -106,8 +106,8 @@ export function SettingsPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                <Key className="h-5 w-5 text-primary" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                <Key className="h-5 w-5 text-foreground" />
               </div>
               <div>
                 <CardTitle>OpenRouter API Key</CardTitle>
@@ -172,7 +172,7 @@ export function SettingsPage() {
           </div>
 
           {/* External link */}
-          <Button variant="link" className="text-primary h-auto p-0 text-sm" asChild>
+          <Button variant="link" className="h-auto p-0 text-sm" asChild>
             <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">
               รับ API Key ที่ OpenRouter <ExternalLink className="h-3 w-3 ml-1" />
             </a>

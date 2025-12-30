@@ -1,7 +1,7 @@
 import { useAuthStore } from '@/stores/authStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bot, MessageSquare, Zap, Brain, ArrowRight, CheckCircle2, DollarSign } from 'lucide-react';
+import { Bot, MessageSquare, Zap, Brain, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { CostAnalytics } from '@/components/analytics/CostAnalytics';
@@ -12,36 +12,28 @@ const stats = [
     value: '0',
     description: 'สร้าง Bot แรกเพื่อเริ่มต้น',
     icon: Bot,
-    gradient: 'from-indigo-500 to-indigo-600',
-    iconBg: 'bg-indigo-500/10',
-    iconColor: 'text-indigo-600',
+    trend: null,
   },
   {
     title: 'แชทที่ใช้งาน',
     value: '0',
     description: 'ไม่มีแชทที่ใช้งานอยู่',
     icon: MessageSquare,
-    gradient: 'from-emerald-500 to-emerald-600',
-    iconBg: 'bg-emerald-500/10',
-    iconColor: 'text-emerald-600',
+    trend: null,
   },
   {
     title: 'ข้อความวันนี้',
     value: '0',
     description: 'ยังไม่มีข้อความ',
     icon: Zap,
-    gradient: 'from-amber-500 to-orange-500',
-    iconBg: 'bg-amber-500/10',
-    iconColor: 'text-amber-600',
+    trend: null,
   },
   {
     title: 'AI Responses',
     value: '0',
     description: 'ยังไม่มีการตอบกลับ AI',
     icon: Brain,
-    gradient: 'from-purple-500 to-purple-600',
-    iconBg: 'bg-purple-500/10',
-    iconColor: 'text-purple-600',
+    trend: null,
   },
 ];
 
@@ -57,10 +49,10 @@ export function DashboardPage() {
   const firstName = user?.name?.split(' ')[0] || 'User';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">
+        <h1 className="text-2xl font-semibold tracking-tight">
           สวัสดี, {firstName}
         </h1>
         <p className="text-muted-foreground">
@@ -71,37 +63,31 @@ export function DashboardPage() {
       {/* Tabs */}
       <Tabs defaultValue="overview" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="overview" className="gap-2">
-            <Brain className="h-4 w-4" />
-            ภาพรวม
-          </TabsTrigger>
-          <TabsTrigger value="costs" className="gap-2">
-            <DollarSign className="h-4 w-4" />
-            ค่าใช้จ่าย API
-          </TabsTrigger>
+          <TabsTrigger value="overview">ภาพรวม</TabsTrigger>
+          <TabsTrigger value="costs">ค่าใช้จ่าย API</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
           {/* Stats Grid */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {stats.map((stat) => (
-              <Card key={stat.title} className="relative overflow-hidden hover:shadow-md cursor-pointer group">
+              <Card key={stat.title} className="border">
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardDescription className="text-sm font-medium">{stat.title}</CardDescription>
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${stat.iconBg}`}>
-                      <stat.icon className={`h-5 w-5 ${stat.iconColor}`} />
-                    </div>
+                    <CardDescription className="text-sm font-medium">
+                      {stat.title}
+                    </CardDescription>
+                    <stat.icon className="h-4 w-4 text-muted-foreground" />
                   </div>
-                  <CardTitle className="text-3xl font-bold">{stat.value}</CardTitle>
+                  <CardTitle className="text-2xl font-semibold">
+                    {stat.value}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-xs text-muted-foreground">
                     {stat.description}
                   </p>
                 </CardContent>
-                {/* Gradient accent */}
-                <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${stat.gradient} opacity-0 group-hover:opacity-100 transition-opacity`} />
               </Card>
             ))}
           </div>
@@ -109,50 +95,48 @@ export function DashboardPage() {
           {/* Quick Actions */}
           <div className="grid gap-6 md:grid-cols-2">
             {/* Quick Start Guide */}
-            <Card>
+            <Card className="border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Zap className="h-5 w-5 text-warning" />
+                <CardTitle className="text-base font-semibold">
                   เริ่มต้นใช้งาน
                 </CardTitle>
                 <CardDescription>
                   ทำตามขั้นตอนเหล่านี้เพื่อเริ่มต้น
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-2">
                 {quickStartSteps.map((item) => (
                   <div
                     key={item.step}
-                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/50 transition-colors"
+                    className="flex items-center gap-3 p-2 rounded-md hover:bg-accent transition-colors"
                   >
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
+                    <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium ${
                       item.done
-                        ? 'bg-emerald-100 text-emerald-700'
+                        ? 'bg-foreground text-background'
                         : item.step === 1
-                        ? 'bg-primary text-primary-foreground'
+                        ? 'bg-foreground text-background'
                         : 'bg-muted text-muted-foreground'
                     }`}>
                       {item.done ? <CheckCircle2 className="h-4 w-4" /> : item.step}
                     </div>
-                    <span className={item.done ? 'line-through text-muted-foreground' : ''}>
+                    <span className={`text-sm ${item.done ? 'line-through text-muted-foreground' : ''}`}>
                       {item.title}
                     </span>
                   </div>
                 ))}
-                <Button variant="cta" className="w-full mt-4" asChild>
+                <Button className="w-full mt-4" asChild>
                   <Link to="/connections/add">
                     สร้างการเชื่อมต่อแรก
-                    <ArrowRight className="h-4 w-4" />
+                    <ArrowRight className="h-4 w-4 ml-2" />
                   </Link>
                 </Button>
               </CardContent>
             </Card>
 
             {/* Recent Activity */}
-            <Card>
+            <Card className="border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5 text-primary" />
+                <CardTitle className="text-base font-semibold">
                   กิจกรรมล่าสุด
                 </CardTitle>
                 <CardDescription>
@@ -161,13 +145,13 @@ export function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted mb-4">
-                    <MessageSquare className="h-8 w-8 text-muted-foreground" />
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
+                    <MessageSquare className="h-6 w-6 text-muted-foreground" />
                   </div>
                   <p className="text-sm text-muted-foreground mb-4">
                     ยังไม่มีกิจกรรมล่าสุด
                   </p>
-                  <Button variant="outline" asChild>
+                  <Button variant="outline" size="sm" asChild>
                     <Link to="/bots">
                       ดูการเชื่อมต่อทั้งหมด
                     </Link>

@@ -1,5 +1,9 @@
 import { NavLink } from 'react-router';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/stores/authStore';
+import { useAuth } from '@/hooks/useAuth';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
 import {
   LayoutDashboard,
   Bot,
@@ -7,13 +11,14 @@ import {
   MessageSquare,
   Settings,
   Sparkles,
+  LogOut,
 } from 'lucide-react';
 
 interface MobileNavProps {
   onNavigate: () => void;
 }
 
-const navItems = [
+const mainNavItems = [
   {
     title: 'แดชบอร์ด',
     href: '/dashboard',
@@ -34,49 +39,91 @@ const navItems = [
     href: '/chat',
     icon: MessageSquare,
   },
-  {
-    title: 'ตั้งค่า',
-    href: '/settings',
-    icon: Settings,
-  },
 ];
 
 export function MobileNav({ onNavigate }: MobileNavProps) {
+  const { user } = useAuthStore();
+  const { logout, isLoggingOut } = useAuth();
+
+  const userInitials = user?.name
+    ? user.name.substring(0, 2).toUpperCase()
+    : 'U';
+
   return (
-    <div className="flex h-full flex-col bg-card">
+    <div className="flex h-full flex-col bg-background">
       {/* Logo */}
-      <div className="flex h-16 items-center border-b px-4 gap-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+      <div className="flex h-14 items-center border-b px-4 gap-3">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background">
           <Sparkles className="h-4 w-4" />
         </div>
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold leading-none">BotFacebook</span>
-          <span className="text-[10px] text-muted-foreground">AI Chatbot Platform</span>
-        </div>
+        <span className="text-sm font-semibold">BotFacebook</span>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-1 p-3">
-        {navItems.map((item) => (
+      {/* Main Navigation */}
+      <nav className="flex-1 space-y-1 p-2">
+        {mainNavItems.map((item) => (
           <NavLink
             key={item.href}
             to={item.href}
             onClick={onNavigate}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
-                'hover:bg-accent/50',
+                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-foreground text-background'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               )
             }
           >
-            <item.icon className="h-5 w-5 shrink-0" />
+            <item.icon className="h-4 w-4 shrink-0" />
             <span>{item.title}</span>
           </NavLink>
         ))}
       </nav>
+
+      {/* Bottom Section */}
+      <div className="border-t p-2">
+        {/* Settings */}
+        <NavLink
+          to="/settings"
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            cn(
+              'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+              isActive
+                ? 'bg-foreground text-background'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+            )
+          }
+        >
+          <Settings className="h-4 w-4 shrink-0" />
+          <span>ตั้งค่า</span>
+        </NavLink>
+
+        {/* User Profile */}
+        <div className="mt-2 flex items-center gap-3 rounded-md px-3 py-2">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback className="text-xs bg-muted">
+              {userInitials}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex-1 min-w-0">
+            <p className="truncate text-sm font-medium">{user?.name || 'User'}</p>
+            <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+          </div>
+        </div>
+
+        {/* Logout Button */}
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-3 px-3 py-2 mt-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+          onClick={() => logout()}
+          disabled={isLoggingOut}
+        >
+          <LogOut className="h-4 w-4" />
+          {isLoggingOut ? 'กำลังออก...' : 'ออกจากระบบ'}
+        </Button>
+      </div>
     </div>
   );
 }

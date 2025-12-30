@@ -173,12 +173,12 @@ function ConversationItem({ conversation, isSelected, onSelect }: ConversationIt
         {/* Bot status badge */}
         <div className="flex items-center gap-1.5 mt-1">
           {conversation.is_handover ? (
-            <Badge variant="outline" className="text-xs h-5 gap-1 text-amber-600 border-amber-300">
+            <Badge variant="outline" className="text-xs h-5 gap-1 border-dashed">
               <Headphones className="h-3 w-3" />
               รอตอบ
             </Badge>
           ) : (
-            <Badge variant="outline" className="text-xs h-5 gap-1 text-green-600 border-green-300">
+            <Badge variant="secondary" className="text-xs h-5 gap-1">
               <Bot className="h-3 w-3" />
               Bot เปิด
             </Badge>

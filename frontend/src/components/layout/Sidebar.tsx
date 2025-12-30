@@ -1,7 +1,17 @@
 import { NavLink } from 'react-router';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/uiStore';
+import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useAuth } from '@/hooks/useAuth';
 import {
   LayoutDashboard,
   Bot,
@@ -10,6 +20,8 @@ import {
   Settings,
   ChevronLeft,
   Sparkles,
+  LogOut,
+  ChevronsUpDown,
 } from 'lucide-react';
 
 const mainNavItems = [
@@ -35,39 +47,34 @@ const mainNavItems = [
   },
 ];
 
-const bottomNavItems = [
-  {
-    title: 'ตั้งค่า',
-    href: '/settings',
-    icon: Settings,
-  },
-];
-
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebarCollapsed } = useUIStore();
+  const { user } = useAuthStore();
+  const { logout, isLoggingOut } = useAuth();
+
+  const userInitials = user?.name
+    ? user.name.substring(0, 2).toUpperCase()
+    : 'U';
 
   return (
     <aside
       className={cn(
-        'hidden h-screen border-r bg-card transition-all duration-300 md:flex md:flex-col',
+        'hidden h-screen border-r bg-background transition-all duration-300 md:flex md:flex-col',
         sidebarCollapsed ? 'w-16' : 'w-64'
       )}
     >
       {/* Logo */}
-      <div className="flex h-16 items-center justify-between border-b px-4">
+      <div className="flex h-14 items-center justify-between border-b px-4">
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background">
               <Sparkles className="h-4 w-4" />
             </div>
-            <div className="flex flex-col">
-              <span className="text-sm font-semibold leading-none">BotFacebook</span>
-              <span className="text-[10px] text-muted-foreground">AI Chatbot Platform</span>
-            </div>
+            <span className="text-sm font-semibold">BotFacebook</span>
           </div>
         )}
         {sidebarCollapsed && (
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground mx-auto">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background mx-auto">
             <Sparkles className="h-4 w-4" />
           </div>
         )}
@@ -77,56 +84,93 @@ export function Sidebar() {
           onClick={toggleSidebarCollapsed}
           className={cn("h-8 w-8 text-muted-foreground hover:text-foreground", sidebarCollapsed && "hidden")}
         >
-          <ChevronLeft
-            className={cn('h-4 w-4 transition-transform', sidebarCollapsed && 'rotate-180')}
-          />
+          <ChevronLeft className="h-4 w-4" />
         </Button>
       </div>
 
       {/* Main Navigation */}
-      <nav className="flex-1 space-y-1 p-3">
+      <nav className="flex-1 space-y-1 p-2">
         {mainNavItems.map((item) => (
           <NavLink
             key={item.href}
             to={item.href}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
-                'hover:bg-accent/50',
+                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-primary/10 text-primary border-l-2 border-primary ml-0 pl-[10px]'
-                  : 'text-muted-foreground hover:text-foreground',
-                sidebarCollapsed && 'justify-center px-2 border-l-0 pl-2'
+                  ? 'bg-foreground text-background'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                sidebarCollapsed && 'justify-center px-2'
               )
             }
           >
-            <item.icon className="h-5 w-5 shrink-0" />
+            <item.icon className="h-4 w-4 shrink-0" />
             {!sidebarCollapsed && <span>{item.title}</span>}
           </NavLink>
         ))}
       </nav>
 
-      {/* Bottom Navigation */}
-      <div className="border-t p-3">
-        {bottomNavItems.map((item) => (
-          <NavLink
-            key={item.href}
-            to={item.href}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
-                'hover:bg-accent/50',
-                isActive
-                  ? 'bg-primary/10 text-primary border-l-2 border-primary ml-0 pl-[10px]'
-                  : 'text-muted-foreground hover:text-foreground',
-                sidebarCollapsed && 'justify-center px-2 border-l-0 pl-2'
-              )
-            }
-          >
-            <item.icon className="h-5 w-5 shrink-0" />
-            {!sidebarCollapsed && <span>{item.title}</span>}
-          </NavLink>
-        ))}
+      {/* Bottom Section */}
+      <div className="border-t p-2">
+        {/* Settings */}
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            cn(
+              'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+              isActive
+                ? 'bg-foreground text-background'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+              sidebarCollapsed && 'justify-center px-2'
+            )
+          }
+        >
+          <Settings className="h-4 w-4 shrink-0" />
+          {!sidebarCollapsed && <span>ตั้งค่า</span>}
+        </NavLink>
+
+        {/* User Profile */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className={cn(
+                'mt-2 flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                'hover:bg-accent text-foreground',
+                sidebarCollapsed && 'justify-center px-2'
+              )}
+            >
+              <Avatar className="h-6 w-6">
+                <AvatarFallback className="text-xs bg-muted">
+                  {userInitials}
+                </AvatarFallback>
+              </Avatar>
+              {!sidebarCollapsed && (
+                <>
+                  <div className="flex-1 text-left">
+                    <p className="truncate text-sm font-medium">{user?.name || 'User'}</p>
+                    <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+                  </div>
+                  <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
+                </>
+              )}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <div className="px-2 py-1.5">
+              <p className="text-sm font-medium">{user?.name}</p>
+              <p className="text-xs text-muted-foreground">{user?.email}</p>
+            </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => logout()}
+              disabled={isLoggingOut}
+              className="text-destructive focus:text-destructive cursor-pointer"
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              {isLoggingOut ? 'กำลังออก...' : 'ออกจากระบบ'}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Expand button when collapsed */}
         {sidebarCollapsed && (
@@ -134,7 +178,7 @@ export function Sidebar() {
             variant="ghost"
             size="icon"
             onClick={toggleSidebarCollapsed}
-            className="w-full h-9 mt-2 text-muted-foreground hover:text-foreground"
+            className="w-full h-8 mt-2 text-muted-foreground hover:text-foreground"
           >
             <ChevronLeft className="h-4 w-4 rotate-180" />
           </Button>

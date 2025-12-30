@@ -51,8 +51,8 @@ function Section({
   return (
     <div className={cn('space-y-4', className)}>
       <div className="flex items-center gap-3">
-        <div className="flex-shrink-0 w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-          <Icon className="h-5 w-5 text-primary" />
+        <div className="flex-shrink-0 w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
+          <Icon className="h-5 w-5 text-foreground" />
         </div>
         <div>
           <h3 className="font-semibold">{title}</h3>
@@ -295,7 +295,7 @@ export function EditConnectionPage() {
                 checked={formData.enabled}
                 onCheckedChange={(checked) => handleChange('enabled', checked)}
               />
-              <span className={cn('text-sm font-medium', formData.enabled ? 'text-green-600' : 'text-slate-500')}>
+              <span className={cn('text-sm font-medium', formData.enabled ? 'text-foreground' : 'text-muted-foreground')}>
                 {formData.enabled ? 'เปิด' : 'ปิด'}
               </span>
             </div>
@@ -388,7 +388,7 @@ export function EditConnectionPage() {
                         className="font-mono text-sm max-w-md"
                       />
                     </div>
-                    <Button variant="link" className="text-primary h-auto p-0 text-sm" asChild>
+                    <Button variant="link" className="h-auto p-0 text-sm" asChild>
                       <a href="https://developers.line.biz" target="_blank" rel="noopener noreferrer">
                         ดูวิธีการเชื่อมต่อ LINE OA <ExternalLink className="h-3 w-3 ml-1" />
                       </a>
@@ -435,7 +435,7 @@ export function EditConnectionPage() {
                     </Button>
                   </div>
                 </div>
-                <Button variant="link" className="text-primary h-auto p-0 text-sm" asChild>
+                <Button variant="link" className="h-auto p-0 text-sm" asChild>
                   <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">
                     สร้าง API Key ที่ OpenRouter <ExternalLink className="h-3 w-3 ml-1" />
                   </a>
@@ -523,7 +523,6 @@ export function EditConnectionPage() {
           <Button
             onClick={handleSave}
             disabled={isSaving}
-            variant="cta"
             size="lg"
             className="min-w-[180px]"
           >
