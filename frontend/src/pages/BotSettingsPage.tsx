@@ -429,7 +429,7 @@ export function BotSettingsPage() {
                   <Slider
                     id="wait-seconds"
                     min={0.5}
-                    max={5}
+                    max={20}
                     step={0.5}
                     value={[formData.wait_multiple_bubbles_seconds]}
                     onValueChange={(value) => handleChange('wait_multiple_bubbles_seconds', value[0])}
