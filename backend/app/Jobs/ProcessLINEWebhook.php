@@ -10,6 +10,7 @@ use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\LINEService;
+use App\Services\MessageAggregationService;
 use App\Services\MultipleBubblesService;
 use App\Services\RateLimitService;
 use Illuminate\Bus\Queueable;
@@ -45,10 +46,14 @@ class ProcessLINEWebhook implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(LINEService $lineService, AIService $aiService, RateLimitService $rateLimitService): void
-    {
+    public function handle(
+        LINEService $lineService,
+        AIService $aiService,
+        RateLimitService $rateLimitService,
+        MessageAggregationService $aggregationService
+    ): void {
         try {
-            $this->processEvent($lineService, $aiService, $rateLimitService);
+            $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService);
         } catch (\Exception $e) {
             Log::error('LINE webhook processing failed', [
                 'bot_id' => $this->bot->id,
@@ -64,8 +69,12 @@ class ProcessLINEWebhook implements ShouldQueue
     /**
      * Process the LINE event.
      */
-    protected function processEvent(LINEService $lineService, AIService $aiService, RateLimitService $rateLimitService): void
-    {
+    protected function processEvent(
+        LINEService $lineService,
+        AIService $aiService,
+        RateLimitService $rateLimitService,
+        MessageAggregationService $aggregationService
+    ): void {
         // Only process message events
         if (!$lineService->isMessageEvent($this->event)) {
             Log::debug('Ignoring non-message event', [
@@ -100,10 +109,14 @@ class ProcessLINEWebhook implements ShouldQueue
             return;
         }
 
+        // Check if message aggregation is enabled
+        $useAggregation = $aggregationService->isEnabled($this->bot);
+        $waitTimeMs = $useAggregation ? $aggregationService->getWaitTimeMs($this->bot) : 0;
+
         // Show loading indicator immediately (before AI processing)
-        // This runs outside the transaction for immediate user feedback
-        // Non-blocking - if it fails, we continue processing
-        $lineService->showLoadingIndicator($this->bot, $userId, 30);
+        // Extended duration if aggregation is enabled to cover wait time
+        $loadingDuration = $useAggregation ? max(60, (int) ceil($waitTimeMs / 1000) + 30) : 30;
+        $lineService->showLoadingIndicator($this->bot, $userId, $loadingDuration);
 
         // Variables to collect for broadcasting after transaction
         $userMessage = null;
@@ -111,9 +124,28 @@ class ProcessLINEWebhook implements ShouldQueue
         $conversation = null;
         $isHandover = false;
         $isNewConversation = false;
+        $dispatchAggregation = false;
+        $aggregationGroupId = null;
 
         // Process in transaction (no broadcasts inside to prevent blocking)
-        DB::transaction(function () use ($lineService, $aiService, $rateLimitService, $userId, $replyToken, $messageData, &$userMessage, &$botMessage, &$conversation, &$isHandover, &$isNewConversation) {
+        DB::transaction(function () use (
+            $lineService,
+            $aiService,
+            $rateLimitService,
+            $aggregationService,
+            $userId,
+            $replyToken,
+            $messageData,
+            $useAggregation,
+            $waitTimeMs,
+            &$userMessage,
+            &$botMessage,
+            &$conversation,
+            &$isHandover,
+            &$isNewConversation,
+            &$dispatchAggregation,
+            &$aggregationGroupId
+        ) {
             // Find or create conversation
             $existingConversation = Conversation::where('bot_id', $this->bot->id)
                 ->where('external_customer_id', $userId)
@@ -158,6 +190,45 @@ class ProcessLINEWebhook implements ShouldQueue
                 return;
             }
 
+            // Check if we should use message aggregation
+            if ($useAggregation) {
+                // Start or continue aggregation group
+                $aggregationResult = $aggregationService->startOrContinueAggregation(
+                    $conversation,
+                    $userMessage,
+                    $waitTimeMs
+                );
+
+                // If aggregation failed (cache error), fall back to immediate response
+                if ($aggregationResult === null) {
+                    $useAggregation = false;
+                    // Continue to immediate response below
+                } else {
+                    $aggregationGroupId = $aggregationResult['group_id'];
+                    $dispatchAggregation = true;
+
+                    Log::info('Message added to aggregation group', [
+                        'conversation_id' => $conversation->id,
+                        'group_id' => $aggregationGroupId,
+                        'is_new_group' => $aggregationResult['is_new_group'],
+                        'message_count' => $aggregationResult['message_count'],
+                    ]);
+
+                    // Update stats for user message only (bot response will be counted later)
+                    $this->updateStatsForUserMessageOnly($conversation);
+
+                    // Increment total_conversations for new conversations
+                    if ($isNewConversation) {
+                        $this->bot->update([
+                            'total_conversations' => DB::raw('total_conversations + 1'),
+                        ]);
+                    }
+
+                    return; // Exit transaction, will dispatch job outside
+                }
+            }
+
+            // Immediate response mode (aggregation disabled)
             // Generate AI response
             $botMessage = $aiService->generateAndSaveResponse(
                 $this->bot,
@@ -182,6 +253,22 @@ class ProcessLINEWebhook implements ShouldQueue
             // Update conversation and bot stats in batch (2 messages: user + bot)
             $this->updateStatsInBatch($conversation, $isNewConversation);
         });
+
+        // Dispatch aggregation job AFTER transaction commits (to ensure message is saved)
+        if ($dispatchAggregation && $conversation && $aggregationGroupId) {
+            ProcessAggregatedMessages::dispatch(
+                $this->bot,
+                $conversation,
+                $aggregationGroupId,
+                $userId
+            )->onQueue('webhooks')->delay(now()->addMilliseconds($waitTimeMs));
+
+            Log::debug('Dispatched aggregation job', [
+                'conversation_id' => $conversation->id,
+                'group_id' => $aggregationGroupId,
+                'delay_ms' => $waitTimeMs,
+            ]);
+        }
 
         // Broadcasts AFTER transaction commits (non-blocking)
         if ($userMessage) {
