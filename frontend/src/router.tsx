@@ -1,31 +1,37 @@
-import { lazy, Suspense } from "react"
+import { Suspense } from "react"
 import { createBrowserRouter, Navigate } from "react-router"
 import { RootLayout } from "@/components/layout/RootLayout"
 import { AuthLayout } from "@/components/layout/AuthLayout"
 import { ProtectedRoute, GuestRoute } from "@/components/auth"
 import { PageLoadingFallback } from "@/components/ui/loading-spinner"
+import { lazyWithRetryNamed } from "@/lib/lazyWithRetry"
+import { ChunkErrorBoundary } from "@/components/error/ChunkErrorBoundary"
 
-// Lazy load auth pages
-const LoginPage = lazy(() => import("@/pages/auth/LoginPage").then(m => ({ default: m.LoginPage })))
-const RegisterPage = lazy(() => import("@/pages/auth/RegisterPage").then(m => ({ default: m.RegisterPage })))
+// Lazy load auth pages with retry support
+const LoginPage = lazyWithRetryNamed(() => import("@/pages/auth/LoginPage"), "LoginPage")
+const RegisterPage = lazyWithRetryNamed(() => import("@/pages/auth/RegisterPage"), "RegisterPage")
 
-// Lazy load main pages
-const DashboardPage = lazy(() => import("@/pages/DashboardPage").then(m => ({ default: m.DashboardPage })))
-const BotsPage = lazy(() => import("@/pages/BotsPage").then(m => ({ default: m.BotsPage })))
-const BotSettingsPage = lazy(() => import("@/pages/BotSettingsPage").then(m => ({ default: m.BotSettingsPage })))
-const BotEditPage = lazy(() => import("@/pages/BotEditPage").then(m => ({ default: m.BotEditPage })))
-const KnowledgeBasePage = lazy(() => import("@/pages/KnowledgeBasePage").then(m => ({ default: m.KnowledgeBasePage })))
-const ConversationsPage = lazy(() => import("@/pages/ConversationsPage").then(m => ({ default: m.ConversationsPage })))
-const ConversationDetailPage = lazy(() => import("@/pages/ConversationDetailPage").then(m => ({ default: m.ConversationDetailPage })))
-const ChatPage = lazy(() => import("@/pages/ChatPage").then(m => ({ default: m.ChatPage })))
-const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ default: m.SettingsPage })))
-const FlowEditorPage = lazy(() => import("@/pages/FlowEditorPage").then(m => ({ default: m.FlowEditorPage })))
-const AddConnectionPage = lazy(() => import("@/pages/AddConnectionPage").then(m => ({ default: m.AddConnectionPage })))
-const EditConnectionPage = lazy(() => import("@/pages/EditConnectionPage").then(m => ({ default: m.EditConnectionPage })))
+// Lazy load main pages with retry support
+const DashboardPage = lazyWithRetryNamed(() => import("@/pages/DashboardPage"), "DashboardPage")
+const BotsPage = lazyWithRetryNamed(() => import("@/pages/BotsPage"), "BotsPage")
+const BotSettingsPage = lazyWithRetryNamed(() => import("@/pages/BotSettingsPage"), "BotSettingsPage")
+const BotEditPage = lazyWithRetryNamed(() => import("@/pages/BotEditPage"), "BotEditPage")
+const KnowledgeBasePage = lazyWithRetryNamed(() => import("@/pages/KnowledgeBasePage"), "KnowledgeBasePage")
+const ConversationsPage = lazyWithRetryNamed(() => import("@/pages/ConversationsPage"), "ConversationsPage")
+const ConversationDetailPage = lazyWithRetryNamed(() => import("@/pages/ConversationDetailPage"), "ConversationDetailPage")
+const ChatPage = lazyWithRetryNamed(() => import("@/pages/ChatPage"), "ChatPage")
+const SettingsPage = lazyWithRetryNamed(() => import("@/pages/SettingsPage"), "SettingsPage")
+const FlowEditorPage = lazyWithRetryNamed(() => import("@/pages/FlowEditorPage"), "FlowEditorPage")
+const AddConnectionPage = lazyWithRetryNamed(() => import("@/pages/AddConnectionPage"), "AddConnectionPage")
+const EditConnectionPage = lazyWithRetryNamed(() => import("@/pages/EditConnectionPage"), "EditConnectionPage")
 
-// Wrapper component for lazy loaded pages
+// Wrapper component for lazy loaded pages with error boundary
 function LazyPage({ children }: { children: React.ReactNode }) {
-  return <Suspense fallback={<PageLoadingFallback />}>{children}</Suspense>
+  return (
+    <ChunkErrorBoundary>
+      <Suspense fallback={<PageLoadingFallback />}>{children}</Suspense>
+    </ChunkErrorBoundary>
+  )
 }
 
 export const router = createBrowserRouter([
