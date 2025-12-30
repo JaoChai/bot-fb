@@ -162,38 +162,33 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
-// Debug endpoint - TEMPORARY (tests full controller flow)
-Route::get('/debug-settings/{bot}', function (\App\Models\Bot $bot) {
+// Debug endpoint - TEMPORARY (tests BEFORE route model binding)
+Route::get('/debug-settings/{botId}', function ($botId) {
     try {
-        // Step 1: Get user from token (simulating auth:sanctum)
+        // Step 0: Test auth
         $user = auth('sanctum')->user();
         if (!$user) {
-            return response()->json(['step' => 1, 'error' => 'No authenticated user'], 401);
+            return response()->json(['step' => 0, 'error' => 'No authenticated user'], 401);
         }
 
-        // Step 2: Check authorization
-        if ($user->id !== $bot->user_id) {
-            return response()->json(['step' => 2, 'error' => 'Authorization failed', 'user_id' => $user->id, 'bot_user_id' => $bot->user_id], 403);
+        // Step 1: Manual bot find (before model binding)
+        $bot = \App\Models\Bot::find($botId);
+        if (!$bot) {
+            return response()->json(['step' => 1, 'error' => 'Bot not found', 'bot_id' => $botId], 404);
         }
 
-        // Step 3: Get settings (using same logic as controller)
+        // Step 2: Test accessing settings relationship
         $settings = $bot->settings;
 
-        // Step 4: If no settings, create defaults
-        if (!$settings) {
-            $settings = \App\Models\BotSetting::create([
-                'bot_id' => $bot->id,
-                'daily_message_limit' => 1000,
-                'per_user_limit' => 100,
-                'rate_limit_per_minute' => 20,
-            ]);
-        }
-
-        // Step 5: Return data (same as controller)
         return response()->json([
-            'step' => 5,
+            'step' => 2,
             'status' => 'ok',
-            'data' => $settings,
+            'user_id' => $user->id,
+            'bot_id' => $bot->id,
+            'bot_user_id' => $bot->user_id,
+            'has_settings' => $settings !== null,
+            'settings_id' => $settings?->id,
+            'settings' => $settings,
         ]);
     } catch (\Throwable $e) {
         return response()->json([
