@@ -188,21 +188,22 @@ Route::get('/debug-schema', function () {
 Route::get('/debug-conversations/{botId}', function ($botId) {
     try {
         $bot = \App\Models\Bot::findOrFail($botId);
-        $conversation = $bot->conversations()
-            ->with(['customerProfile'])
-            ->first();
 
-        if (!$conversation) {
-            return response()->json(['message' => 'No conversations found']);
-        }
+        // Simulate exact same query as ConversationController@index
+        $query = $bot->conversations()
+            ->with(['customerProfile', 'assignedUser']);
 
-        // Test ConversationResource
-        $resource = new \App\Http\Resources\ConversationResource($conversation);
+        // Get paginated results
+        $conversations = $query->orderByDesc('last_message_at')->paginate(20);
+
+        // Test ConversationResource collection
+        $resource = \App\Http\Resources\ConversationResource::collection($conversations);
 
         return response()->json([
-            'conversation_id' => $conversation->id,
-            'context_cleared_at' => $conversation->context_cleared_at,
+            'count' => $conversations->count(),
+            'total' => $conversations->total(),
             'resource_works' => true,
+            'first_id' => $conversations->first()?->id,
         ]);
     } catch (\Throwable $e) {
         return response()->json([
