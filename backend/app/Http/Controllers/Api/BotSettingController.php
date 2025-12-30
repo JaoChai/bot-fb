@@ -44,11 +44,13 @@ class BotSettingController extends Controller
             'hitl_triggers' => 'nullable|array',
             'hitl_triggers.*' => 'string|max:100',
 
-            // Response hours
+            // Response hours (multiple slots per day)
             'response_hours_enabled' => 'boolean',
             'response_hours' => 'nullable|array',
-            'response_hours.*.start' => 'required_with:response_hours|date_format:H:i',
-            'response_hours.*.end' => 'required_with:response_hours|date_format:H:i',
+            'response_hours.*' => 'array',
+            'response_hours.*.*.start' => 'required|date_format:H:i',
+            'response_hours.*.*.end' => 'required|date_format:H:i',
+            'response_hours_timezone' => 'nullable|string|timezone',
             'offline_message' => 'nullable|string|max:1000',
 
             // Auto-responses
