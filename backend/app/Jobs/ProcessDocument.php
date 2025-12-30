@@ -6,6 +6,7 @@ use App\Models\Document;
 use App\Models\DocumentChunk;
 use App\Models\User;
 use App\Services\ChunkingService;
+use App\Services\ContextualRetrievalService;
 use App\Services\DocumentParserService;
 use App\Services\EmbeddingService;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -31,7 +32,8 @@ class ProcessDocument implements ShouldQueue
 
     public function handle(
         DocumentParserService $parser,
-        ChunkingService $chunker
+        ChunkingService $chunker,
+        ContextualRetrievalService $contextualRetrieval
     ): void {
         Log::info('Processing document', [
             'document_id' => $this->document->id,
@@ -73,7 +75,45 @@ class ProcessDocument implements ShouldQueue
                 'chunk_count' => count($chunks),
             ]);
 
-            $this->processChunksWithEmbeddings($chunks, $embedder);
+            // Generate contextual information if enabled
+            $documentSummary = '';
+            $chunkContexts = [];
+
+            if ($contextualRetrieval->isEnabled()) {
+                $documentTitle = $this->document->original_filename ?? $this->document->filename ?? 'Untitled';
+
+                // Step 1: Generate document summary
+                $summaryResult = $contextualRetrieval->generateDocumentSummary(
+                    $documentTitle,
+                    $text,
+                    $apiKey
+                );
+                $documentSummary = $summaryResult['summary'];
+
+                Log::debug('Document summary generated', [
+                    'document_id' => $this->document->id,
+                    'summary_length' => strlen($documentSummary),
+                    'tokens_used' => $summaryResult['tokens_used'],
+                ]);
+
+                // Step 2: Generate chunk contexts
+                $chunkContents = array_column($chunks, 'content');
+                $contextsResult = $contextualRetrieval->generateChunkContexts(
+                    $documentTitle,
+                    $documentSummary,
+                    $chunkContents,
+                    $apiKey
+                );
+                $chunkContexts = $contextsResult['contexts'];
+
+                Log::debug('Chunk contexts generated', [
+                    'document_id' => $this->document->id,
+                    'contexts_count' => count($chunkContexts),
+                    'tokens_used' => $contextsResult['tokens_used'],
+                ]);
+            }
+
+            $this->processChunksWithEmbeddings($chunks, $embedder, $contextualRetrieval, $chunkContexts);
 
             $this->document->update([
                 'status' => 'completed',
@@ -86,6 +126,7 @@ class ProcessDocument implements ShouldQueue
             Log::info('Document processing completed', [
                 'document_id' => $this->document->id,
                 'chunks_created' => count($chunks),
+                'contextual_retrieval' => $contextualRetrieval->isEnabled(),
             ]);
         } catch (Throwable $e) {
             Log::error('Document processing failed', [
@@ -102,28 +143,56 @@ class ProcessDocument implements ShouldQueue
         }
     }
 
-    protected function processChunksWithEmbeddings(array $chunks, EmbeddingService $embedder): void
-    {
+    protected function processChunksWithEmbeddings(
+        array $chunks,
+        EmbeddingService $embedder,
+        ContextualRetrievalService $contextualRetrieval,
+        array $chunkContexts = []
+    ): void {
         $batchSize = 20;
-        $batches = array_chunk($chunks, $batchSize);
+        $batches = array_chunk($chunks, $batchSize, true);
+        $contextBatches = array_chunk($chunkContexts, $batchSize, true);
+        $useContextualRetrieval = $contextualRetrieval->isEnabled() && !empty($chunkContexts);
+        $globalIndex = 0;
 
         foreach ($batches as $batchIndex => $batch) {
-            $texts = array_column($batch, 'content');
+            // Prepare texts for embedding
+            // If contextual retrieval is enabled, combine context + content
+            $texts = [];
+            $batchContexts = $contextBatches[$batchIndex] ?? [];
+
+            foreach ($batch as $chunkIndex => $chunk) {
+                $context = $batchContexts[$chunkIndex] ?? '';
+
+                if ($useContextualRetrieval && !empty($context)) {
+                    // Combine context and content for embedding
+                    $texts[] = $contextualRetrieval->combineForEmbedding($context, $chunk['content']);
+                } else {
+                    $texts[] = $chunk['content'];
+                }
+            }
+
             $embeddings = $embedder->generateBatch($texts);
 
-            DB::transaction(function () use ($batch, $embeddings) {
-                foreach ($batch as $index => $chunk) {
+            DB::transaction(function () use ($batch, $embeddings, $batchContexts, $useContextualRetrieval, &$globalIndex) {
+                foreach ($batch as $localIndex => $chunk) {
+                    $context = $useContextualRetrieval ? ($batchContexts[$localIndex] ?? null) : null;
+
                     DocumentChunk::create([
                         'document_id' => $this->document->id,
                         'content' => $chunk['content'],
+                        'context_text' => $context,
                         'chunk_index' => $chunk['chunk_index'],
                         'start_char' => $chunk['start_char'],
                         'end_char' => $chunk['end_char'],
-                        'embedding' => $embeddings[$index] ?? null,
+                        'embedding' => $embeddings[$localIndex] ?? null,
                         'metadata' => [
                             'word_count' => $chunk['word_count'] ?? null,
+                            'has_context' => !empty($context),
                         ],
                     ]);
+
+                    $globalIndex++;
                 }
             });
 
@@ -131,6 +200,7 @@ class ProcessDocument implements ShouldQueue
                 'document_id' => $this->document->id,
                 'batch' => $batchIndex + 1,
                 'chunks' => count($batch),
+                'contextual_retrieval' => $useContextualRetrieval,
             ]);
         }
     }

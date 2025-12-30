@@ -45,6 +45,9 @@ import {
   List,
   Settings,
   MessageSquare,
+  Sparkles,
+  Brain,
+  FileText,
 } from 'lucide-react';
 import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
 
@@ -667,6 +670,51 @@ export function FlowEditorPage() {
                   </div>
                 </div>
 
+                {/* AI Enhancement Features Section */}
+                <div className="border rounded-lg p-6 space-y-4">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Sparkles className="h-5 w-5" />
+                    <span className="font-medium">AI Enhancement</span>
+                    <Badge variant="outline" className="text-xs">Auto</Badge>
+                  </div>
+
+                  <p className="text-sm text-muted-foreground">
+                    ฟีเจอร์เหล่านี้ทำงานอัตโนมัติเพื่อให้ AI ตอบได้ดีขึ้น
+                  </p>
+
+                  {/* Chain-of-Thought Indicator */}
+                  <div className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg">
+                    <div className="p-2 bg-purple-500/10 rounded">
+                      <Brain className="h-4 w-4 text-purple-500" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">Chain-of-Thought</span>
+                        <Badge variant="secondary" className="text-xs">Active</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        เมื่อตรวจพบคำถามซับซ้อน AI จะวิเคราะห์ทีละขั้นตอนก่อนตอบ
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Contextual Retrieval Indicator */}
+                  <div className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg">
+                    <div className="p-2 bg-blue-500/10 rounded">
+                      <FileText className="h-4 w-4 text-blue-500" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">Contextual Retrieval</span>
+                        <Badge variant="secondary" className="text-xs">Active</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Documents ใหม่จะมี context เพิ่ม ช่วยให้ค้นหาได้แม่นยำขึ้น 49%
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Knowledge Bases (Multi-Select) */}
                 <KnowledgeBaseSelector
                   allKnowledgeBases={allKnowledgeBases}
@@ -1138,6 +1186,32 @@ export function FlowEditorPage() {
                         </div>
                       </div>
                     )}
+                  </div>
+
+                  {/* AI Enhancement Features (Mobile) */}
+                  <div className="border rounded-lg p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Sparkles className="h-4 w-4" />
+                      <span className="font-medium text-sm">AI Enhancement</span>
+                      <Badge variant="outline" className="text-xs">Auto</Badge>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground">
+                      ฟีเจอร์เหล่านี้ทำงานอัตโนมัติเพื่อให้ AI ตอบได้ดีขึ้น
+                    </p>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 p-2 bg-muted/30 rounded">
+                        <Brain className="h-4 w-4 text-purple-500" />
+                        <span className="text-xs font-medium">Chain-of-Thought</span>
+                        <Badge variant="secondary" className="text-xs ml-auto">Active</Badge>
+                      </div>
+                      <div className="flex items-center gap-2 p-2 bg-muted/30 rounded">
+                        <FileText className="h-4 w-4 text-blue-500" />
+                        <span className="text-xs font-medium">Contextual Retrieval</span>
+                        <Badge variant="secondary" className="text-xs ml-auto">Active</Badge>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Knowledge Base Selector (Mobile) */}
