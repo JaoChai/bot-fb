@@ -30,6 +30,31 @@ Route::prefix('auth')->middleware('throttle.auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login'])->name('auth.login');
 });
 
+// Temporary debug route - REMOVE after debugging
+Route::get('/debug-bot-settings/{botId}', function ($botId) {
+    try {
+        $bot = \App\Models\Bot::findOrFail($botId);
+        $settings = $bot->settings;
+        if (!$settings) {
+            $settings = \App\Models\BotSetting::create([
+                'bot_id' => $bot->id,
+                'daily_message_limit' => 1000,
+                'per_user_limit' => 100,
+                'rate_limit_per_minute' => 20,
+                'max_tokens_per_response' => 2000,
+            ]);
+        }
+        return response()->json(['status' => 'ok', 'data' => $settings]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => collect($e->getTrace())->take(5)->toArray(),
+        ], 500);
+    }
+});
+
 // Protected routes (authentication required) with API rate limiting
 Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
 
