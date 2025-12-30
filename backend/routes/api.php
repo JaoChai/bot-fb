@@ -162,32 +162,55 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
-// Debug endpoint - WITH auth:sanctum ONLY
-Route::get('/debug-auth-only/{botId}', function ($botId) {
+// Debug Sanctum auth manually (NO middleware, catches all errors)
+Route::get('/debug-sanctum', function (\Illuminate\Http\Request $request) {
     try {
-        $user = auth('sanctum')->user();
-        $bot = \App\Models\Bot::find($botId);
-        if (!$bot) {
-            return response()->json(['step' => 1, 'error' => 'Bot not found', 'bot_id' => $botId], 404);
+        // Step 1: Get bearer token from header
+        $token = $request->bearerToken();
+        if (!$token) {
+            return response()->json(['step' => 1, 'error' => 'No bearer token provided']);
         }
-        return response()->json(['status' => 'ok', 'user_id' => $user?->id, 'bot_id' => $bot->id]);
-    } catch (\Throwable $e) {
-        return response()->json(['error' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()], 500);
-    }
-})->middleware('auth:sanctum')->name('debug.auth-only');
 
-// Debug endpoint - WITH throttle.api ONLY
-Route::get('/debug-throttle-only/{botId}', function ($botId) {
-    try {
-        $bot = \App\Models\Bot::find($botId);
-        if (!$bot) {
-            return response()->json(['step' => 1, 'error' => 'Bot not found', 'bot_id' => $botId], 404);
+        // Step 2: Parse token (format: id|plaintext)
+        $parts = explode('|', $token, 2);
+        if (count($parts) !== 2) {
+            return response()->json(['step' => 2, 'error' => 'Invalid token format', 'parts' => count($parts)]);
         }
-        return response()->json(['status' => 'ok', 'bot_id' => $bot->id]);
+        $tokenId = $parts[0];
+
+        // Step 3: Find token in database
+        $accessToken = \Laravel\Sanctum\PersonalAccessToken::find($tokenId);
+        if (!$accessToken) {
+            return response()->json(['step' => 3, 'error' => 'Token not found in database', 'token_id' => $tokenId]);
+        }
+
+        // Step 4: Verify token hash
+        if (!hash_equals($accessToken->token, hash('sha256', $parts[1]))) {
+            return response()->json(['step' => 4, 'error' => 'Token hash mismatch']);
+        }
+
+        // Step 5: Get user from token
+        $user = $accessToken->tokenable;
+        if (!$user) {
+            return response()->json(['step' => 5, 'error' => 'User not found for token']);
+        }
+
+        return response()->json([
+            'status' => 'ok',
+            'user_id' => $user->id,
+            'user_email' => $user->email,
+            'token_name' => $accessToken->name,
+            'token_abilities' => $accessToken->abilities,
+        ]);
     } catch (\Throwable $e) {
-        return response()->json(['error' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()], 500);
+        return response()->json([
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => collect(explode("\n", $e->getTraceAsString()))->take(5)->toArray(),
+        ], 500);
     }
-})->middleware('throttle.api')->name('debug.throttle-only');
+})->name('debug.sanctum');
 
 // Debug endpoint - NO MIDDLEWARE (works fine)
 Route::get('/debug-settings/{botId}', function ($botId) {
