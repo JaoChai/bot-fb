@@ -61,13 +61,15 @@ class HybridSearchService
      * @param string $query The search query
      * @param int $limit Final number of results to return
      * @param float|null $threshold Minimum similarity threshold for semantic search
+     * @param string|null $apiKey Optional API key to use (from user settings)
      * @return Collection Merged and ranked results
      */
     public function search(
         int $knowledgeBaseId,
         string $query,
         int $limit = 5,
-        ?float $threshold = null
+        ?float $threshold = null,
+        ?string $apiKey = null
     ): Collection {
         // If hybrid search is disabled, fall back to semantic only
         if (!$this->enabled || !$this->keywordSearch->isAvailable()) {
@@ -75,7 +77,7 @@ class HybridSearchService
                 'enabled' => $this->enabled,
                 'fts_available' => $this->keywordSearch->isAvailable(),
             ]);
-            return $this->semanticSearch->search($knowledgeBaseId, $query, $limit, $threshold);
+            return $this->semanticSearch->search($knowledgeBaseId, $query, $limit, $threshold, $apiKey);
         }
 
         // Determine candidate limit based on reranking
@@ -88,7 +90,8 @@ class HybridSearchService
             $knowledgeBaseId,
             $query,
             $candidateLimit,
-            $threshold
+            $threshold,
+            $apiKey
         );
 
         $keywordResults = $this->keywordSearch->search(
@@ -129,12 +132,14 @@ class HybridSearchService
      * @param array $kbConfigs Array of KB configs with per-KB settings
      * @param string $query The search query
      * @param int $totalLimit Maximum total results across all KBs
+     * @param string|null $apiKey Optional API key to use (from user settings)
      * @return Collection Merged results from all KBs
      */
     public function searchMultiple(
         array $kbConfigs,
         string $query,
-        int $totalLimit = 10
+        int $totalLimit = 10,
+        ?string $apiKey = null
     ): Collection {
         if (empty($kbConfigs)) {
             return collect([]);
@@ -142,7 +147,7 @@ class HybridSearchService
 
         // If hybrid disabled, delegate to semantic service
         if (!$this->enabled || !$this->keywordSearch->isAvailable()) {
-            return $this->semanticSearch->searchMultiple($kbConfigs, $query, $totalLimit);
+            return $this->semanticSearch->searchMultiple($kbConfigs, $query, $totalLimit, $apiKey);
         }
 
         $allResults = collect([]);
@@ -152,7 +157,7 @@ class HybridSearchService
             $limit = $config['kb_top_k'] ?? 5;
             $threshold = $config['kb_similarity_threshold'] ?? null;
 
-            $results = $this->search($kbId, $query, $limit, $threshold);
+            $results = $this->search($kbId, $query, $limit, $threshold, $apiKey);
 
             // Add KB ID to each result
             $results = $results->map(function ($item) use ($kbId) {

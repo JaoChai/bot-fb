@@ -147,6 +147,19 @@ class ToolService
             return 'ไม่มีฐานความรู้ที่เชื่อมต่อกับ Flow นี้';
         }
 
+        // Get API key: Bot-level > User-level > ENV config
+        $apiKey = $flow->bot?->openrouter_api_key
+            ?: $flow->bot?->user?->settings?->openrouter_api_key
+            ?: config('services.openrouter.api_key');
+
+        if (empty($apiKey)) {
+            Log::warning('ToolService: No OpenRouter API key found', [
+                'flow_id' => $flow->id,
+                'bot_id' => $flow->bot_id,
+            ]);
+            return 'กรุณาตั้งค่า OpenRouter API Key ในหน้าตั้งค่าบอทหรือตั้งค่าผู้ใช้ก่อนใช้งานค้นหาฐานความรู้';
+        }
+
         // Build KB configs
         $kbConfigs = $knowledgeBases->map(fn ($kb) => [
             'id' => $kb->id,
@@ -155,11 +168,12 @@ class ToolService
             'kb_similarity_threshold' => $kb->pivot->kb_similarity_threshold ?? 0.7,
         ])->toArray();
 
-        // Search
+        // Search with user's API key
         $results = $this->hybridSearch->searchMultiple(
             kbConfigs: $kbConfigs,
             query: $query,
-            totalLimit: 5
+            totalLimit: 5,
+            apiKey: $apiKey
         );
 
         if ($results->isEmpty()) {

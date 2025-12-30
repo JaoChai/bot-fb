@@ -128,4 +128,28 @@ class EmbeddingService
     {
         return $this->model;
     }
+
+    /**
+     * Create a new instance with a different API key.
+     *
+     * Useful for per-user API keys from UserSettings.
+     *
+     * @param string $apiKey The API key to use
+     * @return self New instance with the specified API key
+     */
+    public function withApiKey(string $apiKey): self
+    {
+        $instance = clone $this;
+        $instance->apiKey = $apiKey;
+
+        return $instance;
+    }
+
+    /**
+     * Check if the service has a valid API key configured.
+     */
+    public function hasApiKey(): bool
+    {
+        return !empty($this->apiKey);
+    }
 }

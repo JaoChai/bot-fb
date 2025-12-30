@@ -288,6 +288,11 @@ class StreamController extends Controller
             $results = collect();
             $kbResults = [];
 
+            // Get API key for embedding: Bot-level > User-level > ENV
+            $embeddingApiKey = $bot->openrouter_api_key
+                ?: $bot->user?->settings?->openrouter_api_key
+                ?: config('services.openrouter.api_key');
+
             // Search flow-level KBs (many-to-many)
             if ($hasFlowKBs) {
                 $kbConfigs = $flowKBs->map(fn ($kb) => [
@@ -300,7 +305,8 @@ class StreamController extends Controller
                 $results = $this->hybridSearch->searchMultiple(
                     kbConfigs: $kbConfigs,
                     query: $message,
-                    totalLimit: config('rag.max_results', 5)
+                    totalLimit: config('rag.max_results', 5),
+                    apiKey: $embeddingApiKey
                 );
 
                 // Group results by KB
@@ -321,7 +327,8 @@ class StreamController extends Controller
                     knowledgeBaseId: $bot->knowledgeBase->id,
                     query: $message,
                     limit: $bot->kb_max_results ?? config('rag.max_results', 3),
-                    threshold: $bot->kb_relevance_threshold ?? config('rag.default_threshold', 0.7)
+                    threshold: $bot->kb_relevance_threshold ?? config('rag.default_threshold', 0.7),
+                    apiKey: $embeddingApiKey
                 );
 
                 if ($results->isNotEmpty()) {
