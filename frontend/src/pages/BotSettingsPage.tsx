@@ -9,8 +9,90 @@ import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Loader2, Clock } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ArrowLeft, Loader2, Clock, Plus, Trash2, Copy } from 'lucide-react';
 import { apiGet, apiPut } from '@/lib/api';
+
+// Response Hours types
+interface TimeSlot {
+  start: string;
+  end: string;
+}
+
+interface DaySchedule {
+  enabled: boolean;
+  slots: TimeSlot[];
+}
+
+type DayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+interface ResponseHoursConfig {
+  mon: DaySchedule;
+  tue: DaySchedule;
+  wed: DaySchedule;
+  thu: DaySchedule;
+  fri: DaySchedule;
+  sat: DaySchedule;
+  sun: DaySchedule;
+}
+
+// Constants
+const DAYS: { key: DayKey; label: string }[] = [
+  { key: 'mon', label: 'จันทร์' },
+  { key: 'tue', label: 'อังคาร' },
+  { key: 'wed', label: 'พุธ' },
+  { key: 'thu', label: 'พฤหัสบดี' },
+  { key: 'fri', label: 'ศุกร์' },
+  { key: 'sat', label: 'เสาร์' },
+  { key: 'sun', label: 'อาทิตย์' },
+];
+
+const TIMEZONES = [
+  { value: 'Asia/Bangkok', label: 'Asia/Bangkok (GMT+7)' },
+  { value: 'Asia/Singapore', label: 'Asia/Singapore (GMT+8)' },
+  { value: 'Asia/Tokyo', label: 'Asia/Tokyo (GMT+9)' },
+  { value: 'Asia/Hong_Kong', label: 'Asia/Hong Kong (GMT+8)' },
+  { value: 'Asia/Shanghai', label: 'Asia/Shanghai (GMT+8)' },
+  { value: 'UTC', label: 'UTC (GMT+0)' },
+];
+
+const createDefaultResponseHours = (): ResponseHoursConfig => ({
+  mon: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
+  tue: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
+  wed: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
+  thu: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
+  fri: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
+  sat: { enabled: false, slots: [{ start: '10:00', end: '14:00' }] },
+  sun: { enabled: false, slots: [{ start: '10:00', end: '14:00' }] },
+});
+
+// Parse API response to UI format
+const parseResponseHours = (apiData: Record<string, TimeSlot[]> | null): ResponseHoursConfig => {
+  const defaultHours = createDefaultResponseHours();
+  if (!apiData) return defaultHours;
+
+  const result: ResponseHoursConfig = { ...defaultHours };
+  for (const day of DAYS) {
+    const slots = apiData[day.key];
+    if (slots && Array.isArray(slots) && slots.length > 0) {
+      result[day.key] = { enabled: true, slots };
+    } else {
+      result[day.key] = { ...defaultHours[day.key], enabled: false };
+    }
+  }
+  return result;
+};
+
+// Convert UI format to API format
+const serializeResponseHours = (uiData: ResponseHoursConfig): Record<string, TimeSlot[]> => {
+  const result: Record<string, TimeSlot[]> = {};
+  for (const day of DAYS) {
+    if (uiData[day.key].enabled && uiData[day.key].slots.length > 0) {
+      result[day.key] = uiData[day.key].slots;
+    }
+  }
+  return result;
+};
 
 interface BotSettingsFormData {
   daily_message_limit: number;
@@ -30,6 +112,9 @@ interface BotSettingsFormData {
   wait_multiple_bubbles_seconds: number;
   reply_sticker_enabled: boolean;
   response_hours_enabled: boolean;
+  response_hours: ResponseHoursConfig;
+  response_hours_timezone: string;
+  offline_message: string;
 }
 
 export function BotSettingsPage() {
@@ -57,7 +142,83 @@ export function BotSettingsPage() {
     wait_multiple_bubbles_seconds: 1.5,
     reply_sticker_enabled: false,
     response_hours_enabled: false,
+    response_hours: createDefaultResponseHours(),
+    response_hours_timezone: 'Asia/Bangkok',
+    offline_message: '',
   });
+
+  // Response Hours helper functions
+  const handleDayToggle = (day: DayKey, enabled: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      response_hours: {
+        ...prev.response_hours,
+        [day]: { ...prev.response_hours[day], enabled },
+      },
+    }));
+  };
+
+  const handleSlotChange = (day: DayKey, slotIndex: number, field: 'start' | 'end', value: string) => {
+    setFormData((prev) => {
+      const newSlots = [...prev.response_hours[day].slots];
+      newSlots[slotIndex] = { ...newSlots[slotIndex], [field]: value };
+      return {
+        ...prev,
+        response_hours: {
+          ...prev.response_hours,
+          [day]: { ...prev.response_hours[day], slots: newSlots },
+        },
+      };
+    });
+  };
+
+  const addSlot = (day: DayKey) => {
+    setFormData((prev) => {
+      const slots = prev.response_hours[day].slots;
+      const lastSlot = slots[slots.length - 1];
+      const newSlot = { start: lastSlot?.end || '09:00', end: '18:00' };
+      return {
+        ...prev,
+        response_hours: {
+          ...prev.response_hours,
+          [day]: { ...prev.response_hours[day], slots: [...slots, newSlot] },
+        },
+      };
+    });
+  };
+
+  const removeSlot = (day: DayKey, slotIndex: number) => {
+    setFormData((prev) => {
+      const slots = prev.response_hours[day].slots.filter((_, i) => i !== slotIndex);
+      // Keep at least one slot
+      if (slots.length === 0) {
+        slots.push({ start: '09:00', end: '18:00' });
+      }
+      return {
+        ...prev,
+        response_hours: {
+          ...prev.response_hours,
+          [day]: { ...prev.response_hours[day], slots },
+        },
+      };
+    });
+  };
+
+  const applyToAllDays = () => {
+    const mondaySchedule = formData.response_hours.mon;
+    setFormData((prev) => ({
+      ...prev,
+      response_hours: {
+        mon: mondaySchedule,
+        tue: { ...mondaySchedule },
+        wed: { ...mondaySchedule },
+        thu: { ...mondaySchedule },
+        fri: { ...mondaySchedule },
+        sat: { ...mondaySchedule },
+        sun: { ...mondaySchedule },
+      },
+    }));
+  };
 
   // Fetch settings on mount
   useEffect(() => {
@@ -88,6 +249,9 @@ export function BotSettingsPage() {
           wait_multiple_bubbles_seconds: ((settings.wait_multiple_bubbles_ms as number) ?? 1500) / 1000,
           reply_sticker_enabled: false,
           response_hours_enabled: (settings.response_hours_enabled as boolean) ?? false,
+          response_hours: parseResponseHours(settings.response_hours as Record<string, TimeSlot[]> | null),
+          response_hours_timezone: (settings.response_hours_timezone as string) ?? 'Asia/Bangkok',
+          offline_message: (settings.offline_message as string) ?? '',
         });
       } catch (error) {
         console.error('Failed to fetch settings:', error);
@@ -124,6 +288,9 @@ export function BotSettingsPage() {
         rate_limit_user_message: formData.rate_limit_user_message || null,
         hitl_enabled: formData.hitl_enabled,
         response_hours_enabled: formData.response_hours_enabled,
+        response_hours: serializeResponseHours(formData.response_hours),
+        response_hours_timezone: formData.response_hours_timezone,
+        offline_message: formData.offline_message || null,
         // Multiple bubbles settings
         multiple_bubbles_enabled: formData.multiple_bubbles_enabled,
         multiple_bubbles_min: formData.multiple_bubbles_min,
@@ -466,7 +633,7 @@ export function BotSettingsPage() {
               </CardTitle>
               <p className="text-sm text-muted-foreground mt-2">บอทจะตอบตามวันและเวลาที่กำหนด</p>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label htmlFor="response-hours" className="font-semibold">
                   เปิดใช้งาน Response Hours
@@ -479,9 +646,123 @@ export function BotSettingsPage() {
               </div>
 
               {formData.response_hours_enabled && (
-                <p className="text-sm text-muted-foreground mt-4 p-4 bg-muted rounded-lg">
-                  💡 Response Hours UI จะถูกเพิ่มในเวอร์ชันถัดไป
-                </p>
+                <div className="space-y-4 pt-4 border-t">
+                  {/* Timezone Selection */}
+                  <div className="space-y-2">
+                    <Label className="font-semibold">Timezone</Label>
+                    <Select
+                      value={formData.response_hours_timezone}
+                      onValueChange={(value) => handleChange('response_hours_timezone', value)}
+                    >
+                      <SelectTrigger className="w-full sm:w-64">
+                        <SelectValue placeholder="เลือก timezone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TIMEZONES.map((tz) => (
+                          <SelectItem key={tz.value} value={tz.value}>
+                            {tz.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Day Schedule */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="font-semibold">ตารางเวลา</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={applyToAllDays}
+                        className="text-xs"
+                      >
+                        <Copy className="h-3 w-3 mr-1" />
+                        ใช้เวลาจันทร์กับทุกวัน
+                      </Button>
+                    </div>
+
+                    <div className="space-y-2 rounded-lg border p-3">
+                      {DAYS.map((day) => (
+                        <div key={day.key} className="space-y-2">
+                          <div className="flex items-center gap-3">
+                            <Switch
+                              checked={formData.response_hours[day.key].enabled}
+                              onCheckedChange={(checked) => handleDayToggle(day.key, checked)}
+                            />
+                            <span className={`w-20 text-sm font-medium ${!formData.response_hours[day.key].enabled ? 'text-muted-foreground' : ''}`}>
+                              {day.label}
+                            </span>
+
+                            {formData.response_hours[day.key].enabled ? (
+                              <div className="flex-1 space-y-1">
+                                {formData.response_hours[day.key].slots.map((slot, slotIndex) => (
+                                  <div key={slotIndex} className="flex items-center gap-2">
+                                    <Input
+                                      type="time"
+                                      value={slot.start}
+                                      onChange={(e) => handleSlotChange(day.key, slotIndex, 'start', e.target.value)}
+                                      className="w-28"
+                                    />
+                                    <span className="text-muted-foreground">-</span>
+                                    <Input
+                                      type="time"
+                                      value={slot.end}
+                                      onChange={(e) => handleSlotChange(day.key, slotIndex, 'end', e.target.value)}
+                                      className="w-28"
+                                    />
+                                    {formData.response_hours[day.key].slots.length > 1 && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => removeSlot(day.key, slotIndex)}
+                                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                ))}
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => addSlot(day.key)}
+                                  className="text-xs text-muted-foreground"
+                                >
+                                  <Plus className="h-3 w-3 mr-1" />
+                                  เพิ่มช่วงเวลา
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">ปิด</span>
+                            )}
+                          </div>
+                          {day.key !== 'sun' && <div className="border-b" />}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Offline Message */}
+                  <div className="space-y-2">
+                    <Label htmlFor="offline-message" className="font-semibold">
+                      ข้อความนอกเวลาทำการ
+                    </Label>
+                    <Textarea
+                      id="offline-message"
+                      placeholder="ตัวอย่าง: ขณะนี้อยู่นอกเวลาทำการ กรุณาติดต่อใหม่ในเวลา 09:00-18:00 น. วันจันทร์-ศุกร์ครับ"
+                      value={formData.offline_message}
+                      onChange={(e) => handleChange('offline_message', e.target.value)}
+                      rows={2}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      เว้นว่างไว้ = บอทจะไม่ตอบนอกเวลาทำการ
+                    </p>
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>

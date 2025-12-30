@@ -17,6 +17,7 @@ class BotSetting extends Model
         'hitl_triggers',
         'response_hours_enabled',
         'response_hours',
+        'response_hours_timezone',
         'offline_message',
         'welcome_message',
         'fallback_message',
