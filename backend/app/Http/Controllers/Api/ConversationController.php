@@ -114,6 +114,9 @@ class ConversationController extends Controller
                     ],
                 ],
             ]);
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            // Let Laravel handle authorization exceptions naturally (403)
+            throw $e;
         } catch (\Throwable $e) {
             Log::error('ConversationController@index error', [
                 'message' => $e->getMessage(),
