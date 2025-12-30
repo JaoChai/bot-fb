@@ -31,9 +31,22 @@ Route::prefix('auth')->middleware('throttle.auth')->group(function () {
 });
 
 // Temporary debug route - REMOVE after debugging
-Route::get('/debug-bot-settings/{botId}', function ($botId) {
+Route::middleware(['auth:sanctum'])->get('/debug-bot-settings-auth/{botId}', function ($botId, \Illuminate\Http\Request $request) {
     try {
+        $user = $request->user();
         $bot = \App\Models\Bot::findOrFail($botId);
+
+        // Check authorization manually
+        $isOwner = $user->id === $bot->user_id;
+
+        if (!$isOwner) {
+            return response()->json([
+                'error' => 'Not authorized',
+                'user_id' => $user->id,
+                'bot_user_id' => $bot->user_id,
+            ], 403);
+        }
+
         $settings = $bot->settings;
         if (!$settings) {
             $settings = \App\Models\BotSetting::create([
