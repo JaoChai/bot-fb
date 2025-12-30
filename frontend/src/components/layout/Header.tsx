@@ -12,7 +12,7 @@ export function Header() {
   const { sidebarOpen, setSidebarOpen } = useUIStore();
 
   return (
-    <header className="flex h-14 items-center border-b bg-background px-4 md:hidden">
+    <header className="sticky top-0 z-40 flex h-14 items-center border-b bg-background px-4 md:hidden">
       {/* Mobile menu button */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetTrigger asChild>

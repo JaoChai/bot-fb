@@ -114,7 +114,7 @@ export const ChatEmulator = memo(function ChatEmulator({
           <Button
             size="sm"
             variant="ghost"
-            className="h-8 w-8 p-0 text-white hover:bg-white/20"
+            className="h-9 w-9 p-0 text-white bg-white/15 hover:bg-white/25 border border-white/20"
             onClick={onClearMessages}
             title="ล้างแชท"
           >

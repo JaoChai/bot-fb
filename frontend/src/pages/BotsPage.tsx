@@ -181,14 +181,14 @@ export function BotsPage() {
     <TooltipProvider>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">การเชื่อมต่อ</h1>
-            <p className="text-muted-foreground text-sm mt-1">
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">การเชื่อมต่อ</h1>
+            <p className="text-muted-foreground text-sm mt-1 hidden sm:block">
               จัดการการเชื่อมต่อ Chatbot กับ Platform ต่างๆ
             </p>
           </div>
-          <Button asChild>
+          <Button asChild className="w-full sm:w-auto">
             <Link to="/connections/add">
               <Plus className="h-4 w-4 mr-2" />
               เพิ่มการเชื่อมต่อ
@@ -246,7 +246,7 @@ export function BotsPage() {
                       {/* Webhook URL - Compact */}
                       {bot.webhook_url && (
                         <div className="flex items-center gap-2 mt-2">
-                          <code className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded font-mono truncate max-w-md">
+                          <code className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded font-mono truncate max-w-[180px] sm:max-w-md">
                             {bot.webhook_url}
                           </code>
                           <Tooltip>

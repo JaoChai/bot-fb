@@ -146,7 +146,7 @@ export function ChatPage() {
   // No bot selected - show bot selector
   if (!botId) {
     return (
-      <div className="flex h-[calc(100vh-64px)] items-center justify-center">
+      <div className="flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-64px)] items-center justify-center">
         <div className="text-center space-y-4 max-w-md">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-muted">
             <MessageSquare className="h-8 w-8 text-muted-foreground" />
@@ -175,7 +175,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="-m-4 md:-m-6 flex h-[calc(100vh-64px)] overflow-hidden bg-background">
+    <div className="-m-4 md:-m-6 flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-64px)] overflow-hidden bg-background">
       {/* Left Panel: Conversation List */}
       <div className={cn(
         'w-full md:w-80 flex-shrink-0 border-r flex flex-col',
