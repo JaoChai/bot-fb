@@ -20,6 +20,8 @@ class BotSetting extends Model
         'offline_message',
         'welcome_message',
         'fallback_message',
+        'rate_limit_bot_message',
+        'rate_limit_user_message',
         'typing_indicator',
         'typing_delay_ms',
         'content_filter_enabled',

@@ -54,6 +54,8 @@ class BotSettingController extends Controller
             // Auto-responses
             'welcome_message' => 'nullable|string|max:2000',
             'fallback_message' => 'nullable|string|max:1000',
+            'rate_limit_bot_message' => 'nullable|string|max:500',
+            'rate_limit_user_message' => 'nullable|string|max:500',
             'typing_indicator' => 'boolean',
             'typing_delay_ms' => 'integer|min:0|max:5000',
 
