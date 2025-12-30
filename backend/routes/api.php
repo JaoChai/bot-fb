@@ -82,6 +82,25 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         // Bot settings routes
         Route::get('/{bot}/settings', [BotSettingController::class, 'show'])->name('bots.settings.show');
         Route::put('/{bot}/settings', [BotSettingController::class, 'update'])->name('bots.settings.update');
+
+        // Debug endpoint - TEMPORARY
+        Route::get('/{bot}/settings-debug', function (\App\Models\Bot $bot) {
+            try {
+                $settings = $bot->settings;
+                return response()->json([
+                    'status' => 'ok',
+                    'has_settings' => $settings !== null,
+                    'response_hours' => $settings?->response_hours,
+                    'response_hours_type' => gettype($settings?->response_hours),
+                ]);
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'error' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                ], 500);
+            }
+        });
     });
 
     // Flow routes (nested under bots)
