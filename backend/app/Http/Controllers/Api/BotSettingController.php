@@ -81,7 +81,7 @@ class BotSettingController extends Controller
             'multiple_bubbles_max' => 'integer|min:1|max:5|gte:multiple_bubbles_min',
             'multiple_bubbles_delimiter' => 'string|max:10',
             'wait_multiple_bubbles_enabled' => 'boolean',
-            'wait_multiple_bubbles_ms' => 'integer|min:500|max:5000',
+            'wait_multiple_bubbles_ms' => 'integer|min:500|max:20000',
         ]);
 
         // Get or create settings
