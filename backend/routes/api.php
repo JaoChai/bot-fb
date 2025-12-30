@@ -162,6 +162,21 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
+// Debug endpoint - Check customer_profiles schema
+Route::get('/debug-customer-profiles-schema', function () {
+    try {
+        $columns = \Illuminate\Support\Facades\Schema::getColumnListing('customer_profiles');
+        return response()->json([
+            'table' => 'customer_profiles',
+            'columns' => $columns,
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+        ], 500);
+    }
+});
+
 // Debug endpoint - TEMPORARY for diagnosing 500 error
 Route::get('/debug-schema', function () {
     try {
