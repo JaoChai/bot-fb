@@ -11,7 +11,7 @@ export function AuthLayout() {
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-background text-foreground">
             <Sparkles className="h-5 w-5" />
           </div>
-          <span className="text-xl font-semibold">BotFacebook</span>
+          <span className="text-xl font-semibold">BotJao</span>
         </div>
 
         {/* Testimonial */}
@@ -41,7 +41,7 @@ export function AuthLayout() {
               <Sparkles className="h-5 w-5" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold">BotFacebook</h1>
+          <h1 className="text-2xl font-bold">BotJao</h1>
           <p className="text-sm text-muted-foreground">AI Chatbot Platform</p>
         </div>
 
