@@ -96,10 +96,12 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
-            // Enable ATTR_EMULATE_PREPARES for Neon.tech PgBouncer compatibility
-            // This prevents "cached plan must not change result type" errors after schema changes
+            // IMPORTANT: ATTR_EMULATE_PREPARES must be FALSE for PostgreSQL boolean columns
+            // When true, PDO sends 1/0 instead of TRUE/FALSE which PostgreSQL rejects
+            // Note: If "cached plan must not change result type" errors occur after migrations,
+            // run: php artisan db:reconnect or restart the application
             'options' => [
-                \PDO::ATTR_EMULATE_PREPARES => true,
+                \PDO::ATTR_EMULATE_PREPARES => false,
             ],
         ],
 
