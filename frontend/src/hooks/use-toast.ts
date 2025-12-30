@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { toast as sonnerToast } from 'sonner';
 
 interface ToastOptions {
@@ -7,7 +8,7 @@ interface ToastOptions {
 }
 
 export function useToast() {
-  const toast = (options: ToastOptions) => {
+  const toast = useCallback((options: ToastOptions) => {
     if (options.variant === 'destructive') {
       sonnerToast.error(options.title, {
         description: options.description,
@@ -17,7 +18,7 @@ export function useToast() {
         description: options.description,
       });
     }
-  };
+  }, []);
 
   return { toast };
 }
