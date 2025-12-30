@@ -10,6 +10,7 @@ use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\LINEService;
+use App\Services\MultipleBubblesService;
 use App\Services\RateLimitService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -164,9 +165,18 @@ class ProcessLINEWebhook implements ShouldQueue
                 $userMessage
             );
 
-            // Send reply to LINE
-            if ($replyToken && $botMessage->content) {
-                $lineService->reply($this->bot, $replyToken, [$botMessage->content]);
+            // Send reply to LINE (with multiple bubbles support)
+            if ($botMessage->content) {
+                $bubblesService = app(MultipleBubblesService::class);
+
+                if ($bubblesService->isEnabled($this->bot)) {
+                    // Parse content into bubbles and send with optional delays
+                    $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
+                    $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles);
+                } elseif ($replyToken) {
+                    // Standard single message reply
+                    $lineService->reply($this->bot, $replyToken, [$botMessage->content]);
+                }
             }
 
             // Update conversation and bot stats in batch (2 messages: user + bot)

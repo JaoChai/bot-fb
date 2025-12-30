@@ -75,11 +75,12 @@ class RAGService
             );
         }
 
-        // Step 4: Build enhanced system prompt with KB context
+        // Step 4: Build enhanced system prompt with KB context and multiple bubbles
         // Priority: Bot system_prompt > Flow system_prompt > Default
         $systemPrompt = $this->buildEnhancedPrompt(
             $this->getSystemPromptForBot($bot),
-            $kbContext
+            $kbContext,
+            $bot
         );
 
         // Step 5: Get chat models
@@ -290,16 +291,27 @@ class RAGService
     }
 
     /**
-     * Build enhanced system prompt with KB context.
+     * Build enhanced system prompt with KB context and multiple bubbles instruction.
      */
-    protected function buildEnhancedPrompt(string $basePrompt, string $kbContext): string
+    protected function buildEnhancedPrompt(string $basePrompt, string $kbContext, ?Bot $bot = null): string
     {
-        if (empty($kbContext)) {
-            return $basePrompt;
+        $prompt = $basePrompt;
+
+        // Append KB context if available
+        if (!empty($kbContext)) {
+            $prompt .= "\n\n" . $kbContext;
         }
 
-        // Append KB context to the system prompt
-        return $basePrompt . "\n\n" . $kbContext;
+        // Append multiple bubbles instruction if enabled
+        if ($bot) {
+            $bubblesService = app(MultipleBubblesService::class);
+            $instruction = $bubblesService->buildPromptInstruction($bot);
+            if (!empty($instruction)) {
+                $prompt .= "\n" . $instruction;
+            }
+        }
+
+        return $prompt;
     }
 
     /**
