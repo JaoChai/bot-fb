@@ -72,6 +72,9 @@ function getEventIcon(event: string, data?: Record<string, unknown>) {
       if (toolName === 'calculate') {
         return <Calculator className="h-3.5 w-3.5 text-foreground" />;
       }
+      if (toolName === 'think') {
+        return <Brain className="h-3.5 w-3.5 text-purple-500" />;
+      }
       return <Wrench className="h-3.5 w-3.5 text-foreground" />;
     }
     case 'tool_result':
@@ -128,6 +131,9 @@ function getEventLabel(event: string, data?: Record<string, unknown>): string {
       }
       if (toolName === 'calculate') {
         return '🧮 คำนวณ...';
+      }
+      if (toolName === 'think') {
+        return '🧠 กำลังคิด...';
       }
       return `🔧 เรียกใช้ Tool: ${toolName || 'unknown'}`;
     }

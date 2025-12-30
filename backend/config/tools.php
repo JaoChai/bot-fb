@@ -54,6 +54,24 @@ return [
         ],
     ],
 
+    'think' => [
+        'type' => 'function',
+        'function' => [
+            'name' => 'think',
+            'description' => 'ใช้เพื่อหยุดคิดและวิเคราะห์ก่อนตอบ ใช้เมื่อ: ต้องการวางแผนขั้นตอนการทำงาน, วิเคราะห์ผลลัพธ์จาก tool อื่น, คิดทบทวนก่อนตอบคำถามที่ซับซ้อน, หรือตรวจสอบความถูกต้องของข้อมูล',
+            'parameters' => [
+                'type' => 'object',
+                'properties' => [
+                    'thought' => [
+                        'type' => 'string',
+                        'description' => 'ความคิดหรือการวิเคราะห์ที่ต้องการบันทึก',
+                    ],
+                ],
+                'required' => ['thought'],
+            ],
+        ],
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Tool Metadata (for UI)
@@ -72,6 +90,12 @@ return [
             'label' => 'คำนวณ',
             'label_en' => 'Calculate',
             'color' => 'green',
+        ],
+        'think' => [
+            'icon' => 'brain',
+            'label' => 'คิดก่อนตอบ',
+            'label_en' => 'Think',
+            'color' => 'purple',
         ],
     ],
 ];

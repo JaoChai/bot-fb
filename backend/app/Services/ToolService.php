@@ -85,6 +85,7 @@ class ToolService
             $result = match ($toolName) {
                 'search_knowledge_base' => $this->executeSearchKb($arguments, $context),
                 'calculate' => $this->executeCalculate($arguments),
+                'think' => $this->executeThink($arguments),
                 default => throw new \InvalidArgumentException("Unknown tool: {$toolName}"),
             };
 
@@ -233,6 +234,32 @@ class ToolService
 
             return "ไม่สามารถคำนวณ \"{$expression}\" ได้: {$e->getMessage()}";
         }
+    }
+
+    /**
+     * Execute think tool - internal reasoning scratchpad for AI.
+     *
+     * This tool allows the AI to pause and reflect before responding.
+     * The thought is logged for debugging but not shown to end users.
+     *
+     * @param array $args Tool arguments
+     * @return string Confirmation message
+     */
+    protected function executeThink(array $args): string
+    {
+        $thought = $args['thought'] ?? '';
+
+        if (empty($thought)) {
+            return '[No thought provided]';
+        }
+
+        // Log for debugging (truncated for log size)
+        Log::debug('AI Think Tool', [
+            'thought' => mb_substr($thought, 0, 200),
+        ]);
+
+        // Return confirmation - this goes back to the AI, not to the user
+        return "Thought recorded: {$thought}";
     }
 
     /**
