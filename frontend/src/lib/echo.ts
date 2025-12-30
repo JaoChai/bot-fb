@@ -34,11 +34,38 @@ export const createEcho = (): Echo<'reverb'> => {
     forceTLS: REVERB_SCHEME === 'https',
     enabledTransports: ['ws', 'wss'],
     authEndpoint: `${baseUrl}/api/broadcasting/auth`,
-    auth: {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem('auth_token') || ''}`,
+    // Use authorizer to get fresh token for each auth request
+    // This prevents stale token issues after page refresh or rehydration
+    authorizer: (channel: { name: string }) => ({
+      authorize: (socketId: string, callback: (error: Error | null, data: { auth: string } | null) => void) => {
+        const token = localStorage.getItem('auth_token');
+        fetch(`${baseUrl}/api/broadcasting/auth`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${token || ''}`,
+          },
+          body: JSON.stringify({
+            socket_id: socketId,
+            channel_name: channel.name,
+          }),
+        })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Auth failed: ${response.status}`);
+            }
+            return response.json();
+          })
+          .then((data) => {
+            callback(null, data);
+          })
+          .catch((error) => {
+            console.error('Broadcasting auth error:', error);
+            callback(error instanceof Error ? error : new Error(String(error)), null);
+          });
       },
-    },
+    }),
   });
 };
 
