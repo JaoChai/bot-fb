@@ -342,7 +342,7 @@ export function FlowEditorPage() {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
           <p className="text-muted-foreground">กำลังโหลด Flow Editor...</p>
         </div>
       </div>
@@ -381,7 +381,7 @@ export function FlowEditorPage() {
           {!showEditor ? (
             /* Empty State */
             <div className="flex-1 flex items-center justify-center">
-              <p className="text-lg text-primary">เลือกหรือสร้างโฟลว์เพื่อเริ่มต้น</p>
+              <p className="text-lg text-muted-foreground">เลือกหรือสร้างโฟลว์เพื่อเริ่มต้น</p>
             </div>
           ) : isLoadingFlow ? (
             <div className="flex-1 flex items-center justify-center">
@@ -402,7 +402,6 @@ export function FlowEditorPage() {
                   />
                 </div>
                 <Button
-                  variant="cta"
                   onClick={handleSave}
                   disabled={isSaving || !hasChanges}
                 >
@@ -472,7 +471,7 @@ export function FlowEditorPage() {
                             <label
                               className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
                                 formData.enabled_tools?.includes('search_kb')
-                                  ? 'bg-cyan-500/10 border-cyan-500/30'
+                                  ? 'bg-accent border-foreground'
                                   : 'hover:bg-muted'
                               }`}
                             >
@@ -503,7 +502,7 @@ export function FlowEditorPage() {
                             <label
                               className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
                                 formData.enabled_tools?.includes('calculate')
-                                  ? 'bg-cyan-500/10 border-cyan-500/30'
+                                  ? 'bg-accent border-foreground'
                                   : 'hover:bg-muted'
                               }`}
                             >
@@ -532,8 +531,8 @@ export function FlowEditorPage() {
                             </label>
                           </div>
                           {(!formData.enabled_tools || formData.enabled_tools.length === 0) && (
-                            <p className="text-xs text-amber-600 mt-1">
-                              ⚠️ กรุณาเลือกอย่างน้อย 1 tool เพื่อใช้งาน Agentic Mode
+                            <p className="text-xs text-muted-foreground mt-1">
+                              กรุณาเลือกอย่างน้อย 1 tool เพื่อใช้งาน Agentic Mode
                             </p>
                           )}
                         </div>
@@ -575,7 +574,7 @@ export function FlowEditorPage() {
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-sm font-medium">
                         เขียนคำสั่งให้ AI สร้างการตอบกลับ - คุณสามารถดูตัวอย่างการเขียนคำสั่งได้ใน{' '}
-                        <a href="#" className="text-primary hover:underline">
+                        <a href="#" className="underline hover:text-muted-foreground">
                           คู่มือการใช้งาน & Prompts Library
                         </a>
                       </span>
@@ -906,7 +905,6 @@ export function FlowEditorPage() {
                 <span>words: {formData.system_prompt.split(/\s+/).filter(Boolean).length}</span>
               </div>
               <Button
-                variant="cta"
                 onClick={() => setIsFullscreenPrompt(false)}
               >
                 เสร็จสิ้น

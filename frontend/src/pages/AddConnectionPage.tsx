@@ -103,24 +103,21 @@ export function AddConnectionPage() {
               onClick={() => setSelectedPlatform(platform.id)}
               className={cn(
                 'relative flex flex-col items-center p-6 rounded-xl border-2 transition-all duration-200 cursor-pointer',
-                'hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary',
+                'hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-foreground',
                 selectedPlatform === platform.id
-                  ? `${platform.borderColor} ${platform.bgColor} shadow-md`
-                  : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-card'
+                  ? 'border-foreground bg-accent shadow-sm'
+                  : 'border-border hover:border-muted-foreground bg-card'
               )}
             >
               {/* Selected Indicator */}
               {selectedPlatform === platform.id && (
-                <div className="absolute top-3 right-3 w-6 h-6 bg-primary rounded-full flex items-center justify-center">
-                  <Check className="h-4 w-4 text-primary-foreground" />
+                <div className="absolute top-3 right-3 w-6 h-6 bg-foreground rounded-full flex items-center justify-center">
+                  <Check className="h-4 w-4 text-background" />
                 </div>
               )}
 
               {/* Icon */}
-              <div className={cn(
-                'w-16 h-16 rounded-xl flex items-center justify-center mb-3',
-                selectedPlatform === platform.id ? 'bg-white dark:bg-slate-900' : platform.bgColor
-              )}>
+              <div className="w-16 h-16 rounded-xl flex items-center justify-center mb-3 bg-muted">
                 {platform.icon}
               </div>
 
@@ -133,18 +130,18 @@ export function AddConnectionPage() {
 
         {/* Requirements Info Panel */}
         {selectedPlatformData && (
-          <Card className="mb-6 border-l-4 border-l-primary animate-in fade-in slide-in-from-top-2 duration-200">
+          <Card className="mb-6 border-l-4 border-l-foreground animate-in fade-in slide-in-from-top-2 duration-200">
             <CardContent className="p-5">
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                  <Info className="h-5 w-5 text-primary" />
+                <div className="flex-shrink-0 w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
+                  <Info className="h-5 w-5 text-foreground" />
                 </div>
                 <div>
                   <h3 className="font-semibold mb-2">สิ่งที่ต้องมีสำหรับ {selectedPlatformData.fullName}</h3>
                   <ul className="space-y-1.5">
                     {selectedPlatformData.requirements.map((req, index) => (
                       <li key={index} className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <span className="w-1.5 h-1.5 bg-primary rounded-full flex-shrink-0" />
+                        <span className="w-1.5 h-1.5 bg-foreground rounded-full flex-shrink-0" />
                         {req}
                       </li>
                     ))}
@@ -158,7 +155,6 @@ export function AddConnectionPage() {
         {/* Continue Button */}
         <div className="flex justify-end">
           <Button
-            variant="cta"
             size="lg"
             onClick={handleContinue}
             disabled={!selectedPlatform}

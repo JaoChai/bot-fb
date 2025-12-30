@@ -183,12 +183,12 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
             <div className="flex items-center gap-2">
               <h2 className="font-semibold">{customerName}</h2>
               {conversation.is_handover ? (
-                <Badge variant="outline" className="text-amber-600 border-amber-300">
+                <Badge variant="outline" className="border-dashed">
                   <Headphones className="h-3 w-3 mr-1" />
                   รอตอบ
                 </Badge>
               ) : (
-                <Badge variant="outline" className="text-green-600 border-green-300">
+                <Badge variant="secondary">
                   <Bot className="h-3 w-3 mr-1" />
                   Bot เปิด
                 </Badge>
@@ -311,12 +311,12 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
                     {/* Context cleared separator */}
                     {showContextSeparator && (
                       <div className="flex items-center gap-3 py-3 my-2">
-                        <div className="flex-1 h-px bg-amber-300 dark:bg-amber-700" />
-                        <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 px-3 py-1 rounded-full border border-amber-200 dark:border-amber-800">
+                        <div className="flex-1 h-px bg-border" />
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full border">
                           <RotateCcw className="h-3 w-3" />
                           <span>Bot เริ่มบริบทใหม่ - {format(contextClearedAt, 'PPp', { locale: th })}</span>
                         </div>
-                        <div className="flex-1 h-px bg-amber-300 dark:bg-amber-700" />
+                        <div className="flex-1 h-px bg-border" />
                       </div>
                     )}
                     <MessageBubble
@@ -369,7 +369,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
                   autoFocus
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Headphones className="h-4 w-4 text-amber-600" />
+                  <Headphones className="h-4 w-4 text-muted-foreground" />
                 </div>
               </div>
               <Button
@@ -445,8 +445,8 @@ function MessageBubble({ message, previousMessage }: MessageBubbleProps) {
             isUser
               ? 'bg-muted text-foreground'
               : message.sender === 'agent'
-              ? 'bg-amber-50 dark:bg-amber-950 text-foreground border border-amber-200 dark:border-amber-800'
-              : 'bg-primary text-primary-foreground'
+              ? 'bg-accent text-foreground border border-dashed'
+              : 'bg-foreground text-background'
           )}
         >
           {/* Sender label for non-user messages */}
@@ -477,16 +477,16 @@ function MessageBubble({ message, previousMessage }: MessageBubbleProps) {
             <AvatarFallback
               className={
                 message.sender === 'agent'
-                  ? 'bg-amber-100 dark:bg-amber-900'
-                  : 'bg-primary'
+                  ? 'bg-muted'
+                  : 'bg-foreground'
               }
             >
               <SenderIcon
                 className={cn(
                   'h-4 w-4',
                   message.sender === 'agent'
-                    ? 'text-amber-700 dark:text-amber-300'
-                    : 'text-primary-foreground'
+                    ? 'text-foreground'
+                    : 'text-background'
                 )}
               />
             </AvatarFallback>

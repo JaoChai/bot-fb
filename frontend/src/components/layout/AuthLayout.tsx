@@ -3,24 +3,52 @@ import { Sparkles } from 'lucide-react';
 
 export function AuthLayout() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-slate-50 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950 p-4">
-      {/* Decorative background */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/5 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-primary/5 rounded-full blur-3xl" />
-      </div>
+    <div className="min-h-screen lg:grid lg:grid-cols-2">
+      {/* Left side - Branding (hidden on mobile) */}
+      <div className="hidden lg:flex flex-col justify-between bg-foreground p-10 text-background">
+        {/* Logo */}
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-background text-foreground">
+            <Sparkles className="h-5 w-5" />
+          </div>
+          <span className="text-xl font-semibold">BotFacebook</span>
+        </div>
 
-      <div className="relative mb-8 text-center">
-        <div className="flex items-center justify-center gap-3 mb-2">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
-            <Sparkles className="h-6 w-6" />
+        {/* Testimonial */}
+        <div className="space-y-4">
+          <blockquote className="text-lg leading-relaxed">
+            "ระบบ AI Chatbot ที่ช่วยให้ธุรกิจของเราตอบลูกค้าได้ 24 ชั่วโมง
+            ลดภาระงานของทีม และเพิ่มยอดขายได้อย่างมีประสิทธิภาพ"
+          </blockquote>
+          <div>
+            <p className="font-medium">คุณสมชาย ใจดี</p>
+            <p className="text-sm text-background/60">CEO, Example Company</p>
           </div>
         </div>
-        <h1 className="text-3xl font-bold text-foreground">BotFacebook</h1>
-        <p className="text-muted-foreground">AI Chatbot Platform</p>
+
+        {/* Footer */}
+        <p className="text-sm text-background/60">
+          AI Chatbot Platform
+        </p>
       </div>
-      <div className="relative w-full max-w-md">
-        <Outlet />
+
+      {/* Right side - Form */}
+      <div className="flex flex-col items-center justify-center p-6 lg:p-10">
+        {/* Mobile logo (visible on mobile only) */}
+        <div className="mb-8 text-center lg:hidden">
+          <div className="flex items-center justify-center gap-3 mb-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-foreground text-background">
+              <Sparkles className="h-5 w-5" />
+            </div>
+          </div>
+          <h1 className="text-2xl font-bold">BotFacebook</h1>
+          <p className="text-sm text-muted-foreground">AI Chatbot Platform</p>
+        </div>
+
+        {/* Form container */}
+        <div className="w-full max-w-sm">
+          <Outlet />
+        </div>
       </div>
     </div>
   );

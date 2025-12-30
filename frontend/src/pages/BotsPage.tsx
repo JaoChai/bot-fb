@@ -183,14 +183,14 @@ export function BotsPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">การเชื่อมต่อ</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">การเชื่อมต่อ</h1>
             <p className="text-muted-foreground text-sm mt-1">
               จัดการการเชื่อมต่อ Chatbot กับ Platform ต่างๆ
             </p>
           </div>
-          <Button variant="cta" asChild>
+          <Button asChild>
             <Link to="/connections/add">
-              <Plus className="h-4 w-4" />
+              <Plus className="h-4 w-4 mr-2" />
               เพิ่มการเชื่อมต่อ
             </Link>
           </Button>
@@ -200,16 +200,16 @@ export function BotsPage() {
           /* Empty State */
           <Card className="border-dashed border-2">
             <CardContent className="flex flex-col items-center justify-center py-16">
-              <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900">
-                <BotIcon className="h-10 w-10 text-blue-600 dark:text-blue-400" />
+              <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+                <BotIcon className="h-8 w-8 text-muted-foreground" />
               </div>
               <h2 className="text-xl font-semibold mb-2">เริ่มต้นใช้งาน AI Chatbot</h2>
               <p className="text-muted-foreground text-center max-w-md mb-6">
                 สร้างการเชื่อมต่อแรกเพื่อเชื่อม AI Chatbot กับ LINE, Facebook หรือทดสอบก่อนใช้งานจริง
               </p>
-              <Button variant="cta" size="lg" asChild>
+              <Button size="lg" asChild>
                 <Link to="/connections/add">
-                  <Plus className="h-5 w-5" />
+                  <Plus className="h-5 w-5 mr-2" />
                   สร้างการเชื่อมต่อแรก
                 </Link>
               </Button>
@@ -221,12 +221,12 @@ export function BotsPage() {
             {bots.map(bot => (
               <Card
                 key={bot.id}
-                className="group hover:shadow-md transition-all duration-200 hover:border-slate-300 dark:hover:border-slate-600"
+                className="border hover:border-foreground/20 transition-colors"
               >
-                <CardContent className="p-5">
+                <CardContent className="p-4">
                   <div className="flex items-start gap-4">
                     {/* Platform Icon */}
-                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-muted rounded-lg">
                       {getChannelIcon(bot.channel_type)}
                     </div>
 
@@ -303,7 +303,7 @@ export function BotsPage() {
 
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="cta" size="sm" asChild>
+                            <Button size="sm" asChild>
                               <Link to={`/flows/editor?botId=${bot.id}`}>
                                 <Workflow className="h-4 w-4" />
                                 <span className="ml-1.5">AI Flow</span>
