@@ -22,12 +22,13 @@ class ConversationController extends Controller
     /**
      * List conversations for a bot with filters, pagination, and search.
      */
-    public function index(Request $request, Bot $bot): AnonymousResourceCollection
+    public function index(Request $request, Bot $bot): AnonymousResourceCollection|JsonResponse
     {
-        $this->authorize('view', $bot);
+        try {
+            $this->authorize('view', $bot);
 
-        $query = $bot->conversations()
-            ->with(['customerProfile', 'assignedUser']);
+            $query = $bot->conversations()
+                ->with(['customerProfile', 'assignedUser']);
 
         // Filter by status
         if ($request->filled('status')) {
@@ -113,6 +114,18 @@ class ConversationController extends Controller
                     ],
                 ],
             ]);
+        } catch (\Throwable $e) {
+            Log::error('ConversationController@index error', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+            return response()->json([
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ], 500);
+        }
     }
 
     /**
