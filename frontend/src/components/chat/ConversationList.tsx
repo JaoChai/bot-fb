@@ -41,14 +41,14 @@ export function ConversationList({
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Search */}
-      <div className="p-3 border-b">
+      <div className="p-2 sm:p-3 border-b">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="ค้นหา..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="pl-9"
+            className="pl-9 min-h-[44px] text-base sm:text-sm"
           />
         </div>
       </div>
@@ -56,27 +56,27 @@ export function ConversationList({
       {/* Status Tabs */}
       <div className="p-2 border-b">
         <Tabs value={statusFilter} onValueChange={onStatusFilterChange}>
-          <TabsList className="w-full grid grid-cols-3 h-10">
-            <TabsTrigger value="all" className="text-xs h-9">
-              ทั้งหมด
+          <TabsList className="w-full grid grid-cols-3 h-11">
+            <TabsTrigger value="all" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+              <span className="truncate">ทั้งหมด</span>
               {statusCounts && (
-                <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4">
+                <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4 hidden sm:inline-flex">
                   {statusCounts.total}
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="active" className="text-xs h-9">
-              กำลังใช้งาน
+            <TabsTrigger value="active" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+              <span className="truncate">ใช้งาน</span>
               {statusCounts && (
-                <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4">
+                <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4 hidden sm:inline-flex">
                   {statusCounts.active}
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="handover" className="text-xs h-9">
-              รอตอบ
-              {statusCounts && (
-                <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4">
+            <TabsTrigger value="handover" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+              <span className="truncate">รอตอบ</span>
+              {statusCounts && statusCounts.handover > 0 && (
+                <Badge className="ml-1 text-xs px-1 py-0 h-4 bg-destructive">
                   {statusCounts.handover}
                 </Badge>
               )}

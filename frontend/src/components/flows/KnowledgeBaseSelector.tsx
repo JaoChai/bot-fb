@@ -73,7 +73,7 @@ const KnowledgeBaseConfigItem = memo(function KnowledgeBaseConfigItem({
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <Label className="text-xs">Top K: {config.kb_top_k || 5}</Label>
           <Slider

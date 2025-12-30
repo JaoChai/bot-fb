@@ -1,4 +1,5 @@
 import { memo, useCallback, useRef, useEffect, useState } from 'react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ProcessDisplay } from '@/components/ProcessDisplay';
 import {
@@ -20,6 +21,7 @@ interface ChatEmulatorProps {
   onClearMessages: () => void;
   disabled?: boolean;
   disabledReason?: string;
+  className?: string;
 }
 
 // Memoized message item
@@ -71,6 +73,7 @@ export const ChatEmulator = memo(function ChatEmulator({
   onClearMessages,
   disabled = false,
   disabledReason,
+  className,
 }: ChatEmulatorProps) {
   const [input, setInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -100,7 +103,7 @@ export const ChatEmulator = memo(function ChatEmulator({
   );
 
   return (
-    <div className="w-96 border-l bg-card flex flex-col">
+    <div className={cn("w-96 border-l bg-card flex flex-col", className)}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 text-background bg-foreground border-b">
         <div className="flex items-center gap-2">

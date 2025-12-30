@@ -236,40 +236,40 @@ export function ConversationDetailPage() {
   return (
     <div className="h-[calc(100vh-100px)] flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b bg-background">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate(`/chat?botId=${botId}`)}>
+      <div className="flex items-center justify-between p-2 sm:p-4 border-b bg-background">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
+          <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0" onClick={() => navigate(`/chat?botId=${botId}`)}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
 
-          <Avatar className="h-10 w-10">
+          <Avatar className="h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0">
             <AvatarImage src={conversation.customer_profile?.picture_url || undefined} />
             <AvatarFallback>{customerInitial}</AvatarFallback>
           </Avatar>
 
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-semibold">{customerName}</h1>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="font-semibold text-sm sm:text-base truncate max-w-[100px] sm:max-w-none">{customerName}</h1>
               <Badge
                 variant={statusVariants[conversation.status] || 'default'}
-                className="text-xs capitalize"
+                className="text-xs capitalize flex-shrink-0"
               >
                 {conversation.status}
               </Badge>
               {conversation.is_handover && (
-                <Badge variant="outline" className="text-xs">
+                <Badge variant="outline" className="text-xs flex-shrink-0 hidden sm:inline-flex">
                   <UserCheck className="h-3 w-3 mr-1" />
                   Handover
                 </Badge>
               )}
             </div>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs sm:text-sm text-muted-foreground truncate">
               {channelLabels[conversation.channel_type]} • {conversation.message_count} messages
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
           {/* Customer Info Sheet */}
           <Sheet>
             <SheetTrigger asChild>
@@ -393,7 +393,7 @@ export function ConversationDetailPage() {
             <p>This conversation is closed. Reopen it to continue.</p>
           </div>
         ) : conversation.is_handover ? (
-          <form onSubmit={handleSendMessage} className="p-4">
+          <form onSubmit={handleSendMessage} className="p-2 sm:p-4">
             <div className="max-w-3xl mx-auto flex gap-2">
               <div className="flex-1 relative">
                 <Input
@@ -401,7 +401,7 @@ export function ConversationDetailPage() {
                   onChange={(e) => setMessageInput(e.target.value)}
                   placeholder="Type your message..."
                   disabled={sendAgentMessage.isPending}
-                  className="pr-12"
+                  className="pr-12 min-h-[44px] text-base sm:text-sm"
                   autoFocus
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
@@ -411,6 +411,7 @@ export function ConversationDetailPage() {
               <Button
                 type="submit"
                 disabled={!messageInput.trim() || sendAgentMessage.isPending}
+                className="h-11 w-11 sm:w-auto sm:h-auto sm:px-4 p-0"
               >
                 {sendAgentMessage.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -420,7 +421,7 @@ export function ConversationDetailPage() {
                 <span className="ml-2 hidden sm:inline">Send</span>
               </Button>
             </div>
-            <p className="text-center text-xs text-muted-foreground mt-2">
+            <p className="text-center text-xs text-muted-foreground mt-2 hidden sm:block">
               <UserCheck className="h-3 w-3 inline-block mr-1" />
               Handover mode - Messages will be sent directly to customer
             </p>
@@ -488,12 +489,12 @@ function MessageBubble({ message, previousMessage }: MessageBubbleProps) {
         {/* Message bubble */}
         <div
           className={cn(
-            'max-w-[70%] rounded-lg px-4 py-2',
+            'max-w-[85%] sm:max-w-[70%] rounded-lg px-3 sm:px-4 py-2 break-words overflow-hidden',
             isUser
               ? 'bg-muted text-foreground'
               : message.sender === 'agent'
               ? 'bg-accent text-foreground border border-border'
-              : 'bg-primary text-primary-foreground'
+              : 'bg-foreground text-background'
           )}
         >
           {/* Sender label for non-user messages */}
@@ -543,8 +544,8 @@ function MessageBubble({ message, previousMessage }: MessageBubbleProps) {
         {/* Bot/Agent avatar */}
         {!isUser && (
           <Avatar className="h-8 w-8 shrink-0">
-            <AvatarFallback className={message.sender === 'agent' ? 'bg-accent' : 'bg-primary'}>
-              <SenderIcon className={cn('h-4 w-4', message.sender === 'agent' ? 'text-foreground' : 'text-primary-foreground')} />
+            <AvatarFallback className={message.sender === 'agent' ? 'bg-muted' : 'bg-foreground'}>
+              <SenderIcon className={cn('h-4 w-4', message.sender === 'agent' ? 'text-foreground' : 'text-background')} />
             </AvatarFallback>
           </Avatar>
         )}
