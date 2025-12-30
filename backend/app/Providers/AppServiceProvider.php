@@ -65,9 +65,9 @@ class AppServiceProvider extends ServiceProvider
      */
     protected function configureRateLimiting(): void
     {
-        // Default API rate limit: 60 requests per minute
+        // Default API rate limit: 300 requests per minute (increased from 60)
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(60)->by(
+            return Limit::perMinute(300)->by(
                 $request->user()?->id ?: $request->ip()
             )->response(function (Request $request, array $headers) {
                 return response()->json([
