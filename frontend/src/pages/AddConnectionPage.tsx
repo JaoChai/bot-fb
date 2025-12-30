@@ -95,8 +95,8 @@ export function AddConnectionPage() {
           </div>
         </div>
 
-        {/* Platform Selection - Horizontal Cards */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        {/* Platform Selection - Responsive Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           {platforms.map((platform) => (
             <button
               key={platform.id}

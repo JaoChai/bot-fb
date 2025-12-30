@@ -80,10 +80,11 @@ export function DocumentUpload({ onSubmit, isSubmitting }: DocumentUploadProps) 
         <button
           type="button"
           disabled
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-muted/30 text-muted-foreground cursor-not-allowed opacity-50"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-muted/30 text-muted-foreground cursor-not-allowed opacity-50 whitespace-nowrap"
         >
           <Upload className="h-4 w-4" />
-          อัพโหลดไฟล์
+          <span className="hidden sm:inline">อัพโหลดไฟล์</span>
+          <span className="sm:hidden">อัพโหลด</span>
           <span className="text-xs">(เร็วๆ นี้)</span>
         </button>
       </div>

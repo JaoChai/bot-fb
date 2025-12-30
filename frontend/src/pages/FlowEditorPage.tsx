@@ -373,7 +373,7 @@ export function FlowEditorPage() {
 
   // Mobile tab navigation component
   const MobileBottomTabs = () => (
-    <div className="fixed bottom-0 left-0 right-0 border-t bg-background md:hidden z-50">
+    <div className="fixed bottom-0 left-0 right-0 border-t bg-background md:hidden z-50 pb-safe">
       <div className="grid grid-cols-3 h-14">
         <button
           onClick={() => setMobileActiveTab('flows')}

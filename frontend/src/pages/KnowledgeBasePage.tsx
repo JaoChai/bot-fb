@@ -130,7 +130,7 @@ export function KnowledgeBasePage() {
         </div>
 
         {/* Bot Selector - Compact */}
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Bot className="h-4 w-4 text-muted-foreground" />
             เลือก Bot:
@@ -139,7 +139,7 @@ export function KnowledgeBasePage() {
             value={selectedBotId?.toString() ?? ''}
             onValueChange={handleBotChange}
           >
-            <SelectTrigger className="w-[280px]">
+            <SelectTrigger className="w-full sm:w-[280px]">
               <SelectValue placeholder="คลิกเพื่อเลือก Bot..." />
             </SelectTrigger>
             <SelectContent>
@@ -158,20 +158,22 @@ export function KnowledgeBasePage() {
         {/* API Key Warning */}
         {selectedBotId && !isApiKeyConfigured && (
           <Card className="border-destructive/50 bg-destructive/5">
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="flex-shrink-0 w-10 h-10 bg-muted rounded-full flex items-center justify-center">
-                <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+            <CardContent className="flex flex-col sm:flex-row sm:items-center gap-4 p-4">
+              <div className="flex items-center gap-4 flex-1">
+                <div className="flex-shrink-0 w-10 h-10 bg-muted rounded-full flex items-center justify-center">
+                  <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium">
+                    OpenRouter API Key ยังไม่ได้ตั้งค่า
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    การประมวลผลเอกสารต้องใช้ API Key สำหรับสร้าง embeddings
+                  </p>
+                </div>
               </div>
-              <div className="flex-1">
-                <p className="font-medium">
-                  OpenRouter API Key ยังไม่ได้ตั้งค่า
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  การประมวลผลเอกสารต้องใช้ API Key สำหรับสร้าง embeddings
-                </p>
-              </div>
-              <Button asChild variant="outline">
-                <Link to="/settings" className="flex items-center gap-2">
+              <Button asChild variant="outline" className="w-full sm:w-auto">
+                <Link to="/settings" className="flex items-center justify-center gap-2">
                   <Settings className="h-4 w-4" />
                   ตั้งค่า API Key
                 </Link>
@@ -185,7 +187,7 @@ export function KnowledgeBasePage() {
           <div className="space-y-6">
             {/* Stats Overview - Horizontal */}
             {knowledgeBase && (
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Card className="border">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
@@ -221,7 +223,7 @@ export function KnowledgeBasePage() {
                         <Cpu className="h-6 w-6 text-muted-foreground" />
                       </div>
                       <div>
-                        <p className="text-sm font-mono font-medium truncate max-w-[120px]">
+                        <p className="text-sm font-mono font-medium truncate max-w-[180px] sm:max-w-[200px]">
                           {(knowledgeBase.embedding_model || 'text-embedding-3-small').split('/').pop()}
                         </p>
                         <p className="text-xs text-muted-foreground">Embedding</p>
@@ -319,21 +321,21 @@ export function KnowledgeBasePage() {
               <p className="text-muted-foreground text-center max-w-md mb-6">
                 เลือก Bot จากเมนูด้านบนเพื่อจัดการฐานความรู้ เพิ่มเอกสาร และทดสอบการค้นหา
               </p>
-              <div className="flex items-center gap-6 text-sm text-muted-foreground">
+              <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-full bg-foreground flex items-center justify-center">
                     <Bot className="h-4 w-4 text-background" />
                   </div>
                   <span>เลือก Bot</span>
                 </div>
-                <div className="w-8 h-px bg-border" />
+                <div className="hidden sm:block w-8 h-px bg-border" />
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
                     <Plus className="h-4 w-4 text-muted-foreground" />
                   </div>
                   <span>เพิ่มเอกสาร</span>
                 </div>
-                <div className="w-8 h-px bg-border" />
+                <div className="hidden sm:block w-8 h-px bg-border" />
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
                     <Search className="h-4 w-4 text-muted-foreground" />

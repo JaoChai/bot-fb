@@ -259,27 +259,27 @@ export function ConversationsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/bots')}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/bots')} className="flex-shrink-0">
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold tracking-tight">Conversations</h1>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Conversations</h1>
               {selectedBot && (
-                <Badge variant="outline" className="font-normal">
+                <Badge variant="outline" className="font-normal text-xs">
                   {selectedBot.name}
                 </Badge>
               )}
             </div>
-            <p className="text-muted-foreground">
+            <p className="text-muted-foreground text-sm hidden sm:block">
               View and manage customer conversations
             </p>
           </div>
         </div>
         <Select value={botId.toString()} onValueChange={handleBotSelect}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="Select bot" />
           </SelectTrigger>
           <SelectContent>
@@ -294,8 +294,9 @@ export function ConversationsPage() {
 
       {/* Status Tabs and Stats */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={statusFilter} onValueChange={handleStatusFilter}>
-          <TabsList>
+        <Tabs value={statusFilter} onValueChange={handleStatusFilter} className="w-full sm:w-auto">
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+            <TabsList className="w-max sm:w-auto">
             <TabsTrigger value="all" className="gap-2">
               All
               {statusCounts && (
@@ -328,7 +329,8 @@ export function ConversationsPage() {
                 </Badge>
               )}
             </TabsTrigger>
-          </TabsList>
+            </TabsList>
+          </div>
         </Tabs>
 
         {/* Search and Sort */}
@@ -339,7 +341,7 @@ export function ConversationsPage() {
               placeholder="Search conversations..."
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
-              className="pl-9 w-[200px]"
+              className="pl-9 w-full sm:w-[200px]"
             />
           </div>
           <DropdownMenu>
