@@ -6,9 +6,11 @@ use App\Exceptions\OpenRouterException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Flow\StoreFlowRequest;
 use App\Http\Requests\Flow\UpdateFlowRequest;
+use App\Http\Resources\FlowListResource;
 use App\Http\Resources\FlowResource;
 use App\Models\Bot;
 use App\Models\Flow;
+use App\Services\FlowCacheService;
 use App\Services\OpenRouterService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,20 +19,25 @@ use Illuminate\Support\Facades\Log;
 
 class FlowController extends Controller
 {
+    public function __construct(
+        protected FlowCacheService $flowCache
+    ) {}
+
     /**
      * List all flows for a bot.
+     * Uses FlowListResource for slim payload (no system_prompt, enabled_tools).
      */
     public function index(Request $request, Bot $bot): AnonymousResourceCollection
     {
         $this->authorize('view', $bot);
 
         $flows = $bot->flows()
-            ->with('knowledgeBases:knowledge_bases.id,knowledge_bases.name')
+            ->with('knowledgeBases:knowledge_bases.id')  // Only load IDs for count
             ->orderByDesc('is_default')  // Base flow always first
             ->latest()
             ->paginate($request->input('per_page', 15));
 
-        return FlowResource::collection($flows);
+        return FlowListResource::collection($flows);
     }
 
     /**
@@ -51,7 +58,7 @@ class FlowController extends Controller
         }
 
         // If this is the first flow, make it default
-        if ($bot->flows()->count() === 0) {
+        if (!$bot->flows()->exists()) {
             $data['is_default'] = true;
         }
 
@@ -77,6 +84,9 @@ class FlowController extends Controller
         if ($flow->is_default) {
             $bot->update(['default_flow_id' => $flow->id]);
         }
+
+        // Invalidate cache for this bot
+        $this->flowCache->invalidateBot($bot->id);
 
         return response()->json([
             'message' => 'Flow created successfully',
@@ -136,9 +146,15 @@ class FlowController extends Controller
             $bot->update(['default_flow_id' => $flow->id]);
         }
 
+        // Refresh to get updated data without full reload
+        $flow->refresh();
+
+        // Invalidate cache (default flow may have changed)
+        $this->flowCache->invalidateBot($bot->id);
+
         return response()->json([
             'message' => 'Flow updated successfully',
-            'data' => new FlowResource($flow->fresh()->load('knowledgeBases')),
+            'data' => new FlowResource($flow->load('knowledgeBases')),
         ]);
     }
 
@@ -157,14 +173,17 @@ class FlowController extends Controller
             ], 422);
         }
 
-        // Don't allow deleting the only flow
-        if ($bot->flows()->count() === 1) {
+        // Don't allow deleting the only flow (check if other flows exist)
+        if (!$bot->flows()->where('id', '!=', $flow->id)->exists()) {
             return response()->json([
                 'message' => 'Cannot delete the only flow. Create another flow first.',
             ], 422);
         }
 
         $flow->delete();
+
+        // Invalidate cache for this bot
+        $this->flowCache->invalidateBot($bot->id);
 
         return response()->json([
             'message' => 'Flow deleted successfully',
@@ -186,9 +205,15 @@ class FlowController extends Controller
         $flow->update(['is_default' => true]);
         $bot->update(['default_flow_id' => $flow->id]);
 
+        // Refresh to get updated data
+        $flow->refresh();
+
+        // Invalidate default flow cache
+        $this->flowCache->invalidateDefaultFlow($bot->id);
+
         return response()->json([
             'message' => 'Flow set as default successfully',
-            'data' => new FlowResource($flow->fresh()),
+            'data' => new FlowResource($flow),
         ]);
     }
 
@@ -214,6 +239,9 @@ class FlowController extends Controller
             ];
         }
         $newFlow->knowledgeBases()->sync($kbData);
+
+        // Invalidate cache (new flow added)
+        $this->flowCache->invalidateBot($bot->id);
 
         return response()->json([
             'message' => 'Flow duplicated successfully',

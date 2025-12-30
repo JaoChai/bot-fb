@@ -64,7 +64,7 @@ export function useCreateFlow(botId: number | null) {
   });
 }
 
-// Update flow mutation
+// Update flow mutation with selective cache update
 export function useUpdateFlow(botId: number | null, flowId: number | null) {
   const queryClient = useQueryClient();
 
@@ -74,14 +74,35 @@ export function useUpdateFlow(botId: number | null, flowId: number | null) {
       const response = await apiPut<ApiResponse<Flow>>(`/bots/${botId}/flows/${flowId}`, data);
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (updatedFlow) => {
       if (!botId || !flowId) return;
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.flows.list(botId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.flows.detail(botId, flowId),
-      });
+
+      // Update detail cache directly
+      queryClient.setQueryData(
+        queryKeys.flows.detail(botId, flowId),
+        updatedFlow
+      );
+
+      // Update flow in list cache without refetching
+      queryClient.setQueryData<PaginatedResponse<Flow> | undefined>(
+        queryKeys.flows.list(botId),
+        (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            data: oldData.data.map((flow) =>
+              flow.id === flowId ? { ...flow, ...updatedFlow } : flow
+            ),
+          };
+        }
+      );
+
+      // Only invalidate list if is_default changed (affects order)
+      if ('is_default' in updatedFlow && updatedFlow.is_default) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.flows.list(botId),
+        });
+      }
     },
   });
 }
@@ -123,7 +144,7 @@ export function useDuplicateFlow(botId: number | null) {
   });
 }
 
-// Set default flow mutation
+// Set default flow mutation with optimistic update
 export function useSetDefaultFlow(botId: number | null) {
   const queryClient = useQueryClient();
 
@@ -133,11 +154,50 @@ export function useSetDefaultFlow(botId: number | null) {
       const response = await apiPost<ApiResponse<Flow>>(`/bots/${botId}/flows/${flowId}/set-default`);
       return response.data;
     },
-    onSuccess: () => {
+    onMutate: async (flowId) => {
       if (!botId) return;
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.flows.list(botId),
-      });
+
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: queryKeys.flows.list(botId) });
+
+      // Snapshot previous value
+      const previousFlows = queryClient.getQueryData<PaginatedResponse<Flow>>(
+        queryKeys.flows.list(botId)
+      );
+
+      // Optimistically update: set new default, unset others
+      queryClient.setQueryData<PaginatedResponse<Flow> | undefined>(
+        queryKeys.flows.list(botId),
+        (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            data: oldData.data.map((flow) => ({
+              ...flow,
+              is_default: flow.id === flowId,
+            })),
+          };
+        }
+      );
+
+      return { previousFlows };
+    },
+    onError: (_err, _flowId, context) => {
+      // Rollback on error
+      if (context?.previousFlows && botId) {
+        queryClient.setQueryData(
+          queryKeys.flows.list(botId),
+          context.previousFlows
+        );
+      }
+    },
+    onSettled: () => {
+      // Refetch to ensure server state
+      if (botId) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.flows.list(botId),
+        });
+      }
     },
   });
 }

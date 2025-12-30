@@ -17,13 +17,12 @@ export interface KnowledgeBaseListItem {
 // Fetch all knowledge bases for the user
 export function useAllKnowledgeBases() {
   return useQuery({
-    queryKey: ['knowledge-bases'],
+    queryKey: queryKeys.knowledgeBase.lists(),
     queryFn: async () => {
       const response = await apiGet<{ data: KnowledgeBaseListItem[] }>('/knowledge-bases');
       return response.data;
     },
-    refetchOnWindowFocus: true,
-    staleTime: 30 * 1000, // 30 seconds
+    // Use global defaults (5 min stale, no refetch on focus)
   });
 }
 
@@ -35,8 +34,7 @@ export function useBots() {
       const response = await apiGet<PaginatedResponse<Bot>>('/bots');
       return response;
     },
-    refetchOnWindowFocus: true,
-    staleTime: 30 * 1000, // 30 seconds
+    // Use global defaults (5 min stale, no refetch on focus)
   });
 }
 
@@ -49,8 +47,7 @@ export function useKnowledgeBase(botId: number | null) {
       return response.data;
     },
     enabled: !!botId,
-    refetchOnWindowFocus: true,
-    staleTime: 30 * 1000, // 30 seconds
+    // Use global defaults (5 min stale, no refetch on focus)
   });
 }
 

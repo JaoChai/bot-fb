@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,28 +23,23 @@ import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations } from '@/hook
 import { useStreamingChat } from '@/hooks/useStreamingChat';
 import { useAllKnowledgeBases } from '@/hooks/useKnowledgeBase';
 import { useToast } from '@/hooks/use-toast';
-import { ProcessDisplay } from '@/components/ProcessDisplay';
+import {
+  FlowsList,
+  KnowledgeBaseSelector,
+  ChatEmulator,
+  type KnowledgeBaseConfig,
+} from '@/components/flows';
 import {
   Loader2,
   Save,
   Plus,
-  MessageCircle,
-  Send,
   ChevronDown,
   ChevronUp,
-  Link2,
-  Settings,
-  ArrowLeft,
   Bot,
   HelpCircle,
-  BookOpen,
-  X,
   Zap,
-  Paperclip,
-  Image as ImageIcon,
   Trash2,
   Code,
-  Square,
   Minimize2,
 } from 'lucide-react';
 import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
@@ -135,9 +130,7 @@ export function FlowEditorPage() {
     clearMessages,
   } = useStreamingChat({ botId, flowId: selectedFlowId });
 
-  // Chat input state
-  const [chatInput, setChatInput] = useState('');
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  // Refs
   const systemPromptRef = useRef<HTMLTextAreaElement>(null);
 
   // Collapsible sections
@@ -201,12 +194,6 @@ export function FlowEditorPage() {
       setHasChanges(false);
     }
   }, [existingFlow]);
-
-
-  // Scroll to bottom of chat
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
 
   // Handle form change
   const handleChange = <K extends keyof CreateFlowData>(field: K, value: CreateFlowData[K]) => {
@@ -340,24 +327,15 @@ export function FlowEditorPage() {
     setHasChanges(true);
   };
 
-  // Handle chat emulator - uses streaming API
-  const handleSendMessage = async () => {
-    if (!chatInput.trim()) return;
-    if (!selectedFlowId) {
-      toast({
-        title: 'ยังไม่ได้บันทึก Flow',
-        description: 'กรุณาบันทึก Flow ก่อนทดสอบ',
-        variant: 'destructive',
-      });
-      return;
-    }
+  // Handle knowledge base selection change (memoized)
+  const handleKnowledgeBasesChange = useCallback((kbs: KnowledgeBaseConfig[]) => {
+    handleChange('knowledge_bases', kbs);
+  }, []);
 
-    const userMessage = chatInput.trim();
-    setChatInput('');
-
-    // Use streaming hook to send message
-    await sendStreamingMessage(userMessage);
-  };
+  // Handle chat emulator message send (memoized)
+  const handleSendChatMessage = useCallback(async (message: string) => {
+    await sendStreamingMessage(message);
+  }, [sendStreamingMessage]);
 
   // Show loading during editor entry mode redirect
   if (isEditorEntryMode && (isLoadingFlows || flows.length > 0)) {
@@ -388,105 +366,13 @@ export function FlowEditorPage() {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      <div className="w-52 border-r bg-card flex flex-col">
-        {/* Logo */}
-        <div className="h-14 flex items-center px-4 border-b">
-          <span className="font-bold text-lg text-primary">BotFacebook</span>
-        </div>
-
-        {/* Create New Flow Button */}
-        <div className="p-3">
-          <Button
-            variant="cta"
-            onClick={() => navigate(`/flows/new?botId=${botId}`)}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            สร้างโฟลว์ใหม่
-          </Button>
-        </div>
-
-        {/* Flow List */}
-        <div className="flex-1 overflow-y-auto">
-          {isLoadingFlows ? (
-            <div className="flex justify-center py-4">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : flows.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">ยังไม่มี Flow</p>
-          ) : (
-            <div className="space-y-1 px-2">
-              {[...flows]
-                .sort((a, b) => {
-                  // Base flow always first
-                  if (a.is_default && !b.is_default) return -1;
-                  if (!a.is_default && b.is_default) return 1;
-                  return 0;
-                })
-                .map((flow) => (
-                <button
-                  key={flow.id}
-                  onClick={() => navigate(`/flows/${flow.id}/edit?botId=${botId}`)}
-                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all duration-200 cursor-pointer
-                    ${flow.is_default ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-transparent'}
-                    ${selectedFlowId === flow.id
-                      ? 'bg-primary/10 text-primary font-medium'
-                      : 'hover:bg-muted'
-                    }`}
-                >
-                  <div className="flex items-center gap-2">
-                    {flow.is_default && (
-                      <svg className="h-4 w-4 text-primary shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
-                      </svg>
-                    )}
-                    <span className="truncate font-medium">{flow.name}</span>
-                  </div>
-                  {flow.is_default && (
-                    <div className="mt-1 ml-6">
-                      <span className="text-xs text-primary font-medium">Base Flow</span>
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Bottom Action Buttons */}
-        <div className="p-3 border-t space-y-2">
-          <Button variant="cta-outline" size="sm" className="w-full justify-start">
-            <Link2 className="h-4 w-4 mr-2" />
-            Link ภายใน
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full justify-start"
-            onClick={() => navigate(`/bots/${botId}/edit`)}
-          >
-            <Settings className="h-4 w-4 mr-2" />
-            แก้ไขการเชื่อมต่อ
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full justify-start"
-            onClick={() => navigate(`/bots/${botId}/settings`)}
-          >
-            <Bot className="h-4 w-4 mr-2" />
-            ตั้งค่า Bot
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start text-primary hover:text-primary"
-            onClick={() => navigate('/bots')}
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            กลับไปหน้าการเชื่อมต่อ
-          </Button>
-        </div>
-      </div>
+      {/* Left Sidebar - Flows List */}
+      <FlowsList
+        flows={flows}
+        isLoading={isLoadingFlows}
+        selectedFlowId={selectedFlowId}
+        botId={botId}
+      />
 
       {/* Main Content Area - Split into Editor + Chat Emulator */}
       <div className="flex-1 flex overflow-hidden">
@@ -676,124 +562,12 @@ export function FlowEditorPage() {
                 </div>
 
                 {/* Knowledge Bases (Multi-Select) */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <BookOpen className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">ฐานความรู้ที่เชื่อมต่อ</span>
-                    <Badge variant="outline" className="text-xs">
-                      {formData.knowledge_bases?.length || 0} เลือก
-                    </Badge>
-                  </div>
-
-                  {/* KB Selection Dropdown */}
-                  <div className="border rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
-                    {isLoadingKBs ? (
-                      <div className="flex items-center justify-center py-4">
-                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                      </div>
-                    ) : allKnowledgeBases.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">
-                        ยังไม่มีฐานความรู้ กรุณาสร้างฐานความรู้ก่อน
-                      </p>
-                    ) : (
-                      allKnowledgeBases.map((kb) => {
-                        const isSelected = formData.knowledge_bases?.some(k => k.id === kb.id);
-                        return (
-                          <label
-                            key={kb.id}
-                            className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
-                              isSelected ? 'bg-warning/10 border border-warning/30' : 'hover:bg-muted'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={(e) => {
-                                const currentKBs = formData.knowledge_bases || [];
-                                if (e.target.checked) {
-                                  // Add KB with default settings
-                                  handleChange('knowledge_bases', [
-                                    ...currentKBs,
-                                    { id: kb.id, kb_top_k: 5, kb_similarity_threshold: 0.7 }
-                                  ]);
-                                } else {
-                                  // Remove KB
-                                  handleChange('knowledge_bases', currentKBs.filter(k => k.id !== kb.id));
-                                }
-                              }}
-                              className="rounded border-border"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-sm truncate">{kb.name}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {kb.bot_name} • {kb.document_count} เอกสาร • {kb.chunk_count} chunks
-                              </div>
-                            </div>
-                          </label>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  {/* Per-KB Settings */}
-                  {formData.knowledge_bases && formData.knowledge_bases.length > 0 && (
-                    <div className="space-y-4 mt-4">
-                      <Label className="text-xs text-muted-foreground">ตั้งค่าแต่ละฐานความรู้</Label>
-                      {formData.knowledge_bases.map((kbConfig, index) => {
-                        const kbInfo = allKnowledgeBases.find(k => k.id === kbConfig.id);
-                        return (
-                          <div key={kbConfig.id} className="border rounded-lg p-3 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium">{kbInfo?.name || `KB #${kbConfig.id}`}</span>
-                              <button
-                                onClick={() => {
-                                  const newKBs = [...(formData.knowledge_bases || [])];
-                                  newKBs.splice(index, 1);
-                                  handleChange('knowledge_bases', newKBs);
-                                }}
-                                className="text-muted-foreground hover:text-destructive"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <Label className="text-xs">Top K: {kbConfig.kb_top_k || 5}</Label>
-                                <Slider
-                                  value={[kbConfig.kb_top_k || 5]}
-                                  onValueChange={([v]) => {
-                                    const newKBs = [...(formData.knowledge_bases || [])];
-                                    newKBs[index] = { ...newKBs[index], kb_top_k: v };
-                                    handleChange('knowledge_bases', newKBs);
-                                  }}
-                                  min={1}
-                                  max={20}
-                                  step={1}
-                                  className="mt-2"
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-xs">Threshold: {kbConfig.kb_similarity_threshold || 0.7}</Label>
-                                <Slider
-                                  value={[kbConfig.kb_similarity_threshold || 0.7]}
-                                  onValueChange={([v]) => {
-                                    const newKBs = [...(formData.knowledge_bases || [])];
-                                    newKBs[index] = { ...newKBs[index], kb_similarity_threshold: v };
-                                    handleChange('knowledge_bases', newKBs);
-                                  }}
-                                  min={0.1}
-                                  max={1}
-                                  step={0.05}
-                                  className="mt-2"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                <KnowledgeBaseSelector
+                  allKnowledgeBases={allKnowledgeBases}
+                  selectedKnowledgeBases={formData.knowledge_bases || []}
+                  isLoading={isLoadingKBs}
+                  onChange={handleKnowledgeBasesChange}
+                />
 
                 {/* System Prompt */}
                 <div className="space-y-3 border rounded-lg overflow-hidden">
@@ -1040,144 +814,16 @@ export function FlowEditorPage() {
         )}
         </div>
 
-        {/* Chat Emulator - Right Panel (Full Height) */}
-        <div className="w-96 border-l bg-card flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 text-warning-foreground bg-warning border-b">
-            <div className="flex items-center gap-2">
-              <MessageCircle className="h-5 w-5" />
-              <span className="font-semibold">แชทจำลอง</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {/* Clear Button */}
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-8 w-8 p-0 text-white hover:bg-white/20"
-                onClick={clearMessages}
-                title="ล้างแชท"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {chatMessages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <MessageCircle className="h-12 w-12 text-muted-foreground/30 mb-3" />
-                <p className="text-sm text-muted-foreground">
-                  ทดสอบการตอบกลับของ AI
-                </p>
-                <p className="text-xs text-muted-foreground/70 mt-1">
-                  พิมพ์ข้อความด้านล่างเพื่อเริ่มต้น
-                </p>
-              </div>
-            ) : (
-              chatMessages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div className={`max-w-[85%] ${msg.role === 'assistant' ? 'w-full' : ''}`}>
-                    {/* Show process display for assistant messages */}
-                    {msg.role === 'assistant' && (msg.processLogs?.length || msg.isStreaming) && (
-                      <ProcessDisplay
-                        logs={msg.processLogs || []}
-                        summary={msg.summary}
-                        isStreaming={msg.isStreaming}
-                      />
-                    )}
-                    <div
-                      className={`rounded-2xl px-4 py-2.5 text-sm ${
-                        msg.role === 'user'
-                          ? 'bg-warning text-warning-foreground rounded-br-md'
-                          : 'bg-muted rounded-bl-md'
-                      }`}
-                    >
-                      {msg.content}
-                      {/* Show streaming cursor */}
-                      {msg.role === 'assistant' && msg.isStreaming && !msg.content && (
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          <span>กำลังตอบ...</span>
-                        </span>
-                      )}
-                      {msg.role === 'assistant' && msg.isStreaming && msg.content && (
-                        <span className="animate-pulse text-warning">|</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Input Area */}
-          <div className="border-t p-4 space-y-3 bg-background/50">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder={isStreaming ? 'กำลังประมวลผล...' : 'พิมพ์ข้อความ...'}
-                className="flex-1 px-4 py-2.5 rounded-full border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-warning/50"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey && !isStreaming) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-                disabled={isStreaming}
-              />
-              {isStreaming ? (
-                <Button
-                  size="icon"
-                  onClick={cancelStream}
-                  variant="destructive"
-                  className="rounded-full h-10 w-10"
-                  title="หยุดการตอบ"
-                >
-                  <Square className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button
-                  size="icon"
-                  onClick={handleSendMessage}
-                  disabled={!chatInput.trim()}
-                  variant="cta"
-                  className="rounded-full h-10 w-10"
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-            <div className="flex gap-2 justify-center">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-8 px-3 text-muted-foreground cursor-not-allowed"
-                title="Attach File (Coming Soon)"
-                disabled
-              >
-                <Paperclip className="h-4 w-4 mr-1" />
-                <span className="text-xs">ไฟล์</span>
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-8 px-3 text-muted-foreground cursor-not-allowed"
-                title="Attach Image (Coming Soon)"
-                disabled
-              >
-                <ImageIcon className="h-4 w-4 mr-1" />
-                <span className="text-xs">รูปภาพ</span>
-              </Button>
-            </div>
-          </div>
-        </div>
+        {/* Chat Emulator - Right Panel */}
+        <ChatEmulator
+          messages={chatMessages}
+          isStreaming={isStreaming}
+          onSendMessage={handleSendChatMessage}
+          onCancelStream={cancelStream}
+          onClearMessages={clearMessages}
+          disabled={!selectedFlowId}
+          disabledReason={!selectedFlowId ? 'บันทึก Flow ก่อนทดสอบ' : undefined}
+        />
       </div>
 
       {/* Unsaved changes toast */}

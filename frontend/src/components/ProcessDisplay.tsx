@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, memo } from 'react';
 import {
   ChevronDown,
   ChevronUp,
@@ -269,14 +269,54 @@ function getEventBgColor(event: string): string {
   }
 }
 
-export function ProcessDisplay({ logs, summary, isStreaming }: ProcessDisplayProps) {
+// Memoized individual log item
+const ProcessLogItem = memo(function ProcessLogItem({
+  log,
+}: {
+  log: ProcessLog;
+}) {
+  return (
+    <div
+      className={`flex items-start gap-2 p-2 rounded-md border text-xs ${getEventBgColor(log.event)}`}
+    >
+      <div className="mt-0.5 shrink-0">
+        {getEventIcon(log.event, log.data)}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-foreground">
+          {getEventLabel(log.event, log.data)}
+        </div>
+        {formatDetails(log.event, log.data) && (
+          <div className="text-muted-foreground mt-0.5 truncate">
+            {formatDetails(log.event, log.data)}
+          </div>
+        )}
+      </div>
+      {typeof log.data.time_ms === 'number' && log.event !== 'done' && (
+        <div className="flex items-center gap-1 text-muted-foreground shrink-0">
+          <Clock className="h-3 w-3" />
+          <span>{log.data.time_ms}ms</span>
+        </div>
+      )}
+    </div>
+  );
+});
+
+export const ProcessDisplay = memo(function ProcessDisplay({
+  logs,
+  summary,
+  isStreaming,
+}: ProcessDisplayProps) {
   const [isExpanded, setIsExpanded] = useState(true);
 
   // Don't render if no logs and not streaming
   if (logs.length === 0 && !isStreaming) return null;
 
-  // Filter out process_start for cleaner display
-  const displayLogs = logs.filter(log => log.event !== 'process_start');
+  // Memoize filtered logs to prevent re-filtering on every render
+  const displayLogs = useMemo(
+    () => logs.filter((log) => log.event !== 'process_start'),
+    [logs]
+  );
 
   return (
     <div className="mb-2">
@@ -308,30 +348,7 @@ export function ProcessDisplay({ logs, summary, isStreaming }: ProcessDisplayPro
       {isExpanded && (
         <div className="mt-1 space-y-1">
           {displayLogs.map((log) => (
-            <div
-              key={log.id}
-              className={`flex items-start gap-2 p-2 rounded-md border text-xs ${getEventBgColor(log.event)}`}
-            >
-              <div className="mt-0.5 shrink-0">
-                {getEventIcon(log.event, log.data)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-foreground">
-                  {getEventLabel(log.event, log.data)}
-                </div>
-                {formatDetails(log.event, log.data) && (
-                  <div className="text-muted-foreground mt-0.5 truncate">
-                    {formatDetails(log.event, log.data)}
-                  </div>
-                )}
-              </div>
-              {typeof log.data.time_ms === 'number' && log.event !== 'done' && (
-                <div className="flex items-center gap-1 text-muted-foreground shrink-0">
-                  <Clock className="h-3 w-3" />
-                  <span>{log.data.time_ms}ms</span>
-                </div>
-              )}
-            </div>
+            <ProcessLogItem key={log.id} log={log} />
           ))}
 
           {/* Streaming indicator */}
@@ -366,4 +383,4 @@ export function ProcessDisplay({ logs, summary, isStreaming }: ProcessDisplayPro
       )}
     </div>
   );
-}
+});
