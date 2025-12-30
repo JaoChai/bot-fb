@@ -33,6 +33,29 @@ Route::prefix('auth')->middleware('throttle.auth')->group(function () {
 // Protected routes (authentication required) with API rate limiting
 Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
 
+    // Debug protected endpoint
+    Route::get('/debug-auth', function (\Illuminate\Http\Request $request) {
+        try {
+            $user = $request->user();
+            $bots = $user->bots()->with(['settings', 'defaultFlow'])->get();
+            $resource = \App\Http\Resources\BotResource::collection($bots);
+            $data = $resource->response()->getData(true);
+
+            return response()->json([
+                'status' => 'ok',
+                'user_id' => $user->id,
+                'bot_count' => $bots->count(),
+                'resource_ok' => true,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ], 500);
+        }
+    });
+
     // Auth routes
     Route::prefix('auth')->group(function () {
         Route::get('/user', [AuthController::class, 'user'])->name('auth.user');
@@ -168,13 +191,14 @@ Route::get('/debug-bots', function () {
         // Test database connection
         \Illuminate\Support\Facades\DB::connection()->getPdo();
 
-        // Test Bot model with relationships
-        $bot = \App\Models\Bot::with(['settings', 'defaultFlow'])->first();
+        // Test Bot model with ALL relationships (including knowledgeBase)
+        $bot = \App\Models\Bot::with(['settings', 'defaultFlow', 'knowledgeBase'])->first();
 
-        // Test BotResource
+        // Test BotResource - this creates KnowledgeBaseResource even when null!
+        $resourceJson = null;
         if ($bot) {
             $resource = new \App\Http\Resources\BotResource($bot);
-            $resourceArray = $resource->toArray(request());
+            $resourceJson = $resource->response()->getData(true);
         }
 
         return response()->json([
@@ -184,8 +208,9 @@ Route::get('/debug-bots', function () {
             'relationships' => $bot ? [
                 'has_settings' => $bot->settings !== null,
                 'has_default_flow' => $bot->defaultFlow !== null,
+                'has_knowledge_base' => $bot->knowledgeBase !== null,
             ] : null,
-            'resource_test' => isset($resourceArray) ? 'ok' : 'no_bots',
+            'resource_test' => $resourceJson ? 'ok' : 'no_bots',
         ]);
     } catch (\Throwable $e) {
         return response()->json([
