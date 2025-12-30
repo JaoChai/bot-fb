@@ -33,7 +33,7 @@ export const createEcho = (): Echo<'reverb'> => {
     wssPort: Number(REVERB_PORT),
     forceTLS: REVERB_SCHEME === 'https',
     enabledTransports: ['ws', 'wss'],
-    authEndpoint: `${baseUrl}/broadcasting/auth`,
+    authEndpoint: `${baseUrl}/api/broadcasting/auth`,
     auth: {
       headers: {
         Authorization: `Bearer ${localStorage.getItem('auth_token') || ''}`,
