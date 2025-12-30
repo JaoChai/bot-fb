@@ -293,6 +293,23 @@ Route::get('/debug-bots', function () {
     }
 });
 
+// Debug webhook URL matching
+Route::get('/debug-webhook', function () {
+    $token = 'X9Xeof5z7rBiQObZlx8LFiAG8m0rLWZF';
+    $appUrl = config('app.url');
+    $expectedUrl = $appUrl . '/webhook/' . $token;
+    $bot = \App\Models\Bot::where('channel_type', 'line')->first();
+
+    return response()->json([
+        'app_url' => $appUrl,
+        'expected_webhook_url' => $expectedUrl,
+        'bot_webhook_url' => $bot?->webhook_url,
+        'match' => $expectedUrl === $bot?->webhook_url,
+        'bot_id' => $bot?->id,
+        'bot_name' => $bot?->name,
+    ]);
+});
+
 // Broadcasting authentication endpoint
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
