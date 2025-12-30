@@ -594,22 +594,35 @@ class ConversationController extends Controller
      */
     public function getAllTags(Request $request, Bot $bot): JsonResponse
     {
-        $this->authorize('view', $bot);
+        try {
+            $this->authorize('view', $bot);
 
-        // Use PostgreSQL jsonb_array_elements_text for efficient tag extraction
-        $tags = DB::select('
-            SELECT DISTINCT jsonb_array_elements_text(tags) as tag
-            FROM conversations
-            WHERE bot_id = ?
-                AND deleted_at IS NULL
-                AND tags IS NOT NULL
-                AND jsonb_array_length(tags) > 0
-            ORDER BY tag
-        ', [$bot->id]);
+            // Use PostgreSQL jsonb_array_elements_text for efficient tag extraction
+            $tags = DB::select('
+                SELECT DISTINCT jsonb_array_elements_text(tags) as tag
+                FROM conversations
+                WHERE bot_id = ?
+                    AND deleted_at IS NULL
+                    AND tags IS NOT NULL
+                    AND jsonb_array_length(tags) > 0
+                ORDER BY tag
+            ', [$bot->id]);
 
-        return response()->json([
-            'data' => array_column($tags, 'tag'),
-        ]);
+            return response()->json([
+                'data' => array_column($tags, 'tag'),
+            ]);
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            Log::error('ConversationController@getAllTags error', [
+                'message' => $e->getMessage(),
+                'bot_id' => $bot->id,
+            ]);
+            return response()->json([
+                'error' => $e->getMessage(),
+                'type' => get_class($e),
+            ], 500);
+        }
     }
 
     /**
