@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { User } from '@/types/api';
+import { disconnectEcho, reconnectEcho } from '@/lib/echo';
 
 interface AuthState {
   user: User | null;
@@ -52,9 +53,13 @@ export const useAuthStore = create<AuthStore>()(
           isAuthenticated: true,
           isLoading: false,
         });
+        // Reconnect Echo with fresh token for real-time features
+        reconnectEcho();
       },
 
       logout: () => {
+        // Disconnect Echo to prevent stale token reconnection attempts
+        disconnectEcho();
         localStorage.removeItem('auth_token');
         set({
           user: null,
