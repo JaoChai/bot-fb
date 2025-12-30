@@ -162,21 +162,10 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
-// Super simple test endpoint
-Route::get('/debug-test', function () {
-    return response()->json(['status' => 'debug-test-ok']);
-})->name('debug.test');
-
-// Debug endpoint - TEMPORARY (tests BEFORE route model binding)
+// Debug endpoint - NO MIDDLEWARE (to catch actual error)
 Route::get('/debug-settings/{botId}', function ($botId) {
     try {
-        // Step 0: Test auth
-        $user = auth('sanctum')->user();
-        if (!$user) {
-            return response()->json(['step' => 0, 'error' => 'No authenticated user'], 401);
-        }
-
-        // Step 1: Manual bot find (before model binding)
+        // Step 1: Manual bot find
         $bot = \App\Models\Bot::find($botId);
         if (!$bot) {
             return response()->json(['step' => 1, 'error' => 'Bot not found', 'bot_id' => $botId], 404);
@@ -188,9 +177,7 @@ Route::get('/debug-settings/{botId}', function ($botId) {
         return response()->json([
             'step' => 2,
             'status' => 'ok',
-            'user_id' => $user->id,
             'bot_id' => $bot->id,
-            'bot_user_id' => $bot->user_id,
             'has_settings' => $settings !== null,
             'settings_id' => $settings?->id,
             'settings' => $settings,
@@ -203,7 +190,7 @@ Route::get('/debug-settings/{botId}', function ($botId) {
             'trace' => collect(explode("\n", $e->getTraceAsString()))->take(10)->toArray(),
         ], 500);
     }
-})->middleware('auth:sanctum')->name('debug.settings');
+})->name('debug.settings');
 
 // Broadcasting authentication endpoint
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
