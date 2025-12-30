@@ -31,6 +31,13 @@ class BotSetting extends Model
         'language',
         'response_style',
         'auto_archive_days',
+        // Multiple bubbles feature
+        'multiple_bubbles_enabled',
+        'multiple_bubbles_min',
+        'multiple_bubbles_max',
+        'multiple_bubbles_delimiter',
+        'wait_multiple_bubbles_enabled',
+        'wait_multiple_bubbles_ms',
     ];
 
     protected $casts = [
@@ -43,6 +50,8 @@ class BotSetting extends Model
         'blocked_keywords' => 'array',
         'analytics_enabled' => 'boolean',
         'save_conversations' => 'boolean',
+        'multiple_bubbles_enabled' => 'boolean',
+        'wait_multiple_bubbles_enabled' => 'boolean',
     ];
 
     public function bot(): BelongsTo

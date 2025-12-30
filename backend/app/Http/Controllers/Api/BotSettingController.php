@@ -74,6 +74,14 @@ class BotSettingController extends Controller
 
             // Conversation management
             'auto_archive_days' => 'nullable|integer|min:1|max:365',
+
+            // Multiple bubbles settings
+            'multiple_bubbles_enabled' => 'boolean',
+            'multiple_bubbles_min' => 'integer|min:1|max:5',
+            'multiple_bubbles_max' => 'integer|min:1|max:5|gte:multiple_bubbles_min',
+            'multiple_bubbles_delimiter' => 'string|max:10',
+            'wait_multiple_bubbles_enabled' => 'boolean',
+            'wait_multiple_bubbles_ms' => 'integer|min:500|max:5000',
         ]);
 
         // Get or create settings
@@ -108,6 +116,13 @@ class BotSettingController extends Controller
             'save_conversations' => true,
             'language' => 'th',
             'response_style' => 'professional',
+            // Multiple bubbles defaults
+            'multiple_bubbles_enabled' => false,
+            'multiple_bubbles_min' => 1,
+            'multiple_bubbles_max' => 3,
+            'multiple_bubbles_delimiter' => '|||',
+            'wait_multiple_bubbles_enabled' => false,
+            'wait_multiple_bubbles_ms' => 1500,
         ]);
     }
 }

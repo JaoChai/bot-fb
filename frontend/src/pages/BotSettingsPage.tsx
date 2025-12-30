@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Loader2, Clock } from 'lucide-react';
+import { apiGet, apiPut } from '@/lib/api';
 
 interface BotSettingsFormData {
   daily_message_limit: number;
@@ -33,8 +34,10 @@ interface BotSettingsFormData {
 
 export function BotSettingsPage() {
   const navigate = useNavigate();
+  const { botId } = useParams<{ botId: string }>();
   const { toast } = useToast();
 
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState<BotSettingsFormData>({
     daily_message_limit: 100,
@@ -51,10 +54,55 @@ export function BotSettingsPage() {
     multiple_bubbles_min: 1,
     multiple_bubbles_max: 3,
     wait_multiple_bubbles_enabled: false,
-    wait_multiple_bubbles_seconds: 10,
+    wait_multiple_bubbles_seconds: 1.5,
     reply_sticker_enabled: false,
     response_hours_enabled: false,
   });
+
+  // Fetch settings on mount
+  useEffect(() => {
+    if (!botId) return;
+
+    const fetchSettings = async () => {
+      try {
+        setIsLoading(true);
+        const response = await apiGet<{ data: Record<string, unknown> }>(`/bots/${botId}/settings`);
+        const settings = response.data;
+
+        setFormData({
+          daily_message_limit: (settings.daily_message_limit as number) ?? 100,
+          per_user_limit: (settings.per_user_limit as number) ?? 10,
+          rate_limit_bot_message: (settings.rate_limit_bot_message as string) ?? '',
+          rate_limit_user_message: (settings.rate_limit_user_message as string) ?? '',
+          easy_slip_enabled: false,
+          hitl_enabled: (settings.hitl_enabled as boolean) ?? false,
+          reply_when_called_only: false,
+          reply_when_called_only_override_hitl: false,
+          lead_recovery_enabled: false,
+          lead_recovery_description: 'ติดตามลูกค้าอัตโนมัติเมื่อบทสนทนาเงียบ',
+          multiple_bubbles_enabled: (settings.multiple_bubbles_enabled as boolean) ?? false,
+          multiple_bubbles_min: (settings.multiple_bubbles_min as number) ?? 1,
+          multiple_bubbles_max: (settings.multiple_bubbles_max as number) ?? 3,
+          wait_multiple_bubbles_enabled: (settings.wait_multiple_bubbles_enabled as boolean) ?? false,
+          // Convert ms to seconds for display
+          wait_multiple_bubbles_seconds: ((settings.wait_multiple_bubbles_ms as number) ?? 1500) / 1000,
+          reply_sticker_enabled: false,
+          response_hours_enabled: (settings.response_hours_enabled as boolean) ?? false,
+        });
+      } catch (error) {
+        console.error('Failed to fetch settings:', error);
+        toast({
+          title: 'ข้อผิดพลาด',
+          description: 'ไม่สามารถโหลดตั้งค่าบอทได้',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSettings();
+  }, [botId, toast]);
 
   const handleChange = <K extends keyof BotSettingsFormData>(
     field: K,
@@ -64,15 +112,32 @@ export function BotSettingsPage() {
   };
 
   const handleSave = async () => {
+    if (!botId) return;
+
     setIsSaving(true);
     try {
-      // TODO: Call API to save bot settings
-      console.log('Saving bot settings:', formData);
+      await apiPut(`/bots/${botId}/settings`, {
+        daily_message_limit: formData.daily_message_limit,
+        per_user_limit: formData.per_user_limit,
+        rate_limit_bot_message: formData.rate_limit_bot_message || null,
+        rate_limit_user_message: formData.rate_limit_user_message || null,
+        hitl_enabled: formData.hitl_enabled,
+        response_hours_enabled: formData.response_hours_enabled,
+        // Multiple bubbles settings
+        multiple_bubbles_enabled: formData.multiple_bubbles_enabled,
+        multiple_bubbles_min: formData.multiple_bubbles_min,
+        multiple_bubbles_max: formData.multiple_bubbles_max,
+        wait_multiple_bubbles_enabled: formData.wait_multiple_bubbles_enabled,
+        // Convert seconds to ms for backend
+        wait_multiple_bubbles_ms: Math.round(formData.wait_multiple_bubbles_seconds * 1000),
+      });
+
       toast({
         title: 'บันทึกสำเร็จ',
         description: 'ตั้งค่าบอทได้รับการบันทึกแล้ว',
       });
     } catch (error) {
+      console.error('Failed to save settings:', error);
       toast({
         title: 'ข้อผิดพลาด',
         description: 'ไม่สามารถบันทึกตั้งค่าบอทได้',
@@ -82,6 +147,15 @@ export function BotSettingsPage() {
       setIsSaving(false);
     }
   };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -349,13 +423,13 @@ export function BotSettingsPage() {
               {formData.wait_multiple_bubbles_enabled && (
                 <div className="space-y-2">
                   <Label htmlFor="wait-seconds" className="font-semibold">
-                    เวลารอ: {formData.wait_multiple_bubbles_seconds} วินาที
+                    เวลารอ: {formData.wait_multiple_bubbles_seconds.toFixed(1)} วินาที
                   </Label>
                   <Slider
                     id="wait-seconds"
-                    min={5}
-                    max={20}
-                    step={1}
+                    min={0.5}
+                    max={5}
+                    step={0.5}
                     value={[formData.wait_multiple_bubbles_seconds]}
                     onValueChange={(value) => handleChange('wait_multiple_bubbles_seconds', value[0])}
                   />
