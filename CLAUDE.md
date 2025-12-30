@@ -113,6 +113,43 @@ railway up --service backend   # Deploy
 | `/e2e-test` | After feature complete |
 | `ui-ux-pro-max` | UI design (auto) |
 
+## UI Development Rules (MANDATORY)
+
+เมื่อทำงานเกี่ยวกับ UI/UX ต้องใช้ทั้งสองระบบร่วมกัน:
+
+### 1. ui-ux-pro-max (Design Intelligence)
+```bash
+# ค้นหา design context ก่อน implement
+python3 .claude/skills/ui-ux-pro-max/scripts/search.py "<keyword>" --domain style
+python3 .claude/skills/ui-ux-pro-max/scripts/search.py "<keyword>" --domain typography
+python3 .claude/skills/ui-ux-pro-max/scripts/search.py "<keyword>" --domain color
+python3 .claude/skills/ui-ux-pro-max/scripts/search.py "<keyword>" --domain ux
+python3 .claude/skills/ui-ux-pro-max/scripts/search.py "<keyword>" --stack react
+```
+
+### 2. shadcn/ui (Components)
+```bash
+# เพิ่ม component ใหม่
+cd frontend && npx shadcn add [component-name]
+
+# Components ที่มี: Button, Card, Dialog, Sheet, Input, Select,
+# Tabs, Dropdown, Avatar, Badge, ScrollArea, Tooltip, etc.
+```
+
+### UI Workflow
+```
+User Request → Search ui-ux-pro-max → Get Design Decisions →
+Use shadcn/ui Components → Apply Tailwind Styles →
+Check Pre-delivery Checklist → Implement
+```
+
+### Pre-delivery Checklist
+- [ ] No emoji icons (ใช้ Lucide icons)
+- [ ] cursor-pointer บน clickable elements
+- [ ] Dark/Light mode contrast ถูกต้อง
+- [ ] Responsive: 320px, 768px, 1024px, 1440px
+- [ ] Hover states ไม่ทำให้ layout shift
+
 ## User Preferences
 - Scope: Tasks < 1 hour
 - Approach: ทีละขั้น ไม่รีบ
