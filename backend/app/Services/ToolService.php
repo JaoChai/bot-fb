@@ -156,6 +156,17 @@ class ToolService
             ?: $bot?->user?->settings?->openrouter_api_key
             ?: config('services.openrouter.api_key');
 
+        // Debug logging to trace API key source
+        Log::debug('ToolService: API key resolution', [
+            'flow_id' => $flow->id,
+            'bot_id' => $bot?->id,
+            'bot_from_context' => isset($context['bot']),
+            'has_bot_api_key' => !empty($bot?->openrouter_api_key),
+            'has_user_api_key' => !empty($bot?->user?->settings?->openrouter_api_key),
+            'has_env_api_key' => !empty(config('services.openrouter.api_key')),
+            'final_has_key' => !empty($apiKey),
+        ]);
+
         if (empty($apiKey)) {
             Log::warning('ToolService: No OpenRouter API key found', [
                 'flow_id' => $flow->id,
@@ -169,7 +180,7 @@ class ToolService
             'id' => $kb->id,
             'name' => $kb->name,
             'kb_top_k' => $kb->pivot->kb_top_k ?? 5,
-            'kb_similarity_threshold' => $kb->pivot->kb_similarity_threshold ?? 0.7,
+            'kb_similarity_threshold' => $kb->pivot->kb_similarity_threshold ?? 0.5, // Lower default for Thai language
         ])->toArray();
 
         // Search with user's API key
