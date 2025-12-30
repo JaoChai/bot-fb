@@ -185,6 +185,77 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
+// Temporary debug endpoint for KB search
+Route::get('/debug-kb-search', function (\Illuminate\Http\Request $request) {
+    try {
+        $kbId = $request->query('kb_id', 5);
+        $query = $request->query('query', 'Nolimit Level Up');
+        $apiKey = $request->query('api_key');
+
+        // Get KB info
+        $kb = \App\Models\KnowledgeBase::find($kbId);
+        if (!$kb) {
+            return response()->json(['error' => 'KB not found']);
+        }
+
+        // Get documents
+        $documents = \App\Models\Document::where('knowledge_base_id', $kbId)
+            ->select('id', 'original_filename', 'status')
+            ->get();
+
+        // Get chunks with embeddings
+        $chunks = \App\Models\DocumentChunk::query()
+            ->join('documents', 'documents.id', '=', 'document_chunks.document_id')
+            ->where('documents.knowledge_base_id', $kbId)
+            ->where('documents.status', 'completed')
+            ->select([
+                'document_chunks.id',
+                'document_chunks.document_id',
+                'document_chunks.chunk_index',
+                \Illuminate\Support\Facades\DB::raw('LENGTH(document_chunks.content) as content_length'),
+                \Illuminate\Support\Facades\DB::raw('document_chunks.embedding IS NOT NULL as has_embedding'),
+            ])
+            ->get();
+
+        // Try search if we have API key
+        $searchResults = null;
+        $embeddingError = null;
+        if ($apiKey || config('services.openrouter.api_key')) {
+            try {
+                $embeddingService = app(\App\Services\EmbeddingService::class);
+                if ($apiKey) {
+                    $embeddingService = $embeddingService->withApiKey($apiKey);
+                }
+
+                // Generate embedding for query
+                $queryEmbedding = $embeddingService->generate($query);
+
+                // Perform semantic search
+                $searchService = app(\App\Services\SemanticSearchService::class);
+                $searchResults = $searchService->search($kbId, $query, 5, 0.5, $apiKey);
+            } catch (\Throwable $e) {
+                $embeddingError = $e->getMessage();
+            }
+        }
+
+        return response()->json([
+            'kb' => ['id' => $kb->id, 'name' => $kb->name],
+            'documents' => $documents,
+            'chunks' => $chunks,
+            'query' => $query,
+            'search_results' => $searchResults,
+            'embedding_error' => $embeddingError,
+            'has_env_api_key' => !empty(config('services.openrouter.api_key')),
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+        ], 500);
+    }
+});
+
 // Temporary debug endpoint for /api/bots 500 error
 Route::get('/debug-bots', function () {
     try {
