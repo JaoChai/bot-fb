@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   Bot,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 
 interface FlowListItem {
@@ -97,8 +98,11 @@ export const FlowsList = memo(function FlowsList({
   return (
     <div className="w-52 border-r bg-card flex flex-col">
       {/* Logo */}
-      <div className="h-14 flex items-center px-4 border-b">
-        <span className="font-bold text-lg">BotJao</span>
+      <div className="h-14 flex items-center px-4 border-b gap-2">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background">
+          <Sparkles className="h-4 w-4" />
+        </div>
+        <span className="text-sm font-semibold">BotJao</span>
       </div>
 
       {/* Create New Flow Button */}
