@@ -162,18 +162,39 @@ Route::get('/health', function () {
     ]);
 })->name('health');
 
-// Debug endpoint - NO MIDDLEWARE (to catch actual error)
-Route::get('/debug-settings/{botId}', function ($botId) {
+// Debug endpoint - WITH middleware to test middleware errors
+Route::get('/debug-with-middleware/{botId}', function ($botId) {
     try {
-        // Step 1: Manual bot find
+        $user = auth('sanctum')->user();
         $bot = \App\Models\Bot::find($botId);
         if (!$bot) {
             return response()->json(['step' => 1, 'error' => 'Bot not found', 'bot_id' => $botId], 404);
         }
-
-        // Step 2: Test accessing settings relationship
         $settings = $bot->settings;
+        return response()->json([
+            'status' => 'ok',
+            'user_id' => $user?->id,
+            'bot_id' => $bot->id,
+            'settings_id' => $settings?->id,
+            'settings' => $settings,
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+        ], 500);
+    }
+})->middleware(['auth:sanctum', 'throttle.api'])->name('debug.with-middleware');
 
+// Debug endpoint - NO MIDDLEWARE (works fine)
+Route::get('/debug-settings/{botId}', function ($botId) {
+    try {
+        $bot = \App\Models\Bot::find($botId);
+        if (!$bot) {
+            return response()->json(['step' => 1, 'error' => 'Bot not found', 'bot_id' => $botId], 404);
+        }
+        $settings = $bot->settings;
         return response()->json([
             'step' => 2,
             'status' => 'ok',
