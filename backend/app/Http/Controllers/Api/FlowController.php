@@ -225,6 +225,9 @@ class FlowController extends Controller
         $this->authorize('update', $bot);
         $this->ensureFlowBelongsToBot($flow, $bot);
 
+        // Eager load knowledgeBases to prevent N+1 in the loop below
+        $flow->loadMissing('knowledgeBases');
+
         $newFlow = $flow->replicate();
         $newFlow->name = $flow->name . ' (Copy)';
         $newFlow->is_default = false;

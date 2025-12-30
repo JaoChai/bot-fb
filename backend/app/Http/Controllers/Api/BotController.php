@@ -10,23 +10,48 @@ use App\Models\Bot;
 use App\Services\AIService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 class BotController extends Controller
 {
     /**
+     * Cache TTL for bot list (5 minutes)
+     */
+    protected const CACHE_TTL = 300;
+
+    /**
      * List all bots for the authenticated user.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $bots = $request->user()
-            ->bots()
-            ->latest()
-            ->paginate($request->input('per_page', 15));
+        $user = $request->user();
+        $page = $request->input('page', 1);
+        $perPage = $request->input('per_page', 15);
+        $cacheKey = "user:{$user->id}:bots:page:{$page}:per:{$perPage}";
+
+        $bots = Cache::remember($cacheKey, self::CACHE_TTL, function () use ($user, $perPage) {
+            return $user->bots()
+                ->with(['settings', 'defaultFlow'])
+                ->latest()
+                ->paginate($perPage);
+        });
 
         return BotResource::collection($bots);
+    }
+
+    /**
+     * Invalidate user's bot list cache.
+     */
+    protected function invalidateBotListCache(int $userId): void
+    {
+        // Clear all pages of bot list cache for this user
+        // Using pattern-based clearing for database cache driver
+        Cache::forget("user:{$userId}:bots:page:1:per:15");
+        Cache::forget("user:{$userId}:bots:page:1:per:10");
+        Cache::forget("user:{$userId}:bots:page:1:per:20");
     }
 
     /**
@@ -56,6 +81,9 @@ class BotController extends Controller
         ]);
 
         $bot->update(['default_flow_id' => $baseFlow->id]);
+
+        // Invalidate cache
+        $this->invalidateBotListCache($request->user()->id);
 
         return response()->json([
             'message' => 'Bot created successfully',
@@ -102,6 +130,9 @@ PROMPT;
 
         $bot->update($request->validated());
 
+        // Invalidate cache
+        $this->invalidateBotListCache($request->user()->id);
+
         return response()->json([
             'message' => 'Bot updated successfully',
             'data' => new BotResource($bot->fresh()),
@@ -116,6 +147,9 @@ PROMPT;
         $this->authorize('delete', $bot);
 
         $bot->delete();
+
+        // Invalidate cache
+        $this->invalidateBotListCache($request->user()->id);
 
         return response()->json([
             'message' => 'Bot deleted successfully',

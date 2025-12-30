@@ -51,11 +51,6 @@ const FlowListItem = memo(function FlowListItem({
         )}
         <span className="truncate font-medium">{flow.name}</span>
       </div>
-      {flow.is_default && (
-        <div className="mt-1 ml-6">
-          <span className={`text-xs font-medium ${isSelected ? 'text-background/70' : 'text-muted-foreground'}`}>Base Flow</span>
-        </div>
-      )}
     </button>
   );
 });
@@ -141,24 +136,28 @@ export const FlowsList = memo(function FlowsList({
       </div>
 
       {/* Bottom Action Buttons */}
-      <div className="p-3 border-t space-y-2">
-        <Button variant="outline" size="sm" className="w-full justify-start">
+      <div className="p-3 border-t space-y-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start text-muted-foreground hover:text-foreground"
+        >
           <Link2 className="h-4 w-4 mr-2" />
           Link ภายใน
         </Button>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
-          className="w-full justify-start"
+          className="w-full justify-start text-muted-foreground hover:text-foreground"
           onClick={handleEditConnection}
         >
           <Settings className="h-4 w-4 mr-2" />
           แก้ไขการเชื่อมต่อ
         </Button>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
-          className="w-full justify-start"
+          className="w-full justify-start text-muted-foreground hover:text-foreground"
           onClick={handleBotSettings}
         >
           <Bot className="h-4 w-4 mr-2" />
@@ -167,7 +166,7 @@ export const FlowsList = memo(function FlowsList({
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start"
+          className="w-full justify-start text-muted-foreground hover:text-foreground"
           onClick={handleBackToBots}
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
