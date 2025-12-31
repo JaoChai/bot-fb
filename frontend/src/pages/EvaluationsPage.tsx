@@ -269,9 +269,9 @@ function CreateEvaluationDialog({
     name: '',
     test_count: 40,
     personas: [],
-    generator_model: 'openai/gpt-4.1-mini',
-    simulator_model: 'openai/gpt-4.1-mini',
-    judge_model: 'openai/gpt-4.1',
+    generator_model: 'openai/gpt-5-mini',
+    simulator_model: 'openai/gpt-5-mini',
+    judge_model: 'openai/gpt-5.1',
     include_multi_turn: true,
     include_edge_cases: true,
   });
@@ -298,9 +298,9 @@ function CreateEvaluationDialog({
         name: '',
         test_count: 40,
         personas: [],
-        generator_model: 'openai/gpt-4.1-mini',
-        simulator_model: 'openai/gpt-4.1-mini',
-        judge_model: 'openai/gpt-4.1',
+        generator_model: 'openai/gpt-5-mini',
+        simulator_model: 'openai/gpt-5-mini',
+        judge_model: 'openai/gpt-5.1',
         include_multi_turn: true,
         include_edge_cases: true,
       });
@@ -493,7 +493,7 @@ function CreateEvaluationDialog({
             <div className="text-sm">
               <p className="font-medium text-blue-900 dark:text-blue-100">ระบบใช้ 3 โมเดล</p>
               <p className="text-blue-700 dark:text-blue-300 mt-1 text-xs sm:text-sm">
-                ใส่ชื่อโมเดลจาก OpenRouter เช่น openai/gpt-4.1-mini
+                ใส่ชื่อโมเดลจาก OpenRouter เช่น openai/gpt-5-mini
               </p>
             </div>
           </div>
@@ -511,7 +511,7 @@ function CreateEvaluationDialog({
             </div>
             <Input
               value={formData.generator_model}
-              placeholder="เช่น openai/gpt-4.1-mini"
+              placeholder="เช่น openai/gpt-5-mini"
               className="min-h-[44px] font-mono text-sm"
               onChange={(e) => setFormData((prev) => ({ ...prev, generator_model: e.target.value }))}
             />
@@ -530,7 +530,7 @@ function CreateEvaluationDialog({
             </div>
             <Input
               value={formData.simulator_model}
-              placeholder="เช่น openai/gpt-4.1-mini"
+              placeholder="เช่น openai/gpt-5-mini"
               className="min-h-[44px] font-mono text-sm"
               onChange={(e) => setFormData((prev) => ({ ...prev, simulator_model: e.target.value }))}
             />
@@ -549,7 +549,7 @@ function CreateEvaluationDialog({
             </div>
             <Input
               value={formData.judge_model}
-              placeholder="เช่น openai/gpt-4.1"
+              placeholder="เช่น openai/gpt-5.1"
               className="min-h-[44px] font-mono text-sm"
               onChange={(e) => setFormData((prev) => ({ ...prev, judge_model: e.target.value }))}
             />
