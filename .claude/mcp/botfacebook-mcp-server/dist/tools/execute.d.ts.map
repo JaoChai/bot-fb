@@ -1,0 +1,1 @@
+{"version":3,"file":"execute.d.ts","sourceRoot":"","sources":["../../src/tools/execute.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAEH,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,oBAAoB,CAAC;AACvD,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,oBAAoB,CAAC;AACvD,OAAO,EAA0C,KAAK,UAAU,EAAE,MAAM,oBAAoB,CAAC;AAoB7F,wBAAsB,aAAa,CACjC,KAAK,EAAE,YAAY,EACnB,MAAM,EAAE,YAAY,GACnB,OAAO,CAAC,UAAU,CAAC,CA0NrB"}
