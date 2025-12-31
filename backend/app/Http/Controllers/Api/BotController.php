@@ -25,7 +25,8 @@ class BotController extends Controller
     protected const CACHE_TTL = 300;
 
     /**
-     * List all bots for the authenticated user.
+     * List all bots accessible by the authenticated user.
+     * Owner sees owned bots, Admin sees assigned bots.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -35,7 +36,7 @@ class BotController extends Controller
         $cacheKey = "user:{$user->id}:bots:page:{$page}:per:{$perPage}";
 
         $bots = Cache::remember($cacheKey, self::CACHE_TTL, function () use ($user, $perPage) {
-            return $user->bots()
+            return $user->accessibleBots()
                 ->with(['settings', 'defaultFlow'])
                 ->latest()
                 ->paginate($perPage);

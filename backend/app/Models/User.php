@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -17,6 +18,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'role',
         'subscription_plan',
         'subscription_expires_at',
         'timezone',
@@ -68,5 +70,66 @@ class User extends Authenticatable
         }
 
         return $this->subscription_expires_at && $this->subscription_expires_at->isFuture();
+    }
+
+    /**
+     * Check if user is an owner.
+     */
+    public function isOwner(): bool
+    {
+        return $this->role === 'owner';
+    }
+
+    /**
+     * Check if user is an admin.
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
+
+    /**
+     * Get admin bot assignments.
+     */
+    public function adminAssignments(): HasMany
+    {
+        return $this->hasMany(AdminBotAssignment::class);
+    }
+
+    /**
+     * Get bots assigned to this admin.
+     */
+    public function assignedBots(): BelongsToMany
+    {
+        return $this->belongsToMany(Bot::class, 'admin_bot_assignments')
+            ->withPivot('assigned_by', 'created_at')
+            ->withTimestamps();
+    }
+
+    /**
+     * Get all bots accessible by this user.
+     * Owner: own bots, Admin: assigned bots
+     */
+    public function accessibleBots()
+    {
+        if ($this->isOwner()) {
+            return $this->bots();
+        }
+
+        return $this->assignedBots();
+    }
+
+    /**
+     * Check if user can access a specific bot.
+     */
+    public function canAccessBot(Bot $bot): bool
+    {
+        // Owner can access their own bots
+        if ($this->isOwner() && $this->id === $bot->user_id) {
+            return true;
+        }
+
+        // Admin can access assigned bots
+        return $this->assignedBots()->where('bots.id', $bot->id)->exists();
     }
 }

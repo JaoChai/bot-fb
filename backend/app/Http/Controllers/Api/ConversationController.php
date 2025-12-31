@@ -809,6 +809,102 @@ class ConversationController extends Controller
     }
 
     /**
+     * Assign conversation to a specific admin (owner only).
+     */
+    public function assign(Request $request, Bot $bot, Conversation $conversation): JsonResponse
+    {
+        $this->authorize('update', $bot);
+        $this->validateConversationBelongsToBot($conversation, $bot);
+
+        $validated = $request->validate([
+            'user_id' => 'required|exists:users,id',
+        ]);
+
+        // Verify user is an admin of this bot or the owner
+        $targetUser = \App\Models\User::find($validated['user_id']);
+        if (!$targetUser->canAccessBot($bot)) {
+            return response()->json([
+                'message' => 'User is not an admin of this bot',
+            ], 422);
+        }
+
+        $conversation->update([
+            'assigned_user_id' => $validated['user_id'],
+        ]);
+
+        // Broadcast the update
+        broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
+
+        return response()->json([
+            'message' => 'Conversation assigned successfully',
+            'data' => new ConversationResource($conversation->fresh(['customerProfile', 'assignedUser'])),
+        ]);
+    }
+
+    /**
+     * Admin claims a conversation for themselves.
+     */
+    public function claim(Request $request, Bot $bot, Conversation $conversation): JsonResponse
+    {
+        $this->authorize('view', $bot);
+        $this->validateConversationBelongsToBot($conversation, $bot);
+
+        $user = $request->user();
+
+        // Must be unassigned or already assigned to this user
+        if ($conversation->assigned_user_id && $conversation->assigned_user_id !== $user->id) {
+            return response()->json([
+                'message' => 'Conversation is already assigned to another user',
+            ], 422);
+        }
+
+        $conversation->update([
+            'assigned_user_id' => $user->id,
+        ]);
+
+        // Broadcast the update
+        broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
+
+        return response()->json([
+            'message' => 'Conversation claimed successfully',
+            'data' => new ConversationResource($conversation->fresh(['customerProfile', 'assignedUser'])),
+        ]);
+    }
+
+    /**
+     * Release conversation assignment.
+     */
+    public function unassign(Request $request, Bot $bot, Conversation $conversation): JsonResponse
+    {
+        $this->authorize('view', $bot);
+        $this->validateConversationBelongsToBot($conversation, $bot);
+
+        $user = $request->user();
+
+        // Only owner or the assigned user can unassign
+        $isOwner = $user->isOwner() && $user->id === $bot->user_id;
+        $isAssignedUser = $conversation->assigned_user_id === $user->id;
+
+        if (!$isOwner && !$isAssignedUser) {
+            return response()->json([
+                'message' => 'You can only unassign conversations assigned to you',
+            ], 403);
+        }
+
+        $conversation->update([
+            'assigned_user_id' => null,
+        ]);
+
+        // Broadcast the update
+        broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
+
+        return response()->json([
+            'message' => 'Conversation unassigned successfully',
+            'data' => new ConversationResource($conversation->fresh(['customerProfile', 'assignedUser'])),
+        ]);
+    }
+
+    /**
      * Validate that a conversation belongs to the specified bot.
      */
     private function validateConversationBelongsToBot(Conversation $conversation, Bot $bot): void
