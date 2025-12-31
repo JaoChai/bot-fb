@@ -310,6 +310,82 @@ PROMPT;
     }
 
     /**
+     * Test Telegram connection and webhook status for a specific bot.
+     */
+    public function testTelegramConnection(Request $request, Bot $bot): JsonResponse
+    {
+        $this->authorize('view', $bot);
+
+        if ($bot->channel_type !== 'telegram') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bot ไม่ได้ตั้งค่าสำหรับ Telegram',
+            ], 400);
+        }
+
+        if (empty($bot->channel_access_token)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'ยังไม่ได้ตั้งค่า Bot Token',
+            ], 400);
+        }
+
+        try {
+            $telegramService = app(TelegramService::class);
+
+            // 1. Validate token by calling getMe
+            $botInfo = $telegramService->getMe($bot);
+
+            // 2. Get current webhook info
+            $webhookInfo = $telegramService->getWebhookInfo($bot);
+
+            // 3. Check if webhook URL matches
+            $currentWebhookUrl = $webhookInfo['url'] ?? '';
+            $expectedWebhookUrl = $bot->webhook_url;
+            $webhookMatches = $currentWebhookUrl === $expectedWebhookUrl;
+
+            // 4. If webhook doesn't match, try to set it
+            $webhookFixed = false;
+            if (!$webhookMatches && !empty($expectedWebhookUrl)) {
+                $webhookFixed = $telegramService->setWebhook($bot, $expectedWebhookUrl);
+                if ($webhookFixed) {
+                    $webhookInfo = $telegramService->getWebhookInfo($bot);
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'เชื่อมต่อสำเร็จ',
+                'bot_info' => [
+                    'username' => $botInfo['username'] ?? null,
+                    'first_name' => $botInfo['first_name'] ?? null,
+                    'can_join_groups' => $botInfo['can_join_groups'] ?? false,
+                    'can_read_all_group_messages' => $botInfo['can_read_all_group_messages'] ?? false,
+                ],
+                'webhook_info' => [
+                    'url' => $webhookInfo['url'] ?? null,
+                    'has_custom_certificate' => $webhookInfo['has_custom_certificate'] ?? false,
+                    'pending_update_count' => $webhookInfo['pending_update_count'] ?? 0,
+                    'last_error_date' => $webhookInfo['last_error_date'] ?? null,
+                    'last_error_message' => $webhookInfo['last_error_message'] ?? null,
+                    'max_connections' => $webhookInfo['max_connections'] ?? null,
+                ],
+                'webhook_status' => [
+                    'expected_url' => $expectedWebhookUrl,
+                    'matches' => $currentWebhookUrl === ($webhookInfo['url'] ?? ''),
+                    'was_fixed' => $webhookFixed,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bot Token ไม่ถูกต้อง: ' . $e->getMessage(),
+            ], 400);
+        }
+    }
+
+    /**
      * Regenerate webhook URL for a bot.
      */
     public function regenerateWebhook(Request $request, Bot $bot): JsonResponse
