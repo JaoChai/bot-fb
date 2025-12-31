@@ -486,3 +486,128 @@ export interface CostAnalyticsFilters {
   group_by?: 'day' | 'week' | 'month';
   bot_id?: number;
 }
+
+// Evaluation Types
+export interface EvaluationPersona {
+  key: string;
+  name: string;
+  description: string;
+  example_style: string;
+}
+
+export interface EvaluationProgress {
+  total: number;
+  total_test_cases: number;
+  completed: number;
+  completed_test_cases: number;
+  percent: number;
+  current_phase: string;
+  eta_seconds: number | null;
+}
+
+export interface EvaluationMetricScores {
+  answer_relevancy: number | null;
+  faithfulness: number | null;
+  role_adherence: number | null;
+  context_precision: number | null;
+  task_completion: number | null;
+}
+
+export interface EvaluationReport {
+  id: number;
+  evaluation_id: number;
+  executive_summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  recommendations: string[];
+  prompt_suggestions: string[];
+  kb_gaps: string[];
+  historical_comparison: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Evaluation {
+  id: number;
+  bot_id: number;
+  flow_id: number;
+  user_id: number;
+  name: string;
+  description: string | null;
+  status: 'pending' | 'generating_tests' | 'running' | 'evaluating' | 'generating_report' | 'completed' | 'failed' | 'cancelled';
+  judge_model: string;
+  personas: string[];
+  config: Record<string, unknown>;
+  overall_score: number | null;
+  metric_scores: EvaluationMetricScores | null;
+  progress: {
+    total_test_cases: number;
+    completed_test_cases: number;
+    percent: number;
+  };
+  total_tokens_used: number;
+  estimated_cost: number;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  error_message?: string;
+  flow?: {
+    id: number;
+    name: string;
+  };
+  report?: EvaluationReport;
+}
+
+export interface EvaluationTestCaseMessage {
+  id: number;
+  turn_number: number;
+  role: 'user' | 'assistant';
+  content: string;
+  rag_metadata: Record<string, unknown> | null;
+  model_metadata: Record<string, unknown> | null;
+  turn_scores: Record<string, unknown> | null;
+}
+
+export interface EvaluationTestCase {
+  id: number;
+  evaluation_id: number;
+  knowledge_base_id: number | null;
+  title: string;
+  description: string | null;
+  persona_key: string;
+  test_type: 'single_turn' | 'multi_turn' | 'edge_case';
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  scores: {
+    answer_relevancy: number | null;
+    faithfulness: number | null;
+    role_adherence: number | null;
+    context_precision: number | null;
+    task_completion: number | null;
+    overall: number | null;
+  };
+  detailed_feedback: Record<string, unknown> | null;
+  expected_topics: string[] | null;
+  source_chunks: string[] | null;
+  messages?: EvaluationTestCaseMessage[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateEvaluationData {
+  flow_id: number;
+  name?: string;
+  description?: string;
+  personas?: string[];
+  judge_model?: string;
+  test_count?: number;
+  include_multi_turn?: boolean;
+  include_edge_cases?: boolean;
+}
+
+export interface EvaluationFilters {
+  flow_id?: number;
+  status?: string;
+  per_page?: number;
+  page?: number;
+}

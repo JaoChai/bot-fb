@@ -22,6 +22,7 @@ import {
   Sparkles,
   LogOut,
   ChevronsUpDown,
+  Target,
 } from 'lucide-react';
 
 const mainNavItems = [
@@ -44,6 +45,11 @@ const mainNavItems = [
     title: 'แชท',
     href: '/chat',
     icon: MessageSquare,
+  },
+  {
+    title: 'AI Evaluation',
+    href: '/evaluations',
+    icon: Target,
   },
 ];
 
