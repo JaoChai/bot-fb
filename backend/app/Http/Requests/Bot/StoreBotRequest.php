@@ -22,10 +22,7 @@ class StoreBotRequest extends FormRequest
             'channel_secret' => ['nullable', 'string'],
             'page_id' => ['nullable', 'string'],
 
-            // OpenRouter API
-            'openrouter_api_key' => ['nullable', 'string'],
-
-            // Multi-model LLM configuration
+            // Multi-model LLM configuration (API key now in User Settings)
             'primary_chat_model' => ['nullable', 'string', 'max:100'],
             'fallback_chat_model' => ['nullable', 'string', 'max:100'],
             'decision_model' => ['nullable', 'string', 'max:100'],

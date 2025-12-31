@@ -25,9 +25,7 @@ class Bot extends Model
         'webhook_forwarder_enabled',
         'page_id',
         'default_flow_id',
-        // OpenRouter API
-        'openrouter_api_key',
-        // LLM Models (legacy)
+        // LLM Models (legacy) - API key now in User Settings
         'llm_model',
         'llm_fallback_model',
         // LLM Models (new multi-model)
@@ -79,7 +77,6 @@ class Bot extends Model
     protected $hidden = [
         'channel_access_token',
         'channel_secret',
-        'openrouter_api_key',
     ];
 
     public function user(): BelongsTo

@@ -59,9 +59,7 @@ export interface Bot {
   channel_type: 'line' | 'facebook' | 'testing';
   webhook_url: string;
   webhook_forwarder_enabled: boolean;
-  // Credentials
-  openrouter_api_key?: string;
-  // Multi-model LLM configuration
+  // Multi-model LLM configuration (API key now in User Settings)
   primary_chat_model: string | null;
   fallback_chat_model: string | null;
   decision_model: string | null;
@@ -87,11 +85,10 @@ export interface Bot {
   updated_at: string;
 }
 
-// Connection/Bot creation data
+// Connection/Bot creation data (API key now in User Settings)
 export interface CreateConnectionData {
   name: string;
   channel_type: 'line' | 'facebook' | 'testing';
-  openrouter_api_key?: string;
   primary_chat_model?: string;
   fallback_chat_model?: string;
   decision_model?: string;
@@ -101,12 +98,11 @@ export interface CreateConnectionData {
   webhook_forwarder_enabled?: boolean;
 }
 
-// Connection/Bot update data
+// Connection/Bot update data (API key now in User Settings)
 export interface UpdateConnectionData {
   name?: string;
   status?: 'active' | 'inactive' | 'paused';
   channel_type?: 'line' | 'facebook' | 'testing';
-  openrouter_api_key?: string;
   primary_chat_model?: string;
   fallback_chat_model?: string;
   decision_model?: string;

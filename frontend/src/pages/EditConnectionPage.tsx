@@ -70,7 +70,6 @@ interface ConnectionFormData {
   enabled: boolean;
   connection_name: string;
   platform: 'line' | 'facebook' | 'testing';
-  openrouter_api_key: string;
   primary_chat_model: string;
   fallback_chat_model: string;
   decision_model: string;
@@ -84,7 +83,6 @@ const DEFAULT_FORM_DATA: ConnectionFormData = {
   enabled: true,
   connection_name: '',
   platform: 'testing',
-  openrouter_api_key: '',
   primary_chat_model: 'google/gemini-2.5-flash-preview',
   fallback_chat_model: 'google/gemini-2.0-flash-001',
   decision_model: 'openai/gpt-4o-mini',
@@ -111,7 +109,6 @@ export function EditConnectionPage() {
   const deleteMutation = useDeleteConnection();
 
   // Local state
-  const [showApiKey, setShowApiKey] = useState(false);
   const [showLineSecretToggle, setShowLineSecretToggle] = useState(false);
   const [formData, setFormData] = useState<ConnectionFormData>({
     ...DEFAULT_FORM_DATA,
@@ -125,7 +122,6 @@ export function EditConnectionPage() {
         enabled: existingBot.status === 'active',
         connection_name: existingBot.name,
         platform: existingBot.channel_type,
-        openrouter_api_key: existingBot.openrouter_api_key || '',
         primary_chat_model: existingBot.primary_chat_model || DEFAULT_FORM_DATA.primary_chat_model,
         fallback_chat_model: existingBot.fallback_chat_model || DEFAULT_FORM_DATA.fallback_chat_model,
         decision_model: existingBot.decision_model || DEFAULT_FORM_DATA.decision_model,
@@ -148,11 +144,6 @@ export function EditConnectionPage() {
     // Validation
     if (!formData.connection_name.trim()) {
       toast({ title: 'ข้อผิดพลาด', description: 'กรุณากรอกชื่อการเชื่อมต่อ', variant: 'destructive' });
-      return;
-    }
-
-    if (formData.platform !== 'testing' && !formData.openrouter_api_key.trim() && !isEditMode) {
-      toast({ title: 'ข้อผิดพลาด', description: 'กรุณากรอก OpenRouter API Key', variant: 'destructive' });
       return;
     }
 
@@ -179,8 +170,7 @@ export function EditConnectionPage() {
           decision_model: formData.decision_model,
           fallback_decision_model: formData.fallback_decision_model,
           webhook_forwarder_enabled: formData.webhook_forwarder_enabled,
-          // Only send credentials if they were changed (not empty)
-          ...(formData.openrouter_api_key && { openrouter_api_key: formData.openrouter_api_key }),
+          // Only send LINE credentials if they were changed (not empty)
           ...(formData.line_channel_secret && { channel_secret: formData.line_channel_secret }),
           ...(formData.line_channel_access_token && { channel_access_token: formData.line_channel_access_token }),
         });
@@ -198,7 +188,6 @@ export function EditConnectionPage() {
           decision_model: formData.decision_model,
           fallback_decision_model: formData.fallback_decision_model,
           webhook_forwarder_enabled: formData.webhook_forwarder_enabled,
-          openrouter_api_key: formData.openrouter_api_key,
           channel_secret: formData.line_channel_secret,
           channel_access_token: formData.line_channel_access_token,
         });
@@ -398,46 +387,18 @@ export function EditConnectionPage() {
               </>
             )}
 
-            {/* OpenRouter API Section */}
+            {/* OpenRouter API Note */}
             <div className="border-t" />
             <Section
               icon={Key}
               title="OpenRouter API"
-              description="API Key สำหรับเชื่อมต่อกับ AI Models"
+              description="ตั้งค่า API Key สำหรับเชื่อมต่อกับ AI Models"
             >
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="api-key">
-                    API Key
-                    {isEditMode && (
-                      <span className="text-muted-foreground font-normal ml-2 text-xs">
-                        (เว้นว่างถ้าไม่เปลี่ยน)
-                      </span>
-                    )}
-                  </Label>
-                  <div className="flex gap-2 max-w-md">
-                    <Input
-                      id="api-key"
-                      type={showApiKey ? 'text' : 'password'}
-                      placeholder={isEditMode ? '••••••••' : 'sk-or-...'}
-                      value={formData.openrouter_api_key}
-                      onChange={(e) => handleChange('openrouter_api_key', e.target.value)}
-                      className="font-mono text-sm"
-                    />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      type="button"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                      aria-label={showApiKey ? 'Hide API Key' : 'Show API Key'}
-                    >
-                      {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                </div>
+              <div className="text-sm text-muted-foreground bg-muted/50 rounded-lg px-4 py-3 max-w-md">
+                <p className="mb-2">OpenRouter API Key ตั้งค่าที่หน้า Settings เพียงที่เดียว</p>
                 <Button variant="link" className="h-auto p-0 text-sm" asChild>
-                  <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">
-                    สร้าง API Key ที่ OpenRouter <ExternalLink className="h-3 w-3 ml-1" />
+                  <a href="/settings">
+                    ไปที่หน้า Settings <ExternalLink className="h-3 w-3 ml-1" />
                   </a>
                 </Button>
               </div>
