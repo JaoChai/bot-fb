@@ -277,13 +277,18 @@ function CreateEvaluationDialog({
   });
 
   const [activeTab, setActiveTab] = useState('basic');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async () => {
+    // Prevent double submit
+    if (isSubmitting || isCreating) return;
+
     if (!formData.flow_id) {
       toast({ title: 'กรุณาเลือก Flow', variant: 'destructive' });
       return;
     }
 
+    setIsSubmitting(true);
     try {
       await createEvaluation?.({
         ...formData,
@@ -306,6 +311,8 @@ function CreateEvaluationDialog({
       });
     } catch (error) {
       toast({ title: 'เกิดข้อผิดพลาด', description: getErrorMessage(error), variant: 'destructive' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -576,8 +583,8 @@ function CreateEvaluationDialog({
       <Button variant="outline" onClick={() => onOpenChange(false)} className="min-h-[44px] w-full sm:w-auto">
         ยกเลิก
       </Button>
-      <Button onClick={handleSubmit} disabled={isCreating || !formData.flow_id} className="min-h-[44px] w-full sm:w-auto">
-        {isCreating ? (
+      <Button onClick={handleSubmit} disabled={isSubmitting || isCreating || !formData.flow_id} className="min-h-[44px] w-full sm:w-auto">
+        {isSubmitting || isCreating ? (
           <>
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             กำลังเริ่ม...
