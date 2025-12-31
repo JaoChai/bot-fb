@@ -94,4 +94,15 @@ export const queryKeys = {
       [...queryKeys.evaluations.detail(botId, evaluationId), 'report'] as const,
     personas: () => [...queryKeys.evaluations.all, 'personas'] as const,
   },
+  // Improvement Sessions
+  improvements: {
+    all: ['improvements'] as const,
+    lists: () => [...queryKeys.improvements.all, 'list'] as const,
+    list: (botId: number) => [...queryKeys.improvements.lists(), botId] as const,
+    details: () => [...queryKeys.improvements.all, 'detail'] as const,
+    detail: (botId: number, sessionId: number) =>
+      [...queryKeys.improvements.details(), botId, sessionId] as const,
+    suggestions: (botId: number, sessionId: number) =>
+      [...queryKeys.improvements.detail(botId, sessionId), 'suggestions'] as const,
+  },
 } as const;

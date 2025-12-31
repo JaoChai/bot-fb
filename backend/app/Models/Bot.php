@@ -116,4 +116,9 @@ class Bot extends Model
     {
         return $this->hasMany(Evaluation::class);
     }
+
+    public function improvementSessions(): HasMany
+    {
+        return $this->hasMany(ImprovementSession::class);
+    }
 }

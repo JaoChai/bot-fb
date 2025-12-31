@@ -656,3 +656,101 @@ export interface EvaluationFilters {
   per_page?: number;
   page?: number;
 }
+
+// Improvement Agent Types
+export type ImprovementSessionStatus =
+  | 'analyzing'
+  | 'suggestions_ready'
+  | 'applying'
+  | 're_evaluating'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export type ImprovementSuggestionType = 'system_prompt' | 'kb_content';
+export type ImprovementPriority = 'high' | 'medium' | 'low';
+
+export interface ImprovementSession {
+  id: number;
+  evaluation_id: number;
+  flow_id: number;
+  bot_id: number;
+  status: ImprovementSessionStatus;
+  analysis_summary: string | null;
+  before_score: number | null;
+  after_score: number | null;
+  score_improvement: number | null;
+  re_evaluation_id: number | null;
+  agent_model: string;
+  total_tokens_used: number;
+  estimated_cost: number;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  // Counts
+  suggestions_count?: number;
+  selected_suggestions_count?: number;
+  // Relations
+  evaluation?: {
+    id: number;
+    name: string;
+    overall_score: number | null;
+    status: string;
+  };
+  re_evaluation?: {
+    id: number;
+    name: string;
+    overall_score: number | null;
+    status: string;
+  } | null;
+  suggestions?: ImprovementSuggestion[];
+}
+
+export interface ImprovementSuggestion {
+  id: number;
+  session_id: number;
+  type: ImprovementSuggestionType;
+  priority: ImprovementPriority;
+  priority_variant: 'destructive' | 'warning' | 'default' | 'secondary';
+  confidence_score: number;
+  title: string;
+  description: string | null;
+  is_selected: boolean;
+  is_applied: boolean;
+  applied_at: string | null;
+  source_metric: string | null;
+  source_test_case_ids: number[] | null;
+  created_at: string;
+  // System prompt specific
+  current_value?: string;
+  suggested_value?: string;
+  diff_summary?: string;
+  // KB content specific
+  target_knowledge_base_id?: number;
+  kb_content_title?: string;
+  kb_content_body?: string;
+  related_topics?: string[];
+}
+
+export interface ImprovementPreview {
+  prompt_changes: {
+    id: number;
+    title: string;
+    current: string | null;
+    suggested: string | null;
+    diff_summary: string | null;
+  }[];
+  kb_additions: {
+    id: number;
+    title: string;
+    content: string | null;
+    related_topics: string[] | null;
+  }[];
+  summary: {
+    total_selected: number;
+    prompt_updates: number;
+    kb_documents: number;
+  };
+}
