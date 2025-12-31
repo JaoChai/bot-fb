@@ -224,7 +224,13 @@ function EvaluationCard({
               {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={onView} className="min-h-[36px]">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onView}
+            disabled={isRunning}
+            className="min-h-[36px]"
+          >
             <span className="hidden sm:inline">ดูรายละเอียด</span>
             <span className="sm:hidden">ดู</span>
             <ChevronRight className="h-3 w-3 ml-1" />

@@ -24,7 +24,7 @@ import {
   useUpdateConnection,
   useDeleteConnection,
 } from '@/hooks/useConnections';
-import { ArrowLeft, Loader2, Eye, EyeOff, ExternalLink, Trash2, MessageCircle, Settings, Cpu, Key, Zap } from 'lucide-react';
+import { ArrowLeft, Loader2, Eye, EyeOff, ExternalLink, Trash2, MessageCircle, Settings, Cpu, Key, Zap, Copy, Check, Send } from 'lucide-react';
 import { ModelConfiguration } from '@/components/ModelSelector';
 import { cn } from '@/lib/utils';
 
@@ -77,6 +77,7 @@ interface ConnectionFormData {
   fallback_decision_model: string;
   line_channel_secret: string;
   line_channel_access_token: string;
+  telegram_bot_token: string;
   webhook_forwarder_enabled: boolean;
 }
 
@@ -90,8 +91,11 @@ const DEFAULT_FORM_DATA: ConnectionFormData = {
   fallback_decision_model: 'openai/gpt-4o',
   line_channel_secret: '',
   line_channel_access_token: '',
+  telegram_bot_token: '',
   webhook_forwarder_enabled: false,
 };
+
+const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://backend-production-b216.up.railway.app';
 
 export function EditConnectionPage() {
   const { botId } = useParams();
@@ -111,6 +115,8 @@ export function EditConnectionPage() {
 
   // Local state
   const [showLineSecretToggle, setShowLineSecretToggle] = useState(false);
+  const [showTelegramToken, setShowTelegramToken] = useState(false);
+  const [webhookCopied, setWebhookCopied] = useState(false);
   const [formData, setFormData] = useState<ConnectionFormData>({
     ...DEFAULT_FORM_DATA,
     platform: platformFromUrl || 'testing',
@@ -129,6 +135,7 @@ export function EditConnectionPage() {
         fallback_decision_model: existingBot.fallback_decision_model || DEFAULT_FORM_DATA.fallback_decision_model,
         line_channel_secret: '', // Hidden field - don't populate
         line_channel_access_token: '', // Hidden field - don't populate
+        telegram_bot_token: '', // Hidden field - don't populate
         webhook_forwarder_enabled: existingBot.webhook_forwarder_enabled || false,
       });
     }
@@ -159,6 +166,17 @@ export function EditConnectionPage() {
       }
     }
 
+    if (formData.platform === 'telegram' && !isEditMode) {
+      if (!formData.telegram_bot_token?.trim()) {
+        toast({
+          title: 'ข้อผิดพลาด',
+          description: 'กรุณากรอก Telegram Bot Token',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
     try {
       if (isEditMode) {
         // Update existing connection
@@ -171,9 +189,10 @@ export function EditConnectionPage() {
           decision_model: formData.decision_model,
           fallback_decision_model: formData.fallback_decision_model,
           webhook_forwarder_enabled: formData.webhook_forwarder_enabled,
-          // Only send LINE credentials if they were changed (not empty)
-          ...(formData.line_channel_secret && { channel_secret: formData.line_channel_secret }),
-          ...(formData.line_channel_access_token && { channel_access_token: formData.line_channel_access_token }),
+          // Only send credentials if they were changed (not empty)
+          ...(formData.platform === 'line' && formData.line_channel_secret && { channel_secret: formData.line_channel_secret }),
+          ...(formData.platform === 'line' && formData.line_channel_access_token && { channel_access_token: formData.line_channel_access_token }),
+          ...(formData.platform === 'telegram' && formData.telegram_bot_token && { channel_access_token: formData.telegram_bot_token }),
         });
         toast({
           title: 'บันทึกสำเร็จ',
@@ -181,7 +200,7 @@ export function EditConnectionPage() {
         });
       } else {
         // Create new connection
-        await createMutation.mutateAsync({
+        const createData: Parameters<typeof createMutation.mutateAsync>[0] = {
           name: formData.connection_name,
           channel_type: formData.platform,
           primary_chat_model: formData.primary_chat_model,
@@ -189,9 +208,18 @@ export function EditConnectionPage() {
           decision_model: formData.decision_model,
           fallback_decision_model: formData.fallback_decision_model,
           webhook_forwarder_enabled: formData.webhook_forwarder_enabled,
-          channel_secret: formData.line_channel_secret,
-          channel_access_token: formData.line_channel_access_token,
-        });
+        };
+
+        // Set credentials based on platform
+        if (formData.platform === 'line') {
+          createData.channel_secret = formData.line_channel_secret;
+          createData.channel_access_token = formData.line_channel_access_token;
+        } else if (formData.platform === 'telegram') {
+          // Telegram uses channel_access_token to store bot token
+          createData.channel_access_token = formData.telegram_bot_token;
+        }
+
+        await createMutation.mutateAsync(createData);
         toast({
           title: 'สร้างสำเร็จ',
           description: 'การเชื่อมต่อใหม่ถูกสร้างแล้ว',
@@ -245,6 +273,7 @@ export function EditConnectionPage() {
     const colors: Record<string, string> = {
       line: 'bg-[#06C755]/10 text-[#06C755] border-[#06C755]/30',
       facebook: 'bg-[#0084FF]/10 text-[#0084FF] border-[#0084FF]/30',
+      telegram: 'bg-[#0088CC]/10 text-[#0088CC] border-[#0088CC]/30',
       testing: 'bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400',
     };
 
@@ -381,6 +410,98 @@ export function EditConnectionPage() {
                     <Button variant="link" className="h-auto p-0 text-sm" asChild>
                       <a href="https://developers.line.biz" target="_blank" rel="noopener noreferrer">
                         ดูวิธีการเชื่อมต่อ LINE OA <ExternalLink className="h-3 w-3 ml-1" />
+                      </a>
+                    </Button>
+                  </div>
+                </Section>
+              </>
+            )}
+
+            {/* Telegram Credentials Section */}
+            {formData.platform === 'telegram' && (
+              <>
+                <div className="border-t" />
+                <Section
+                  icon={Send}
+                  title="Telegram Bot Token"
+                  description="ข้อมูลจาก @BotFather บน Telegram"
+                >
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="telegram-token">
+                        Bot Token
+                        {isEditMode && (
+                          <span className="text-muted-foreground font-normal ml-2 text-xs">
+                            (เว้นว่างถ้าไม่เปลี่ยน)
+                          </span>
+                        )}
+                      </Label>
+                      <div className="flex gap-2 max-w-md">
+                        <Input
+                          id="telegram-token"
+                          type={showTelegramToken ? 'text' : 'password'}
+                          placeholder={isEditMode ? '••••••••' : '123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ'}
+                          value={formData.telegram_bot_token}
+                          onChange={(e) => handleChange('telegram_bot_token', e.target.value)}
+                          className="font-mono text-sm"
+                        />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          type="button"
+                          onClick={() => setShowTelegramToken(!showTelegramToken)}
+                          aria-label="Toggle visibility"
+                        >
+                          {showTelegramToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Webhook URL - Show after bot is created */}
+                    {isEditMode && existingBot && (
+                      <div className="space-y-2">
+                        <Label>Webhook URL</Label>
+                        <div className="flex gap-2 max-w-md">
+                          <Input
+                            readOnly
+                            value={`${BACKEND_URL.replace('/api', '')}/webhook/telegram/${existingBot.webhook_url?.split('/').pop() || '[token]'}`}
+                            className="font-mono text-xs bg-muted"
+                          />
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            type="button"
+                            onClick={() => {
+                              const webhookUrl = `${BACKEND_URL.replace('/api', '')}/webhook/telegram/${existingBot.webhook_url?.split('/').pop() || ''}`;
+                              navigator.clipboard.writeText(webhookUrl);
+                              setWebhookCopied(true);
+                              setTimeout(() => setWebhookCopied(false), 2000);
+                              toast({ title: 'คัดลอกแล้ว', description: 'Webhook URL ถูกคัดลอกไปยังคลิปบอร์ด' });
+                            }}
+                            aria-label="Copy webhook URL"
+                          >
+                            {webhookCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          นำ URL นี้ไปตั้งค่าที่ @BotFather ด้วยคำสั่ง /setwebhook
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="bg-[#0088CC]/5 border border-[#0088CC]/20 rounded-lg p-4 max-w-md">
+                      <h4 className="font-medium text-sm mb-2">วิธีสร้าง Telegram Bot</h4>
+                      <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+                        <li>เปิด Telegram แล้วค้นหา @BotFather</li>
+                        <li>ส่งคำสั่ง /newbot และทำตามขั้นตอน</li>
+                        <li>คัดลอก Bot Token มาวางที่นี่</li>
+                        {isEditMode && <li>คัดลอก Webhook URL ด้านบนไปตั้งค่าด้วย /setwebhook</li>}
+                      </ol>
+                    </div>
+
+                    <Button variant="link" className="h-auto p-0 text-sm" asChild>
+                      <a href="https://core.telegram.org/bots#how-do-i-create-a-bot" target="_blank" rel="noopener noreferrer">
+                        ดูวิธีการสร้าง Telegram Bot <ExternalLink className="h-3 w-3 ml-1" />
                       </a>
                     </Button>
                   </div>
