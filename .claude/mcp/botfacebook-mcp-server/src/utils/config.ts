@@ -34,8 +34,8 @@ export function loadConfig(): ServerConfig {
     railwayProject: process.env.RAILWAY_PROJECT,
     railwayEnvironment: process.env.RAILWAY_ENVIRONMENT || "production",
     mode: (process.env.MCP_MODE as "local" | "remote") || "local",
-    productionBackendUrl: process.env.PRODUCTION_BACKEND_URL || "https://backend-production-b216.up.railway.app",
-    productionFrontendUrl: process.env.PRODUCTION_FRONTEND_URL || "https://frontend-production-9fe8.up.railway.app",
+    productionBackendUrl: process.env.PRODUCTION_BACKEND_URL || "https://api.botjao.com",
+    productionFrontendUrl: process.env.PRODUCTION_FRONTEND_URL || "https://www.botjao.com",
   };
 }
 

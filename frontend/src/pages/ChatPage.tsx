@@ -8,7 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, MessageSquare } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Loader2, MessageSquare, MessageCircle } from 'lucide-react';
 import { useBots } from '@/hooks/useKnowledgeBase';
 import { useInfiniteConversations, useMarkAsRead } from '@/hooks/useConversations';
 import { useBotChannel } from '@/hooks/useEcho';
@@ -18,6 +19,14 @@ import { CustomerInfoPanel } from '@/components/chat/CustomerInfoPanel';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types/api';
+
+// Channel tabs configuration
+const channelTabs = [
+  { value: 'all', label: 'ทั้งหมด', color: '' },
+  { value: 'line', label: 'LINE', color: 'text-[#06C755]' },
+  { value: 'facebook', label: 'Facebook', color: 'text-[#0084FF]' },
+  { value: 'telegram', label: 'Telegram', color: 'text-[#0088CC]' },
+] as const;
 
 export function ChatPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -31,8 +40,12 @@ export function ChatPage() {
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
 
   // Filters
+  const [channelFilter, setChannelFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
+
+  // Determine if current channel is telegram for different sub-filters
+  const isTelegramChannel = channelFilter === 'telegram';
 
   // Mobile info panel
   const [showInfoPanel, setShowInfoPanel] = useState(false);
@@ -45,13 +58,33 @@ export function ChatPage() {
   const bots = botsResponse?.data || [];
 
   // Memoize filters to prevent unnecessary query re-creations
-  const filters = useMemo<ConversationFilters>(() => ({
-    status: statusFilter === 'all' ? undefined : statusFilter,
-    search: search || undefined,
-    sort_by: 'last_message_at',
-    sort_direction: 'desc',
-    per_page: 30,
-  }), [statusFilter, search]);
+  const filters = useMemo<ConversationFilters>(() => {
+    const baseFilters: ConversationFilters = {
+      search: search || undefined,
+      sort_by: 'last_message_at',
+      sort_direction: 'desc',
+      per_page: 30,
+    };
+
+    // Add channel filter
+    if (channelFilter !== 'all') {
+      baseFilters.channel_type = channelFilter;
+    }
+
+    // For telegram: use telegram_chat_type filter (group/private)
+    // For other channels: use status filter (active/handover)
+    if (isTelegramChannel) {
+      if (statusFilter !== 'all') {
+        baseFilters.telegram_chat_type = statusFilter; // 'group' or 'private'
+      }
+    } else {
+      if (statusFilter !== 'all') {
+        baseFilters.status = statusFilter; // 'active' or 'handover'
+      }
+    }
+
+    return baseFilters;
+  }, [channelFilter, statusFilter, search, isTelegramChannel]);
 
   const {
     data: conversationsData,
@@ -122,6 +155,13 @@ export function ChatPage() {
     setSelectedConversationId(null);
     setShowMobileChat(false); // Reset to list view when changing bot
   }, [setSearchParams]);
+
+  // Handle channel filter change - reset status filter when channel changes
+  const handleChannelFilterChange = useCallback((value: string) => {
+    setChannelFilter(value);
+    setStatusFilter('all'); // Reset sub-filter when channel changes
+    setSelectedConversationId(null);
+  }, []);
 
   // Handle conversation selection (memoized to prevent child re-renders)
   const handleConversationSelect = useCallback((conversation: Conversation) => {
@@ -210,6 +250,26 @@ export function ChatPage() {
           </Select>
         </div>
 
+        {/* Channel Tabs */}
+        <div className="p-2 border-b bg-muted/10">
+          <Tabs value={channelFilter} onValueChange={handleChannelFilterChange}>
+            <TabsList className="w-full grid grid-cols-4 h-9">
+              {channelTabs.map((tab) => (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className={cn('text-xs px-1', tab.color)}
+                >
+                  {tab.value === 'all' ? (
+                    <MessageCircle className="h-3.5 w-3.5 mr-1 hidden sm:inline" />
+                  ) : null}
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
+
         {/* Conversation List */}
         <ConversationList
           conversations={conversations}
@@ -224,6 +284,7 @@ export function ChatPage() {
           hasNextPage={hasNextPage}
           isFetchingNextPage={isFetchingNextPage}
           fetchNextPage={fetchNextPage}
+          channelType={isTelegramChannel ? 'telegram' : undefined}
         />
       </div>
 

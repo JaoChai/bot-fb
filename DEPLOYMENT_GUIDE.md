@@ -7,8 +7,8 @@ This guide explains how to properly configure the BotFacebook application for pr
 ## Production Deployment URLs (Current)
 
 ```
-Frontend:  https://frontend-production-9fe8.up.railway.app
-Backend:   https://backend-production-b216.up.railway.app
+Frontend:  https://www.botjao.com
+Backend:   https://api.botjao.com
 ```
 
 ---
@@ -30,12 +30,12 @@ Configure these environment variables on the **Backend Service**:
 
 ```bash
 # Set the frontend URL as the allowed origin:
-CORS_ALLOWED_ORIGINS=https://frontend-production-9fe8.up.railway.app
+CORS_ALLOWED_ORIGINS=https://www.botjao.com
 ```
 
 **For multiple environments** (local, staging, production):
 ```bash
-CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,https://frontend-production-9fe8.up.railway.app,https://staging-frontend.up.railway.app
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,https://www.botjao.com,https://staging-frontend.up.railway.app
 ```
 
 #### 2. `SANCTUM_STATEFUL_DOMAINS` (REQUIRED for authentication)
@@ -43,12 +43,12 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,https://fronten
 
 ```bash
 # Set the frontend domain (without protocol):
-SANCTUM_STATEFUL_DOMAINS=frontend-production-9fe8.up.railway.app
+SANCTUM_STATEFUL_DOMAINS=www.botjao.com
 ```
 
 **For multiple environments**:
 ```bash
-SANCTUM_STATEFUL_DOMAINS=localhost,localhost:5173,localhost:3000,frontend-production-9fe8.up.railway.app,staging-frontend.up.railway.app
+SANCTUM_STATEFUL_DOMAINS=localhost,localhost:5173,localhost:3000,www.botjao.com,staging-frontend.up.railway.app
 ```
 
 ---
@@ -65,7 +65,7 @@ APP_DEBUG=false
 APP_KEY=base64:your-generated-key-here
 
 # Server URLs (MUST match deployed URLs)
-APP_URL=https://backend-production-b216.up.railway.app
+APP_URL=https://api.botjao.com
 
 # Database (Neon PostgreSQL)
 DB_CONNECTION=pgsql
@@ -94,8 +94,8 @@ PUSHER_APP_SECRET=your-app-secret
 PUSHER_APP_CLUSTER=us2
 
 # ⭐ CRITICAL: CORS & Authentication
-CORS_ALLOWED_ORIGINS=https://frontend-production-9fe8.up.railway.app
-SANCTUM_STATEFUL_DOMAINS=frontend-production-9fe8.up.railway.app
+CORS_ALLOWED_ORIGINS=https://www.botjao.com
+SANCTUM_STATEFUL_DOMAINS=www.botjao.com
 
 # AI/LLM Configuration
 OPENROUTER_API_KEY=your-openrouter-key
@@ -114,7 +114,7 @@ LINE_CHANNEL_SECRET=your-line-secret
 
 ```ini
 # ⭐ CRITICAL: API Endpoint (must match backend URL)
-VITE_API_URL=https://backend-production-b216.up.railway.app/api
+VITE_API_URL=https://api.botjao.com/api
 
 # WebSocket Configuration (for real-time features)
 VITE_REVERB_APP_KEY=your-reverb-app-key
@@ -139,9 +139,9 @@ VITE_REVERB_SCHEME=https
 |----------|-------|-------|
 | `APP_ENV` | `production` | Critical for performance & security |
 | `APP_DEBUG` | `false` | MUST be false (prevents info leaks) |
-| `APP_URL` | `https://backend-production-b216.up.railway.app` | Must match deployed URL |
-| `CORS_ALLOWED_ORIGINS` | `https://frontend-production-9fe8.up.railway.app` | Frontend URL exactly |
-| `SANCTUM_STATEFUL_DOMAINS` | `frontend-production-9fe8.up.railway.app` | Frontend domain without protocol |
+| `APP_URL` | `https://api.botjao.com` | Must match deployed URL |
+| `CORS_ALLOWED_ORIGINS` | `https://www.botjao.com` | Frontend URL exactly |
+| `SANCTUM_STATEFUL_DOMAINS` | `www.botjao.com` | Frontend domain without protocol |
 | `DB_CONNECTION` | `pgsql` | PostgreSQL for Neon |
 | `SESSION_DRIVER` | `cookie` | Required for SPA auth |
 
@@ -159,7 +159,7 @@ VITE_REVERB_SCHEME=https
 
 | Variable | Value | Notes |
 |----------|-------|-------|
-| `VITE_API_URL` | `https://backend-production-b216.up.railway.app/api` | Must point to backend |
+| `VITE_API_URL` | `https://api.botjao.com/api` | Must point to backend |
 | `VITE_REVERB_HOST` | `your-reverb-host` | Configure for WebSocket |
 | `VITE_REVERB_SCHEME` | `https` | Use HTTPS for production |
 
@@ -175,7 +175,7 @@ After configuring environment variables:
 
 - [ ] Backend service redeployed successfully
 - [ ] Frontend service redeployed successfully
-- [ ] Can access login page: `https://frontend-production-9fe8.up.railway.app`
+- [ ] Can access login page: `https://www.botjao.com`
 - [ ] Can log in successfully
 - [ ] Connections page (`/connections`) loads without "Network Error"
 - [ ] Can create/edit/delete connections
