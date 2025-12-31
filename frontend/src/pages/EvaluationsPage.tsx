@@ -600,6 +600,23 @@ function CreateEvaluationDialog({
                 ))}
               </SelectContent>
             </Select>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs">
+                <span className="bg-background px-2 text-muted-foreground">หรือพิมพ์เอง</span>
+              </div>
+            </div>
+            <Input
+              placeholder="เช่น meta-llama/llama-3-70b-instruct"
+              className="min-h-[44px] font-mono text-sm"
+              onChange={(e) => {
+                if (e.target.value.trim()) {
+                  setFormData((prev) => ({ ...prev, simulator_model: e.target.value.trim() }));
+                }
+              }}
+            />
           </div>
 
           {/* Judge Model */}
@@ -638,6 +655,23 @@ function CreateEvaluationDialog({
                 ))}
               </SelectContent>
             </Select>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs">
+                <span className="bg-background px-2 text-muted-foreground">หรือพิมพ์เอง</span>
+              </div>
+            </div>
+            <Input
+              placeholder="เช่น anthropic/claude-3-opus"
+              className="min-h-[44px] font-mono text-sm"
+              onChange={(e) => {
+                if (e.target.value.trim()) {
+                  setFormData((prev) => ({ ...prev, judge_model: e.target.value.trim() }));
+                }
+              }}
+            />
           </div>
         </TabsContent>
       </div>
