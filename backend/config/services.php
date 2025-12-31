@@ -67,9 +67,4 @@ return [
         'timeout' => env('JINA_TIMEOUT', 30),
     ],
 
-    'webhook' => [
-        // Base URL for webhook endpoints (use this when APP_URL is behind a proxy that doesn't route /webhook/*)
-        'base_url' => env('WEBHOOK_BASE_URL'),
-    ],
-
 ];

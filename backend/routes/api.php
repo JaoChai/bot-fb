@@ -364,6 +364,27 @@ Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
 /*
 |--------------------------------------------------------------------------
+| Webhook Routes (Public - no auth required)
+|--------------------------------------------------------------------------
+|
+| These routes handle incoming webhooks from messaging platforms.
+| They are public endpoints that platforms call to deliver messages.
+| Moved here so they work with custom domain proxy (/api/*)
+|
+*/
+
+Route::prefix('webhook')->middleware('throttle.webhook')->withoutMiddleware(['auth:sanctum'])->group(function () {
+    // LINE webhook - POST /api/webhook/{token}
+    Route::post('/{token}', [\App\Http\Controllers\Webhook\LINEWebhookController::class, 'handle'])
+        ->name('webhook.line');
+
+    // Telegram webhook - POST /api/webhook/telegram/{token}
+    Route::post('/telegram/{token}', [\App\Http\Controllers\Webhook\TelegramWebhookController::class, 'handle'])
+        ->name('webhook.telegram');
+});
+
+/*
+|--------------------------------------------------------------------------
 | Streaming Routes (Outside auth middleware for SSE support)
 |--------------------------------------------------------------------------
 |
