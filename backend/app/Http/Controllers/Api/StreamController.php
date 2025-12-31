@@ -94,10 +94,10 @@ class StreamController extends Controller
             return $this->errorResponse('Flow not found', 404);
         }
 
-        // 4. Get API key
-        $apiKey = $bot->openrouter_api_key ?: config('services.openrouter.api_key');
+        // 4. Get API key: User Settings > ENV
+        $apiKey = $bot->user?->settings?->openrouter_api_key ?? config('services.openrouter.api_key');
         if (empty($apiKey)) {
-            return $this->errorResponse('No API key configured. Please set up in Bot Connection settings.', 422);
+            return $this->errorResponse('No API key configured. Please set up in Settings page.', 422);
         }
 
         // 5. Create SSE response
@@ -303,10 +303,9 @@ class StreamController extends Controller
             $results = collect();
             $kbResults = [];
 
-            // Get API key for embedding: Bot-level > User-level > ENV
-            $embeddingApiKey = $bot->openrouter_api_key
-                ?: $bot->user?->settings?->openrouter_api_key
-                ?: config('services.openrouter.api_key');
+            // Get API key: User Settings > ENV
+            $embeddingApiKey = $bot->user?->settings?->openrouter_api_key
+                ?? config('services.openrouter.api_key');
 
             // Search flow-level KBs (many-to-many)
             if ($hasFlowKBs) {

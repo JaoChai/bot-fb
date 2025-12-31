@@ -59,23 +59,16 @@ class RunEvaluationJob implements ShouldQueue
 
     /**
      * Get user's API key from settings
+     * Priority: User Settings > ENV
      */
     protected function getUserApiKey(): ?string
     {
-        // First try bot's OpenRouter API key
-        $bot = $this->evaluation->bot;
-        if ($bot && !empty($bot->openrouter_api_key)) {
-            return $bot->openrouter_api_key;
-        }
-
-        // Then try user's settings
+        // Try user's settings first
         if ($this->userId) {
             $user = User::find($this->userId);
-            if ($user) {
-                $settings = $user->settings;
-                if ($settings && !empty($settings['openrouter_api_key'])) {
-                    return $settings['openrouter_api_key'];
-                }
+            $apiKey = $user?->settings?->openrouter_api_key;
+            if (!empty($apiKey)) {
+                return $apiKey;
             }
         }
 

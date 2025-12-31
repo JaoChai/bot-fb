@@ -196,10 +196,8 @@ class RAGService
             $limit = $bot->kb_max_results ?? config('rag.max_results', 3);
             $threshold = $bot->kb_relevance_threshold ?? config('rag.default_threshold', 0.7);
 
-            // Get API key: Bot-level > User-level > ENV
-            $apiKey = $bot->openrouter_api_key
-                ?: $bot->user?->settings?->openrouter_api_key
-                ?: config('services.openrouter.api_key');
+            // Get API key: User Settings > ENV
+            $apiKey = $this->getApiKeyForBot($bot);
 
             foreach ($queryVariations as $variation) {
                 $results = $this->hybridSearchService->search(
@@ -450,18 +448,13 @@ class RAGService
      * Get the API key to use for a bot.
      *
      * Priority:
-     * 1. Bot's own API key (per-connection setting)
-     * 2. Config/env fallback (handled by OpenRouterService)
+     * 1. User's API key from Settings page
+     * 2. Config/env fallback
      */
     protected function getApiKeyForBot(Bot $bot): ?string
     {
-        // Use Bot's own API key from connection settings
-        if (!empty($bot->openrouter_api_key)) {
-            return $bot->openrouter_api_key;
-        }
-
-        // Let OpenRouterService use its default from config
-        return null;
+        return $bot->user?->settings?->openrouter_api_key
+            ?? config('services.openrouter.api_key');
     }
 
     /**
@@ -733,10 +726,8 @@ PROMPT;
                 'kb_similarity_threshold' => $kb->pivot->kb_similarity_threshold ?? 0.7,
             ])->toArray();
 
-            // Get API key: Bot-level > User-level > ENV
-            $apiKey = $flow->bot?->openrouter_api_key
-                ?: $flow->bot?->user?->settings?->openrouter_api_key
-                ?: config('services.openrouter.api_key');
+            // Get API key: User Settings > ENV
+            $apiKey = $flow->bot ? $this->getApiKeyForBot($flow->bot) : config('services.openrouter.api_key');
 
             // Search all KBs using hybrid search and merge results
             $results = $this->hybridSearchService->searchMultiple(

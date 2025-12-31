@@ -35,9 +35,6 @@ class BotResource extends JsonResource
             // Webhook forwarder
             'webhook_forwarder_enabled' => $this->webhook_forwarder_enabled ?? false,
 
-            // Credentials (visible for single-user setup)
-            'openrouter_api_key' => $this->openrouter_api_key,
-
             // Knowledge Base (RAG) Settings
             'kb_enabled' => $this->kb_enabled ?? false,
             'kb_relevance_threshold' => $this->kb_relevance_threshold ?? 0.7,
