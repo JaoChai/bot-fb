@@ -122,7 +122,7 @@ class KnowledgeBaseController extends Controller
 
         try {
             // Get API key: User Settings > ENV
-            $apiKey = $bot->user?->settings?->openrouter_api_key
+            $apiKey = $bot->user?->settings?->getOpenRouterApiKey()
                 ?? config('services.openrouter.api_key');
 
             $results = $searchService->search(

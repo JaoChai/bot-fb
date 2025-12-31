@@ -211,10 +211,10 @@ class ProcessDocument implements ShouldQueue
      */
     protected function getUserApiKey(): ?string
     {
-        // Try specified user first
+        // Try specified user first (using safe getter to handle decryption errors)
         if ($this->userId) {
             $user = User::find($this->userId);
-            $apiKey = $user?->settings?->openrouter_api_key;
+            $apiKey = $user?->settings?->getOpenRouterApiKey();
             if ($apiKey) {
                 return $apiKey;
             }
@@ -222,7 +222,7 @@ class ProcessDocument implements ShouldQueue
 
         // Fallback to document owner's API key
         $owner = $this->document->knowledgeBase?->user;
-        return $owner?->settings?->openrouter_api_key;
+        return $owner?->settings?->getOpenRouterApiKey();
     }
 
     public function failed(Throwable $exception): void

@@ -49,11 +49,28 @@ class UserSetting extends Model
     }
 
     /**
+     * Safely get OpenRouter API key, handling decryption errors.
+     * Returns null if decryption fails (e.g., APP_KEY changed).
+     */
+    public function getOpenRouterApiKey(): ?string
+    {
+        try {
+            return $this->openrouter_api_key;
+        } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
+            \Illuminate\Support\Facades\Log::warning('Failed to decrypt OpenRouter API key', [
+                'user_id' => $this->user_id,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
      * Check if OpenRouter is configured.
      */
     public function hasOpenRouterKey(): bool
     {
-        return !empty($this->openrouter_api_key);
+        return !empty($this->getOpenRouterApiKey());
     }
 
     /**

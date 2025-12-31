@@ -151,15 +151,15 @@ class ToolService
             return 'ไม่มีฐานความรู้ที่เชื่อมต่อกับ Flow นี้';
         }
 
-        // Get API key: User Settings > ENV
-        $apiKey = $bot?->user?->settings?->openrouter_api_key
+        // Get API key: User Settings > ENV (using safe getter to handle decryption errors)
+        $apiKey = $bot?->user?->settings?->getOpenRouterApiKey()
             ?? config('services.openrouter.api_key');
 
         // Debug logging to trace API key source
         Log::debug('ToolService: API key resolution', [
             'flow_id' => $flow->id,
             'bot_id' => $bot?->id,
-            'has_user_api_key' => !empty($bot?->user?->settings?->openrouter_api_key),
+            'has_user_api_key' => !empty($bot?->user?->settings?->getOpenRouterApiKey()),
             'has_env_api_key' => !empty(config('services.openrouter.api_key')),
             'final_has_key' => !empty($apiKey),
         ]);

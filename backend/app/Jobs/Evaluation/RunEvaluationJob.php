@@ -63,10 +63,10 @@ class RunEvaluationJob implements ShouldQueue
      */
     protected function getUserApiKey(): ?string
     {
-        // Try user's settings first
+        // Try user's settings first (using safe getter to handle decryption errors)
         if ($this->userId) {
             $user = User::find($this->userId);
-            $apiKey = $user?->settings?->openrouter_api_key;
+            $apiKey = $user?->settings?->getOpenRouterApiKey();
             if (!empty($apiKey)) {
                 return $apiKey;
             }

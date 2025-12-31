@@ -453,7 +453,7 @@ class RAGService
      */
     protected function getApiKeyForBot(Bot $bot): ?string
     {
-        return $bot->user?->settings?->openrouter_api_key
+        return $bot->user?->settings?->getOpenRouterApiKey()
             ?? config('services.openrouter.api_key');
     }
 
