@@ -47,7 +47,7 @@ const mainNavItems = [
     icon: MessageSquare,
   },
   {
-    title: 'AI Evaluation',
+    title: 'ประเมินบอท',
     href: '/evaluations',
     icon: Target,
   },
