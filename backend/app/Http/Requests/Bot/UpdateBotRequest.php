@@ -33,6 +33,9 @@ class UpdateBotRequest extends FormRequest
             // Webhook forwarder
             'webhook_forwarder_enabled' => ['sometimes', 'boolean'],
 
+            // Auto handover
+            'auto_handover' => ['sometimes', 'boolean'],
+
             // LLM Settings (legacy)
             'llm_model' => ['sometimes', 'string', 'max:100'],
             'llm_fallback_model' => ['sometimes', 'string', 'max:100'],

@@ -31,6 +31,9 @@ class StoreBotRequest extends FormRequest
             // Webhook forwarder
             'webhook_forwarder_enabled' => ['nullable', 'boolean'],
 
+            // Auto handover
+            'auto_handover' => ['nullable', 'boolean'],
+
             // Support nested api_keys format
             'api_keys' => ['nullable', 'array'],
             'api_keys.channel_access_token' => ['nullable', 'string'],
