@@ -45,6 +45,14 @@ class ConversationController extends Controller
             $query->where('channel_type', $request->channel_type);
         }
 
+        // Filter by Telegram chat type (private, group, supergroup, channel)
+        if ($request->filled('telegram_chat_type')) {
+            $chatTypes = is_array($request->telegram_chat_type)
+                ? $request->telegram_chat_type
+                : explode(',', $request->telegram_chat_type);
+            $query->whereIn('telegram_chat_type', $chatTypes);
+        }
+
         // Filter by handover status
         if ($request->has('is_handover')) {
             $query->where('is_handover', filter_var($request->is_handover, FILTER_VALIDATE_BOOLEAN));

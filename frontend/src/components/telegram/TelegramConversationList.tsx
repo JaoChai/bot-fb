@@ -73,7 +73,7 @@ export function TelegramConversationList({
         </div>
       </div>
 
-      {/* Status Tabs */}
+      {/* Chat Type Tabs */}
       <div className="p-2 border-b">
         <Tabs value={statusFilter} onValueChange={onStatusFilterChange}>
           <TabsList className="w-full grid grid-cols-3 h-11">
@@ -85,10 +85,10 @@ export function TelegramConversationList({
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="active" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+            <TabsTrigger value="group" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
               <span className="truncate">กลุ่ม</span>
             </TabsTrigger>
-            <TabsTrigger value="handover" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+            <TabsTrigger value="private" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
               <span className="truncate">ส่วนตัว</span>
             </TabsTrigger>
           </TabsList>

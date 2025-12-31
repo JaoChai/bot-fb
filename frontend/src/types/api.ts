@@ -396,6 +396,7 @@ export interface ConversationStats {
 export interface ConversationFilters {
   status?: string | string[];
   channel_type?: string;
+  telegram_chat_type?: string | string[];
   is_handover?: boolean;
   assigned_user_id?: number;
   tags?: string[];
