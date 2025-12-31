@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import {
   Tooltip,
   TooltipContent,
@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useBots } from '@/hooks/useKnowledgeBase';
+import { useToggleBotStatus } from '@/hooks/useConnections';
 import { useToast } from '@/hooks/use-toast';
 import { apiDelete } from '@/lib/api';
 import {
@@ -73,12 +74,34 @@ function MessengerIcon({ className }: { className?: string }) {
 
 export function BotsPage() {
   const { data: botsResponse, isLoading, error, refetch } = useBots();
+  const toggleStatusMutation = useToggleBotStatus();
   const { toast } = useToast();
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [botToDelete, setBotToDelete] = useState<any | null>(null);
+  const [togglingBotId, setTogglingBotId] = useState<number | null>(null);
 
   const bots = botsResponse?.data || [];
+
+  const handleToggleStatus = async (bot: any) => {
+    const newStatus = bot.status === 'active' ? 'inactive' : 'active';
+    setTogglingBotId(bot.id);
+    try {
+      await toggleStatusMutation.mutateAsync({ botId: bot.id, status: newStatus });
+      toast({
+        title: newStatus === 'active' ? 'เปิดใช้งานแล้ว' : 'ปิดใช้งานแล้ว',
+        description: `"${bot.name}" ${newStatus === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}แล้ว`,
+      });
+    } catch (err) {
+      toast({
+        title: 'เกิดข้อผิดพลาด',
+        description: err instanceof Error ? err.message : 'ไม่สามารถเปลี่ยนสถานะได้',
+        variant: 'destructive',
+      });
+    } finally {
+      setTogglingBotId(null);
+    }
+  };
 
   const copyWebhookUrl = async (botId: number, webhookUrl: string) => {
     // Validate URL format
@@ -234,13 +257,24 @@ export function BotsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-1">
                         <h3 className="text-lg font-semibold truncate">{bot.name}</h3>
-                        <Badge
-                          variant={bot.status === 'active' ? 'success' : 'inactive'}
-                          className="flex-shrink-0"
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${bot.status === 'active' ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-slate-400 dark:bg-slate-500'}`} />
-                          {getStatusText(bot.status)}
-                        </Badge>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <Switch
+                                checked={bot.status === 'active'}
+                                onCheckedChange={() => handleToggleStatus(bot)}
+                                disabled={togglingBotId === bot.id}
+                                className="data-[state=checked]:bg-emerald-500"
+                              />
+                              <span className={`text-xs ${bot.status === 'active' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
+                                {togglingBotId === bot.id ? '...' : getStatusText(bot.status)}
+                              </span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {bot.status === 'active' ? 'คลิกเพื่อปิดใช้งาน' : 'คลิกเพื่อเปิดใช้งาน'}
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
 
                       {/* Webhook URL - Compact */}

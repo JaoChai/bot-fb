@@ -77,6 +77,26 @@ export function useDeleteConnection() {
   });
 }
 
+// Toggle bot status mutation
+export function useToggleBotStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ botId, status }: { botId: number; status: 'active' | 'inactive' }) => {
+      const response = await apiPut<ApiResponse<Bot>>(`/bots/${botId}`, { status });
+      return response.data;
+    },
+    onSuccess: (_, { botId }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.bots.lists(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.bots.detail(botId),
+      });
+    },
+  });
+}
+
 // Convenience hook combining all connection operations
 export function useConnectionOperations(botId: number | null) {
   const connection = useConnection(botId);
