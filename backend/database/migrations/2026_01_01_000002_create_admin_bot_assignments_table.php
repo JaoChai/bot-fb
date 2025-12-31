@@ -11,16 +11,19 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('admin_bot_assignments', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->foreignId('bot_id')->constrained()->onDelete('cascade');
-            $table->foreignId('assigned_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->timestamps();
+        // Only create if table doesn't exist
+        if (!Schema::hasTable('admin_bot_assignments')) {
+            Schema::create('admin_bot_assignments', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('user_id')->constrained()->onDelete('cascade');
+                $table->foreignId('bot_id')->constrained()->onDelete('cascade');
+                $table->foreignId('assigned_by')->nullable()->constrained('users')->nullOnDelete();
+                $table->timestamps();
 
-            $table->unique(['user_id', 'bot_id']);
-            $table->index('bot_id');
-        });
+                $table->unique(['user_id', 'bot_id']);
+                $table->index('bot_id');
+            });
+        }
     }
 
     /**
