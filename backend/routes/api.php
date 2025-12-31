@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BotController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\FlowController;
 use App\Http\Controllers\Api\KnowledgeBaseController;
 use App\Http\Controllers\Api\StreamController;
+use App\Http\Controllers\Api\UserSearchController;
 use App\Http\Controllers\Api\UserSettingController;
 use App\Http\Controllers\Api\EvaluationController;
 use App\Http\Controllers\Api\AgentApprovalController;
@@ -80,6 +82,9 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::get('/summary', [DashboardController::class, 'summary'])->name('dashboard.summary');
     });
 
+    // User search route (Owner only)
+    Route::get('/users/search', [UserSearchController::class, 'search'])->name('users.search');
+
     // User Settings routes
     Route::prefix('settings')->group(function () {
         Route::get('/', [UserSettingController::class, 'show'])->name('settings.show');
@@ -119,6 +124,11 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         // Bot settings routes
         Route::get('/{bot}/settings', [BotSettingController::class, 'show'])->name('bots.settings.show');
         Route::put('/{bot}/settings', [BotSettingController::class, 'update'])->name('bots.settings.update');
+
+        // Bot admin management routes (Owner only)
+        Route::get('/{bot}/admins', [AdminController::class, 'index'])->name('bots.admins.index');
+        Route::post('/{bot}/admins', [AdminController::class, 'store'])->name('bots.admins.store');
+        Route::delete('/{bot}/admins/{user}', [AdminController::class, 'destroy'])->name('bots.admins.destroy');
     });
 
     // Flow routes (nested under bots)
@@ -193,6 +203,11 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/{conversation}/upload', [ConversationController::class, 'uploadMedia'])
             ->middleware('throttle:30,1') // 30 uploads per minute
             ->name('conversations.upload');
+
+        // Conversation assignment routes
+        Route::post('/{conversation}/assign', [ConversationController::class, 'assign'])->name('conversations.assign');
+        Route::post('/{conversation}/claim', [ConversationController::class, 'claim'])->name('conversations.claim');
+        Route::post('/{conversation}/unassign', [ConversationController::class, 'unassign'])->name('conversations.unassign');
     });
 
     // Evaluation routes (nested under bots)
