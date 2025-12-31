@@ -116,15 +116,15 @@ export function ChatPage() {
     onNewConversation: handleNewConversation,
   });
 
-  // Handle bot selection
-  const handleBotSelect = (value: string) => {
+  // Handle bot selection (memoized to prevent child re-renders)
+  const handleBotSelect = useCallback((value: string) => {
     setSearchParams({ botId: value });
     setSelectedConversationId(null);
     setShowMobileChat(false); // Reset to list view when changing bot
-  };
+  }, [setSearchParams]);
 
-  // Handle conversation selection
-  const handleConversationSelect = (conversation: Conversation) => {
+  // Handle conversation selection (memoized to prevent child re-renders)
+  const handleConversationSelect = useCallback((conversation: Conversation) => {
     setSelectedConversationId(conversation.id);
     setShowMobileChat(true); // Switch to chat view on mobile
 
@@ -132,12 +132,17 @@ export function ChatPage() {
     if (conversation.unread_count > 0) {
       markAsRead.mutate(conversation.id);
     }
-  };
+  }, [markAsRead]);
 
-  // Handle back to list (mobile)
-  const handleBackToList = () => {
+  // Handle back to list (mobile) - memoized
+  const handleBackToList = useCallback(() => {
     setShowMobileChat(false);
-  };
+  }, []);
+
+  // Handle show info panel (memoized to prevent ChatWindow re-renders)
+  const handleShowInfo = useCallback(() => {
+    setShowInfoPanel(true);
+  }, []);
 
   // Auto-select first conversation if none selected (desktop only)
   useEffect(() => {
@@ -231,7 +236,7 @@ export function ChatPage() {
           <ChatWindow
             botId={botId}
             conversation={selectedConversation}
-            onShowInfo={() => setShowInfoPanel(true)}
+            onShowInfo={handleShowInfo}
             onBack={handleBackToList}
           />
         ) : (

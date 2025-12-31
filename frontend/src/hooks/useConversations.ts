@@ -66,9 +66,10 @@ export function useConversations(botId: number | undefined, filters: Conversatio
       return response.data;
     },
     enabled: !!botId,
-    staleTime: 10000, // 10 seconds
-    refetchInterval: 10000, // Poll every 10 seconds for real-time updates
-    refetchOnWindowFocus: true,
+    // WebSocket (Echo) handles real-time updates, polling disabled for performance
+    staleTime: 30000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -108,9 +109,10 @@ export function useInfiniteConversations(botId: number | undefined, filters: Con
       return current_page < last_page ? current_page + 1 : undefined;
     },
     enabled: !!botId,
-    staleTime: 10000,
-    refetchInterval: 10000,
-    refetchOnWindowFocus: true,
+    // WebSocket (Echo) handles real-time updates, polling disabled for performance
+    staleTime: 30000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -154,9 +156,10 @@ export function useConversationMessages(
       return response.data;
     },
     enabled: !!botId && !!conversationId,
-    staleTime: 5000,
-    refetchInterval: 5000, // Poll every 5 seconds for real-time updates
-    refetchOnWindowFocus: true,
+    // WebSocket (Echo) handles real-time updates, polling disabled for performance
+    staleTime: 30000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
   });
 }
 

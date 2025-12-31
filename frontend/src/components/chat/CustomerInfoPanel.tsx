@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
@@ -44,33 +44,66 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
     conversation.bot_auto_enable_remaining_seconds
   );
 
-  // Update countdown
+  // Update countdown - optimized to pause when tab is hidden
   useEffect(() => {
     if (!conversation.is_handover || !conversation.bot_auto_enable_at) {
       setRemainingSeconds(null);
       return;
     }
 
-    // Calculate remaining seconds
     const targetTime = new Date(conversation.bot_auto_enable_at).getTime();
-    const now = Date.now();
-    const diff = Math.max(0, Math.floor((targetTime - now) / 1000));
-    setRemainingSeconds(diff);
+    let intervalId: ReturnType<typeof setInterval> | null = null;
 
-    if (diff <= 0) return;
+    // Calculate and update remaining seconds
+    const updateCountdown = () => {
+      const now = Date.now();
+      const diff = Math.max(0, Math.floor((targetTime - now) / 1000));
+      setRemainingSeconds(diff);
+      return diff;
+    };
 
-    // Start countdown
-    const interval = setInterval(() => {
-      setRemainingSeconds((prev) => {
-        if (prev === null || prev <= 1) {
-          clearInterval(interval);
-          return null;
+    // Start or stop interval based on visibility
+    const startInterval = () => {
+      if (intervalId) return;
+      const diff = updateCountdown();
+      if (diff <= 0) return;
+
+      intervalId = setInterval(() => {
+        const remaining = updateCountdown();
+        if (remaining <= 0 && intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
         }
-        return prev - 1;
-      });
-    }, 1000);
+      }, 1000);
+    };
 
-    return () => clearInterval(interval);
+    const stopInterval = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    // Handle visibility change - pause when hidden, resume when visible
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopInterval();
+      } else {
+        startInterval();
+      }
+    };
+
+    // Initial setup
+    if (!document.hidden) {
+      startInterval();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      stopInterval();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [conversation.is_handover, conversation.bot_auto_enable_at]);
 
   // Format countdown
@@ -80,8 +113,8 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Handle toggle bot
-  const handleToggleBot = async () => {
+  // Handle toggle bot (memoized)
+  const handleToggleBot = useCallback(async () => {
     try {
       await toggleHandover.mutateAsync({ conversationId: conversation.id });
       toast({
@@ -97,7 +130,7 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
         variant: 'destructive',
       });
     }
-  };
+  }, [toggleHandover, conversation.id, conversation.is_handover, toast]);
 
   return (
     <div className="p-4 space-y-6">

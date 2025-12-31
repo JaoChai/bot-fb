@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, memo, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -129,7 +129,7 @@ export function ConversationList({
                 key={conversation.id}
                 conversation={conversation}
                 isSelected={conversation.id === selectedId}
-                onSelect={() => onSelect(conversation)}
+                onSelect={onSelect}
               />
             ))}
 
@@ -153,10 +153,15 @@ export function ConversationList({
 interface ConversationItemProps {
   conversation: Conversation;
   isSelected: boolean;
-  onSelect: () => void;
+  onSelect: (conversation: Conversation) => void;
 }
 
-function ConversationItem({ conversation, isSelected, onSelect }: ConversationItemProps) {
+// Memoized conversation item - prevents re-rendering unchanged items
+const ConversationItem = memo(function ConversationItem({
+  conversation,
+  isSelected,
+  onSelect,
+}: ConversationItemProps) {
   const customerName = conversation.customer_profile?.display_name || 'Unknown';
   const customerInitial = customerName.charAt(0).toUpperCase();
   const hasUnread = conversation.unread_count > 0;
@@ -164,9 +169,14 @@ function ConversationItem({ conversation, isSelected, onSelect }: ConversationIt
     ? formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: th })
     : null;
 
+  // Memoize click handler to prevent re-creation
+  const handleClick = useCallback(() => {
+    onSelect(conversation);
+  }, [onSelect, conversation]);
+
   return (
     <button
-      onClick={onSelect}
+      onClick={handleClick}
       className={cn(
         'w-full p-3 rounded-lg flex items-start gap-3 text-left transition-colors cursor-pointer',
         'hover:bg-accent/50 active:bg-accent',
@@ -230,4 +240,4 @@ function ConversationItem({ conversation, isSelected, onSelect }: ConversationIt
       </div>
     </button>
   );
-}
+});
