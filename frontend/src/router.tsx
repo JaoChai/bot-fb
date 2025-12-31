@@ -24,6 +24,7 @@ const AddConnectionPage = lazyWithRetryNamed(() => import("@/pages/AddConnection
 const EditConnectionPage = lazyWithRetryNamed(() => import("@/pages/EditConnectionPage"), "EditConnectionPage")
 const EvaluationsPage = lazyWithRetryNamed(() => import("@/pages/EvaluationsPage"), "EvaluationsPage")
 const EvaluationDetailPage = lazyWithRetryNamed(() => import("@/pages/EvaluationDetailPage"), "EvaluationDetailPage")
+const TeamPage = lazyWithRetryNamed(() => import("@/pages/TeamPage"), "TeamPage")
 
 // Wrapper component for lazy loaded pages with error boundary
 function LazyPage({ children }: { children: React.ReactNode }) {
@@ -119,6 +120,10 @@ export const router = createBrowserRouter([
           {
             path: "telegram",
             element: <Navigate to="/chat" replace />,
+          },
+          {
+            path: "team",
+            element: <LazyPage><TeamPage /></LazyPage>,
           },
         ],
       },
