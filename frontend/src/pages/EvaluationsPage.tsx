@@ -1,9 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import {
   Dialog,
   DialogContent,
@@ -46,6 +45,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import type { Evaluation, CreateEvaluationData } from '@/types/api';
+import { EvaluationProgressStepper } from '@/components/evaluation/EvaluationProgressStepper';
 
 // Status badge configuration
 const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: React.ElementType }> = {
@@ -128,15 +128,14 @@ function EvaluationCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Progress for running evaluations */}
+        {/* Progress stepper for running evaluations */}
         {isRunning && (
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span>ความคืบหน้า</span>
-              <span>{evaluation.progress.completed_test_cases} / {evaluation.progress.total_test_cases}</span>
-            </div>
-            <Progress value={evaluation.progress.percent} />
-          </div>
+          <EvaluationProgressStepper
+            status={evaluation.status}
+            completedTestCases={evaluation.progress.completed_test_cases}
+            totalTestCases={evaluation.progress.total_test_cases}
+            percent={evaluation.progress.percent}
+          />
         )}
 
         {/* Scores for completed evaluations */}
@@ -489,6 +488,24 @@ export function EvaluationsPage() {
     deleteEvaluation,
     refetch,
   } = useEvaluationOperations(selectedBotId);
+
+  // Check if any evaluation is running (for auto-refresh)
+  const hasRunningEvaluations = useMemo(() => {
+    return evaluations.some(e =>
+      ['pending', 'generating_tests', 'running', 'evaluating', 'generating_report'].includes(e.status)
+    );
+  }, [evaluations]);
+
+  // Auto-refresh when evaluations are running
+  useEffect(() => {
+    if (!hasRunningEvaluations) return;
+
+    const interval = setInterval(() => {
+      refetch();
+    }, 5000); // Every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [hasRunningEvaluations, refetch]);
 
   const handleSelectBot = (id: string) => {
     navigate(`/evaluations?bot=${id}`);
