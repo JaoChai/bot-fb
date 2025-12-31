@@ -188,6 +188,11 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/{conversation}/agent-message', [ConversationController::class, 'sendAgentMessage'])
             ->middleware('throttle:60,1') // 60 messages per minute per user
             ->name('conversations.agent-message');
+
+        // Media upload for agent messages
+        Route::post('/{conversation}/upload', [ConversationController::class, 'uploadMedia'])
+            ->middleware('throttle:30,1') // 30 uploads per minute
+            ->name('conversations.upload');
     });
 
     // Evaluation routes (nested under bots)

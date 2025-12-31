@@ -700,9 +700,51 @@ class ConversationController extends Controller
         // Send to customer via channel (outside transaction - external API call)
         try {
             if ($conversation->channel_type === 'line') {
-                $lineService->push($bot, $conversation->external_customer_id, [
-                    $lineService->textMessage($validated['content']),
-                ]);
+                $type = $validated['type'] ?? 'text';
+                $userId = $conversation->external_customer_id;
+                $mediaUrl = $validated['media_url'] ?? null;
+
+                switch ($type) {
+                    case 'photo':
+                    case 'image':
+                        if ($mediaUrl) {
+                            $lineService->push($bot, $userId, [
+                                $lineService->imageMessage($mediaUrl),
+                            ]);
+                        } else {
+                            $lineService->push($bot, $userId, [
+                                $lineService->textMessage($validated['content']),
+                            ]);
+                        }
+                        break;
+                    case 'video':
+                        if ($mediaUrl) {
+                            $lineService->push($bot, $userId, [
+                                $lineService->videoMessage($mediaUrl),
+                            ]);
+                        } else {
+                            $lineService->push($bot, $userId, [
+                                $lineService->textMessage($validated['content']),
+                            ]);
+                        }
+                        break;
+                    case 'audio':
+                    case 'voice':
+                        if ($mediaUrl) {
+                            $lineService->push($bot, $userId, [
+                                $lineService->audioMessage($mediaUrl),
+                            ]);
+                        } else {
+                            $lineService->push($bot, $userId, [
+                                $lineService->textMessage($validated['content']),
+                            ]);
+                        }
+                        break;
+                    default:
+                        $lineService->push($bot, $userId, [
+                            $lineService->textMessage($validated['content']),
+                        ]);
+                }
             } elseif ($conversation->channel_type === 'telegram') {
                 $type = $validated['type'] ?? 'text';
                 $chatId = $conversation->external_customer_id;
@@ -774,5 +816,66 @@ class ConversationController extends Controller
         if ($conversation->bot_id !== $bot->id) {
             abort(404, 'Conversation not found');
         }
+    }
+
+    /**
+     * Upload media file for agent messages.
+     * Stores the file and returns the public URL.
+     */
+    public function uploadMedia(Request $request, Bot $bot, Conversation $conversation): JsonResponse
+    {
+        $this->authorize('update', $bot);
+        $this->validateConversationBelongsToBot($conversation, $bot);
+
+        $request->validate([
+            'file' => 'required|file|max:20480|mimes:jpg,jpeg,png,gif,webp,mp4,mov,avi,webm,mp3,m4a,wav,ogg',
+        ]);
+
+        $file = $request->file('file');
+        $mimeType = $file->getMimeType();
+
+        // Determine type from mime
+        $type = 'file';
+        if (str_starts_with($mimeType, 'image/')) {
+            $type = 'image';
+        } elseif (str_starts_with($mimeType, 'video/')) {
+            $type = 'video';
+        } elseif (str_starts_with($mimeType, 'audio/')) {
+            $type = 'audio';
+        }
+
+        // Generate storage path
+        $extension = $file->getClientOriginalExtension();
+        $storagePath = 'chat/' . $bot->id . '/' . date('Y/m/d') . '/' . uniqid() . '.' . $extension;
+
+        // Store file
+        $disk = config('filesystems.default');
+        $file->storeAs(dirname($storagePath), basename($storagePath), $disk);
+
+        // Generate URL
+        $url = $this->generateStorageUrl($disk, $storagePath);
+
+        return response()->json([
+            'url' => $url,
+            'type' => $type,
+            'mime_type' => $mimeType,
+            'size' => $file->getSize(),
+            'filename' => $file->getClientOriginalName(),
+        ]);
+    }
+
+    /**
+     * Generate storage URL - use R2_URL directly if R2 disk.
+     */
+    private function generateStorageUrl(string $disk, string $path): string
+    {
+        if ($disk === 'r2') {
+            $r2Url = env('R2_URL') ?: config('filesystems.disks.r2.url');
+            if ($r2Url) {
+                return rtrim($r2Url, '/') . '/' . $path;
+            }
+        }
+
+        return \Illuminate\Support\Facades\Storage::disk($disk)->url($path);
     }
 }
