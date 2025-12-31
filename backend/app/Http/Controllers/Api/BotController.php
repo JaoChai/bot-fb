@@ -335,10 +335,14 @@ PROMPT;
 
     /**
      * Generate a unique webhook URL.
+     * Uses WEBHOOK_BASE_URL env var if set, otherwise falls back to APP_URL
      */
     private function generateWebhookUrl(string $channelType = 'line'): string
     {
         $token = Str::random(32);
+
+        // Use dedicated webhook URL if configured (for cases where APP_URL is behind a proxy)
+        $baseUrl = config('services.webhook.base_url') ?? config('app.url');
 
         // Platform-specific webhook paths
         $path = match ($channelType) {
@@ -346,7 +350,7 @@ PROMPT;
             default => '/webhook/',
         };
 
-        return config('app.url') . $path . $token;
+        return $baseUrl . $path . $token;
     }
 
     /**
