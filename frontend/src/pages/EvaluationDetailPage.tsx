@@ -278,13 +278,13 @@ function TestCaseDetailDialog({
             {testCase.detailed_feedback && (
               <div className="space-y-2">
                 <h4 className="font-medium">Feedback</h4>
-                <ScrollArea className="max-h-[200px]">
-                  <div className="text-sm bg-muted p-3 rounded-lg whitespace-pre-wrap">
+                <div className="max-h-[200px] overflow-y-auto rounded-lg border">
+                  <div className="text-sm bg-muted p-3 whitespace-pre-wrap">
                     {typeof testCase.detailed_feedback === 'string'
                       ? testCase.detailed_feedback
                       : JSON.stringify(testCase.detailed_feedback, null, 2)}
                   </div>
-                </ScrollArea>
+                </div>
               </div>
             )}
           </div>

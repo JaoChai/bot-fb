@@ -22,6 +22,8 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { getErrorMessage } from '@/lib/api';
 import { useBots } from '@/hooks/useKnowledgeBase';
@@ -43,6 +45,13 @@ import {
   StopCircle,
   DollarSign,
   ChevronRight,
+  ChevronDown,
+  Settings2,
+  User,
+  Users,
+  ShieldAlert,
+  MessageSquare,
+  Check,
 } from 'lucide-react';
 import type { Evaluation, CreateEvaluationData } from '@/types/api';
 import { EvaluationProgressStepper } from '@/components/evaluation/EvaluationProgressStepper';
@@ -212,6 +221,14 @@ function EvaluationCard({
   );
 }
 
+// Persona icon mapping
+const PERSONA_ICONS: Record<string, React.ElementType> = {
+  new_customer: User,
+  regular_customer: Users,
+  edge_case: ShieldAlert,
+  complaint: MessageSquare,
+};
+
 function CreateEvaluationDialog({
   open,
   onOpenChange,
@@ -242,6 +259,8 @@ function CreateEvaluationDialog({
     include_multi_turn: true,
     include_edge_cases: true,
   });
+
+  const [isModelSettingsOpen, setIsModelSettingsOpen] = useState(false);
 
   const handleSubmit = async () => {
     if (!formData.flow_id) {
@@ -292,7 +311,7 @@ function CreateEvaluationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>สร้างการประเมินใหม่</DialogTitle>
           <DialogDescription>
@@ -300,148 +319,208 @@ function CreateEvaluationDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          {/* Flow Selection */}
-          <div className="space-y-2">
-            <Label>เลือก Flow *</Label>
-            <Select
-              value={formData.flow_id ? String(formData.flow_id) : ''}
-              onValueChange={(value) => setFormData((prev) => ({ ...prev, flow_id: Number(value) }))}
-              disabled={isFlowsLoading}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={isFlowsLoading ? 'กำลังโหลด...' : 'เลือก Flow ที่ต้องการทดสอบ'} />
-              </SelectTrigger>
-              <SelectContent>
-                {flows.map((flow) => (
-                  <SelectItem key={flow.id} value={String(flow.id)}>
-                    {flow.name} {flow.is_default && '(Default)'}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Name (optional) */}
-          <div className="space-y-2">
-            <Label>ชื่อการประเมิน (ไม่บังคับ)</Label>
-            <Input
-              placeholder="เช่น ทดสอบ prompt v2"
-              value={formData.name}
-              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-            />
-          </div>
-
-          {/* Test Count */}
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <Label>จำนวน Test Cases</Label>
-              <span className="text-sm text-muted-foreground">{formData.test_count} cases</span>
-            </div>
-            <Slider
-              value={[formData.test_count || 40]}
-              onValueChange={([value]) => setFormData((prev) => ({ ...prev, test_count: value }))}
-              min={10}
-              max={100}
-              step={5}
-            />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>10 (เร็ว)</span>
-              <span>100 (ละเอียด)</span>
-            </div>
-          </div>
-
-          {/* Model Settings */}
-          <div className="space-y-3 pt-2 border-t">
-            <Label className="text-sm font-medium">Model Settings</Label>
-
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Model สร้างคำถาม (Generator)</Label>
-              <Input
-                placeholder="anthropic/claude-3-haiku-20240307"
-                value={formData.generator_model}
-                onChange={(e) => setFormData((prev) => ({ ...prev, generator_model: e.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Model จำลองลูกค้า (Simulator)</Label>
-              <Input
-                placeholder="anthropic/claude-3-haiku-20240307"
-                value={formData.simulator_model}
-                onChange={(e) => setFormData((prev) => ({ ...prev, simulator_model: e.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Model ประเมินคำตอบ (Judge)</Label>
-              <Input
-                placeholder="anthropic/claude-3.5-sonnet"
-                value={formData.judge_model}
-                onChange={(e) => setFormData((prev) => ({ ...prev, judge_model: e.target.value }))}
-              />
-            </div>
-          </div>
-
-          {/* Personas */}
-          <div className="space-y-2">
-            <Label>Personas (เว้นว่าง = ใช้ทั้งหมด)</Label>
-            {isPersonasLoading ? (
-              <div className="text-sm text-muted-foreground">กำลังโหลด...</div>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                {personas.map((persona) => (
-                  <Button
-                    key={persona.key}
-                    type="button"
-                    variant={formData.personas?.includes(persona.key) ? 'default' : 'outline'}
-                    size="sm"
-                    className="justify-start text-left h-auto py-2"
-                    onClick={() => togglePersona(persona.key)}
-                  >
-                    <div>
-                      <div className="font-medium">{persona.name}</div>
-                      <div className="text-xs opacity-70">{persona.description}</div>
-                    </div>
-                  </Button>
-                ))}
+        <ScrollArea className="flex-1 pr-4">
+          <div className="space-y-6 py-4">
+            {/* Section 1: Basic Settings */}
+            <div className="space-y-4">
+              {/* Flow Selection */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">เลือก Flow *</Label>
+                <Select
+                  value={formData.flow_id ? String(formData.flow_id) : ''}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, flow_id: Number(value) }))}
+                  disabled={isFlowsLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={isFlowsLoading ? 'กำลังโหลด...' : 'เลือก Flow ที่ต้องการทดสอบ'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {flows.map((flow) => (
+                      <SelectItem key={flow.id} value={String(flow.id)}>
+                        {flow.name} {flow.is_default && '(Default)'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            )}
-          </div>
 
-          {/* Options */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="multi-turn">รวม Multi-turn conversations</Label>
-              <Switch
-                id="multi-turn"
-                checked={formData.include_multi_turn}
-                onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, include_multi_turn: checked }))}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="edge-cases">รวม Edge cases</Label>
-              <Switch
-                id="edge-cases"
-                checked={formData.include_edge_cases}
-                onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, include_edge_cases: checked }))}
-              />
-            </div>
-          </div>
-
-          {/* Estimated Cost */}
-          <div className="bg-muted p-3 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div className="text-sm">
-                <div className="font-medium">ค่าใช้จ่ายโดยประมาณ</div>
-                <div className="text-muted-foreground">ใช้ OpenRouter API ของคุณ</div>
+              {/* Name (optional) */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">ชื่อการประเมิน <span className="text-muted-foreground font-normal">(ไม่บังคับ)</span></Label>
+                <Input
+                  placeholder="เช่น ทดสอบ prompt v2"
+                  value={formData.name}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                />
               </div>
-              <div className="text-lg font-bold text-primary">~${estimatedCost}</div>
+
+              {/* Test Count */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <Label className="text-sm font-medium">จำนวน Test Cases</Label>
+                  <Badge variant="secondary" className="font-mono">{formData.test_count}</Badge>
+                </div>
+                <Slider
+                  value={[formData.test_count || 40]}
+                  onValueChange={([value]) => setFormData((prev) => ({ ...prev, test_count: value }))}
+                  min={10}
+                  max={100}
+                  step={5}
+                  className="py-2"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>10 (เร็ว)</span>
+                  <span>100 (ละเอียด)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2: Personas */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Personas</Label>
+                <span className="text-xs text-muted-foreground">
+                  {formData.personas?.length ? `เลือก ${formData.personas.length} personas` : 'ใช้ทั้งหมด'}
+                </span>
+              </div>
+              {isPersonasLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {personas.map((persona) => {
+                    const isSelected = formData.personas?.includes(persona.key);
+                    const Icon = PERSONA_ICONS[persona.key] || User;
+                    return (
+                      <button
+                        key={persona.key}
+                        type="button"
+                        onClick={() => togglePersona(persona.key)}
+                        className={`
+                          relative p-3 rounded-lg border-2 text-left transition-all cursor-pointer
+                          ${isSelected
+                            ? 'border-primary bg-primary/5'
+                            : 'border-border hover:border-muted-foreground/50 hover:bg-muted/50'
+                          }
+                        `}
+                      >
+                        {isSelected && (
+                          <div className="absolute top-2 right-2">
+                            <Check className="h-4 w-4 text-primary" />
+                          </div>
+                        )}
+                        <div className="flex items-start gap-3">
+                          <div className={`
+                            p-2 rounded-lg
+                            ${isSelected ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}
+                          `}>
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm">{persona.name}</div>
+                            <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                              {persona.description}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Section 3: Test Options */}
+            <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+              <Label className="text-sm font-medium">ตัวเลือกการทดสอบ</Label>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="multi-turn" className="text-sm cursor-pointer">Multi-turn conversations</Label>
+                    <p className="text-xs text-muted-foreground">ทดสอบบทสนทนาหลายรอบ</p>
+                  </div>
+                  <Switch
+                    id="multi-turn"
+                    checked={formData.include_multi_turn}
+                    onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, include_multi_turn: checked }))}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="edge-cases" className="text-sm cursor-pointer">Edge cases</Label>
+                    <p className="text-xs text-muted-foreground">รวมกรณีพิเศษและขอบเขต</p>
+                  </div>
+                  <Switch
+                    id="edge-cases"
+                    checked={formData.include_edge_cases}
+                    onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, include_edge_cases: checked }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Section 4: Advanced Model Settings (Collapsible) */}
+            <Collapsible open={isModelSettingsOpen} onOpenChange={setIsModelSettingsOpen}>
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center justify-between w-full p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <Settings2 className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Model Settings</span>
+                  </div>
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isModelSettingsOpen ? 'rotate-180' : ''}`} />
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="space-y-3 pt-3 pl-1">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Generator (สร้างคำถาม)</Label>
+                    <Input
+                      placeholder="anthropic/claude-3-haiku-20240307"
+                      value={formData.generator_model}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, generator_model: e.target.value }))}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Simulator (จำลองลูกค้า)</Label>
+                    <Input
+                      placeholder="anthropic/claude-3-haiku-20240307"
+                      value={formData.simulator_model}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, simulator_model: e.target.value }))}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Judge (ประเมินผล)</Label>
+                    <Input
+                      placeholder="anthropic/claude-3.5-sonnet"
+                      value={formData.judge_model}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, judge_model: e.target.value }))}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* Cost Summary */}
+            <div className="flex items-center justify-between p-4 bg-primary/5 border border-primary/20 rounded-lg">
+              <div>
+                <div className="text-sm font-medium">ค่าใช้จ่ายโดยประมาณ</div>
+                <div className="text-xs text-muted-foreground">ผ่าน OpenRouter API</div>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-bold text-primary">~${estimatedCost}</div>
+              </div>
             </div>
           </div>
-        </div>
+        </ScrollArea>
 
-        <DialogFooter>
+        <DialogFooter className="border-t pt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             ยกเลิก
           </Button>
