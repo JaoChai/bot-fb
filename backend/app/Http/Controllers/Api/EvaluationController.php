@@ -7,6 +7,7 @@ use App\Http\Resources\EvaluationResource;
 use App\Http\Resources\EvaluationTestCaseResource;
 use App\Http\Resources\EvaluationReportResource;
 use App\Jobs\Evaluation\RunEvaluationJob;
+use App\Models\ActivityLog;
 use App\Models\Bot;
 use App\Models\Evaluation;
 use App\Services\Evaluation\EvaluationService;
@@ -75,6 +76,16 @@ class EvaluationController extends Controller
 
             // Dispatch background job
             RunEvaluationJob::dispatch($evaluation, $request->user()->id);
+
+            // Log activity
+            ActivityLog::log(
+                userId: $request->user()->id,
+                type: ActivityLog::TYPE_EVALUATION_STARTED,
+                title: 'เริ่มการประเมิน',
+                description: "เริ่มประเมิน Flow: {$flow->name}",
+                botId: $bot->id,
+                metadata: ['evaluation_id' => $evaluation->id, 'flow_id' => $flow->id]
+            );
 
             return response()->json([
                 'message' => 'Evaluation started',

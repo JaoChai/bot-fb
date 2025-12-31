@@ -42,7 +42,9 @@ import {
   AlertTriangle,
   ThumbsUp,
   FileText,
+  Sparkles,
 } from 'lucide-react';
+import { ImprovementAgentDialog } from '@/components/improvement';
 import {
   Radar,
   RadarChart,
@@ -467,6 +469,7 @@ export function EvaluationDetailPage() {
   const { toast } = useToast();
 
   const [selectedTestCase, setSelectedTestCase] = useState<EvaluationTestCase | null>(null);
+  const [showImprovementDialog, setShowImprovementDialog] = useState(false);
   const queryClient = useQueryClient();
 
   // Fetch evaluation
@@ -574,6 +577,12 @@ export function EvaluationDetailPage() {
               <Button onClick={handleRetry} disabled={retryMutation.isPending}>
                 {retryMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
                 <span className="ml-2">ลองใหม่</span>
+              </Button>
+            )}
+            {evaluation.status === 'completed' && (
+              <Button onClick={() => setShowImprovementDialog(true)} className="gap-2">
+                <Sparkles className="h-4 w-4" />
+                AI ปรับปรุง
               </Button>
             )}
           </div>
@@ -737,6 +746,17 @@ export function EvaluationDetailPage() {
         open={!!selectedTestCase}
         onOpenChange={(open) => !open && setSelectedTestCase(null)}
       />
+
+      {/* Improvement Agent Dialog */}
+      {botId && evalId && evaluation && (
+        <ImprovementAgentDialog
+          open={showImprovementDialog}
+          onOpenChange={setShowImprovementDialog}
+          botId={botId}
+          evaluationId={evalId}
+          evaluationName={evaluation.name}
+        />
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BotController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\BotSettingController;
 use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\DocumentController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\Api\StreamController;
 use App\Http\Controllers\Api\UserSettingController;
 use App\Http\Controllers\Api\EvaluationController;
 use App\Http\Controllers\Api\AgentApprovalController;
+use App\Http\Controllers\Api\ImprovementController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
@@ -195,6 +197,21 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
 
     // Evaluation personas (shared across all bots)
     Route::get('/evaluation-personas', [EvaluationController::class, 'personas'])->name('evaluations.personas');
+
+    // Improvement Agent routes (nested under bots)
+    Route::post('bots/{bot}/evaluations/{evaluation}/improve', [ImprovementController::class, 'start'])
+        ->name('improvements.start');
+
+    Route::prefix('bots/{bot}/improvement-sessions')->group(function () {
+        Route::get('/', [ImprovementController::class, 'index'])->name('improvements.index');
+        Route::get('/{session}', [ImprovementController::class, 'show'])->name('improvements.show');
+        Route::get('/{session}/suggestions', [ImprovementController::class, 'suggestions'])->name('improvements.suggestions');
+        Route::patch('/{session}/suggestions/{suggestion}', [ImprovementController::class, 'toggleSuggestion'])
+            ->name('improvements.toggle-suggestion');
+        Route::post('/{session}/preview', [ImprovementController::class, 'preview'])->name('improvements.preview');
+        Route::post('/{session}/apply', [ImprovementController::class, 'apply'])->name('improvements.apply');
+        Route::post('/{session}/cancel', [ImprovementController::class, 'cancel'])->name('improvements.cancel');
+    });
 
     // Agent approval routes (HITL - Human-in-the-Loop)
     Route::prefix('agent-approvals')->group(function () {

@@ -68,3 +68,15 @@ export {
   useDeleteConnection,
   useConnectionOperations,
 } from './useConnections';
+
+export {
+  useImprovementSession,
+  useImprovementSuggestions,
+  useStartImprovement,
+  useToggleSuggestion,
+  useApplyImprovements,
+  useCancelImprovement,
+  useImprovementOperations,
+  isSessionRunning,
+  canCancelSession,
+} from './useImprovement';
