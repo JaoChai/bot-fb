@@ -335,22 +335,19 @@ PROMPT;
 
     /**
      * Generate a unique webhook URL.
-     * Uses WEBHOOK_BASE_URL env var if set, otherwise falls back to APP_URL
+     * Uses /api/webhook/ path to work with custom domain proxy
      */
     private function generateWebhookUrl(string $channelType = 'line'): string
     {
         $token = Str::random(32);
 
-        // Use dedicated webhook URL if configured (for cases where APP_URL is behind a proxy)
-        $baseUrl = config('services.webhook.base_url') ?? config('app.url');
-
-        // Platform-specific webhook paths
+        // Platform-specific webhook paths (under /api/ for proxy compatibility)
         $path = match ($channelType) {
-            'telegram' => '/webhook/telegram/',
-            default => '/webhook/',
+            'telegram' => '/api/webhook/telegram/',
+            default => '/api/webhook/',
         };
 
-        return $baseUrl . $path . $token;
+        return config('app.url') . $path . $token;
     }
 
     /**
