@@ -646,7 +646,7 @@ export function EditConnectionPage() {
             onClick={handleSave}
             disabled={isSaving}
             size="lg"
-            className="min-w-[180px]"
+            className="min-w-[180px] transition-colors"
           >
             {isSaving ? (
               <>
