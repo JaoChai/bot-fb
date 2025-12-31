@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\KnowledgeBaseController;
 use App\Http\Controllers\Api\StreamController;
 use App\Http\Controllers\Api\UserSettingController;
 use App\Http\Controllers\Api\EvaluationController;
+use App\Http\Controllers\Api\AgentApprovalController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
@@ -194,6 +195,13 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
 
     // Evaluation personas (shared across all bots)
     Route::get('/evaluation-personas', [EvaluationController::class, 'personas'])->name('evaluations.personas');
+
+    // Agent approval routes (HITL - Human-in-the-Loop)
+    Route::prefix('agent-approvals')->group(function () {
+        Route::get('/{approvalId}', [AgentApprovalController::class, 'show'])->name('agent-approvals.show');
+        Route::post('/{approvalId}/approve', [AgentApprovalController::class, 'approve'])->name('agent-approvals.approve');
+        Route::post('/{approvalId}/reject', [AgentApprovalController::class, 'reject'])->name('agent-approvals.reject');
+    });
 });
 
 // Health check endpoint (no rate limiting needed)

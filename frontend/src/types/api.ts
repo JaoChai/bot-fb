@@ -535,6 +535,8 @@ export interface Evaluation {
   name: string;
   description: string | null;
   status: 'pending' | 'generating_tests' | 'running' | 'evaluating' | 'generating_report' | 'completed' | 'failed' | 'cancelled';
+  generator_model: string;
+  simulator_model: string;
   judge_model: string;
   personas: string[];
   config: Record<string, unknown>;
@@ -599,6 +601,8 @@ export interface CreateEvaluationData {
   name?: string;
   description?: string;
   personas?: string[];
+  generator_model?: string;
+  simulator_model?: string;
   judge_model?: string;
   test_count?: number;
   include_multi_turn?: boolean;

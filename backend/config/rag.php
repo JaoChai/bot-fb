@@ -187,6 +187,61 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Semantic Router Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Fast intent classification using vector similarity instead of LLM calls.
+    | Based on RouteLLM research: https://github.com/lm-sys/RouteLLM
+    |
+    | Performance: 50-100ms vs 500-2000ms (LLM), 10-20x faster
+    | Cost: ~$0.0001/call (embedding only) vs $0.001-0.01 (LLM)
+    |
+    */
+    'semantic_router' => [
+        // Enable/disable semantic router (falls back to LLM if disabled)
+        'enabled' => env('RAG_SEMANTIC_ROUTER_ENABLED', true),
+
+        // Minimum similarity score to accept semantic classification
+        // Below this threshold, falls back to LLM decision model
+        'default_threshold' => env('RAG_SEMANTIC_ROUTER_THRESHOLD', 0.75),
+
+        // Fallback behavior when confidence is below threshold
+        // Options: 'llm' (use LLM decision model), 'default_intent' (default to 'chat')
+        'fallback' => env('RAG_SEMANTIC_ROUTER_FALLBACK', 'llm'),
+
+        // Cache TTL for route embeddings (seconds)
+        'cache_ttl' => env('RAG_SEMANTIC_ROUTER_CACHE_TTL', 300),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Confidence-Based Cascade Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Cost-effective LLM routing: try cheap model first, escalate to expensive
+    | only when confidence is low.
+    |
+    | Based on RouteLLM research: https://lmsys.org/blog/2024-07-01-routellm/
+    | Can reduce costs by 50-85% while maintaining 95% response quality.
+    |
+    */
+    'confidence_cascade' => [
+        // Enable/disable confidence cascade
+        'enabled' => env('RAG_CASCADE_ENABLED', false),
+
+        // Confidence threshold to accept cheap model response
+        // Below this threshold, escalates to expensive model
+        'threshold' => env('RAG_CASCADE_THRESHOLD', 0.7),
+
+        // Cheap model for initial attempt
+        'cheap_model' => env('RAG_CASCADE_CHEAP_MODEL', 'openai/gpt-4o-mini'),
+
+        // Expensive model for escalation
+        'expensive_model' => env('RAG_CASCADE_EXPENSIVE_MODEL', 'openai/gpt-4o'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Contextual Retrieval Configuration
     |--------------------------------------------------------------------------
     |
@@ -216,5 +271,39 @@ return [
 
         // Timeout in seconds for context generation
         'timeout' => 30,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Corrective RAG (CRAG) Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Evaluates retrieval quality and takes corrective action when results
+    | are ambiguous or incorrect. Improves response accuracy by ~10-20%.
+    |
+    | Based on: "Corrective Retrieval Augmented Generation" (2024)
+    |
+    */
+    'crag' => [
+        // Enable/disable CRAG evaluation
+        'enabled' => env('RAG_CRAG_ENABLED', false),
+
+        // Evaluation mode: 'heuristics' (fast), 'llm' (accurate), 'hybrid' (balanced)
+        'evaluation_mode' => env('RAG_CRAG_MODE', 'heuristics'),
+
+        // LLM model for evaluation (when using 'llm' or 'hybrid' mode)
+        'evaluation_model' => env('RAG_CRAG_MODEL', 'openai/gpt-4o-mini'),
+
+        // Threshold for "correct" grade (use results directly)
+        'correct_threshold' => env('RAG_CRAG_CORRECT_THRESHOLD', 0.7),
+
+        // Threshold for "ambiguous" grade (rewrite query)
+        'ambiguous_threshold' => env('RAG_CRAG_AMBIGUOUS_THRESHOLD', 0.3),
+
+        // Maximum query rewrite attempts for ambiguous results
+        'max_rewrite_attempts' => env('RAG_CRAG_MAX_REWRITES', 2),
+
+        // Action when grade is "incorrect": 'skip_kb' or 'fallback_general'
+        'incorrect_action' => env('RAG_CRAG_INCORRECT_ACTION', 'skip_kb'),
     ],
 ];

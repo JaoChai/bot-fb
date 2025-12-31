@@ -1,0 +1,11 @@
+step,check_item,how_to_verify,common_issue,solution
+1,Webhook URL ถูกต้อง,ดูใน LINE Developers Console > Messaging API,URL ผิด หรือไม่ใช่ HTTPS,ใช้ URL format: https://[domain]/api/v1/webhook/line/[bot_uuid]
+2,Webhook Enabled,ดูใน LINE Console > Use webhook = ON,Webhook disabled,เปิด Use webhook
+3,Channel Access Token ถูกต้อง,ทดสอบด้วย curl GET /v2/bot/info,Token หมดอายุหรือผิด,สร้าง token ใหม่ใน LINE Console
+4,Channel Secret ถูกต้อง,ดูใน bot settings / env,Secret ผิดทำให้ signature invalid,ตรวจสอบ Channel Secret ใน LINE Console
+5,SSL Certificate Valid,ใช้ https:// และ cert ถูกต้อง,SSL error / self-signed cert,ใช้ valid SSL certificate
+6,Bot UUID ถูกต้อง,ดูใน database bots.uuid,UUID ใน URL ไม่ตรงกับ database,ตรวจสอบ UUID จาก database
+7,Server Accessible,ping / curl ไปที่ endpoint,Firewall block / server down,ตรวจสอบ firewall และ server status
+8,Response Time < 1s,ดู webhook verify result,Response timeout,optimize code หรือใช้ queue
+9,Return 200 OK,ดู server logs,Return error status code,แก้ไข code ให้ return 200
+10,Signature Verification,ดู laravel logs,Invalid signature error,ตรวจสอบ X-Line-Signature header และ Channel Secret

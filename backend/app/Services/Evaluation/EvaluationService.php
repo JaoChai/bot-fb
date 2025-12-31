@@ -54,6 +54,8 @@ class EvaluationService
             'description' => $config['description'] ?? null,
             'status' => Evaluation::STATUS_PENDING,
             'judge_model' => $config['judge_model'] ?? 'anthropic/claude-3.5-sonnet',
+            'generator_model' => $config['generator_model'] ?? 'anthropic/claude-3-haiku-20240307',
+            'simulator_model' => $config['simulator_model'] ?? 'anthropic/claude-3-haiku-20240307',
             'personas' => $personas,
             'config' => [
                 'test_count' => $config['test_count'] ?? 40,
@@ -110,7 +112,8 @@ class EvaluationService
             evaluation: $evaluation,
             flow: $flow,
             targetCount: $targetCount,
-            apiKey: $apiKey
+            apiKey: $apiKey,
+            model: $evaluation->generator_model
         );
 
         $evaluation->update([
@@ -138,7 +141,8 @@ class EvaluationService
                 testCase: $testCase,
                 bot: $bot,
                 flow: $flow,
-                apiKey: $apiKey
+                apiKey: $apiKey,
+                model: $evaluation->simulator_model
             );
 
             if ($result['success']) {

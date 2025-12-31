@@ -16,6 +16,8 @@ class ConversationSimulatorService
     protected OpenRouterService $openRouter;
     protected PersonaService $personaService;
 
+    protected const DEFAULT_MODEL = 'anthropic/claude-3-haiku-20240307';
+
     public function __construct(
         RAGService $ragService,
         OpenRouterService $openRouter,
@@ -33,8 +35,10 @@ class ConversationSimulatorService
         EvaluationTestCase $testCase,
         Bot $bot,
         Flow $flow,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?string $model = null
     ): array {
+        $model = $model ?? self::DEFAULT_MODEL;
         $testCase->markAsRunning();
 
         $maxTurns = $testCase->test_type === EvaluationTestCase::TYPE_MULTI_TURN ? 3 : 1;
@@ -43,7 +47,7 @@ class ConversationSimulatorService
 
         try {
             // Get or create initial user message
-            $userMessage = $this->getOrCreateInitialMessage($testCase, $apiKey);
+            $userMessage = $this->getOrCreateInitialMessage($testCase, $apiKey, $model);
 
             for ($turn = 1; $turn <= $maxTurns; $turn++) {
                 // Store user message if not already stored
@@ -83,7 +87,8 @@ class ConversationSimulatorService
                     $followUp = $this->generateFollowUpQuestion(
                         testCase: $testCase,
                         conversation: $conversationHistory,
-                        apiKey: $apiKey
+                        apiKey: $apiKey,
+                        model: $model
                     );
 
                     if ($followUp) {
@@ -115,7 +120,7 @@ class ConversationSimulatorService
     /**
      * Get or create initial user message for test case
      */
-    protected function getOrCreateInitialMessage(EvaluationTestCase $testCase, ?string $apiKey): string
+    protected function getOrCreateInitialMessage(EvaluationTestCase $testCase, ?string $apiKey, ?string $model): string
     {
         // Check if initial message already exists
         $existingMessage = $testCase->messages()
@@ -135,13 +140,13 @@ class ConversationSimulatorService
         }
 
         // For KB-based tests, generate question from source chunks
-        return $this->generateQuestionFromTestCase($testCase, $apiKey);
+        return $this->generateQuestionFromTestCase($testCase, $apiKey, $model);
     }
 
     /**
      * Generate question from test case context
      */
-    protected function generateQuestionFromTestCase(EvaluationTestCase $testCase, ?string $apiKey): string
+    protected function generateQuestionFromTestCase(EvaluationTestCase $testCase, ?string $apiKey, ?string $model): string
     {
         $persona = $this->personaService->getPersona($testCase->persona_key);
         $topics = $testCase->expected_topics ?? ['general inquiry'];
@@ -164,7 +169,7 @@ PROMPT;
         try {
             $response = $this->openRouter->chat(
                 messages: [['role' => 'user', 'content' => $prompt]],
-                model: 'anthropic/claude-3-haiku-20240307',
+                model: $model ?? self::DEFAULT_MODEL,
                 temperature: 0.7,
                 maxTokens: 200,
                 apiKeyOverride: $apiKey
@@ -244,7 +249,8 @@ PROMPT;
     protected function generateFollowUpQuestion(
         EvaluationTestCase $testCase,
         array $conversation,
-        ?string $apiKey
+        ?string $apiKey,
+        ?string $model
     ): ?string {
         $persona = $this->personaService->getPersona($testCase->persona_key);
 
@@ -274,7 +280,7 @@ PROMPT;
         try {
             $response = $this->openRouter->chat(
                 messages: [['role' => 'user', 'content' => $prompt]],
-                model: 'anthropic/claude-3-haiku-20240307',
+                model: $model ?? self::DEFAULT_MODEL,
                 temperature: 0.7,
                 maxTokens: 200,
                 apiKeyOverride: $apiKey

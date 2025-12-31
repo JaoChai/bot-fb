@@ -1,0 +1,353 @@
+{
+  "templates": {
+    "simple_text": {
+      "name": "Simple Text Bubble",
+      "description": "Basic text message in bubble format",
+      "template": {
+        "type": "bubble",
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": "{{title}}",
+              "weight": "bold",
+              "size": "xl"
+            },
+            {
+              "type": "text",
+              "text": "{{description}}",
+              "size": "sm",
+              "color": "#666666",
+              "margin": "md",
+              "wrap": true
+            }
+          ]
+        }
+      }
+    },
+    "button_primary": {
+      "name": "Primary Button",
+      "description": "Button with primary action",
+      "template": {
+        "type": "bubble",
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": "{{title}}",
+              "weight": "bold",
+              "size": "lg"
+            }
+          ]
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "button",
+              "action": {
+                "type": "uri",
+                "label": "{{button_label}}",
+                "uri": "{{button_url}}"
+              },
+              "style": "primary",
+              "color": "#1DB446"
+            }
+          ]
+        }
+      }
+    },
+    "product_card": {
+      "name": "Product Card",
+      "description": "Product showcase with image and details",
+      "template": {
+        "type": "bubble",
+        "hero": {
+          "type": "image",
+          "url": "{{image_url}}",
+          "size": "full",
+          "aspectRatio": "20:13",
+          "aspectMode": "cover"
+        },
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": "{{product_name}}",
+              "weight": "bold",
+              "size": "xl"
+            },
+            {
+              "type": "box",
+              "layout": "baseline",
+              "margin": "md",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "฿{{price}}",
+                  "size": "xl",
+                  "color": "#1DB446",
+                  "weight": "bold"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": "{{description}}",
+              "size": "sm",
+              "color": "#666666",
+              "margin": "md",
+              "wrap": true
+            }
+          ]
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "button",
+              "action": {
+                "type": "uri",
+                "label": "ดูรายละเอียด",
+                "uri": "{{product_url}}"
+              },
+              "style": "primary"
+            },
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "สนใจสั่งซื้อ",
+                "text": "สนใจสินค้า {{product_name}}"
+              },
+              "style": "secondary",
+              "margin": "sm"
+            }
+          ]
+        }
+      }
+    },
+    "confirmation": {
+      "name": "Confirmation Dialog",
+      "description": "Yes/No confirmation bubble",
+      "template": {
+        "type": "bubble",
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": "{{question}}",
+              "weight": "bold",
+              "size": "lg",
+              "wrap": true
+            }
+          ]
+        },
+        "footer": {
+          "type": "box",
+          "layout": "horizontal",
+          "contents": [
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "ใช่",
+                "text": "{{yes_response}}"
+              },
+              "style": "primary",
+              "color": "#1DB446"
+            },
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "ไม่ใช่",
+                "text": "{{no_response}}"
+              },
+              "style": "secondary",
+              "margin": "sm"
+            }
+          ]
+        }
+      }
+    },
+    "order_status": {
+      "name": "Order Status",
+      "description": "Order tracking information",
+      "template": {
+        "type": "bubble",
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": "สถานะคำสั่งซื้อ",
+              "weight": "bold",
+              "size": "xl",
+              "color": "#1DB446"
+            },
+            {
+              "type": "separator",
+              "margin": "lg"
+            },
+            {
+              "type": "box",
+              "layout": "vertical",
+              "margin": "lg",
+              "contents": [
+                {
+                  "type": "box",
+                  "layout": "baseline",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "หมายเลข",
+                      "color": "#aaaaaa",
+                      "size": "sm",
+                      "flex": 2
+                    },
+                    {
+                      "type": "text",
+                      "text": "{{order_id}}",
+                      "size": "sm",
+                      "flex": 5
+                    }
+                  ]
+                },
+                {
+                  "type": "box",
+                  "layout": "baseline",
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "สถานะ",
+                      "color": "#aaaaaa",
+                      "size": "sm",
+                      "flex": 2
+                    },
+                    {
+                      "type": "text",
+                      "text": "{{status}}",
+                      "size": "sm",
+                      "flex": 5,
+                      "color": "#1DB446"
+                    }
+                  ]
+                },
+                {
+                  "type": "box",
+                  "layout": "baseline",
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "ที่อยู่",
+                      "color": "#aaaaaa",
+                      "size": "sm",
+                      "flex": 2
+                    },
+                    {
+                      "type": "text",
+                      "text": "{{address}}",
+                      "size": "sm",
+                      "flex": 5,
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "button",
+              "action": {
+                "type": "uri",
+                "label": "ติดตามพัสดุ",
+                "uri": "{{tracking_url}}"
+              },
+              "style": "primary"
+            }
+          ]
+        }
+      }
+    },
+    "carousel_products": {
+      "name": "Product Carousel",
+      "description": "Multiple products in carousel format",
+      "template": {
+        "type": "carousel",
+        "contents": [
+          {
+            "type": "bubble",
+            "hero": {
+              "type": "image",
+              "url": "{{product1_image}}",
+              "size": "full",
+              "aspectRatio": "20:13",
+              "aspectMode": "cover"
+            },
+            "body": {
+              "type": "box",
+              "layout": "vertical",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "{{product1_name}}",
+                  "weight": "bold"
+                },
+                {
+                  "type": "text",
+                  "text": "฿{{product1_price}}",
+                  "color": "#1DB446"
+                }
+              ]
+            }
+          },
+          {
+            "type": "bubble",
+            "hero": {
+              "type": "image",
+              "url": "{{product2_image}}",
+              "size": "full",
+              "aspectRatio": "20:13",
+              "aspectMode": "cover"
+            },
+            "body": {
+              "type": "box",
+              "layout": "vertical",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "{{product2_name}}",
+                  "weight": "bold"
+                },
+                {
+                  "type": "text",
+                  "text": "฿{{product2_price}}",
+                  "color": "#1DB446"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

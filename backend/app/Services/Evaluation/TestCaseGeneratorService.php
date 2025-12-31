@@ -16,6 +16,8 @@ class TestCaseGeneratorService
     protected OpenRouterService $openRouter;
     protected PersonaService $personaService;
 
+    protected const DEFAULT_MODEL = 'anthropic/claude-3-haiku-20240307';
+
     public function __construct(OpenRouterService $openRouter, PersonaService $personaService)
     {
         $this->openRouter = $openRouter;
@@ -29,8 +31,10 @@ class TestCaseGeneratorService
         Evaluation $evaluation,
         Flow $flow,
         int $targetCount = 40,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?string $model = null
     ): Collection {
+        $model = $model ?? self::DEFAULT_MODEL;
         $testCases = collect();
         $personas = $evaluation->personas ?? $this->personaService->getPersonaKeys();
         $config = $evaluation->config ?? [];
@@ -57,7 +61,8 @@ class TestCaseGeneratorService
                 knowledgeBase: $kb,
                 count: $distribution['kb_based'],
                 personas: $personas,
-                apiKey: $apiKey
+                apiKey: $apiKey,
+                model: $model
             );
             $testCases = $testCases->merge($kbTestCases);
         }
@@ -111,7 +116,8 @@ class TestCaseGeneratorService
         KnowledgeBase $knowledgeBase,
         int $count,
         array $personas,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?string $model = null
     ): Collection {
         $testCases = collect();
 
@@ -137,7 +143,8 @@ class TestCaseGeneratorService
             $question = $this->generateQuestionFromChunks(
                 chunks: $group,
                 personaKey: $personaKey,
-                apiKey: $apiKey
+                apiKey: $apiKey,
+                model: $model
             );
 
             if (!$question) {
@@ -190,7 +197,8 @@ class TestCaseGeneratorService
     protected function generateQuestionFromChunks(
         Collection $chunks,
         string $personaKey,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?string $model = null
     ): ?array {
         $persona = $this->personaService->getPersona($personaKey);
         if (!$persona) {
@@ -227,7 +235,7 @@ PROMPT;
         try {
             $response = $this->openRouter->chat(
                 messages: [['role' => 'user', 'content' => $prompt]],
-                model: 'anthropic/claude-3-haiku-20240307',
+                model: $model ?? self::DEFAULT_MODEL,
                 temperature: 0.7,
                 maxTokens: 500,
                 apiKeyOverride: $apiKey

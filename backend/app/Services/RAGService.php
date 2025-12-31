@@ -27,7 +27,11 @@ class RAGService
         protected SemanticSearchService $semanticSearchService,
         protected HybridSearchService $hybridSearchService,
         protected OpenRouterService $openRouter,
-        protected ?QueryEnhancementService $queryEnhancement = null
+        protected ?QueryEnhancementService $queryEnhancement = null,
+        protected ?SemanticRouterService $semanticRouter = null,
+        protected ?ConfidenceCascadeService $confidenceCascade = null,
+        protected ?RetrievalEvaluatorService $retrievalEvaluator = null,
+        protected ?QueryRewriterService $queryRewriter = null
     ) {}
 
     /**
@@ -111,17 +115,27 @@ class RAGService
             $maxTokens = (int) min($maxTokens * $multiplier, 4096);
         }
 
-        // Step 9: Generate response using Chat Model
-        $result = $this->openRouter->generateBotResponse(
-            userMessage: $userMessage,
-            systemPrompt: $systemPrompt,
-            conversationHistory: $conversationHistory,
-            model: $chatModel,
-            fallbackModel: $fallbackChatModel,
-            temperature: $bot->llm_temperature,
-            maxTokens: $maxTokens,
-            apiKeyOverride: $apiKey
-        );
+        // Step 9: Generate response using Chat Model (with Confidence Cascade if enabled)
+        if ($this->confidenceCascade && $bot->use_confidence_cascade) {
+            $result = $this->confidenceCascade->generateWithCascade(
+                bot: $bot,
+                userMessage: $userMessage,
+                systemPrompt: $systemPrompt,
+                conversationHistory: $conversationHistory,
+                apiKey: $apiKey
+            );
+        } else {
+            $result = $this->openRouter->generateBotResponse(
+                userMessage: $userMessage,
+                systemPrompt: $systemPrompt,
+                conversationHistory: $conversationHistory,
+                model: $chatModel,
+                fallbackModel: $fallbackChatModel,
+                temperature: $bot->llm_temperature,
+                maxTokens: $maxTokens,
+                apiKeyOverride: $apiKey
+            );
+        }
 
         // Add metadata to result
         $result['intent'] = $intent;
@@ -129,7 +143,7 @@ class RAGService
         $result['complexity'] = $complexity;
         $result['models_used'] = [
             'decision' => $intent['model_used'] ?? null,
-            'chat' => $result['model'] ?? $chatModel,
+            'chat' => $result['model'] ?? $result['cascade']['model_used'] ?? $chatModel,
         ];
 
         return $result;
@@ -236,11 +250,43 @@ class RAGService
                 return '';
             }
 
+            // Step 4: CRAG - Assess retrieval quality
+            $cragResult = null;
+            if ($this->retrievalEvaluator && config('rag.crag.enabled', false)) {
+                $cragResult = $this->assessAndCorrectRetrieval(
+                    $bot,
+                    $kb,
+                    $query,
+                    $dedupedResults,
+                    $apiKey,
+                    $limit,
+                    $threshold
+                );
+
+                // Handle CRAG actions
+                if ($cragResult['action'] === 'skip_kb') {
+                    Log::info('CRAG: Skipping KB due to low relevance', [
+                        'bot_id' => $bot->id,
+                        'grade' => $cragResult['grade'],
+                        'score' => $cragResult['score'],
+                    ]);
+                    $metadata['crag'] = $cragResult;
+                    $metadata['enabled'] = false;
+                    return '';
+                }
+
+                // Use rewritten query results if available
+                if ($cragResult['action'] === 'use_rewritten' && !empty($cragResult['rewritten_results'])) {
+                    $dedupedResults = $cragResult['rewritten_results'];
+                }
+            }
+
             // Update metadata with search info
             $metadata['enabled'] = true;
             $metadata['results_count'] = $dedupedResults->count();
             $metadata['search_mode'] = $this->hybridSearchService->isEnabled() ? 'hybrid' : 'semantic';
             $metadata['query_enhancement'] = $enhancementMetadata;
+            $metadata['crag'] = $cragResult;
             $metadata['chunks_used'] = $dedupedResults->map(fn ($r) => [
                 'document' => $r['document_name'],
                 'similarity' => $r['similarity'],
@@ -259,6 +305,178 @@ class RAGService
             ]);
             return '';
         }
+    }
+
+    /**
+     * CRAG: Assess retrieval quality and take corrective action if needed.
+     *
+     * Flow:
+     * 1. Grade initial results (correct/ambiguous/incorrect)
+     * 2. If ambiguous: rewrite query and re-search (up to max attempts)
+     * 3. Return final grade and action
+     *
+     * @param Bot $bot The bot
+     * @param mixed $kb The knowledge base
+     * @param string $query Original user query
+     * @param \Illuminate\Support\Collection $results Initial search results
+     * @param string|null $apiKey API key
+     * @param int $limit Max results per search
+     * @param float $threshold Similarity threshold
+     * @return array CRAG result with grade, action, and optionally rewritten results
+     */
+    protected function assessAndCorrectRetrieval(
+        Bot $bot,
+        $kb,
+        string $query,
+        $results,
+        ?string $apiKey,
+        int $limit,
+        float $threshold
+    ): array {
+        $mode = config('rag.crag.evaluation_mode', 'heuristics');
+        $maxRewrites = config('rag.crag.max_rewrite_attempts', 2);
+
+        // Set thresholds from config
+        $correctThreshold = config('rag.crag.correct_threshold', 0.7);
+        $ambiguousThreshold = config('rag.crag.ambiguous_threshold', 0.3);
+        $this->retrievalEvaluator->setThresholds($correctThreshold, $ambiguousThreshold);
+
+        // Step 1: Grade initial results
+        $gradeResult = $this->retrievalEvaluator->evaluate(
+            $query,
+            $results,
+            $mode,
+            $apiKey
+        );
+
+        Log::debug('CRAG: Initial grade', [
+            'bot_id' => $bot->id,
+            'grade' => $gradeResult['grade'],
+            'score' => $gradeResult['score'],
+            'action' => $gradeResult['action'],
+        ]);
+
+        // Step 2: If correct, use results directly
+        if ($gradeResult['grade'] === 'correct') {
+            return [
+                'grade' => 'correct',
+                'score' => $gradeResult['score'],
+                'action' => 'use_original',
+                'attempts' => 0,
+                'details' => $gradeResult['details'],
+            ];
+        }
+
+        // Step 3: If incorrect, skip KB
+        if ($gradeResult['grade'] === 'incorrect') {
+            $incorrectAction = config('rag.crag.incorrect_action', 'skip_kb');
+            return [
+                'grade' => 'incorrect',
+                'score' => $gradeResult['score'],
+                'action' => $incorrectAction,
+                'attempts' => 0,
+                'details' => $gradeResult['details'],
+            ];
+        }
+
+        // Step 4: If ambiguous, try query rewriting
+        if ($gradeResult['grade'] === 'ambiguous' && $this->queryRewriter && $maxRewrites > 0) {
+            $bestResults = $results;
+            $bestScore = $gradeResult['score'];
+            $attempts = 0;
+
+            for ($i = 0; $i < $maxRewrites; $i++) {
+                $attempts++;
+
+                // Rewrite the query
+                $rewritten = $this->queryRewriter->rewrite($query, [], $apiKey);
+
+                Log::debug('CRAG: Query rewritten', [
+                    'bot_id' => $bot->id,
+                    'attempt' => $attempts,
+                    'original' => $query,
+                    'variations' => count($rewritten['queries']),
+                ]);
+
+                // Search with rewritten queries
+                $allResults = collect([]);
+                foreach ($rewritten['queries'] as $variation) {
+                    $newResults = $this->hybridSearchService->search(
+                        knowledgeBaseId: $kb->id,
+                        query: $variation,
+                        limit: $limit,
+                        threshold: $threshold,
+                        apiKey: $apiKey
+                    );
+                    $allResults = $allResults->concat($newResults);
+                }
+
+                // Deduplicate
+                $dedupedNew = $allResults
+                    ->groupBy('id')
+                    ->map(fn($group) => $group->sortByDesc(fn($r) =>
+                        $r['relevance_score'] ?? $r['similarity'] ?? 0
+                    )->first())
+                    ->values()
+                    ->sortByDesc(fn($r) => $r['relevance_score'] ?? $r['similarity'] ?? 0)
+                    ->take($limit);
+
+                // Re-grade
+                $newGrade = $this->retrievalEvaluator->evaluate(
+                    $query, // Grade against original query
+                    $dedupedNew,
+                    $mode,
+                    $apiKey
+                );
+
+                Log::debug('CRAG: Rewritten query graded', [
+                    'bot_id' => $bot->id,
+                    'attempt' => $attempts,
+                    'new_grade' => $newGrade['grade'],
+                    'new_score' => $newGrade['score'],
+                    'previous_score' => $bestScore,
+                ]);
+
+                // Keep best results
+                if ($newGrade['score'] > $bestScore) {
+                    $bestResults = $dedupedNew;
+                    $bestScore = $newGrade['score'];
+                }
+
+                // If we reached correct, stop trying
+                if ($newGrade['grade'] === 'correct') {
+                    return [
+                        'grade' => 'correct',
+                        'score' => $newGrade['score'],
+                        'action' => 'use_rewritten',
+                        'attempts' => $attempts,
+                        'rewritten_results' => $bestResults,
+                        'details' => $newGrade['details'],
+                    ];
+                }
+            }
+
+            // After all attempts, use best results if improved
+            if ($bestScore > $gradeResult['score']) {
+                return [
+                    'grade' => 'ambiguous',
+                    'score' => $bestScore,
+                    'action' => 'use_rewritten',
+                    'attempts' => $attempts,
+                    'rewritten_results' => $bestResults,
+                    'details' => ['improved_from' => $gradeResult['score'], 'improved_to' => $bestScore],
+                ];
+            }
+        }
+
+        // Fall back to original results (ambiguous but no improvement)
+        return [
+            'grade' => $gradeResult['grade'],
+            'score' => $gradeResult['score'],
+            'action' => 'use_original',
+            'attempts' => 0,
+            'details' => $gradeResult['details'],
+        ];
     }
 
     /**
@@ -463,7 +681,12 @@ class RAGService
     }
 
     /**
-     * Analyze user message intent using the decision model.
+     * Analyze user message intent using Semantic Router first, then LLM fallback.
+     *
+     * Flow:
+     * 1. Try Semantic Router (fast, ~50-100ms, no LLM cost)
+     * 2. If confidence too low or error, fall back to LLM Decision Model
+     * 3. If no Decision Model configured, use default behavior
      *
      * @param Bot $bot The bot
      * @param string $userMessage The user's message
@@ -472,6 +695,30 @@ class RAGService
      */
     protected function analyzeIntent(Bot $bot, string $userMessage, ?string $apiKey): array
     {
+        // Step 1: Try Semantic Router first (fast path)
+        if ($this->semanticRouter && $bot->use_semantic_router) {
+            $semanticResult = $this->semanticRouter->classifyIntent($bot, $userMessage, $apiKey);
+
+            // If semantic router gave a confident result, use it
+            if (!isset($semanticResult['use_fallback'])) {
+                Log::debug('Intent classified via Semantic Router', [
+                    'bot_id' => $bot->id,
+                    'intent' => $semanticResult['intent'],
+                    'confidence' => $semanticResult['confidence'],
+                    'time_ms' => $semanticResult['time_ms'] ?? null,
+                ]);
+                return $semanticResult;
+            }
+
+            // Log why we're falling back
+            Log::debug('Semantic Router fallback triggered', [
+                'bot_id' => $bot->id,
+                'reason' => $semanticResult['reason'] ?? 'unknown',
+                'semantic_score' => $semanticResult['semantic_score'] ?? null,
+            ]);
+        }
+
+        // Step 2: Fall back to LLM Decision Model
         $decisionModel = $this->getDecisionModelForBot($bot);
         $fallbackDecision = $this->getFallbackDecisionModelForBot($bot);
 
@@ -482,6 +729,7 @@ class RAGService
                 'intent' => $this->shouldUseKnowledgeBase($bot) ? 'knowledge' : 'chat',
                 'confidence' => 1.0,
                 'model_used' => null,
+                'method' => 'default',
                 'skipped' => true,
             ];
         }
@@ -504,9 +752,10 @@ class RAGService
 
             $parsed = $this->parseIntentResponse($result['content']);
             $parsed['model_used'] = $result['model'] ?? $decisionModel;
+            $parsed['method'] = 'llm_decision';
             $parsed['usage'] = $result['usage'] ?? null;
 
-            Log::debug('Intent analysis completed', [
+            Log::debug('Intent analysis completed via LLM', [
                 'bot_id' => $bot->id,
                 'intent' => $parsed['intent'],
                 'confidence' => $parsed['confidence'],
@@ -524,6 +773,7 @@ class RAGService
             return [
                 'intent' => $this->shouldUseKnowledgeBase($bot) ? 'knowledge' : 'chat',
                 'confidence' => 0,
+                'method' => 'error_fallback',
                 'error' => $e->getMessage(),
             ];
         }

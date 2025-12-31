@@ -237,6 +237,9 @@ function CreateEvaluationDialog({
     name: '',
     test_count: 40,
     personas: [],
+    generator_model: 'anthropic/claude-3-haiku-20240307',
+    simulator_model: 'anthropic/claude-3-haiku-20240307',
+    judge_model: 'anthropic/claude-3.5-sonnet',
     include_multi_turn: true,
     include_edge_cases: true,
   });
@@ -261,6 +264,9 @@ function CreateEvaluationDialog({
         name: '',
         test_count: 40,
         personas: [],
+        generator_model: 'anthropic/claude-3-haiku-20240307',
+        simulator_model: 'anthropic/claude-3-haiku-20240307',
+        judge_model: 'anthropic/claude-3.5-sonnet',
         include_multi_turn: true,
         include_edge_cases: true,
       });
@@ -343,6 +349,38 @@ function CreateEvaluationDialog({
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>10 (เร็ว)</span>
               <span>100 (ละเอียด)</span>
+            </div>
+          </div>
+
+          {/* Model Settings */}
+          <div className="space-y-3 pt-2 border-t">
+            <Label className="text-sm font-medium">Model Settings</Label>
+
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Model สร้างคำถาม (Generator)</Label>
+              <Input
+                placeholder="anthropic/claude-3-haiku-20240307"
+                value={formData.generator_model}
+                onChange={(e) => setFormData((prev) => ({ ...prev, generator_model: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Model จำลองลูกค้า (Simulator)</Label>
+              <Input
+                placeholder="anthropic/claude-3-haiku-20240307"
+                value={formData.simulator_model}
+                onChange={(e) => setFormData((prev) => ({ ...prev, simulator_model: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Model ประเมินคำตอบ (Judge)</Label>
+              <Input
+                placeholder="anthropic/claude-3.5-sonnet"
+                value={formData.judge_model}
+                onChange={(e) => setFormData((prev) => ({ ...prev, judge_model: e.target.value }))}
+              />
             </div>
           </div>
 

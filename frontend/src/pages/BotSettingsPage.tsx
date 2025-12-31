@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Loader2, Clock, Plus, Trash2, Copy } from 'lucide-react';
 import { apiGet, apiPut } from '@/lib/api';
+import { AISettingsSection, type AISettings } from '@/components/bot/AISettingsSection';
 
 // Response Hours types
 interface TimeSlot {
@@ -115,6 +116,8 @@ interface BotSettingsFormData {
   response_hours: ResponseHoursConfig;
   response_hours_timezone: string;
   offline_message: string;
+  // AI Settings
+  ai_settings: AISettings;
 }
 
 export function BotSettingsPage() {
@@ -145,6 +148,15 @@ export function BotSettingsPage() {
     response_hours: createDefaultResponseHours(),
     response_hours_timezone: 'Asia/Bangkok',
     offline_message: '',
+    ai_settings: {
+      use_semantic_router: false,
+      semantic_router_threshold: 0.75,
+      semantic_router_fallback: 'llm',
+      use_confidence_cascade: false,
+      cascade_confidence_threshold: 0.7,
+      cascade_cheap_model: 'openai/gpt-4o-mini',
+      cascade_expensive_model: 'openai/gpt-4o',
+    },
   });
 
   // Response Hours helper functions
@@ -252,6 +264,15 @@ export function BotSettingsPage() {
           response_hours: parseResponseHours(settings.response_hours as Record<string, TimeSlot[]> | null),
           response_hours_timezone: (settings.response_hours_timezone as string) ?? 'Asia/Bangkok',
           offline_message: (settings.offline_message as string) ?? '',
+          ai_settings: {
+            use_semantic_router: (settings.use_semantic_router as boolean) ?? false,
+            semantic_router_threshold: (settings.semantic_router_threshold as number) ?? 0.75,
+            semantic_router_fallback: (settings.semantic_router_fallback as 'llm' | 'default_intent') ?? 'llm',
+            use_confidence_cascade: (settings.use_confidence_cascade as boolean) ?? false,
+            cascade_confidence_threshold: (settings.cascade_confidence_threshold as number) ?? 0.7,
+            cascade_cheap_model: (settings.cascade_cheap_model as string) ?? 'openai/gpt-4o-mini',
+            cascade_expensive_model: (settings.cascade_expensive_model as string) ?? 'openai/gpt-4o',
+          },
         });
       } catch (error) {
         console.error('Failed to fetch settings:', error);
@@ -276,6 +297,16 @@ export function BotSettingsPage() {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleAISettingsChange = <K extends keyof AISettings>(
+    field: K,
+    value: AISettings[K]
+  ) => {
+    setFormData((prev) => ({
+      ...prev,
+      ai_settings: { ...prev.ai_settings, [field]: value },
+    }));
+  };
+
   const handleSave = async () => {
     if (!botId) return;
 
@@ -298,6 +329,14 @@ export function BotSettingsPage() {
         wait_multiple_bubbles_enabled: formData.wait_multiple_bubbles_enabled,
         // Convert seconds to ms for backend
         wait_multiple_bubbles_ms: Math.round(formData.wait_multiple_bubbles_seconds * 1000),
+        // AI Settings
+        use_semantic_router: formData.ai_settings.use_semantic_router,
+        semantic_router_threshold: formData.ai_settings.semantic_router_threshold,
+        semantic_router_fallback: formData.ai_settings.semantic_router_fallback,
+        use_confidence_cascade: formData.ai_settings.use_confidence_cascade,
+        cascade_confidence_threshold: formData.ai_settings.cascade_confidence_threshold,
+        cascade_cheap_model: formData.ai_settings.cascade_cheap_model || null,
+        cascade_expensive_model: formData.ai_settings.cascade_expensive_model || null,
       });
 
       toast({
@@ -415,6 +454,20 @@ export function BotSettingsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* AI Optimization Section */}
+          <div className="pt-4">
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              AI Optimization
+              <Badge variant="outline" className="bg-gradient-to-r from-purple-50 to-blue-50 text-purple-700 dark:from-purple-950 dark:to-blue-950 dark:text-purple-400">
+                ใหม่
+              </Badge>
+            </h2>
+            <AISettingsSection
+              settings={formData.ai_settings}
+              onChange={handleAISettingsChange}
+            />
+          </div>
 
           {/* Easy Slip */}
           <Card>

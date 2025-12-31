@@ -26,6 +26,11 @@ class Flow extends Model
         'max_tokens',
         'agentic_mode',
         'max_tool_calls',
+        // Agent Safety
+        'agent_timeout_seconds',
+        'agent_max_cost_per_request',
+        'hitl_enabled',
+        'hitl_dangerous_actions',
         'enabled_tools',
         'language',
         'is_default',
@@ -36,6 +41,11 @@ class Flow extends Model
         'agentic_mode' => 'boolean',
         'is_default' => 'boolean',
         'enabled_tools' => 'array',
+        // Agent Safety
+        'agent_timeout_seconds' => 'integer',
+        'agent_max_cost_per_request' => 'decimal:4',
+        'hitl_enabled' => 'boolean',
+        'hitl_dangerous_actions' => 'array',
     ];
 
     public function bot(): BelongsTo

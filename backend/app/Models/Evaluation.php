@@ -21,6 +21,8 @@ class Evaluation extends Model
         'description',
         'status',
         'judge_model',
+        'generator_model',
+        'simulator_model',
         'personas',
         'config',
         'overall_score',

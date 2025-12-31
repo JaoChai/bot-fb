@@ -1,0 +1,15 @@
+strategy,impact,difficulty,description,implementation
+use_smaller_decision_model,high,easy,ใช้ model เล็กสำหรับ intent analysis,"เปลี่ยน decision_model เป็น claude-3.5-haiku หรือ gpt-4o-mini"
+reduce_kb_max_results,medium,easy,ลดจำนวน chunks ที่ส่งให้ LLM,"ลด kb_max_results จาก 10 เหลือ 5"
+shorter_system_prompts,medium,medium,ลดความยาว system prompt,"เขียน prompt ให้กระชับ 150-200 คำ"
+set_max_tokens,medium,easy,จำกัดความยาว response,"ตั้ง max_tokens เป็น 1024"
+cache_embeddings,high,already_done,Cache embeddings ไม่ต้อง re-compute,"ระบบทำอยู่แล้วใน document processing"
+use_fallback_wisely,low,easy,ใช้ fallback model ที่ถูกกว่า,"ตั้ง fallback_chat_model เป็น model ที่ถูกกว่า"
+batch_embeddings,medium,medium,รวม embedding requests,"ใช้ batch API แทนทีละ request"
+disable_query_enhancement,low,easy,ปิด query enhancement ถ้าไม่จำเป็น,"ตั้ง RAG_QUERY_ENHANCEMENT_ENABLED=false"
+use_hybrid_instead_semantic_only,low,depends,Hybrid search อาจลด false positives,"เปิด hybrid search ถ้า semantic มี noise มาก"
+skip_intent_for_simple,medium,medium,Skip decision model สำหรับ simple queries,ตรวจสอบ query length ก่อนเรียก decision model
+reduce_conversation_history,medium,medium,จำกัด history ที่ส่งให้ LLM,ส่งแค่ 3-5 messages ล่าสุด
+use_gemini_flash_high_volume,high,medium,ใช้ Gemini Flash สำหรับ high volume bots,เปลี่ยน chat_model เป็น google/gemini-2.0-flash
+monitor_token_usage,low,easy,ติดตาม token usage เป็นประจำ,ดู logs และ OpenRouter dashboard
+set_spending_limits,low,easy,ตั้ง limit ใน OpenRouter,OpenRouter > API Keys > Set Limit
