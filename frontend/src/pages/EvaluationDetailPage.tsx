@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
+import { EvaluationProgressStepper } from '@/components/evaluation/EvaluationProgressStepper';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -421,6 +422,7 @@ export function EvaluationDetailPage() {
   const { toast } = useToast();
 
   const [selectedTestCase, setSelectedTestCase] = useState<EvaluationTestCase | null>(null);
+  const queryClient = useQueryClient();
 
   // Fetch evaluation
   const { data: evaluation, isLoading } = useEvaluation(botId, evalId);
@@ -439,6 +441,18 @@ export function EvaluationDetailPage() {
   // Mutations
   const cancelMutation = useCancelEvaluation(botId);
   const retryMutation = useRetryEvaluation(botId);
+
+  // Auto-refresh for running evaluations
+  useEffect(() => {
+    if (!isRunning || !botId || !evalId) return;
+
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ['evaluation', botId, evalId] });
+      queryClient.invalidateQueries({ queryKey: ['evaluation-progress', botId, evalId] });
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [isRunning, botId, evalId, queryClient]);
 
   const handleCancel = async () => {
     if (!evalId) return;
@@ -524,16 +538,12 @@ export function EvaluationDetailPage() {
         {isRunning && (
           <Card className="mb-6">
             <CardContent className="py-6">
-              <div className="space-y-4">
-                <div className="flex justify-between text-sm">
-                  <span className="font-medium">{STATUS_CONFIG[evaluation.status]?.label}</span>
-                  <span>{currentProgress.completed_test_cases} / {currentProgress.total_test_cases}</span>
-                </div>
-                <Progress value={currentProgress.percent} className="h-2" />
-                <div className="text-sm text-muted-foreground text-center">
-                  กำลังทำงาน... กรุณารอสักครู่
-                </div>
-              </div>
+              <EvaluationProgressStepper
+                status={evaluation.status}
+                completedTestCases={currentProgress.completed_test_cases}
+                totalTestCases={currentProgress.total_test_cases}
+                percent={currentProgress.percent}
+              />
             </CardContent>
           </Card>
         )}
