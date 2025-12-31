@@ -79,6 +79,7 @@ interface ConnectionFormData {
   line_channel_access_token: string;
   telegram_bot_token: string;
   webhook_forwarder_enabled: boolean;
+  auto_handover: boolean;
 }
 
 const DEFAULT_FORM_DATA: ConnectionFormData = {
@@ -93,6 +94,7 @@ const DEFAULT_FORM_DATA: ConnectionFormData = {
   line_channel_access_token: '',
   telegram_bot_token: '',
   webhook_forwarder_enabled: false,
+  auto_handover: false,
 };
 
 const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://api.botjao.com';
@@ -137,6 +139,7 @@ export function EditConnectionPage() {
         line_channel_access_token: '', // Hidden field - don't populate
         telegram_bot_token: '', // Hidden field - don't populate
         webhook_forwarder_enabled: existingBot.webhook_forwarder_enabled || false,
+        auto_handover: existingBot.auto_handover || false,
       });
     }
   }, [existingBot]);
@@ -189,6 +192,7 @@ export function EditConnectionPage() {
           decision_model: formData.decision_model,
           fallback_decision_model: formData.fallback_decision_model,
           webhook_forwarder_enabled: formData.webhook_forwarder_enabled,
+          auto_handover: formData.auto_handover,
           // Only send credentials if they were changed (not empty)
           ...(formData.platform === 'line' && formData.line_channel_secret && { channel_secret: formData.line_channel_secret }),
           ...(formData.platform === 'line' && formData.line_channel_access_token && { channel_access_token: formData.line_channel_access_token }),
@@ -208,6 +212,7 @@ export function EditConnectionPage() {
           decision_model: formData.decision_model,
           fallback_decision_model: formData.fallback_decision_model,
           webhook_forwarder_enabled: formData.webhook_forwarder_enabled,
+          auto_handover: formData.auto_handover,
         };
 
         // Set credentials based on platform
@@ -598,6 +603,18 @@ export function EditConnectionPage() {
                       id="webhook-forwarder"
                       checked={formData.webhook_forwarder_enabled}
                       onCheckedChange={(checked) => handleChange('webhook_forwarder_enabled', checked)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between max-w-md">
+                    <div>
+                      <Label htmlFor="auto-handover" className="font-normal">Auto Handover</Label>
+                      <p className="text-xs text-muted-foreground">ปิดบอทตอบอัตโนมัติ ให้ Admin ตอบเอง</p>
+                    </div>
+                    <Switch
+                      id="auto-handover"
+                      checked={formData.auto_handover}
+                      onCheckedChange={(checked) => handleChange('auto_handover', checked)}
                     />
                   </div>
                 </Section>

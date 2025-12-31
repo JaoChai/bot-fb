@@ -290,13 +290,17 @@ class ProcessLINEWebhook implements ShouldQueue
         // Create or update customer profile
         $customerProfile = $this->findOrCreateCustomerProfile($userId, $lineService);
 
+        // Check if bot has auto_handover enabled
+        $autoHandover = $this->bot->auto_handover ?? false;
+
         // Create new conversation
         $conversation = Conversation::create([
             'bot_id' => $this->bot->id,
             'customer_profile_id' => $customerProfile?->id,
             'external_customer_id' => $userId,
             'channel_type' => 'line',
-            'status' => 'active',
+            'status' => $autoHandover ? 'handover' : 'active',
+            'is_handover' => $autoHandover,
             'current_flow_id' => $this->bot->default_flow_id,
             'message_count' => 0,
         ]);

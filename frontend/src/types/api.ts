@@ -24,10 +24,13 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
 }
 
 // Auth Types
+export type UserRole = 'owner' | 'admin';
+
 export interface User {
   id: number;
   name: string;
   email: string;
+  role: UserRole;
   email_verified_at: string | null;
   created_at: string;
   updated_at: string;
@@ -59,6 +62,7 @@ export interface Bot {
   channel_type: 'line' | 'facebook' | 'testing' | 'telegram';
   webhook_url: string;
   webhook_forwarder_enabled: boolean;
+  auto_handover: boolean;
   // Multi-model LLM configuration (API key now in User Settings)
   primary_chat_model: string | null;
   fallback_chat_model: string | null;
@@ -81,6 +85,14 @@ export interface Bot {
   last_active_at: string | null;
   // Relationships
   settings?: BotSettings;
+  // Owner info (loaded for admins)
+  user?: {
+    id: number;
+    name: string;
+    email: string;
+  };
+  // Admins (loaded for owners)
+  admins?: User[];
   created_at: string;
   updated_at: string;
 }
@@ -96,6 +108,7 @@ export interface CreateConnectionData {
   channel_access_token?: string;
   channel_secret?: string;
   webhook_forwarder_enabled?: boolean;
+  auto_handover?: boolean;
 }
 
 // Connection/Bot update data (API key now in User Settings)
@@ -110,6 +123,7 @@ export interface UpdateConnectionData {
   channel_access_token?: string;
   channel_secret?: string;
   webhook_forwarder_enabled?: boolean;
+  auto_handover?: boolean;
 }
 
 // Bot Settings Types
@@ -146,8 +160,23 @@ export interface BotSettings {
   response_style: 'professional' | 'casual' | 'friendly' | 'formal';
   // Conversation management
   auto_archive_days: number | null;
+  // Auto-assignment settings
+  auto_assignment_enabled: boolean;
+  auto_assignment_mode: 'round_robin' | 'load_balanced';
+  auto_assignment_max_per_admin: number | null;
   created_at: string;
   updated_at: string;
+}
+
+// Admin Bot Assignment Types
+export interface AdminBotAssignment {
+  id: number;
+  user_id: number;
+  bot_id: number;
+  assigned_by: number | null;
+  user?: User;
+  assigned_at: string;
+  created_at: string;
 }
 
 // Knowledge Base Types
@@ -355,6 +384,8 @@ export interface Conversation {
   telegram_chat_type?: 'private' | 'group' | 'supergroup' | 'channel' | null;
   telegram_chat_title?: string | null;
   assigned_user_id: number | null;
+  assignment_method: 'manual' | 'claimed' | 'auto' | null;
+  assigned_at: string | null;
   memory_notes: ConversationNote[] | null;
   tags: string[];
   context: Record<string, unknown> | null;

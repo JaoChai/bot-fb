@@ -40,6 +40,9 @@ class BotResource extends JsonResource
             'kb_relevance_threshold' => $this->kb_relevance_threshold ?? 0.7,
             'kb_max_results' => $this->kb_max_results ?? 3,
 
+            // Auto handover setting
+            'auto_handover' => $this->auto_handover ?? false,
+
             // Stats
             'total_conversations' => $this->total_conversations ?? 0,
             'total_messages' => $this->total_messages ?? 0,
