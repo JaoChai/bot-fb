@@ -38,9 +38,10 @@ import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message } from '@/types/api';
-// Telegram-specific components
+// Channel-specific components
 import { TelegramMessageBubble } from '@/components/telegram/TelegramMessageBubble';
 import { TelegramMessageInput } from '@/components/telegram/TelegramMessageInput';
+import { LINEMessageBubble } from '@/components/line/LINEMessageBubble';
 
 const channelLabels: Record<string, string> = {
   line: 'LINE',
@@ -228,6 +229,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
 
   // Channel detection
   const isTelegram = conversation.channel_type === 'telegram';
+  const isLINE = conversation.channel_type === 'line';
   const isGroup = isTelegram && (
     conversation.telegram_chat_type === 'group' ||
     conversation.telegram_chat_type === 'supergroup'
@@ -540,6 +542,15 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
                 // Telegram: Use TelegramMessageBubble for rich media support
                 messages.map((message, index) => (
                   <TelegramMessageBubble
+                    key={message.id}
+                    message={message}
+                    previousMessage={index > 0 ? messages[index - 1] : undefined}
+                  />
+                ))
+              ) : isLINE ? (
+                // LINE: Use LINEMessageBubble for rich media support
+                messages.map((message, index) => (
+                  <LINEMessageBubble
                     key={message.id}
                     message={message}
                     previousMessage={index > 0 ? messages[index - 1] : undefined}

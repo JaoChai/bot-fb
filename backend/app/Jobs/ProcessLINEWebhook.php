@@ -357,35 +357,110 @@ class ProcessLINEWebhook implements ShouldQueue
     }
 
     /**
-     * Handle non-text messages.
+     * Handle non-text messages (images, videos, audio, files, stickers, locations).
+     * Downloads media and saves to database for display in chat.
      */
     protected function handleNonTextMessage(LINEService $lineService): void
     {
+        $userId = $lineService->extractUserId($this->event);
         $replyToken = $lineService->extractReplyToken($this->event);
         $messageData = $lineService->extractMessage($this->event);
+        $messageType = $messageData['type'];
 
-        if (!$replyToken) {
+        if (!$userId) {
             return;
         }
 
-        // Send a helpful response for non-text messages
-        $messageType = $messageData['type'];
-        $response = match ($messageType) {
-            'image' => 'ขออภัยครับ ขณะนี้ยังไม่รองรับการวิเคราะห์รูปภาพ กรุณาพิมพ์ข้อความแทนครับ',
-            'video' => 'ขออภัยครับ ขณะนี้ยังไม่รองรับการวิเคราะห์วิดีโอ กรุณาพิมพ์ข้อความแทนครับ',
-            'audio' => 'ขออภัยครับ ขณะนี้ยังไม่รองรับการวิเคราะห์เสียง กรุณาพิมพ์ข้อความแทนครับ',
-            'sticker' => 'ขอบคุณสำหรับสติกเกอร์ครับ! มีอะไรให้ช่วยเพิ่มเติมไหมครับ?',
-            'location' => 'ได้รับตำแหน่งที่ตั้งแล้วครับ มีอะไรให้ช่วยเหลือไหมครับ?',
-            'file' => 'ขออภัยครับ ขณะนี้ยังไม่รองรับการวิเคราะห์ไฟล์ กรุณาพิมพ์ข้อความแทนครับ',
-            default => 'ขออภัยครับ ไม่สามารถประมวลผลข้อความประเภทนี้ได้ กรุณาพิมพ์ข้อความแทนครับ',
-        };
+        // Find or create conversation
+        $existingConversation = Conversation::where('bot_id', $this->bot->id)
+            ->where('external_customer_id', $userId)
+            ->where('channel_type', 'line')
+            ->where('status', 'active')
+            ->first();
 
-        try {
-            $lineService->reply($this->bot, $replyToken, [$response]);
-        } catch (\Exception $e) {
-            Log::warning('Failed to send non-text message response', [
-                'error' => $e->getMessage(),
+        $isNewConversation = !$existingConversation;
+        $conversation = $existingConversation ?? $this->createNewConversation($userId, $lineService);
+
+        // Check for duplicate message
+        if ($messageData['id'] && Message::where('conversation_id', $conversation->id)
+            ->where('external_message_id', $messageData['id'])
+            ->exists()) {
+            Log::info('Duplicate non-text webhook ignored', [
+                'conversation_id' => $conversation->id,
+                'message_id' => $messageData['id'],
             ]);
+            return;
+        }
+
+        // Download media for supported types
+        $mediaUrl = null;
+        $mediaType = null;
+        $content = null;
+
+        if (in_array($messageType, ['image', 'video', 'audio', 'file'])) {
+            $mediaData = $lineService->downloadAndStoreFile($this->bot, $messageData['id'], $messageType);
+            if ($mediaData) {
+                $mediaUrl = $mediaData['url'];
+                $mediaType = $mediaData['mime_type'];
+            }
+            $content = match ($messageType) {
+                'image' => '[รูปภาพ]',
+                'video' => '[วิดีโอ]',
+                'audio' => '[เสียง]',
+                'file' => '[ไฟล์]',
+                default => '[สื่อ]',
+            };
+        } elseif ($messageType === 'sticker') {
+            $content = '[สติกเกอร์]';
+        } elseif ($messageType === 'location') {
+            $lat = $messageData['latitude'] ?? '';
+            $lng = $messageData['longitude'] ?? '';
+            $addr = $messageData['address'] ?? '';
+            $content = "[ตำแหน่ง] {$addr} ({$lat}, {$lng})";
+        } else {
+            $content = '[ข้อความที่ไม่รองรับ]';
+        }
+
+        // Save message to database
+        $conversation->messages()->create([
+            'sender' => 'user',
+            'content' => $content,
+            'type' => $messageType,
+            'media_url' => $mediaUrl,
+            'media_type' => $mediaType,
+            'external_message_id' => $messageData['id'],
+        ]);
+
+        // Update stats
+        $this->updateStatsForUserMessageOnly($conversation);
+        if ($isNewConversation) {
+            $this->bot->update([
+                'total_conversations' => DB::raw('total_conversations + 1'),
+            ]);
+        }
+
+        // Broadcast update
+        broadcast(new ConversationUpdated($conversation->fresh(), 'message_received'))->toOthers();
+
+        // Send acknowledgment reply
+        if ($replyToken) {
+            $response = match ($messageType) {
+                'image' => 'ได้รับรูปภาพแล้วครับ',
+                'video' => 'ได้รับวิดีโอแล้วครับ',
+                'audio' => 'ได้รับเสียงแล้วครับ',
+                'sticker' => 'ขอบคุณสำหรับสติกเกอร์ครับ!',
+                'location' => 'ได้รับตำแหน่งแล้วครับ',
+                'file' => 'ได้รับไฟล์แล้วครับ',
+                default => 'ได้รับข้อความแล้วครับ',
+            };
+
+            try {
+                $lineService->reply($this->bot, $replyToken, [$response]);
+            } catch (\Exception $e) {
+                Log::warning('Failed to send non-text message acknowledgment', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 
