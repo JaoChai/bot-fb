@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Search, Loader2, MessageCircle, Bot, Headphones } from 'lucide-react';
+import { Search, Loader2, MessageCircle, Bot, Headphones, Users, User } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -31,6 +31,8 @@ interface ConversationListProps {
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
   fetchNextPage?: () => void;
+  // Channel-specific mode
+  channelType?: string;
 }
 
 export function ConversationList({
@@ -46,8 +48,10 @@ export function ConversationList({
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
+  channelType,
 }: ConversationListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const isTelegram = channelType === 'telegram';
 
   // Infinite scroll using IntersectionObserver
   useEffect(() => {
@@ -73,7 +77,7 @@ export function ConversationList({
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="ค้นหา..."
+            placeholder={isTelegram ? "ค้นหาแชท..." : "ค้นหา..."}
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             className="pl-9 min-h-[44px] text-base sm:text-sm"
@@ -81,7 +85,7 @@ export function ConversationList({
         </div>
       </div>
 
-      {/* Status Tabs */}
+      {/* Status/Type Tabs - Dynamic based on channel */}
       <div className="p-2 border-b">
         <Tabs value={statusFilter} onValueChange={onStatusFilterChange}>
           <TabsList className="w-full grid grid-cols-3 h-11">
@@ -93,22 +97,35 @@ export function ConversationList({
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="active" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
-              <span className="truncate">ใช้งาน</span>
-              {statusCounts && (
-                <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4 hidden sm:inline-flex">
-                  {statusCounts.active}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="handover" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
-              <span className="truncate">รอตอบ</span>
-              {statusCounts && statusCounts.handover > 0 && (
-                <Badge className="ml-1 text-xs px-1 py-0 h-4 bg-destructive">
-                  {statusCounts.handover}
-                </Badge>
-              )}
-            </TabsTrigger>
+            {isTelegram ? (
+              <>
+                <TabsTrigger value="group" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+                  <span className="truncate">กลุ่ม</span>
+                </TabsTrigger>
+                <TabsTrigger value="private" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+                  <span className="truncate">ส่วนตัว</span>
+                </TabsTrigger>
+              </>
+            ) : (
+              <>
+                <TabsTrigger value="active" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+                  <span className="truncate">ใช้งาน</span>
+                  {statusCounts && (
+                    <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4 hidden sm:inline-flex">
+                      {statusCounts.active}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="handover" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+                  <span className="truncate">รอตอบ</span>
+                  {statusCounts && statusCounts.handover > 0 && (
+                    <Badge className="ml-1 text-xs px-1 py-0 h-4 bg-destructive">
+                      {statusCounts.handover}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+              </>
+            )}
           </TabsList>
         </Tabs>
       </div>
@@ -157,18 +174,30 @@ interface ConversationItemProps {
   onSelect: (conversation: Conversation) => void;
 }
 
-// Memoized conversation item - prevents re-rendering unchanged items
+// Memoized conversation item - handles all channel types
 const ConversationItem = memo(function ConversationItem({
   conversation,
   isSelected,
   onSelect,
 }: ConversationItemProps) {
-  const customerName = conversation.customer_profile?.display_name || 'Unknown';
+  const isTelegram = conversation.channel_type === 'telegram';
+  const isGroup = isTelegram && (
+    conversation.telegram_chat_type === 'group' ||
+    conversation.telegram_chat_type === 'supergroup'
+  );
+
+  // Display name: group title for telegram groups, otherwise customer name
+  const customerName = isGroup
+    ? conversation.telegram_chat_title || 'Telegram Group'
+    : conversation.customer_profile?.display_name || 'Unknown';
+
   const customerInitial = customerName.charAt(0).toUpperCase();
   const hasUnread = conversation.unread_count > 0;
   const lastMessageTime = conversation.last_message_at
     ? formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: th })
     : null;
+
+  const channelColor = channelColors[conversation.channel_type] || 'text-muted-foreground';
 
   // Memoize click handler to prevent re-creation
   const handleClick = useCallback(() => {
@@ -187,12 +216,20 @@ const ConversationItem = memo(function ConversationItem({
     >
       {/* Avatar with unread indicator */}
       <div className="relative">
-        <Avatar className="h-12 w-12 md:h-10 md:w-10">
+        <Avatar className={cn(
+          'h-12 w-12 md:h-10 md:w-10',
+          isTelegram && 'bg-[#0088CC]/10'
+        )}>
           <AvatarImage src={conversation.customer_profile?.picture_url || undefined} />
-          <AvatarFallback>{customerInitial}</AvatarFallback>
+          <AvatarFallback className={isTelegram ? 'bg-[#0088CC]/10 text-[#0088CC]' : undefined}>
+            {isGroup ? <Users className="h-5 w-5" /> : customerInitial}
+          </AvatarFallback>
         </Avatar>
         {hasUnread && (
-          <span className="absolute -top-0.5 -right-0.5 h-3 w-3 bg-green-500 rounded-full border-2 border-background" />
+          <span className={cn(
+            'absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background',
+            isTelegram ? 'bg-[#0088CC]' : 'bg-green-500'
+          )} />
         )}
       </div>
 
@@ -208,32 +245,46 @@ const ConversationItem = memo(function ConversationItem({
         </div>
 
         <div className="flex items-center gap-1.5 mt-0.5">
-          <MessageCircle
-            className={cn(
-              'h-3 w-3 flex-shrink-0',
-              channelColors[conversation.channel_type] || 'text-muted-foreground'
-            )}
-          />
+          <MessageCircle className={cn('h-3 w-3 flex-shrink-0', channelColor)} />
           <span className="text-xs text-muted-foreground truncate">
             {conversation.message_count} ข้อความ
           </span>
         </div>
 
-        {/* Bot status badge */}
+        {/* Status/Type badge - different for telegram vs other channels */}
         <div className="flex items-center gap-1.5 mt-1">
-          {conversation.is_handover ? (
-            <Badge variant="outline" className="text-xs h-5 gap-1 border-dashed">
-              <Headphones className="h-3 w-3" />
-              รอตอบ
-            </Badge>
+          {isTelegram ? (
+            // Telegram: Show group/private badge
+            isGroup ? (
+              <Badge variant="outline" className="text-xs h-5 gap-1 border-[#0088CC]/30 text-[#0088CC]">
+                <Users className="h-3 w-3" />
+                กลุ่ม
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs h-5 gap-1 border-[#0088CC]/30 text-[#0088CC]">
+                <User className="h-3 w-3" />
+                ส่วนตัว
+              </Badge>
+            )
           ) : (
-            <Badge variant="secondary" className="text-xs h-5 gap-1">
-              <Bot className="h-3 w-3" />
-              Bot เปิด
-            </Badge>
+            // Other channels: Show bot/handover status
+            conversation.is_handover ? (
+              <Badge variant="outline" className="text-xs h-5 gap-1 border-dashed">
+                <Headphones className="h-3 w-3" />
+                รอตอบ
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="text-xs h-5 gap-1">
+                <Bot className="h-3 w-3" />
+                Bot เปิด
+              </Badge>
+            )
           )}
           {hasUnread && (
-            <Badge className="text-xs h-5 bg-green-500 hover:bg-green-500">
+            <Badge className={cn(
+              'text-xs h-5',
+              isTelegram ? 'bg-[#0088CC] hover:bg-[#0088CC]' : 'bg-green-500 hover:bg-green-500'
+            )}>
               {conversation.unread_count} ใหม่
             </Badge>
           )}

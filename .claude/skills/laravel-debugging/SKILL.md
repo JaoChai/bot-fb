@@ -10,7 +10,7 @@ description: Debug Laravel errors by getting actual exception messages, checking
 ### 1. หา ACTUAL Error Message
 ```bash
 # Option A: Check health first
-curl https://backend-production-b216.up.railway.app/api/health
+curl https://api.botjao.com/api/health
 
 # Option B: If logs timeout, create debug endpoint
 # Add to routes/api.php temporarily:
@@ -90,10 +90,10 @@ try {
 
 ```bash
 # 1. Health check
-curl -s https://backend-production-b216.up.railway.app/api/health | jq
+curl -s https://api.botjao.com/api/health | jq
 
 # 2. Test specific endpoint
-curl -s -X POST https://backend-production-b216.up.railway.app/api/stream \
+curl -s -X POST https://api.botjao.com/api/stream \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{"message":"test"}' | head -100
@@ -118,5 +118,5 @@ Error → Health Check → Get ACTUAL message → Identify location → ONE fix 
 
 ## Production URLs
 
-- Backend: `https://backend-production-b216.up.railway.app`
-- Health: `https://backend-production-b216.up.railway.app/api/health`
+- Backend: `https://api.botjao.com`
+- Health: `https://api.botjao.com/api/health`

@@ -18,6 +18,8 @@ import {
   Clock,
   MessagesSquare,
   Timer,
+  Users,
+  User,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
@@ -26,6 +28,7 @@ import type { Conversation } from '@/types/api';
 const channelLabels: Record<string, string> = {
   line: 'LINE',
   facebook: 'Facebook',
+  telegram: 'Telegram',
   demo: 'Demo',
 };
 
@@ -38,6 +41,13 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
   const { toast } = useToast();
   const customer = conversation.customer_profile;
   const toggleHandover = useToggleHandover(botId);
+
+  // Channel detection
+  const isTelegram = conversation.channel_type === 'telegram';
+  const isGroup = isTelegram && (
+    conversation.telegram_chat_type === 'group' ||
+    conversation.telegram_chat_type === 'supergroup'
+  );
 
   // Auto-enable countdown
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(
@@ -134,67 +144,107 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
 
   return (
     <div className="p-4 space-y-6">
-      {/* Customer Profile */}
+      {/* Customer/Chat Profile */}
       <div className="flex items-center gap-4">
         <Avatar className="h-16 w-16">
           <AvatarImage src={customer?.picture_url || undefined} />
-          <AvatarFallback className="text-lg">
-            {customer?.display_name?.charAt(0).toUpperCase() || '?'}
+          <AvatarFallback className={`text-lg ${isTelegram ? 'bg-[#0088CC]/10 text-[#0088CC]' : ''}`}>
+            {isGroup ? (
+              <Users className="h-6 w-6" />
+            ) : (
+              customer?.display_name?.charAt(0).toUpperCase() || '?'
+            )}
           </AvatarFallback>
         </Avatar>
         <div>
           <h3 className="font-semibold text-lg">
-            {customer?.display_name || 'ลูกค้า'}
+            {isGroup
+              ? conversation.telegram_chat_title || 'Group'
+              : customer?.display_name || 'ลูกค้า'}
           </h3>
-          <p className="text-sm text-muted-foreground">
-            {channelLabels[conversation.channel_type]}
-          </p>
+          {isTelegram ? (
+            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              {isGroup ? (
+                <>
+                  <Users className="h-3.5 w-3.5" />
+                  <span>
+                    {conversation.telegram_chat_type === 'supergroup' ? 'Supergroup' : 'Group'}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <User className="h-3.5 w-3.5" />
+                  <span>Private Chat</span>
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {channelLabels[conversation.channel_type]}
+            </p>
+          )}
         </div>
       </div>
 
       <Separator />
 
-      {/* Bot Control */}
-      <Card className={conversation.is_handover ? 'border-2 border-dashed' : 'border-2 border-foreground'}>
-        <CardContent className="p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            {conversation.is_handover ? (
-              <Headphones className="h-5 w-5 text-muted-foreground" />
-            ) : (
-              <Bot className="h-5 w-5" />
-            )}
-            <span className="font-medium">
-              {conversation.is_handover ? 'โหมดรอตอบ' : 'Bot เปิด'}
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <Label htmlFor="bot-toggle" className="text-sm">
-              {conversation.is_handover ? 'เปิด Bot' : 'Bot เปิดอยู่'}
-            </Label>
-            <Switch
-              id="bot-toggle"
-              checked={!conversation.is_handover}
-              onCheckedChange={handleToggleBot}
-              disabled={toggleHandover.isPending}
-            />
-          </div>
-
-          {/* Auto-enable countdown */}
-          {conversation.is_handover && remainingSeconds !== null && remainingSeconds > 0 && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Timer className="h-4 w-4" />
-              <span>เปิดอัตโนมัติใน {formatCountdown(remainingSeconds)}</span>
+      {/* Bot Control / Human Agent Mode */}
+      {isTelegram ? (
+        // Telegram: Human Agent Mode (no bot toggle)
+        <Card className="border-2 border-dashed border-[#0088CC]/50 bg-[#0088CC]/5">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <Headphones className="h-5 w-5 text-[#0088CC]" />
+              <span className="font-medium text-[#0088CC]">Human Agent Mode</span>
             </div>
-          )}
+            <p className="text-xs text-muted-foreground">
+              Telegram ใช้ระบบ Human Agent เท่านั้น ไม่มี Bot ตอบอัตโนมัติ
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        // Other channels: Bot toggle with countdown
+        <Card className={conversation.is_handover ? 'border-2 border-dashed' : 'border-2 border-foreground'}>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              {conversation.is_handover ? (
+                <Headphones className="h-5 w-5 text-muted-foreground" />
+              ) : (
+                <Bot className="h-5 w-5" />
+              )}
+              <span className="font-medium">
+                {conversation.is_handover ? 'โหมดรอตอบ' : 'Bot เปิด'}
+              </span>
+            </div>
 
-          <p className="text-xs text-muted-foreground">
-            {conversation.is_handover
-              ? 'Bot หยุดทำงาน คุณสามารถตอบลูกค้าได้โดยตรง'
-              : 'Bot จะตอบข้อความโดยอัตโนมัติ'}
-          </p>
-        </CardContent>
-      </Card>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="bot-toggle" className="text-sm">
+                {conversation.is_handover ? 'เปิด Bot' : 'Bot เปิดอยู่'}
+              </Label>
+              <Switch
+                id="bot-toggle"
+                checked={!conversation.is_handover}
+                onCheckedChange={handleToggleBot}
+                disabled={toggleHandover.isPending}
+              />
+            </div>
+
+            {/* Auto-enable countdown */}
+            {conversation.is_handover && remainingSeconds !== null && remainingSeconds > 0 && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Timer className="h-4 w-4" />
+                <span>เปิดอัตโนมัติใน {formatCountdown(remainingSeconds)}</span>
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              {conversation.is_handover
+                ? 'Bot หยุดทำงาน คุณสามารถตอบลูกค้าได้โดยตรง'
+                : 'Bot จะตอบข้อความโดยอัตโนมัติ'}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <Separator />
 

@@ -95,7 +95,7 @@ const DEFAULT_FORM_DATA: ConnectionFormData = {
   webhook_forwarder_enabled: false,
 };
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://backend-production-b216.up.railway.app';
+const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://api.botjao.com';
 
 export function EditConnectionPage() {
   const { botId } = useParams();

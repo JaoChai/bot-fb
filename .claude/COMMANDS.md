@@ -31,5 +31,5 @@ git log --oneline -10               # Recent commits
 
 ## Debug
 ```bash
-curl https://backend-production-b216.up.railway.app/api/health
+curl https://api.botjao.com/api/health
 ```

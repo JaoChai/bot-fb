@@ -25,7 +25,6 @@ import {
   Target,
   Sun,
   Moon,
-  Send,
 } from 'lucide-react';
 
 const mainNavItems = [
@@ -45,14 +44,9 @@ const mainNavItems = [
     icon: BookOpen,
   },
   {
-    title: 'แชท',
+    title: 'การสนทนา',
     href: '/chat',
     icon: MessageSquare,
-  },
-  {
-    title: 'Telegram',
-    href: '/telegram',
-    icon: Send,
   },
   {
     title: 'ประเมินบอท',

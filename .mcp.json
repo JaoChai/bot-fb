@@ -1,13 +1,5 @@
 {
   "mcpServers": {
-    "laravel": {
-      "command": "node",
-      "args": [".claude/mcp/laravel-mcp-server/dist/index.js"],
-      "env": {
-        "LARAVEL_PATH": "./backend",
-        "PHP_PATH": "/opt/homebrew/opt/php@8.4/bin/php"
-      }
-    },
     "botfacebook": {
       "command": "node",
       "args": [".claude/mcp/botfacebook-mcp-server/dist/index.js"],
@@ -18,8 +10,8 @@
         "LARAVEL_API_URL": "http://localhost:8000",
         "LARAVEL_AUTH_TOKEN": "44|Rj1gbClt05KG5ELUGb2UUgU6NKNWTve3Z8AGRI1e56b9054b",
         "MCP_MODE": "remote",
-        "PRODUCTION_BACKEND_URL": "https://backend-production-b216.up.railway.app",
-        "PRODUCTION_FRONTEND_URL": "https://frontend-production-9fe8.up.railway.app"
+        "PRODUCTION_BACKEND_URL": "https://api.botjao.com",
+        "PRODUCTION_FRONTEND_URL": "https://www.botjao.com"
       }
     },
     "neon": {

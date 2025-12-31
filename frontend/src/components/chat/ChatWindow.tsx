@@ -32,15 +32,20 @@ import {
   Headphones,
   ChevronDown,
   RotateCcw,
+  Users,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message } from '@/types/api';
+// Telegram-specific components
+import { TelegramMessageBubble } from '@/components/telegram/TelegramMessageBubble';
+import { TelegramMessageInput } from '@/components/telegram/TelegramMessageInput';
 
 const channelLabels: Record<string, string> = {
   line: 'LINE',
   facebook: 'Facebook',
+  telegram: 'Telegram',
   demo: 'Demo',
 };
 
@@ -219,6 +224,14 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [messageInput, setMessageInput] = useState('');
+  const [selectedMedia, setSelectedMedia] = useState<File | null>(null);
+
+  // Channel detection
+  const isTelegram = conversation.channel_type === 'telegram';
+  const isGroup = isTelegram && (
+    conversation.telegram_chat_type === 'group' ||
+    conversation.telegram_chat_type === 'supergroup'
+  );
 
   // Messages query
   const { data: messagesResponse, isLoading: isLoadingMessages } = useConversationMessages(
@@ -271,6 +284,40 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
     }
   }, [messageInput, sendAgentMessage, conversation.id, toast]);
 
+  // Handle send telegram message (memoized)
+  // TODO: Add media upload support when backend supports it
+  const handleSendTelegramMessage = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!messageInput.trim() && !selectedMedia) return;
+
+    const content = messageInput.trim();
+    setMessageInput('');
+    setSelectedMedia(null);
+
+    try {
+      // For now, just send text (same as regular agent message)
+      const result = await sendAgentMessage.mutateAsync({
+        conversationId: conversation.id,
+        data: { content },
+      });
+
+      if (result.delivery_error) {
+        toast({
+          title: 'บันทึกข้อความแล้ว แต่ส่งไม่สำเร็จ',
+          description: result.delivery_error,
+          variant: 'destructive',
+        });
+      }
+    } catch {
+      setMessageInput(content);
+      toast({
+        title: 'เกิดข้อผิดพลาด',
+        description: 'ไม่สามารถส่งข้อความได้',
+        variant: 'destructive',
+      });
+    }
+  }, [messageInput, selectedMedia, sendAgentMessage, conversation.id, toast]);
+
   // Handle toggle bot (memoized)
   const handleToggleBot = useCallback(async () => {
     try {
@@ -321,7 +368,10 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  const customerName = conversation.customer_profile?.display_name || 'ลูกค้า';
+  // Display name: group title for telegram groups, otherwise customer name
+  const customerName = isGroup
+    ? conversation.telegram_chat_title || 'Telegram Group'
+    : conversation.customer_profile?.display_name || 'ลูกค้า';
   const customerInitial = customerName.charAt(0).toUpperCase();
 
   return (
@@ -340,23 +390,50 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
               <ArrowLeft className="h-5 w-5" />
             </Button>
           )}
-          <Avatar className="h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0">
+          <Avatar className={cn(
+            'h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0',
+            isTelegram && 'bg-[#0088CC]/10'
+          )}>
             <AvatarImage src={conversation.customer_profile?.picture_url || undefined} />
-            <AvatarFallback>{customerInitial}</AvatarFallback>
+            <AvatarFallback className={isTelegram ? 'bg-[#0088CC]/10 text-[#0088CC]' : undefined}>
+              {isGroup ? <Users className="h-5 w-5" /> : customerInitial}
+            </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="font-semibold text-sm sm:text-base truncate max-w-[120px] sm:max-w-none">{customerName}</h2>
-              {conversation.is_handover ? (
-                <Badge variant="outline" className="border-dashed text-xs flex-shrink-0">
-                  <Headphones className="h-3 w-3 mr-1 hidden sm:inline" />
-                  รอตอบ
-                </Badge>
+              {isTelegram ? (
+                // Telegram: Show group/private and human mode badge
+                <>
+                  {isGroup ? (
+                    <Badge variant="outline" className="text-xs flex-shrink-0 border-[#0088CC]/30 text-[#0088CC]">
+                      <Users className="h-3 w-3 mr-1 hidden sm:inline" />
+                      กลุ่ม
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs flex-shrink-0 border-[#0088CC]/30 text-[#0088CC]">
+                      <User className="h-3 w-3 mr-1 hidden sm:inline" />
+                      ส่วนตัว
+                    </Badge>
+                  )}
+                  <Badge variant="secondary" className="text-xs flex-shrink-0">
+                    <Headphones className="h-3 w-3 mr-1 hidden sm:inline" />
+                    Human Only
+                  </Badge>
+                </>
               ) : (
-                <Badge variant="secondary" className="text-xs flex-shrink-0">
-                  <Bot className="h-3 w-3 mr-1 hidden sm:inline" />
-                  Bot
-                </Badge>
+                // Other channels: Show bot/handover status
+                conversation.is_handover ? (
+                  <Badge variant="outline" className="border-dashed text-xs flex-shrink-0">
+                    <Headphones className="h-3 w-3 mr-1 hidden sm:inline" />
+                    รอตอบ
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="text-xs flex-shrink-0">
+                    <Bot className="h-3 w-3 mr-1 hidden sm:inline" />
+                    Bot
+                  </Badge>
+                )
               )}
             </div>
             <p className="text-xs text-muted-foreground truncate">
@@ -366,59 +443,64 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
         </div>
 
         <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-          {/* Toggle Bot Button */}
-          <Button
-            variant={conversation.is_handover ? 'default' : 'outline'}
-            size="sm"
-            onClick={handleToggleBot}
-            disabled={toggleHandover.isPending}
-          >
-            {toggleHandover.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : conversation.is_handover ? (
-              <>
-                <Bot className="h-4 w-4 mr-1" />
-                เปิด Bot
-              </>
-            ) : (
-              <>
-                <Headphones className="h-4 w-4 mr-1" />
-                ตอบเอง
-              </>
-            )}
-          </Button>
-
-          {/* Clear Context Button */}
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
+          {/* Bot controls - only for non-telegram channels */}
+          {!isTelegram && (
+            <>
+              {/* Toggle Bot Button */}
               <Button
-                variant="outline"
-                size="icon"
-                disabled={clearContext.isPending}
-                title="Reset บริบท Bot"
+                variant={conversation.is_handover ? 'default' : 'outline'}
+                size="sm"
+                onClick={handleToggleBot}
+                disabled={toggleHandover.isPending}
               >
-                {clearContext.isPending ? (
+                {toggleHandover.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
+                ) : conversation.is_handover ? (
+                  <>
+                    <Bot className="h-4 w-4 mr-1" />
+                    เปิด Bot
+                  </>
                 ) : (
-                  <RotateCcw className="h-4 w-4" />
+                  <>
+                    <Headphones className="h-4 w-4 mr-1" />
+                    ตอบเอง
+                  </>
                 )}
               </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Reset บริบท Bot?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Bot จะเริ่มบริบทใหม่ ไม่อ้างอิงประวัติเก่า แต่คุณยังดูประวัติย้อนหลังได้
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                <AlertDialogAction onClick={handleClearContext}>
-                  Reset บริบท
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+
+              {/* Clear Context Button */}
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={clearContext.isPending}
+                    title="Reset บริบท Bot"
+                  >
+                    {clearContext.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="h-4 w-4" />
+                    )}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Reset บริบท Bot?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Bot จะเริ่มบริบทใหม่ ไม่อ้างอิงประวัติเก่า แต่คุณยังดูประวัติย้อนหลังได้
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleClearContext}>
+                      Reset บริบท
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          )}
 
           {/* Info Button (for tablet) */}
           <Button
@@ -452,15 +534,27 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
                 </span>
               </div>
 
-              {/* Messages - using memoized contextClearedAt */}
-              {messages.map((message, index) => (
-                <MemoizedMessageItem
-                  key={message.id}
-                  message={message}
-                  previousMessage={index > 0 ? messages[index - 1] : undefined}
-                  contextClearedAt={contextClearedAt}
-                />
-              ))}
+              {/* Messages - channel-specific rendering */}
+              {isTelegram ? (
+                // Telegram: Use TelegramMessageBubble for rich media support
+                messages.map((message, index) => (
+                  <TelegramMessageBubble
+                    key={message.id}
+                    message={message}
+                    previousMessage={index > 0 ? messages[index - 1] : undefined}
+                  />
+                ))
+              ) : (
+                // Other channels: Use standard MessageBubble with context separator
+                messages.map((message, index) => (
+                  <MemoizedMessageItem
+                    key={message.id}
+                    message={message}
+                    previousMessage={index > 0 ? messages[index - 1] : undefined}
+                    contextClearedAt={contextClearedAt}
+                  />
+                ))
+              )}
 
               {/* Scroll anchor */}
               <div ref={messagesEndRef} />
@@ -488,7 +582,18 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
           <div className="p-4 text-center text-sm text-muted-foreground">
             การสนทนานี้ปิดแล้ว
           </div>
+        ) : isTelegram ? (
+          // Telegram: Always show input (human-only mode) with media upload
+          <TelegramMessageInput
+            value={messageInput}
+            onChange={setMessageInput}
+            selectedMedia={selectedMedia}
+            onMediaSelect={setSelectedMedia}
+            onSubmit={handleSendTelegramMessage}
+            isLoading={sendAgentMessage.isPending}
+          />
         ) : conversation.is_handover ? (
+          // Other channels: Handover mode - show agent input
           <form onSubmit={handleSendMessage} className="p-2 sm:p-3">
             <div className="flex gap-2 max-w-3xl mx-auto">
               <div className="flex-1 relative">
@@ -521,6 +626,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
             </p>
           </form>
         ) : (
+          // Other channels: Bot mode - show bot indicator
           <div className="p-4 text-center text-sm text-muted-foreground">
             <Bot className="h-4 w-4 inline-block mr-1" />
             Bot กำลังตอบการสนทนานี้ กด "ตอบเอง" เพื่อตอบด้วยตนเอง
