@@ -8,11 +8,13 @@ use App\Http\Requests\Bot\UpdateBotRequest;
 use App\Http\Resources\BotResource;
 use App\Models\Bot;
 use App\Services\AIService;
+use App\Services\TelegramService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class BotController extends Controller
@@ -59,9 +61,12 @@ class BotController extends Controller
      */
     public function store(StoreBotRequest $request): JsonResponse
     {
+        $validated = $request->validated();
+        $channelType = $validated['channel_type'];
+
         $bot = $request->user()->bots()->create([
-            ...$request->validated(),
-            'webhook_url' => $this->generateWebhookUrl(),
+            ...$validated,
+            'webhook_url' => $this->generateWebhookUrl($channelType),
             'status' => 'inactive',
         ]);
 
@@ -82,12 +87,19 @@ class BotController extends Controller
 
         $bot->update(['default_flow_id' => $baseFlow->id]);
 
+        // Auto setup Telegram webhook if token is provided
+        $webhookSetup = null;
+        if ($channelType === 'telegram' && !empty($bot->channel_access_token)) {
+            $webhookSetup = $this->setupTelegramWebhook($bot);
+        }
+
         // Invalidate cache
         $this->invalidateBotListCache($request->user()->id);
 
         return response()->json([
             'message' => 'Bot created successfully',
             'data' => new BotResource($bot->load('defaultFlow')),
+            'webhook_setup' => $webhookSetup,
         ], 201);
     }
 
@@ -128,7 +140,20 @@ PROMPT;
     {
         $this->authorize('update', $bot);
 
-        $bot->update($request->validated());
+        $validated = $request->validated();
+
+        // Check if Telegram token changed (need to re-setup webhook)
+        $telegramTokenChanged = $bot->channel_type === 'telegram'
+            && isset($validated['channel_access_token'])
+            && $validated['channel_access_token'] !== $bot->channel_access_token;
+
+        $bot->update($validated);
+
+        // Re-setup webhook if Telegram token changed
+        $webhookSetup = null;
+        if ($telegramTokenChanged && !empty($bot->channel_access_token)) {
+            $webhookSetup = $this->setupTelegramWebhook($bot);
+        }
 
         // Invalidate cache
         $this->invalidateBotListCache($request->user()->id);
@@ -136,6 +161,7 @@ PROMPT;
         return response()->json([
             'message' => 'Bot updated successfully',
             'data' => new BotResource($bot->fresh()),
+            'webhook_setup' => $webhookSetup,
         ]);
     }
 
@@ -291,21 +317,66 @@ PROMPT;
         $this->authorize('update', $bot);
 
         $bot->update([
-            'webhook_url' => $this->generateWebhookUrl(),
+            'webhook_url' => $this->generateWebhookUrl($bot->channel_type),
         ]);
+
+        // Re-setup Telegram webhook with new URL
+        $webhookSetup = null;
+        if ($bot->channel_type === 'telegram' && !empty($bot->channel_access_token)) {
+            $webhookSetup = $this->setupTelegramWebhook($bot);
+        }
 
         return response()->json([
             'message' => 'Webhook URL regenerated successfully',
             'webhook_url' => $bot->webhook_url,
+            'webhook_setup' => $webhookSetup,
         ]);
     }
 
     /**
      * Generate a unique webhook URL.
      */
-    private function generateWebhookUrl(): string
+    private function generateWebhookUrl(string $channelType = 'line'): string
     {
         $token = Str::random(32);
-        return config('app.url') . '/webhook/' . $token;
+
+        // Platform-specific webhook paths
+        $path = match ($channelType) {
+            'telegram' => '/webhook/telegram/',
+            default => '/webhook/',
+        };
+
+        return config('app.url') . $path . $token;
+    }
+
+    /**
+     * Setup Telegram webhook automatically.
+     */
+    private function setupTelegramWebhook(Bot $bot): bool
+    {
+        try {
+            $telegramService = app(TelegramService::class);
+
+            // Validate token first by calling getMe
+            $telegramService->getMe($bot);
+
+            // Set webhook
+            $success = $telegramService->setWebhook($bot, $bot->webhook_url);
+
+            if ($success) {
+                Log::info('Telegram webhook setup successful', [
+                    'bot_id' => $bot->id,
+                    'webhook_url' => $bot->webhook_url,
+                ]);
+            }
+
+            return $success;
+        } catch (\Exception $e) {
+            Log::error('Telegram webhook setup failed', [
+                'bot_id' => $bot->id,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
     }
 }
