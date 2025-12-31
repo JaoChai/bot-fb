@@ -66,4 +66,29 @@ export const apiPatch = <T>(url: string, data?: unknown) =>
 export const apiDelete = <T>(url: string) =>
   api.delete<T>(url).then((res) => res.data);
 
+/**
+ * Extract error message from various error types
+ * Handles ApiError objects, Axios errors, and standard Error objects
+ */
+export function getErrorMessage(error: unknown): string {
+  if (!error) return 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ';
+
+  // ApiError from our interceptor
+  if (typeof error === 'object' && 'message' in error) {
+    return (error as { message: string }).message;
+  }
+
+  // Standard Error object
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  // Already a string
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  return 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ';
+}
+
 export default api;
