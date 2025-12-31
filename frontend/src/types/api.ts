@@ -210,6 +210,11 @@ export interface Flow {
   knowledge_bases?: FlowKnowledgeBase[];
   language: 'th' | 'en' | 'zh' | 'ja' | 'ko';
   is_default: boolean;
+  // Agent Safety
+  agent_timeout_seconds?: number;
+  agent_max_cost_per_request?: number | null;
+  hitl_enabled?: boolean;
+  hitl_dangerous_actions?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -245,6 +250,11 @@ export interface CreateFlowData {
   knowledge_bases?: CreateFlowKnowledgeBaseData[];
   language?: string;
   is_default?: boolean;
+  // Agent Safety
+  agent_timeout_seconds?: number;
+  agent_max_cost_per_request?: number | null;
+  hitl_enabled?: boolean;
+  hitl_dangerous_actions?: string[];
 }
 
 export interface UpdateFlowData extends Partial<CreateFlowData> {}
