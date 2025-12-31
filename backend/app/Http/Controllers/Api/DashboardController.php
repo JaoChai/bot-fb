@@ -202,7 +202,6 @@ class DashboardController extends Controller
                 Evaluation::STATUS_GENERATING_TESTS,
                 Evaluation::STATUS_RUNNING,
                 Evaluation::STATUS_EVALUATING,
-                Evaluation::STATUS_GENERATING_REPORT,
             ])
             ->with('bot:id,name')
             ->orderBy('created_at', 'asc')
