@@ -52,7 +52,7 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from 'recharts';
-import type { EvaluationTestCase } from '@/types/api';
+import type { EvaluationTestCase, EvaluationReport } from '@/types/api';
 
 // Status badge configuration
 const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: React.ElementType }> = {
@@ -278,11 +278,13 @@ function TestCaseDetailDialog({
             {testCase.detailed_feedback && (
               <div className="space-y-2">
                 <h4 className="font-medium">Feedback</h4>
-                <div className="text-sm bg-muted p-3 rounded-lg whitespace-pre-wrap">
-                  {typeof testCase.detailed_feedback === 'string'
-                    ? testCase.detailed_feedback
-                    : JSON.stringify(testCase.detailed_feedback, null, 2)}
-                </div>
+                <ScrollArea className="max-h-[200px]">
+                  <div className="text-sm bg-muted p-3 rounded-lg whitespace-pre-wrap">
+                    {typeof testCase.detailed_feedback === 'string'
+                      ? testCase.detailed_feedback
+                      : JSON.stringify(testCase.detailed_feedback, null, 2)}
+                  </div>
+                </ScrollArea>
               </div>
             )}
           </div>
@@ -292,7 +294,23 @@ function TestCaseDetailDialog({
   );
 }
 
-function ReportSection({ report }: { report: { executive_summary: string; strengths: string[]; weaknesses: string[]; recommendations: string[]; prompt_suggestions: string[]; kb_gaps: string[] } }) {
+function ReportSection({ report }: { report: EvaluationReport }) {
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'high': return 'bg-red-100 text-red-700';
+      case 'medium': return 'bg-yellow-100 text-yellow-700';
+      default: return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const getPriorityLabel = (priority: string) => {
+    switch (priority) {
+      case 'high': return 'สำคัญมาก';
+      case 'medium': return 'ปานกลาง';
+      default: return 'ทั่วไป';
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Executive Summary */}
@@ -304,7 +322,7 @@ function ReportSection({ report }: { report: { executive_summary: string; streng
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm leading-relaxed">{report.executive_summary}</p>
+          <div className="text-sm leading-relaxed whitespace-pre-wrap">{report.executive_summary}</div>
         </CardContent>
       </Card>
 
@@ -314,15 +332,21 @@ function ReportSection({ report }: { report: { executive_summary: string; streng
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base text-green-600">
               <ThumbsUp className="h-5 w-5" />
-              จุดแข็ง
+              จุดแข็ง ({report.strengths.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               {report.strengths.map((item, idx) => (
-                <li key={idx} className="flex items-start gap-2 text-sm">
+                <li key={idx} className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
-                  <span>{item}</span>
+                  <div>
+                    <div className="text-sm font-medium flex items-center gap-2">
+                      {item.label}
+                      <span className="text-green-600 text-xs">({(item.score * 100).toFixed(0)}%)</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">{item.description}</div>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -334,15 +358,21 @@ function ReportSection({ report }: { report: { executive_summary: string; streng
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base text-red-600">
               <AlertTriangle className="h-5 w-5" />
-              จุดที่ต้องปรับปรุง
+              จุดที่ต้องปรับปรุง ({report.weaknesses.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               {report.weaknesses.map((item, idx) => (
-                <li key={idx} className="flex items-start gap-2 text-sm">
+                <li key={idx} className="flex items-start gap-2">
                   <XCircle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
-                  <span>{item}</span>
+                  <div>
+                    <div className="text-sm font-medium flex items-center gap-2">
+                      {item.label}
+                      <span className="text-red-600 text-xs">({(item.score * 100).toFixed(0)}%)</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">{item.description}</div>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -355,17 +385,23 @@ function ReportSection({ report }: { report: { executive_summary: string; streng
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base text-blue-600">
             <Lightbulb className="h-5 w-5" />
-            คำแนะนำ
+            คำแนะนำ ({report.recommendations.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <ul className="space-y-2">
+          <ul className="space-y-4">
             {report.recommendations.map((item, idx) => (
-              <li key={idx} className="flex items-start gap-2 text-sm">
-                <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 text-xs flex items-center justify-center shrink-0">
-                  {idx + 1}
-                </span>
-                <span>{item}</span>
+              <li key={idx} className="border-l-2 border-blue-200 pl-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 text-xs flex items-center justify-center shrink-0">
+                    {idx + 1}
+                  </span>
+                  <span className="text-sm font-medium">{item.title}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded ${getPriorityColor(item.priority)}`}>
+                    {getPriorityLabel(item.priority)}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground ml-7">{item.description}</p>
               </li>
             ))}
           </ul>
@@ -379,10 +415,13 @@ function ReportSection({ report }: { report: { executive_summary: string; streng
             <CardTitle className="text-base">แนะนำปรับ Prompt</CardTitle>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-2">
+            <ul className="space-y-4">
               {report.prompt_suggestions.map((item, idx) => (
-                <li key={idx} className="text-sm bg-muted p-2 rounded">
-                  {item}
+                <li key={idx} className="space-y-2">
+                  <div className="text-sm font-medium">{item.suggestion}</div>
+                  <pre className="text-xs bg-muted p-3 rounded-lg overflow-x-auto whitespace-pre-wrap">
+                    {item.example}
+                  </pre>
                 </li>
               ))}
             </ul>
@@ -395,14 +434,20 @@ function ReportSection({ report }: { report: { executive_summary: string; streng
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">ช่องว่าง Knowledge Base</CardTitle>
-            <CardDescription>ข้อมูลที่ควรเพิ่มใน KB</CardDescription>
+            <CardDescription>หัวข้อที่ควรเพิ่มข้อมูลใน KB</CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="space-y-2">
               {report.kb_gaps.map((item, idx) => (
-                <li key={idx} className="text-sm flex items-start gap-2">
-                  <span className="text-orange-600">!</span>
-                  <span>{item}</span>
+                <li key={idx} className="text-sm flex items-start gap-2 p-2 bg-orange-50 rounded">
+                  <AlertTriangle className="h-4 w-4 text-orange-600 mt-0.5 shrink-0" />
+                  <div>
+                    {item.topics.map((topic, tidx) => (
+                      <span key={tidx} className="inline-block bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-xs mr-1 mb-1">
+                        {topic}
+                      </span>
+                    ))}
+                  </div>
                 </li>
               ))}
             </ul>

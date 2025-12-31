@@ -523,15 +523,46 @@ export interface EvaluationMetricScores {
   task_completion: number | null;
 }
 
+export interface ReportStrength {
+  metric: string;
+  label: string;
+  score: number;
+  description: string;
+}
+
+export interface ReportWeakness {
+  metric: string;
+  label: string;
+  score: number;
+  description: string;
+}
+
+export interface ReportRecommendation {
+  title: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface ReportPromptSuggestion {
+  suggestion: string;
+  example: string;
+}
+
+export interface ReportKbGap {
+  topics: string[];
+  test_case_id: number;
+  score: number;
+}
+
 export interface EvaluationReport {
   id: number;
   evaluation_id: number;
   executive_summary: string;
-  strengths: string[];
-  weaknesses: string[];
-  recommendations: string[];
-  prompt_suggestions: string[];
-  kb_gaps: string[];
+  strengths: ReportStrength[];
+  weaknesses: ReportWeakness[];
+  recommendations: ReportRecommendation[];
+  prompt_suggestions: ReportPromptSuggestion[];
+  kb_gaps: ReportKbGap[];
   historical_comparison: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
