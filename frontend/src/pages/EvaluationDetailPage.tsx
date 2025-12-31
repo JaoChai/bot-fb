@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { getErrorMessage } from '@/lib/api';
+import { formatTHB } from '@/lib/currency';
 import {
   useEvaluation,
   useEvaluationTestCases,
@@ -34,7 +35,7 @@ import {
   TrendingUp,
   RotateCcw,
   StopCircle,
-  DollarSign,
+  Banknote,
   MessageSquare,
   User,
   Bot,
@@ -696,8 +697,8 @@ export function EvaluationDetailPage() {
                     </div>
                     <div>
                       <div className="text-2xl font-bold flex items-center justify-center gap-1">
-                        <DollarSign className="h-5 w-5" />
-                        {evaluation.estimated_cost.toFixed(2)}
+                        <Banknote className="h-5 w-5" />
+                        {formatTHB(evaluation.estimated_cost)}
                       </div>
                       <div className="text-sm text-muted-foreground">ค่าใช้จ่าย</div>
                     </div>
