@@ -24,7 +24,7 @@ import {
   useUpdateConnection,
   useDeleteConnection,
 } from '@/hooks/useConnections';
-import { ArrowLeft, Loader2, Eye, EyeOff, ExternalLink, Trash2, MessageCircle, Settings, Cpu, Key, Zap, Copy, Check, Send } from 'lucide-react';
+import { ArrowLeft, Loader2, Eye, EyeOff, ExternalLink, Trash2, MessageCircle, Settings, Cpu, Key, Zap, Copy, Check, Send, User } from 'lucide-react';
 import { ModelConfiguration } from '@/components/ModelSelector';
 import { cn } from '@/lib/utils';
 
@@ -304,7 +304,11 @@ export function EditConnectionPage() {
               </h1>
               {isEditMode && getPlatformBadge()}
             </div>
-            <p className="text-muted-foreground text-sm mt-1">กำหนดค่า API และ LLM Models</p>
+            <p className="text-muted-foreground text-sm mt-1">
+              {formData.platform === 'telegram'
+                ? 'ตั้งค่า Bot Token และ Webhook'
+                : 'กำหนดค่า API และ LLM Models'}
+            </p>
           </div>
           {isEditMode && (
             <div className="flex items-center gap-2">
@@ -320,6 +324,28 @@ export function EditConnectionPage() {
             </div>
           )}
         </div>
+
+        {/* Platform Mode Banner - Telegram Human Only */}
+        {formData.platform === 'telegram' && (
+          <div className="bg-[#0088CC]/5 border border-[#0088CC]/20 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="bg-[#0088CC]/10 p-2 rounded-full">
+                <User className="h-5 w-5 text-[#0088CC]" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">Human Only</span>
+                  <Badge variant="outline" className="bg-[#0088CC]/10 text-[#0088CC] border-[#0088CC]/30">
+                    Telegram
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  ข้อความจะส่งตรงถึงทีม Support ไม่มี AI ตอบอัตโนมัติ
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <Card>
           <CardContent className="p-6 space-y-8">
@@ -509,61 +535,66 @@ export function EditConnectionPage() {
               </>
             )}
 
-            {/* OpenRouter API Note */}
-            <div className="border-t" />
-            <Section
-              icon={Key}
-              title="OpenRouter API"
-              description="ตั้งค่า API Key สำหรับเชื่อมต่อกับ AI Models"
-            >
-              <div className="text-sm text-muted-foreground bg-muted/50 rounded-lg px-4 py-3 max-w-md">
-                <p className="mb-2">OpenRouter API Key ตั้งค่าที่หน้า Settings เพียงที่เดียว</p>
-                <Button variant="link" className="h-auto p-0 text-sm" asChild>
-                  <a href="/settings">
-                    ไปที่หน้า Settings <ExternalLink className="h-3 w-3 ml-1" />
-                  </a>
-                </Button>
-              </div>
-            </Section>
+            {/* AI-related sections - Hide for Telegram (Human Only mode) */}
+            {formData.platform !== 'telegram' && (
+              <>
+                {/* OpenRouter API Note */}
+                <div className="border-t" />
+                <Section
+                  icon={Key}
+                  title="OpenRouter API"
+                  description="ตั้งค่า API Key สำหรับเชื่อมต่อกับ AI Models"
+                >
+                  <div className="text-sm text-muted-foreground bg-muted/50 rounded-lg px-4 py-3 max-w-md">
+                    <p className="mb-2">OpenRouter API Key ตั้งค่าที่หน้า Settings เพียงที่เดียว</p>
+                    <Button variant="link" className="h-auto p-0 text-sm" asChild>
+                      <a href="/settings">
+                        ไปที่หน้า Settings <ExternalLink className="h-3 w-3 ml-1" />
+                      </a>
+                    </Button>
+                  </div>
+                </Section>
 
-            {/* LLM Models Section */}
-            <div className="border-t" />
-            <Section
-              icon={Cpu}
-              title="AI Models"
-              description="เลือก model สำหรับตอบคำถามและตัดสินใจ"
-            >
-              <ModelConfiguration
-                primaryModel={formData.primary_chat_model}
-                fallbackModel={formData.fallback_chat_model}
-                decisionModel={formData.decision_model}
-                fallbackDecisionModel={formData.fallback_decision_model}
-                onPrimaryChange={(value) => handleChange('primary_chat_model', value)}
-                onFallbackChange={(value) => handleChange('fallback_chat_model', value)}
-                onDecisionChange={(value) => handleChange('decision_model', value)}
-                onFallbackDecisionChange={(value) => handleChange('fallback_decision_model', value)}
-                showDecisionModels={true}
-              />
-            </Section>
+                {/* LLM Models Section */}
+                <div className="border-t" />
+                <Section
+                  icon={Cpu}
+                  title="AI Models"
+                  description="เลือก model สำหรับตอบคำถามและตัดสินใจ"
+                >
+                  <ModelConfiguration
+                    primaryModel={formData.primary_chat_model}
+                    fallbackModel={formData.fallback_chat_model}
+                    decisionModel={formData.decision_model}
+                    fallbackDecisionModel={formData.fallback_decision_model}
+                    onPrimaryChange={(value) => handleChange('primary_chat_model', value)}
+                    onFallbackChange={(value) => handleChange('fallback_chat_model', value)}
+                    onDecisionChange={(value) => handleChange('decision_model', value)}
+                    onFallbackDecisionChange={(value) => handleChange('fallback_decision_model', value)}
+                    showDecisionModels={true}
+                  />
+                </Section>
 
-            {/* Advanced Options Section */}
-            <div className="border-t" />
-            <Section
-              icon={Settings}
-              title="ตัวเลือกขั้นสูง"
-            >
-              <div className="flex items-center justify-between max-w-md">
-                <div>
-                  <Label htmlFor="webhook-forwarder" className="font-normal">Webhook Forwarder</Label>
-                  <p className="text-xs text-muted-foreground">ส่ง webhook ไปยัง URL อื่นด้วย</p>
-                </div>
-                <Switch
-                  id="webhook-forwarder"
-                  checked={formData.webhook_forwarder_enabled}
-                  onCheckedChange={(checked) => handleChange('webhook_forwarder_enabled', checked)}
-                />
-              </div>
-            </Section>
+                {/* Advanced Options Section */}
+                <div className="border-t" />
+                <Section
+                  icon={Settings}
+                  title="ตัวเลือกขั้นสูง"
+                >
+                  <div className="flex items-center justify-between max-w-md">
+                    <div>
+                      <Label htmlFor="webhook-forwarder" className="font-normal">Webhook Forwarder</Label>
+                      <p className="text-xs text-muted-foreground">ส่ง webhook ไปยัง URL อื่นด้วย</p>
+                    </div>
+                    <Switch
+                      id="webhook-forwarder"
+                      checked={formData.webhook_forwarder_enabled}
+                      onCheckedChange={(checked) => handleChange('webhook_forwarder_enabled', checked)}
+                    />
+                  </div>
+                </Section>
+              </>
+            )}
           </CardContent>
         </Card>
 
