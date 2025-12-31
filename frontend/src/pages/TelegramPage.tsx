@@ -1,0 +1,285 @@
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Loader2, Send } from 'lucide-react';
+import { useBots } from '@/hooks/useKnowledgeBase';
+import { useInfiniteConversations, useMarkAsRead } from '@/hooks/useConversations';
+import { useBotChannel } from '@/hooks/useEcho';
+import { TelegramConversationList } from '@/components/telegram/TelegramConversationList';
+import { TelegramChatWindow } from '@/components/telegram/TelegramChatWindow';
+import { TelegramInfoPanel } from '@/components/telegram/TelegramInfoPanel';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { cn } from '@/lib/utils';
+import type { Conversation, ConversationFilters } from '@/types/api';
+
+export function TelegramPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryClient = useQueryClient();
+
+  // Get botId from URL
+  const botIdParam = searchParams.get('botId');
+  const botId = botIdParam ? parseInt(botIdParam, 10) : null;
+
+  // Selected conversation
+  const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
+
+  // Filters
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [search, setSearch] = useState('');
+
+  // Mobile info panel
+  const [showInfoPanel, setShowInfoPanel] = useState(false);
+
+  // Mobile chat view (master-detail navigation)
+  const [showMobileChat, setShowMobileChat] = useState(false);
+
+  // Bots query - filter for Telegram bots only
+  const { data: botsResponse, isLoading: isBotsLoading } = useBots();
+  const telegramBots = useMemo(
+    () => (botsResponse?.data || []).filter((b) => b.channel_type === 'telegram'),
+    [botsResponse?.data]
+  );
+
+  // Memoize filters to prevent unnecessary query re-creations
+  const filters = useMemo<ConversationFilters>(() => ({
+    status: statusFilter === 'all' ? undefined : statusFilter,
+    search: search || undefined,
+    channel_type: 'telegram',
+    sort_by: 'last_message_at',
+    sort_direction: 'desc',
+    per_page: 30,
+  }), [statusFilter, search]);
+
+  const {
+    data: conversationsData,
+    isLoading: isConversationsLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteConversations(botId ?? undefined, filters);
+
+  // Memoize flattened conversations to avoid recreating array on every render
+  const conversations = useMemo(
+    () => conversationsData?.pages.flatMap((page) => page.data) || [],
+    [conversationsData?.pages]
+  );
+  const statusCounts = conversationsData?.pages[0]?.meta?.status_counts;
+
+  // Selected conversation
+  const selectedConversation = conversations.find((c) => c.id === selectedConversationId);
+
+  // Mark as read mutation
+  const markAsRead = useMarkAsRead(botId ?? undefined);
+
+  // Real-time WebSocket callbacks (memoized to prevent re-subscriptions)
+  const handleRealtimeMessage = useCallback(
+    (event: { conversation_id: number }) => {
+      // Invalidate messages for the specific conversation
+      queryClient.invalidateQueries({
+        queryKey: ['conversation-messages', botId, event.conversation_id],
+      });
+      // Also update conversation list (for last_message_at, unread_count)
+      queryClient.invalidateQueries({
+        queryKey: ['conversations-infinite', botId],
+      });
+    },
+    [queryClient, botId]
+  );
+
+  const handleConversationUpdate = useCallback(
+    () => {
+      // Invalidate conversation list
+      queryClient.invalidateQueries({
+        queryKey: ['conversations-infinite', botId],
+      });
+    },
+    [queryClient, botId]
+  );
+
+  const handleNewConversation = useCallback(
+    () => {
+      // Invalidate conversation list to show new conversation
+      queryClient.invalidateQueries({
+        queryKey: ['conversations-infinite', botId],
+      });
+    },
+    [queryClient, botId]
+  );
+
+  // Subscribe to bot channel for real-time updates
+  useBotChannel(botId, {
+    onMessage: handleRealtimeMessage,
+    onConversationUpdate: handleConversationUpdate,
+    onNewConversation: handleNewConversation,
+  });
+
+  // Handle bot selection (memoized to prevent child re-renders)
+  const handleBotSelect = useCallback((value: string) => {
+    setSearchParams({ botId: value });
+    setSelectedConversationId(null);
+    setShowMobileChat(false);
+  }, [setSearchParams]);
+
+  // Handle conversation selection (memoized to prevent child re-renders)
+  const handleConversationSelect = useCallback((conversation: Conversation) => {
+    setSelectedConversationId(conversation.id);
+    setShowMobileChat(true);
+
+    // Mark as read if has unread messages
+    if (conversation.unread_count > 0) {
+      markAsRead.mutate(conversation.id);
+    }
+  }, [markAsRead]);
+
+  // Handle back to list (mobile) - memoized
+  const handleBackToList = useCallback(() => {
+    setShowMobileChat(false);
+  }, []);
+
+  // Handle show info panel (memoized to prevent ChatWindow re-renders)
+  const handleShowInfo = useCallback(() => {
+    setShowInfoPanel(true);
+  }, []);
+
+  // Auto-select first conversation if none selected (desktop only)
+  useEffect(() => {
+    const isDesktop = window.matchMedia('(min-width: 768px)').matches;
+    if (isDesktop && conversations.length > 0 && !selectedConversationId) {
+      const firstConv = conversations[0];
+      setSelectedConversationId(firstConv.id);
+      if (firstConv.unread_count > 0) {
+        markAsRead.mutate(firstConv.id);
+      }
+    }
+  }, [conversations, selectedConversationId, markAsRead]);
+
+  // No bot selected - show bot selector
+  if (!botId) {
+    return (
+      <div className="flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-64px)] items-center justify-center">
+        <div className="text-center space-y-4 max-w-md">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#0088CC]/10">
+            <Send className="h-8 w-8 text-[#0088CC]" />
+          </div>
+          <h1 className="text-2xl font-bold">Telegram Support</h1>
+          <p className="text-muted-foreground">
+            เลือก Telegram Bot เพื่อดูรายการสนทนา
+          </p>
+          {isBotsLoading ? (
+            <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+          ) : telegramBots.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              ยังไม่มี Telegram Bot - กรุณาเพิ่ม Bot ใน Settings
+            </p>
+          ) : (
+            <Select onValueChange={handleBotSelect}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="เลือก Telegram Bot..." />
+              </SelectTrigger>
+              <SelectContent>
+                {telegramBots.map((bot) => (
+                  <SelectItem key={bot.id} value={bot.id.toString()}>
+                    {bot.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="-m-4 md:-m-6 flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-64px)] overflow-hidden bg-background">
+      {/* Left Panel: Conversation List */}
+      <div className={cn(
+        'w-full md:w-80 flex-shrink-0 border-r flex flex-col',
+        showMobileChat && 'hidden md:flex'
+      )}>
+        {/* Bot Selector */}
+        <div className="p-3 border-b bg-[#0088CC]/5">
+          <Select value={botId.toString()} onValueChange={handleBotSelect}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="เลือก Telegram Bot" />
+            </SelectTrigger>
+            <SelectContent>
+              {telegramBots.map((bot) => (
+                <SelectItem key={bot.id} value={bot.id.toString()}>
+                  {bot.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Conversation List */}
+        <TelegramConversationList
+          conversations={conversations}
+          selectedId={selectedConversationId}
+          onSelect={handleConversationSelect}
+          isLoading={isConversationsLoading}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          search={search}
+          onSearchChange={setSearch}
+          statusCounts={statusCounts}
+          hasNextPage={hasNextPage}
+          isFetchingNextPage={isFetchingNextPage}
+          fetchNextPage={fetchNextPage}
+        />
+      </div>
+
+      {/* Center Panel: Chat Window */}
+      <div className={cn(
+        'flex-1 flex flex-col min-w-0',
+        !showMobileChat && 'hidden md:flex'
+      )}>
+        {selectedConversation ? (
+          <TelegramChatWindow
+            botId={botId}
+            conversation={selectedConversation}
+            onShowInfo={handleShowInfo}
+            onBack={handleBackToList}
+          />
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            <div className="text-center">
+              <Send className="h-12 w-12 mx-auto mb-4 opacity-50 text-[#0088CC]" />
+              <p>เลือกการสนทนาเพื่อดูข้อความ</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Right Panel: Customer Info (Desktop) */}
+      <div className="w-96 flex-shrink-0 border-l hidden xl:block overflow-y-auto">
+        {selectedConversation && (
+          <TelegramInfoPanel
+            botId={botId}
+            conversation={selectedConversation}
+          />
+        )}
+      </div>
+
+      {/* Mobile Info Panel Sheet */}
+      <Sheet open={showInfoPanel} onOpenChange={setShowInfoPanel}>
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+          {selectedConversation && (
+            <TelegramInfoPanel
+              botId={botId}
+              conversation={selectedConversation}
+            />
+          )}
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}

@@ -17,6 +17,8 @@ class Conversation extends Model
         'customer_profile_id',
         'external_customer_id',
         'channel_type',
+        'telegram_chat_type',
+        'telegram_chat_title',
         'status',
         'is_handover',
         'bot_auto_enable_at',

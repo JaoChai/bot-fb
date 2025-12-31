@@ -56,7 +56,7 @@ export interface Bot {
   name: string;
   description: string | null;
   status: 'active' | 'inactive' | 'paused';
-  channel_type: 'line' | 'facebook' | 'testing';
+  channel_type: 'line' | 'facebook' | 'testing' | 'telegram';
   webhook_url: string;
   webhook_forwarder_enabled: boolean;
   // Multi-model LLM configuration (API key now in User Settings)
@@ -88,7 +88,7 @@ export interface Bot {
 // Connection/Bot creation data (API key now in User Settings)
 export interface CreateConnectionData {
   name: string;
-  channel_type: 'line' | 'facebook' | 'testing';
+  channel_type: 'line' | 'facebook' | 'testing' | 'telegram';
   primary_chat_model?: string;
   fallback_chat_model?: string;
   decision_model?: string;
@@ -102,7 +102,7 @@ export interface CreateConnectionData {
 export interface UpdateConnectionData {
   name?: string;
   status?: 'active' | 'inactive' | 'paused';
-  channel_type?: 'line' | 'facebook' | 'testing';
+  channel_type?: 'line' | 'facebook' | 'testing' | 'telegram';
   primary_chat_model?: string;
   fallback_chat_model?: string;
   decision_model?: string;
@@ -307,7 +307,7 @@ export interface BulkTagsData {
 export interface CustomerProfile {
   id: number;
   external_id: string;
-  channel_type: 'line' | 'facebook' | 'demo';
+  channel_type: 'line' | 'facebook' | 'demo' | 'telegram';
   display_name: string | null;
   picture_url: string | null;
   phone: string | null;
@@ -327,7 +327,7 @@ export interface Message {
   conversation_id: number;
   sender: 'user' | 'bot' | 'agent';
   content: string;
-  type: 'text' | 'image' | 'file' | 'sticker' | 'location' | 'audio' | 'video' | 'template' | 'flex';
+  type: 'text' | 'image' | 'file' | 'sticker' | 'location' | 'audio' | 'video' | 'template' | 'flex' | 'photo' | 'voice' | 'contact' | 'poll';
   media_url: string | null;
   media_type: string | null;
   media_metadata: Record<string, unknown> | null;
@@ -348,9 +348,12 @@ export interface Conversation {
   bot_id: number;
   customer_profile_id: number | null;
   external_customer_id: string;
-  channel_type: 'line' | 'facebook' | 'demo';
+  channel_type: 'line' | 'facebook' | 'demo' | 'telegram';
   status: 'active' | 'closed' | 'handover';
   is_handover: boolean;
+  // Telegram-specific fields
+  telegram_chat_type?: 'private' | 'group' | 'supergroup' | 'channel' | null;
+  telegram_chat_title?: string | null;
   assigned_user_id: number | null;
   memory_notes: ConversationNote[] | null;
   tags: string[];
@@ -765,7 +768,7 @@ export interface DashboardBotSummary {
   id: number;
   name: string;
   status: 'active' | 'inactive' | 'paused';
-  channel_type: 'line' | 'facebook' | 'testing';
+  channel_type: 'line' | 'facebook' | 'testing' | 'telegram';
   last_active_at: string | null;
   conversation_count: number;
   active_conversations: number;

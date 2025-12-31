@@ -12,6 +12,10 @@ import {
   getRailwayLogs,
   getRailwayStatus,
   deployToRailway,
+  listRailwayServices,
+  getRailwayVariables,
+  setRailwayVariable,
+  restartRailwayService,
 } from "../clients/railway.js";
 import { isLocalMode } from "../utils/config.js";
 import {
@@ -40,6 +44,8 @@ export async function handleExecute(
     service,
     lines = 100,
     confirm,
+    variable_name,
+    variable_value,
   } = input;
 
   try {
@@ -172,6 +178,67 @@ export async function handleExecute(
         return createSuccessResult({
           output: result.stdout || result.stderr,
         }, "Railway status retrieved");
+      }
+
+      case "railway_services": {
+        const result = await listRailwayServices(config);
+        if (!result.success) {
+          return createErrorResult(`Failed to list services: ${result.stderr}`);
+        }
+        try {
+          const services = JSON.parse(result.stdout);
+          return createSuccessResult({ services }, "Railway services listed");
+        } catch {
+          return createSuccessResult({
+            output: result.stdout,
+          }, "Railway services listed (raw)");
+        }
+      }
+
+      case "railway_variables": {
+        const result = await getRailwayVariables(service, config);
+        if (!result.success) {
+          return createErrorResult(`Failed to get variables: ${result.stderr}`);
+        }
+        try {
+          const variables = JSON.parse(result.stdout);
+          return createSuccessResult({
+            service: service || "all",
+            variables,
+          }, "Railway variables retrieved");
+        } catch {
+          return createSuccessResult({
+            service: service || "all",
+            output: result.stdout,
+          }, "Railway variables retrieved (raw)");
+        }
+      }
+
+      case "railway_set_variable": {
+        if (!variable_name) {
+          return createErrorResult("variable_name is required");
+        }
+        if (variable_value === undefined) {
+          return createErrorResult("variable_value is required");
+        }
+        const result = await setRailwayVariable(variable_name, variable_value, service, config);
+        return result.success
+          ? createSuccessResult({
+              name: variable_name,
+              service: service || "all",
+            }, `Variable ${variable_name} set successfully`)
+          : createErrorResult(`Failed to set variable: ${result.stderr}`);
+      }
+
+      case "railway_redeploy": {
+        const svc = validateRailwayService(service);
+        const result = await restartRailwayService(svc, config);
+        return result.success
+          ? createSuccessResult({
+              service: svc,
+              output: result.stdout,
+            }, `Service ${svc} redeployed`)
+          : createErrorResult(`Redeploy failed: ${result.stderr}`);
       }
 
       // ============================================

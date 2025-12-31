@@ -39,4 +39,16 @@ export declare function checkRailwayConnection(config: ServerConfig): Promise<{
     connected: boolean;
     project?: string;
 }>;
+/**
+ * List Railway services in the project
+ */
+export declare function listRailwayServices(config: ServerConfig): Promise<ShellResult>;
+/**
+ * Get Railway environment variables
+ */
+export declare function getRailwayVariables(service: string | undefined, config: ServerConfig): Promise<ShellResult>;
+/**
+ * Set Railway environment variable
+ */
+export declare function setRailwayVariable(name: string, value: string, service: string | undefined, config: ServerConfig): Promise<ShellResult>;
 //# sourceMappingURL=railway.d.ts.map

@@ -182,38 +182,40 @@ PROMPT;
 
         $userMessage = $request->input('message');
 
-        // Use AI service if configured, otherwise return placeholder
-        if ($aiService->isAvailable()) {
-            try {
-                $result = $aiService->testBotConfiguration($bot, $userMessage);
+        // Check if API key is available: User Settings > ENV
+        $apiKey = $bot->user?->settings?->openrouter_api_key
+            ?? config('services.openrouter.api_key');
 
-                return response()->json([
-                    'message' => 'Test completed successfully',
-                    'input' => $userMessage,
-                    'response' => $result['content'],
-                    'bot_id' => $bot->id,
-                    'model' => $result['model'],
-                    'usage' => $result['usage'],
-                    'cost' => $result['cost'],
-                ]);
-            } catch (\Exception $e) {
-                return response()->json([
-                    'message' => 'AI service error',
-                    'input' => $userMessage,
-                    'response' => 'Failed to generate AI response: ' . $e->getMessage(),
-                    'bot_id' => $bot->id,
-                    'error' => true,
-                ], 500);
-            }
+        if (empty($apiKey)) {
+            return response()->json([
+                'message' => 'Test message received',
+                'input' => $userMessage,
+                'response' => 'กรุณาตั้งค่า OpenRouter API Key ที่หน้า Settings ก่อนทดสอบ',
+                'bot_id' => $bot->id,
+            ]);
         }
 
-        // Placeholder response when AI not configured
-        return response()->json([
-            'message' => 'Test message received',
-            'input' => $userMessage,
-            'response' => 'AI service not configured. Add OPENROUTER_API_KEY to enable AI responses.',
-            'bot_id' => $bot->id,
-        ]);
+        try {
+            $result = $aiService->testBotConfiguration($bot, $userMessage);
+
+            return response()->json([
+                'message' => 'Test completed successfully',
+                'input' => $userMessage,
+                'response' => $result['content'],
+                'bot_id' => $bot->id,
+                'model' => $result['model'],
+                'usage' => $result['usage'],
+                'cost' => $result['cost'],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'AI service error',
+                'input' => $userMessage,
+                'response' => 'Failed to generate AI response: ' . $e->getMessage(),
+                'bot_id' => $bot->id,
+                'error' => true,
+            ], 500);
+        }
     }
 
     /**
