@@ -225,12 +225,12 @@ class EvaluationService
     }
 
     /**
-     * Cancel a running evaluation
+     * Cancel a running or pending evaluation
      */
     public function cancelEvaluation(Evaluation $evaluation): void
     {
-        if (!$evaluation->isRunning()) {
-            throw new \RuntimeException('Evaluation is not running');
+        if (!$evaluation->isRunning() && !$evaluation->isPending()) {
+            throw new \RuntimeException('Evaluation cannot be cancelled');
         }
 
         $evaluation->markAsFailed('Cancelled by user');

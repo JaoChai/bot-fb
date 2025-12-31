@@ -136,9 +136,10 @@ class EvaluationController extends Controller
         $this->authorize('update', $bot);
         $this->ensureEvaluationBelongsToBot($evaluation, $bot);
 
-        if (!$evaluation->isRunning()) {
+        // Allow cancelling both pending and running evaluations
+        if (!$evaluation->isRunning() && !$evaluation->isPending()) {
             return response()->json([
-                'message' => 'Evaluation is not running',
+                'message' => 'Evaluation cannot be cancelled (already completed or failed)',
             ], 422);
         }
 
