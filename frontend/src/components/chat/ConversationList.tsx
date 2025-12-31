@@ -13,6 +13,7 @@ import type { Conversation, ConversationStatusCounts } from '@/types/api';
 const channelColors: Record<string, string> = {
   line: 'text-[#06C755]',
   facebook: 'text-[#0084FF]',
+  telegram: 'text-[#0088CC]',
   demo: 'text-destructive',
 };
 
