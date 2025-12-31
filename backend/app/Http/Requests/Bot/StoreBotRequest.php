@@ -17,7 +17,7 @@ class StoreBotRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
-            'channel_type' => ['required', Rule::in(['line', 'facebook', 'testing', 'demo'])],
+            'channel_type' => ['required', Rule::in(['line', 'facebook', 'telegram', 'testing', 'demo'])],
             'channel_access_token' => ['nullable', 'string'],
             'channel_secret' => ['nullable', 'string'],
             'page_id' => ['nullable', 'string'],
