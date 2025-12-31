@@ -334,7 +334,7 @@ class ProcessTelegramWebhook implements ShouldQueue
             'external_id' => $externalId,
             'channel_type' => 'telegram',
             'display_name' => $displayName ?: 'Telegram User',
-            'picture_url' => null, // Telegram doesn't provide profile picture in webhook
+            'picture_url' => $this->fetchUserProfilePhoto($parsed, $telegramService),
             'first_interaction_at' => now(),
             'last_interaction_at' => now(),
             'interaction_count' => 1,
@@ -345,6 +345,25 @@ class ProcessTelegramWebhook implements ShouldQueue
                 'chat_title' => $parsed['chat_title'],
             ],
         ]);
+    }
+
+    /**
+     * Fetch user profile photo from Telegram API.
+     * Only fetches for private chats (individual users).
+     */
+    protected function fetchUserProfilePhoto(array $parsed, TelegramService $telegramService): ?string
+    {
+        // Only fetch for private chats (individual users)
+        if ($parsed['chat_type'] !== 'private') {
+            return null;
+        }
+
+        $userId = $parsed['user_id'] ?? null;
+        if (!$userId) {
+            return null;
+        }
+
+        return $telegramService->getUserProfilePhoto($this->bot, $userId);
     }
 
     /**
