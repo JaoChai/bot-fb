@@ -1,0 +1,9 @@
+metric,weight,description_th,description_en,good_score,bad_score,improvement_tips
+answer_relevancy,0.25,คำตอบตรงประเด็นหรือไม่,Does the response address the question,>0.8,<0.5,ปรับปรุง system prompt ให้ focus มากขึ้น
+faithfulness,0.25,คำตอบ based on KB หรือไม่,Is the response grounded in KB context,>0.85,<0.6,เพิ่ม KB content หรือลด hallucination ด้วย strict prompt
+role_adherence,0.20,ปฏิบัติตามบทบาทหรือไม่,Does the bot follow its system prompt,>0.8,<0.5,ปรับ system prompt ให้ชัดเจนขึ้น
+context_precision,0.15,Retrieved chunks เกี่ยวข้องหรือไม่,Were the most relevant KB chunks retrieved,>0.7,<0.4,ปรับ threshold หรือใช้ reranking
+task_completion,0.15,User บรรลุเป้าหมายหรือไม่,Did the user achieve their goal,>0.75,<0.5,เพิ่ม KB coverage หรือปรับ flow logic
+retrieval_precision,N/A,จำนวน relevant chunks / total retrieved,Relevant chunks divided by total retrieved,>0.7,<0.3,เพิ่ม threshold หรือลด kb_max_results
+retrieval_recall,N/A,จำนวน relevant retrieved / total relevant in KB,Relevant retrieved divided by total relevant,>0.6,<0.3,ลด threshold หรือเพิ่ม kb_max_results
+semantic_score_avg,N/A,ค่าเฉลี่ย similarity score,Average similarity score of retrieved chunks,>0.65,<0.5,ปรับปรุง embeddings หรือ KB content

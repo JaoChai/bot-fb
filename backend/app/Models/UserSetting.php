@@ -11,6 +11,11 @@ class UserSetting extends Model
         'user_id',
         'openrouter_api_key',
         'openrouter_model',
+        // Cost limits
+        'max_daily_cost',
+        'max_monthly_cost',
+        'cost_alert_enabled',
+        'cost_alert_threshold',
         'line_channel_secret',
         'line_channel_access_token',
     ];
@@ -22,6 +27,11 @@ class UserSetting extends Model
         'openrouter_api_key' => 'encrypted',
         'line_channel_secret' => 'encrypted',
         'line_channel_access_token' => 'encrypted',
+        // Cost limits
+        'max_daily_cost' => 'decimal:2',
+        'max_monthly_cost' => 'decimal:2',
+        'cost_alert_enabled' => 'boolean',
+        'cost_alert_threshold' => 'integer',
     ];
 
     /**

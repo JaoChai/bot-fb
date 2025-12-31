@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Bot;
 use App\Models\Flow;
 use App\Models\User;
+use App\Services\AgentSafetyService;
+use App\Services\CostTrackingService;
 use App\Services\HybridSearchService;
 use App\Services\OpenRouterService;
 use App\Services\ToolService;
@@ -31,6 +33,8 @@ class StreamController extends Controller
     protected OpenRouterService $openRouter;
     protected HybridSearchService $hybridSearch;
     protected ToolService $toolService;
+    protected CostTrackingService $costTracking;
+    protected AgentSafetyService $agentSafety;
 
     // Track process metrics
     protected array $metrics = [
@@ -44,11 +48,15 @@ class StreamController extends Controller
     public function __construct(
         OpenRouterService $openRouter,
         HybridSearchService $hybridSearch,
-        ToolService $toolService
+        ToolService $toolService,
+        CostTrackingService $costTracking,
+        AgentSafetyService $agentSafety
     ) {
         $this->openRouter = $openRouter;
         $this->hybridSearch = $hybridSearch;
         $this->toolService = $toolService;
+        $this->costTracking = $costTracking;
+        $this->agentSafety = $agentSafety;
     }
 
     /**
@@ -115,7 +123,7 @@ class StreamController extends Controller
 
                 // === AGENTIC MODE: Use Agent Loop ===
                 if ($flow->agentic_mode && !empty($flow->enabled_tools)) {
-                    $this->runAgentLoop($bot, $flow, $message, $conversationHistory, $apiKey);
+                    $this->runAgentLoop($bot, $flow, $message, $conversationHistory, $apiKey, $user);
                 } else {
                     // === STANDARD MODE: Decision → KB → Chat ===
 
@@ -687,17 +695,24 @@ PROMPT;
      * Run Agent Loop with tool calling (Agentic Mode).
      *
      * Implements ReAct pattern: Think → Act → Observe → Repeat
+     * Includes safety mechanisms: timeout, cost limits, HITL approval
      */
     protected function runAgentLoop(
         Bot $bot,
         Flow $flow,
         string $message,
         array $conversationHistory,
-        string $apiKey
+        string $apiKey,
+        ?User $user = null
     ): void {
         $maxIterations = $flow->max_tool_calls ?? 10;
         $tools = $this->toolService->getToolDefinitions($flow->enabled_tools ?? []);
         $chatModel = $this->getChatModel($bot);
+
+        // === SAFETY: Initialize tracking ===
+        $requestId = $this->costTracking->startRequest();
+        $loopStartTime = microtime(true);
+        $safetyConfig = $this->agentSafety->getSafetyConfig($flow);
 
         // Build initial messages
         $systemPrompt = $this->buildAgentSystemPrompt($bot, $flow);
@@ -707,16 +722,55 @@ PROMPT;
             'max_iterations' => $maxIterations,
             'tools' => array_map(fn($t) => $t['function']['name'] ?? 'unknown', $tools),
             'model' => $chatModel,
+            'safety' => [
+                'timeout_seconds' => $safetyConfig['timeout_seconds'],
+                'max_cost' => $safetyConfig['max_cost_per_request'],
+                'hitl_enabled' => $safetyConfig['hitl_enabled'],
+            ],
         ]);
 
         $iteration = 0;
+        $finalStatus = 'completed';
+        $errorMessage = null;
 
         while ($iteration < $maxIterations) {
             $iteration++;
-            $iterationStart = microtime(true);
+
+            // === SAFETY: Check timeout ===
+            $safetyViolation = $this->agentSafety->checkLimits(
+                $flow,
+                $loopStartTime,
+                $this->costTracking->getRunningCost(),
+                $user?->id ?? 0
+            );
+
+            if ($safetyViolation) {
+                $this->sendSSE('agent_safety_stop', [
+                    'type' => $safetyViolation['type'],
+                    'details' => $safetyViolation,
+                    'iteration' => $iteration,
+                ]);
+
+                $finalStatus = $safetyViolation['type'] === 'timeout' ? 'timeout' : 'cost_limit';
+                break;
+            }
+
+            // === SAFETY: Check daily cost limit ===
+            if ($user && $this->costTracking->exceedsDailyLimit($user)) {
+                $this->sendSSE('agent_safety_stop', [
+                    'type' => 'daily_limit',
+                    'message' => 'ถึงวงเงินรายวันแล้ว',
+                    'iteration' => $iteration,
+                ]);
+
+                $finalStatus = 'cost_limit';
+                break;
+            }
 
             $this->sendSSE('agent_thinking', [
                 'iteration' => $iteration,
+                'elapsed_seconds' => round(microtime(true) - $loopStartTime, 1),
+                'running_cost' => round($this->costTracking->getRunningCost(), 6),
             ]);
 
             try {
@@ -731,9 +785,14 @@ PROMPT;
                     toolChoice: 'auto'
                 );
 
+                // === SAFETY: Track cost ===
+                $promptTokens = $response['usage']['prompt_tokens'] ?? 0;
+                $completionTokens = $response['usage']['completion_tokens'] ?? 0;
+                $this->costTracking->addCost($chatModel, $promptTokens, $completionTokens);
+
                 $this->metrics['models_used'][] = $response['model'] ?? $chatModel;
-                $this->metrics['prompt_tokens'] += $response['usage']['prompt_tokens'] ?? 0;
-                $this->metrics['completion_tokens'] += $response['usage']['completion_tokens'] ?? 0;
+                $this->metrics['prompt_tokens'] += $promptTokens;
+                $this->metrics['completion_tokens'] += $completionTokens;
 
                 $finishReason = $response['finish_reason'] ?? 'stop';
 
@@ -742,10 +801,53 @@ PROMPT;
                     // Process each tool call
                     foreach ($response['tool_calls'] as $toolCall) {
                         $this->metrics['tool_calls']++;
+                        $this->costTracking->addToolCall();
 
                         $toolId = $toolCall['id'] ?? 'tool_' . $iteration;
                         $toolName = $toolCall['function']['name'] ?? 'unknown';
                         $toolArgs = json_decode($toolCall['function']['arguments'] ?? '{}', true) ?: [];
+
+                        // === SAFETY: Check HITL approval for dangerous actions ===
+                        if ($this->agentSafety->requiresApproval($flow, $toolName, $toolArgs)) {
+                            $approvalId = $this->agentSafety->requestApproval(
+                                $requestId,
+                                $flow,
+                                $toolName,
+                                $toolArgs,
+                                60 // 60 second timeout
+                            );
+
+                            $this->sendSSE('agent_approval_required', [
+                                'approval_id' => $approvalId,
+                                'tool_name' => $toolName,
+                                'tool_args' => $toolArgs,
+                                'timeout_seconds' => 60,
+                            ]);
+
+                            // Wait for approval (blocking)
+                            $approval = $this->agentSafety->waitForApproval($approvalId, 60);
+
+                            $this->sendSSE('agent_approval_response', [
+                                'approval_id' => $approvalId,
+                                'approved' => $approval['approved'],
+                                'reason' => $approval['reason'] ?? null,
+                            ]);
+
+                            if (!$approval['approved']) {
+                                // Skip this tool call
+                                $messages[] = [
+                                    'role' => 'assistant',
+                                    'content' => null,
+                                    'tool_calls' => [$toolCall],
+                                ];
+                                $messages[] = [
+                                    'role' => 'tool',
+                                    'tool_call_id' => $toolId,
+                                    'content' => 'Action was rejected by user: ' . ($approval['reason'] ?? 'No reason provided'),
+                                ];
+                                continue;
+                            }
+                        }
 
                         // Send tool call event
                         $this->sendSSE('tool_call', [
@@ -797,6 +899,8 @@ PROMPT;
                 $this->sendSSE('agent_done', [
                     'iterations' => $iteration,
                     'total_tool_calls' => $this->metrics['tool_calls'],
+                    'total_cost' => round($this->costTracking->getRunningCost(), 6),
+                    'elapsed_seconds' => round(microtime(true) - $loopStartTime, 1),
                 ]);
 
                 // Stream final response if available
@@ -837,6 +941,9 @@ PROMPT;
                     'reason' => 'Tool calling failed, generating direct response',
                 ]);
 
+                $finalStatus = 'error';
+                $errorMessage = $e->getMessage();
+
                 // Fall back to regular chat
                 $fallbackMessages = $this->buildMessages(
                     $this->getDefaultSystemPrompt($bot),
@@ -854,6 +961,22 @@ PROMPT;
                 'iterations' => $iteration,
                 'message' => 'ถึงจำนวนรอบสูงสุดแล้ว',
             ]);
+        }
+
+        // === SAFETY: Finalize cost tracking ===
+        $durationMs = round((microtime(true) - $loopStartTime) * 1000);
+
+        if ($user) {
+            $this->costTracking->finalizeRequest(
+                userId: $user->id,
+                botId: $bot->id,
+                flowId: $flow->id,
+                status: $finalStatus,
+                durationMs: $durationMs,
+                iterations: $iteration,
+                modelUsed: $chatModel,
+                errorMessage: $errorMessage
+            );
         }
     }
 

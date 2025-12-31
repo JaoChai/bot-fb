@@ -43,6 +43,15 @@ class Bot extends Model
         'kb_enabled',
         'kb_relevance_threshold',
         'kb_max_results',
+        // Semantic Router settings
+        'use_semantic_router',
+        'semantic_router_threshold',
+        'semantic_router_fallback',
+        // Confidence Cascade settings
+        'use_confidence_cascade',
+        'cascade_confidence_threshold',
+        'cascade_cheap_model',
+        'cascade_expensive_model',
         // Stats
         'total_conversations',
         'total_messages',
@@ -59,6 +68,12 @@ class Bot extends Model
         'kb_enabled' => 'boolean',
         'kb_relevance_threshold' => 'float',
         'kb_max_results' => 'integer',
+        // Semantic Router settings
+        'use_semantic_router' => 'boolean',
+        'semantic_router_threshold' => 'float',
+        // Confidence Cascade settings
+        'use_confidence_cascade' => 'boolean',
+        'cascade_confidence_threshold' => 'float',
     ];
 
     protected $hidden = [

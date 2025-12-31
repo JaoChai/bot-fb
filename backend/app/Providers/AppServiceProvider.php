@@ -8,12 +8,16 @@ use App\Models\KnowledgeBase;
 use App\Policies\BotPolicy;
 use App\Policies\DocumentPolicy;
 use App\Policies\KnowledgeBasePolicy;
+use App\Services\ConfidenceCascadeService;
 use App\Services\HybridSearchService;
 use App\Services\JinaRerankerService;
 use App\Services\KeywordSearchService;
 use App\Services\OpenRouterService;
 use App\Services\QueryEnhancementService;
+use App\Services\QueryRewriterService;
 use App\Services\RAGService;
+use App\Services\RetrievalEvaluatorService;
+use App\Services\SemanticRouterService;
 use App\Services\SemanticSearchService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -39,13 +43,17 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
-        // Register RAGService with QueryEnhancementService dependency
+        // Register RAGService with all dependencies
         $this->app->singleton(RAGService::class, function ($app) {
             return new RAGService(
                 $app->make(SemanticSearchService::class),
                 $app->make(HybridSearchService::class),
                 $app->make(OpenRouterService::class),
-                $app->make(QueryEnhancementService::class)
+                $app->make(QueryEnhancementService::class),
+                $app->make(SemanticRouterService::class),
+                $app->make(ConfidenceCascadeService::class),
+                $app->make(RetrievalEvaluatorService::class),
+                $app->make(QueryRewriterService::class)
             );
         });
     }
