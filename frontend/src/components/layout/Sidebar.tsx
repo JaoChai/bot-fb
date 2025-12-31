@@ -25,6 +25,7 @@ import {
   Target,
   Sun,
   Moon,
+  Users,
 } from 'lucide-react';
 
 const mainNavItems = [
@@ -120,6 +121,25 @@ export function Sidebar() {
             {!sidebarCollapsed && <span>{item.title}</span>}
           </NavLink>
         ))}
+
+        {/* Team - Owner only */}
+        {user?.role === 'owner' && (
+          <NavLink
+            to="/team"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                isActive
+                  ? 'bg-foreground text-background'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                sidebarCollapsed && 'justify-center px-2'
+              )
+            }
+          >
+            <Users className="h-4 w-4 shrink-0" />
+            {!sidebarCollapsed && <span>จัดการทีม</span>}
+          </NavLink>
+        )}
       </nav>
 
       {/* Bottom Section */}
