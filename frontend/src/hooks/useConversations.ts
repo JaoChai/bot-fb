@@ -558,7 +558,7 @@ export function useBulkAddTags(botId: number | undefined) {
 
 interface SendAgentMessageData {
   content: string;
-  type?: 'text' | 'image' | 'file';
+  type?: 'text' | 'image' | 'video' | 'audio' | 'file';
   media_url?: string;
 }
 

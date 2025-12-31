@@ -42,6 +42,7 @@ import type { Conversation, Message } from '@/types/api';
 import { TelegramMessageBubble } from '@/components/telegram/TelegramMessageBubble';
 import { TelegramMessageInput } from '@/components/telegram/TelegramMessageInput';
 import { LINEMessageBubble } from '@/components/line/LINEMessageBubble';
+import { LINEMessageInput } from '@/components/line/LINEMessageInput';
 
 const channelLabels: Record<string, string> = {
   line: 'LINE',
@@ -286,21 +287,43 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
     }
   }, [messageInput, sendAgentMessage, conversation.id, toast]);
 
-  // Handle send telegram message (memoized)
-  // TODO: Add media upload support when backend supports it
+  // Handle send telegram message with media upload (memoized)
   const handleSendTelegramMessage = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!messageInput.trim() && !selectedMedia) return;
 
     const content = messageInput.trim();
+    const media = selectedMedia;
     setMessageInput('');
     setSelectedMedia(null);
 
     try {
-      // For now, just send text (same as regular agent message)
+      let mediaUrl: string | undefined;
+      let mediaType: 'text' | 'image' | 'video' | 'audio' | 'file' = 'text';
+
+      // Upload media if present
+      if (media) {
+        const formData = new FormData();
+        formData.append('file', media);
+
+        const { api } = await import('@/lib/api');
+        const uploadResponse = await api.post<{ url: string; type: string }>(
+          `/bots/${botId}/conversations/${conversation.id}/upload`,
+          formData,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        );
+
+        mediaUrl = uploadResponse.data.url;
+        mediaType = uploadResponse.data.type as 'image' | 'video' | 'audio' | 'file';
+      }
+
       const result = await sendAgentMessage.mutateAsync({
         conversationId: conversation.id,
-        data: { content },
+        data: {
+          content: content || `[${mediaType}]`,
+          type: mediaType,
+          media_url: mediaUrl,
+        },
       });
 
       if (result.delivery_error) {
@@ -312,13 +335,71 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
       }
     } catch {
       setMessageInput(content);
+      if (media) setSelectedMedia(media);
       toast({
         title: 'เกิดข้อผิดพลาด',
         description: 'ไม่สามารถส่งข้อความได้',
         variant: 'destructive',
       });
     }
-  }, [messageInput, selectedMedia, sendAgentMessage, conversation.id, toast]);
+  }, [messageInput, selectedMedia, sendAgentMessage, conversation.id, botId, toast]);
+
+  // Handle send LINE message with media upload (memoized)
+  const handleSendLINEMessage = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!messageInput.trim() && !selectedMedia) return;
+
+    const content = messageInput.trim();
+    const media = selectedMedia;
+    setMessageInput('');
+    setSelectedMedia(null);
+
+    try {
+      let mediaUrl: string | undefined;
+      let mediaType: 'text' | 'image' | 'video' | 'audio' = 'text';
+
+      // Upload media if present
+      if (media) {
+        const formData = new FormData();
+        formData.append('file', media);
+
+        const { api } = await import('@/lib/api');
+        const uploadResponse = await api.post<{ url: string; type: string }>(
+          `/bots/${botId}/conversations/${conversation.id}/upload`,
+          formData,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        );
+
+        mediaUrl = uploadResponse.data.url;
+        mediaType = uploadResponse.data.type as 'image' | 'video' | 'audio';
+      }
+
+      const result = await sendAgentMessage.mutateAsync({
+        conversationId: conversation.id,
+        data: {
+          content: content || `[${mediaType}]`,
+          type: mediaType,
+          media_url: mediaUrl,
+        },
+      });
+
+      if (result.delivery_error) {
+        toast({
+          title: 'บันทึกข้อความแล้ว แต่ส่งไม่สำเร็จ',
+          description: result.delivery_error,
+          variant: 'destructive',
+        });
+      }
+    } catch {
+      setMessageInput(content);
+      if (media) setSelectedMedia(media);
+      toast({
+        title: 'เกิดข้อผิดพลาด',
+        description: 'ไม่สามารถส่งข้อความได้',
+        variant: 'destructive',
+      });
+    }
+  }, [messageInput, selectedMedia, sendAgentMessage, conversation.id, botId, toast]);
 
   // Handle toggle bot (memoized)
   const handleToggleBot = useCallback(async () => {
@@ -604,8 +685,18 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
             onSubmit={handleSendTelegramMessage}
             isLoading={sendAgentMessage.isPending}
           />
+        ) : isLINE && conversation.is_handover ? (
+          // LINE: Handover mode - show LINE input with media upload support
+          <LINEMessageInput
+            value={messageInput}
+            onChange={setMessageInput}
+            selectedMedia={selectedMedia}
+            onMediaSelect={setSelectedMedia}
+            onSubmit={handleSendLINEMessage}
+            isLoading={sendAgentMessage.isPending}
+          />
         ) : conversation.is_handover ? (
-          // Other channels: Handover mode - show agent input
+          // Other channels: Handover mode - show basic text input
           <form onSubmit={handleSendMessage} className="p-2 sm:p-3">
             <div className="flex gap-2 max-w-3xl mx-auto">
               <div className="flex-1 relative">

@@ -346,6 +346,48 @@ class LINEService
     }
 
     /**
+     * Create an image message.
+     * LINE requires HTTPS URLs. Max image size: 10MB.
+     */
+    public function imageMessage(string $originalUrl, ?string $previewUrl = null): array
+    {
+        return [
+            'type' => 'image',
+            'originalContentUrl' => $originalUrl,
+            'previewImageUrl' => $previewUrl ?? $originalUrl,
+        ];
+    }
+
+    /**
+     * Create a video message.
+     * LINE requires HTTPS URLs and a preview image. Max video size: 200MB.
+     */
+    public function videoMessage(string $originalUrl, ?string $previewUrl = null): array
+    {
+        // Use a default video thumbnail if none provided
+        $defaultPreview = 'https://cdn.botjao.com/defaults/video-thumbnail.png';
+
+        return [
+            'type' => 'video',
+            'originalContentUrl' => $originalUrl,
+            'previewImageUrl' => $previewUrl ?? $defaultPreview,
+        ];
+    }
+
+    /**
+     * Create an audio message.
+     * LINE requires HTTPS URLs. Duration in milliseconds (max 1 minute = 60000ms).
+     */
+    public function audioMessage(string $originalUrl, int $durationMs = 60000): array
+    {
+        return [
+            'type' => 'audio',
+            'originalContentUrl' => $originalUrl,
+            'duration' => min($durationMs, 60000),
+        ];
+    }
+
+    /**
      * Format messages for LINE API.
      */
     protected function formatMessages(array $messages): array
