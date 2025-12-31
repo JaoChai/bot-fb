@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Search, Loader2, MessageCircle, Bot, Headphones, Users, User } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
@@ -89,37 +90,42 @@ export function ConversationList({
       <div className="p-2 border-b">
         <Tabs value={statusFilter} onValueChange={onStatusFilterChange}>
           <TabsList className="w-full grid grid-cols-3 h-11">
-            <TabsTrigger value="all" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
-              <span className="truncate">ทั้งหมด</span>
+            <TabsTrigger value="all" className="text-xs sm:text-sm h-10 px-2 sm:px-3 gap-1.5">
+              <MessageCircle className="h-4 w-4 flex-shrink-0" />
+              <span className="truncate hidden sm:inline">ทั้งหมด</span>
               {statusCounts && (
-                <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4 hidden sm:inline-flex">
+                <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 hidden sm:inline-flex">
                   {statusCounts.total}
                 </Badge>
               )}
             </TabsTrigger>
             {isTelegram ? (
               <>
-                <TabsTrigger value="group" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+                <TabsTrigger value="group" className="text-xs sm:text-sm h-10 px-2 sm:px-3 gap-1.5">
+                  <Users className="h-4 w-4 flex-shrink-0" />
                   <span className="truncate">กลุ่ม</span>
                 </TabsTrigger>
-                <TabsTrigger value="private" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+                <TabsTrigger value="private" className="text-xs sm:text-sm h-10 px-2 sm:px-3 gap-1.5">
+                  <User className="h-4 w-4 flex-shrink-0" />
                   <span className="truncate">ส่วนตัว</span>
                 </TabsTrigger>
               </>
             ) : (
               <>
-                <TabsTrigger value="active" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
-                  <span className="truncate">ใช้งาน</span>
+                <TabsTrigger value="active" className="text-xs sm:text-sm h-10 px-2 sm:px-3 gap-1.5">
+                  <Bot className="h-4 w-4 flex-shrink-0" />
+                  <span className="truncate hidden sm:inline">ใช้งาน</span>
                   {statusCounts && (
-                    <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4 hidden sm:inline-flex">
+                    <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 hidden sm:inline-flex">
                       {statusCounts.active}
                     </Badge>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="handover" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
-                  <span className="truncate">รอตอบ</span>
+                <TabsTrigger value="handover" className="text-xs sm:text-sm h-10 px-2 sm:px-3 gap-1.5">
+                  <Headphones className="h-4 w-4 flex-shrink-0" />
+                  <span className="truncate hidden sm:inline">รอตอบ</span>
                   {statusCounts && statusCounts.handover > 0 && (
-                    <Badge className="ml-1 text-xs px-1 py-0 h-4 bg-destructive">
+                    <Badge className="text-xs px-1.5 py-0 h-5 bg-destructive text-destructive-foreground">
                       {statusCounts.handover}
                     </Badge>
                   )}
@@ -133,8 +139,11 @@ export function ConversationList({
       {/* Conversation List */}
       <ScrollArea className="flex-1">
         {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          // Skeleton loading - better perceived performance
+          <div className="p-2 space-y-1">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <ConversationSkeleton key={i} />
+            ))}
           </div>
         ) : conversations.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
@@ -172,6 +181,23 @@ interface ConversationItemProps {
   conversation: Conversation;
   isSelected: boolean;
   onSelect: (conversation: Conversation) => void;
+}
+
+// Skeleton loading component for conversation list
+function ConversationSkeleton() {
+  return (
+    <div className="w-full p-3 rounded-lg flex items-start gap-3 min-h-[72px]">
+      <Skeleton className="h-12 w-12 md:h-10 md:w-10 rounded-full flex-shrink-0" />
+      <div className="flex-1 min-w-0 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-3 w-10" />
+        </div>
+        <Skeleton className="h-3 w-16" />
+        <Skeleton className="h-5 w-20" />
+      </div>
+    </div>
+  );
 }
 
 // Memoized conversation item - handles all channel types

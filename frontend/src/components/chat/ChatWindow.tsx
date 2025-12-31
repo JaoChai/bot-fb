@@ -379,13 +379,14 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
       {/* Header */}
       <div className="flex items-center justify-between p-2 sm:p-3 border-b bg-background">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-          {/* Back button - mobile only */}
+          {/* Back button - mobile only, prominent for easy navigation */}
           {onBack && (
             <Button
-              variant="ghost"
+              variant="outline"
               size="icon"
-              className="md:hidden h-9 w-9 flex-shrink-0"
+              className="md:hidden h-10 w-10 min-h-[40px] min-w-[40px] flex-shrink-0 border-2"
               onClick={onBack}
+              aria-label="กลับไปรายการสนทนา"
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>

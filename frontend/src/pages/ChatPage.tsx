@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, MessageSquare, MessageCircle } from 'lucide-react';
+import { Loader2, MessageSquare, MessageCircle, MessagesSquare, Send } from 'lucide-react';
 import { useBots } from '@/hooks/useKnowledgeBase';
 import { useInfiniteConversations, useMarkAsRead } from '@/hooks/useConversations';
 import { useBotChannel } from '@/hooks/useEcho';
@@ -20,12 +20,12 @@ import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types/api';
 
-// Channel tabs configuration
+// Channel tabs configuration with icons for better UX
 const channelTabs = [
-  { value: 'all', label: 'ทั้งหมด', color: '' },
-  { value: 'line', label: 'LINE', color: 'text-[#06C755]' },
-  { value: 'facebook', label: 'Facebook', color: 'text-[#0084FF]' },
-  { value: 'telegram', label: 'Telegram', color: 'text-[#0088CC]' },
+  { value: 'all', label: 'ทั้งหมด', shortLabel: 'ทั้งหมด', color: '', bgActive: '', icon: MessagesSquare },
+  { value: 'line', label: 'LINE', shortLabel: 'LINE', color: 'text-[#06C755]', bgActive: 'data-[state=active]:bg-[#06C755] data-[state=active]:text-white', icon: MessageCircle },
+  { value: 'facebook', label: 'Facebook', shortLabel: 'FB', color: 'text-[#0084FF]', bgActive: 'data-[state=active]:bg-[#0084FF] data-[state=active]:text-white', icon: Send },
+  { value: 'telegram', label: 'Telegram', shortLabel: 'TG', color: 'text-[#0088CC]', bgActive: 'data-[state=active]:bg-[#0088CC] data-[state=active]:text-white', icon: Send },
 ] as const;
 
 export function ChatPage() {
@@ -250,22 +250,29 @@ export function ChatPage() {
           </Select>
         </div>
 
-        {/* Channel Tabs */}
+        {/* Channel Tabs - Touch-friendly with icons */}
         <div className="p-2 border-b bg-muted/10">
           <Tabs value={channelFilter} onValueChange={handleChannelFilterChange}>
-            <TabsList className="w-full grid grid-cols-4 h-9">
-              {channelTabs.map((tab) => (
-                <TabsTrigger
-                  key={tab.value}
-                  value={tab.value}
-                  className={cn('text-xs px-1', tab.color)}
-                >
-                  {tab.value === 'all' ? (
-                    <MessageCircle className="h-3.5 w-3.5 mr-1 hidden sm:inline" />
-                  ) : null}
-                  {tab.label}
-                </TabsTrigger>
-              ))}
+            <TabsList className="w-full grid grid-cols-4 h-11 gap-1">
+              {channelTabs.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <TabsTrigger
+                    key={tab.value}
+                    value={tab.value}
+                    className={cn(
+                      'h-10 min-h-[40px] px-2 text-xs sm:text-sm gap-1.5',
+                      'transition-all duration-200',
+                      tab.color,
+                      tab.bgActive
+                    )}
+                  >
+                    <Icon className="h-4 w-4 flex-shrink-0" />
+                    <span className="hidden sm:inline truncate">{tab.label}</span>
+                    <span className="sm:hidden truncate">{tab.shortLabel}</span>
+                  </TabsTrigger>
+                );
+              })}
             </TabsList>
           </Tabs>
         </div>
@@ -302,9 +309,12 @@ export function ChatPage() {
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            <div className="text-center">
-              <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>เลือกการสนทนาเพื่อเริ่มแชท</p>
+            <div className="text-center p-6 max-w-sm">
+              <div className="mx-auto w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
+                <MessageSquare className="h-8 w-8 opacity-50" />
+              </div>
+              <h3 className="font-medium text-foreground mb-2">เลือกการสนทนา</h3>
+              <p className="text-sm">เลือกการสนทนาจากรายการด้านซ้ายเพื่อเริ่มแชท</p>
             </div>
           </div>
         )}
