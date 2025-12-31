@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\FlowController;
 use App\Http\Controllers\Api\KnowledgeBaseController;
 use App\Http\Controllers\Api\StreamController;
 use App\Http\Controllers\Api\UserSettingController;
+use App\Http\Controllers\Api\EvaluationController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
@@ -175,6 +176,24 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
             ->middleware('throttle:60,1') // 60 messages per minute per user
             ->name('conversations.agent-message');
     });
+
+    // Evaluation routes (nested under bots)
+    Route::prefix('bots/{bot}/evaluations')->group(function () {
+        Route::get('/', [EvaluationController::class, 'index'])->name('evaluations.index');
+        Route::post('/', [EvaluationController::class, 'store'])->name('evaluations.store');
+        Route::get('/{evaluation}', [EvaluationController::class, 'show'])->name('evaluations.show');
+        Route::delete('/{evaluation}', [EvaluationController::class, 'destroy'])->name('evaluations.destroy');
+        Route::post('/{evaluation}/cancel', [EvaluationController::class, 'cancel'])->name('evaluations.cancel');
+        Route::post('/{evaluation}/retry', [EvaluationController::class, 'retry'])->name('evaluations.retry');
+        Route::get('/{evaluation}/progress', [EvaluationController::class, 'progress'])->name('evaluations.progress');
+        Route::get('/{evaluation}/test-cases', [EvaluationController::class, 'testCases'])->name('evaluations.test-cases');
+        Route::get('/{evaluation}/test-cases/{testCase}', [EvaluationController::class, 'testCaseDetail'])->name('evaluations.test-case-detail');
+        Route::get('/{evaluation}/report', [EvaluationController::class, 'report'])->name('evaluations.report');
+        Route::get('/compare', [EvaluationController::class, 'compare'])->name('evaluations.compare');
+    });
+
+    // Evaluation personas (shared across all bots)
+    Route::get('/evaluation-personas', [EvaluationController::class, 'personas'])->name('evaluations.personas');
 });
 
 // Health check endpoint (no rate limiting needed)

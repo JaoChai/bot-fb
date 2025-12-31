@@ -12,6 +12,7 @@ import {
   Settings,
   Sparkles,
   LogOut,
+  Target,
 } from 'lucide-react';
 
 interface MobileNavProps {
@@ -38,6 +39,11 @@ const mainNavItems = [
     title: 'แชท',
     href: '/chat',
     icon: MessageSquare,
+  },
+  {
+    title: 'AI Evaluation',
+    href: '/evaluations',
+    icon: Target,
   },
 ];
 

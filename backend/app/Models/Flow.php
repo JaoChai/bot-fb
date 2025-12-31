@@ -54,4 +54,9 @@ class Flow extends Model
     {
         return $this->hasMany(Conversation::class, 'current_flow_id');
     }
+
+    public function evaluations(): HasMany
+    {
+        return $this->hasMany(Evaluation::class);
+    }
 }
