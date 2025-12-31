@@ -243,23 +243,6 @@ const PERSONA_ICONS: Record<string, React.ElementType> = {
   complaint: MessageSquare,
 };
 
-// Model options for evaluation
-const MODEL_OPTIONS = {
-  fast: [
-    { value: 'anthropic/claude-3-haiku-20240307', label: 'Claude 3 Haiku', description: 'เร็ว ราคาถูก' },
-    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini', description: 'เร็ว ราคาถูก' },
-    { value: 'google/gemini-flash-1.5', label: 'Gemini Flash 1.5', description: 'เร็วมาก' },
-  ],
-  balanced: [
-    { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet', description: 'สมดุล แนะนำ', recommended: true },
-    { value: 'openai/gpt-4o', label: 'GPT-4o', description: 'สมดุล' },
-    { value: 'google/gemini-pro-1.5', label: 'Gemini Pro 1.5', description: 'สมดุล' },
-  ],
-  powerful: [
-    { value: 'anthropic/claude-3-opus', label: 'Claude 3 Opus', description: 'แม่นยำสูงสุด' },
-    { value: 'openai/gpt-4-turbo', label: 'GPT-4 Turbo', description: 'แม่นยำสูง' },
-  ],
-};
 
 function CreateEvaluationDialog({
   open,
@@ -286,9 +269,9 @@ function CreateEvaluationDialog({
     name: '',
     test_count: 40,
     personas: [],
-    generator_model: 'anthropic/claude-3-haiku-20240307',
-    simulator_model: 'anthropic/claude-3-haiku-20240307',
-    judge_model: 'anthropic/claude-3.5-sonnet',
+    generator_model: 'openai/gpt-4.1-mini',
+    simulator_model: 'openai/gpt-4.1-mini',
+    judge_model: 'openai/gpt-4.1',
     include_multi_turn: true,
     include_edge_cases: true,
   });
@@ -315,9 +298,9 @@ function CreateEvaluationDialog({
         name: '',
         test_count: 40,
         personas: [],
-        generator_model: 'anthropic/claude-3-haiku-20240307',
-        simulator_model: 'anthropic/claude-3-haiku-20240307',
-        judge_model: 'anthropic/claude-3.5-sonnet',
+        generator_model: 'openai/gpt-4.1-mini',
+        simulator_model: 'openai/gpt-4.1-mini',
+        judge_model: 'openai/gpt-4.1',
         include_multi_turn: true,
         include_edge_cases: true,
       });
@@ -510,7 +493,7 @@ function CreateEvaluationDialog({
             <div className="text-sm">
               <p className="font-medium text-blue-900 dark:text-blue-100">ระบบใช้ 3 โมเดล</p>
               <p className="text-blue-700 dark:text-blue-300 mt-1 text-xs sm:text-sm">
-                Generator → Simulator → Judge
+                ใส่ชื่อโมเดลจาก OpenRouter เช่น openai/gpt-4.1-mini
               </p>
             </div>
           </div>
@@ -526,44 +509,11 @@ function CreateEvaluationDialog({
                 <p className="text-xs text-muted-foreground truncate">สร้าง test cases</p>
               </div>
             </div>
-            <Select
-              value={formData.generator_model}
-              onValueChange={(value) => setFormData((prev) => ({ ...prev, generator_model: value }))}
-            >
-              <SelectTrigger className="min-h-[44px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">เร็ว & ประหยัด</div>
-                {MODEL_OPTIONS.fast.map((model) => (
-                  <SelectItem key={model.value} value={model.value} className="min-h-[44px]">
-                    <span>{model.label}</span>
-                  </SelectItem>
-                ))}
-                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-1">สมดุล</div>
-                {MODEL_OPTIONS.balanced.map((model) => (
-                  <SelectItem key={model.value} value={model.value} className="min-h-[44px]">
-                    <span>{model.label}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="bg-background px-2 text-muted-foreground">หรือพิมพ์เอง</span>
-              </div>
-            </div>
             <Input
-              placeholder="เช่น meta-llama/llama-3-70b-instruct"
+              value={formData.generator_model}
+              placeholder="เช่น openai/gpt-4.1-mini"
               className="min-h-[44px] font-mono text-sm"
-              onChange={(e) => {
-                if (e.target.value.trim()) {
-                  setFormData((prev) => ({ ...prev, generator_model: e.target.value.trim() }));
-                }
-              }}
+              onChange={(e) => setFormData((prev) => ({ ...prev, generator_model: e.target.value }))}
             />
           </div>
 
@@ -578,44 +528,11 @@ function CreateEvaluationDialog({
                 <p className="text-xs text-muted-foreground truncate">จำลองลูกค้า</p>
               </div>
             </div>
-            <Select
-              value={formData.simulator_model}
-              onValueChange={(value) => setFormData((prev) => ({ ...prev, simulator_model: value }))}
-            >
-              <SelectTrigger className="min-h-[44px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">เร็ว & ประหยัด</div>
-                {MODEL_OPTIONS.fast.map((model) => (
-                  <SelectItem key={model.value} value={model.value} className="min-h-[44px]">
-                    <span>{model.label}</span>
-                  </SelectItem>
-                ))}
-                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-1">สมดุล</div>
-                {MODEL_OPTIONS.balanced.map((model) => (
-                  <SelectItem key={model.value} value={model.value} className="min-h-[44px]">
-                    <span>{model.label}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="bg-background px-2 text-muted-foreground">หรือพิมพ์เอง</span>
-              </div>
-            </div>
             <Input
-              placeholder="เช่น meta-llama/llama-3-70b-instruct"
+              value={formData.simulator_model}
+              placeholder="เช่น openai/gpt-4.1-mini"
               className="min-h-[44px] font-mono text-sm"
-              onChange={(e) => {
-                if (e.target.value.trim()) {
-                  setFormData((prev) => ({ ...prev, simulator_model: e.target.value.trim() }));
-                }
-              }}
+              onChange={(e) => setFormData((prev) => ({ ...prev, simulator_model: e.target.value }))}
             />
           </div>
 
@@ -630,47 +547,11 @@ function CreateEvaluationDialog({
                 <p className="text-xs text-muted-foreground truncate">ประเมินคุณภาพ</p>
               </div>
             </div>
-            <Select
-              value={formData.judge_model}
-              onValueChange={(value) => setFormData((prev) => ({ ...prev, judge_model: value }))}
-            >
-              <SelectTrigger className="min-h-[44px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">สมดุล (แนะนำ)</div>
-                {MODEL_OPTIONS.balanced.map((model) => (
-                  <SelectItem key={model.value} value={model.value} className="min-h-[44px]">
-                    <div className="flex items-center gap-2">
-                      <span>{model.label}</span>
-                      {model.recommended && <Badge variant="secondary" className="text-xs">แนะนำ</Badge>}
-                    </div>
-                  </SelectItem>
-                ))}
-                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-1">แม่นยำสูง</div>
-                {MODEL_OPTIONS.powerful.map((model) => (
-                  <SelectItem key={model.value} value={model.value} className="min-h-[44px]">
-                    <span>{model.label}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="bg-background px-2 text-muted-foreground">หรือพิมพ์เอง</span>
-              </div>
-            </div>
             <Input
-              placeholder="เช่น anthropic/claude-3-opus"
+              value={formData.judge_model}
+              placeholder="เช่น openai/gpt-4.1"
               className="min-h-[44px] font-mono text-sm"
-              onChange={(e) => {
-                if (e.target.value.trim()) {
-                  setFormData((prev) => ({ ...prev, judge_model: e.target.value.trim() }));
-                }
-              }}
+              onChange={(e) => setFormData((prev) => ({ ...prev, judge_model: e.target.value }))}
             />
           </div>
         </TabsContent>
