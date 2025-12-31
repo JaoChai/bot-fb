@@ -18,7 +18,7 @@ class UpdateBotRequest extends FormRequest
             'name' => ['sometimes', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
             'status' => ['sometimes', Rule::in(['active', 'inactive', 'paused'])],
-            'channel_type' => ['sometimes', Rule::in(['line', 'facebook', 'testing', 'demo'])],
+            'channel_type' => ['sometimes', Rule::in(['line', 'facebook', 'telegram', 'testing', 'demo'])],
             'channel_access_token' => ['nullable', 'string'],
             'channel_secret' => ['nullable', 'string'],
             'page_id' => ['nullable', 'string'],
