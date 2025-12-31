@@ -51,10 +51,12 @@ class RAGService
     public function generateResponse(
         Bot $bot,
         string $userMessage,
-        array $conversationHistory = []
+        array $conversationHistory = [],
+        ?Flow $flow = null,
+        ?string $apiKeyOverride = null
     ): array {
         // Get API key first (used for both decision and chat models)
-        $apiKey = $this->getApiKeyForBot($bot);
+        $apiKey = $apiKeyOverride ?? $this->getApiKeyForBot($bot);
 
         // Step 1: Analyze intent using Decision Model
         $intent = $this->analyzeIntent($bot, $userMessage, $apiKey);
