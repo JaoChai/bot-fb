@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type {
   AddTagsData,
@@ -68,6 +68,48 @@ export function useConversations(botId: number | undefined, filters: Conversatio
     enabled: !!botId,
     staleTime: 10000, // 10 seconds
     refetchInterval: 10000, // Poll every 10 seconds for real-time updates
+    refetchOnWindowFocus: true,
+  });
+}
+
+/**
+ * Hook to fetch conversations with infinite scroll pagination
+ */
+export function useInfiniteConversations(botId: number | undefined, filters: ConversationFilters = {}) {
+  return useInfiniteQuery({
+    queryKey: ['conversations-infinite', botId, filters],
+    queryFn: async ({ pageParam = 1 }) => {
+      const params = new URLSearchParams();
+
+      if (filters.status) {
+        params.append('status', Array.isArray(filters.status) ? filters.status.join(',') : filters.status);
+      }
+      if (filters.channel_type) params.append('channel_type', filters.channel_type);
+      if (filters.is_handover !== undefined) params.append('is_handover', String(filters.is_handover));
+      if (filters.assigned_user_id) params.append('assigned_user_id', String(filters.assigned_user_id));
+      if (filters.tags?.length) params.append('tags', filters.tags.join(','));
+      if (filters.search) params.append('search', filters.search);
+      if (filters.from_date) params.append('from_date', filters.from_date);
+      if (filters.to_date) params.append('to_date', filters.to_date);
+      if (filters.sort_by) params.append('sort_by', filters.sort_by);
+      if (filters.sort_direction) params.append('sort_direction', filters.sort_direction);
+
+      params.append('per_page', String(filters.per_page || 30));
+      params.append('page', String(pageParam));
+
+      const response = await api.get<ConversationsResponse>(
+        `/bots/${botId}/conversations?${params.toString()}`
+      );
+      return response.data;
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const { current_page, last_page } = lastPage.meta;
+      return current_page < last_page ? current_page + 1 : undefined;
+    },
+    enabled: !!botId,
+    staleTime: 10000,
+    refetchInterval: 10000,
     refetchOnWindowFocus: true,
   });
 }
@@ -155,6 +197,7 @@ export function useUpdateConversation(botId: number | undefined) {
     },
     onSuccess: (_, { conversationId }) => {
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
     },
@@ -176,6 +219,7 @@ export function useCloseConversation(botId: number | undefined) {
     },
     onSuccess: (_, conversationId) => {
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
     },
@@ -197,6 +241,7 @@ export function useReopenConversation(botId: number | undefined) {
     },
     onSuccess: (_, conversationId) => {
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
     },
@@ -227,6 +272,7 @@ export function useToggleHandover(botId: number | undefined) {
     },
     onSuccess: (_, { conversationId }) => {
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
     },
@@ -248,6 +294,7 @@ export function useMarkAsRead(botId: number | undefined) {
     },
     onSuccess: (_, conversationId) => {
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
     },
   });
@@ -269,6 +316,7 @@ export function useClearContext(botId: number | undefined) {
     },
     onSuccess: (_, conversationId) => {
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
     },
   });
@@ -438,6 +486,7 @@ export function useAddTags(botId: number | undefined) {
     },
     onSuccess: (_, { conversationId }) => {
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
       queryClient.invalidateQueries({ queryKey: ['bot-tags', botId] });
     },
@@ -465,6 +514,7 @@ export function useRemoveTag(botId: number | undefined) {
     },
     onSuccess: (_, { conversationId }) => {
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
       queryClient.invalidateQueries({ queryKey: ['bot-tags', botId] });
     },
@@ -487,6 +537,7 @@ export function useBulkAddTags(botId: number | undefined) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
       queryClient.invalidateQueries({ queryKey: ['bot-tags', botId] });
     },
   });
@@ -591,6 +642,7 @@ export function useSendAgentMessage(botId: number | undefined) {
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversation-messages', botId, conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
     },
   });
 }

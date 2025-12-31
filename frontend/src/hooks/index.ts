@@ -34,6 +34,7 @@ export {
 
 export {
   useConversations,
+  useInfiniteConversations,
   useConversation,
   useConversationMessages,
   useConversationStats,
