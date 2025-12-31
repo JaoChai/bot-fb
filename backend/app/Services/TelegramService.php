@@ -148,11 +148,12 @@ class TelegramService
             $extension = pathinfo($filePath, PATHINFO_EXTENSION);
             $storagePath = 'telegram/' . $bot->id . '/' . date('Y/m/d') . '/' . uniqid() . '.' . $extension;
 
-            // Store file
-            Storage::disk('public')->put($storagePath, $fileContent);
+            // Store file (use configured disk - r2 in production, public locally)
+            $disk = config('filesystems.default');
+            Storage::disk($disk)->put($storagePath, $fileContent);
 
             return [
-                'url' => Storage::disk('public')->url($storagePath),
+                'url' => Storage::disk($disk)->url($storagePath),
                 'path' => $storagePath,
                 'file_size' => $fileInfo['file_size'] ?? null,
                 'mime_type' => $this->guessMimeType($extension),
