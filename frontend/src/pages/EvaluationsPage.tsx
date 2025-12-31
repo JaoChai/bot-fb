@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
+import { getErrorMessage } from '@/lib/api';
 import { useBots } from '@/hooks/useKnowledgeBase';
 import { useFlows } from '@/hooks/useFlows';
 import { useEvaluationOperations, useEvaluationPersonas } from '@/hooks/useEvaluations';
@@ -264,7 +265,7 @@ function CreateEvaluationDialog({
         include_edge_cases: true,
       });
     } catch (error) {
-      toast({ title: 'เกิดข้อผิดพลาด', description: String(error), variant: 'destructive' });
+      toast({ title: 'เกิดข้อผิดพลาด', description: getErrorMessage(error), variant: 'destructive' });
     }
   };
 
@@ -460,7 +461,7 @@ export function EvaluationsPage() {
       await cancelEvaluation?.(evaluationId);
       toast({ title: 'ยกเลิกการประเมินแล้ว' });
     } catch (error) {
-      toast({ title: 'เกิดข้อผิดพลาด', description: String(error), variant: 'destructive' });
+      toast({ title: 'เกิดข้อผิดพลาด', description: getErrorMessage(error), variant: 'destructive' });
     }
   };
 
@@ -469,7 +470,7 @@ export function EvaluationsPage() {
       await deleteEvaluation?.(evaluationId);
       toast({ title: 'ลบการประเมินแล้ว' });
     } catch (error) {
-      toast({ title: 'เกิดข้อผิดพลาด', description: String(error), variant: 'destructive' });
+      toast({ title: 'เกิดข้อผิดพลาด', description: getErrorMessage(error), variant: 'destructive' });
     }
   };
 

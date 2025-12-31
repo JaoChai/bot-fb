@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { getErrorMessage } from '@/lib/api';
 import {
   useEvaluation,
   useEvaluationTestCases,
@@ -445,7 +446,7 @@ export function EvaluationDetailPage() {
       await cancelMutation.mutateAsync(evalId);
       toast({ title: 'ยกเลิกการประเมินแล้ว' });
     } catch (error) {
-      toast({ title: 'เกิดข้อผิดพลาด', description: String(error), variant: 'destructive' });
+      toast({ title: 'เกิดข้อผิดพลาด', description: getErrorMessage(error), variant: 'destructive' });
     }
   };
 
@@ -455,7 +456,7 @@ export function EvaluationDetailPage() {
       await retryMutation.mutateAsync(evalId);
       toast({ title: 'เริ่มการประเมินใหม่แล้ว' });
     } catch (error) {
-      toast({ title: 'เกิดข้อผิดพลาด', description: String(error), variant: 'destructive' });
+      toast({ title: 'เกิดข้อผิดพลาด', description: getErrorMessage(error), variant: 'destructive' });
     }
   };
 
