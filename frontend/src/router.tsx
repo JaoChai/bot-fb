@@ -17,8 +17,6 @@ const BotsPage = lazyWithRetryNamed(() => import("@/pages/BotsPage"), "BotsPage"
 const BotSettingsPage = lazyWithRetryNamed(() => import("@/pages/BotSettingsPage"), "BotSettingsPage")
 const BotEditPage = lazyWithRetryNamed(() => import("@/pages/BotEditPage"), "BotEditPage")
 const KnowledgeBasePage = lazyWithRetryNamed(() => import("@/pages/KnowledgeBasePage"), "KnowledgeBasePage")
-const ConversationsPage = lazyWithRetryNamed(() => import("@/pages/ConversationsPage"), "ConversationsPage")
-const ConversationDetailPage = lazyWithRetryNamed(() => import("@/pages/ConversationDetailPage"), "ConversationDetailPage")
 const ChatPage = lazyWithRetryNamed(() => import("@/pages/ChatPage"), "ChatPage")
 const SettingsPage = lazyWithRetryNamed(() => import("@/pages/SettingsPage"), "SettingsPage")
 const FlowEditorPage = lazyWithRetryNamed(() => import("@/pages/FlowEditorPage"), "FlowEditorPage")
@@ -104,14 +102,6 @@ export const router = createBrowserRouter([
           {
             path: "chat",
             element: <LazyPage><ChatPage /></LazyPage>,
-          },
-          {
-            path: "conversations",
-            element: <LazyPage><ConversationsPage /></LazyPage>,
-          },
-          {
-            path: "conversations/:conversationId",
-            element: <LazyPage><ConversationDetailPage /></LazyPage>,
           },
           {
             path: "settings",
