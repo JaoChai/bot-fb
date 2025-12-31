@@ -48,14 +48,24 @@ export function TelegramPage() {
   );
 
   // Memoize filters to prevent unnecessary query re-creations
-  const filters = useMemo<ConversationFilters>(() => ({
-    status: statusFilter === 'all' ? undefined : statusFilter,
-    search: search || undefined,
-    channel_type: 'telegram',
-    sort_by: 'last_message_at',
-    sort_direction: 'desc',
-    per_page: 30,
-  }), [statusFilter, search]);
+  const filters = useMemo<ConversationFilters>(() => {
+    // Map tab values to telegram_chat_type filter
+    let chatTypeFilter: string | string[] | undefined;
+    if (statusFilter === 'group') {
+      chatTypeFilter = ['group', 'supergroup']; // Include supergroups
+    } else if (statusFilter === 'private') {
+      chatTypeFilter = 'private';
+    }
+
+    return {
+      telegram_chat_type: chatTypeFilter,
+      search: search || undefined,
+      channel_type: 'telegram',
+      sort_by: 'last_message_at',
+      sort_direction: 'desc',
+      per_page: 30,
+    };
+  }, [statusFilter, search]);
 
   const {
     data: conversationsData,

@@ -49,6 +49,9 @@ export function useConversations(botId: number | undefined, filters: Conversatio
         params.append('status', Array.isArray(filters.status) ? filters.status.join(',') : filters.status);
       }
       if (filters.channel_type) params.append('channel_type', filters.channel_type);
+      if (filters.telegram_chat_type) {
+        params.append('telegram_chat_type', Array.isArray(filters.telegram_chat_type) ? filters.telegram_chat_type.join(',') : filters.telegram_chat_type);
+      }
       if (filters.is_handover !== undefined) params.append('is_handover', String(filters.is_handover));
       if (filters.assigned_user_id) params.append('assigned_user_id', String(filters.assigned_user_id));
       if (filters.tags?.length) params.append('tags', filters.tags.join(','));
@@ -86,6 +89,9 @@ export function useInfiniteConversations(botId: number | undefined, filters: Con
         params.append('status', Array.isArray(filters.status) ? filters.status.join(',') : filters.status);
       }
       if (filters.channel_type) params.append('channel_type', filters.channel_type);
+      if (filters.telegram_chat_type) {
+        params.append('telegram_chat_type', Array.isArray(filters.telegram_chat_type) ? filters.telegram_chat_type.join(',') : filters.telegram_chat_type);
+      }
       if (filters.is_handover !== undefined) params.append('is_handover', String(filters.is_handover));
       if (filters.assigned_user_id) params.append('assigned_user_id', String(filters.assigned_user_id));
       if (filters.tags?.length) params.append('tags', filters.tags.join(','));
