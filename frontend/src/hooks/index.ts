@@ -80,3 +80,9 @@ export {
   isSessionRunning,
   canCancelSession,
 } from './useImprovement';
+
+export {
+  useDashboardSummary,
+  hasActiveAlerts,
+  getTotalAlertCount,
+} from './useDashboard';

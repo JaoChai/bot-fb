@@ -7,6 +7,7 @@ use App\Events\MessageSent;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ConversationResource;
 use App\Http\Resources\MessageResource;
+use App\Models\ActivityLog;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -279,6 +280,17 @@ class ConversationController extends Controller
         }
 
         $conversation->update($updateData);
+
+        // Log activity
+        $customerName = $conversation->customerProfile?->display_name ?? $conversation->external_customer_id;
+        ActivityLog::log(
+            userId: $request->user()->id,
+            type: $isHandover ? ActivityLog::TYPE_HANDOVER_STARTED : ActivityLog::TYPE_HANDOVER_RESOLVED,
+            title: $isHandover ? 'เปิด Handover Mode' : 'ปิด Handover Mode',
+            description: "ลูกค้า: {$customerName}",
+            botId: $bot->id,
+            metadata: ['conversation_id' => $conversation->id]
+        );
 
         // Broadcast the update for real-time sync
         broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
