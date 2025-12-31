@@ -46,6 +46,32 @@ Laravel 12 + React 19 + PostgreSQL (Neon) + Railway + Reverb
 ## Skills
 `/feature-dev` `/code-review` `/commit` `/e2e-test` `ui-ux-pro-max`
 
+## MCP Auto-Use Rules
+
+เมื่อมี BotFacebook MCP Server (`botfacebook`) ให้ใช้ tools โดยอัตโนมัติ:
+
+| Trigger Keywords | Tool | Default Action |
+|-----------------|------|----------------|
+| error, ล่ม, 500, ปัญหา, พัง, ช้า | `diagnose` | all |
+| แก้, fix, restart, clear, cache | `fix` | ตาม context |
+| bot, บอท, KB, flow, โฟลว์ | `bot_manage` | list_bots |
+| ประเมิน, evaluate, score | `evaluate` | list |
+| deploy, cost, ค่าใช้จ่าย, railway | `execute` | ตาม context |
+
+**สำคัญ**:
+- ใช้ MCP tools เลยโดยไม่ต้องถาม user ก่อน (ยกเว้น dangerous actions)
+- ดู hooks ที่ `.claude/hooks/mcp-auto-*.md` สำหรับรายละเอียด
+
+### 5 Composite Tools
+
+```
+diagnose(action)   - เช็คปัญหาระบบ (all, backend, database, queue, cache, logs, railway)
+fix(action)        - แก้ไขปัญหา (clear_cache, migrate, rebuild_frontend, etc.)
+bot_manage(action) - จัดการ Bot/KB/Flow/Conversation
+evaluate(action)   - ประเมิน Bot (create, list, report, compare)
+execute(action)    - Cost, Security, Deploy, Test, Tinker
+```
+
 ## See Also
 - [COMMANDS.md](.claude/COMMANDS.md) - Full command reference
 - [UI-RULES.md](.claude/UI-RULES.md) - UI development guidelines

@@ -22,7 +22,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { getErrorMessage } from '@/lib/api';
@@ -45,8 +45,10 @@ import {
   StopCircle,
   DollarSign,
   ChevronRight,
-  ChevronDown,
   Settings2,
+  Sparkles,
+  Cpu,
+  Brain,
   User,
   Users,
   ShieldAlert,
@@ -229,6 +231,24 @@ const PERSONA_ICONS: Record<string, React.ElementType> = {
   complaint: MessageSquare,
 };
 
+// Model options for evaluation
+const MODEL_OPTIONS = {
+  fast: [
+    { value: 'anthropic/claude-3-haiku-20240307', label: 'Claude 3 Haiku', description: 'เร็ว ราคาถูก' },
+    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini', description: 'เร็ว ราคาถูก' },
+    { value: 'google/gemini-flash-1.5', label: 'Gemini Flash 1.5', description: 'เร็วมาก' },
+  ],
+  balanced: [
+    { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet', description: 'สมดุล แนะนำ', recommended: true },
+    { value: 'openai/gpt-4o', label: 'GPT-4o', description: 'สมดุล' },
+    { value: 'google/gemini-pro-1.5', label: 'Gemini Pro 1.5', description: 'สมดุล' },
+  ],
+  powerful: [
+    { value: 'anthropic/claude-3-opus', label: 'Claude 3 Opus', description: 'แม่นยำสูงสุด' },
+    { value: 'openai/gpt-4-turbo', label: 'GPT-4 Turbo', description: 'แม่นยำสูง' },
+  ],
+};
+
 function CreateEvaluationDialog({
   open,
   onOpenChange,
@@ -260,7 +280,7 @@ function CreateEvaluationDialog({
     include_edge_cases: true,
   });
 
-  const [isModelSettingsOpen, setIsModelSettingsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('basic');
 
   const handleSubmit = async () => {
     if (!formData.flow_id) {
@@ -311,18 +331,32 @@ function CreateEvaluationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6 pb-0">
           <DialogTitle>สร้างการประเมินใหม่</DialogTitle>
           <DialogDescription>
             ระบบจะสร้าง test cases จาก Knowledge Base และประเมินคุณภาพการตอบของ Bot
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 pr-4">
-          <div className="space-y-6 py-4">
-            {/* Section 1: Basic Settings */}
-            <div className="space-y-4">
+        {/* Tabs Navigation */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+          <div className="px-6 pt-4">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="basic" className="gap-2">
+                <Settings2 className="h-4 w-4" />
+                ตั้งค่าพื้นฐาน
+              </TabsTrigger>
+              <TabsTrigger value="models" className="gap-2">
+                <Brain className="h-4 w-4" />
+                เลือกโมเดล AI
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <ScrollArea className="flex-1 px-6">
+            {/* Tab 1: Basic Settings */}
+            <TabsContent value="basic" className="mt-0 space-y-6 py-4">
               {/* Flow Selection */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">เลือก Flow *</Label>
@@ -373,141 +407,248 @@ function CreateEvaluationDialog({
                   <span>100 (ละเอียด)</span>
                 </div>
               </div>
-            </div>
 
-            {/* Section 2: Personas */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">Personas</Label>
-                <span className="text-xs text-muted-foreground">
-                  {formData.personas?.length ? `เลือก ${formData.personas.length} personas` : 'ใช้ทั้งหมด'}
-                </span>
-              </div>
-              {isPersonasLoading ? (
-                <div className="flex items-center justify-center py-4">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  {personas.map((persona) => {
-                    const isSelected = formData.personas?.includes(persona.key);
-                    const Icon = PERSONA_ICONS[persona.key] || User;
-                    return (
-                      <button
-                        key={persona.key}
-                        type="button"
-                        onClick={() => togglePersona(persona.key)}
-                        className={`
-                          relative p-3 rounded-lg border-2 text-left transition-all cursor-pointer
-                          ${isSelected
-                            ? 'border-primary bg-primary/5'
-                            : 'border-border hover:border-muted-foreground/50 hover:bg-muted/50'
-                          }
-                        `}
-                      >
-                        {isSelected && (
-                          <div className="absolute top-2 right-2">
-                            <Check className="h-4 w-4 text-primary" />
-                          </div>
-                        )}
-                        <div className="flex items-start gap-3">
-                          <div className={`
-                            p-2 rounded-lg
-                            ${isSelected ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}
-                          `}>
-                            <Icon className="h-4 w-4" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm">{persona.name}</div>
-                            <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
-                              {persona.description}
-                            </div>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Section 3: Test Options */}
-            <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-              <Label className="text-sm font-medium">ตัวเลือกการทดสอบ</Label>
+              {/* Personas */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <Label htmlFor="multi-turn" className="text-sm cursor-pointer">Multi-turn conversations</Label>
-                    <p className="text-xs text-muted-foreground">ทดสอบบทสนทนาหลายรอบ</p>
-                  </div>
-                  <Switch
-                    id="multi-turn"
-                    checked={formData.include_multi_turn}
-                    onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, include_multi_turn: checked }))}
-                  />
+                  <Label className="text-sm font-medium">Personas</Label>
+                  <span className="text-xs text-muted-foreground">
+                    {formData.personas?.length ? `เลือก ${formData.personas.length} personas` : 'ใช้ทั้งหมด'}
+                  </span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label htmlFor="edge-cases" className="text-sm cursor-pointer">Edge cases</Label>
-                    <p className="text-xs text-muted-foreground">รวมกรณีพิเศษและขอบเขต</p>
+                {isPersonasLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                   </div>
-                  <Switch
-                    id="edge-cases"
-                    checked={formData.include_edge_cases}
-                    onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, include_edge_cases: checked }))}
-                  />
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {personas.map((persona) => {
+                      const isSelected = formData.personas?.includes(persona.key);
+                      const Icon = PERSONA_ICONS[persona.key] || User;
+                      return (
+                        <button
+                          key={persona.key}
+                          type="button"
+                          onClick={() => togglePersona(persona.key)}
+                          className={`
+                            relative p-3 rounded-lg border-2 text-left transition-all cursor-pointer
+                            ${isSelected
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border hover:border-muted-foreground/50 hover:bg-muted/50'
+                            }
+                          `}
+                        >
+                          {isSelected && (
+                            <div className="absolute top-2 right-2">
+                              <Check className="h-4 w-4 text-primary" />
+                            </div>
+                          )}
+                          <div className="flex items-start gap-3">
+                            <div className={`
+                              p-2 rounded-lg
+                              ${isSelected ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}
+                            `}>
+                              <Icon className="h-4 w-4" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm">{persona.name}</div>
+                              <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                                {persona.description}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Test Options */}
+              <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                <Label className="text-sm font-medium">ตัวเลือกการทดสอบ</Label>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="multi-turn" className="text-sm cursor-pointer">Multi-turn conversations</Label>
+                      <p className="text-xs text-muted-foreground">ทดสอบบทสนทนาหลายรอบ</p>
+                    </div>
+                    <Switch
+                      id="multi-turn"
+                      checked={formData.include_multi_turn}
+                      onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, include_multi_turn: checked }))}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="edge-cases" className="text-sm cursor-pointer">Edge cases</Label>
+                      <p className="text-xs text-muted-foreground">รวมกรณีพิเศษและขอบเขต</p>
+                    </div>
+                    <Switch
+                      id="edge-cases"
+                      checked={formData.include_edge_cases}
+                      onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, include_edge_cases: checked }))}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            </TabsContent>
 
-            {/* Section 4: Advanced Model Settings (Collapsible) */}
-            <Collapsible open={isModelSettingsOpen} onOpenChange={setIsModelSettingsOpen}>
-              <CollapsibleTrigger asChild>
-                <button
-                  type="button"
-                  className="flex items-center justify-between w-full p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    <Settings2 className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Model Settings</span>
+            {/* Tab 2: Model Settings */}
+            <TabsContent value="models" className="mt-0 space-y-6 py-4">
+              {/* Info Banner */}
+              <div className="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <Sparkles className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                <div className="text-sm">
+                  <p className="font-medium text-blue-900 dark:text-blue-100">ระบบใช้ 3 โมเดลทำงานร่วมกัน</p>
+                  <p className="text-blue-700 dark:text-blue-300 mt-1">
+                    Generator สร้างคำถาม → Simulator จำลองลูกค้า → Judge ประเมินผล
+                  </p>
+                </div>
+              </div>
+
+              {/* Generator Model */}
+              <div className="space-y-3 p-4 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
+                    <Cpu className="h-5 w-5 text-green-600 dark:text-green-400" />
                   </div>
-                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isModelSettingsOpen ? 'rotate-180' : ''}`} />
-                </button>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="space-y-3 pt-3 pl-1">
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">Generator (สร้างคำถาม)</Label>
-                    <Input
-                      placeholder="anthropic/claude-3-haiku-20240307"
-                      value={formData.generator_model}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, generator_model: e.target.value }))}
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">Simulator (จำลองลูกค้า)</Label>
-                    <Input
-                      placeholder="anthropic/claude-3-haiku-20240307"
-                      value={formData.simulator_model}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, simulator_model: e.target.value }))}
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">Judge (ประเมินผล)</Label>
-                    <Input
-                      placeholder="anthropic/claude-3.5-sonnet"
-                      value={formData.judge_model}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, judge_model: e.target.value }))}
-                      className="h-9 text-sm"
-                    />
+                  <div>
+                    <Label className="text-sm font-medium">Generator Model</Label>
+                    <p className="text-xs text-muted-foreground">สร้าง test cases และคำถามจาก Knowledge Base</p>
                   </div>
                 </div>
-              </CollapsibleContent>
-            </Collapsible>
+                <Select
+                  value={formData.generator_model}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, generator_model: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">เร็ว & ประหยัด</div>
+                    {MODEL_OPTIONS.fast.map((model) => (
+                      <SelectItem key={model.value} value={model.value}>
+                        <div className="flex items-center gap-2">
+                          <span>{model.label}</span>
+                          <span className="text-xs text-muted-foreground">({model.description})</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-1">สมดุล</div>
+                    {MODEL_OPTIONS.balanced.map((model) => (
+                      <SelectItem key={model.value} value={model.value}>
+                        <div className="flex items-center gap-2">
+                          <span>{model.label}</span>
+                          <span className="text-xs text-muted-foreground">({model.description})</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            {/* Cost Summary */}
+              {/* Simulator Model */}
+              <div className="space-y-3 p-4 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                    <User className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium">Simulator Model</Label>
+                    <p className="text-xs text-muted-foreground">จำลองการสนทนาของลูกค้าตาม Persona</p>
+                  </div>
+                </div>
+                <Select
+                  value={formData.simulator_model}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, simulator_model: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">เร็ว & ประหยัด</div>
+                    {MODEL_OPTIONS.fast.map((model) => (
+                      <SelectItem key={model.value} value={model.value}>
+                        <div className="flex items-center gap-2">
+                          <span>{model.label}</span>
+                          <span className="text-xs text-muted-foreground">({model.description})</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-1">สมดุล</div>
+                    {MODEL_OPTIONS.balanced.map((model) => (
+                      <SelectItem key={model.value} value={model.value}>
+                        <div className="flex items-center gap-2">
+                          <span>{model.label}</span>
+                          <span className="text-xs text-muted-foreground">({model.description})</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Judge Model */}
+              <div className="space-y-3 p-4 border rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                    <Brain className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium">Judge Model</Label>
+                    <p className="text-xs text-muted-foreground">ประเมินคุณภาพการตอบ (แนะนำใช้โมเดลที่แม่นยำ)</p>
+                  </div>
+                </div>
+                <Select
+                  value={formData.judge_model}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, judge_model: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">สมดุล (แนะนำ)</div>
+                    {MODEL_OPTIONS.balanced.map((model) => (
+                      <SelectItem key={model.value} value={model.value}>
+                        <div className="flex items-center gap-2">
+                          <span>{model.label}</span>
+                          {model.recommended && <Badge variant="secondary" className="text-xs">แนะนำ</Badge>}
+                          <span className="text-xs text-muted-foreground">({model.description})</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-1">แม่นยำสูง</div>
+                    {MODEL_OPTIONS.powerful.map((model) => (
+                      <SelectItem key={model.value} value={model.value}>
+                        <div className="flex items-center gap-2">
+                          <span>{model.label}</span>
+                          <span className="text-xs text-muted-foreground">({model.description})</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Custom Model Input */}
+              <div className="space-y-2 pt-2 border-t">
+                <Label className="text-xs text-muted-foreground">หรือใส่ชื่อโมเดลเอง (OpenRouter format)</Label>
+                <Input
+                  placeholder="เช่น meta-llama/llama-3-70b-instruct"
+                  className="text-sm font-mono"
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setFormData((prev) => ({ ...prev, judge_model: e.target.value }));
+                    }
+                  }}
+                />
+              </div>
+            </TabsContent>
+          </ScrollArea>
+
+          {/* Cost Summary - Always visible */}
+          <div className="px-6 py-4 border-t bg-muted/30">
             <div className="flex items-center justify-between p-4 bg-primary/5 border border-primary/20 rounded-lg">
               <div>
                 <div className="text-sm font-medium">ค่าใช้จ่ายโดยประมาณ</div>
@@ -518,26 +659,26 @@ function CreateEvaluationDialog({
               </div>
             </div>
           </div>
-        </ScrollArea>
 
-        <DialogFooter className="border-t pt-4">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            ยกเลิก
-          </Button>
-          <Button onClick={handleSubmit} disabled={isCreating || !formData.flow_id}>
-            {isCreating ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                กำลังเริ่ม...
-              </>
-            ) : (
-              <>
-                <PlayCircle className="h-4 w-4 mr-2" />
-                เริ่มการประเมิน
-              </>
-            )}
-          </Button>
-        </DialogFooter>
+          <DialogFooter className="px-6 pb-6 pt-0">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              ยกเลิก
+            </Button>
+            <Button onClick={handleSubmit} disabled={isCreating || !formData.flow_id}>
+              {isCreating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  กำลังเริ่ม...
+                </>
+              ) : (
+                <>
+                  <PlayCircle className="h-4 w-4 mr-2" />
+                  เริ่มการประเมิน
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );
