@@ -109,13 +109,13 @@ export function BotOverviewCard({ bot }: BotOverviewCardProps) {
         {/* Action Buttons */}
         <div className="flex gap-2 pt-1">
           <Button variant="outline" size="sm" asChild className="flex-1">
-            <Link to={`/chat?bot_id=${bot.id}`}>ดูแชท</Link>
+            <Link to={`/chat?botId=${bot.id}`}>ดูแชท</Link>
           </Button>
           <Button variant="outline" size="sm" asChild className="flex-1">
-            <Link to={`/bots/${bot.id}/flows`}>AI Flow</Link>
+            <Link to={`/flows/editor?botId=${bot.id}`}>AI Flow</Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link to={`/bots/${bot.id}/evaluations`}>
+            <Link to={`/evaluations?bot=${bot.id}`}>
               <TestTube className="h-4 w-4" />
             </Link>
           </Button>

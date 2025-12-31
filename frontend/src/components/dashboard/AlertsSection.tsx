@@ -48,7 +48,7 @@ export function AlertsSection({ alerts }: AlertsSectionProps) {
                 </span>
               </div>
               <Button variant="ghost" size="sm" asChild>
-                <Link to="/chat?status=handover">
+                <Link to="/chat">
                   ดูทั้งหมด <ArrowRight className="ml-1 h-3 w-3" />
                 </Link>
               </Button>
@@ -57,7 +57,7 @@ export function AlertsSection({ alerts }: AlertsSectionProps) {
               {alerts.handover_conversations.slice(0, 3).map((conv) => (
                 <Link
                   key={conv.id}
-                  to={`/chat?conversation_id=${conv.id}`}
+                  to={`/chat?botId=${conv.bot_id}`}
                   className="flex items-center justify-between text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <span>
