@@ -250,7 +250,7 @@ export function ChatPage() {
           </Select>
         </div>
 
-        {/* Channel Tabs - Touch-friendly with icons */}
+        {/* Channel Tabs - Icon only on mobile, text on desktop */}
         <div className="p-2 border-b bg-muted/10">
           <Tabs value={channelFilter} onValueChange={handleChannelFilterChange}>
             <TabsList className="w-full grid grid-cols-4 h-11 gap-1">
@@ -261,15 +261,15 @@ export function ChatPage() {
                     key={tab.value}
                     value={tab.value}
                     className={cn(
-                      'h-10 min-h-[40px] px-2 text-xs sm:text-sm gap-1.5',
+                      'h-10 min-h-[40px] px-1 sm:px-3 text-xs sm:text-sm gap-1',
                       'transition-all duration-200',
                       tab.color,
                       tab.bgActive
                     )}
+                    title={tab.label}
                   >
-                    <Icon className="h-4 w-4 flex-shrink-0" />
-                    <span className="hidden sm:inline truncate">{tab.label}</span>
-                    <span className="sm:hidden truncate">{tab.shortLabel}</span>
+                    <Icon className="h-4 w-4 sm:h-3.5 sm:w-3.5 flex-shrink-0" />
+                    <span className="hidden sm:inline">{tab.shortLabel}</span>
                   </TabsTrigger>
                 );
               })}

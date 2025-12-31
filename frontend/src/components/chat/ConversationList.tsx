@@ -86,13 +86,13 @@ export function ConversationList({
         </div>
       </div>
 
-      {/* Status/Type Tabs - Dynamic based on channel */}
+      {/* Status/Type Tabs - Icon only on mobile, text on desktop */}
       <div className="p-2 border-b">
         <Tabs value={statusFilter} onValueChange={onStatusFilterChange}>
-          <TabsList className="w-full grid grid-cols-3 h-11">
-            <TabsTrigger value="all" className="text-xs sm:text-sm h-10 px-2 sm:px-3 gap-1.5">
+          <TabsList className="w-full grid grid-cols-3 h-11 gap-1">
+            <TabsTrigger value="all" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="ทั้งหมด">
               <MessageCircle className="h-4 w-4 flex-shrink-0" />
-              <span className="truncate hidden sm:inline">ทั้งหมด</span>
+              <span className="hidden sm:inline">ทั้งหมด</span>
               {statusCounts && (
                 <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 hidden sm:inline-flex">
                   {statusCounts.total}
@@ -101,29 +101,29 @@ export function ConversationList({
             </TabsTrigger>
             {isTelegram ? (
               <>
-                <TabsTrigger value="group" className="text-xs sm:text-sm h-10 px-2 sm:px-3 gap-1.5">
+                <TabsTrigger value="group" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="กลุ่ม">
                   <Users className="h-4 w-4 flex-shrink-0" />
-                  <span className="truncate">กลุ่ม</span>
+                  <span className="hidden sm:inline">กลุ่ม</span>
                 </TabsTrigger>
-                <TabsTrigger value="private" className="text-xs sm:text-sm h-10 px-2 sm:px-3 gap-1.5">
+                <TabsTrigger value="private" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="ส่วนตัว">
                   <User className="h-4 w-4 flex-shrink-0" />
-                  <span className="truncate">ส่วนตัว</span>
+                  <span className="hidden sm:inline">ส่วนตัว</span>
                 </TabsTrigger>
               </>
             ) : (
               <>
-                <TabsTrigger value="active" className="text-xs sm:text-sm h-10 px-2 sm:px-3 gap-1.5">
+                <TabsTrigger value="active" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="ใช้งาน (Bot)">
                   <Bot className="h-4 w-4 flex-shrink-0" />
-                  <span className="truncate hidden sm:inline">ใช้งาน</span>
+                  <span className="hidden sm:inline">Bot</span>
                   {statusCounts && (
                     <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 hidden sm:inline-flex">
                       {statusCounts.active}
                     </Badge>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="handover" className="text-xs sm:text-sm h-10 px-2 sm:px-3 gap-1.5">
+                <TabsTrigger value="handover" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="รอตอบ">
                   <Headphones className="h-4 w-4 flex-shrink-0" />
-                  <span className="truncate hidden sm:inline">รอตอบ</span>
+                  <span className="hidden sm:inline">รอตอบ</span>
                   {statusCounts && statusCounts.handover > 0 && (
                     <Badge className="text-xs px-1.5 py-0 h-5 bg-destructive text-destructive-foreground">
                       {statusCounts.handover}
