@@ -2,11 +2,9 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -123,29 +121,5 @@ class Bot extends Model
     public function improvementSessions(): HasMany
     {
         return $this->hasMany(ImprovementSession::class);
-    }
-
-    /**
-     * Admins assigned to this bot.
-     */
-    public function admins(): BelongsToMany
-    {
-        return $this->belongsToMany(User::class, 'admin_bot_assignments')
-            ->withPivot('assigned_by')
-            ->withTimestamps();
-    }
-
-    /**
-     * Scope to get bots accessible by a user (owned or assigned).
-     */
-    public function scopeAccessibleBy(Builder $query, User $user): Builder
-    {
-        if ($user->isOwner()) {
-            return $query->where('user_id', $user->id);
-        }
-
-        return $query->whereHas('admins', function ($q) use ($user) {
-            $q->where('users.id', $user->id);
-        });
     }
 }
