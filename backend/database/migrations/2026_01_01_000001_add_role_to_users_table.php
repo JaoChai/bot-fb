@@ -12,9 +12,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->string('role', 20)->default('admin')->after('email');
-        });
+        // Only add column if it doesn't exist
+        if (!Schema::hasColumn('users', 'role')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->string('role', 20)->default('admin')->after('email');
+            });
+        }
 
         // Set anugooltippon@gmail.com as owner
         DB::table('users')
