@@ -1,6 +1,7 @@
 import { useAuthStore } from '@/stores/authStore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bot, MessageSquare, Zap, Users, DollarSign, Plus } from 'lucide-react';
+import { Bot, MessageSquare, Zap, Users, Banknote, Plus } from 'lucide-react';
+import { formatTHB } from '@/lib/currency';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -130,9 +131,9 @@ export function DashboardPage() {
             />
             <DashboardStatCard
               title="ค่าใช้จ่ายวันนี้"
-              value={`$${(costData?.summary.today_cost ?? 0).toFixed(2)}`}
-              description={`เดือนนี้ $${(costData?.summary.month_cost ?? 0).toFixed(2)}`}
-              icon={DollarSign}
+              value={formatTHB(costData?.summary.today_cost ?? 0)}
+              description={`เดือนนี้ ${formatTHB(costData?.summary.month_cost ?? 0)}`}
+              icon={Banknote}
             />
           </div>
 

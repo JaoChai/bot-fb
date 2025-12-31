@@ -34,6 +34,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { getErrorMessage } from '@/lib/api';
+import { formatTHB, usdToTHB } from '@/lib/currency';
 import { useBots } from '@/hooks/useKnowledgeBase';
 import { useFlows } from '@/hooks/useFlows';
 import { useEvaluationOperations, useEvaluationPersonas } from '@/hooks/useEvaluations';
@@ -51,7 +52,7 @@ import {
   Trash2,
   RotateCcw,
   StopCircle,
-  DollarSign,
+  Banknote,
   ChevronRight,
   Settings2,
   Sparkles,
@@ -177,8 +178,8 @@ function EvaluationCard({
         {(isCompleted || isFailed) && (
           <div className="flex items-center justify-between text-xs sm:text-sm text-muted-foreground">
             <div className="flex items-center gap-1">
-              <DollarSign className="h-3 w-3" />
-              <span>${evaluation.estimated_cost.toFixed(2)}</span>
+              <Banknote className="h-3 w-3" />
+              <span>{formatTHB(evaluation.estimated_cost)}</span>
             </div>
             <div className="flex items-center gap-1">
               <Target className="h-3 w-3" />
@@ -334,11 +335,12 @@ function CreateEvaluationDialog({
     }));
   };
 
-  // Estimate cost based on test count
-  const estimatedCost = useMemo(() => {
+  // Estimate cost based on test count (in THB)
+  const estimatedCostTHB = useMemo(() => {
     const testCount = formData.test_count || 40;
-    // Rough estimate: $0.07 per test case
-    return (testCount * 0.07).toFixed(2);
+    // Rough estimate: $0.07 per test case -> convert to THB
+    const usdCost = testCount * 0.07;
+    return usdToTHB(usdCost).toFixed(0);
   }, [formData.test_count]);
 
   // Shared form content
@@ -546,6 +548,23 @@ function CreateEvaluationDialog({
                 ))}
               </SelectContent>
             </Select>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs">
+                <span className="bg-background px-2 text-muted-foreground">หรือพิมพ์เอง</span>
+              </div>
+            </div>
+            <Input
+              placeholder="เช่น meta-llama/llama-3-70b-instruct"
+              className="min-h-[44px] font-mono text-sm"
+              onChange={(e) => {
+                if (e.target.value.trim()) {
+                  setFormData((prev) => ({ ...prev, generator_model: e.target.value.trim() }));
+                }
+              }}
+            />
           </div>
 
           {/* Simulator Model */}
@@ -630,7 +649,7 @@ function CreateEvaluationDialog({
             <div className="text-sm font-medium">ค่าใช้จ่ายโดยประมาณ</div>
             <div className="text-xs text-muted-foreground">OpenRouter API</div>
           </div>
-          <div className="text-xl sm:text-2xl font-bold text-primary">~${estimatedCost}</div>
+          <div className="text-xl sm:text-2xl font-bold text-primary">~฿{estimatedCostTHB}</div>
         </div>
       </div>
     </Tabs>

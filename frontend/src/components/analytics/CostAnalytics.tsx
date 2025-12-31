@@ -29,7 +29,8 @@ import {
 } from '@/components/ui/select';
 import { useCostAnalytics } from '@/hooks/useCostAnalytics';
 import type { CostAnalyticsFilters } from '@/types/api';
-import { DollarSign, MessageSquare, TrendingUp, Coins } from 'lucide-react';
+import { Banknote, MessageSquare, TrendingUp, Coins } from 'lucide-react';
+import { formatTHB, usdToTHB } from '@/lib/currency';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
@@ -58,14 +59,9 @@ export function CostAnalytics() {
 
   if (!data) return null;
 
-  const formatCost = (value: number | string | null | undefined) => {
-    const num = Number(value) || 0;
-    return `$${num.toFixed(4)}`;
-  };
-  const formatCostShort = (value: number | string | null | undefined) => {
-    const num = Number(value) || 0;
-    return `$${num.toFixed(2)}`;
-  };
+  // Use THB formatting from currency utility
+  const formatCost = (value: number | string | null | undefined) => formatTHB(value, 2);
+  const formatCostShort = (value: number | string | null | undefined) => formatTHB(value, 2);
   const formatTokens = (value: number | string | null | undefined) => {
     const num = Number(value) || 0;
     return num.toLocaleString();
@@ -79,7 +75,7 @@ export function CostAnalytics() {
     <div className="space-y-6">
       {/* Period Selector */}
       <div className="flex items-center gap-4">
-        <span className="text-sm text-muted-foreground">Group by:</span>
+        <span className="text-sm text-muted-foreground">แสดงตาม:</span>
         <Select
           value={filters.group_by}
           onValueChange={(value) =>
@@ -87,12 +83,12 @@ export function CostAnalytics() {
           }
         >
           <SelectTrigger className="w-[140px]">
-            <SelectValue placeholder="Group by" />
+            <SelectValue placeholder="แสดงตาม" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="day">Daily</SelectItem>
-            <SelectItem value="week">Weekly</SelectItem>
-            <SelectItem value="month">Monthly</SelectItem>
+            <SelectItem value="day">รายวัน</SelectItem>
+            <SelectItem value="week">รายสัปดาห์</SelectItem>
+            <SelectItem value="month">รายเดือน</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -101,46 +97,46 @@ export function CostAnalytics() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">วันนี้</CardTitle>
+            <Banknote className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {formatCostShort(data.summary.today_cost)}
             </div>
-            <p className="text-xs text-muted-foreground">Cost today</p>
+            <p className="text-xs text-muted-foreground">ค่าใช้จ่ายวันนี้</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">This Week</CardTitle>
+            <CardTitle className="text-sm font-medium">สัปดาห์นี้</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {formatCostShort(data.summary.week_cost)}
             </div>
-            <p className="text-xs text-muted-foreground">Cost this week</p>
+            <p className="text-xs text-muted-foreground">ค่าใช้จ่ายสัปดาห์นี้</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">This Month</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">เดือนนี้</CardTitle>
+            <Banknote className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {formatCostShort(data.summary.month_cost)}
             </div>
-            <p className="text-xs text-muted-foreground">Cost this month</p>
+            <p className="text-xs text-muted-foreground">ค่าใช้จ่ายเดือนนี้</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Tokens</CardTitle>
+            <CardTitle className="text-sm font-medium">Tokens ทั้งหมด</CardTitle>
             <Coins className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -157,40 +153,40 @@ export function CostAnalytics() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Period Total</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">รวมทั้งหมด</CardTitle>
+            <Banknote className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {formatCost(data.summary.total_cost)}
             </div>
-            <p className="text-xs text-muted-foreground">Last 30 days</p>
+            <p className="text-xs text-muted-foreground">30 วันล่าสุด</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">AI Responses</CardTitle>
+            <CardTitle className="text-sm font-medium">AI ตอบกลับ</CardTitle>
             <MessageSquare className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {data.summary.total_responses.toLocaleString()}
             </div>
-            <p className="text-xs text-muted-foreground">Total responses</p>
+            <p className="text-xs text-muted-foreground">จำนวนการตอบกลับ</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg Cost/Response</CardTitle>
+            <CardTitle className="text-sm font-medium">เฉลี่ย/การตอบ</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {formatCost(data.summary.avg_cost_per_response)}
             </div>
-            <p className="text-xs text-muted-foreground">Per AI response</p>
+            <p className="text-xs text-muted-foreground">ต่อการตอบกลับ AI</p>
           </CardContent>
         </Card>
       </div>
@@ -199,9 +195,9 @@ export function CostAnalytics() {
       {data.time_series.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Cost Over Time</CardTitle>
+            <CardTitle>ค่าใช้จ่ายตามเวลา</CardTitle>
             <CardDescription>
-              AI response costs by {filters.group_by}
+              ค่าใช้จ่าย AI ตาม{filters.group_by === 'day' ? 'วัน' : filters.group_by === 'week' ? 'สัปดาห์' : 'เดือน'}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -215,12 +211,12 @@ export function CostAnalytics() {
                     tick={{ fill: 'currentColor' }}
                   />
                   <YAxis
-                    tickFormatter={(v) => `$${(Number(v) || 0).toFixed(2)}`}
+                    tickFormatter={(v) => `฿${usdToTHB(Number(v) || 0).toFixed(0)}`}
                     className="text-xs"
                     tick={{ fill: 'currentColor' }}
                   />
                   <Tooltip
-                    formatter={(v) => [formatCost(Number(v) || 0), 'Cost']}
+                    formatter={(v) => [formatCost(Number(v) || 0), 'ค่าใช้จ่าย']}
                     contentStyle={{
                       backgroundColor: 'hsl(var(--card))',
                       border: '1px solid hsl(var(--border))',
@@ -246,8 +242,8 @@ export function CostAnalytics() {
         {data.by_model.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Cost by Model</CardTitle>
-              <CardDescription>Breakdown by AI model used</CardDescription>
+              <CardTitle>ค่าใช้จ่ายตาม Model</CardTitle>
+              <CardDescription>แยกตาม AI model ที่ใช้</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-[300px]">
@@ -276,7 +272,7 @@ export function CostAnalytics() {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(v) => [formatCost(Number(v) || 0), 'Cost']}
+                      formatter={(v) => [formatCost(Number(v) || 0), 'ค่าใช้จ่าย']}
                       contentStyle={{
                         backgroundColor: 'hsl(var(--card))',
                         border: '1px solid hsl(var(--border))',
@@ -293,8 +289,8 @@ export function CostAnalytics() {
         {data.by_bot && data.by_bot.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Cost by Bot</CardTitle>
-              <CardDescription>Breakdown by bot</CardDescription>
+              <CardTitle>ค่าใช้จ่ายตาม Bot</CardTitle>
+              <CardDescription>แยกตาม Bot</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-[300px]">
@@ -303,7 +299,7 @@ export function CostAnalytics() {
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis
                       type="number"
-                      tickFormatter={(v) => `$${(Number(v) || 0).toFixed(2)}`}
+                      tickFormatter={(v) => `฿${usdToTHB(Number(v) || 0).toFixed(0)}`}
                       className="text-xs"
                       tick={{ fill: 'currentColor' }}
                     />
@@ -315,7 +311,7 @@ export function CostAnalytics() {
                       tick={{ fill: 'currentColor' }}
                     />
                     <Tooltip
-                      formatter={(v) => [formatCost(Number(v) || 0), 'Cost']}
+                      formatter={(v) => [formatCost(Number(v) || 0), 'ค่าใช้จ่าย']}
                       contentStyle={{
                         backgroundColor: 'hsl(var(--card))',
                         border: '1px solid hsl(var(--border))',
@@ -335,8 +331,8 @@ export function CostAnalytics() {
       {data.by_model.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Model Usage Details</CardTitle>
-            <CardDescription>Detailed breakdown by model</CardDescription>
+            <CardTitle>รายละเอียดการใช้งาน Model</CardTitle>
+            <CardDescription>แยกรายละเอียดตาม model</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -344,10 +340,10 @@ export function CostAnalytics() {
                 <thead>
                   <tr className="border-b">
                     <th className="py-3 text-left font-medium">Model</th>
-                    <th className="py-3 text-right font-medium">Responses</th>
+                    <th className="py-3 text-right font-medium">ตอบกลับ</th>
                     <th className="py-3 text-right font-medium">Prompt Tokens</th>
                     <th className="py-3 text-right font-medium">Completion Tokens</th>
-                    <th className="py-3 text-right font-medium">Total Cost</th>
+                    <th className="py-3 text-right font-medium">ค่าใช้จ่าย</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -384,10 +380,9 @@ export function CostAnalytics() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <MessageSquare className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium">No cost data yet</h3>
+            <h3 className="text-lg font-medium">ยังไม่มีข้อมูลค่าใช้จ่าย</h3>
             <p className="text-sm text-muted-foreground text-center max-w-sm mt-2">
-              Cost analytics will appear here once your bots start generating AI
-              responses.
+              ข้อมูลค่าใช้จ่ายจะแสดงที่นี่เมื่อ Bot ของคุณเริ่มตอบกลับ
             </p>
           </CardContent>
         </Card>
