@@ -12,6 +12,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { useIsMobile } from '@/hooks/useMediaQuery';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -23,7 +32,6 @@ import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { getErrorMessage } from '@/lib/api';
 import { useBots } from '@/hooks/useKnowledgeBase';
@@ -125,20 +133,20 @@ function EvaluationCard({
 
   return (
     <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={onView}>
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <CardTitle className="text-base font-medium">{evaluation.name}</CardTitle>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>Flow: {evaluation.flow?.name || 'Unknown'}</span>
-              <span>|</span>
+      <CardHeader className="pb-2 px-4 sm:px-6">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+          <div className="space-y-1 min-w-0">
+            <CardTitle className="text-base font-medium truncate">{evaluation.name}</CardTitle>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm text-muted-foreground">
+              <span className="truncate max-w-[150px]">Flow: {evaluation.flow?.name || 'Unknown'}</span>
+              <span className="hidden sm:inline">|</span>
               <span>{new Date(evaluation.created_at).toLocaleDateString('th-TH')}</span>
             </div>
           </div>
           <StatusBadge status={evaluation.status} />
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 px-4 sm:px-6">
         {/* Progress stepper for running evaluations */}
         {isRunning && (
           <EvaluationProgressStepper
@@ -151,7 +159,7 @@ function EvaluationCard({
 
         {/* Scores for completed evaluations */}
         {isCompleted && evaluation.overall_score !== null && (
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-2 sm:gap-4">
             <ScoreDisplay score={evaluation.overall_score} label="Overall" />
             <ScoreDisplay score={evaluation.metric_scores?.faithfulness ?? null} label="Faithfulness" />
             <ScoreDisplay score={evaluation.metric_scores?.answer_relevancy ?? null} label="Relevancy" />
@@ -160,36 +168,37 @@ function EvaluationCard({
 
         {/* Error message for failed evaluations */}
         {isFailed && evaluation.error_message && (
-          <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">
+          <div className="text-xs sm:text-sm text-destructive bg-destructive/10 p-2 rounded">
             {evaluation.error_message}
           </div>
         )}
 
         {/* Cost info */}
         {(isCompleted || isFailed) && (
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <div className="flex items-center justify-between text-xs sm:text-sm text-muted-foreground">
             <div className="flex items-center gap-1">
               <DollarSign className="h-3 w-3" />
               <span>${evaluation.estimated_cost.toFixed(2)}</span>
             </div>
             <div className="flex items-center gap-1">
               <Target className="h-3 w-3" />
-              <span>{evaluation.progress.total_test_cases} test cases</span>
+              <span>{evaluation.progress.total_test_cases} tests</span>
             </div>
           </div>
         )}
 
-        {/* Actions */}
-        <div className="flex items-center justify-end gap-2 pt-2 border-t" onClick={(e) => e.stopPropagation()}>
+        {/* Actions - Responsive */}
+        <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t" onClick={(e) => e.stopPropagation()}>
           {isRunning && (
             <Button
               variant="outline"
               size="sm"
               onClick={onCancel}
               disabled={isCancelling}
+              className="min-h-[36px]"
             >
               {isCancelling ? <Loader2 className="h-3 w-3 animate-spin" /> : <StopCircle className="h-3 w-3" />}
-              <span className="ml-1">ยกเลิก</span>
+              <span className="ml-1 hidden sm:inline">ยกเลิก</span>
             </Button>
           )}
           {isFailed && (
@@ -197,9 +206,10 @@ function EvaluationCard({
               variant="outline"
               size="sm"
               onClick={onRetry}
+              className="min-h-[36px]"
             >
               <RotateCcw className="h-3 w-3" />
-              <span className="ml-1">ลองใหม่</span>
+              <span className="ml-1 hidden sm:inline">ลองใหม่</span>
             </Button>
           )}
           {!isRunning && (
@@ -208,13 +218,14 @@ function EvaluationCard({
               size="sm"
               onClick={onDelete}
               disabled={isDeleting}
-              className="text-destructive hover:text-destructive"
+              className="text-destructive hover:text-destructive min-h-[36px] min-w-[36px]"
             >
               {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={onView}>
-            <span>ดูรายละเอียด</span>
+          <Button variant="ghost" size="sm" onClick={onView} className="min-h-[36px]">
+            <span className="hidden sm:inline">ดูรายละเอียด</span>
+            <span className="sm:hidden">ดู</span>
             <ChevronRight className="h-3 w-3 ml-1" />
           </Button>
         </div>
@@ -261,6 +272,7 @@ function CreateEvaluationDialog({
   onSuccess: () => void;
 }) {
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const { data: flowsData, isLoading: isFlowsLoading } = useFlows(botId);
   const { data: personasData, isLoading: isPersonasLoading } = useEvaluationPersonas();
   const { createEvaluation, isCreating } = useEvaluationOperations(botId);
@@ -329,356 +341,358 @@ function CreateEvaluationDialog({
     return (testCount * 0.07).toFixed(2);
   }, [formData.test_count]);
 
+  // Shared form content
+  const FormContent = (
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+      <div className="px-4 sm:px-6 pt-4 shrink-0">
+        <TabsList className="grid w-full grid-cols-2 h-11">
+          <TabsTrigger value="basic" className="gap-2 min-h-[44px]">
+            <Settings2 className="h-4 w-4" />
+            <span className="hidden sm:inline">ตั้งค่าพื้นฐาน</span>
+            <span className="sm:hidden">พื้นฐาน</span>
+          </TabsTrigger>
+          <TabsTrigger value="models" className="gap-2 min-h-[44px]">
+            <Brain className="h-4 w-4" />
+            <span className="hidden sm:inline">เลือกโมเดล AI</span>
+            <span className="sm:hidden">โมเดล</span>
+          </TabsTrigger>
+        </TabsList>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6">
+        {/* Tab 1: Basic Settings */}
+        <TabsContent value="basic" className="mt-0 space-y-5 py-4 data-[state=inactive]:hidden">
+          {/* Flow Selection */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">เลือก Flow *</Label>
+            <Select
+              value={formData.flow_id ? String(formData.flow_id) : ''}
+              onValueChange={(value) => setFormData((prev) => ({ ...prev, flow_id: Number(value) }))}
+              disabled={isFlowsLoading}
+            >
+              <SelectTrigger className="min-h-[44px]">
+                <SelectValue placeholder={isFlowsLoading ? 'กำลังโหลด...' : 'เลือก Flow ที่ต้องการทดสอบ'} />
+              </SelectTrigger>
+              <SelectContent>
+                {flows.map((flow) => (
+                  <SelectItem key={flow.id} value={String(flow.id)} className="min-h-[44px]">
+                    {flow.name} {flow.is_default && '(Default)'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Name (optional) */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">ชื่อการประเมิน <span className="text-muted-foreground font-normal">(ไม่บังคับ)</span></Label>
+            <Input
+              placeholder="เช่น ทดสอบ prompt v2"
+              value={formData.name}
+              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+              className="min-h-[44px]"
+            />
+          </div>
+
+          {/* Test Count */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <Label className="text-sm font-medium">จำนวน Test Cases</Label>
+              <Badge variant="secondary" className="font-mono">{formData.test_count}</Badge>
+            </div>
+            <Slider
+              value={[formData.test_count || 40]}
+              onValueChange={([value]) => setFormData((prev) => ({ ...prev, test_count: value }))}
+              min={10}
+              max={100}
+              step={5}
+              className="py-2"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>10 (เร็ว)</span>
+              <span>100 (ละเอียด)</span>
+            </div>
+          </div>
+
+          {/* Personas - Responsive grid */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Personas</Label>
+              <span className="text-xs text-muted-foreground">
+                {formData.personas?.length ? `เลือก ${formData.personas.length} personas` : 'ใช้ทั้งหมด'}
+              </span>
+            </div>
+            {isPersonasLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {personas.map((persona) => {
+                  const isSelected = formData.personas?.includes(persona.key);
+                  const Icon = PERSONA_ICONS[persona.key] || User;
+                  return (
+                    <button
+                      key={persona.key}
+                      type="button"
+                      onClick={() => togglePersona(persona.key)}
+                      className={`
+                        relative p-3 sm:p-4 rounded-lg border-2 text-left transition-all cursor-pointer min-h-[60px]
+                        ${isSelected
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:border-muted-foreground/50 hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      {isSelected && (
+                        <div className="absolute top-2 right-2">
+                          <Check className="h-4 w-4 text-primary" />
+                        </div>
+                      )}
+                      <div className="flex items-start gap-3">
+                        <div className={`
+                          p-2 rounded-lg shrink-0
+                          ${isSelected ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}
+                        `}>
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm">{persona.name}</div>
+                          <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                            {persona.description}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Test Options */}
+          <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+            <Label className="text-sm font-medium">ตัวเลือกการทดสอบ</Label>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between min-h-[44px]">
+                <div className="flex-1 pr-4">
+                  <Label htmlFor="multi-turn" className="text-sm cursor-pointer">Multi-turn</Label>
+                  <p className="text-xs text-muted-foreground">ทดสอบบทสนทนาหลายรอบ</p>
+                </div>
+                <Switch
+                  id="multi-turn"
+                  checked={formData.include_multi_turn}
+                  onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, include_multi_turn: checked }))}
+                />
+              </div>
+              <div className="flex items-center justify-between min-h-[44px]">
+                <div className="flex-1 pr-4">
+                  <Label htmlFor="edge-cases" className="text-sm cursor-pointer">Edge cases</Label>
+                  <p className="text-xs text-muted-foreground">รวมกรณีพิเศษและขอบเขต</p>
+                </div>
+                <Switch
+                  id="edge-cases"
+                  checked={formData.include_edge_cases}
+                  onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, include_edge_cases: checked }))}
+                />
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* Tab 2: Model Settings */}
+        <TabsContent value="models" className="mt-0 space-y-5 py-4 data-[state=inactive]:hidden">
+          {/* Info Banner */}
+          <div className="flex items-start gap-3 p-3 sm:p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <Sparkles className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <p className="font-medium text-blue-900 dark:text-blue-100">ระบบใช้ 3 โมเดล</p>
+              <p className="text-blue-700 dark:text-blue-300 mt-1 text-xs sm:text-sm">
+                Generator → Simulator → Judge
+              </p>
+            </div>
+          </div>
+
+          {/* Generator Model */}
+          <div className="space-y-3 p-3 sm:p-4 border rounded-lg">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30 shrink-0">
+                <Cpu className="h-4 w-4 sm:h-5 sm:w-5 text-green-600 dark:text-green-400" />
+              </div>
+              <div className="min-w-0">
+                <Label className="text-sm font-medium">Generator</Label>
+                <p className="text-xs text-muted-foreground truncate">สร้าง test cases</p>
+              </div>
+            </div>
+            <Select
+              value={formData.generator_model}
+              onValueChange={(value) => setFormData((prev) => ({ ...prev, generator_model: value }))}
+            >
+              <SelectTrigger className="min-h-[44px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">เร็ว & ประหยัด</div>
+                {MODEL_OPTIONS.fast.map((model) => (
+                  <SelectItem key={model.value} value={model.value} className="min-h-[44px]">
+                    <span>{model.label}</span>
+                  </SelectItem>
+                ))}
+                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-1">สมดุล</div>
+                {MODEL_OPTIONS.balanced.map((model) => (
+                  <SelectItem key={model.value} value={model.value} className="min-h-[44px]">
+                    <span>{model.label}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Simulator Model */}
+          <div className="space-y-3 p-3 sm:p-4 border rounded-lg">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30 shrink-0">
+                <User className="h-4 w-4 sm:h-5 sm:w-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div className="min-w-0">
+                <Label className="text-sm font-medium">Simulator</Label>
+                <p className="text-xs text-muted-foreground truncate">จำลองลูกค้า</p>
+              </div>
+            </div>
+            <Select
+              value={formData.simulator_model}
+              onValueChange={(value) => setFormData((prev) => ({ ...prev, simulator_model: value }))}
+            >
+              <SelectTrigger className="min-h-[44px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">เร็ว & ประหยัด</div>
+                {MODEL_OPTIONS.fast.map((model) => (
+                  <SelectItem key={model.value} value={model.value} className="min-h-[44px]">
+                    <span>{model.label}</span>
+                  </SelectItem>
+                ))}
+                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-1">สมดุล</div>
+                {MODEL_OPTIONS.balanced.map((model) => (
+                  <SelectItem key={model.value} value={model.value} className="min-h-[44px]">
+                    <span>{model.label}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Judge Model */}
+          <div className="space-y-3 p-3 sm:p-4 border rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30 shrink-0">
+                <Brain className="h-4 w-4 sm:h-5 sm:w-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div className="min-w-0">
+                <Label className="text-sm font-medium">Judge</Label>
+                <p className="text-xs text-muted-foreground truncate">ประเมินคุณภาพ</p>
+              </div>
+            </div>
+            <Select
+              value={formData.judge_model}
+              onValueChange={(value) => setFormData((prev) => ({ ...prev, judge_model: value }))}
+            >
+              <SelectTrigger className="min-h-[44px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">สมดุล (แนะนำ)</div>
+                {MODEL_OPTIONS.balanced.map((model) => (
+                  <SelectItem key={model.value} value={model.value} className="min-h-[44px]">
+                    <div className="flex items-center gap-2">
+                      <span>{model.label}</span>
+                      {model.recommended && <Badge variant="secondary" className="text-xs">แนะนำ</Badge>}
+                    </div>
+                  </SelectItem>
+                ))}
+                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-1">แม่นยำสูง</div>
+                {MODEL_OPTIONS.powerful.map((model) => (
+                  <SelectItem key={model.value} value={model.value} className="min-h-[44px]">
+                    <span>{model.label}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </TabsContent>
+      </div>
+
+      {/* Cost Summary - Always visible */}
+      <div className="px-4 sm:px-6 py-3 border-t bg-muted/30 shrink-0">
+        <div className="flex items-center justify-between p-3 bg-primary/5 border border-primary/20 rounded-lg">
+          <div>
+            <div className="text-sm font-medium">ค่าใช้จ่ายโดยประมาณ</div>
+            <div className="text-xs text-muted-foreground">OpenRouter API</div>
+          </div>
+          <div className="text-xl sm:text-2xl font-bold text-primary">~${estimatedCost}</div>
+        </div>
+      </div>
+    </Tabs>
+  );
+
+  // Footer buttons
+  const FooterButtons = (
+    <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
+      <Button variant="outline" onClick={() => onOpenChange(false)} className="min-h-[44px] w-full sm:w-auto">
+        ยกเลิก
+      </Button>
+      <Button onClick={handleSubmit} disabled={isCreating || !formData.flow_id} className="min-h-[44px] w-full sm:w-auto">
+        {isCreating ? (
+          <>
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            กำลังเริ่ม...
+          </>
+        ) : (
+          <>
+            <PlayCircle className="h-4 w-4 mr-2" />
+            เริ่มการประเมิน
+          </>
+        )}
+      </Button>
+    </div>
+  );
+
+  // Mobile: Bottom Sheet
+  if (isMobile) {
+    return (
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent side="bottom" className="h-[85vh] flex flex-col p-0 rounded-t-2xl">
+          <SheetHeader className="px-4 pt-4 pb-2 shrink-0">
+            <div className="w-12 h-1.5 bg-muted-foreground/20 rounded-full mx-auto mb-2" />
+            <SheetTitle>สร้างการประเมินใหม่</SheetTitle>
+            <SheetDescription className="text-xs">
+              สร้าง test cases และประเมินคุณภาพ Bot
+            </SheetDescription>
+          </SheetHeader>
+          {FormContent}
+          <SheetFooter className="px-4 pb-6 pt-2 shrink-0 border-t">
+            {FooterButtons}
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  // Desktop: Dialog
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0">
-        <DialogHeader className="px-6 pt-6 pb-0">
+      <DialogContent className="sm:max-w-xl max-h-[85vh] flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
           <DialogTitle>สร้างการประเมินใหม่</DialogTitle>
           <DialogDescription>
             ระบบจะสร้าง test cases จาก Knowledge Base และประเมินคุณภาพการตอบของ Bot
           </DialogDescription>
         </DialogHeader>
-
-        {/* Tabs Navigation */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-          <div className="px-6 pt-4">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="basic" className="gap-2">
-                <Settings2 className="h-4 w-4" />
-                ตั้งค่าพื้นฐาน
-              </TabsTrigger>
-              <TabsTrigger value="models" className="gap-2">
-                <Brain className="h-4 w-4" />
-                เลือกโมเดล AI
-              </TabsTrigger>
-            </TabsList>
-          </div>
-
-          <ScrollArea className="flex-1 px-6">
-            {/* Tab 1: Basic Settings */}
-            <TabsContent value="basic" className="mt-0 space-y-6 py-4">
-              {/* Flow Selection */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">เลือก Flow *</Label>
-                <Select
-                  value={formData.flow_id ? String(formData.flow_id) : ''}
-                  onValueChange={(value) => setFormData((prev) => ({ ...prev, flow_id: Number(value) }))}
-                  disabled={isFlowsLoading}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={isFlowsLoading ? 'กำลังโหลด...' : 'เลือก Flow ที่ต้องการทดสอบ'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {flows.map((flow) => (
-                      <SelectItem key={flow.id} value={String(flow.id)}>
-                        {flow.name} {flow.is_default && '(Default)'}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Name (optional) */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">ชื่อการประเมิน <span className="text-muted-foreground font-normal">(ไม่บังคับ)</span></Label>
-                <Input
-                  placeholder="เช่น ทดสอบ prompt v2"
-                  value={formData.name}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-                />
-              </div>
-
-              {/* Test Count */}
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <Label className="text-sm font-medium">จำนวน Test Cases</Label>
-                  <Badge variant="secondary" className="font-mono">{formData.test_count}</Badge>
-                </div>
-                <Slider
-                  value={[formData.test_count || 40]}
-                  onValueChange={([value]) => setFormData((prev) => ({ ...prev, test_count: value }))}
-                  min={10}
-                  max={100}
-                  step={5}
-                  className="py-2"
-                />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>10 (เร็ว)</span>
-                  <span>100 (ละเอียด)</span>
-                </div>
-              </div>
-
-              {/* Personas */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Personas</Label>
-                  <span className="text-xs text-muted-foreground">
-                    {formData.personas?.length ? `เลือก ${formData.personas.length} personas` : 'ใช้ทั้งหมด'}
-                  </span>
-                </div>
-                {isPersonasLoading ? (
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3">
-                    {personas.map((persona) => {
-                      const isSelected = formData.personas?.includes(persona.key);
-                      const Icon = PERSONA_ICONS[persona.key] || User;
-                      return (
-                        <button
-                          key={persona.key}
-                          type="button"
-                          onClick={() => togglePersona(persona.key)}
-                          className={`
-                            relative p-3 rounded-lg border-2 text-left transition-all cursor-pointer
-                            ${isSelected
-                              ? 'border-primary bg-primary/5'
-                              : 'border-border hover:border-muted-foreground/50 hover:bg-muted/50'
-                            }
-                          `}
-                        >
-                          {isSelected && (
-                            <div className="absolute top-2 right-2">
-                              <Check className="h-4 w-4 text-primary" />
-                            </div>
-                          )}
-                          <div className="flex items-start gap-3">
-                            <div className={`
-                              p-2 rounded-lg
-                              ${isSelected ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}
-                            `}>
-                              <Icon className="h-4 w-4" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-sm">{persona.name}</div>
-                              <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
-                                {persona.description}
-                              </div>
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Test Options */}
-              <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-                <Label className="text-sm font-medium">ตัวเลือกการทดสอบ</Label>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label htmlFor="multi-turn" className="text-sm cursor-pointer">Multi-turn conversations</Label>
-                      <p className="text-xs text-muted-foreground">ทดสอบบทสนทนาหลายรอบ</p>
-                    </div>
-                    <Switch
-                      id="multi-turn"
-                      checked={formData.include_multi_turn}
-                      onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, include_multi_turn: checked }))}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label htmlFor="edge-cases" className="text-sm cursor-pointer">Edge cases</Label>
-                      <p className="text-xs text-muted-foreground">รวมกรณีพิเศษและขอบเขต</p>
-                    </div>
-                    <Switch
-                      id="edge-cases"
-                      checked={formData.include_edge_cases}
-                      onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, include_edge_cases: checked }))}
-                    />
-                  </div>
-                </div>
-              </div>
-            </TabsContent>
-
-            {/* Tab 2: Model Settings */}
-            <TabsContent value="models" className="mt-0 space-y-6 py-4">
-              {/* Info Banner */}
-              <div className="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
-                <Sparkles className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
-                <div className="text-sm">
-                  <p className="font-medium text-blue-900 dark:text-blue-100">ระบบใช้ 3 โมเดลทำงานร่วมกัน</p>
-                  <p className="text-blue-700 dark:text-blue-300 mt-1">
-                    Generator สร้างคำถาม → Simulator จำลองลูกค้า → Judge ประเมินผล
-                  </p>
-                </div>
-              </div>
-
-              {/* Generator Model */}
-              <div className="space-y-3 p-4 border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
-                    <Cpu className="h-5 w-5 text-green-600 dark:text-green-400" />
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium">Generator Model</Label>
-                    <p className="text-xs text-muted-foreground">สร้าง test cases และคำถามจาก Knowledge Base</p>
-                  </div>
-                </div>
-                <Select
-                  value={formData.generator_model}
-                  onValueChange={(value) => setFormData((prev) => ({ ...prev, generator_model: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">เร็ว & ประหยัด</div>
-                    {MODEL_OPTIONS.fast.map((model) => (
-                      <SelectItem key={model.value} value={model.value}>
-                        <div className="flex items-center gap-2">
-                          <span>{model.label}</span>
-                          <span className="text-xs text-muted-foreground">({model.description})</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-1">สมดุล</div>
-                    {MODEL_OPTIONS.balanced.map((model) => (
-                      <SelectItem key={model.value} value={model.value}>
-                        <div className="flex items-center gap-2">
-                          <span>{model.label}</span>
-                          <span className="text-xs text-muted-foreground">({model.description})</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Simulator Model */}
-              <div className="space-y-3 p-4 border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
-                    <User className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium">Simulator Model</Label>
-                    <p className="text-xs text-muted-foreground">จำลองการสนทนาของลูกค้าตาม Persona</p>
-                  </div>
-                </div>
-                <Select
-                  value={formData.simulator_model}
-                  onValueChange={(value) => setFormData((prev) => ({ ...prev, simulator_model: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">เร็ว & ประหยัด</div>
-                    {MODEL_OPTIONS.fast.map((model) => (
-                      <SelectItem key={model.value} value={model.value}>
-                        <div className="flex items-center gap-2">
-                          <span>{model.label}</span>
-                          <span className="text-xs text-muted-foreground">({model.description})</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-1">สมดุล</div>
-                    {MODEL_OPTIONS.balanced.map((model) => (
-                      <SelectItem key={model.value} value={model.value}>
-                        <div className="flex items-center gap-2">
-                          <span>{model.label}</span>
-                          <span className="text-xs text-muted-foreground">({model.description})</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Judge Model */}
-              <div className="space-y-3 p-4 border rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-                    <Brain className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium">Judge Model</Label>
-                    <p className="text-xs text-muted-foreground">ประเมินคุณภาพการตอบ (แนะนำใช้โมเดลที่แม่นยำ)</p>
-                  </div>
-                </div>
-                <Select
-                  value={formData.judge_model}
-                  onValueChange={(value) => setFormData((prev) => ({ ...prev, judge_model: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">สมดุล (แนะนำ)</div>
-                    {MODEL_OPTIONS.balanced.map((model) => (
-                      <SelectItem key={model.value} value={model.value}>
-                        <div className="flex items-center gap-2">
-                          <span>{model.label}</span>
-                          {model.recommended && <Badge variant="secondary" className="text-xs">แนะนำ</Badge>}
-                          <span className="text-xs text-muted-foreground">({model.description})</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-1">แม่นยำสูง</div>
-                    {MODEL_OPTIONS.powerful.map((model) => (
-                      <SelectItem key={model.value} value={model.value}>
-                        <div className="flex items-center gap-2">
-                          <span>{model.label}</span>
-                          <span className="text-xs text-muted-foreground">({model.description})</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Custom Model Input */}
-              <div className="space-y-2 pt-2 border-t">
-                <Label className="text-xs text-muted-foreground">หรือใส่ชื่อโมเดลเอง (OpenRouter format)</Label>
-                <Input
-                  placeholder="เช่น meta-llama/llama-3-70b-instruct"
-                  className="text-sm font-mono"
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      setFormData((prev) => ({ ...prev, judge_model: e.target.value }));
-                    }
-                  }}
-                />
-              </div>
-            </TabsContent>
-          </ScrollArea>
-
-          {/* Cost Summary - Always visible */}
-          <div className="px-6 py-4 border-t bg-muted/30">
-            <div className="flex items-center justify-between p-4 bg-primary/5 border border-primary/20 rounded-lg">
-              <div>
-                <div className="text-sm font-medium">ค่าใช้จ่ายโดยประมาณ</div>
-                <div className="text-xs text-muted-foreground">ผ่าน OpenRouter API</div>
-              </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold text-primary">~${estimatedCost}</div>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="px-6 pb-6 pt-0">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              ยกเลิก
-            </Button>
-            <Button onClick={handleSubmit} disabled={isCreating || !formData.flow_id}>
-              {isCreating ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  กำลังเริ่ม...
-                </>
-              ) : (
-                <>
-                  <PlayCircle className="h-4 w-4 mr-2" />
-                  เริ่มการประเมิน
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </Tabs>
+        {FormContent}
+        <DialogFooter className="px-6 pb-6 pt-2 shrink-0 border-t">
+          {FooterButtons}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -787,36 +801,39 @@ export function EvaluationsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/bots')}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight">AI Evaluation</h1>
-            <p className="text-muted-foreground">ทดสอบและประเมินคุณภาพ Prompt และ Knowledge Base</p>
+      <div className="max-w-4xl mx-auto px-4 py-4 sm:py-8">
+        {/* Header - Responsive */}
+        <div className="space-y-4 mb-6 sm:mb-8">
+          {/* Top row: Back button + Title */}
+          <div className="flex items-center gap-3 sm:gap-4">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/bots')} className="shrink-0 min-h-[44px] min-w-[44px]">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight">AI Evaluation</h1>
+              <p className="text-sm text-muted-foreground hidden sm:block">ทดสอบและประเมินคุณภาพ Prompt และ Knowledge Base</p>
+            </div>
           </div>
-          <Button onClick={() => setIsCreateOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            สร้างการประเมิน
-          </Button>
-        </div>
 
-        {/* Bot Selector */}
-        <div className="mb-6">
-          <Select value={selectedBotId ? String(selectedBotId) : ''} onValueChange={handleSelectBot}>
-            <SelectTrigger className="w-full sm:w-64">
-              <SelectValue placeholder="เลือก Bot" />
-            </SelectTrigger>
-            <SelectContent>
-              {bots.map((bot) => (
-                <SelectItem key={bot.id} value={String(bot.id)}>
-                  {bot.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Bottom row: Bot selector + Create button */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Select value={selectedBotId ? String(selectedBotId) : ''} onValueChange={handleSelectBot}>
+              <SelectTrigger className="w-full sm:w-64 min-h-[44px]">
+                <SelectValue placeholder="เลือก Bot" />
+              </SelectTrigger>
+              <SelectContent>
+                {bots.map((bot) => (
+                  <SelectItem key={bot.id} value={String(bot.id)} className="min-h-[44px]">
+                    {bot.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button onClick={() => setIsCreateOpen(true)} className="min-h-[44px] w-full sm:w-auto">
+              <Plus className="h-4 w-4 mr-2" />
+              สร้างการประเมิน
+            </Button>
+          </div>
         </div>
 
         {/* Evaluations List */}
