@@ -153,14 +153,14 @@ PROMPT,
      */
     public function getPersonasForDisplay(): array
     {
-        return array_map(function ($persona) {
+        return array_values(array_map(function ($persona) {
             return [
                 'key' => $persona['key'],
                 'name' => $persona['name'],
                 'name_en' => $persona['name_en'],
                 'description' => $persona['description'],
             ];
-        }, $this->personas);
+        }, $this->personas));
     }
 
     /**
