@@ -576,18 +576,15 @@ PROMPT;
      */
     protected function parseIntentResponse(string $content): array
     {
-        // Try to extract JSON from the response
         $content = trim($content);
 
-        // Remove markdown code blocks if present
-        if (preg_match('/```(?:json)?\s*(\{.*?\})\s*```/s', $content, $matches)) {
+        // Remove markdown code blocks if present (greedy to capture full JSON)
+        if (preg_match('/```(?:json)?\s*(\{.+\})\s*```/s', $content, $matches)) {
             $content = $matches[1];
         }
 
-        // Try to find JSON object in the response
-        if (preg_match('/\{[^}]+\}/', $content, $matches)) {
-            $content = $matches[0];
-        }
+        // Extract JSON object with proper brace matching
+        $content = $this->extractJsonObject($content);
 
         try {
             $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
@@ -618,6 +615,57 @@ PROMPT;
                 'confidence' => 0,
             ];
         }
+    }
+
+    /**
+     * Extract JSON object from string with proper brace matching.
+     * Handles nested objects unlike simple regex.
+     */
+    protected function extractJsonObject(string $content): string
+    {
+        $start = strpos($content, '{');
+        if ($start === false) {
+            return $content;
+        }
+
+        $depth = 0;
+        $length = strlen($content);
+        $inString = false;
+        $escape = false;
+
+        for ($i = $start; $i < $length; $i++) {
+            $char = $content[$i];
+
+            if ($escape) {
+                $escape = false;
+                continue;
+            }
+
+            if ($char === '\\') {
+                $escape = true;
+                continue;
+            }
+
+            if ($char === '"') {
+                $inString = !$inString;
+                continue;
+            }
+
+            if ($inString) {
+                continue;
+            }
+
+            if ($char === '{') {
+                $depth++;
+            } elseif ($char === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return substr($content, $start, $i - $start + 1);
+                }
+            }
+        }
+
+        return $content;
     }
 
     /**

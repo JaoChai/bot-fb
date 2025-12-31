@@ -212,7 +212,14 @@ class StreamController extends Controller
                 fallbackModelOverride: $fallbackDecisionModel
             );
 
-            $parsed = $this->parseIntentResponse($result['content'] ?? '');
+            $rawContent = $result['content'] ?? '';
+            Log::debug('Decision Model Raw Response', [
+                'bot_id' => $bot->id,
+                'model' => $decisionModel,
+                'raw_content' => $rawContent,
+            ]);
+
+            $parsed = $this->parseIntentResponse($rawContent);
             $timeMs = round((microtime(true) - $startTime) * 1000);
 
             $this->metrics['models_used'][] = $result['model'] ?? $decisionModel;
@@ -593,15 +600,13 @@ PROMPT;
     {
         $content = trim($content);
 
-        // Remove markdown code blocks
-        if (preg_match('/```(?:json)?\s*(\{.*?\})\s*```/s', $content, $matches)) {
+        // Remove markdown code blocks (greedy to capture full JSON)
+        if (preg_match('/```(?:json)?\s*(\{.+\})\s*```/s', $content, $matches)) {
             $content = $matches[1];
         }
 
-        // Find JSON object
-        if (preg_match('/\{[^}]+\}/', $content, $matches)) {
-            $content = $matches[0];
-        }
+        // Extract JSON object with proper brace matching
+        $content = $this->extractJsonObject($content);
 
         try {
             $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
@@ -620,11 +625,66 @@ PROMPT;
                 'confidence' => $confidence,
             ];
         } catch (\Exception $e) {
+            Log::warning('Decision Model JSON Parse Failed', [
+                'content' => substr($content, 0, 500),
+                'error' => $e->getMessage(),
+            ]);
             return [
                 'intent' => 'chat',
                 'confidence' => 0,
             ];
         }
+    }
+
+    /**
+     * Extract JSON object from string with proper brace matching.
+     * Handles nested objects unlike simple regex.
+     */
+    protected function extractJsonObject(string $content): string
+    {
+        $start = strpos($content, '{');
+        if ($start === false) {
+            return $content;
+        }
+
+        $depth = 0;
+        $length = strlen($content);
+        $inString = false;
+        $escape = false;
+
+        for ($i = $start; $i < $length; $i++) {
+            $char = $content[$i];
+
+            if ($escape) {
+                $escape = false;
+                continue;
+            }
+
+            if ($char === '\\') {
+                $escape = true;
+                continue;
+            }
+
+            if ($char === '"') {
+                $inString = !$inString;
+                continue;
+            }
+
+            if ($inString) {
+                continue;
+            }
+
+            if ($char === '{') {
+                $depth++;
+            } elseif ($char === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return substr($content, $start, $i - $start + 1);
+                }
+            }
+        }
+
+        return $content;
     }
 
     protected function formatKnowledgeBaseContext($results): string
