@@ -28,6 +28,7 @@ import {
   FlowsList,
   KnowledgeBaseSelector,
   ChatEmulator,
+  FlowSafetySettings,
   type KnowledgeBaseConfig,
 } from '@/components/flows';
 import {
@@ -89,6 +90,11 @@ const INITIAL_FORM_DATA: CreateFlowData = {
   knowledge_bases: [],
   language: 'th',
   is_default: false,
+  // Agent Safety
+  agent_timeout_seconds: 120,
+  agent_max_cost_per_request: null,
+  hitl_enabled: false,
+  hitl_dangerous_actions: [],
 };
 
 export function FlowEditorPage() {
@@ -200,6 +206,11 @@ export function FlowEditorPage() {
         knowledge_bases: kbData,
         language: existingFlow.language,
         is_default: existingFlow.is_default,
+        // Agent Safety
+        agent_timeout_seconds: existingFlow.agent_timeout_seconds ?? 120,
+        agent_max_cost_per_request: existingFlow.agent_max_cost_per_request ?? null,
+        hitl_enabled: existingFlow.hitl_enabled ?? false,
+        hitl_dangerous_actions: existingFlow.hitl_dangerous_actions || [],
       });
       setHasChanges(false);
     }
@@ -664,6 +675,19 @@ export function FlowEditorPage() {
                           <span className="text-xs text-muted-foreground">
                             5-15 ครั้ง • AI จะหยุดทำงานอัตโนมัติเมื่อถึงจำนวนนี้
                           </span>
+                        </div>
+
+                        {/* Agent Safety Settings */}
+                        <div className="mt-4 pt-4 border-t">
+                          <FlowSafetySettings
+                            settings={{
+                              agent_timeout_seconds: formData.agent_timeout_seconds ?? 120,
+                              agent_max_cost_per_request: formData.agent_max_cost_per_request ?? null,
+                              hitl_enabled: formData.hitl_enabled ?? false,
+                              hitl_dangerous_actions: formData.hitl_dangerous_actions || [],
+                            }}
+                            onChange={(field, value) => handleChange(field as keyof typeof formData, value as CreateFlowData[keyof CreateFlowData])}
+                          />
                         </div>
                       </div>
                     )}
@@ -1184,6 +1208,19 @@ export function FlowEditorPage() {
                             </div>
                           </label>
                         </div>
+
+                        {/* Agent Safety Settings (Mobile) */}
+                        <div className="mt-3 pt-3 border-t">
+                          <FlowSafetySettings
+                            settings={{
+                              agent_timeout_seconds: formData.agent_timeout_seconds ?? 120,
+                              agent_max_cost_per_request: formData.agent_max_cost_per_request ?? null,
+                              hitl_enabled: formData.hitl_enabled ?? false,
+                              hitl_dangerous_actions: formData.hitl_dangerous_actions || [],
+                            }}
+                            onChange={(field, value) => handleChange(field as keyof typeof formData, value as CreateFlowData[keyof CreateFlowData])}
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1319,6 +1356,11 @@ export function FlowEditorPage() {
                     knowledge_bases: kbData,
                     language: existingFlow.language,
                     is_default: existingFlow.is_default,
+                    // Agent Safety
+                    agent_timeout_seconds: existingFlow.agent_timeout_seconds ?? 120,
+                    agent_max_cost_per_request: existingFlow.agent_max_cost_per_request ?? null,
+                    hitl_enabled: existingFlow.hitl_enabled ?? false,
+                    hitl_dangerous_actions: existingFlow.hitl_dangerous_actions || [],
                   });
                 } else {
                   setFormData(INITIAL_FORM_DATA);

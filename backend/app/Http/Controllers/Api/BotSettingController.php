@@ -21,18 +21,8 @@ class BotSettingController extends Controller
             // Get or create settings for this bot
             $settings = $bot->settings ?? $this->createDefaultSettings($bot);
 
-            // Merge AI settings from Bot model
-            $data = $settings->toArray();
-            $data['use_semantic_router'] = $bot->use_semantic_router ?? false;
-            $data['semantic_router_threshold'] = $bot->semantic_router_threshold ?? 0.75;
-            $data['semantic_router_fallback'] = $bot->semantic_router_fallback ?? 'llm';
-            $data['use_confidence_cascade'] = $bot->use_confidence_cascade ?? false;
-            $data['cascade_confidence_threshold'] = $bot->cascade_confidence_threshold ?? 0.7;
-            $data['cascade_cheap_model'] = $bot->cascade_cheap_model ?? 'openai/gpt-4o-mini';
-            $data['cascade_expensive_model'] = $bot->cascade_expensive_model ?? 'openai/gpt-4o';
-
             return response()->json([
-                'data' => $data,
+                'data' => $settings->toArray(),
             ]);
         } catch (\Throwable $e) {
             \Log::error('BotSettingController::show error', [
@@ -109,41 +99,13 @@ class BotSettingController extends Controller
                 'multiple_bubbles_delimiter' => 'string|max:10',
                 'wait_multiple_bubbles_enabled' => 'boolean',
                 'wait_multiple_bubbles_ms' => 'integer|min:500|max:20000',
-
-                // AI Settings (stored on Bot model)
-                'use_semantic_router' => 'boolean',
-                'semantic_router_threshold' => 'numeric|min:0|max:1',
-                'semantic_router_fallback' => 'string|in:llm,default_intent',
-                'use_confidence_cascade' => 'boolean',
-                'cascade_confidence_threshold' => 'numeric|min:0|max:1',
-                'cascade_cheap_model' => 'nullable|string|max:100',
-                'cascade_expensive_model' => 'nullable|string|max:100',
             ]);
-
-            // Separate AI settings from BotSetting fields
-            $aiSettings = [
-                'use_semantic_router',
-                'semantic_router_threshold',
-                'semantic_router_fallback',
-                'use_confidence_cascade',
-                'cascade_confidence_threshold',
-                'cascade_cheap_model',
-                'cascade_expensive_model',
-            ];
-
-            $botSettingData = collect($validated)->except($aiSettings)->toArray();
-            $botAiData = collect($validated)->only($aiSettings)->toArray();
 
             // Get or create settings
             $settings = $bot->settings ?? $this->createDefaultSettings($bot);
 
             // Update BotSetting
-            $settings->update($botSettingData);
-
-            // Update Bot AI settings
-            if (!empty($botAiData)) {
-                $bot->update($botAiData);
-            }
+            $settings->update($validated);
 
             return response()->json([
                 'message' => 'Settings updated successfully',
