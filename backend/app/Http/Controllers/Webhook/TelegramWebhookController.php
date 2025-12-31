@@ -64,8 +64,8 @@ class TelegramWebhookController extends Controller
      */
     protected function findBotByToken(string $token): ?Bot
     {
-        // Build the expected webhook URL
-        $webhookUrl = config('app.url') . '/webhook/telegram/' . $token;
+        // Build the expected webhook URL (using /api/webhook/ path for proxy compatibility)
+        $webhookUrl = config('app.url') . '/api/webhook/telegram/' . $token;
 
         return Bot::where('webhook_url', $webhookUrl)
             ->where('channel_type', 'telegram')
