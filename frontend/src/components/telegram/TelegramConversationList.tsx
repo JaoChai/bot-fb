@@ -1,0 +1,230 @@
+import { useEffect, useRef, memo, useCallback } from 'react';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Search, Loader2, Users, User, MessageCircle } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { th } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
+import type { Conversation, ConversationStatusCounts } from '@/types/api';
+
+interface TelegramConversationListProps {
+  conversations: Conversation[];
+  selectedId: number | null;
+  onSelect: (conversation: Conversation) => void;
+  isLoading: boolean;
+  statusFilter: string;
+  onStatusFilterChange: (status: string) => void;
+  search: string;
+  onSearchChange: (search: string) => void;
+  statusCounts?: ConversationStatusCounts;
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
+  fetchNextPage?: () => void;
+}
+
+export function TelegramConversationList({
+  conversations,
+  selectedId,
+  onSelect,
+  isLoading,
+  statusFilter,
+  onStatusFilterChange,
+  search,
+  onSearchChange,
+  statusCounts,
+  hasNextPage,
+  isFetchingNextPage,
+  fetchNextPage,
+}: TelegramConversationListProps) {
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  // Infinite scroll using IntersectionObserver
+  useEffect(() => {
+    if (!loadMoreRef.current || !hasNextPage || !fetchNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Search */}
+      <div className="p-2 sm:p-3 border-b">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="ค้นหาแชท..."
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            className="pl-9 min-h-[44px] text-base sm:text-sm"
+          />
+        </div>
+      </div>
+
+      {/* Status Tabs */}
+      <div className="p-2 border-b">
+        <Tabs value={statusFilter} onValueChange={onStatusFilterChange}>
+          <TabsList className="w-full grid grid-cols-3 h-11">
+            <TabsTrigger value="all" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+              <span className="truncate">ทั้งหมด</span>
+              {statusCounts && (
+                <Badge variant="secondary" className="ml-1 text-xs px-1 py-0 h-4 hidden sm:inline-flex">
+                  {statusCounts.total}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="active" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+              <span className="truncate">กลุ่ม</span>
+            </TabsTrigger>
+            <TabsTrigger value="handover" className="text-xs sm:text-sm h-10 px-1 sm:px-3">
+              <span className="truncate">ส่วนตัว</span>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {/* Conversation List */}
+      <ScrollArea className="flex-1">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : conversations.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            ไม่พบการสนทนา
+          </div>
+        ) : (
+          <div className="p-2 space-y-1">
+            {conversations.map((conversation) => (
+              <TelegramConversationItem
+                key={conversation.id}
+                conversation={conversation}
+                isSelected={conversation.id === selectedId}
+                onSelect={onSelect}
+              />
+            ))}
+
+            {/* Load more trigger */}
+            <div ref={loadMoreRef} className="h-1" />
+
+            {/* Loading indicator */}
+            {isFetchingNextPage && (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-sm text-muted-foreground">กำลังโหลด...</span>
+              </div>
+            )}
+          </div>
+        )}
+      </ScrollArea>
+    </div>
+  );
+}
+
+interface TelegramConversationItemProps {
+  conversation: Conversation;
+  isSelected: boolean;
+  onSelect: (conversation: Conversation) => void;
+}
+
+// Memoized conversation item
+const TelegramConversationItem = memo(function TelegramConversationItem({
+  conversation,
+  isSelected,
+  onSelect,
+}: TelegramConversationItemProps) {
+  // Determine if this is a group chat
+  const isGroup = conversation.telegram_chat_type === 'group' ||
+                  conversation.telegram_chat_type === 'supergroup';
+
+  // Display name: group title or customer name
+  const displayName = isGroup
+    ? conversation.telegram_chat_title || 'Telegram Group'
+    : conversation.customer_profile?.display_name || 'Telegram User';
+
+  const displayInitial = displayName.charAt(0).toUpperCase();
+  const hasUnread = conversation.unread_count > 0;
+  const lastMessageTime = conversation.last_message_at
+    ? formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: th })
+    : null;
+
+  const handleClick = useCallback(() => {
+    onSelect(conversation);
+  }, [onSelect, conversation]);
+
+  return (
+    <button
+      onClick={handleClick}
+      className={cn(
+        'w-full p-3 rounded-lg flex items-start gap-3 text-left transition-colors cursor-pointer',
+        'hover:bg-accent/50 active:bg-accent',
+        'min-h-[72px]',
+        isSelected && 'bg-accent'
+      )}
+    >
+      {/* Avatar with group/user indicator */}
+      <div className="relative">
+        <Avatar className="h-12 w-12 md:h-10 md:w-10 bg-[#0088CC]/10">
+          <AvatarImage src={conversation.customer_profile?.picture_url || undefined} />
+          <AvatarFallback className="bg-[#0088CC]/10 text-[#0088CC]">
+            {isGroup ? <Users className="h-5 w-5" /> : displayInitial}
+          </AvatarFallback>
+        </Avatar>
+        {hasUnread && (
+          <span className="absolute -top-0.5 -right-0.5 h-3 w-3 bg-[#0088CC] rounded-full border-2 border-background" />
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <span className={cn('font-medium truncate', hasUnread && 'font-semibold')}>
+            {displayName}
+          </span>
+          <span className="text-xs text-muted-foreground flex-shrink-0">
+            {lastMessageTime}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <MessageCircle className="h-3 w-3 flex-shrink-0 text-[#0088CC]" />
+          <span className="text-xs text-muted-foreground truncate">
+            {conversation.message_count} ข้อความ
+          </span>
+        </div>
+
+        {/* Chat type badge */}
+        <div className="flex items-center gap-1.5 mt-1">
+          {isGroup ? (
+            <Badge variant="outline" className="text-xs h-5 gap-1 border-[#0088CC]/30 text-[#0088CC]">
+              <Users className="h-3 w-3" />
+              กลุ่ม
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-xs h-5 gap-1 border-[#0088CC]/30 text-[#0088CC]">
+              <User className="h-3 w-3" />
+              ส่วนตัว
+            </Badge>
+          )}
+          {hasUnread && (
+            <Badge className="text-xs h-5 bg-[#0088CC] hover:bg-[#0088CC]">
+              {conversation.unread_count} ใหม่
+            </Badge>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+});

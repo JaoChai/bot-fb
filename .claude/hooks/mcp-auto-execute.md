@@ -1,7 +1,7 @@
 ---
 event: UserPromptSubmit
 condition: |
-  prompt matches "(?i)(deploy|cost|ค่าใช้จ่าย|token|api key|security|webhook|railway|log|tinker|test|e2e|unit)"
+  prompt matches "(?i)(deploy|cost|ค่าใช้จ่าย|token|api key|security|webhook|railway|log|tinker|test|e2e|unit|env|variable|service|redeploy|restart)"
 ---
 # MCP Auto-Execute Hook
 
@@ -28,20 +28,31 @@ execute({ action: "cost_by_model", from_date: "2024-01-01", to_date: "2024-12-31
 - list tokens: `execute({ action: "list_tokens" })`
 - revoke token: `execute({ action: "revoke_token", token_id: <id>, confirm: true })`
 
-## Deploy Actions (ต้อง confirm)
+## Railway Actions
 ```javascript
-// Deploy backend
+// Deploy
 execute({ action: "deploy_backend", confirm: true })
-
-// Deploy frontend
 execute({ action: "deploy_frontend", confirm: true })
 
-// ดู Railway logs
+// ดู logs
 execute({ action: "railway_logs", service: "backend", lines: 100 })
 execute({ action: "railway_logs", service: "frontend", lines: 100 })
 
-// ดู Railway status
+// ดู status
 execute({ action: "railway_status" })
+
+// ดู services ทั้งหมด
+execute({ action: "railway_services" })
+
+// ดู env variables
+execute({ action: "railway_variables" })
+execute({ action: "railway_variables", service: "backend" })
+
+// ตั้งค่า env variable
+execute({ action: "railway_set_variable", variable_name: "KEY", variable_value: "value", service: "backend" })
+
+// Redeploy/restart service
+execute({ action: "railway_redeploy", service: "backend" })
 ```
 
 ## Test Actions
@@ -64,7 +75,12 @@ execute({
 | token usage | cost_by_model |
 | deploy backend | deploy_backend |
 | deploy frontend | deploy_frontend |
-| railway, log | railway_logs |
+| railway status | railway_status |
+| railway log | railway_logs |
+| railway service | railway_services |
+| env, variable | railway_variables |
+| set env, set variable | railway_set_variable |
+| redeploy, restart | railway_redeploy |
 | api key, security | check_api_keys |
 | webhook | rotate_webhook หรือ test_webhook |
 | tinker, php | tinker |
@@ -75,3 +91,4 @@ execute({
 - Deploy actions ต้องมี `confirm: true`
 - Tinker เฉพาะ local mode
 - ห้ามใช้ tinker สำหรับ DROP/DELETE/TRUNCATE statements
+- ต้อง `railway login` ก่อนใช้ Railway actions

@@ -156,11 +156,15 @@ export type ExecuteAction =
   | "rotate_webhook"
   | "list_tokens"
   | "revoke_token"
-  // Deploy
+  // Deploy/Railway
   | "deploy_backend"
   | "deploy_frontend"
   | "railway_logs"
   | "railway_status"
+  | "railway_services"
+  | "railway_variables"
+  | "railway_set_variable"
+  | "railway_redeploy"
   // Test
   | "run_e2e"
   | "run_unit"
@@ -179,4 +183,7 @@ export interface ExecuteInput {
   service?: "backend" | "frontend" | "reverb";
   lines?: number;
   confirm?: boolean;
+  // Railway env vars
+  variable_name?: string;
+  variable_value?: string;
 }

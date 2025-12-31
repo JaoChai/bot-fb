@@ -58,4 +58,30 @@ export async function checkRailwayConnection(config) {
     }
     return { connected: false };
 }
+/**
+ * List Railway services in the project
+ */
+export async function listRailwayServices(config) {
+    return executeShell("railway", ["service", "list", "--json"], config, { timeout: 30000 });
+}
+/**
+ * Get Railway environment variables
+ */
+export async function getRailwayVariables(service, config) {
+    const args = ["variables", "--json"];
+    if (service) {
+        args.push("--service", service);
+    }
+    return executeShell("railway", args, config, { timeout: 30000 });
+}
+/**
+ * Set Railway environment variable
+ */
+export async function setRailwayVariable(name, value, service, config) {
+    const args = ["variables", "set", `${name}=${value}`];
+    if (service) {
+        args.push("--service", service);
+    }
+    return executeShell("railway", args, config, { timeout: 30000 });
+}
 //# sourceMappingURL=railway.js.map

@@ -53,7 +53,7 @@ export interface EvaluateInput {
     per_page?: number;
     status?: string;
 }
-export type ExecuteAction = "cost_summary" | "cost_by_bot" | "cost_by_model" | "check_api_keys" | "rotate_webhook" | "list_tokens" | "revoke_token" | "deploy_backend" | "deploy_frontend" | "railway_logs" | "railway_status" | "run_e2e" | "run_unit" | "test_webhook" | "tinker";
+export type ExecuteAction = "cost_summary" | "cost_by_bot" | "cost_by_model" | "check_api_keys" | "rotate_webhook" | "list_tokens" | "revoke_token" | "deploy_backend" | "deploy_frontend" | "railway_logs" | "railway_status" | "railway_services" | "railway_variables" | "railway_set_variable" | "railway_redeploy" | "run_e2e" | "run_unit" | "test_webhook" | "tinker";
 export interface ExecuteInput {
     action: ExecuteAction;
     bot_id?: number;
@@ -65,5 +65,7 @@ export interface ExecuteInput {
     service?: "backend" | "frontend" | "reverb";
     lines?: number;
     confirm?: boolean;
+    variable_name?: string;
+    variable_value?: string;
 }
 //# sourceMappingURL=inputs.d.ts.map

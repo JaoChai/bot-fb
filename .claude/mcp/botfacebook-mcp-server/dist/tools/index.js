@@ -217,10 +217,14 @@ Security:
 - rotate_webhook: Regenerate bot webhook URL
 - list_tokens, revoke_token: Manage auth tokens
 
-Deploy:
+Railway (Deploy & Management):
 - deploy_backend, deploy_frontend: Railway deployment
 - railway_logs: Get Railway logs
 - railway_status: Check Railway service status
+- railway_services: List all services
+- railway_variables: Get env variables
+- railway_set_variable: Set env variable
+- railway_redeploy: Redeploy/restart service
 
 Test:
 - run_e2e: Run E2E tests
@@ -238,6 +242,7 @@ Tinker:
                             "cost_summary", "cost_by_bot", "cost_by_model",
                             "check_api_keys", "rotate_webhook", "list_tokens", "revoke_token",
                             "deploy_backend", "deploy_frontend", "railway_logs", "railway_status",
+                            "railway_services", "railway_variables", "railway_set_variable", "railway_redeploy",
                             "run_e2e", "run_unit", "test_webhook",
                             "tinker",
                         ],
@@ -256,10 +261,12 @@ Tinker:
                     service: {
                         type: "string",
                         enum: ["backend", "frontend", "reverb"],
-                        description: "For railway_logs: which service",
+                        description: "For railway_logs, railway_variables, railway_redeploy: which service",
                     },
                     lines: { type: "number", default: 100, description: "For railway_logs: number of lines" },
                     confirm: { type: "boolean", description: "Required for dangerous actions (deploy, revoke_token)" },
+                    variable_name: { type: "string", description: "For railway_set_variable: variable name" },
+                    variable_value: { type: "string", description: "For railway_set_variable: variable value" },
                 },
                 required: ["action"],
             },

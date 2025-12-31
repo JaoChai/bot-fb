@@ -124,3 +124,47 @@ export async function checkRailwayConnection(
 
   return { connected: false };
 }
+
+/**
+ * List Railway services in the project
+ */
+export async function listRailwayServices(
+  config: ServerConfig
+): Promise<ShellResult> {
+  return executeShell(
+    "railway",
+    ["service", "list", "--json"],
+    config,
+    { timeout: 30000 }
+  );
+}
+
+/**
+ * Get Railway environment variables
+ */
+export async function getRailwayVariables(
+  service: string | undefined,
+  config: ServerConfig
+): Promise<ShellResult> {
+  const args = ["variables", "--json"];
+  if (service) {
+    args.push("--service", service);
+  }
+  return executeShell("railway", args, config, { timeout: 30000 });
+}
+
+/**
+ * Set Railway environment variable
+ */
+export async function setRailwayVariable(
+  name: string,
+  value: string,
+  service: string | undefined,
+  config: ServerConfig
+): Promise<ShellResult> {
+  const args = ["variables", "set", `${name}=${value}`];
+  if (service) {
+    args.push("--service", service);
+  }
+  return executeShell("railway", args, config, { timeout: 30000 });
+}

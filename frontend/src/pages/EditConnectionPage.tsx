@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
 const PLATFORMS = [
   { id: 'line', name: 'LINE Official Account', icon: 'line' },
   { id: 'facebook', name: 'Facebook Page', icon: 'facebook' },
+  { id: 'telegram', name: 'Telegram Bot', icon: 'telegram' },
   { id: 'testing', name: 'Just Testing', icon: 'testing' },
 ];
 
@@ -69,7 +70,7 @@ function Section({
 interface ConnectionFormData {
   enabled: boolean;
   connection_name: string;
-  platform: 'line' | 'facebook' | 'testing';
+  platform: 'line' | 'facebook' | 'testing' | 'telegram';
   primary_chat_model: string;
   fallback_chat_model: string;
   decision_model: string;
@@ -100,7 +101,7 @@ export function EditConnectionPage() {
 
   const isEditMode = !!botId;
   const botIdNumber = botId ? parseInt(botId, 10) : null;
-  const platformFromUrl = searchParams.get('platform') as 'line' | 'facebook' | 'testing' | null;
+  const platformFromUrl = searchParams.get('platform') as 'line' | 'facebook' | 'testing' | 'telegram' | null;
 
   // API Hooks
   const { data: existingBot, isLoading: isLoadingBot } = useConnection(botIdNumber);

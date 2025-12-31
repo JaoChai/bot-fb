@@ -62,7 +62,7 @@ Laravel 12 + React 19 + PostgreSQL (Neon) + Railway + Reverb
 - ใช้ MCP tools เลยโดยไม่ต้องถาม user ก่อน (ยกเว้น dangerous actions)
 - ดู hooks ที่ `.claude/hooks/mcp-auto-*.md` สำหรับรายละเอียด
 
-### 5 Composite Tools
+### BotFacebook MCP (5 Composite Tools)
 
 ```
 diagnose(action)   - เช็คปัญหาระบบ (all, backend, database, queue, cache, logs, railway)
@@ -71,6 +71,16 @@ bot_manage(action) - จัดการ Bot/KB/Flow/Conversation
 evaluate(action)   - ประเมิน Bot (create, list, report, compare)
 execute(action)    - Cost, Security, Deploy, Test, Tinker
 ```
+
+### Railway MCP Server
+
+Direct Railway platform access via `@railway/mcp-server`:
+- Project/Service management
+- Deployment triggers & logs
+- Environment variables
+- Build logs & streaming
+
+**ต้อง login ก่อนใช้:** `railway login`
 
 ## See Also
 - [COMMANDS.md](.claude/COMMANDS.md) - Full command reference

@@ -12,6 +12,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\LINEService;
+use App\Services\TelegramService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -640,8 +641,13 @@ class ConversationController extends Controller
     /**
      * Send a message from agent to customer (HITL).
      */
-    public function sendAgentMessage(Request $request, Bot $bot, Conversation $conversation, LINEService $lineService): JsonResponse
-    {
+    public function sendAgentMessage(
+        Request $request,
+        Bot $bot,
+        Conversation $conversation,
+        LINEService $lineService,
+        TelegramService $telegramService
+    ): JsonResponse {
         $this->authorize('update', $bot);
         $this->validateConversationBelongsToBot($conversation, $bot);
 
@@ -659,7 +665,7 @@ class ConversationController extends Controller
                     $fail('The message is too long (max 5000 bytes for LINE).');
                 }
             }],
-            'type' => 'sometimes|in:text,image,file',
+            'type' => 'sometimes|in:text,image,file,photo,video,document,voice',
             'media_url' => 'sometimes|url|max:2048',
         ]);
 
@@ -683,19 +689,60 @@ class ConversationController extends Controller
             return $message;
         });
 
-        // Send to customer via LINE (outside transaction - external API call)
+        // Send to customer via channel (outside transaction - external API call)
         try {
             if ($conversation->channel_type === 'line') {
                 $lineService->push($bot, $conversation->external_customer_id, [
                     $lineService->textMessage($validated['content']),
                 ]);
+            } elseif ($conversation->channel_type === 'telegram') {
+                $type = $validated['type'] ?? 'text';
+                $chatId = $conversation->external_customer_id;
+                $mediaUrl = $validated['media_url'] ?? null;
+
+                switch ($type) {
+                    case 'photo':
+                    case 'image':
+                        if ($mediaUrl) {
+                            $telegramService->sendPhoto($bot, $chatId, $mediaUrl, $validated['content'] ?: null);
+                        } else {
+                            $telegramService->sendMessage($bot, $chatId, $validated['content']);
+                        }
+                        break;
+                    case 'video':
+                        if ($mediaUrl) {
+                            $telegramService->sendVideo($bot, $chatId, $mediaUrl, $validated['content'] ?: null);
+                        } else {
+                            $telegramService->sendMessage($bot, $chatId, $validated['content']);
+                        }
+                        break;
+                    case 'document':
+                    case 'file':
+                        if ($mediaUrl) {
+                            $telegramService->sendDocument($bot, $chatId, $mediaUrl, $validated['content'] ?: null);
+                        } else {
+                            $telegramService->sendMessage($bot, $chatId, $validated['content']);
+                        }
+                        break;
+                    case 'voice':
+                        if ($mediaUrl) {
+                            $telegramService->sendVoice($bot, $chatId, $mediaUrl);
+                        } else {
+                            $telegramService->sendMessage($bot, $chatId, $validated['content']);
+                        }
+                        break;
+                    default:
+                        $telegramService->sendMessage($bot, $chatId, $validated['content']);
+                }
             }
             // Add other channel implementations here (Facebook, etc.)
         } catch (\Exception $e) {
             Log::error('Failed to send agent message to customer', [
                 'conversation_id' => $conversation->id,
                 'bot_id' => $bot->id,
+                'channel_type' => $conversation->channel_type,
                 'error_type' => get_class($e),
+                'error_message' => $e->getMessage(),
             ]);
             $sendError = 'Failed to deliver message to customer';
         }
