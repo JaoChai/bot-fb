@@ -87,7 +87,7 @@ class Evaluation extends Model
     // Helper methods
     public function getProgressAttribute(): float
     {
-        if ($this->total_test_cases === 0) {
+        if (empty($this->total_test_cases)) {
             return 0;
         }
         return round(($this->completed_test_cases / $this->total_test_cases) * 100, 2);
