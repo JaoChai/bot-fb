@@ -360,7 +360,15 @@ export function EditConnectionPage() {
                   <Label htmlFor="connection_name">ชื่อการเชื่อมต่อ</Label>
                   <Input
                     id="connection_name"
-                    placeholder="เช่น LINE Bot สำหรับร้านกาแฟ"
+                    placeholder={
+                      formData.platform === 'telegram'
+                        ? 'เช่น Telegram Support ร้านกาแฟ'
+                        : formData.platform === 'facebook'
+                        ? 'เช่น Facebook Bot ร้านกาแฟ'
+                        : formData.platform === 'testing'
+                        ? 'เช่น Bot ทดสอบ'
+                        : 'เช่น LINE Bot สำหรับร้านกาแฟ'
+                    }
                     value={formData.connection_name}
                     onChange={(e) => handleChange('connection_name', e.target.value)}
                     className="max-w-md"
