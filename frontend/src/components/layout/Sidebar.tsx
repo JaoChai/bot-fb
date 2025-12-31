@@ -23,6 +23,8 @@ import {
   LogOut,
   ChevronsUpDown,
   Target,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
 const mainNavItems = [
@@ -54,9 +56,13 @@ const mainNavItems = [
 ];
 
 export function Sidebar() {
-  const { sidebarCollapsed, toggleSidebarCollapsed } = useUIStore();
+  const { sidebarCollapsed, toggleSidebarCollapsed, theme, setTheme } = useUIStore();
   const { user } = useAuthStore();
   const { logout, isLoggingOut } = useAuth();
+
+  const toggleTheme = () => {
+    setTheme(theme === 'dark' ? 'light' : 'dark');
+  };
 
   const userInitials = user?.name
     ? user.name.substring(0, 2).toUpperCase()
@@ -134,6 +140,31 @@ export function Sidebar() {
           <Settings className="h-4 w-4 shrink-0" />
           {!sidebarCollapsed && <span>ตั้งค่า</span>}
         </NavLink>
+
+        {/* Theme Toggle */}
+        <button
+          onClick={toggleTheme}
+          className={cn(
+            'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors w-full',
+            'text-muted-foreground hover:bg-accent hover:text-foreground cursor-pointer',
+            sidebarCollapsed && 'justify-center px-2'
+          )}
+          title={theme === 'dark' ? 'สลับเป็นโหมดสว่าง' : 'สลับเป็นโหมดมืด'}
+        >
+          <div className="relative h-4 w-4 shrink-0">
+            <Sun className={cn(
+              'absolute h-4 w-4 transition-all duration-300 ease-out',
+              theme === 'dark' ? 'rotate-0 scale-100 opacity-100' : 'rotate-90 scale-0 opacity-0'
+            )} />
+            <Moon className={cn(
+              'absolute h-4 w-4 transition-all duration-300 ease-out',
+              theme === 'dark' ? '-rotate-90 scale-0 opacity-0' : 'rotate-0 scale-100 opacity-100'
+            )} />
+          </div>
+          {!sidebarCollapsed && (
+            <span>{theme === 'dark' ? 'โหมดสว่าง' : 'โหมดมืด'}</span>
+          )}
+        </button>
 
         {/* User Profile */}
         <DropdownMenu>
