@@ -169,6 +169,51 @@ class TelegramService
     }
 
     /**
+     * Get user profile photo and store it.
+     */
+    public function getUserProfilePhoto(Bot $bot, string $userId): ?string
+    {
+        try {
+            // 1. Get profile photos
+            $response = $this->client($bot)->post('/getUserProfilePhotos', [
+                'user_id' => $userId,
+                'limit' => 1,
+            ]);
+
+            if ($response->failed() || !$response->json('ok')) {
+                return null;
+            }
+
+            $photos = $response->json('result.photos', []);
+            if (empty($photos) || empty($photos[0])) {
+                return null;
+            }
+
+            // 2. Get largest photo (last in array)
+            $photoSizes = $photos[0];
+            $largestPhoto = end($photoSizes);
+            $fileId = $largestPhoto['file_id'] ?? null;
+
+            if (!$fileId) {
+                return null;
+            }
+
+            // 3. Download and store using existing method
+            $fileData = $this->downloadAndStoreFile($bot, $fileId);
+
+            return $fileData['url'] ?? null;
+
+        } catch (\Exception $e) {
+            Log::warning('Failed to get Telegram user profile photo', [
+                'bot_id' => $bot->id,
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
      * Send text message.
      */
     public function sendMessage(Bot $bot, string $chatId, string $text, array $options = []): array
