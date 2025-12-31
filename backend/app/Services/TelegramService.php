@@ -152,8 +152,11 @@ class TelegramService
             $disk = config('filesystems.default');
             Storage::disk($disk)->put($storagePath, $fileContent);
 
+            // Generate URL - use R2_URL directly to avoid config cache issues
+            $url = $this->generateStorageUrl($disk, $storagePath);
+
             return [
-                'url' => Storage::disk($disk)->url($storagePath),
+                'url' => $url,
                 'path' => $storagePath,
                 'file_size' => $fileInfo['file_size'] ?? null,
                 'mime_type' => $this->guessMimeType($extension),
@@ -211,6 +214,23 @@ class TelegramService
             ]);
             return null;
         }
+    }
+
+    /**
+     * Generate storage URL - use R2_URL directly if R2 disk to avoid config cache issues.
+     */
+    protected function generateStorageUrl(string $disk, string $path): string
+    {
+        if ($disk === 'r2') {
+            // Use R2_URL env directly to avoid Laravel config cache issues
+            $r2Url = env('R2_URL') ?: config('filesystems.disks.r2.url');
+            if ($r2Url) {
+                return rtrim($r2Url, '/') . '/' . $path;
+            }
+        }
+
+        // Fallback to Storage::url() for other disks
+        return Storage::disk($disk)->url($path);
     }
 
     /**

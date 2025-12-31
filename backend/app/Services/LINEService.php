@@ -7,6 +7,7 @@ use App\Models\Bot;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class LINEService
 {
@@ -243,6 +244,73 @@ class LINEService
         }
 
         return $response->body();
+    }
+
+    /**
+     * Download and store message content (images, videos, audio, files).
+     * Returns array with url, path, mime_type or null on failure.
+     */
+    public function downloadAndStoreFile(Bot $bot, string $messageId, string $type): ?array
+    {
+        try {
+            $content = $this->getContent($bot, $messageId);
+
+            // Determine extension based on type
+            $extension = match ($type) {
+                'image' => 'jpg',
+                'video' => 'mp4',
+                'audio' => 'm4a',
+                'file' => 'bin',
+                default => 'bin',
+            };
+
+            // Generate storage path
+            $storagePath = 'line/' . $bot->id . '/' . date('Y/m/d') . '/' . uniqid() . '.' . $extension;
+
+            // Store file
+            $disk = config('filesystems.default');
+            Storage::disk($disk)->put($storagePath, $content);
+
+            // Generate URL
+            $url = $this->generateStorageUrl($disk, $storagePath);
+
+            // Determine MIME type
+            $mimeType = match ($type) {
+                'image' => 'image/jpeg',
+                'video' => 'video/mp4',
+                'audio' => 'audio/m4a',
+                default => 'application/octet-stream',
+            };
+
+            return [
+                'url' => $url,
+                'path' => $storagePath,
+                'mime_type' => $mimeType,
+            ];
+        } catch (\Exception $e) {
+            Log::error('LINE file download failed', [
+                'bot_id' => $bot->id,
+                'message_id' => $messageId,
+                'type' => $type,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Generate storage URL - use R2_URL directly if R2 disk.
+     */
+    protected function generateStorageUrl(string $disk, string $path): string
+    {
+        if ($disk === 'r2') {
+            $r2Url = env('R2_URL') ?: config('filesystems.disks.r2.url');
+            if ($r2Url) {
+                return rtrim($r2Url, '/') . '/' . $path;
+            }
+        }
+
+        return Storage::disk($disk)->url($path);
     }
 
     /**
