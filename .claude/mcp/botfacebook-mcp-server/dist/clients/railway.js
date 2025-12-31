@@ -62,7 +62,7 @@ export async function checkRailwayConnection(config) {
  * List Railway services in the project
  */
 export async function listRailwayServices(config) {
-    return executeShell("railway", ["service", "list", "--json"], config, { timeout: 30000 });
+    return executeShell("railway", ["service", "status"], config, { timeout: 30000 });
 }
 /**
  * Get Railway environment variables

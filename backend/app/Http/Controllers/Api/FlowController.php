@@ -272,7 +272,7 @@ class FlowController extends Controller
         $conversationHistory = $request->input('conversation_history', []);
 
         // Get API key: User Settings > ENV
-        $apiKey = $bot->user?->settings?->openrouter_api_key ?? config('services.openrouter.api_key');
+        $apiKey = $bot->user?->settings?->getOpenRouterApiKey() ?? config('services.openrouter.api_key');
 
         if (empty($apiKey)) {
             return response()->json([

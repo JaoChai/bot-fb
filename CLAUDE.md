@@ -69,16 +69,20 @@ diagnose(action)   - เช็คปัญหาระบบ (all, backend, data
 fix(action)        - แก้ไขปัญหา (clear_cache, migrate, rebuild_frontend, etc.)
 bot_manage(action) - จัดการ Bot/KB/Flow/Conversation
 evaluate(action)   - ประเมิน Bot (create, list, report, compare)
-execute(action)    - Cost, Security, Deploy, Test, Tinker
+execute(action)    - Cost, Security, Railway, Test, Tinker
 ```
 
-### Railway MCP Server
+### Railway Actions (via execute tool)
 
-Direct Railway platform access via `@railway/mcp-server`:
-- Project/Service management
-- Deployment triggers & logs
-- Environment variables
-- Build logs & streaming
+```
+railway_status     - ดู deployment status
+railway_logs       - ดู service logs
+railway_services   - ดู services ทั้งหมด
+railway_variables  - ดู env variables
+railway_set_variable - ตั้งค่า env variable
+railway_redeploy   - restart service
+deploy_backend/frontend - deploy ใหม่
+```
 
 **ต้อง login ก่อนใช้:** `railway login`
 

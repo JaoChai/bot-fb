@@ -95,7 +95,7 @@ class StreamController extends Controller
         }
 
         // 4. Get API key: User Settings > ENV
-        $apiKey = $bot->user?->settings?->openrouter_api_key ?? config('services.openrouter.api_key');
+        $apiKey = $bot->user?->settings?->getOpenRouterApiKey() ?? config('services.openrouter.api_key');
         if (empty($apiKey)) {
             return $this->errorResponse('No API key configured. Please set up in Settings page.', 422);
         }
@@ -304,7 +304,7 @@ class StreamController extends Controller
             $kbResults = [];
 
             // Get API key: User Settings > ENV
-            $embeddingApiKey = $bot->user?->settings?->openrouter_api_key
+            $embeddingApiKey = $bot->user?->settings?->getOpenRouterApiKey()
                 ?? config('services.openrouter.api_key');
 
             // Search flow-level KBs (many-to-many)

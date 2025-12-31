@@ -133,7 +133,7 @@ export async function listRailwayServices(
 ): Promise<ShellResult> {
   return executeShell(
     "railway",
-    ["service", "list", "--json"],
+    ["service", "status"],
     config,
     { timeout: 30000 }
   );

@@ -183,7 +183,7 @@ PROMPT;
         $userMessage = $request->input('message');
 
         // Check if API key is available: User Settings > ENV
-        $apiKey = $bot->user?->settings?->openrouter_api_key
+        $apiKey = $bot->user?->settings?->getOpenRouterApiKey()
             ?? config('services.openrouter.api_key');
 
         if (empty($apiKey)) {
