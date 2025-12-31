@@ -14,6 +14,7 @@ use App\Services\Evaluation\PersonaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Log;
 
 class EvaluationController extends Controller
 {
@@ -58,24 +59,36 @@ class EvaluationController extends Controller
             'include_edge_cases' => 'nullable|boolean',
         ]);
 
-        // Verify flow belongs to bot
-        $flow = $bot->flows()->findOrFail($validated['flow_id']);
+        try {
+            // Verify flow belongs to bot
+            $flow = $bot->flows()->findOrFail($validated['flow_id']);
 
-        // Create evaluation
-        $evaluation = $this->evaluationService->createEvaluation(
-            bot: $bot,
-            flow: $flow,
-            user: $request->user(),
-            config: $validated
-        );
+            // Create evaluation
+            $evaluation = $this->evaluationService->createEvaluation(
+                bot: $bot,
+                flow: $flow,
+                user: $request->user(),
+                config: $validated
+            );
 
-        // Dispatch background job
-        RunEvaluationJob::dispatch($evaluation, $request->user()->id);
+            // Dispatch background job
+            RunEvaluationJob::dispatch($evaluation, $request->user()->id);
 
-        return response()->json([
-            'message' => 'Evaluation started',
-            'data' => new EvaluationResource($evaluation),
-        ], 201);
+            return response()->json([
+                'message' => 'Evaluation started',
+                'data' => new EvaluationResource($evaluation),
+            ], 201);
+        } catch (\Exception $e) {
+            Log::error('Evaluation creation failed', [
+                'bot_id' => $bot->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to create evaluation: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
