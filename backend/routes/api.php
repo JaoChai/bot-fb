@@ -75,6 +75,11 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::get('/costs', [AnalyticsController::class, 'costs'])->name('analytics.costs');
     });
 
+    // Dashboard routes
+    Route::prefix('dashboard')->group(function () {
+        Route::get('/summary', [DashboardController::class, 'summary'])->name('dashboard.summary');
+    });
+
     // User Settings routes
     Route::prefix('settings')->group(function () {
         Route::get('/', [UserSettingController::class, 'show'])->name('settings.show');

@@ -754,3 +754,92 @@ export interface ImprovementPreview {
     kb_documents: number;
   };
 }
+
+// Dashboard Types
+export interface DashboardSummary {
+  total_bots: number;
+  active_bots: number;
+  total_conversations: number;
+  active_conversations: number;
+  handover_conversations: number;
+  messages_today: number;
+}
+
+export interface DashboardBotSummary {
+  id: number;
+  name: string;
+  status: 'active' | 'inactive' | 'paused';
+  channel_type: 'line' | 'facebook' | 'testing';
+  last_active_at: string | null;
+  conversation_count: number;
+  active_conversations: number;
+  handover_count: number;
+  messages_today: number;
+  latest_evaluation: {
+    id: number;
+    overall_score: number | null;
+    status: string;
+    completed_at: string | null;
+  } | null;
+}
+
+export interface DashboardHandoverAlert {
+  id: number;
+  bot_id: number;
+  bot_name: string;
+  customer_name: string;
+  waiting_since: string;
+}
+
+export interface DashboardEvaluationAlert {
+  id: number;
+  bot_id: number;
+  bot_name: string;
+  status: string;
+  progress_percent: number;
+  name: string;
+}
+
+export interface DashboardImprovementAlert {
+  id: number;
+  bot_id: number;
+  bot_name: string;
+  status: string;
+  suggestions_count: number;
+}
+
+export interface DashboardAlerts {
+  handover_conversations: DashboardHandoverAlert[];
+  running_evaluations: DashboardEvaluationAlert[];
+  pending_improvements: DashboardImprovementAlert[];
+}
+
+export type DashboardActivityType =
+  | 'evaluation_started'
+  | 'evaluation_completed'
+  | 'evaluation_failed'
+  | 'handover_started'
+  | 'handover_resolved'
+  | 'improvement_started'
+  | 'improvement_applied'
+  | 'bot_created'
+  | 'bot_updated'
+  | 'conversation_started';
+
+export interface DashboardActivity {
+  id: number;
+  type: DashboardActivityType;
+  title: string;
+  description: string | null;
+  bot_id: number | null;
+  bot_name: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface DashboardData {
+  summary: DashboardSummary;
+  bots: DashboardBotSummary[];
+  alerts: DashboardAlerts;
+  recent_activity: DashboardActivity[];
+}

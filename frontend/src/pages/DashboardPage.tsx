@@ -1,52 +1,81 @@
 import { useAuthStore } from '@/stores/authStore';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bot, MessageSquare, Zap, Brain, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Bot, MessageSquare, Zap, Users, DollarSign, Plus } from 'lucide-react';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CostAnalytics } from '@/components/analytics/CostAnalytics';
-
-const stats = [
-  {
-    title: 'Bots ทั้งหมด',
-    value: '0',
-    description: 'สร้าง Bot แรกเพื่อเริ่มต้น',
-    icon: Bot,
-    trend: null,
-  },
-  {
-    title: 'แชทที่ใช้งาน',
-    value: '0',
-    description: 'ไม่มีแชทที่ใช้งานอยู่',
-    icon: MessageSquare,
-    trend: null,
-  },
-  {
-    title: 'ข้อความวันนี้',
-    value: '0',
-    description: 'ยังไม่มีข้อความ',
-    icon: Zap,
-    trend: null,
-  },
-  {
-    title: 'AI Responses',
-    value: '0',
-    description: 'ยังไม่มีการตอบกลับ AI',
-    icon: Brain,
-    trend: null,
-  },
-];
-
-const quickStartSteps = [
-  { step: 1, title: 'สร้างการเชื่อมต่อแรก', done: false },
-  { step: 2, title: 'เชื่อมต่อ LINE หรือ Facebook', done: false },
-  { step: 3, title: 'อัปโหลดฐานความรู้', done: false },
-  { step: 4, title: 'เริ่มรับข้อความ', done: false },
-];
+import { useDashboardSummary } from '@/hooks/useDashboard';
+import { useCostAnalytics } from '@/hooks/useCostAnalytics';
+import {
+  DashboardStatCard,
+  BotOverviewCard,
+  AlertsSection,
+  RecentActivityTimeline,
+  DashboardSkeleton,
+} from '@/components/dashboard';
 
 export function DashboardPage() {
   const { user } = useAuthStore();
   const firstName = user?.name?.split(' ')[0] || 'User';
+
+  const { data, isLoading, error } = useDashboardSummary();
+  const { data: costData } = useCostAnalytics({ group_by: 'day' });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            สวัสดี, {firstName}
+          </h1>
+          <p className="text-muted-foreground">
+            นี่คือภาพรวมกิจกรรม Chatbot ของคุณ
+          </p>
+        </div>
+
+        <Tabs defaultValue="overview" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="overview">ภาพรวม</TabsTrigger>
+            <TabsTrigger value="costs">ค่าใช้จ่าย API</TabsTrigger>
+          </TabsList>
+          <TabsContent value="overview">
+            <DashboardSkeleton />
+          </TabsContent>
+        </Tabs>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            สวัสดี, {firstName}
+          </h1>
+          <p className="text-muted-foreground">
+            นี่คือภาพรวมกิจกรรม Chatbot ของคุณ
+          </p>
+        </div>
+        <Card className="border-destructive">
+          <CardContent className="py-8 text-center">
+            <p className="text-destructive">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>
+            <Button
+              variant="outline"
+              className="mt-4"
+              onClick={() => window.location.reload()}
+            >
+              ลองใหม่
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const hasBots = data && data.bots.length > 0;
 
   return (
     <div className="space-y-8">
@@ -69,97 +98,90 @@ export function DashboardPage() {
 
         <TabsContent value="overview" className="space-y-6">
           {/* Stats Grid */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {stats.map((stat) => (
-              <Card key={stat.title} className="border">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardDescription className="text-sm font-medium">
-                      {stat.title}
-                    </CardDescription>
-                    <stat.icon className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <CardTitle className="text-2xl font-semibold">
-                    {stat.value}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-xs text-muted-foreground">
-                    {stat.description}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            <DashboardStatCard
+              title="Bots ทั้งหมด"
+              value={data?.summary.total_bots ?? 0}
+              description={`${data?.summary.active_bots ?? 0} ทำงานอยู่`}
+              icon={Bot}
+            />
+            <DashboardStatCard
+              title="แชทที่ใช้งาน"
+              value={data?.summary.active_conversations ?? 0}
+              description={`จาก ${data?.summary.total_conversations ?? 0} ทั้งหมด`}
+              icon={MessageSquare}
+            />
+            <DashboardStatCard
+              title="ข้อความวันนี้"
+              value={data?.summary.messages_today ?? 0}
+              description="ข้อความที่รับส่งวันนี้"
+              icon={Zap}
+            />
+            <DashboardStatCard
+              title="รอมนุษย์ตอบ"
+              value={data?.summary.handover_conversations ?? 0}
+              description="การสนทนาที่ต้องดูแล"
+              icon={Users}
+              variant={
+                (data?.summary.handover_conversations ?? 0) > 0
+                  ? 'danger'
+                  : 'default'
+              }
+            />
+            <DashboardStatCard
+              title="ค่าใช้จ่ายวันนี้"
+              value={`$${(costData?.summary.today_cost ?? 0).toFixed(2)}`}
+              description={`เดือนนี้ $${(costData?.summary.month_cost ?? 0).toFixed(2)}`}
+              icon={DollarSign}
+            />
           </div>
 
-          {/* Quick Actions */}
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Quick Start Guide */}
-            <Card className="border">
+          {/* Alerts Section */}
+          {data?.alerts && <AlertsSection alerts={data.alerts} />}
+
+          {/* Bot Overview Cards */}
+          {hasBots ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Bot ทั้งหมด</h2>
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/bots/new">
+                    <Plus className="h-4 w-4 mr-1" />
+                    สร้าง Bot ใหม่
+                  </Link>
+                </Button>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {data.bots.map((bot) => (
+                  <BotOverviewCard key={bot.id} bot={bot} />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <Card>
               <CardHeader>
-                <CardTitle className="text-base font-semibold">
-                  เริ่มต้นใช้งาน
-                </CardTitle>
+                <CardTitle className="text-base">เริ่มต้นใช้งาน</CardTitle>
                 <CardDescription>
-                  ทำตามขั้นตอนเหล่านี้เพื่อเริ่มต้น
+                  สร้าง Bot แรกของคุณเพื่อเริ่มต้นรับข้อความจากลูกค้า
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2">
-                {quickStartSteps.map((item) => (
-                  <div
-                    key={item.step}
-                    className="flex items-center gap-3 p-2 rounded-md hover:bg-accent transition-colors"
-                  >
-                    <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium ${
-                      item.done
-                        ? 'bg-foreground text-background'
-                        : item.step === 1
-                        ? 'bg-foreground text-background'
-                        : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {item.done ? <CheckCircle2 className="h-4 w-4" /> : item.step}
-                    </div>
-                    <span className={`text-sm ${item.done ? 'line-through text-muted-foreground' : ''}`}>
-                      {item.title}
-                    </span>
-                  </div>
-                ))}
-                <Button className="w-full mt-4" asChild>
-                  <Link to="/connections/add">
-                    สร้างการเชื่อมต่อแรก
-                    <ArrowRight className="h-4 w-4 ml-2" />
+              <CardContent className="flex flex-col items-center py-8">
+                <Bot className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                <p className="text-sm text-muted-foreground mb-4 text-center">
+                  ยังไม่มี Bot สร้าง Bot แรกเพื่อเชื่อมต่อกับ LINE หรือ Facebook
+                </p>
+                <Button asChild>
+                  <Link to="/bots/new">
+                    <Plus className="h-4 w-4 mr-2" />
+                    สร้าง Bot แรก
                   </Link>
                 </Button>
               </CardContent>
             </Card>
+          )}
 
-            {/* Recent Activity */}
-            <Card className="border">
-              <CardHeader>
-                <CardTitle className="text-base font-semibold">
-                  กิจกรรมล่าสุด
-                </CardTitle>
-                <CardDescription>
-                  การสนทนาและกิจกรรมล่าสุดของคุณ
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
-                    <MessageSquare className="h-6 w-6 text-muted-foreground" />
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    ยังไม่มีกิจกรรมล่าสุด
-                  </p>
-                  <Button variant="outline" size="sm" asChild>
-                    <Link to="/bots">
-                      ดูการเชื่อมต่อทั้งหมด
-                    </Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          {/* Recent Activity Timeline */}
+          <RecentActivityTimeline activities={data?.recent_activity ?? []} />
         </TabsContent>
 
         <TabsContent value="costs">
