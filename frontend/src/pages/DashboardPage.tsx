@@ -146,7 +146,7 @@ export function DashboardPage() {
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">Bot ทั้งหมด</h2>
                 <Button variant="outline" size="sm" asChild>
-                  <Link to="/bots/new">
+                  <Link to="/connections/add">
                     <Plus className="h-4 w-4 mr-1" />
                     สร้าง Bot ใหม่
                   </Link>
@@ -172,7 +172,7 @@ export function DashboardPage() {
                   ยังไม่มี Bot สร้าง Bot แรกเพื่อเชื่อมต่อกับ LINE หรือ Facebook
                 </p>
                 <Button asChild>
-                  <Link to="/bots/new">
+                  <Link to="/connections/add">
                     <Plus className="h-4 w-4 mr-2" />
                     สร้าง Bot แรก
                   </Link>
