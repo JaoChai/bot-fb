@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -56,6 +56,157 @@ const senderLabels = {
   agent: 'แอดมิน',
 };
 
+// =====================
+// Memoized Sub-Components (defined before main component for proper hoisting)
+// =====================
+
+interface MessageBubbleProps {
+  message: Message;
+  previousMessage?: Message;
+}
+
+// Memoized message bubble - prevents re-rendering unchanged messages
+const MessageBubble = memo(function MessageBubble({ message, previousMessage }: MessageBubbleProps) {
+  const isUser = message.sender === 'user';
+  const SenderIcon = senderIcons[message.sender];
+
+  // Show timestamp if more than 5 minutes since last message
+  const showTimestamp =
+    !previousMessage ||
+    new Date(message.created_at).getTime() - new Date(previousMessage.created_at).getTime() >
+      5 * 60 * 1000;
+
+  // Show sender change indicator
+  const senderChanged = previousMessage && previousMessage.sender !== message.sender;
+
+  return (
+    <>
+      {/* Timestamp separator */}
+      {showTimestamp && (
+        <div className="text-center text-xs text-muted-foreground py-2">
+          {format(new Date(message.created_at), 'HH:mm', { locale: th })}
+        </div>
+      )}
+
+      {/* Sender change indicator */}
+      {senderChanged && !showTimestamp && <div className="h-2" />}
+
+      <div className={cn('flex gap-2', isUser ? 'justify-start' : 'justify-end')}>
+        {/* User avatar */}
+        {isUser && (
+          <Avatar className="h-8 w-8 shrink-0">
+            <AvatarFallback>
+              <User className="h-4 w-4" />
+            </AvatarFallback>
+          </Avatar>
+        )}
+
+        {/* Message bubble */}
+        <div
+          className={cn(
+            'max-w-[85%] sm:max-w-[70%] rounded-lg px-3 sm:px-4 py-2 break-words overflow-hidden',
+            isUser
+              ? 'bg-muted text-foreground'
+              : message.sender === 'agent'
+              ? 'bg-accent text-foreground border border-dashed'
+              : 'bg-foreground text-background'
+          )}
+        >
+          {/* Sender label for non-user messages */}
+          {!isUser && (
+            <div className="flex items-center gap-1 text-xs opacity-70 mb-1">
+              <SenderIcon className="h-3 w-3" />
+              <span>{senderLabels[message.sender]}</span>
+            </div>
+          )}
+
+          {/* Message content */}
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+
+          {/* AI metadata */}
+          {message.model_used && (
+            <div className="text-xs opacity-60 mt-1">
+              {message.model_used}
+              {message.prompt_tokens && message.completion_tokens && (
+                <span> - {message.prompt_tokens + message.completion_tokens} tokens</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Bot/Agent avatar */}
+        {!isUser && (
+          <Avatar className="h-8 w-8 shrink-0">
+            <AvatarFallback
+              className={
+                message.sender === 'agent'
+                  ? 'bg-muted'
+                  : 'bg-foreground'
+              }
+            >
+              <SenderIcon
+                className={cn(
+                  'h-4 w-4',
+                  message.sender === 'agent'
+                    ? 'text-foreground'
+                    : 'text-background'
+                )}
+              />
+            </AvatarFallback>
+          </Avatar>
+        )}
+      </div>
+    </>
+  );
+});
+
+// Memoized message item wrapper - prevents unnecessary re-renders
+interface MemoizedMessageItemProps {
+  message: Message;
+  previousMessage?: Message;
+  contextClearedAt: Date | null;
+}
+
+const MemoizedMessageItem = memo(function MemoizedMessageItem({
+  message,
+  previousMessage,
+  contextClearedAt,
+}: MemoizedMessageItemProps) {
+  // Memoize the separator calculation
+  const showContextSeparator = useMemo(() => {
+    if (!contextClearedAt) return false;
+    const messageTime = new Date(message.created_at);
+    const previousMessageTime = previousMessage
+      ? new Date(previousMessage.created_at)
+      : null;
+    return (
+      (!previousMessageTime && messageTime >= contextClearedAt) ||
+      (previousMessageTime && previousMessageTime < contextClearedAt && messageTime >= contextClearedAt)
+    );
+  }, [message.created_at, previousMessage?.created_at, contextClearedAt]);
+
+  return (
+    <div>
+      {/* Context cleared separator */}
+      {showContextSeparator && contextClearedAt && (
+        <div className="flex items-center gap-3 py-3 my-2">
+          <div className="flex-1 h-px bg-border" />
+          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full border">
+            <RotateCcw className="h-3 w-3" />
+            <span>Bot เริ่มบริบทใหม่ - {format(contextClearedAt, 'PPp', { locale: th })}</span>
+          </div>
+          <div className="flex-1 h-px bg-border" />
+        </div>
+      )}
+      <MessageBubble message={message} previousMessage={previousMessage} />
+    </div>
+  );
+});
+
+// =====================
+// Main Component
+// =====================
+
 interface ChatWindowProps {
   botId: number;
   conversation: Conversation;
@@ -89,8 +240,8 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
     }
   }, [messages, autoScroll]);
 
-  // Handle send message
-  const handleSendMessage = async (e: React.FormEvent) => {
+  // Handle send message (memoized)
+  const handleSendMessage = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!messageInput.trim()) return;
 
@@ -118,10 +269,10 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
         variant: 'destructive',
       });
     }
-  };
+  }, [messageInput, sendAgentMessage, conversation.id, toast]);
 
-  // Handle toggle bot
-  const handleToggleBot = async () => {
+  // Handle toggle bot (memoized)
+  const handleToggleBot = useCallback(async () => {
     try {
       await toggleHandover.mutateAsync({ conversationId: conversation.id });
       toast({
@@ -137,10 +288,10 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
         variant: 'destructive',
       });
     }
-  };
+  }, [toggleHandover, conversation.id, conversation.is_handover, toast]);
 
-  // Handle clear context
-  const handleClearContext = async () => {
+  // Handle clear context (memoized)
+  const handleClearContext = useCallback(async () => {
     try {
       await clearContext.mutateAsync(conversation.id);
       toast({
@@ -154,7 +305,21 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
         variant: 'destructive',
       });
     }
-  };
+  }, [clearContext, conversation.id, toast]);
+
+  // Memoize contextClearedAt to prevent recreating Date objects on each render
+  const contextClearedAt = useMemo(() =>
+    conversation.context_cleared_at
+      ? new Date(conversation.context_cleared_at)
+      : null,
+    [conversation.context_cleared_at]
+  );
+
+  // Handle scroll to bottom (memoized)
+  const handleScrollToBottom = useCallback(() => {
+    setAutoScroll(true);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
   const customerName = conversation.customer_profile?.display_name || 'ลูกค้า';
   const customerInitial = customerName.charAt(0).toUpperCase();
@@ -287,45 +452,15 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
                 </span>
               </div>
 
-              {/* Messages */}
-              {messages.map((message, index) => {
-                const previousMessage = index > 0 ? messages[index - 1] : undefined;
-
-                // Check if context was cleared between this and previous message
-                const contextClearedAt = conversation.context_cleared_at
-                  ? new Date(conversation.context_cleared_at)
-                  : null;
-                const messageTime = new Date(message.created_at);
-                const previousMessageTime = previousMessage
-                  ? new Date(previousMessage.created_at)
-                  : null;
-
-                // Show separator if context was cleared after previous message and before/at this message
-                const showContextSeparator = contextClearedAt && (
-                  (!previousMessageTime && messageTime >= contextClearedAt) ||
-                  (previousMessageTime && previousMessageTime < contextClearedAt && messageTime >= contextClearedAt)
-                );
-
-                return (
-                  <div key={message.id}>
-                    {/* Context cleared separator */}
-                    {showContextSeparator && (
-                      <div className="flex items-center gap-3 py-3 my-2">
-                        <div className="flex-1 h-px bg-border" />
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full border">
-                          <RotateCcw className="h-3 w-3" />
-                          <span>Bot เริ่มบริบทใหม่ - {format(contextClearedAt, 'PPp', { locale: th })}</span>
-                        </div>
-                        <div className="flex-1 h-px bg-border" />
-                      </div>
-                    )}
-                    <MessageBubble
-                      message={message}
-                      previousMessage={previousMessage}
-                    />
-                  </div>
-                );
-              })}
+              {/* Messages - using memoized contextClearedAt */}
+              {messages.map((message, index) => (
+                <MemoizedMessageItem
+                  key={message.id}
+                  message={message}
+                  previousMessage={index > 0 ? messages[index - 1] : undefined}
+                  contextClearedAt={contextClearedAt}
+                />
+              ))}
 
               {/* Scroll anchor */}
               <div ref={messagesEndRef} />
@@ -340,10 +475,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
           variant="secondary"
           size="sm"
           className="absolute bottom-24 left-1/2 -translate-x-1/2 shadow-lg"
-          onClick={() => {
-            setAutoScroll(true);
-            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-          }}
+          onClick={handleScrollToBottom}
         >
           <ChevronDown className="h-4 w-4 mr-2" />
           ข้อความใหม่
@@ -399,101 +531,3 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
   );
 }
 
-interface MessageBubbleProps {
-  message: Message;
-  previousMessage?: Message;
-}
-
-function MessageBubble({ message, previousMessage }: MessageBubbleProps) {
-  const isUser = message.sender === 'user';
-  const SenderIcon = senderIcons[message.sender];
-
-  // Show timestamp if more than 5 minutes since last message
-  const showTimestamp =
-    !previousMessage ||
-    new Date(message.created_at).getTime() - new Date(previousMessage.created_at).getTime() >
-      5 * 60 * 1000;
-
-  // Show sender change indicator
-  const senderChanged = previousMessage && previousMessage.sender !== message.sender;
-
-  return (
-    <>
-      {/* Timestamp separator */}
-      {showTimestamp && (
-        <div className="text-center text-xs text-muted-foreground py-2">
-          {format(new Date(message.created_at), 'HH:mm', { locale: th })}
-        </div>
-      )}
-
-      {/* Sender change indicator */}
-      {senderChanged && !showTimestamp && <div className="h-2" />}
-
-      <div className={cn('flex gap-2', isUser ? 'justify-start' : 'justify-end')}>
-        {/* User avatar */}
-        {isUser && (
-          <Avatar className="h-8 w-8 shrink-0">
-            <AvatarFallback>
-              <User className="h-4 w-4" />
-            </AvatarFallback>
-          </Avatar>
-        )}
-
-        {/* Message bubble */}
-        <div
-          className={cn(
-            'max-w-[85%] sm:max-w-[70%] rounded-lg px-3 sm:px-4 py-2 break-words overflow-hidden',
-            isUser
-              ? 'bg-muted text-foreground'
-              : message.sender === 'agent'
-              ? 'bg-accent text-foreground border border-dashed'
-              : 'bg-foreground text-background'
-          )}
-        >
-          {/* Sender label for non-user messages */}
-          {!isUser && (
-            <div className="flex items-center gap-1 text-xs opacity-70 mb-1">
-              <SenderIcon className="h-3 w-3" />
-              <span>{senderLabels[message.sender]}</span>
-            </div>
-          )}
-
-          {/* Message content */}
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
-
-          {/* AI metadata */}
-          {message.model_used && (
-            <div className="text-xs opacity-60 mt-1">
-              {message.model_used}
-              {message.prompt_tokens && message.completion_tokens && (
-                <span> - {message.prompt_tokens + message.completion_tokens} tokens</span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Bot/Agent avatar */}
-        {!isUser && (
-          <Avatar className="h-8 w-8 shrink-0">
-            <AvatarFallback
-              className={
-                message.sender === 'agent'
-                  ? 'bg-muted'
-                  : 'bg-foreground'
-              }
-            >
-              <SenderIcon
-                className={cn(
-                  'h-4 w-4',
-                  message.sender === 'agent'
-                    ? 'text-foreground'
-                    : 'text-background'
-                )}
-              />
-            </AvatarFallback>
-          </Avatar>
-        )}
-      </div>
-    </>
-  );
-}
