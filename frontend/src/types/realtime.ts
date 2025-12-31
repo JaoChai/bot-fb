@@ -37,10 +37,12 @@ export interface AdminNotificationEvent {
  * Channel names for subscription
  */
 export const CHANNELS = {
-  conversation: (id: number) => `private-conversation.${id}`,
-  bot: (id: number) => `private-bot.${id}`,
-  botPresence: (id: number) => `presence-bot.${id}.presence`,
-  userNotifications: (id: number) => `private-user.${id}.notifications`,
+  // Note: echo.private() and echo.join() automatically add 'private-' and 'presence-' prefixes
+  // So we only need the base channel name here
+  conversation: (id: number) => `conversation.${id}`,
+  bot: (id: number) => `bot.${id}`,
+  botPresence: (id: number) => `bot.${id}.presence`,
+  userNotifications: (id: number) => `user.${id}.notifications`,
 } as const;
 
 /**
