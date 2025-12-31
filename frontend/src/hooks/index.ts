@@ -86,3 +86,10 @@ export {
   hasActiveAlerts,
   getTotalAlertCount,
 } from './useDashboard';
+
+export {
+  useMediaQuery,
+  useIsMobile,
+  useIsTablet,
+  useIsDesktop,
+} from './useMediaQuery';
