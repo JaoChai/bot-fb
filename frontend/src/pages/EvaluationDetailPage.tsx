@@ -81,11 +81,11 @@ function StatusBadge({ status }: { status: string }) {
 
 function MetricRadarChart({ scores }: { scores: { answer_relevancy: number | null; faithfulness: number | null; role_adherence: number | null; context_precision: number | null; task_completion: number | null } }) {
   const data = [
-    { metric: 'Relevancy', value: (scores.answer_relevancy ?? 0) * 100, fullMark: 100 },
-    { metric: 'Faithfulness', value: (scores.faithfulness ?? 0) * 100, fullMark: 100 },
-    { metric: 'Role', value: (scores.role_adherence ?? 0) * 100, fullMark: 100 },
-    { metric: 'Context', value: (scores.context_precision ?? 0) * 100, fullMark: 100 },
-    { metric: 'Task', value: (scores.task_completion ?? 0) * 100, fullMark: 100 },
+    { metric: 'ตรงคำถาม', value: (scores.answer_relevancy ?? 0) * 100, fullMark: 100 },
+    { metric: 'ไม่แต่งเอง', value: (scores.faithfulness ?? 0) * 100, fullMark: 100 },
+    { metric: 'ทำตามบทบาท', value: (scores.role_adherence ?? 0) * 100, fullMark: 100 },
+    { metric: 'ดึง KB', value: (scores.context_precision ?? 0) * 100, fullMark: 100 },
+    { metric: 'ช่วยสำเร็จ', value: (scores.task_completion ?? 0) * 100, fullMark: 100 },
   ];
 
   return (
@@ -638,7 +638,7 @@ export function EvaluationDetailPage() {
               {evaluation.metric_scores && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg">Metrics Overview</CardTitle>
+                    <CardTitle className="text-lg">ภาพรวมคะแนน</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <MetricRadarChart scores={evaluation.metric_scores} />
@@ -650,29 +650,29 @@ export function EvaluationDetailPage() {
               {evaluation.metric_scores && (
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                   <ScoreCard
-                    label="Answer Relevancy"
+                    label="ตอบตรงคำถาม"
                     score={evaluation.metric_scores.answer_relevancy}
-                    description="ตอบตรงคำถาม"
+                    description="คำตอบเกี่ยวข้องกับคำถาม"
                   />
                   <ScoreCard
-                    label="Faithfulness"
+                    label="ไม่แต่งเอง"
                     score={evaluation.metric_scores.faithfulness}
-                    description="ไม่ hallucinate"
+                    description="ไม่สร้างข้อมูลเท็จ"
                   />
                   <ScoreCard
-                    label="Role Adherence"
+                    label="ทำตามบทบาท"
                     score={evaluation.metric_scores.role_adherence}
-                    description="ทำตาม persona"
+                    description="ปฏิบัติตาม Persona"
                   />
                   <ScoreCard
-                    label="Context Precision"
+                    label="ดึง KB ถูก"
                     score={evaluation.metric_scores.context_precision}
-                    description="ดึง KB ถูกต้อง"
+                    description="เลือกข้อมูลที่เกี่ยวข้อง"
                   />
                   <ScoreCard
-                    label="Task Completion"
+                    label="ช่วยสำเร็จ"
                     score={evaluation.metric_scores.task_completion}
-                    description="ช่วยลูกค้าสำเร็จ"
+                    description="ช่วยลูกค้าบรรลุเป้าหมาย"
                   />
                 </div>
               )}
