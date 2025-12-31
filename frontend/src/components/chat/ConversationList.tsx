@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -25,6 +26,10 @@ interface ConversationListProps {
   search: string;
   onSearchChange: (search: string) => void;
   statusCounts?: ConversationStatusCounts;
+  // Infinite scroll props
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
+  fetchNextPage?: () => void;
 }
 
 export function ConversationList({
@@ -37,7 +42,29 @@ export function ConversationList({
   search,
   onSearchChange,
   statusCounts,
+  hasNextPage,
+  isFetchingNextPage,
+  fetchNextPage,
 }: ConversationListProps) {
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  // Infinite scroll using IntersectionObserver
+  useEffect(() => {
+    if (!loadMoreRef.current || !hasNextPage || !fetchNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Search */}
@@ -105,6 +132,17 @@ export function ConversationList({
                 onSelect={() => onSelect(conversation)}
               />
             ))}
+
+            {/* Load more trigger */}
+            <div ref={loadMoreRef} className="h-1" />
+
+            {/* Loading indicator */}
+            {isFetchingNextPage && (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-sm text-muted-foreground">กำลังโหลด...</span>
+              </div>
+            )}
           </div>
         )}
       </ScrollArea>

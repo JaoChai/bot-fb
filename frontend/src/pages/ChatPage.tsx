@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/select';
 import { Loader2, MessageSquare } from 'lucide-react';
 import { useBots } from '@/hooks/useKnowledgeBase';
-import { useConversations, useMarkAsRead } from '@/hooks/useConversations';
+import { useInfiniteConversations, useMarkAsRead } from '@/hooks/useConversations';
 import { useBotChannel } from '@/hooks/useEcho';
 import { ConversationList } from '@/components/chat/ConversationList';
 import { ChatWindow } from '@/components/chat/ChatWindow';
@@ -44,21 +44,29 @@ export function ChatPage() {
   const { data: botsResponse, isLoading: isBotsLoading } = useBots();
   const bots = botsResponse?.data || [];
 
-  // Conversations query
-  const filters: ConversationFilters = {
+  // Memoize filters to prevent unnecessary query re-creations
+  const filters = useMemo<ConversationFilters>(() => ({
     status: statusFilter === 'all' ? undefined : statusFilter,
     search: search || undefined,
     sort_by: 'last_message_at',
     sort_direction: 'desc',
-    per_page: 50,
-  };
+    per_page: 30,
+  }), [statusFilter, search]);
 
-  const { data: conversationsResponse, isLoading: isConversationsLoading } = useConversations(
-    botId ?? undefined,
-    filters
+  const {
+    data: conversationsData,
+    isLoading: isConversationsLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteConversations(botId ?? undefined, filters);
+
+  // Memoize flattened conversations to avoid recreating array on every render
+  const conversations = useMemo(
+    () => conversationsData?.pages.flatMap((page) => page.data) || [],
+    [conversationsData?.pages]
   );
-  const conversations = conversationsResponse?.data || [];
-  const statusCounts = conversationsResponse?.meta?.status_counts;
+  const statusCounts = conversationsData?.pages[0]?.meta?.status_counts;
 
   // Selected conversation
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId);
@@ -75,7 +83,7 @@ export function ChatPage() {
       });
       // Also update conversation list (for last_message_at, unread_count)
       queryClient.invalidateQueries({
-        queryKey: ['conversations', botId],
+        queryKey: ['conversations-infinite', botId],
       });
     },
     [queryClient, botId]
@@ -85,7 +93,7 @@ export function ChatPage() {
     () => {
       // Invalidate conversation list
       queryClient.invalidateQueries({
-        queryKey: ['conversations', botId],
+        queryKey: ['conversations-infinite', botId],
       });
     },
     [queryClient, botId]
@@ -95,7 +103,7 @@ export function ChatPage() {
     () => {
       // Invalidate conversation list to show new conversation
       queryClient.invalidateQueries({
-        queryKey: ['conversations', botId],
+        queryKey: ['conversations-infinite', botId],
       });
     },
     [queryClient, botId]
@@ -208,6 +216,9 @@ export function ChatPage() {
           search={search}
           onSearchChange={setSearch}
           statusCounts={statusCounts}
+          hasNextPage={hasNextPage}
+          isFetchingNextPage={isFetchingNextPage}
+          fetchNextPage={fetchNextPage}
         />
       </div>
 
