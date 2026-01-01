@@ -33,6 +33,9 @@ import {
   ChevronDown,
   RotateCcw,
   Users,
+  MessageCircleWarning,
+  Clock,
+  CheckCircle2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
@@ -219,9 +222,10 @@ interface ChatWindowProps {
   conversation: Conversation;
   onShowInfo: () => void;
   onBack?: () => void;
+  isAutoHandover?: boolean;
 }
 
-export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWindowProps) {
+export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHandover }: ChatWindowProps) {
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -505,6 +509,24 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
                     Human Only
                   </Badge>
                 </>
+              ) : isAutoHandover ? (
+                // Auto handover: Show needs_response status
+                conversation.status === 'closed' ? (
+                  <Badge variant="secondary" className="text-xs flex-shrink-0">
+                    <CheckCircle2 className="h-3 w-3 mr-1 hidden sm:inline" />
+                    จบแล้ว
+                  </Badge>
+                ) : conversation.needs_response ? (
+                  <Badge className="text-xs flex-shrink-0 bg-red-500 text-white">
+                    <MessageCircleWarning className="h-3 w-3 mr-1 hidden sm:inline" />
+                    รอคุณตอบ
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-xs flex-shrink-0 bg-amber-50 text-amber-700 border-amber-200">
+                    <Clock className="h-3 w-3 mr-1 hidden sm:inline" />
+                    รอลูกค้า
+                  </Badge>
+                )
               ) : (
                 // Other channels: Show bot/handover status
                 conversation.is_handover ? (
