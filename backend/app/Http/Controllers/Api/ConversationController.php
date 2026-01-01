@@ -31,7 +31,7 @@ class ConversationController extends Controller
             $this->authorize('view', $bot);
 
             $query = $bot->conversations()
-                ->with(['customerProfile', 'assignedUser', 'lastMessage']);
+                ->with(['customerProfile', 'assignedUser']);
 
         // Filter by status
         if ($request->filled('status')) {
@@ -116,21 +116,8 @@ class ConversationController extends Controller
             ->toArray();
 
         // Count conversations needing response (last message is from customer)
-        // Only for auto_handover bots, otherwise return 0
+        // Temporarily disabled - calculate client-side from needs_response field
         $needsResponseCount = 0;
-        if ($bot->auto_handover) {
-            // Use subquery approach instead of whereHas for ofMany relationship
-            $needsResponseCount = $bot->conversations()
-                ->where('status', '!=', 'closed')
-                ->whereExists(function ($query) {
-                    $query->selectRaw('1')
-                        ->from('messages as m')
-                        ->whereColumn('m.conversation_id', 'conversations.id')
-                        ->where('m.is_from_customer', true)
-                        ->whereRaw('m.id = (SELECT MAX(m2.id) FROM messages m2 WHERE m2.conversation_id = conversations.id)');
-                })
-                ->count();
-        }
 
         $conversations = $query->paginate($request->input('per_page', 20));
 
