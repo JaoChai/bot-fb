@@ -16,6 +16,7 @@ use App\Services\TelegramService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -72,15 +73,18 @@ class ConversationController extends Controller
         }
 
         // Search by external customer ID or customer profile name
-        // Using LEFT JOIN instead of whereHas for better performance
+        // Uses full-text search on customer_profiles (GIN index) for performance
         if ($request->filled('search')) {
             $search = $request->search;
             $query->leftJoin('customer_profiles as cp_search', 'conversations.customer_profile_id', '=', 'cp_search.id')
                 ->where(function ($q) use ($search) {
+                    // External customer ID - still uses ILIKE (indexed)
                     $q->where('conversations.external_customer_id', 'ilike', "%{$search}%")
-                        ->orWhere('cp_search.display_name', 'ilike', "%{$search}%")
-                        ->orWhere('cp_search.email', 'ilike', "%{$search}%")
-                        ->orWhere('cp_search.phone', 'ilike', "%{$search}%");
+                        // Full-text search on customer_profiles using GIN index
+                        ->orWhereRaw(
+                            "to_tsvector('simple', coalesce(cp_search.display_name, '') || ' ' || coalesce(cp_search.email, '') || ' ' || coalesce(cp_search.phone, '')) @@ plainto_tsquery('simple', ?)",
+                            [$search]
+                        );
                 })
                 ->select('conversations.*'); // Ensure only conversation columns are returned
         }
@@ -168,15 +172,19 @@ class ConversationController extends Controller
 
     /**
      * Get messages for a conversation with pagination.
+     * Enforces max 100 messages per page to prevent memory issues.
      */
     public function messages(Request $request, Bot $bot, Conversation $conversation): AnonymousResourceCollection
     {
         $this->authorize('view', $bot);
         $this->validateConversationBelongsToBot($conversation, $bot);
 
+        // Enforce maximum limit of 100 messages per page
+        $perPage = min((int) $request->input('per_page', 50), 100);
+
         $messages = $conversation->messages()
             ->orderBy('created_at', $request->input('order', 'desc'))
-            ->paginate($request->input('per_page', 50));
+            ->paginate($perPage);
 
         return MessageResource::collection($messages);
     }
@@ -204,10 +212,11 @@ class ConversationController extends Controller
         }
 
         $conversation->update($validated);
+        $conversation->load(['customerProfile', 'assignedUser']);
 
         return response()->json([
             'message' => 'Conversation updated successfully',
-            'data' => new ConversationResource($conversation->fresh(['customerProfile', 'assignedUser'])),
+            'data' => new ConversationResource($conversation),
         ]);
     }
 
@@ -224,10 +233,14 @@ class ConversationController extends Controller
             'is_handover' => false,
             'assigned_user_id' => null,
         ]);
+        $conversation->load(['customerProfile']);
+
+        // Invalidate stats cache
+        Cache::forget("bot:{$bot->id}:conversation:stats");
 
         return response()->json([
             'message' => 'Conversation closed successfully',
-            'data' => new ConversationResource($conversation->fresh(['customerProfile'])),
+            'data' => new ConversationResource($conversation),
         ]);
     }
 
@@ -242,10 +255,14 @@ class ConversationController extends Controller
         $conversation->update([
             'status' => 'active',
         ]);
+        $conversation->load(['customerProfile']);
+
+        // Invalidate stats cache
+        Cache::forget("bot:{$bot->id}:conversation:stats");
 
         return response()->json([
             'message' => 'Conversation reopened successfully',
-            'data' => new ConversationResource($conversation->fresh(['customerProfile'])),
+            'data' => new ConversationResource($conversation),
         ]);
     }
 
@@ -301,12 +318,18 @@ class ConversationController extends Controller
             metadata: ['conversation_id' => $conversation->id]
         );
 
+        // Load relationships for broadcast and response
+        $conversation->load(['customerProfile', 'assignedUser']);
+
+        // Invalidate stats cache (status changed to handover or active)
+        Cache::forget("bot:{$bot->id}:conversation:stats");
+
         // Broadcast the update for real-time sync
-        broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
+        broadcast(new ConversationUpdated($conversation))->toOthers();
 
         return response()->json([
             'message' => $isHandover ? 'Handover mode enabled' : 'Bot mode enabled',
-            'data' => new ConversationResource($conversation->fresh(['customerProfile', 'assignedUser'])),
+            'data' => new ConversationResource($conversation),
         ]);
     }
 
@@ -322,12 +345,14 @@ class ConversationController extends Controller
             $conversation->update(['unread_count' => 0]);
 
             // Broadcast the update for real-time sync
-            broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
+            broadcast(new ConversationUpdated($conversation))->toOthers();
         }
+
+        $conversation->load(['customerProfile']);
 
         return response()->json([
             'message' => 'Conversation marked as read',
-            'data' => new ConversationResource($conversation->fresh(['customerProfile'])),
+            'data' => new ConversationResource($conversation),
         ]);
     }
 
@@ -340,26 +365,29 @@ class ConversationController extends Controller
         $this->validateConversationBelongsToBot($conversation, $bot);
 
         $conversation->update(['context_cleared_at' => now()]);
+        $conversation->load(['customerProfile']);
 
         // Broadcast the update for real-time sync
-        broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
+        broadcast(new ConversationUpdated($conversation))->toOthers();
 
         return response()->json([
             'message' => 'Bot context cleared successfully',
-            'data' => new ConversationResource($conversation->fresh(['customerProfile'])),
+            'data' => new ConversationResource($conversation),
         ]);
     }
 
     /**
      * Get conversation statistics for a bot.
      * Optimized: Single query with CTE instead of 6 separate queries.
+     * Cached for 30 seconds to reduce database load.
      */
     public function stats(Request $request, Bot $bot): JsonResponse
     {
         $this->authorize('view', $bot);
 
-        // Use a single optimized query with PostgreSQL aggregations
-        $stats = DB::selectOne("
+        $cacheKey = "bot:{$bot->id}:conversation:stats";
+
+        $stats = Cache::remember($cacheKey, 30, fn () => DB::selectOne("
             WITH conv_base AS (
                 SELECT
                     id,
@@ -405,7 +433,7 @@ class ConversationController extends Controller
             FROM status_counts sc
             CROSS JOIN messages_today mt
             CROSS JOIN channel_counts cc
-        ", [$bot->id, $bot->id]);
+        ", [$bot->id, $bot->id]));
 
         return response()->json([
             'data' => [
@@ -544,6 +572,9 @@ class ConversationController extends Controller
 
         $conversation->update(['tags' => array_values($newTags)]);
 
+        // Invalidate tags cache
+        Cache::forget("bot:{$bot->id}:conversation:tags");
+
         return response()->json([
             'message' => 'Tags added successfully',
             'data' => ['tags' => $newTags],
@@ -566,6 +597,9 @@ class ConversationController extends Controller
         }
 
         $conversation->update(['tags' => $filteredTags]);
+
+        // Invalidate tags cache
+        Cache::forget("bot:{$bot->id}:conversation:tags");
 
         return response()->json([
             'message' => 'Tag removed successfully',
@@ -603,6 +637,9 @@ class ConversationController extends Controller
             $updated++;
         }
 
+        // Invalidate tags cache
+        Cache::forget("bot:{$bot->id}:conversation:tags");
+
         return response()->json([
             'message' => "Tags added to {$updated} conversations",
             'data' => ['updated_count' => $updated],
@@ -612,14 +649,16 @@ class ConversationController extends Controller
     /**
      * Get all unique tags used in bot conversations.
      * Optimized: SQL aggregation instead of fetching all rows.
+     * Cached for 60 seconds to reduce database load.
      */
     public function getAllTags(Request $request, Bot $bot): JsonResponse
     {
         try {
             $this->authorize('view', $bot);
 
-            // Use PostgreSQL jsonb_array_elements_text for efficient tag extraction
-            $tags = DB::select('
+            $cacheKey = "bot:{$bot->id}:conversation:tags";
+
+            $tags = Cache::remember($cacheKey, 60, fn () => DB::select('
                 SELECT DISTINCT jsonb_array_elements_text(tags) as tag
                 FROM conversations
                 WHERE bot_id = ?
@@ -627,7 +666,7 @@ class ConversationController extends Controller
                     AND tags IS NOT NULL
                     AND jsonb_array_length(tags) > 0
                 ORDER BY tag
-            ', [$bot->id]);
+            ', [$bot->id]));
 
             return response()->json([
                 'data' => array_column($tags, 'tag'),
@@ -797,9 +836,12 @@ class ConversationController extends Controller
             $sendError = 'Failed to deliver message to customer';
         }
 
+        // Reload conversation with updated stats for broadcast
+        $conversation->refresh();
+
         // Broadcast the message for real-time updates
         broadcast(new MessageSent($message))->toOthers();
-        broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
+        broadcast(new ConversationUpdated($conversation))->toOthers();
 
         return response()->json([
             'message' => 'Message sent successfully',
@@ -831,13 +873,14 @@ class ConversationController extends Controller
         $conversation->update([
             'assigned_user_id' => $validated['user_id'],
         ]);
+        $conversation->load(['customerProfile', 'assignedUser']);
 
         // Broadcast the update
-        broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
+        broadcast(new ConversationUpdated($conversation))->toOthers();
 
         return response()->json([
             'message' => 'Conversation assigned successfully',
-            'data' => new ConversationResource($conversation->fresh(['customerProfile', 'assignedUser'])),
+            'data' => new ConversationResource($conversation),
         ]);
     }
 
@@ -861,13 +904,14 @@ class ConversationController extends Controller
         $conversation->update([
             'assigned_user_id' => $user->id,
         ]);
+        $conversation->load(['customerProfile', 'assignedUser']);
 
         // Broadcast the update
-        broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
+        broadcast(new ConversationUpdated($conversation))->toOthers();
 
         return response()->json([
             'message' => 'Conversation claimed successfully',
-            'data' => new ConversationResource($conversation->fresh(['customerProfile', 'assignedUser'])),
+            'data' => new ConversationResource($conversation),
         ]);
     }
 
@@ -894,13 +938,14 @@ class ConversationController extends Controller
         $conversation->update([
             'assigned_user_id' => null,
         ]);
+        $conversation->load(['customerProfile', 'assignedUser']);
 
         // Broadcast the update
-        broadcast(new ConversationUpdated($conversation->fresh()))->toOthers();
+        broadcast(new ConversationUpdated($conversation))->toOthers();
 
         return response()->json([
             'message' => 'Conversation unassigned successfully',
-            'data' => new ConversationResource($conversation->fresh(['customerProfile', 'assignedUser'])),
+            'data' => new ConversationResource($conversation),
         ]);
     }
 

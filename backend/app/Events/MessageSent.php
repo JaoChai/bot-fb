@@ -44,12 +44,16 @@ class MessageSent implements ShouldBroadcast
 
     /**
      * Get the data to broadcast.
+     * Includes conversation update data to reduce double broadcasts.
      *
      * @return array<string, mixed>
      */
     public function broadcastWith(): array
     {
+        $conversation = $this->message->conversation;
+
         return [
+            // Message data
             'id' => $this->message->id,
             'conversation_id' => $this->message->conversation_id,
             'sender' => $this->message->sender,
@@ -58,6 +62,12 @@ class MessageSent implements ShouldBroadcast
             'media_url' => $this->message->media_url,
             'media_type' => $this->message->media_type,
             'created_at' => $this->message->created_at->toISOString(),
+            // Conversation update data for single-event updates
+            'conversation' => [
+                'id' => $conversation->id,
+                'message_count' => $conversation->message_count,
+                'last_message_at' => $conversation->last_message_at?->toISOString(),
+            ],
         ];
     }
 }

@@ -54,17 +54,25 @@ export function ConversationList({
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const isTelegram = channelType === 'telegram';
 
-  // Infinite scroll using IntersectionObserver
+  // Infinite scroll using IntersectionObserver with debounce protection
   useEffect(() => {
     if (!loadMoreRef.current || !hasNextPage || !fetchNextPage) return;
 
+    let isLoading = false;
+
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && !isFetchingNextPage) {
+        // Debounce protection: prevent multiple triggers
+        if (entries[0].isIntersecting && !isFetchingNextPage && !isLoading) {
+          isLoading = true;
           fetchNextPage();
+          // Reset loading flag after a short delay to prevent rapid re-triggers
+          setTimeout(() => {
+            isLoading = false;
+          }, 500);
         }
       },
-      { threshold: 0.1 }
+      { threshold: 0.5, rootMargin: '100px' } // Higher threshold + rootMargin for earlier loading
     );
 
     observer.observe(loadMoreRef.current);

@@ -4,6 +4,7 @@ import {
   Dialog,
   DialogContent,
 } from '@/components/ui/dialog';
+import { LazyImage } from '@/components/ui/lazy-image';
 import {
   Headphones,
   MapPin,
@@ -62,10 +63,11 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
           <div className="max-w-[280px]">
             {message.media_url ? (
               <>
-                <img
+                <LazyImage
                   src={message.media_url}
                   alt="รูปภาพ"
-                  className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                  className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity w-full"
+                  placeholderClassName="min-h-[150px] w-full"
                   onClick={() => setLightboxOpen(true)}
                 />
                 {message.content && !message.content.includes('[รูปภาพ]') && (

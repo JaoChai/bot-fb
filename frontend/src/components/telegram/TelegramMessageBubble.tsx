@@ -5,6 +5,7 @@ import {
   Dialog,
   DialogContent,
 } from '@/components/ui/dialog';
+import { LazyImage } from '@/components/ui/lazy-image';
 import {
   User,
   Headphones,
@@ -57,10 +58,11 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
           <div className="max-w-[280px]">
             {message.media_url ? (
               <>
-                <img
+                <LazyImage
                   src={message.media_url}
                   alt="Photo"
-                  className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                  className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity w-full"
+                  placeholderClassName="min-h-[150px] w-full"
                   onClick={() => setLightboxOpen(true)}
                 />
                 {message.content && message.content !== '[Photo]' && (
@@ -151,10 +153,11 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
         return (
           <div className="max-w-[128px]">
             {message.media_url ? (
-              <img
+              <LazyImage
                 src={message.media_url}
                 alt={`Sticker ${(metadata?.emoji as string) || ''}`}
                 className="max-w-[128px] max-h-[128px]"
+                placeholderClassName="min-h-[80px] w-[80px]"
               />
             ) : (
               <p className="text-2xl">{(metadata?.emoji as string) || '🎭'}</p>

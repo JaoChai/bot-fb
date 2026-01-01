@@ -20,6 +20,41 @@ const getBaseUrl = (): string => {
 };
 
 /**
+ * Auth cache to prevent redundant auth requests
+ * Cache expires after 5 minutes
+ */
+interface AuthCacheEntry {
+  auth: string;
+  timestamp: number;
+  socketId: string;
+}
+const authCache = new Map<string, AuthCacheEntry>();
+const AUTH_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+const getCachedAuth = (channelName: string, socketId: string): { auth: string } | null => {
+  const entry = authCache.get(channelName);
+  if (!entry) return null;
+  // Check if cache is still valid (same socketId and not expired)
+  if (entry.socketId === socketId && Date.now() - entry.timestamp < AUTH_CACHE_TTL) {
+    return { auth: entry.auth };
+  }
+  // Cache expired or socketId changed
+  authCache.delete(channelName);
+  return null;
+};
+
+const setCachedAuth = (channelName: string, socketId: string, auth: string): void => {
+  authCache.set(channelName, { auth, timestamp: Date.now(), socketId });
+};
+
+/**
+ * Clear auth cache (call on logout or token refresh)
+ */
+export const clearAuthCache = (): void => {
+  authCache.clear();
+};
+
+/**
  * Create and configure Laravel Echo instance for Reverb WebSocket
  */
 export const createEcho = (): Echo<'reverb'> => {
@@ -34,10 +69,17 @@ export const createEcho = (): Echo<'reverb'> => {
     forceTLS: REVERB_SCHEME === 'https',
     enabledTransports: ['ws', 'wss'],
     authEndpoint: `${baseUrl}/api/broadcasting/auth`,
-    // Use authorizer to get fresh token for each auth request
-    // This prevents stale token issues after page refresh or rehydration
+    // Use authorizer with caching to reduce redundant auth requests
+    // Cache expires after 5 minutes or when socketId changes
     authorizer: (channel: { name: string }) => ({
       authorize: (socketId: string, callback: (error: Error | null, data: { auth: string } | null) => void) => {
+        // Check cache first
+        const cached = getCachedAuth(channel.name, socketId);
+        if (cached) {
+          callback(null, cached);
+          return;
+        }
+
         const token = localStorage.getItem('auth_token');
         fetch(`${baseUrl}/api/broadcasting/auth`, {
           method: 'POST',
@@ -58,6 +100,10 @@ export const createEcho = (): Echo<'reverb'> => {
             return response.json();
           })
           .then((data) => {
+            // Cache successful auth
+            if (data?.auth) {
+              setCachedAuth(channel.name, socketId, data.auth);
+            }
             callback(null, data);
           })
           .catch((error) => {
@@ -90,6 +136,7 @@ export const disconnectEcho = (): void => {
     echoInstance.disconnect();
     echoInstance = null;
   }
+  clearAuthCache(); // Clear auth cache on disconnect
 };
 
 /**

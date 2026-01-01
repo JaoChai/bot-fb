@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import {
   Select,
   SelectContent,
@@ -18,7 +18,19 @@ import { ChatWindow } from '@/components/chat/ChatWindow';
 import { CustomerInfoPanel } from '@/components/chat/CustomerInfoPanel';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
-import type { Conversation, ConversationFilters } from '@/types/api';
+import type { Conversation, ConversationFilters, Message, PaginationMeta, ConversationStatusCounts } from '@/types/api';
+import type { MessageSentEvent, ConversationUpdatedEvent } from '@/types/realtime';
+
+// Response types for query cache updates
+interface MessagesResponse {
+  data: Message[];
+  meta: PaginationMeta;
+}
+
+interface ConversationsResponse {
+  data: Conversation[];
+  meta: PaginationMeta & { status_counts: ConversationStatusCounts };
+}
 
 // Channel tabs configuration with icons for better UX
 const channelTabs = [
@@ -107,34 +119,111 @@ export function ChatPage() {
   // Mark as read mutation
   const markAsRead = useMarkAsRead(botId ?? undefined);
 
-  // Real-time WebSocket callbacks (memoized to prevent re-subscriptions)
+  // Real-time WebSocket callbacks - optimized with surgical cache updates
   const handleRealtimeMessage = useCallback(
-    (event: { conversation_id: number }) => {
-      // Invalidate messages for the specific conversation
-      queryClient.invalidateQueries({
-        queryKey: ['conversation-messages', botId, event.conversation_id],
-      });
-      // Also update conversation list (for last_message_at, unread_count)
-      queryClient.invalidateQueries({
-        queryKey: ['conversations-infinite', botId],
-      });
+    (event: MessageSentEvent) => {
+      // Surgically add the new message to cache instead of refetching
+      const messageOptions = { order: 'asc' as const, perPage: 100 };
+      queryClient.setQueryData<MessagesResponse>(
+        ['conversation-messages', botId, event.conversation_id, messageOptions],
+        (old) => {
+          if (!old) return old;
+          // Check if message already exists to prevent duplicates
+          const exists = old.data.some((m) => m.id === event.id);
+          if (exists) return old;
+
+          // Append new message with all required fields
+          const newMessage: Message = {
+            id: event.id,
+            conversation_id: event.conversation_id,
+            sender: event.sender,
+            content: event.content,
+            type: event.type,
+            media_url: event.media_url,
+            media_type: event.media_type,
+            media_metadata: null,
+            model_used: null,
+            prompt_tokens: null,
+            completion_tokens: null,
+            cost: null,
+            external_message_id: null,
+            reply_to_message_id: null,
+            sentiment: null,
+            intents: null,
+            created_at: event.created_at,
+            updated_at: event.created_at,
+          };
+
+          return {
+            ...old,
+            data: [...old.data, newMessage],
+          };
+        }
+      );
+
+      // Update conversation list with new message info (without full refetch)
+      // Uses conversation data from event if available for accuracy
+      queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
+        ['conversations-infinite', botId, filters],
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              data: page.data.map((conv) =>
+                conv.id === event.conversation_id
+                  ? {
+                      ...conv,
+                      last_message_at: event.conversation?.last_message_at ?? event.created_at,
+                      message_count: event.conversation?.message_count ?? conv.message_count + 1,
+                      // Increment unread if not currently viewing this conversation
+                      unread_count: conv.id === selectedConversationId ? 0 : conv.unread_count + 1,
+                    }
+                  : conv
+              ),
+            })),
+          };
+        }
+      );
     },
-    [queryClient, botId]
+    [queryClient, botId, filters, selectedConversationId]
   );
 
   const handleConversationUpdate = useCallback(
-    () => {
-      // Invalidate conversation list
-      queryClient.invalidateQueries({
-        queryKey: ['conversations-infinite', botId],
-      });
+    (event: ConversationUpdatedEvent) => {
+      // Surgically update the specific conversation in cache
+      queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
+        ['conversations-infinite', botId, filters],
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              data: page.data.map((conv) =>
+                conv.id === event.id
+                  ? {
+                      ...conv,
+                      status: event.status,
+                      is_handover: event.is_handover,
+                      assigned_user_id: event.assigned_user_id,
+                      message_count: event.message_count,
+                      last_message_at: event.last_message_at,
+                    }
+                  : conv
+              ),
+            })),
+          };
+        }
+      );
     },
-    [queryClient, botId]
+    [queryClient, botId, filters]
   );
 
   const handleNewConversation = useCallback(
     () => {
-      // Invalidate conversation list to show new conversation
+      // New conversation requires full refetch to get correct ordering
       queryClient.invalidateQueries({
         queryKey: ['conversations-infinite', botId],
       });
