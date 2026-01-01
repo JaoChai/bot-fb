@@ -72,6 +72,8 @@ export function ChatPage() {
   // Get selected bot's auto_handover status (after bots is defined)
   const selectedBot = bots.find((b) => b.id === botId);
   const isAutoHandover = selectedBot?.auto_handover ?? false;
+  // Human-only mode: both Telegram and auto_handover use priority-based tabs
+  const isHumanOnlyMode = isTelegramChannel || isAutoHandover;
 
   // Memoize filters to prevent unnecessary query re-creations
   const filters = useMemo<ConversationFilters>(() => {
@@ -87,17 +89,11 @@ export function ChatPage() {
       baseFilters.channel_type = channelFilter;
     }
 
-    // For telegram: use telegram_chat_type filter (group/private)
+    // For human-only modes (Telegram & auto_handover): use needs_response/waiting_customer/closed filters
     // For other channels: use status filter (active/handover)
-    // For auto_handover bots: use needs_response/waiting_customer/closed filters
-    if (isTelegramChannel) {
-      if (statusFilter !== 'all') {
-        baseFilters.telegram_chat_type = statusFilter; // 'group' or 'private'
-      }
-    } else if (isAutoHandover) {
-      // Auto handover mode filters
+    if (isHumanOnlyMode) {
+      // Human-only mode filters (both Telegram and auto_handover)
       // Note: needs_response filtering is done client-side since it's a computed field
-      // For now, we fetch all non-closed for 'needs_response' and 'waiting_customer' tabs
       if (statusFilter === 'closed') {
         baseFilters.status = 'closed';
       } else if (statusFilter === 'needs_response' || statusFilter === 'waiting_customer') {
@@ -105,6 +101,11 @@ export function ChatPage() {
         baseFilters.status = ['active', 'handover'];
       }
       // 'all' shows everything (no status filter)
+
+      // For Telegram, still apply channel filter
+      if (isTelegramChannel) {
+        baseFilters.channel_type = 'telegram';
+      }
     } else {
       if (statusFilter !== 'all') {
         baseFilters.status = statusFilter; // 'active' or 'handover'
@@ -127,8 +128,8 @@ export function ChatPage() {
   const conversations = useMemo(() => {
     const allConversations = conversationsData?.pages.flatMap((page) => page.data) || [];
 
-    // Apply client-side filtering for auto_handover mode
-    if (isAutoHandover && !isTelegramChannel) {
+    // Apply client-side filtering for human-only mode (Telegram and auto_handover)
+    if (isHumanOnlyMode) {
       if (statusFilter === 'needs_response') {
         return allConversations.filter((c) => c.status !== 'closed' && c.needs_response === true);
       } else if (statusFilter === 'waiting_customer') {
@@ -275,9 +276,11 @@ export function ChatPage() {
   // Handle channel filter change - reset status filter when channel changes
   const handleChannelFilterChange = useCallback((value: string) => {
     setChannelFilter(value);
-    setStatusFilter('all'); // Reset sub-filter when channel changes
+    // For Telegram and auto_handover bots, default to needs_response tab
+    const isHumanOnlyChannel = value === 'telegram' || isAutoHandover;
+    setStatusFilter(isHumanOnlyChannel ? 'needs_response' : 'all');
     setSelectedConversationId(null);
-  }, []);
+  }, [isAutoHandover]);
 
   // Handle conversation selection (memoized to prevent child re-renders)
   const handleConversationSelect = useCallback((conversation: Conversation) => {
