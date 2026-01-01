@@ -32,8 +32,6 @@ interface ConversationListProps {
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
   fetchNextPage?: () => void;
-  // Channel-specific mode
-  channelType?: string;
   // Auto handover mode - shows different tabs and badges
   isAutoHandover?: boolean;
 }
@@ -51,11 +49,11 @@ export function ConversationList({
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
-  channelType,
   isAutoHandover = false,
 }: ConversationListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
-  const isTelegram = channelType === 'telegram';
+  // Derive isTelegram from conversations (all from same bot)
+  const isTelegram = conversations[0]?.channel_type === 'telegram';
 
   // Infinite scroll using IntersectionObserver with debounce protection
   useEffect(() => {
