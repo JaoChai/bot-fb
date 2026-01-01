@@ -119,9 +119,16 @@ class ConversationController extends Controller
         // Only for auto_handover bots, otherwise return 0
         $needsResponseCount = 0;
         if ($bot->auto_handover) {
+            // Use subquery approach instead of whereHas for ofMany relationship
             $needsResponseCount = $bot->conversations()
                 ->where('status', '!=', 'closed')
-                ->whereHas('lastMessage', fn ($q) => $q->where('is_from_customer', true))
+                ->whereExists(function ($query) {
+                    $query->selectRaw('1')
+                        ->from('messages as m')
+                        ->whereColumn('m.conversation_id', 'conversations.id')
+                        ->where('m.is_from_customer', true)
+                        ->whereRaw('m.id = (SELECT MAX(m2.id) FROM messages m2 WHERE m2.conversation_id = conversations.id)');
+                })
                 ->count();
         }
 
