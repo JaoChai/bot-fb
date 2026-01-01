@@ -1,13 +1,13 @@
 {
-  "description": "BotFacebook auto-sync lessons (ไม่เปลือง tokens)",
+  "description": "BotFacebook auto-learning system (0 tokens)",
   "hooks": {
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_ROOT}/.claude/scripts/sync-lessons.js\" 2>/dev/null || true",
-            "timeout": 10
+            "command": "node \"${CLAUDE_PROJECT_ROOT}/.claude/scripts/sync-lessons.js\" 2>/dev/null || true; node \"${CLAUDE_PROJECT_ROOT}/.claude/scripts/sync-profile.js\" 2>/dev/null || true",
+            "timeout": 15
           }
         ]
       }
