@@ -548,11 +548,10 @@ export function EditConnectionPage() {
               </>
             )}
 
-            {/* AI-related sections - Hide for Telegram (Human Only mode) */}
-            {formData.platform !== 'telegram' && (
-              <>
-                {/* OpenRouter API Note */}
-                <div className="border-t" />
+            {/* AI-related sections - Shown for all platforms including Telegram */}
+            <>
+              {/* OpenRouter API Note */}
+              <div className="border-t" />
                 <Section
                   icon={Key}
                   title="OpenRouter API"
@@ -618,8 +617,7 @@ export function EditConnectionPage() {
                     />
                   </div>
                 </Section>
-              </>
-            )}
+            </>
           </CardContent>
         </Card>
 
