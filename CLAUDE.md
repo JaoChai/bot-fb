@@ -32,5 +32,10 @@ Laravel 12 + React 19 + PostgreSQL (Neon) + Railway + Reverb
 | `evaluate` | Bot eval | create, progress, report |
 | `execute` | Operations | railway_status, railway_logs, tinker |
 
+## Memory (claude-mem)
+- **Bug/Feature**: Search memory first → Apply past patterns
+- **Prefs**: ไทย, diagrams, MCP tools
+
 ## See Also
+- [LESSONS.md](.claude/LESSONS.md) - ความผิดพลาด & preferences (อ่านก่อนทำงาน!)
 - [COMMANDS.md](.claude/COMMANDS.md) | [UI-RULES.md](.claude/UI-RULES.md)

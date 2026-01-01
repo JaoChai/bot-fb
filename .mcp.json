@@ -8,7 +8,7 @@
         "FRONTEND_PATH": "./frontend",
         "PHP_PATH": "/opt/homebrew/opt/php@8.4/bin/php",
         "LARAVEL_API_URL": "http://localhost:8000",
-        "LARAVEL_AUTH_TOKEN": "44|Rj1gbClt05KG5ELUGb2UUgU6NKNWTve3Z8AGRI1e56b9054b",
+        "LARAVEL_AUTH_TOKEN": "47|THbMuu6Z4EFujm1k0rJpjxgDfY73wF64GhR1TapOe7fab8ce",
         "MCP_MODE": "remote",
         "PRODUCTION_BACKEND_URL": "https://api.botjao.com",
         "PRODUCTION_FRONTEND_URL": "https://www.botjao.com"

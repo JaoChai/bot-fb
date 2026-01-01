@@ -11,12 +11,18 @@ export interface MessageSentEvent {
   media_url: string | null;
   media_type: string | null;
   created_at: string;
+  // Included conversation update data to reduce double broadcasts
+  conversation?: {
+    id: number;
+    message_count: number;
+    last_message_at: string | null;
+  };
 }
 
 export interface ConversationUpdatedEvent {
   id: number;
   bot_id: number;
-  status: 'active' | 'closed' | 'pending';
+  status: 'active' | 'closed' | 'handover';
   is_handover: boolean;
   assigned_user_id: number | null;
   message_count: number;
