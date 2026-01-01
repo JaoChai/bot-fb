@@ -88,11 +88,11 @@ class ProcessTelegramWebhook implements ShouldQueue
             &$conversation,
             &$isNewConversation
         ) {
-            // Find or create conversation
+            // Find or create conversation (include handover status for auto_handover bots)
             $existingConversation = Conversation::where('bot_id', $this->bot->id)
                 ->where('external_customer_id', $parsed['chat_id'])
                 ->where('channel_type', 'telegram')
-                ->where('status', 'active')
+                ->whereIn('status', ['active', 'handover'])
                 ->first();
 
             $isNewConversation = !$existingConversation;
