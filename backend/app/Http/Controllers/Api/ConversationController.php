@@ -31,7 +31,7 @@ class ConversationController extends Controller
             $this->authorize('view', $bot);
 
             $query = $bot->conversations()
-                ->with(['customerProfile', 'assignedUser']);
+                ->with(['customerProfile', 'assignedUser', 'lastMessage']);
 
         // Filter by status
         if ($request->filled('status')) {
@@ -115,6 +115,16 @@ class ConversationController extends Controller
             ->pluck('count', 'status')
             ->toArray();
 
+        // Count conversations needing response (last message is from customer)
+        // Only for auto_handover bots, otherwise return 0
+        $needsResponseCount = 0;
+        if ($bot->auto_handover) {
+            $needsResponseCount = $bot->conversations()
+                ->where('status', '!=', 'closed')
+                ->whereHas('lastMessage', fn ($q) => $q->where('is_from_customer', true))
+                ->count();
+        }
+
         $conversations = $query->paginate($request->input('per_page', 20));
 
         return ConversationResource::collection($conversations)
@@ -125,6 +135,7 @@ class ConversationController extends Controller
                         'closed' => $statusCounts['closed'] ?? 0,
                         'handover' => $statusCounts['handover'] ?? 0,
                         'total' => array_sum($statusCounts),
+                        'needs_response' => $needsResponseCount,
                     ],
                 ],
             ]);

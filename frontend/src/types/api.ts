@@ -398,6 +398,8 @@ export interface Conversation {
   context_cleared_at: string | null;
   created_at: string;
   updated_at: string;
+  // Computed fields
+  needs_response?: boolean;
   // Relationships
   bot?: Bot;
   customer_profile?: CustomerProfile;
@@ -412,6 +414,7 @@ export interface ConversationStatusCounts {
   closed: number;
   handover: number;
   total: number;
+  needs_response?: number;
 }
 
 export interface ConversationStats {

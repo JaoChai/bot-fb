@@ -69,6 +69,10 @@ export function ChatPage() {
   const { data: botsResponse, isLoading: isBotsLoading } = useBots();
   const bots = botsResponse?.data || [];
 
+  // Get selected bot's auto_handover status (after bots is defined)
+  const selectedBot = bots.find((b) => b.id === botId);
+  const isAutoHandover = selectedBot?.auto_handover ?? false;
+
   // Memoize filters to prevent unnecessary query re-creations
   const filters = useMemo<ConversationFilters>(() => {
     const baseFilters: ConversationFilters = {
@@ -85,10 +89,22 @@ export function ChatPage() {
 
     // For telegram: use telegram_chat_type filter (group/private)
     // For other channels: use status filter (active/handover)
+    // For auto_handover bots: use needs_response/waiting_customer/closed filters
     if (isTelegramChannel) {
       if (statusFilter !== 'all') {
         baseFilters.telegram_chat_type = statusFilter; // 'group' or 'private'
       }
+    } else if (isAutoHandover) {
+      // Auto handover mode filters
+      // Note: needs_response filtering is done client-side since it's a computed field
+      // For now, we fetch all non-closed for 'needs_response' and 'waiting_customer' tabs
+      if (statusFilter === 'closed') {
+        baseFilters.status = 'closed';
+      } else if (statusFilter === 'needs_response' || statusFilter === 'waiting_customer') {
+        // Fetch all non-closed conversations, filter client-side by needs_response
+        baseFilters.status = ['active', 'handover'];
+      }
+      // 'all' shows everything (no status filter)
     } else {
       if (statusFilter !== 'all') {
         baseFilters.status = statusFilter; // 'active' or 'handover'
@@ -96,7 +112,7 @@ export function ChatPage() {
     }
 
     return baseFilters;
-  }, [channelFilter, statusFilter, search, isTelegramChannel]);
+  }, [channelFilter, statusFilter, search, isTelegramChannel, isAutoHandover]);
 
   const {
     data: conversationsData,
@@ -107,10 +123,21 @@ export function ChatPage() {
   } = useInfiniteConversations(botId ?? undefined, filters);
 
   // Memoize flattened conversations to avoid recreating array on every render
-  const conversations = useMemo(
-    () => conversationsData?.pages.flatMap((page) => page.data) || [],
-    [conversationsData?.pages]
-  );
+  // For auto_handover mode, apply client-side filtering based on needs_response
+  const conversations = useMemo(() => {
+    const allConversations = conversationsData?.pages.flatMap((page) => page.data) || [];
+
+    // Apply client-side filtering for auto_handover mode
+    if (isAutoHandover && !isTelegramChannel) {
+      if (statusFilter === 'needs_response') {
+        return allConversations.filter((c) => c.status !== 'closed' && c.needs_response === true);
+      } else if (statusFilter === 'waiting_customer') {
+        return allConversations.filter((c) => c.status !== 'closed' && c.needs_response === false);
+      }
+    }
+
+    return allConversations;
+  }, [conversationsData?.pages, isAutoHandover, isTelegramChannel, statusFilter]);
   const statusCounts = conversationsData?.pages[0]?.meta?.status_counts;
 
   // Selected conversation
@@ -381,6 +408,7 @@ export function ChatPage() {
           isFetchingNextPage={isFetchingNextPage}
           fetchNextPage={fetchNextPage}
           channelType={isTelegramChannel ? 'telegram' : undefined}
+          isAutoHandover={isAutoHandover}
         />
       </div>
 
@@ -395,6 +423,7 @@ export function ChatPage() {
             conversation={selectedConversation}
             onShowInfo={handleShowInfo}
             onBack={handleBackToList}
+            isAutoHandover={isAutoHandover}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">

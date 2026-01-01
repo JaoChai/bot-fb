@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Conversation extends Model
@@ -66,6 +67,30 @@ class Conversation extends Model
     public function messages(): HasMany
     {
         return $this->hasMany(Message::class);
+    }
+
+    /**
+     * Get the last message for the conversation.
+     */
+    public function lastMessage(): HasOne
+    {
+        return $this->hasOne(Message::class)->latestOfMany();
+    }
+
+    /**
+     * Check if conversation needs a response from agent.
+     * Returns true if last message is from customer (they're waiting for reply).
+     */
+    public function getNeedsResponseAttribute(): bool
+    {
+        // If no messages, default to needs response
+        if (! $this->relationLoaded('lastMessage')) {
+            $lastMessage = $this->lastMessage()->first();
+        } else {
+            $lastMessage = $this->lastMessage;
+        }
+
+        return $lastMessage ? $lastMessage->is_from_customer : true;
     }
 
     // Query scopes for common patterns
