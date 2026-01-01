@@ -90,7 +90,9 @@ class Conversation extends Model
             $lastMessage = $this->lastMessage;
         }
 
-        return $lastMessage ? $lastMessage->is_from_customer : true;
+        // sender can be: 'user', 'bot', 'agent'
+        // needs_response = true when last message is from customer (user)
+        return $lastMessage ? $lastMessage->sender === 'user' : true;
     }
 
     // Query scopes for common patterns
