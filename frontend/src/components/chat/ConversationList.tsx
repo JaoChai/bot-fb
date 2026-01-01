@@ -5,7 +5,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Loader2, MessageCircle, Bot, Headphones, Users, User, Clock, CheckCircle2, MessageCircleWarning } from 'lucide-react';
+import { Search, Loader2, MessageCircle, Bot, Headphones, Users, Clock, CheckCircle2, MessageCircleWarning } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -101,41 +101,20 @@ export function ConversationList({
       <div className="p-2 border-b">
         <Tabs value={statusFilter} onValueChange={onStatusFilterChange}>
           <TabsList className="w-full grid grid-cols-3 h-11 gap-1">
-            {isTelegram ? (
-              // Telegram: all / group / private
-              <>
-                <TabsTrigger value="all" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="ทั้งหมด">
-                  <MessageCircle className="h-4 w-4 flex-shrink-0" />
-                  <span className="hidden sm:inline">ทั้งหมด</span>
-                  {statusCounts && (
-                    <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 hidden sm:inline-flex">
-                      {statusCounts.total}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="group" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="กลุ่ม">
-                  <Users className="h-4 w-4 flex-shrink-0" />
-                  <span className="hidden sm:inline">กลุ่ม</span>
-                </TabsTrigger>
-                <TabsTrigger value="private" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="ส่วนตัว">
-                  <User className="h-4 w-4 flex-shrink-0" />
-                  <span className="hidden sm:inline">ส่วนตัว</span>
-                </TabsTrigger>
-              </>
-            ) : isAutoHandover ? (
-              // Auto Handover: รอคุณตอบ / รอลูกค้า / จบแล้ว
+            {isTelegram || isAutoHandover ? (
+              // Human-only mode (Telegram & auto_handover): รอคุณตอบ / รอลูกค้า / จบแล้ว
               <>
                 <TabsTrigger value="needs_response" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="รอคุณตอบ">
-                  <MessageCircleWarning className="h-4 w-4 flex-shrink-0 text-red-500" />
+                  <MessageCircleWarning className={cn("h-4 w-4 flex-shrink-0", isTelegram ? "text-[#0088CC]" : "text-red-500")} />
                   <span className="hidden sm:inline">รอคุณตอบ</span>
                   {statusCounts && statusCounts.needs_response !== undefined && statusCounts.needs_response > 0 && (
-                    <Badge className="text-xs px-1.5 py-0 h-5 bg-red-500 text-white animate-pulse">
+                    <Badge className={cn("text-xs px-1.5 py-0 h-5 text-white animate-pulse", isTelegram ? "bg-[#0088CC]" : "bg-red-500")}>
                       {statusCounts.needs_response}
                     </Badge>
                   )}
                 </TabsTrigger>
                 <TabsTrigger value="waiting_customer" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="รอลูกค้า">
-                  <Clock className="h-4 w-4 flex-shrink-0 text-amber-600" />
+                  <Clock className={cn("h-4 w-4 flex-shrink-0", isTelegram ? "text-[#0088CC]/70" : "text-amber-600")} />
                   <span className="hidden sm:inline">รอลูกค้า</span>
                 </TabsTrigger>
                 <TabsTrigger value="closed" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="จบแล้ว">
@@ -278,16 +257,23 @@ const ConversationItem = memo(function ConversationItem({
     onSelect(conversation);
   }, [onSelect, conversation]);
 
-  // Row styling based on auto_handover state
+  // Human-only mode: both Telegram and auto_handover
+  const isHumanOnly = isTelegram || isAutoHandover;
+
+  // Row styling based on human-only mode state
   const rowClassName = cn(
     'w-full p-3 rounded-lg flex items-start gap-3 text-left transition-colors cursor-pointer',
     'min-h-[72px]',
     isSelected && 'bg-accent',
-    // Auto handover mode styling
-    isAutoHandover && !isTelegram && !isClosed && needsResponse && !isSelected && 'bg-red-50 border-l-4 border-red-500 hover:bg-red-100',
-    isAutoHandover && !isTelegram && isClosed && 'opacity-60',
+    // Human-only mode styling (Telegram uses brand color, auto_handover uses red)
+    isHumanOnly && !isClosed && needsResponse && !isSelected && (
+      isTelegram
+        ? 'bg-[#0088CC]/10 border-l-4 border-[#0088CC] hover:bg-[#0088CC]/20'
+        : 'bg-red-50 border-l-4 border-red-500 hover:bg-red-100'
+    ),
+    isHumanOnly && isClosed && 'opacity-60',
     // Default styling
-    !isSelected && !(isAutoHandover && needsResponse && !isClosed) && 'hover:bg-accent/50 active:bg-accent'
+    !isSelected && !(isHumanOnly && needsResponse && !isClosed) && 'hover:bg-accent/50 active:bg-accent'
   );
 
   return (
@@ -332,35 +318,22 @@ const ConversationItem = memo(function ConversationItem({
           </span>
         </div>
 
-        {/* Status/Type badge - different for telegram vs other channels */}
+        {/* Status/Type badge - human-only mode vs normal mode */}
         <div className="flex items-center gap-1.5 mt-1">
-          {isTelegram ? (
-            // Telegram: Show group/private badge
-            isGroup ? (
-              <Badge variant="outline" className="text-xs h-5 gap-1 border-[#0088CC]/30 text-[#0088CC]">
-                <Users className="h-3 w-3" />
-                กลุ่ม
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="text-xs h-5 gap-1 border-[#0088CC]/30 text-[#0088CC]">
-                <User className="h-3 w-3" />
-                ส่วนตัว
-              </Badge>
-            )
-          ) : isAutoHandover ? (
-            // Auto handover mode: Show needs_response / waiting_customer / closed
+          {isHumanOnly ? (
+            // Human-only mode (Telegram & auto_handover): Show needs_response status
             isClosed ? (
               <Badge variant="secondary" className="text-xs h-5 gap-1 bg-slate-100 text-slate-500">
                 <CheckCircle2 className="h-3 w-3" />
                 จบแล้ว
               </Badge>
             ) : needsResponse ? (
-              <Badge className="text-xs h-5 gap-1 bg-red-500 text-white">
+              <Badge className={cn("text-xs h-5 gap-1 text-white", isTelegram ? "bg-[#0088CC]" : "bg-red-500")}>
                 <MessageCircleWarning className="h-3 w-3" />
                 รอคุณตอบ
               </Badge>
             ) : (
-              <Badge variant="outline" className="text-xs h-5 gap-1 bg-amber-50 text-amber-700 border-amber-200">
+              <Badge variant="outline" className={cn("text-xs h-5 gap-1", isTelegram ? "bg-[#0088CC]/10 text-[#0088CC] border-[#0088CC]/30" : "bg-amber-50 text-amber-700 border-amber-200")}>
                 <Clock className="h-3 w-3" />
                 รอลูกค้า
               </Badge>
@@ -378,6 +351,13 @@ const ConversationItem = memo(function ConversationItem({
                 Bot เปิด
               </Badge>
             )
+          )}
+          {/* Group indicator for Telegram */}
+          {isTelegram && isGroup && (
+            <Badge variant="outline" className="text-xs h-5 gap-1 border-[#0088CC]/30 text-[#0088CC]">
+              <Users className="h-3 w-3" />
+              กลุ่ม
+            </Badge>
           )}
           {hasUnread && (
             <Badge className={cn(

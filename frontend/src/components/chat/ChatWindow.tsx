@@ -490,43 +490,33 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHand
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="font-semibold text-sm sm:text-base truncate max-w-[120px] sm:max-w-none">{customerName}</h2>
-              {isTelegram ? (
-                // Telegram: Show group/private and human mode badge
+              {isTelegram || isAutoHandover ? (
+                // Human-only mode (Telegram & auto_handover): Show needs_response status
                 <>
-                  {isGroup ? (
+                  {conversation.status === 'closed' ? (
+                    <Badge variant="secondary" className="text-xs flex-shrink-0">
+                      <CheckCircle2 className="h-3 w-3 mr-1 hidden sm:inline" />
+                      จบแล้ว
+                    </Badge>
+                  ) : conversation.needs_response ? (
+                    <Badge className={cn("text-xs flex-shrink-0 text-white", isTelegram ? "bg-[#0088CC]" : "bg-red-500")}>
+                      <MessageCircleWarning className="h-3 w-3 mr-1 hidden sm:inline" />
+                      รอคุณตอบ
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className={cn("text-xs flex-shrink-0", isTelegram ? "bg-[#0088CC]/10 text-[#0088CC] border-[#0088CC]/30" : "bg-amber-50 text-amber-700 border-amber-200")}>
+                      <Clock className="h-3 w-3 mr-1 hidden sm:inline" />
+                      รอลูกค้า
+                    </Badge>
+                  )}
+                  {/* Group indicator for Telegram */}
+                  {isTelegram && isGroup && (
                     <Badge variant="outline" className="text-xs flex-shrink-0 border-[#0088CC]/30 text-[#0088CC]">
                       <Users className="h-3 w-3 mr-1 hidden sm:inline" />
                       กลุ่ม
                     </Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-xs flex-shrink-0 border-[#0088CC]/30 text-[#0088CC]">
-                      <User className="h-3 w-3 mr-1 hidden sm:inline" />
-                      ส่วนตัว
-                    </Badge>
                   )}
-                  <Badge variant="secondary" className="text-xs flex-shrink-0">
-                    <Headphones className="h-3 w-3 mr-1 hidden sm:inline" />
-                    Human Only
-                  </Badge>
                 </>
-              ) : isAutoHandover ? (
-                // Auto handover: Show needs_response status
-                conversation.status === 'closed' ? (
-                  <Badge variant="secondary" className="text-xs flex-shrink-0">
-                    <CheckCircle2 className="h-3 w-3 mr-1 hidden sm:inline" />
-                    จบแล้ว
-                  </Badge>
-                ) : conversation.needs_response ? (
-                  <Badge className="text-xs flex-shrink-0 bg-red-500 text-white">
-                    <MessageCircleWarning className="h-3 w-3 mr-1 hidden sm:inline" />
-                    รอคุณตอบ
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-xs flex-shrink-0 bg-amber-50 text-amber-700 border-amber-200">
-                    <Clock className="h-3 w-3 mr-1 hidden sm:inline" />
-                    รอลูกค้า
-                  </Badge>
-                )
               ) : (
                 // Other channels: Show bot/handover status
                 conversation.is_handover ? (
