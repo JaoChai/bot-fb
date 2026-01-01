@@ -8,8 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, MessageSquare, MessageCircle, MessagesSquare, Send } from 'lucide-react';
+import { Loader2, MessageSquare } from 'lucide-react';
 import { useBots } from '@/hooks/useKnowledgeBase';
 import { useInfiniteConversations, useMarkAsRead } from '@/hooks/useConversations';
 import { useBotChannel } from '@/hooks/useEcho';
@@ -32,14 +31,6 @@ interface ConversationsResponse {
   meta: PaginationMeta & { status_counts: ConversationStatusCounts };
 }
 
-// Channel tabs configuration with icons for better UX
-const channelTabs = [
-  { value: 'all', label: 'ทั้งหมด', shortLabel: 'ทั้งหมด', color: '', bgActive: '', icon: MessagesSquare },
-  { value: 'line', label: 'LINE', shortLabel: 'LINE', color: 'text-[#06C755]', bgActive: 'data-[state=active]:bg-[#06C755] data-[state=active]:text-white', icon: MessageCircle },
-  { value: 'facebook', label: 'Facebook', shortLabel: 'FB', color: 'text-[#0084FF]', bgActive: 'data-[state=active]:bg-[#0084FF] data-[state=active]:text-white', icon: Send },
-  { value: 'telegram', label: 'Telegram', shortLabel: 'TG', color: 'text-[#0088CC]', bgActive: 'data-[state=active]:bg-[#0088CC] data-[state=active]:text-white', icon: Send },
-] as const;
-
 export function ChatPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -52,12 +43,8 @@ export function ChatPage() {
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
 
   // Filters
-  const [channelFilter, setChannelFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
-
-  // Determine if current channel is telegram for different sub-filters
-  const isTelegramChannel = channelFilter === 'telegram';
 
   // Mobile info panel
   const [showInfoPanel, setShowInfoPanel] = useState(false);
@@ -69,9 +56,11 @@ export function ChatPage() {
   const { data: botsResponse, isLoading: isBotsLoading } = useBots();
   const bots = botsResponse?.data || [];
 
-  // Get selected bot's auto_handover status (after bots is defined)
+  // Get selected bot's config (after bots is defined)
   const selectedBot = bots.find((b) => b.id === botId);
   const isAutoHandover = selectedBot?.auto_handover ?? false;
+  // Determine channel type from bot config (not user selection)
+  const isTelegramChannel = selectedBot?.channel_type === 'telegram';
   // Human-only mode: both Telegram and auto_handover use priority-based tabs
   const isHumanOnlyMode = isTelegramChannel || isAutoHandover;
 
@@ -83,11 +72,6 @@ export function ChatPage() {
       sort_direction: 'desc',
       per_page: 30,
     };
-
-    // Add channel filter
-    if (channelFilter !== 'all') {
-      baseFilters.channel_type = channelFilter;
-    }
 
     // For human-only modes (Telegram & auto_handover): use needs_response/waiting_customer/closed filters
     // For other channels: use status filter (active/handover)
@@ -101,11 +85,6 @@ export function ChatPage() {
         baseFilters.status = ['active', 'handover'];
       }
       // 'all' shows everything (no status filter)
-
-      // For Telegram, still apply channel filter
-      if (isTelegramChannel) {
-        baseFilters.channel_type = 'telegram';
-      }
     } else {
       if (statusFilter !== 'all') {
         baseFilters.status = statusFilter; // 'active' or 'handover'
@@ -113,7 +92,7 @@ export function ChatPage() {
     }
 
     return baseFilters;
-  }, [channelFilter, statusFilter, search, isTelegramChannel, isAutoHandover]);
+  }, [statusFilter, search, isHumanOnlyMode]);
 
   const {
     data: conversationsData,
@@ -138,7 +117,7 @@ export function ChatPage() {
     }
 
     return allConversations;
-  }, [conversationsData?.pages, isAutoHandover, isTelegramChannel, statusFilter]);
+  }, [conversationsData?.pages, isHumanOnlyMode, statusFilter]);
   const statusCounts = conversationsData?.pages[0]?.meta?.status_counts;
 
   // Selected conversation
@@ -273,15 +252,6 @@ export function ChatPage() {
     setShowMobileChat(false); // Reset to list view when changing bot
   }, [setSearchParams]);
 
-  // Handle channel filter change - reset status filter when channel changes
-  const handleChannelFilterChange = useCallback((value: string) => {
-    setChannelFilter(value);
-    // For Telegram and auto_handover bots, default to needs_response tab
-    const isHumanOnlyChannel = value === 'telegram' || isAutoHandover;
-    setStatusFilter(isHumanOnlyChannel ? 'needs_response' : 'all');
-    setSelectedConversationId(null);
-  }, [isAutoHandover]);
-
   // Handle conversation selection (memoized to prevent child re-renders)
   const handleConversationSelect = useCallback((conversation: Conversation) => {
     setSelectedConversationId(conversation.id);
@@ -369,33 +339,6 @@ export function ChatPage() {
           </Select>
         </div>
 
-        {/* Channel Tabs - Icon only on mobile, text on desktop */}
-        <div className="p-2 border-b bg-muted/10">
-          <Tabs value={channelFilter} onValueChange={handleChannelFilterChange}>
-            <TabsList className="w-full grid grid-cols-4 h-11 gap-1">
-              {channelTabs.map((tab) => {
-                const Icon = tab.icon;
-                return (
-                  <TabsTrigger
-                    key={tab.value}
-                    value={tab.value}
-                    className={cn(
-                      'h-10 min-h-[40px] px-1 sm:px-3 text-xs sm:text-sm gap-1',
-                      'transition-all duration-200',
-                      tab.color,
-                      tab.bgActive
-                    )}
-                    title={tab.label}
-                  >
-                    <Icon className="h-4 w-4 sm:h-3.5 sm:w-3.5 flex-shrink-0" />
-                    <span className="hidden sm:inline">{tab.shortLabel}</span>
-                  </TabsTrigger>
-                );
-              })}
-            </TabsList>
-          </Tabs>
-        </div>
-
         {/* Conversation List */}
         <ConversationList
           conversations={conversations}
@@ -410,7 +353,6 @@ export function ChatPage() {
           hasNextPage={hasNextPage}
           isFetchingNextPage={isFetchingNextPage}
           fetchNextPage={fetchNextPage}
-          channelType={isTelegramChannel ? 'telegram' : undefined}
           isAutoHandover={isAutoHandover}
         />
       </div>
