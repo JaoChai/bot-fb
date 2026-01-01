@@ -8,6 +8,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\Message;
+use App\Services\AIService;
 use App\Services\TelegramService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -42,10 +43,10 @@ class ProcessTelegramWebhook implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(TelegramService $telegramService): void
+    public function handle(TelegramService $telegramService, AIService $aiService): void
     {
         try {
-            $this->processUpdate($telegramService);
+            $this->processUpdate($telegramService, $aiService);
         } catch (\Exception $e) {
             Log::error('Telegram webhook processing failed', [
                 'bot_id' => $this->bot->id,
@@ -61,7 +62,7 @@ class ProcessTelegramWebhook implements ShouldQueue
     /**
      * Process the Telegram update.
      */
-    protected function processUpdate(TelegramService $telegramService): void
+    protected function processUpdate(TelegramService $telegramService, AIService $aiService): void
     {
         // Parse the update
         $parsed = $telegramService->parseUpdate($this->update);
@@ -77,16 +78,21 @@ class ProcessTelegramWebhook implements ShouldQueue
 
         // Variables for broadcasting after transaction
         $userMessage = null;
+        $botMessage = null;
         $conversation = null;
         $isNewConversation = false;
+        $isHandover = false;
 
         // Process in transaction
         DB::transaction(function () use (
             $telegramService,
+            $aiService,
             $parsed,
             &$userMessage,
+            &$botMessage,
             &$conversation,
-            &$isNewConversation
+            &$isNewConversation,
+            &$isHandover
         ) {
             // Find or create conversation (include handover status for auto_handover bots)
             $existingConversation = Conversation::where('bot_id', $this->bot->id)
@@ -97,6 +103,7 @@ class ProcessTelegramWebhook implements ShouldQueue
 
             $isNewConversation = !$existingConversation;
             $conversation = $existingConversation ?? $this->createNewConversation($parsed, $telegramService);
+            $isHandover = $conversation->is_handover;
 
             // Check for duplicate message
             $messageId = (string) $parsed['message_id'];
@@ -150,11 +157,36 @@ class ProcessTelegramWebhook implements ShouldQueue
             }
 
             $this->bot->update($botUpdate);
+
+            // Generate AI response if not in handover mode and is a text message
+            if (!$isHandover && $parsed['type'] === 'text' && $userMessage) {
+                $botMessage = $this->generateAIResponse(
+                    $conversation,
+                    $userMessage,
+                    $aiService,
+                    $telegramService,
+                    $parsed['chat_id']
+                );
+
+                // Update stats for bot message
+                if ($botMessage) {
+                    $conversation->update([
+                        'message_count' => DB::raw('message_count + 1'),
+                        'last_message_at' => now(),
+                    ]);
+                    $this->bot->update([
+                        'total_messages' => DB::raw('total_messages + 1'),
+                    ]);
+                }
+            }
         });
 
         // Broadcast AFTER transaction commits
         if ($userMessage) {
             broadcast(new MessageSent($userMessage))->toOthers();
+        }
+        if ($botMessage) {
+            broadcast(new MessageSent($botMessage))->toOthers();
         }
         if ($conversation) {
             $updateType = $isNewConversation ? 'created' : 'message_received';
@@ -170,14 +202,17 @@ class ProcessTelegramWebhook implements ShouldQueue
         // Create or update customer profile
         $customerProfile = $this->findOrCreateCustomerProfile($parsed, $telegramService);
 
-        // Create new conversation - always in handover mode (no AI for Telegram)
+        // Check if bot has auto_handover enabled
+        $autoHandover = $this->bot->auto_handover ?? false;
+
+        // Create new conversation
         $conversation = Conversation::create([
             'bot_id' => $this->bot->id,
             'customer_profile_id' => $customerProfile?->id,
             'external_customer_id' => $parsed['chat_id'],
             'channel_type' => 'telegram',
-            'status' => 'active',
-            'is_handover' => true, // Always handover mode for Telegram (human-only)
+            'status' => $autoHandover ? 'handover' : 'active',
+            'is_handover' => $autoHandover,
             'telegram_chat_type' => $parsed['chat_type'],
             'telegram_chat_title' => $parsed['chat_title'],
             'message_count' => 0,
@@ -364,6 +399,50 @@ class ProcessTelegramWebhook implements ShouldQueue
         }
 
         return $telegramService->getUserProfilePhoto($this->bot, $userId);
+    }
+
+    /**
+     * Generate AI response for non-handover conversations.
+     */
+    protected function generateAIResponse(
+        Conversation $conversation,
+        Message $userMessage,
+        AIService $aiService,
+        TelegramService $telegramService,
+        string $chatId
+    ): ?Message {
+        try {
+            // Generate AI response using the same service as LINE
+            $botMessage = $aiService->generateAndSaveResponse(
+                $this->bot,
+                $conversation,
+                $userMessage
+            );
+
+            // Send response to Telegram
+            if ($botMessage && $botMessage->content) {
+                $telegramService->sendMessage(
+                    $this->bot,
+                    $chatId,
+                    $botMessage->content
+                );
+
+                Log::info('Telegram AI response sent', [
+                    'conversation_id' => $conversation->id,
+                    'message_id' => $botMessage->id,
+                ]);
+            }
+
+            return $botMessage;
+
+        } catch (\Exception $e) {
+            Log::error('Failed to generate AI response for Telegram', [
+                'conversation_id' => $conversation->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     /**
