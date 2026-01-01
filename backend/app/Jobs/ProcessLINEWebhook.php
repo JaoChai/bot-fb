@@ -146,11 +146,11 @@ class ProcessLINEWebhook implements ShouldQueue
             &$dispatchAggregation,
             &$aggregationGroupId
         ) {
-            // Find or create conversation
+            // Find or create conversation (include handover status for auto_handover bots)
             $existingConversation = Conversation::where('bot_id', $this->bot->id)
                 ->where('external_customer_id', $userId)
                 ->where('channel_type', 'line')
-                ->where('status', 'active')
+                ->whereIn('status', ['active', 'handover'])
                 ->first();
 
             $isNewConversation = !$existingConversation;
@@ -371,11 +371,11 @@ class ProcessLINEWebhook implements ShouldQueue
             return;
         }
 
-        // Find or create conversation
+        // Find or create conversation (include handover status for auto_handover bots)
         $existingConversation = Conversation::where('bot_id', $this->bot->id)
             ->where('external_customer_id', $userId)
             ->where('channel_type', 'line')
-            ->where('status', 'active')
+            ->whereIn('status', ['active', 'handover'])
             ->first();
 
         $isNewConversation = !$existingConversation;
