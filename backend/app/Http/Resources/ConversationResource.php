@@ -45,7 +45,8 @@ class ConversationResource extends JsonResource
 
             // Computed fields
             'last_message' => new MessageResource($this->whenLoaded('lastMessage')),
-            'needs_response' => $this->needs_response,
+            // needs_response - temporarily disabled to debug 500 error
+            // 'needs_response' => $this->needs_response,
         ];
     }
 }
