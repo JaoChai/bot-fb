@@ -36,6 +36,15 @@ Laravel 12 + React 19 + PostgreSQL (Neon) + Railway + Reverb
 - **Bug/Feature**: Search memory first → Apply past patterns
 - **Prefs**: ไทย, diagrams, MCP tools
 
-## See Also
-- [LESSONS.md](.claude/LESSONS.md) - ความผิดพลาด & preferences (อ่านก่อนทำงาน!)
+## คิดแทน (Proactive)
+| เมื่อเห็น | ทำสิ่งนี้ |
+|----------|---------|
+| error/bug/ล่ม | diagnose → logs → memory → แก้ |
+| feature/เพิ่ม | Plan Mode → design → confirm → ทำ |
+| deploy/commit | build → test → confirm → push |
+| ไม่แน่ใจ | **ถาม อย่าเดา** |
+
+## See Also (อ่านก่อนทำงาน!)
+- [USER-PROFILE.md](.claude/USER-PROFILE.md) - วิธีคิด & patterns ของ user
+- [LESSONS.md](.claude/LESSONS.md) - ความผิดพลาด & วิธีแก้
 - [COMMANDS.md](.claude/COMMANDS.md) | [UI-RULES.md](.claude/UI-RULES.md)
