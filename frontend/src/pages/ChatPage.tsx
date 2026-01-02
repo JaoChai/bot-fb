@@ -17,7 +17,7 @@ import { ChatWindow } from '@/components/chat/ChatWindow';
 import { CustomerInfoPanel } from '@/components/chat/CustomerInfoPanel';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
-import type { Conversation, ConversationFilters, Message, PaginationMeta, ConversationStatusCounts } from '@/types/api';
+import type { Conversation, ConversationFilters, Message, PaginationMeta } from '@/types/api';
 import type { MessageSentEvent, ConversationUpdatedEvent } from '@/types/realtime';
 
 // Response types for query cache updates
@@ -28,7 +28,7 @@ interface MessagesResponse {
 
 interface ConversationsResponse {
   data: Conversation[];
-  meta: PaginationMeta & { status_counts: ConversationStatusCounts };
+  meta: PaginationMeta;
 }
 
 export function ChatPage() {
@@ -42,8 +42,7 @@ export function ChatPage() {
   // Selected conversation
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
 
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  // Search
   const [searchInput, setSearchInput] = useState('');
   // Debounce search to prevent API calls on every keystroke
   const search = useDeferredValue(searchInput);
@@ -61,40 +60,15 @@ export function ChatPage() {
   // Get selected bot's config (after bots is defined)
   const selectedBot = bots.find((b) => b.id === botId);
   const isAutoHandover = selectedBot?.auto_handover ?? false;
-  // Determine channel type from bot config (not user selection)
-  const isTelegramChannel = selectedBot?.channel_type === 'telegram';
-  // Human-only mode: both Telegram and auto_handover use priority-based tabs
-  const isHumanOnlyMode = isTelegramChannel || isAutoHandover;
 
   // Memoize filters to prevent unnecessary query re-creations
-  const filters = useMemo<ConversationFilters>(() => {
-    const baseFilters: ConversationFilters = {
-      search: search || undefined,
-      sort_by: 'last_message_at',
-      sort_direction: 'desc',
-      per_page: 30,
-    };
-
-    // For human-only modes (Telegram & auto_handover): use needs_response/waiting_customer/closed filters
-    // For other channels: use status filter (active/handover)
-    if (isHumanOnlyMode) {
-      // Human-only mode filters (both Telegram and auto_handover)
-      // Note: needs_response filtering is done client-side since it's a computed field
-      if (statusFilter === 'closed') {
-        baseFilters.status = 'closed';
-      } else if (statusFilter === 'needs_response' || statusFilter === 'waiting_customer') {
-        // Fetch all non-closed conversations, filter client-side by needs_response
-        baseFilters.status = ['active', 'handover'];
-      }
-      // 'all' shows everything (no status filter)
-    } else {
-      if (statusFilter !== 'all') {
-        baseFilters.status = statusFilter; // 'active' or 'handover'
-      }
-    }
-
-    return baseFilters;
-  }, [statusFilter, search, isHumanOnlyMode]);
+  // No status filtering - show all conversations with badge-only approach
+  const filters = useMemo<ConversationFilters>(() => ({
+    search: search || undefined,
+    sort_by: 'last_message_at',
+    sort_direction: 'desc',
+    per_page: 30,
+  }), [search]);
 
   const {
     data: conversationsData,
@@ -105,32 +79,13 @@ export function ChatPage() {
     fetchNextPage,
   } = useInfiniteConversations(botId ?? undefined, filters);
 
-  // Memoize flattened conversations to avoid recreating array on every render
-  // For auto_handover mode, apply client-side filtering based on needs_response
+  // Memoize flattened conversations - no filtering, show all with badges
   const conversations = useMemo(() => {
-    const allConversations = conversationsData?.pages.flatMap((page) => page.data) || [];
-
-    // Apply client-side filtering for human-only mode (Telegram and auto_handover)
-    if (isHumanOnlyMode) {
-      if (statusFilter === 'needs_response') {
-        return allConversations.filter((c) => c.status !== 'closed' && c.needs_response === true);
-      } else if (statusFilter === 'waiting_customer') {
-        return allConversations.filter((c) => c.status !== 'closed' && c.needs_response === false);
-      }
-    }
-
-    return allConversations;
-  }, [conversationsData?.pages, isHumanOnlyMode, statusFilter]);
-  const statusCounts = conversationsData?.pages[0]?.meta?.status_counts;
-
-  // All conversations (unfiltered) - used for finding selected conversation
-  const allConversations = useMemo(() => {
     return conversationsData?.pages.flatMap((page) => page.data) || [];
   }, [conversationsData?.pages]);
 
-  // Selected conversation - find from ALL conversations, not just filtered
-  // This ensures chat window stays visible when switching tabs
-  const selectedConversation = allConversations.find((c) => c.id === selectedConversationId);
+  // Selected conversation
+  const selectedConversation = conversations.find((c) => c.id === selectedConversationId);
 
   // Mark as read mutation
   const markAsRead = useMarkAsRead(botId ?? undefined);
@@ -177,47 +132,28 @@ export function ChatPage() {
         }
       );
 
-      // Update conversation list with new message info and status_counts (without full refetch)
+      // Update conversation list with new message info (without full refetch)
       queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
         ['conversations-infinite', botId, filters],
         (old) => {
           if (!old) return old;
 
-          // Calculate needs_response change for status_counts update
           const nowNeedsResponse = event.sender === 'user';
-          let needsResponseDelta = 0;
-
-          // Find the conversation to check previous state
-          const targetConv = old.pages.flatMap(p => p.data).find(c => c.id === event.conversation_id);
-          if (targetConv && targetConv.status !== 'closed') {
-            const wasNeedsResponse = targetConv.needs_response ?? false;
-            if (wasNeedsResponse !== nowNeedsResponse) {
-              needsResponseDelta = nowNeedsResponse ? 1 : -1;
-            }
-          }
 
           return {
             ...old,
-            pages: old.pages.map((page, pageIdx) => ({
+            pages: old.pages.map((page) => ({
               ...page,
-              // Update status_counts only on first page
-              meta: pageIdx === 0 && needsResponseDelta !== 0 && page.meta?.status_counts
-                ? {
-                    ...page.meta,
-                    status_counts: {
-                      ...page.meta.status_counts,
-                      needs_response: Math.max(0, (page.meta.status_counts.needs_response ?? 0) + needsResponseDelta),
-                    },
-                  }
-                : page.meta,
               data: page.data.map((conv) =>
                 conv.id === event.conversation_id
                   ? {
                       ...conv,
                       last_message_at: event.conversation?.last_message_at ?? event.created_at,
                       message_count: event.conversation?.message_count ?? conv.message_count + 1,
-                      // Increment unread if not currently viewing this conversation
-                      unread_count: conv.id === selectedConversationId ? 0 : conv.unread_count + 1,
+                      // Use unread_count from event if available, otherwise increment
+                      unread_count: conv.id === selectedConversationId
+                        ? 0
+                        : (event.conversation?.unread_count ?? conv.unread_count + 1),
                       // Update needs_response based on message sender
                       needs_response: nowNeedsResponse,
                     }
@@ -233,49 +169,16 @@ export function ChatPage() {
 
   const handleConversationUpdate = useCallback(
     (event: ConversationUpdatedEvent) => {
-      // Surgically update the specific conversation in cache with status_counts
+      // Surgically update the specific conversation in cache
       queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
         ['conversations-infinite', botId, filters],
         (old) => {
           if (!old) return old;
 
-          // Calculate needs_response change for status_counts update
-          let needsResponseDelta = 0;
-
-          // Find the conversation to check previous state
-          const targetConv = old.pages.flatMap(p => p.data).find(c => c.id === event.id);
-          if (targetConv) {
-            const wasNeedsResponse = targetConv.needs_response ?? false;
-            const wasOpen = targetConv.status !== 'closed';
-            const nowOpen = event.status !== 'closed';
-
-            // Handle status changes affecting counts
-            if (wasOpen && !nowOpen) {
-              // Conversation was closed - decrement if it was needs_response
-              if (wasNeedsResponse) needsResponseDelta = -1;
-            } else if (!wasOpen && nowOpen) {
-              // Conversation was reopened - increment if it now needs_response
-              if (event.needs_response) needsResponseDelta = 1;
-            } else if (nowOpen && wasNeedsResponse !== event.needs_response) {
-              // Status unchanged but needs_response changed
-              needsResponseDelta = event.needs_response ? 1 : -1;
-            }
-          }
-
           return {
             ...old,
-            pages: old.pages.map((page, pageIdx) => ({
+            pages: old.pages.map((page) => ({
               ...page,
-              // Update status_counts only on first page
-              meta: pageIdx === 0 && needsResponseDelta !== 0 && page.meta?.status_counts
-                ? {
-                    ...page.meta,
-                    status_counts: {
-                      ...page.meta.status_counts,
-                      needs_response: Math.max(0, (page.meta.status_counts.needs_response ?? 0) + needsResponseDelta),
-                    },
-                  }
-                : page.meta,
               data: page.data.map((conv) =>
                 conv.id === event.id
                   ? {
@@ -286,6 +189,8 @@ export function ChatPage() {
                       message_count: event.message_count,
                       last_message_at: event.last_message_at,
                       needs_response: event.needs_response,
+                      // Update unread_count from event if available
+                      unread_count: event.unread_count ?? conv.unread_count,
                     }
                   : conv
               ),
@@ -414,11 +319,8 @@ export function ChatPage() {
           selectedId={selectedConversationId}
           onSelect={handleConversationSelect}
           isLoading={isConversationsLoading || (isConversationsFetching && conversations.length === 0)}
-          statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
           search={searchInput}
           onSearchChange={setSearchInput}
-          statusCounts={statusCounts}
           hasNextPage={hasNextPage}
           isFetchingNextPage={isFetchingNextPage}
           fetchNextPage={fetchNextPage}

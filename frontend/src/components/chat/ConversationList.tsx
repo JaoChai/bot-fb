@@ -2,14 +2,13 @@ import { useEffect, useRef, memo, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Loader2, MessageCircle, Bot, Headphones, Users, CheckCircle2, MessageCircleWarning, Inbox } from 'lucide-react';
+import { Search, Loader2, MessageCircle, Bot, Headphones, Users, CheckCircle2, MessageCircleWarning } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import type { Conversation, ConversationStatusCounts } from '@/types/api';
+import type { Conversation } from '@/types/api';
 
 const channelColors: Record<string, string> = {
   line: 'text-[#06C755]',
@@ -23,16 +22,13 @@ interface ConversationListProps {
   selectedId: number | null;
   onSelect: (conversation: Conversation) => void;
   isLoading: boolean;
-  statusFilter: string;
-  onStatusFilterChange: (status: string) => void;
   search: string;
   onSearchChange: (search: string) => void;
-  statusCounts?: ConversationStatusCounts;
   // Infinite scroll props
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
   fetchNextPage?: () => void;
-  // Auto handover mode - shows different tabs and badges
+  // Auto handover mode - shows different badges
   isAutoHandover?: boolean;
 }
 
@@ -41,11 +37,8 @@ export function ConversationList({
   selectedId,
   onSelect,
   isLoading,
-  statusFilter,
-  onStatusFilterChange,
   search,
   onSearchChange,
-  statusCounts,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
@@ -95,77 +88,6 @@ export function ConversationList({
         </div>
       </div>
 
-      {/* Status/Type Tabs - Icon only on mobile, text on desktop */}
-      <div className="p-2 border-b">
-        <Tabs value={statusFilter} onValueChange={onStatusFilterChange}>
-          <TabsList className="w-full grid grid-cols-3 h-11 gap-1">
-            {isTelegram || isAutoHandover ? (
-              // Human-only mode (Telegram & auto_handover): ต้องตอบ / ตอบแล้ว / ทั้งหมด
-              <>
-                <TabsTrigger value="needs_response" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="ต้องตอบ">
-                  <MessageCircleWarning className="h-4 w-4 flex-shrink-0 text-orange-500" />
-                  <span className="hidden sm:inline">ต้องตอบ</span>
-                  {statusCounts && statusCounts.needs_response !== undefined && statusCounts.needs_response > 0 && (
-                    <Badge className="text-xs px-1.5 py-0 h-5 text-white animate-pulse bg-orange-500">
-                      {statusCounts.needs_response}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="waiting_customer" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="ตอบแล้ว">
-                  <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-green-600" />
-                  <span className="hidden sm:inline">ตอบแล้ว</span>
-                  {statusCounts && statusCounts.waiting_customer !== undefined && statusCounts.waiting_customer > 0 && (
-                    <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 bg-green-100 text-green-700">
-                      {statusCounts.waiting_customer}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="all" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="ทั้งหมด">
-                  <Inbox className="h-4 w-4 flex-shrink-0 text-slate-500" />
-                  <span className="hidden sm:inline">ทั้งหมด</span>
-                  {statusCounts && (
-                    <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5">
-                      {statusCounts.total}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-              </>
-            ) : (
-              // Normal mode: all / Bot / รอตอบ
-              <>
-                <TabsTrigger value="all" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="ทั้งหมด">
-                  <MessageCircle className="h-4 w-4 flex-shrink-0" />
-                  <span className="hidden sm:inline">ทั้งหมด</span>
-                  {statusCounts && (
-                    <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 hidden sm:inline-flex">
-                      {statusCounts.total}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="active" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="ใช้งาน (Bot)">
-                  <Bot className="h-4 w-4 flex-shrink-0" />
-                  <span className="hidden sm:inline">Bot</span>
-                  {statusCounts && (
-                    <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 hidden sm:inline-flex">
-                      {statusCounts.active}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="handover" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="รอตอบ">
-                  <Headphones className="h-4 w-4 flex-shrink-0" />
-                  <span className="hidden sm:inline">รอตอบ</span>
-                  {statusCounts && statusCounts.handover > 0 && (
-                    <Badge className="text-xs px-1.5 py-0 h-5 bg-destructive text-destructive-foreground">
-                      {statusCounts.handover}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-              </>
-            )}
-          </TabsList>
-        </Tabs>
-      </div>
-
       {/* Conversation List */}
       <ScrollArea className="flex-1">
         {isLoading ? (
@@ -188,7 +110,6 @@ export function ConversationList({
                 isSelected={conversation.id === selectedId}
                 onSelect={onSelect}
                 isAutoHandover={isAutoHandover}
-                statusFilter={statusFilter}
               />
             ))}
 
@@ -214,7 +135,6 @@ interface ConversationItemProps {
   isSelected: boolean;
   onSelect: (conversation: Conversation) => void;
   isAutoHandover?: boolean;
-  statusFilter?: string;
 }
 
 // Skeleton loading component for conversation list
@@ -240,7 +160,6 @@ const ConversationItem = memo(function ConversationItem({
   isSelected,
   onSelect,
   isAutoHandover = false,
-  statusFilter = 'all',
 }: ConversationItemProps) {
   const isTelegram = conversation.channel_type === 'telegram';
   const isClosed = conversation.status === 'closed';
@@ -288,14 +207,6 @@ const ConversationItem = memo(function ConversationItem({
     !isSelected && !(isHumanOnly && needsResponse && !isClosed) && 'hover:bg-accent/50 active:bg-accent'
   );
 
-  // Determine if we should show the status badge
-  // Don't show if already filtered by that status (reduces visual clutter)
-  const shouldShowStatusBadge = isHumanOnly && (
-    statusFilter === 'all' || // Always show in "ทั้งหมด" tab
-    (statusFilter === 'needs_response' && !needsResponse) || // Show "ตอบแล้ว" in "ต้องตอบ" tab (shouldn't happen, but just in case)
-    (statusFilter === 'waiting_customer' && needsResponse) || // Show "ต้องตอบ" in "ตอบแล้ว" tab (shouldn't happen)
-    isClosed // Always show "จบแล้ว" badge
-  );
 
   return (
     <button
@@ -343,52 +254,46 @@ const ConversationItem = memo(function ConversationItem({
           </div>
         )}
 
-        {/* Status/Type badge - human-only mode vs normal mode */}
+        {/* Status badges - always visible */}
         <div className="flex items-center gap-1.5 mt-1">
           {isHumanOnly ? (
-            // Human-only mode: Show status badge only when needed
-            shouldShowStatusBadge && (
-              isClosed ? (
-                <Badge variant="secondary" className="text-xs h-5 gap-1 bg-slate-100 text-slate-500">
-                  <CheckCircle2 className="h-3 w-3" />
-                  จบแล้ว
-                </Badge>
-              ) : needsResponse ? (
-                <Badge className="text-xs h-5 gap-1 text-white bg-orange-500">
-                  <MessageCircleWarning className="h-3 w-3" />
-                  ต้องตอบ
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="text-xs h-5 gap-1 bg-green-50 text-green-700 border-green-200">
-                  <CheckCircle2 className="h-3 w-3" />
-                  ตอบแล้ว
-                </Badge>
-              )
-            )
+            // Human-only mode: Always show status badge
+            isClosed ? (
+              <Badge variant="secondary" className="text-xs h-5 gap-1 bg-slate-100 text-slate-500">
+                <CheckCircle2 className="h-3 w-3" />
+                จบแล้ว
+              </Badge>
+            ) : needsResponse ? (
+              <Badge className="text-xs h-5 gap-1 text-white bg-orange-500">
+                <MessageCircleWarning className="h-3 w-3" />
+                ต้องตอบ
+              </Badge>
+            ) : null // ตอบแล้ว รอลูกค้า - no badge needed
           ) : (
             // Normal mode: Show bot/handover status
             conversation.is_handover ? (
-              <Badge variant="outline" className="text-xs h-5 gap-1 border-dashed">
+              <Badge className="text-xs h-5 gap-1 text-white bg-orange-500">
                 <Headphones className="h-3 w-3" />
                 รอตอบ
               </Badge>
             ) : (
-              <Badge variant="secondary" className="text-xs h-5 gap-1">
+              <Badge variant="secondary" className="text-xs h-5 gap-1 bg-blue-100 text-blue-700">
                 <Bot className="h-3 w-3" />
-                Bot เปิด
+                Bot
               </Badge>
             )
+          )}
+          {/* Unread badge */}
+          {hasUnread && (
+            <Badge className="text-xs h-5 bg-orange-500 hover:bg-orange-500 text-white">
+              {conversation.unread_count} ใหม่
+            </Badge>
           )}
           {/* Group indicator for Telegram */}
           {isTelegram && isGroup && (
             <Badge variant="outline" className="text-xs h-5 gap-1 border-[#0088CC]/30 text-[#0088CC]">
               <Users className="h-3 w-3" />
               กลุ่ม
-            </Badge>
-          )}
-          {hasUnread && (
-            <Badge className="text-xs h-5 bg-orange-500 hover:bg-orange-500">
-              {conversation.unread_count} ใหม่
             </Badge>
           )}
         </div>

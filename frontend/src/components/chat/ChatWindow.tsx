@@ -507,7 +507,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHand
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="font-semibold text-sm sm:text-base truncate max-w-[120px] sm:max-w-none">{customerName}</h2>
               {isTelegram || isAutoHandover ? (
-                // Human-only mode (Telegram & auto_handover): Show needs_response status
+                // Human-only mode: Show status badge + unread
                 <>
                   {conversation.status === 'closed' ? (
                     <Badge variant="secondary" className="text-xs flex-shrink-0 bg-slate-100 text-slate-500">
@@ -519,10 +519,11 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHand
                       <MessageCircleWarning className="h-3 w-3 mr-1 hidden sm:inline" />
                       ต้องตอบ
                     </Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-xs flex-shrink-0 bg-green-100 text-green-700 border-green-200">
-                      <CheckCircle2 className="h-3 w-3 mr-1 hidden sm:inline" />
-                      ตอบแล้ว
+                  ) : null}
+                  {/* Unread badge */}
+                  {conversation.unread_count > 0 && (
+                    <Badge className="text-xs flex-shrink-0 text-white bg-orange-500">
+                      {conversation.unread_count} ใหม่
                     </Badge>
                   )}
                   {/* Group indicator for Telegram */}
@@ -534,18 +535,26 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHand
                   )}
                 </>
               ) : (
-                // Other channels: Show bot/handover status
-                conversation.is_handover ? (
-                  <Badge variant="outline" className="border-dashed text-xs flex-shrink-0">
-                    <Headphones className="h-3 w-3 mr-1 hidden sm:inline" />
-                    รอตอบ
-                  </Badge>
-                ) : (
-                  <Badge variant="secondary" className="text-xs flex-shrink-0">
-                    <Bot className="h-3 w-3 mr-1 hidden sm:inline" />
-                    Bot
-                  </Badge>
-                )
+                // Bot mode: Show bot/handover status + unread
+                <>
+                  {conversation.is_handover ? (
+                    <Badge className="text-xs flex-shrink-0 text-white bg-orange-500">
+                      <Headphones className="h-3 w-3 mr-1 hidden sm:inline" />
+                      รอตอบ
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-xs flex-shrink-0 bg-blue-100 text-blue-700">
+                      <Bot className="h-3 w-3 mr-1 hidden sm:inline" />
+                      Bot
+                    </Badge>
+                  )}
+                  {/* Unread badge */}
+                  {conversation.unread_count > 0 && (
+                    <Badge className="text-xs flex-shrink-0 text-white bg-orange-500">
+                      {conversation.unread_count} ใหม่
+                    </Badge>
+                  )}
+                </>
               )}
             </div>
             <p className="text-xs text-muted-foreground truncate">

@@ -17,6 +17,7 @@ export interface MessageSentEvent {
     message_count: number;
     last_message_at: string | null;
     needs_response: boolean;
+    unread_count: number;
   };
 }
 
@@ -29,6 +30,7 @@ export interface ConversationUpdatedEvent {
   message_count: number;
   last_message_at: string | null;
   needs_response: boolean;
+  unread_count: number;
   update_type: 'created' | 'updated' | 'message_received' | 'handover' | 'closed';
   updated_at: string;
 }
