@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\UserSettingController;
 use App\Http\Controllers\Api\EvaluationController;
 use App\Http\Controllers\Api\AgentApprovalController;
 use App\Http\Controllers\Api\ImprovementController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
