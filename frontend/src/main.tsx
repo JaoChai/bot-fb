@@ -1,11 +1,11 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { RouterProvider } from "react-router"
-import { QueryClientProvider } from "@tanstack/react-query"
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client"
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools"
 import * as Sentry from "@sentry/react"
 import { Toaster } from "@/components/ui/sonner"
-import { queryClient } from "./lib/query"
+import { queryClient, persister } from "./lib/query"
 import { router } from "./router"
 import { reportWebVitals } from "./lib/webVitals"
 import "./index.css"
@@ -27,11 +27,14 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister }}
+    >
       <RouterProvider router={router} />
       <Toaster position="top-right" />
       <ReactQueryDevtools initialIsOpen={false} />
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   </StrictMode>
 )
 

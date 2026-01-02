@@ -1,12 +1,13 @@
 import { QueryClient } from '@tanstack/react-query';
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       // Stale time - data considered fresh for 5 minutes
       staleTime: 5 * 60 * 1000,
-      // Cache time - keep in cache for 30 minutes
-      gcTime: 30 * 60 * 1000,
+      // Cache time - keep in cache for 24 hours (required for persistence)
+      gcTime: 1000 * 60 * 60 * 24,
       // Retry failed requests 3 times with exponential backoff
       retry: (failureCount, error) => {
         // Check if error has status property (ApiError from our interceptor)
@@ -27,6 +28,12 @@ export const queryClient = new QueryClient({
       retry: 1,
     },
   },
+});
+
+// Persister for localStorage - keeps cache across page refreshes
+export const persister = createSyncStoragePersister({
+  storage: window.localStorage,
+  key: 'BOTJAO_QUERY_CACHE',
 });
 
 // Query Keys factory - keeps keys consistent across the app
