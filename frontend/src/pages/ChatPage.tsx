@@ -234,6 +234,26 @@ export function ChatPage() {
     onNewConversation: handleNewConversation,
   });
 
+  // Handle WebSocket reconnection - refetch data that might have been missed
+  useEffect(() => {
+    const handleReconnect = () => {
+      console.log('[ChatPage] WebSocket reconnected, invalidating queries...');
+      // Invalidate messages for current conversation to sync with server
+      if (selectedConversationId) {
+        queryClient.invalidateQueries({
+          queryKey: ['conversation-messages', botId, selectedConversationId],
+        });
+      }
+      // Invalidate conversation list to get any updates missed during disconnect
+      queryClient.invalidateQueries({
+        queryKey: ['conversations-infinite', botId],
+      });
+    };
+
+    window.addEventListener('echo:reconnected', handleReconnect);
+    return () => window.removeEventListener('echo:reconnected', handleReconnect);
+  }, [queryClient, botId, selectedConversationId]);
+
   // Handle bot selection (memoized to prevent child re-renders)
   const handleBotSelect = useCallback((value: string) => {
     const newBotId = parseInt(value, 10);
