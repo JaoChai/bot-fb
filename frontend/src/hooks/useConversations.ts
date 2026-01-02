@@ -172,10 +172,14 @@ export function useConversationMessages(
       return response.data;
     },
     enabled: !!botId && !!conversationId,
-    // WebSocket handles real-time, fallback to polling when disconnected
-    staleTime: 30000,
-    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
-    refetchOnWindowFocus: true,
+    // WebSocket-first pattern: WebSocket handles all real-time updates via setQueryData
+    // Only refetch on reconnect (handled by ChatPage echo:reconnected listener)
+    staleTime: Infinity,                                      // Never auto-refetch, WebSocket handles freshness
+    gcTime: 1000 * 60 * 10,                                   // Keep in cache 10 minutes after unmount
+    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,  // Fallback polling when disconnected
+    refetchOnWindowFocus: false,                              // Don't refetch on tab focus (prevents cache overwrite)
+    refetchOnMount: false,                                    // Don't refetch if data exists
+    refetchOnReconnect: false,                                // Handle reconnect via WebSocket event instead
   });
 }
 
@@ -742,8 +746,8 @@ export function useSendAgentMessage(botId: number | undefined) {
         }
       );
 
-      // Also invalidate to ensure fresh data on next focus/mount
-      queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
+      // Note: We intentionally do NOT invalidate queries here to prevent race conditions
+      // WebSocket handles real-time updates, and refetch happens on reconnect
     },
   });
 }
