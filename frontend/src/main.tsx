@@ -5,7 +5,7 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools"
 import * as Sentry from "@sentry/react"
 import { Toaster } from "@/components/ui/sonner"
-import { queryClient, persister } from "./lib/query"
+import { queryClient, persister, shouldDehydrateQuery } from "./lib/query"
 import { router } from "./router"
 import { reportWebVitals } from "./lib/webVitals"
 import "./index.css"
@@ -32,7 +32,12 @@ createRoot(document.getElementById("root")!).render(
       persistOptions={{
         persister,
         // Buster version - increment when schema changes to clear stale cache
-        buster: 'v1',
+        buster: 'v2', // v2: exclude real-time conversation data from persist
+        // Don't persist real-time data (conversations, messages)
+        // This ensures fresh data is always fetched from server on navigation
+        dehydrateOptions: {
+          shouldDehydrateQuery,
+        },
       }}
     >
       <RouterProvider router={router} />

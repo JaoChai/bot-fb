@@ -1,6 +1,16 @@
 import { QueryClient } from '@tanstack/react-query';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 
+// Query keys that should NOT be persisted (real-time data)
+const NON_PERSISTENT_KEYS = [
+  'conversations',
+  'conversations-infinite',
+  'conversation-messages',
+  'conversation',
+  'conversation-stats',
+  'conversation-notes',
+];
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -29,6 +39,19 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * Check if a query should be persisted to localStorage
+ * Real-time data (conversations, messages) should NOT be persisted
+ * to ensure fresh data is always fetched from server
+ */
+export function shouldDehydrateQuery(query: { queryKey: readonly unknown[] }): boolean {
+  const firstKey = query.queryKey[0];
+  if (typeof firstKey === 'string' && NON_PERSISTENT_KEYS.includes(firstKey)) {
+    return false; // Don't persist real-time conversation data
+  }
+  return true; // Persist other queries (bots, settings, etc.)
+}
 
 // Persister for localStorage - keeps cache across page refreshes
 export const persister = createSyncStoragePersister({
