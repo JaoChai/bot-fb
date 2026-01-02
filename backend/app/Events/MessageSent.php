@@ -67,6 +67,7 @@ class MessageSent implements ShouldBroadcast
                 'id' => $conversation->id,
                 'message_count' => $conversation->message_count,
                 'last_message_at' => $conversation->last_message_at?->toISOString(),
+                'needs_response' => $this->message->sender === 'user',
             ],
         ];
     }

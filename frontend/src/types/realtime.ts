@@ -16,6 +16,7 @@ export interface MessageSentEvent {
     id: number;
     message_count: number;
     last_message_at: string | null;
+    needs_response: boolean;
   };
 }
 
@@ -27,6 +28,7 @@ export interface ConversationUpdatedEvent {
   assigned_user_id: number | null;
   message_count: number;
   last_message_at: string | null;
+  needs_response: boolean;
   update_type: 'created' | 'updated' | 'message_received' | 'handover' | 'closed';
   updated_at: string;
 }

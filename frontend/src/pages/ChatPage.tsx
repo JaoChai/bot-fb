@@ -186,6 +186,8 @@ export function ChatPage() {
                       message_count: event.conversation?.message_count ?? conv.message_count + 1,
                       // Increment unread if not currently viewing this conversation
                       unread_count: conv.id === selectedConversationId ? 0 : conv.unread_count + 1,
+                      // Update needs_response based on message sender
+                      needs_response: event.sender === 'user',
                     }
                   : conv
               ),
@@ -217,6 +219,7 @@ export function ChatPage() {
                       assigned_user_id: event.assigned_user_id,
                       message_count: event.message_count,
                       last_message_at: event.last_message_at,
+                      needs_response: event.needs_response,
                     }
                   : conv
               ),

@@ -65,6 +65,7 @@ class ConversationUpdated implements ShouldBroadcast
             'assigned_user_id' => $this->conversation->assigned_user_id,
             'message_count' => $this->conversation->message_count,
             'last_message_at' => $this->conversation->last_message_at?->toISOString(),
+            'needs_response' => $this->conversation->needs_response,
             'update_type' => $this->updateType,
             'updated_at' => $this->conversation->updated_at->toISOString(),
         ];
