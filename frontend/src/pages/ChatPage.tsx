@@ -121,8 +121,14 @@ export function ChatPage() {
   }, [conversationsData?.pages, isHumanOnlyMode, statusFilter]);
   const statusCounts = conversationsData?.pages[0]?.meta?.status_counts;
 
-  // Selected conversation
-  const selectedConversation = conversations.find((c) => c.id === selectedConversationId);
+  // All conversations (unfiltered) - used for finding selected conversation
+  const allConversations = useMemo(() => {
+    return conversationsData?.pages.flatMap((page) => page.data) || [];
+  }, [conversationsData?.pages]);
+
+  // Selected conversation - find from ALL conversations, not just filtered
+  // This ensures chat window stays visible when switching tabs
+  const selectedConversation = allConversations.find((c) => c.id === selectedConversationId);
 
   // Mark as read mutation
   const markAsRead = useMarkAsRead(botId ?? undefined);
