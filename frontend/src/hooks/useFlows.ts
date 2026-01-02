@@ -115,11 +115,17 @@ export function useDeleteFlow(botId: number | null) {
     mutationFn: async (flowId: number) => {
       if (!botId) throw new Error('Bot ID is required');
       await apiDelete(`/bots/${botId}/flows/${flowId}`);
+      return flowId; // Return flowId for onSuccess
     },
-    onSuccess: () => {
+    onSuccess: (deletedFlowId) => {
       if (!botId) return;
+      // Invalidate list
       queryClient.invalidateQueries({
         queryKey: queryKeys.flows.list(botId),
+      });
+      // Invalidate detail cache for the deleted flow
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.flows.detail(botId, deletedFlowId),
       });
     },
   });

@@ -142,6 +142,13 @@ export function useCancelEvaluation(botId: number | null) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.evaluations.list(botId),
       });
+      // Also invalidate progress and testCases which are affected by cancellation
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.evaluations.progress(botId, evaluationId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.evaluations.testCases(botId, evaluationId),
+      });
     },
   });
 }
@@ -164,6 +171,16 @@ export function useRetryEvaluation(botId: number | null) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.evaluations.list(botId),
       });
+      // Also invalidate progress and testCases which reset on retry
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.evaluations.progress(botId, evaluationId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.evaluations.testCases(botId, evaluationId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.evaluations.report(botId, evaluationId),
+      });
     },
   });
 }
@@ -176,11 +193,26 @@ export function useDeleteEvaluation(botId: number | null) {
     mutationFn: async (evaluationId: number) => {
       if (!botId) throw new Error('Bot ID is required');
       await apiDelete(`/bots/${botId}/evaluations/${evaluationId}`);
+      return evaluationId; // Return evaluationId for onSuccess
     },
-    onSuccess: () => {
+    onSuccess: (deletedEvaluationId) => {
       if (!botId) return;
+      // Invalidate list
       queryClient.invalidateQueries({
         queryKey: queryKeys.evaluations.list(botId),
+      });
+      // Invalidate all related caches for the deleted evaluation
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.evaluations.detail(botId, deletedEvaluationId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.evaluations.progress(botId, deletedEvaluationId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.evaluations.testCases(botId, deletedEvaluationId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.evaluations.report(botId, deletedEvaluationId),
       });
     },
   });

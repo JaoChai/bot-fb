@@ -92,6 +92,10 @@ export function useToggleSuggestion(botId: number | null, sessionId: number | nu
       queryClient.invalidateQueries({
         queryKey: queryKeys.improvements.detail(botId, sessionId),
       });
+      // Also invalidate list which may have summary counts
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.improvements.list(botId),
+      });
     },
   });
 }
@@ -112,6 +116,10 @@ export function useApplyImprovements(botId: number | null, sessionId: number | n
       if (!botId || !sessionId) return;
       queryClient.invalidateQueries({
         queryKey: queryKeys.improvements.detail(botId, sessionId),
+      });
+      // Also invalidate improvements list to reflect the applied state
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.improvements.list(botId),
       });
       // Also invalidate evaluations since a new one may be created
       queryClient.invalidateQueries({
@@ -140,6 +148,10 @@ export function useCancelImprovement(botId: number | null, sessionId: number | n
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.improvements.list(botId),
+      });
+      // Also invalidate suggestions which become invalid after cancel
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.improvements.suggestions(botId, sessionId),
       });
     },
   });

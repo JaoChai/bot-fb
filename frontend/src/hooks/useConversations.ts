@@ -305,6 +305,8 @@ export function useMarkAsRead(botId: number | undefined) {
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
       queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
+      // Also invalidate stats which tracks unread counts
+      queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
     },
   });
 }
@@ -327,6 +329,8 @@ export function useClearContext(botId: number | undefined) {
       queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
       queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
+      // Also invalidate stats to reflect context clear
+      queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
     },
   });
 }

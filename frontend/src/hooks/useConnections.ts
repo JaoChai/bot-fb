@@ -68,10 +68,16 @@ export function useDeleteConnection() {
   return useMutation({
     mutationFn: async (botId: number) => {
       await apiDelete(`/bots/${botId}`);
+      return botId; // Return botId for onSuccess
     },
-    onSuccess: () => {
+    onSuccess: (deletedBotId) => {
+      // Invalidate all bot-related caches including detail
       queryClient.invalidateQueries({
-        queryKey: queryKeys.bots.lists(),
+        queryKey: queryKeys.bots.all,
+      });
+      // Also invalidate the specific detail to ensure it's removed
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.bots.detail(deletedBotId),
       });
     },
   });
