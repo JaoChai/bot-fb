@@ -144,9 +144,9 @@ class TelegramService
             $fileUrl = $this->getFileUrl($bot, $filePath);
             $fileContent = Http::timeout(60)->get($fileUrl)->body();
 
-            // Generate storage path
+            // Generate storage path (use 'chat/' prefix for R2 compatibility)
             $extension = pathinfo($filePath, PATHINFO_EXTENSION);
-            $storagePath = 'telegram/' . $bot->id . '/' . date('Y/m/d') . '/' . uniqid() . '.' . $extension;
+            $storagePath = 'chat/' . $bot->id . '/' . date('Y/m/d') . '/' . uniqid() . '.' . $extension;
 
             // Store file (use configured disk - r2 in production, public locally)
             $disk = config('filesystems.default');
