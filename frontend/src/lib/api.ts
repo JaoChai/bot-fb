@@ -1,5 +1,6 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import type { ApiError } from '@/types/api';
+import { getEcho } from './echo';
 
 let API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -17,13 +18,26 @@ export const api = axios.create({
   withCredentials: true, // For Sanctum cookie-based auth
 });
 
-// Request interceptor - attach auth token
+// Request interceptor - attach auth token and socket ID
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('auth_token');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    // Add X-Socket-ID header for Laravel's toOthers() to work
+    // This prevents WebSocket broadcasts from returning to the sender
+    try {
+      const echo = getEcho();
+      const socketId = echo.socketId();
+      if (socketId && config.headers) {
+        config.headers['X-Socket-ID'] = socketId;
+      }
+    } catch {
+      // Echo not initialized yet, skip socket ID
+    }
+
     return config;
   },
   (error) => Promise.reject(error)
