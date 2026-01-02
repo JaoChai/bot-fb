@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { useConnectionStore } from '@/stores/connectionStore';
 import type {
   AddTagsData,
   BulkTagsData,
@@ -36,10 +37,15 @@ interface StatsResponse {
   data: ConversationStats;
 }
 
+// Fallback polling interval when WebSocket is disconnected (10 seconds)
+const FALLBACK_POLLING_INTERVAL = 10000;
+
 /**
  * Hook to fetch conversations for a bot with filters and pagination
  */
 export function useConversations(botId: number | undefined, filters: ConversationFilters = {}) {
+  const isConnected = useConnectionStore((state) => state.isConnected);
+
   return useQuery({
     queryKey: ['conversations', botId, filters],
     queryFn: async () => {
@@ -69,9 +75,9 @@ export function useConversations(botId: number | undefined, filters: Conversatio
       return response.data;
     },
     enabled: !!botId,
-    // WebSocket handles real-time, but refetch on window focus catches missed updates
+    // WebSocket handles real-time, fallback to polling when disconnected
     staleTime: 30000,
-    refetchInterval: false,
+    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
     refetchOnWindowFocus: true,
   });
 }
@@ -80,6 +86,8 @@ export function useConversations(botId: number | undefined, filters: Conversatio
  * Hook to fetch conversations with infinite scroll pagination
  */
 export function useInfiniteConversations(botId: number | undefined, filters: ConversationFilters = {}) {
+  const isConnected = useConnectionStore((state) => state.isConnected);
+
   return useInfiniteQuery({
     queryKey: ['conversations-infinite', botId, filters],
     queryFn: async ({ pageParam = 1 }) => {
@@ -115,9 +123,9 @@ export function useInfiniteConversations(botId: number | undefined, filters: Con
       return current_page < last_page ? current_page + 1 : undefined;
     },
     enabled: !!botId,
-    // WebSocket handles real-time, but refetch on window focus catches missed updates
+    // WebSocket handles real-time, fallback to polling when disconnected
     staleTime: 30000,
-    refetchInterval: false,
+    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
     refetchOnWindowFocus: true,
   });
 }
@@ -148,6 +156,8 @@ export function useConversationMessages(
   conversationId: number | undefined,
   options: { page?: number; perPage?: number; order?: 'asc' | 'desc' } = {}
 ) {
+  const isConnected = useConnectionStore((state) => state.isConnected);
+
   return useQuery({
     queryKey: ['conversation-messages', botId, conversationId, options],
     queryFn: async () => {
@@ -162,9 +172,9 @@ export function useConversationMessages(
       return response.data;
     },
     enabled: !!botId && !!conversationId,
-    // WebSocket handles real-time, but refetch on window focus catches missed updates
+    // WebSocket handles real-time, fallback to polling when disconnected
     staleTime: 30000,
-    refetchInterval: false,
+    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
     refetchOnWindowFocus: true,
   });
 }
