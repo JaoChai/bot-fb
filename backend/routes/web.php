@@ -19,3 +19,22 @@ Route::get('/', function () {
 | - Telegram: POST /api/webhook/telegram/{token}
 |
 */
+
+/*
+|--------------------------------------------------------------------------
+| Legacy Webhook Fallback Routes
+|--------------------------------------------------------------------------
+|
+| These routes provide backward compatibility for webhooks configured
+| with the old URL format (without /api/ prefix). They forward requests
+| to the correct controllers.
+|
+*/
+
+Route::prefix('webhook')->group(function () {
+    // LINE webhook fallback - POST /webhook/{token}
+    Route::post('/{token}', [\App\Http\Controllers\Webhook\LINEWebhookController::class, 'handle']);
+
+    // Telegram webhook fallback - POST /webhook/telegram/{token}
+    Route::post('/telegram/{token}', [\App\Http\Controllers\Webhook\TelegramWebhookController::class, 'handle']);
+});
