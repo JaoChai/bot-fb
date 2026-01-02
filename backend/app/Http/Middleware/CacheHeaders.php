@@ -21,9 +21,11 @@ class CacheHeaders
      * Note: paths are WITHOUT the api/ prefix (Laravel strips it)
      */
     private array $cacheRules = [
+        // Bot list - no cache (status changes frequently via toggles)
+        'bots' => 0,
+        // Bot detail - cache briefly (user viewing details)
+        'bots/*' => 60,
         // Static/stable data - cache 5 minutes
-        'bots' => 300,
-        'bots/*' => 300,
         'flows' => 300,
         'flows/*' => 300,
         'knowledge-bases' => 300,
