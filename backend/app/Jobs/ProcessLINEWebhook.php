@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
+use App\Services\AutoAssignmentService;
 use App\Services\LINEService;
 use App\Services\MessageAggregationService;
 use App\Services\MultipleBubblesService;
@@ -304,6 +305,14 @@ class ProcessLINEWebhook implements ShouldQueue
             'current_flow_id' => $this->bot->default_flow_id,
             'message_count' => 0,
         ]);
+
+        // Auto-assign conversation if enabled
+        $autoAssignment = app(AutoAssignmentService::class);
+        $assignedUser = $autoAssignment->assignConversation($this->bot, $conversation);
+
+        if ($assignedUser) {
+            $conversation->update(['assigned_user_id' => $assignedUser->id]);
+        }
 
         // Broadcast new conversation event
         broadcast(new ConversationUpdated($conversation, 'created'))->toOthers();
