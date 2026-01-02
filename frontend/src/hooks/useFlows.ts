@@ -64,7 +64,7 @@ export function useCreateFlow(botId: number | null) {
   });
 }
 
-// Update flow mutation with selective cache update
+// Update flow mutation with optimistic update
 export function useUpdateFlow(botId: number | null, flowId: number | null) {
   const queryClient = useQueryClient();
 
@@ -74,16 +74,64 @@ export function useUpdateFlow(botId: number | null, flowId: number | null) {
       const response = await apiPut<ApiResponse<Flow>>(`/bots/${botId}/flows/${flowId}`, data);
       return response.data;
     },
+    onMutate: async (data) => {
+      if (!botId || !flowId) return;
+
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: queryKeys.flows.list(botId) });
+      await queryClient.cancelQueries({ queryKey: queryKeys.flows.detail(botId, flowId) });
+
+      // Snapshot previous values
+      const previousFlows = queryClient.getQueryData<PaginatedResponse<Flow>>(
+        queryKeys.flows.list(botId)
+      );
+      const previousFlow = queryClient.getQueryData<Flow>(
+        queryKeys.flows.detail(botId, flowId)
+      );
+
+      // Extract only safe fields to update (exclude knowledge_bases which has different type)
+      const { knowledge_bases: _kb, ...safeData } = data;
+      const partialUpdate = safeData as Partial<Flow>;
+
+      // Optimistically update detail cache
+      queryClient.setQueryData<Flow | undefined>(
+        queryKeys.flows.detail(botId, flowId),
+        (oldData) => oldData ? { ...oldData, ...partialUpdate } : oldData
+      );
+
+      // Optimistically update list cache
+      queryClient.setQueryData<PaginatedResponse<Flow> | undefined>(
+        queryKeys.flows.list(botId),
+        (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            data: oldData.data.map((flow) =>
+              flow.id === flowId ? { ...flow, ...partialUpdate } : flow
+            ),
+          };
+        }
+      );
+
+      return { previousFlows, previousFlow };
+    },
+    onError: (_err, _data, context) => {
+      // Rollback on error
+      if (!botId || !flowId) return;
+      if (context?.previousFlows) {
+        queryClient.setQueryData(queryKeys.flows.list(botId), context.previousFlows);
+      }
+      if (context?.previousFlow) {
+        queryClient.setQueryData(queryKeys.flows.detail(botId, flowId), context.previousFlow);
+      }
+    },
     onSuccess: (updatedFlow) => {
       if (!botId || !flowId) return;
 
-      // Update detail cache directly
-      queryClient.setQueryData(
-        queryKeys.flows.detail(botId, flowId),
-        updatedFlow
-      );
+      // Update with actual server response
+      queryClient.setQueryData(queryKeys.flows.detail(botId, flowId), updatedFlow);
 
-      // Update flow in list cache without refetching
+      // Update flow in list cache with server data
       queryClient.setQueryData<PaginatedResponse<Flow> | undefined>(
         queryKeys.flows.list(botId),
         (oldData) => {
@@ -96,9 +144,10 @@ export function useUpdateFlow(botId: number | null, flowId: number | null) {
           };
         }
       );
-
-      // Only invalidate list if is_default changed (affects order)
-      if ('is_default' in updatedFlow && updatedFlow.is_default) {
+    },
+    onSettled: () => {
+      // Only invalidate if is_default might have changed (affects order)
+      if (botId) {
         queryClient.invalidateQueries({
           queryKey: queryKeys.flows.list(botId),
         });
@@ -107,7 +156,7 @@ export function useUpdateFlow(botId: number | null, flowId: number | null) {
   });
 }
 
-// Delete flow mutation
+// Delete flow mutation with optimistic update
 export function useDeleteFlow(botId: number | null) {
   const queryClient = useQueryClient();
 
@@ -115,18 +164,55 @@ export function useDeleteFlow(botId: number | null) {
     mutationFn: async (flowId: number) => {
       if (!botId) throw new Error('Bot ID is required');
       await apiDelete(`/bots/${botId}/flows/${flowId}`);
-      return flowId; // Return flowId for onSuccess
+      return flowId;
     },
-    onSuccess: (deletedFlowId) => {
+    onMutate: async (flowId) => {
       if (!botId) return;
-      // Invalidate list
+
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: queryKeys.flows.list(botId) });
+
+      // Snapshot previous value
+      const previousFlows = queryClient.getQueryData<PaginatedResponse<Flow>>(
+        queryKeys.flows.list(botId)
+      );
+
+      // Optimistically remove flow from list
+      queryClient.setQueryData<PaginatedResponse<Flow> | undefined>(
+        queryKeys.flows.list(botId),
+        (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            data: oldData.data.filter((flow) => flow.id !== flowId),
+            meta: oldData.meta ? {
+              ...oldData.meta,
+              total: Math.max(0, (oldData.meta.total || 0) - 1),
+            } : oldData.meta,
+          };
+        }
+      );
+
+      return { previousFlows };
+    },
+    onError: (_err, _flowId, context) => {
+      // Rollback on error
+      if (context?.previousFlows && botId) {
+        queryClient.setQueryData(queryKeys.flows.list(botId), context.previousFlows);
+      }
+    },
+    onSettled: (deletedFlowId) => {
+      if (!botId) return;
+      // Refetch to ensure server state
       queryClient.invalidateQueries({
         queryKey: queryKeys.flows.list(botId),
       });
-      // Invalidate detail cache for the deleted flow
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.flows.detail(botId, deletedFlowId),
-      });
+      // Remove detail cache for the deleted flow
+      if (deletedFlowId) {
+        queryClient.removeQueries({
+          queryKey: queryKeys.flows.detail(botId, deletedFlowId),
+        });
+      }
     },
   });
 }
