@@ -5,7 +5,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Loader2, MessageCircle, Bot, Headphones, Users, Clock, CheckCircle2, MessageCircleWarning } from 'lucide-react';
+import { Search, Loader2, MessageCircle, Bot, Headphones, Users, CheckCircle2, MessageCircleWarning, Inbox } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -100,24 +100,34 @@ export function ConversationList({
         <Tabs value={statusFilter} onValueChange={onStatusFilterChange}>
           <TabsList className="w-full grid grid-cols-3 h-11 gap-1">
             {isTelegram || isAutoHandover ? (
-              // Human-only mode (Telegram & auto_handover): รอคุณตอบ / รอลูกค้า / จบแล้ว
+              // Human-only mode (Telegram & auto_handover): ต้องตอบ / ตอบแล้ว / ทั้งหมด
               <>
-                <TabsTrigger value="needs_response" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="รอคุณตอบ">
-                  <MessageCircleWarning className={cn("h-4 w-4 flex-shrink-0", isTelegram ? "text-[#0088CC]" : "text-red-500")} />
-                  <span className="hidden sm:inline">รอคุณตอบ</span>
+                <TabsTrigger value="needs_response" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="ต้องตอบ">
+                  <MessageCircleWarning className="h-4 w-4 flex-shrink-0 text-orange-500" />
+                  <span className="hidden sm:inline">ต้องตอบ</span>
                   {statusCounts && statusCounts.needs_response !== undefined && statusCounts.needs_response > 0 && (
-                    <Badge className={cn("text-xs px-1.5 py-0 h-5 text-white animate-pulse", isTelegram ? "bg-[#0088CC]" : "bg-red-500")}>
+                    <Badge className="text-xs px-1.5 py-0 h-5 text-white animate-pulse bg-orange-500">
                       {statusCounts.needs_response}
                     </Badge>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="waiting_customer" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="รอลูกค้า">
-                  <Clock className={cn("h-4 w-4 flex-shrink-0", isTelegram ? "text-[#0088CC]/70" : "text-amber-600")} />
-                  <span className="hidden sm:inline">รอลูกค้า</span>
+                <TabsTrigger value="waiting_customer" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="ตอบแล้ว">
+                  <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-green-600" />
+                  <span className="hidden sm:inline">ตอบแล้ว</span>
+                  {statusCounts && statusCounts.waiting_customer !== undefined && statusCounts.waiting_customer > 0 && (
+                    <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 bg-green-100 text-green-700">
+                      {statusCounts.waiting_customer}
+                    </Badge>
+                  )}
                 </TabsTrigger>
-                <TabsTrigger value="closed" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="จบแล้ว">
-                  <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-slate-400" />
-                  <span className="hidden sm:inline">จบแล้ว</span>
+                <TabsTrigger value="all" className="text-xs sm:text-sm h-10 px-1 sm:px-3 gap-1" title="ทั้งหมด">
+                  <Inbox className="h-4 w-4 flex-shrink-0 text-slate-500" />
+                  <span className="hidden sm:inline">ทั้งหมด</span>
+                  {statusCounts && (
+                    <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5">
+                      {statusCounts.total}
+                    </Badge>
+                  )}
                 </TabsTrigger>
               </>
             ) : (
@@ -178,6 +188,7 @@ export function ConversationList({
                 isSelected={conversation.id === selectedId}
                 onSelect={onSelect}
                 isAutoHandover={isAutoHandover}
+                statusFilter={statusFilter}
               />
             ))}
 
@@ -203,6 +214,7 @@ interface ConversationItemProps {
   isSelected: boolean;
   onSelect: (conversation: Conversation) => void;
   isAutoHandover?: boolean;
+  statusFilter?: string;
 }
 
 // Skeleton loading component for conversation list
@@ -228,6 +240,7 @@ const ConversationItem = memo(function ConversationItem({
   isSelected,
   onSelect,
   isAutoHandover = false,
+  statusFilter = 'all',
 }: ConversationItemProps) {
   const isTelegram = conversation.channel_type === 'telegram';
   const isClosed = conversation.status === 'closed';
@@ -248,6 +261,11 @@ const ConversationItem = memo(function ConversationItem({
     ? formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: th })
     : null;
 
+  // Last message preview (truncated)
+  const lastMessagePreview = conversation.last_message?.content
+    ? conversation.last_message.content.slice(0, 50) + (conversation.last_message.content.length > 50 ? '...' : '')
+    : null;
+
   const channelColor = channelColors[conversation.channel_type] || 'text-muted-foreground';
 
   // Memoize click handler to prevent re-creation
@@ -258,20 +276,25 @@ const ConversationItem = memo(function ConversationItem({
   // Human-only mode: both Telegram and auto_handover
   const isHumanOnly = isTelegram || isAutoHandover;
 
-  // Row styling based on human-only mode state
+  // Row styling based on human-only mode state - unified orange color for urgent
   const rowClassName = cn(
     'w-full p-3 rounded-lg flex items-start gap-3 text-left transition-colors cursor-pointer',
     'min-h-[72px]',
     isSelected && 'bg-accent',
-    // Human-only mode styling (Telegram uses brand color, auto_handover uses red)
-    isHumanOnly && !isClosed && needsResponse && !isSelected && (
-      isTelegram
-        ? 'bg-[#0088CC]/10 border-l-4 border-[#0088CC] hover:bg-[#0088CC]/20'
-        : 'bg-red-50 border-l-4 border-red-500 hover:bg-red-100'
-    ),
+    // Human-only mode styling - unified orange for needs_response
+    isHumanOnly && !isClosed && needsResponse && !isSelected && 'bg-orange-50 border-l-4 border-orange-500 hover:bg-orange-100',
     isHumanOnly && isClosed && 'opacity-60',
     // Default styling
     !isSelected && !(isHumanOnly && needsResponse && !isClosed) && 'hover:bg-accent/50 active:bg-accent'
+  );
+
+  // Determine if we should show the status badge
+  // Don't show if already filtered by that status (reduces visual clutter)
+  const shouldShowStatusBadge = isHumanOnly && (
+    statusFilter === 'all' || // Always show in "ทั้งหมด" tab
+    (statusFilter === 'needs_response' && !needsResponse) || // Show "ตอบแล้ว" in "ต้องตอบ" tab (shouldn't happen, but just in case)
+    (statusFilter === 'waiting_customer' && needsResponse) || // Show "ต้องตอบ" in "ตอบแล้ว" tab (shouldn't happen)
+    isClosed // Always show "จบแล้ว" badge
   );
 
   return (
@@ -291,10 +314,7 @@ const ConversationItem = memo(function ConversationItem({
           </AvatarFallback>
         </Avatar>
         {hasUnread && (
-          <span className={cn(
-            'absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background',
-            isTelegram ? 'bg-[#0088CC]' : 'bg-green-500'
-          )} />
+          <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-orange-500" />
         )}
       </div>
 
@@ -309,32 +329,41 @@ const ConversationItem = memo(function ConversationItem({
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <MessageCircle className={cn('h-3 w-3 flex-shrink-0', channelColor)} />
-          <span className="text-xs text-muted-foreground truncate">
-            {conversation.message_count} ข้อความ
-          </span>
-        </div>
+        {/* Last message preview */}
+        {lastMessagePreview ? (
+          <p className="text-xs text-muted-foreground truncate mt-0.5">
+            {lastMessagePreview}
+          </p>
+        ) : (
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <MessageCircle className={cn('h-3 w-3 flex-shrink-0', channelColor)} />
+            <span className="text-xs text-muted-foreground truncate">
+              {conversation.message_count} ข้อความ
+            </span>
+          </div>
+        )}
 
         {/* Status/Type badge - human-only mode vs normal mode */}
         <div className="flex items-center gap-1.5 mt-1">
           {isHumanOnly ? (
-            // Human-only mode (Telegram & auto_handover): Show needs_response status
-            isClosed ? (
-              <Badge variant="secondary" className="text-xs h-5 gap-1 bg-slate-100 text-slate-500">
-                <CheckCircle2 className="h-3 w-3" />
-                จบแล้ว
-              </Badge>
-            ) : needsResponse ? (
-              <Badge className={cn("text-xs h-5 gap-1 text-white", isTelegram ? "bg-[#0088CC]" : "bg-red-500")}>
-                <MessageCircleWarning className="h-3 w-3" />
-                รอคุณตอบ
-              </Badge>
-            ) : (
-              <Badge variant="outline" className={cn("text-xs h-5 gap-1", isTelegram ? "bg-[#0088CC]/10 text-[#0088CC] border-[#0088CC]/30" : "bg-amber-50 text-amber-700 border-amber-200")}>
-                <Clock className="h-3 w-3" />
-                รอลูกค้า
-              </Badge>
+            // Human-only mode: Show status badge only when needed
+            shouldShowStatusBadge && (
+              isClosed ? (
+                <Badge variant="secondary" className="text-xs h-5 gap-1 bg-slate-100 text-slate-500">
+                  <CheckCircle2 className="h-3 w-3" />
+                  จบแล้ว
+                </Badge>
+              ) : needsResponse ? (
+                <Badge className="text-xs h-5 gap-1 text-white bg-orange-500">
+                  <MessageCircleWarning className="h-3 w-3" />
+                  ต้องตอบ
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-xs h-5 gap-1 bg-green-50 text-green-700 border-green-200">
+                  <CheckCircle2 className="h-3 w-3" />
+                  ตอบแล้ว
+                </Badge>
+              )
             )
           ) : (
             // Normal mode: Show bot/handover status
@@ -358,10 +387,7 @@ const ConversationItem = memo(function ConversationItem({
             </Badge>
           )}
           {hasUnread && (
-            <Badge className={cn(
-              'text-xs h-5',
-              isTelegram ? 'bg-[#0088CC] hover:bg-[#0088CC]' : 'bg-green-500 hover:bg-green-500'
-            )}>
+            <Badge className="text-xs h-5 bg-orange-500 hover:bg-orange-500">
               {conversation.unread_count} ใหม่
             </Badge>
           )}

@@ -116,7 +116,9 @@ class ConversationController extends Controller
             ->toArray();
 
         // Count conversations needing response (last message is from customer/user)
+        // and waiting for customer (last message is from bot/agent)
         $needsResponseCount = 0;
+        $waitingCustomerCount = 0;
         if ($bot->auto_handover) {
             $needsResponseCount = $bot->conversations()
                 ->where('status', '!=', 'closed')
@@ -125,6 +127,17 @@ class ConversationController extends Controller
                         ->from('messages as m')
                         ->whereColumn('m.conversation_id', 'conversations.id')
                         ->where('m.sender', 'user')
+                        ->whereRaw('m.id = (SELECT MAX(m2.id) FROM messages m2 WHERE m2.conversation_id = conversations.id)');
+                })
+                ->count();
+
+            $waitingCustomerCount = $bot->conversations()
+                ->where('status', '!=', 'closed')
+                ->whereExists(function ($query) {
+                    $query->selectRaw('1')
+                        ->from('messages as m')
+                        ->whereColumn('m.conversation_id', 'conversations.id')
+                        ->whereIn('m.sender', ['bot', 'agent'])
                         ->whereRaw('m.id = (SELECT MAX(m2.id) FROM messages m2 WHERE m2.conversation_id = conversations.id)');
                 })
                 ->count();
@@ -141,6 +154,7 @@ class ConversationController extends Controller
                         'handover' => $statusCounts['handover'] ?? 0,
                         'total' => array_sum($statusCounts),
                         'needs_response' => $needsResponseCount,
+                        'waiting_customer' => $waitingCustomerCount,
                     ],
                 ],
             ]);

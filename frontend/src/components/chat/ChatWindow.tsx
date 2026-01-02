@@ -34,7 +34,6 @@ import {
   RotateCcw,
   Users,
   MessageCircleWarning,
-  Clock,
   CheckCircle2,
 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -511,19 +510,19 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHand
                 // Human-only mode (Telegram & auto_handover): Show needs_response status
                 <>
                   {conversation.status === 'closed' ? (
-                    <Badge variant="secondary" className="text-xs flex-shrink-0">
+                    <Badge variant="secondary" className="text-xs flex-shrink-0 bg-slate-100 text-slate-500">
                       <CheckCircle2 className="h-3 w-3 mr-1 hidden sm:inline" />
                       จบแล้ว
                     </Badge>
                   ) : conversation.needs_response ? (
-                    <Badge className={cn("text-xs flex-shrink-0 text-white", isTelegram ? "bg-[#0088CC]" : "bg-red-500")}>
+                    <Badge className="text-xs flex-shrink-0 text-white bg-orange-500">
                       <MessageCircleWarning className="h-3 w-3 mr-1 hidden sm:inline" />
-                      รอคุณตอบ
+                      ต้องตอบ
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className={cn("text-xs flex-shrink-0", isTelegram ? "bg-[#0088CC]/10 text-[#0088CC] border-[#0088CC]/30" : "bg-amber-50 text-amber-700 border-amber-200")}>
-                      <Clock className="h-3 w-3 mr-1 hidden sm:inline" />
-                      รอลูกค้า
+                    <Badge variant="outline" className="text-xs flex-shrink-0 bg-green-100 text-green-700 border-green-200">
+                      <CheckCircle2 className="h-3 w-3 mr-1 hidden sm:inline" />
+                      ตอบแล้ว
                     </Badge>
                   )}
                   {/* Group indicator for Telegram */}
