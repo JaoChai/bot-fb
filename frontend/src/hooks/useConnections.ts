@@ -92,7 +92,34 @@ export function useToggleBotStatus() {
       const response = await apiPut<ApiResponse<Bot>>(`/bots/${botId}`, { status });
       return response.data;
     },
-    onSuccess: (_, { botId }) => {
+    onMutate: async ({ botId, status }) => {
+      // Cancel any outgoing refetches to prevent overwriting optimistic update
+      await queryClient.cancelQueries({ queryKey: queryKeys.bots.lists() });
+
+      // Snapshot the previous value for rollback
+      const previousBots = queryClient.getQueryData(queryKeys.bots.lists());
+
+      // Optimistically update the cache immediately
+      queryClient.setQueryData(queryKeys.bots.lists(), (old: { data: Bot[] } | undefined) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map((bot) =>
+            bot.id === botId ? { ...bot, status } : bot
+          ),
+        };
+      });
+
+      return { previousBots };
+    },
+    onError: (_err, _variables, context) => {
+      // Rollback to previous value on error
+      if (context?.previousBots) {
+        queryClient.setQueryData(queryKeys.bots.lists(), context.previousBots);
+      }
+    },
+    onSettled: (_, __, { botId }) => {
+      // Always refetch after error or success to ensure consistency
       queryClient.invalidateQueries({
         queryKey: queryKeys.bots.lists(),
       });
