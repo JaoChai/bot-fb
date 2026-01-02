@@ -105,7 +105,12 @@ class CacheHeaders
      */
     private function withCache(Response $response, int $maxAge): Response
     {
-        $response->headers->set('Cache-Control', "private, max-age={$maxAge}");
+        // Remove any existing cache headers set by Laravel
+        $response->headers->remove('Cache-Control');
+        $response->headers->remove('Pragma');
+        $response->headers->remove('Expires');
+
+        $response->headers->set('Cache-Control', "private, max-age={$maxAge}", true);
         $response->headers->set('Vary', 'Accept, Authorization');
 
         return $response;
@@ -116,7 +121,12 @@ class CacheHeaders
      */
     private function noCache(Response $response): Response
     {
-        $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate');
+        // Remove any existing cache headers
+        $response->headers->remove('Cache-Control');
+        $response->headers->remove('Pragma');
+        $response->headers->remove('Expires');
+
+        $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate', true);
         $response->headers->set('Pragma', 'no-cache');
 
         return $response;

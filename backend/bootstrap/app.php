@@ -36,10 +36,14 @@ return Application::configure(basePath: dirname(__DIR__))
             SanitizeInput::class,
         ]);
 
-        // Append cache headers and compression middleware (runs after response is generated)
+        // Compression runs early to compress response
         $middleware->api(append: [
-            CacheHeaders::class,
             CompressResponse::class,
+        ]);
+
+        // Cache headers PREPEND = runs LAST on response (overrides Laravel's headers)
+        $middleware->api(prepend: [
+            CacheHeaders::class,
         ]);
 
         // Exclude webhook routes from CSRF protection
