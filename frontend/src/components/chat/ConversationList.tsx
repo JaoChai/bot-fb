@@ -5,9 +5,23 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Search, Loader2, MessageCircle, Bot, Headphones, Users, CheckCircle2, MessageCircleWarning } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+
+// Short time format for Thai (e.g., "16น." instead of "16 นาที")
+function formatTimeShort(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'เมื่อกี้';
+  if (diffMins < 60) return `${diffMins}น.`;
+  if (diffHours < 24) return `${diffHours}ชม.`;
+  if (diffDays < 7) return `${diffDays}ว.`;
+  return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+}
+
 import type { Conversation } from '@/types/api';
 
 const channelColors: Record<string, string> = {
@@ -102,7 +116,7 @@ export function ConversationList({
             ไม่พบการสนทนา
           </div>
         ) : (
-          <div className="p-2 space-y-1">
+          <div className="p-2 space-y-1 overflow-hidden">
             {conversations.map((conversation) => (
               <ConversationItem
                 key={conversation.id}
@@ -176,14 +190,14 @@ const ConversationItem = memo(function ConversationItem({
 
   const customerInitial = customerName.charAt(0).toUpperCase();
   const hasUnread = conversation.unread_count > 0;
+
+  // Format time in short form (e.g., "16น." instead of "16 นาที")
   const lastMessageTime = conversation.last_message_at
-    ? formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: th })
+    ? formatTimeShort(new Date(conversation.last_message_at))
     : null;
 
-  // Last message preview (truncated)
-  const lastMessagePreview = conversation.last_message?.content
-    ? conversation.last_message.content.slice(0, 50) + (conversation.last_message.content.length > 50 ? '...' : '')
-    : null;
+  // Last message preview - CSS handles truncation
+  const lastMessagePreview = conversation.last_message?.content || null;
 
   const channelColor = channelColors[conversation.channel_type] || 'text-muted-foreground';
 
@@ -197,7 +211,7 @@ const ConversationItem = memo(function ConversationItem({
 
   // Row styling based on human-only mode state - unified orange color for urgent
   const rowClassName = cn(
-    'w-full p-3 rounded-lg flex items-start gap-3 text-left transition-colors cursor-pointer',
+    'w-full p-3 rounded-lg flex items-start gap-3 text-left transition-colors cursor-pointer overflow-hidden',
     'min-h-[72px]',
     isSelected && 'bg-accent',
     // Human-only mode styling - unified orange for needs_response
@@ -230,19 +244,19 @@ const ConversationItem = memo(function ConversationItem({
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2">
-          <span className={cn('font-medium truncate', hasUnread && 'font-semibold')}>
+      <div className="flex-1 min-w-0 overflow-hidden">
+        <div className="flex items-center gap-2">
+          <span className={cn('font-medium truncate flex-1 min-w-0', hasUnread && 'font-semibold')}>
             {customerName}
           </span>
-          <span className="text-xs text-muted-foreground flex-shrink-0">
+          <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
             {lastMessageTime}
           </span>
         </div>
 
         {/* Last message preview */}
         {lastMessagePreview ? (
-          <p className="text-xs text-muted-foreground truncate mt-0.5">
+          <p className="text-xs text-muted-foreground truncate mt-0.5 pr-2">
             {lastMessagePreview}
           </p>
         ) : (
