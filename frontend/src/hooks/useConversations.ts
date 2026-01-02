@@ -300,10 +300,33 @@ export function useToggleHandover(botId: number | undefined) {
       );
       return response.data;
     },
-    onSuccess: (_, { conversationId }) => {
-      queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
-      queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
+    onSuccess: (result, { conversationId }) => {
+      const updatedConversation = result.data;
+
+      // Immediately update cache with response data (fixes UI not updating)
+      queryClient.setQueriesData<InfiniteData<ConversationsResponse>>(
+        { queryKey: ['conversations-infinite', botId] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              data: page.data.map((conv) =>
+                conv.id === conversationId ? { ...conv, ...updatedConversation } : conv
+              ),
+            })),
+          };
+        }
+      );
+
+      // Also update single conversation query if it exists
+      queryClient.setQueryData<ConversationResponse>(
+        ['conversation', botId, conversationId],
+        (old) => old ? { ...old, data: { ...old.data, ...updatedConversation } } : old
+      );
+
+      // Invalidate stats (status changed)
       queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
     },
   });

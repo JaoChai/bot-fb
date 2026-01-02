@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToggleHandover } from '@/hooks/useConversations';
 import { useToast } from '@/hooks/use-toast';
@@ -20,6 +21,7 @@ import {
   Timer,
   Users,
   User,
+  Ban,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
@@ -48,6 +50,9 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
     conversation.telegram_chat_type === 'group' ||
     conversation.telegram_chat_type === 'supergroup'
   );
+
+  // Permanent disable option (no auto-enable)
+  const [permanentDisable, setPermanentDisable] = useState(false);
 
   // Auto-enable countdown
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(
@@ -126,13 +131,33 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
   // Handle toggle bot (memoized)
   const handleToggleBot = useCallback(async () => {
     try {
-      await toggleHandover.mutateAsync({ conversationId: conversation.id });
-      toast({
-        title: conversation.is_handover ? 'เปิด Bot แล้ว' : 'เปิดโหมดรอตอบ',
-        description: conversation.is_handover
-          ? 'Bot จะตอบข้อความในการสนทนานี้'
-          : 'คุณสามารถตอบข้อความได้โดยตรง Bot จะเปิดอัตโนมัติใน 30 นาที',
+      // When turning OFF bot (enabling handover), check permanentDisable setting
+      const autoEnableMinutes = conversation.is_handover ? 30 : (permanentDisable ? 0 : 30);
+
+      await toggleHandover.mutateAsync({
+        conversationId: conversation.id,
+        autoEnableMinutes,
       });
+
+      // Toast message based on action
+      if (conversation.is_handover) {
+        // Turning ON bot
+        toast({
+          title: 'เปิด Bot แล้ว',
+          description: 'Bot จะตอบข้อความในการสนทนานี้',
+        });
+      } else {
+        // Turning OFF bot (handover)
+        toast({
+          title: permanentDisable ? 'ปิด Bot ถาวร' : 'เปิดโหมดรอตอบ',
+          description: permanentDisable
+            ? 'Bot จะไม่ตอบลูกค้ารายนี้จนกว่าจะเปิดเอง'
+            : 'คุณสามารถตอบข้อความได้โดยตรง Bot จะเปิดอัตโนมัติใน 30 นาที',
+        });
+      }
+
+      // Reset permanent disable checkbox after toggle
+      setPermanentDisable(false);
     } catch {
       toast({
         title: 'เกิดข้อผิดพลาด',
@@ -140,7 +165,7 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
         variant: 'destructive',
       });
     }
-  }, [toggleHandover, conversation.id, conversation.is_handover, toast]);
+  }, [toggleHandover, conversation.id, conversation.is_handover, permanentDisable, toast]);
 
   return (
     <div className="p-4 space-y-6">
@@ -229,12 +254,33 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
               />
             </div>
 
-            {/* Auto-enable countdown */}
-            {conversation.is_handover && remainingSeconds !== null && remainingSeconds > 0 && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Timer className="h-4 w-4" />
-                <span>เปิดอัตโนมัติใน {formatCountdown(remainingSeconds)}</span>
+            {/* Permanent disable option - show when bot is ON (about to turn off) */}
+            {!conversation.is_handover && (
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="permanent-disable"
+                  checked={permanentDisable}
+                  onCheckedChange={(checked) => setPermanentDisable(checked === true)}
+                />
+                <Label htmlFor="permanent-disable" className="text-sm text-muted-foreground cursor-pointer">
+                  ปิด Bot ถาวร (ไม่เปิดอัตโนมัติ)
+                </Label>
               </div>
+            )}
+
+            {/* Auto-enable countdown or permanent indicator */}
+            {conversation.is_handover && (
+              remainingSeconds !== null && remainingSeconds > 0 ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Timer className="h-4 w-4" />
+                  <span>เปิดอัตโนมัติใน {formatCountdown(remainingSeconds)}</span>
+                </div>
+              ) : !conversation.bot_auto_enable_at && (
+                <div className="flex items-center gap-2 text-sm text-destructive">
+                  <Ban className="h-4 w-4" />
+                  <span>ปิดถาวร - ไม่เปิดอัตโนมัติ</span>
+                </div>
+              )
             )}
 
             <p className="text-xs text-muted-foreground">
