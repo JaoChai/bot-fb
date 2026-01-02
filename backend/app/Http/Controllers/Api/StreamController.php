@@ -213,21 +213,22 @@ class StreamController extends Controller
             );
 
             $rawContent = $result['content'] ?? '';
-            // Log at INFO level to see in production
-            Log::info('Decision Model Raw Response', [
+            // TEMP: Log at ERROR level to debug 0% confidence issue (change back to INFO after debugging)
+            Log::error('[DEBUG] Decision Model Raw Response', [
                 'bot_id' => $bot->id,
                 'model' => $decisionModel,
-                'raw_content' => $rawContent,
+                'raw_content' => substr($rawContent, 0, 1000),
             ]);
 
             $parsed = $this->parseIntentResponse($rawContent);
             $timeMs = round((microtime(true) - $startTime) * 1000);
 
-            // Log parsed result to debug 0% confidence issue
-            Log::info('Decision Model Parsed Result', [
+            // TEMP: Log at ERROR level to debug 0% confidence issue
+            Log::error('[DEBUG] Decision Model Parsed Result', [
                 'bot_id' => $bot->id,
                 'intent' => $parsed['intent'],
                 'confidence' => $parsed['confidence'],
+                'full_result_keys' => array_keys($result), // See what fields are available
             ]);
 
             $this->metrics['models_used'][] = $result['model'] ?? $decisionModel;
