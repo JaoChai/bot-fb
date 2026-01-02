@@ -102,21 +102,21 @@ export function ConversationList({
         </div>
       </div>
 
-      {/* Conversation List */}
-      <ScrollArea className="flex-1">
+      {/* Conversation List - [&>div>div]:!block fixes Radix ScrollArea display:table issue */}
+      <ScrollArea className="flex-1 w-full [&>div>div]:!block">
         {isLoading ? (
           // Skeleton loading - better perceived performance
-          <div className="p-2 space-y-1">
+          <div className="p-2 space-y-1 w-full">
             {Array.from({ length: 6 }).map((_, i) => (
               <ConversationSkeleton key={i} />
             ))}
           </div>
         ) : conversations.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground text-sm">
+          <div className="text-center py-8 text-muted-foreground text-sm w-full">
             ไม่พบการสนทนา
           </div>
         ) : (
-          <div className="p-2 space-y-1">
+          <div className="p-2 space-y-1 w-full">
             {conversations.map((conversation) => (
               <ConversationItem
                 key={conversation.id}
