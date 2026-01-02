@@ -29,7 +29,11 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <PersistQueryClientProvider
       client={queryClient}
-      persistOptions={{ persister }}
+      persistOptions={{
+        persister,
+        // Buster version - increment when schema changes to clear stale cache
+        buster: 'v1',
+      }}
     >
       <RouterProvider router={router} />
       <Toaster position="top-right" />
