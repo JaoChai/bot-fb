@@ -126,6 +126,10 @@ export function useToggleBotStatus() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.bots.detail(botId),
       });
+      // Also invalidate dashboard since it has its own bot summary
+      queryClient.invalidateQueries({
+        queryKey: ['dashboard', 'summary'],
+      });
     },
   });
 }
