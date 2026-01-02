@@ -88,6 +88,7 @@ class EvaluationService
             $this->runLLMJudging($evaluation, $flow, $apiKey);
 
             // Phase 4: Generate report
+            $evaluation->markAsGeneratingReport();
             $this->runReportGeneration($evaluation, $apiKey);
 
         } catch (\Exception $e) {

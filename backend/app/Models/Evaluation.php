@@ -56,6 +56,7 @@ class Evaluation extends Model
     public const STATUS_GENERATING_TESTS = 'generating_tests';
     public const STATUS_RUNNING = 'running';
     public const STATUS_EVALUATING = 'evaluating';
+    public const STATUS_GENERATING_REPORT = 'generating_report';
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_FAILED = 'failed';
 
@@ -104,6 +105,7 @@ class Evaluation extends Model
             self::STATUS_GENERATING_TESTS,
             self::STATUS_RUNNING,
             self::STATUS_EVALUATING,
+            self::STATUS_GENERATING_REPORT,
         ]);
     }
 
@@ -133,6 +135,11 @@ class Evaluation extends Model
     public function markAsEvaluating(): void
     {
         $this->update(['status' => self::STATUS_EVALUATING]);
+    }
+
+    public function markAsGeneratingReport(): void
+    {
+        $this->update(['status' => self::STATUS_GENERATING_REPORT]);
     }
 
     public function markAsCompleted(array $metricScores, float $overallScore): void

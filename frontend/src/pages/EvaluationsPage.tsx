@@ -59,8 +59,6 @@ import {
   Cpu,
   Brain,
   User,
-  Users,
-  ShieldAlert,
   MessageSquare,
   Check,
 } from 'lucide-react';
@@ -119,6 +117,7 @@ function EvaluationCard({
   onDelete,
   isDeleting,
   isCancelling,
+  isRetrying,
 }: {
   evaluation: Evaluation;
   onView: () => void;
@@ -127,6 +126,7 @@ function EvaluationCard({
   onDelete: () => void;
   isDeleting: boolean;
   isCancelling: boolean;
+  isRetrying: boolean;
 }) {
   const isRunning = ['pending', 'generating_tests', 'running', 'evaluating', 'generating_report'].includes(evaluation.status);
   const isFailed = evaluation.status === 'failed';
@@ -207,9 +207,10 @@ function EvaluationCard({
               variant="outline"
               size="sm"
               onClick={onRetry}
+              disabled={isRetrying}
               className="min-h-[36px]"
             >
-              <RotateCcw className="h-3 w-3" />
+              {isRetrying ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
               <span className="ml-1 hidden sm:inline">ลองใหม่</span>
             </Button>
           )}
@@ -243,10 +244,10 @@ function EvaluationCard({
 
 // Persona icon mapping
 const PERSONA_ICONS: Record<string, React.ElementType> = {
-  new_customer: User,
-  regular_customer: Users,
-  edge_case: ShieldAlert,
-  complaint: MessageSquare,
+  thai_new_customer: User,
+  thai_frustrated: AlertCircle,
+  thai_technical: Cpu,
+  thai_off_topic: MessageSquare,
 };
 
 
@@ -665,8 +666,10 @@ export function EvaluationsPage() {
     isLoading,
     isDeleting,
     isCancelling,
+    isRetrying,
     cancelEvaluation,
     deleteEvaluation,
+    retryEvaluation,
     refetch,
   } = useEvaluationOperations(selectedBotId);
 
@@ -705,6 +708,15 @@ export function EvaluationsPage() {
     try {
       await deleteEvaluation?.(evaluationId);
       toast({ title: 'ลบการประเมินแล้ว' });
+    } catch (error) {
+      toast({ title: 'เกิดข้อผิดพลาด', description: getErrorMessage(error), variant: 'destructive' });
+    }
+  };
+
+  const handleRetry = async (evaluationId: number) => {
+    try {
+      await retryEvaluation?.(evaluationId);
+      toast({ title: 'เริ่มการประเมินใหม่แล้ว' });
     } catch (error) {
       toast({ title: 'เกิดข้อผิดพลาด', description: getErrorMessage(error), variant: 'destructive' });
     }
@@ -810,10 +822,11 @@ export function EvaluationsPage() {
                 evaluation={evaluation}
                 onView={() => navigate(`/evaluations/${evaluation.id}?bot=${selectedBotId}`)}
                 onCancel={() => handleCancel(evaluation.id)}
-                onRetry={() => {/* TODO */}}
+                onRetry={() => handleRetry(evaluation.id)}
                 onDelete={() => handleDelete(evaluation.id)}
                 isDeleting={isDeleting}
                 isCancelling={isCancelling}
+                isRetrying={isRetrying}
               />
             ))}
           </div>
