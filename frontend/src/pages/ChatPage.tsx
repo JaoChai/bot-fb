@@ -266,6 +266,12 @@ export function ChatPage() {
 
   // Handle conversation selection (memoized to prevent child re-renders)
   const handleConversationSelect = useCallback((conversation: Conversation) => {
+    // Force fresh fetch of messages when switching conversations
+    // This ensures we don't show stale cached data from previous visits
+    queryClient.invalidateQueries({
+      queryKey: ['conversation-messages', botId, conversation.id],
+    });
+
     setSelectedConversationId(conversation.id);
     setShowMobileChat(true); // Switch to chat view on mobile
 
@@ -273,7 +279,7 @@ export function ChatPage() {
     if (conversation.unread_count > 0) {
       markAsRead.mutate(conversation.id);
     }
-  }, [markAsRead]);
+  }, [markAsRead, queryClient, botId]);
 
   // Handle back to list (mobile) - memoized
   const handleBackToList = useCallback(() => {
