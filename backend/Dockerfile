@@ -85,7 +85,7 @@ stderr_logfile_maxbytes=0
 
 [program:queue-worker]
 process_name=%(program_name)s_%(process_num)02d
-command=php /var/www/html/artisan queue:work database --queue=webhooks,default --sleep=3 --tries=3 --backoff=5 --max-jobs=1000 --max-time=3600
+command=php /var/www/html/artisan queue:work --queue=webhooks,default --sleep=3 --tries=3 --backoff=5 --max-jobs=1000 --max-time=3600
 autostart=true
 autorestart=true
 stopasgroup=true
