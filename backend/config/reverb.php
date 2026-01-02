@@ -83,8 +83,10 @@ return [
                     'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
                 ],
                 'allowed_origins' => ['*'],
-                'ping_interval' => env('REVERB_APP_PING_INTERVAL', 60),
-                'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 30),
+                // Keep-alive settings: ping_interval MUST be less than activity_timeout
+                // to ensure pings arrive before connection times out
+                'ping_interval' => env('REVERB_APP_PING_INTERVAL', 25),      // Send ping every 25 seconds
+                'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 120), // Timeout after 120 seconds of no activity
                 'max_connections' => env('REVERB_APP_MAX_CONNECTIONS'),
                 'max_message_size' => env('REVERB_APP_MAX_MESSAGE_SIZE', 10_000),
             ],
