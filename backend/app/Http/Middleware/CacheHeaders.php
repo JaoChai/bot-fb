@@ -18,28 +18,29 @@ class CacheHeaders
     /**
      * Cache rules: route pattern => max-age in seconds.
      * 0 = no-store (never cache)
+     * Note: paths are WITHOUT the api/ prefix (Laravel strips it)
      */
     private array $cacheRules = [
         // Static/stable data - cache 5 minutes
-        'api/bots' => 300,
-        'api/bots/*' => 300,
-        'api/flows' => 300,
-        'api/flows/*' => 300,
-        'api/knowledge-bases' => 300,
-        'api/knowledge-bases/*' => 300,
-        'api/evaluation-personas' => 3600, // 1 hour - rarely changes
+        'bots' => 300,
+        'bots/*' => 300,
+        'flows' => 300,
+        'flows/*' => 300,
+        'knowledge-bases' => 300,
+        'knowledge-bases/*' => 300,
+        'evaluation-personas' => 3600, // 1 hour - rarely changes
 
         // User-specific data - cache 1 minute
-        'api/auth/user' => 60,
-        'api/dashboard/summary' => 60,
-        'api/settings' => 60,
-        'api/analytics/*' => 60,
+        'auth/user' => 60,
+        'dashboard/summary' => 60,
+        'settings' => 60,
+        'analytics/*' => 60,
 
         // Real-time data - never cache
-        'api/conversations' => 0,
-        'api/conversations/*' => 0,
-        'api/webhook/*' => 0,
-        'api/health' => 0,
+        'conversations' => 0,
+        'conversations/*' => 0,
+        'webhook/*' => 0,
+        'health' => 0,
     ];
 
     /**
@@ -54,9 +55,11 @@ class CacheHeaders
             return $response;
         }
 
+        $path = $request->path();
+
         // Skip non-GET requests (mutations should never be cached)
         if (! $request->isMethod('GET')) {
-            return $this->noCache($response);
+            return $this->noCache($response, $path);
         }
 
         // Skip streaming responses
@@ -66,17 +69,17 @@ class CacheHeaders
 
         // Skip error responses
         if ($response->getStatusCode() >= 400) {
-            return $this->noCache($response);
+            return $this->noCache($response, $path);
         }
 
         // Determine cache duration based on route
         $maxAge = $this->getCacheDuration($request);
 
         if ($maxAge > 0) {
-            return $this->withCache($response, $maxAge);
+            return $this->withCache($response, $maxAge, $path);
         }
 
-        return $this->noCache($response);
+        return $this->noCache($response, $path);
     }
 
     /**
@@ -108,10 +111,11 @@ class CacheHeaders
     /**
      * Add cache headers to response.
      */
-    private function withCache(Response $response, int $maxAge): Response
+    private function withCache(Response $response, int $maxAge, string $path = ''): Response
     {
         // Debug: mark that this middleware ran
         $response->headers->set('X-Cache-Strategy', "max-age-{$maxAge}");
+        $response->headers->set('X-Cache-Path', $path);
 
         // Remove any existing cache headers set by Laravel
         $response->headers->remove('Cache-Control');
@@ -128,10 +132,11 @@ class CacheHeaders
     /**
      * Add no-cache headers to response.
      */
-    private function noCache(Response $response): Response
+    private function noCache(Response $response, string $path = ''): Response
     {
         // Debug: mark that this middleware ran
         $response->headers->set('X-Cache-Strategy', 'no-cache');
+        $response->headers->set('X-Cache-Path', $path);
 
         // Remove any existing cache headers
         $response->headers->remove('Cache-Control');
