@@ -650,12 +650,42 @@ export function useSendAgentMessage(botId: number | undefined) {
         );
       }
     },
-    onSettled: (_, __, { conversationId }) => {
-      // Always refetch after mutation to sync with server
-      queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversation-messages', botId, conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+    onSuccess: (response, { conversationId }) => {
+      const messageOptions = { order: 'asc' as const, perPage: 100 };
+
+      // Replace optimistic message with real message from server
+      // This avoids invalidateQueries which causes race conditions with WebSocket updates
+      queryClient.setQueryData<MessagesResponse>(
+        ['conversation-messages', botId, conversationId, messageOptions],
+        (old) => {
+          if (!old) return old;
+
+          // Find optimistic message (temp ID > 1700000000000 = timestamp-based ID)
+          const hasOptimistic = old.data.some((m) => m.id > 1700000000000);
+
+          if (hasOptimistic) {
+            // Replace optimistic message with real message
+            return {
+              ...old,
+              data: old.data.map((m) =>
+                m.id > 1700000000000 ? response.data : m
+              ),
+            };
+          } else {
+            // Edge case: no optimistic message found, check if message already exists
+            const exists = old.data.some((m) => m.id === response.data.id);
+            if (exists) return old;
+            return {
+              ...old,
+              data: [...old.data, response.data],
+            };
+          }
+        }
+      );
+
+      // Update conversation list (doesn't affect messages cache)
       queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
     },
   });
 }
