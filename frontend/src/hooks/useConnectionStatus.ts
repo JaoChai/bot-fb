@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { useConnectionStore } from '@/stores/connectionStore';
 
 /**
  * Hook to monitor WebSocket connection status and handle reconnection.
@@ -9,17 +10,18 @@ import { toast } from 'sonner';
  * - Listens for echo:connected, echo:disconnected, echo:reconnected events
  * - Shows toast notifications for connection status changes
  * - Auto-invalidates all queries on reconnect to fetch fresh data
+ * - Updates global connection state in Zustand store for fallback polling
  *
  * Usage: Call this hook once at the app level (e.g., RootLayout)
  */
 export function useConnectionStatus() {
-  const [isConnected, setIsConnected] = useState(true);
   const queryClient = useQueryClient();
   const hasConnectedOnce = useRef(false);
+  const { isConnected, setConnected } = useConnectionStore();
 
   useEffect(() => {
     const handleConnected = () => {
-      setIsConnected(true);
+      setConnected(true);
       // Only show toast after initial connection (not on first load)
       if (hasConnectedOnce.current) {
         toast.success('เชื่อมต่อแล้ว', { id: 'connection-status' });
@@ -28,7 +30,7 @@ export function useConnectionStatus() {
     };
 
     const handleDisconnected = () => {
-      setIsConnected(false);
+      setConnected(false);
       toast.error('ขาดการเชื่อมต่อ กำลังเชื่อมต่อใหม่...', {
         id: 'connection-status',
         duration: Infinity, // Stay until connected
@@ -53,7 +55,7 @@ export function useConnectionStatus() {
       window.removeEventListener('echo:disconnected', handleDisconnected);
       window.removeEventListener('echo:reconnected', handleReconnected);
     };
-  }, [queryClient]);
+  }, [queryClient, setConnected]);
 
   return { isConnected };
 }
