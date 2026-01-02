@@ -112,24 +112,27 @@ export function useToggleBotStatus() {
 
       return { previousBots };
     },
+    onSuccess: (updatedBot, { botId }) => {
+      // Update cache with actual API response (works with localStorage persister)
+      queryClient.setQueryData(queryKeys.bots.lists(), (old: { data: Bot[] } | undefined) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map((bot) =>
+            bot.id === botId ? { ...bot, ...updatedBot } : bot
+          ),
+        };
+      });
+      // Update detail cache
+      queryClient.setQueryData(queryKeys.bots.detail(botId), updatedBot);
+      // Invalidate dashboard
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] });
+    },
     onError: (_err, _variables, context) => {
       // Rollback to previous value on error
       if (context?.previousBots) {
         queryClient.setQueryData(queryKeys.bots.lists(), context.previousBots);
       }
-    },
-    onSettled: (_, __, { botId }) => {
-      // Force refetch (not just invalidate) to ensure data syncs with localStorage persister
-      queryClient.refetchQueries({
-        queryKey: queryKeys.bots.lists(),
-      });
-      queryClient.refetchQueries({
-        queryKey: queryKeys.bots.detail(botId),
-      });
-      // Also refetch dashboard since it has its own bot summary
-      queryClient.refetchQueries({
-        queryKey: ['dashboard', 'summary'],
-      });
     },
   });
 }
