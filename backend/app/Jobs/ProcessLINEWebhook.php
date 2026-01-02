@@ -380,28 +380,7 @@ class ProcessLINEWebhook implements ShouldQueue
             return;
         }
 
-        // Find or create conversation (include handover status for auto_handover bots)
-        $existingConversation = Conversation::where('bot_id', $this->bot->id)
-            ->where('external_customer_id', $userId)
-            ->where('channel_type', 'line')
-            ->whereIn('status', ['active', 'handover'])
-            ->first();
-
-        $isNewConversation = !$existingConversation;
-        $conversation = $existingConversation ?? $this->createNewConversation($userId, $lineService);
-
-        // Check for duplicate message
-        if ($messageData['id'] && Message::where('conversation_id', $conversation->id)
-            ->where('external_message_id', $messageData['id'])
-            ->exists()) {
-            Log::info('Duplicate non-text webhook ignored', [
-                'conversation_id' => $conversation->id,
-                'message_id' => $messageData['id'],
-            ]);
-            return;
-        }
-
-        // Download media for supported types
+        // Download media BEFORE transaction (external API call shouldn't be in transaction)
         $mediaUrl = null;
         $mediaType = null;
         $content = null;
@@ -430,28 +409,73 @@ class ProcessLINEWebhook implements ShouldQueue
             $content = '[ข้อความที่ไม่รองรับ]';
         }
 
-        // Save message to database
-        $conversation->messages()->create([
-            'sender' => 'user',
-            'content' => $content,
-            'type' => $messageType,
-            'media_url' => $mediaUrl,
-            'media_type' => $mediaType,
-            'external_message_id' => $messageData['id'],
-        ]);
+        // Variables for broadcasting after transaction
+        $userMessage = null;
+        $conversation = null;
+        $isNewConversation = false;
 
-        // Update stats
-        $this->updateStatsForUserMessageOnly($conversation);
-        if ($isNewConversation) {
-            $this->bot->update([
-                'total_conversations' => DB::raw('total_conversations + 1'),
+        // Process in transaction to prevent race conditions and ensure atomic updates
+        DB::transaction(function () use (
+            $lineService,
+            $userId,
+            $messageData,
+            $messageType,
+            $mediaUrl,
+            $mediaType,
+            $content,
+            &$userMessage,
+            &$conversation,
+            &$isNewConversation
+        ) {
+            // Find or create conversation (include handover status for auto_handover bots)
+            $existingConversation = Conversation::where('bot_id', $this->bot->id)
+                ->where('external_customer_id', $userId)
+                ->where('channel_type', 'line')
+                ->whereIn('status', ['active', 'handover'])
+                ->first();
+
+            $isNewConversation = !$existingConversation;
+            $conversation = $existingConversation ?? $this->createNewConversation($userId, $lineService);
+
+            // Check for duplicate message INSIDE transaction to prevent race conditions
+            if ($messageData['id'] && Message::where('conversation_id', $conversation->id)
+                ->where('external_message_id', $messageData['id'])
+                ->exists()) {
+                Log::info('Duplicate non-text webhook ignored', [
+                    'conversation_id' => $conversation->id,
+                    'message_id' => $messageData['id'],
+                ]);
+                return;
+            }
+
+            // Save message to database
+            $userMessage = $conversation->messages()->create([
+                'sender' => 'user',
+                'content' => $content,
+                'type' => $messageType,
+                'media_url' => $mediaUrl,
+                'media_type' => $mediaType,
+                'external_message_id' => $messageData['id'],
             ]);
+
+            // Update stats atomically with message creation
+            $this->updateStatsForUserMessageOnly($conversation);
+            if ($isNewConversation) {
+                $this->bot->update([
+                    'total_conversations' => DB::raw('total_conversations + 1'),
+                ]);
+            }
+        });
+
+        // Broadcasts AFTER transaction commits (non-blocking)
+        if ($userMessage) {
+            broadcast(new MessageSent($userMessage))->toOthers();
+        }
+        if ($conversation) {
+            broadcast(new ConversationUpdated($conversation->fresh(), 'message_received'))->toOthers();
         }
 
-        // Broadcast update
-        broadcast(new ConversationUpdated($conversation->fresh(), 'message_received'))->toOthers();
-
-        // Send acknowledgment reply
+        // Send acknowledgment reply (outside transaction - external API call)
         if ($replyToken) {
             $response = match ($messageType) {
                 'image' => 'ได้รับรูปภาพแล้วครับ',
