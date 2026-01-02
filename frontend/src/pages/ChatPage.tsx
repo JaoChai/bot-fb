@@ -97,6 +97,7 @@ export function ChatPage() {
   const {
     data: conversationsData,
     isLoading: isConversationsLoading,
+    isFetching: isConversationsFetching,
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
@@ -347,7 +348,7 @@ export function ChatPage() {
           conversations={conversations}
           selectedId={selectedConversationId}
           onSelect={handleConversationSelect}
-          isLoading={isConversationsLoading}
+          isLoading={isConversationsLoading || (isConversationsFetching && conversations.length === 0)}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
           search={search}
