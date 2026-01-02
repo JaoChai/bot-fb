@@ -607,10 +607,13 @@ export function useSendAgentMessage(botId: number | undefined) {
         { order: 'asc', perPage: 100 },
       ]);
 
+      // Generate optimistic ID before using it
+      const optimisticId = Date.now();
+
       // Optimistically add the new message
       if (previousMessages) {
         const optimisticMessage: Message = {
-          id: Date.now(), // Temporary ID
+          id: optimisticId, // Use the generated ID
           conversation_id: conversationId,
           sender: 'agent',
           content: data.content,
@@ -639,47 +642,57 @@ export function useSendAgentMessage(botId: number | undefined) {
         );
       }
 
-      return { previousMessages };
+      return { previousMessages, optimisticId };
     },
     onError: (_err, { conversationId }, context) => {
-      // Rollback on error
-      if (context?.previousMessages) {
-        queryClient.setQueryData(
-          ['conversation-messages', botId, conversationId, { order: 'asc', perPage: 100 }],
-          context.previousMessages
+      // Rollback: remove only the failed optimistic message
+      if (context?.optimisticId) {
+        const messageOptions = { order: 'asc' as const, perPage: 100 };
+        queryClient.setQueryData<MessagesResponse>(
+          ['conversation-messages', botId, conversationId, messageOptions],
+          (old) => {
+            if (!old) return old;
+            return {
+              ...old,
+              data: old.data.filter((m) => m.id !== context.optimisticId),
+            };
+          }
         );
       }
     },
-    onSuccess: (response, { conversationId }) => {
+    onSuccess: (response, { conversationId }, context) => {
       const messageOptions = { order: 'asc' as const, perPage: 100 };
+      const optimisticId = context?.optimisticId;
 
-      // Replace optimistic message with real message from server
+      // Replace only the specific optimistic message with real message from server
       // This avoids invalidateQueries which causes race conditions with WebSocket updates
       queryClient.setQueryData<MessagesResponse>(
         ['conversation-messages', botId, conversationId, messageOptions],
         (old) => {
           if (!old) return old;
 
-          // Find optimistic message (temp ID > 1700000000000 = timestamp-based ID)
-          const hasOptimistic = old.data.some((m) => m.id > 1700000000000);
+          if (optimisticId) {
+            // Replace only the message with matching optimistic ID
+            const hasThisOptimistic = old.data.some((m) => m.id === optimisticId);
 
-          if (hasOptimistic) {
-            // Replace optimistic message with real message
-            return {
-              ...old,
-              data: old.data.map((m) =>
-                m.id > 1700000000000 ? response.data : m
-              ),
-            };
-          } else {
-            // Edge case: no optimistic message found, check if message already exists
-            const exists = old.data.some((m) => m.id === response.data.id);
-            if (exists) return old;
-            return {
-              ...old,
-              data: [...old.data, response.data],
-            };
+            if (hasThisOptimistic) {
+              return {
+                ...old,
+                data: old.data.map((m) =>
+                  m.id === optimisticId ? response.data : m
+                ),
+              };
+            }
           }
+
+          // Fallback: check if message already exists
+          const exists = old.data.some((m) => m.id === response.data.id);
+          if (exists) return old;
+
+          return {
+            ...old,
+            data: [...old.data, response.data],
+          };
         }
       );
 
