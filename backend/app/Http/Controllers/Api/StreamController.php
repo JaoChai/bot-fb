@@ -213,7 +213,8 @@ class StreamController extends Controller
             );
 
             $rawContent = $result['content'] ?? '';
-            Log::debug('Decision Model Raw Response', [
+            // Log at INFO level to see in production
+            Log::info('Decision Model Raw Response', [
                 'bot_id' => $bot->id,
                 'model' => $decisionModel,
                 'raw_content' => $rawContent,
@@ -221,6 +222,13 @@ class StreamController extends Controller
 
             $parsed = $this->parseIntentResponse($rawContent);
             $timeMs = round((microtime(true) - $startTime) * 1000);
+
+            // Log parsed result to debug 0% confidence issue
+            Log::info('Decision Model Parsed Result', [
+                'bot_id' => $bot->id,
+                'intent' => $parsed['intent'],
+                'confidence' => $parsed['confidence'],
+            ]);
 
             $this->metrics['models_used'][] = $result['model'] ?? $decisionModel;
             $this->metrics['prompt_tokens'] += $result['usage']['prompt_tokens'] ?? 0;
@@ -624,7 +632,8 @@ PROMPT;
                 'confidence' => $confidence,
             ];
         } catch (\Exception $e) {
-            Log::warning('Decision Model JSON Parse Failed', [
+            // Log at ERROR level to see in production
+            Log::error('Decision Model JSON Parse Failed', [
                 'content' => substr($content, 0, 500),
                 'error' => $e->getMessage(),
             ]);
