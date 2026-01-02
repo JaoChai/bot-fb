@@ -105,8 +105,46 @@ export function useDeleteKnowledgeBase() {
   return useMutation({
     mutationFn: async (kbId: number) => {
       await apiDelete(`/knowledge-bases/${kbId}`);
+      return kbId;
     },
-    onSuccess: () => {
+    // Optimistic update: remove KB from cache immediately
+    onMutate: async (kbId: number) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({
+        queryKey: queryKeys.knowledgeBase.lists(),
+      });
+
+      // Snapshot the previous value
+      const previousKnowledgeBases = queryClient.getQueryData<KnowledgeBaseListItem[]>(
+        queryKeys.knowledgeBase.lists()
+      );
+
+      // Optimistically update to remove the KB
+      if (previousKnowledgeBases) {
+        queryClient.setQueryData<KnowledgeBaseListItem[]>(
+          queryKeys.knowledgeBase.lists(),
+          previousKnowledgeBases.filter((kb) => kb.id !== kbId)
+        );
+      }
+
+      // Remove the detail cache for this KB
+      queryClient.removeQueries({
+        queryKey: queryKeys.knowledgeBase.detail(kbId),
+      });
+
+      return { previousKnowledgeBases };
+    },
+    // If mutation fails, rollback to previous value
+    onError: (_err, _kbId, context) => {
+      if (context?.previousKnowledgeBases) {
+        queryClient.setQueryData(
+          queryKeys.knowledgeBase.lists(),
+          context.previousKnowledgeBases
+        );
+      }
+    },
+    // Always refetch after error or success
+    onSettled: () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.knowledgeBase.lists(),
       });
@@ -177,8 +215,45 @@ export function useDeleteDocument(kbId: number | null) {
     mutationFn: async (documentId: number) => {
       if (!kbId) throw new Error('Knowledge Base ID is required');
       await apiDelete(`/knowledge-bases/${kbId}/documents/${documentId}`);
+      return documentId;
     },
-    onSuccess: () => {
+    // Optimistic update: remove document from cache immediately
+    onMutate: async (documentId: number) => {
+      if (!kbId) return;
+
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({
+        queryKey: [...queryKeys.knowledgeBase.detail(kbId), 'documents'],
+      });
+
+      // Snapshot the previous value
+      const previousDocuments = queryClient.getQueryData<PaginatedResponse<Document>>(
+        [...queryKeys.knowledgeBase.detail(kbId), 'documents']
+      );
+
+      // Optimistically update to remove the document
+      if (previousDocuments) {
+        queryClient.setQueryData<PaginatedResponse<Document>>(
+          [...queryKeys.knowledgeBase.detail(kbId), 'documents'],
+          {
+            ...previousDocuments,
+            data: previousDocuments.data.filter((doc) => doc.id !== documentId),
+          }
+        );
+      }
+
+      return { previousDocuments };
+    },
+    // If mutation fails, rollback to previous value
+    onError: (_err, _documentId, context) => {
+      if (!kbId || !context?.previousDocuments) return;
+      queryClient.setQueryData(
+        [...queryKeys.knowledgeBase.detail(kbId), 'documents'],
+        context.previousDocuments
+      );
+    },
+    // Always refetch after error or success
+    onSettled: () => {
       if (!kbId) return;
       queryClient.invalidateQueries({
         queryKey: queryKeys.knowledgeBase.detail(kbId),
