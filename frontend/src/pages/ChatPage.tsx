@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/select';
 import { Loader2, MessageSquare } from 'lucide-react';
 import { useBots } from '@/hooks/useKnowledgeBase';
+import { useBotPreferencesStore } from '@/stores/botPreferencesStore';
 import { useInfiniteConversations, useMarkAsRead } from '@/hooks/useConversations';
 import { useBotChannel } from '@/hooks/useEcho';
 import { ConversationList } from '@/components/chat/ConversationList';
@@ -56,6 +57,20 @@ export function ChatPage() {
   // Bots query
   const { data: botsResponse, isLoading: isBotsLoading } = useBots();
   const bots = botsResponse?.data || [];
+
+  // Bot preferences (last used bot)
+  const { lastUsedBotId, setLastUsedBotId } = useBotPreferencesStore();
+
+  // Auto-redirect to last used bot or first bot if no botId in URL
+  useEffect(() => {
+    if (botId || isBotsLoading || bots.length === 0) return;
+
+    // Check if lastUsedBotId is still valid
+    const lastUsedBotExists = lastUsedBotId && bots.some((b) => b.id === lastUsedBotId);
+    const targetBotId = lastUsedBotExists ? lastUsedBotId : bots[0].id;
+
+    setSearchParams({ botId: targetBotId.toString() }, { replace: true });
+  }, [botId, isBotsLoading, bots, lastUsedBotId, setSearchParams]);
 
   // Get selected bot's config (after bots is defined)
   const selectedBot = bots.find((b) => b.id === botId);
@@ -221,10 +236,12 @@ export function ChatPage() {
 
   // Handle bot selection (memoized to prevent child re-renders)
   const handleBotSelect = useCallback((value: string) => {
+    const newBotId = parseInt(value, 10);
     setSearchParams({ botId: value });
+    setLastUsedBotId(newBotId); // Remember last used bot
     setSelectedConversationId(null);
     setShowMobileChat(false); // Reset to list view when changing bot
-  }, [setSearchParams]);
+  }, [setSearchParams, setLastUsedBotId]);
 
   // Handle conversation selection (memoized to prevent child re-renders)
   const handleConversationSelect = useCallback((conversation: Conversation) => {
