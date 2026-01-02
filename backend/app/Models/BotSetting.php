@@ -39,6 +39,9 @@ class BotSetting extends Model
         'multiple_bubbles_delimiter',
         'wait_multiple_bubbles_enabled',
         'wait_multiple_bubbles_ms',
+        // Auto-assignment feature
+        'auto_assignment_enabled',
+        'auto_assignment_mode',
     ];
 
     protected $casts = [
@@ -53,6 +56,7 @@ class BotSetting extends Model
         'save_conversations' => 'boolean',
         'multiple_bubbles_enabled' => 'boolean',
         'wait_multiple_bubbles_enabled' => 'boolean',
+        'auto_assignment_enabled' => 'boolean',
     ];
 
     public function bot(): BelongsTo

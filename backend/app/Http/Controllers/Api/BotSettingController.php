@@ -99,6 +99,10 @@ class BotSettingController extends Controller
                 'multiple_bubbles_delimiter' => 'string|max:10',
                 'wait_multiple_bubbles_enabled' => 'boolean',
                 'wait_multiple_bubbles_ms' => 'integer|min:500|max:20000',
+
+                // Auto-assignment settings
+                'auto_assignment_enabled' => 'boolean',
+                'auto_assignment_mode' => 'string|in:round_robin,load_balanced',
             ]);
 
             // Get or create settings
@@ -145,8 +149,7 @@ class BotSettingController extends Controller
             'save_conversations' => true,
             'language' => 'th',
             'response_style' => 'professional',
-            // Note: multiple_bubbles fields use database defaults
-            // They will be set automatically after migration runs
+            // Note: multiple_bubbles and auto_assignment fields use database defaults
         ]);
     }
 }

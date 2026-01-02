@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
+use App\Services\AutoAssignmentService;
 use App\Services\TelegramService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -217,6 +218,14 @@ class ProcessTelegramWebhook implements ShouldQueue
             'telegram_chat_title' => $parsed['chat_title'],
             'message_count' => 0,
         ]);
+
+        // Auto-assign conversation if enabled
+        $autoAssignment = app(AutoAssignmentService::class);
+        $assignedUser = $autoAssignment->assignConversation($this->bot, $conversation);
+
+        if ($assignedUser) {
+            $conversation->update(['assigned_user_id' => $assignedUser->id]);
+        }
 
         Log::info('New Telegram conversation created', [
             'conversation_id' => $conversation->id,

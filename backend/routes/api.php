@@ -124,6 +124,7 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         // Bot settings routes
         Route::get('/{bot}/settings', [BotSettingController::class, 'show'])->name('bots.settings.show');
         Route::put('/{bot}/settings', [BotSettingController::class, 'update'])->name('bots.settings.update');
+        Route::patch('/{bot}/settings', [BotSettingController::class, 'update'])->name('bots.settings.patch');
 
         // Bot admin management routes (Owner only)
         Route::get('/{bot}/admins', [AdminController::class, 'index'])->name('bots.admins.index');
