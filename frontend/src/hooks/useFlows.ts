@@ -283,13 +283,28 @@ export function useSetDefaultFlow(botId: number | null) {
         );
       }
     },
-    onSettled: () => {
-      // Refetch to ensure server state
-      if (botId) {
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.flows.list(botId),
-        });
-      }
+    onSuccess: (updatedFlow, flowId) => {
+      if (!botId) return;
+
+      // Update cache with actual API response (works with localStorage persister)
+      queryClient.setQueryData<PaginatedResponse<Flow> | undefined>(
+        queryKeys.flows.list(botId),
+        (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            data: oldData.data.map((flow) => ({
+              ...flow,
+              is_default: flow.id === flowId,
+              // Merge with updated flow data if this is the one that was set as default
+              ...(flow.id === flowId ? updatedFlow : {}),
+            })),
+          };
+        }
+      );
+
+      // Update detail cache if exists
+      queryClient.setQueryData(queryKeys.flows.detail(botId, flowId), updatedFlow);
     },
   });
 }
