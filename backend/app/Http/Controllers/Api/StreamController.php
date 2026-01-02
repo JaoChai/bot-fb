@@ -101,7 +101,7 @@ class StreamController extends Controller
         }
 
         // 5. Create SSE response
-        return new StreamedResponse(function () use ($bot, $flow, $message, $conversationHistory, $apiKey) {
+        return new StreamedResponse(function () use ($bot, $flow, $message, $conversationHistory, $apiKey, $user) {
             // Disable output buffering for streaming
             while (ob_get_level()) {
                 ob_end_clean();
