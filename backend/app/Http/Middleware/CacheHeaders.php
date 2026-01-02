@@ -55,11 +55,9 @@ class CacheHeaders
             return $response;
         }
 
-        $path = $request->path();
-
         // Skip non-GET requests (mutations should never be cached)
         if (! $request->isMethod('GET')) {
-            return $this->noCache($response, $path);
+            return $this->noCache($response);
         }
 
         // Skip streaming responses
@@ -69,17 +67,17 @@ class CacheHeaders
 
         // Skip error responses
         if ($response->getStatusCode() >= 400) {
-            return $this->noCache($response, $path);
+            return $this->noCache($response);
         }
 
         // Determine cache duration based on route
         $maxAge = $this->getCacheDuration($request);
 
         if ($maxAge > 0) {
-            return $this->withCache($response, $maxAge, $path);
+            return $this->withCache($response, $maxAge);
         }
 
-        return $this->noCache($response, $path);
+        return $this->noCache($response);
     }
 
     /**
@@ -111,18 +109,14 @@ class CacheHeaders
     /**
      * Add cache headers to response.
      */
-    private function withCache(Response $response, int $maxAge, string $path = ''): Response
+    private function withCache(Response $response, int $maxAge): Response
     {
-        // Debug: mark that this middleware ran
-        $response->headers->set('X-Cache-Strategy', "max-age-{$maxAge}");
-        $response->headers->set('X-Cache-Path', $path);
-
         // Remove any existing cache headers set by Laravel
         $response->headers->remove('Cache-Control');
         $response->headers->remove('Pragma');
         $response->headers->remove('Expires');
 
-        // Force set cache control with replace=true
+        // Set cache control with private (user-specific) and max-age
         $response->headers->set('Cache-Control', "private, max-age={$maxAge}", true);
         $response->headers->set('Vary', 'Accept, Authorization');
 
@@ -132,12 +126,8 @@ class CacheHeaders
     /**
      * Add no-cache headers to response.
      */
-    private function noCache(Response $response, string $path = ''): Response
+    private function noCache(Response $response): Response
     {
-        // Debug: mark that this middleware ran
-        $response->headers->set('X-Cache-Strategy', 'no-cache');
-        $response->headers->set('X-Cache-Path', $path);
-
         // Remove any existing cache headers
         $response->headers->remove('Cache-Control');
         $response->headers->remove('Pragma');
