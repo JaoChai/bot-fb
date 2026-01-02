@@ -23,6 +23,7 @@ import {
   useCreateConnection,
   useUpdateConnection,
   useDeleteConnection,
+  useToggleBotStatus,
 } from '@/hooks/useConnections';
 import { ArrowLeft, Loader2, Eye, EyeOff, ExternalLink, Trash2, MessageCircle, Settings, Cpu, Key, Zap, Copy, Check, Send, User } from 'lucide-react';
 import { ModelConfiguration } from '@/components/ModelSelector';
@@ -114,6 +115,7 @@ export function EditConnectionPage() {
   const createMutation = useCreateConnection();
   const updateMutation = useUpdateConnection(botIdNumber);
   const deleteMutation = useDeleteConnection();
+  const toggleStatusMutation = useToggleBotStatus();
 
   // Local state
   const [showLineSecretToggle, setShowLineSecretToggle] = useState(false);
@@ -149,6 +151,32 @@ export function EditConnectionPage() {
     value: ConnectionFormData[K]
   ) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // Handle status toggle - immediately update backend
+  const handleStatusToggle = async (checked: boolean) => {
+    if (!botIdNumber) return;
+
+    const newStatus = checked ? 'active' : 'inactive';
+
+    // Optimistically update local state
+    handleChange('enabled', checked);
+
+    try {
+      await toggleStatusMutation.mutateAsync({ botId: botIdNumber, status: newStatus });
+      toast({
+        title: newStatus === 'active' ? 'เปิดใช้งานแล้ว' : 'ปิดใช้งานแล้ว',
+        description: `สถานะถูกเปลี่ยนเป็น "${newStatus === 'active' ? 'เปิด' : 'ปิด'}"`,
+      });
+    } catch (err) {
+      // Rollback on error
+      handleChange('enabled', !checked);
+      toast({
+        title: 'เกิดข้อผิดพลาด',
+        description: err instanceof Error ? err.message : 'ไม่สามารถเปลี่ยนสถานะได้',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleSave = async () => {
@@ -321,10 +349,11 @@ export function EditConnectionPage() {
               <Switch
                 id="enabled"
                 checked={formData.enabled}
-                onCheckedChange={(checked) => handleChange('enabled', checked)}
+                onCheckedChange={handleStatusToggle}
+                disabled={toggleStatusMutation.isPending}
               />
               <span className={cn('text-sm font-medium', formData.enabled ? 'text-foreground' : 'text-muted-foreground')}>
-                {formData.enabled ? 'เปิด' : 'ปิด'}
+                {toggleStatusMutation.isPending ? '...' : formData.enabled ? 'เปิด' : 'ปิด'}
               </span>
             </div>
           )}
