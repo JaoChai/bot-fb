@@ -204,8 +204,9 @@ export function ChatPage() {
                       message_count: event.message_count,
                       last_message_at: event.last_message_at,
                       needs_response: event.needs_response,
-                      // Update unread_count from event if available
                       unread_count: event.unread_count ?? conv.unread_count,
+                      // Update auto-enable timer for handover mode
+                      bot_auto_enable_at: event.bot_auto_enable_at,
                     }
                   : conv
               ),

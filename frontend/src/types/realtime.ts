@@ -31,6 +31,7 @@ export interface ConversationUpdatedEvent {
   last_message_at: string | null;
   needs_response: boolean;
   unread_count: number;
+  bot_auto_enable_at: string | null;
   update_type: 'created' | 'updated' | 'message_received' | 'handover' | 'closed';
   updated_at: string;
 }
