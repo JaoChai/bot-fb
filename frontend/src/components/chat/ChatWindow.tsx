@@ -241,12 +241,14 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHand
   );
 
   // Messages query
-  const { data: messagesResponse, isLoading: isLoadingMessages } = useConversationMessages(
+  const { data: messagesResponse, isLoading: isLoadingMessages, isFetching: isFetchingMessages } = useConversationMessages(
     botId,
     conversation.id,
     { order: 'asc', perPage: 100 }
   );
   const messages = messagesResponse?.data || conversation.messages || [];
+  // Show loading if either initial load OR fetching with no cached messages
+  const showMessagesLoading = (isLoadingMessages || isFetchingMessages) && messages.length === 0;
 
   // Mutations
   const sendAgentMessage = useSendAgentMessage(botId);
@@ -613,7 +615,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHand
       {/* Messages Area */}
       <ScrollArea className="flex-1 p-4">
         <div className="space-y-4 max-w-3xl mx-auto">
-          {isLoadingMessages && messages.length === 0 ? (
+          {showMessagesLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
