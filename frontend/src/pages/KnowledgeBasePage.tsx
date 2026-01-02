@@ -1,5 +1,4 @@
 import { useState, useCallback } from 'react';
-import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -9,350 +8,433 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { useBots, useKnowledgeBaseOperations } from '@/hooks/useKnowledgeBase';
-import { useUserSettings } from '@/hooks/useUserSettings';
+import {
+  useAllKnowledgeBases,
+  useKnowledgeBase,
+  useDocuments,
+  useCreateKnowledgeBase,
+  useDeleteKnowledgeBase,
+  useCreateDocument,
+  useDeleteDocument,
+} from '@/hooks/useKnowledgeBase';
 import { DocumentUpload } from '@/components/knowledge-base/DocumentUpload';
 import { DocumentList } from '@/components/knowledge-base/DocumentList';
 import { SemanticSearch } from '@/components/knowledge-base/SemanticSearch';
 import {
-  Bot,
   FileText,
   Layers,
-  Cpu,
   BookOpen,
   Search,
   Plus,
   Database,
-  AlertTriangle,
-  Settings,
+  ArrowLeft,
+  Trash2,
+  Loader2,
+  Calendar,
 } from 'lucide-react';
 
 export function KnowledgeBasePage() {
-  const [selectedBotId, setSelectedBotId] = useState<number | null>(null);
-  const { data: botsResponse, isLoading: isLoadingBots } = useBots();
-  const { data: userSettings } = useUserSettings();
-  const bots = botsResponse?.data ?? [];
-  const isApiKeyConfigured = userSettings?.openrouter_configured ?? false;
+  // State
+  const [selectedKbId, setSelectedKbId] = useState<number | null>(null);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [newKbName, setNewKbName] = useState('');
+  const [newKbDescription, setNewKbDescription] = useState('');
 
-  const {
-    knowledgeBase,
-    documents,
-    isLoading,
-    isSubmitting,
-    isDeleting,
-    error,
-    createDocument,
-    deleteDocument,
-    refetch,
-  } = useKnowledgeBaseOperations(selectedBotId);
+  // Queries
+  const { data: knowledgeBases, isLoading: isLoadingList } = useAllKnowledgeBases();
+  const { data: knowledgeBase } = useKnowledgeBase(selectedKbId);
+  const { data: documentsResponse, isLoading: isLoadingDocuments, refetch: refetchDocuments } = useDocuments(selectedKbId);
+  const documents = documentsResponse?.data ?? [];
 
-  const handleBotChange = useCallback((value: string) => {
-    setSelectedBotId(Number(value));
+  // Mutations
+  const createKbMutation = useCreateKnowledgeBase();
+  const deleteKbMutation = useDeleteKnowledgeBase();
+  const createDocMutation = useCreateDocument(selectedKbId);
+  const deleteDocMutation = useDeleteDocument(selectedKbId);
+
+  // Handlers
+  const handleCreateKb = useCallback(async () => {
+    if (!newKbName.trim()) return;
+    await createKbMutation.mutateAsync({
+      name: newKbName.trim(),
+      description: newKbDescription.trim() || undefined,
+    });
+    setNewKbName('');
+    setNewKbDescription('');
+    setIsCreateDialogOpen(false);
+  }, [newKbName, newKbDescription, createKbMutation]);
+
+  const handleDeleteKb = useCallback(async () => {
+    if (!selectedKbId) return;
+    await deleteKbMutation.mutateAsync(selectedKbId);
+    setSelectedKbId(null);
+    setIsDeleteDialogOpen(false);
+  }, [selectedKbId, deleteKbMutation]);
+
+  const handleUploadDocument = useCallback(
+    async (data: { title: string; content: string }) => {
+      await createDocMutation.mutateAsync(data);
+    },
+    [createDocMutation]
+  );
+
+  const handleDeleteDocument = useCallback(
+    async (documentId: number) => {
+      await deleteDocMutation.mutateAsync(documentId);
+    },
+    [deleteDocMutation]
+  );
+
+  const handleBack = useCallback(() => {
+    setSelectedKbId(null);
   }, []);
 
-  const handleSubmit = useCallback(
-    async (data: { title: string; content: string }) => {
-      if (createDocument) {
-        await createDocument(data);
-      }
-    },
-    [createDocument]
-  );
+  const handleSelectKb = useCallback((kbId: number) => {
+    setSelectedKbId(kbId);
+  }, []);
 
-  const handleDelete = useCallback(
-    async (documentId: number) => {
-      if (deleteDocument) {
-        await deleteDocument(documentId);
-      }
-    },
-    [deleteDocument]
-  );
-
-  const selectedBot = bots.find((b) => b.id === selectedBotId);
-
-  // ยังไม่มี Bot
-  if (!isLoadingBots && bots.length === 0) {
+  // Detail View
+  if (selectedKbId && knowledgeBase) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">ฐานความรู้</h1>
-          <p className="text-muted-foreground">
-            จัดการข้อมูลความรู้สำหรับ Bot ของคุณ
-          </p>
+        {/* Header with Back and Delete buttons */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="sm" onClick={handleBack}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              กลับ
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">{knowledgeBase.name}</h1>
+              {knowledgeBase.description && (
+                <p className="text-muted-foreground">{knowledgeBase.description}</p>
+              )}
+            </div>
+          </div>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setIsDeleteDialogOpen(true)}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            ลบฐานความรู้
+          </Button>
         </div>
 
-        <Card className="border-dashed">
-          <CardHeader className="text-center pb-2">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-              <Bot className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <CardTitle className="text-xl">ยังไม่มี Bot</CardTitle>
-            <CardDescription className="max-w-sm mx-auto">
-              สร้าง Bot ก่อนเพื่อเริ่มเพิ่มข้อมูลความรู้ให้ Bot ตอบคำถามได้อย่างชาญฉลาด
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-full bg-primary/10 p-2">
+                  <FileText className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{knowledgeBase.document_count ?? 0}</p>
+                  <p className="text-xs text-muted-foreground">เอกสาร</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-full bg-warning/10 p-2">
+                  <Layers className="h-4 w-4 text-warning" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{knowledgeBase.chunk_count ?? 0}</p>
+                  <p className="text-xs text-muted-foreground">Chunks</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-full bg-info/10 p-2">
+                  <Database className="h-4 w-4 text-info" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium truncate max-w-[120px]">
+                    {knowledgeBase.embedding_model ?? 'default'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Embedding</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-full bg-muted p-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">
+                    {new Date(knowledgeBase.updated_at).toLocaleDateString('th-TH')}
+                  </p>
+                  <p className="text-xs text-muted-foreground">อัพเดทล่าสุด</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Document Upload */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Plus className="h-5 w-5" />
+              เพิ่มเอกสาร
+            </CardTitle>
+            <CardDescription>
+              อัพโหลดเนื้อหาเพื่อให้ Bot ใช้ในการตอบคำถาม
             </CardDescription>
           </CardHeader>
-          <CardContent className="text-center pb-6">
-            <Button asChild>
-              <a href="/bots">
-                <Bot className="mr-2 h-4 w-4" />
-                สร้าง Bot แรกของคุณ
-              </a>
-            </Button>
+          <CardContent>
+            <DocumentUpload
+              onSubmit={handleUploadDocument}
+              isSubmitting={createDocMutation.isPending}
+            />
           </CardContent>
         </Card>
+
+        {/* Document List */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <FileText className="h-5 w-5" />
+              เอกสารทั้งหมด
+            </CardTitle>
+            <CardDescription>
+              {documents.length} เอกสาร
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DocumentList
+              documents={documents}
+              isLoading={isLoadingDocuments}
+              isDeleting={deleteDocMutation.isPending}
+              onDelete={handleDeleteDocument}
+              onRefresh={refetchDocuments}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Semantic Search */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Search className="h-5 w-5" />
+              ทดสอบการค้นหา
+            </CardTitle>
+            <CardDescription>
+              ค้นหาเนื้อหาในฐานความรู้ด้วย Semantic Search
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SemanticSearch
+              kbId={selectedKbId}
+              hasChunks={(knowledgeBase.chunk_count ?? 0) > 0}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>ยืนยันการลบฐานความรู้</AlertDialogTitle>
+              <AlertDialogDescription>
+                คุณแน่ใจหรือไม่ที่จะลบ "{knowledgeBase.name}"?
+                การดำเนินการนี้ไม่สามารถย้อนกลับได้ และจะลบเอกสารทั้งหมดในฐานความรู้นี้ด้วย
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteKb}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                disabled={deleteKbMutation.isPending}
+              >
+                {deleteKbMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-2" />
+                )}
+                ลบ
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     );
   }
 
+  // List View (Cards Grid)
   return (
     <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">ฐานความรู้</h1>
-            <p className="text-muted-foreground text-sm mt-1">
-              เพิ่มข้อมูลให้ Bot เรียนรู้และตอบคำถามได้อย่างแม่นยำ
-            </p>
-          </div>
-          {selectedBot && (
-            <Badge variant="outline" className="hidden sm:flex gap-1.5 px-3 py-1.5">
-              <Database className="h-3.5 w-3.5" />
-              Smart RAG
-            </Badge>
-          )}
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">ฐานความรู้</h1>
+          <p className="text-muted-foreground">
+            จัดการฐานความรู้สำหรับ Bot ของคุณ
+          </p>
         </div>
-
-        {/* Bot Selector - Compact */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <Bot className="h-4 w-4 text-muted-foreground" />
-            เลือก Bot:
-          </div>
-          <Select
-            value={selectedBotId?.toString() ?? ''}
-            onValueChange={handleBotChange}
-          >
-            <SelectTrigger className="w-full sm:w-[280px]">
-              <SelectValue placeholder="คลิกเพื่อเลือก Bot..." />
-            </SelectTrigger>
-            <SelectContent>
-              {bots.map((bot) => (
-                <SelectItem key={bot.id} value={bot.id.toString()}>
-                  <div className="flex items-center gap-2">
-                    <Bot className="h-4 w-4" />
-                    {bot.name}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* API Key Warning */}
-        {selectedBotId && !isApiKeyConfigured && (
-          <Card className="border-destructive/50 bg-destructive/5">
-            <CardContent className="flex flex-col sm:flex-row sm:items-center gap-4 p-4">
-              <div className="flex items-center gap-4 flex-1">
-                <div className="flex-shrink-0 w-10 h-10 bg-muted rounded-full flex items-center justify-center">
-                  <AlertTriangle className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium">
-                    OpenRouter API Key ยังไม่ได้ตั้งค่า
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    การประมวลผลเอกสารต้องใช้ API Key สำหรับสร้าง embeddings
-                  </p>
-                </div>
+        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              สร้างฐานความรู้
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>สร้างฐานความรู้ใหม่</DialogTitle>
+              <DialogDescription>
+                กรอกข้อมูลเพื่อสร้างฐานความรู้สำหรับเก็บเอกสารและข้อมูลของคุณ
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="kb-name">ชื่อ *</Label>
+                <Input
+                  id="kb-name"
+                  placeholder="เช่น คู่มือผลิตภัณฑ์, FAQ"
+                  value={newKbName}
+                  onChange={(e) => setNewKbName(e.target.value)}
+                />
               </div>
-              <Button asChild variant="outline" className="w-full sm:w-auto">
-                <Link to="/settings" className="flex items-center justify-center gap-2">
-                  <Settings className="h-4 w-4" />
-                  ตั้งค่า API Key
-                </Link>
+              <div className="space-y-2">
+                <Label htmlFor="kb-description">คำอธิบาย</Label>
+                <Textarea
+                  id="kb-description"
+                  placeholder="อธิบายเกี่ยวกับฐานความรู้นี้..."
+                  value={newKbDescription}
+                  onChange={(e) => setNewKbDescription(e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsCreateDialogOpen(false)}
+              >
+                ยกเลิก
               </Button>
-            </CardContent>
-          </Card>
-        )}
+              <Button
+                onClick={handleCreateKb}
+                disabled={!newKbName.trim() || createKbMutation.isPending}
+              >
+                {createKbMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Plus className="h-4 w-4 mr-2" />
+                )}
+                สร้าง
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
 
-        {/* Main Content Area */}
-        {selectedBotId ? (
-          <div className="space-y-6">
-            {/* Stats Overview - Horizontal */}
-            {knowledgeBase && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Card className="border">
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex-shrink-0 w-12 h-12 bg-muted rounded-xl flex items-center justify-center">
-                        <FileText className="h-6 w-6 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold tabular-nums">{knowledgeBase.document_count}</p>
-                        <p className="text-xs text-muted-foreground">เอกสาร</p>
-                      </div>
+      {/* Loading State */}
+      {isLoadingList && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!isLoadingList && (!knowledgeBases || knowledgeBases.length === 0) && (
+        <Card className="border-dashed border-2">
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-muted">
+              <BookOpen className="h-10 w-10 text-muted-foreground" />
+            </div>
+            <h3 className="text-xl font-semibold mb-2">ยังไม่มีฐานความรู้</h3>
+            <p className="text-muted-foreground text-center max-w-sm mb-6">
+              สร้างฐานความรู้เพื่อเก็บเอกสารและข้อมูลที่ Bot จะใช้ในการตอบคำถาม
+            </p>
+            <Button onClick={() => setIsCreateDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              สร้างฐานความรู้แรก
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Knowledge Base Cards Grid */}
+      {!isLoadingList && knowledgeBases && knowledgeBases.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {knowledgeBases.map((kb) => (
+            <Card
+              key={kb.id}
+              className="cursor-pointer hover:border-primary/50 hover:shadow-md transition-all"
+              onClick={() => handleSelectKb(kb.id)}
+            >
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-full bg-primary/10 p-2">
+                      <BookOpen className="h-5 w-5 text-primary" />
                     </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border">
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex-shrink-0 w-12 h-12 bg-muted rounded-xl flex items-center justify-center">
-                        <Layers className="h-6 w-6 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold tabular-nums">{knowledgeBase.chunk_count}</p>
-                        <p className="text-xs text-muted-foreground">Chunks</p>
-                      </div>
+                    <div>
+                      <CardTitle className="text-lg">{kb.name}</CardTitle>
+                      {kb.description && (
+                        <CardDescription className="line-clamp-1">
+                          {kb.description}
+                        </CardDescription>
+                      )}
                     </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border">
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex-shrink-0 w-12 h-12 bg-muted rounded-xl flex items-center justify-center">
-                        <Cpu className="h-6 w-6 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-mono font-medium truncate max-w-[180px] sm:max-w-[200px]">
-                          {(knowledgeBase.embedding_model || 'text-embedding-3-small').split('/').pop()}
-                        </p>
-                        <p className="text-xs text-muted-foreground">Embedding</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-
-            {/* Add Document Section */}
-            <Card>
-              <CardHeader className="pb-3">
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
                 <div className="flex items-center gap-3">
-                  <div className="flex-shrink-0 w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
-                    <Plus className="h-5 w-5 text-foreground" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg">เพิ่มข้อมูลความรู้</CardTitle>
-                    <CardDescription>
-                      เพิ่มข้อมูลที่ต้องการให้ Bot เรียนรู้และใช้ตอบคำถาม
-                    </CardDescription>
-                  </div>
+                  <Badge variant="secondary" className="text-xs">
+                    <FileText className="h-3 w-3 mr-1" />
+                    {kb.document_count} เอกสาร
+                  </Badge>
+                  <Badge variant="outline" className="text-xs">
+                    <Layers className="h-3 w-3 mr-1" />
+                    {kb.chunk_count} chunks
+                  </Badge>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <DocumentUpload
-                  onSubmit={handleSubmit}
-                  isSubmitting={isSubmitting}
-                />
+                <p className="text-xs text-muted-foreground mt-3">
+                  อัพเดท: {new Date(kb.updated_at).toLocaleDateString('th-TH')}
+                </p>
               </CardContent>
             </Card>
-
-            {/* Document List Section */}
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-shrink-0 w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
-                      <FileText className="h-5 w-5 text-foreground" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">รายการเอกสาร</CardTitle>
-                      <CardDescription>
-                        {documents.length === 0 ? 'ยังไม่มีเอกสาร' : `${documents.length} เอกสารในฐานความรู้`}
-                      </CardDescription>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <DocumentList
-                  documents={documents}
-                  isLoading={isLoading}
-                  isDeleting={isDeleting}
-                  onDelete={handleDelete}
-                  onRefresh={refetch}
-                />
-              </CardContent>
-            </Card>
-
-            {/* Search Section */}
-            {(knowledgeBase?.chunk_count ?? 0) > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-shrink-0 w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
-                      <Search className="h-5 w-5 text-foreground" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">ทดสอบค้นหา</CardTitle>
-                      <CardDescription>
-                        ทดสอบว่า Bot สามารถค้นหาข้อมูลจากฐานความรู้ได้หรือไม่
-                      </CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <SemanticSearch
-                    botId={selectedBotId}
-                    hasChunks={(knowledgeBase?.chunk_count ?? 0) > 0}
-                  />
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        ) : (
-          /* Empty State - No Bot Selected */
-          <Card className="border-dashed border-2">
-            <CardContent className="flex flex-col items-center justify-center py-16">
-              <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-muted">
-                <BookOpen className="h-10 w-10 text-muted-foreground" />
-              </div>
-              <h2 className="text-xl font-semibold mb-2">เลือก Bot เพื่อเริ่มต้น</h2>
-              <p className="text-muted-foreground text-center max-w-md mb-6">
-                เลือก Bot จากเมนูด้านบนเพื่อจัดการฐานความรู้ เพิ่มเอกสาร และทดสอบการค้นหา
-              </p>
-              <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-foreground flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-background" />
-                  </div>
-                  <span>เลือก Bot</span>
-                </div>
-                <div className="hidden sm:block w-8 h-px bg-border" />
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                    <Plus className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <span>เพิ่มเอกสาร</span>
-                </div>
-                <div className="hidden sm:block w-8 h-px bg-border" />
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                    <Search className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <span>ทดสอบ</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
-            {(error as Error).message || 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง'}
-          </div>
-        )}
+          ))}
+        </div>
+      )}
     </div>
   );
 }

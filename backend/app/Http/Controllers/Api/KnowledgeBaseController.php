@@ -6,12 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\KnowledgeBase\StoreKnowledgeBaseRequest;
 use App\Http\Requests\KnowledgeBase\UpdateKnowledgeBaseRequest;
 use App\Http\Resources\KnowledgeBaseResource;
-use App\Models\Bot;
 use App\Models\KnowledgeBase;
 use App\Services\SemanticSearchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 
 class KnowledgeBaseController extends Controller
 {
@@ -21,7 +19,6 @@ class KnowledgeBaseController extends Controller
     public function index(Request $request): JsonResponse
     {
         $knowledgeBases = KnowledgeBase::where('user_id', $request->user()->id)
-            ->with('bot:id,name')
             ->withCount('documents')
             ->orderBy('created_at', 'desc')
             ->get();
@@ -31,68 +28,80 @@ class KnowledgeBaseController extends Controller
                 'id' => $kb->id,
                 'name' => $kb->name,
                 'description' => $kb->description,
-                'bot_id' => $kb->bot_id,
-                'bot_name' => $kb->bot?->name,
                 'document_count' => $kb->documents_count,
                 'chunk_count' => $kb->chunk_count,
+                'embedding_model' => $kb->embedding_model,
+                'created_at' => $kb->created_at->toISOString(),
+                'updated_at' => $kb->updated_at->toISOString(),
             ]),
         ]);
     }
 
     /**
-     * Get or create the knowledge base for a bot.
+     * Create a new knowledge base.
      */
-    public function show(Request $request, Bot $bot): JsonResponse
+    public function store(StoreKnowledgeBaseRequest $request): JsonResponse
     {
-        $this->authorize('view', $bot);
-
-        $kb = $bot->knowledgeBase;
-
-        if (!$kb) {
-            // Auto-create KB for bot if it doesn't exist
-            $kb = KnowledgeBase::create([
-                'user_id' => $request->user()->id,
-                'bot_id' => $bot->id,
-                'name' => $bot->name . ' Knowledge Base',
-                'description' => 'Knowledge base for ' . $bot->name,
-            ]);
-        }
+        $kb = KnowledgeBase::create([
+            'user_id' => $request->user()->id,
+            'name' => $request->validated('name'),
+            'description' => $request->validated('description'),
+        ]);
 
         return response()->json([
-            'data' => new KnowledgeBaseResource($kb->load('documents')),
+            'message' => 'Knowledge base created successfully',
+            'data' => new KnowledgeBaseResource($kb),
+        ], 201);
+    }
+
+    /**
+     * Get a specific knowledge base.
+     */
+    public function show(Request $request, KnowledgeBase $knowledgeBase): JsonResponse
+    {
+        $this->authorize('view', $knowledgeBase);
+
+        return response()->json([
+            'data' => new KnowledgeBaseResource($knowledgeBase->load('documents')),
         ]);
     }
 
     /**
      * Update knowledge base settings.
      */
-    public function update(UpdateKnowledgeBaseRequest $request, Bot $bot): JsonResponse
+    public function update(UpdateKnowledgeBaseRequest $request, KnowledgeBase $knowledgeBase): JsonResponse
     {
-        $this->authorize('update', $bot);
+        $this->authorize('update', $knowledgeBase);
 
-        $kb = $bot->knowledgeBase;
-
-        if (!$kb) {
-            return response()->json([
-                'message' => 'Knowledge base not found',
-            ], 404);
-        }
-
-        $kb->update($request->validated());
+        $knowledgeBase->update($request->validated());
 
         return response()->json([
             'message' => 'Knowledge base updated successfully',
-            'data' => new KnowledgeBaseResource($kb->fresh()),
+            'data' => new KnowledgeBaseResource($knowledgeBase->fresh()),
+        ]);
+    }
+
+    /**
+     * Delete a knowledge base.
+     */
+    public function destroy(Request $request, KnowledgeBase $knowledgeBase): JsonResponse
+    {
+        $this->authorize('delete', $knowledgeBase);
+
+        // This will also delete related documents due to cascade
+        $knowledgeBase->delete();
+
+        return response()->json([
+            'message' => 'Knowledge base deleted successfully',
         ]);
     }
 
     /**
      * Search knowledge base using semantic similarity.
-     * SemanticSearchService is injected via method injection to avoid loading it for other endpoints.
      */
-    public function search(Request $request, Bot $bot, SemanticSearchService $searchService): JsonResponse
+    public function search(Request $request, KnowledgeBase $knowledgeBase, SemanticSearchService $searchService): JsonResponse
     {
-        $this->authorize('view', $bot);
+        $this->authorize('view', $knowledgeBase);
 
         $validated = $request->validate([
             'query' => 'required|string|min:1|max:1000',
@@ -100,18 +109,8 @@ class KnowledgeBaseController extends Controller
             'threshold' => 'numeric|min:0|max:1',
         ]);
 
-        $kb = $bot->knowledgeBase;
-
-        if (!$kb) {
-            return response()->json([
-                'message' => 'Knowledge base not found',
-                'results' => [],
-                'count' => 0,
-            ]);
-        }
-
         // Check if KB has any processed documents
-        if ($kb->chunk_count === 0) {
+        if ($knowledgeBase->chunk_count === 0) {
             return response()->json([
                 'query' => $validated['query'],
                 'results' => [],
@@ -122,11 +121,11 @@ class KnowledgeBaseController extends Controller
 
         try {
             // Get API key: User Settings > ENV
-            $apiKey = $bot->user?->settings?->getOpenRouterApiKey()
+            $apiKey = $knowledgeBase->user?->settings?->getOpenRouterApiKey()
                 ?? config('services.openrouter.api_key');
 
             $results = $searchService->search(
-                $kb->id,
+                $knowledgeBase->id,
                 $validated['query'],
                 $validated['limit'] ?? 5,
                 $validated['threshold'] ?? null,
