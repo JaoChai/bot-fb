@@ -12,7 +12,6 @@ use App\Services\TelegramService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -20,41 +19,26 @@ use Illuminate\Support\Str;
 class BotController extends Controller
 {
     /**
-     * Cache TTL for bot list (5 minutes)
-     */
-    protected const CACHE_TTL = 300;
-
-    /**
      * List all bots accessible by the authenticated user.
      * Owner sees owned bots, Admin sees assigned bots.
+     *
+     * NOTE: No server-side caching for bot list.
+     * Bot list changes frequently (status toggles, creates, deletes) and must
+     * reflect changes immediately. The query is simple (user's bots with relations)
+     * and caching caused sync issues where deleted/updated bots still appeared.
+     * Frontend uses React Query with short staleTime for client-side caching.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
         $user = $request->user();
-        $page = $request->input('page', 1);
         $perPage = $request->input('per_page', 15);
-        $cacheKey = "user:{$user->id}:bots:page:{$page}:per:{$perPage}";
 
-        $bots = Cache::remember($cacheKey, self::CACHE_TTL, function () use ($user, $perPage) {
-            return $user->accessibleBots()
-                ->with(['settings', 'defaultFlow'])
-                ->latest()
-                ->paginate($perPage);
-        });
+        $bots = $user->accessibleBots()
+            ->with(['settings', 'defaultFlow'])
+            ->latest()
+            ->paginate($perPage);
 
         return BotResource::collection($bots);
-    }
-
-    /**
-     * Invalidate user's bot list cache.
-     */
-    protected function invalidateBotListCache(int $userId): void
-    {
-        // Clear all pages of bot list cache for this user
-        // Using pattern-based clearing for database cache driver
-        Cache::forget("user:{$userId}:bots:page:1:per:15");
-        Cache::forget("user:{$userId}:bots:page:1:per:10");
-        Cache::forget("user:{$userId}:bots:page:1:per:20");
     }
 
     /**
@@ -93,9 +77,6 @@ class BotController extends Controller
         if ($channelType === 'telegram' && !empty($bot->channel_access_token)) {
             $webhookSetup = $this->setupTelegramWebhook($bot);
         }
-
-        // Invalidate cache
-        $this->invalidateBotListCache($request->user()->id);
 
         return response()->json([
             'message' => 'Bot created successfully',
@@ -156,9 +137,6 @@ PROMPT;
             $webhookSetup = $this->setupTelegramWebhook($bot);
         }
 
-        // Invalidate cache
-        $this->invalidateBotListCache($request->user()->id);
-
         return response()->json([
             'message' => 'Bot updated successfully',
             'data' => new BotResource($bot->fresh()),
@@ -174,9 +152,6 @@ PROMPT;
         $this->authorize('delete', $bot);
 
         $bot->delete();
-
-        // Invalidate cache
-        $this->invalidateBotListCache($request->user()->id);
 
         return response()->json([
             'message' => 'Bot deleted successfully',

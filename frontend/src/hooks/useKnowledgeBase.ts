@@ -34,7 +34,10 @@ export function useBots() {
       const response = await apiGet<PaginatedResponse<Bot>>('/bots');
       return response;
     },
-    // Use global defaults (5 min stale, no refetch on focus)
+    // Bot list changes frequently (status toggles, creates, deletes)
+    // Use short staleTime so mutations trigger immediate refetch
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 }
 
