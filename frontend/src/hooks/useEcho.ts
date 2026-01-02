@@ -5,6 +5,7 @@ import type {
   MessageSentEvent,
   ConversationUpdatedEvent,
   AdminNotificationEvent,
+  DocumentStatusUpdatedEvent,
 } from '@/types/realtime';
 import { CHANNELS, EVENTS } from '@/types/realtime';
 
@@ -176,6 +177,39 @@ export function useBotPresence(
       }
     };
   }, [botId, callbacks.onHere, callbacks.onJoining, callbacks.onLeaving]);
+
+  return channelRef.current;
+}
+
+/**
+ * Hook to subscribe to knowledge base channel for document status updates
+ */
+export function useKnowledgeBaseChannel(
+  knowledgeBaseId: number | null,
+  callbacks: {
+    onDocumentStatusUpdate?: (event: DocumentStatusUpdatedEvent) => void;
+  }
+) {
+  const channelRef = useRef<Channel | null>(null);
+
+  useEffect(() => {
+    if (!knowledgeBaseId) return;
+
+    const echo = getEcho();
+    const channelName = CHANNELS.knowledgeBase(knowledgeBaseId);
+
+    channelRef.current = echo.private(channelName)
+      .listen(`.${EVENTS.documentStatusUpdated}`, (event: DocumentStatusUpdatedEvent) => {
+        callbacks.onDocumentStatusUpdate?.(event);
+      });
+
+    return () => {
+      if (channelRef.current) {
+        echo.leave(channelName);
+        channelRef.current = null;
+      }
+    };
+  }, [knowledgeBaseId, callbacks.onDocumentStatusUpdate]);
 
   return channelRef.current;
 }

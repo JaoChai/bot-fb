@@ -77,3 +77,17 @@ Broadcast::channel('bot.{botId}.presence', function ($user, $botId) {
 Broadcast::channel('user.{userId}.notifications', function ($user, $userId) {
     return (int) $user->id === (int) $userId;
 });
+
+/**
+ * Private channel for knowledge base document updates
+ * Authorized for: knowledge base owner only
+ */
+Broadcast::channel('knowledge-base.{knowledgeBaseId}', function ($user, $knowledgeBaseId) {
+    $kb = \App\Models\KnowledgeBase::find($knowledgeBaseId);
+
+    if (! $kb) {
+        return false;
+    }
+
+    return $kb->user_id === $user->id;
+});

@@ -43,6 +43,15 @@ export interface AdminNotificationEvent {
   timestamp: string;
 }
 
+export interface DocumentStatusUpdatedEvent {
+  id: number;
+  name: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  chunk_count: number | null;
+  error_message: string | null;
+  updated_at: string | null;
+}
+
 /**
  * Channel names for subscription
  */
@@ -53,6 +62,7 @@ export const CHANNELS = {
   bot: (id: number) => `bot.${id}`,
   botPresence: (id: number) => `bot.${id}.presence`,
   userNotifications: (id: number) => `user.${id}.notifications`,
+  knowledgeBase: (id: number) => `knowledge-base.${id}`,
 } as const;
 
 /**
@@ -66,4 +76,5 @@ export const EVENTS = {
   conversationHandover: 'conversation.handover',
   conversationClosed: 'conversation.closed',
   notification: 'notification',
+  documentStatusUpdated: 'document.status_updated',
 } as const;
