@@ -681,24 +681,35 @@ export function useSendAgentMessage(botId: number | undefined) {
         (old) => {
           if (!old) return old;
 
-          if (optimisticId) {
-            // Replace only the message with matching optimistic ID
-            const hasThisOptimistic = old.data.some((m) => m.id === optimisticId);
+          // CRITICAL: Check if real message already exists first (from WebSocket)
+          // This prevents duplicates when WebSocket arrives before API response
+          const realMessageExists = old.data.some((m) => m.id === response.data.id);
+          const hasOptimistic = optimisticId && old.data.some((m) => m.id === optimisticId);
 
-            if (hasThisOptimistic) {
-              return {
-                ...old,
-                data: old.data.map((m) =>
-                  m.id === optimisticId ? response.data : m
-                ),
-              };
-            }
+          if (realMessageExists && hasOptimistic) {
+            // WebSocket came first - just remove the optimistic message
+            return {
+              ...old,
+              data: old.data.filter((m) => m.id !== optimisticId),
+            };
           }
 
-          // Fallback: check if message already exists
-          const exists = old.data.some((m) => m.id === response.data.id);
-          if (exists) return old;
+          if (realMessageExists) {
+            // Real message exists, no optimistic - nothing to do
+            return old;
+          }
 
+          if (hasOptimistic) {
+            // Normal case: replace optimistic with real
+            return {
+              ...old,
+              data: old.data.map((m) =>
+                m.id === optimisticId ? response.data : m
+              ),
+            };
+          }
+
+          // No optimistic, no real message - add it
           return {
             ...old,
             data: [...old.data, response.data],
