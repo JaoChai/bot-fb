@@ -13,7 +13,7 @@ import { useSemanticSearch } from '@/hooks/useKnowledgeBase';
 import type { SearchResult } from '@/types/api';
 
 interface SemanticSearchProps {
-  botId: number;
+  kbId: number;
   hasChunks: boolean;
 }
 
@@ -28,11 +28,11 @@ function highlightMatch(content: string, maxLength: number = 300): string {
   return content.slice(0, maxLength) + '...';
 }
 
-export function SemanticSearch({ botId, hasChunks }: SemanticSearchProps) {
+export function SemanticSearch({ kbId, hasChunks }: SemanticSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searchedQuery, setSearchedQuery] = useState('');
-  const searchMutation = useSemanticSearch(botId);
+  const searchMutation = useSemanticSearch(kbId);
 
   const handleSearch = useCallback(async () => {
     if (!query.trim()) return;

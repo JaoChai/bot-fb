@@ -43,7 +43,7 @@ const KnowledgeBaseItem = memo(function KnowledgeBaseItem({
       <div className="flex-1 min-w-0">
         <div className="font-medium text-sm truncate">{kb.name}</div>
         <div className="text-xs text-muted-foreground">
-          {kb.bot_name} • {kb.document_count} เอกสาร • {kb.chunk_count} chunks
+          {kb.document_count} เอกสาร • {kb.chunk_count} chunks
         </div>
       </div>
     </label>

@@ -151,23 +151,23 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
     // Flow templates (not nested)
     Route::get('/flow-templates', [FlowController::class, 'templates'])->name('flows.templates');
 
-    // Knowledge Bases list (all user's KBs for Flow multi-select)
-    Route::get('/knowledge-bases', [KnowledgeBaseController::class, 'index'])->name('kb.index');
-
-    // Knowledge Base routes (nested under bots)
-    Route::prefix('bots/{bot}/knowledge-base')->group(function () {
-        Route::get('/', [KnowledgeBaseController::class, 'show'])->name('kb.show');
-        Route::put('/', [KnowledgeBaseController::class, 'update'])->name('kb.update');
-        Route::post('/search', [KnowledgeBaseController::class, 'search'])->name('kb.search');
+    // Knowledge Base routes (standalone, not nested under bots)
+    Route::prefix('knowledge-bases')->group(function () {
+        Route::get('/', [KnowledgeBaseController::class, 'index'])->name('kb.index');
+        Route::post('/', [KnowledgeBaseController::class, 'store'])->name('kb.store');
+        Route::get('/{knowledgeBase}', [KnowledgeBaseController::class, 'show'])->name('kb.show');
+        Route::put('/{knowledgeBase}', [KnowledgeBaseController::class, 'update'])->name('kb.update');
+        Route::delete('/{knowledgeBase}', [KnowledgeBaseController::class, 'destroy'])->name('kb.destroy');
+        Route::post('/{knowledgeBase}/search', [KnowledgeBaseController::class, 'search'])->name('kb.search');
 
         // Document routes with upload rate limiting
-        Route::get('/documents', [DocumentController::class, 'index'])->name('kb.documents.index');
-        Route::post('/documents', [DocumentController::class, 'store'])
+        Route::get('/{knowledgeBase}/documents', [DocumentController::class, 'index'])->name('kb.documents.index');
+        Route::post('/{knowledgeBase}/documents', [DocumentController::class, 'store'])
             ->middleware('throttle.uploads')
             ->name('kb.documents.store');
-        Route::get('/documents/{document}', [DocumentController::class, 'show'])->name('kb.documents.show');
-        Route::post('/documents/{document}/reprocess', [DocumentController::class, 'reprocess'])->name('kb.documents.reprocess');
-        Route::delete('/documents/{document}', [DocumentController::class, 'destroy'])->name('kb.documents.destroy');
+        Route::get('/{knowledgeBase}/documents/{document}', [DocumentController::class, 'show'])->name('kb.documents.show');
+        Route::post('/{knowledgeBase}/documents/{document}/reprocess', [DocumentController::class, 'reprocess'])->name('kb.documents.reprocess');
+        Route::delete('/{knowledgeBase}/documents/{document}', [DocumentController::class, 'destroy'])->name('kb.documents.destroy');
     });
 
     // Conversation routes (nested under bots)
@@ -337,10 +337,10 @@ Route::get('/debug-bots', function () {
         // Test database connection
         \Illuminate\Support\Facades\DB::connection()->getPdo();
 
-        // Test Bot model with ALL relationships (including knowledgeBase)
-        $bot = \App\Models\Bot::with(['settings', 'defaultFlow', 'knowledgeBase'])->first();
+        // Test Bot model with relationships
+        $bot = \App\Models\Bot::with(['settings', 'defaultFlow'])->first();
 
-        // Test BotResource - this creates KnowledgeBaseResource even when null!
+        // Test BotResource
         $resourceJson = null;
         if ($bot) {
             $resource = new \App\Http\Resources\BotResource($bot);
@@ -354,7 +354,6 @@ Route::get('/debug-bots', function () {
             'relationships' => $bot ? [
                 'has_settings' => $bot->settings !== null,
                 'has_default_flow' => $bot->defaultFlow !== null,
-                'has_knowledge_base' => $bot->knowledgeBase !== null,
             ] : null,
             'resource_test' => $resourceJson ? 'ok' : 'no_bots',
         ]);

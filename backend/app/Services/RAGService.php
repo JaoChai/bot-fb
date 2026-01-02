@@ -147,11 +147,12 @@ class RAGService
             return false;
         }
 
-        // Must have a knowledge base associated
-        $kb = $bot->knowledgeBase;
-        if (!$kb) {
-            Log::debug('Bot has KB enabled but no knowledge base', [
+        // Must have a default flow with knowledge bases
+        $defaultFlow = $bot->defaultFlow;
+        if (!$defaultFlow || !$defaultFlow->knowledgeBases()->exists()) {
+            Log::debug('Bot has KB enabled but no knowledge bases in default flow', [
                 'bot_id' => $bot->id,
+                'has_default_flow' => $defaultFlow !== null,
             ]);
             return false;
         }
@@ -162,103 +163,20 @@ class RAGService
     /**
      * Get context from Knowledge Base for the given query.
      *
-     * Uses hybrid search (semantic + keyword) with RRF for better retrieval.
-     * Optionally enhances queries with LLM-based expansion for better recall.
+     * Delegates to getFlowKnowledgeBaseContext since KBs are now accessed via Flow.
      */
     protected function getKnowledgeBaseContext(
         Bot $bot,
         string $query,
         array &$metadata
     ): string {
-        $kb = $bot->knowledgeBase;
-
-        try {
-            // Step 1: Enhance query if enabled
-            $queryVariations = [$query];
-            $enhancementMetadata = null;
-
-            if ($this->queryEnhancement?->isEnabled()) {
-                $enhanced = $this->queryEnhancement->enhance($query, [
-                    'bot_name' => $bot->name,
-                    'kb_topics' => $kb->description ?? '',
-                ]);
-
-                $queryVariations = $enhanced['variations'];
-                $enhancementMetadata = [
-                    'was_enhanced' => $enhanced['was_enhanced'],
-                    'variations_count' => count($enhanced['variations']),
-                    'reasoning' => $enhanced['reasoning'],
-                ];
-            }
-
-            // Step 2: Search with all query variations
-            $allResults = collect([]);
-            $limit = $bot->kb_max_results ?? config('rag.max_results', 3);
-            $threshold = $bot->kb_relevance_threshold ?? config('rag.default_threshold', 0.7);
-
-            // Get API key: User Settings > ENV
-            $apiKey = $this->getApiKeyForBot($bot);
-
-            foreach ($queryVariations as $variation) {
-                $results = $this->hybridSearchService->search(
-                    knowledgeBaseId: $kb->id,
-                    query: $variation,
-                    limit: $limit,
-                    threshold: $threshold,
-                    apiKey: $apiKey
-                );
-
-                // Add results, will deduplicate later
-                $allResults = $allResults->concat($results);
-            }
-
-            // Step 3: Deduplicate and rank by best score
-            $dedupedResults = $allResults
-                ->groupBy('id')
-                ->map(function ($group) {
-                    // Keep the result with the highest similarity/relevance score
-                    return $group->sortByDesc(fn($r) =>
-                        $r['relevance_score'] ?? $r['similarity'] ?? 0
-                    )->first();
-                })
-                ->values()
-                ->sortByDesc(fn($r) => $r['relevance_score'] ?? $r['similarity'] ?? 0)
-                ->take($limit);
-
-            if ($dedupedResults->isEmpty()) {
-                Log::debug('No relevant KB results found', [
-                    'bot_id' => $bot->id,
-                    'kb_id' => $kb->id,
-                    'query' => substr($query, 0, 100),
-                    'query_variations' => count($queryVariations),
-                    'search_mode' => $this->hybridSearchService->isEnabled() ? 'hybrid' : 'semantic',
-                ]);
-                return '';
-            }
-
-            // Update metadata with search info
-            $metadata['enabled'] = true;
-            $metadata['results_count'] = $dedupedResults->count();
-            $metadata['search_mode'] = $this->hybridSearchService->isEnabled() ? 'hybrid' : 'semantic';
-            $metadata['query_enhancement'] = $enhancementMetadata;
-            $metadata['chunks_used'] = $dedupedResults->map(fn ($r) => [
-                'document' => $r['document_name'],
-                'similarity' => $r['similarity'],
-                'relevance_score' => $r['relevance_score'] ?? null,
-                'rrf_score' => $r['rrf_score'] ?? null,
-                'reranked' => $r['reranked'] ?? false,
-            ])->toArray();
-
-            // Format context for prompt
-            return $this->formatKnowledgeBaseContext($dedupedResults);
-        } catch (\Exception $e) {
-            Log::error('KB search failed', [
-                'bot_id' => $bot->id,
-                'kb_id' => $kb->id,
-                'error' => $e->getMessage(),
-            ]);
+        // Get default flow and delegate to flow-based context retrieval
+        $defaultFlow = $bot->defaultFlow;
+        if (!$defaultFlow) {
             return '';
         }
+
+        return $this->getFlowKnowledgeBaseContext($defaultFlow, $query, $metadata);
     }
 
     /**
@@ -537,7 +455,7 @@ class RAGService
      */
     protected function buildIntentAnalysisPrompt(Bot $bot): string
     {
-        $hasKB = $bot->kb_enabled && $bot->knowledgeBase;
+        $hasKB = $bot->kb_enabled && $bot->defaultFlow?->knowledgeBases()->exists();
         $kbNote = $hasKB ? ' (Knowledge Base available for factual queries)' : '';
 
         return <<<PROMPT
@@ -799,7 +717,7 @@ PROMPT;
         return [
             'bot_id' => $bot->id,
             'kb_enabled' => $bot->kb_enabled,
-            'has_knowledge_base' => $bot->knowledgeBase !== null,
+            'has_knowledge_base' => $bot->defaultFlow?->knowledgeBases()->exists() ?? false,
             'test_query' => $testQuery,
             'context_generated' => !empty($context),
             'context_preview' => substr($context, 0, 500) . (strlen($context) > 500 ? '...' : ''),
