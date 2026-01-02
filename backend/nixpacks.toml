@@ -16,4 +16,5 @@ cmds = [
 [start]
 # Run queue worker in background, then start web server
 # Queue worker: processes webhooks asynchronously for better scalability
-cmd = "php artisan migrate --force && (php artisan queue:work database --queue=webhooks,default --sleep=3 --tries=3 --backoff=5 --max-jobs=500 --max-time=3600 >> /tmp/queue.log 2>&1 &) && php artisan serve --host=0.0.0.0 --port=${PORT:-8080}"
+# Uses QUEUE_CONNECTION from env (redis or database)
+cmd = "php artisan migrate --force && (php artisan queue:work --queue=webhooks,default --sleep=3 --tries=3 --backoff=5 --max-jobs=500 --max-time=3600 >> /tmp/queue.log 2>&1 &) && php artisan serve --host=0.0.0.0 --port=${PORT:-8080}"
