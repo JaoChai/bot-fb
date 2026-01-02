@@ -32,6 +32,11 @@ return Application::configure(basePath: dirname(__DIR__))
             SecurityHeaders::class,
         ]);
 
+        // Don't redirect to login - return null to throw AuthenticationException
+        // which will be caught by our custom exception handler and return 401 JSON
+        // This is an API-only application, no web login page exists
+        $middleware->redirectGuestsTo(fn () => null);
+
         // API middleware group additions
         $middleware->api(prepend: [
             ValidateJsonContent::class,
