@@ -415,6 +415,7 @@ export interface ConversationStatusCounts {
   handover: number;
   total: number;
   needs_response?: number;
+  waiting_customer?: number;
 }
 
 export interface ConversationStats {
