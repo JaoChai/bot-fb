@@ -1,8 +1,12 @@
 import { Outlet } from "react-router"
 import { Sidebar } from "./Sidebar"
 import { Header } from "./Header"
+import { useConnectionStatus } from "@/hooks/useConnectionStatus"
 
 export function RootLayout() {
+  // Monitor WebSocket connection globally - shows toast on disconnect/reconnect
+  useConnectionStatus();
+
   return (
     <div className="flex h-screen bg-background">
       {/* Sidebar - hidden on mobile */}

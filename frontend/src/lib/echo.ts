@@ -60,7 +60,7 @@ export const clearAuthCache = (): void => {
 export const createEcho = (): Echo<'reverb'> => {
   const baseUrl = getBaseUrl();
 
-  return new Echo({
+  const echo = new Echo({
     broadcaster: 'reverb',
     key: REVERB_KEY,
     wsHost: REVERB_HOST,
@@ -113,6 +113,35 @@ export const createEcho = (): Echo<'reverb'> => {
       },
     }),
   });
+
+  // Monitor connection state for automatic recovery
+  // States: initialized, connecting, connected, unavailable, failed, disconnected
+  echo.connector.pusher.connection.bind('state_change', (states: {
+    previous: string;
+    current: string;
+  }) => {
+    console.log(`[Echo] Connection: ${states.previous} → ${states.current}`);
+
+    // Dispatch events for global listeners
+    if (states.current === 'connected') {
+      window.dispatchEvent(new CustomEvent('echo:connected'));
+
+      // Reconnected (not initial connection) - need to refetch data!
+      if (states.previous !== 'initialized') {
+        window.dispatchEvent(new CustomEvent('echo:reconnected'));
+      }
+    } else if (
+      states.current === 'disconnected' ||
+      states.current === 'unavailable' ||
+      states.current === 'failed'
+    ) {
+      window.dispatchEvent(new CustomEvent('echo:disconnected', {
+        detail: { state: states.current }
+      }));
+    }
+  });
+
+  return echo;
 };
 
 // Singleton Echo instance
