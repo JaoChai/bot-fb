@@ -49,6 +49,11 @@ class CacheHeaders
     {
         $response = $next($request);
 
+        // Only apply to API routes
+        if (! $request->is('api/*')) {
+            return $response;
+        }
+
         // Skip non-GET requests (mutations should never be cached)
         if (! $request->isMethod('GET')) {
             return $this->noCache($response);

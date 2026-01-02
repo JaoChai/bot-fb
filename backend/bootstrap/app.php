@@ -24,7 +24,9 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         // Global middleware applied to all requests
+        // CacheHeaders FIRST in prepend = runs LAST on response (final word on cache headers)
         $middleware->prepend([
+            CacheHeaders::class,
             TrustProxies::class,
             HandleCors::class,
             SecurityHeaders::class,
@@ -36,14 +38,9 @@ return Application::configure(basePath: dirname(__DIR__))
             SanitizeInput::class,
         ]);
 
-        // Compression runs early to compress response
+        // Compression runs after response is generated
         $middleware->api(append: [
             CompressResponse::class,
-        ]);
-
-        // Cache headers PREPEND = runs LAST on response (overrides Laravel's headers)
-        $middleware->api(prepend: [
-            CacheHeaders::class,
         ]);
 
         // Exclude webhook routes from CSRF protection
