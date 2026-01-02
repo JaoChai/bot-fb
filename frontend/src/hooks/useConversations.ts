@@ -69,10 +69,10 @@ export function useConversations(botId: number | undefined, filters: Conversatio
       return response.data;
     },
     enabled: !!botId,
-    // WebSocket (Echo) handles real-time updates, polling disabled for performance
+    // WebSocket handles real-time, but refetch on window focus catches missed updates
     staleTime: 30000,
     refetchInterval: false,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -115,10 +115,10 @@ export function useInfiniteConversations(botId: number | undefined, filters: Con
       return current_page < last_page ? current_page + 1 : undefined;
     },
     enabled: !!botId,
-    // WebSocket (Echo) handles real-time updates, polling disabled for performance
+    // WebSocket handles real-time, but refetch on window focus catches missed updates
     staleTime: 30000,
     refetchInterval: false,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -162,10 +162,10 @@ export function useConversationMessages(
       return response.data;
     },
     enabled: !!botId && !!conversationId,
-    // WebSocket (Echo) handles real-time updates, polling disabled for performance
+    // WebSocket handles real-time, but refetch on window focus catches missed updates
     staleTime: 30000,
     refetchInterval: false,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
 }
 
