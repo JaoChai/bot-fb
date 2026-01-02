@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import { useSearchParams } from 'react-router';
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import {
@@ -44,7 +44,9 @@ export function ChatPage() {
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  // Debounce search to prevent API calls on every keystroke
+  const search = useDeferredValue(searchInput);
 
   // Mobile info panel
   const [showInfoPanel, setShowInfoPanel] = useState(false);
@@ -175,16 +177,39 @@ export function ChatPage() {
         }
       );
 
-      // Update conversation list with new message info (without full refetch)
-      // Uses conversation data from event if available for accuracy
+      // Update conversation list with new message info and status_counts (without full refetch)
       queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
         ['conversations-infinite', botId, filters],
         (old) => {
           if (!old) return old;
+
+          // Calculate needs_response change for status_counts update
+          const nowNeedsResponse = event.sender === 'user';
+          let needsResponseDelta = 0;
+
+          // Find the conversation to check previous state
+          const targetConv = old.pages.flatMap(p => p.data).find(c => c.id === event.conversation_id);
+          if (targetConv && targetConv.status !== 'closed') {
+            const wasNeedsResponse = targetConv.needs_response ?? false;
+            if (wasNeedsResponse !== nowNeedsResponse) {
+              needsResponseDelta = nowNeedsResponse ? 1 : -1;
+            }
+          }
+
           return {
             ...old,
-            pages: old.pages.map((page) => ({
+            pages: old.pages.map((page, pageIdx) => ({
               ...page,
+              // Update status_counts only on first page
+              meta: pageIdx === 0 && needsResponseDelta !== 0 && page.meta?.status_counts
+                ? {
+                    ...page.meta,
+                    status_counts: {
+                      ...page.meta.status_counts,
+                      needs_response: Math.max(0, (page.meta.status_counts.needs_response ?? 0) + needsResponseDelta),
+                    },
+                  }
+                : page.meta,
               data: page.data.map((conv) =>
                 conv.id === event.conversation_id
                   ? {
@@ -194,7 +219,7 @@ export function ChatPage() {
                       // Increment unread if not currently viewing this conversation
                       unread_count: conv.id === selectedConversationId ? 0 : conv.unread_count + 1,
                       // Update needs_response based on message sender
-                      needs_response: event.sender === 'user',
+                      needs_response: nowNeedsResponse,
                     }
                   : conv
               ),
@@ -208,15 +233,49 @@ export function ChatPage() {
 
   const handleConversationUpdate = useCallback(
     (event: ConversationUpdatedEvent) => {
-      // Surgically update the specific conversation in cache
+      // Surgically update the specific conversation in cache with status_counts
       queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
         ['conversations-infinite', botId, filters],
         (old) => {
           if (!old) return old;
+
+          // Calculate needs_response change for status_counts update
+          let needsResponseDelta = 0;
+
+          // Find the conversation to check previous state
+          const targetConv = old.pages.flatMap(p => p.data).find(c => c.id === event.id);
+          if (targetConv) {
+            const wasNeedsResponse = targetConv.needs_response ?? false;
+            const wasOpen = targetConv.status !== 'closed';
+            const nowOpen = event.status !== 'closed';
+
+            // Handle status changes affecting counts
+            if (wasOpen && !nowOpen) {
+              // Conversation was closed - decrement if it was needs_response
+              if (wasNeedsResponse) needsResponseDelta = -1;
+            } else if (!wasOpen && nowOpen) {
+              // Conversation was reopened - increment if it now needs_response
+              if (event.needs_response) needsResponseDelta = 1;
+            } else if (nowOpen && wasNeedsResponse !== event.needs_response) {
+              // Status unchanged but needs_response changed
+              needsResponseDelta = event.needs_response ? 1 : -1;
+            }
+          }
+
           return {
             ...old,
-            pages: old.pages.map((page) => ({
+            pages: old.pages.map((page, pageIdx) => ({
               ...page,
+              // Update status_counts only on first page
+              meta: pageIdx === 0 && needsResponseDelta !== 0 && page.meta?.status_counts
+                ? {
+                    ...page.meta,
+                    status_counts: {
+                      ...page.meta.status_counts,
+                      needs_response: Math.max(0, (page.meta.status_counts.needs_response ?? 0) + needsResponseDelta),
+                    },
+                  }
+                : page.meta,
               data: page.data.map((conv) =>
                 conv.id === event.id
                   ? {
@@ -357,8 +416,8 @@ export function ChatPage() {
           isLoading={isConversationsLoading || (isConversationsFetching && conversations.length === 0)}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
-          search={search}
-          onSearchChange={setSearch}
+          search={searchInput}
+          onSearchChange={setSearchInput}
           statusCounts={statusCounts}
           hasNextPage={hasNextPage}
           isFetchingNextPage={isFetchingNextPage}

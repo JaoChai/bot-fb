@@ -457,6 +457,21 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHand
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
+  // Scroll area viewport ref for scroll detection
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
+
+  // Handle scroll to detect when user scrolls to bottom - toggle autoScroll accordingly
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 50;
+
+    if (isAtBottom && !autoScroll) {
+      setAutoScroll(true);
+    } else if (!isAtBottom && autoScroll) {
+      setAutoScroll(false);
+    }
+  }, [autoScroll]);
+
   // Display name: group title for telegram groups, otherwise customer name
   const customerName = isGroup
     ? conversation.telegram_chat_title || 'Telegram Group'
@@ -613,7 +628,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHand
       </div>
 
       {/* Messages Area */}
-      <ScrollArea className="flex-1 p-4">
+      <ScrollArea className="flex-1 p-4" viewportRef={scrollViewportRef} onScroll={handleScroll}>
         <div className="space-y-4 max-w-3xl mx-auto">
           {showMessagesLoading ? (
             <div className="flex items-center justify-center py-8">
