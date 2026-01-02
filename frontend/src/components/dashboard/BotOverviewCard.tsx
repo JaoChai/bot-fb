@@ -10,6 +10,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ChannelIcon } from '@/components/ui/channel-icon';
 import { cn } from '@/lib/utils';
 import type { DashboardBotSummary } from '@/types/api';
 import { formatDistanceToNow } from 'date-fns';
@@ -18,18 +19,6 @@ import { th } from 'date-fns/locale';
 interface BotOverviewCardProps {
   bot: DashboardBotSummary;
 }
-
-const channelIcons: Record<string, string> = {
-  line: '/line-icon.svg',
-  facebook: '/facebook-icon.svg',
-  testing: '',
-};
-
-const channelLabels: Record<string, string> = {
-  line: 'LINE',
-  facebook: 'Facebook',
-  testing: 'Testing',
-};
 
 const statusConfig = {
   active: { label: 'ทำงาน', variant: 'default' as const, className: 'bg-green-100 text-green-800' },
@@ -47,16 +36,7 @@ export function BotOverviewCard({ bot }: BotOverviewCardProps) {
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {bot.channel_type !== 'testing' && channelIcons[bot.channel_type] && (
-              <img
-                src={channelIcons[bot.channel_type]}
-                alt={channelLabels[bot.channel_type]}
-                className="h-5 w-5"
-              />
-            )}
-            {bot.channel_type === 'testing' && (
-              <TestTube className="h-5 w-5 text-muted-foreground" />
-            )}
+            <ChannelIcon channel={bot.channel_type} />
             <CardTitle className="text-base">{bot.name}</CardTitle>
           </div>
           <Badge className={cn('font-normal', status.className)}>{status.label}</Badge>
