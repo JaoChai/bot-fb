@@ -110,11 +110,15 @@ class CacheHeaders
      */
     private function withCache(Response $response, int $maxAge): Response
     {
+        // Debug: mark that this middleware ran
+        $response->headers->set('X-Cache-Strategy', "max-age-{$maxAge}");
+
         // Remove any existing cache headers set by Laravel
         $response->headers->remove('Cache-Control');
         $response->headers->remove('Pragma');
         $response->headers->remove('Expires');
 
+        // Force set cache control with replace=true
         $response->headers->set('Cache-Control', "private, max-age={$maxAge}", true);
         $response->headers->set('Vary', 'Accept, Authorization');
 
@@ -126,6 +130,9 @@ class CacheHeaders
      */
     private function noCache(Response $response): Response
     {
+        // Debug: mark that this middleware ran
+        $response->headers->set('X-Cache-Strategy', 'no-cache');
+
         // Remove any existing cache headers
         $response->headers->remove('Cache-Control');
         $response->headers->remove('Pragma');
