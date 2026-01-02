@@ -119,15 +119,15 @@ export function useToggleBotStatus() {
       }
     },
     onSettled: (_, __, { botId }) => {
-      // Always refetch after error or success to ensure consistency
-      queryClient.invalidateQueries({
+      // Force refetch (not just invalidate) to ensure data syncs with localStorage persister
+      queryClient.refetchQueries({
         queryKey: queryKeys.bots.lists(),
       });
-      queryClient.invalidateQueries({
+      queryClient.refetchQueries({
         queryKey: queryKeys.bots.detail(botId),
       });
-      // Also invalidate dashboard since it has its own bot summary
-      queryClient.invalidateQueries({
+      // Also refetch dashboard since it has its own bot summary
+      queryClient.refetchQueries({
         queryKey: ['dashboard', 'summary'],
       });
     },
