@@ -88,7 +88,7 @@ export function ConversationList({
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
       {/* Search */}
       <div className="p-2 sm:p-3 border-b">
         <div className="relative">
