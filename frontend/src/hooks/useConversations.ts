@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type {
   AddTagsData,
@@ -696,8 +696,32 @@ export function useSendAgentMessage(botId: number | undefined) {
         }
       );
 
-      // Update conversation list (doesn't affect messages cache)
-      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
+      // Surgical update: Set needs_response = false for this conversation
+      // This is necessary because WebSocket uses toOthers() and doesn't send to the sender
+      queryClient.setQueriesData<InfiniteData<ConversationsResponse>>(
+        { queryKey: ['conversations-infinite', botId] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              data: page.data.map((conv) =>
+                conv.id === conversationId
+                  ? {
+                      ...conv,
+                      needs_response: false, // Agent replied = no longer needs response
+                      last_message_at: new Date().toISOString(),
+                      message_count: conv.message_count + 1,
+                    }
+                  : conv
+              ),
+            })),
+          };
+        }
+      );
+
+      // Also invalidate to ensure fresh data on next focus/mount
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
     },
   });
