@@ -633,15 +633,16 @@ PROMPT;
                 'confidence' => $confidence,
             ];
         } catch (\Exception $e) {
-            // Log at ERROR level to see in production
-            Log::error('Decision Model JSON Parse Failed', [
+            // JSON parse failed - try text-based fallback
+            $fallbackResult = $this->fallbackIntentFromText($content);
+
+            Log::warning('Decision Model JSON Parse Failed - using text fallback', [
                 'content' => substr($content, 0, 500),
                 'error' => $e->getMessage(),
+                'fallback_result' => $fallbackResult,
             ]);
-            return [
-                'intent' => 'chat',
-                'confidence' => 0,
-            ];
+
+            return $fallbackResult;
         }
     }
 
@@ -694,6 +695,49 @@ PROMPT;
         }
 
         return $content;
+    }
+
+    /**
+     * Fallback intent detection from raw text when JSON parsing fails.
+     * Uses keyword matching to determine intent with reasonable confidence.
+     */
+    protected function fallbackIntentFromText(string $content): array
+    {
+        $content = strtolower($content);
+
+        // Keywords that suggest "knowledge" intent
+        $knowledgeKeywords = ['knowledge', 'information', 'factual', 'data', 'lookup', 'search', 'query', 'question'];
+        // Keywords that suggest "chat" intent
+        $chatKeywords = ['chat', 'greeting', 'casual', 'conversation', 'hello', 'hi', 'general'];
+
+        $knowledgeScore = 0;
+        $chatScore = 0;
+
+        foreach ($knowledgeKeywords as $keyword) {
+            if (str_contains($content, $keyword)) {
+                $knowledgeScore++;
+            }
+        }
+
+        foreach ($chatKeywords as $keyword) {
+            if (str_contains($content, $keyword)) {
+                $chatScore++;
+            }
+        }
+
+        // Default to "chat" with 0.5 confidence when no clear signals
+        if ($knowledgeScore === 0 && $chatScore === 0) {
+            return ['intent' => 'chat', 'confidence' => 0.5];
+        }
+
+        // Determine intent based on keyword matches
+        if ($knowledgeScore > $chatScore) {
+            $confidence = min(0.7, 0.5 + ($knowledgeScore * 0.1));
+            return ['intent' => 'knowledge', 'confidence' => $confidence];
+        }
+
+        $confidence = min(0.7, 0.5 + ($chatScore * 0.1));
+        return ['intent' => 'chat', 'confidence' => $confidence];
     }
 
     protected function formatKnowledgeBaseContext($results): string
