@@ -75,13 +75,13 @@ export function useConversations(botId: number | undefined, filters: Conversatio
       return response.data;
     },
     enabled: !!botId,
-    // WebSocket-first pattern: WebSocket handles real-time updates via setQueryData
-    staleTime: Infinity,
+    // Hybrid pattern: WebSocket for real-time + refetch on focus for reliability
+    staleTime: 5000,                                            // 5 seconds buffer to prevent race conditions
     gcTime: 1000 * 60 * 10,
     refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: false,
+    refetchOnWindowFocus: true,                                 // Refetch when tab regains focus
+    refetchOnMount: 'always',                                   // Always refetch on mount (fixes F5 refresh)
+    refetchOnReconnect: true,
   });
 }
 
@@ -126,14 +126,13 @@ export function useInfiniteConversations(botId: number | undefined, filters: Con
       return current_page < last_page ? current_page + 1 : undefined;
     },
     enabled: !!botId,
-    // WebSocket-first pattern: WebSocket handles real-time updates via setQueryData
-    // Only refetch on reconnect (handled by ChatPage echo:reconnected listener)
-    staleTime: Infinity,                                      // Never auto-refetch, WebSocket handles freshness
+    // Hybrid pattern: WebSocket for real-time + refetch on focus for reliability
+    staleTime: 5000,                                          // 5 seconds buffer to prevent race conditions
     gcTime: 1000 * 60 * 10,                                   // Keep in cache 10 minutes after unmount
     refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,  // Fallback polling when disconnected
-    refetchOnWindowFocus: false,                              // Don't refetch on tab focus (prevents cache overwrite)
-    refetchOnMount: false,                                    // Don't refetch if data exists
-    refetchOnReconnect: false,                                // Handle reconnect via WebSocket event instead
+    refetchOnWindowFocus: true,                               // Refetch when tab regains focus (fixes stale data)
+    refetchOnMount: 'always',                                 // Always refetch on mount (fixes F5 refresh)
+    refetchOnReconnect: true,                                 // Refetch on network reconnect
   });
 }
 
@@ -179,14 +178,13 @@ export function useConversationMessages(
       return response.data;
     },
     enabled: !!botId && !!conversationId,
-    // WebSocket-first pattern: WebSocket handles all real-time updates via setQueryData
-    // Only refetch on reconnect (handled by ChatPage echo:reconnected listener)
-    staleTime: Infinity,                                      // Never auto-refetch, WebSocket handles freshness
+    // Hybrid pattern: WebSocket for real-time + refetch on focus for reliability
+    staleTime: 5000,                                          // 5 seconds buffer to prevent race conditions
     gcTime: 1000 * 60 * 10,                                   // Keep in cache 10 minutes after unmount
     refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,  // Fallback polling when disconnected
-    refetchOnWindowFocus: false,                              // Don't refetch on tab focus (prevents cache overwrite)
-    refetchOnMount: false,                                    // Don't refetch if data exists
-    refetchOnReconnect: false,                                // Handle reconnect via WebSocket event instead
+    refetchOnWindowFocus: true,                               // Refetch when tab regains focus (fixes stale data)
+    refetchOnMount: 'always',                                 // Always refetch on mount (fixes F5 refresh)
+    refetchOnReconnect: true,                                 // Refetch on network reconnect
   });
 }
 
