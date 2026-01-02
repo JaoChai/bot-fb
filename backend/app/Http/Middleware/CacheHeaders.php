@@ -18,31 +18,29 @@ class CacheHeaders
     /**
      * Cache rules: route pattern => max-age in seconds.
      * 0 = no-store (never cache)
-     * Note: paths are WITHOUT the api/ prefix (Laravel strips it)
+     * Note: paths INCLUDE the api/ prefix (from $request->path())
      */
     private array $cacheRules = [
-        // Bot list - no cache (status changes frequently via toggles)
-        'bots' => 0,
-        // Bot detail - cache briefly (user viewing details)
-        'bots/*' => 60,
         // Static/stable data - cache 5 minutes
-        'flows' => 300,
-        'flows/*' => 300,
-        'knowledge-bases' => 300,
-        'knowledge-bases/*' => 300,
-        'evaluation-personas' => 3600, // 1 hour - rarely changes
+        'api/bots' => 300,
+        'api/bots/*' => 300,
+        'api/flows' => 300,
+        'api/flows/*' => 300,
+        'api/knowledge-bases' => 300,
+        'api/knowledge-bases/*' => 300,
+        'api/evaluation-personas' => 3600, // 1 hour - rarely changes
 
         // User-specific data - cache 1 minute
-        'auth/user' => 60,
-        'dashboard/summary' => 60,
-        'settings' => 60,
-        'analytics/*' => 60,
+        'api/auth/user' => 60,
+        'api/dashboard/summary' => 60,
+        'api/settings' => 60,
+        'api/analytics/*' => 60,
 
         // Real-time data - never cache
-        'conversations' => 0,
-        'conversations/*' => 0,
-        'webhook/*' => 0,
-        'health' => 0,
+        'api/conversations' => 0,
+        'api/conversations/*' => 0,
+        'api/webhook/*' => 0,
+        'api/health' => 0,
     ];
 
     /**
