@@ -96,9 +96,13 @@ export function useCreateDocument(botId: number | null) {
     },
     onSuccess: () => {
       if (!botId) return;
-      // Invalidate both documents and knowledge base queries
+      // Invalidate knowledge base detail
       queryClient.invalidateQueries({
         queryKey: queryKeys.knowledgeBase.detail(botId),
+      });
+      // Explicitly invalidate documents list
+      queryClient.invalidateQueries({
+        queryKey: [...queryKeys.knowledgeBase.detail(botId), 'documents'],
       });
     },
   });
@@ -115,8 +119,13 @@ export function useDeleteDocument(botId: number | null) {
     },
     onSuccess: () => {
       if (!botId) return;
+      // Invalidate knowledge base detail
       queryClient.invalidateQueries({
         queryKey: queryKeys.knowledgeBase.detail(botId),
+      });
+      // Explicitly invalidate documents list
+      queryClient.invalidateQueries({
+        queryKey: [...queryKeys.knowledgeBase.detail(botId), 'documents'],
       });
     },
   });
