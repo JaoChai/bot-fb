@@ -75,10 +75,13 @@ export function useConversations(botId: number | undefined, filters: Conversatio
       return response.data;
     },
     enabled: !!botId,
-    // WebSocket handles real-time, fallback to polling when disconnected
-    staleTime: 30000,
+    // WebSocket-first pattern: WebSocket handles real-time updates via setQueryData
+    staleTime: Infinity,
+    gcTime: 1000 * 60 * 10,
     refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 }
 
@@ -123,10 +126,14 @@ export function useInfiniteConversations(botId: number | undefined, filters: Con
       return current_page < last_page ? current_page + 1 : undefined;
     },
     enabled: !!botId,
-    // WebSocket handles real-time, fallback to polling when disconnected
-    staleTime: 30000,
-    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
-    refetchOnWindowFocus: true,
+    // WebSocket-first pattern: WebSocket handles real-time updates via setQueryData
+    // Only refetch on reconnect (handled by ChatPage echo:reconnected listener)
+    staleTime: Infinity,                                      // Never auto-refetch, WebSocket handles freshness
+    gcTime: 1000 * 60 * 10,                                   // Keep in cache 10 minutes after unmount
+    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,  // Fallback polling when disconnected
+    refetchOnWindowFocus: false,                              // Don't refetch on tab focus (prevents cache overwrite)
+    refetchOnMount: false,                                    // Don't refetch if data exists
+    refetchOnReconnect: false,                                // Handle reconnect via WebSocket event instead
   });
 }
 
