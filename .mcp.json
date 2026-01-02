@@ -17,6 +17,10 @@
     "neon": {
       "command": "npx",
       "args": ["-y", "@neondatabase/mcp-server-neon", "start", "napi_fli47jfhat6lc1tipoyxhk66y2w6r1os31bvf49q2mhen45bmi78debj4nn8pwkm"]
+    },
+    "sentry": {
+      "type": "sse",
+      "url": "https://mcp.sentry.dev/sse"
     }
   }
 }
