@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\CacheHeaders;
 use App\Http\Middleware\CompressResponse;
 use App\Http\Middleware\SanitizeInput;
 use App\Http\Middleware\SecurityHeaders;
@@ -11,6 +12,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
+use Sentry\Laravel\Integration;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -34,8 +36,9 @@ return Application::configure(basePath: dirname(__DIR__))
             SanitizeInput::class,
         ]);
 
-        // Append compression middleware (runs after response is generated)
+        // Append cache headers and compression middleware (runs after response is generated)
         $middleware->api(append: [
+            CacheHeaders::class,
             CompressResponse::class,
         ]);
 
@@ -54,6 +57,9 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Sentry error monitoring integration
+        Integration::handles($exceptions);
+
         // Return JSON 401 for unauthenticated API requests instead of redirecting
         $exceptions->render(function (AuthenticationException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
