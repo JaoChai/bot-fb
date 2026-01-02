@@ -421,3 +421,70 @@ Route::prefix('webhook')->middleware('throttle.webhook')->withoutMiddleware(['au
 Route::post('/bots/{botId}/flows/{flowId}/stream', [StreamController::class, 'streamTest'])
     ->middleware('throttle.bot-test')
     ->name('flows.stream');
+
+// TEMP: Debug endpoint for Decision Model testing (remove after debugging)
+Route::post('/debug/decision-model/{botId}', function (Request $request, int $botId) {
+    $bot = \App\Models\Bot::find($botId);
+    if (!$bot) {
+        return response()->json(['error' => 'Bot not found'], 404);
+    }
+
+    $message = $request->input('message', 'สวัสดีครับ');
+    $decisionModel = $bot->decision_model;
+    $fallbackDecisionModel = $bot->fallback_decision_model;
+
+    if (empty($decisionModel)) {
+        return response()->json(['error' => 'No decision model configured', 'bot_id' => $botId]);
+    }
+
+    $openRouter = app(\App\Services\OpenRouterService::class);
+    $hasKB = $bot->kb_enabled && $bot->knowledgeBase;
+    $kbNote = $hasKB ? ' (Knowledge Base available for factual queries)' : '';
+
+    $prompt = <<<PROMPT
+You are an intent classifier. Analyze the user's message and determine the appropriate intent.
+Respond with JSON only: {"intent": "chat|knowledge", "confidence": 0.0-1.0}
+
+Available intents:
+- "chat": General conversation, greetings, opinions, casual talk, or when unsure
+- "knowledge": Questions requiring factual information, specific data, or documentation{$kbNote}
+
+Classification rules:
+- Use "knowledge" for: questions about facts, how-to queries, data lookups, technical questions
+- Use "chat" for: greetings (hi, hello), opinions, casual conversation, follow-up responses
+- When uncertain, prefer "chat" (safer default)
+
+Respond with JSON only, no explanation.
+PROMPT;
+
+    try {
+        $result = $openRouter->chat(
+            messages: [
+                ['role' => 'system', 'content' => $prompt],
+                ['role' => 'user', 'content' => $message],
+            ],
+            model: $decisionModel,
+            temperature: 0.1,
+            maxTokens: 150,
+            useFallback: true,
+            fallbackModelOverride: $fallbackDecisionModel
+        );
+
+        return response()->json([
+            'success' => true,
+            'bot_id' => $botId,
+            'decision_model' => $decisionModel,
+            'message' => $message,
+            'raw_response' => $result,
+            'content' => $result['content'] ?? null,
+            'content_length' => strlen($result['content'] ?? ''),
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'bot_id' => $botId,
+            'decision_model' => $decisionModel,
+        ], 500);
+    }
+})->name('debug.decision-model');
