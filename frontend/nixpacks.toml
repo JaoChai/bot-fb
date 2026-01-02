@@ -7,7 +7,9 @@ nixPkgs = ["nodejs_20"]
 cmds = ["npm ci"]
 
 [phases.build]
-cmds = ["npm run build"]
+# Build and copy serve.json config for cache headers
+cmds = ["npm run build", "cp serve.json dist/serve.json"]
 
 [start]
+# serve.json: no-cache for index.html, long cache for hashed assets
 cmd = "npx serve dist -l ${PORT:-3000}"
