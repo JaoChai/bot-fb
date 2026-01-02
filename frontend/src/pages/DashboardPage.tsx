@@ -11,7 +11,6 @@ import { useCostAnalytics } from '@/hooks/useCostAnalytics';
 import {
   DashboardStatCard,
   BotOverviewCard,
-  AlertsSection,
   RecentActivityTimeline,
   DashboardSkeleton,
 } from '@/components/dashboard';
@@ -136,9 +135,6 @@ export function DashboardPage() {
               icon={Banknote}
             />
           </div>
-
-          {/* Alerts Section */}
-          {data?.alerts && <AlertsSection alerts={data.alerts} />}
 
           {/* Bot Overview Cards */}
           {hasBots ? (
