@@ -211,7 +211,7 @@ const ConversationItem = memo(function ConversationItem({
 
   // Row styling based on human-only mode state - unified orange color for urgent
   const rowClassName = cn(
-    'w-full p-3 rounded-lg flex items-start gap-3 text-left transition-colors cursor-pointer overflow-hidden',
+    'w-full max-w-full p-3 rounded-lg flex items-start gap-3 text-left transition-colors cursor-pointer overflow-hidden',
     'min-h-[72px]',
     isSelected && 'bg-accent',
     // Human-only mode styling - unified orange for needs_response
@@ -244,12 +244,12 @@ const ConversationItem = memo(function ConversationItem({
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2">
-          <span className={cn('font-medium truncate min-w-0', hasUnread && 'font-semibold')}>
+      <div className="flex-1 min-w-0 overflow-hidden">
+        <div className="flex items-center justify-between gap-2 overflow-hidden">
+          <span className={cn('font-medium truncate min-w-0 flex-1', hasUnread && 'font-semibold')}>
             {customerName}
           </span>
-          <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+          <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
             {lastMessageTime}
           </span>
         </div>
