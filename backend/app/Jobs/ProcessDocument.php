@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Events\DocumentStatusUpdated;
 use App\Models\Document;
 use App\Models\DocumentChunk;
 use App\Models\User;
@@ -42,6 +43,7 @@ class ProcessDocument implements ShouldQueue
 
         try {
             $this->document->update(['status' => 'processing']);
+            broadcast(new DocumentStatusUpdated($this->document, 'processing'));
 
             // Get user's API key from their settings
             $apiKey = $this->getUserApiKey();
@@ -120,6 +122,7 @@ class ProcessDocument implements ShouldQueue
                 'chunk_count' => count($chunks),
                 'error_message' => null,
             ]);
+            broadcast(new DocumentStatusUpdated($this->document->fresh(), 'completed'));
 
             $this->document->knowledgeBase->increment('chunk_count', count($chunks));
 
@@ -138,6 +141,7 @@ class ProcessDocument implements ShouldQueue
                 'status' => 'failed',
                 'error_message' => $e->getMessage(),
             ]);
+            broadcast(new DocumentStatusUpdated($this->document->fresh(), 'failed'));
 
             throw $e;
         }
@@ -236,5 +240,6 @@ class ProcessDocument implements ShouldQueue
             'status' => 'failed',
             'error_message' => 'Processing failed after retries: ' . $exception->getMessage(),
         ]);
+        broadcast(new DocumentStatusUpdated($this->document->fresh(), 'failed'));
     }
 }

@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -42,6 +43,10 @@ import {
 import { DocumentUpload } from '@/components/knowledge-base/DocumentUpload';
 import { DocumentList } from '@/components/knowledge-base/DocumentList';
 import { SemanticSearch } from '@/components/knowledge-base/SemanticSearch';
+import { useKnowledgeBaseChannel } from '@/hooks/useEcho';
+import { queryKeys } from '@/lib/query';
+import type { DocumentStatusUpdatedEvent } from '@/types/realtime';
+import type { Document, PaginatedResponse } from '@/types/api';
 import {
   FileText,
   Layers,
@@ -63,6 +68,9 @@ export function KnowledgeBasePage() {
   const [newKbName, setNewKbName] = useState('');
   const [newKbDescription, setNewKbDescription] = useState('');
 
+  // Query client for cache updates
+  const queryClient = useQueryClient();
+
   // Queries
   const { data: knowledgeBases, isLoading: isLoadingList } = useAllKnowledgeBases();
   const { data: knowledgeBase } = useKnowledgeBase(selectedKbId);
@@ -74,6 +82,47 @@ export function KnowledgeBasePage() {
   const deleteKbMutation = useDeleteKnowledgeBase();
   const createDocMutation = useCreateDocument(selectedKbId);
   const deleteDocMutation = useDeleteDocument(selectedKbId);
+
+  // Real-time document status update handler
+  const handleDocumentStatusUpdate = useCallback(
+    (event: DocumentStatusUpdatedEvent) => {
+      if (!selectedKbId) return;
+
+      // Update document in React Query cache
+      const queryKey = [...queryKeys.knowledgeBase.detail(selectedKbId), 'documents'];
+      queryClient.setQueryData<PaginatedResponse<Document>>(queryKey, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map((doc) =>
+            doc.id === event.id
+              ? {
+                  ...doc,
+                  status: event.status,
+                  chunk_count: event.chunk_count ?? doc.chunk_count,
+                  error_message: event.error_message,
+                }
+              : doc
+          ),
+        };
+      });
+
+      // Also invalidate KB detail to update chunk_count in stats
+      if (event.status === 'completed') {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.knowledgeBase.detail(selectedKbId),
+        });
+      }
+    },
+    [selectedKbId, queryClient]
+  );
+
+  // Subscribe to real-time updates
+  const realtimeCallbacks = useMemo(
+    () => ({ onDocumentStatusUpdate: handleDocumentStatusUpdate }),
+    [handleDocumentStatusUpdate]
+  );
+  useKnowledgeBaseChannel(selectedKbId, realtimeCallbacks);
 
   // Handlers
   const handleCreateKb = useCallback(async () => {
