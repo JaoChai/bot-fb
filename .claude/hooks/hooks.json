@@ -11,7 +11,7 @@
           },
           {
             "type": "prompt",
-            "prompt": "[SESSION:INIT] BotFacebook (Laravel 12 + React 19). Auto-load from mem: 1) Rules: [RULE:*][UNIVERSAL], [RULE:*][TECHNOLOGY:Laravel|React], [RULE:*][PROJECT:BotFacebook] - Priority: PROJECT>TECH>UNIVERSAL. 2) Tools: [MCP:REGISTRY], [SKILL:REGISTRY] for tools-manager. 3) Budget: Apply token limits per task size. 4) Check pendingTask in settings.local.json - if exists, resume automatically. 5) BUG WORKFLOW (MANDATORY): ISSUE → FIX → LOG. Before ANY bug fix: create GitHub Issue, verify with realtime logs, ask user approval. NO SKIPPING! Cache all for session."
+            "prompt": "[SESSION:INIT] BotFacebook (Laravel 12 + React 19). Auto-load from mem: 1) Rules: [RULE:*][UNIVERSAL], [RULE:*][TECHNOLOGY:Laravel|React], [RULE:*][PROJECT:BotFacebook] - Priority: PROJECT>TECH>UNIVERSAL. 2) Tools: [MCP:REGISTRY], [SKILL:REGISTRY] for tools-manager. 3) Budget: Apply token limits per task size. 4) Check pendingTask in settings.local.json - if exists, resume automatically. 5) DEBUG WORKFLOW (MANDATORY): DISCOVERY → DIAGNOSIS → PROCESS. Memory=HINT only, verify realtime, 80% confidence, user approval before fix. NO SKIPPING!"
           }
         ]
       }
