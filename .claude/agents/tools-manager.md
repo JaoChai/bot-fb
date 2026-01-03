@@ -225,6 +225,128 @@ Example:
 
 ---
 
+## Usage Monitoring (Claude Subscription)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ SESSION USAGE TRACKING                                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ Check Usage:                                                │
+│ • Session start → record baseline                          │
+│ • Every 10 tool calls → check usage                        │
+│ • Before large operations → verify capacity                 │
+│                                                             │
+│ Thresholds (Claude Pro subscription):                       │
+│ 🟢 Normal    → Continue freely                             │
+│ 🟡 High      → Optimize token usage                        │
+│ 🟠 Very High → Essential operations only                   │
+│ 🔴 Near Limit → STOP, save state, notify user              │
+│                                                             │
+│ On Near Limit:                                              │
+│ 1. Save current task state to settings.local.json          │
+│ 2. Notify user about limit                                  │
+│ 3. Suggest: wait for reset or continue later                │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## MCP Lifecycle Management
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ MCP OPERATIONS                                              │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ ADD NEW MCP:                                                │
+│ 1. Check if MCP needed for task                            │
+│ 2. Run: claude mcp add <name> -- <command>                 │
+│ 3. Check if authentication needed                          │
+│    → If OAuth/API key needed → AskUserQuestion             │
+│ 4. Verify MCP is working                                    │
+│ 5. If restart needed → trigger RESTART flow                │
+│ 6. Update [MCP:REGISTRY] in mem                            │
+│                                                             │
+│ VERIFY MCP:                                                 │
+│ • Try a simple operation                                    │
+│ • If fails → check auth, retry, or ask user                │
+│                                                             │
+│ REMOVE MCP:                                                 │
+│ • Only if unused for 30+ days                              │
+│ • Confirm with user first                                   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Restart Management
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ WHEN RESTART NEEDED                                         │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ Triggers:                                                   │
+│ • New MCP added that requires restart                       │
+│ • Configuration changed                                     │
+│ • Session corrupted/stuck                                   │
+│                                                             │
+│ RESTART FLOW:                                               │
+│ 1. SAVE STATE → .claude/settings.local.json                │
+│    {                                                        │
+│      "pendingTask": {                                       │
+│        "description": "...",                                │
+│        "progress": [...],                                   │
+│        "lastAction": "...",                                 │
+│        "savedAt": "ISO timestamp"                           │
+│      }                                                      │
+│    }                                                        │
+│                                                             │
+│ 2. NOTIFY USER                                              │
+│    "ต้อง restart Claude Code - กรุณารัน:"                   │
+│    .claude/scripts/restart-claude.sh                        │
+│                                                             │
+│ 3. ON SESSION START (after restart)                         │
+│    • Check pendingTask in settings.local.json               │
+│    • If exists → resume task automatically                  │
+│    • Clear pendingTask after resuming                       │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Permission Management
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ PERMISSION HANDLING                                         │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ When Permission Needed:                                     │
+│ 1. Use AskUserQuestion to request                          │
+│ 2. Explain WHY permission is needed                        │
+│ 3. Show exactly what will be accessed                      │
+│                                                             │
+│ Store Permissions:                                          │
+│ • Allowed tools → settings.local.json.permissions.allow    │
+│ • API keys → .env or secure storage (never in git)         │
+│ • OAuth tokens → managed by MCP servers                    │
+│                                                             │
+│ Permission Types:                                           │
+│ • MCP tool access (auto-approved in allow list)            │
+│ • File system access (Bash commands)                       │
+│ • Network access (WebFetch, MCP calls)                     │
+│ • API keys (ask user, store securely)                      │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## Integration with rules-manager
 
 ```

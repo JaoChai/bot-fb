@@ -5,8 +5,13 @@
       {
         "hooks": [
           {
+            "type": "command",
+            "command": "cat \"${CLAUDE_PROJECT_ROOT}/.claude/settings.local.json\" 2>/dev/null | grep -o '\"pendingTask\"' >/dev/null && echo '[RESUME:PENDING] Found pending task - check settings.local.json and resume' || true",
+            "timeout": 5
+          },
+          {
             "type": "prompt",
-            "prompt": "[SESSION:INIT] BotFacebook (Laravel 12 + React 19). Auto-load from mem: 1) Rules: [RULE:*][UNIVERSAL], [RULE:*][TECHNOLOGY:Laravel|React], [RULE:*][PROJECT:BotFacebook] - Priority: PROJECT>TECH>UNIVERSAL. 2) Tools: [MCP:REGISTRY], [SKILL:REGISTRY] for tools-manager. 3) Budget: Apply token limits per task size. Cache all for session."
+            "prompt": "[SESSION:INIT] BotFacebook (Laravel 12 + React 19). Auto-load from mem: 1) Rules: [RULE:*][UNIVERSAL], [RULE:*][TECHNOLOGY:Laravel|React], [RULE:*][PROJECT:BotFacebook] - Priority: PROJECT>TECH>UNIVERSAL. 2) Tools: [MCP:REGISTRY], [SKILL:REGISTRY] for tools-manager. 3) Budget: Apply token limits per task size. 4) Check pendingTask in settings.local.json - if exists, resume automatically. Cache all for session."
           }
         ]
       }
