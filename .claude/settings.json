@@ -1,0 +1,47 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat \"${CLAUDE_PROJECT_DIR}/.claude/settings.local.json\" 2>/dev/null | grep -o '\"pendingTask\"' >/dev/null && echo '[RESUME:PENDING] Found pending task - check settings.local.json and resume' || true",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/scripts/update-debug-state.js\" status 2>/dev/null || true",
+            "timeout": 5
+          },
+          {
+            "type": "prompt",
+            "prompt": "[SESSION:INIT] BotFacebook (Laravel 12 + React 19). DEBUG WORKFLOW ENFORCED: PreToolUse hook BLOCKS Edit/Write if workflow incomplete. Use 'node .claude/scripts/update-debug-state.js' to track. Flow: DISCOVERY → DIAGNOSIS → PROCESS."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/scripts/check-debug-state.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/scripts/sync-lessons.js\" 2>/dev/null || true; node \"${CLAUDE_PROJECT_DIR}/.claude/scripts/sync-profile.js\" 2>/dev/null || true",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
