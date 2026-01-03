@@ -127,10 +127,10 @@ function checkState() {
     missing.push('PROCESS: User approval not received');
   }
 
-  // If any missing, BLOCK
+  // If any missing, BLOCK with exit code 2!
   if (missing.length > 0) {
     console.error(formatBlockMessage(state, missing));
-    process.exit(1);
+    process.exit(2); // Exit code 2 = BLOCK tool in PreToolUse hook
   }
 
   // All checks passed
