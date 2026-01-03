@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Zap } from 'lucide-react';
 import { QuickReplyList } from './QuickReplyList';
 import type { QuickReply } from '@/types/quick-reply';
@@ -23,8 +23,8 @@ export function QuickReplyButton({ onSelect, disabled }: QuickReplyButtonProps) 
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
         <Button
           type="button"
           variant="outline"
@@ -35,15 +35,15 @@ export function QuickReplyButton({ onSelect, disabled }: QuickReplyButtonProps) 
         >
           <Zap className="h-5 w-5" />
         </Button>
-      </PopoverTrigger>
-      <PopoverContent
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
         className="w-80 p-0"
         align="start"
         side="top"
         sideOffset={8}
       >
         <QuickReplyList onSelect={handleSelect} />
-      </PopoverContent>
-    </Popover>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

@@ -12,7 +12,7 @@ import type {
 // Fetch all quick replies with optional filters
 export function useQuickReplies(params?: QuickReplyListParams) {
   return useQuery({
-    queryKey: queryKeys.quickReplies.list(params),
+    queryKey: queryKeys.quickReplies.list(params as Record<string, unknown> | undefined),
     queryFn: async () => {
       const searchParams = new URLSearchParams();
       if (params?.is_active !== undefined) {

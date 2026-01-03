@@ -8,14 +8,12 @@ interface QuickReplyAutocompleteProps {
   inputValue: string;
   onSelect: (quickReply: QuickReply) => void;
   onClose: () => void;
-  anchorRef: React.RefObject<HTMLElement>;
 }
 
 export function QuickReplyAutocomplete({
   inputValue,
   onSelect,
   onClose,
-  anchorRef,
 }: QuickReplyAutocompleteProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
