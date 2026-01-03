@@ -1,32 +1,110 @@
 # CLAUDE.md - BotFacebook
 
-## Quick Codes
-`ccc` context+compact | `nnn` plan | `gogogo` execute | `lll` status | `rrr` retrospective
+## STOP! อ่านก่อนทำอะไร
 
-## Critical Rules
-- **NEVER** force flags, merge without approval, `rm -rf`
-- **NEVER** guess root cause - get ACTUAL error first
-- **STOP** after 2 failed fix attempts
-- **ALWAYS** `npm run build` before commit
-
-## ก่อนแก้ Bug - บังคับ (3 ม.ค. 2026)
 ```
-ห้ามแก้ code จนกว่าจะทำครบ:
-
-1. มี GitHub Issue? → อ่านก่อน
-2. API issue?
-   □ เปิด Backend Controller ดู return จริง
-   □ เปิด Frontend hook ดู expect จริง
-   □ ถ้าไม่ตรง → แก้ให้ตรง → จบ
-3. Cache/Deploy issue?
-   □ curl -I production ดู headers จริง
-   □ ถ้าไม่ถูก → แก้ server → จบ
-4. ไม่แน่ใจ? → ถามก่อน อย่าเดา
-
-❌ ห้าม: "น่าจะเป็น..." แล้วลุยแก้
-❌ ห้าม: สมมติว่า backend/frontend return อะไร
-✅ ต้อง: เปิดไฟล์ดูจริง ก่อนแก้
+┌─────────────────────────────────────────────────────────────┐
+│  🚨 กฎเหล็ก: ดูจริง ก่อนแก้                                  │
+├─────────────────────────────────────────────────────────────┤
+│  ❌ ห้าม: "น่าจะเป็น..." → ลุยแก้                            │
+│  ❌ ห้าม: เดาว่า API return อะไร                             │
+│  ❌ ห้าม: แก้ 2 รอบไม่หาย แล้วลุยต่อ                         │
+│                                                             │
+│  ✅ ต้อง: เปิดไฟล์ดูจริง → แล้วค่อยแก้                       │
+│  ✅ ต้อง: 2 รอบไม่หาย → หยุด ถาม user                        │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+## Decision Tree - ทำตามนี้เลย
+
+```
+User บอกปัญหา
+    │
+    ├─ "API/Toggle/Data ไม่ทำงาน"
+    │   └─ ไป → [Checklist A: API Issues]
+    │
+    ├─ "Deploy แล้วไม่เห็น/Cache"
+    │   └─ ไป → [Checklist B: Deploy Issues]
+    │
+    ├─ "Error/พัง/500"
+    │   └─ ไป → [Checklist C: Debug Issues]
+    │
+    └─ "เพิ่ม Feature"
+        └─ ไป → [Checklist D: New Feature]
+```
+
+---
+
+## Checklist A: API Issues
+
+```
+□ 1. มี GitHub Issue เกี่ยวกับเรื่องนี้ไหม?
+     gh issue list --search "keyword"
+     → ถ้ามี อ่านก่อน อาจมีคำตอบแล้ว
+
+□ 2. Backend return อะไร?
+     → เปิด Controller ดู return statement จริง
+     → จด: return { ??? }
+
+□ 3. Frontend expect อะไร?
+     → เปิด hook/component ดู type จริง
+     → จด: expect type { ??? }
+
+□ 4. ตรงกันไหม?
+     → ถ้าไม่ตรง แก้ให้ตรง → จบ
+     → ถ้าตรง ปัญหาอยู่ที่อื่น → ถาม user
+```
+
+## Checklist B: Deploy Issues
+
+```
+□ 1. Production serve อะไรอยู่?
+     curl -I https://www.botjao.com/
+     → จด headers ที่เห็น
+
+□ 2. Headers ถูกต้องไหม?
+     → index.html ต้อง no-cache
+     → assets/*.js ต้อง immutable
+
+□ 3. ถ้าไม่ถูก → แก้ server config
+□ 4. Test local ก่อน deploy
+□ 5. Deploy แล้ว curl -I อีกครั้ง verify
+```
+
+## Checklist C: Debug Issues
+
+```
+□ 1. ดู actual error ก่อน
+     → diagnose logs / railway_logs
+     → จด error message จริง
+
+□ 2. Search memory
+     → mem-search "error message"
+     → เคยแก้ไหม? แก้ยังไง?
+
+□ 3. ถ้าแก้ 2 รอบไม่หาย → หยุด ถาม user
+```
+
+## Checklist D: New Feature
+
+```
+□ 1. เข้า Plan Mode ก่อน
+□ 2. วางแผน → ให้ user approve
+□ 3. Implement ตาม plan
+□ 4. npm run build ก่อน commit
+```
+
+---
+
+## Quick Reference
+
+| Command | ใช้เมื่อ |
+|---------|---------|
+| `ccc` | context+compact |
+| `nnn` | plan |
+| `gogogo` | execute |
+| `gh issue list` | หา issue ที่เกี่ยวข้อง |
+| `curl -I URL` | ดู headers จริง |
 
 ## Stack
 Laravel 12 + React 19 + PostgreSQL (Neon) + Railway + Reverb
@@ -35,35 +113,21 @@ Laravel 12 + React 19 + PostgreSQL (Neon) + Railway + Reverb
 - Frontend: `https://www.botjao.com`
 - Backend: `https://api.botjao.com`
 
-## Gotchas
+## MCP Tools
+| Tool | Purpose |
+|------|---------|
+| `diagnose` | Health check (all, backend, logs, railway) |
+| `fix` | Apply fixes (clear_cache, optimize, migrate) |
+| `bot_manage` | Bot/Flow/KB operations |
+| `execute` | railway_status, railway_logs, tinker |
+
+## Gotchas (ปัญหาที่เจอบ่อย)
 | Issue | Fix |
 |-------|-----|
 | `config('x','')` returns null | `config('x') ?? ''` |
-| Echo auth stale | Dynamic authorizer |
-| PDO boolean fails | Disable emulate_prepares |
+| API return wrapped `{data: X}` | ต้อง `response.data` |
+| serve.json ไม่ work บน Railway | ใช้ Express server แทน |
 
-## MCP Tools
-| Tool | Purpose | Actions |
-|------|---------|---------|
-| `diagnose` | Health check | all, backend, database, logs, railway |
-| `fix` | Apply fixes | clear_cache, optimize, migrate |
-| `bot_manage` | Bot/Flow/KB | list_bots, test_bot, search_kb |
-| `evaluate` | Bot eval | create, progress, report |
-| `execute` | Operations | railway_status, railway_logs, tinker |
+---
 
-## Memory (claude-mem)
-- **Bug/Feature**: Search memory first → Apply past patterns
-- **Prefs**: ไทย, diagrams, MCP tools
-
-## คิดแทน (Proactive)
-| เมื่อเห็น | ทำสิ่งนี้ |
-|----------|---------|
-| error/bug/ล่ม | diagnose → logs → memory → แก้ |
-| feature/เพิ่ม | Plan Mode → design → confirm → ทำ |
-| deploy/commit | build → test → confirm → push |
-| ไม่แน่ใจ | **ถาม อย่าเดา** |
-
-## See Also (อ่านก่อนทำงาน!)
-- [USER-PROFILE.md](.claude/USER-PROFILE.md) - วิธีคิด & patterns ของ user
-- [LESSONS.md](.claude/LESSONS.md) - ความผิดพลาด & วิธีแก้
-- [COMMANDS.md](.claude/COMMANDS.md) | [UI-RULES.md](.claude/UI-RULES.md)
+*อัพเดท: 3 ม.ค. 2026 - Refactor ให้ฉลาดขึ้น*

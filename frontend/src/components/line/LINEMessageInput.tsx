@@ -1,6 +1,5 @@
-import { useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Paperclip,
   Send,
@@ -29,6 +28,25 @@ export function LINEMessageInput({
   isLoading,
 }: LINEMessageInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+    }
+  }, [value]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (value.trim() || selectedMedia) {
+        onSubmit(e as unknown as React.FormEvent);
+      }
+    }
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -116,12 +134,15 @@ export function LINEMessageInput({
 
         {/* Text Input */}
         <div className="flex-1 relative">
-          <Input
+          <textarea
+            ref={textareaRef}
             value={value}
             onChange={(e) => onChange(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder={selectedMedia ? 'เพิ่มคำอธิบาย...' : 'พิมพ์ข้อความ...'}
             disabled={isLoading}
-            className="pr-4 min-h-[44px] text-base sm:text-sm"
+            rows={1}
+            className="w-full min-h-[44px] max-h-[120px] py-2.5 px-4 text-base sm:text-sm resize-none rounded-full border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
             autoFocus
           />
         </div>
@@ -141,7 +162,7 @@ export function LINEMessageInput({
       </div>
 
       <p className="text-center text-xs text-muted-foreground mt-2 hidden sm:block">
-        ข้อความจะส่งไปยัง LINE โดยตรง
+        ข้อความจะส่งไปยัง LINE โดยตรง • Shift+Enter ขึ้นบรรทัดใหม่
       </p>
     </form>
   );
