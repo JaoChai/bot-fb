@@ -38,10 +38,12 @@ User ขอ Feature ใหม่
      │
      ▼
 ┌─────────────────────────────────────┐
-│ 1. RESEARCH                         │
-│    → mem-search "feature keyword"   │
-│    → Explore codebase หา pattern    │
-│    → ดูว่ามี code คล้ายๆ ไหม         │
+│ 1. RESEARCH (ใช้ Memory เต็มที่)      │
+│    → search(type=feature) หา feature คล้ายๆ │
+│    → search(type=decision) หา decisions     │
+│    → timeline(anchor=ID) ดู context         │
+│    → get_observations(ids) ดึงรายละเอียด    │
+│    → Explore codebase หา pattern            │
 └─────────────────────────────────────┘
      │
      ▼
@@ -105,9 +107,12 @@ User แจ้ง Bug
      │
      ▼
 ┌─────────────────────────────────────┐
-│ 1. เช็ค Memory ก่อน                  │
-│    mem-search "keyword"             │
-│    → ได้ HINT (ไม่ใช่คำตอบสุดท้าย)   │
+│ 1. MEMORY (ใช้ Memory เต็มที่)        │
+│    → search(type=bugfix) หา bug คล้ายๆ      │
+│    → search(type=decision) หา decisions     │
+│    → timeline(anchor=ID) ดู context         │
+│    → get_observations(ids) ดึงรายละเอียดวิธีแก้│
+│    ⚠️ Memory = HINT ต้อง verify กับ realtime │
 └─────────────────────────────────────┘
      │
      ▼
@@ -154,6 +159,36 @@ User แจ้ง Bug
 │    ❌ ไม่ work → Update Issue กลับข้อ 2│
 │    ❌ 2 รอบไม่หาย → หยุด ถาม User    │
 └─────────────────────────────────────┘
+```
+
+### claude-mem Usage Guide
+
+**Search Workflow:**
+```
+1. search(query, type, obs_type) → ได้ IDs
+2. timeline(anchor=ID) → ดู context รอบๆ
+3. get_observations(ids) → ดึงรายละเอียด
+```
+
+**obs_type ที่ใช้ได้:**
+| Type | ใช้หา |
+|------|-------|
+| `bugfix` | Bug ที่เคยแก้ |
+| `feature` | Feature ที่เคยทำ |
+| `decision` | การตัดสินใจ architectural |
+| `discovery` | สิ่งที่ค้นพบ/เรียนรู้ |
+| `change` | การเปลี่ยนแปลง code |
+
+**ตัวอย่าง:**
+```
+# หา bug คล้ายๆ
+search(query="toggle", obs_type="bugfix", project="BotFacebook")
+
+# หา decisions เกี่ยวกับ React Query
+search(query="React Query", obs_type="decision", project="BotFacebook")
+
+# ดู context รอบ observation #14820
+timeline(anchor=14820, depth_before=3, depth_after=3, project="BotFacebook")
 ```
 
 ### Data Reliability
