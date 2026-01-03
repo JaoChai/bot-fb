@@ -14,6 +14,7 @@
 | **Cache** | serve.json fail | ใช้ Express server |
 | **Config** | `config('x','')` null | `config('x') ?? ''` |
 | **React Query** | Optimistic update ซับซ้อน UI ไม่ sync | ลบ optimistic ใช้แค่ `refetchQueries` ใน onSuccess |
+| **React State** | Toggle UI ไม่อัพเดท (อ่านจาก query) | ใช้ local state + update ก่อน mutation |
 | **Debugging** | Fix ซ้อน fix ไม่ work | หยุด หา root cause ลบ complexity |
 
 ## Workflow Preferences
