@@ -93,52 +93,13 @@ export function useToggleBotStatus() {
       const response = await apiPut<{ data: Bot }>(`/bots/${botId}`, { status });
       return response.data;
     },
-    onMutate: async ({ botId, status }) => {
-      // Cancel any outgoing refetches to prevent overwriting optimistic update
-      await queryClient.cancelQueries({ queryKey: queryKeys.bots.lists() });
-
-      // Snapshot the previous value for rollback
-      const previousBots = queryClient.getQueryData(queryKeys.bots.lists());
-
-      // Optimistically update the cache immediately
-      queryClient.setQueryData(queryKeys.bots.lists(), (old: { data: Bot[] } | undefined) => {
-        if (!old) return old;
-        return {
-          ...old,
-          data: old.data.map((bot) =>
-            bot.id === botId ? { ...bot, status } : bot
-          ),
-        };
+    onSuccess: async () => {
+      // Force refetch from server to ensure UI shows latest data
+      // Using refetchQueries instead of invalidateQueries for immediate update
+      await queryClient.refetchQueries({
+        queryKey: queryKeys.bots.lists(),
+        exact: true,
       });
-
-      return { previousBots };
-    },
-    onSuccess: (updatedBot, { botId }) => {
-      // Update detail cache with API response
-      queryClient.setQueryData(queryKeys.bots.detail(botId), updatedBot);
-
-      // Update list cache with actual server response (critical for persistence)
-      // This ensures the cache has correct data even if invalidateQueries refetch
-      // doesn't complete before user navigates away
-      queryClient.setQueryData(queryKeys.bots.lists(), (old: { data: Bot[] } | undefined) => {
-        if (!old) return old;
-        return {
-          ...old,
-          data: old.data.map((bot) =>
-            bot.id === botId ? updatedBot : bot
-          ),
-        };
-      });
-    },
-    onError: (_err, _variables, context) => {
-      // Rollback to previous value on error
-      if (context?.previousBots) {
-        queryClient.setQueryData(queryKeys.bots.lists(), context.previousBots);
-      }
-    },
-    // Always refetch after error or success (per TanStack Query docs)
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.bots.lists() });
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] });
     },
   });
