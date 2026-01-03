@@ -1,0 +1,283 @@
+openapi: 3.0.3
+info:
+  title: Quick Replies API
+  version: 1.0.0
+  description: API for managing canned responses (Quick Replies) in chat
+
+servers:
+  - url: /api
+    description: API base path
+
+paths:
+  /quick-replies:
+    get:
+      summary: List all Quick Replies for current team
+      tags: [Quick Replies]
+      parameters:
+        - name: is_active
+          in: query
+          schema:
+            type: boolean
+          description: Filter by active status
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Filter by category
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search in title and content
+      responses:
+        '200':
+          description: List of Quick Replies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/QuickReply'
+
+    post:
+      summary: Create a new Quick Reply (Owner only)
+      tags: [Quick Replies]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuickReplyInput'
+      responses:
+        '201':
+          description: Quick Reply created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/QuickReply'
+        '403':
+          description: Not authorized (not team owner)
+        '422':
+          description: Validation error
+
+  /quick-replies/{id}:
+    get:
+      summary: Get a Quick Reply by ID
+      tags: [Quick Replies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Quick Reply details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/QuickReply'
+        '404':
+          description: Not found
+
+    put:
+      summary: Update a Quick Reply (Owner only)
+      tags: [Quick Replies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuickReplyInput'
+      responses:
+        '200':
+          description: Quick Reply updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/QuickReply'
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found
+        '422':
+          description: Validation error
+
+    delete:
+      summary: Delete a Quick Reply (Owner only)
+      tags: [Quick Replies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Deleted successfully
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found
+
+  /quick-replies/{id}/toggle:
+    post:
+      summary: Toggle active status (Owner only)
+      tags: [Quick Replies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Status toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/QuickReply'
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found
+
+  /quick-replies/reorder:
+    post:
+      summary: Reorder Quick Replies (Owner only)
+      tags: [Quick Replies]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                  description: Ordered list of Quick Reply IDs
+      responses:
+        '200':
+          description: Reordered successfully
+        '403':
+          description: Not authorized
+        '422':
+          description: Validation error
+
+  /quick-replies/search:
+    get:
+      summary: Search Quick Replies by shortcut (for autocomplete)
+      tags: [Quick Replies]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Shortcut prefix to search
+      responses:
+        '200':
+          description: Matching Quick Replies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/QuickReply'
+
+components:
+  schemas:
+    QuickReply:
+      type: object
+      properties:
+        id:
+          type: integer
+        shortcut:
+          type: string
+          example: "hello"
+        title:
+          type: string
+          example: "ทักทายลูกค้า"
+        content:
+          type: string
+          example: "สวัสดีค่ะ ยินดีให้บริการค่ะ"
+        category:
+          type: string
+          nullable: true
+          example: "greeting"
+        sort_order:
+          type: integer
+          example: 0
+        is_active:
+          type: boolean
+          example: true
+        created_by:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    QuickReplyInput:
+      type: object
+      required:
+        - shortcut
+        - title
+        - content
+      properties:
+        shortcut:
+          type: string
+          pattern: '^[a-z0-9_-]+$'
+          minLength: 1
+          maxLength: 50
+          example: "hello"
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "ทักทายลูกค้า"
+        content:
+          type: string
+          minLength: 1
+          maxLength: 5000
+          example: "สวัสดีค่ะ ยินดีให้บริการค่ะ"
+        category:
+          type: string
+          maxLength: 50
+          nullable: true
+          example: "greeting"
+        sort_order:
+          type: integer
+          minimum: 0
+          example: 0
+        is_active:
+          type: boolean
+          example: true
