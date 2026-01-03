@@ -70,15 +70,19 @@ export function useBotChannel(
 
     channelRef.current = echo.private(channelName)
       .listen(`.${EVENTS.messageSent}`, (event: MessageSentEvent) => {
+        console.log('[useBotChannel] message.sent:', event.conversation_id);
         callbacks.onMessage?.(event);
       })
       .listen(`.${EVENTS.conversationCreated}`, (event: ConversationUpdatedEvent) => {
+        console.log('[useBotChannel] conversation.created:', event.id);
         callbacks.onNewConversation?.(event);
       })
       .listen(`.${EVENTS.conversationUpdated}`, (event: ConversationUpdatedEvent) => {
+        console.log('[useBotChannel] conversation.updated:', event.id);
         callbacks.onConversationUpdate?.(event);
       })
       .listen(`.${EVENTS.conversationMessageReceived}`, (event: ConversationUpdatedEvent) => {
+        console.log('[useBotChannel] conversation.message_received:', event.id);
         callbacks.onConversationUpdate?.(event);
       });
 

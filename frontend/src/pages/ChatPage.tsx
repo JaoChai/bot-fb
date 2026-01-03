@@ -143,6 +143,25 @@ export function ChatPage() {
         }
       );
 
+      // Check if conversation exists in cache first
+      const existingData = queryClient.getQueryData<InfiniteData<ConversationsResponse>>(
+        ['conversations-infinite', botId, filters]
+      );
+
+      const conversationExists = existingData?.pages.some((page) =>
+        page.data.some((conv) => conv.id === event.conversation_id)
+      );
+
+      if (!conversationExists) {
+        // New conversation not in cache - refetch to get it with full data
+        console.log('[ChatPage] Message for new conversation, refetching:', event.conversation_id);
+        queryClient.refetchQueries({
+          queryKey: ['conversations-infinite', botId],
+          exact: false,
+        });
+        return;
+      }
+
       // Update conversation list and move to top (sorted by last_message_at)
       queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
         ['conversations-infinite', botId, filters],
@@ -159,7 +178,7 @@ export function ChatPage() {
             (conv) => conv.id === event.conversation_id
           );
 
-          if (conversationIndex === -1) return old; // Conversation not in list
+          if (conversationIndex === -1) return old; // Should not happen after check above
 
           // Create updated conversation with new last_message from event
           const existingConv = allConversations[conversationIndex];
@@ -217,6 +236,25 @@ export function ChatPage() {
 
   const handleConversationUpdate = useCallback(
     (event: ConversationUpdatedEvent) => {
+      // Check if conversation exists in cache
+      const existingData = queryClient.getQueryData<InfiniteData<ConversationsResponse>>(
+        ['conversations-infinite', botId, filters]
+      );
+
+      const conversationExists = existingData?.pages.some((page) =>
+        page.data.some((conv) => conv.id === event.id)
+      );
+
+      if (!conversationExists) {
+        // New conversation not in cache - refetch to get it with full data
+        console.log('[ChatPage] Conversation not in cache, refetching:', event.id);
+        queryClient.refetchQueries({
+          queryKey: ['conversations-infinite', botId],
+          exact: false,
+        });
+        return;
+      }
+
       // Surgically update the specific conversation in cache
       queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
         ['conversations-infinite', botId, filters],
@@ -252,10 +290,13 @@ export function ChatPage() {
   );
 
   const handleNewConversation = useCallback(
-    () => {
-      // New conversation requires full refetch to get correct ordering
-      queryClient.invalidateQueries({
+    (event: ConversationUpdatedEvent) => {
+      console.log('[ChatPage] New conversation event received:', event.id);
+      // Force immediate refetch to get new conversation with full data
+      // Using refetchQueries instead of invalidateQueries for guaranteed refetch
+      queryClient.refetchQueries({
         queryKey: ['conversations-infinite', botId],
+        exact: false,
       });
     },
     [queryClient, botId]

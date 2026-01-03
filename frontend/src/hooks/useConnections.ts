@@ -89,8 +89,9 @@ export function useToggleBotStatus() {
 
   return useMutation({
     mutationFn: async ({ botId, status }: { botId: number; status: 'active' | 'inactive' }) => {
-      const response = await apiPut<ApiResponse<Bot>>(`/bots/${botId}`, { status });
-      return response.data;
+      // apiPut already extracts res.data, and backend returns Bot directly (not wrapped)
+      const bot = await apiPut<Bot>(`/bots/${botId}`, { status });
+      return bot;
     },
     onMutate: async ({ botId, status }) => {
       // Cancel any outgoing refetches to prevent overwriting optimistic update
