@@ -113,7 +113,7 @@ export function useToggleBotStatus() {
       return { previousBots };
     },
     onSuccess: (updatedBot, { botId }) => {
-      // Update cache with actual API response (works with localStorage persister)
+      // Update cache with actual API response for immediate UI update
       queryClient.setQueryData(queryKeys.bots.lists(), (old: { data: Bot[] } | undefined) => {
         if (!old) return old;
         return {
@@ -125,6 +125,8 @@ export function useToggleBotStatus() {
       });
       // Update detail cache
       queryClient.setQueryData(queryKeys.bots.detail(botId), updatedBot);
+      // Invalidate bots list to ensure fresh data on navigation
+      queryClient.invalidateQueries({ queryKey: queryKeys.bots.lists() });
       // Invalidate dashboard
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] });
     },
