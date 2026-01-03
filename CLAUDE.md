@@ -9,6 +9,25 @@
 - **STOP** after 2 failed fix attempts
 - **ALWAYS** `npm run build` before commit
 
+## ก่อนแก้ Bug - บังคับ (3 ม.ค. 2026)
+```
+ห้ามแก้ code จนกว่าจะทำครบ:
+
+1. มี GitHub Issue? → อ่านก่อน
+2. API issue?
+   □ เปิด Backend Controller ดู return จริง
+   □ เปิด Frontend hook ดู expect จริง
+   □ ถ้าไม่ตรง → แก้ให้ตรง → จบ
+3. Cache/Deploy issue?
+   □ curl -I production ดู headers จริง
+   □ ถ้าไม่ถูก → แก้ server → จบ
+4. ไม่แน่ใจ? → ถามก่อน อย่าเดา
+
+❌ ห้าม: "น่าจะเป็น..." แล้วลุยแก้
+❌ ห้าม: สมมติว่า backend/frontend return อะไร
+✅ ต้อง: เปิดไฟล์ดูจริง ก่อนแก้
+```
+
 ## Stack
 Laravel 12 + React 19 + PostgreSQL (Neon) + Railway + Reverb
 
