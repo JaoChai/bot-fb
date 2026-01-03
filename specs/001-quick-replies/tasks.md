@@ -84,17 +84,17 @@
 
 ### Implementation for User Story 2
 
-- [ ] T025 [P] [US2] Add `store` action with validation in `backend/app/Http/Controllers/Api/QuickReplyController.php`
-- [ ] T026 [P] [US2] Add `update` action in `backend/app/Http/Controllers/Api/QuickReplyController.php`
-- [ ] T027 [P] [US2] Add `destroy` action in `backend/app/Http/Controllers/Api/QuickReplyController.php`
-- [ ] T028 [P] [US2] Add `toggle` action for is_active in `backend/app/Http/Controllers/Api/QuickReplyController.php`
-- [ ] T029 [P] [US2] Add `reorder` action for sort_order in `backend/app/Http/Controllers/Api/QuickReplyController.php`
-- [ ] T030 [US2] Create QuickRepliesPage with list and CRUD UI in `frontend/src/pages/settings/QuickRepliesPage.tsx`
-- [ ] T031 [US2] Add create/edit dialog component in `frontend/src/pages/settings/QuickRepliesPage.tsx`
-- [ ] T032 [US2] Add delete confirmation in `frontend/src/pages/settings/QuickRepliesPage.tsx`
-- [ ] T033 [US2] Add drag-and-drop reorder in `frontend/src/pages/settings/QuickRepliesPage.tsx`
-- [ ] T034 [US2] Add Quick Replies menu to settings navigation in `frontend/src/components/layout/SettingsSidebar.tsx`
-- [ ] T035 [US2] Add route for Quick Replies page in `frontend/src/App.tsx`
+- [X] T025 [P] [US2] Add `store` action with validation in `backend/app/Http/Controllers/Api/QuickReplyController.php`
+- [X] T026 [P] [US2] Add `update` action in `backend/app/Http/Controllers/Api/QuickReplyController.php`
+- [X] T027 [P] [US2] Add `destroy` action in `backend/app/Http/Controllers/Api/QuickReplyController.php`
+- [X] T028 [P] [US2] Add `toggle` action for is_active in `backend/app/Http/Controllers/Api/QuickReplyController.php`
+- [X] T029 [P] [US2] Add `reorder` action for sort_order in `backend/app/Http/Controllers/Api/QuickReplyController.php`
+- [X] T030 [US2] Create QuickRepliesPage with list and CRUD UI in `frontend/src/pages/settings/QuickRepliesPage.tsx`
+- [X] T031 [US2] Add create/edit dialog component in `frontend/src/pages/settings/QuickRepliesPage.tsx`
+- [X] T032 [US2] Add delete confirmation in `frontend/src/pages/settings/QuickRepliesPage.tsx`
+- [X] T033 [US2] Add drag-and-drop reorder in `frontend/src/pages/settings/QuickRepliesPage.tsx`
+- [X] T034 [US2] Add Quick Replies menu to settings navigation in `frontend/src/components/layout/Sidebar.tsx`
+- [X] T035 [US2] Add route for Quick Replies page in `frontend/src/router.tsx`
 
 **Checkpoint**: Owner can fully manage Quick Replies
 
@@ -108,9 +108,9 @@
 
 ### Implementation for User Story 3
 
-- [ ] T036 [US3] Add search/filter input to QuickReplyList in `frontend/src/components/chat/QuickReplyList.tsx`
-- [ ] T037 [US3] Implement client-side filtering by title and content in `frontend/src/components/chat/QuickReplyList.tsx`
-- [ ] T038 [US3] Add "no results" empty state in `frontend/src/components/chat/QuickReplyList.tsx`
+- [X] T036 [US3] Add search/filter input to QuickReplyList in `frontend/src/components/chat/QuickReplyList.tsx`
+- [X] T037 [US3] Implement client-side filtering by title and content in `frontend/src/components/chat/QuickReplyList.tsx`
+- [X] T038 [US3] Add "no results" empty state in `frontend/src/components/chat/QuickReplyList.tsx`
 
 **Checkpoint**: All user stories complete and independently functional
 
@@ -120,10 +120,10 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T039 [P] Add content length validation warning (5000 bytes) in `frontend/src/pages/settings/QuickRepliesPage.tsx`
-- [ ] T040 [P] Add shortcut format validation (a-z, 0-9, -, _) in `backend/app/Http/Requests/QuickReplyRequest.php`
-- [ ] T041 Add loading states and error handling in all components
-- [ ] T042 Run quickstart.md validation checklist
+- [X] T039 [P] Add content length validation warning (5000 bytes) in `frontend/src/pages/settings/QuickRepliesPage.tsx`
+- [X] T040 [P] Add shortcut format validation (a-z, 0-9, -, _) in `backend/app/Http/Requests/QuickReplyRequest.php`
+- [X] T041 Add loading states and error handling in all components
+- [X] T042 Run quickstart.md validation checklist
 
 ---
 
