@@ -19,10 +19,10 @@
 
 **Purpose**: Database schema and shared types
 
-- [ ] T001 Create migration for quick_replies table in `backend/database/migrations/xxxx_create_quick_replies_table.php`
-- [ ] T002 [P] Create QuickReply model in `backend/app/Models/QuickReply.php`
-- [ ] T003 [P] Create QuickReply TypeScript types in `frontend/src/types/quick-reply.ts`
-- [ ] T004 Run migration to create table
+- [X] T001 Create migration for quick_replies table in `backend/database/migrations/xxxx_create_quick_replies_table.php`
+- [X] T002 [P] Create QuickReply model in `backend/app/Models/QuickReply.php`
+- [X] T003 [P] Create QuickReply TypeScript types in `frontend/src/types/quick-reply.ts`
+- [X] T004 Run migration to create table
 
 ---
 
@@ -32,12 +32,12 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 Create QuickReplyPolicy for Owner-only authorization in `backend/app/Policies/QuickReplyPolicy.php`
-- [ ] T006 [P] Create QuickReplyRequest for validation in `backend/app/Http/Requests/QuickReplyRequest.php`
-- [ ] T007 [P] Create QuickReplyResource for API responses in `backend/app/Http/Resources/QuickReplyResource.php`
-- [ ] T008 Create QuickReplyController with CRUD endpoints in `backend/app/Http/Controllers/Api/QuickReplyController.php`
-- [ ] T009 Register routes in `backend/routes/api.php`
-- [ ] T010 Create useQuickReplies hook with React Query in `frontend/src/hooks/useQuickReplies.ts`
+- [X] T005 Create QuickReplyPolicy for Owner-only authorization in `backend/app/Policies/QuickReplyPolicy.php`
+- [X] T006 [P] Create QuickReplyRequest for validation in `backend/app/Http/Requests/QuickReplyRequest.php`
+- [X] T007 [P] Create QuickReplyResource for API responses in `backend/app/Http/Resources/QuickReplyResource.php`
+- [X] T008 Create QuickReplyController with CRUD endpoints in `backend/app/Http/Controllers/Api/QuickReplyController.php`
+- [X] T009 Register routes in `backend/routes/api.php`
+- [X] T010 Create useQuickReplies hook with React Query in `frontend/src/hooks/useQuickReplies.ts`
 
 **Checkpoint**: API ready - user story implementation can begin
 
@@ -56,14 +56,14 @@
 
 ### Implementation for User Story 1
 
-- [ ] T013 [P] [US1] Add `index` action with is_active filter in `backend/app/Http/Controllers/Api/QuickReplyController.php`
-- [ ] T014 [P] [US1] Add `search` action for shortcut autocomplete in `backend/app/Http/Controllers/Api/QuickReplyController.php`
-- [ ] T015 [US1] Create QuickReplyButton component in `frontend/src/components/chat/QuickReplyButton.tsx`
-- [ ] T016 [US1] Create QuickReplyList popover component in `frontend/src/components/chat/QuickReplyList.tsx`
-- [ ] T017 [US1] Create QuickReplyAutocomplete for `/shortcut` in `frontend/src/components/chat/QuickReplyAutocomplete.tsx`
-- [ ] T018 [US1] Integrate QuickReplyButton into ChatWindow input area in `frontend/src/components/chat/ChatWindow.tsx`
-- [ ] T019 [US1] Integrate QuickReplyAutocomplete into message input in `frontend/src/components/chat/ChatWindow.tsx`
-- [ ] T020 [US1] Connect selection to sendAgentMessage hook in `frontend/src/components/chat/ChatWindow.tsx`
+- [X] T013 [P] [US1] Add `index` action with is_active filter in `backend/app/Http/Controllers/Api/QuickReplyController.php`
+- [X] T014 [P] [US1] Add `search` action for shortcut autocomplete in `backend/app/Http/Controllers/Api/QuickReplyController.php`
+- [X] T015 [US1] Create QuickReplyButton component in `frontend/src/components/chat/QuickReplyButton.tsx`
+- [X] T016 [US1] Create QuickReplyList popover component in `frontend/src/components/chat/QuickReplyList.tsx`
+- [X] T017 [US1] Create QuickReplyAutocomplete for `/shortcut` in `frontend/src/components/chat/QuickReplyAutocomplete.tsx`
+- [X] T018 [US1] Integrate QuickReplyButton into ChatWindow input area in `frontend/src/components/chat/ChatWindow.tsx`
+- [X] T019 [US1] Integrate QuickReplyAutocomplete into message input in `frontend/src/components/chat/ChatWindow.tsx`
+- [X] T020 [US1] Connect selection to sendAgentMessage hook in `frontend/src/components/chat/ChatWindow.tsx`
 
 **Checkpoint**: Agent can use Quick Replies in chat - MVP complete
 
