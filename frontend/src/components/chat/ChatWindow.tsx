@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
-import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -40,13 +39,7 @@ import {
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import type { Conversation, Message, PaginationMeta } from '@/types/api';
-
-// Type for conversations infinite query cache
-interface ConversationsResponse {
-  data: Conversation[];
-  meta: PaginationMeta;
-}
+import type { Conversation, Message } from '@/types/api';
 // Channel-specific components
 import { TelegramMessageBubble } from '@/components/telegram/TelegramMessageBubble';
 import { TelegramMessageInput } from '@/components/telegram/TelegramMessageInput';
@@ -233,7 +226,6 @@ interface ChatWindowProps {
 
 export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHandover }: ChatWindowProps) {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [messageInput, setMessageInput] = useState('');
@@ -268,35 +260,6 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHand
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, autoScroll]);
-
-  // Sync message count from API response to conversations cache
-  // This fixes the bug where message_count becomes stale after switching conversations
-  useEffect(() => {
-    const serverTotal = messagesResponse?.meta?.total;
-    if (serverTotal === undefined || serverTotal === conversation.message_count) {
-      return; // No update needed
-    }
-
-    // Update message_count in conversations-infinite cache using partial key match
-    queryClient.setQueriesData<InfiniteData<ConversationsResponse>>(
-      { queryKey: ['conversations-infinite', botId] },
-      (old) => {
-        if (!old) return old;
-
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            data: page.data.map((conv) =>
-              conv.id === conversation.id
-                ? { ...conv, message_count: serverTotal }
-                : conv
-            ),
-          })),
-        };
-      }
-    );
-  }, [messagesResponse?.meta?.total, conversation.id, conversation.message_count, botId, queryClient]);
 
   // Handle send message (memoized)
   const handleSendMessage = useCallback(async (e: React.FormEvent) => {

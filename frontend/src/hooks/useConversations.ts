@@ -75,13 +75,8 @@ export function useConversations(botId: number | undefined, filters: Conversatio
       return response.data;
     },
     enabled: !!botId,
-    // Hybrid pattern: WebSocket for real-time + refetch on focus for reliability
-    staleTime: 5000,                                            // 5 seconds buffer to prevent race conditions
-    gcTime: 1000 * 60 * 10,
+    // Let global defaults handle caching - WebSocket handles real-time updates
     refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
-    refetchOnWindowFocus: true,                                 // Refetch when tab regains focus
-    refetchOnMount: 'always',                                   // Always refetch on mount (fixes F5 refresh)
-    refetchOnReconnect: true,
   });
 }
 
@@ -126,13 +121,8 @@ export function useInfiniteConversations(botId: number | undefined, filters: Con
       return current_page < last_page ? current_page + 1 : undefined;
     },
     enabled: !!botId,
-    // Hybrid pattern: WebSocket for real-time + refetch on focus for reliability
-    staleTime: 5000,                                          // 5 seconds buffer to prevent race conditions
-    gcTime: 1000 * 60 * 10,                                   // Keep in cache 10 minutes after unmount
-    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,  // Fallback polling when disconnected
-    refetchOnWindowFocus: true,                               // Refetch when tab regains focus (fixes stale data)
-    refetchOnMount: 'always',                                 // Always refetch on mount (fixes F5 refresh)
-    refetchOnReconnect: true,                                 // Refetch on network reconnect
+    // Let global defaults handle caching - WebSocket handles real-time updates
+    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
   });
 }
 
@@ -178,13 +168,8 @@ export function useConversationMessages(
       return response.data;
     },
     enabled: !!botId && !!conversationId,
-    // Hybrid pattern: WebSocket for real-time + refetch on focus for reliability
-    staleTime: 5000,                                          // 5 seconds buffer to prevent race conditions
-    gcTime: 1000 * 60 * 10,                                   // Keep in cache 10 minutes after unmount
-    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,  // Fallback polling when disconnected
-    refetchOnWindowFocus: true,                               // Refetch when tab regains focus (fixes stale data)
-    refetchOnMount: 'always',                                 // Always refetch on mount (fixes F5 refresh)
-    refetchOnReconnect: true,                                 // Refetch on network reconnect
+    // Let global defaults handle caching - WebSocket handles real-time updates
+    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
   });
 }
 
