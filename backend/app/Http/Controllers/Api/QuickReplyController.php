@@ -12,16 +12,13 @@ use Illuminate\Http\Response;
 
 class QuickReplyController extends Controller
 {
-    public function __construct()
-    {
-        $this->authorizeResource(QuickReply::class, 'quick_reply');
-    }
-
     /**
      * List all quick replies for the authenticated user's owner.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
+        $this->authorize('viewAny', QuickReply::class);
+
         $user = $request->user();
         $ownerId = $this->getOwnerId($user);
 
@@ -47,6 +44,8 @@ class QuickReplyController extends Controller
      */
     public function search(Request $request): AnonymousResourceCollection
     {
+        $this->authorize('viewAny', QuickReply::class);
+
         $user = $request->user();
         $ownerId = $this->getOwnerId($user);
 
@@ -66,6 +65,8 @@ class QuickReplyController extends Controller
      */
     public function store(QuickReplyRequest $request): QuickReplyResource
     {
+        $this->authorize('create', QuickReply::class);
+
         $user = $request->user();
 
         $quickReply = QuickReply::create([
@@ -87,6 +88,8 @@ class QuickReplyController extends Controller
      */
     public function show(QuickReply $quickReply): QuickReplyResource
     {
+        $this->authorize('view', $quickReply);
+
         return new QuickReplyResource($quickReply);
     }
 
@@ -95,6 +98,8 @@ class QuickReplyController extends Controller
      */
     public function update(QuickReplyRequest $request, QuickReply $quickReply): QuickReplyResource
     {
+        $this->authorize('update', $quickReply);
+
         $quickReply->update($request->validated());
 
         return new QuickReplyResource($quickReply);
@@ -105,6 +110,8 @@ class QuickReplyController extends Controller
      */
     public function destroy(QuickReply $quickReply): Response
     {
+        $this->authorize('delete', $quickReply);
+
         $quickReply->delete();
 
         return response()->noContent();
