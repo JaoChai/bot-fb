@@ -3,6 +3,7 @@ import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persist
 
 // Query keys that should NOT be persisted (real-time data)
 const NON_PERSISTENT_KEYS = [
+  'bots',
   'conversations',
   'conversations-infinite',
   'conversation-messages',
