@@ -736,8 +736,16 @@ export function useSendAgentMessage(botId: number | undefined) {
 
       // Surgical update: Set needs_response = false for this conversation
       // This is necessary because WebSocket uses toOthers() and doesn't send to the sender
+      // Use predicate function for reliable matching with infinite query keys that include filters
       queryClient.setQueriesData<InfiniteData<ConversationsResponse>>(
-        { queryKey: ['conversations-infinite', botId] },
+        {
+          predicate: (query) => {
+            const key = query.queryKey;
+            return Array.isArray(key) &&
+              key[0] === 'conversations-infinite' &&
+              key[1] === botId;
+          },
+        },
         (old) => {
           if (!old) return old;
           return {
