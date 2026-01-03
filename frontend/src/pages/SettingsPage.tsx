@@ -14,8 +14,11 @@ import {
   Loader2,
   CheckCircle,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  Zap,
+  ChevronRight,
 } from 'lucide-react';
+import { Link } from 'react-router';
 import {
   useUserSettings,
   useUpdateOpenRouterSettings,
@@ -222,6 +225,32 @@ export function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Separator />
+
+      {/* Quick Replies - Owner only */}
+      {user?.role === 'owner' && (
+        <Card className="hover:bg-accent/50 transition-colors">
+          <Link to="/settings/quick-replies">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                    <Zap className="h-5 w-5 text-foreground" />
+                  </div>
+                  <div>
+                    <CardTitle>Quick Replies</CardTitle>
+                    <CardDescription>
+                      จัดการคำตอบสำเร็จรูปสำหรับทีม
+                    </CardDescription>
+                  </div>
+                </div>
+                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </CardHeader>
+          </Link>
+        </Card>
+      )}
 
       <Separator />
 

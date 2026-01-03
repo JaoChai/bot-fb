@@ -57,12 +57,17 @@ export function BotsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [botToDelete, setBotToDelete] = useState<any | null>(null);
   const [togglingBotId, setTogglingBotId] = useState<number | null>(null);
+  // Local state for immediate UI updates - key fix for toggle not updating
+  const [localStatuses, setLocalStatuses] = useState<Record<number, string>>({});
 
   const bots = botsResponse?.data || [];
 
   const handleToggleStatus = useCallback(async (bot: any) => {
-    const newStatus = bot.status === 'active' ? 'inactive' : 'active';
+    const currentStatus = localStatuses[bot.id] ?? bot.status;
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
     setTogglingBotId(bot.id);
+    // Update local state IMMEDIATELY for instant UI feedback
+    setLocalStatuses(prev => ({ ...prev, [bot.id]: newStatus }));
     try {
       // Mutation handles refetch in onSuccess
       await toggleStatusMutation.mutateAsync({ botId: bot.id, status: newStatus });
@@ -71,6 +76,8 @@ export function BotsPage() {
         description: `"${bot.name}" ${newStatus === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}แล้ว`,
       });
     } catch (err) {
+      // Revert local state on error
+      setLocalStatuses(prev => ({ ...prev, [bot.id]: currentStatus }));
       toast({
         title: 'เกิดข้อผิดพลาด',
         description: err instanceof Error ? err.message : 'ไม่สามารถเปลี่ยนสถานะได้',
@@ -79,7 +86,7 @@ export function BotsPage() {
     } finally {
       setTogglingBotId(null);
     }
-  }, [toggleStatusMutation, toast]);
+  }, [toggleStatusMutation, toast, localStatuses]);
 
   const copyWebhookUrl = async (botId: number, webhookUrl: string) => {
     // Validate URL format
@@ -227,18 +234,18 @@ export function BotsPage() {
                           <TooltipTrigger asChild>
                             <div className="flex items-center gap-2 flex-shrink-0">
                               <Switch
-                                checked={bot.status === 'active'}
+                                checked={(localStatuses[bot.id] ?? bot.status) === 'active'}
                                 onCheckedChange={() => handleToggleStatus(bot)}
                                 disabled={togglingBotId === bot.id}
                                 className="data-[state=checked]:bg-emerald-500"
                               />
-                              <span className={`text-xs ${bot.status === 'active' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
-                                {togglingBotId === bot.id ? '...' : getStatusText(bot.status)}
+                              <span className={`text-xs ${(localStatuses[bot.id] ?? bot.status) === 'active' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
+                                {togglingBotId === bot.id ? '...' : getStatusText(localStatuses[bot.id] ?? bot.status)}
                               </span>
                             </div>
                           </TooltipTrigger>
                           <TooltipContent>
-                            {bot.status === 'active' ? 'คลิกเพื่อปิดใช้งาน' : 'คลิกเพื่อเปิดใช้งาน'}
+                            {(localStatuses[bot.id] ?? bot.status) === 'active' ? 'คลิกเพื่อปิดใช้งาน' : 'คลิกเพื่อเปิดใช้งาน'}
                           </TooltipContent>
                         </Tooltip>
                       </div>
