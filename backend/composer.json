@@ -13,7 +13,6 @@
         "laravel/tinker": "^2.10.1",
         "league/flysystem-aws-s3-v3": "^3.0",
         "pgvector/pgvector": "^0.2.2",
-        "predis/predis": "^3.3",
         "sentry/sentry-laravel": "^4.20",
         "smalot/pdfparser": "^2.12"
     },
