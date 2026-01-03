@@ -74,6 +74,17 @@ User แจ้ง Bug
 └─────────────────────────────────────┘
 ```
 
+## ไม่มั่นใจ? ใช้แหล่งอ้างอิงเหล่านี้
+
+| แหล่ง | Tool/Command |
+|-------|--------------|
+| Memory (เคยแก้ไหม?) | `mem-search "keyword"` |
+| LESSONS.md | Read file |
+| Code ที่ work | เปรียบเทียบ 2 ไฟล์ |
+| Logs จริง | `diagnose logs` / `railway_logs` |
+| Codebase patterns | `Grep` หา pattern |
+| Library docs | `Context7` query-docs |
+
 ## Safety Stops (ต้องถาม User)
 
 Destructive | Cost | Security | Ambiguous | Failed 2x
