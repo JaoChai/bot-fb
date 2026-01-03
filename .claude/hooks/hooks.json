@@ -1,6 +1,16 @@
 {
-  "description": "BotFacebook auto-learning system (0 tokens)",
+  "description": "BotFacebook autonomous system hooks",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "[RULE:LOAD] Session starting for BotFacebook (Laravel 12 + React 19). Load relevant rules from mem using tags: [RULE:*][UNIVERSAL], [RULE:*][TECHNOLOGY:Laravel], [RULE:*][TECHNOLOGY:React], [RULE:*][PROJECT:BotFacebook]. Cache rules for this session. Priority: PROJECT > TECHNOLOGY > UNIVERSAL."
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
