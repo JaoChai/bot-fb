@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -33,8 +32,6 @@ import {
   ChevronDown,
   RotateCcw,
   Users,
-  MessageCircleWarning,
-  CheckCircle2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
@@ -221,10 +218,9 @@ interface ChatWindowProps {
   conversation: Conversation;
   onShowInfo: () => void;
   onBack?: () => void;
-  isAutoHandover?: boolean;
 }
 
-export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHandover }: ChatWindowProps) {
+export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWindowProps) {
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -504,57 +500,11 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack, isAutoHand
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
               <h2 className="font-semibold text-sm sm:text-base truncate max-w-[120px] sm:max-w-none">{customerName}</h2>
-              {isTelegram || isAutoHandover ? (
-                // Human-only mode: Show status badge + unread
-                <>
-                  {conversation.status === 'closed' ? (
-                    <Badge variant="secondary" className="text-xs flex-shrink-0 bg-slate-100 text-slate-500">
-                      <CheckCircle2 className="h-3 w-3 mr-1 hidden sm:inline" />
-                      จบแล้ว
-                    </Badge>
-                  ) : conversation.needs_response ? (
-                    <Badge className="text-xs flex-shrink-0 text-white bg-orange-500">
-                      <MessageCircleWarning className="h-3 w-3 mr-1 hidden sm:inline" />
-                      ต้องตอบ
-                    </Badge>
-                  ) : null}
-                  {/* Unread badge */}
-                  {conversation.unread_count > 0 && (
-                    <Badge className="text-xs flex-shrink-0 text-white bg-orange-500">
-                      {conversation.unread_count} ใหม่
-                    </Badge>
-                  )}
-                  {/* Group indicator for Telegram */}
-                  {isTelegram && isGroup && (
-                    <Badge variant="outline" className="text-xs flex-shrink-0 border-[#0088CC]/30 text-[#0088CC]">
-                      <Users className="h-3 w-3 mr-1 hidden sm:inline" />
-                      กลุ่ม
-                    </Badge>
-                  )}
-                </>
-              ) : (
-                // Bot mode: Show bot/handover status + unread
-                <>
-                  {conversation.is_handover ? (
-                    <Badge className="text-xs flex-shrink-0 text-white bg-orange-500">
-                      <Headphones className="h-3 w-3 mr-1 hidden sm:inline" />
-                      รอตอบ
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary" className="text-xs flex-shrink-0 bg-blue-100 text-blue-700">
-                      <Bot className="h-3 w-3 mr-1 hidden sm:inline" />
-                      Bot
-                    </Badge>
-                  )}
-                  {/* Unread badge */}
-                  {conversation.unread_count > 0 && (
-                    <Badge className="text-xs flex-shrink-0 text-white bg-orange-500">
-                      {conversation.unread_count} ใหม่
-                    </Badge>
-                  )}
-                </>
+              {/* LINE OA style green dot - shows when needs response */}
+              {conversation.needs_response && conversation.status !== 'closed' && (
+                <span className="h-3 w-3 rounded-full bg-[#06C755] flex-shrink-0" />
               )}
             </div>
             <p className="text-xs text-muted-foreground truncate">
