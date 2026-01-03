@@ -30,6 +30,88 @@
 RECEIVE → RESEARCH → SPEC → PLAN → TASKS → ISSUE → EXECUTE → VERIFY → COMMIT → LEARN
 ```
 
+## Feature Development Workflow (Full Auto)
+
+```
+User ขอ Feature ใหม่
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 1. RESEARCH                         │
+│    → mem-search "feature keyword"   │
+│    → Explore codebase หา pattern    │
+│    → ดูว่ามี code คล้ายๆ ไหม         │
+└─────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 2. SPEC (ระบุให้ชัด)                 │
+│    → Feature ทำอะไร?                │
+│    → User story คืออะไร?            │
+│    → Scope อะไรบ้าง? อะไรไม่ทำ?      │
+│    → Tool: /speckit.specify         │
+└─────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 3. PLAN (วางแผนเทคนิค)               │
+│    → Backend: API/DB อะไรบ้าง?      │
+│    → Frontend: Component ไหน?       │
+│    → ไฟล์ที่ต้องแก้/สร้าง            │
+│    → Tool: /speckit.plan            │
+└─────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 4. TASKS (แตก task ย่อย)             │
+│    → แบ่งเป็น task เล็กๆ             │
+│    → เรียงลำดับ dependency          │
+│    → Tool: /speckit.tasks           │
+└─────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 5. GitHub Issue                     │
+│    → Title: Feature: [ชื่อ feature]  │
+│    → Body: Spec + Plan + Tasks      │
+│    → (สร้างเพื่อ track)              │
+└─────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 6. EXECUTE (ทำทีละ task)             │
+│    → ทำตาม task list                │
+│    → Commit ทุก task ที่เสร็จ        │
+│    → Tool: /speckit.implement       │
+└─────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 7. VERIFY                           │
+│    → npm run build ผ่าน?            │
+│    → ทดสอบ feature ทำงาน?           │
+│    → E2E test (ถ้ามี)               │
+└─────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 8. DEPLOY + LEARN                   │
+│    → Deploy to production           │
+│    → Close Issue                    │
+│    → บันทึก LESSONS.md ถ้าเรียนรู้อะไร│
+└─────────────────────────────────────┘
+```
+
+### Feature Checklist (ก่อนเริ่ม Execute)
+
+```
+□ Spec ชัดเจน? (รู้ว่าทำอะไร)
+□ Plan สมเหตุสมผล? (รู้ว่าทำยังไง)
+□ Tasks แตกย่อยแล้ว?
+□ มี pattern ใน codebase ให้ดูไหม?
+□ GitHub Issue สร้างแล้ว?
+```
+
 ## Bug Fixing Workflow (Full Auto)
 
 ```
