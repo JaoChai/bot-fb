@@ -99,6 +99,33 @@ User แจ้ง Bug
 | `mem-search` | ❌ | **Hint เท่านั้น** ต้อง verify |
 | LESSONS.md | ⚠️ | Pattern ทั่วไป OK, specific อาจ outdated |
 
+### Anti-Overconfidence Protocol (บังคับ)
+
+**ก่อนบอกว่า "มั่นใจ X%":**
+```
+□ มีหลักฐานจาก realtime data? (logs/code จริง)
+□ Reproduce bug ได้ไหม? (เห็นปัญหาเกิดขึ้นจริง)
+□ ถ้าแก้แล้วผิด จะรู้ได้ยังไง?
+□ มี alternative explanation ไหม?
+```
+
+**Confidence Level ที่ถูกต้อง:**
+| Level | Criteria |
+|-------|----------|
+| 90%+ | เห็น root cause ใน logs + มี code ที่ work เปรียบเทียบ |
+| 80% | เห็น root cause ใน logs หรือ code |
+| 70% | มี hypothesis ที่สมเหตุสมผล แต่ยังไม่ confirm |
+| <70% | **ต้องหาข้อมูลเพิ่ม ห้ามแก้** |
+
+### Verification Methods
+
+| ประเภท Fix | วิธี Verify |
+|------------|------------|
+| UI ไม่อัพเดท | User ลองกดดู / Playwright test |
+| API Error | `curl` endpoint / ดู logs |
+| Data ไม่ถูก | Query database ดู |
+| Deploy ไม่ขึ้น | `railway_logs` / `curl -I` |
+
 ## ไม่มั่นใจ? ใช้แหล่งอ้างอิงเหล่านี้
 
 | แหล่ง | Tool/Command |
