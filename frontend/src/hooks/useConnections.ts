@@ -113,28 +113,19 @@ export function useToggleBotStatus() {
       return { previousBots };
     },
     onSuccess: (updatedBot, { botId }) => {
-      // Update cache with actual API response for immediate UI update
-      queryClient.setQueryData(queryKeys.bots.lists(), (old: { data: Bot[] } | undefined) => {
-        if (!old) return old;
-        return {
-          ...old,
-          data: old.data.map((bot) =>
-            bot.id === botId ? { ...bot, ...updatedBot } : bot
-          ),
-        };
-      });
-      // Update detail cache
+      // Update detail cache with API response
       queryClient.setQueryData(queryKeys.bots.detail(botId), updatedBot);
-      // Invalidate bots list to ensure fresh data on navigation
-      queryClient.invalidateQueries({ queryKey: queryKeys.bots.lists() });
-      // Invalidate dashboard
-      queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] });
     },
     onError: (_err, _variables, context) => {
       // Rollback to previous value on error
       if (context?.previousBots) {
         queryClient.setQueryData(queryKeys.bots.lists(), context.previousBots);
       }
+    },
+    // Always refetch after error or success (per TanStack Query docs)
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.bots.lists() });
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] });
     },
   });
 }
