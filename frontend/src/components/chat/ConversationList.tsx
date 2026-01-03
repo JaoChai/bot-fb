@@ -169,7 +169,7 @@ const ConversationItem = memo(function ConversationItem({
 }: ConversationItemProps) {
   const isTelegram = conversation.channel_type === 'telegram';
   const isClosed = conversation.status === 'closed';
-  const needsResponse = conversation.needs_response ?? true;
+  const hasUnread = conversation.unread_count > 0;
   const isGroup = isTelegram && (
     conversation.telegram_chat_type === 'group' ||
     conversation.telegram_chat_type === 'supergroup'
@@ -225,15 +225,15 @@ const ConversationItem = memo(function ConversationItem({
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <span className={cn('font-medium truncate', needsResponse && !isClosed && 'font-semibold')}>
+          <span className={cn('font-medium truncate', hasUnread && !isClosed && 'font-semibold')}>
             {customerName}
           </span>
           <div className="flex items-center gap-2 flex-shrink-0">
             <span className="text-xs text-muted-foreground">
               {lastMessageTime}
             </span>
-            {/* LINE OA style green dot - shows when needs response */}
-            {needsResponse && !isClosed && (
+            {/* LINE OA style green dot - shows when has unread messages */}
+            {hasUnread && !isClosed && (
               <span className="h-3 w-3 rounded-full bg-[#06C755]" />
             )}
           </div>

@@ -502,8 +502,8 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h2 className="font-semibold text-sm sm:text-base truncate max-w-[120px] sm:max-w-none">{customerName}</h2>
-              {/* LINE OA style green dot - shows when needs response */}
-              {conversation.needs_response && conversation.status !== 'closed' && (
+              {/* LINE OA style green dot - shows when has unread messages */}
+              {conversation.unread_count > 0 && conversation.status !== 'closed' && (
                 <span className="h-3 w-3 rounded-full bg-[#06C755] flex-shrink-0" />
               )}
             </div>
