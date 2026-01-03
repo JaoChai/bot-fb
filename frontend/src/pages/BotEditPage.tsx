@@ -13,6 +13,7 @@ import { Separator } from '@/components/ui/separator';
 
 // Hooks
 import { useBots } from '@/hooks/useKnowledgeBase';
+import { useUpdateConnection } from '@/hooks/useConnections';
 
 // API
 import { apiPost } from '@/lib/api';
@@ -76,6 +77,7 @@ export function BotEditPage() {
   const numericBotId = botId ? parseInt(botId, 10) : null;
 
   const { data: botsResponse, isLoading: isLoadingBots } = useBots();
+  const updateMutation = useUpdateConnection(numericBotId);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
@@ -124,18 +126,22 @@ export function BotEditPage() {
   };
 
   const handleSave = async () => {
+    if (!numericBotId) return;
     setIsSaving(true);
     try {
-      // TODO: Implement actual save API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await updateMutation.mutateAsync({
+        name: formState.name,
+        status: formState.status,
+        channel_type: formState.channelType,
+      });
       toast({
         title: 'บันทึกสำเร็จ',
         description: 'การตั้งค่าถูกบันทึกเรียบร้อยแล้ว',
       });
-    } catch {
+    } catch (error) {
       toast({
         title: 'เกิดข้อผิดพลาด',
-        description: 'ไม่สามารถบันทึกการตั้งค่าได้',
+        description: error instanceof Error ? error.message : 'ไม่สามารถบันทึกการตั้งค่าได้',
         variant: 'destructive',
       });
     } finally {
