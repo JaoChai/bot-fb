@@ -7,9 +7,8 @@ nixPkgs = ["nodejs_20"]
 cmds = ["npm ci"]
 
 [phases.build]
-# Build and copy serve.json config for cache headers
-cmds = ["npm run build", "cp serve.json dist/serve.json"]
+cmds = ["npm run build"]
 
 [start]
-# serve.json: no-cache for index.html, long cache for hashed assets
-cmd = "npx serve dist -l ${PORT:-3000}"
+# Express server with proper cache headers for SPA
+cmd = "node server.js"
