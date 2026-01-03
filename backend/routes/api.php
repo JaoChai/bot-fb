@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\UserSettingController;
 use App\Http\Controllers\Api\EvaluationController;
 use App\Http\Controllers\Api\AgentApprovalController;
 use App\Http\Controllers\Api\ImprovementController;
+use App\Http\Controllers\Api\QuickReplyController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -95,6 +96,18 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/test-line', [UserSettingController::class, 'testLine'])->name('settings.line.test');
         Route::delete('/openrouter', [UserSettingController::class, 'clearOpenRouter'])->name('settings.openrouter.clear');
         Route::delete('/line', [UserSettingController::class, 'clearLine'])->name('settings.line.clear');
+    });
+
+    // Quick Replies routes
+    Route::prefix('quick-replies')->group(function () {
+        Route::get('/', [QuickReplyController::class, 'index'])->name('quick-replies.index');
+        Route::get('/search', [QuickReplyController::class, 'search'])->name('quick-replies.search');
+        Route::post('/', [QuickReplyController::class, 'store'])->name('quick-replies.store');
+        Route::get('/{quick_reply}', [QuickReplyController::class, 'show'])->name('quick-replies.show');
+        Route::put('/{quick_reply}', [QuickReplyController::class, 'update'])->name('quick-replies.update');
+        Route::delete('/{quick_reply}', [QuickReplyController::class, 'destroy'])->name('quick-replies.destroy');
+        Route::post('/{quick_reply}/toggle', [QuickReplyController::class, 'toggle'])->name('quick-replies.toggle');
+        Route::post('/reorder', [QuickReplyController::class, 'reorder'])->name('quick-replies.reorder');
     });
 
     // Bot routes

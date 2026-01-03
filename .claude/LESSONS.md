@@ -22,6 +22,9 @@
 - ใช้ GitHub Issue track งาน
 - ดู production logs ก่อนเดา
 - Test locally ก่อน deploy
+- **2 fix ไม่ work = หยุด** → recheck root cause หรือถาม user
+- **อย่า fix ซ้อน fix** → ลบ complexity แทนเพิ่ม code
+- **Self-learning = ทำเลย** → ไม่ต้องขออนุญาต update LESSONS.md
 
 ---
 *Auto-learning: เพิ่มบทเรียนใหม่เมื่อเจอปัญหา*

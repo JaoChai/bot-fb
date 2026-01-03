@@ -1,6 +1,6 @@
 export interface QuickReply {
   id: number;
-  team_id: number;
+  user_id: number;
   shortcut: string;
   title: string;
   content: string;

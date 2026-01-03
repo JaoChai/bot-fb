@@ -136,4 +136,14 @@ export const queryKeys = {
     suggestions: (botId: number, sessionId: number) =>
       [...queryKeys.improvements.detail(botId, sessionId), 'suggestions'] as const,
   },
+  // Quick Replies
+  quickReplies: {
+    all: ['quickReplies'] as const,
+    lists: () => [...queryKeys.quickReplies.all, 'list'] as const,
+    list: (filters?: Record<string, unknown>) =>
+      [...queryKeys.quickReplies.lists(), filters] as const,
+    details: () => [...queryKeys.quickReplies.all, 'detail'] as const,
+    detail: (id: number) => [...queryKeys.quickReplies.details(), id] as const,
+    search: (query: string) => [...queryKeys.quickReplies.all, 'search', query] as const,
+  },
 } as const;

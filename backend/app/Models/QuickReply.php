@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class QuickReply extends Model
 {
     protected $fillable = [
-        'team_id',
+        'user_id',
         'shortcut',
         'title',
         'content',
@@ -23,9 +23,9 @@ class QuickReply extends Model
         'sort_order' => 'integer',
     ];
 
-    public function team(): BelongsTo
+    public function user(): BelongsTo
     {
-        return $this->belongsTo(Team::class);
+        return $this->belongsTo(User::class);
     }
 
     public function creator(): BelongsTo
@@ -38,9 +38,9 @@ class QuickReply extends Model
         return $query->where('is_active', true);
     }
 
-    public function scopeForTeam($query, int $teamId)
+    public function scopeForUser($query, int $userId)
     {
-        return $query->where('team_id', $teamId);
+        return $query->where('user_id', $userId);
     }
 
     public function scopeOrdered($query)
