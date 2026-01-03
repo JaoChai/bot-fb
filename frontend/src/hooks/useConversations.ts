@@ -75,7 +75,8 @@ export function useConversations(botId: number | undefined, filters: Conversatio
       return response.data;
     },
     enabled: !!botId,
-    // Let global defaults handle caching - WebSocket handles real-time updates
+    // Always refetch on mount - conversations are real-time data
+    staleTime: 0,
     refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
   });
 }
@@ -88,6 +89,8 @@ export function useInfiniteConversations(botId: number | undefined, filters: Con
 
   return useInfiniteQuery({
     queryKey: ['conversations-infinite', botId, filters],
+    // Always refetch on mount - conversations are real-time data
+    staleTime: 0,
     queryFn: async ({ pageParam = 1 }) => {
       const params = new URLSearchParams();
 
@@ -168,7 +171,8 @@ export function useConversationMessages(
       return response.data;
     },
     enabled: !!botId && !!conversationId,
-    // Let global defaults handle caching - WebSocket handles real-time updates
+    // Always refetch on mount - messages are real-time data
+    staleTime: 0,
     refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
   });
 }
