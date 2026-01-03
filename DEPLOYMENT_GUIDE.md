@@ -75,12 +75,9 @@ DB_DATABASE=neondb
 DB_USERNAME=neon_user
 DB_PASSWORD=your-neon-password
 
-# Cache & Queue
-CACHE_STORE=redis
-QUEUE_CONNECTION=redis
-REDIS_HOST=your-redis-host
-REDIS_PASSWORD=your-redis-password
-REDIS_PORT=6379
+# Cache & Queue (ใช้ database แทน Redis เพื่อหลีกเลี่ยง quota limits)
+CACHE_STORE=array
+QUEUE_CONNECTION=database
 
 # Session
 SESSION_DRIVER=cookie
