@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Link } from 'react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
+import { queryKeys } from '@/lib/query';
 import {
   Tooltip,
   TooltipContent,
@@ -46,7 +48,8 @@ import {
 import { ChannelIcon } from '@/components/ui/channel-icon';
 
 export function BotsPage() {
-  const { data: botsResponse, isLoading, error, refetch } = useBots();
+  const queryClient = useQueryClient();
+  const { data: botsResponse, isLoading, error } = useBots();
   const toggleStatusMutation = useToggleBotStatus();
   const { toast } = useToast();
   const [copiedId, setCopiedId] = useState<number | null>(null);
@@ -56,13 +59,16 @@ export function BotsPage() {
 
   const bots = botsResponse?.data || [];
 
-  const handleToggleStatus = async (bot: any) => {
+  const handleToggleStatus = useCallback(async (bot: any) => {
     const newStatus = bot.status === 'active' ? 'inactive' : 'active';
     setTogglingBotId(bot.id);
     try {
       await toggleStatusMutation.mutateAsync({ botId: bot.id, status: newStatus });
-      // Force refetch to ensure UI updates immediately
-      await refetch();
+      // Force refetch queries to ensure UI updates - use refetchQueries for better control
+      await queryClient.refetchQueries({
+        queryKey: queryKeys.bots.lists(),
+        type: 'active',
+      });
       toast({
         title: newStatus === 'active' ? 'เปิดใช้งานแล้ว' : 'ปิดใช้งานแล้ว',
         description: `"${bot.name}" ${newStatus === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}แล้ว`,
@@ -76,7 +82,7 @@ export function BotsPage() {
     } finally {
       setTogglingBotId(null);
     }
-  };
+  }, [toggleStatusMutation, queryClient, toast]);
 
   const copyWebhookUrl = async (botId: number, webhookUrl: string) => {
     // Validate URL format
@@ -121,7 +127,7 @@ export function BotsPage() {
         title: 'ลบแล้ว',
         description: `"${botToDelete.name}" ลบเรียบร้อยแล้ว`,
       });
-      refetch();
+      await queryClient.refetchQueries({ queryKey: queryKeys.bots.lists(), type: 'active' });
     } catch (err) {
       toast({
         title: 'เกิดข้อผิดพลาด',
