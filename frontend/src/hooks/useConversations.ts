@@ -317,6 +317,7 @@ export function useToggleHandover(botId: number | undefined) {
 
 /**
  * Hook to mark conversation as read
+ * Uses optimistic update for instant UI feedback (LINE OA style)
  */
 export function useMarkAsRead(botId: number | undefined) {
   const queryClient = useQueryClient();
@@ -328,11 +329,60 @@ export function useMarkAsRead(botId: number | undefined) {
       );
       return response.data;
     },
-    onSuccess: (_, conversationId) => {
-      queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
-      queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
-      // Also invalidate stats which tracks unread counts
+    onMutate: async (conversationId) => {
+      // Cancel outgoing refetches to prevent overwriting optimistic update
+      await queryClient.cancelQueries({ queryKey: ['conversations-infinite', botId] });
+
+      // Snapshot for rollback
+      const previousData = queryClient.getQueriesData<InfiniteData<ConversationsResponse>>({
+        predicate: (query) => {
+          const key = query.queryKey;
+          return Array.isArray(key) &&
+            key[0] === 'conversations-infinite' &&
+            key[1] === botId;
+        },
+      });
+
+      // Optimistically set unread_count = 0 (instant UI update)
+      queryClient.setQueriesData<InfiniteData<ConversationsResponse>>(
+        {
+          predicate: (query) => {
+            const key = query.queryKey;
+            return Array.isArray(key) &&
+              key[0] === 'conversations-infinite' &&
+              key[1] === botId;
+          },
+        },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              data: page.data.map((conv) =>
+                conv.id === conversationId
+                  ? { ...conv, unread_count: 0 }
+                  : conv
+              ),
+            })),
+          };
+        }
+      );
+
+      return { previousData };
+    },
+    onError: (_err, _conversationId, context) => {
+      // Rollback on error
+      if (context?.previousData) {
+        context.previousData.forEach(([queryKey, data]) => {
+          if (data) {
+            queryClient.setQueryData(queryKey, data);
+          }
+        });
+      }
+    },
+    onSettled: () => {
+      // Invalidate stats (lightweight query for sidebar counts)
       queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
     },
   });
