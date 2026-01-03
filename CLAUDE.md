@@ -7,21 +7,65 @@
 | 1 | ห้ามเดา | ดูจริงก่อนแก้ (เปิดไฟล์/curl/logs) |
 | 2 | ห้ามแก้มัว | 2 รอบไม่หาย → หยุด ถาม User |
 | 3 | ใช้ Memory | `mem-search` ก่อนทำทุกครั้ง |
-| 4 | เรียนรู้ | ผิด → บันทึก LESSONS.md ทันที |
+| 4 | เรียนรู้ | ผิด → บันทึกลง mem พร้อม tags |
 | 5 | **ห้ามถามเรื่อง learning** | บันทึกเอง commit เอง ไม่ต้องขออนุญาต |
 
 ## Self-Learning Protocol (ห้ามถาม ทำเลย)
 
 ```
 เมื่อเกิดเหตุการณ์ต่อไปนี้:
-├── ทำผิด/แก้ไม่ได้        → บันทึก LESSONS.md ทันที
-├── เรียนรู้วิธีใหม่        → บันทึก LESSONS.md ทันที
-├── เจอ pattern ที่ดี      → บันทึก LESSONS.md ทันที
-└── ถูก user ท้าทาย/แก้ไข  → บันทึก LESSONS.md ทันที
+├── ทำผิด/แก้ไม่ได้        → บันทึกลง mem พร้อม tags
+├── เรียนรู้วิธีใหม่        → บันทึกลง mem พร้อม tags
+├── เจอ pattern ที่ดี      → บันทึกลง mem พร้อม tags
+└── ถูก user ท้าทาย/แก้ไข  → บันทึกลง mem พร้อม tags
 
 ❌ ห้าม: "ต้องการให้ผมเพิ่มไหมครับ?"
 ❌ ห้าม: "ควรบันทึกเรื่องนี้ไหม?"
-✅ ต้อง: Edit → Commit → Push → แจ้ง user ว่าทำแล้ว
+✅ ต้อง: ทำงาน → mem records auto → แจ้ง user ว่าเรียนรู้แล้ว
+```
+
+### Tagging Convention (บังคับ)
+
+**เมื่อเรียนรู้สิ่งใหม่ ใส่ tags ใน narrative:**
+
+```
+Format: [CATEGORY][SCOPE] description...
+
+Categories:
+├── [PROCESS]      วิธีทำงานที่ดี
+├── [MISTAKE]      ข้อผิดพลาดที่ทำ
+├── [PATTERN]      รูปแบบ code ที่ดี
+├── [ARCHITECTURE] การออกแบบระบบ
+└── [GOTCHA]       กับดักที่ต้องระวัง
+
+Scopes:
+├── [UNIVERSAL]           ใช้ได้ทุก project
+├── [TECHNOLOGY:xxx]      เฉพาะ tech (Laravel, React, etc.)
+└── [PROJECT:BotFacebook] เฉพาะ project นี้
+```
+
+**ตัวอย่าง:**
+```
+[PATTERN][UNIVERSAL] ใช้ local state + refetch สำหรับ toggle UI
+[GOTCHA][TECHNOLOGY:Laravel] config('x','') returns null ใช้ ?? '' แทน
+[PROCESS][UNIVERSAL] 2 รอบไม่หาย → หยุด หา root cause
+[MISTAKE][TECHNOLOGY:React] ลืมใส่ dependency ใน useCallback
+```
+
+### ค้นหา Lessons
+
+```bash
+# หา pattern ทั้งหมด
+mem-search "[PATTERN]"
+
+# หา gotcha ของ Laravel
+mem-search "[GOTCHA][TECHNOLOGY:Laravel]"
+
+# หาสิ่งที่ใช้ได้ทุก project
+mem-search "[UNIVERSAL]"
+
+# หา mistake ที่เคยทำ
+mem-search "[MISTAKE]"
 ```
 
 ## Work Loop
@@ -87,7 +131,7 @@ User ขอ Feature ใหม่
 ┌─────────────────────────────────────┐
 │ 7. DEPLOY + LEARN                   │
 │    → git push (auto deploy)         │
-│    → บันทึก LESSONS.md ถ้าเรียนรู้    │
+│    → mem records lessons พร้อม tags │
 └─────────────────────────────────────┘
 ```
 
@@ -155,7 +199,7 @@ User แจ้ง Bug
      ▼
 ┌─────────────────────────────────────┐
 │ 6. Verify (Deploy ≠ Done)           │
-│    ✅ work → Close Issue + LESSONS  │
+│    ✅ work → Close Issue + mem tags │
 │    ❌ ไม่ work → Update Issue กลับข้อ 2│
 │    ❌ 2 รอบไม่หาย → หยุด ถาม User    │
 └─────────────────────────────────────┘
@@ -200,7 +244,7 @@ timeline(anchor=14820, depth_before=3, depth_after=3, project="BotFacebook")
 | Read files | ✅ | **Source of Truth** |
 | Grep | ✅ | **Source of Truth** |
 | `mem-search` | ❌ | **Hint เท่านั้น** ต้อง verify |
-| LESSONS.md | ⚠️ | Pattern ทั่วไป OK, specific อาจ outdated |
+| mem tags | ⚠️ | Pattern ทั่วไป OK, specific อาจ outdated |
 
 ### Anti-Overconfidence Protocol (บังคับ)
 
@@ -234,7 +278,7 @@ timeline(anchor=14820, depth_before=3, depth_after=3, project="BotFacebook")
 | แหล่ง | Tool/Command |
 |-------|--------------|
 | Memory (เคยแก้ไหม?) | `mem-search "keyword"` |
-| LESSONS.md | Read file |
+| Lessons (mem) | `mem-search "[PATTERN]"` หรือ `[GOTCHA]` |
 | Code ที่ work | เปรียบเทียบ 2 ไฟล์ |
 | Logs จริง | `diagnose logs` / `railway_logs` |
 | Codebase patterns | `Grep` หา pattern |
@@ -301,7 +345,7 @@ Destructive | Cost | Security | Ambiguous | Failed 2x
 ┌─────────────────────────────────────┐
 │ 3. APPLY: ใช้ความรู้ใหม่             │
 │    → สรุปสั้นๆ ให้ User              │
-│    → บันทึก LESSONS.md ถ้า reusable │
+│    → mem records พร้อม tags ถ้า reusable │
 └─────────────────────────────────────┘
 ```
 
