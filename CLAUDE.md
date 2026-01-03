@@ -27,7 +27,8 @@
 ## Work Loop
 
 ```
-RECEIVE → RESEARCH → SPEC → PLAN → TASKS → ISSUE → EXECUTE → VERIFY → COMMIT → LEARN
+Feature: RESEARCH → SPEC → PLAN → TASKS → EXECUTE → VERIFY → DEPLOY → LEARN
+Bug:     MEMORY → VERIFY → ISSUE → RECHECK → FIX → VERIFY → LEARN
 ```
 
 ## Feature Development Workflow (Full Auto)
@@ -45,71 +46,56 @@ User ขอ Feature ใหม่
      │
      ▼
 ┌─────────────────────────────────────┐
-│ 2. SPEC (ระบุให้ชัด)                 │
+│ 2. SPEC → /speckit.specify          │
+│    → Output: specs/xxx/spec.md      │
 │    → Feature ทำอะไร?                │
-│    → User story คืออะไร?            │
-│    → Scope อะไรบ้าง? อะไรไม่ทำ?      │
-│    → Tool: /speckit.specify         │
+│    → User story, Scope              │
 └─────────────────────────────────────┘
      │
      ▼
 ┌─────────────────────────────────────┐
-│ 3. PLAN (วางแผนเทคนิค)               │
-│    → Backend: API/DB อะไรบ้าง?      │
-│    → Frontend: Component ไหน?       │
-│    → ไฟล์ที่ต้องแก้/สร้าง            │
-│    → Tool: /speckit.plan            │
+│ 3. PLAN → /speckit.plan             │
+│    → Output: specs/xxx/plan.md      │
+│    → Backend: API/DB                │
+│    → Frontend: Component/hooks      │
 └─────────────────────────────────────┘
      │
      ▼
 ┌─────────────────────────────────────┐
-│ 4. TASKS (แตก task ย่อย)             │
-│    → แบ่งเป็น task เล็กๆ             │
-│    → เรียงลำดับ dependency          │
-│    → Tool: /speckit.tasks           │
+│ 4. TASKS → /speckit.tasks           │
+│    → Output: specs/xxx/tasks.md     │
+│    → แบ่ง task ย่อย + dependency    │
 └─────────────────────────────────────┘
      │
      ▼
 ┌─────────────────────────────────────┐
-│ 5. GitHub Issue                     │
-│    → Title: Feature: [ชื่อ feature]  │
-│    → Body: Spec + Plan + Tasks      │
-│    → (สร้างเพื่อ track)              │
-└─────────────────────────────────────┘
-     │
-     ▼
-┌─────────────────────────────────────┐
-│ 6. EXECUTE (ทำทีละ task)             │
-│    → ทำตาม task list                │
+│ 5. EXECUTE → /speckit.implement     │
+│    → ทำตาม tasks.md ทีละข้อ         │
 │    → Commit ทุก task ที่เสร็จ        │
-│    → Tool: /speckit.implement       │
 └─────────────────────────────────────┘
      │
      ▼
 ┌─────────────────────────────────────┐
-│ 7. VERIFY                           │
+│ 6. VERIFY                           │
 │    → npm run build ผ่าน?            │
 │    → ทดสอบ feature ทำงาน?           │
-│    → E2E test (ถ้ามี)               │
 └─────────────────────────────────────┘
      │
      ▼
 ┌─────────────────────────────────────┐
-│ 8. DEPLOY + LEARN                   │
-│    → Deploy to production           │
-│    → Close Issue                    │
-│    → บันทึก LESSONS.md ถ้าเรียนรู้อะไร│
+│ 7. DEPLOY + LEARN                   │
+│    → git push (auto deploy)         │
+│    → บันทึก LESSONS.md ถ้าเรียนรู้    │
 └─────────────────────────────────────┘
 ```
 
 ### Feature Checklist (ก่อนเริ่ม Execute)
 
 ```
-□ Spec ชัดเจน? (รู้ว่าทำอะไร)
-□ Plan สมเหตุสมผล? (รู้ว่าทำยังไง)
-□ Tasks แตกย่อยแล้ว?
+□ spec.md ชัดเจน? (รู้ว่าทำอะไร)
+□ plan.md สมเหตุสมผล? (รู้ว่าทำยังไง)
+□ tasks.md แตกย่อยแล้ว?
 □ มี pattern ใน codebase ให้ดูไหม?
-□ GitHub Issue สร้างแล้ว?
 ```
 
 ## Bug Fixing Workflow (Full Auto)
