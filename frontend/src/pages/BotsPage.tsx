@@ -61,6 +61,8 @@ export function BotsPage() {
     setTogglingBotId(bot.id);
     try {
       await toggleStatusMutation.mutateAsync({ botId: bot.id, status: newStatus });
+      // Force refetch to ensure UI updates immediately
+      await refetch();
       toast({
         title: newStatus === 'active' ? 'เปิดใช้งานแล้ว' : 'ปิดใช้งานแล้ว',
         description: `"${bot.name}" ${newStatus === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}แล้ว`,
