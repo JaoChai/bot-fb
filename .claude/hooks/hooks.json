@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "[RULE:LOAD] Session starting for BotFacebook (Laravel 12 + React 19). Load relevant rules from mem using tags: [RULE:*][UNIVERSAL], [RULE:*][TECHNOLOGY:Laravel], [RULE:*][TECHNOLOGY:React], [RULE:*][PROJECT:BotFacebook]. Cache rules for this session. Priority: PROJECT > TECHNOLOGY > UNIVERSAL."
+            "prompt": "[SESSION:INIT] BotFacebook (Laravel 12 + React 19). Auto-load from mem: 1) Rules: [RULE:*][UNIVERSAL], [RULE:*][TECHNOLOGY:Laravel|React], [RULE:*][PROJECT:BotFacebook] - Priority: PROJECT>TECH>UNIVERSAL. 2) Tools: [MCP:REGISTRY], [SKILL:REGISTRY] for tools-manager. 3) Budget: Apply token limits per task size. Cache all for session."
           }
         ]
       }
