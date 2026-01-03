@@ -72,10 +72,6 @@ export function ChatPage() {
     setSearchParams({ botId: targetBotId.toString() }, { replace: true });
   }, [botId, isBotsLoading, bots, lastUsedBotId, setSearchParams]);
 
-  // Get selected bot's config (after bots is defined)
-  const selectedBot = bots.find((b) => b.id === botId);
-  const isAutoHandover = selectedBot?.auto_handover ?? false;
-
   // Memoize filters to prevent unnecessary query re-creations
   // No status filtering - show all conversations with badge-only approach
   const filters = useMemo<ConversationFilters>(() => ({
@@ -362,7 +358,6 @@ export function ChatPage() {
           hasNextPage={hasNextPage}
           isFetchingNextPage={isFetchingNextPage}
           fetchNextPage={fetchNextPage}
-          isAutoHandover={isAutoHandover}
         />
       </div>
 
@@ -377,7 +372,6 @@ export function ChatPage() {
             conversation={selectedConversation}
             onShowInfo={handleShowInfo}
             onBack={handleBackToList}
-            isAutoHandover={isAutoHandover}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">

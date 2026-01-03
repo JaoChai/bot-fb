@@ -1,10 +1,9 @@
 import { useEffect, useRef, memo, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Loader2, MessageCircle, Bot, Headphones, Users, CheckCircle2, MessageCircleWarning } from 'lucide-react';
+import { Search, Loader2, MessageCircle, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Short time format for Thai (e.g., "16น." instead of "16 นาที")
@@ -42,8 +41,6 @@ interface ConversationListProps {
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
   fetchNextPage?: () => void;
-  // Auto handover mode - shows different badges
-  isAutoHandover?: boolean;
 }
 
 export function ConversationList({
@@ -56,7 +53,6 @@ export function ConversationList({
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
-  isAutoHandover = false,
 }: ConversationListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   // Derive isTelegram from conversations (all from same bot)
@@ -123,7 +119,6 @@ export function ConversationList({
                 conversation={conversation}
                 isSelected={conversation.id === selectedId}
                 onSelect={onSelect}
-                isAutoHandover={isAutoHandover}
               />
             ))}
 
@@ -148,7 +143,6 @@ interface ConversationItemProps {
   conversation: Conversation;
   isSelected: boolean;
   onSelect: (conversation: Conversation) => void;
-  isAutoHandover?: boolean;
 }
 
 // Skeleton loading component for conversation list
@@ -161,19 +155,17 @@ function ConversationSkeleton() {
           <Skeleton className="h-4 w-24" />
           <Skeleton className="h-3 w-10" />
         </div>
-        <Skeleton className="h-3 w-16" />
-        <Skeleton className="h-5 w-20" />
+        <Skeleton className="h-3 w-32" />
       </div>
     </div>
   );
 }
 
-// Memoized conversation item - handles all channel types
+// Memoized conversation item - LINE OA style with green dot
 const ConversationItem = memo(function ConversationItem({
   conversation,
   isSelected,
   onSelect,
-  isAutoHandover = false,
 }: ConversationItemProps) {
   const isTelegram = conversation.channel_type === 'telegram';
   const isClosed = conversation.status === 'closed';
@@ -189,7 +181,6 @@ const ConversationItem = memo(function ConversationItem({
     : conversation.customer_profile?.display_name || 'Unknown';
 
   const customerInitial = customerName.charAt(0).toUpperCase();
-  const hasUnread = conversation.unread_count > 0;
 
   // Format time in short form (e.g., "16น." instead of "16 นาที")
   const lastMessageTime = conversation.last_message_at
@@ -206,52 +197,46 @@ const ConversationItem = memo(function ConversationItem({
     onSelect(conversation);
   }, [onSelect, conversation]);
 
-  // Human-only mode: both Telegram and auto_handover
-  const isHumanOnly = isTelegram || isAutoHandover;
-
-  // Row styling based on human-only mode state - unified orange color for urgent
+  // Simple row styling - no orange highlighting
   const rowClassName = cn(
     'w-full p-3 rounded-lg flex items-start gap-3 text-left transition-colors cursor-pointer',
     'min-h-[72px]',
     isSelected && 'bg-accent',
-    // Human-only mode styling - unified orange for needs_response
-    isHumanOnly && !isClosed && needsResponse && !isSelected && 'bg-orange-50 border-l-4 border-orange-500 hover:bg-orange-100',
-    isHumanOnly && isClosed && 'opacity-60',
-    // Default styling
-    !isSelected && !(isHumanOnly && needsResponse && !isClosed) && 'hover:bg-accent/50 active:bg-accent'
+    isClosed && 'opacity-60',
+    !isSelected && 'hover:bg-accent/50 active:bg-accent'
   );
-
 
   return (
     <button
       onClick={handleClick}
       className={rowClassName}
     >
-      {/* Avatar with unread indicator */}
-      <div className="relative">
-        <Avatar className={cn(
-          'h-12 w-12 md:h-10 md:w-10',
-          isTelegram && 'bg-[#0088CC]/10'
-        )}>
-          <AvatarImage src={conversation.customer_profile?.picture_url || undefined} />
-          <AvatarFallback className={isTelegram ? 'bg-[#0088CC]/10 text-[#0088CC]' : undefined}>
-            {isGroup ? <Users className="h-5 w-5" /> : customerInitial}
-          </AvatarFallback>
-        </Avatar>
-        {hasUnread && (
-          <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-orange-500" />
-        )}
-      </div>
+      {/* Avatar */}
+      <Avatar className={cn(
+        'h-12 w-12 md:h-10 md:w-10 flex-shrink-0',
+        isTelegram && 'bg-[#0088CC]/10'
+      )}>
+        <AvatarImage src={conversation.customer_profile?.picture_url || undefined} />
+        <AvatarFallback className={isTelegram ? 'bg-[#0088CC]/10 text-[#0088CC]' : undefined}>
+          {isGroup ? <Users className="h-5 w-5" /> : customerInitial}
+        </AvatarFallback>
+      </Avatar>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <span className={cn('font-medium truncate', hasUnread && 'font-semibold')}>
+          <span className={cn('font-medium truncate', needsResponse && !isClosed && 'font-semibold')}>
             {customerName}
           </span>
-          <span className="text-xs text-muted-foreground flex-shrink-0">
-            {lastMessageTime}
-          </span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className="text-xs text-muted-foreground">
+              {lastMessageTime}
+            </span>
+            {/* LINE OA style green dot - shows when needs response */}
+            {needsResponse && !isClosed && (
+              <span className="h-3 w-3 rounded-full bg-[#06C755]" />
+            )}
+          </div>
         </div>
 
         {/* Last message preview */}
@@ -267,50 +252,6 @@ const ConversationItem = memo(function ConversationItem({
             </span>
           </div>
         )}
-
-        {/* Status badges - always visible */}
-        <div className="flex items-center gap-1.5 mt-1">
-          {isHumanOnly ? (
-            // Human-only mode: Always show status badge
-            isClosed ? (
-              <Badge variant="secondary" className="text-xs h-5 gap-1 bg-slate-100 text-slate-500">
-                <CheckCircle2 className="h-3 w-3" />
-                จบแล้ว
-              </Badge>
-            ) : needsResponse ? (
-              <Badge className="text-xs h-5 gap-1 text-white bg-orange-500">
-                <MessageCircleWarning className="h-3 w-3" />
-                ต้องตอบ
-              </Badge>
-            ) : null // ตอบแล้ว รอลูกค้า - no badge needed
-          ) : (
-            // Normal mode: Show bot/handover status
-            conversation.is_handover ? (
-              <Badge className="text-xs h-5 gap-1 text-white bg-orange-500">
-                <Headphones className="h-3 w-3" />
-                รอตอบ
-              </Badge>
-            ) : (
-              <Badge variant="secondary" className="text-xs h-5 gap-1 bg-blue-100 text-blue-700">
-                <Bot className="h-3 w-3" />
-                Bot
-              </Badge>
-            )
-          )}
-          {/* Unread badge */}
-          {hasUnread && (
-            <Badge className="text-xs h-5 bg-orange-500 hover:bg-orange-500 text-white">
-              {conversation.unread_count} ใหม่
-            </Badge>
-          )}
-          {/* Group indicator for Telegram */}
-          {isTelegram && isGroup && (
-            <Badge variant="outline" className="text-xs h-5 gap-1 border-[#0088CC]/30 text-[#0088CC]">
-              <Users className="h-3 w-3" />
-              กลุ่ม
-            </Badge>
-          )}
-        </div>
       </div>
     </button>
   );
