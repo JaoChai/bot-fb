@@ -1,231 +1,86 @@
-# CLAUDE.md - BotFacebook
+# CLAUDE.md - Autonomous Mode
 
-## STOP! อ่านก่อนทำอะไร
+## Core Rules (ห้ามละเมิด)
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  🚨 กฎเหล็กข้อ 1: ห้ามทำเลย ต้องวางแผนก่อน                   │
-├─────────────────────────────────────────────────────────────┤
-│  1. สร้าง GitHub Issue วางแผนก่อน                           │
-│  2. รอ User approve                                         │
-│  3. ทำตาม plan เท่านั้น ไม่ข้ามไปเรื่องอื่น                   │
-│  4. เสร็จแล้ว close issue                                   │
-└─────────────────────────────────────────────────────────────┘
+| # | Rule | Action |
+|---|------|--------|
+| 1 | ห้ามเดา | ดูจริงก่อนแก้ (เปิดไฟล์/curl/logs) |
+| 2 | ห้ามแก้มัว | 2 รอบไม่หาย → หยุด ถาม User |
+| 3 | ใช้ Memory | `mem-search` ก่อนทำทุกครั้ง |
+| 4 | เรียนรู้ | ผิด → บันทึก LESSONS.md ทันที |
 
-┌─────────────────────────────────────────────────────────────┐
-│  🚨 กฎเหล็กข้อ 2: ดูจริง ก่อนแก้                             │
-├─────────────────────────────────────────────────────────────┤
-│  ❌ ห้าม: "น่าจะเป็น..." → ลุยแก้                            │
-│  ❌ ห้าม: เดาว่า API return อะไร                             │
-│  ❌ ห้าม: แก้ 2 รอบไม่หาย แล้วลุยต่อ                         │
-│                                                             │
-│  ✅ ต้อง: เปิดไฟล์ดูจริง → แล้วค่อยแก้                       │
-│  ✅ ต้อง: ไม่มั่นใจ → วิเคราะห์ + ค้นหาก่อน ไม่เดา           │
-│  ✅ ต้อง: 2 รอบไม่หาย → หยุด ถาม user                        │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│  🚨 กฎเหล็กข้อ 3: วิเคราะห์ต้องถูก 100% แก้ไม่ซับซ้อน        │
-├─────────────────────────────────────────────────────────────┤
-│  • เรื่องง่ายหรือยาก → มาตรฐานเดียวกัน                       │
-│  • ปัญหาง่าย → แก้ง่าย (อย่าทำให้ซับซ้อน)                    │
-│  • ปัญหายาก → แยกเป็นขั้นตอน แก้ทีละจุด                      │
-│  • ห้ามแก้พัลวัน ต้องแก้ตรงจุด                               │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│  🚨 กฎเหล็กข้อ 4: ใช้ Memory เรียนรู้และจำ                   │
-├─────────────────────────────────────────────────────────────┤
-│  ก่อนแก้ปัญหาใดๆ:                                           │
-│  1. mem-search "keyword" → เคยเจอ/แก้ไหม?                   │
-│  2. ถ้าเคย → ใช้วิธีเดิมที่ work                             │
-│  3. ถ้ายังไม่เคย → วิเคราะห์ใหม่ บันทึกไว้                   │
-│                                                             │
-│  ❌ ห้าม: แก้ปัญหาเดิมซ้ำๆ โดยไม่ดู memory                   │
-│  ✅ ต้อง: เช็ค memory ก่อนทุกครั้ง                           │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│  🚨 กฎเหล็กข้อ 5: เรียนรู้ด้วยตัวเอง (Self-Learning)         │
-├─────────────────────────────────────────────────────────────┤
-│  เมื่อแก้ผิด / ไม่มั่นใจ:                                    │
-│  1. หยุดทันที → วิเคราะห์ว่าผิดตรงไหน                        │
-│  2. บันทึกลง LESSONS.md ทันที:                              │
-│     "ปัญหา X → ผิดเพราะ Y → วิธีถูกคือ Z"                   │
-│  3. แก้ไขให้ถูก                                             │
-│                                                             │
-│  ❌ ห้าม: ปล่อยผ่าน ไม่เรียนรู้                              │
-│  ❌ ห้าม: ทำผิดซ้ำ โดยไม่จำ                                  │
-│  ✅ ต้อง: บันทึกทุกความผิดพลาด → เรียนรู้ → ไม่ทำซ้ำ         │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Workflow บังคับ: GitHub Issue First
+## Work Loop (Autonomous)
 
 ```
-User บอกปัญหา/ขอ feature
-         │
-         ▼
-┌─────────────────────────────┐
-│ 1. วิเคราะห์ปัญหา            │
-│    - ดูข้อมูลจริง            │
-│    - ค้นหา GitHub Issues     │
-│    - ค้นหา memory            │
-│    - ไม่มั่นใจ → ค้นหาเพิ่ม   │
-└─────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────┐
-│ 2. สร้าง GitHub Issue       │
-│    - Root cause (จากข้อมูลจริง)│
-│    - แผนแก้ไข               │
-│    - ไฟล์ที่จะแก้            │
-│    - ความมั่นใจ: X%          │
-└─────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────┐
-│ 3. รอ User Approve          │
-│    User พิมพ์ "gogogo"       │
-│    ❌ ห้ามทำก่อน approve     │
-└─────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────┐
-│ 4. ⚠️ RECHECK ก่อนทำ                     │
-│    อ่าน Issue ซ้ำ ถามตัวเอง:             │
-│    □ Root cause ถูกไหม?                 │
-│    □ แผนสมเหตุสมผลไหม?                  │
-│    □ มีอะไรที่พลาดไปไหม?                 │
-│    □ ถ้าไม่มั่นใจ → บอก User ก่อนทำ       │
-└─────────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────┐
-│ 5. ทำตาม Plan เท่านั้น       │
-│    ❌ ห้ามข้ามไปเรื่องอื่น    │
-│    ❌ ห้ามเพิ่ม scope        │
-└─────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────┐
-│ 6. Close Issue เมื่อเสร็จ    │
-└─────────────────────────────┘
+RECEIVE → RESEARCH → SPEC → PLAN → TASKS → ISSUE → EXECUTE → VERIFY → COMMIT → LEARN
 ```
 
-## Decision Tree - เลือก Checklist
+| Phase | Action | Output |
+|-------|--------|--------|
+| 1. Receive | รับงาน ถามให้ชัด | เข้าใจ requirement |
+| 2. Research | mem-search + ดูจริง | ข้อมูลครบ |
+| 3. Spec | `/speckit.specify` | `.specify/specs/x.md` |
+| 4. Plan | `/speckit.plan` | `.specify/plans/x.md` |
+| 5. Tasks | `/speckit.tasks` | `.specify/tasks/x.md` |
+| 6. Issue | `gh issue create` | GitHub Issue #XX |
+| 7. Execute | `/speckit.implement` | Code changes |
+| 8. Verify | Build + Test | Pass/Fail |
+| 9. Commit | Push + Close Issue | Done |
+| 10. Learn | บันทึก Memory | จำไว้ |
 
+## Safety Stops (ต้องถาม User)
+
+- **Destructive**: delete, migrate:fresh, drop, force push
+- **Cost**: paid API, infrastructure change
+- **Security**: auth, API keys, permissions
+- **Ambiguous**: ไม่ชัดเจน, หลายทางเลือก
+- **Failed 2x**: แก้ 2 รอบไม่หาย
+
+## Session Checklist
+
+**Start:**
 ```
-User บอกปัญหา
-    │
-    ├─ "API/Toggle/Data ไม่ทำงาน"
-    │   └─ ไป → [Checklist A: API Issues]
-    │
-    ├─ "Deploy แล้วไม่เห็น/Cache"
-    │   └─ ไป → [Checklist B: Deploy Issues]
-    │
-    ├─ "Error/พัง/500"
-    │   └─ ไป → [Checklist C: Debug Issues]
-    │
-    └─ "เพิ่ม Feature"
-        └─ ไป → [Checklist D: New Feature]
-```
-
----
-
-## Checklist A: API Issues
-
-```
-□ 1. มี GitHub Issue เกี่ยวกับเรื่องนี้ไหม?
-     gh issue list --search "keyword"
-     → ถ้ามี อ่านก่อน อาจมีคำตอบแล้ว
-
-□ 2. Backend return อะไร?
-     → เปิด Controller ดู return statement จริง
-     → จด: return { ??? }
-
-□ 3. Frontend expect อะไร?
-     → เปิด hook/component ดู type จริง
-     → จด: expect type { ??? }
-
-□ 4. ตรงกันไหม?
-     → ถ้าไม่ตรง แก้ให้ตรง → จบ
-     → ถ้าตรง ปัญหาอยู่ที่อื่น → ถาม user
+□ CLAUDE.md □ LESSONS.md □ mem-search □ gh issue list □ .specify/specs/
 ```
 
-## Checklist B: Deploy Issues
-
+**End:**
 ```
-□ 1. Production serve อะไรอยู่?
-     curl -I https://www.botjao.com/
-     → จด headers ที่เห็น
-
-□ 2. Headers ถูกต้องไหม?
-     → index.html ต้อง no-cache
-     → assets/*.js ต้อง immutable
-
-□ 3. ถ้าไม่ถูก → แก้ server config
-□ 4. Test local ก่อน deploy
-□ 5. Deploy แล้ว curl -I อีกครั้ง verify
+□ งานค้าง → Issue □ บทเรียน → LESSONS.md □ สรุป → Memory
 ```
 
-## Checklist C: Debug Issues
+## Stack & URLs
 
-```
-□ 1. ดู actual error ก่อน
-     → diagnose logs / railway_logs
-     → จด error message จริง
-
-□ 2. Search memory
-     → mem-search "error message"
-     → เคยแก้ไหม? แก้ยังไง?
-
-□ 3. ถ้าแก้ 2 รอบไม่หาย → หยุด ถาม user
-```
-
-## Checklist D: New Feature
-
-```
-□ 1. เข้า Plan Mode ก่อน
-□ 2. วางแผน → ให้ user approve
-□ 3. Implement ตาม plan
-□ 4. npm run build ก่อน commit
-```
-
----
-
-## Quick Reference
-
-| Command | ใช้เมื่อ |
-|---------|---------|
-| `ccc` | context+compact |
-| `nnn` | plan |
-| `gogogo` | execute |
-| `gh issue list` | หา issue ที่เกี่ยวข้อง |
-| `curl -I URL` | ดู headers จริง |
-
-## Stack
-Laravel 12 + React 19 + PostgreSQL (Neon) + Railway + Reverb
-
-## URLs
-- Frontend: `https://www.botjao.com`
-- Backend: `https://api.botjao.com`
+| Item | Value |
+|------|-------|
+| Stack | Laravel 12 + React 19 + Neon + Railway |
+| Frontend | https://www.botjao.com |
+| Backend | https://api.botjao.com |
 
 ## MCP Tools
-| Tool | Purpose |
-|------|---------|
-| `diagnose` | Health check (all, backend, logs, railway) |
-| `fix` | Apply fixes (clear_cache, optimize, migrate) |
-| `bot_manage` | Bot/Flow/KB operations |
-| `execute` | railway_status, railway_logs, tinker |
 
-## Gotchas (ปัญหาที่เจอบ่อย)
-| Issue | Fix |
-|-------|-----|
-| `config('x','')` returns null | `config('x') ?? ''` |
-| API return wrapped `{data: X}` | ต้อง `response.data` |
-| serve.json ไม่ work บน Railway | ใช้ Express server แทน |
+| Tool | Use |
+|------|-----|
+| `diagnose` | logs, railway, all |
+| `fix` | clear_cache, migrate |
+| `bot_manage` | bot/flow/kb ops |
+| `execute` | tinker, railway_logs |
+
+## Gotchas
+
+| Problem | Fix |
+|---------|-----|
+| `config('x','')` null | `config('x') ?? ''` |
+| API wrapped `{data:X}` | `response.data` |
+| serve.json fail | Express server |
+
+## Spec-Kit Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/speckit.specify` | What/Why |
+| `/speckit.plan` | How |
+| `/speckit.tasks` | Task breakdown |
+| `/speckit.implement` | Execute |
 
 ---
-
-*อัพเดท: 3 ม.ค. 2026 - Refactor ให้ฉลาดขึ้น*
+*Autonomous Mode - No gogogo needed*
