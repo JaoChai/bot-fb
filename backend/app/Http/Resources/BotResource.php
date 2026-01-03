@@ -18,6 +18,10 @@ class BotResource extends JsonResource
             'page_id' => $this->page_id,
             'webhook_url' => $this->webhook_url,
 
+            // Channel credentials (for debugging)
+            'channel_access_token' => $this->channel_access_token,
+            'channel_secret' => $this->channel_secret,
+
             // LLM Settings (legacy)
             'llm_model' => $this->llm_model,
             'llm_fallback_model' => $this->llm_fallback_model,
