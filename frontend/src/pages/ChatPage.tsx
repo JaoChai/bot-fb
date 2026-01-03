@@ -143,7 +143,7 @@ export function ChatPage() {
         }
       );
 
-      // Update conversation list with new message info (without full refetch)
+      // Update conversation list and move to top (sorted by last_message_at)
       queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
         ['conversations-infinite', botId, filters],
         (old) => {
@@ -151,26 +151,63 @@ export function ChatPage() {
 
           const nowNeedsResponse = event.sender === 'user';
 
+          // Flatten all conversations from all pages
+          const allConversations = old.pages.flatMap((page) => page.data);
+
+          // Find and update the conversation
+          const conversationIndex = allConversations.findIndex(
+            (conv) => conv.id === event.conversation_id
+          );
+
+          if (conversationIndex === -1) return old; // Conversation not in list
+
+          // Create updated conversation with new last_message from event
+          const existingConv = allConversations[conversationIndex];
+          const updatedConv: Conversation = {
+            ...existingConv,
+            last_message_at: event.conversation?.last_message_at ?? event.created_at,
+            message_count: event.conversation?.message_count ?? existingConv.message_count + 1,
+            unread_count: existingConv.id === selectedConversationId
+              ? 0
+              : (event.conversation?.unread_count ?? existingConv.unread_count + 1),
+            needs_response: nowNeedsResponse,
+            // Update last_message preview from event data
+            last_message: {
+              id: event.id,
+              conversation_id: event.conversation_id,
+              sender: event.sender,
+              content: event.content,
+              type: event.type,
+              media_url: event.media_url,
+              media_type: event.media_type,
+              media_metadata: null,
+              model_used: null,
+              prompt_tokens: null,
+              completion_tokens: null,
+              cost: null,
+              external_message_id: null,
+              reply_to_message_id: null,
+              sentiment: null,
+              intents: null,
+              created_at: event.created_at,
+              updated_at: event.created_at,
+            },
+          };
+
+          // Remove from current position and add to top
+          allConversations.splice(conversationIndex, 1);
+          allConversations.unshift(updatedConv);
+
+          // Redistribute back into pages (keeping page sizes)
+          let offset = 0;
           return {
             ...old,
-            pages: old.pages.map((page) => ({
-              ...page,
-              data: page.data.map((conv) =>
-                conv.id === event.conversation_id
-                  ? {
-                      ...conv,
-                      last_message_at: event.conversation?.last_message_at ?? event.created_at,
-                      message_count: event.conversation?.message_count ?? conv.message_count + 1,
-                      // Use unread_count from event if available, otherwise increment
-                      unread_count: conv.id === selectedConversationId
-                        ? 0
-                        : (event.conversation?.unread_count ?? conv.unread_count + 1),
-                      // Update needs_response based on message sender
-                      needs_response: nowNeedsResponse,
-                    }
-                  : conv
-              ),
-            })),
+            pages: old.pages.map((page) => {
+              const pageSize = page.data.length;
+              const pageData = allConversations.slice(offset, offset + pageSize);
+              offset += pageSize;
+              return { ...page, data: pageData };
+            }),
           };
         }
       );
