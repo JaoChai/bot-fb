@@ -270,6 +270,104 @@ Destructive | Cost | Security | Ambiguous | Failed 2x
 | **Task breakdown** | `/speckit.tasks` |
 | **Execute plan** | `/speckit.implement` |
 
+## Realtime Search Protocol (เรื่องใหม่)
+
+```
+เมื่อเจอ Topic ใหม่ที่ไม่รู้จัก:
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 1. CHECK: เรื่องใหม่จริงไหม?         │
+│    → mem-search(topic) → เคยทำ?     │
+│    → memory มี? → ใช้ memory ก่อน    │
+│    → memory ไม่มี/outdated? → ข้อ 2 │
+└─────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 2. SEARCH: ค้นหา Token-Efficient    │
+│    Priority Order:                  │
+│    ① Context7 (library docs)        │
+│      → resolve-library-id ก่อน      │
+│      → query-docs เฉพาะที่ต้องการ    │
+│    ② WebSearch (best practices)     │
+│      → ใส่ปี 2025-2026 ใน query     │
+│      → เลือกผลลัพธ์ที่ตรงที่สุด      │
+│    ③ WebFetch (ดึงรายละเอียด)        │
+│      → เฉพาะ URL ที่จำเป็น          │
+└─────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 3. APPLY: ใช้ความรู้ใหม่             │
+│    → สรุปสั้นๆ ให้ User              │
+│    → บันทึก LESSONS.md ถ้า reusable │
+└─────────────────────────────────────┘
+```
+
+### Token Efficiency Rules
+
+| Situation | Action | Tokens |
+|-----------|--------|--------|
+| Library/Framework | Context7 ก่อน | ~500-2k |
+| Best Practice 2025+ | WebSearch | ~1k |
+| Specific Page | WebFetch | ~2-5k |
+| ❌ ไม่รู้จะหาอะไร | ❌ อย่า search มัว | save |
+
+### Search Justification (ต้องมี)
+
+```
+ก่อน Realtime Search ถามตัวเอง:
+□ Memory ไม่มีจริงหรือ outdated?
+□ ต้องการข้อมูลนี้จริงๆ ไหม?
+□ ใช้ Context7 (docs) ได้ไหม แทน WebSearch?
+□ search query เฉพาะเจาะจงพอไหม?
+```
+
+## Autonomous Tool Orchestration
+
+```
+┌─────────────────────────────────────┐
+│ UNDERSTAND → RECALL → SELECT → DO   │
+│                                     │
+│ คิด วิเคราะห์ เข้าใจ context         │
+│        ↓                            │
+│ ดึง Memory (mem-search)             │
+│        ↓                            │
+│ เลือก Tools ที่เหมาะสม (auto)        │
+│        ↓                            │
+│ ทำทันที ไม่ต้องถาม                   │
+│        ↓                            │
+│ วัดผล + เรียนรู้                     │
+└─────────────────────────────────────┘
+```
+
+### Auto-Invoke Rules
+
+| Need | Auto-Use |
+|------|----------|
+| ค้นหา codebase ซับซ้อน | Task → Explore agent |
+| วางแผน feature | Task → Plan agent |
+| Review code ก่อน commit | Task → code-reviewer |
+| Debug Laravel 500 | Skill → laravel-debugging |
+| Test E2E | Skill → e2e-test |
+| Design UI | Skill → ui-ux-pro-max |
+| Library docs | MCP → Context7 |
+| Database query | MCP → Neon |
+| Error tracking | MCP → Sentry |
+| UI automation | MCP → Playwright |
+| System health | MCP → botfacebook (diagnose) |
+| Deploy/logs | MCP → botfacebook (execute) |
+
+### Multi-Tool Parallel
+
+```
+ถ้า task ต้องการหลาย tools:
+✅ เรียกพร้อมกันได้ ถ้าไม่ depend กัน
+✅ ใช้ run_in_background สำหรับ long-running
+❌ อย่ารอทีละ tool ถ้าไม่จำเป็น
+```
+
 ## Quick Reference
 
 | Item | Value |
