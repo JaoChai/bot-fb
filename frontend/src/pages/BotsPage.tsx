@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { queryKeys } from '@/lib/query';
+// Note: queryClient kept for handleDeleteConfirm
 import {
   Tooltip,
   TooltipContent,
@@ -63,12 +64,8 @@ export function BotsPage() {
     const newStatus = bot.status === 'active' ? 'inactive' : 'active';
     setTogglingBotId(bot.id);
     try {
+      // Mutation handles refetch in onSuccess
       await toggleStatusMutation.mutateAsync({ botId: bot.id, status: newStatus });
-      // Force refetch queries to ensure UI updates - use refetchQueries for better control
-      await queryClient.refetchQueries({
-        queryKey: queryKeys.bots.lists(),
-        type: 'active',
-      });
       toast({
         title: newStatus === 'active' ? 'เปิดใช้งานแล้ว' : 'ปิดใช้งานแล้ว',
         description: `"${bot.name}" ${newStatus === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}แล้ว`,
@@ -82,7 +79,7 @@ export function BotsPage() {
     } finally {
       setTogglingBotId(null);
     }
-  }, [toggleStatusMutation, queryClient, toast]);
+  }, [toggleStatusMutation, toast]);
 
   const copyWebhookUrl = async (botId: number, webhookUrl: string) => {
     // Validate URL format
