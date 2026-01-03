@@ -1,6 +1,6 @@
 # CLAUDE.md - Autonomous Mode
 
-## Core Rules (ห้ามละเมิด)
+## Core Rules
 
 | # | Rule | Action |
 |---|------|--------|
@@ -9,61 +9,49 @@
 | 3 | ใช้ Memory | `mem-search` ก่อนทำทุกครั้ง |
 | 4 | เรียนรู้ | ผิด → บันทึก LESSONS.md ทันที |
 
-## Work Loop (Autonomous)
+## Work Loop
 
 ```
 RECEIVE → RESEARCH → SPEC → PLAN → TASKS → ISSUE → EXECUTE → VERIFY → COMMIT → LEARN
 ```
 
-| Phase | Action | Output |
-|-------|--------|--------|
-| 1. Receive | รับงาน ถามให้ชัด | เข้าใจ requirement |
-| 2. Research | mem-search + ดูจริง | ข้อมูลครบ |
-| 3. Spec | `/speckit.specify` | `.specify/specs/x.md` |
-| 4. Plan | `/speckit.plan` | `.specify/plans/x.md` |
-| 5. Tasks | `/speckit.tasks` | `.specify/tasks/x.md` |
-| 6. Issue | `gh issue create` | GitHub Issue #XX |
-| 7. Execute | `/speckit.implement` | Code changes |
-| 8. Verify | Build + Test | Pass/Fail |
-| 9. Commit | Push + Close Issue | Done |
-| 10. Learn | บันทึก Memory | จำไว้ |
-
 ## Safety Stops (ต้องถาม User)
 
-- **Destructive**: delete, migrate:fresh, drop, force push
-- **Cost**: paid API, infrastructure change
-- **Security**: auth, API keys, permissions
-- **Ambiguous**: ไม่ชัดเจน, หลายทางเลือก
-- **Failed 2x**: แก้ 2 รอบไม่หาย
+Destructive | Cost | Security | Ambiguous | Failed 2x
 
-## Session Checklist
+## Tool Selection Guide
 
-**Start:**
-```
-□ CLAUDE.md □ LESSONS.md □ mem-search □ gh issue list □ .specify/specs/
-```
+### เมื่อไหร่ใช้อะไร
 
-**End:**
-```
-□ งานค้าง → Issue □ บทเรียน → LESSONS.md □ สรุป → Memory
-```
+| Situation | Tool |
+|-----------|------|
+| **System health/logs** | `diagnose` (MCP) |
+| **Clear cache/migrate** | `fix` (MCP) |
+| **Bot/Flow/KB ops** | `bot_manage` (MCP) |
+| **Railway deploy/logs** | `execute` (MCP) |
+| **Database query** | `mcp__neon__run_sql` |
+| **Error tracking** | `mcp__sentry__*` |
+| **UI testing** | `mcp__playwright__*` |
+| **ค้นหา codebase** | Task → `Explore` agent |
+| **วางแผน implementation** | Task → `Plan` agent |
+| **Review code** | Task → `code-reviewer` agent |
+| **Debug Laravel 500** | Skill → `laravel-debugging` |
+| **E2E testing** | Skill → `e2e-test` |
+| **Design UI** | Skill → `ui-ux-pro-max` |
+| **Debug LINE** | Skill → `line-expert` |
+| **Check migration safety** | Skill → `migration-validator` |
+| **Feature spec** | `/speckit.specify` |
+| **Technical plan** | `/speckit.plan` |
+| **Task breakdown** | `/speckit.tasks` |
+| **Execute plan** | `/speckit.implement` |
 
-## Stack & URLs
+## Quick Reference
 
 | Item | Value |
 |------|-------|
 | Stack | Laravel 12 + React 19 + Neon + Railway |
 | Frontend | https://www.botjao.com |
 | Backend | https://api.botjao.com |
-
-## MCP Tools
-
-| Tool | Use |
-|------|-----|
-| `diagnose` | logs, railway, all |
-| `fix` | clear_cache, migrate |
-| `bot_manage` | bot/flow/kb ops |
-| `execute` | tinker, railway_logs |
 
 ## Gotchas
 
@@ -73,14 +61,5 @@ RECEIVE → RESEARCH → SPEC → PLAN → TASKS → ISSUE → EXECUTE → VERIF
 | API wrapped `{data:X}` | `response.data` |
 | serve.json fail | Express server |
 
-## Spec-Kit Commands
-
-| Command | Purpose |
-|---------|---------|
-| `/speckit.specify` | What/Why |
-| `/speckit.plan` | How |
-| `/speckit.tasks` | Task breakdown |
-| `/speckit.implement` | Execute |
-
 ---
-*Autonomous Mode - No gogogo needed*
+*Autonomous Mode - เลือก tool ถูก ทำได้เอง*
