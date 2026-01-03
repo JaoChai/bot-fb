@@ -95,3 +95,16 @@ export {
   useIsTablet,
   useIsDesktop,
 } from './useMediaQuery';
+
+export {
+  useQuickReplies,
+  useActiveQuickReplies,
+  useQuickReplySearch,
+  useQuickReply,
+  useCreateQuickReply,
+  useUpdateQuickReply,
+  useDeleteQuickReply,
+  useToggleQuickReply,
+  useReorderQuickReplies,
+  useQuickReplyOperations,
+} from './useQuickReplies';

@@ -42,6 +42,10 @@ import { TelegramMessageBubble } from '@/components/telegram/TelegramMessageBubb
 import { TelegramMessageInput } from '@/components/telegram/TelegramMessageInput';
 import { LINEMessageBubble } from '@/components/line/LINEMessageBubble';
 import { LINEMessageInput } from '@/components/line/LINEMessageInput';
+// Quick Reply components
+import { QuickReplyButton } from '@/components/chat/QuickReplyButton';
+import { QuickReplyAutocomplete } from '@/components/chat/QuickReplyAutocomplete';
+import type { QuickReply } from '@/types/quick-reply';
 
 const channelLabels: Record<string, string> = {
   line: 'LINE',
@@ -223,9 +227,11 @@ interface ChatWindowProps {
 export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWindowProps) {
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [messageInput, setMessageInput] = useState('');
   const [selectedMedia, setSelectedMedia] = useState<File | null>(null);
+  const [showQuickReplyAutocomplete, setShowQuickReplyAutocomplete] = useState(false);
 
   // Channel detection
   const isTelegram = conversation.channel_type === 'telegram';
@@ -437,6 +443,40 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
       });
     }
   }, [clearContext, conversation.id, toast]);
+
+  // Handle quick reply selection - sends the content as a message
+  const handleQuickReplySelect = useCallback(async (quickReply: QuickReply) => {
+    setShowQuickReplyAutocomplete(false);
+    setMessageInput('');
+
+    try {
+      const result = await sendAgentMessage.mutateAsync({
+        conversationId: conversation.id,
+        data: { content: quickReply.content },
+      });
+
+      if (result.delivery_error) {
+        toast({
+          title: 'บันทึกข้อความแล้ว แต่ส่งไม่สำเร็จ',
+          description: result.delivery_error,
+          variant: 'destructive',
+        });
+      }
+    } catch {
+      toast({
+        title: 'เกิดข้อผิดพลาด',
+        description: 'ไม่สามารถส่งข้อความได้',
+        variant: 'destructive',
+      });
+    }
+  }, [sendAgentMessage, conversation.id, toast]);
+
+  // Handle message input change with quick reply detection
+  const handleMessageInputChange = useCallback((value: string) => {
+    setMessageInput(value);
+    // Show autocomplete when input starts with / and is at beginning
+    setShowQuickReplyAutocomplete(value.match(/^\/[a-z0-9_-]*$/i) !== null);
+  }, []);
 
   // Memoize contextClearedAt to prevent recreating Date objects on each render
   const contextClearedAt = useMemo(() =>
@@ -683,14 +723,29 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
             isLoading={sendAgentMessage.isPending}
           />
         ) : conversation.is_handover ? (
-          // Other channels: Handover mode - show basic text input
+          // Other channels: Handover mode - show basic text input with Quick Reply
           <form onSubmit={handleSendMessage} className="p-2 sm:p-3">
             <div className="flex gap-2 max-w-3xl mx-auto">
+              {/* Quick Reply Button */}
+              <QuickReplyButton
+                onSelect={handleQuickReplySelect}
+                disabled={sendAgentMessage.isPending}
+              />
               <div className="flex-1 relative">
+                {/* Quick Reply Autocomplete */}
+                {showQuickReplyAutocomplete && (
+                  <QuickReplyAutocomplete
+                    inputValue={messageInput}
+                    onSelect={handleQuickReplySelect}
+                    onClose={() => setShowQuickReplyAutocomplete(false)}
+                    anchorRef={inputRef}
+                  />
+                )}
                 <Input
+                  ref={inputRef}
                   value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  placeholder="พิมพ์ข้อความ..."
+                  onChange={(e) => handleMessageInputChange(e.target.value)}
+                  placeholder="พิมพ์ข้อความ หรือ / เพื่อเลือก Quick Reply..."
                   disabled={sendAgentMessage.isPending}
                   className="pr-12 min-h-[44px] text-base sm:text-sm"
                   autoFocus
@@ -712,7 +767,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
               </Button>
             </div>
             <p className="text-center text-xs text-muted-foreground mt-2 hidden sm:block">
-              โหมดตอบเอง - ข้อความจะส่งถึงลูกค้าโดยตรง
+              โหมดตอบเอง - พิมพ์ / เพื่อใช้ Quick Reply
             </p>
           </form>
         ) : (
