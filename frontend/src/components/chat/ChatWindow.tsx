@@ -738,7 +738,6 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
                     inputValue={messageInput}
                     onSelect={handleQuickReplySelect}
                     onClose={() => setShowQuickReplyAutocomplete(false)}
-                    anchorRef={inputRef}
                   />
                 )}
                 <Input
