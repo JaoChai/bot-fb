@@ -107,6 +107,14 @@ class MessageAggregationService
     }
 
     /**
+     * Get the current group ID from cache (for debugging).
+     */
+    public function getCurrentGroupId(int $conversationId): ?string
+    {
+        return Cache::get($this->getGroupIdKey($conversationId));
+    }
+
+    /**
      * Get all message IDs in an aggregation group.
      */
     public function getMessageIds(int $conversationId): array
