@@ -54,7 +54,9 @@ class MessageAggregationService
                 // DEBUG: Verify cache was stored
                 $verifyGroupId = Cache::get($groupKey);
                 $verifyMessages = Cache::get($messagesKey);
-                error_log("[AGGREGATION_DEBUG] Cache stored - key: {$groupKey}, group_id: {$groupId}, verified: " . ($verifyGroupId === $groupId ? 'YES' : 'NO') . ", messages: " . json_encode($verifyMessages) . ", ttl: {$ttl}s");
+                $cacheDriver = Cache::getDefaultDriver();
+                $cacheStore = config('cache.default');
+                error_log("[AGGREGATION_DEBUG] Cache stored - driver: {$cacheDriver}, store: {$cacheStore}, key: {$groupKey}, group_id: {$groupId}, verified: " . ($verifyGroupId === $groupId ? 'YES' : 'NO') . ", messages: " . json_encode($verifyMessages) . ", ttl: {$ttl}s");
 
                 Log::debug('Started new aggregation group', [
                     'conversation_id' => $conversationId,
