@@ -81,11 +81,29 @@ class ProcessAggregatedMessages implements ShouldQueue
     ): void {
         $conversationId = $this->conversation->id;
 
+        // DEBUG: Log all cache values at job start
+        $cachedGroupId = $aggregationService->getCurrentGroupId($conversationId);
+        $cachedMessageIds = $aggregationService->getMessageIds($conversationId);
+        $startedAt = $aggregationService->getStartedAt($conversationId);
+
+        Log::info('[AGGREGATION_DEBUG] Job started', [
+            'conversation_id' => $conversationId,
+            'job_group_id' => $this->groupId,
+            'cached_group_id' => $cachedGroupId,
+            'group_id_match' => $cachedGroupId === $this->groupId,
+            'cached_message_ids' => $cachedMessageIds,
+            'message_count' => count($cachedMessageIds),
+            'started_at' => $startedAt,
+            'bot_id' => $this->bot->id,
+        ]);
+
         // Verify this group is still active (no newer messages came in)
         if (!$aggregationService->isActiveGroup($conversationId, $this->groupId)) {
-            Log::debug('Aggregation group superseded by newer group', [
+            Log::warning('[AGGREGATION_DEBUG] Early exit: group_id mismatch', [
                 'conversation_id' => $conversationId,
-                'old_group_id' => $this->groupId,
+                'job_group_id' => $this->groupId,
+                'cached_group_id' => $cachedGroupId,
+                'reason' => $cachedGroupId === null ? 'cache_expired_or_missing' : 'newer_group_exists',
             ]);
             return;
         }
@@ -94,9 +112,11 @@ class ProcessAggregatedMessages implements ShouldQueue
         $mergedContent = $aggregationService->getMergedContent($conversationId);
 
         if (empty($mergedContent)) {
-            Log::warning('No content found in aggregation group', [
+            Log::warning('[AGGREGATION_DEBUG] Early exit: no content', [
                 'conversation_id' => $conversationId,
                 'group_id' => $this->groupId,
+                'cached_message_ids' => $cachedMessageIds,
+                'reason' => empty($cachedMessageIds) ? 'message_ids_empty' : 'messages_not_found_in_db',
             ]);
             $aggregationService->clearAggregation($conversationId);
             return;
@@ -129,11 +149,17 @@ class ProcessAggregatedMessages implements ShouldQueue
 
             // Check if handover mode was enabled while waiting
             if ($this->conversation->is_handover) {
-                Log::info('Conversation entered handover mode during aggregation wait', [
+                Log::warning('[AGGREGATION_DEBUG] Early exit: handover mode enabled', [
                     'conversation_id' => $this->conversation->id,
+                    'is_handover' => true,
                 ]);
                 return;
             }
+
+            Log::info('[AGGREGATION_DEBUG] Generating AI response', [
+                'conversation_id' => $this->conversation->id,
+                'merged_content_length' => strlen($mergedContent),
+            ]);
 
             // Generate AI response using merged content
             $result = $aiService->generateResponse(
