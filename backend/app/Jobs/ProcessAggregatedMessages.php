@@ -86,6 +86,8 @@ class ProcessAggregatedMessages implements ShouldQueue
         $cachedMessageIds = $aggregationService->getMessageIds($conversationId);
         $startedAt = $aggregationService->getStartedAt($conversationId);
 
+        $cacheDriver = \Illuminate\Support\Facades\Cache::getDefaultDriver();
+        $cacheStore = config('cache.default');
         $debugData = json_encode([
             'conversation_id' => $conversationId,
             'job_group_id' => $this->groupId,
@@ -95,6 +97,8 @@ class ProcessAggregatedMessages implements ShouldQueue
             'message_count' => count($cachedMessageIds),
             'started_at' => $startedAt,
             'bot_id' => $this->bot->id,
+            'cache_driver' => $cacheDriver,
+            'cache_store' => $cacheStore,
         ]);
         error_log("[AGGREGATION_DEBUG] Job started: {$debugData}");
 
