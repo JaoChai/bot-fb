@@ -51,6 +51,11 @@ class MessageAggregationService
                 Cache::put($messagesKey, [$message->id], $ttl);
                 Cache::put($timestampKey, now()->timestamp, $ttl);
 
+                // DEBUG: Verify cache was stored
+                $verifyGroupId = Cache::get($groupKey);
+                $verifyMessages = Cache::get($messagesKey);
+                error_log("[AGGREGATION_DEBUG] Cache stored - key: {$groupKey}, group_id: {$groupId}, verified: " . ($verifyGroupId === $groupId ? 'YES' : 'NO') . ", messages: " . json_encode($verifyMessages) . ", ttl: {$ttl}s");
+
                 Log::debug('Started new aggregation group', [
                     'conversation_id' => $conversationId,
                     'group_id' => $groupId,
