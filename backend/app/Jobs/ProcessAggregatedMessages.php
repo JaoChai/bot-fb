@@ -81,12 +81,12 @@ class ProcessAggregatedMessages implements ShouldQueue
     ): void {
         $conversationId = $this->conversation->id;
 
-        // DEBUG: Log all cache values at job start
+        // DEBUG: Log all cache values at job start (use stderr for Railway visibility)
         $cachedGroupId = $aggregationService->getCurrentGroupId($conversationId);
         $cachedMessageIds = $aggregationService->getMessageIds($conversationId);
         $startedAt = $aggregationService->getStartedAt($conversationId);
 
-        Log::info('[AGGREGATION_DEBUG] Job started', [
+        $debugData = json_encode([
             'conversation_id' => $conversationId,
             'job_group_id' => $this->groupId,
             'cached_group_id' => $cachedGroupId,
@@ -96,15 +96,12 @@ class ProcessAggregatedMessages implements ShouldQueue
             'started_at' => $startedAt,
             'bot_id' => $this->bot->id,
         ]);
+        error_log("[AGGREGATION_DEBUG] Job started: {$debugData}");
 
         // Verify this group is still active (no newer messages came in)
         if (!$aggregationService->isActiveGroup($conversationId, $this->groupId)) {
-            Log::warning('[AGGREGATION_DEBUG] Early exit: group_id mismatch', [
-                'conversation_id' => $conversationId,
-                'job_group_id' => $this->groupId,
-                'cached_group_id' => $cachedGroupId,
-                'reason' => $cachedGroupId === null ? 'cache_expired_or_missing' : 'newer_group_exists',
-            ]);
+            $reason = $cachedGroupId === null ? 'cache_expired_or_missing' : 'newer_group_exists';
+            error_log("[AGGREGATION_DEBUG] Early exit: group_id mismatch - reason: {$reason}, job_group_id: {$this->groupId}, cached_group_id: {$cachedGroupId}");
             return;
         }
 
@@ -112,12 +109,8 @@ class ProcessAggregatedMessages implements ShouldQueue
         $mergedContent = $aggregationService->getMergedContent($conversationId);
 
         if (empty($mergedContent)) {
-            Log::warning('[AGGREGATION_DEBUG] Early exit: no content', [
-                'conversation_id' => $conversationId,
-                'group_id' => $this->groupId,
-                'cached_message_ids' => $cachedMessageIds,
-                'reason' => empty($cachedMessageIds) ? 'message_ids_empty' : 'messages_not_found_in_db',
-            ]);
+            $reason = empty($cachedMessageIds) ? 'message_ids_empty' : 'messages_not_found_in_db';
+            error_log("[AGGREGATION_DEBUG] Early exit: no content - reason: {$reason}, message_ids: " . json_encode($cachedMessageIds));
             $aggregationService->clearAggregation($conversationId);
             return;
         }
@@ -149,17 +142,11 @@ class ProcessAggregatedMessages implements ShouldQueue
 
             // Check if handover mode was enabled while waiting
             if ($this->conversation->is_handover) {
-                Log::warning('[AGGREGATION_DEBUG] Early exit: handover mode enabled', [
-                    'conversation_id' => $this->conversation->id,
-                    'is_handover' => true,
-                ]);
+                error_log("[AGGREGATION_DEBUG] Early exit: handover mode enabled - conversation_id: {$this->conversation->id}");
                 return;
             }
 
-            Log::info('[AGGREGATION_DEBUG] Generating AI response', [
-                'conversation_id' => $this->conversation->id,
-                'merged_content_length' => strlen($mergedContent),
-            ]);
+            error_log("[AGGREGATION_DEBUG] Generating AI response - conversation_id: {$this->conversation->id}, content_length: " . strlen($mergedContent));
 
             // Generate AI response using merged content
             $result = $aiService->generateResponse(
