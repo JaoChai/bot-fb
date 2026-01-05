@@ -110,7 +110,8 @@ export function LINEMessageInput({
         </div>
       )}
 
-      <div className="flex gap-2 max-w-3xl mx-auto">
+      {/* LINE OA Style Input Container */}
+      <div className="flex items-end gap-2 max-w-3xl mx-auto">
         {/* Hidden file input - LINE supports image, video, audio */}
         <input
           ref={fileInputRef}
@@ -123,17 +124,17 @@ export function LINEMessageInput({
         {/* Media Upload Button */}
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="icon"
-          className="h-11 w-11 flex-shrink-0"
+          className="h-10 w-10 flex-shrink-0 text-muted-foreground hover:text-foreground"
           onClick={() => fileInputRef.current?.click()}
           disabled={isLoading}
         >
           <Paperclip className="h-5 w-5" />
         </Button>
 
-        {/* Text Input */}
-        <div className="flex-1 relative">
+        {/* Text Input Container - LINE OA Style */}
+        <div className="flex-1 flex items-end gap-2 px-4 py-2 bg-muted/50 rounded-2xl border border-input focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
           <textarea
             ref={textareaRef}
             value={value}
@@ -142,23 +143,24 @@ export function LINEMessageInput({
             placeholder={selectedMedia ? 'เพิ่มคำอธิบาย...' : 'พิมพ์ข้อความ...'}
             disabled={isLoading}
             rows={1}
-            className="w-full min-h-[44px] max-h-[120px] py-2.5 px-4 text-base sm:text-sm resize-none rounded-full border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex-1 min-h-[24px] max-h-[120px] py-0 text-base sm:text-sm resize-none bg-transparent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 placeholder:text-muted-foreground"
             autoFocus
           />
-        </div>
 
-        {/* Send Button - LINE Green */}
-        <Button
-          type="submit"
-          disabled={(!value.trim() && !selectedMedia) || isLoading}
-          className="h-11 w-11 p-0 bg-[#06C755] hover:bg-[#06C755]/90"
-        >
-          {isLoading ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : (
-            <Send className="h-5 w-5" />
-          )}
-        </Button>
+          {/* Send Button inside input - LINE Green */}
+          <Button
+            type="submit"
+            size="icon"
+            disabled={(!value.trim() && !selectedMedia) || isLoading}
+            className="h-8 w-8 flex-shrink-0 rounded-full bg-[#06C755] hover:bg-[#06C755]/90 disabled:bg-muted disabled:text-muted-foreground"
+          >
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
       </div>
 
       <p className="text-center text-xs text-muted-foreground mt-2 hidden sm:block">
