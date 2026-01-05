@@ -183,15 +183,25 @@ class ProcessTelegramWebhook implements ShouldQueue
         });
 
         // Broadcast AFTER transaction commits
+        // Refresh conversation to get actual DB values after DB::raw updates
+        if ($conversation) {
+            $conversation->refresh();
+            $conversationData = [
+                'id' => $conversation->id,
+                'message_count' => $conversation->message_count,
+                'last_message_at' => $conversation->last_message_at?->toISOString(),
+                'unread_count' => $conversation->unread_count,
+            ];
+        }
         if ($userMessage) {
-            broadcast(new MessageSent($userMessage))->toOthers();
+            broadcast(new MessageSent($userMessage, $conversationData ?? null))->toOthers();
         }
         if ($botMessage) {
-            broadcast(new MessageSent($botMessage))->toOthers();
+            broadcast(new MessageSent($botMessage, $conversationData ?? null))->toOthers();
         }
         if ($conversation) {
             $updateType = $isNewConversation ? 'created' : 'message_received';
-            broadcast(new ConversationUpdated($conversation->fresh(), $updateType))->toOthers();
+            broadcast(new ConversationUpdated($conversation, $updateType))->toOthers();
         }
     }
 

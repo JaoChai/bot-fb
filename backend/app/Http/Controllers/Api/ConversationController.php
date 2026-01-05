@@ -868,9 +868,15 @@ class ConversationController extends Controller
 
         // Reload conversation with updated stats for broadcast
         $conversation->refresh();
+        $conversationData = [
+            'id' => $conversation->id,
+            'message_count' => $conversation->message_count,
+            'last_message_at' => $conversation->last_message_at?->toISOString(),
+            'unread_count' => $conversation->unread_count,
+        ];
 
         // Broadcast the message for real-time updates
-        broadcast(new MessageSent($message))->toOthers();
+        broadcast(new MessageSent($message, $conversationData))->toOthers();
         broadcast(new ConversationUpdated($conversation))->toOthers();
 
         return response()->json([
