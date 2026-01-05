@@ -385,6 +385,34 @@ export function useMarkAsRead(botId: number | undefined) {
         });
       }
     },
+    onSuccess: (_data, conversationId) => {
+      // Re-apply cache update to fix race condition
+      // If a refetch happened during mutation, it may have overwritten optimistic update
+      queryClient.setQueriesData<InfiniteData<ConversationsResponse>>(
+        {
+          predicate: (query) => {
+            const key = query.queryKey;
+            return Array.isArray(key) &&
+              key[0] === 'conversations-infinite' &&
+              key[1] === botId;
+          },
+        },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              data: page.data.map((conv) =>
+                conv.id === conversationId
+                  ? { ...conv, unread_count: 0 }
+                  : conv
+              ),
+            })),
+          };
+        }
+      );
+    },
     onSettled: () => {
       // Invalidate stats (lightweight query for sidebar counts)
       queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
