@@ -50,7 +50,8 @@ class MessageSent implements ShouldBroadcast
      */
     public function broadcastWith(): array
     {
-        $conversation = $this->message->conversation;
+        // Use fresh() to get latest data after DB::raw() updates (e.g., unread_count increment)
+        $conversation = $this->message->conversation->fresh();
 
         return [
             // Message data
