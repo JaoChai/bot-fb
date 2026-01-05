@@ -178,7 +178,7 @@ const ConversationItem = memo(function ConversationItem({
   // Display name: group title for telegram groups, otherwise customer name
   const customerName = isGroup
     ? conversation.telegram_chat_title || 'Telegram Group'
-    : conversation.customer_profile?.display_name || 'Unknown';
+    : conversation.customer_profile?.display_name || 'ลูกค้า';
 
   const customerInitial = customerName.charAt(0).toUpperCase();
 
