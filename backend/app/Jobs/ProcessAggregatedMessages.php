@@ -193,9 +193,17 @@ class ProcessAggregatedMessages implements ShouldQueue
         $aggregationService->clearAggregation($conversationId);
 
         // Broadcast events after transaction
+        // Refresh conversation to get actual DB values after DB::raw updates
         if ($botMessage) {
-            broadcast(new MessageSent($botMessage))->toOthers();
-            broadcast(new ConversationUpdated($this->conversation->fresh(), 'message_received'))->toOthers();
+            $this->conversation->refresh();
+            $conversationData = [
+                'id' => $this->conversation->id,
+                'message_count' => $this->conversation->message_count,
+                'last_message_at' => $this->conversation->last_message_at?->toISOString(),
+                'unread_count' => $this->conversation->unread_count,
+            ];
+            broadcast(new MessageSent($botMessage, $conversationData))->toOthers();
+            broadcast(new ConversationUpdated($this->conversation, 'message_received'))->toOthers();
         }
     }
 

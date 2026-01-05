@@ -15,11 +15,36 @@ class MessageSent implements ShouldBroadcast
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     /**
+     * Conversation data captured at dispatch time to avoid race conditions.
+     * Since broadcasts are queued, calling fresh() in broadcastWith() would get
+     * the current DB value which may have changed (e.g., after markAsRead).
+     */
+    public array $conversationData;
+
+    /**
      * Create a new event instance.
+     *
+     * @param Message $message The message being sent
+     * @param array|null $conversationData Pre-captured conversation data (optional, will fetch fresh if not provided)
      */
     public function __construct(
-        public Message $message
-    ) {}
+        public Message $message,
+        ?array $conversationData = null
+    ) {
+        // Capture conversation data NOW (at dispatch time) to avoid race conditions
+        // When queue job runs later, the DB value may have changed
+        if ($conversationData !== null) {
+            $this->conversationData = $conversationData;
+        } else {
+            $conversation = $this->message->conversation()->first();
+            $this->conversationData = [
+                'id' => $conversation->id,
+                'message_count' => $conversation->message_count,
+                'last_message_at' => $conversation->last_message_at?->toISOString(),
+                'unread_count' => $conversation->unread_count,
+            ];
+        }
+    }
 
     /**
      * Get the channels the event should broadcast on.
@@ -50,9 +75,6 @@ class MessageSent implements ShouldBroadcast
      */
     public function broadcastWith(): array
     {
-        // Use fresh() to get latest data after DB::raw() updates (e.g., unread_count increment)
-        $conversation = $this->message->conversation->fresh();
-
         return [
             // Message data
             'id' => $this->message->id,
@@ -63,13 +85,13 @@ class MessageSent implements ShouldBroadcast
             'media_url' => $this->message->media_url,
             'media_type' => $this->message->media_type,
             'created_at' => $this->message->created_at->toISOString(),
-            // Conversation update data for single-event updates
+            // Conversation data captured at dispatch time (not fresh() to avoid race conditions)
             'conversation' => [
-                'id' => $conversation->id,
-                'message_count' => $conversation->message_count,
-                'last_message_at' => $conversation->last_message_at?->toISOString(),
+                'id' => $this->conversationData['id'],
+                'message_count' => $this->conversationData['message_count'],
+                'last_message_at' => $this->conversationData['last_message_at'],
                 'needs_response' => $this->message->sender === 'user',
-                'unread_count' => $conversation->unread_count,
+                'unread_count' => $this->conversationData['unread_count'],
             ],
         ];
     }
