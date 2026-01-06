@@ -153,9 +153,20 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
 
       case 'sticker':
         return (
-          <div className="flex items-center gap-2 p-2">
-            <Smile className="h-8 w-8 text-[#06C755]" />
-            <span className="text-muted-foreground text-sm">สติกเกอร์</span>
+          <div className="max-w-[120px]">
+            {message.media_url ? (
+              <img
+                src={message.media_url}
+                alt="สติกเกอร์"
+                className="w-full h-auto"
+                loading="lazy"
+              />
+            ) : (
+              <div className="flex items-center gap-2 p-2">
+                <Smile className="h-8 w-8 text-[#06C755]" />
+                <span className="text-muted-foreground text-sm">สติกเกอร์</span>
+              </div>
+            )}
           </div>
         );
 

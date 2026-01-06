@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Paperclip,
@@ -9,6 +9,9 @@ import {
   Image as ImageIcon,
   Film,
 } from 'lucide-react';
+import { QuickReplyButton } from '@/components/chat/QuickReplyButton';
+import { QuickReplyAutocomplete } from '@/components/chat/QuickReplyAutocomplete';
+import type { QuickReply } from '@/types/quick-reply';
 
 interface LINEMessageInputProps {
   value: string;
@@ -17,6 +20,9 @@ interface LINEMessageInputProps {
   onMediaSelect: (file: File | null) => void;
   onSubmit: (e: React.FormEvent) => void;
   isLoading: boolean;
+  // Quick Reply props
+  onQuickReplySelect?: (quickReply: QuickReply) => void;
+  showQuickReply?: boolean;
 }
 
 export function LINEMessageInput({
@@ -26,9 +32,12 @@ export function LINEMessageInput({
   onMediaSelect,
   onSubmit,
   isLoading,
+  onQuickReplySelect,
+  showQuickReply = true,
 }: LINEMessageInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -38,6 +47,19 @@ export function LINEMessageInput({
       textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
     }
   }, [value]);
+
+  // Handle text change with Quick Reply detection
+  const handleTextChange = useCallback((newValue: string) => {
+    onChange(newValue);
+    // Show autocomplete when input starts with / (e.g., "/hello", "/")
+    setShowAutocomplete(newValue.match(/^\/[a-z0-9_-]*$/i) !== null);
+  }, [onChange]);
+
+  // Handle Quick Reply selection
+  const handleQuickReplySelect = useCallback((quickReply: QuickReply) => {
+    setShowAutocomplete(false);
+    onQuickReplySelect?.(quickReply);
+  }, [onQuickReplySelect]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -111,7 +133,7 @@ export function LINEMessageInput({
       )}
 
       {/* LINE OA Style Input Container */}
-      <div className="flex items-end gap-2 max-w-3xl mx-auto">
+      <div className="flex items-end gap-2 max-w-3xl mx-auto relative">
         {/* Hidden file input - LINE supports image, video, audio */}
         <input
           ref={fileInputRef}
@@ -133,14 +155,33 @@ export function LINEMessageInput({
           <Paperclip className="h-5 w-5" />
         </Button>
 
+        {/* Quick Reply Button - LINE OA style */}
+        {showQuickReply && onQuickReplySelect && (
+          <QuickReplyButton
+            onSelect={handleQuickReplySelect}
+            disabled={isLoading}
+            variant="ghost"
+            className="h-10 w-10 text-muted-foreground hover:text-foreground"
+          />
+        )}
+
         {/* Text Input Container - LINE OA Style */}
-        <div className="flex-1 flex items-end gap-2 px-4 py-2 bg-muted/50 rounded-2xl border border-input focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
+        <div className="flex-1 flex items-end gap-2 px-4 py-2 bg-muted/50 rounded-2xl border border-input focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 relative">
+          {/* Quick Reply Autocomplete - shows above input */}
+          {showQuickReply && showAutocomplete && onQuickReplySelect && (
+            <QuickReplyAutocomplete
+              inputValue={value}
+              onSelect={handleQuickReplySelect}
+              onClose={() => setShowAutocomplete(false)}
+            />
+          )}
+
           <textarea
             ref={textareaRef}
             value={value}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => handleTextChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={selectedMedia ? 'เพิ่มคำอธิบาย...' : 'พิมพ์ข้อความ...'}
+            placeholder={selectedMedia ? 'เพิ่มคำอธิบาย...' : 'พิมพ์ข้อความ หรือ / เพื่อใช้ Quick Reply...'}
             disabled={isLoading}
             rows={1}
             className="flex-1 min-h-[24px] max-h-[120px] py-0 text-base sm:text-sm resize-none bg-transparent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 placeholder:text-muted-foreground"

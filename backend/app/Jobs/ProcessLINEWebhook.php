@@ -410,6 +410,12 @@ class ProcessLINEWebhook implements ShouldQueue
             };
         } elseif ($messageType === 'sticker') {
             $content = '[สติกเกอร์]';
+            // Construct sticker URL from LINE CDN
+            $stickerId = $messageData['sticker_id'] ?? null;
+            if ($stickerId) {
+                $mediaUrl = "https://stickershop.line-scdn.net/stickershop/v1/sticker/{$stickerId}/android/sticker.png";
+                $mediaType = 'image/png';
+            }
         } elseif ($messageType === 'location') {
             $lat = $messageData['latitude'] ?? '';
             $lng = $messageData['longitude'] ?? '';
@@ -495,26 +501,8 @@ class ProcessLINEWebhook implements ShouldQueue
             broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
         }
 
-        // Send acknowledgment reply (outside transaction - external API call)
-        if ($replyToken) {
-            $response = match ($messageType) {
-                'image' => 'ได้รับรูปภาพแล้วครับ',
-                'video' => 'ได้รับวิดีโอแล้วครับ',
-                'audio' => 'ได้รับเสียงแล้วครับ',
-                'sticker' => 'ขอบคุณสำหรับสติกเกอร์ครับ!',
-                'location' => 'ได้รับตำแหน่งแล้วครับ',
-                'file' => 'ได้รับไฟล์แล้วครับ',
-                default => 'ได้รับข้อความแล้วครับ',
-            };
-
-            try {
-                $lineService->reply($this->bot, $replyToken, [$response]);
-            } catch (\Exception $e) {
-                Log::warning('Failed to send non-text message acknowledgment', [
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
+        // Non-text messages are stored silently without bot acknowledgment
+        // The bot does not respond to images, stickers, etc. - just saves them for display
     }
 
     /**
