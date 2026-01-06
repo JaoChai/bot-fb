@@ -7,14 +7,22 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Zap } from 'lucide-react';
 import { QuickReplyList } from './QuickReplyList';
+import { cn } from '@/lib/utils';
 import type { QuickReply } from '@/types/quick-reply';
 
 interface QuickReplyButtonProps {
   onSelect: (quickReply: QuickReply) => void;
   disabled?: boolean;
+  variant?: 'outline' | 'ghost';
+  className?: string;
 }
 
-export function QuickReplyButton({ onSelect, disabled }: QuickReplyButtonProps) {
+export function QuickReplyButton({
+  onSelect,
+  disabled,
+  variant = 'outline',
+  className
+}: QuickReplyButtonProps) {
   const [open, setOpen] = useState(false);
 
   const handleSelect = (quickReply: QuickReply) => {
@@ -27,9 +35,9 @@ export function QuickReplyButton({ onSelect, disabled }: QuickReplyButtonProps) 
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
-          variant="outline"
+          variant={variant}
           size="icon"
-          className="h-11 w-11 flex-shrink-0"
+          className={cn("h-11 w-11 flex-shrink-0", className)}
           disabled={disabled}
           title="Quick Reply"
         >

@@ -43,3 +43,4 @@ coverage/
 *.bak
 *.tmp
 .playwright-mcp/
+.claude/debug-active.txt

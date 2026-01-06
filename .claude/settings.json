@@ -10,12 +10,24 @@
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/scripts/update-debug-state.js\" status 2>/dev/null || true",
-            "timeout": 5
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/scripts/load-rules.js\" 2>/dev/null || echo '[RULES] Failed to load rules from memory'",
+            "timeout": 10
           },
           {
-            "type": "prompt",
-            "prompt": "[SESSION:INIT] BotFacebook (Laravel 12 + React 19). DEBUG WORKFLOW ENFORCED: PreToolUse hook BLOCKS Edit/Write if workflow incomplete. Use 'node .claude/scripts/update-debug-state.js' to track. Flow: DISCOVERY → DIAGNOSIS → PROCESS."
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/scripts/check-learning-review.js\" 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/scripts/detect-bug-keywords.js\"",
+            "timeout": 3
           }
         ]
       }
@@ -26,8 +38,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/scripts/check-debug-state.js\"",
-            "timeout": 5
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/scripts/check-debug-state.js\" 2>/dev/null || true",
+            "timeout": 3
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep|Glob|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/scripts/check-context-usage.js\" 2>/dev/null || true",
+            "timeout": 2
           }
         ]
       }

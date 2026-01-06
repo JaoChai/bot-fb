@@ -683,12 +683,12 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
         </div>
       </ScrollArea>
 
-      {/* Scroll to bottom button */}
+      {/* Scroll to bottom button - positioned above input area */}
       {!autoScroll && (
         <Button
           variant="secondary"
           size="sm"
-          className="absolute bottom-24 left-1/2 -translate-x-1/2 shadow-lg"
+          className="absolute bottom-28 left-1/2 -translate-x-1/2 shadow-lg z-20"
           onClick={handleScrollToBottom}
         >
           <ChevronDown className="h-4 w-4 mr-2" />
@@ -713,7 +713,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
             isLoading={sendAgentMessage.isPending}
           />
         ) : isLINE && conversation.is_handover ? (
-          // LINE: Handover mode - show LINE input with media upload support
+          // LINE: Handover mode - show LINE input with media upload and Quick Reply support
           <LINEMessageInput
             value={messageInput}
             onChange={setMessageInput}
@@ -721,6 +721,8 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
             onMediaSelect={setSelectedMedia}
             onSubmit={handleSendLINEMessage}
             isLoading={sendAgentMessage.isPending}
+            onQuickReplySelect={handleQuickReplySelect}
+            showQuickReply={true}
           />
         ) : conversation.is_handover ? (
           // Other channels: Handover mode - show basic text input with Quick Reply

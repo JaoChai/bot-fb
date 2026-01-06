@@ -29,6 +29,13 @@ class ProcessAggregatedMessages implements ShouldQueue
     public int $tries = 1;
 
     /**
+     * The number of seconds the job can run before timing out.
+     * Set to 150s to allow for slow LLM models like gpt-5-mini.
+     * Requires DB_QUEUE_RETRY_AFTER >= 180 in production.
+     */
+    public int $timeout = 150;
+
+    /**
      * Create a new job instance.
      */
     public function __construct(
