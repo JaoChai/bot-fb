@@ -96,12 +96,12 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
-            // IMPORTANT: ATTR_EMULATE_PREPARES must be FALSE for PostgreSQL boolean columns
-            // When true, PDO sends 1/0 instead of TRUE/FALSE which PostgreSQL rejects
-            // Note: If "cached plan must not change result type" errors occur after migrations,
-            // run: php artisan db:reconnect or restart the application
+            // ATTR_EMULATE_PREPARES:
+            // - false: Uses PostgreSQL native prepared statements (better for booleans)
+            // - true: PDO emulates prepares (avoids "cached plan must not change result type" after migrations)
+            // Set via env to allow temporary override after schema changes
             'options' => [
-                \PDO::ATTR_EMULATE_PREPARES => false,
+                \PDO::ATTR_EMULATE_PREPARES => env('DB_EMULATE_PREPARES', false),
             ],
         ],
 
