@@ -444,6 +444,34 @@ export function useClearContext(botId: number | undefined) {
   });
 }
 
+interface ClearContextAllResponse {
+  data: { updated_count: number };
+  message: string;
+}
+
+/**
+ * Hook to clear bot context for ALL active/handover conversations
+ * Bot will start fresh with all open conversations
+ */
+export function useClearContextAll(botId: number | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!botId) throw new Error('Bot ID is required');
+      const response = await api.post<ClearContextAllResponse>(
+        `/bots/${botId}/conversations/clear-context-all`
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
+      queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
+    },
+  });
+}
+
 // =====================
 // Notes/Memory Hooks
 // =====================

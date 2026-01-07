@@ -8,15 +8,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, MessageSquare } from 'lucide-react';
+import { Loader2, MessageSquare, RotateCcw } from 'lucide-react';
 import { useBots } from '@/hooks/useKnowledgeBase';
 import { useBotPreferencesStore } from '@/stores/botPreferencesStore';
-import { useInfiniteConversations, useMarkAsRead } from '@/hooks/useConversations';
+import { useInfiniteConversations, useMarkAsRead, useClearContextAll } from '@/hooks/useConversations';
 import { useBotChannel } from '@/hooks/useEcho';
 import { ConversationList } from '@/components/chat/ConversationList';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { CustomerInfoPanel } from '@/components/chat/CustomerInfoPanel';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters, Message, PaginationMeta } from '@/types/api';
 import type { MessageSentEvent, ConversationUpdatedEvent } from '@/types/realtime';
@@ -100,6 +113,10 @@ export function ChatPage() {
 
   // Mark as read mutation
   const markAsRead = useMarkAsRead(botId ?? undefined);
+
+  // Clear context all mutation
+  const clearContextAll = useClearContextAll(botId ?? undefined);
+  const { toast } = useToast();
 
   // Real-time WebSocket callbacks - optimized with surgical cache updates
   const handleRealtimeMessage = useCallback(
@@ -423,6 +440,58 @@ export function ChatPage() {
               ))}
             </SelectContent>
           </Select>
+
+          {/* Bulk Reset Context */}
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                disabled={clearContextAll.isPending || !botId}
+              >
+                {clearContextAll.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                )}
+                Reset บริบททุกคน
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset บริบททุกคน?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Bot จะเริ่มบริบทใหม่กับทุกการสนทนาที่ยังเปิดอยู่
+                  ประวัติแชทยังคงอยู่ แต่ Bot จะไม่อ้างอิงข้อความก่อนหน้า
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    clearContextAll.mutate(undefined, {
+                      onSuccess: (data) => {
+                        toast({
+                          title: 'Reset บริบทสำเร็จ',
+                          description: `Reset แล้ว ${data.data.updated_count} การสนทนา`,
+                        });
+                      },
+                      onError: () => {
+                        toast({
+                          title: 'เกิดข้อผิดพลาด',
+                          description: 'ไม่สามารถ reset บริบทได้',
+                          variant: 'destructive',
+                        });
+                      },
+                    });
+                  }}
+                >
+                  Reset บริบททุกคน
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
 
         {/* Conversation List */}
