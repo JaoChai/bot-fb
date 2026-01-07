@@ -11,7 +11,8 @@
       "skills": ["ui-ux-pro-max", "react-query-expert"],
       "mcp": {
         "context7": ["resolve-library-id", "query-docs"],
-        "chrome": ["computer", "screenshot", "resize_window"]
+        "chrome": ["computer", "screenshot", "resize_window"],
+        "sentry": ["search_issues", "get_issue_details"]
       }
     },
     "backend-dev": {
@@ -23,7 +24,8 @@
       "skills": [],
       "mcp": {
         "context7": ["resolve-library-id", "query-docs"],
-        "neon": ["run_sql", "get_database_tables", "describe_table_schema"]
+        "neon": ["run_sql", "get_database_tables", "describe_table_schema"],
+        "sentry": ["search_issues", "get_issue_details"]
       }
     },
     "database": {
@@ -60,7 +62,8 @@
       "skills": ["line-expert", "websocket-debugger"],
       "mcp": {
         "neon": ["run_sql"],
-        "railway": ["get-logs", "list-deployments"]
+        "railway": ["get-logs", "list-deployments"],
+        "sentry": ["search_issues", "get_issue_details", "analyze_issue_with_seer"]
       }
     },
     "performance": {
@@ -73,7 +76,8 @@
       "skills": ["react-query-expert"],
       "mcp": {
         "neon": ["prepare_query_tuning", "explain_sql_statement", "list_slow_queries"],
-        "chrome": ["computer", "screenshot"]
+        "chrome": ["computer", "screenshot"],
+        "sentry": ["search_events", "get_trace_details", "search_issues"]
       }
     },
     "code-review": {
@@ -96,7 +100,8 @@
       "agent": "security-reviewer",
       "skills": [],
       "mcp": {
-        "context7": ["query-docs"]
+        "context7": ["query-docs"],
+        "sentry": ["search_issues", "search_events"]
       }
     },
     "api-design": {
@@ -129,7 +134,8 @@
       "agent": "backend-tester",
       "skills": [],
       "mcp": {
-        "neon": ["run_sql"]
+        "neon": ["run_sql"],
+        "sentry": ["search_issues", "search_events"]
       }
     },
     "integration-test": {
@@ -141,7 +147,8 @@
       "skills": ["e2e-test"],
       "mcp": {
         "chrome": ["computer", "navigate", "read_page", "form_input"],
-        "neon": ["run_sql"]
+        "neon": ["run_sql"],
+        "sentry": ["search_issues", "search_events"]
       }
     },
     "deployment": {
@@ -152,7 +159,8 @@
       "agent": null,
       "skills": ["railway-deployer"],
       "mcp": {
-        "railway": ["deploy", "get-logs", "list-variables", "set-variables", "generate-domain"]
+        "railway": ["deploy", "get-logs", "list-variables", "set-variables", "generate-domain"],
+        "sentry": ["search_issues", "search_events", "find_releases"]
       }
     },
     "prompt-eng": {
