@@ -200,6 +200,9 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/{conversation}/toggle-handover', [ConversationController::class, 'toggleHandover'])->name('conversations.toggle-handover');
         Route::post('/{conversation}/mark-as-read', [ConversationController::class, 'markAsRead'])->name('conversations.mark-as-read');
         Route::post('/{conversation}/clear-context', [ConversationController::class, 'clearContext'])->name('conversations.clear-context');
+        Route::post('/clear-context-all', [ConversationController::class, 'clearContextAll'])
+            ->middleware('throttle:10,1') // 10 requests per minute
+            ->name('conversations.clear-context-all');
 
         // Notes/Memory routes
         Route::get('/{conversation}/notes', [ConversationController::class, 'getNotes'])->name('conversations.notes.index');

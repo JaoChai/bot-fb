@@ -407,6 +407,27 @@ class ConversationController extends Controller
     }
 
     /**
+     * Clear bot context for ALL active/handover conversations.
+     * Bot will start fresh with all open conversations.
+     */
+    public function clearContextAll(Request $request, Bot $bot): JsonResponse
+    {
+        $this->authorize('update', $bot);
+
+        $updatedCount = $bot->conversations()
+            ->whereIn('status', ['active', 'handover'])
+            ->update(['context_cleared_at' => now()]);
+
+        // Invalidate stats cache
+        Cache::forget("bot:{$bot->id}:conversation:stats");
+
+        return response()->json([
+            'message' => "Reset บริบทสำเร็จ {$updatedCount} การสนทนา",
+            'data' => ['updated_count' => $updatedCount],
+        ]);
+    }
+
+    /**
      * Get conversation statistics for a bot.
      * Optimized: Single query with CTE instead of 6 separate queries.
      * Cached for 30 seconds to reduce database load.
