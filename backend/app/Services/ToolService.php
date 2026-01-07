@@ -70,6 +70,52 @@ class ToolService
     }
 
     /**
+     * Validate tool arguments against schema.
+     *
+     * @param string $toolName The tool function name
+     * @param array $arguments Tool arguments
+     * @throws \InvalidArgumentException If validation fails
+     */
+    protected function validateArguments(string $toolName, array $arguments): void
+    {
+        // Tool-specific validation rules
+        $validationRules = [
+            'search_knowledge_base' => [
+                'required' => ['query'],
+                'maxLength' => ['query' => 1000],
+            ],
+            'calculate' => [
+                'required' => ['expression'],
+                'maxLength' => ['expression' => 500],
+            ],
+            'think' => [
+                'required' => ['thought'],
+                'maxLength' => ['thought' => 5000],
+            ],
+        ];
+
+        $rules = $validationRules[$toolName] ?? [];
+
+        // Check required fields
+        foreach ($rules['required'] ?? [] as $field) {
+            if (!isset($arguments[$field]) || $arguments[$field] === '') {
+                throw new \InvalidArgumentException("Missing required field: {$field}");
+            }
+        }
+
+        // Check max length
+        foreach ($rules['maxLength'] ?? [] as $field => $maxLength) {
+            if (isset($arguments[$field]) && is_string($arguments[$field])) {
+                if (mb_strlen($arguments[$field]) > $maxLength) {
+                    throw new \InvalidArgumentException(
+                        "Field '{$field}' exceeds maximum length of {$maxLength} characters"
+                    );
+                }
+            }
+        }
+    }
+
+    /**
      * Execute a tool and return result.
      *
      * @param string $toolName The tool function name
@@ -82,6 +128,9 @@ class ToolService
         $startTime = microtime(true);
 
         try {
+            // Validate arguments before execution
+            $this->validateArguments($toolName, $arguments);
+
             $result = match ($toolName) {
                 'search_knowledge_base' => $this->executeSearchKb($arguments, $context),
                 'calculate' => $this->executeCalculate($arguments),
@@ -338,14 +387,39 @@ class SafeMathCalculator
     private int $pos;
     private int $length;
 
+    // Safety limits to prevent DoS attacks
+    private const MAX_EXPRESSION_LENGTH = 500;
+    private const MAX_PARENTHESES_DEPTH = 20;
+
     /**
      * Calculate a math expression safely.
      *
      * @param string $expression Math expression
      * @return float|null Result or null on error
+     * @throws \Exception If expression exceeds safety limits
      */
     public function calculate(string $expression): ?float
     {
+        // Safety check: expression length
+        if (strlen($expression) > self::MAX_EXPRESSION_LENGTH) {
+            throw new \Exception('Expression too long (max ' . self::MAX_EXPRESSION_LENGTH . ' characters)');
+        }
+
+        // Safety check: parentheses nesting depth
+        $depth = 0;
+        $maxDepth = 0;
+        for ($i = 0; $i < strlen($expression); $i++) {
+            if ($expression[$i] === '(') {
+                $depth++;
+                $maxDepth = max($maxDepth, $depth);
+            } elseif ($expression[$i] === ')') {
+                $depth--;
+            }
+            if ($maxDepth > self::MAX_PARENTHESES_DEPTH) {
+                throw new \Exception('Parentheses nesting too deep (max ' . self::MAX_PARENTHESES_DEPTH . ')');
+            }
+        }
+
         // Normalize expression
         $this->expression = str_replace(' ', '', $expression);
 

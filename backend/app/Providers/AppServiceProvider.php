@@ -10,6 +10,7 @@ use App\Policies\BotPolicy;
 use App\Policies\DocumentPolicy;
 use App\Policies\KnowledgeBasePolicy;
 use App\Policies\QuickReplyPolicy;
+use App\Services\CostTrackingService;
 use App\Services\HybridSearchService;
 use App\Services\JinaRerankerService;
 use App\Services\KeywordSearchService;
@@ -51,6 +52,12 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(QueryEnhancementService::class),
                 $app->make(SemanticCacheService::class)
             );
+        });
+
+        // Register CostTrackingService as scoped (request-bound) to prevent
+        // concurrent requests from corrupting each other's cost tracking state
+        $this->app->scoped(CostTrackingService::class, function ($app) {
+            return new CostTrackingService();
         });
     }
 
