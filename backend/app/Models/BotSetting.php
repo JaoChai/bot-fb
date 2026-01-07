@@ -39,6 +39,9 @@ class BotSetting extends Model
         'multiple_bubbles_delimiter',
         'wait_multiple_bubbles_enabled',
         'wait_multiple_bubbles_ms',
+        // Reply sticker feature
+        'reply_sticker_enabled',
+        'reply_sticker_message',
         // Auto-assignment feature
         'auto_assignment_enabled',
         'auto_assignment_mode',
@@ -56,6 +59,7 @@ class BotSetting extends Model
         'save_conversations' => 'boolean',
         'multiple_bubbles_enabled' => 'boolean',
         'wait_multiple_bubbles_enabled' => 'boolean',
+        'reply_sticker_enabled' => 'boolean',
         'auto_assignment_enabled' => 'boolean',
     ];
 

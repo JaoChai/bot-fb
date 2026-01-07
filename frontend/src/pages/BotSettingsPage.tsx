@@ -111,6 +111,7 @@ interface BotSettingsFormData {
   wait_multiple_bubbles_enabled: boolean;
   wait_multiple_bubbles_seconds: number;
   reply_sticker_enabled: boolean;
+  reply_sticker_message: string;
   response_hours_enabled: boolean;
   response_hours: ResponseHoursConfig;
   response_hours_timezone: string;
@@ -141,6 +142,7 @@ export function BotSettingsPage() {
     wait_multiple_bubbles_enabled: false,
     wait_multiple_bubbles_seconds: 1.5,
     reply_sticker_enabled: false,
+    reply_sticker_message: '',
     response_hours_enabled: false,
     response_hours: createDefaultResponseHours(),
     response_hours_timezone: 'Asia/Bangkok',
@@ -247,7 +249,8 @@ export function BotSettingsPage() {
           wait_multiple_bubbles_enabled: (settings.wait_multiple_bubbles_enabled as boolean) ?? false,
           // Convert ms to seconds for display
           wait_multiple_bubbles_seconds: ((settings.wait_multiple_bubbles_ms as number) ?? 1500) / 1000,
-          reply_sticker_enabled: false,
+          reply_sticker_enabled: (settings.reply_sticker_enabled as boolean) ?? false,
+          reply_sticker_message: (settings.reply_sticker_message as string) ?? '',
           response_hours_enabled: (settings.response_hours_enabled as boolean) ?? false,
           response_hours: parseResponseHours(settings.response_hours as Record<string, TimeSlot[]> | null),
           response_hours_timezone: (settings.response_hours_timezone as string) ?? 'Asia/Bangkok',
@@ -298,6 +301,9 @@ export function BotSettingsPage() {
         wait_multiple_bubbles_enabled: formData.wait_multiple_bubbles_enabled,
         // Convert seconds to ms for backend
         wait_multiple_bubbles_ms: Math.round(formData.wait_multiple_bubbles_seconds * 1000),
+        // Reply sticker settings
+        reply_sticker_enabled: formData.reply_sticker_enabled,
+        reply_sticker_message: formData.reply_sticker_message || null,
       });
 
       toast({
@@ -609,8 +615,9 @@ export function BotSettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">การตอบกลับ Sticker</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">บอทจะตอบกลับอัตโนมัติเมื่อได้รับสติกเกอร์</p>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label htmlFor="sticker" className="font-semibold">
                   เปิดใช้งาน Reply Sticker
@@ -621,6 +628,23 @@ export function BotSettingsPage() {
                   onCheckedChange={(checked) => handleChange('reply_sticker_enabled', checked)}
                 />
               </div>
+
+              {formData.reply_sticker_enabled && (
+                <div className="space-y-2 pt-4 border-t">
+                  <Label htmlFor="sticker-message" className="font-semibold">
+                    ข้อความตอบกลับ
+                  </Label>
+                  <Input
+                    id="sticker-message"
+                    placeholder="ได้รับสติกเกอร์แล้วค่ะ 🎉"
+                    value={formData.reply_sticker_message}
+                    onChange={(e) => handleChange('reply_sticker_message', e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    เว้นว่างไว้ = ใช้ข้อความเริ่มต้น "ได้รับสติกเกอร์แล้วค่ะ 🎉"
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 

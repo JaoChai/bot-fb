@@ -501,8 +501,39 @@ class ProcessLINEWebhook implements ShouldQueue
             broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
         }
 
-        // Non-text messages are stored silently without bot acknowledgment
-        // The bot does not respond to images, stickers, etc. - just saves them for display
+        // Reply to stickers if enabled (and not in handover mode)
+        if ($messageType === 'sticker' && $replyToken && $conversation && !$conversation->is_handover) {
+            $settings = $this->bot->settings;
+            if ($settings?->reply_sticker_enabled) {
+                $responseMessage = $settings->reply_sticker_message ?: 'ได้รับสติกเกอร์แล้วค่ะ 🎉';
+
+                try {
+                    $lineService->reply($this->bot, $replyToken, [$responseMessage]);
+
+                    // Save bot response to conversation
+                    $botMessage = $conversation->messages()->create([
+                        'sender' => 'bot',
+                        'content' => $responseMessage,
+                        'type' => 'text',
+                    ]);
+
+                    // Broadcast bot message
+                    broadcast(new MessageSent($botMessage, $conversationData ?? null))->toOthers();
+
+                    Log::info('Replied to sticker', [
+                        'bot_id' => $this->bot->id,
+                        'conversation_id' => $conversation->id,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::warning('Failed to reply to sticker', [
+                        'bot_id' => $this->bot->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        // Non-text messages (except stickers with reply enabled) are stored silently
     }
 
     /**

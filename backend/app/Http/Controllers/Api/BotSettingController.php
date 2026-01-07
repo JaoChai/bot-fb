@@ -100,6 +100,10 @@ class BotSettingController extends Controller
                 'wait_multiple_bubbles_enabled' => 'boolean',
                 'wait_multiple_bubbles_ms' => 'integer|min:500|max:20000',
 
+                // Reply sticker settings
+                'reply_sticker_enabled' => 'boolean',
+                'reply_sticker_message' => 'nullable|string|max:500',
+
                 // Auto-assignment settings
                 'auto_assignment_enabled' => 'boolean',
                 'auto_assignment_mode' => 'string|in:round_robin,load_balanced',
