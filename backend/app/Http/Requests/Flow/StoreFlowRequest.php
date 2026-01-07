@@ -30,6 +30,12 @@ class StoreFlowRequest extends FormRequest
             'knowledge_bases.*.kb_similarity_threshold' => ['nullable', 'numeric', 'between:0,1'],
             'language' => ['nullable', 'string', 'max:10'],
             'is_default' => ['nullable', 'boolean'],
+            // Second AI
+            'second_ai_enabled' => ['nullable', 'boolean'],
+            'second_ai_options' => ['nullable', 'array'],
+            'second_ai_options.fact_check' => ['nullable', 'boolean'],
+            'second_ai_options.policy' => ['nullable', 'boolean'],
+            'second_ai_options.personality' => ['nullable', 'boolean'],
         ];
     }
 

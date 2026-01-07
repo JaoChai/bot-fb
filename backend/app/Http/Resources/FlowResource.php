@@ -43,6 +43,14 @@ class FlowResource extends JsonResource
             'language' => $this->language,
             'is_default' => $this->is_default,
 
+            // Second AI
+            'second_ai_enabled' => $this->second_ai_enabled ?? false,
+            'second_ai_options' => $this->second_ai_options ?? [
+                'fact_check' => false,
+                'policy' => false,
+                'personality' => false,
+            ],
+
             // Timestamps
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

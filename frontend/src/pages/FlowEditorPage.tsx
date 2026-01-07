@@ -212,6 +212,15 @@ export function FlowEditorPage() {
         hitl_enabled: existingFlow.hitl_enabled ?? false,
         hitl_dangerous_actions: existingFlow.hitl_dangerous_actions || [],
       });
+
+      // Load Second AI settings
+      setAgenticSecondAIEnabled(existingFlow.second_ai_enabled ?? false);
+      setSecondAIOptions({
+        factCheck: existingFlow.second_ai_options?.fact_check ?? false,
+        policy: existingFlow.second_ai_options?.policy ?? false,
+        personality: existingFlow.second_ai_options?.personality ?? false,
+      });
+
       setHasChanges(false);
     }
   }, [existingFlow]);
@@ -239,12 +248,23 @@ export function FlowEditorPage() {
       return;
     }
 
+    // Prepare data with Second AI fields
+    const dataToSave = {
+      ...formData,
+      second_ai_enabled: agenticSecondAIEnabled,
+      second_ai_options: {
+        fact_check: secondAIOptions.factCheck,
+        policy: secondAIOptions.policy,
+        personality: secondAIOptions.personality,
+      },
+    };
+
     try {
       if (selectedFlowId) {
-        await updateMutation.mutateAsync(formData);
+        await updateMutation.mutateAsync(dataToSave);
         toast({ title: 'บันทึกแล้ว', description: 'การเปลี่ยนแปลงถูกบันทึกเรียบร้อย' });
       } else {
-        const newFlow = await createMutation.mutateAsync(formData);
+        const newFlow = await createMutation.mutateAsync(dataToSave);
         toast({ title: 'สร้างแล้ว', description: 'Flow ใหม่ถูกสร้างเรียบร้อย' });
         // Navigate to the new flow
         if (newFlow?.id) {
