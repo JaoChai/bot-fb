@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\PostgresBoolean;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -35,7 +36,7 @@ class Conversation extends Model
     ];
 
     protected $casts = [
-        'is_handover' => 'boolean',
+        'is_handover' => PostgresBoolean::class,
         'memory_notes' => 'array',
         'tags' => 'array',
         'context' => 'array',
