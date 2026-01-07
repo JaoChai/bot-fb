@@ -14,6 +14,7 @@ use App\Services\LINEService;
 use App\Services\MessageAggregationService;
 use App\Services\MultipleBubblesService;
 use App\Services\RateLimitService;
+use App\Services\ResponseHoursService;
 use App\Services\SmartAggregation\SmartAggregationAnalyzer;
 use App\Services\SmartAggregation\UserTypingStats;
 use Illuminate\Bus\Queueable;
@@ -60,10 +61,11 @@ class ProcessLINEWebhook implements ShouldQueue
         LINEService $lineService,
         AIService $aiService,
         RateLimitService $rateLimitService,
-        MessageAggregationService $aggregationService
+        MessageAggregationService $aggregationService,
+        ResponseHoursService $responseHoursService
     ): void {
         try {
-            $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService);
+            $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService);
         } catch (\Exception $e) {
             Log::error('LINE webhook processing failed', [
                 'bot_id' => $this->bot->id,
@@ -83,7 +85,8 @@ class ProcessLINEWebhook implements ShouldQueue
         LINEService $lineService,
         AIService $aiService,
         RateLimitService $rateLimitService,
-        MessageAggregationService $aggregationService
+        MessageAggregationService $aggregationService,
+        ResponseHoursService $responseHoursService
     ): void {
         // Only process message events
         if (!$lineService->isMessageEvent($this->event)) {
@@ -116,6 +119,13 @@ class ProcessLINEWebhook implements ShouldQueue
         $rateLimitResult = $rateLimitService->checkRateLimit($this->bot, $userId);
         if (!$rateLimitResult['allowed']) {
             $this->handleRateLimitExceeded($lineService, $rateLimitService, $replyToken, $rateLimitResult['status']);
+            return;
+        }
+
+        // Check response hours before processing
+        $responseHoursResult = $responseHoursService->checkResponseHours($this->bot);
+        if (!$responseHoursResult['allowed']) {
+            $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken);
             return;
         }
 
@@ -614,6 +624,36 @@ class ProcessLINEWebhook implements ShouldQueue
             Log::warning('Failed to send rate limit message', [
                 'bot_id' => $this->bot->id,
                 'status' => $status,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Handle messages received outside response hours.
+     * Sends offline message if configured, otherwise stays silent.
+     */
+    protected function handleOutsideResponseHours(
+        LINEService $lineService,
+        ResponseHoursService $responseHoursService,
+        ?string $replyToken
+    ): void {
+        $message = $responseHoursService->getOfflineMessage($this->bot->settings);
+
+        Log::info('Message received outside response hours', [
+            'bot_id' => $this->bot->id,
+            'has_offline_message' => $message !== null,
+        ]);
+
+        if (!$message || !$replyToken) {
+            return;
+        }
+
+        try {
+            $lineService->reply($this->bot, $replyToken, [$message]);
+        } catch (\Exception $e) {
+            Log::warning('Failed to send offline message', [
+                'bot_id' => $this->bot->id,
                 'error' => $e->getMessage(),
             ]);
         }
