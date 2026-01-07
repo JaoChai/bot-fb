@@ -74,6 +74,12 @@ class RAGService
                     'rag' => $cachedResponse['metadata']['rag'] ?? [],
                     'complexity' => $cachedResponse['metadata']['complexity'] ?? [],
                     'models_used' => $cachedResponse['metadata']['models_used'] ?? [],
+                    'model' => $cachedResponse['metadata']['models_used']['chat'] ?? 'cached',
+                    'usage' => [
+                        'prompt_tokens' => 0,
+                        'completion_tokens' => 0,
+                        'total_tokens' => 0,
+                    ],
                 ];
             }
         }
