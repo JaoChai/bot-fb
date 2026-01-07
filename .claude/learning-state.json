@@ -1,0 +1,20 @@
+{
+  "last_review": "2026-01-07T21:10:00.000Z",
+  "rules_created": 2,
+  "total_reviews": 2,
+  "last_updated": "2026-01-07T21:10:00.000Z",
+  "recent_rules": [
+    {
+      "id": "pgsql-cached-plan",
+      "title": "PostgreSQL cached plan error after schema migration - use DB_EMULATE_PREPARES",
+      "created": "2026-01-07T21:10:00.000Z",
+      "trigger": "ALTER TABLE added columns, Neon connection pool cached stale prepared statements"
+    },
+    {
+      "id": "defensive-api",
+      "title": "Always use null coalescing for external API responses",
+      "created": "2026-01-07T19:55:00.000Z",
+      "trigger": "Gemini 3 Flash Preview missing usage data bug"
+    }
+  ]
+}
