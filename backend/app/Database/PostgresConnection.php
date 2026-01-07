@@ -3,18 +3,36 @@
 namespace App\Database;
 
 use Illuminate\Database\PostgresConnection as BasePostgresConnection;
+use Illuminate\Database\Query\Builder;
 
 /**
  * Custom PostgreSQL Connection that properly handles boolean binding.
  *
- * PostgreSQL with native prepared statements (PDO::ATTR_EMULATE_PREPARES = false)
- * requires actual boolean values, not integers (1/0).
+ * PostgreSQL requires actual boolean values, not integers (1/0).
  *
- * This class overrides prepareBindings() to convert PHP booleans to PostgreSQL
- * native boolean format ('t'/'f' or true/false).
+ * This class:
+ * 1. Uses custom PostgresBuilder that preserves boolean types (prevents int conversion)
+ * 2. Overrides prepareBindings() to convert PHP booleans to PostgreSQL format ('true'/'false')
  */
 class PostgresConnection extends BasePostgresConnection
 {
+    /**
+     * Get a new query builder instance.
+     *
+     * Returns our custom PostgresBuilder that preserves boolean types
+     * instead of converting them to integers.
+     *
+     * @return \App\Database\PostgresBuilder
+     */
+    public function query(): Builder
+    {
+        return new PostgresBuilder(
+            $this,
+            $this->getQueryGrammar(),
+            $this->getPostProcessor()
+        );
+    }
+
     /**
      * Prepare the query bindings for execution.
      *
