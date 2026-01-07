@@ -102,8 +102,8 @@ class BotSettingController extends Controller
 
                 // Smart aggregation settings
                 'smart_aggregation_enabled' => 'boolean',
-                'smart_min_wait_ms' => 'integer|min:300|max:3000',
-                'smart_max_wait_ms' => 'integer|min:1000|max:10000|gte:smart_min_wait_ms',
+                'smart_min_wait_ms' => 'sometimes|integer|min:300|max:3000',
+                'smart_max_wait_ms' => ['sometimes', 'integer', 'min:1000', 'max:10000'],
                 'smart_early_trigger_enabled' => 'boolean',
                 'smart_per_user_learning_enabled' => 'boolean',
 
@@ -116,8 +116,26 @@ class BotSettingController extends Controller
                 'auto_assignment_mode' => 'string|in:round_robin,load_balanced',
             ]);
 
+            // Validate smart_max_wait_ms >= smart_min_wait_ms
+            if (isset($validated['smart_max_wait_ms'], $validated['smart_min_wait_ms'])) {
+                if ($validated['smart_max_wait_ms'] < $validated['smart_min_wait_ms']) {
+                    return response()->json([
+                        'message' => 'The smart max wait must be greater than or equal to smart min wait.',
+                        'errors' => [
+                            'smart_max_wait_ms' => ['The smart max wait must be greater than or equal to smart min wait.'],
+                        ],
+                    ], 422);
+                }
+            }
+
             // Get or create settings
             $settings = $bot->settings ?? $this->createDefaultSettings($bot);
+
+            // Log for debugging
+            \Log::debug('BotSettingController::update - updating settings', [
+                'bot_id' => $bot->id,
+                'smart_fields' => array_filter($validated, fn($k) => str_starts_with($k, 'smart_'), ARRAY_FILTER_USE_KEY),
+            ]);
 
             // Update BotSetting
             $settings->update($validated);

@@ -1,26 +1,20 @@
 {
   "mcpServers": {
-    "botfacebook": {
-      "command": "node",
-      "args": [".claude/mcp/botfacebook-mcp-server/dist/index.js"],
-      "env": {
-        "LARAVEL_PATH": "./backend",
-        "FRONTEND_PATH": "./frontend",
-        "PHP_PATH": "/opt/homebrew/opt/php@8.4/bin/php",
-        "LARAVEL_API_URL": "http://localhost:8000",
-        "LARAVEL_AUTH_TOKEN": "47|THbMuu6Z4EFujm1k0rJpjxgDfY73wF64GhR1TapOe7fab8ce",
-        "MCP_MODE": "remote",
-        "PRODUCTION_BACKEND_URL": "https://api.botjao.com",
-        "PRODUCTION_FRONTEND_URL": "https://www.botjao.com"
-      }
-    },
     "neon": {
       "command": "npx",
       "args": ["-y", "@neondatabase/mcp-server-neon", "start", "napi_fli47jfhat6lc1tipoyxhk66y2w6r1os31bvf49q2mhen45bmi78debj4nn8pwkm"]
     },
     "sentry": {
-      "type": "sse",
-      "url": "https://mcp.sentry.dev/sse"
+      "command": "npx",
+      "args": [
+        "-y",
+        "@sentry/mcp-server@latest",
+        "--access-token",
+        "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"
+      ],
+      "env": {
+        "OPENAI_API_KEY": "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"
+      }
     }
   }
 }
