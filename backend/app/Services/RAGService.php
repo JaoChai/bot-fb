@@ -27,7 +27,8 @@ class RAGService
         protected SemanticSearchService $semanticSearchService,
         protected HybridSearchService $hybridSearchService,
         protected OpenRouterService $openRouter,
-        protected ?QueryEnhancementService $queryEnhancement = null
+        protected ?QueryEnhancementService $queryEnhancement = null,
+        protected ?SemanticCacheService $semanticCache = null
     ) {}
 
     /**
@@ -53,6 +54,29 @@ class RAGService
     ): array {
         // Get API key first (used for both decision and chat models)
         $apiKey = $apiKeyOverride ?? $this->getApiKeyForBot($bot);
+
+        // Step 0: Check Semantic Cache first (fastest path)
+        if ($this->semanticCache?->isEnabled()) {
+            $cachedResponse = $this->semanticCache->get($bot, $userMessage, $apiKey);
+            if ($cachedResponse) {
+                Log::debug('RAGService: Cache hit, returning cached response', [
+                    'bot_id' => $bot->id,
+                    'cache_match_type' => $cachedResponse['cache_match_type'],
+                    'cache_similarity' => $cachedResponse['cache_similarity'] ?? null,
+                ]);
+
+                return [
+                    'content' => $cachedResponse['content'],
+                    'from_cache' => true,
+                    'cache_match_type' => $cachedResponse['cache_match_type'],
+                    'cache_similarity' => $cachedResponse['cache_similarity'],
+                    'intent' => $cachedResponse['metadata']['intent'] ?? ['intent' => 'cached', 'confidence' => 1.0],
+                    'rag' => $cachedResponse['metadata']['rag'] ?? [],
+                    'complexity' => $cachedResponse['metadata']['complexity'] ?? [],
+                    'models_used' => $cachedResponse['metadata']['models_used'] ?? [],
+                ];
+            }
+        }
 
         // Step 1: Analyze intent using Decision Model
         $intent = $this->analyzeIntent($bot, $userMessage, $apiKey);
@@ -133,6 +157,31 @@ class RAGService
             'decision' => $intent['model_used'] ?? null,
             'chat' => $result['model'] ?? $chatModel,
         ];
+        $result['from_cache'] = false;
+
+        // Step 10: Save to Semantic Cache for future similar queries
+        if ($this->semanticCache?->isEnabled() && !empty($result['content'])) {
+            try {
+                $this->semanticCache->put(
+                    $bot,
+                    $userMessage,
+                    $result['content'],
+                    [
+                        'intent' => $intent,
+                        'rag' => $kbMetadata,
+                        'complexity' => $complexity,
+                        'models_used' => $result['models_used'],
+                    ],
+                    $apiKey
+                );
+            } catch (\Exception $e) {
+                // Cache save failure should not break the response
+                Log::warning('RAGService: Failed to save to cache', [
+                    'bot_id' => $bot->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         return $result;
     }

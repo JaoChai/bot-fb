@@ -14,3 +14,10 @@ Schedule::command('conversations:auto-enable-bots')
     ->everyMinute()
     ->withoutOverlapping()
     ->runInBackground();
+
+// Clean up expired RAG cache entries
+// Runs every 6 hours as configured in rag.semantic_cache.cleanup_interval_hours
+Schedule::command('rag:cleanup-cache')
+    ->everyFourHours()
+    ->withoutOverlapping()
+    ->runInBackground();

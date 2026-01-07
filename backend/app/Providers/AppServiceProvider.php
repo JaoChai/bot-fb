@@ -16,6 +16,7 @@ use App\Services\KeywordSearchService;
 use App\Services\OpenRouterService;
 use App\Services\QueryEnhancementService;
 use App\Services\RAGService;
+use App\Services\SemanticCacheService;
 use App\Services\SemanticSearchService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -47,7 +48,8 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(SemanticSearchService::class),
                 $app->make(HybridSearchService::class),
                 $app->make(OpenRouterService::class),
-                $app->make(QueryEnhancementService::class)
+                $app->make(QueryEnhancementService::class),
+                $app->make(SemanticCacheService::class)
             );
         });
     }
