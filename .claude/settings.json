@@ -1,0 +1,13 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "bug|error|fix|แก้|พัง|ไม่ทำงาน|ล่ม|500|404|exception|feature|เพิ่ม|สร้าง|ฟีเจอร์|implement|develop",
+        "action": {
+          "type": "prompt-inject",
+          "message": "🔍 Auto Memory Search: ก่อนเริ่มงาน ให้ spawn memory-search agent เพื่อหา similar work/gotchas ก่อน แล้วแสดงผลให้ user เห็น"
+        }
+      }
+    ]
+  }
+}
