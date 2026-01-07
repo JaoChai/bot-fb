@@ -39,11 +39,24 @@ class AIService
             conversationHistory: $history
         );
 
+        // Ensure usage key exists with defaults (some models may not return usage data)
+        if (!isset($result['usage'])) {
+            $result['usage'] = [
+                'prompt_tokens' => 0,
+                'completion_tokens' => 0,
+                'total_tokens' => 0,
+            ];
+            Log::warning('AI response missing usage data', [
+                'model' => $result['model'] ?? 'unknown',
+                'from_cache' => $result['from_cache'] ?? false,
+            ]);
+        }
+
         // Calculate cost
         $result['cost'] = $this->openRouter->estimateCost(
-            $result['usage']['prompt_tokens'],
-            $result['usage']['completion_tokens'],
-            $result['model']
+            $result['usage']['prompt_tokens'] ?? 0,
+            $result['usage']['completion_tokens'] ?? 0,
+            $result['model'] ?? 'unknown'
         );
 
         return $result;
@@ -69,10 +82,10 @@ class AIService
                 'sender' => 'bot',
                 'content' => $result['content'],
                 'type' => 'text',
-                'model_used' => $result['model'],
-                'prompt_tokens' => $result['usage']['prompt_tokens'],
-                'completion_tokens' => $result['usage']['completion_tokens'],
-                'cost' => $result['cost'],
+                'model_used' => $result['model'] ?? 'unknown',
+                'prompt_tokens' => $result['usage']['prompt_tokens'] ?? 0,
+                'completion_tokens' => $result['usage']['completion_tokens'] ?? 0,
+                'cost' => $result['cost'] ?? 0,
             ];
 
             // Include RAG metadata if KB was used
