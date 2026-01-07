@@ -1,12 +1,46 @@
 {
+  "extraKnownMarketplaces": {
+    "botfb-local": {
+      "source": {
+        "source": "directory",
+        "path": ".claude/plugins/botfb-agents"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "botfb-agents@botfb-local": true
+  },
   "hooks": {
     "UserPromptSubmit": [
       {
-        "matcher": "bug|error|fix|แก้|พัง|ไม่ทำงาน|ล่ม|500|404|exception|feature|เพิ่ม|สร้าง|ฟีเจอร์|implement|develop",
-        "action": {
-          "type": "prompt-inject",
-          "message": "🔍 Auto Memory Search: ก่อนเริ่มงาน ให้ spawn memory-search agent เพื่อหา similar work/gotchas ก่อน แล้วแสดงผลให้ user เห็น"
-        }
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/smart-agent-selector.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/pre-commit-review.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/post-implement.sh"
+          }
+        ]
       }
     ]
   }

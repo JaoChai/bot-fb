@@ -1,3 +1,15 @@
+---
+name: memory-search
+description: Search past work memory for bugs, features, gotchas. Use when starting bug fixes or new features to find similar past work.
+tools: Read
+model: haiku
+color: purple
+# Set Integration
+skills: []
+mcp:
+  mem-search: ["search", "get_observation", "get_context_timeline"]
+---
+
 # Memory Search Agent
 
 Auto-search memory เมื่อเริ่มงาน bug fix หรือ feature
