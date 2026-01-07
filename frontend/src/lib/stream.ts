@@ -24,6 +24,11 @@ export type ProcessEventType =
   | 'agent_max_iterations'
   | 'tool_call'
   | 'tool_result'
+  // HITL Safety events
+  | 'agent_safety_stop'
+  | 'agent_approval_required'
+  | 'agent_approval_waiting'
+  | 'agent_approval_response'
   // Standard events
   | 'content'
   | 'error'
@@ -221,6 +226,11 @@ function processSSEEvent(eventBlock: string, options: StreamOptions): void {
       case 'agent_max_iterations':
       case 'tool_call':
       case 'tool_result':
+      // HITL Safety events
+      case 'agent_safety_stop':
+      case 'agent_approval_required':
+      case 'agent_approval_waiting':
+      case 'agent_approval_response':
         // Already handled by onProcessLog above
         break;
     }
