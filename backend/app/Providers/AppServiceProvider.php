@@ -19,6 +19,10 @@ use App\Services\QueryEnhancementService;
 use App\Services\RAGService;
 use App\Services\SemanticCacheService;
 use App\Services\SemanticSearchService;
+use App\Services\SecondAI\SecondAIService;
+use App\Services\SecondAI\FactCheckService;
+use App\Services\SecondAI\PolicyCheckService;
+use App\Services\SecondAI\PersonalityCheckService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +68,22 @@ class AppServiceProvider extends ServiceProvider
         // concurrent requests from corrupting each other's cost tracking state
         $this->app->scoped(CostTrackingService::class, function ($app) {
             return new CostTrackingService();
+        });
+
+        // Register SecondAIService with all check services
+        $this->app->singleton(SecondAIService::class, function ($app) {
+            return new SecondAIService(
+                new FactCheckService(
+                    $app->make(HybridSearchService::class),
+                    $app->make(OpenRouterService::class)
+                ),
+                new PolicyCheckService(
+                    $app->make(OpenRouterService::class)
+                ),
+                new PersonalityCheckService(
+                    $app->make(OpenRouterService::class)
+                )
+            );
         });
     }
 

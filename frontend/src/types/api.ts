@@ -217,6 +217,13 @@ export interface FlowKnowledgeBase {
   kb_similarity_threshold: number;
 }
 
+// Second AI Options
+export interface SecondAIOptions {
+  fact_check: boolean;
+  policy: boolean;
+  personality: boolean;
+}
+
 export interface Flow {
   id: number;
   bot_id: number;
@@ -240,6 +247,9 @@ export interface Flow {
   agent_max_cost_per_request?: number | null;
   hitl_enabled?: boolean;
   hitl_dangerous_actions?: string[];
+  // Second AI
+  second_ai_enabled?: boolean;
+  second_ai_options?: SecondAIOptions;
   created_at: string;
   updated_at: string;
 }
@@ -280,6 +290,9 @@ export interface CreateFlowData {
   agent_max_cost_per_request?: number | null;
   hitl_enabled?: boolean;
   hitl_dangerous_actions?: string[];
+  // Second AI
+  second_ai_enabled?: boolean;
+  second_ai_options?: SecondAIOptions;
 }
 
 export interface UpdateFlowData extends Partial<CreateFlowData> {}

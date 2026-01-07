@@ -6,6 +6,7 @@ use App\Exceptions\OpenRouterException;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Services\SecondAI\SecondAIService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -13,7 +14,8 @@ class AIService
 {
     public function __construct(
         protected OpenRouterService $openRouter,
-        protected RAGService $ragService
+        protected RAGService $ragService,
+        protected SecondAIService $secondAIService
     ) {}
 
     /**
@@ -38,6 +40,23 @@ class AIService
             userMessage: $userMessage,
             conversationHistory: $history
         );
+
+        // Apply Second AI check if enabled on the flow
+        $flow = $conversation?->currentFlow ?? $bot->defaultFlow;
+        if ($flow && $flow->second_ai_enabled) {
+            $secondAIResult = $this->secondAIService->process(
+                response: $result['content'],
+                flow: $flow,
+                userMessage: $userMessage,
+                apiKey: $bot->user?->openrouter_api_key
+            );
+
+            $result['content'] = $secondAIResult['content'];
+            $result['second_ai'] = [
+                'applied' => $secondAIResult['second_ai_applied'],
+                'metadata' => $secondAIResult['second_ai'] ?? [],
+            ];
+        }
 
         // Ensure usage key exists with defaults (some models may not return usage data)
         if (!isset($result['usage'])) {
@@ -93,6 +112,14 @@ class AIService
                 $messageData['metadata'] = [
                     'rag' => $result['rag'],
                 ];
+            }
+
+            // Include Second AI metadata if applied
+            if (!empty($result['second_ai']) && $result['second_ai']['applied']) {
+                $messageData['metadata'] = array_merge(
+                    $messageData['metadata'] ?? [],
+                    ['second_ai' => $result['second_ai']]
+                );
             }
 
             // Create bot response message

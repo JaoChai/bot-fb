@@ -34,6 +34,9 @@ class Flow extends Model
         'enabled_tools',
         'language',
         'is_default',
+        // Second AI
+        'second_ai_enabled',
+        'second_ai_options',
     ];
 
     protected $casts = [
@@ -46,6 +49,9 @@ class Flow extends Model
         'agent_max_cost_per_request' => 'decimal:4',
         'hitl_enabled' => 'boolean',
         'hitl_dangerous_actions' => 'array',
+        // Second AI
+        'second_ai_enabled' => 'boolean',
+        'second_ai_options' => 'array',
     ];
 
     public function bot(): BelongsTo
