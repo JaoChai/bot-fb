@@ -38,20 +38,25 @@ class PostgresConnection extends BasePostgresConnection
      *
      * Converts boolean values to PostgreSQL-compatible format.
      *
+     * CRITICAL: Must convert booleans BEFORE calling parent::prepareBindings()
+     * because the parent method converts booleans to integers (0/1) which
+     * PostgreSQL rejects for boolean columns.
+     *
      * @param  array  $bindings
      * @return array
      */
     public function prepareBindings(array $bindings)
     {
-        $bindings = parent::prepareBindings($bindings);
-
+        // FIRST: Convert PHP booleans to PostgreSQL format BEFORE parent processes them
+        // Parent::prepareBindings() converts bool to int, which breaks PostgreSQL!
         foreach ($bindings as $key => $value) {
-            // Convert PHP boolean to PostgreSQL boolean format
             if (is_bool($value)) {
                 $bindings[$key] = $value ? 'true' : 'false';
             }
         }
 
-        return $bindings;
+        // Now call parent for other type conversions (DateTime, etc.)
+        // Booleans are already strings so parent won't touch them
+        return parent::prepareBindings($bindings);
     }
 }
