@@ -887,6 +887,9 @@ PROMPT;
             ]);
 
             try {
+                // Truncate messages if approaching token limit to prevent memory growth
+                $messages = $this->truncateMessagesIfNeeded($messages);
+
                 // Call LLM with tools
                 $response = $this->openRouter->chatWithTools(
                     messages: $messages,
@@ -911,12 +914,16 @@ PROMPT;
 
                 // Check if we should execute tools
                 if ($finishReason === 'tool_calls' && !empty($response['tool_calls'])) {
+                    // Collect all tool calls and results for proper batching (OpenAI spec)
+                    $processedToolCalls = [];
+                    $toolResults = [];
+
                     // Process each tool call
                     foreach ($response['tool_calls'] as $toolCall) {
                         $this->metrics['tool_calls']++;
                         $this->costTracking->addToolCall();
 
-                        $toolId = $toolCall['id'] ?? 'tool_' . $iteration;
+                        $toolId = $toolCall['id'] ?? 'tool_' . $iteration . '_' . count($processedToolCalls);
                         $toolName = $toolCall['function']['name'] ?? 'unknown';
                         $toolArgs = json_decode($toolCall['function']['arguments'] ?? '{}', true) ?: [];
 
@@ -937,8 +944,17 @@ PROMPT;
                                 'timeout_seconds' => 60,
                             ]);
 
-                            // Wait for approval (blocking)
-                            $approval = $this->agentSafety->waitForApproval($approvalId, 60);
+                            // Wait for approval with heartbeat to keep SSE alive
+                            $approval = $this->agentSafety->waitForApproval(
+                                $approvalId,
+                                60,
+                                fn($elapsed, $timeout) => $this->sendSSE('agent_approval_waiting', [
+                                    'approval_id' => $approvalId,
+                                    'elapsed_seconds' => $elapsed,
+                                    'timeout_seconds' => $timeout,
+                                    'tool_name' => $toolName,
+                                ])
+                            );
 
                             $this->sendSSE('agent_approval_response', [
                                 'approval_id' => $approvalId,
@@ -947,14 +963,9 @@ PROMPT;
                             ]);
 
                             if (!$approval['approved']) {
-                                // Skip this tool call
-                                $messages[] = [
-                                    'role' => 'assistant',
-                                    'content' => null,
-                                    'tool_calls' => [$toolCall],
-                                ];
-                                $messages[] = [
-                                    'role' => 'tool',
+                                // Mark as rejected - still add to batch
+                                $processedToolCalls[] = $toolCall;
+                                $toolResults[] = [
                                     'tool_call_id' => $toolId,
                                     'content' => 'Action was rejected by user: ' . ($approval['reason'] ?? 'No reason provided'),
                                 ];
@@ -987,21 +998,32 @@ PROMPT;
                             'time_ms' => $toolResult['time_ms'] ?? 0,
                         ]);
 
-                        // Add assistant message with tool call
-                        $messages[] = [
-                            'role' => 'assistant',
-                            'content' => null,
-                            'tool_calls' => [$toolCall],
-                        ];
-
-                        // Add tool result message
-                        $messages[] = [
-                            'role' => 'tool',
+                        // Collect for batching
+                        $processedToolCalls[] = $toolCall;
+                        $toolResults[] = [
                             'tool_call_id' => $toolId,
                             'content' => $toolResult['status'] === 'success'
                                 ? ($toolResult['result'] ?? '')
                                 : ('Error: ' . ($toolResult['error'] ?? 'Unknown error')),
                         ];
+                    }
+
+                    // Add ONE assistant message with ALL tool calls (OpenAI spec compliance)
+                    if (!empty($processedToolCalls)) {
+                        $messages[] = [
+                            'role' => 'assistant',
+                            'content' => null,
+                            'tool_calls' => $processedToolCalls,
+                        ];
+
+                        // Add all tool results
+                        foreach ($toolResults as $result) {
+                            $messages[] = [
+                                'role' => 'tool',
+                                'tool_call_id' => $result['tool_call_id'],
+                                'content' => $result['content'],
+                            ];
+                        }
                     }
 
                     // Continue loop to process tool results
@@ -1138,6 +1160,53 @@ PROMPT;
             return $text;
         }
         return mb_substr($text, 0, $maxLength) . '...';
+    }
+
+    /**
+     * Truncate messages array if approaching token limit.
+     * Keeps system message + recent messages to prevent memory growth.
+     *
+     * @param array $messages Current messages array
+     * @param int $maxMessages Maximum messages to keep (default 30)
+     * @return array Truncated messages array
+     */
+    protected function truncateMessagesIfNeeded(array $messages, int $maxMessages = 30): array
+    {
+        // If under limit, return as-is
+        if (count($messages) <= $maxMessages) {
+            return $messages;
+        }
+
+        // Keep system message (first) + last N messages
+        $systemMessage = null;
+        $otherMessages = [];
+
+        foreach ($messages as $msg) {
+            if ($msg['role'] === 'system') {
+                $systemMessage = $msg;
+            } else {
+                $otherMessages[] = $msg;
+            }
+        }
+
+        // Keep last (maxMessages - 1) non-system messages
+        $keepCount = $maxMessages - ($systemMessage ? 1 : 0);
+        $truncatedMessages = array_slice($otherMessages, -$keepCount);
+
+        // Ensure we don't start with orphaned tool result messages
+        // Tool results must follow their corresponding assistant message with tool_calls
+        while (!empty($truncatedMessages) && $truncatedMessages[0]['role'] === 'tool') {
+            array_shift($truncatedMessages);
+        }
+
+        // Rebuild with system message first
+        $result = [];
+        if ($systemMessage) {
+            $result[] = $systemMessage;
+        }
+        $result = array_merge($result, $truncatedMessages);
+
+        return $result;
     }
 
     protected function sendSSE(string $event, array $data): void

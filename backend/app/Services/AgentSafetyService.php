@@ -20,18 +20,23 @@ class AgentSafetyService
     /**
      * Default dangerous tool patterns.
      * Tools matching these patterns require HITL approval.
+     * Synced with frontend FlowSafetySettings.tsx
      */
     protected array $defaultDangerousPatterns = [
+        // Data modification patterns
         'delete_*',
         'remove_*',
         'destroy_*',
         'drop_*',
         'truncate_*',
+        'update_*',
+        // Sensitive operations
         'execute_sql',
         'run_command',
         'send_email',
         'make_payment',
         'transfer_funds',
+        'call_external_api',
     ];
 
     public function __construct(
@@ -127,13 +132,27 @@ class AgentSafetyService
 
     /**
      * Wait for approval (blocking with timeout).
+     * Optionally sends heartbeat callbacks during wait.
+     *
+     * @param string $approvalId
+     * @param int $timeoutSeconds
+     * @param callable|null $heartbeat Callback fn($elapsedSeconds, $timeoutSeconds) for SSE heartbeat
      */
-    public function waitForApproval(string $approvalId, int $timeoutSeconds = 60): array
+    public function waitForApproval(string $approvalId, int $timeoutSeconds = 60, ?callable $heartbeat = null): array
     {
         $startTime = time();
         $checkInterval = 500000; // 0.5 seconds in microseconds
+        $heartbeatInterval = 3; // Send heartbeat every 3 seconds
+        $lastHeartbeat = $startTime;
 
         while (time() - $startTime < $timeoutSeconds) {
+            // Send heartbeat to keep SSE connection alive
+            $now = time();
+            if ($heartbeat && ($now - $lastHeartbeat) >= $heartbeatInterval) {
+                $heartbeat($now - $startTime, $timeoutSeconds);
+                $lastHeartbeat = $now;
+            }
+
             $approval = Cache::get("hitl_approval:{$approvalId}");
 
             if (!$approval) {

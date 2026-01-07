@@ -42,12 +42,14 @@ const InfoTooltip = ({ children }: { children: React.ReactNode }) => (
   </TooltipProvider>
 );
 
+// Synced with backend AgentSafetyService.php $defaultDangerousPatterns
+// Using wildcard patterns for broader matching
 const DANGEROUS_ACTIONS = [
-  { id: 'send_email', label: 'ส่งอีเมล', description: 'อนุญาตให้ส่งอีเมลได้' },
-  { id: 'make_payment', label: 'ชำระเงิน', description: 'ดำเนินการชำระเงิน' },
-  { id: 'delete_data', label: 'ลบข้อมูล', description: 'ลบข้อมูลในระบบ' },
-  { id: 'update_database', label: 'แก้ไขฐานข้อมูล', description: 'แก้ไขข้อมูลในฐานข้อมูล' },
-  { id: 'call_external_api', label: 'เรียก API ภายนอก', description: 'เรียกใช้ API ภายนอก' },
+  { id: 'send_email', label: 'ส่งอีเมล', description: 'ส่งอีเมลในนามของ user' },
+  { id: 'make_payment', label: 'ชำระเงิน', description: 'ดำเนินการชำระเงินหรือโอนเงิน' },
+  { id: 'delete_*', label: 'ลบข้อมูล', description: 'ลบข้อมูลในระบบ (รวม remove, destroy, drop)' },
+  { id: 'update_*', label: 'แก้ไขข้อมูล', description: 'แก้ไขหรืออัปเดตข้อมูลในฐานข้อมูล' },
+  { id: 'call_external_api', label: 'เรียก API ภายนอก', description: 'เรียกใช้ API หรือ webhook ภายนอก' },
 ];
 
 export function FlowSafetySettings({ settings, onChange }: FlowSafetySettingsProps) {

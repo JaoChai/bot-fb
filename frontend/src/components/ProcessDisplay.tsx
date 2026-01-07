@@ -17,6 +17,9 @@ import {
   Bot,
   Sparkles,
   Calculator,
+  ShieldAlert,
+  XCircle,
+  Timer,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { ProcessLog, DoneSummary } from '@/hooks/useStreamingChat';
@@ -79,6 +82,17 @@ function getEventIcon(event: string, data?: Record<string, unknown>) {
     }
     case 'tool_result':
       return <CheckCircle2 className="h-3.5 w-3.5 text-foreground" />;
+    // HITL Safety events
+    case 'agent_safety_stop':
+      return <ShieldAlert className="h-3.5 w-3.5 text-destructive" />;
+    case 'agent_approval_required':
+      return <Timer className="h-3.5 w-3.5 text-amber-500" />;
+    case 'agent_approval_waiting':
+      return <Loader2 className="h-3.5 w-3.5 text-amber-500 animate-spin" />;
+    case 'agent_approval_response':
+      return data?.approved
+        ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+        : <XCircle className="h-3.5 w-3.5 text-destructive" />;
     default:
       return <Activity className="h-3.5 w-3.5 text-muted-foreground" />;
   }
@@ -141,6 +155,15 @@ function getEventLabel(event: string, data?: Record<string, unknown>): string {
       const status = data?.status as string;
       return status === 'success' ? '✅ ผลลัพธ์ Tool' : '❌ Tool ล้มเหลว';
     }
+    // HITL Safety events
+    case 'agent_safety_stop':
+      return '🛑 Agent หยุดทำงาน (Safety)';
+    case 'agent_approval_required':
+      return '⏳ รอการอนุมัติจาก User';
+    case 'agent_approval_waiting':
+      return '⏳ กำลังรอ...';
+    case 'agent_approval_response':
+      return data?.approved ? '✅ อนุมัติแล้ว' : '❌ ปฏิเสธ';
     default:
       return event;
   }
@@ -231,20 +254,43 @@ function formatDetails(event: string, data: Record<string, unknown>): string {
       return `${preview.slice(0, 100)}${preview.length > 100 ? '...' : ''} • ${timeMs}ms`;
     }
 
+    // HITL Safety events
+    case 'agent_safety_stop': {
+      const message = data.message ? ` - ${data.message}` : '';
+      return `หยุดเนื่องจาก: ${data.type || 'unknown'}${message}`;
+    }
+
+    case 'agent_approval_required':
+      return `Tool: ${data.tool_name || 'unknown'} (timeout: ${data.timeout_seconds || 60}s)`;
+
+    case 'agent_approval_waiting':
+      return `รอแล้ว ${data.elapsed_seconds || 0}/${data.timeout_seconds || 60} วินาที`;
+
+    case 'agent_approval_response':
+      return data.reason as string || (data.approved ? 'อนุมัติ' : 'ปฏิเสธ');
+
     default:
       return '';
   }
 }
 
 // Get background color for each event type
-function getEventBgColor(event: string): string {
+function getEventBgColor(event: string, data?: Record<string, unknown>): string {
   switch (event) {
     case 'error':
     case 'agent_error':
+    case 'agent_safety_stop':
       return 'bg-destructive/10 border-destructive/20';
     case 'done':
     case 'agent_done':
       return 'bg-emerald-500/10 border-emerald-500/20';
+    case 'agent_approval_required':
+    case 'agent_approval_waiting':
+      return 'bg-amber-500/10 border-amber-500/20';
+    case 'agent_approval_response':
+      return data?.approved
+        ? 'bg-emerald-500/10 border-emerald-500/20'
+        : 'bg-destructive/10 border-destructive/20';
     default:
       return 'bg-muted/50 border-border';
   }
@@ -258,7 +304,7 @@ const ProcessLogItem = memo(function ProcessLogItem({
 }) {
   return (
     <div
-      className={`flex items-start gap-2 p-2 rounded-md border text-xs ${getEventBgColor(log.event)}`}
+      className={`flex items-start gap-2 p-2 rounded-md border text-xs ${getEventBgColor(log.event, log.data)}`}
     >
       <div className="mt-0.5 shrink-0">
         {getEventIcon(log.event, log.data)}
