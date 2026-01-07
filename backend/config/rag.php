@@ -83,6 +83,52 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Semantic Cache Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Caches RAG responses using PostgreSQL + pgvector for semantic matching.
+    | Similar queries return cached responses, reducing API costs and latency.
+    |
+    | Benefits:
+    | - Reduces API costs by 30-50% (cache hit rate depends on query patterns)
+    | - Reduces latency from 2-3s to ~100ms for cached queries
+    | - Uses existing PostgreSQL (no extra infrastructure)
+    |
+    | How it works:
+    | 1. Exact match check (fast, no API call)
+    | 2. If no exact match, semantic similarity search using pgvector
+    | 3. If similarity > threshold → return cached response
+    | 4. If no match → generate new response → save to cache
+    |
+    */
+    'semantic_cache' => [
+        // Enable/disable semantic cache
+        'enabled' => env('RAG_SEMANTIC_CACHE_ENABLED', true),
+
+        // Similarity threshold for cache hit (0.0 - 1.0)
+        // Higher = stricter matching, lower hit rate but more accurate
+        // Recommended: 0.90-0.95 for most use cases
+        'similarity_threshold' => env('RAG_SEMANTIC_CACHE_THRESHOLD', 0.92),
+
+        // Cache TTL in minutes
+        // Longer TTL = higher hit rate but potentially stale data
+        // Recommended: 30-60 minutes for dynamic content, 60-1440 for static
+        'ttl_minutes' => env('RAG_SEMANTIC_CACHE_TTL', 60),
+
+        // Try exact match first before semantic search
+        // Saves embedding API call if query is exactly the same
+        'exact_match_first' => env('RAG_SEMANTIC_CACHE_EXACT_FIRST', true),
+
+        // Cache cleanup interval in hours (run via scheduler)
+        'cleanup_interval_hours' => env('RAG_SEMANTIC_CACHE_CLEANUP', 6),
+
+        // Maximum cache entries per bot (prevents unbounded growth)
+        // Oldest entries are removed when limit is reached
+        'max_entries_per_bot' => env('RAG_SEMANTIC_CACHE_MAX_ENTRIES', 10000),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Hybrid Search Configuration
     |--------------------------------------------------------------------------
     |

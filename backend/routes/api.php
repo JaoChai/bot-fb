@@ -77,6 +77,8 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
     // Analytics routes
     Route::prefix('analytics')->group(function () {
         Route::get('/costs', [AnalyticsController::class, 'costs'])->name('analytics.costs');
+        Route::get('/cache', [AnalyticsController::class, 'cacheStats'])->name('analytics.cache');
+        Route::delete('/cache', [AnalyticsController::class, 'clearCache'])->name('analytics.cache.clear');
     });
 
     // Dashboard routes

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Message;
+use App\Services\SemanticCacheService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -218,5 +219,82 @@ class AnalyticsController extends Controller
                 'group_by' => $groupBy,
             ],
         ];
+    }
+
+    /**
+     * Get Semantic Cache statistics for a specific bot or all bots.
+     */
+    public function cacheStats(Request $request, SemanticCacheService $cacheService): JsonResponse
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'bot_id' => [
+                'sometimes',
+                'integer',
+                Rule::exists('bots', 'id')->where('user_id', $user->id),
+            ],
+        ]);
+
+        $botId = $validated['bot_id'] ?? null;
+
+        // If specific bot requested, return stats for that bot
+        if ($botId) {
+            return response()->json([
+                'data' => $cacheService->getStats($botId),
+            ]);
+        }
+
+        // Otherwise, return stats for all user's bots
+        $bots = $user->bots()->get(['id', 'name']);
+        $allStats = [];
+        $totalHits = 0;
+        $totalEntries = 0;
+
+        foreach ($bots as $bot) {
+            $stats = $cacheService->getStats($bot->id);
+            $allStats[] = [
+                'bot_id' => $bot->id,
+                'bot_name' => $bot->name,
+                'stats' => $stats,
+            ];
+            $totalHits += $stats['total_hits'] ?? 0;
+            $totalEntries += $stats['active_entries'] ?? 0;
+        }
+
+        return response()->json([
+            'data' => [
+                'summary' => [
+                    'total_bots' => $bots->count(),
+                    'total_active_entries' => $totalEntries,
+                    'total_hits' => $totalHits,
+                    'cache_enabled' => $cacheService->isEnabled(),
+                ],
+                'by_bot' => $allStats,
+            ],
+        ]);
+    }
+
+    /**
+     * Clear Semantic Cache for a specific bot.
+     */
+    public function clearCache(Request $request, SemanticCacheService $cacheService): JsonResponse
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'bot_id' => [
+                'required',
+                'integer',
+                Rule::exists('bots', 'id')->where('user_id', $user->id),
+            ],
+        ]);
+
+        $deletedCount = $cacheService->clearForBot($validated['bot_id']);
+
+        return response()->json([
+            'message' => "Cleared {$deletedCount} cached entries",
+            'deleted_count' => $deletedCount,
+        ]);
     }
 }
