@@ -11,8 +11,8 @@ RUN apk add --no-cache \
     libxml2-dev \
     && docker-php-ext-install pdo pdo_pgsql pgsql mbstring bcmath pcntl
 
-# Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+# Install Composer (use specific version to avoid Docker Hub rate limits)
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 # Set working directory
 WORKDIR /var/www/html
