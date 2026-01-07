@@ -27,7 +27,7 @@ class PostgresBuilder extends Builder
     public function castBinding($value)
     {
         if ($value instanceof DateTimeInterface) {
-            return $value->format($this->getDateFormat());
+            return $value->format($this->grammar->getDateFormat());
         }
 
         // DO NOT convert booleans to integers for PostgreSQL!
