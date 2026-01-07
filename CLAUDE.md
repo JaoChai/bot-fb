@@ -17,6 +17,22 @@
 | API response wrapped in `{data:X}` | Access `response.data` |
 | Railway serve.json fails | Use Express server |
 
+## Code Change Rules (Minimal Change Principle)
+
+เมื่อแก้ไข bug หรือ update feature:
+
+| Rule | Description |
+|------|-------------|
+| แก้เฉพาะจุด | ห้ามแก้ไขโค้ดที่ไม่เกี่ยวกับปัญหาโดยตรง |
+| ห้าม refactor | ถ้าเจอโค้ดที่อยากปรับ ให้แยกเป็น task ใหม่ |
+| ห้ามเพิ่ม feature | focus เฉพาะการแก้ปัญหาที่ได้รับมอบหมาย |
+| ตรวจ git diff | ก่อน commit ต้องมีเฉพาะไฟล์ที่เกี่ยวข้อง |
+
+### Before Commit Checklist
+- [ ] ไฟล์ที่แก้ไขเกี่ยวข้องกับ task โดยตรงทั้งหมด?
+- [ ] ไม่มีการ refactor/cleanup ที่ไม่เกี่ยวข้อง?
+- [ ] ไม่มีการเพิ่ม feature ใหม่ที่ไม่ได้ขอ?
+
 ## When Debugging
 - Search memory first for similar bugs
 - Use MCP `diagnose` tool for system health check
