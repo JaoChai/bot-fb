@@ -39,6 +39,12 @@ class BotSetting extends Model
         'multiple_bubbles_delimiter',
         'wait_multiple_bubbles_enabled',
         'wait_multiple_bubbles_ms',
+        // Smart aggregation settings
+        'smart_aggregation_enabled',
+        'smart_min_wait_ms',
+        'smart_max_wait_ms',
+        'smart_early_trigger_enabled',
+        'smart_per_user_learning_enabled',
         // Reply sticker feature
         'reply_sticker_enabled',
         'reply_sticker_message',
@@ -59,6 +65,11 @@ class BotSetting extends Model
         'save_conversations' => 'boolean',
         'multiple_bubbles_enabled' => 'boolean',
         'wait_multiple_bubbles_enabled' => 'boolean',
+        'smart_aggregation_enabled' => 'boolean',
+        'smart_min_wait_ms' => 'integer',
+        'smart_max_wait_ms' => 'integer',
+        'smart_early_trigger_enabled' => 'boolean',
+        'smart_per_user_learning_enabled' => 'boolean',
         'reply_sticker_enabled' => 'boolean',
         'auto_assignment_enabled' => 'boolean',
     ];

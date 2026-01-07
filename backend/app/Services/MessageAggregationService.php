@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Services\SmartAggregation\AggregationContext;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -50,13 +52,6 @@ class MessageAggregationService
                 Cache::put($groupKey, $groupId, $ttl);
                 Cache::put($messagesKey, [$message->id], $ttl);
                 Cache::put($timestampKey, now()->timestamp, $ttl);
-
-                // DEBUG: Verify cache was stored
-                $verifyGroupId = Cache::get($groupKey);
-                $verifyMessages = Cache::get($messagesKey);
-                $cacheDriver = Cache::getDefaultDriver();
-                $cacheStore = config('cache.default');
-                error_log("[AGGREGATION_DEBUG] Cache stored - driver: {$cacheDriver}, store: {$cacheStore}, key: {$groupKey}, group_id: {$groupId}, verified: " . ($verifyGroupId === $groupId ? 'YES' : 'NO') . ", messages: " . json_encode($verifyMessages) . ", ttl: {$ttl}s");
 
                 Log::debug('Started new aggregation group', [
                     'conversation_id' => $conversationId,
@@ -203,6 +198,65 @@ class MessageAggregationService
     public function getStartedAt(int $conversationId): ?int
     {
         return Cache::get($this->getTimestampKey($conversationId));
+    }
+
+    /**
+     * Get elapsed time since aggregation started (in milliseconds).
+     */
+    public function getElapsedMs(int $conversationId): int
+    {
+        $startedAt = $this->getStartedAt($conversationId);
+        if (!$startedAt) {
+            return 0;
+        }
+        return (int) ((now()->timestamp - $startedAt) * 1000);
+    }
+
+    /**
+     * Build context for smart aggregation decisions.
+     */
+    public function buildContext(
+        Conversation $conversation,
+        string $currentMessage,
+        ?string $customerId = null
+    ): AggregationContext {
+        $conversationId = $conversation->id;
+        $messageIds = $this->getMessageIds($conversationId);
+        $bot = $conversation->bot;
+
+        // Get recent messages with timestamps
+        $recentMessages = [];
+        if (!empty($messageIds)) {
+            $recentMessages = Message::whereIn('id', $messageIds)
+                ->orderBy('created_at', 'asc')
+                ->get(['id', 'content', 'created_at'])
+                ->map(fn($m) => [
+                    'id' => $m->id,
+                    'content' => $m->content,
+                    'created_at' => $m->created_at->toIso8601String(),
+                ])
+                ->toArray();
+        }
+
+        // Calculate gaps between messages
+        $gaps = [];
+        for ($i = 1; $i < count($recentMessages); $i++) {
+            $prev = Carbon::parse($recentMessages[$i - 1]['created_at']);
+            $curr = Carbon::parse($recentMessages[$i]['created_at']);
+            $gaps[] = $curr->diffInMilliseconds($prev);
+        }
+
+        return new AggregationContext(
+            conversationId: $conversationId,
+            recentMessages: $recentMessages,
+            messageCount: count($messageIds) + 1, // +1 for current message being added
+            elapsedMs: $this->getElapsedMs($conversationId),
+            lastGapMs: !empty($gaps) ? end($gaps) : null,
+            avgGapMs: count($gaps) > 0 ? array_sum($gaps) / count($gaps) : 0,
+            baseWaitMs: $this->getWaitTimeMs($bot),
+            bot: $bot,
+            customerId: $customerId,
+        );
     }
 
     /**

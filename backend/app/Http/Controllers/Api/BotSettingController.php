@@ -100,6 +100,13 @@ class BotSettingController extends Controller
                 'wait_multiple_bubbles_enabled' => 'boolean',
                 'wait_multiple_bubbles_ms' => 'integer|min:500|max:20000',
 
+                // Smart aggregation settings
+                'smart_aggregation_enabled' => 'boolean',
+                'smart_min_wait_ms' => 'integer|min:300|max:3000',
+                'smart_max_wait_ms' => 'integer|min:1000|max:10000|gte:smart_min_wait_ms',
+                'smart_early_trigger_enabled' => 'boolean',
+                'smart_per_user_learning_enabled' => 'boolean',
+
                 // Reply sticker settings
                 'reply_sticker_enabled' => 'boolean',
                 'reply_sticker_message' => 'nullable|string|max:500',

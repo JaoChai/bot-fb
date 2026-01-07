@@ -14,6 +14,8 @@ use App\Services\LINEService;
 use App\Services\MessageAggregationService;
 use App\Services\MultipleBubblesService;
 use App\Services\RateLimitService;
+use App\Services\SmartAggregation\SmartAggregationAnalyzer;
+use App\Services\SmartAggregation\UserTypingStats;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -35,6 +37,13 @@ class ProcessLINEWebhook implements ShouldQueue
      * The number of seconds to wait before retrying the job.
      */
     public int $backoff = 5;
+
+    /**
+     * Smart aggregation state (used to pass data outside transaction).
+     */
+    protected ?string $aggregationGroupId = null;
+    protected bool $dispatchAggregation = false;
+    protected ?int $adaptiveWaitTimeMs = null;
 
     /**
      * Create a new job instance.
@@ -193,39 +202,79 @@ class ProcessLINEWebhook implements ShouldQueue
 
             // Check if we should use message aggregation
             if ($useAggregation) {
-                // Start or continue aggregation group
-                $aggregationResult = $aggregationService->startOrContinueAggregation(
+                $smartAnalyzer = app(SmartAggregationAnalyzer::class);
+
+                // Build context for smart decisions
+                $context = $aggregationService->buildContext(
                     $conversation,
-                    $userMessage,
-                    $waitTimeMs
+                    $messageData['text'] ?? '',
+                    $userId // external user ID for per-user learning
                 );
 
-                // If aggregation failed (cache error), fall back to immediate response
-                if ($aggregationResult === null) {
-                    $useAggregation = false;
-                    // Continue to immediate response below
-                } else {
-                    $aggregationGroupId = $aggregationResult['group_id'];
-                    $dispatchAggregation = true;
-
-                    Log::info('Message added to aggregation group', [
+                // Check if we should trigger early (skip waiting)
+                if ($smartAnalyzer->isSmartEnabled($this->bot) &&
+                    $smartAnalyzer->shouldTriggerEarly($messageData['text'] ?? '', $context)) {
+                    Log::info('Smart aggregation: early trigger activated', [
                         'conversation_id' => $conversation->id,
-                        'group_id' => $aggregationGroupId,
-                        'is_new_group' => $aggregationResult['is_new_group'],
-                        'message_count' => $aggregationResult['message_count'],
+                        'message' => mb_substr($messageData['text'] ?? '', 0, 50),
                     ]);
-
-                    // Update stats for user message only (bot response will be counted later)
-                    $this->updateStatsForUserMessageOnly($conversation);
-
-                    // Increment total_conversations for new conversations
-                    if ($isNewConversation) {
-                        $this->bot->update([
-                            'total_conversations' => DB::raw('total_conversations + 1'),
+                    $useAggregation = false; // Skip aggregation, respond immediately
+                } else {
+                    // Calculate adaptive wait time
+                    if ($smartAnalyzer->isSmartEnabled($this->bot)) {
+                        $waitTimeMs = $smartAnalyzer->calculateAdaptiveWaitTime($context);
+                        Log::debug('Smart aggregation: using adaptive wait time', [
+                            'conversation_id' => $conversation->id,
+                            'wait_ms' => $waitTimeMs,
+                            'avg_gap_ms' => $context->avgGapMs,
                         ]);
                     }
 
-                    return; // Exit transaction, will dispatch job outside
+                    // Start or continue aggregation group
+                    $aggregationResult = $aggregationService->startOrContinueAggregation(
+                        $conversation,
+                        $userMessage,
+                        $waitTimeMs
+                    );
+
+                    // If aggregation failed (cache error), fall back to immediate response
+                    if ($aggregationResult === null) {
+                        $useAggregation = false;
+                        // Continue to immediate response below
+                    } else {
+                        $aggregationGroupId = $aggregationResult['group_id'];
+                        $dispatchAggregation = true;
+
+                        // Track typing gap for per-user learning (Phase 4)
+                        $settings = $this->bot->settings;
+                        if ($settings?->smart_per_user_learning_enabled && $context->lastGapMs !== null) {
+                            $userTypingStats = app(UserTypingStats::class);
+                            $userTypingStats->updateStats($this->bot->id, $userId, $context->lastGapMs);
+                        }
+
+                        Log::info('Message added to aggregation group', [
+                            'conversation_id' => $conversation->id,
+                            'group_id' => $aggregationGroupId,
+                            'is_new_group' => $aggregationResult['is_new_group'],
+                            'message_count' => $aggregationResult['message_count'],
+                            'adaptive_wait_ms' => $waitTimeMs,
+                        ]);
+
+                        // Update stats for user message only (bot response will be counted later)
+                        $this->updateStatsForUserMessageOnly($conversation);
+
+                        // Increment total_conversations for new conversations
+                        if ($isNewConversation) {
+                            $this->bot->update([
+                                'total_conversations' => DB::raw('total_conversations + 1'),
+                            ]);
+                        }
+
+                        // Store adaptive wait time for dispatch after transaction
+                        $this->adaptiveWaitTimeMs = $waitTimeMs;
+
+                        return; // Exit transaction, will dispatch job outside
+                    }
                 }
             }
 
@@ -257,17 +306,21 @@ class ProcessLINEWebhook implements ShouldQueue
 
         // Dispatch aggregation job AFTER transaction commits (to ensure message is saved)
         if ($dispatchAggregation && $conversation && $aggregationGroupId) {
+            // Use adaptive wait time if available, otherwise fall back to base wait time
+            $delayMs = $this->adaptiveWaitTimeMs ?? $waitTimeMs;
+
             ProcessAggregatedMessages::dispatch(
                 $this->bot,
                 $conversation,
                 $aggregationGroupId,
                 $userId
-            )->onQueue('webhooks')->delay(now()->addMilliseconds($waitTimeMs));
+            )->onQueue('webhooks')->delay(now()->addMilliseconds($delayMs));
 
-            Log::debug('Dispatched aggregation job', [
+            Log::info('Dispatched aggregated message job', [
                 'conversation_id' => $conversation->id,
                 'group_id' => $aggregationGroupId,
-                'delay_ms' => $waitTimeMs,
+                'delay_ms' => $delayMs,
+                'is_adaptive' => $this->adaptiveWaitTimeMs !== null,
             ]);
         }
 

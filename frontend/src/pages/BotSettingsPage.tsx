@@ -110,6 +110,12 @@ interface BotSettingsFormData {
   multiple_bubbles_max: number;
   wait_multiple_bubbles_enabled: boolean;
   wait_multiple_bubbles_seconds: number;
+  // Smart Aggregation fields
+  smart_aggregation_enabled: boolean;
+  smart_min_wait_seconds: number;
+  smart_max_wait_seconds: number;
+  smart_early_trigger_enabled: boolean;
+  smart_per_user_learning_enabled: boolean;
   reply_sticker_enabled: boolean;
   reply_sticker_message: string;
   response_hours_enabled: boolean;
@@ -141,6 +147,12 @@ export function BotSettingsPage() {
     multiple_bubbles_max: 3,
     wait_multiple_bubbles_enabled: false,
     wait_multiple_bubbles_seconds: 1.5,
+    // Smart Aggregation defaults
+    smart_aggregation_enabled: false,
+    smart_min_wait_seconds: 0.5,
+    smart_max_wait_seconds: 3,
+    smart_early_trigger_enabled: true,
+    smart_per_user_learning_enabled: false,
     reply_sticker_enabled: false,
     reply_sticker_message: '',
     response_hours_enabled: false,
@@ -249,6 +261,12 @@ export function BotSettingsPage() {
           wait_multiple_bubbles_enabled: (settings.wait_multiple_bubbles_enabled as boolean) ?? false,
           // Convert ms to seconds for display
           wait_multiple_bubbles_seconds: ((settings.wait_multiple_bubbles_ms as number) ?? 1500) / 1000,
+          // Smart Aggregation - convert ms to seconds for display
+          smart_aggregation_enabled: (settings.smart_aggregation_enabled as boolean) ?? false,
+          smart_min_wait_seconds: ((settings.smart_min_wait_ms as number) ?? 500) / 1000,
+          smart_max_wait_seconds: ((settings.smart_max_wait_ms as number) ?? 3000) / 1000,
+          smart_early_trigger_enabled: (settings.smart_early_trigger_enabled as boolean) ?? true,
+          smart_per_user_learning_enabled: (settings.smart_per_user_learning_enabled as boolean) ?? false,
           reply_sticker_enabled: (settings.reply_sticker_enabled as boolean) ?? false,
           reply_sticker_message: (settings.reply_sticker_message as string) ?? '',
           response_hours_enabled: (settings.response_hours_enabled as boolean) ?? false,
@@ -301,6 +319,12 @@ export function BotSettingsPage() {
         wait_multiple_bubbles_enabled: formData.wait_multiple_bubbles_enabled,
         // Convert seconds to ms for backend
         wait_multiple_bubbles_ms: Math.round(formData.wait_multiple_bubbles_seconds * 1000),
+        // Smart Aggregation settings - convert seconds to ms for backend
+        smart_aggregation_enabled: formData.smart_aggregation_enabled,
+        smart_min_wait_ms: Math.round(formData.smart_min_wait_seconds * 1000),
+        smart_max_wait_ms: Math.round(formData.smart_max_wait_seconds * 1000),
+        smart_early_trigger_enabled: formData.smart_early_trigger_enabled,
+        smart_per_user_learning_enabled: formData.smart_per_user_learning_enabled,
         // Reply sticker settings
         reply_sticker_enabled: formData.reply_sticker_enabled,
         reply_sticker_message: formData.reply_sticker_message || null,
@@ -606,6 +630,101 @@ export function BotSettingsPage() {
                     value={[formData.wait_multiple_bubbles_seconds]}
                     onValueChange={(value) => handleChange('wait_multiple_bubbles_seconds', value[0])}
                   />
+                </div>
+              )}
+
+              {/* Smart Aggregation Section - Show only if wait_multiple_bubbles_enabled */}
+              {formData.wait_multiple_bubbles_enabled && (
+                <div className="space-y-4 mt-4 pl-4 border-l-2 border-blue-200">
+                  <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
+                    Smart Aggregation (ปรับเวลารออัตโนมัติ)
+                  </h4>
+
+                  {/* Toggle: Enable Smart Aggregation */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        เปิดใช้ Smart Aggregation
+                      </span>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        ปรับเวลารอตามความเร็วการพิมพ์ของลูกค้า
+                      </p>
+                    </div>
+                    <Switch
+                      id="smart-aggregation"
+                      checked={formData.smart_aggregation_enabled}
+                      onCheckedChange={(checked) => handleChange('smart_aggregation_enabled', checked)}
+                    />
+                  </div>
+
+                  {/* Show advanced options when smart aggregation enabled */}
+                  {formData.smart_aggregation_enabled && (
+                    <div className="space-y-4 mt-2 pl-4">
+                      {/* Min Wait Time Slider */}
+                      <div className="space-y-2">
+                        <Label htmlFor="smart-min-wait" className="text-sm text-gray-600 dark:text-gray-400">
+                          เวลารอขั้นต่ำ: {formData.smart_min_wait_seconds.toFixed(1)} วินาที
+                        </Label>
+                        <Slider
+                          id="smart-min-wait"
+                          min={0.3}
+                          max={3}
+                          step={0.1}
+                          value={[formData.smart_min_wait_seconds]}
+                          onValueChange={(value) => handleChange('smart_min_wait_seconds', value[0])}
+                        />
+                      </div>
+
+                      {/* Max Wait Time Slider */}
+                      <div className="space-y-2">
+                        <Label htmlFor="smart-max-wait" className="text-sm text-gray-600 dark:text-gray-400">
+                          เวลารอสูงสุด: {formData.smart_max_wait_seconds.toFixed(1)} วินาที
+                        </Label>
+                        <Slider
+                          id="smart-max-wait"
+                          min={1}
+                          max={10}
+                          step={0.5}
+                          value={[formData.smart_max_wait_seconds]}
+                          onValueChange={(value) => handleChange('smart_max_wait_seconds', value[0])}
+                        />
+                      </div>
+
+                      {/* Toggle: Early Trigger */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            ตอบทันทีสำหรับข้อความสมบูรณ์
+                          </span>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            ไม่ต้องรอถ้าข้อความจบด้วย "ครับ" "ค่ะ" หรือ "?"
+                          </p>
+                        </div>
+                        <Switch
+                          id="smart-early-trigger"
+                          checked={formData.smart_early_trigger_enabled}
+                          onCheckedChange={(checked) => handleChange('smart_early_trigger_enabled', checked)}
+                        />
+                      </div>
+
+                      {/* Toggle: Per-User Learning */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            เรียนรู้พฤติกรรมการพิมพ์
+                          </span>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            ปรับเวลารอตามความเร็วพิมพ์ของลูกค้าแต่ละคน
+                          </p>
+                        </div>
+                        <Switch
+                          id="smart-per-user-learning"
+                          checked={formData.smart_per_user_learning_enabled}
+                          onCheckedChange={(checked) => handleChange('smart_per_user_learning_enabled', checked)}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
