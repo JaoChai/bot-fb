@@ -198,6 +198,23 @@ class ProcessLINEWebhook implements ShouldQueue
             // Increment rate limit counters after successful message save
             $rateLimitService->incrementCounters($this->bot, $userId);
 
+            // Check if bot is active - if not, save message but don't respond
+            if ($this->bot->status !== 'active') {
+                Log::info('Bot is inactive, message saved but skipping AI response', [
+                    'bot_id' => $this->bot->id,
+                    'conversation_id' => $conversation->id,
+                    'status' => $this->bot->status,
+                ]);
+                // Update stats for user message only
+                $this->updateStatsForUserMessageOnly($conversation);
+                if ($isNewConversation) {
+                    $this->bot->update([
+                        'total_conversations' => DB::raw('total_conversations + 1'),
+                    ]);
+                }
+                return; // Exit transaction, message is saved
+            }
+
             // Check handover status
             $isHandover = $conversation->is_handover;
 
@@ -564,8 +581,8 @@ class ProcessLINEWebhook implements ShouldQueue
             broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
         }
 
-        // Reply to stickers if enabled (and not in handover mode)
-        if ($messageType === 'sticker' && $replyToken && $conversation && !$conversation->is_handover) {
+        // Reply to stickers if enabled (and not in handover mode, and bot is active)
+        if ($messageType === 'sticker' && $replyToken && $conversation && !$conversation->is_handover && $this->bot->status === 'active') {
             $settings = $this->bot->settings;
             if ($settings?->reply_sticker_enabled) {
                 $responseMessage = $settings->reply_sticker_message ?: 'ได้รับสติกเกอร์แล้วค่ะ 🎉';
