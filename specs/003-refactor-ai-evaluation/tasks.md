@@ -179,7 +179,7 @@
 - [X] T058 Run code style check: `./vendor/bin/pint --test` in backend/
 - [X] T059 [P] Run frontend linting: `npm run lint` in frontend/
 - [X] T060 Performance validation: Compare actual vs target metrics (latency, cost)
-- [ ] T061 Create commit with conventional format: `feat(ai-evaluation): implement Phase 1 refactor`
+- [X] T061 Create commit with conventional format: `feat(ai-evaluation): implement Phase 1 refactor`
 
 ---
 
