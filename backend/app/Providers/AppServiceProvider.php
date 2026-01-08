@@ -23,6 +23,9 @@ use App\Services\SecondAI\SecondAIService;
 use App\Services\SecondAI\FactCheckService;
 use App\Services\SecondAI\PolicyCheckService;
 use App\Services\SecondAI\PersonalityCheckService;
+use App\Services\SecondAI\UnifiedCheckService;
+use App\Services\Evaluation\ModelTierSelector;
+use App\Services\Evaluation\LLMJudgeService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -73,16 +76,49 @@ class AppServiceProvider extends ServiceProvider
         // Register SecondAIService with all check services
         $this->app->singleton(SecondAIService::class, function ($app) {
             return new SecondAIService(
-                new FactCheckService(
-                    $app->make(HybridSearchService::class),
-                    $app->make(OpenRouterService::class)
-                ),
-                new PolicyCheckService(
-                    $app->make(OpenRouterService::class)
-                ),
-                new PersonalityCheckService(
-                    $app->make(OpenRouterService::class)
-                )
+                $app->make(FactCheckService::class),
+                $app->make(PolicyCheckService::class),
+                $app->make(PersonalityCheckService::class),
+                $app->make(UnifiedCheckService::class)
+            );
+        });
+
+        // Register individual check services
+        $this->app->singleton(FactCheckService::class, function ($app) {
+            return new FactCheckService(
+                $app->make(HybridSearchService::class),
+                $app->make(OpenRouterService::class)
+            );
+        });
+
+        $this->app->singleton(PolicyCheckService::class, function ($app) {
+            return new PolicyCheckService(
+                $app->make(OpenRouterService::class)
+            );
+        });
+
+        $this->app->singleton(PersonalityCheckService::class, function ($app) {
+            return new PersonalityCheckService(
+                $app->make(OpenRouterService::class)
+            );
+        });
+
+        $this->app->singleton(UnifiedCheckService::class, function ($app) {
+            return new UnifiedCheckService(
+                $app->make(OpenRouterService::class),
+                $app->make(RAGService::class)
+            );
+        });
+
+        // Register Evaluation services
+        $this->app->singleton(ModelTierSelector::class, function ($app) {
+            return new ModelTierSelector();
+        });
+
+        $this->app->singleton(LLMJudgeService::class, function ($app) {
+            return new LLMJudgeService(
+                $app->make(OpenRouterService::class),
+                $app->make(ModelTierSelector::class)
             );
         });
     }

@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Log;
 class TestCaseGeneratorService
 {
     protected OpenRouterService $openRouter;
+
     protected PersonaService $personaService;
 
     protected const DEFAULT_MODEL = 'anthropic/claude-3-haiku-20240307';
@@ -48,6 +49,7 @@ class TestCaseGeneratorService
 
         if ($knowledgeBases->isEmpty()) {
             Log::warning("No knowledge bases found for flow {$flow->id}");
+
             return $testCases;
         }
 
@@ -147,7 +149,7 @@ class TestCaseGeneratorService
                 model: $model
             );
 
-            if (!$question) {
+            if (! $question) {
                 continue;
             }
 
@@ -182,11 +184,11 @@ class TestCaseGeneratorService
         // Get documents with their chunks
         $chunks = DocumentChunk::whereHas('document', function ($query) use ($knowledgeBase) {
             $query->where('knowledge_base_id', $knowledgeBase->id)
-                  ->where('status', 'completed');
+                ->where('status', 'completed');
         })
-        ->inRandomOrder()
-        ->limit($limit)
-        ->get();
+            ->inRandomOrder()
+            ->limit($limit)
+            ->get();
 
         return $chunks;
     }
@@ -201,11 +203,11 @@ class TestCaseGeneratorService
         ?string $model = null
     ): ?array {
         $persona = $this->personaService->getPersona($personaKey);
-        if (!$persona) {
+        if (! $persona) {
             return null;
         }
 
-        $content = $chunks->map(fn($c) => $c->content)->implode("\n\n");
+        $content = $chunks->map(fn ($c) => $c->content)->implode("\n\n");
 
         $prompt = <<<PROMPT
 Based on the following information, generate a realistic customer question in Thai.
@@ -242,9 +244,11 @@ PROMPT;
             );
 
             $jsonContent = $this->extractJson($response['content']);
+
             return json_decode($jsonContent, true);
         } catch (\Exception $e) {
             Log::error("Failed to generate question: {$e->getMessage()}");
+
             return null;
         }
     }
@@ -359,6 +363,7 @@ PROMPT;
         if (preg_match('/\{[\s\S]*\}/m', $content, $matches)) {
             return $matches[0];
         }
+
         return $content;
     }
 
@@ -368,7 +373,8 @@ PROMPT;
     protected function generateTitle(array $question): string
     {
         $text = $question['question'] ?? 'Unknown Question';
-        return mb_strlen($text) > 50 ? mb_substr($text, 0, 47) . '...' : $text;
+
+        return mb_strlen($text) > 50 ? mb_substr($text, 0, 47).'...' : $text;
     }
 
     /**
@@ -382,6 +388,7 @@ PROMPT;
             if (isset($metadata['topic'])) {
                 return $metadata['topic'];
             }
+
             return mb_substr($chunk->content, 0, 30);
         })->unique()->values()->toArray();
     }
@@ -393,6 +400,7 @@ PROMPT;
     {
         // Complex questions or those with multiple expected points could be multi-turn
         $points = $question['expected_answer_points'] ?? [];
+
         return count($points) > 2;
     }
 }

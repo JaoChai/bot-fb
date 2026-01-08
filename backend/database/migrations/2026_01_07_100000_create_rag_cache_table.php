@@ -27,7 +27,12 @@ return new class extends Migration
 
             // Query embedding vector for semantic similarity search
             // Uses pgvector extension (1536 dimensions for text-embedding-3-small)
-            $table->vector('query_embedding', 1536)->nullable();
+            // Only add vector column on PostgreSQL, use text on SQLite for testing
+            if (DB::connection()->getDriverName() === 'pgsql') {
+                $table->vector('query_embedding', 1536)->nullable();
+            } else {
+                $table->text('query_embedding')->nullable();
+            }
 
             // Cached response content
             $table->text('response');
@@ -50,7 +55,10 @@ return new class extends Migration
 
         // Create HNSW index for fast vector similarity search
         // This makes semantic search ~10x faster than brute-force
-        DB::statement('CREATE INDEX rag_cache_embedding_idx ON rag_cache USING hnsw (query_embedding vector_cosine_ops)');
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement('CREATE INDEX rag_cache_embedding_idx ON rag_cache USING hnsw (query_embedding vector_cosine_ops)');
+        }
+        // SQLite doesn't support pgvector HNSW indexes - skip for testing
     }
 
     /**

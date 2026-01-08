@@ -12,13 +12,19 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Update conversations table constraint
-        DB::statement('ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_channel_type_check');
-        DB::statement("ALTER TABLE conversations ADD CONSTRAINT conversations_channel_type_check CHECK (channel_type IN ('line', 'facebook', 'telegram', 'demo'))");
+        $driver = DB::getDriverName();
 
-        // Update customer_profiles table constraint
-        DB::statement('ALTER TABLE customer_profiles DROP CONSTRAINT IF EXISTS customer_profiles_channel_type_check');
-        DB::statement("ALTER TABLE customer_profiles ADD CONSTRAINT customer_profiles_channel_type_check CHECK (channel_type IN ('line', 'facebook', 'telegram', 'demo'))");
+        if ($driver === 'pgsql') {
+            // Update conversations table constraint
+            DB::statement('ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_channel_type_check');
+            DB::statement("ALTER TABLE conversations ADD CONSTRAINT conversations_channel_type_check CHECK (channel_type IN ('line', 'facebook', 'telegram', 'demo'))");
+
+            // Update customer_profiles table constraint
+            DB::statement('ALTER TABLE customer_profiles DROP CONSTRAINT IF EXISTS customer_profiles_channel_type_check');
+            DB::statement("ALTER TABLE customer_profiles ADD CONSTRAINT customer_profiles_channel_type_check CHECK (channel_type IN ('line', 'facebook', 'telegram', 'demo'))");
+        } elseif ($driver === 'sqlite') {
+            // SQLite doesn't support ALTER CONSTRAINT - skip for testing
+        }
     }
 
     /**
@@ -26,12 +32,18 @@ return new class extends Migration
      */
     public function down(): void
     {
-        // Revert conversations table constraint
-        DB::statement('ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_channel_type_check');
-        DB::statement("ALTER TABLE conversations ADD CONSTRAINT conversations_channel_type_check CHECK (channel_type IN ('line', 'facebook', 'demo'))");
+        $driver = DB::getDriverName();
 
-        // Revert customer_profiles table constraint
-        DB::statement('ALTER TABLE customer_profiles DROP CONSTRAINT IF EXISTS customer_profiles_channel_type_check');
-        DB::statement("ALTER TABLE customer_profiles ADD CONSTRAINT customer_profiles_channel_type_check CHECK (channel_type IN ('line', 'facebook', 'demo'))");
+        if ($driver === 'pgsql') {
+            // Revert conversations table constraint
+            DB::statement('ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_channel_type_check');
+            DB::statement("ALTER TABLE conversations ADD CONSTRAINT conversations_channel_type_check CHECK (channel_type IN ('line', 'facebook', 'demo'))");
+
+            // Revert customer_profiles table constraint
+            DB::statement('ALTER TABLE customer_profiles DROP CONSTRAINT IF EXISTS customer_profiles_channel_type_check');
+            DB::statement("ALTER TABLE customer_profiles ADD CONSTRAINT customer_profiles_channel_type_check CHECK (channel_type IN ('line', 'facebook', 'demo'))");
+        } elseif ($driver === 'sqlite') {
+            // SQLite doesn't support ALTER CONSTRAINT - skip for testing
+        }
     }
 };

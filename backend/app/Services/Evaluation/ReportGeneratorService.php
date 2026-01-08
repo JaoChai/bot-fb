@@ -102,7 +102,7 @@ class ReportGeneratorService
             ->orderByDesc('completed_at')
             ->first();
 
-        if (!$previousEval) {
+        if (! $previousEval) {
             return [
                 'has_previous' => false,
                 'previous_score' => null,
@@ -186,7 +186,7 @@ class ReportGeneratorService
         $lowPrecisionCases = $testCases->where('context_precision', '<', 0.5);
         foreach ($lowPrecisionCases->take(5) as $case) {
             $topics = $case->expected_topics ?? [];
-            if (!empty($topics)) {
+            if (! empty($topics)) {
                 $kbGaps[] = [
                     'topics' => $topics,
                     'test_case_id' => $case->id,
@@ -215,14 +215,15 @@ class ReportGeneratorService
         $systemPrompt = $flow->system_prompt ?? 'ไม่มี system prompt';
 
         $weaknessesText = collect($analysis['weaknesses'])
-            ->map(function($w) {
+            ->map(function ($w) {
                 $label = $w['label'] ?? $w['type'];
+
                 return "- {$label}: {$w['description']}";
             })
             ->implode("\n");
 
         $kbGapsText = collect($analysis['kb_gaps'])
-            ->map(fn($g) => "- หัวข้อ: " . implode(', ', $g['topics']))
+            ->map(fn ($g) => '- หัวข้อ: '.implode(', ', $g['topics']))
             ->implode("\n");
 
         $prompt = <<<PROMPT
@@ -283,9 +284,10 @@ PROMPT;
             ];
         } catch (\Exception $e) {
             Log::error("Failed to generate recommendations: {$e->getMessage()}");
+
             return [
                 'general' => [
-                    ['title' => 'ปรับปรุงจุดอ่อน', 'description' => 'ดูจากจุดอ่อนที่พบและปรับปรุง', 'priority' => 'high']
+                    ['title' => 'ปรับปรุงจุดอ่อน', 'description' => 'ดูจากจุดอ่อนที่พบและปรับปรุง', 'priority' => 'high'],
                 ],
                 'prompt' => [],
                 'kb' => [],
@@ -340,12 +342,14 @@ PROMPT;
     protected function getStrengthDescription(string $metric, float $score): string
     {
         $label = $this->getMetricLabel($metric);
+
         return "{$label}อยู่ในระดับดีเยี่ยม (คะแนน: {$score})";
     }
 
     protected function getWeaknessDescription(string $metric, float $score): string
     {
         $label = $this->getMetricLabel($metric);
+
         return "{$label}ต้องปรับปรุง (คะแนน: {$score})";
     }
 
@@ -366,6 +370,7 @@ PROMPT;
         if (preg_match('/\{[\s\S]*\}/m', $content, $matches)) {
             return $matches[0];
         }
+
         return '{}';
     }
 }

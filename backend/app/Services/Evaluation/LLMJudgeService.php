@@ -10,11 +10,17 @@ use Illuminate\Support\Facades\Log;
 class LLMJudgeService
 {
     protected OpenRouterService $openRouter;
+
+    protected ModelTierSelector $tierSelector;
+
     protected string $defaultJudgeModel = 'anthropic/claude-3.5-sonnet';
 
-    public function __construct(OpenRouterService $openRouter)
-    {
+    public function __construct(
+        OpenRouterService $openRouter,
+        ModelTierSelector $tierSelector
+    ) {
         $this->openRouter = $openRouter;
+        $this->tierSelector = $tierSelector;
     }
 
     /**
@@ -23,10 +29,8 @@ class LLMJudgeService
     public function evaluateTestCase(
         EvaluationTestCase $testCase,
         Flow $flow,
-        ?string $judgeModel = null,
         ?string $apiKey = null
     ): array {
-        $model = $judgeModel ?? $this->defaultJudgeModel;
         $tokensUsed = 0;
 
         // Get conversation from test case
@@ -41,19 +45,20 @@ class LLMJudgeService
             ->where('role', 'assistant')
             ->pluck('rag_metadata')
             ->filter()
-            ->flatMap(fn($meta) => $meta['chunks'] ?? [])
+            ->flatMap(fn ($meta) => $meta['chunks'] ?? [])
             ->toArray();
 
         $scores = [];
         $feedback = [];
+        $modelMetadata = [];
 
         // Evaluate each metric
         $metrics = [
-            'answer_relevancy' => fn() => $this->evaluateAnswerRelevancy($conversation, $model, $apiKey),
-            'faithfulness' => fn() => $this->evaluateFaithfulness($conversation, $ragContext, $model, $apiKey),
-            'role_adherence' => fn() => $this->evaluateRoleAdherence($conversation, $systemPrompt, $model, $apiKey),
-            'context_precision' => fn() => $this->evaluateContextPrecision($testCase, $ragContext, $model, $apiKey),
-            'task_completion' => fn() => $this->evaluateTaskCompletion($conversation, $testCase, $model, $apiKey),
+            'answer_relevancy' => fn () => $this->evaluateAnswerRelevancy($conversation, $apiKey),
+            'faithfulness' => fn () => $this->evaluateFaithfulness($conversation, $ragContext, $apiKey),
+            'role_adherence' => fn () => $this->evaluateRoleAdherence($conversation, $systemPrompt, $apiKey),
+            'context_precision' => fn () => $this->evaluateContextPrecision($testCase, $ragContext, $apiKey),
+            'task_completion' => fn () => $this->evaluateTaskCompletion($conversation, $testCase, $apiKey),
         ];
 
         foreach ($metrics as $metric => $evaluator) {
@@ -62,6 +67,11 @@ class LLMJudgeService
                 $scores[$metric] = $result['score'];
                 $feedback[$metric] = $result['reasoning'];
                 $tokensUsed += $result['tokens_used'] ?? 0;
+
+                // Store model metadata for cost tracking
+                if (isset($result['model_metadata'])) {
+                    $modelMetadata[$metric] = $result['model_metadata'];
+                }
             } catch (\Exception $e) {
                 Log::error("Failed to evaluate {$metric} for test case {$testCase->id}: {$e->getMessage()}");
                 $scores[$metric] = null;
@@ -72,17 +82,26 @@ class LLMJudgeService
         // Update test case with scores
         $testCase->markAsCompleted($scores, $feedback);
 
+        // Store model metadata in test case for cost tracking
+        if (! empty($modelMetadata)) {
+            $testCase->metadata = array_merge($testCase->metadata ?? [], [
+                'model_tiers' => $modelMetadata,
+            ]);
+            $testCase->save();
+        }
+
         return [
             'scores' => $scores,
             'feedback' => $feedback,
             'tokens_used' => $tokensUsed,
+            'model_metadata' => $modelMetadata,
         ];
     }
 
     /**
      * Evaluate Answer Relevancy: Does the response directly address the question?
      */
-    protected function evaluateAnswerRelevancy(array $conversation, string $model, ?string $apiKey): array
+    protected function evaluateAnswerRelevancy(array $conversation, ?string $apiKey): array
     {
         $conversationText = $this->formatConversation($conversation);
 
@@ -107,18 +126,18 @@ class LLMJudgeService
 }
 PROMPT;
 
-        return $this->callJudge($prompt, $model, $apiKey);
+        return $this->callJudge($prompt, 'answer_relevancy', $apiKey);
     }
 
     /**
      * Evaluate Faithfulness: Is the response grounded in KB without hallucination?
      */
-    protected function evaluateFaithfulness(array $conversation, array $ragContext, string $model, ?string $apiKey): array
+    protected function evaluateFaithfulness(array $conversation, array $ragContext, ?string $apiKey): array
     {
         $conversationText = $this->formatConversation($conversation);
         $contextText = empty($ragContext)
             ? 'ไม่มีข้อมูลจาก Knowledge Base'
-            : implode("\n---\n", array_map(fn($c) => $c['content'] ?? '', $ragContext));
+            : implode("\n---\n", array_map(fn ($c) => $c['content'] ?? '', $ragContext));
 
         $prompt = <<<PROMPT
 คุณเป็นผู้ประเมินคุณภาพ AI Chatbot ให้ประเมินว่าคำตอบของ Bot อ้างอิงจากข้อมูลที่มีหรือไม่ (ไม่ hallucinate)
@@ -145,13 +164,13 @@ PROMPT;
 }
 PROMPT;
 
-        return $this->callJudge($prompt, $model, $apiKey);
+        return $this->callJudge($prompt, 'faithfulness', $apiKey);
     }
 
     /**
      * Evaluate Role Adherence: Does the bot follow its system prompt persona?
      */
-    protected function evaluateRoleAdherence(array $conversation, string $systemPrompt, string $model, ?string $apiKey): array
+    protected function evaluateRoleAdherence(array $conversation, string $systemPrompt, ?string $apiKey): array
     {
         $conversationText = $this->formatConversation($conversation);
         $systemPromptText = $systemPrompt ?: 'ไม่มี system prompt กำหนด (ใช้ default)';
@@ -180,20 +199,20 @@ PROMPT;
 }
 PROMPT;
 
-        return $this->callJudge($prompt, $model, $apiKey);
+        return $this->callJudge($prompt, 'role_adherence', $apiKey);
     }
 
     /**
      * Evaluate Context Precision: Were the most relevant KB chunks retrieved?
      */
-    protected function evaluateContextPrecision(EvaluationTestCase $testCase, array $ragContext, string $model, ?string $apiKey): array
+    protected function evaluateContextPrecision(EvaluationTestCase $testCase, array $ragContext, ?string $apiKey): array
     {
         $expectedTopics = $testCase->expected_topics ?? [];
         $expectedText = empty($expectedTopics) ? 'ไม่ระบุ' : implode(', ', $expectedTopics);
 
         $contextText = empty($ragContext)
             ? 'ไม่มีข้อมูลจาก Knowledge Base'
-            : implode("\n---\n", array_map(fn($c) => $c['content'] ?? '', $ragContext));
+            : implode("\n---\n", array_map(fn ($c) => $c['content'] ?? '', $ragContext));
 
         $userQuestion = $testCase->messages()
             ->where('role', 'user')
@@ -227,13 +246,13 @@ PROMPT;
 }
 PROMPT;
 
-        return $this->callJudge($prompt, $model, $apiKey);
+        return $this->callJudge($prompt, 'context_precision', $apiKey);
     }
 
     /**
      * Evaluate Task Completion: Was the user's goal achieved?
      */
-    protected function evaluateTaskCompletion(array $conversation, EvaluationTestCase $testCase, string $model, ?string $apiKey): array
+    protected function evaluateTaskCompletion(array $conversation, EvaluationTestCase $testCase, ?string $apiKey): array
     {
         $conversationText = $this->formatConversation($conversation);
         $testType = $testCase->test_type;
@@ -262,27 +281,97 @@ PROMPT;
 }
 PROMPT;
 
-        return $this->callJudge($prompt, $model, $apiKey);
+        return $this->callJudge($prompt, 'task_completion', $apiKey);
     }
 
     /**
-     * Call judge model
+     * Call judge model with tier selection and fallback
      */
-    protected function callJudge(string $prompt, string $model, ?string $apiKey): array
+    protected function callJudge(string $prompt, string $metricName, ?string $apiKey): array
     {
-        $response = $this->openRouter->chat(
-            messages: [['role' => 'user', 'content' => $prompt]],
-            model: $model,
-            temperature: 0.1, // Low temperature for consistent evaluation
-            maxTokens: 500,
-            apiKeyOverride: $apiKey
-        );
+        // Get model tier configuration for this metric
+        $config = $this->tierSelector->selectForMetric($metricName);
+
+        Log::info('Evaluating metric with tier system', [
+            'metric' => $metricName,
+            'tier' => $config->tier,
+            'primary_model' => $config->modelId,
+            'fallback_model' => $config->fallbackModelId,
+        ]);
+
+        // Try primary model first
+        $modelUsed = $config->modelId;
+        $fallbackOccurred = false;
+
+        try {
+            $response = $this->openRouter->chat(
+                messages: [['role' => 'user', 'content' => $prompt]],
+                model: $config->modelId,
+                temperature: 0.1, // Low temperature for consistent evaluation
+                maxTokens: 500,
+                apiKeyOverride: $apiKey
+            );
+        } catch (\Exception $e) {
+            // Primary model failed, try fallback if available
+            if ($config->fallbackModelId) {
+                Log::warning('Primary model failed, using fallback', [
+                    'metric' => $metricName,
+                    'primary_model' => $config->modelId,
+                    'fallback_model' => $config->fallbackModelId,
+                    'error' => $e->getMessage(),
+                ]);
+
+                $fallbackOccurred = true;
+                $modelUsed = $config->fallbackModelId;
+
+                try {
+                    $response = $this->openRouter->chat(
+                        messages: [['role' => 'user', 'content' => $prompt]],
+                        model: $config->fallbackModelId,
+                        temperature: 0.1,
+                        maxTokens: 500,
+                        apiKeyOverride: $apiKey
+                    );
+                } catch (\Exception $fallbackError) {
+                    Log::error('Both primary and fallback models failed', [
+                        'metric' => $metricName,
+                        'primary_error' => $e->getMessage(),
+                        'fallback_error' => $fallbackError->getMessage(),
+                    ]);
+                    throw $fallbackError;
+                }
+            } else {
+                // No fallback available, rethrow error
+                Log::error('Primary model failed with no fallback available', [
+                    'metric' => $metricName,
+                    'model' => $config->modelId,
+                    'error' => $e->getMessage(),
+                ]);
+                throw $e;
+            }
+        }
 
         $tokensUsed = ($response['usage']['prompt_tokens'] ?? 0) +
                       ($response['usage']['completion_tokens'] ?? 0);
 
         $result = $this->parseJudgeResponse($response['content']);
         $result['tokens_used'] = $tokensUsed;
+
+        // Add model metadata for cost tracking
+        $result['model_metadata'] = [
+            'tier' => $config->tier,
+            'model_used' => $modelUsed,
+            'fallback_occurred' => $fallbackOccurred,
+        ];
+
+        Log::info('Metric evaluation completed', [
+            'metric' => $metricName,
+            'tier' => $config->tier,
+            'model_used' => $modelUsed,
+            'fallback_occurred' => $fallbackOccurred,
+            'score' => $result['score'],
+            'tokens_used' => $tokensUsed,
+        ]);
 
         return $result;
     }
@@ -325,6 +414,7 @@ PROMPT;
     {
         return collect($conversation)->map(function ($msg) {
             $role = $msg['role'] === 'user' ? 'ลูกค้า' : 'Bot';
+
             return "{$role}: {$msg['content']}";
         })->implode("\n\n");
     }
@@ -335,14 +425,13 @@ PROMPT;
     public function batchEvaluate(
         array $testCases,
         Flow $flow,
-        ?string $judgeModel = null,
         ?string $apiKey = null
     ): array {
         $results = [];
         $totalTokens = 0;
 
         foreach ($testCases as $testCase) {
-            $result = $this->evaluateTestCase($testCase, $flow, $judgeModel, $apiKey);
+            $result = $this->evaluateTestCase($testCase, $flow, $apiKey);
             $results[$testCase->id] = $result;
             $totalTokens += $result['tokens_used'];
         }

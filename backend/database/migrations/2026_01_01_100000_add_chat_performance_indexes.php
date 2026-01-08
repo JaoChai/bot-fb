@@ -12,6 +12,8 @@ return new class extends Migration
      */
     public function up(): void
     {
+        $driver = DB::getDriverName();
+
         // Composite index for common filter + sort pattern in conversation list
         DB::statement('
             CREATE INDEX IF NOT EXISTS idx_conv_bot_status_last_msg
@@ -31,15 +33,19 @@ return new class extends Migration
         ');
 
         // Full-text search on customer_profiles for faster search
-        DB::statement("
-            CREATE INDEX IF NOT EXISTS idx_cp_fulltext_search
-            ON customer_profiles
-            USING gin(to_tsvector('simple',
-                coalesce(display_name, '') || ' ' ||
-                coalesce(email, '') || ' ' ||
-                coalesce(phone, '')
-            ))
-        ");
+        if ($driver === 'pgsql') {
+            DB::statement("
+                CREATE INDEX IF NOT EXISTS idx_cp_fulltext_search
+                ON customer_profiles
+                USING gin(to_tsvector('simple',
+                    coalesce(display_name, '') || ' ' ||
+                    coalesce(email, '') || ' ' ||
+                    coalesce(phone, '')
+                ))
+            ");
+        } elseif ($driver === 'sqlite') {
+            // SQLite doesn't support GIN indexes or to_tsvector - skip for testing
+        }
     }
 
     /**
@@ -47,9 +53,16 @@ return new class extends Migration
      */
     public function down(): void
     {
+        $driver = DB::getDriverName();
+
         DB::statement('DROP INDEX IF EXISTS idx_conv_bot_status_last_msg');
         DB::statement('DROP INDEX IF EXISTS idx_conv_bot_created');
         DB::statement('DROP INDEX IF EXISTS idx_msg_conv_sender');
-        DB::statement('DROP INDEX IF EXISTS idx_cp_fulltext_search');
+
+        if ($driver === 'pgsql') {
+            DB::statement('DROP INDEX IF EXISTS idx_cp_fulltext_search');
+        } elseif ($driver === 'sqlite') {
+            // Skip - index was not created for SQLite
+        }
     }
 };

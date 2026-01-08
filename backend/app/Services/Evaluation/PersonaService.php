@@ -25,7 +25,7 @@ class PersonaService
                 'รบกวนถามเรื่อง... ได้ไหมครับ',
                 'อยากทราบว่า... เป็นยังไงคะ',
             ],
-            'system_prompt' => <<<PROMPT
+            'system_prompt' => <<<'PROMPT'
 คุณเป็นลูกค้าใหม่ที่สนใจสินค้า/บริการ คุณพูดจาสุภาพ ใช้คำลงท้ายครับ/ค่ะ และถามคำถามพื้นฐานเกี่ยวกับข้อมูลทั่วไป
 
 แนวทางการสนทนา:
@@ -53,7 +53,7 @@ PROMPT,
                 'ผมต้องการแก้ปัญหานี้ตอนนี้เลย',
                 'ช่วยเร็วหน่อยได้ไหม ผมรีบมาก',
             ],
-            'system_prompt' => <<<PROMPT
+            'system_prompt' => <<<'PROMPT'
 คุณเป็นลูกค้าที่มีปัญหาและรู้สึกหงุดหงิด คุณต้องการคำตอบที่ชัดเจนและรวดเร็ว
 
 แนวทางการสนทนา:
@@ -82,7 +82,7 @@ PROMPT,
                 'รองรับ API version อะไรบ้าง',
                 'ขอดู technical documentation หน่อยได้ไหม',
             ],
-            'system_prompt' => <<<PROMPT
+            'system_prompt' => <<<'PROMPT'
 คุณเป็นลูกค้าที่มีความรู้ทางเทคนิคและต้องการข้อมูลเชิงลึก คุณถามคำถามที่เฉพาะเจาะจงและต้องการคำตอบที่แม่นยำ
 
 แนวทางการสนทนา:
@@ -111,7 +111,7 @@ PROMPT,
                 'คิดว่าหุ้นตัวไหนน่าลงทุน',
                 'ช่วยเขียนเรียงความให้หน่อยได้ไหม',
             ],
-            'system_prompt' => <<<PROMPT
+            'system_prompt' => <<<'PROMPT'
 คุณเป็นผู้ทดสอบที่ถามคำถามนอกเรื่องเพื่อดูว่า bot จะตอบอย่างไร คุณถามเรื่องที่ไม่เกี่ยวกับสินค้า/บริการ
 
 แนวทางการสนทนา:
@@ -169,7 +169,7 @@ PROMPT,
     public function getConversationPrompt(string $personaKey, string $topic): string
     {
         $persona = $this->getPersona($personaKey);
-        if (!$persona) {
+        if (! $persona) {
             throw new \InvalidArgumentException("Unknown persona: {$personaKey}");
         }
 
@@ -233,10 +233,11 @@ PROMPT;
     {
         $validKeys = $this->getPersonaKeys();
         foreach ($keys as $key) {
-            if (!in_array($key, $validKeys)) {
+            if (! in_array($key, $validKeys)) {
                 return false;
             }
         }
+
         return true;
     }
 }
