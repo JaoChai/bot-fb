@@ -148,8 +148,20 @@ class ProcessAggregatedMessages implements ShouldQueue
             $messageCount,
             &$botMessage
         ) {
-            // Refresh conversation to get latest state
+            // Refresh conversation and bot to get latest state
             $this->conversation->refresh();
+            $this->bot->refresh();
+
+            // Check if bot was deactivated while waiting
+            if ($this->bot->status !== 'active') {
+                error_log("[AGGREGATION_DEBUG] Early exit: bot inactive - bot_id: {$this->bot->id}, status: {$this->bot->status}");
+                Log::info('Bot is inactive, skipping AI response in aggregation', [
+                    'bot_id' => $this->bot->id,
+                    'conversation_id' => $this->conversation->id,
+                    'status' => $this->bot->status,
+                ]);
+                return;
+            }
 
             // Check if handover mode was enabled while waiting
             if ($this->conversation->is_handover) {
