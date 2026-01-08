@@ -693,19 +693,26 @@ class ProcessLINEWebhook implements ShouldQueue
         // Get LINE profile
         $lineProfile = $lineService->getProfile($this->bot, $userId);
 
-        // Create new profile
-        return CustomerProfile::create([
-            'external_id' => $userId,
-            'channel_type' => 'line',
-            'display_name' => $lineProfile['displayName'] ?? null,
-            'picture_url' => $lineProfile['pictureUrl'] ?? null,
-            'first_interaction_at' => now(),
-            'last_interaction_at' => now(),
-            'interaction_count' => 1,
-            'metadata' => [
-                'status_message' => $lineProfile['statusMessage'] ?? null,
-            ],
-        ]);
+        // Create new profile with race condition handling
+        try {
+            return CustomerProfile::create([
+                'external_id' => $userId,
+                'channel_type' => 'line',
+                'display_name' => $lineProfile['displayName'] ?? null,
+                'picture_url' => $lineProfile['pictureUrl'] ?? null,
+                'first_interaction_at' => now(),
+                'last_interaction_at' => now(),
+                'interaction_count' => 1,
+                'metadata' => [
+                    'status_message' => $lineProfile['statusMessage'] ?? null,
+                ],
+            ]);
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            // Race condition: another job created the profile, query again
+            return CustomerProfile::where('external_id', $userId)
+                ->where('channel_type', 'line')
+                ->first();
+        }
     }
 
     /**
