@@ -12,22 +12,43 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Find and fix all mismatched message counts
-        $updated = DB::update("
-            UPDATE conversations c
-            SET message_count = (
-                SELECT COUNT(*)
-                FROM messages m
-                WHERE m.conversation_id = c.id
-            )
-            WHERE c.message_count != (
-                SELECT COUNT(*)
-                FROM messages m
-                WHERE m.conversation_id = c.id
-            )
-        ");
+        $driver = DB::getDriverName();
 
-        Log::info("Synced message_count for {$updated} conversations");
+        if ($driver === 'pgsql') {
+            // PostgreSQL supports table aliases in UPDATE
+            $updated = DB::update("
+                UPDATE conversations c
+                SET message_count = (
+                    SELECT COUNT(*)
+                    FROM messages m
+                    WHERE m.conversation_id = c.id
+                )
+                WHERE c.message_count != (
+                    SELECT COUNT(*)
+                    FROM messages m
+                    WHERE m.conversation_id = c.id
+                )
+            ");
+
+            Log::info("Synced message_count for {$updated} conversations");
+        } elseif ($driver === 'sqlite') {
+            // SQLite doesn't support table aliases in UPDATE
+            $updated = DB::update("
+                UPDATE conversations
+                SET message_count = (
+                    SELECT COUNT(*)
+                    FROM messages
+                    WHERE messages.conversation_id = conversations.id
+                )
+                WHERE message_count != (
+                    SELECT COUNT(*)
+                    FROM messages
+                    WHERE messages.conversation_id = conversations.id
+                )
+            ");
+
+            Log::info("Synced message_count for {$updated} conversations");
+        }
     }
 
     /**

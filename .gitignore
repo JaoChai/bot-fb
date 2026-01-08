@@ -44,3 +44,6 @@ coverage/
 *.tmp
 .playwright-mcp/
 .claude/debug-active.txt
+
+# Auto Claude data directory
+.auto-claude/
