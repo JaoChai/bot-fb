@@ -175,7 +175,7 @@
 - [X] T054 [P] Add environment variable documentation in backend/.env.example
 - [X] T055 [P] Update CLAUDE.md with new services and refactor patterns
 - [X] T056 Verify all existing tests still pass: `php artisan test` (zero breaking changes)
-- [ ] T057 [P] Verify frontend tests pass: `npm test` in frontend/
+- [X] T057 [P] Verify frontend tests pass: `npm test` in frontend/ (N/A - no test script configured)
 - [X] T058 Run code style check: `./vendor/bin/pint --test` in backend/
 - [X] T059 [P] Run frontend linting: `npm run lint` in frontend/
 - [X] T060 Performance validation: Compare actual vs target metrics (latency, cost)
