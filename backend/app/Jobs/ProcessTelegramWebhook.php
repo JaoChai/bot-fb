@@ -159,8 +159,8 @@ class ProcessTelegramWebhook implements ShouldQueue
 
             $this->bot->update($botUpdate);
 
-            // Generate AI response if not in handover mode and is a text message
-            if (!$isHandover && $parsed['type'] === 'text' && $userMessage) {
+            // Generate AI response if not in handover mode, bot is active, and is a text message
+            if (!$isHandover && $this->bot->status === 'active' && $parsed['type'] === 'text' && $userMessage) {
                 $botMessage = $this->generateAIResponse(
                     $conversation,
                     $userMessage,
