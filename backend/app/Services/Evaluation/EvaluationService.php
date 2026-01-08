@@ -12,9 +12,13 @@ use Illuminate\Support\Facades\Log;
 class EvaluationService
 {
     protected TestCaseGeneratorService $testCaseGenerator;
+
     protected ConversationSimulatorService $conversationSimulator;
+
     protected LLMJudgeService $llmJudge;
+
     protected ReportGeneratorService $reportGenerator;
+
     protected PersonaService $personaService;
 
     public function __construct(
@@ -42,7 +46,7 @@ class EvaluationService
     ): Evaluation {
         // Validate personas
         $personas = $config['personas'] ?? $this->personaService->getPersonaKeys();
-        if (!$this->personaService->validatePersonaKeys($personas)) {
+        if (! $this->personaService->validatePersonaKeys($personas)) {
             throw new \InvalidArgumentException('Invalid persona keys provided');
         }
 
@@ -50,7 +54,7 @@ class EvaluationService
             'bot_id' => $bot->id,
             'flow_id' => $flow->id,
             'user_id' => $user->id,
-            'name' => $config['name'] ?? "Evaluation " . now()->format('Y-m-d H:i'),
+            'name' => $config['name'] ?? 'Evaluation '.now()->format('Y-m-d H:i'),
             'description' => $config['description'] ?? null,
             'status' => Evaluation::STATUS_PENDING,
             'judge_model' => $config['judge_model'] ?? 'anthropic/claude-3.5-sonnet',
@@ -165,8 +169,8 @@ class EvaluationService
             ->where('status', EvaluationTestCase::STATUS_RUNNING)
             ->orWhere(function ($query) use ($evaluation) {
                 $query->where('evaluation_id', $evaluation->id)
-                      ->whereNotNull('id')
-                      ->whereNull('overall_score');
+                    ->whereNotNull('id')
+                    ->whereNull('overall_score');
             })
             ->get();
 
@@ -177,6 +181,7 @@ class EvaluationService
             if ($testCase->messages()->count() === 0) {
                 $testCase->markAsFailed();
                 $evaluation->incrementCompletedTestCases();
+
                 continue;
             }
 
@@ -230,7 +235,7 @@ class EvaluationService
      */
     public function cancelEvaluation(Evaluation $evaluation): void
     {
-        if (!$evaluation->isRunning() && !$evaluation->isPending()) {
+        if (! $evaluation->isRunning() && ! $evaluation->isPending()) {
             throw new \RuntimeException('Evaluation cannot be cancelled');
         }
 
@@ -242,7 +247,7 @@ class EvaluationService
      */
     public function retryEvaluation(Evaluation $evaluation, ?string $apiKey = null): void
     {
-        if (!$evaluation->isFailed()) {
+        if (! $evaluation->isFailed()) {
             throw new \RuntimeException('Only failed evaluations can be retried');
         }
 
