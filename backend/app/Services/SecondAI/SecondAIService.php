@@ -22,7 +22,8 @@ class SecondAIService
     public function __construct(
         protected FactCheckService $factCheck,
         protected PolicyCheckService $policyCheck,
-        protected PersonalityCheckService $personalityCheck
+        protected PersonalityCheckService $personalityCheck,
+        protected UnifiedCheckService $unifiedCheck,
     ) {}
 
     /**
@@ -49,16 +50,44 @@ class SecondAIService
         }
 
         $options = $flow->second_ai_options ?? [];
+        $startTime = microtime(true);
+
+        // Try unified mode first if applicable
+        if ($this->shouldUseUnifiedMode($options)) {
+            Log::info('SecondAI: Using unified mode', [
+                'flow_id' => $flow->id,
+                'enabled_checks' => array_keys(array_filter($options)),
+            ]);
+
+            try {
+                $result = $this->unifiedCheck->check($response, $flow, $userMessage, $apiKey);
+
+                Log::info('SecondAI: Unified mode completed', [
+                    'flow_id' => $flow->id,
+                    'passed' => $result->passed,
+                    'elapsed_ms' => $result->metadata['latency_ms'] ?? 0,
+                ]);
+
+                // Convert to legacy format for backward compatibility
+                return $result->toLegacyFormat();
+            } catch (\Exception $e) {
+                Log::warning('SecondAI: Unified mode failed, falling back to sequential', [
+                    'flow_id' => $flow->id,
+                    'error' => $e->getMessage(),
+                ]);
+                // Fall through to sequential mode below
+            }
+        }
+
+        // Sequential mode (original implementation or fallback)
         $currentContent = $response;
         $modifications = [];
         $checksApplied = [];
 
-        Log::info('SecondAI: Starting checks', [
+        Log::info('SecondAI: Using sequential mode', [
             'flow_id' => $flow->id,
             'options' => $options,
         ]);
-
-        $startTime = microtime(true);
 
         try {
             // Use Laravel rescue for timeout-safe execution
@@ -204,5 +233,31 @@ class SecondAIService
     {
         $this->timeout = $seconds;
         return $this;
+    }
+
+    /**
+     * Check if unified mode should be used.
+     *
+     * Unified mode is enabled when 2 or more check options are enabled.
+     * This provides better performance by combining checks into a single LLM call.
+     *
+     * @param array $options Second AI options from flow configuration
+     * @return bool
+     */
+    protected function shouldUseUnifiedMode(array $options): bool
+    {
+        $enabledCount = 0;
+
+        if (!empty($options['fact_check'])) {
+            $enabledCount++;
+        }
+        if (!empty($options['policy'])) {
+            $enabledCount++;
+        }
+        if (!empty($options['personality'])) {
+            $enabledCount++;
+        }
+
+        return $enabledCount >= 2;
     }
 }

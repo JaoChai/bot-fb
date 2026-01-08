@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -20,7 +21,14 @@ return new class extends Migration
             $table->string('intent', 50); // 'chat', 'knowledge', 'flow'
             $table->string('language', 10)->default('th'); // 'th', 'en'
             $table->text('example_phrase');
-            $table->vector('embedding', 1536); // pgvector for text-embedding-3-small
+
+            // Vector embedding - only PostgreSQL supports pgvector
+            if (DB::connection()->getDriverName() === 'pgsql') {
+                $table->vector('embedding', 1536); // pgvector for text-embedding-3-small
+            } else {
+                $table->text('embedding'); // SQLite uses text for testing
+            }
+
             $table->float('weight')->default(1.0);
             $table->boolean('is_active')->default(true);
             $table->timestamps();

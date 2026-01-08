@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
+import { KnowledgeBaseWarning } from '@/components/flow/KnowledgeBaseWarning';
 import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations } from '@/hooks/useFlows';
 import { useStreamingChat } from '@/hooks/useStreamingChat';
 import { useAllKnowledgeBases } from '@/hooks/useKnowledgeBase';
@@ -900,6 +901,11 @@ export function FlowEditorPage() {
                         <span className="text-sm">💬 Personality</span>
                       </label>
                     </div>
+
+                    {/* Warning: Fact Check requires Knowledge Base */}
+                    <KnowledgeBaseWarning
+                      visible={secondAIOptions.factCheck && (formData.knowledge_bases?.length ?? 0) === 0}
+                    />
                   </div>
                 )}
               </div>

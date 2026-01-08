@@ -6,14 +6,16 @@ use App\Models\Bot;
 use App\Models\EvaluationMessage;
 use App\Models\EvaluationTestCase;
 use App\Models\Flow;
-use App\Services\RAGService;
 use App\Services\OpenRouterService;
+use App\Services\RAGService;
 use Illuminate\Support\Facades\Log;
 
 class ConversationSimulatorService
 {
     protected RAGService $ragService;
+
     protected OpenRouterService $openRouter;
+
     protected PersonaService $personaService;
 
     protected const DEFAULT_MODEL = 'anthropic/claude-3-haiku-20240307';
@@ -109,6 +111,7 @@ class ConversationSimulatorService
         } catch (\Exception $e) {
             Log::error("Conversation simulation failed for test case {$testCase->id}: {$e->getMessage()}");
             $testCase->markAsFailed();
+
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -136,7 +139,7 @@ class ConversationSimulatorService
         if ($testCase->test_type === EvaluationTestCase::TYPE_EDGE_CASE ||
             $testCase->test_type === EvaluationTestCase::TYPE_PERSONA_ADHERENCE) {
             // These should already have messages from generation
-            return "สวัสดีครับ";
+            return 'สวัสดีครับ';
         }
 
         // For KB-based tests, generate question from source chunks
@@ -178,7 +181,8 @@ PROMPT;
             return trim($response['content']);
         } catch (\Exception $e) {
             Log::error("Failed to generate question: {$e->getMessage()}");
-            return "สวัสดีครับ ขอสอบถามข้อมูลหน่อยครับ";
+
+            return 'สวัสดีครับ ขอสอบถามข้อมูลหน่อยครับ';
         }
     }
 
@@ -256,6 +260,7 @@ PROMPT;
 
         $conversationText = collect($conversation)->map(function ($msg) {
             $role = $msg['role'] === 'user' ? 'ลูกค้า' : 'Bot';
+
             return "{$role}: {$msg['content']}";
         })->implode("\n");
 
@@ -287,9 +292,11 @@ PROMPT;
             );
 
             $content = trim($response['content']);
+
             return $content === 'DONE' ? null : $content;
         } catch (\Exception $e) {
             Log::error("Failed to generate follow-up: {$e->getMessage()}");
+
             return null;
         }
     }

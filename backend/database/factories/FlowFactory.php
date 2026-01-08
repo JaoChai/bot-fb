@@ -27,9 +27,8 @@ class FlowFactory extends Factory
             'agentic_mode' => false,
             'max_tool_calls' => 5,
             'enabled_tools' => null,
-            'knowledge_base_id' => null,
-            'kb_top_k' => 5,
-            'kb_similarity_threshold' => 0.7,
+            // KB relationship moved to many-to-many via flow_knowledge_base pivot table
+            // Removed: knowledge_base_id, kb_top_k, kb_similarity_threshold
             'language' => 'th',
             'is_default' => false,
         ];

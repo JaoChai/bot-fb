@@ -55,11 +55,21 @@ return new class extends Migration
                     }
 
                     // Add 7 hours to convert UTC to Bangkok time
-                    DB::statement("
-                        UPDATE {$table}
-                        SET {$column} = {$column} + INTERVAL '7 hours'
-                        WHERE {$column} IS NOT NULL
-                    ");
+                    $driver = DB::getDriverName();
+
+                    if ($driver === 'pgsql') {
+                        DB::statement("
+                            UPDATE {$table}
+                            SET {$column} = {$column} + INTERVAL '7 hours'
+                            WHERE {$column} IS NOT NULL
+                        ");
+                    } elseif ($driver === 'sqlite') {
+                        DB::statement("
+                            UPDATE {$table}
+                            SET {$column} = datetime({$column}, '+7 hours')
+                            WHERE {$column} IS NOT NULL
+                        ");
+                    }
                 }
             }
         });
@@ -109,11 +119,21 @@ return new class extends Migration
                     }
 
                     // Subtract 7 hours to convert Bangkok time back to UTC
-                    DB::statement("
-                        UPDATE {$table}
-                        SET {$column} = {$column} - INTERVAL '7 hours'
-                        WHERE {$column} IS NOT NULL
-                    ");
+                    $driver = DB::getDriverName();
+
+                    if ($driver === 'pgsql') {
+                        DB::statement("
+                            UPDATE {$table}
+                            SET {$column} = {$column} - INTERVAL '7 hours'
+                            WHERE {$column} IS NOT NULL
+                        ");
+                    } elseif ($driver === 'sqlite') {
+                        DB::statement("
+                            UPDATE {$table}
+                            SET {$column} = datetime({$column}, '-7 hours')
+                            WHERE {$column} IS NOT NULL
+                        ");
+                    }
                 }
             }
         });
