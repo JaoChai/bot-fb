@@ -18,6 +18,8 @@ class UserSetting extends Model
         'cost_alert_threshold',
         'line_channel_secret',
         'line_channel_access_token',
+        // Notification preferences
+        'notification_preferences',
     ];
 
     /**
@@ -32,6 +34,8 @@ class UserSetting extends Model
         'max_monthly_cost' => 'decimal:2',
         'cost_alert_enabled' => 'boolean',
         'cost_alert_threshold' => 'integer',
+        // Notification preferences
+        'notification_preferences' => 'array',
     ];
 
     /**

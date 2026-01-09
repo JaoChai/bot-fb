@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\CacheHeaders;
 use App\Http\Middleware\CompressResponse;
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\SanitizeInput;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TrustProxies;
@@ -32,10 +33,11 @@ return Application::configure(basePath: dirname(__DIR__))
             SecurityHeaders::class,
         ]);
 
-        // Don't redirect to login - return null to throw AuthenticationException
-        // which will be caught by our custom exception handler and return 401 JSON
-        // This is an API-only application, no web login page exists
-        $middleware->redirectGuestsTo(fn () => null);
+        // Redirect unauthenticated web requests to login
+        // API requests will return 401 JSON (handled in exception handler)
+        $middleware->redirectGuestsTo(fn (Request $request) =>
+            $request->expectsJson() ? null : route('login')
+        );
 
         // API middleware group additions
         $middleware->api(prepend: [
@@ -51,6 +53,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // Exclude webhook routes from CSRF protection
         $middleware->validateCsrfTokens(except: [
             'webhook/*',
+        ]);
+
+        // Web middleware group additions for Inertia.js
+        $middleware->web(append: [
+            HandleInertiaRequests::class,
         ]);
 
         // Define middleware aliases for route-level usage

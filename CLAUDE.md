@@ -341,6 +341,8 @@ php artisan test tests/Unit/Evaluation
 ## Active Technologies
 - PHP 8.2 (Backend), TypeScript 5.x (Frontend) + Laravel 12, React 19, TanStack Query v5, Zustand (006-bots-refactor)
 - PostgreSQL (Neon) with pgvector extension (006-bots-refactor)
+- PHP 8.4, TypeScript 5.x + Laravel 12, Inertia.js 2.x, React 19, Vite 5.x, TailwindCSS (007-laravel-cloud-migration)
+- Laravel Cloud Serverless Postgres with pgvector extension (007-laravel-cloud-migration)
 
 - **Backend:** PHP 8.2, Laravel 12, OpenRouter API
 - **Frontend:** TypeScript 5.x, React 19, TanStack Query
