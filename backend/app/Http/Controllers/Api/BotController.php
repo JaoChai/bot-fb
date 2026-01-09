@@ -27,6 +27,36 @@ class BotController extends Controller
      * reflect changes immediately. The query is simple (user's bots with relations)
      * and caching caused sync issues where deleted/updated bots still appeared.
      * Frontend uses React Query with short staleTime for client-side caching.
+     *
+     * @OA\Get(
+     *     path="/api/bots",
+     *     summary="List all bots",
+     *     description="Returns paginated list of bots accessible by the authenticated user. Owners see their owned bots, Admins see assigned bots.",
+     *     operationId="listBots",
+     *     tags={"Bots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="per_page",
+     *         in="query",
+     *         description="Number of items per page",
+     *         required=false,
+     *         @OA\Schema(type="integer", default=15, minimum=1, maximum=100)
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Successful operation",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(
+     *                 property="data",
+     *                 type="array",
+     *                 @OA\Items(ref="#/components/schemas/Bot")
+     *             ),
+     *             @OA\Property(property="meta", ref="#/components/schemas/PaginationMeta")
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated")
+     * )
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -43,6 +73,37 @@ class BotController extends Controller
 
     /**
      * Create a new bot.
+     *
+     * @OA\Post(
+     *     path="/api/bots",
+     *     summary="Create a new bot",
+     *     description="Creates a new bot with auto-generated webhook URL and Base Flow. For Telegram bots, webhook is automatically configured.",
+     *     operationId="createBot",
+     *     tags={"Bots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"name", "channel_type"},
+     *             @OA\Property(property="name", type="string", maxLength=255, example="My Support Bot"),
+     *             @OA\Property(property="channel_type", type="string", enum={"line", "telegram", "facebook"}, example="line"),
+     *             @OA\Property(property="channel_access_token", type="string", description="Channel access token for the messaging platform"),
+     *             @OA\Property(property="channel_secret", type="string", description="Channel secret (LINE only)"),
+     *             @OA\Property(property="description", type="string", maxLength=1000)
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=201,
+     *         description="Bot created successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="message", type="string", example="Bot created successfully"),
+     *             @OA\Property(property="data", ref="#/components/schemas/Bot"),
+     *             @OA\Property(property="webhook_setup", type="boolean", nullable=true, description="Telegram webhook setup result")
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=422, description="Validation error", @OA\JsonContent(ref="#/components/schemas/ErrorResponse"))
+     * )
      */
     public function store(StoreBotRequest $request): JsonResponse
     {
@@ -107,6 +168,32 @@ PROMPT;
 
     /**
      * Get a specific bot.
+     *
+     * @OA\Get(
+     *     path="/api/bots/{bot}",
+     *     summary="Get a specific bot",
+     *     description="Returns detailed information about a specific bot including settings and default flow.",
+     *     operationId="getBot",
+     *     tags={"Bots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="bot",
+     *         in="path",
+     *         description="Bot ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Successful operation",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="data", ref="#/components/schemas/Bot")
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=403, description="Forbidden"),
+     *     @OA\Response(response=404, description="Bot not found")
+     * )
      */
     public function show(Request $request, Bot $bot): BotResource
     {
@@ -117,6 +204,45 @@ PROMPT;
 
     /**
      * Update a bot.
+     *
+     * @OA\Put(
+     *     path="/api/bots/{bot}",
+     *     summary="Update a bot",
+     *     description="Updates bot information. For Telegram bots, changing the token will re-configure the webhook.",
+     *     operationId="updateBot",
+     *     tags={"Bots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="bot",
+     *         in="path",
+     *         description="Bot ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             @OA\Property(property="name", type="string", maxLength=255),
+     *             @OA\Property(property="description", type="string", maxLength=1000),
+     *             @OA\Property(property="channel_access_token", type="string"),
+     *             @OA\Property(property="channel_secret", type="string"),
+     *             @OA\Property(property="status", type="string", enum={"active", "inactive"})
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Bot updated successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="message", type="string", example="Bot updated successfully"),
+     *             @OA\Property(property="data", ref="#/components/schemas/Bot"),
+     *             @OA\Property(property="webhook_setup", type="boolean", nullable=true)
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=403, description="Forbidden"),
+     *     @OA\Response(response=404, description="Bot not found"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
      */
     public function update(UpdateBotRequest $request, Bot $bot): JsonResponse
     {
@@ -431,5 +557,52 @@ PROMPT;
             ]);
             return false;
         }
+    }
+
+    /**
+     * Reveal bot credentials (owner only).
+     * Returns the actual channel_access_token and channel_secret.
+     *
+     * @OA\Get(
+     *     path="/api/bots/{bot}/credentials",
+     *     summary="Get bot credentials",
+     *     description="Returns the channel access token and secret. Owner only - admins cannot access credentials.",
+     *     operationId="getBotCredentials",
+     *     tags={"Bots"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="bot",
+     *         in="path",
+     *         description="Bot ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Credentials retrieved successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(
+     *                 property="data",
+     *                 type="object",
+     *                 @OA\Property(property="channel_access_token", type="string"),
+     *                 @OA\Property(property="channel_secret", type="string", nullable=true)
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=403, description="Forbidden - only owners can view credentials"),
+     *     @OA\Response(response=404, description="Bot not found")
+     * )
+     */
+    public function credentials(Bot $bot): JsonResponse
+    {
+        $this->authorize('viewCredentials', $bot);
+
+        return response()->json([
+            'data' => [
+                'channel_access_token' => $bot->channel_access_token,
+                'channel_secret' => $bot->channel_secret,
+            ],
+        ]);
     }
 }

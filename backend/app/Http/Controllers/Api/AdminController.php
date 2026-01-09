@@ -24,14 +24,17 @@ class AdminController extends Controller
         $query = $bot->adminAssignments()->with('user');
 
         if ($withCounts) {
-            // Get active conversation counts for each admin
-            $admins = $query->get()->map(function ($assignment) use ($bot) {
-                $assignment->active_conversations_count = Conversation::where('bot_id', $bot->id)
-                    ->where('assigned_user_id', $assignment->user_id)
-                    ->where('status', 'active')
-                    ->count();
-                return $assignment;
-            });
+            // Use subquery to count active conversations in a single query (avoids N+1)
+            $admins = $query
+                ->selectRaw('admin_bot_assignments.*, (
+                    SELECT COUNT(*)
+                    FROM conversations
+                    WHERE conversations.assigned_user_id = admin_bot_assignments.user_id
+                    AND conversations.bot_id = admin_bot_assignments.bot_id
+                    AND conversations.status = ?
+                    AND conversations.deleted_at IS NULL
+                ) as active_conversations_count', ['active'])
+                ->get();
 
             return response()->json([
                 'data' => $admins,

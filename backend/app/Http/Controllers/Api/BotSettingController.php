@@ -12,6 +12,32 @@ class BotSettingController extends Controller
 {
     /**
      * Get bot settings.
+     *
+     * @OA\Get(
+     *     path="/api/bots/{bot}/settings",
+     *     summary="Get bot settings",
+     *     description="Returns all configuration settings for a bot. Creates default settings if none exist.",
+     *     operationId="getBotSettings",
+     *     tags={"Bot Settings"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="bot",
+     *         in="path",
+     *         description="Bot ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Successful operation",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="data", ref="#/components/schemas/BotSettings")
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=403, description="Forbidden"),
+     *     @OA\Response(response=404, description="Bot not found")
+     * )
      */
     public function show(Request $request, Bot $bot): JsonResponse
     {
@@ -40,6 +66,63 @@ class BotSettingController extends Controller
 
     /**
      * Update bot settings.
+     *
+     * @OA\Put(
+     *     path="/api/bots/{bot}/settings",
+     *     summary="Update bot settings",
+     *     description="Updates configuration settings for a bot including usage limits, HITL, response hours, and more.",
+     *     operationId="updateBotSettings",
+     *     tags={"Bot Settings"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="bot",
+     *         in="path",
+     *         description="Bot ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             @OA\Property(property="daily_message_limit", type="integer", minimum=0, maximum=100000, example=1000),
+     *             @OA\Property(property="per_user_limit", type="integer", minimum=0, maximum=10000, example=100),
+     *             @OA\Property(property="rate_limit_per_minute", type="integer", minimum=1, maximum=1000, example=20),
+     *             @OA\Property(property="max_tokens_per_response", type="integer", minimum=100, maximum=32000, example=2000),
+     *             @OA\Property(property="hitl_enabled", type="boolean", description="Enable Human-in-the-Loop"),
+     *             @OA\Property(property="hitl_triggers", type="array", @OA\Items(type="string"), description="Keywords to trigger HITL"),
+     *             @OA\Property(property="response_hours_enabled", type="boolean"),
+     *             @OA\Property(property="response_hours", type="object", description="Business hours per day"),
+     *             @OA\Property(property="response_hours_timezone", type="string", example="Asia/Bangkok"),
+     *             @OA\Property(property="offline_message", type="string", maxLength=1000),
+     *             @OA\Property(property="welcome_message", type="string", maxLength=2000),
+     *             @OA\Property(property="fallback_message", type="string", maxLength=1000),
+     *             @OA\Property(property="typing_indicator", type="boolean"),
+     *             @OA\Property(property="typing_delay_ms", type="integer", minimum=0, maximum=5000),
+     *             @OA\Property(property="content_filter_enabled", type="boolean"),
+     *             @OA\Property(property="blocked_keywords", type="array", @OA\Items(type="string")),
+     *             @OA\Property(property="analytics_enabled", type="boolean"),
+     *             @OA\Property(property="save_conversations", type="boolean"),
+     *             @OA\Property(property="language", type="string", enum={"th", "en", "zh", "ja", "ko"}),
+     *             @OA\Property(property="response_style", type="string", enum={"professional", "casual", "friendly", "formal"}),
+     *             @OA\Property(property="multiple_bubbles_enabled", type="boolean"),
+     *             @OA\Property(property="smart_aggregation_enabled", type="boolean"),
+     *             @OA\Property(property="auto_assignment_enabled", type="boolean"),
+     *             @OA\Property(property="auto_assignment_mode", type="string", enum={"round_robin", "load_balanced"})
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Settings updated successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="message", type="string", example="Settings updated successfully"),
+     *             @OA\Property(property="data", ref="#/components/schemas/BotSettings")
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=403, description="Forbidden"),
+     *     @OA\Response(response=404, description="Bot not found"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
      */
     public function update(Request $request, Bot $bot): JsonResponse
     {

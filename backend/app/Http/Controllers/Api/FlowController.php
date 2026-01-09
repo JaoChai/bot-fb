@@ -15,6 +15,7 @@ use App\Services\OpenRouterService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class FlowController extends Controller
@@ -26,6 +27,45 @@ class FlowController extends Controller
     /**
      * List all flows for a bot.
      * Uses FlowListResource for slim payload (no system_prompt, enabled_tools).
+     *
+     * @OA\Get(
+     *     path="/api/bots/{bot}/flows",
+     *     summary="List all flows for a bot",
+     *     description="Returns paginated list of flows for a specific bot. Base/default flow is always listed first.",
+     *     operationId="listFlows",
+     *     tags={"Flows"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="bot",
+     *         in="path",
+     *         description="Bot ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Parameter(
+     *         name="per_page",
+     *         in="query",
+     *         description="Number of items per page",
+     *         required=false,
+     *         @OA\Schema(type="integer", default=15, minimum=1, maximum=100)
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Successful operation",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(
+     *                 property="data",
+     *                 type="array",
+     *                 @OA\Items(ref="#/components/schemas/FlowList")
+     *             ),
+     *             @OA\Property(property="meta", ref="#/components/schemas/PaginationMeta")
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=403, description="Forbidden"),
+     *     @OA\Response(response=404, description="Bot not found")
+     * )
      */
     public function index(Request $request, Bot $bot): AnonymousResourceCollection
     {
@@ -42,6 +82,59 @@ class FlowController extends Controller
 
     /**
      * Create a new flow for a bot.
+     *
+     * @OA\Post(
+     *     path="/api/bots/{bot}/flows",
+     *     summary="Create a new flow",
+     *     description="Creates a new flow for a bot. If it's the first flow or marked as default, it becomes the default flow.",
+     *     operationId="createFlow",
+     *     tags={"Flows"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="bot",
+     *         in="path",
+     *         description="Bot ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"name"},
+     *             @OA\Property(property="name", type="string", maxLength=255, example="Customer Support Flow"),
+     *             @OA\Property(property="description", type="string", maxLength=1000),
+     *             @OA\Property(property="system_prompt", type="string", description="AI system prompt"),
+     *             @OA\Property(property="temperature", type="number", format="float", minimum=0, maximum=2, default=0.7),
+     *             @OA\Property(property="max_tokens", type="integer", minimum=100, maximum=32000, default=2048),
+     *             @OA\Property(property="agentic_mode", type="boolean", default=false),
+     *             @OA\Property(property="max_tool_calls", type="integer", minimum=1, maximum=50, default=10),
+     *             @OA\Property(property="enabled_tools", type="array", @OA\Items(type="string")),
+     *             @OA\Property(property="language", type="string", enum={"th", "en", "zh", "ja", "ko"}, default="th"),
+     *             @OA\Property(property="is_default", type="boolean", default=false),
+     *             @OA\Property(
+     *                 property="knowledge_bases",
+     *                 type="array",
+     *                 @OA\Items(
+     *                     type="object",
+     *                     @OA\Property(property="id", type="integer"),
+     *                     @OA\Property(property="kb_top_k", type="integer", default=5),
+     *                     @OA\Property(property="kb_similarity_threshold", type="number", format="float", default=0.7)
+     *                 )
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=201,
+     *         description="Flow created successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="message", type="string", example="Flow created successfully"),
+     *             @OA\Property(property="data", ref="#/components/schemas/Flow")
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=403, description="Forbidden"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
      */
     public function store(StoreFlowRequest $request, Bot $bot): JsonResponse
     {
@@ -96,6 +189,39 @@ class FlowController extends Controller
 
     /**
      * Get a specific flow.
+     *
+     * @OA\Get(
+     *     path="/api/bots/{bot}/flows/{flow}",
+     *     summary="Get a specific flow",
+     *     description="Returns detailed information about a specific flow including knowledge bases.",
+     *     operationId="getFlow",
+     *     tags={"Flows"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="bot",
+     *         in="path",
+     *         description="Bot ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Parameter(
+     *         name="flow",
+     *         in="path",
+     *         description="Flow ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Successful operation",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="data", ref="#/components/schemas/Flow")
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=403, description="Forbidden"),
+     *     @OA\Response(response=404, description="Flow not found")
+     * )
      */
     public function show(Request $request, Bot $bot, Flow $flow): FlowResource
     {
@@ -107,6 +233,66 @@ class FlowController extends Controller
 
     /**
      * Update a flow.
+     *
+     * @OA\Put(
+     *     path="/api/bots/{bot}/flows/{flow}",
+     *     summary="Update a flow",
+     *     description="Updates flow configuration. Setting is_default=true will unset other flows as default.",
+     *     operationId="updateFlow",
+     *     tags={"Flows"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="bot",
+     *         in="path",
+     *         description="Bot ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Parameter(
+     *         name="flow",
+     *         in="path",
+     *         description="Flow ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             @OA\Property(property="name", type="string", maxLength=255),
+     *             @OA\Property(property="description", type="string", maxLength=1000),
+     *             @OA\Property(property="system_prompt", type="string"),
+     *             @OA\Property(property="temperature", type="number", format="float", minimum=0, maximum=2),
+     *             @OA\Property(property="max_tokens", type="integer", minimum=100, maximum=32000),
+     *             @OA\Property(property="agentic_mode", type="boolean"),
+     *             @OA\Property(property="max_tool_calls", type="integer", minimum=1, maximum=50),
+     *             @OA\Property(property="enabled_tools", type="array", @OA\Items(type="string")),
+     *             @OA\Property(property="language", type="string", enum={"th", "en", "zh", "ja", "ko"}),
+     *             @OA\Property(property="is_default", type="boolean"),
+     *             @OA\Property(
+     *                 property="knowledge_bases",
+     *                 type="array",
+     *                 @OA\Items(
+     *                     type="object",
+     *                     @OA\Property(property="id", type="integer"),
+     *                     @OA\Property(property="kb_top_k", type="integer"),
+     *                     @OA\Property(property="kb_similarity_threshold", type="number", format="float")
+     *                 )
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Flow updated successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="message", type="string", example="Flow updated successfully"),
+     *             @OA\Property(property="data", ref="#/components/schemas/Flow")
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=403, description="Forbidden"),
+     *     @OA\Response(response=404, description="Flow not found"),
+     *     @OA\Response(response=422, description="Validation error")
+     * )
      */
     public function update(UpdateFlowRequest $request, Bot $bot, Flow $flow): JsonResponse
     {
@@ -192,18 +378,58 @@ class FlowController extends Controller
 
     /**
      * Set a flow as the default for a bot.
+     *
+     * @OA\Post(
+     *     path="/api/bots/{bot}/flows/{flow}/set-default",
+     *     summary="Set flow as default",
+     *     description="Sets this flow as the default flow for the bot. The previous default flow will be unset.",
+     *     operationId="setDefaultFlow",
+     *     tags={"Flows"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Parameter(
+     *         name="bot",
+     *         in="path",
+     *         description="Bot ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Parameter(
+     *         name="flow",
+     *         in="path",
+     *         description="Flow ID",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Flow set as default successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="message", type="string", example="Flow set as default successfully"),
+     *             @OA\Property(property="data", ref="#/components/schemas/Flow")
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthenticated"),
+     *     @OA\Response(response=403, description="Forbidden"),
+     *     @OA\Response(response=404, description="Flow not found")
+     * )
      */
     public function setDefault(Request $request, Bot $bot, Flow $flow): JsonResponse
     {
         $this->authorize('update', $bot);
         $this->ensureFlowBelongsToBot($flow, $bot);
 
-        // Unset other defaults
-        $bot->flows()->update(['is_default' => false]);
+        DB::transaction(function () use ($bot, $flow) {
+            // Lock all flows for this bot to prevent race condition
+            Flow::where('bot_id', $bot->id)
+                ->lockForUpdate()
+                ->update(['is_default' => false]);
 
-        // Set this flow as default
-        $flow->update(['is_default' => true]);
-        $bot->update(['default_flow_id' => $flow->id]);
+            // Set this flow as default
+            $flow->update(['is_default' => true]);
+
+            // Update bot's default_flow_id reference
+            $bot->update(['default_flow_id' => $flow->id]);
+        });
 
         // Refresh to get updated data
         $flow->refresh();

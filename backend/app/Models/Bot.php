@@ -65,6 +65,9 @@ class Bot extends Model
         'llm_max_tokens' => 'integer',
         'context_window' => 'integer',
         'webhook_forwarder_enabled' => 'boolean',
+        // Channel credentials (encrypted at rest)
+        'channel_access_token' => 'encrypted',
+        'channel_secret' => 'encrypted',
         // KB settings
         'kb_enabled' => 'boolean',
         'kb_relevance_threshold' => 'float',

@@ -1,0 +1,229 @@
+# API Contract: Flow API Extensions for Second AI
+# Feature: 002-second-ai-improvement
+
+openapi: 3.0.3
+info:
+  title: Flow API - Second AI Extensions
+  version: 1.0.0
+  description: Extensions to existing Flow API for Second AI feature
+
+paths:
+  /api/bots/{botId}/flows:
+    post:
+      summary: Create Flow (extended with Second AI fields)
+      operationId: createFlow
+      parameters:
+        - name: botId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFlowRequest'
+      responses:
+        '201':
+          description: Flow created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowResponse'
+
+  /api/bots/{botId}/flows/{flowId}:
+    put:
+      summary: Update Flow (extended with Second AI fields)
+      operationId: updateFlow
+      parameters:
+        - name: botId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: flowId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFlowRequest'
+      responses:
+        '200':
+          description: Flow updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowResponse'
+
+    get:
+      summary: Get Flow (includes Second AI fields)
+      operationId: getFlow
+      parameters:
+        - name: botId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: flowId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Flow details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowResponse'
+
+components:
+  schemas:
+    SecondAIOptions:
+      type: object
+      properties:
+        fact_check:
+          type: boolean
+          default: false
+          description: Enable fact checking against Knowledge Base
+        policy:
+          type: boolean
+          default: false
+          description: Enable policy compliance checking
+        personality:
+          type: boolean
+          default: false
+          description: Enable personality/tone checking
+      example:
+        fact_check: true
+        policy: true
+        personality: false
+
+    CreateFlowRequest:
+      type: object
+      required:
+        - name
+        - system_prompt
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+        system_prompt:
+          type: string
+        model:
+          type: string
+          default: gpt-4o-mini
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+          default: 0.7
+        max_tokens:
+          type: integer
+          minimum: 1
+          maximum: 4096
+          default: 1024
+        is_default:
+          type: boolean
+          default: false
+        # NEW: Second AI fields
+        second_ai_enabled:
+          type: boolean
+          default: false
+          description: Toggle Second AI improvement feature
+        second_ai_options:
+          $ref: '#/components/schemas/SecondAIOptions'
+
+    UpdateFlowRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+        system_prompt:
+          type: string
+        model:
+          type: string
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+        max_tokens:
+          type: integer
+          minimum: 1
+          maximum: 4096
+        is_default:
+          type: boolean
+        # NEW: Second AI fields
+        second_ai_enabled:
+          type: boolean
+          description: Toggle Second AI improvement feature
+        second_ai_options:
+          $ref: '#/components/schemas/SecondAIOptions'
+
+    FlowResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: integer
+            bot_id:
+              type: integer
+            name:
+              type: string
+            description:
+              type: string
+              nullable: true
+            system_prompt:
+              type: string
+            model:
+              type: string
+            temperature:
+              type: number
+            max_tokens:
+              type: integer
+            is_default:
+              type: boolean
+            # NEW: Second AI fields
+            second_ai_enabled:
+              type: boolean
+            second_ai_options:
+              $ref: '#/components/schemas/SecondAIOptions'
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+      example:
+        data:
+          id: 1
+          bot_id: 1
+          name: Sales Flow
+          description: Flow สำหรับทีมขาย
+          system_prompt: คุณเป็นที่ปรึกษาการขาย...
+          model: gpt-4o-mini
+          temperature: 0.7
+          max_tokens: 1024
+          is_default: true
+          second_ai_enabled: true
+          second_ai_options:
+            fact_check: true
+            policy: true
+            personality: false
+          created_at: "2026-01-07T10:00:00Z"
+          updated_at: "2026-01-07T10:00:00Z"

@@ -1,0 +1,440 @@
+openapi: 3.0.3
+info:
+  title: Webhooks API
+  description: Webhook endpoints for receiving messages from LINE, Telegram, and Facebook Messenger
+  version: 1.0.0
+
+servers:
+  - url: https://api.botjao.com
+    description: Production server
+
+paths:
+  /webhook/line/{webhookId}:
+    post:
+      summary: LINE webhook endpoint
+      description: |
+        Receives webhook events from LINE Messaging API.
+        Validates signature using X-Line-Signature header.
+        Processes events asynchronously via queue job.
+      operationId: lineWebhook
+      tags:
+        - Webhooks
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          description: Unique webhook identifier for the bot
+          schema:
+            type: string
+            format: uuid
+        - name: X-Line-Signature
+          in: header
+          required: true
+          description: HMAC-SHA256 signature of request body
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LINEWebhookPayload'
+      responses:
+        '200':
+          description: Webhook received successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        '400':
+          description: Invalid request or signature
+        '404':
+          description: Bot not found for webhook ID
+
+  /webhook/telegram/{webhookId}:
+    post:
+      summary: Telegram webhook endpoint
+      description: |
+        Receives webhook updates from Telegram Bot API.
+        Validates request origin.
+        Processes updates asynchronously via queue job.
+      operationId: telegramWebhook
+      tags:
+        - Webhooks
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          description: Unique webhook identifier for the bot
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramWebhookPayload'
+      responses:
+        '200':
+          description: Webhook received successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        '404':
+          description: Bot not found for webhook ID
+
+  /webhook/facebook/{webhookId}:
+    get:
+      summary: Facebook webhook verification
+      description: |
+        Handles Facebook webhook verification challenge.
+        Required for initial webhook setup in Facebook App Dashboard.
+      operationId: facebookWebhookVerify
+      tags:
+        - Webhooks
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: hub.mode
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [subscribe]
+        - name: hub.verify_token
+          in: query
+          required: true
+          description: Token configured in Facebook App Dashboard
+          schema:
+            type: string
+        - name: hub.challenge
+          in: query
+          required: true
+          description: Challenge string to echo back
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verification successful
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Echo of hub.challenge
+        '403':
+          description: Invalid verify token
+
+    post:
+      summary: Facebook webhook endpoint
+      description: |
+        Receives webhook events from Facebook Messenger Platform.
+        Validates signature using X-Hub-Signature-256 header.
+        Processes events asynchronously via queue job.
+      operationId: facebookWebhook
+      tags:
+        - Webhooks
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          description: HMAC-SHA256 signature prefixed with 'sha256='
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacebookWebhookPayload'
+      responses:
+        '200':
+          description: Webhook received successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        '400':
+          description: Invalid request or signature
+        '404':
+          description: Bot not found for webhook ID
+
+components:
+  schemas:
+    LINEWebhookPayload:
+      type: object
+      properties:
+        destination:
+          type: string
+          description: Bot user ID
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/LINEEvent'
+
+    LINEEvent:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [message, follow, unfollow, join, leave, postback, beacon]
+        timestamp:
+          type: integer
+          format: int64
+        source:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [user, group, room]
+            userId:
+              type: string
+            groupId:
+              type: string
+            roomId:
+              type: string
+        replyToken:
+          type: string
+        message:
+          $ref: '#/components/schemas/LINEMessage'
+
+    LINEMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [text, image, video, audio, file, location, sticker]
+        text:
+          type: string
+          description: For text messages
+        fileName:
+          type: string
+          description: For file messages
+        fileSize:
+          type: integer
+          description: For file messages
+        title:
+          type: string
+          description: For location messages
+        address:
+          type: string
+          description: For location messages
+        latitude:
+          type: number
+          description: For location messages
+        longitude:
+          type: number
+          description: For location messages
+        packageId:
+          type: string
+          description: For sticker messages
+        stickerId:
+          type: string
+          description: For sticker messages
+
+    TelegramWebhookPayload:
+      type: object
+      properties:
+        update_id:
+          type: integer
+          format: int64
+        message:
+          $ref: '#/components/schemas/TelegramMessage'
+        callback_query:
+          type: object
+          description: For button callbacks
+
+    TelegramMessage:
+      type: object
+      properties:
+        message_id:
+          type: integer
+        from:
+          $ref: '#/components/schemas/TelegramUser'
+        chat:
+          $ref: '#/components/schemas/TelegramChat'
+        date:
+          type: integer
+          description: Unix timestamp
+        text:
+          type: string
+        photo:
+          type: array
+          items:
+            type: object
+        document:
+          type: object
+        location:
+          type: object
+          properties:
+            latitude:
+              type: number
+            longitude:
+              type: number
+
+    TelegramUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        is_bot:
+          type: boolean
+        first_name:
+          type: string
+        last_name:
+          type: string
+        username:
+          type: string
+
+    TelegramChat:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        type:
+          type: string
+          enum: [private, group, supergroup, channel]
+        title:
+          type: string
+        username:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+
+    FacebookWebhookPayload:
+      type: object
+      required:
+        - object
+        - entry
+      properties:
+        object:
+          type: string
+          enum: [page]
+        entry:
+          type: array
+          items:
+            $ref: '#/components/schemas/FacebookEntry'
+
+    FacebookEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Page ID
+        time:
+          type: integer
+          format: int64
+          description: Unix timestamp
+        messaging:
+          type: array
+          items:
+            $ref: '#/components/schemas/FacebookMessagingEvent'
+
+    FacebookMessagingEvent:
+      type: object
+      properties:
+        sender:
+          type: object
+          properties:
+            id:
+              type: string
+              description: PSID (Page-scoped ID)
+        recipient:
+          type: object
+          properties:
+            id:
+              type: string
+              description: Page ID
+        timestamp:
+          type: integer
+          format: int64
+        message:
+          $ref: '#/components/schemas/FacebookMessage'
+        postback:
+          $ref: '#/components/schemas/FacebookPostback'
+
+    FacebookMessage:
+      type: object
+      properties:
+        mid:
+          type: string
+          description: Message ID
+        text:
+          type: string
+          description: Text content
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/FacebookAttachment'
+        quick_reply:
+          type: object
+          properties:
+            payload:
+              type: string
+        reply_to:
+          type: object
+          properties:
+            mid:
+              type: string
+              description: ID of message being replied to
+
+    FacebookAttachment:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [image, video, audio, file, location, fallback]
+        payload:
+          type: object
+          properties:
+            url:
+              type: string
+              format: uri
+            coordinates:
+              type: object
+              description: For location type
+              properties:
+                lat:
+                  type: number
+                long:
+                  type: number
+
+    FacebookPostback:
+      type: object
+      properties:
+        title:
+          type: string
+        payload:
+          type: string
+        referral:
+          type: object
+          description: Optional referral data
