@@ -208,7 +208,7 @@ class DashboardController extends Controller
             ->with([
                 'bot:id,name,channel_type',
                 'customerProfile:id,display_name,picture_url',
-                'lastMessage:id,conversation_id,content,sender,created_at',
+                'lastMessage:id,content,sender,created_at',
             ])
             ->orderByDesc('last_message_at')
             ->limit(5)
