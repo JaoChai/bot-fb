@@ -339,6 +339,8 @@ php artisan test tests/Unit/Evaluation
 ---
 
 ## Active Technologies
+- PHP 8.2 (Backend), TypeScript 5.x (Frontend) + Laravel 12, React 19, TanStack Query v5, Zustand (006-bots-refactor)
+- PostgreSQL (Neon) with pgvector extension (006-bots-refactor)
 
 - **Backend:** PHP 8.2, Laravel 12, OpenRouter API
 - **Frontend:** TypeScript 5.x, React 19, TanStack Query
@@ -350,3 +352,6 @@ php artisan test tests/Unit/Evaluation
 **Last Updated:** 2026-01-08
 
 **Documentation Version:** 2.0 (Refactored)
+
+## Recent Changes
+- 006-bots-refactor: Added PHP 8.2 (Backend), TypeScript 5.x (Frontend) + Laravel 12, React 19, TanStack Query v5, Zustand

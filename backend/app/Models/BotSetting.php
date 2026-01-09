@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class BotSetting extends Model
 {
@@ -77,5 +78,25 @@ class BotSetting extends Model
     public function bot(): BelongsTo
     {
         return $this->belongsTo(Bot::class);
+    }
+
+    public function limits(): HasOne
+    {
+        return $this->hasOne(BotLimits::class);
+    }
+
+    public function hitlSettings(): HasOne
+    {
+        return $this->hasOne(BotHITLSettings::class);
+    }
+
+    public function aggregationSettings(): HasOne
+    {
+        return $this->hasOne(BotAggregationSettings::class);
+    }
+
+    public function responseHours(): HasOne
+    {
+        return $this->hasOne(BotResponseHours::class);
     }
 }

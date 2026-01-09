@@ -1,0 +1,411 @@
+openapi: 3.0.3
+info:
+  title: Bots API
+  description: API endpoints for managing bots (channel connections)
+  version: 1.0.0
+
+servers:
+  - url: https://api.botjao.com/api
+    description: Production server
+
+security:
+  - bearerAuth: []
+
+paths:
+  /bots:
+    get:
+      summary: List all bots
+      description: Returns all bots owned by the authenticated user
+      operationId: listBots
+      tags:
+        - Bots
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Bot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      summary: Create a new bot
+      description: Creates a new bot with the specified channel type
+      operationId: createBot
+      tags:
+        - Bots
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBotRequest'
+      responses:
+        '201':
+          description: Bot created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Bot'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /bots/{botId}:
+    get:
+      summary: Get a specific bot
+      description: Returns details of a specific bot. Credentials are masked for non-owners.
+      operationId: getBot
+      tags:
+        - Bots
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Bot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      summary: Update a bot
+      description: Updates bot configuration. Only owner can update credentials.
+      operationId: updateBot
+      tags:
+        - Bots
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBotRequest'
+      responses:
+        '200':
+          description: Bot updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Bot'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    delete:
+      summary: Delete a bot
+      description: Permanently deletes a bot and all associated data
+      operationId: deleteBot
+      tags:
+        - Bots
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      responses:
+        '204':
+          description: Bot deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /bots/{botId}/credentials:
+    get:
+      summary: Reveal bot credentials
+      description: Returns unmasked credentials. Only available to bot owner.
+      operationId: revealCredentials
+      tags:
+        - Bots
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      responses:
+        '200':
+          description: Credentials revealed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      channel_access_token:
+                        type: string
+                        description: Full channel access token
+                      channel_secret:
+                        type: string
+                        description: Full channel secret
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /bots/{botId}/test-connection:
+    post:
+      summary: Test bot connection
+      description: Tests the bot's channel connection by making a test API call
+      operationId: testConnection
+      tags:
+        - Bots
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      responses:
+        '200':
+          description: Connection test result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      success:
+                        type: boolean
+                      message:
+                        type: string
+                      details:
+                        type: object
+
+  /bots/{botId}/regenerate-webhook:
+    post:
+      summary: Regenerate webhook URL
+      description: Generates a new webhook URL for the bot
+      operationId: regenerateWebhook
+      tags:
+        - Bots
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      responses:
+        '200':
+          description: New webhook URL generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      webhook_url:
+                        type: string
+                        format: uri
+
+  /bots/{botId}/status:
+    patch:
+      summary: Update bot status
+      description: Activates, deactivates, or pauses the bot
+      operationId: updateBotStatus
+      tags:
+        - Bots
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [active, inactive, paused]
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Bot'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    BotId:
+      name: botId
+      in: path
+      required: true
+      description: The bot ID
+      schema:
+        type: integer
+        format: int64
+
+  schemas:
+    Bot:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          maxLength: 255
+        channel_type:
+          type: string
+          enum: [line, telegram, facebook, testing]
+        channel_access_token:
+          type: string
+          description: Masked as '••••••••' for security. Use /credentials endpoint to reveal.
+          nullable: true
+        channel_secret:
+          type: string
+          description: Masked as '••••••••' for security. Use /credentials endpoint to reveal.
+          nullable: true
+        page_id:
+          type: string
+          description: Facebook Page ID (for facebook channel_type)
+          nullable: true
+        webhook_url:
+          type: string
+          format: uri
+          nullable: true
+        primary_chat_model:
+          type: string
+          maxLength: 100
+          nullable: true
+        fallback_chat_model:
+          type: string
+          maxLength: 100
+          nullable: true
+        decision_model:
+          type: string
+          maxLength: 100
+          nullable: true
+        default_flow_id:
+          type: integer
+          format: int64
+          nullable: true
+        status:
+          type: string
+          enum: [active, inactive, paused]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateBotRequest:
+      type: object
+      required:
+        - name
+        - channel_type
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        channel_type:
+          type: string
+          enum: [line, telegram, facebook, testing]
+        channel_access_token:
+          type: string
+          nullable: true
+        channel_secret:
+          type: string
+          nullable: true
+        page_id:
+          type: string
+          description: Required for facebook channel_type
+          nullable: true
+
+    UpdateBotRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        channel_access_token:
+          type: string
+          nullable: true
+        channel_secret:
+          type: string
+          nullable: true
+        page_id:
+          type: string
+          nullable: true
+        primary_chat_model:
+          type: string
+          maxLength: 100
+          nullable: true
+        fallback_chat_model:
+          type: string
+          maxLength: 100
+          nullable: true
+        decision_model:
+          type: string
+          maxLength: 100
+          nullable: true
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: Unauthenticated.
+
+    Forbidden:
+      description: Access denied
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: This action is unauthorized.
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: Bot not found.
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+              errors:
+                type: object
+                additionalProperties:
+                  type: array
+                  items:
+                    type: string

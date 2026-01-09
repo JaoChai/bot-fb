@@ -37,4 +37,8 @@ Route::prefix('webhook')->group(function () {
 
     // Telegram webhook fallback - POST /webhook/telegram/{token}
     Route::post('/telegram/{token}', [\App\Http\Controllers\Webhook\TelegramWebhookController::class, 'handle']);
+
+    // Facebook webhook fallback - GET for verification, POST for events
+    Route::get('/facebook/{token}', [\App\Http\Controllers\Webhook\FacebookWebhookController::class, 'verify']);
+    Route::post('/facebook/{token}', [\App\Http\Controllers\Webhook\FacebookWebhookController::class, 'handle']);
 });

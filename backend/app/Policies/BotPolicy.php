@@ -42,4 +42,13 @@ class BotPolicy
     {
         return $user->isOwner() && $user->id === $bot->user_id;
     }
+
+    /**
+     * Determine if the user can view bot credentials (tokens/secrets).
+     * Only the owner can view sensitive credentials.
+     */
+    public function viewCredentials(User $user, Bot $bot): bool
+    {
+        return $user->isOwner() && $user->id === $bot->user_id;
+    }
 }

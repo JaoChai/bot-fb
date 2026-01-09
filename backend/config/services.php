@@ -52,6 +52,12 @@ return [
         'channel_access_token' => env('LINE_CHANNEL_ACCESS_TOKEN'),
     ],
 
+    'facebook' => [
+        'app_id' => env('FACEBOOK_APP_ID'),
+        'app_secret' => env('FACEBOOK_APP_SECRET'),
+        'graph_version' => env('FACEBOOK_GRAPH_VERSION', 'v21.0'),
+    ],
+
     'embeddings' => [
         'model' => env('EMBEDDING_MODEL', 'openai/text-embedding-3-small'),
         'dimensions' => env('EMBEDDING_DIMENSIONS', 1536),

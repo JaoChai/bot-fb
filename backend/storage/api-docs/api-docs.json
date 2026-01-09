@@ -1,0 +1,1630 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "BotJao API",
+        "description": "API for BotJao chatbot platform - manage bots, flows, knowledge bases, and conversations",
+        "contact": {
+            "name": "BotJao Support",
+            "email": "support@botjao.com"
+        },
+        "license": {
+            "name": "Proprietary",
+            "url": "https://www.botjao.com/terms"
+        },
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "https://api.botjao.com",
+            "description": "Production server"
+        },
+        {
+            "url": "http://localhost:8000",
+            "description": "Local development server"
+        }
+    ],
+    "paths": {
+        "/api/bots": {
+            "get": {
+                "tags": [
+                    "Bots"
+                ],
+                "summary": "List all bots",
+                "description": "Returns paginated list of bots accessible by the authenticated user. Owners see their owned bots, Admins see assigned bots.",
+                "operationId": "listBots",
+                "parameters": [
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "description": "Number of items per page",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 15,
+                            "maximum": 100,
+                            "minimum": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Bot"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/PaginationMeta"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Bots"
+                ],
+                "summary": "Create a new bot",
+                "description": "Creates a new bot with auto-generated webhook URL and Base Flow. For Telegram bots, webhook is automatically configured.",
+                "operationId": "createBot",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name",
+                                    "channel_type"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 255,
+                                        "example": "My Support Bot"
+                                    },
+                                    "channel_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "line",
+                                            "telegram",
+                                            "facebook"
+                                        ],
+                                        "example": "line"
+                                    },
+                                    "channel_access_token": {
+                                        "description": "Channel access token for the messaging platform",
+                                        "type": "string"
+                                    },
+                                    "channel_secret": {
+                                        "description": "Channel secret (LINE only)",
+                                        "type": "string"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "maxLength": 1000
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Bot created successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Bot created successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Bot"
+                                        },
+                                        "webhook_setup": {
+                                            "description": "Telegram webhook setup result",
+                                            "type": "boolean",
+                                            "nullable": true
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/bots/{bot}": {
+            "get": {
+                "tags": [
+                    "Bots"
+                ],
+                "summary": "Get a specific bot",
+                "description": "Returns detailed information about a specific bot including settings and default flow.",
+                "operationId": "getBot",
+                "parameters": [
+                    {
+                        "name": "bot",
+                        "in": "path",
+                        "description": "Bot ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Bot"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "description": "Bot not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Bots"
+                ],
+                "summary": "Update a bot",
+                "description": "Updates bot information. For Telegram bots, changing the token will re-configure the webhook.",
+                "operationId": "updateBot",
+                "parameters": [
+                    {
+                        "name": "bot",
+                        "in": "path",
+                        "description": "Bot ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "maxLength": 1000
+                                    },
+                                    "channel_access_token": {
+                                        "type": "string"
+                                    },
+                                    "channel_secret": {
+                                        "type": "string"
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "active",
+                                            "inactive"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Bot updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Bot updated successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Bot"
+                                        },
+                                        "webhook_setup": {
+                                            "type": "boolean",
+                                            "nullable": true
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "description": "Bot not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/bots/{bot}/credentials": {
+            "get": {
+                "tags": [
+                    "Bots"
+                ],
+                "summary": "Get bot credentials",
+                "description": "Returns the channel access token and secret. Owner only - admins cannot access credentials.",
+                "operationId": "getBotCredentials",
+                "parameters": [
+                    {
+                        "name": "bot",
+                        "in": "path",
+                        "description": "Bot ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Credentials retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "data": {
+                                            "properties": {
+                                                "channel_access_token": {
+                                                    "type": "string"
+                                                },
+                                                "channel_secret": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden - only owners can view credentials"
+                    },
+                    "404": {
+                        "description": "Bot not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/bots/{bot}/settings": {
+            "get": {
+                "tags": [
+                    "Bot Settings"
+                ],
+                "summary": "Get bot settings",
+                "description": "Returns all configuration settings for a bot. Creates default settings if none exist.",
+                "operationId": "getBotSettings",
+                "parameters": [
+                    {
+                        "name": "bot",
+                        "in": "path",
+                        "description": "Bot ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/BotSettings"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "description": "Bot not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Bot Settings"
+                ],
+                "summary": "Update bot settings",
+                "description": "Updates configuration settings for a bot including usage limits, HITL, response hours, and more.",
+                "operationId": "updateBotSettings",
+                "parameters": [
+                    {
+                        "name": "bot",
+                        "in": "path",
+                        "description": "Bot ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "daily_message_limit": {
+                                        "type": "integer",
+                                        "maximum": 100000,
+                                        "minimum": 0,
+                                        "example": 1000
+                                    },
+                                    "per_user_limit": {
+                                        "type": "integer",
+                                        "maximum": 10000,
+                                        "minimum": 0,
+                                        "example": 100
+                                    },
+                                    "rate_limit_per_minute": {
+                                        "type": "integer",
+                                        "maximum": 1000,
+                                        "minimum": 1,
+                                        "example": 20
+                                    },
+                                    "max_tokens_per_response": {
+                                        "type": "integer",
+                                        "maximum": 32000,
+                                        "minimum": 100,
+                                        "example": 2000
+                                    },
+                                    "hitl_enabled": {
+                                        "description": "Enable Human-in-the-Loop",
+                                        "type": "boolean"
+                                    },
+                                    "hitl_triggers": {
+                                        "description": "Keywords to trigger HITL",
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "response_hours_enabled": {
+                                        "type": "boolean"
+                                    },
+                                    "response_hours": {
+                                        "description": "Business hours per day",
+                                        "type": "object"
+                                    },
+                                    "response_hours_timezone": {
+                                        "type": "string",
+                                        "example": "Asia/Bangkok"
+                                    },
+                                    "offline_message": {
+                                        "type": "string",
+                                        "maxLength": 1000
+                                    },
+                                    "welcome_message": {
+                                        "type": "string",
+                                        "maxLength": 2000
+                                    },
+                                    "fallback_message": {
+                                        "type": "string",
+                                        "maxLength": 1000
+                                    },
+                                    "typing_indicator": {
+                                        "type": "boolean"
+                                    },
+                                    "typing_delay_ms": {
+                                        "type": "integer",
+                                        "maximum": 5000,
+                                        "minimum": 0
+                                    },
+                                    "content_filter_enabled": {
+                                        "type": "boolean"
+                                    },
+                                    "blocked_keywords": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "analytics_enabled": {
+                                        "type": "boolean"
+                                    },
+                                    "save_conversations": {
+                                        "type": "boolean"
+                                    },
+                                    "language": {
+                                        "type": "string",
+                                        "enum": [
+                                            "th",
+                                            "en",
+                                            "zh",
+                                            "ja",
+                                            "ko"
+                                        ]
+                                    },
+                                    "response_style": {
+                                        "type": "string",
+                                        "enum": [
+                                            "professional",
+                                            "casual",
+                                            "friendly",
+                                            "formal"
+                                        ]
+                                    },
+                                    "multiple_bubbles_enabled": {
+                                        "type": "boolean"
+                                    },
+                                    "smart_aggregation_enabled": {
+                                        "type": "boolean"
+                                    },
+                                    "auto_assignment_enabled": {
+                                        "type": "boolean"
+                                    },
+                                    "auto_assignment_mode": {
+                                        "type": "string",
+                                        "enum": [
+                                            "round_robin",
+                                            "load_balanced"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Settings updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Settings updated successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/BotSettings"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "description": "Bot not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/bots/{bot}/flows": {
+            "get": {
+                "tags": [
+                    "Flows"
+                ],
+                "summary": "List all flows for a bot",
+                "description": "Returns paginated list of flows for a specific bot. Base/default flow is always listed first.",
+                "operationId": "listFlows",
+                "parameters": [
+                    {
+                        "name": "bot",
+                        "in": "path",
+                        "description": "Bot ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "description": "Number of items per page",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 15,
+                            "maximum": 100,
+                            "minimum": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/FlowList"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/PaginationMeta"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "description": "Bot not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Flows"
+                ],
+                "summary": "Create a new flow",
+                "description": "Creates a new flow for a bot. If it's the first flow or marked as default, it becomes the default flow.",
+                "operationId": "createFlow",
+                "parameters": [
+                    {
+                        "name": "bot",
+                        "in": "path",
+                        "description": "Bot ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 255,
+                                        "example": "Customer Support Flow"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "maxLength": 1000
+                                    },
+                                    "system_prompt": {
+                                        "description": "AI system prompt",
+                                        "type": "string"
+                                    },
+                                    "temperature": {
+                                        "type": "number",
+                                        "format": "float",
+                                        "default": 0.7,
+                                        "maximum": 2,
+                                        "minimum": 0
+                                    },
+                                    "max_tokens": {
+                                        "type": "integer",
+                                        "default": 2048,
+                                        "maximum": 32000,
+                                        "minimum": 100
+                                    },
+                                    "agentic_mode": {
+                                        "type": "boolean",
+                                        "default": false
+                                    },
+                                    "max_tool_calls": {
+                                        "type": "integer",
+                                        "default": 10,
+                                        "maximum": 50,
+                                        "minimum": 1
+                                    },
+                                    "enabled_tools": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "language": {
+                                        "type": "string",
+                                        "default": "th",
+                                        "enum": [
+                                            "th",
+                                            "en",
+                                            "zh",
+                                            "ja",
+                                            "ko"
+                                        ]
+                                    },
+                                    "is_default": {
+                                        "type": "boolean",
+                                        "default": false
+                                    },
+                                    "knowledge_bases": {
+                                        "type": "array",
+                                        "items": {
+                                            "properties": {
+                                                "id": {
+                                                    "type": "integer"
+                                                },
+                                                "kb_top_k": {
+                                                    "type": "integer",
+                                                    "default": 5
+                                                },
+                                                "kb_similarity_threshold": {
+                                                    "type": "number",
+                                                    "format": "float",
+                                                    "default": 0.7
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Flow created successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Flow created successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Flow"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/bots/{bot}/flows/{flow}": {
+            "get": {
+                "tags": [
+                    "Flows"
+                ],
+                "summary": "Get a specific flow",
+                "description": "Returns detailed information about a specific flow including knowledge bases.",
+                "operationId": "getFlow",
+                "parameters": [
+                    {
+                        "name": "bot",
+                        "in": "path",
+                        "description": "Bot ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "flow",
+                        "in": "path",
+                        "description": "Flow ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Flow"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "description": "Flow not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Flows"
+                ],
+                "summary": "Update a flow",
+                "description": "Updates flow configuration. Setting is_default=true will unset other flows as default.",
+                "operationId": "updateFlow",
+                "parameters": [
+                    {
+                        "name": "bot",
+                        "in": "path",
+                        "description": "Bot ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "flow",
+                        "in": "path",
+                        "description": "Flow ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "maxLength": 1000
+                                    },
+                                    "system_prompt": {
+                                        "type": "string"
+                                    },
+                                    "temperature": {
+                                        "type": "number",
+                                        "format": "float",
+                                        "maximum": 2,
+                                        "minimum": 0
+                                    },
+                                    "max_tokens": {
+                                        "type": "integer",
+                                        "maximum": 32000,
+                                        "minimum": 100
+                                    },
+                                    "agentic_mode": {
+                                        "type": "boolean"
+                                    },
+                                    "max_tool_calls": {
+                                        "type": "integer",
+                                        "maximum": 50,
+                                        "minimum": 1
+                                    },
+                                    "enabled_tools": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "language": {
+                                        "type": "string",
+                                        "enum": [
+                                            "th",
+                                            "en",
+                                            "zh",
+                                            "ja",
+                                            "ko"
+                                        ]
+                                    },
+                                    "is_default": {
+                                        "type": "boolean"
+                                    },
+                                    "knowledge_bases": {
+                                        "type": "array",
+                                        "items": {
+                                            "properties": {
+                                                "id": {
+                                                    "type": "integer"
+                                                },
+                                                "kb_top_k": {
+                                                    "type": "integer"
+                                                },
+                                                "kb_similarity_threshold": {
+                                                    "type": "number",
+                                                    "format": "float"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Flow updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Flow updated successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Flow"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "description": "Flow not found"
+                    },
+                    "422": {
+                        "description": "Validation error"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/bots/{bot}/flows/{flow}/set-default": {
+            "post": {
+                "tags": [
+                    "Flows"
+                ],
+                "summary": "Set flow as default",
+                "description": "Sets this flow as the default flow for the bot. The previous default flow will be unset.",
+                "operationId": "setDefaultFlow",
+                "parameters": [
+                    {
+                        "name": "bot",
+                        "in": "path",
+                        "description": "Bot ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "flow",
+                        "in": "path",
+                        "description": "Flow ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Flow set as default successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Flow set as default successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Flow"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "description": "Flow not found"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "PaginationMeta": {
+                "properties": {
+                    "current_page": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "from": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "last_page": {
+                        "type": "integer",
+                        "example": 5
+                    },
+                    "per_page": {
+                        "type": "integer",
+                        "example": 15
+                    },
+                    "to": {
+                        "type": "integer",
+                        "example": 15
+                    },
+                    "total": {
+                        "type": "integer",
+                        "example": 75
+                    }
+                },
+                "type": "object"
+            },
+            "ErrorResponse": {
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "example": "The given data was invalid."
+                    },
+                    "errors": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "property": null
+                        }
+                    }
+                },
+                "type": "object"
+            },
+            "Bot": {
+                "required": [
+                    "id",
+                    "name",
+                    "channel_type",
+                    "status"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "My Support Bot"
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "inactive"
+                        ],
+                        "example": "active"
+                    },
+                    "channel_type": {
+                        "type": "string",
+                        "enum": [
+                            "line",
+                            "telegram",
+                            "facebook"
+                        ],
+                        "example": "line"
+                    },
+                    "page_id": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "webhook_url": {
+                        "type": "string",
+                        "example": "https://api.botjao.com/api/webhook/abc123"
+                    },
+                    "channel_access_token": {
+                        "description": "Masked for security",
+                        "type": "string",
+                        "example": "********"
+                    },
+                    "channel_secret": {
+                        "description": "Masked for security",
+                        "type": "string",
+                        "example": "********",
+                        "nullable": true
+                    },
+                    "credentials_visible": {
+                        "description": "True if current user is owner",
+                        "type": "boolean"
+                    },
+                    "primary_chat_model": {
+                        "type": "string",
+                        "example": "openai/gpt-4o",
+                        "nullable": true
+                    },
+                    "fallback_chat_model": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "decision_model": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "kb_enabled": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "kb_relevance_threshold": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 0.7
+                    },
+                    "kb_max_results": {
+                        "type": "integer",
+                        "example": 3
+                    },
+                    "auto_handover": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "total_conversations": {
+                        "type": "integer",
+                        "example": 0
+                    },
+                    "total_messages": {
+                        "type": "integer",
+                        "example": 0
+                    },
+                    "last_active_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "settings": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/BotSettings"
+                            }
+                        ],
+                        "nullable": true
+                    },
+                    "default_flow": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/Flow"
+                            }
+                        ],
+                        "nullable": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "Flow": {
+                "required": [
+                    "id",
+                    "bot_id",
+                    "name"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "bot_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Customer Support Flow"
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "system_prompt": {
+                        "description": "AI system prompt",
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "model": {
+                        "type": "string",
+                        "example": "openai/gpt-4o",
+                        "nullable": true
+                    },
+                    "fallback_model": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "decision_model": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "temperature": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 0.7
+                    },
+                    "max_tokens": {
+                        "type": "integer",
+                        "example": 2048
+                    },
+                    "agentic_mode": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "max_tool_calls": {
+                        "type": "integer",
+                        "example": 10
+                    },
+                    "enabled_tools": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "knowledge_bases": {
+                        "type": "array",
+                        "items": {
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "kb_top_k": {
+                                    "type": "integer"
+                                },
+                                "kb_similarity_threshold": {
+                                    "type": "number",
+                                    "format": "float"
+                                }
+                            },
+                            "type": "object"
+                        }
+                    },
+                    "language": {
+                        "type": "string",
+                        "enum": [
+                            "th",
+                            "en",
+                            "zh",
+                            "ja",
+                            "ko"
+                        ],
+                        "example": "th"
+                    },
+                    "is_default": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "second_ai_enabled": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "second_ai_options": {
+                        "properties": {
+                            "fact_check": {
+                                "type": "boolean"
+                            },
+                            "policy": {
+                                "type": "boolean"
+                            },
+                            "personality": {
+                                "type": "boolean"
+                            }
+                        },
+                        "type": "object"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "FlowList": {
+                "description": "Slim flow resource for list endpoints (excludes system_prompt, enabled_tools)",
+                "required": [
+                    "id",
+                    "bot_id",
+                    "name"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "bot_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Customer Support Flow"
+                    },
+                    "description": {
+                        "description": "Truncated to 100 chars",
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "model": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "agentic_mode": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "knowledge_bases_count": {
+                        "type": "integer",
+                        "example": 2
+                    },
+                    "language": {
+                        "type": "string",
+                        "enum": [
+                            "th",
+                            "en",
+                            "zh",
+                            "ja",
+                            "ko"
+                        ]
+                    },
+                    "is_default": {
+                        "type": "boolean"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "BotSettings": {
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "bot_id": {
+                        "type": "integer"
+                    },
+                    "daily_message_limit": {
+                        "type": "integer",
+                        "example": 1000
+                    },
+                    "per_user_limit": {
+                        "type": "integer",
+                        "example": 100
+                    },
+                    "rate_limit_per_minute": {
+                        "type": "integer",
+                        "example": 20
+                    },
+                    "max_tokens_per_response": {
+                        "type": "integer",
+                        "example": 2000
+                    },
+                    "hitl_enabled": {
+                        "description": "Human-in-the-Loop enabled",
+                        "type": "boolean"
+                    },
+                    "hitl_triggers": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "nullable": true
+                    },
+                    "response_hours_enabled": {
+                        "type": "boolean"
+                    },
+                    "response_hours": {
+                        "description": "Business hours per day of week",
+                        "type": "object",
+                        "nullable": true
+                    },
+                    "response_hours_timezone": {
+                        "type": "string",
+                        "example": "Asia/Bangkok"
+                    },
+                    "offline_message": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "welcome_message": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "fallback_message": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "typing_indicator": {
+                        "type": "boolean"
+                    },
+                    "typing_delay_ms": {
+                        "type": "integer",
+                        "example": 1000
+                    },
+                    "content_filter_enabled": {
+                        "type": "boolean"
+                    },
+                    "blocked_keywords": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "nullable": true
+                    },
+                    "analytics_enabled": {
+                        "type": "boolean"
+                    },
+                    "save_conversations": {
+                        "type": "boolean"
+                    },
+                    "language": {
+                        "type": "string",
+                        "enum": [
+                            "th",
+                            "en",
+                            "zh",
+                            "ja",
+                            "ko"
+                        ]
+                    },
+                    "response_style": {
+                        "type": "string",
+                        "enum": [
+                            "professional",
+                            "casual",
+                            "friendly",
+                            "formal"
+                        ]
+                    },
+                    "multiple_bubbles_enabled": {
+                        "type": "boolean"
+                    },
+                    "multiple_bubbles_min": {
+                        "type": "integer"
+                    },
+                    "multiple_bubbles_max": {
+                        "type": "integer"
+                    },
+                    "smart_aggregation_enabled": {
+                        "type": "boolean"
+                    },
+                    "smart_min_wait_ms": {
+                        "type": "integer"
+                    },
+                    "smart_max_wait_ms": {
+                        "type": "integer"
+                    },
+                    "auto_assignment_enabled": {
+                        "type": "boolean"
+                    },
+                    "auto_assignment_mode": {
+                        "type": "string",
+                        "enum": [
+                            "round_robin",
+                            "load_balanced"
+                        ]
+                    }
+                },
+                "type": "object"
+            }
+        },
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "description": "Enter your Sanctum token",
+                "bearerFormat": "JWT",
+                "scheme": "bearer"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "Bots",
+            "description": "Bot management endpoints"
+        },
+        {
+            "name": "Flows",
+            "description": "Flow management endpoints for bot conversation configuration"
+        },
+        {
+            "name": "Bot Settings",
+            "description": "Bot configuration and settings endpoints"
+        }
+    ]
+}

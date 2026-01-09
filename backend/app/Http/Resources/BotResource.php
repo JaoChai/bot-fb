@@ -9,6 +9,8 @@ class BotResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $isOwner = $request->user()?->id === $this->user_id;
+
         return [
             'id' => $this->id,
             'name' => $this->name,
@@ -18,9 +20,10 @@ class BotResource extends JsonResource
             'page_id' => $this->page_id,
             'webhook_url' => $this->webhook_url,
 
-            // Channel credentials (for debugging)
-            'channel_access_token' => $this->channel_access_token,
-            'channel_secret' => $this->channel_secret,
+            // Channel credentials - always masked, reveal via separate endpoint
+            'channel_access_token' => $this->channel_access_token ? '••••••••' : null,
+            'channel_secret' => $this->channel_secret ? '••••••••' : null,
+            'credentials_visible' => $isOwner,
 
             // LLM Settings (legacy)
             'llm_model' => $this->llm_model,

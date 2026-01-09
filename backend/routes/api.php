@@ -141,6 +141,10 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
             ->middleware('throttle:10,1') // 10 requests per minute per user
             ->name('bots.test-telegram');
 
+        // Bot credentials reveal endpoint (owner only)
+        Route::get('/{bot}/credentials', [BotController::class, 'credentials'])
+            ->name('bots.credentials');
+
         // Bot settings routes
         Route::get('/{bot}/settings', [BotSettingController::class, 'show'])->name('bots.settings.show');
         Route::put('/{bot}/settings', [BotSettingController::class, 'update'])->name('bots.settings.update');
@@ -431,6 +435,12 @@ Route::prefix('webhook')->middleware('throttle.webhook')->withoutMiddleware(['au
     // Telegram webhook - POST /api/webhook/telegram/{token}
     Route::post('/telegram/{token}', [\App\Http\Controllers\Webhook\TelegramWebhookController::class, 'handle'])
         ->name('webhook.telegram');
+
+    // Facebook webhook - GET for verification, POST for events
+    Route::get('/facebook/{token}', [\App\Http\Controllers\Webhook\FacebookWebhookController::class, 'verify'])
+        ->name('webhook.facebook.verify');
+    Route::post('/facebook/{token}', [\App\Http\Controllers\Webhook\FacebookWebhookController::class, 'handle'])
+        ->name('webhook.facebook');
 });
 
 /*
