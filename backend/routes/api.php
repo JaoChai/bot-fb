@@ -192,17 +192,22 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
 
     // Conversation routes (nested under bots)
     Route::prefix('bots/{bot}/conversations')->group(function () {
-        // Core conversation routes
+        // Static routes MUST come before wildcard routes
+        // Otherwise /{conversation} will match "tags", "stats", etc.
         Route::get('/', [ConversationController::class, 'index'])->name('conversations.index');
         Route::get('/stats', [ConversationController::class, 'stats'])->name('conversations.stats');
+        Route::get('/tags', [ConversationTagController::class, 'index'])->name('conversations.tags.all');
+        Route::post('/bulk-tags', [ConversationTagController::class, 'bulkStore'])->name('conversations.bulk-tags');
+        Route::post('/clear-context-all', [ConversationController::class, 'clearContextAll'])
+            ->middleware('throttle:10,1') // 10 requests per minute
+            ->name('conversations.clear-context-all');
+
+        // Wildcard routes (must come after static routes)
         Route::get('/{conversation}', [ConversationController::class, 'show'])->name('conversations.show');
         Route::put('/{conversation}', [ConversationController::class, 'update'])->name('conversations.update');
         Route::post('/{conversation}/close', [ConversationController::class, 'close'])->name('conversations.close');
         Route::post('/{conversation}/reopen', [ConversationController::class, 'reopen'])->name('conversations.reopen');
         Route::post('/{conversation}/clear-context', [ConversationController::class, 'clearContext'])->name('conversations.clear-context');
-        Route::post('/clear-context-all', [ConversationController::class, 'clearContextAll'])
-            ->middleware('throttle:10,1') // 10 requests per minute
-            ->name('conversations.clear-context-all');
 
         // Message routes
         Route::get('/{conversation}/messages', [ConversationMessageController::class, 'index'])->name('conversations.messages');
@@ -220,9 +225,7 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::put('/{conversation}/notes/{noteId}', [ConversationNoteController::class, 'update'])->name('conversations.notes.update');
         Route::delete('/{conversation}/notes/{noteId}', [ConversationNoteController::class, 'destroy'])->name('conversations.notes.destroy');
 
-        // Tag routes
-        Route::get('/tags', [ConversationTagController::class, 'index'])->name('conversations.tags.all');
-        Route::post('/bulk-tags', [ConversationTagController::class, 'bulkStore'])->name('conversations.bulk-tags');
+        // Tag routes (conversation-specific)
         Route::post('/{conversation}/tags', [ConversationTagController::class, 'store'])->name('conversations.tags.store');
         Route::delete('/{conversation}/tags/{tag}', [ConversationTagController::class, 'destroy'])->name('conversations.tags.destroy');
 
