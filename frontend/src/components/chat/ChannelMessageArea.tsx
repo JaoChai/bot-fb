@@ -3,7 +3,7 @@
  * Handles Telegram and LINE message rendering
  * Extracted from ChatWindow.tsx
  */
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { ChevronDown, Loader2 } from 'lucide-react';
@@ -27,6 +27,34 @@ export function ChannelMessageArea({
   channelType,
 }: ChannelMessageAreaProps) {
   const [autoScroll, setAutoScroll] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
+
+  // Auto scroll to bottom when messages change
+  useEffect(() => {
+    if (autoScroll && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, autoScroll]);
+
+  // Handle scroll to detect when user scrolls up
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const target = e.currentTarget;
+      const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 50;
+
+      if (isAtBottom !== autoScroll) {
+        setAutoScroll(isAtBottom);
+      }
+    },
+    [autoScroll]
+  );
+
+  // Handle scroll to bottom button click
+  const handleScrollToBottom = useCallback(() => {
+    setAutoScroll(true);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
   const renderMessages = () => {
     if (channelType === 'telegram') {
@@ -50,7 +78,11 @@ export function ChannelMessageArea({
 
   return (
     <div className="flex-1 relative">
-      <ScrollArea className="h-full p-4">
+      <ScrollArea
+        className="h-full p-4"
+        viewportRef={scrollViewportRef}
+        onScroll={handleScroll}
+      >
         <div className="space-y-4 max-w-3xl mx-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
@@ -70,6 +102,9 @@ export function ChannelMessageArea({
               {renderMessages()}
             </>
           )}
+
+          {/* Scroll anchor */}
+          <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
 
@@ -78,7 +113,7 @@ export function ChannelMessageArea({
           variant="secondary"
           size="sm"
           className="absolute bottom-4 left-1/2 -translate-x-1/2 shadow-lg z-20"
-          onClick={() => setAutoScroll(true)}
+          onClick={handleScrollToBottom}
         >
           <ChevronDown className="h-4 w-4 mr-2" />
           New messages
