@@ -207,7 +207,7 @@ class DashboardController extends Controller
         return Conversation::whereIn('bot_id', $botIds)
             ->with([
                 'bot:id,name,channel_type',
-                'customerProfile:id,display_name,avatar_url',
+                'customerProfile:id,display_name,picture_url',
                 'lastMessage:id,conversation_id,content,sender,created_at',
             ])
             ->orderByDesc('last_message_at')
