@@ -29,6 +29,16 @@ class CustomerProfile extends Model
         'tags' => 'array',
     ];
 
+    protected $appends = ['avatar_url'];
+
+    /**
+     * Get the avatar_url attribute (alias for picture_url)
+     */
+    public function getAvatarUrlAttribute(): ?string
+    {
+        return $this->picture_url;
+    }
+
     public function conversations(): HasMany
     {
         return $this->hasMany(Conversation::class);
