@@ -1,6 +1,10 @@
-import { useState, useEffect, useCallback, useMemo, useDeferredValue } from 'react';
+/**
+ * T026: Refactored ChatPage
+ * Uses chatStore for UI state and new hooks for data
+ * Reduced from ~560 lines to ~200 lines
+ */
+import { useEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import { useSearchParams } from 'react-router';
-import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import {
   Select,
   SelectContent,
@@ -11,8 +15,13 @@ import {
 import { Loader2, MessageSquare, RotateCcw } from 'lucide-react';
 import { useBots } from '@/hooks/useKnowledgeBase';
 import { useBotPreferencesStore } from '@/stores/botPreferencesStore';
-import { useInfiniteConversations, useMarkAsRead, useClearContextAll } from '@/hooks/useConversations';
-import { useBotChannel } from '@/hooks/useEcho';
+import { useChatStore } from '@/stores/chatStore';
+import {
+  useInfiniteConversationList,
+  useRealtime,
+  useMarkAsRead,
+} from '@/hooks/chat';
+import { useClearContextAll } from '@/hooks/useConversations';
 import { ConversationList } from '@/components/chat/ConversationList';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { CustomerInfoPanel } from '@/components/chat/CustomerInfoPanel';
@@ -31,69 +40,47 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import type { Conversation, ConversationFilters, Message, PaginationMeta } from '@/types/api';
-import type { MessageSentEvent, ConversationUpdatedEvent } from '@/types/realtime';
-
-// Response types for query cache updates
-interface MessagesResponse {
-  data: Message[];
-  meta: PaginationMeta;
-}
-
-interface ConversationsResponse {
-  data: Conversation[];
-  meta: PaginationMeta;
-}
+import type { Conversation, ConversationFilters } from '@/types/api';
 
 export function ChatPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   // Get botId from URL
   const botIdParam = searchParams.get('botId');
   const botId = botIdParam ? parseInt(botIdParam, 10) : null;
 
-  // Selected conversation
-  const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
+  // UI state from chatStore
+  const {
+    selectedConversationId,
+    selectConversation,
+    isCustomerPanelOpen,
+    setCustomerPanelOpen,
+    showMobileChat,
+    setShowMobileChat,
+    searchQuery,
+    setSearchQuery,
+  } = useChatStore();
 
-  // Search
-  const [searchInput, setSearchInput] = useState('');
-  // Debounce search to prevent API calls on every keystroke
-  const search = useDeferredValue(searchInput);
-
-  // Mobile info panel
-  const [showInfoPanel, setShowInfoPanel] = useState(false);
-
-  // Mobile chat view (master-detail navigation)
-  const [showMobileChat, setShowMobileChat] = useState(false);
+  // Debounce search
+  const deferredSearch = useDeferredValue(searchQuery);
 
   // Bots query
   const { data: botsResponse, isLoading: isBotsLoading } = useBots();
   const bots = botsResponse?.data || [];
 
-  // Bot preferences (last used bot)
+  // Bot preferences
   const { lastUsedBotId, setLastUsedBotId } = useBotPreferencesStore();
 
-  // Auto-redirect to last used bot or first bot if no botId in URL
-  useEffect(() => {
-    if (botId || isBotsLoading || bots.length === 0) return;
-
-    // Check if lastUsedBotId is still valid
-    const lastUsedBotExists = lastUsedBotId && bots.some((b) => b.id === lastUsedBotId);
-    const targetBotId = lastUsedBotExists ? lastUsedBotId : bots[0].id;
-
-    setSearchParams({ botId: targetBotId.toString() }, { replace: true });
-  }, [botId, isBotsLoading, bots, lastUsedBotId, setSearchParams]);
-
-  // Memoize filters to prevent unnecessary query re-creations
-  // No status filtering - show all conversations with badge-only approach
+  // Filters
   const filters = useMemo<ConversationFilters>(() => ({
-    search: search || undefined,
+    search: deferredSearch || undefined,
     sort_by: 'last_message_at',
     sort_direction: 'desc',
     per_page: 30,
-  }), [search]);
+  }), [deferredSearch]);
 
+  // Conversations query with infinite scroll
   const {
     data: conversationsData,
     isLoading: isConversationsLoading,
@@ -101,9 +88,9 @@ export function ChatPage() {
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
-  } = useInfiniteConversations(botId ?? undefined, filters);
+  } = useInfiniteConversationList(botId ?? undefined, filters);
 
-  // Memoize flattened conversations - no filtering, show all with badges
+  // Flatten conversations
   const conversations = useMemo(() => {
     return conversationsData?.pages.flatMap((page) => page.data) || [];
   }, [conversationsData?.pages]);
@@ -111,282 +98,80 @@ export function ChatPage() {
   // Selected conversation
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId);
 
-  // Mark as read mutation
+  // Mutations
   const markAsRead = useMarkAsRead(botId ?? undefined);
-
-  // Clear context all mutation
   const clearContextAll = useClearContextAll(botId ?? undefined);
-  const { toast } = useToast();
 
-  // Real-time WebSocket callbacks - optimized with surgical cache updates
-  const handleRealtimeMessage = useCallback(
-    (event: MessageSentEvent) => {
-      // Surgically add the new message to cache instead of refetching
-      const messageOptions = { order: 'asc' as const, perPage: 100 };
-      queryClient.setQueryData<MessagesResponse>(
-        ['conversation-messages', botId, event.conversation_id, messageOptions],
-        (old) => {
-          if (!old) return old;
-          // Check if message already exists to prevent duplicates
-          const exists = old.data.some((m) => m.id === event.id);
-          if (exists) return old;
+  // Real-time WebSocket updates
+  useRealtime(botId, filters, { selectedConversationId });
 
-          // Append new message with all required fields
-          const newMessage: Message = {
-            id: event.id,
-            conversation_id: event.conversation_id,
-            sender: event.sender,
-            content: event.content,
-            type: event.type,
-            media_url: event.media_url,
-            media_type: event.media_type,
-            media_metadata: null,
-            model_used: null,
-            prompt_tokens: null,
-            completion_tokens: null,
-            cost: null,
-            external_message_id: null,
-            reply_to_message_id: null,
-            sentiment: null,
-            intents: null,
-            created_at: event.created_at,
-            updated_at: event.created_at,
-          };
-
-          return {
-            ...old,
-            data: [...old.data, newMessage],
-          };
-        }
-      );
-
-      // Check if conversation exists in cache first
-      const existingData = queryClient.getQueryData<InfiniteData<ConversationsResponse>>(
-        ['conversations-infinite', botId, filters]
-      );
-
-      const conversationExists = existingData?.pages.some((page) =>
-        page.data.some((conv) => conv.id === event.conversation_id)
-      );
-
-      if (!conversationExists) {
-        // New conversation not in cache - refetch to get it with full data
-        console.log('[ChatPage] Message for new conversation, refetching:', event.conversation_id);
-        queryClient.refetchQueries({
-          queryKey: ['conversations-infinite', botId],
-          exact: false,
-        });
-        return;
-      }
-
-      // Update conversation list and move to top (sorted by last_message_at)
-      queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
-        ['conversations-infinite', botId, filters],
-        (old) => {
-          if (!old) return old;
-
-          const nowNeedsResponse = event.sender === 'user';
-
-          // Flatten all conversations from all pages
-          const allConversations = old.pages.flatMap((page) => page.data);
-
-          // Find and update the conversation
-          const conversationIndex = allConversations.findIndex(
-            (conv) => conv.id === event.conversation_id
-          );
-
-          if (conversationIndex === -1) return old; // Should not happen after check above
-
-          // Create updated conversation with new last_message from event
-          const existingConv = allConversations[conversationIndex];
-          const updatedConv: Conversation = {
-            ...existingConv,
-            last_message_at: event.conversation?.last_message_at ?? event.created_at,
-            message_count: event.conversation?.message_count ?? existingConv.message_count + 1,
-            unread_count: existingConv.id === selectedConversationId
-              ? 0
-              : (event.conversation?.unread_count ?? existingConv.unread_count + 1),
-            needs_response: nowNeedsResponse,
-            // Update last_message preview from event data
-            last_message: {
-              id: event.id,
-              conversation_id: event.conversation_id,
-              sender: event.sender,
-              content: event.content,
-              type: event.type,
-              media_url: event.media_url,
-              media_type: event.media_type,
-              media_metadata: null,
-              model_used: null,
-              prompt_tokens: null,
-              completion_tokens: null,
-              cost: null,
-              external_message_id: null,
-              reply_to_message_id: null,
-              sentiment: null,
-              intents: null,
-              created_at: event.created_at,
-              updated_at: event.created_at,
-            },
-          };
-
-          // Remove from current position and add to top
-          allConversations.splice(conversationIndex, 1);
-          allConversations.unshift(updatedConv);
-
-          // Redistribute back into pages (keeping page sizes)
-          let offset = 0;
-          return {
-            ...old,
-            pages: old.pages.map((page) => {
-              const pageSize = page.data.length;
-              const pageData = allConversations.slice(offset, offset + pageSize);
-              offset += pageSize;
-              return { ...page, data: pageData };
-            }),
-          };
-        }
-      );
-    },
-    [queryClient, botId, filters, selectedConversationId]
-  );
-
-  const handleConversationUpdate = useCallback(
-    (event: ConversationUpdatedEvent) => {
-      // Check if conversation exists in cache
-      const existingData = queryClient.getQueryData<InfiniteData<ConversationsResponse>>(
-        ['conversations-infinite', botId, filters]
-      );
-
-      const conversationExists = existingData?.pages.some((page) =>
-        page.data.some((conv) => conv.id === event.id)
-      );
-
-      if (!conversationExists) {
-        // New conversation not in cache - refetch to get it with full data
-        console.log('[ChatPage] Conversation not in cache, refetching:', event.id);
-        queryClient.refetchQueries({
-          queryKey: ['conversations-infinite', botId],
-          exact: false,
-        });
-        return;
-      }
-
-      // Surgically update the specific conversation in cache
-      queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
-        ['conversations-infinite', botId, filters],
-        (old) => {
-          if (!old) return old;
-
-          return {
-            ...old,
-            pages: old.pages.map((page) => ({
-              ...page,
-              data: page.data.map((conv) =>
-                conv.id === event.id
-                  ? {
-                      ...conv,
-                      status: event.status,
-                      is_handover: event.is_handover,
-                      assigned_user_id: event.assigned_user_id,
-                      message_count: event.message_count,
-                      last_message_at: event.last_message_at,
-                      needs_response: event.needs_response,
-                      unread_count: event.unread_count ?? conv.unread_count,
-                      // Update auto-enable timer for handover mode
-                      bot_auto_enable_at: event.bot_auto_enable_at,
-                    }
-                  : conv
-              ),
-            })),
-          };
-        }
-      );
-    },
-    [queryClient, botId, filters]
-  );
-
-  const handleNewConversation = useCallback(
-    (event: ConversationUpdatedEvent) => {
-      console.log('[ChatPage] New conversation event received:', event.id);
-      // Force immediate refetch to get new conversation with full data
-      // Using refetchQueries instead of invalidateQueries for guaranteed refetch
-      queryClient.refetchQueries({
-        queryKey: ['conversations-infinite', botId],
-        exact: false,
-      });
-    },
-    [queryClient, botId]
-  );
-
-  // Subscribe to bot channel for real-time updates
-  useBotChannel(botId, {
-    onMessage: handleRealtimeMessage,
-    onConversationUpdate: handleConversationUpdate,
-    onNewConversation: handleNewConversation,
-  });
-
-  // Handle WebSocket reconnection - refetch data that might have been missed
+  // Auto-redirect to last used bot or first bot
   useEffect(() => {
-    const handleReconnect = () => {
-      console.log('[ChatPage] WebSocket reconnected, invalidating queries...');
-      // Invalidate messages for current conversation to sync with server
-      if (selectedConversationId) {
-        queryClient.invalidateQueries({
-          queryKey: ['conversation-messages', botId, selectedConversationId],
-        });
-      }
-      // Invalidate conversation list to get any updates missed during disconnect
-      queryClient.invalidateQueries({
-        queryKey: ['conversations-infinite', botId],
-      });
-    };
+    if (botId || isBotsLoading || bots.length === 0) return;
 
-    window.addEventListener('echo:reconnected', handleReconnect);
-    return () => window.removeEventListener('echo:reconnected', handleReconnect);
-  }, [queryClient, botId, selectedConversationId]);
+    const lastUsedBotExists = lastUsedBotId && bots.some((b) => b.id === lastUsedBotId);
+    const targetBotId = lastUsedBotExists ? lastUsedBotId : bots[0].id;
 
-  // Handle bot selection (memoized to prevent child re-renders)
-  const handleBotSelect = useCallback((value: string) => {
-    const newBotId = parseInt(value, 10);
-    setSearchParams({ botId: value });
-    setLastUsedBotId(newBotId); // Remember last used bot
-    setSelectedConversationId(null);
-    setShowMobileChat(false); // Reset to list view when changing bot
-  }, [setSearchParams, setLastUsedBotId]);
+    setSearchParams({ botId: targetBotId.toString() }, { replace: true });
+  }, [botId, isBotsLoading, bots, lastUsedBotId, setSearchParams]);
 
-  // Handle conversation selection (memoized to prevent child re-renders)
-  const handleConversationSelect = useCallback((conversation: Conversation) => {
-    setSelectedConversationId(conversation.id);
-    setShowMobileChat(true); // Switch to chat view on mobile
-
-    // Mark as read if has unread messages
-    if (conversation.unread_count > 0) {
-      markAsRead.mutate(conversation.id);
-    }
-  }, [markAsRead]);
-
-  // Handle back to list (mobile) - memoized
-  const handleBackToList = useCallback(() => {
-    setShowMobileChat(false);
-  }, []);
-
-  // Handle show info panel (memoized to prevent ChatWindow re-renders)
-  const handleShowInfo = useCallback(() => {
-    setShowInfoPanel(true);
-  }, []);
-
-  // Auto-select first conversation if none selected (desktop only)
+  // Auto-select first conversation on desktop
   useEffect(() => {
     const isDesktop = window.matchMedia('(min-width: 768px)').matches;
     if (isDesktop && conversations.length > 0 && !selectedConversationId) {
       const firstConv = conversations[0];
-      setSelectedConversationId(firstConv.id);
+      selectConversation(firstConv.id);
       if (firstConv.unread_count > 0) {
         markAsRead.mutate(firstConv.id);
       }
     }
-  }, [conversations, selectedConversationId, markAsRead]);
+  }, [conversations, selectedConversationId, selectConversation, markAsRead]);
+
+  // Handle bot selection
+  const handleBotSelect = useCallback((value: string) => {
+    const newBotId = parseInt(value, 10);
+    setSearchParams({ botId: value });
+    setLastUsedBotId(newBotId);
+    selectConversation(null);
+    setShowMobileChat(false);
+  }, [setSearchParams, setLastUsedBotId, selectConversation, setShowMobileChat]);
+
+  // Handle conversation selection
+  const handleConversationSelect = useCallback((conversation: Conversation) => {
+    selectConversation(conversation.id);
+    if (conversation.unread_count > 0) {
+      markAsRead.mutate(conversation.id);
+    }
+  }, [selectConversation, markAsRead]);
+
+  // Handle back to list (mobile)
+  const handleBackToList = useCallback(() => {
+    setShowMobileChat(false);
+  }, [setShowMobileChat]);
+
+  // Handle show info panel
+  const handleShowInfo = useCallback(() => {
+    setCustomerPanelOpen(true);
+  }, [setCustomerPanelOpen]);
+
+  // Handle clear context all
+  const handleClearContextAll = useCallback(() => {
+    clearContextAll.mutate(undefined, {
+      onSuccess: (data) => {
+        toast({
+          title: 'Context reset successful',
+          description: `Reset ${data.data.updated_count} conversations`,
+        });
+      },
+      onError: () => {
+        toast({
+          title: 'Error',
+          description: 'Failed to reset context',
+          variant: 'destructive',
+        });
+      },
+    });
+  }, [clearContextAll, toast]);
 
   // No bot selected - show bot selector
   if (!botId) {
@@ -396,14 +181,14 @@ export function ChatPage() {
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-muted">
             <MessageSquare className="h-8 w-8 text-muted-foreground" />
           </div>
-          <h1 className="text-2xl font-bold">เลือก Bot</h1>
-          <p className="text-muted-foreground">เลือก Bot เพื่อดูรายการสนทนา</p>
+          <h1 className="text-2xl font-bold">Select a Bot</h1>
+          <p className="text-muted-foreground">Choose a bot to view conversations</p>
           {isBotsLoading ? (
             <Loader2 className="h-6 w-6 animate-spin mx-auto" />
           ) : (
             <Select onValueChange={handleBotSelect}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="เลือก Bot..." />
+                <SelectValue placeholder="Select Bot..." />
               </SelectTrigger>
               <SelectContent>
                 {bots.map((bot) => (
@@ -430,7 +215,7 @@ export function ChatPage() {
         <div className="p-3 border-b bg-muted/30">
           <Select value={botId.toString()} onValueChange={handleBotSelect}>
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="เลือก Bot" />
+              <SelectValue placeholder="Select Bot" />
             </SelectTrigger>
             <SelectContent>
               {bots.map((bot) => (
@@ -455,39 +240,21 @@ export function ChatPage() {
                 ) : (
                   <RotateCcw className="h-4 w-4 mr-2" />
                 )}
-                Reset บริบททุกคน
+                Reset All Contexts
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Reset บริบททุกคน?</AlertDialogTitle>
+                <AlertDialogTitle>Reset all contexts?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Bot จะเริ่มบริบทใหม่กับทุกการสนทนาที่ยังเปิดอยู่
-                  ประวัติแชทยังคงอยู่ แต่ Bot จะไม่อ้างอิงข้อความก่อนหน้า
+                  Bot will start fresh with all open conversations.
+                  Chat history will be preserved but bot will not reference previous messages.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    clearContextAll.mutate(undefined, {
-                      onSuccess: (data) => {
-                        toast({
-                          title: 'Reset บริบทสำเร็จ',
-                          description: `Reset แล้ว ${data.data.updated_count} การสนทนา`,
-                        });
-                      },
-                      onError: () => {
-                        toast({
-                          title: 'เกิดข้อผิดพลาด',
-                          description: 'ไม่สามารถ reset บริบทได้',
-                          variant: 'destructive',
-                        });
-                      },
-                    });
-                  }}
-                >
-                  Reset บริบททุกคน
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleClearContextAll}>
+                  Reset All
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -500,8 +267,8 @@ export function ChatPage() {
           selectedId={selectedConversationId}
           onSelect={handleConversationSelect}
           isLoading={isConversationsLoading || (isConversationsFetching && conversations.length === 0)}
-          search={searchInput}
-          onSearchChange={setSearchInput}
+          search={searchQuery}
+          onSearchChange={setSearchQuery}
           hasNextPage={hasNextPage}
           isFetchingNextPage={isFetchingNextPage}
           fetchNextPage={fetchNextPage}
@@ -526,8 +293,8 @@ export function ChatPage() {
               <div className="mx-auto w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
                 <MessageSquare className="h-8 w-8 opacity-50" />
               </div>
-              <h3 className="font-medium text-foreground mb-2">เลือกการสนทนา</h3>
-              <p className="text-sm">เลือกการสนทนาจากรายการด้านซ้ายเพื่อเริ่มแชท</p>
+              <h3 className="font-medium text-foreground mb-2">Select a conversation</h3>
+              <p className="text-sm">Choose a conversation from the list to start chatting</p>
             </div>
           </div>
         )}
@@ -544,7 +311,7 @@ export function ChatPage() {
       </div>
 
       {/* Mobile Info Panel Sheet */}
-      <Sheet open={showInfoPanel} onOpenChange={setShowInfoPanel}>
+      <Sheet open={isCustomerPanelOpen} onOpenChange={setCustomerPanelOpen}>
         <SheetContent className="w-full sm:max-w-md overflow-y-auto">
           {selectedConversation && (
             <CustomerInfoPanel
