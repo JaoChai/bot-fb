@@ -37,7 +37,7 @@ type ChatStore = ChatState & ChatActions;
 
 const initialState: ChatState = {
   selectedConversationId: null,
-  isCustomerPanelOpen: true,
+  isCustomerPanelOpen: false, // Default to closed - user can open via button
   showMobileChat: false,
   searchQuery: '',
 };
