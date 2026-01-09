@@ -1,0 +1,32 @@
+{
+  "id": "ideation-20260108-115139",
+  "project_id": "/Users/jaochaio/Code/bot-fb",
+  "config": {
+    "enabled_types": [
+      "code_improvements",
+      "ui_ux_improvements",
+      "security_hardening"
+    ],
+    "include_roadmap_context": true,
+    "include_kanban_context": true,
+    "max_ideas_per_type": 5
+  },
+  "ideas": [],
+  "project_context": {
+    "existing_features": [],
+    "tech_stack": [
+      "JavaScript",
+      "TypeScript",
+      "React"
+    ],
+    "target_audience": null,
+    "planned_features": []
+  },
+  "summary": {
+    "total_ideas": 0,
+    "by_type": {},
+    "by_status": {}
+  },
+  "generated_at": "2026-01-08T11:51:39.051639",
+  "updated_at": "2026-01-08T11:51:39.051644"
+}
