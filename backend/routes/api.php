@@ -6,7 +6,11 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BotController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\BotSettingController;
+use App\Http\Controllers\Api\ConversationAssignmentController;
 use App\Http\Controllers\Api\ConversationController;
+use App\Http\Controllers\Api\ConversationMessageController;
+use App\Http\Controllers\Api\ConversationNoteController;
+use App\Http\Controllers\Api\ConversationTagController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\FlowController;
 use App\Http\Controllers\Api\KnowledgeBaseController;
@@ -188,46 +192,45 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
 
     // Conversation routes (nested under bots)
     Route::prefix('bots/{bot}/conversations')->group(function () {
+        // Core conversation routes
         Route::get('/', [ConversationController::class, 'index'])->name('conversations.index');
         Route::get('/stats', [ConversationController::class, 'stats'])->name('conversations.stats');
-        Route::get('/tags', [ConversationController::class, 'getAllTags'])->name('conversations.tags.all');
-        Route::post('/bulk-tags', [ConversationController::class, 'bulkAddTags'])->name('conversations.bulk-tags');
         Route::get('/{conversation}', [ConversationController::class, 'show'])->name('conversations.show');
         Route::put('/{conversation}', [ConversationController::class, 'update'])->name('conversations.update');
-        Route::get('/{conversation}/messages', [ConversationController::class, 'messages'])->name('conversations.messages');
         Route::post('/{conversation}/close', [ConversationController::class, 'close'])->name('conversations.close');
         Route::post('/{conversation}/reopen', [ConversationController::class, 'reopen'])->name('conversations.reopen');
-        Route::post('/{conversation}/toggle-handover', [ConversationController::class, 'toggleHandover'])->name('conversations.toggle-handover');
-        Route::post('/{conversation}/mark-as-read', [ConversationController::class, 'markAsRead'])->name('conversations.mark-as-read');
         Route::post('/{conversation}/clear-context', [ConversationController::class, 'clearContext'])->name('conversations.clear-context');
         Route::post('/clear-context-all', [ConversationController::class, 'clearContextAll'])
             ->middleware('throttle:10,1') // 10 requests per minute
             ->name('conversations.clear-context-all');
 
-        // Notes/Memory routes
-        Route::get('/{conversation}/notes', [ConversationController::class, 'getNotes'])->name('conversations.notes.index');
-        Route::post('/{conversation}/notes', [ConversationController::class, 'addNote'])->name('conversations.notes.store');
-        Route::put('/{conversation}/notes/{noteId}', [ConversationController::class, 'updateNote'])->name('conversations.notes.update');
-        Route::delete('/{conversation}/notes/{noteId}', [ConversationController::class, 'deleteNote'])->name('conversations.notes.destroy');
-
-        // Tag routes
-        Route::post('/{conversation}/tags', [ConversationController::class, 'addTags'])->name('conversations.tags.store');
-        Route::delete('/{conversation}/tags/{tag}', [ConversationController::class, 'removeTag'])->name('conversations.tags.destroy');
-
-        // HITL Agent message route (rate limited to prevent spam)
-        Route::post('/{conversation}/agent-message', [ConversationController::class, 'sendAgentMessage'])
+        // Message routes
+        Route::get('/{conversation}/messages', [ConversationMessageController::class, 'index'])->name('conversations.messages');
+        Route::post('/{conversation}/mark-as-read', [ConversationMessageController::class, 'markAsRead'])->name('conversations.mark-as-read');
+        Route::post('/{conversation}/agent-message', [ConversationMessageController::class, 'store'])
             ->middleware('throttle:60,1') // 60 messages per minute per user
             ->name('conversations.agent-message');
-
-        // Media upload for agent messages
-        Route::post('/{conversation}/upload', [ConversationController::class, 'uploadMedia'])
+        Route::post('/{conversation}/upload', [ConversationMessageController::class, 'upload'])
             ->middleware('throttle:30,1') // 30 uploads per minute
             ->name('conversations.upload');
 
-        // Conversation assignment routes
-        Route::post('/{conversation}/assign', [ConversationController::class, 'assign'])->name('conversations.assign');
-        Route::post('/{conversation}/claim', [ConversationController::class, 'claim'])->name('conversations.claim');
-        Route::post('/{conversation}/unassign', [ConversationController::class, 'unassign'])->name('conversations.unassign');
+        // Note routes
+        Route::get('/{conversation}/notes', [ConversationNoteController::class, 'index'])->name('conversations.notes.index');
+        Route::post('/{conversation}/notes', [ConversationNoteController::class, 'store'])->name('conversations.notes.store');
+        Route::put('/{conversation}/notes/{noteId}', [ConversationNoteController::class, 'update'])->name('conversations.notes.update');
+        Route::delete('/{conversation}/notes/{noteId}', [ConversationNoteController::class, 'destroy'])->name('conversations.notes.destroy');
+
+        // Tag routes
+        Route::get('/tags', [ConversationTagController::class, 'index'])->name('conversations.tags.all');
+        Route::post('/bulk-tags', [ConversationTagController::class, 'bulkStore'])->name('conversations.bulk-tags');
+        Route::post('/{conversation}/tags', [ConversationTagController::class, 'store'])->name('conversations.tags.store');
+        Route::delete('/{conversation}/tags/{tag}', [ConversationTagController::class, 'destroy'])->name('conversations.tags.destroy');
+
+        // Assignment and handover routes
+        Route::post('/{conversation}/toggle-handover', [ConversationAssignmentController::class, 'toggleHandover'])->name('conversations.toggle-handover');
+        Route::post('/{conversation}/assign', [ConversationAssignmentController::class, 'assign'])->name('conversations.assign');
+        Route::post('/{conversation}/claim', [ConversationAssignmentController::class, 'claim'])->name('conversations.claim');
+        Route::post('/{conversation}/unassign', [ConversationAssignmentController::class, 'unassign'])->name('conversations.unassign');
     });
 
     // Evaluation routes (nested under bots)

@@ -1,38 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
+/**
+ * T036: CustomerInfoPanel - Refactored container component
+ * Composes: CustomerDetails, BotControl, ConversationTags, ConversationNotes
+ */
 import { Separator } from '@/components/ui/separator';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useToggleHandover } from '@/hooks/useConversations';
-import { useToast } from '@/hooks/use-toast';
-import { NotesPanel } from '@/components/conversation/NotesPanel';
-import { TagsPanel } from '@/components/conversation/TagsPanel';
-import {
-  Bot,
-  Headphones,
-  Mail,
-  Phone,
-  Hash,
-  Calendar,
-  Clock,
-  MessagesSquare,
-  Timer,
-  Users,
-  User,
-  Ban,
-} from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { th } from 'date-fns/locale';
+import { CustomerDetails } from './CustomerDetails';
+import { BotControl } from './BotControl';
+import { ConversationTags } from './ConversationTags';
+import { ConversationNotes } from './ConversationNotes';
 import type { Conversation } from '@/types/api';
-
-const channelLabels: Record<string, string> = {
-  line: 'LINE',
-  facebook: 'Facebook',
-  telegram: 'Telegram',
-  demo: 'Demo',
-};
 
 interface CustomerInfoPanelProps {
   botId: number;
@@ -40,351 +15,20 @@ interface CustomerInfoPanelProps {
 }
 
 export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProps) {
-  const { toast } = useToast();
-  const customer = conversation.customer_profile;
-  const toggleHandover = useToggleHandover(botId);
-
-  // Channel detection
-  const isTelegram = conversation.channel_type === 'telegram';
-  const isGroup = isTelegram && (
-    conversation.telegram_chat_type === 'group' ||
-    conversation.telegram_chat_type === 'supergroup'
-  );
-
-  // Permanent disable option (no auto-enable)
-  const [permanentDisable, setPermanentDisable] = useState(false);
-
-  // Auto-enable countdown
-  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(
-    conversation.bot_auto_enable_remaining_seconds
-  );
-
-  // Update countdown - optimized to pause when tab is hidden
-  useEffect(() => {
-    if (!conversation.is_handover || !conversation.bot_auto_enable_at) {
-      setRemainingSeconds(null);
-      return;
-    }
-
-    const targetTime = new Date(conversation.bot_auto_enable_at).getTime();
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    // Calculate and update remaining seconds
-    const updateCountdown = () => {
-      const now = Date.now();
-      const diff = Math.max(0, Math.floor((targetTime - now) / 1000));
-      setRemainingSeconds(diff);
-      return diff;
-    };
-
-    // Start or stop interval based on visibility
-    const startInterval = () => {
-      if (intervalId) return;
-      const diff = updateCountdown();
-      if (diff <= 0) return;
-
-      intervalId = setInterval(() => {
-        const remaining = updateCountdown();
-        if (remaining <= 0 && intervalId) {
-          clearInterval(intervalId);
-          intervalId = null;
-        }
-      }, 1000);
-    };
-
-    const stopInterval = () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-        intervalId = null;
-      }
-    };
-
-    // Handle visibility change - pause when hidden, resume when visible
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        stopInterval();
-      } else {
-        startInterval();
-      }
-    };
-
-    // Initial setup
-    if (!document.hidden) {
-      startInterval();
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      stopInterval();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [conversation.is_handover, conversation.bot_auto_enable_at]);
-
-  // Format countdown
-  const formatCountdown = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Handle toggle bot (memoized)
-  const handleToggleBot = useCallback(async () => {
-    try {
-      // When turning OFF bot (enabling handover), check permanentDisable setting
-      const autoEnableMinutes = conversation.is_handover ? 30 : (permanentDisable ? 0 : 30);
-
-      await toggleHandover.mutateAsync({
-        conversationId: conversation.id,
-        autoEnableMinutes,
-      });
-
-      // Toast message based on action
-      if (conversation.is_handover) {
-        // Turning ON bot
-        toast({
-          title: 'เปิด Bot แล้ว',
-          description: 'Bot จะตอบข้อความในการสนทนานี้',
-        });
-      } else {
-        // Turning OFF bot (handover)
-        toast({
-          title: permanentDisable ? 'ปิด Bot ถาวร' : 'เปิดโหมดรอตอบ',
-          description: permanentDisable
-            ? 'Bot จะไม่ตอบลูกค้ารายนี้จนกว่าจะเปิดเอง'
-            : 'คุณสามารถตอบข้อความได้โดยตรง Bot จะเปิดอัตโนมัติใน 30 นาที',
-        });
-      }
-
-      // Reset permanent disable checkbox after toggle
-      setPermanentDisable(false);
-    } catch {
-      toast({
-        title: 'เกิดข้อผิดพลาด',
-        description: 'ไม่สามารถสลับโหมด Bot ได้',
-        variant: 'destructive',
-      });
-    }
-  }, [toggleHandover, conversation.id, conversation.is_handover, permanentDisable, toast]);
-
   return (
     <div className="p-4 space-y-6">
-      {/* Customer/Chat Profile */}
-      <div className="flex items-center gap-4">
-        <Avatar className="h-16 w-16">
-          <AvatarImage src={customer?.picture_url || undefined} />
-          <AvatarFallback className={`text-lg ${isTelegram ? 'bg-[#0088CC]/10 text-[#0088CC]' : ''}`}>
-            {isGroup ? (
-              <Users className="h-6 w-6" />
-            ) : (
-              customer?.display_name?.charAt(0).toUpperCase() || '?'
-            )}
-          </AvatarFallback>
-        </Avatar>
-        <div>
-          <h3 className="font-semibold text-lg">
-            {isGroup
-              ? conversation.telegram_chat_title || 'Group'
-              : customer?.display_name || 'ลูกค้า'}
-          </h3>
-          {isTelegram ? (
-            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              {isGroup ? (
-                <>
-                  <Users className="h-3.5 w-3.5" />
-                  <span>
-                    {conversation.telegram_chat_type === 'supergroup' ? 'Supergroup' : 'Group'}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <User className="h-3.5 w-3.5" />
-                  <span>Private Chat</span>
-                </>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {channelLabels[conversation.channel_type]}
-            </p>
-          )}
-        </div>
-      </div>
+      {/* Customer Profile & Stats */}
+      <CustomerDetails conversation={conversation} />
 
       <Separator />
 
       {/* Bot Control / Human Agent Mode */}
-      {isTelegram ? (
-        // Telegram: Human Agent Mode (no bot toggle)
-        <Card className="border-2 border-dashed border-[#0088CC]/50 bg-[#0088CC]/5">
-          <CardContent className="p-4 space-y-2">
-            <div className="flex items-center gap-2">
-              <Headphones className="h-5 w-5 text-[#0088CC]" />
-              <span className="font-medium text-[#0088CC]">Human Agent Mode</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Telegram ใช้ระบบ Human Agent เท่านั้น ไม่มี Bot ตอบอัตโนมัติ
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        // Other channels: Bot toggle with countdown
-        <Card className={conversation.is_handover ? 'border-2 border-dashed' : 'border-2 border-foreground'}>
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              {conversation.is_handover ? (
-                <Headphones className="h-5 w-5 text-muted-foreground" />
-              ) : (
-                <Bot className="h-5 w-5" />
-              )}
-              <span className="font-medium">
-                {conversation.is_handover ? 'โหมดรอตอบ' : 'Bot เปิด'}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <Label htmlFor="bot-toggle" className="text-sm">
-                {conversation.is_handover ? 'เปิด Bot' : 'Bot เปิดอยู่'}
-              </Label>
-              <Switch
-                id="bot-toggle"
-                checked={!conversation.is_handover}
-                onCheckedChange={handleToggleBot}
-                disabled={toggleHandover.isPending}
-              />
-            </div>
-
-            {/* Permanent disable option - show when bot is ON (about to turn off) */}
-            {!conversation.is_handover && (
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="permanent-disable"
-                  checked={permanentDisable}
-                  onCheckedChange={(checked) => setPermanentDisable(checked === true)}
-                />
-                <Label htmlFor="permanent-disable" className="text-sm text-muted-foreground cursor-pointer">
-                  ปิด Bot ถาวร (ไม่เปิดอัตโนมัติ)
-                </Label>
-              </div>
-            )}
-
-            {/* Auto-enable countdown or permanent indicator */}
-            {conversation.is_handover && (
-              remainingSeconds !== null && remainingSeconds > 0 ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Timer className="h-4 w-4" />
-                  <span>เปิดอัตโนมัติใน {formatCountdown(remainingSeconds)}</span>
-                </div>
-              ) : !conversation.bot_auto_enable_at && (
-                <div className="flex items-center gap-2 text-sm text-destructive">
-                  <Ban className="h-4 w-4" />
-                  <span>ปิดถาวร - ไม่เปิดอัตโนมัติ</span>
-                </div>
-              )
-            )}
-
-            <p className="text-xs text-muted-foreground">
-              {conversation.is_handover
-                ? 'Bot หยุดทำงาน คุณสามารถตอบลูกค้าได้โดยตรง'
-                : 'Bot จะตอบข้อความโดยอัตโนมัติ'}
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      <Separator />
-
-      {/* Contact Info */}
-      <div className="space-y-3">
-        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-          ข้อมูลติดต่อ
-        </h4>
-
-        {customer?.email && (
-          <div className="flex items-center gap-2 text-sm">
-            <Mail className="h-4 w-4 text-muted-foreground" />
-            <span>{customer.email}</span>
-          </div>
-        )}
-
-        {customer?.phone && (
-          <div className="flex items-center gap-2 text-sm">
-            <Phone className="h-4 w-4 text-muted-foreground" />
-            <span>{customer.phone}</span>
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 text-sm">
-          <Hash className="h-4 w-4 text-muted-foreground" />
-          <span className="font-mono text-xs truncate">{conversation.external_customer_id}</span>
-        </div>
-      </div>
-
-      <Separator />
-
-      {/* Interaction Stats */}
-      <div className="space-y-3">
-        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-          สถิติการโต้ตอบ
-        </h4>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Card>
-            <CardContent className="p-3">
-              <div className="flex items-center gap-2">
-                <MessagesSquare className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p className="text-2xl font-bold">{conversation.message_count}</p>
-                  <p className="text-xs text-muted-foreground">ข้อความ</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-3">
-              <div className="flex items-center gap-2">
-                <Hash className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p className="text-2xl font-bold">{customer?.interaction_count || 1}</p>
-                  <p className="text-xs text-muted-foreground">ครั้ง</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="flex items-center gap-2 text-sm">
-          <Calendar className="h-4 w-4 text-muted-foreground" />
-          <span>
-            เริ่มคุยครั้งแรก:{' '}
-            {customer?.first_interaction_at
-              ? formatDistanceToNow(new Date(customer.first_interaction_at), {
-                  addSuffix: true,
-                  locale: th,
-                })
-              : 'ไม่ระบุ'}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2 text-sm">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-          <span>
-            ข้อความล่าสุด:{' '}
-            {conversation.last_message_at
-              ? formatDistanceToNow(new Date(conversation.last_message_at), {
-                  addSuffix: true,
-                  locale: th,
-                })
-              : 'ไม่ระบุ'}
-          </span>
-        </div>
-      </div>
+      <BotControl botId={botId} conversation={conversation} />
 
       <Separator />
 
       {/* Tags Panel */}
-      <TagsPanel
+      <ConversationTags
         botId={botId}
         conversationId={conversation.id}
         currentTags={conversation.tags || []}
@@ -393,7 +37,7 @@ export function CustomerInfoPanel({ botId, conversation }: CustomerInfoPanelProp
       <Separator />
 
       {/* Notes Panel */}
-      <NotesPanel botId={botId} conversationId={conversation.id} />
+      <ConversationNotes botId={botId} conversationId={conversation.id} />
     </div>
   );
 }
