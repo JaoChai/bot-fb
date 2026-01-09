@@ -4,10 +4,10 @@
  *
  * Single conversation query with optimistic updates setup
  */
-import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, type QueryClient, type InfiniteData } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { Conversation, ConversationStats, UpdateConversationData } from '@/types/api';
-import { conversationKeys } from './useConversationList';
+import { conversationKeys, type ConversationsResponse } from './useConversationList';
 import { messageKeys, type MessagesResponse } from './useMessages';
 
 // Query key factory for single conversation
@@ -16,6 +16,9 @@ export const conversationDetailKeys = {
     ['conversation', botId, conversationId] as const,
   stats: (botId: number) => ['conversation-stats', botId] as const,
 };
+
+// Type for infinite conversations data (used in cache updates)
+type InfiniteConversationsData = InfiniteData<ConversationsResponse>;
 
 // Response types
 interface ConversationResponse {
@@ -195,6 +198,7 @@ export function useUpdateConversation(botId: number | undefined) {
 /**
  * Hook to mark conversation as read
  * T040: Includes optimistic updates for unread count
+ * Uses setQueriesData with predicate to handle query keys with filters
  */
 export function useMarkAsRead(botId: number | undefined) {
   const queryClient = useQueryClient();
@@ -209,38 +213,91 @@ export function useMarkAsRead(botId: number | undefined) {
     onMutate: async (conversationId) => {
       if (!botId) return;
 
-      // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: conversationKeys.infinite(botId) });
-
-      // Snapshot previous conversation list
-      const previousConversations = queryClient.getQueryData(conversationKeys.infinite(botId));
-
-      // Optimistically update unread count to 0 in the conversation list
-      queryClient.setQueryData(conversationKeys.infinite(botId), (old: unknown) => {
-        if (!old || typeof old !== 'object') return old;
-        const data = old as { pages: Array<{ data: Array<{ id: number; unread_count: number }> }> };
-
-        return {
-          ...data,
-          pages: data.pages.map((page) => ({
-            ...page,
-            data: page.data.map((conv) =>
-              conv.id === conversationId ? { ...conv, unread_count: 0 } : conv
-            ),
-          })),
-        };
+      // Cancel any outgoing refetches to prevent overwriting optimistic update
+      // Use predicate to match all conversation-infinite queries for this bot (regardless of filters)
+      await queryClient.cancelQueries({
+        predicate: (query) => {
+          const key = query.queryKey;
+          return Array.isArray(key) &&
+            key[0] === 'conversations-infinite' &&
+            key[1] === botId;
+        },
       });
 
-      return { previousConversations };
+      // Snapshot previous data for rollback
+      const previousData = queryClient.getQueriesData<InfiniteConversationsData>({
+        predicate: (query) => {
+          const key = query.queryKey;
+          return Array.isArray(key) &&
+            key[0] === 'conversations-infinite' &&
+            key[1] === botId;
+        },
+      });
+
+      // Optimistically update unread count to 0 in all matching queries
+      queryClient.setQueriesData<InfiniteConversationsData>(
+        {
+          predicate: (query) => {
+            const key = query.queryKey;
+            return Array.isArray(key) &&
+              key[0] === 'conversations-infinite' &&
+              key[1] === botId;
+          },
+        },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              data: page.data.map((conv) =>
+                conv.id === conversationId ? { ...conv, unread_count: 0 } : conv
+              ),
+            })),
+          };
+        }
+      );
+
+      return { previousData };
     },
     onError: (_err, _conversationId, context) => {
-      if (!botId || !context?.previousConversations) return;
-
       // Rollback on error
-      queryClient.setQueryData(conversationKeys.infinite(botId), context.previousConversations);
+      if (context?.previousData) {
+        context.previousData.forEach(([queryKey, data]) => {
+          if (data) {
+            queryClient.setQueryData(queryKey, data);
+          }
+        });
+      }
     },
-    onSuccess: () => {
+    onSuccess: (_data, conversationId) => {
       if (!botId) return;
+
+      // Re-apply cache update to fix race condition
+      // If a refetch happened during mutation, it may have overwritten optimistic update
+      queryClient.setQueriesData<InfiniteConversationsData>(
+        {
+          predicate: (query) => {
+            const key = query.queryKey;
+            return Array.isArray(key) &&
+              key[0] === 'conversations-infinite' &&
+              key[1] === botId;
+          },
+        },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              data: page.data.map((conv) =>
+                conv.id === conversationId ? { ...conv, unread_count: 0 } : conv
+              ),
+            })),
+          };
+        }
+      );
+
       // Refetch stats to get accurate unread counts
       queryClient.invalidateQueries({ queryKey: conversationDetailKeys.stats(botId) });
     },
