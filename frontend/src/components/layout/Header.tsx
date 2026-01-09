@@ -4,7 +4,10 @@ import {
   Sheet,
   SheetContent,
   SheetTrigger,
+  SheetTitle,
+  SheetDescription,
 } from '@/components/ui/sheet';
+import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { MobileNav } from './MobileNav';
 import { Menu } from 'lucide-react';
 
@@ -22,6 +25,10 @@ export function Header() {
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="w-72 p-0">
+          <VisuallyHidden.Root>
+            <SheetTitle>Navigation Menu</SheetTitle>
+            <SheetDescription>Navigate to different sections of the application</SheetDescription>
+          </VisuallyHidden.Root>
           <MobileNav onNavigate={() => setSidebarOpen(false)} />
         </SheetContent>
       </Sheet>

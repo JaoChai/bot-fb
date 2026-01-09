@@ -25,7 +25,8 @@ import { useClearContextAll } from '@/hooks/useConversations';
 import { ConversationList } from '@/components/chat/ConversationList';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { CustomerInfoPanel } from '@/components/chat/CustomerInfoPanel';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -313,6 +314,10 @@ export function ChatPage() {
       {/* Mobile Info Panel Sheet */}
       <Sheet open={isCustomerPanelOpen} onOpenChange={setCustomerPanelOpen}>
         <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+          <VisuallyHidden.Root>
+            <SheetTitle>Customer Information</SheetTitle>
+            <SheetDescription>View customer details and conversation information</SheetDescription>
+          </VisuallyHidden.Root>
           {selectedConversation && (
             <CustomerInfoPanel
               botId={botId}
