@@ -60,7 +60,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
   );
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0 overflow-hidden">
       {/* Header */}
       <ChatHeader
         conversation={conversation}

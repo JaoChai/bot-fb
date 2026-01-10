@@ -45,7 +45,7 @@ export function ChatInputArea({
   // Closed conversation
   if (conversation.status === 'closed') {
     return (
-      <div className="border-t bg-background">
+      <div className="flex-shrink-0 border-t bg-background">
         <div className="p-4 text-center text-sm text-muted-foreground">
           This conversation is closed
         </div>
@@ -56,7 +56,7 @@ export function ChatInputArea({
   // Telegram channel
   if (isTelegram) {
     return (
-      <div className="border-t bg-background">
+      <div className="flex-shrink-0 border-t bg-background">
         <TelegramMessageInput
           value={messageInput}
           onChange={setMessageInput}
@@ -72,7 +72,7 @@ export function ChatInputArea({
   // LINE channel with handover
   if (isLINE && conversation.is_handover) {
     return (
-      <div className="border-t bg-background">
+      <div className="flex-shrink-0 border-t bg-background">
         <LINEMessageInput
           value={messageInput}
           onChange={setMessageInput}
@@ -90,7 +90,7 @@ export function ChatInputArea({
   // Regular handover mode
   if (conversation.is_handover) {
     return (
-      <div className="border-t bg-background">
+      <div className="flex-shrink-0 border-t bg-background">
         <MessageInput
           onSend={onSendMessage}
           isLoading={isSending}
@@ -103,7 +103,7 @@ export function ChatInputArea({
 
   // Bot is handling
   return (
-    <div className="border-t bg-background">
+    <div className="flex-shrink-0 border-t bg-background">
       <div className="p-4 text-center text-sm text-muted-foreground">
         <Bot className="h-4 w-4 inline-block mr-1" />
         Bot is handling this conversation. Click "Take Over" to respond manually.

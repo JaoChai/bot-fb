@@ -49,7 +49,7 @@ export const ChatHeader = memo(function ChatHeader({
   const customerInitial = customerName.charAt(0).toUpperCase();
 
   return (
-    <div className="flex items-center justify-between p-2 sm:p-3 border-b bg-background">
+    <div className="flex-shrink-0 sticky top-0 z-10 flex items-center justify-between p-2 sm:p-3 border-b bg-background">
       <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
         {/* Back button - mobile only */}
         {onBack && (
