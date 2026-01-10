@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class CustomerProfile extends Model
 {
@@ -42,5 +43,15 @@ class CustomerProfile extends Model
     public function conversations(): HasMany
     {
         return $this->hasMany(Conversation::class);
+    }
+
+    public function messages(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            Message::class,
+            Conversation::class,
+            'customer_profile_id',
+            'conversation_id'
+        );
     }
 }
