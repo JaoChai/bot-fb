@@ -257,8 +257,9 @@ export function EditConnectionPage() {
           title: 'สร้างสำเร็จ',
           description: 'การเชื่อมต่อใหม่ถูกสร้างแล้ว',
         });
+        // Only redirect to /bots after creating new connection
+        navigate('/bots');
       }
-      navigate('/bots');
     } catch (error) {
       toast({
         title: 'ข้อผิดพลาด',
