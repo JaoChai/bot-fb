@@ -91,14 +91,19 @@ export function useToggleBotStatus() {
     mutationFn: async ({ botId, status }: { botId: number; status: 'active' | 'inactive' }) => {
       // Backend returns { message, data: Bot, webhook_setup }
       const response = await apiPut<{ data: Bot }>(`/bots/${botId}`, { status });
-      return response.data;
+      return { data: response.data, botId };
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      const { botId } = result;
       // Force refetch from server to ensure UI shows latest data
       // Using refetchQueries instead of invalidateQueries for immediate update
       await queryClient.refetchQueries({
         queryKey: queryKeys.bots.lists(),
         exact: true,
+      });
+      // Also invalidate the bot detail cache to keep edit page in sync
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.bots.detail(botId),
       });
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] });
     },
