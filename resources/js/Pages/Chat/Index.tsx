@@ -85,7 +85,8 @@ export default function ChatIndex() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [isTogglingHitl, setIsTogglingHitl] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const lastMessageCountRef = useRef<number>(0);
 
   // Get the selected bot
   const selectedBot = bots.find(b => b.id === selectedBotId);
@@ -116,10 +117,22 @@ export default function ChatIndex() {
     debug: false,
   });
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom when new messages arrive
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages?.data]);
+    const messageCount = messages?.data?.length ?? 0;
+
+    // Only scroll if there are new messages (not on every render)
+    if (messageCount > 0 && messageCount !== lastMessageCountRef.current) {
+      lastMessageCountRef.current = messageCount;
+
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        if (scrollAreaRef.current) {
+          scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+        }
+      });
+    }
+  }, [messages?.data?.length]);
 
   // Toggle HITL mode
   const handleToggleHitl = useCallback(async () => {
@@ -418,7 +431,7 @@ export default function ChatIndex() {
               </div>
 
               {/* Messages */}
-              <ScrollArea className="flex-1 p-4">
+              <ScrollArea className="flex-1 p-4" viewportRef={scrollAreaRef}>
                 <div className="space-y-4">
                   {messages?.data.slice().reverse().map((message) => (
                     <div
@@ -460,8 +473,6 @@ export default function ChatIndex() {
                       </div>
                     </div>
                   ))}
-                  {/* Auto-scroll anchor */}
-                  <div ref={messagesEndRef} />
                 </div>
               </ScrollArea>
 

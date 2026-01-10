@@ -82,7 +82,7 @@ class ChatController extends Controller
             'bots' => $bots,
             'selectedBotId' => $selectedBot->id,
             'conversations' => $conversations,
-            'selectedConversation' => $conversation->load(['customer', 'bot']),
+            'selectedConversation' => $conversation->load(['customerProfile', 'bot']),
             'messages' => $messages,
             'filters' => $request->only(['search', 'status']),
         ]);
@@ -94,12 +94,12 @@ class ChatController extends Controller
     protected function getConversations(Request $request, Bot $bot): array
     {
         $query = Conversation::where('bot_id', $bot->id)
-            ->with(['customer', 'latestMessage'])
+            ->with(['customerProfile', 'lastMessage'])
             ->withCount('messages');
 
         // Apply search filter
         if ($search = $request->query('search')) {
-            $query->whereHas('customer', function ($q) use ($search) {
+            $query->whereHas('customerProfile', function ($q) use ($search) {
                 $q->where('display_name', 'like', "%{$search}%")
                     ->orWhere('platform_id', 'like', "%{$search}%");
             });
@@ -204,11 +204,11 @@ class ChatController extends Controller
         $this->authorize('view', $conversation);
 
         return response()->json([
-            'customer' => $conversation->customer,
+            'customer' => $conversation->customerProfile,
             'stats' => [
-                'total_conversations' => $conversation->customer->conversations()->count(),
-                'total_messages' => $conversation->customer->messages()->count(),
-                'first_contact' => $conversation->customer->created_at,
+                'total_conversations' => $conversation->customerProfile->conversations()->count(),
+                'total_messages' => $conversation->customerProfile->messages()->count(),
+                'first_contact' => $conversation->customerProfile->created_at,
             ],
         ]);
     }
