@@ -313,17 +313,19 @@ export function ChatPage() {
 
       {/* Mobile Info Panel Sheet */}
       <Sheet open={isCustomerPanelOpen} onOpenChange={setCustomerPanelOpen}>
-        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
-          <VisuallyHidden.Root>
-            <SheetTitle>Customer Information</SheetTitle>
-            <SheetDescription>View customer details and conversation information</SheetDescription>
-          </VisuallyHidden.Root>
-          {selectedConversation && (
-            <CustomerInfoPanel
-              botId={botId}
-              conversation={selectedConversation}
-            />
-          )}
+        <SheetContent className="w-full sm:max-w-md flex flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <VisuallyHidden.Root>
+              <SheetTitle>Customer Information</SheetTitle>
+              <SheetDescription>View customer details and conversation information</SheetDescription>
+            </VisuallyHidden.Root>
+            {selectedConversation && (
+              <CustomerInfoPanel
+                botId={botId}
+                conversation={selectedConversation}
+              />
+            )}
+          </div>
         </SheetContent>
       </Sheet>
     </div>
