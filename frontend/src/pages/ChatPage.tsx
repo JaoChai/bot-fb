@@ -206,7 +206,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="-m-4 md:-m-6 flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-64px)] overflow-hidden bg-background">
+    <div className="-mx-4 -mb-4 -mt-14 md:-m-6 flex h-[calc(100%+4.5rem)] md:h-[calc(100%+3rem)] overflow-hidden bg-background">
       {/* Left Panel: Conversation List */}
       <div className={cn(
         'w-full md:w-80 flex-shrink-0 border-r flex flex-col',
