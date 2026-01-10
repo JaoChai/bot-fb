@@ -11,6 +11,7 @@ import { CHANNELS, EVENTS } from '@/types/realtime';
 
 /**
  * Hook to subscribe to a conversation channel for real-time messages
+ * Uses refs for callbacks to prevent effect re-runs on callback changes
  */
 export function useConversationChannel(
   conversationId: number | null,
@@ -21,6 +22,10 @@ export function useConversationChannel(
 ) {
   const channelRef = useRef<Channel | null>(null);
 
+  // Store callbacks in refs to prevent effect re-runs
+  const callbacksRef = useRef(callbacks);
+  callbacksRef.current = callbacks;
+
   useEffect(() => {
     if (!conversationId) return;
 
@@ -29,13 +34,13 @@ export function useConversationChannel(
 
     channelRef.current = echo.private(channelName)
       .listen(`.${EVENTS.messageSent}`, (event: MessageSentEvent) => {
-        callbacks.onMessage?.(event);
+        callbacksRef.current.onMessage?.(event);
       })
       .listen(`.${EVENTS.conversationUpdated}`, (event: ConversationUpdatedEvent) => {
-        callbacks.onConversationUpdate?.(event);
+        callbacksRef.current.onConversationUpdate?.(event);
       })
       .listen(`.${EVENTS.conversationMessageReceived}`, (event: ConversationUpdatedEvent) => {
-        callbacks.onConversationUpdate?.(event);
+        callbacksRef.current.onConversationUpdate?.(event);
       });
 
     return () => {
@@ -44,13 +49,14 @@ export function useConversationChannel(
         channelRef.current = null;
       }
     };
-  }, [conversationId, callbacks.onMessage, callbacks.onConversationUpdate]);
+  }, [conversationId]); // Only re-subscribe when conversationId changes
 
   return channelRef.current;
 }
 
 /**
  * Hook to subscribe to a bot channel for all conversations
+ * Uses refs for callbacks to prevent effect re-runs on callback changes
  */
 export function useBotChannel(
   botId: number | null,
@@ -62,37 +68,49 @@ export function useBotChannel(
 ) {
   const channelRef = useRef<Channel | null>(null);
 
+  // Store callbacks in refs to prevent effect re-runs
+  const callbacksRef = useRef(callbacks);
+  callbacksRef.current = callbacks;
+
   useEffect(() => {
-    if (!botId) return;
+    if (!botId) {
+      console.log('[useBotChannel] No botId, skipping subscription');
+      return;
+    }
 
     const echo = getEcho();
     const channelName = CHANNELS.bot(botId);
 
+    console.log('[useBotChannel] Subscribing to channel:', channelName);
+
     channelRef.current = echo.private(channelName)
       .listen(`.${EVENTS.messageSent}`, (event: MessageSentEvent) => {
         console.log('[useBotChannel] message.sent:', event.conversation_id);
-        callbacks.onMessage?.(event);
+        callbacksRef.current.onMessage?.(event);
       })
       .listen(`.${EVENTS.conversationCreated}`, (event: ConversationUpdatedEvent) => {
         console.log('[useBotChannel] conversation.created:', event.id);
-        callbacks.onNewConversation?.(event);
+        callbacksRef.current.onNewConversation?.(event);
       })
       .listen(`.${EVENTS.conversationUpdated}`, (event: ConversationUpdatedEvent) => {
         console.log('[useBotChannel] conversation.updated:', event.id);
-        callbacks.onConversationUpdate?.(event);
+        callbacksRef.current.onConversationUpdate?.(event);
       })
       .listen(`.${EVENTS.conversationMessageReceived}`, (event: ConversationUpdatedEvent) => {
         console.log('[useBotChannel] conversation.message_received:', event.id);
-        callbacks.onConversationUpdate?.(event);
+        callbacksRef.current.onConversationUpdate?.(event);
       });
 
+    console.log('[useBotChannel] Subscription complete for:', channelName);
+
     return () => {
+      console.log('[useBotChannel] Leaving channel:', channelName);
       if (channelRef.current) {
         echo.leave(channelName);
         channelRef.current = null;
       }
     };
-  }, [botId, callbacks.onMessage, callbacks.onConversationUpdate, callbacks.onNewConversation]);
+  }, [botId]); // Only re-subscribe when botId changes
 
   return channelRef.current;
 }

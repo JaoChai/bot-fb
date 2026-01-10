@@ -153,10 +153,15 @@ let echoInstance: Echo<'reverb'> | null = null;
 
 /**
  * Get the Echo instance (creates one if it doesn't exist)
+ * Also exposes instance to window for debugging
  */
 export const getEcho = (): Echo<'reverb'> => {
   if (!echoInstance) {
     echoInstance = createEcho();
+    // Expose to window for debugging
+    if (typeof window !== 'undefined') {
+      (window as Window & { Echo?: Echo<'reverb'> }).Echo = echoInstance;
+    }
   }
   return echoInstance;
 };
