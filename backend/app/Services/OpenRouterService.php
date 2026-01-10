@@ -320,6 +320,162 @@ class OpenRouterService
     }
 
     /**
+     * Send a chat completion request with vision/image analysis support.
+     *
+     * @param array $messages Chat messages (can include multimodal content)
+     * @param array $imageUrls Array of image URLs to analyze
+     * @param string|null $model Model ID (must be vision-capable)
+     * @param float|null $temperature Sampling temperature
+     * @param int|null $maxTokens Maximum tokens in response
+     * @param string|null $apiKeyOverride Override API key
+     * @return array Response with content and usage
+     */
+    public function chatWithVision(
+        array $messages,
+        array $imageUrls,
+        ?string $model = null,
+        ?float $temperature = null,
+        ?int $maxTokens = null,
+        ?string $apiKeyOverride = null
+    ): array {
+        $model = $model ?? 'google/gemini-2.0-flash-001'; // Default to Gemini for vision
+        $temperature = $temperature ?? 0.7;
+        $maxTokens = $maxTokens ?? $this->maxTokens;
+        $apiKey = $apiKeyOverride ?? $this->apiKey;
+
+        // Build multimodal messages
+        $visionMessages = $this->buildVisionMessages($messages, $imageUrls);
+
+        try {
+            $response = $this->client($apiKey)->post('/chat/completions', [
+                'model' => $model,
+                'messages' => $visionMessages,
+                'temperature' => $temperature,
+                'max_tokens' => $maxTokens,
+            ]);
+
+            if ($response->failed()) {
+                $error = $response->json('error.message', 'Unknown error');
+
+                Log::warning('OpenRouter Vision API failed', [
+                    'model' => $model,
+                    'status' => $response->status(),
+                    'error' => $error,
+                ]);
+
+                throw new OpenRouterException("OpenRouter Vision API error: {$error}", $response->status());
+            }
+
+            $data = $response->json();
+
+            return [
+                'content' => $data['choices'][0]['message']['content'] ?? '',
+                'model' => $data['model'] ?? $model,
+                'usage' => [
+                    'prompt_tokens' => $data['usage']['prompt_tokens'] ?? 0,
+                    'completion_tokens' => $data['usage']['completion_tokens'] ?? 0,
+                    'total_tokens' => $data['usage']['total_tokens'] ?? 0,
+                ],
+                'id' => $data['id'] ?? null,
+                'finish_reason' => $data['choices'][0]['finish_reason'] ?? null,
+            ];
+        } catch (OpenRouterException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error('OpenRouter Vision request failed', [
+                'model' => $model,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new OpenRouterException("OpenRouter Vision request failed: {$e->getMessage()}", 500, $e);
+        }
+    }
+
+    /**
+     * Build multimodal messages with image URLs for vision models.
+     *
+     * Converts standard messages to multimodal format when images are present.
+     * Format follows OpenRouter/OpenAI vision API spec.
+     *
+     * @param array $messages Original messages
+     * @param array $imageUrls Array of image URLs
+     * @return array Multimodal messages
+     */
+    protected function buildVisionMessages(array $messages, array $imageUrls): array
+    {
+        if (empty($imageUrls)) {
+            return $messages;
+        }
+
+        $visionMessages = [];
+
+        foreach ($messages as $message) {
+            // Only convert user messages with text content to multimodal
+            if ($message['role'] === 'user' && is_string($message['content'])) {
+                // Build multimodal content array
+                $content = [
+                    ['type' => 'text', 'text' => $message['content']],
+                ];
+
+                // Add all images to this message
+                foreach ($imageUrls as $imageUrl) {
+                    $content[] = [
+                        'type' => 'image_url',
+                        'image_url' => ['url' => $imageUrl],
+                    ];
+                }
+
+                $visionMessages[] = [
+                    'role' => 'user',
+                    'content' => $content,
+                ];
+            } else {
+                // Keep system and assistant messages as-is
+                $visionMessages[] = $message;
+            }
+        }
+
+        return $visionMessages;
+    }
+
+    /**
+     * Check if a model supports vision/image analysis.
+     *
+     * Vision-capable models:
+     * - Google Gemini (all versions)
+     * - OpenAI GPT-4o, GPT-4 Turbo, GPT-4 Vision
+     * - Anthropic Claude 3 and 3.5 (all versions)
+     *
+     * @param string $model Model ID
+     * @return bool Whether the model supports vision
+     */
+    public function supportsVision(string $model): bool
+    {
+        $model = strtolower($model);
+
+        // Gemini models (all support vision)
+        if (str_starts_with($model, 'google/gemini')) {
+            return true;
+        }
+
+        // OpenAI vision models
+        if (str_starts_with($model, 'openai/gpt-4o') ||
+            str_starts_with($model, 'openai/gpt-4-turbo') ||
+            str_starts_with($model, 'openai/gpt-4-vision') ||
+            str_starts_with($model, 'openai/chatgpt-4o')) {
+            return true;
+        }
+
+        // Claude 3 and 3.5 models (all support vision)
+        if (str_starts_with($model, 'anthropic/claude-3') ||
+            str_starts_with($model, 'anthropic/claude-3.5')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Check if the service is properly configured.
      */
     public function isConfigured(): bool

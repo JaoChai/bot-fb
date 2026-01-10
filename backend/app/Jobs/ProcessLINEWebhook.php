@@ -13,6 +13,7 @@ use App\Services\AutoAssignmentService;
 use App\Services\LINEService;
 use App\Services\MessageAggregationService;
 use App\Services\MultipleBubblesService;
+use App\Services\OpenRouterService;
 use App\Services\RateLimitService;
 use App\Services\ResponseHoursService;
 use App\Services\SmartAggregation\SmartAggregationAnalyzer;
@@ -458,6 +459,7 @@ class ProcessLINEWebhook implements ShouldQueue
     /**
      * Handle non-text messages (images, videos, audio, files, stickers, locations).
      * Downloads media and saves to database for display in chat.
+     * For images: analyzes with AI vision if bot is active and model supports vision.
      */
     protected function handleNonTextMessage(LINEService $lineService): void
     {
@@ -581,11 +583,17 @@ class ProcessLINEWebhook implements ShouldQueue
             broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
         }
 
+        // Handle image analysis with AI Vision
+        if ($messageType === 'image' && $mediaUrl && $conversation && $replyToken) {
+            $this->handleImageAnalysis($lineService, $conversation, $userMessage, $mediaUrl, $userId, $replyToken, $conversationData ?? null);
+            return; // Skip sticker reply handling for images
+        }
+
         // Reply to stickers if enabled (and not in handover mode, and bot is active)
         if ($messageType === 'sticker' && $replyToken && $conversation && !$conversation->is_handover && $this->bot->status === 'active') {
             $settings = $this->bot->settings;
             if ($settings?->reply_sticker_enabled) {
-                $responseMessage = $settings->reply_sticker_message ?: 'ได้รับสติกเกอร์แล้วค่ะ 🎉';
+                $responseMessage = $settings->reply_sticker_message ?: 'ได้รับสติกเกอร์แล้วค่ะ';
 
                 try {
                     $lineService->reply($this->bot, $replyToken, [$responseMessage]);
@@ -614,6 +622,303 @@ class ProcessLINEWebhook implements ShouldQueue
         }
 
         // Non-text messages (except stickers with reply enabled) are stored silently
+    }
+
+    /**
+     * Handle image analysis using AI Vision.
+     *
+     * Conditions for AI analysis:
+     * - Bot is active
+     * - Conversation is not in handover mode
+     * - Bot's model supports vision
+     *
+     * @param LINEService $lineService
+     * @param Conversation $conversation
+     * @param Message $userMessage
+     * @param string $imageUrl
+     * @param string $userId
+     * @param string $replyToken
+     * @param array|null $conversationData
+     */
+    protected function handleImageAnalysis(
+        LINEService $lineService,
+        Conversation $conversation,
+        Message $userMessage,
+        string $imageUrl,
+        string $userId,
+        string $replyToken,
+        ?array $conversationData
+    ): void {
+        // Check if bot is active
+        if ($this->bot->status !== 'active') {
+            Log::info('Bot inactive, skipping image analysis', [
+                'bot_id' => $this->bot->id,
+                'conversation_id' => $conversation->id,
+            ]);
+            return;
+        }
+
+        // Check if conversation is in handover mode
+        if ($conversation->is_handover) {
+            Log::info('Conversation in handover mode, skipping image analysis', [
+                'bot_id' => $this->bot->id,
+                'conversation_id' => $conversation->id,
+            ]);
+            return;
+        }
+
+        // Get the model from bot/flow settings
+        $openRouterService = app(OpenRouterService::class);
+        $model = $this->getVisionModel();
+
+        // Check if model supports vision
+        if (!$model || !$openRouterService->supportsVision($model)) {
+            Log::info('Model does not support vision, skipping image analysis', [
+                'bot_id' => $this->bot->id,
+                'conversation_id' => $conversation->id,
+                'model' => $model,
+            ]);
+            return;
+        }
+
+        // Show loading indicator
+        $lineService->showLoadingIndicator($this->bot, $userId, 30);
+
+        try {
+            // Build system prompt for image analysis
+            $systemPrompt = $this->buildVisionSystemPrompt();
+
+            // Get conversation history for context
+            $history = $this->getVisionConversationHistory($conversation);
+
+            // Build messages array
+            $messages = [];
+
+            // Add system prompt
+            if ($systemPrompt) {
+                $messages[] = [
+                    'role' => 'system',
+                    'content' => $systemPrompt,
+                ];
+            }
+
+            // Add conversation history
+            foreach ($history as $msg) {
+                $messages[] = [
+                    'role' => $msg['sender'] === 'user' ? 'user' : 'assistant',
+                    'content' => $msg['content'],
+                ];
+            }
+
+            // Add current image message with prompt
+            $imagePrompt = $this->getImageAnalysisPrompt();
+            $messages[] = [
+                'role' => 'user',
+                'content' => $imagePrompt,
+            ];
+
+            // Get API key
+            $apiKey = $this->bot->user?->settings?->getOpenRouterApiKey()
+                ?? config('services.openrouter.api_key');
+
+            // Call Vision API
+            $result = $openRouterService->chatWithVision(
+                messages: $messages,
+                imageUrls: [$imageUrl],
+                model: $model,
+                temperature: $this->bot->llm_temperature ?? 0.7,
+                maxTokens: $this->bot->llm_max_tokens ?? 1024,
+                apiKeyOverride: $apiKey
+            );
+
+            $responseContent = $result['content'] ?? '';
+
+            if (empty($responseContent)) {
+                Log::warning('Empty response from Vision API', [
+                    'bot_id' => $this->bot->id,
+                    'conversation_id' => $conversation->id,
+                ]);
+                return;
+            }
+
+            // Save bot response
+            $botMessage = $conversation->messages()->create([
+                'sender' => 'bot',
+                'content' => $responseContent,
+                'type' => 'text',
+                'model_used' => $result['model'] ?? $model,
+                'prompt_tokens' => $result['usage']['prompt_tokens'] ?? 0,
+                'completion_tokens' => $result['usage']['completion_tokens'] ?? 0,
+                'cost' => $openRouterService->estimateCost(
+                    $result['usage']['prompt_tokens'] ?? 0,
+                    $result['usage']['completion_tokens'] ?? 0,
+                    $result['model'] ?? $model
+                ),
+                'metadata' => [
+                    'vision_analysis' => true,
+                    'image_url' => $imageUrl,
+                ],
+            ]);
+
+            // Update conversation stats
+            $conversation->update([
+                'message_count' => DB::raw('message_count + 1'),
+                'last_message_at' => now(),
+            ]);
+
+            // Update bot stats
+            $this->bot->update([
+                'total_messages' => DB::raw('total_messages + 1'),
+                'last_active_at' => now(),
+            ]);
+
+            // Send reply to LINE
+            $bubblesService = app(MultipleBubblesService::class);
+            if ($bubblesService->isEnabled($this->bot)) {
+                $bubbles = $bubblesService->parseIntoBubbles($responseContent, $this->bot);
+                $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles);
+            } else {
+                $lineService->reply($this->bot, $replyToken, [$responseContent]);
+            }
+
+            // Refresh and broadcast
+            $conversation->refresh();
+            $updatedConversationData = [
+                'id' => $conversation->id,
+                'message_count' => $conversation->message_count,
+                'last_message_at' => $conversation->last_message_at?->toISOString(),
+                'unread_count' => $conversation->unread_count,
+            ];
+
+            broadcast(new MessageSent($botMessage, $updatedConversationData))->toOthers();
+            broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
+
+            Log::info('Image analyzed successfully', [
+                'bot_id' => $this->bot->id,
+                'conversation_id' => $conversation->id,
+                'model' => $result['model'] ?? $model,
+                'tokens_used' => $result['usage']['total_tokens'] ?? 0,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Image analysis failed', [
+                'bot_id' => $this->bot->id,
+                'conversation_id' => $conversation->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            // Fail silently - image is already saved, just no AI response
+        }
+    }
+
+    /**
+     * Get the vision-capable model to use for image analysis.
+     *
+     * Priority:
+     * 1. Bot's default Flow model (if vision-capable) - this is where user configures AI model
+     * 2. Bot's primary_chat_model (if vision-capable)
+     * 3. User's openrouter_model (if vision-capable)
+     * 4. Bot's llm_model (if vision-capable)
+     * 5. Default vision model (Gemini 2.0 Flash)
+     */
+    protected function getVisionModel(): string
+    {
+        $openRouterService = app(OpenRouterService::class);
+
+        // Priority 1: Bot's default Flow model (from flow settings in UI)
+        $flow = $this->bot->defaultFlow;
+        if ($flow && $flow->model && $openRouterService->supportsVision($flow->model)) {
+            return $flow->model;
+        }
+
+        // Priority 2: Bot's primary chat model
+        if ($this->bot->primary_chat_model && $openRouterService->supportsVision($this->bot->primary_chat_model)) {
+            return $this->bot->primary_chat_model;
+        }
+
+        // Priority 3: User's model from settings
+        $userModel = $this->bot->user?->settings?->openrouter_model;
+        if ($userModel && $openRouterService->supportsVision($userModel)) {
+            return $userModel;
+        }
+
+        // Priority 4: Bot's llm_model
+        if ($this->bot->llm_model && $openRouterService->supportsVision($this->bot->llm_model)) {
+            return $this->bot->llm_model;
+        }
+
+        // Priority 5: Default vision model
+        return 'google/gemini-2.0-flash-001';
+    }
+
+    /**
+     * Build system prompt for vision/image analysis.
+     * Uses bot's system prompt with vision-specific additions.
+     */
+    protected function buildVisionSystemPrompt(): string
+    {
+        // Get base system prompt from bot or flow
+        $basePrompt = '';
+
+        if (!empty($this->bot->system_prompt)) {
+            $basePrompt = $this->bot->system_prompt;
+        } elseif ($this->bot->default_flow_id) {
+            $flow = $this->bot->defaultFlow;
+            if ($flow && !empty($flow->system_prompt)) {
+                $basePrompt = $flow->system_prompt;
+            }
+        }
+
+        if (empty($basePrompt)) {
+            $basePrompt = "You are a helpful AI assistant for {$this->bot->name}. Be friendly, professional, and helpful.";
+        }
+
+        // Add vision-specific instruction
+        $visionInstruction = "\n\nWhen analyzing images, describe what you see clearly and helpfully. Answer any questions about the image content.";
+
+        return $basePrompt . $visionInstruction;
+    }
+
+    /**
+     * Get the prompt to use when analyzing an image.
+     */
+    protected function getImageAnalysisPrompt(): string
+    {
+        // Check bot settings for custom image prompt
+        $settings = $this->bot->settings;
+        if ($settings && !empty($settings->image_analysis_prompt)) {
+            return $settings->image_analysis_prompt;
+        }
+
+        // Default Thai prompt (since most users are Thai based on existing code)
+        return 'กรุณาอธิบายรูปภาพนี้ และช่วยตอบคำถามหากมี';
+    }
+
+    /**
+     * Get conversation history for vision context.
+     * Limited to recent messages to keep context manageable.
+     */
+    protected function getVisionConversationHistory(Conversation $conversation, int $limit = 5): array
+    {
+        $query = $conversation->messages()
+            ->whereIn('sender', ['user', 'bot'])
+            ->where('type', 'text'); // Only include text messages in history
+
+        // Filter out messages before context was cleared
+        if ($conversation->context_cleared_at) {
+            $query->where('created_at', '>', $conversation->context_cleared_at);
+        }
+
+        return $query->latest()
+            ->take($limit)
+            ->get()
+            ->reverse()
+            ->map(fn (Message $msg) => [
+                'sender' => $msg->sender,
+                'content' => $msg->content,
+            ])
+            ->values()
+            ->toArray();
     }
 
     /**
