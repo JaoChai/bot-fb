@@ -202,6 +202,8 @@ export function useRealtime(
               if (!needsUpdate) return conv;
 
               hasChanges = true;
+              // If this conversation is currently selected, keep unread_count at 0
+              const isSelected = conv.id === selectedConversationIdRef.current;
               return {
                 ...conv,
                 status: event.status,
@@ -210,7 +212,7 @@ export function useRealtime(
                 message_count: event.message_count,
                 last_message_at: event.last_message_at,
                 needs_response: event.needs_response,
-                unread_count: event.unread_count ?? conv.unread_count,
+                unread_count: isSelected ? 0 : (event.unread_count ?? conv.unread_count),
                 bot_auto_enable_at: event.bot_auto_enable_at,
               };
             }),

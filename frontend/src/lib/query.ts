@@ -10,6 +10,7 @@ const NON_PERSISTENT_KEYS = [
   'conversation',
   'conversation-stats',
   'conversation-notes',
+  'messages', // Prevent stale messages from localStorage on soft refresh
 ];
 
 export const queryClient = new QueryClient({
