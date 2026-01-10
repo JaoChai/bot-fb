@@ -77,7 +77,7 @@ export function ChannelMessageArea({
   };
 
   return (
-    <div className="flex-1 relative">
+    <div className="flex-1 relative min-h-0">
       <ScrollArea
         className="h-full p-4"
         viewportRef={scrollViewportRef}

@@ -4,7 +4,7 @@
  * Reduced from ~368 lines to ~100 lines
  */
 import { useState } from 'react';
-import { useConversationMessages } from '@/hooks/useConversations';
+import { useMessages } from '@/hooks/chat';
 import { useChatActions } from '@/hooks/useChatActions';
 import type { Conversation } from '@/types/api';
 
@@ -30,8 +30,8 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
   const isLINE = conversation.channel_type === 'line';
   const useCustomBubbles = isTelegram || isLINE;
 
-  // Messages query
-  const { data: messagesResponse, isLoading: isLoadingMessages, isFetching: isFetchingMessages } = useConversationMessages(
+  // Messages query - use useMessages for consistent query keys with WebSocket updates
+  const { data: messagesResponse, isLoading: isLoadingMessages, isFetching: isFetchingMessages } = useMessages(
     botId,
     conversation.id,
     { order: 'asc', perPage: 100 }
@@ -60,7 +60,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* Header */}
       <ChatHeader
         conversation={conversation}
