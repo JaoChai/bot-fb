@@ -278,7 +278,7 @@ export function ChatPage() {
 
       {/* Center Panel: Chat Window */}
       <div className={cn(
-        'flex-1 flex flex-col min-w-0',
+        'flex-1 flex flex-col min-w-0 min-h-0',
         !showMobileChat && 'hidden md:flex'
       )}>
         {selectedConversation ? (
