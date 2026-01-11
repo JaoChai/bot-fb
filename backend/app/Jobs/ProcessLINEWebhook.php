@@ -18,6 +18,7 @@ use App\Services\RateLimitService;
 use App\Services\ResponseHoursService;
 use App\Services\SmartAggregation\SmartAggregationAnalyzer;
 use App\Services\SmartAggregation\UserTypingStats;
+use App\Services\StickerReplyService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -610,37 +611,97 @@ class ProcessLINEWebhook implements ShouldQueue
 
         // Reply to stickers if enabled (and not in handover mode, and bot is active)
         if ($messageType === 'sticker' && $replyToken && $conversation && !$conversation->is_handover && $this->bot->status === 'active') {
-            $settings = $this->bot->settings;
-            if ($settings?->reply_sticker_enabled) {
-                $responseMessage = $settings->reply_sticker_message ?: 'ได้รับสติกเกอร์แล้วค่ะ';
-
-                try {
-                    $lineService->reply($this->bot, $replyToken, [$responseMessage]);
-
-                    // Save bot response to conversation
-                    $botMessage = $conversation->messages()->create([
-                        'sender' => 'bot',
-                        'content' => $responseMessage,
-                        'type' => 'text',
-                    ]);
-
-                    // Broadcast bot message
-                    broadcast(new MessageSent($botMessage, $conversationData ?? null))->toOthers();
-
-                    Log::info('Replied to sticker', [
-                        'bot_id' => $this->bot->id,
-                        'conversation_id' => $conversation->id,
-                    ]);
-                } catch (\Exception $e) {
-                    Log::warning('Failed to reply to sticker', [
-                        'bot_id' => $this->bot->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            }
+            $this->handleStickerReply($lineService, $conversation, $messageData, $userId, $replyToken, $conversationData ?? null);
         }
 
         // Non-text messages (except stickers with reply enabled) are stored silently
+    }
+
+    /**
+     * Handle sticker reply with support for static and AI modes.
+     *
+     * @param LINEService $lineService
+     * @param Conversation $conversation
+     * @param array $messageData
+     * @param string $userId
+     * @param string $replyToken
+     * @param array|null $conversationData
+     */
+    protected function handleStickerReply(
+        LINEService $lineService,
+        Conversation $conversation,
+        array $messageData,
+        string $userId,
+        string $replyToken,
+        ?array $conversationData
+    ): void {
+        $settings = $this->bot->settings;
+        if (!$settings?->reply_sticker_enabled) {
+            return;
+        }
+
+        $mode = $settings->reply_sticker_mode ?? 'static';
+
+        // Show loading indicator for AI mode
+        if ($mode === 'ai') {
+            $lineService->showLoadingIndicator($this->bot, $userId, 15);
+        }
+
+        try {
+            $stickerService = app(StickerReplyService::class);
+            $responseMessage = $stickerService->generateReply($this->bot, $conversation, $messageData);
+
+            if (!$responseMessage) {
+                return;
+            }
+
+            // Send reply
+            $lineService->reply($this->bot, $replyToken, [$responseMessage]);
+
+            // Save bot response
+            $botMessage = $conversation->messages()->create([
+                'sender' => 'bot',
+                'content' => $responseMessage,
+                'type' => 'text',
+                'metadata' => [
+                    'sticker_reply' => true,
+                    'sticker_mode' => $mode,
+                    'sticker_id' => $messageData['sticker_id'] ?? null,
+                ],
+            ]);
+
+            // Update stats
+            $conversation->update([
+                'message_count' => DB::raw('message_count + 1'),
+                'last_message_at' => now(),
+            ]);
+            $this->bot->update([
+                'total_messages' => DB::raw('total_messages + 1'),
+                'last_active_at' => now(),
+            ]);
+
+            // Broadcast
+            $conversation->refresh();
+            broadcast(new MessageSent($botMessage, [
+                'id' => $conversation->id,
+                'message_count' => $conversation->message_count,
+                'last_message_at' => $conversation->last_message_at?->toISOString(),
+                'unread_count' => $conversation->unread_count,
+            ]))->toOthers();
+
+            Log::info('Replied to sticker', [
+                'bot_id' => $this->bot->id,
+                'conversation_id' => $conversation->id,
+                'mode' => $mode,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::warning('Failed to reply to sticker', [
+                'bot_id' => $this->bot->id,
+                'mode' => $mode,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
