@@ -99,7 +99,7 @@ class ProcessLINEWebhook implements ShouldQueue
 
         // Only process text messages for now
         if (!$lineService->isTextMessage($this->event)) {
-            $this->handleNonTextMessage($lineService);
+            $this->handleNonTextMessage($lineService, $responseHoursService);
             return;
         }
 
@@ -461,8 +461,10 @@ class ProcessLINEWebhook implements ShouldQueue
      * Downloads media and saves to database for display in chat.
      * For images: analyzes with AI vision if bot is active and model supports vision.
      */
-    protected function handleNonTextMessage(LINEService $lineService): void
-    {
+    protected function handleNonTextMessage(
+        LINEService $lineService,
+        ResponseHoursService $responseHoursService
+    ): void {
         $userId = $lineService->extractUserId($this->event);
         $replyToken = $lineService->extractReplyToken($this->event);
         $messageData = $lineService->extractMessage($this->event);
@@ -581,6 +583,23 @@ class ProcessLINEWebhook implements ShouldQueue
         }
         if ($conversation) {
             broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
+        }
+
+        // Check response hours AFTER saving message but BEFORE AI response
+        $responseHoursResult = $responseHoursService->checkResponseHours($this->bot);
+        if (!$responseHoursResult['allowed']) {
+            Log::info('Non-text message received outside response hours', [
+                'bot_id' => $this->bot->id,
+                'message_type' => $messageType,
+                'status' => $responseHoursResult['status'],
+                'current_time' => $responseHoursResult['current_time'] ?? null,
+            ]);
+
+            // Send offline message for non-sticker messages (stickers stay silent)
+            if ($messageType !== 'sticker' && $replyToken) {
+                $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken);
+            }
+            return; // Skip AI response
         }
 
         // Handle image analysis with AI Vision
