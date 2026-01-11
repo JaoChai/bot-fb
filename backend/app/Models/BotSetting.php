@@ -49,6 +49,8 @@ class BotSetting extends Model
         // Reply sticker feature
         'reply_sticker_enabled',
         'reply_sticker_message',
+        'reply_sticker_mode',
+        'reply_sticker_ai_prompt',
         // Auto-assignment feature
         'auto_assignment_enabled',
         'auto_assignment_mode',

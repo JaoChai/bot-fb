@@ -193,6 +193,8 @@ class BotSettingController extends Controller
                 // Reply sticker settings
                 'reply_sticker_enabled' => 'boolean',
                 'reply_sticker_message' => 'nullable|string|max:500',
+                'reply_sticker_mode' => 'string|in:static,ai',
+                'reply_sticker_ai_prompt' => 'nullable|string|max:1000',
 
                 // Auto-assignment settings
                 'auto_assignment_enabled' => 'boolean',

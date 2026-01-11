@@ -118,6 +118,8 @@ interface BotSettingsFormData {
   smart_per_user_learning_enabled: boolean;
   reply_sticker_enabled: boolean;
   reply_sticker_message: string;
+  reply_sticker_mode: 'static' | 'ai';
+  reply_sticker_ai_prompt: string;
   response_hours_enabled: boolean;
   response_hours: ResponseHoursConfig;
   response_hours_timezone: string;
@@ -155,6 +157,8 @@ export function BotSettingsPage() {
     smart_per_user_learning_enabled: false,
     reply_sticker_enabled: false,
     reply_sticker_message: '',
+    reply_sticker_mode: 'static',
+    reply_sticker_ai_prompt: '',
     response_hours_enabled: false,
     response_hours: createDefaultResponseHours(),
     response_hours_timezone: 'Asia/Bangkok',
@@ -269,6 +273,8 @@ export function BotSettingsPage() {
           smart_per_user_learning_enabled: (settings.smart_per_user_learning_enabled as boolean) ?? false,
           reply_sticker_enabled: (settings.reply_sticker_enabled as boolean) ?? false,
           reply_sticker_message: (settings.reply_sticker_message as string) ?? '',
+          reply_sticker_mode: (settings.reply_sticker_mode as 'static' | 'ai') ?? 'static',
+          reply_sticker_ai_prompt: (settings.reply_sticker_ai_prompt as string) ?? '',
           response_hours_enabled: (settings.response_hours_enabled as boolean) ?? false,
           response_hours: parseResponseHours(settings.response_hours as Record<string, TimeSlot[]> | null),
           response_hours_timezone: (settings.response_hours_timezone as string) ?? 'Asia/Bangkok',
@@ -328,6 +334,8 @@ export function BotSettingsPage() {
         // Reply sticker settings
         reply_sticker_enabled: formData.reply_sticker_enabled,
         reply_sticker_message: formData.reply_sticker_message || null,
+        reply_sticker_mode: formData.reply_sticker_mode,
+        reply_sticker_ai_prompt: formData.reply_sticker_ai_prompt || null,
       });
 
       toast({

@@ -102,6 +102,8 @@ export interface BotSettingsFormData {
   offline_message: string | null;
   reply_sticker_enabled: boolean;
   reply_sticker_message: string | null;
+  reply_sticker_mode: 'static' | 'ai';
+  reply_sticker_ai_prompt: string | null;
 }
 
 export interface SectionProps {
@@ -159,6 +161,8 @@ export interface BotResponseHours {
   offline_message: string | null;
   reply_sticker_enabled: boolean;
   reply_sticker_message: string | null;
+  reply_sticker_mode: 'static' | 'ai';
+  reply_sticker_ai_prompt: string | null;
 }
 
 // Extended props for ResponseHoursSection with schedule handlers
