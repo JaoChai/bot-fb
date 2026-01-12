@@ -10,6 +10,7 @@ use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\AutoAssignmentService;
+use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
 use App\Services\MessageAggregationService;
 use App\Services\MultipleBubblesService;
@@ -363,6 +364,9 @@ class ProcessLINEWebhook implements ShouldQueue
                 'last_message_at' => $conversation->last_message_at?->toISOString(),
                 'unread_count' => $conversation->unread_count,
             ];
+
+            // Mark lead recovery as responded when customer sends a message
+            app(LeadRecoveryService::class)->markCustomerResponded($conversation);
         }
         if ($userMessage) {
             broadcast(new MessageSent($userMessage, $conversationData ?? null))->toOthers();
@@ -578,6 +582,9 @@ class ProcessLINEWebhook implements ShouldQueue
                 'last_message_at' => $conversation->last_message_at?->toISOString(),
                 'unread_count' => $conversation->unread_count,
             ];
+
+            // Mark lead recovery as responded when customer sends a message
+            app(LeadRecoveryService::class)->markCustomerResponded($conversation);
         }
         if ($userMessage) {
             broadcast(new MessageSent($userMessage, $conversationData ?? null))->toOthers();

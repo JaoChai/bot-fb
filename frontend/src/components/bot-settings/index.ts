@@ -10,3 +10,4 @@ export * from './HITLSettingsSection';
 export * from './AggregationSettingsSection';
 export * from './ResponseHoursSection';
 export * from './StickerReplySection';
+export * from './LeadRecoverySection';

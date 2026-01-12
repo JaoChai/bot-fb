@@ -138,6 +138,12 @@ export interface BotSettings {
   // HITL settings
   hitl_enabled: boolean;
   hitl_triggers: string[] | null;
+  // Lead Recovery settings
+  lead_recovery_enabled: boolean;
+  lead_recovery_timeout_hours: number;
+  lead_recovery_mode: 'static' | 'ai';
+  lead_recovery_message: string | null;
+  lead_recovery_max_attempts: number;
   // Response hours
   response_hours_enabled: boolean;
   response_hours: Record<string, { start: string; end: string }> | null;

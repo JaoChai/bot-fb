@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\UserSettingController;
 use App\Http\Controllers\Api\EvaluationController;
 use App\Http\Controllers\Api\AgentApprovalController;
 use App\Http\Controllers\Api\ImprovementController;
+use App\Http\Controllers\Api\LeadRecoveryController;
 use App\Http\Controllers\Api\QuickReplyController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
@@ -144,6 +145,12 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         // Bot credentials reveal endpoint (owner only)
         Route::get('/{bot}/credentials', [BotController::class, 'credentials'])
             ->name('bots.credentials');
+
+        // Lead recovery routes
+        Route::get('/{bot}/lead-recovery/stats', [LeadRecoveryController::class, 'getStats'])
+            ->name('bots.lead-recovery.stats');
+        Route::get('/{bot}/lead-recovery/logs', [LeadRecoveryController::class, 'getLogs'])
+            ->name('bots.lead-recovery.logs');
 
         // Bot settings routes
         Route::get('/{bot}/settings', [BotSettingController::class, 'show'])->name('bots.settings.show');

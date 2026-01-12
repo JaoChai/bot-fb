@@ -15,6 +15,11 @@ class BotHITLSettings extends Model
         'hitl_triggers',
         'auto_assignment_enabled',
         'auto_assignment_mode',
+        'lead_recovery_enabled',
+        'lead_recovery_timeout_hours',
+        'lead_recovery_mode',
+        'lead_recovery_message',
+        'lead_recovery_max_attempts',
     ];
 
     protected function casts(): array
@@ -23,6 +28,9 @@ class BotHITLSettings extends Model
             'hitl_enabled' => 'boolean',
             'hitl_triggers' => 'array',
             'auto_assignment_enabled' => 'boolean',
+            'lead_recovery_enabled' => 'boolean',
+            'lead_recovery_timeout_hours' => 'integer',
+            'lead_recovery_max_attempts' => 'integer',
         ];
     }
 
