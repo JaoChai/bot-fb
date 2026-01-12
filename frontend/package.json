@@ -1,11 +1,12 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "clean": "rm -rf node_modules/.cache node_modules/.vite dist",
+    "build": "npm run clean && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
