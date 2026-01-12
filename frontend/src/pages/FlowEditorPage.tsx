@@ -157,6 +157,7 @@ export function FlowEditorPage() {
   const [isSystemPromptPreview, setIsSystemPromptPreview] = useState(false);
   const [isFullscreenPrompt, setIsFullscreenPrompt] = useState(false);
   const [agenticSecondAIEnabled, setAgenticSecondAIEnabled] = useState(false);
+  const [secondAIModel, setSecondAIModel] = useState('openai/gpt-4o-mini');
   const [secondAIOptions, setSecondAIOptions] = useState({
     factCheck: false,
     policy: false,
@@ -216,6 +217,7 @@ export function FlowEditorPage() {
 
       // Load Second AI settings
       setAgenticSecondAIEnabled(existingFlow.second_ai_enabled ?? false);
+      setSecondAIModel(existingFlow.second_ai_model || 'openai/gpt-4o-mini');
       setSecondAIOptions({
         factCheck: existingFlow.second_ai_options?.fact_check ?? false,
         policy: existingFlow.second_ai_options?.policy ?? false,
@@ -253,6 +255,7 @@ export function FlowEditorPage() {
     const dataToSave = {
       ...formData,
       second_ai_enabled: agenticSecondAIEnabled,
+      second_ai_model: secondAIModel,
       second_ai_options: {
         fact_check: secondAIOptions.factCheck,
         policy: secondAIOptions.policy,

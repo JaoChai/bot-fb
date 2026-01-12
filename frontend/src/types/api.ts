@@ -249,6 +249,7 @@ export interface Flow {
   hitl_dangerous_actions?: string[];
   // Second AI
   second_ai_enabled?: boolean;
+  second_ai_model?: string | null;
   second_ai_options?: SecondAIOptions;
   created_at: string;
   updated_at: string;
@@ -292,6 +293,7 @@ export interface CreateFlowData {
   hitl_dangerous_actions?: string[];
   // Second AI
   second_ai_enabled?: boolean;
+  second_ai_model?: string | null;
   second_ai_options?: SecondAIOptions;
 }
 
