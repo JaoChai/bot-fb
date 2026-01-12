@@ -52,6 +52,7 @@ railway up                   # Manual deploy
 | Railway serve.json fails | Use Express server | [→](docs/gotchas.md#railway-servejson-fails) |
 | N+1 queries | Use eager loading | [→](docs/gotchas.md#n1-query-problem) |
 | Race condition | Use DB locks | [→](docs/gotchas.md#race-condition-in-customer-profile-creation) |
+| Component exists but not rendered | Verify import/usage with grep | [→](docs/gotchas.md#common-false-assumptions-debugging-traps) |
 
 [→ All known issues](docs/gotchas.md)
 
@@ -349,7 +350,7 @@ php artisan test tests/Unit/Evaluation
 
 ---
 
-**Last Updated:** 2026-01-08
+**Last Updated:** 2026-01-12
 
 **Documentation Version:** 2.0 (Refactored)
 
