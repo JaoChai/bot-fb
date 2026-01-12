@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\ProcessLeadRecovery;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -21,3 +22,7 @@ Schedule::command('rag:cleanup-cache')
     ->everyFourHours()
     ->withoutOverlapping()
     ->runInBackground();
+
+// Process lead recovery to re-engage inactive leads
+// Runs hourly to check for leads needing follow-up
+Schedule::job(new ProcessLeadRecovery)->hourly()->name('lead-recovery');

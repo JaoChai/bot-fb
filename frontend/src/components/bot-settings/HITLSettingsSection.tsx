@@ -6,6 +6,10 @@
  * - hitl_enabled
  * - hitl_triggers
  * - lead_recovery_enabled
+ * - lead_recovery_timeout_hours
+ * - lead_recovery_mode
+ * - lead_recovery_message
+ * - lead_recovery_max_attempts
  * - reply_when_called_enabled
  * - easy_slip_enabled
  */
@@ -19,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Plus, X } from 'lucide-react';
 import { type SectionProps } from './types';
+import { LeadRecoverySection, type LeadRecoverySettings } from './LeadRecoverySection';
 
 export function HITLSettingsSection({ formData, onChange, disabled }: SectionProps) {
   const [newTrigger, setNewTrigger] = useState('');
@@ -173,6 +178,32 @@ export function HITLSettingsSection({ formData, onChange, disabled }: SectionPro
             disabled={disabled}
           />
         </div>
+
+        {/* Lead Recovery Settings */}
+        <LeadRecoverySection
+          enabled={formData.lead_recovery_enabled}
+          settings={{
+            lead_recovery_timeout_hours: formData.lead_recovery_timeout_hours ?? 4,
+            lead_recovery_mode: formData.lead_recovery_mode ?? 'static',
+            lead_recovery_message: formData.lead_recovery_message ?? null,
+            lead_recovery_max_attempts: formData.lead_recovery_max_attempts ?? 2,
+          }}
+          onChange={(updates: Partial<LeadRecoverySettings>) => {
+            if (updates.lead_recovery_timeout_hours !== undefined) {
+              onChange('lead_recovery_timeout_hours', updates.lead_recovery_timeout_hours);
+            }
+            if (updates.lead_recovery_mode !== undefined) {
+              onChange('lead_recovery_mode', updates.lead_recovery_mode);
+            }
+            if (updates.lead_recovery_message !== undefined) {
+              onChange('lead_recovery_message', updates.lead_recovery_message);
+            }
+            if (updates.lead_recovery_max_attempts !== undefined) {
+              onChange('lead_recovery_max_attempts', updates.lead_recovery_max_attempts);
+            }
+          }}
+          disabled={disabled}
+        />
 
         {/* Reply When Called */}
         <div className="flex items-center justify-between">

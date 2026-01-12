@@ -79,6 +79,10 @@ export interface BotSettingsFormData {
   hitl_enabled: boolean;
   hitl_triggers: string[];
   lead_recovery_enabled: boolean;
+  lead_recovery_timeout_hours: number;
+  lead_recovery_mode: 'static' | 'ai';
+  lead_recovery_message: string | null;
+  lead_recovery_max_attempts: number;
   reply_when_called_enabled: boolean;
   easy_slip_enabled: boolean;
 
@@ -132,6 +136,10 @@ export interface BotHITLSettings {
   hitl_enabled: boolean;
   hitl_triggers: string[];
   lead_recovery_enabled: boolean;
+  lead_recovery_timeout_hours: number;
+  lead_recovery_mode: 'static' | 'ai';
+  lead_recovery_message: string | null;
+  lead_recovery_max_attempts: number;
   reply_when_called_enabled: boolean;
   easy_slip_enabled: boolean;
 }

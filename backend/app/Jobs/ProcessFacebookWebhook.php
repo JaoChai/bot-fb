@@ -10,6 +10,7 @@ use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\AutoAssignmentService;
+use App\Services\LeadRecoveryService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -161,6 +162,9 @@ class ProcessFacebookWebhook implements ShouldQueue
                 'last_message_at' => $conversation->last_message_at?->toISOString(),
                 'unread_count' => $conversation->unread_count,
             ];
+
+            // Mark lead recovery as responded when customer sends a message
+            app(LeadRecoveryService::class)->markCustomerResponded($conversation);
         }
         if ($userMessage) {
             broadcast(new MessageSent($userMessage, $conversationData ?? null))->toOthers();

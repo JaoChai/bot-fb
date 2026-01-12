@@ -33,6 +33,8 @@ class Conversation extends Model
         'unread_count',
         'last_message_at',
         'context_cleared_at',
+        'recovery_attempts',
+        'last_recovery_at',
     ];
 
     protected $casts = [
@@ -43,6 +45,7 @@ class Conversation extends Model
         'last_message_at' => 'datetime',
         'bot_auto_enable_at' => 'datetime',
         'context_cleared_at' => 'datetime',
+        'last_recovery_at' => 'datetime',
     ];
 
     public function bot(): BelongsTo
@@ -184,5 +187,26 @@ class Conversation extends Model
         $remaining = $this->bot_auto_enable_at->diffInSeconds(now(), false);
 
         return $remaining > 0 ? null : abs($remaining);
+    }
+
+    /**
+     * Conversations eligible for lead recovery
+     */
+    public function scopeNeedsRecovery($query, int $timeoutHours, int $maxAttempts)
+    {
+        return $query
+            ->where('status', 'active')
+            ->where('is_handover', false)
+            ->where('recovery_attempts', '<', $maxAttempts)
+            ->where('last_message_at', '<', now()->subHours($timeoutHours))
+            ->where(function ($q) {
+                $q->whereNull('last_recovery_at')
+                  ->orWhere('last_recovery_at', '<', now()->subHours(24));
+            });
+    }
+
+    public function recoveryLogs(): HasMany
+    {
+        return $this->hasMany(LeadRecoveryLog::class);
     }
 }
