@@ -27,7 +27,6 @@ export interface FlowFormData {
 
   // Second AI
   second_ai_enabled: boolean;
-  second_ai_model: string | null;
   second_ai_check_fact: boolean;
   second_ai_check_policy: boolean;
   second_ai_check_personality: boolean;

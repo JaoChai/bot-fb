@@ -20,7 +20,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
-import { ModelSelector } from '@/components/ModelSelector';
 import { KnowledgeBaseWarning } from '@/components/flow/KnowledgeBaseWarning';
 import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations } from '@/hooks/useFlows';
 import { useStreamingChat } from '@/hooks/useStreamingChat';
@@ -158,7 +157,6 @@ export function FlowEditorPage() {
   const [isSystemPromptPreview, setIsSystemPromptPreview] = useState(false);
   const [isFullscreenPrompt, setIsFullscreenPrompt] = useState(false);
   const [agenticSecondAIEnabled, setAgenticSecondAIEnabled] = useState(false);
-  const [secondAIModel, setSecondAIModel] = useState('openai/gpt-4o-mini');
   const [secondAIOptions, setSecondAIOptions] = useState({
     factCheck: false,
     policy: false,
@@ -218,7 +216,6 @@ export function FlowEditorPage() {
 
       // Load Second AI settings
       setAgenticSecondAIEnabled(existingFlow.second_ai_enabled ?? false);
-      setSecondAIModel(existingFlow.second_ai_model || 'openai/gpt-4o-mini');
       setSecondAIOptions({
         factCheck: existingFlow.second_ai_options?.fact_check ?? false,
         policy: existingFlow.second_ai_options?.policy ?? false,
@@ -256,7 +253,6 @@ export function FlowEditorPage() {
     const dataToSave = {
       ...formData,
       second_ai_enabled: agenticSecondAIEnabled,
-      second_ai_model: secondAIModel,
       second_ai_options: {
         fact_check: secondAIOptions.factCheck,
         policy: secondAIOptions.policy,
@@ -870,22 +866,6 @@ export function FlowEditorPage() {
 
                 {agenticSecondAIEnabled && (
                   <div className="mt-4 space-y-3 pt-4 border-t">
-                    {/* Model Selector */}
-                    <div className="mb-4">
-                      <ModelSelector
-                        label="Model สำหรับ Second AI"
-                        value={secondAIModel}
-                        onChange={(value) => {
-                          setSecondAIModel(value);
-                          setHasChanges(true);
-                        }}
-                        placeholder="openai/gpt-4o-mini (แนะนำ)"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        แนะนำ: gpt-4o-mini (เร็ว ประหยัด) หรือ claude-3.5-sonnet (คุณภาพสูง)
-                      </p>
-                    </div>
-
                     <div className="grid grid-cols-3 gap-3">
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input

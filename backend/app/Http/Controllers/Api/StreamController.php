@@ -604,10 +604,14 @@ class StreamController extends Controller
 
         $startTime = microtime(true);
 
+        // Get model from Bot settings (same logic as UnifiedCheckService)
+        $bot = $flow->bot;
+        $model = $bot?->decision_model ?: $bot?->primary_chat_model ?: 'openai/gpt-4o-mini';
+
         // Send start event
         $this->sendSSE('second_ai_start', [
             'enabled_checks' => $enabledChecks,
-            'model' => $flow->second_ai_model ?? 'openai/gpt-4o-mini',
+            'model' => $model,
         ]);
 
         // Use rescue() for graceful timeout handling

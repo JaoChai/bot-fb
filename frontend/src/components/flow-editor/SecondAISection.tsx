@@ -4,36 +4,17 @@
  *
  * Controls:
  * - second_ai_enabled toggle
- * - second_ai_model selector
  * - second_ai_check_fact, second_ai_check_policy, second_ai_check_personality checkboxes
+ *
+ * Note: Second AI model is now configured at the Bot level (Connection Settings)
  */
 
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
-import { ModelSelector } from '@/components/ModelSelector';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
 import { ShieldCheck, Info, CheckCircle, Scale, MessageCircle } from 'lucide-react';
 import { type FlowSectionProps } from './types';
-
-const InfoTooltip = ({ children }: { children: React.ReactNode }) => (
-  <TooltipProvider>
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Info className="h-4 w-4 text-muted-foreground cursor-help" />
-      </TooltipTrigger>
-      <TooltipContent className="max-w-xs">
-        <p className="text-sm">{children}</p>
-      </TooltipContent>
-    </Tooltip>
-  </TooltipProvider>
-);
 
 export function SecondAISection({
   formData,
@@ -77,22 +58,6 @@ export function SecondAISection({
       <Collapsible open={formData.second_ai_enabled}>
         <CollapsibleContent>
           <div className="mt-4 space-y-4 pt-4 border-t">
-            {/* Model selector */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label className="text-sm font-medium">Model สำหรับ Second AI</Label>
-                <InfoTooltip>
-                  เลือก model ที่จะใช้ในการตรวจสอบคำตอบ แนะนำให้ใช้ model ที่เร็วและประหยัด
-                </InfoTooltip>
-              </div>
-              <ModelSelector
-                label=""
-                value={formData.second_ai_model || ''}
-                onChange={(value) => onChange('second_ai_model', value)}
-                placeholder="openai/gpt-4o-mini (แนะนำ)"
-              />
-            </div>
-
             {/* Check options */}
             <div className="space-y-2">
               <Label className="text-sm font-medium">ประเภทการตรวจสอบ</Label>
