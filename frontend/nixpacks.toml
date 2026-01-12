@@ -7,8 +7,7 @@ nixPkgs = ["nodejs_20"]
 cmds = ["npm ci"]
 
 [phases.build]
-# Clear vite cache before build to ensure fresh bundle
-cmds = ["rm -rf node_modules/.cache node_modules/.vite && npm run build"]
+cmds = ["npm run build"]
 
 [start]
 # Express server with proper cache headers for SPA
