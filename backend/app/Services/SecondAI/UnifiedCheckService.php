@@ -54,10 +54,11 @@ class UnifiedCheckService
         $prompt = $this->buildUnifiedPrompt($response, $flow, $userMessage, $kbContext);
 
         // Call LLM
+        $model = $flow->second_ai_model ?? 'openai/gpt-4o-mini';
         try {
             $response = $this->openRouter->chat(
                 messages: [['role' => 'user', 'content' => $prompt]],
-                model: 'anthropic/claude-3.5-sonnet',
+                model: $model,
                 temperature: 0.3,
                 maxTokens: 2000,
                 apiKeyOverride: $apiKey,
@@ -90,7 +91,7 @@ class UnifiedCheckService
             'passed' => $parsedData['passed'],
             'modifications' => $parsedData['modifications'],
             'final_response' => $parsedData['final_response'],
-            'model_used' => 'anthropic/claude-3.5-sonnet',
+            'model_used' => $response['model'] ?? $model,
             'latency_ms' => $elapsedMs,
         ]);
     }

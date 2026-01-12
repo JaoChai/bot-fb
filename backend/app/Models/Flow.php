@@ -36,6 +36,7 @@ class Flow extends Model
         'is_default',
         // Second AI
         'second_ai_enabled',
+        'second_ai_model',
         'second_ai_options',
     ];
 

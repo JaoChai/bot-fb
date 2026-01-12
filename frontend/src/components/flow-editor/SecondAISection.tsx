@@ -10,14 +10,8 @@
 
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
+import { ModelSelector } from '@/components/ModelSelector';
 import {
   Tooltip,
   TooltipContent,
@@ -27,14 +21,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { ShieldCheck, Info, CheckCircle, Scale, MessageCircle } from 'lucide-react';
 import { type FlowSectionProps } from './types';
-
-// Available models for Second AI evaluation
-const SECOND_AI_MODELS = [
-  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI' },
-  { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI' },
-  { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'Anthropic' },
-  { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', provider: 'Google' },
-];
 
 const InfoTooltip = ({ children }: { children: React.ReactNode }) => (
   <TooltipProvider>
@@ -99,27 +85,12 @@ export function SecondAISection({
                   เลือก model ที่จะใช้ในการตรวจสอบคำตอบ แนะนำให้ใช้ model ที่เร็วและประหยัด
                 </InfoTooltip>
               </div>
-              <Select
+              <ModelSelector
+                label=""
                 value={formData.second_ai_model || ''}
-                onValueChange={(value) => onChange('second_ai_model', value)}
-                disabled={disabled}
-              >
-                <SelectTrigger className="w-full md:w-72">
-                  <SelectValue placeholder="เลือก model..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {SECOND_AI_MODELS.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>
-                      <span className="flex items-center gap-2">
-                        <span>{model.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          ({model.provider})
-                        </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={(value) => onChange('second_ai_model', value)}
+                placeholder="openai/gpt-4o-mini (แนะนำ)"
+              />
             </div>
 
             {/* Check options */}

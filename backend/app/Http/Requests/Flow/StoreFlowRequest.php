@@ -32,6 +32,7 @@ class StoreFlowRequest extends FormRequest
             'is_default' => ['nullable', 'boolean'],
             // Second AI
             'second_ai_enabled' => ['nullable', 'boolean'],
+            'second_ai_model' => ['nullable', 'string', 'max:255'],
             'second_ai_options' => ['nullable', 'array'],
             'second_ai_options.fact_check' => ['nullable', 'boolean'],
             'second_ai_options.policy' => ['nullable', 'boolean'],
