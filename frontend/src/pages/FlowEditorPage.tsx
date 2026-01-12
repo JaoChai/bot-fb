@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
+import { ModelSelector } from '@/components/ModelSelector';
 import { KnowledgeBaseWarning } from '@/components/flow/KnowledgeBaseWarning';
 import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations } from '@/hooks/useFlows';
 import { useStreamingChat } from '@/hooks/useStreamingChat';
@@ -866,6 +867,22 @@ export function FlowEditorPage() {
 
                 {agenticSecondAIEnabled && (
                   <div className="mt-4 space-y-3 pt-4 border-t">
+                    {/* Model Selector */}
+                    <div className="mb-4">
+                      <ModelSelector
+                        label="Model สำหรับ Second AI"
+                        value={secondAIModel}
+                        onChange={(value) => {
+                          setSecondAIModel(value);
+                          setHasChanges(true);
+                        }}
+                        placeholder="openai/gpt-4o-mini (แนะนำ)"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        แนะนำ: gpt-4o-mini (เร็ว ประหยัด) หรือ claude-3.5-sonnet (คุณภาพสูง)
+                      </p>
+                    </div>
+
                     <div className="grid grid-cols-3 gap-3">
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
