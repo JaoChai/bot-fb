@@ -10,6 +10,7 @@ use App\Services\AgentSafetyService;
 use App\Services\CostTrackingService;
 use App\Services\HybridSearchService;
 use App\Services\OpenRouterService;
+use App\Services\SecondAI\SecondAIService;
 use App\Services\ToolService;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -35,6 +36,7 @@ class StreamController extends Controller
     protected ToolService $toolService;
     protected CostTrackingService $costTracking;
     protected AgentSafetyService $agentSafety;
+    protected SecondAIService $secondAI;
 
     // Track process metrics
     protected array $metrics = [
@@ -50,13 +52,15 @@ class StreamController extends Controller
         HybridSearchService $hybridSearch,
         ToolService $toolService,
         CostTrackingService $costTracking,
-        AgentSafetyService $agentSafety
+        AgentSafetyService $agentSafety,
+        SecondAIService $secondAI
     ) {
         $this->openRouter = $openRouter;
         $this->hybridSearch = $hybridSearch;
         $this->toolService = $toolService;
         $this->costTracking = $costTracking;
         $this->agentSafety = $agentSafety;
+        $this->secondAI = $secondAI;
     }
 
     /**
@@ -125,7 +129,7 @@ class StreamController extends Controller
                 if ($flow->agentic_mode && !empty($flow->enabled_tools)) {
                     $this->runAgentLoop($bot, $flow, $message, $conversationHistory, $apiKey, $user);
                 } else {
-                    // === STANDARD MODE: Decision → KB → Chat ===
+                    // === STANDARD MODE: Decision → KB → Chat → Second AI ===
 
                     // === STEP 2: Decision Model - Intent Analysis ===
                     $intent = $this->runDecisionModel($bot, $message, $apiKey);
@@ -134,7 +138,10 @@ class StreamController extends Controller
                     $kbContext = $this->runKnowledgeBaseSearch($bot, $flow, $message, $intent);
 
                     // === STEP 4: Chat Model - Generate Response ===
-                    $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey);
+                    $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey);
+
+                    // === STEP 5: Second AI - Content Verification ===
+                    $this->runSecondAI($flow, $chatResponse, $message, $apiKey);
                 }
 
                 // === STEP 5: Done ===
@@ -397,6 +404,8 @@ class StreamController extends Controller
 
     /**
      * Step 4: Run Chat Model for Response Generation (with streaming)
+     *
+     * @return string The collected response content for Second AI processing
      */
     protected function runChatModel(
         Bot $bot,
@@ -405,7 +414,7 @@ class StreamController extends Controller
         array $conversationHistory,
         string $kbContext,
         ?string $apiKey
-    ): void {
+    ): string {
         // Get models from Bot Settings
         $chatModel = $this->getChatModel($bot);
         $fallbackChatModel = $this->getFallbackChatModel($bot);
@@ -427,9 +436,10 @@ class StreamController extends Controller
 
         $startTime = microtime(true);
         $usedFallback = false;
+        $collectedResponse = '';
 
         try {
-            $this->streamFromOpenRouter($messages, $chatModel, $apiKey);
+            $collectedResponse = $this->streamFromOpenRouter($messages, $chatModel, $apiKey);
             $this->metrics['models_used'][] = $chatModel;
         } catch (\Exception $e) {
             // Try fallback model
@@ -441,7 +451,7 @@ class StreamController extends Controller
                 ]);
 
                 try {
-                    $this->streamFromOpenRouter($messages, $fallbackChatModel, $apiKey);
+                    $collectedResponse = $this->streamFromOpenRouter($messages, $fallbackChatModel, $apiKey);
                     $this->metrics['models_used'][] = $fallbackChatModel;
                     $usedFallback = true;
                 } catch (\Exception $fallbackError) {
@@ -451,12 +461,16 @@ class StreamController extends Controller
                 throw $e;
             }
         }
+
+        return $collectedResponse;
     }
 
     /**
      * Stream response from OpenRouter using Guzzle with true streaming.
+     *
+     * @return string The full collected response content
      */
-    protected function streamFromOpenRouter(array $messages, string $model, ?string $apiKey): void
+    protected function streamFromOpenRouter(array $messages, string $model, ?string $apiKey): string
     {
         $client = new Client([
             'timeout' => 120,
@@ -485,6 +499,7 @@ class StreamController extends Controller
 
         $body = $response->getBody();
         $buffer = '';
+        $collectedContent = '';
 
         while (!$body->eof()) {
             $chunk = $body->read(1024);
@@ -508,12 +523,13 @@ class StreamController extends Controller
                     $data = substr($line, 6);
 
                     if ($data === '[DONE]') {
-                        return;
+                        return $collectedContent;
                     }
 
                     $json = json_decode($data, true);
                     if ($json && isset($json['choices'][0]['delta']['content'])) {
                         $content = $json['choices'][0]['delta']['content'];
+                        $collectedContent .= $content;
                         $this->sendSSE('content', ['text' => $content]);
                     }
 
@@ -532,8 +548,116 @@ class StreamController extends Controller
 
             if (connection_aborted()) {
                 Log::info('Stream aborted by client');
-                return;
+                return $collectedContent;
             }
+        }
+
+        return $collectedContent;
+    }
+
+    /**
+     * Step 5: Run Second AI for Content Verification
+     *
+     * Executes Second AI checks (Fact Check, Policy, Personality) if enabled.
+     * Sends SSE events for timeline display in Chat Emulator.
+     *
+     * @param Flow $flow The flow with second_ai configuration
+     * @param string $originalResponse The original AI response to check
+     * @param string $userMessage The original user message (for context)
+     * @param string|null $apiKey Optional API key override
+     * @return string The final response (modified or original)
+     */
+    protected function runSecondAI(
+        Flow $flow,
+        string $originalResponse,
+        string $userMessage,
+        ?string $apiKey
+    ): string {
+        // Skip if Second AI is not enabled or response is empty
+        if (!$flow->second_ai_enabled || empty($originalResponse)) {
+            return $originalResponse;
+        }
+
+        $options = $flow->second_ai_options ?? [];
+        $enabledChecks = [];
+
+        if (!empty($options['fact_check'])) {
+            $enabledChecks[] = 'fact_check';
+        }
+        if (!empty($options['policy'])) {
+            $enabledChecks[] = 'policy';
+        }
+        if (!empty($options['personality'])) {
+            $enabledChecks[] = 'personality';
+        }
+
+        // Skip if no checks are enabled
+        if (empty($enabledChecks)) {
+            return $originalResponse;
+        }
+
+        $startTime = microtime(true);
+
+        // Send start event
+        $this->sendSSE('second_ai_start', [
+            'enabled_checks' => $enabledChecks,
+            'model' => $flow->second_ai_model ?? 'openai/gpt-4o-mini',
+        ]);
+
+        try {
+            // Call SecondAIService
+            $result = $this->secondAI->process(
+                $originalResponse,
+                $flow,
+                $userMessage,
+                $apiKey
+            );
+
+            $timeMs = round((microtime(true) - $startTime) * 1000);
+
+            // Determine if checks passed (no modifications applied)
+            $passed = !($result['second_ai_applied'] ?? false);
+            $checksApplied = $result['second_ai']['checks_applied'] ?? [];
+            $modifications = $result['second_ai']['modifications'] ?? [];
+
+            // Send result event
+            $this->sendSSE('second_ai_result', [
+                'passed' => $passed,
+                'checks_applied' => $checksApplied,
+                'modifications' => $modifications,
+                'time_ms' => $timeMs,
+            ]);
+
+            // If content was modified, send the modified content event
+            $finalContent = $result['content'] ?? $originalResponse;
+            if (!$passed && $finalContent !== $originalResponse) {
+                $this->sendSSE('second_ai_modified', [
+                    'content' => $finalContent,
+                    'original_length' => strlen($originalResponse),
+                    'modified_length' => strlen($finalContent),
+                ]);
+            }
+
+            return $finalContent;
+
+        } catch (\Exception $e) {
+            Log::warning('Second AI failed in StreamController', [
+                'flow_id' => $flow->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            // Send error event but don't fail the request
+            $timeMs = round((microtime(true) - $startTime) * 1000);
+            $this->sendSSE('second_ai_result', [
+                'passed' => true, // Treat as passed since we're falling back
+                'checks_applied' => [],
+                'modifications' => [],
+                'error' => $e->getMessage(),
+                'time_ms' => $timeMs,
+            ]);
+
+            // Graceful fallback - return original response
+            return $originalResponse;
         }
     }
 
@@ -1056,6 +1180,9 @@ PROMPT;
                         $offset += $chunkSize;
                         usleep(10000); // 10ms delay for smooth streaming effect
                     }
+
+                    // === Second AI - Content Verification for Agentic Mode ===
+                    $this->runSecondAI($flow, $content, $message, $apiKey);
                 }
 
                 break; // Exit loop - we're done

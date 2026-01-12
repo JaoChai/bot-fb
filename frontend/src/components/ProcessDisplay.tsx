@@ -18,6 +18,7 @@ import {
   Sparkles,
   Calculator,
   ShieldAlert,
+  ShieldCheck,
   XCircle,
   Timer,
 } from 'lucide-react';
@@ -93,6 +94,15 @@ function getEventIcon(event: string, data?: Record<string, unknown>) {
       return data?.approved
         ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
         : <XCircle className="h-3.5 w-3.5 text-destructive" />;
+    // Second AI events
+    case 'second_ai_start':
+      return <ShieldCheck className="h-3.5 w-3.5 text-blue-500 animate-pulse" />;
+    case 'second_ai_result':
+      return data?.passed
+        ? <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+        : <ShieldCheck className="h-3.5 w-3.5 text-amber-500" />;
+    case 'second_ai_modified':
+      return <RefreshCw className="h-3.5 w-3.5 text-amber-500" />;
     default:
       return <Activity className="h-3.5 w-3.5 text-muted-foreground" />;
   }
@@ -164,6 +174,13 @@ function getEventLabel(event: string, data?: Record<string, unknown>): string {
       return '⏳ กำลังรอ...';
     case 'agent_approval_response':
       return data?.approved ? '✅ อนุมัติแล้ว' : '❌ ปฏิเสธ';
+    // Second AI events
+    case 'second_ai_start':
+      return '🛡️ Second AI กำลังตรวจสอบ...';
+    case 'second_ai_result':
+      return data?.passed ? '✅ Second AI ผ่าน' : '⚠️ Second AI ตรวจพบปัญหา';
+    case 'second_ai_modified':
+      return '📝 ปรับปรุงคำตอบแล้ว';
     default:
       return event;
   }
@@ -269,6 +286,23 @@ function formatDetails(event: string, data: Record<string, unknown>): string {
     case 'agent_approval_response':
       return data.reason as string || (data.approved ? 'อนุมัติ' : 'ปฏิเสธ');
 
+    // Second AI events
+    case 'second_ai_start': {
+      const checks = data.enabled_checks as string[] || [];
+      return `ตรวจสอบ: ${checks.join(', ')} • Model: ${data.model || 'N/A'}`;
+    }
+    case 'second_ai_result': {
+      const checksApplied = data.checks_applied as string[] || [];
+      const timeMs = data.time_ms as number || 0;
+      if (data.error) return data.error as string;
+      return `${checksApplied.join(', ')} • ${timeMs}ms`;
+    }
+    case 'second_ai_modified': {
+      const origLen = data.original_length as number || 0;
+      const modLen = data.modified_length as number || 0;
+      return `${origLen} → ${modLen} ตัวอักษร`;
+    }
+
     default:
       return '';
   }
@@ -291,6 +325,15 @@ function getEventBgColor(event: string, data?: Record<string, unknown>): string 
       return data?.approved
         ? 'bg-emerald-500/10 border-emerald-500/20'
         : 'bg-destructive/10 border-destructive/20';
+    // Second AI events
+    case 'second_ai_start':
+      return 'bg-blue-500/10 border-blue-500/20';
+    case 'second_ai_result':
+      return data?.passed
+        ? 'bg-emerald-500/10 border-emerald-500/20'
+        : 'bg-amber-500/10 border-amber-500/20';
+    case 'second_ai_modified':
+      return 'bg-amber-500/10 border-amber-500/20';
     default:
       return 'bg-muted/50 border-border';
   }
