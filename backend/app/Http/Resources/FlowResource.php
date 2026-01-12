@@ -45,7 +45,6 @@ class FlowResource extends JsonResource
 
             // Second AI
             'second_ai_enabled' => $this->second_ai_enabled ?? false,
-            'second_ai_model' => $this->second_ai_model,
             'second_ai_options' => $this->second_ai_options ?? [
                 'fact_check' => false,
                 'policy' => false,

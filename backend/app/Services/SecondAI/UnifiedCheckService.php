@@ -59,17 +59,29 @@ class UnifiedCheckService
         // Build unified prompt
         $prompt = $this->buildUnifiedPrompt($response, $flow, $userMessage, $kbContext);
 
-        // Call LLM with timeout to prevent hanging
-        $model = $flow->second_ai_model ?? 'openai/gpt-4o-mini';
+        // Get models from Bot Settings (same as Decision/Intent Analysis)
+        $bot = $flow->bot;
+        $model = $bot?->decision_model
+            ?: $bot?->primary_chat_model
+            ?: 'openai/gpt-4o-mini';
+        $fallbackModel = $bot?->fallback_decision_model
+            ?: $bot?->fallback_chat_model
+            ?: 'google/gemini-flash-1.5';
+
+        Log::info('UnifiedCheckService: Using models from Bot Settings', [
+            'primary_model' => $model,
+            'fallback_model' => $fallbackModel,
+        ]);
+
         try {
             $response = $this->openRouter->chat(
                 messages: [['role' => 'user', 'content' => $prompt]],
                 model: $model,
                 temperature: 0.3,
                 maxTokens: 2000,
-                useFallback: false, // Don't retry on failure for Second AI
+                useFallback: true, // Enable fallback for reliability
                 apiKeyOverride: $apiKey,
-                fallbackModelOverride: null,
+                fallbackModelOverride: $fallbackModel,
                 timeout: $this->timeout,
             );
 
