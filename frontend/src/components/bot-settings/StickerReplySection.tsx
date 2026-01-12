@@ -7,6 +7,8 @@
  * - Mode selection (static/ai)
  * - Custom reply message for static mode
  * - AI prompt for ai mode
+ *
+ * @updated 2026-01-12 - Cache bust for AI sticker feature
  */
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
