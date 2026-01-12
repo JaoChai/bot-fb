@@ -29,6 +29,10 @@ export type ProcessEventType =
   | 'agent_approval_required'
   | 'agent_approval_waiting'
   | 'agent_approval_response'
+  // Second AI events
+  | 'second_ai_start'
+  | 'second_ai_result'
+  | 'second_ai_modified'
   // Standard events
   | 'content'
   | 'error'
@@ -44,6 +48,7 @@ export interface ProcessLog {
 export interface StreamOptions {
   onProcessLog?: (log: ProcessLog) => void;
   onContent?: (text: string) => void;
+  onContentReplace?: (text: string) => void;
   onError?: (message: string) => void;
   onDone?: (summary: DoneSummary) => void;
   signal?: AbortSignal;
@@ -232,6 +237,18 @@ function processSSEEvent(eventBlock: string, options: StreamOptions): void {
       case 'agent_approval_waiting':
       case 'agent_approval_response':
         // Already handled by onProcessLog above
+        break;
+
+      // Second AI events
+      case 'second_ai_start':
+      case 'second_ai_result':
+        // Already handled by onProcessLog above
+        break;
+      case 'second_ai_modified':
+        // Replace content with modified response
+        if (parsed.content) {
+          options.onContentReplace?.(parsed.content);
+        }
         break;
     }
   } catch (e) {

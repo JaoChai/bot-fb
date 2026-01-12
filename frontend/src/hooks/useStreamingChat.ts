@@ -27,6 +27,7 @@ type ChatAction =
   | { type: 'ADD_ASSISTANT_PLACEHOLDER'; payload: { id: string } }
   | { type: 'APPEND_PROCESS_LOG'; payload: { messageId: string; log: ProcessLog } }
   | { type: 'APPEND_CONTENT'; payload: { messageId: string; text: string } }
+  | { type: 'REPLACE_CONTENT'; payload: { messageId: string; content: string } }
   | { type: 'SET_ERROR'; payload: { messageId: string; error: string } }
   | { type: 'SET_DONE'; payload: { messageId: string; summary?: DoneSummary } }
   | { type: 'SET_ABORTED'; payload: { messageId: string } }
@@ -83,6 +84,16 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         messages: state.messages.map(m =>
           m.id === action.payload.messageId
             ? { ...m, content: m.content + action.payload.text }
+            : m
+        ),
+      };
+
+    case 'REPLACE_CONTENT':
+      return {
+        ...state,
+        messages: state.messages.map(m =>
+          m.id === action.payload.messageId
+            ? { ...m, content: action.payload.content }
             : m
         ),
       };
@@ -191,6 +202,9 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
           },
           onContent: (text) => {
             dispatch({ type: 'APPEND_CONTENT', payload: { messageId: assistantMsgId, text } });
+          },
+          onContentReplace: (content) => {
+            dispatch({ type: 'REPLACE_CONTENT', payload: { messageId: assistantMsgId, content } });
           },
           onError: (error) => {
             dispatch({ type: 'SET_ERROR', payload: { messageId: assistantMsgId, error } });
