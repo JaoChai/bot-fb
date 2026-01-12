@@ -10,7 +10,7 @@ import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Loader2, Clock, Plus, Trash2, Copy } from 'lucide-react';
+import { ArrowLeft, Loader2, Clock, Plus, Trash2, Copy, MessageSquare, Sparkles } from 'lucide-react';
 import { apiGet, apiPut } from '@/lib/api';
 
 // Response Hours types
@@ -757,19 +757,87 @@ export function BotSettingsPage() {
               </div>
 
               {formData.reply_sticker_enabled && (
-                <div className="space-y-2 pt-4 border-t">
-                  <Label htmlFor="sticker-message" className="font-semibold">
-                    ข้อความตอบกลับ
-                  </Label>
-                  <Input
-                    id="sticker-message"
-                    placeholder="ได้รับสติกเกอร์แล้วค่ะ 🎉"
-                    value={formData.reply_sticker_message}
-                    onChange={(e) => handleChange('reply_sticker_message', e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    เว้นว่างไว้ = ใช้ข้อความเริ่มต้น "ได้รับสติกเกอร์แล้วค่ะ 🎉"
-                  </p>
+                <div className="space-y-4 pt-4 border-t">
+                  {/* Mode Selection */}
+                  <div className="space-y-2">
+                    <Label className="font-semibold">รูปแบบการตอบกลับ</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Static Mode */}
+                      <button
+                        type="button"
+                        onClick={() => handleChange('reply_sticker_mode', 'static')}
+                        className={`p-4 rounded-lg border-2 text-left transition-all ${
+                          formData.reply_sticker_mode === 'static'
+                            ? 'border-primary bg-primary/5'
+                            : 'border-muted hover:border-muted-foreground/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <MessageSquare className="h-5 w-5 text-blue-500" />
+                          <span className="font-medium">ข้อความคงที่</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          ตอบด้วยข้อความที่กำหนดไว้ล่วงหน้า
+                        </p>
+                      </button>
+
+                      {/* AI Mode */}
+                      <button
+                        type="button"
+                        onClick={() => handleChange('reply_sticker_mode', 'ai')}
+                        className={`p-4 rounded-lg border-2 text-left transition-all ${
+                          formData.reply_sticker_mode === 'ai'
+                            ? 'border-primary bg-primary/5'
+                            : 'border-muted hover:border-muted-foreground/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <Sparkles className="h-5 w-5 text-amber-500" />
+                          <span className="font-medium">AI วิเคราะห์</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          AI วิเคราะห์สติกเกอร์และตอบกลับอัจฉริยะ
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Static Mode Input */}
+                  {formData.reply_sticker_mode === 'static' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="sticker-message" className="font-semibold">
+                        ข้อความตอบกลับ
+                      </Label>
+                      <Input
+                        id="sticker-message"
+                        placeholder="ได้รับสติกเกอร์แล้วค่ะ 🎉"
+                        value={formData.reply_sticker_message}
+                        onChange={(e) => handleChange('reply_sticker_message', e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        เว้นว่างไว้ = ใช้ข้อความเริ่มต้น "ได้รับสติกเกอร์แล้วค่ะ 🎉"
+                      </p>
+                    </div>
+                  )}
+
+                  {/* AI Mode Input */}
+                  {formData.reply_sticker_mode === 'ai' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="sticker-ai-prompt" className="font-semibold">
+                        AI Prompt (ไม่บังคับ)
+                      </Label>
+                      <Textarea
+                        id="sticker-ai-prompt"
+                        placeholder="ตอบกลับสติกเกอร์อย่างเป็นมิตร..."
+                        value={formData.reply_sticker_ai_prompt}
+                        onChange={(e) => handleChange('reply_sticker_ai_prompt', e.target.value)}
+                        rows={3}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        เว้นว่างไว้ = AI จะใช้ prompt เริ่มต้น
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
