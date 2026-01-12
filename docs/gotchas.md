@@ -465,6 +465,43 @@ $result = Cache::remember($cacheKey, 3600, fn() => $this->evaluate($message));
 
 ---
 
+## Common False Assumptions (Debugging Traps)
+
+ข้อสมมติฐานที่มักผิดเมื่อ debug - ตรวจสอบให้แน่ใจก่อนแก้!
+
+| คิดว่า... | จริงๆ คือ... | วิธีตรวจสอบ |
+|----------|-------------|-------------|
+| Cache ไม่ update | Code ไม่ได้ถูกใช้งาน | `grep -r "ComponentName" src/` |
+| Deploy สำเร็จแล้ว | ใช้ cached build เก่า | ตรวจ commitHash ใน deployment |
+| Component มีแล้ว | ไม่ได้ import/ใช้งาน | grep หา import statement |
+| Type error เล็กน้อย | มี duplicate types 2 ชุด | ตรวจสอบ import paths ทั้งหมด |
+| UI ไม่ render | Component ไม่ได้ถูกเรียกใช้ | ตรวจสอบ parent component |
+| Bundle มี code | Code อยู่แต่ไม่ถูก execute | ตรวจสอบ conditional rendering |
+
+### ตัวอย่างที่พบบ่อย
+
+**Case: Component exists but not rendered**
+```typescript
+// ❌ มี StickerReplySection.tsx แต่ไม่ได้ใช้
+// BotSettingsPage.tsx ใช้ inline code แทน
+
+// ✅ วิธีตรวจสอบ
+grep -r "StickerReplySection" frontend/src/
+// ถ้าไม่เจอ import → component ไม่ได้ถูกใช้งาน
+```
+
+**Case: Deploy success but old code**
+```bash
+# ❌ Deployment สำเร็จแต่ไม่มี commitHash
+# → Railway ใช้ cached build
+
+# ✅ วิธีตรวจสอบ
+railway logs --service frontend --json | grep commitHash
+# ถ้า commitHash ว่าง → ใช้ cache เก่า
+```
+
+---
+
 ## Quick Fixes Reference
 
 | Problem | Quick Fix |
@@ -477,6 +514,7 @@ $result = Cache::remember($cacheKey, 3600, fn() => $this->evaluate($message));
 | Deploy ล้ม | Check devDependencies → dependencies |
 | Tests fail CI | Set proper env vars |
 | AI ช้า | Use model tiers + caching |
+| Component not rendering | Check if imported/used | `grep -r "ComponentName"` |
 
 ---
 

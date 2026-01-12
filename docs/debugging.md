@@ -457,15 +457,44 @@ if (memory_get_usage(true) > 100 * 1024 * 1024) { // 100MB
 
 ---
 
+## กฎ 3 รอบ (Stop & Reassess Rule)
+
+> **ถ้าแก้ไม่สำเร็จภายใน 3 รอบ → หยุด ถอยกลับ วิเคราะห์ใหม่**
+
+| รอบ | สถานะ | Action |
+|-----|-------|--------|
+| 1 | ไม่สำเร็จ | ปกติ ลองต่อ |
+| 2 | ไม่สำเร็จ | ทบทวน approach |
+| 3 | ไม่สำเร็จ | **หยุด!** root cause อาจผิด |
+
+### เมื่อถึงรอบที่ 3:
+1. หยุดแก้ทันที
+2. ถอยกลับมาวิเคราะห์ใหม่ตั้งแต่ต้น
+3. ตั้งคำถาม: "สมมติฐานของเราถูกต้องไหม?"
+4. ดู [Common False Assumptions](gotchas.md#common-false-assumptions-debugging-traps)
+5. หา root cause ใหม่แล้วค่อยแก้
+
+---
+
 ## Debugging Checklist
 
-### เมื่อเจอ Bug:
+### ก่อนเริ่มแก้ Bug (Verify First!):
 
-- [ ] Can you reproduce?
+- [ ] **ตรวจว่า code ถูกใช้งานจริงหรือไม่** (`grep -r "ComponentName" src/`)
+- [ ] ดู production bundle/logs ว่า code อยู่จริง
+- [ ] ตรวจ import statements ว่าถูก import
+- [ ] Reproduce ปัญหาได้ไหม?
+
+### ระหว่างแก้ Bug:
+
 - [ ] Check error logs (Sentry, Railway)
 - [ ] Search memory (`/mem-search "bug description"`)
 - [ ] Isolate the issue (minimal reproduction)
 - [ ] Check recent changes (git log)
+- [ ] **นับรอบการแก้ - ถ้าถึง 3 รอบให้หยุด!**
+
+### หลังแก้ Bug:
+
 - [ ] Test in different environment
 - [ ] Fix & verify
 - [ ] Add test to prevent regression
