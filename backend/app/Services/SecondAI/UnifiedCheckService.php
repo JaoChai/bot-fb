@@ -9,6 +9,12 @@ use Illuminate\Support\Facades\Log;
 
 class UnifiedCheckService
 {
+    /**
+     * Timeout for Second AI API calls (seconds).
+     * Lower than default to prevent Chat Emulator from hanging.
+     */
+    protected int $timeout = 15;
+
     public function __construct(
         protected OpenRouterService $openRouter,
         protected RAGService $ragService,
@@ -53,7 +59,7 @@ class UnifiedCheckService
         // Build unified prompt
         $prompt = $this->buildUnifiedPrompt($response, $flow, $userMessage, $kbContext);
 
-        // Call LLM
+        // Call LLM with timeout to prevent hanging
         $model = $flow->second_ai_model ?? 'openai/gpt-4o-mini';
         try {
             $response = $this->openRouter->chat(
@@ -61,13 +67,17 @@ class UnifiedCheckService
                 model: $model,
                 temperature: 0.3,
                 maxTokens: 2000,
+                useFallback: false, // Don't retry on failure for Second AI
                 apiKeyOverride: $apiKey,
+                fallbackModelOverride: null,
+                timeout: $this->timeout,
             );
 
             $rawResponse = $response['content'];
         } catch (\Exception $e) {
             Log::error('UnifiedCheckService: LLM call failed', [
                 'error' => $e->getMessage(),
+                'timeout' => $this->timeout,
             ]);
             throw new \RuntimeException('Unified check LLM call failed: '.$e->getMessage());
         }

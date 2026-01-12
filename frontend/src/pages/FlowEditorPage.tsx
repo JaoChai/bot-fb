@@ -853,7 +853,10 @@ export function FlowEditorPage() {
                   <Switch
                     id="agentic_second_ai"
                     checked={agenticSecondAIEnabled}
-                    onCheckedChange={setAgenticSecondAIEnabled}
+                    onCheckedChange={(checked) => {
+                      setAgenticSecondAIEnabled(checked);
+                      setHasChanges(true);
+                    }}
                   />
                   <div className="flex-1">
                     <Label htmlFor="agentic_second_ai" className="font-medium">

@@ -573,6 +573,12 @@ class StreamController extends Controller
         string $userMessage,
         ?string $apiKey
     ): string {
+        // Check if client disconnected before starting
+        if (connection_aborted()) {
+            Log::info('SecondAI: Client disconnected before starting');
+            return $originalResponse;
+        }
+
         // Skip if Second AI is not enabled or response is empty
         if (!$flow->second_ai_enabled || empty($originalResponse)) {
             return $originalResponse;
@@ -604,61 +610,58 @@ class StreamController extends Controller
             'model' => $flow->second_ai_model ?? 'openai/gpt-4o-mini',
         ]);
 
-        try {
-            // Call SecondAIService
-            $result = $this->secondAI->process(
-                $originalResponse,
-                $flow,
-                $userMessage,
-                $apiKey
-            );
-
-            $timeMs = round((microtime(true) - $startTime) * 1000);
-
-            // Determine if checks passed (no modifications applied)
-            $passed = !($result['second_ai_applied'] ?? false);
-            $checksApplied = $result['second_ai']['checks_applied'] ?? [];
-            $modifications = $result['second_ai']['modifications'] ?? [];
-
-            // Send result event
-            $this->sendSSE('second_ai_result', [
-                'passed' => $passed,
-                'checks_applied' => $checksApplied,
-                'modifications' => $modifications,
-                'time_ms' => $timeMs,
-            ]);
-
-            // If content was modified, send the modified content event
-            $finalContent = $result['content'] ?? $originalResponse;
-            if (!$passed && $finalContent !== $originalResponse) {
-                $this->sendSSE('second_ai_modified', [
-                    'content' => $finalContent,
-                    'original_length' => strlen($originalResponse),
-                    'modified_length' => strlen($finalContent),
+        // Use rescue() for graceful timeout handling
+        $result = rescue(
+            function () use ($originalResponse, $flow, $userMessage, $apiKey) {
+                return $this->secondAI->process(
+                    $originalResponse,
+                    $flow,
+                    $userMessage,
+                    $apiKey
+                );
+            },
+            function (\Throwable $e) use ($originalResponse, $flow) {
+                Log::warning('SecondAI: Process failed or timed out', [
+                    'flow_id' => $flow->id,
+                    'error' => $e->getMessage(),
                 ]);
-            }
+                return [
+                    'content' => $originalResponse,
+                    'second_ai_applied' => false,
+                    'second_ai' => ['error' => 'timeout_or_error'],
+                ];
+            },
+            report: false
+        );
 
-            return $finalContent;
+        $timeMs = round((microtime(true) - $startTime) * 1000);
 
-        } catch (\Exception $e) {
-            Log::warning('Second AI failed in StreamController', [
-                'flow_id' => $flow->id,
-                'error' => $e->getMessage(),
+        // Determine if checks passed (no modifications applied)
+        $passed = !($result['second_ai_applied'] ?? false);
+        $checksApplied = $result['second_ai']['checks_applied'] ?? [];
+        $modifications = $result['second_ai']['modifications'] ?? [];
+        $error = $result['second_ai']['error'] ?? null;
+
+        // Send result event (always sent, success or failure)
+        $this->sendSSE('second_ai_result', [
+            'passed' => $passed,
+            'checks_applied' => $checksApplied,
+            'modifications' => $modifications,
+            'time_ms' => $timeMs,
+            ...($error ? ['error' => $error] : []),
+        ]);
+
+        // If content was modified, send the modified content event
+        $finalContent = $result['content'] ?? $originalResponse;
+        if (!$passed && $finalContent !== $originalResponse && empty($error)) {
+            $this->sendSSE('second_ai_modified', [
+                'content' => $finalContent,
+                'original_length' => strlen($originalResponse),
+                'modified_length' => strlen($finalContent),
             ]);
-
-            // Send error event but don't fail the request
-            $timeMs = round((microtime(true) - $startTime) * 1000);
-            $this->sendSSE('second_ai_result', [
-                'passed' => true, // Treat as passed since we're falling back
-                'checks_applied' => [],
-                'modifications' => [],
-                'error' => $e->getMessage(),
-                'time_ms' => $timeMs,
-            ]);
-
-            // Graceful fallback - return original response
-            return $originalResponse;
         }
+
+        return $finalContent;
     }
 
     // =====================
