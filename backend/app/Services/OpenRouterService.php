@@ -41,6 +41,7 @@ class OpenRouterService
      * @param bool $useFallback Whether to try fallback model on failure
      * @param string|null $apiKeyOverride Override API key (from user settings)
      * @param string|null $fallbackModelOverride Override fallback model (from bot settings)
+     * @param int|null $timeout Request timeout in seconds (null uses default)
      */
     public function chat(
         array $messages,
@@ -49,16 +50,18 @@ class OpenRouterService
         ?int $maxTokens = null,
         bool $useFallback = true,
         ?string $apiKeyOverride = null,
-        ?string $fallbackModelOverride = null
+        ?string $fallbackModelOverride = null,
+        ?int $timeout = null
     ): array {
         $model = $model ?? $this->defaultModel;
         $temperature = $temperature ?? 0.7;
         $maxTokens = $maxTokens ?? $this->maxTokens;
         $apiKey = $apiKeyOverride ?? $this->apiKey;
         $fallbackModel = $fallbackModelOverride ?? $this->fallbackModel;
+        $requestTimeout = $timeout ?? $this->timeout;
 
         try {
-            $response = $this->client($apiKey)->post('/chat/completions', [
+            $response = $this->client($apiKey, $requestTimeout)->post('/chat/completions', [
                 'model' => $model,
                 'messages' => $messages,
                 'temperature' => $temperature,
@@ -76,7 +79,7 @@ class OpenRouterService
 
                 if ($useFallback && $model !== $fallbackModel) {
                     Log::info('Attempting fallback model', ['fallback' => $fallbackModel]);
-                    return $this->chat($messages, $fallbackModel, $temperature, $maxTokens, false, $apiKeyOverride, null);
+                    return $this->chat($messages, $fallbackModel, $temperature, $maxTokens, false, $apiKeyOverride, null, $timeout);
                 }
 
                 throw new OpenRouterException("OpenRouter API error: {$error}", $response->status());
@@ -105,7 +108,7 @@ class OpenRouterService
 
             if ($useFallback && $model !== $fallbackModel) {
                 Log::info('Attempting fallback model after exception', ['fallback' => $fallbackModel]);
-                return $this->chat($messages, $fallbackModel, $temperature, $maxTokens, false, $apiKeyOverride, null);
+                return $this->chat($messages, $fallbackModel, $temperature, $maxTokens, false, $apiKeyOverride, null, $timeout);
             }
 
             throw new OpenRouterException("OpenRouter request failed: {$e->getMessage()}", 500, $e);
@@ -508,10 +511,12 @@ class OpenRouterService
      * Get configured HTTP client.
      *
      * @param string|null $apiKey API key (uses default from config if not provided)
+     * @param int|null $timeout Request timeout in seconds (null uses default)
      */
-    protected function client(?string $apiKey = null): PendingRequest
+    protected function client(?string $apiKey = null, ?int $timeout = null): PendingRequest
     {
         $key = $apiKey ?? $this->apiKey;
+        $requestTimeout = $timeout ?? $this->timeout;
 
         return Http::baseUrl($this->baseUrl)
             ->withHeaders([
@@ -519,7 +524,7 @@ class OpenRouterService
                 'HTTP-Referer' => $this->siteUrl,
                 'X-Title' => $this->siteName,
             ])
-            ->timeout($this->timeout)
+            ->timeout($requestTimeout)
             ->acceptJson();
     }
 }
