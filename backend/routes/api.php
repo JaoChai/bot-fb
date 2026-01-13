@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\AgentApprovalController;
 use App\Http\Controllers\Api\ImprovementController;
 use App\Http\Controllers\Api\LeadRecoveryController;
 use App\Http\Controllers\Api\QuickReplyController;
+use App\Http\Controllers\QAInspectorController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -133,6 +134,37 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::get('/{bot}/settings', [BotSettingController::class, 'show'])->name('bots.settings.show');
         Route::put('/{bot}/settings', [BotSettingController::class, 'update'])->name('bots.settings.update');
         Route::patch('/{bot}/settings', [BotSettingController::class, 'update'])->name('bots.settings.patch');
+
+        // QA Inspector routes with rate limiting
+        // GET endpoints: 60 req/min
+        Route::middleware(['throttle:qa-inspector-read'])->group(function () {
+            Route::get('/{bot}/qa-inspector/settings', [QAInspectorController::class, 'getSettings'])
+                ->name('bots.qa-inspector.settings');
+            Route::get('/{bot}/qa-inspector/logs', [QAInspectorController::class, 'getLogs'])
+                ->name('bots.qa-inspector.logs');
+            Route::get('/{bot}/qa-inspector/logs/{log}', [QAInspectorController::class, 'getLog'])
+                ->name('bots.qa-inspector.logs.show');
+            Route::get('/{bot}/qa-inspector/stats', [QAInspectorController::class, 'getStats'])
+                ->name('bots.qa-inspector.stats');
+            Route::get('/{bot}/qa-inspector/reports', [QAInspectorController::class, 'getReports'])
+                ->name('bots.qa-inspector.reports');
+            Route::get('/{bot}/qa-inspector/reports/{report}', [QAInspectorController::class, 'getReport'])
+                ->name('bots.qa-inspector.reports.show');
+        });
+
+        // PUT/POST endpoints: 30 req/min
+        Route::middleware(['throttle:qa-inspector-write'])->group(function () {
+            Route::put('/{bot}/qa-inspector/settings', [QAInspectorController::class, 'updateSettings'])
+                ->name('bots.qa-inspector.settings.update');
+            Route::post('/{bot}/qa-inspector/reports/{report}/suggestions/{index}/apply', [QAInspectorController::class, 'applySuggestion'])
+                ->name('bots.qa-inspector.suggestions.apply')
+                ->where('index', '[0-9]+');
+        });
+
+        // Report generation: 5 req/hour per bot
+        Route::post('/{bot}/qa-inspector/reports/generate', [QAInspectorController::class, 'generateReport'])
+            ->middleware(['throttle:qa-report-generate'])
+            ->name('bots.qa-inspector.reports.generate');
 
         // Bot admin management routes (Owner only)
         Route::get('/{bot}/admins', [AdminController::class, 'index'])->name('bots.admins.index');
