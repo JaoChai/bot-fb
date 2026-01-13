@@ -10,8 +10,9 @@ import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Loader2, Clock, Plus, Trash2, Copy, MessageSquare, Sparkles } from 'lucide-react';
+import { ArrowLeft, Loader2, Clock, Plus, Trash2, Copy, MessageSquare, Sparkles, Shield } from 'lucide-react';
 import { apiGet, apiPut } from '@/lib/api';
+import { QAInspectorToggle } from '@/components/qa-inspector';
 
 // Response Hours types
 interface TimeSlot {
@@ -983,6 +984,22 @@ export function BotSettingsPage() {
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* QA Inspector */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                Quality Assurance
+              </CardTitle>
+              <p className="text-sm text-muted-foreground mt-2">
+                ตรวจสอบคุณภาพการตอบของบอทโดยอัตโนมัติด้วย AI
+              </p>
+            </CardHeader>
+            <CardContent>
+              {botId && <QAInspectorToggle botId={Number(botId)} />}
             </CardContent>
           </Card>
 

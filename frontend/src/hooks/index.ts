@@ -108,3 +108,16 @@ export {
   useReorderQuickReplies,
   useQuickReplyOperations,
 } from './useQuickReplies';
+
+export {
+  qaInspectorKeys,
+  useQAInspectorSettings,
+  useUpdateQAInspectorSettings,
+  useToggleQAInspector,
+  useQAEvaluationLogs,
+  useQAEvaluationLog,
+  useQAWeeklyReports,
+  useQAWeeklyReport,
+  useQAInspectorDashboard,
+  useQAInspectorOperations,
+} from './useQAInspector';
