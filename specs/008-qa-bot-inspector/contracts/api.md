@@ -2,7 +2,10 @@
 
 **Feature**: 008-qa-bot-inspector
 **Date**: 2026-01-13
-**Base URL**: `/api/v1`
+**Base URL**: `/api`
+
+> **Note**: API versioning (e.g., `/api/v1`) is planned for future implementation.
+> Currently all endpoints use `/api` without version prefix.
 
 ## Authentication
 
@@ -390,34 +393,111 @@ Manually trigger report generation.
 
 Apply a prompt suggestion to the flow.
 
+**Path Parameters**:
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| bot | integer | Bot ID |
+| report | integer | Weekly report ID |
+| index | integer | Zero-based suggestion index (must be >= 0 and < total suggestions) |
+
 **Request**:
 ```json
 {
   "flow_id": 1,
-  "confirm": true
+  "force": false
 }
 ```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| flow_id | integer | Yes | Flow ID to apply suggestion to (must belong to same bot) |
+| force | boolean | No | Force apply even if prompt was modified (appends instead of replaces) |
 
 **Response** `200 OK`:
 ```json
 {
   "data": {
-    "message": "Prompt suggestion applied successfully",
+    "success": true,
+    "message": "Suggestion applied successfully",
     "flow_id": 1,
-    "section_updated": "STEP 2 CONFIRM",
-    "characters_changed": 245
+    "updated_at": "2026-01-13T15:30:00Z",
+    "force_applied": false
   }
 }
 ```
 
 **Conflict** `409 Conflict`:
+
+Returned when the original "before" text cannot be found in the current prompt (prompt was modified since report generation).
+
 ```json
 {
-  "message": "Flow prompt has been modified since report generation. Please review manually.",
-  "current_section": "...",
-  "expected_section": "..."
+  "data": {
+    "conflict": true,
+    "message": "The expected text was not found in the current prompt. The prompt may have been modified since the report was generated.",
+    "expected": "Original text that was expected...",
+    "actual": "Similar section found in current prompt (if any)...",
+    "can_force": true
+  }
 }
 ```
+
+When `can_force` is `true`, you can retry the request with `"force": true` to append the improvement at the end of the prompt instead of replacing.
+
+**Validation Error** `422 Unprocessable Entity`:
+
+Returned for various validation failures (invalid index, already applied, etc.)
+
+```json
+{
+  "data": {
+    "success": false,
+    "message": "Invalid suggestion index: 5. Valid range: 0-2",
+    "error_code": "invalid_index"
+  }
+}
+```
+
+**Error Codes**:
+| Code | Description |
+|------|-------------|
+| `report_not_completed` | Report generation is not complete |
+| `invalid_index` | Suggestion index is out of range |
+| `no_suggestions` | Report has no prompt suggestions |
+| `already_applied` | Suggestion has already been applied |
+| `empty_before_after` | Suggestion is missing before/after text |
+| `flow_bot_mismatch` | Flow does not belong to the same bot |
+| `prompt_modified` | Prompt was modified (returns 409 conflict) |
+
+---
+
+## Response Format Notes
+
+### Data Wrapper Convention
+
+Most successful responses wrap data in a `data` key:
+```json
+{
+  "data": { ... }
+}
+```
+
+Paginated responses include `meta` for pagination info:
+```json
+{
+  "data": [ ... ],
+  "meta": {
+    "current_page": 1,
+    "last_page": 10,
+    "per_page": 20,
+    "total": 195
+  }
+}
+```
+
+### Laravel API Resource Responses
+
+Endpoints using Laravel API Resources return data directly without explicit wrapper in some cases (Laravel handles the wrapping automatically). The response structure is consistent across all endpoints.
 
 ---
 
@@ -445,11 +525,24 @@ Apply a prompt suggestion to the flow.
 ```
 
 ### 422 Validation Error
+
+**Laravel FormRequest validation errors:**
 ```json
 {
   "message": "The given data was invalid.",
   "errors": {
     "field_name": ["Error message"]
+  }
+}
+```
+
+**Application validation errors (e.g., suggestion apply):**
+```json
+{
+  "data": {
+    "success": false,
+    "message": "Error description",
+    "error_code": "error_code_here"
   }
 }
 ```

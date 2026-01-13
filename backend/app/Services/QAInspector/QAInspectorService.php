@@ -7,6 +7,7 @@ use App\Models\QAEvaluationLog;
 use App\Services\Evaluation\LLMJudgeService;
 use App\Services\OpenRouterService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class QAInspectorService
@@ -387,101 +388,112 @@ class QAInspectorService
      */
     public function calculateDashboardStats(Bot $bot, string $period = '7d'): array
     {
-        $days = match ($period) {
-            '1d' => 1,
-            '7d' => 7,
-            '30d' => 30,
-            default => 7,
-        };
+        $cacheKey = "qa:stats:{$bot->id}:{$period}";
+        $ttl = $period === '30d' ? 900 : 300; // 15 min for 30d, 5 min for others
 
-        $startDate = Carbon::now()->subDays($days)->startOfDay();
-        $endDate = Carbon::now()->endOfDay();
+        return Cache::remember($cacheKey, $ttl, function () use ($bot, $period) {
+            $days = match ($period) {
+                '1d' => 1,
+                '7d' => 7,
+                '30d' => 30,
+                default => 7,
+            };
 
-        // Base query
-        $baseQuery = QAEvaluationLog::byBot($bot->id)
-            ->byDateRange($startDate, $endDate);
+            $startDate = Carbon::now()->subDays($days)->startOfDay();
+            $endDate = Carbon::now()->endOfDay();
 
-        // Summary stats
-        $summary = (clone $baseQuery)
-            ->selectRaw('
-                COUNT(*) as total_evaluated,
-                SUM(CASE WHEN is_flagged = true THEN 1 ELSE 0 END) as total_flagged,
-                AVG(overall_score) as average_score
-            ')
-            ->first();
+            // Base query
+            $baseQuery = QAEvaluationLog::byBot($bot->id)
+                ->byDateRange($startDate, $endDate);
 
-        $totalEvaluated = (int) ($summary->total_evaluated ?? 0);
-        $totalFlagged = (int) ($summary->total_flagged ?? 0);
-        $averageScore = (float) ($summary->average_score ?? 0);
-        $errorRate = $totalEvaluated > 0
-            ? round(($totalFlagged / $totalEvaluated) * 100, 2)
-            : 0;
+            // Combined summary stats and metric averages (single query instead of two)
+            $summary = (clone $baseQuery)
+                ->selectRaw('
+                    COUNT(*) as total_evaluated,
+                    SUM(CASE WHEN is_flagged = true THEN 1 ELSE 0 END) as total_flagged,
+                    AVG(overall_score) as average_score,
+                    AVG(answer_relevancy) as answer_relevancy,
+                    AVG(faithfulness) as faithfulness,
+                    AVG(role_adherence) as role_adherence,
+                    AVG(context_precision) as context_precision,
+                    AVG(task_completion) as task_completion
+                ')
+                ->first();
 
-        // Score trend (daily averages)
-        $scoreTrend = (clone $baseQuery)
-            ->selectRaw('DATE(created_at) as date, AVG(overall_score) as average_score')
-            ->groupBy(DB::raw('DATE(created_at)'))
-            ->orderBy('date')
-            ->get()
-            ->map(fn ($row) => [
-                'date' => $row->date,
-                'average_score' => round((float) $row->average_score * 100, 1),
-            ])
-            ->toArray();
+            $totalEvaluated = (int) ($summary->total_evaluated ?? 0);
+            $totalFlagged = (int) ($summary->total_flagged ?? 0);
+            $averageScore = (float) ($summary->average_score ?? 0);
+            $errorRate = $totalEvaluated > 0
+                ? round(($totalFlagged / $totalEvaluated) * 100, 2)
+                : 0;
 
-        // Issue breakdown
-        $issueBreakdown = (clone $baseQuery)
-            ->where('is_flagged', true)
-            ->whereNotNull('issue_type')
-            ->selectRaw('issue_type as type, COUNT(*) as count')
-            ->groupBy('issue_type')
-            ->orderBy('count', 'desc')
-            ->get()
-            ->map(function ($row) use ($totalFlagged) {
-                return [
-                    'type' => $row->type,
-                    'count' => (int) $row->count,
-                    'percentage' => $totalFlagged > 0
-                        ? round(($row->count / $totalFlagged) * 100, 1)
-                        : 0,
-                ];
-            })
-            ->toArray();
+            // Score trend (daily averages)
+            $scoreTrend = (clone $baseQuery)
+                ->selectRaw('DATE(created_at) as date, AVG(overall_score) as average_score')
+                ->groupBy(DB::raw('DATE(created_at)'))
+                ->orderBy('date')
+                ->get()
+                ->map(fn ($row) => [
+                    'date' => $row->date,
+                    'average_score' => round((float) $row->average_score * 100, 1),
+                ])
+                ->toArray();
 
-        // Metric averages
-        $metricAverages = (clone $baseQuery)
-            ->selectRaw('
-                AVG(answer_relevancy) as answer_relevancy,
-                AVG(faithfulness) as faithfulness,
-                AVG(role_adherence) as role_adherence,
-                AVG(context_precision) as context_precision,
-                AVG(task_completion) as task_completion
-            ')
-            ->first();
+            // Issue breakdown
+            $issueBreakdown = (clone $baseQuery)
+                ->where('is_flagged', true)
+                ->whereNotNull('issue_type')
+                ->selectRaw('issue_type as type, COUNT(*) as count')
+                ->groupBy('issue_type')
+                ->orderBy('count', 'desc')
+                ->get()
+                ->map(function ($row) use ($totalFlagged) {
+                    return [
+                        'type' => $row->type,
+                        'count' => (int) $row->count,
+                        'percentage' => $totalFlagged > 0
+                            ? round(($row->count / $totalFlagged) * 100, 1)
+                            : 0,
+                    ];
+                })
+                ->toArray();
 
-        // Cost tracking
-        $costThisPeriod = (clone $baseQuery)
-            ->whereNotNull('model_metadata')
-            ->get()
-            ->sum(fn ($log) => $log->model_metadata['cost_estimate'] ?? 0);
+            // Cost tracking using PostgreSQL JSON aggregation (memory efficient)
+            $costThisPeriod = (float) ((clone $baseQuery)
+                ->whereNotNull('model_metadata')
+                ->selectRaw("COALESCE(SUM((model_metadata->>'cost_estimate')::numeric), 0) as total_cost")
+                ->value('total_cost') ?? 0);
 
-        return [
-            'summary' => [
-                'total_evaluated' => $totalEvaluated,
-                'total_flagged' => $totalFlagged,
-                'error_rate' => $errorRate,
-                'average_score' => round($averageScore * 100, 1),
-            ],
-            'score_trend' => $scoreTrend,
-            'issue_breakdown' => $issueBreakdown,
-            'metric_averages' => [
-                'answer_relevancy' => round((float) ($metricAverages->answer_relevancy ?? 0), 2),
-                'faithfulness' => round((float) ($metricAverages->faithfulness ?? 0), 2),
-                'role_adherence' => round((float) ($metricAverages->role_adherence ?? 0), 2),
-                'context_precision' => round((float) ($metricAverages->context_precision ?? 0), 2),
-                'task_completion' => round((float) ($metricAverages->task_completion ?? 0), 2),
-            ],
-            'cost_this_period' => round($costThisPeriod, 2),
-        ];
+            return [
+                'summary' => [
+                    'total_evaluated' => $totalEvaluated,
+                    'total_flagged' => $totalFlagged,
+                    'error_rate' => $errorRate,
+                    'average_score' => round($averageScore * 100, 1),
+                ],
+                'score_trend' => $scoreTrend,
+                'issue_breakdown' => $issueBreakdown,
+                'metric_averages' => [
+                    'answer_relevancy' => round((float) ($summary->answer_relevancy ?? 0), 2),
+                    'faithfulness' => round((float) ($summary->faithfulness ?? 0), 2),
+                    'role_adherence' => round((float) ($summary->role_adherence ?? 0), 2),
+                    'context_precision' => round((float) ($summary->context_precision ?? 0), 2),
+                    'task_completion' => round((float) ($summary->task_completion ?? 0), 2),
+                ],
+                'cost_this_period' => round($costThisPeriod, 2),
+            ];
+        });
+    }
+
+    /**
+     * Invalidate dashboard stats cache for a bot
+     *
+     * Call this when a new evaluation is created to ensure fresh data.
+     */
+    public function invalidateStatsCache(Bot $bot): void
+    {
+        Cache::forget("qa:stats:{$bot->id}:1d");
+        Cache::forget("qa:stats:{$bot->id}:7d");
+        Cache::forget("qa:stats:{$bot->id}:30d");
     }
 }

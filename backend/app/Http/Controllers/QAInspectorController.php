@@ -62,6 +62,16 @@ class QAInspectorController extends Controller
     {
         $this->authorize('view', $bot);
 
+        $request->validate([
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
+            'is_flagged' => ['nullable', 'boolean'],
+            'issue_type' => ['nullable', 'string', 'max:50'],
+            'min_score' => ['nullable', 'numeric', 'between:0,1'],
+            'max_score' => ['nullable', 'numeric', 'between:0,1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
         $query = QAEvaluationLog::byBot($bot->id)
             ->with(['conversation', 'message', 'flow'])
             ->orderBy('created_at', 'desc');
@@ -163,6 +173,10 @@ class QAInspectorController extends Controller
     public function generateReport(Request $request, Bot $bot): JsonResponse
     {
         $this->authorize('update', $bot);
+
+        $request->validate([
+            'week_start' => ['nullable', 'date_format:Y-m-d'],
+        ]);
 
         $weekStart = $request->filled('week_start')
             ? Carbon::parse($request->input('week_start'))->startOfWeek()

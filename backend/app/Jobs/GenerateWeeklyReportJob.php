@@ -7,6 +7,7 @@ use App\Models\QAWeeklyReport;
 use App\Services\QAInspector\QAReportNotificationService;
 use App\Services\QAInspector\WeeklyReportGenerator;
 use Carbon\Carbon;
+use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\Log;
 
 class GenerateWeeklyReportJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 2;
     public int $timeout = 300; // 5 minutes

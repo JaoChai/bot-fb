@@ -41,12 +41,24 @@ class WeeklyReportGenerator
         );
 
         try {
-            // Get all evaluation logs for the week
-            $logs = QAEvaluationLog::byBot($bot->id)
+            // Use SQL aggregation for summary stats (memory efficient)
+            $summary = QAEvaluationLog::byBot($bot->id)
                 ->byDateRange($weekStart, $weekEnd)
-                ->get();
+                ->selectRaw('
+                    COUNT(*) as total_evaluated,
+                    SUM(CASE WHEN is_flagged = true THEN 1 ELSE 0 END) as total_flagged,
+                    AVG(overall_score) as average_score,
+                    AVG(answer_relevancy) as avg_relevancy,
+                    AVG(faithfulness) as avg_faithfulness,
+                    AVG(role_adherence) as avg_role_adherence,
+                    AVG(context_precision) as avg_context_precision,
+                    AVG(task_completion) as avg_task_completion
+                ')
+                ->first();
 
-            if ($logs->isEmpty()) {
+            $totalEvaluated = (int) ($summary->total_evaluated ?? 0);
+
+            if ($totalEvaluated === 0) {
                 $report->update([
                     'status' => QAWeeklyReport::STATUS_COMPLETED,
                     'performance_summary' => ['message' => 'No data available for this week'],
@@ -67,8 +79,16 @@ class WeeklyReportGenerator
                 return $report;
             }
 
-            // Calculate performance summary
-            $performanceSummary = $this->calculatePerformanceSummary($logs);
+            $totalFlagged = (int) ($summary->total_flagged ?? 0);
+            $averageScore = round((float) ($summary->average_score ?? 0) * 100, 2);
+
+            // Calculate performance summary using aggregated data
+            $performanceSummary = $this->calculatePerformanceSummaryFromAggregates(
+                $bot->id,
+                $weekStart,
+                $weekEnd,
+                $summary
+            );
 
             // Get previous week's average for trend
             $previousReport = QAWeeklyReport::byBot($bot->id)
@@ -76,17 +96,14 @@ class WeeklyReportGenerator
                 ->completed()
                 ->first();
 
-            // Identify top issues
-            $topIssues = $this->identifyTopIssues($logs);
+            // Identify top issues using cursor for memory efficiency
+            $topIssues = $this->identifyTopIssuesEfficient($bot->id, $weekStart, $weekEnd, $totalFlagged);
 
             // Generate prompt suggestions using AI
             $promptSuggestions = $this->generatePromptSuggestions($bot, $topIssues);
 
             // Calculate generation cost
-            $generationCost = $this->estimateGenerationCost($logs->count(), count($topIssues));
-
-            $totalFlagged = $logs->where('is_flagged', true)->count();
-            $averageScore = round($logs->avg('overall_score') * 100, 2);
+            $generationCost = $this->estimateGenerationCost($totalEvaluated, count($topIssues));
 
             // Update report
             $report->update([
@@ -94,7 +111,7 @@ class WeeklyReportGenerator
                 'performance_summary' => $performanceSummary,
                 'top_issues' => $topIssues,
                 'prompt_suggestions' => $promptSuggestions,
-                'total_conversations' => $logs->count(),
+                'total_conversations' => $totalEvaluated,
                 'total_flagged' => $totalFlagged,
                 'average_score' => $averageScore,
                 'previous_average_score' => $previousReport?->average_score,
@@ -108,7 +125,7 @@ class WeeklyReportGenerator
                 'bot_id' => $bot->id,
                 'report_id' => $report->id,
                 'week_start' => $weekStart->toDateString(),
-                'total_evaluated' => $logs->count(),
+                'total_evaluated' => $totalEvaluated,
                 'total_flagged' => $totalFlagged,
                 'average_score' => $averageScore,
                 'top_issues_count' => count($topIssues),
@@ -139,19 +156,29 @@ class WeeklyReportGenerator
         }
     }
 
-    private function calculatePerformanceSummary($logs): array
-    {
-        $total = $logs->count();
-        $flagged = $logs->where('is_flagged', true)->count();
-        $avgScore = $logs->avg('overall_score');
+    /**
+     * Calculate performance summary using pre-aggregated data (memory efficient)
+     */
+    private function calculatePerformanceSummaryFromAggregates(
+        int $botId,
+        Carbon $weekStart,
+        Carbon $weekEnd,
+        object $summary
+    ): array {
+        $total = (int) ($summary->total_evaluated ?? 0);
+        $flagged = (int) ($summary->total_flagged ?? 0);
+        $avgScore = (float) ($summary->average_score ?? 0);
 
-        // Score distribution
-        $distribution = [
-            'excellent' => $logs->filter(fn ($l) => $l->overall_score >= 0.9)->count(),
-            'good' => $logs->filter(fn ($l) => $l->overall_score >= 0.7 && $l->overall_score < 0.9)->count(),
-            'needs_improvement' => $logs->filter(fn ($l) => $l->overall_score >= 0.5 && $l->overall_score < 0.7)->count(),
-            'poor' => $logs->filter(fn ($l) => $l->overall_score < 0.5)->count(),
-        ];
+        // Score distribution using SQL aggregation
+        $distribution = QAEvaluationLog::byBot($botId)
+            ->byDateRange($weekStart, $weekEnd)
+            ->selectRaw("
+                SUM(CASE WHEN overall_score >= 0.9 THEN 1 ELSE 0 END) as excellent,
+                SUM(CASE WHEN overall_score >= 0.7 AND overall_score < 0.9 THEN 1 ELSE 0 END) as good,
+                SUM(CASE WHEN overall_score >= 0.5 AND overall_score < 0.7 THEN 1 ELSE 0 END) as needs_improvement,
+                SUM(CASE WHEN overall_score < 0.5 THEN 1 ELSE 0 END) as poor
+            ")
+            ->first();
 
         return [
             'total_conversations' => $total,
@@ -160,17 +187,112 @@ class WeeklyReportGenerator
             'error_rate' => $total > 0 ? round(($flagged / $total) * 100, 2) : 0,
             'average_score' => round($avgScore * 100, 1),
             'score_trend' => null, // Will be calculated from previous
-            'score_distribution' => $distribution,
+            'score_distribution' => [
+                'excellent' => (int) ($distribution->excellent ?? 0),
+                'good' => (int) ($distribution->good ?? 0),
+                'needs_improvement' => (int) ($distribution->needs_improvement ?? 0),
+                'poor' => (int) ($distribution->poor ?? 0),
+            ],
             'metric_averages' => [
-                'answer_relevancy' => round($logs->avg('answer_relevancy') ?? 0, 2),
-                'faithfulness' => round($logs->avg('faithfulness') ?? 0, 2),
-                'role_adherence' => round($logs->avg('role_adherence') ?? 0, 2),
-                'context_precision' => round($logs->avg('context_precision') ?? 0, 2),
-                'task_completion' => round($logs->avg('task_completion') ?? 0, 2),
+                'answer_relevancy' => round((float) ($summary->avg_relevancy ?? 0), 2),
+                'faithfulness' => round((float) ($summary->avg_faithfulness ?? 0), 2),
+                'role_adherence' => round((float) ($summary->avg_role_adherence ?? 0), 2),
+                'context_precision' => round((float) ($summary->avg_context_precision ?? 0), 2),
+                'task_completion' => round((float) ($summary->avg_task_completion ?? 0), 2),
             ],
         ];
     }
 
+    /**
+     * Identify top issues using SQL aggregation and cursor (memory efficient)
+     */
+    private function identifyTopIssuesEfficient(
+        int $botId,
+        Carbon $weekStart,
+        Carbon $weekEnd,
+        int $totalFlagged
+    ): array {
+        if ($totalFlagged === 0) {
+            return [];
+        }
+
+        // Get issue type counts via SQL aggregation
+        $issueTypeCounts = QAEvaluationLog::byBot($botId)
+            ->byDateRange($weekStart, $weekEnd)
+            ->flagged()
+            ->whereNotNull('issue_type')
+            ->selectRaw('issue_type, COUNT(*) as count')
+            ->groupBy('issue_type')
+            ->orderByDesc('count')
+            ->limit(5)
+            ->get();
+
+        $topIssues = [];
+        $rank = 1;
+
+        foreach ($issueTypeCounts as $issueData) {
+            $type = $issueData->issue_type;
+            $count = (int) $issueData->count;
+
+            // Get 3 example conversations for this issue type (limited query)
+            $examples = QAEvaluationLog::byBot($botId)
+                ->byDateRange($weekStart, $weekEnd)
+                ->flagged()
+                ->where('issue_type', $type)
+                ->select(['id', 'user_question', 'bot_response', 'issue_details'])
+                ->limit(3)
+                ->get()
+                ->map(fn ($log) => [
+                    'evaluation_log_id' => $log->id,
+                    'user_question' => Str::limit($log->user_question, 100),
+                    'bot_response' => Str::limit($log->bot_response, 150),
+                ])
+                ->toArray();
+
+            // Get common prompt section using a single query
+            $sampleLogs = QAEvaluationLog::byBot($botId)
+                ->byDateRange($weekStart, $weekEnd)
+                ->flagged()
+                ->where('issue_type', $type)
+                ->whereNotNull('issue_details')
+                ->select(['issue_details'])
+                ->limit(10)
+                ->get();
+
+            $promptSections = $sampleLogs
+                ->pluck('issue_details.prompt_section_identified')
+                ->filter()
+                ->countBy();
+            $commonSection = $promptSections->sortDesc()->keys()->first() ?? 'Unknown';
+
+            // Get common root cause
+            $commonRootCause = $sampleLogs
+                ->pluck('issue_details.root_cause')
+                ->filter()
+                ->first() ?? 'Analysis pending';
+
+            // Get pattern from sample questions
+            $sampleQuestions = $sampleLogs->pluck('issue_details')->filter();
+            $pattern = $this->identifyPatternFromSamples($sampleQuestions);
+
+            $topIssues[] = [
+                'rank' => $rank++,
+                'issue_type' => $type ?? 'other',
+                'count' => $count,
+                'percentage' => round(($count / $totalFlagged) * 100, 1),
+                'pattern' => $pattern,
+                'prompt_section' => $commonSection,
+                'example_conversations' => $examples,
+                'root_cause' => $commonRootCause,
+            ];
+        }
+
+        return $topIssues;
+    }
+
+    /**
+     * @deprecated Use identifyTopIssuesEfficient instead
+     */
     private function identifyTopIssues($logs): array
     {
         $flaggedLogs = $logs->where('is_flagged', true);
@@ -217,6 +339,38 @@ class WeeklyReportGenerator
     {
         // Simple pattern detection based on common words in questions
         $questions = $logs->pluck('user_question')->join(' ');
+
+        // Common Thai patterns
+        $patterns = [
+            'confirm' => 'User types "confirm" without answering previous question',
+            'price' => 'Questions about product pricing',
+            'upsell' => 'Related to upsell offers',
+            'product' => 'Questions about product information',
+        ];
+
+        foreach ($patterns as $keyword => $pattern) {
+            if (str_contains(strtolower($questions), strtolower($keyword))) {
+                return $pattern;
+            }
+        }
+
+        return 'Pattern requires further analysis';
+    }
+
+    /**
+     * Identify pattern from sample issue details (memory efficient version)
+     */
+    private function identifyPatternFromSamples($samples): string
+    {
+        // Extract user questions from issue_details if available
+        $questions = $samples
+            ->pluck('user_question')
+            ->filter()
+            ->join(' ');
+
+        if (empty($questions)) {
+            return 'Pattern requires further analysis';
+        }
 
         // Common Thai patterns
         $patterns = [
