@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams } from 'react-router';
+import { useState, useEffect } from 'react';
+import { useParams, useSearchParams } from 'react-router';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { QADashboard } from '@/components/qa-inspector/QADashboard';
 import { QAEvaluationLogList } from '@/components/qa-inspector/QAEvaluationLogList';
@@ -9,10 +9,35 @@ import { QAWeeklyReportView } from '@/components/qa-inspector/QAWeeklyReportView
 import { QAInspectorSettings } from '@/components/qa-inspector/QAInspectorSettings';
 import { BarChart3, List, Settings, FileText } from 'lucide-react';
 
+const VALID_TABS = ['dashboard', 'logs', 'reports', 'settings'] as const;
+type TabValue = typeof VALID_TABS[number];
+
 export function QAInspectorPage() {
   const { botId } = useParams<{ botId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
+
+  // Get tab from URL or default to 'dashboard'
+  const tabParam = searchParams.get('tab');
+  const defaultTab: TabValue = VALID_TABS.includes(tabParam as TabValue)
+    ? (tabParam as TabValue)
+    : 'dashboard';
+  const [activeTab, setActiveTab] = useState<TabValue>(defaultTab);
+
+  // Sync tab with URL when it changes
+  useEffect(() => {
+    const currentTab = searchParams.get('tab');
+    if (currentTab !== activeTab) {
+      if (activeTab === 'dashboard') {
+        // Remove tab param for default value
+        searchParams.delete('tab');
+      } else {
+        searchParams.set('tab', activeTab);
+      }
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [activeTab, searchParams, setSearchParams]);
 
   const numericBotId = parseInt(botId || '0', 10);
 
@@ -57,7 +82,7 @@ export function QAInspectorPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="dashboard" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)} className="space-y-6">
         <TabsList>
           <TabsTrigger value="dashboard" className="gap-2">
             <BarChart3 className="h-4 w-4" />

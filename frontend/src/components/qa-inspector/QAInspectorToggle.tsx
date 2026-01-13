@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Loader2, CheckCircle2, XCircle, AlertCircle, Settings, ExternalLink } from 'lucide-react';
 import { useQAInspectorSettings, useToggleQAInspector } from '@/hooks/useQAInspector';
 import { cn } from '@/lib/utils';
 
@@ -103,6 +105,24 @@ export function QAInspectorToggle({
             ? 'QA Inspector is actively monitoring bot responses and creating evaluation logs.'
             : 'Enable to automatically evaluate bot response quality with AI-powered analysis.'}
         </p>
+      )}
+
+      {/* Link to full QA Inspector page when enabled */}
+      {localEnabled && (
+        <div className="pt-2 flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link to={`/bots/${botId}/qa-inspector`}>
+              <ExternalLink className="h-4 w-4 mr-2" />
+              View Dashboard
+            </Link>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
+            <Link to={`/bots/${botId}/qa-inspector?tab=settings`}>
+              <Settings className="h-4 w-4 mr-2" />
+              Configure Models
+            </Link>
+          </Button>
+        </div>
       )}
 
       {toggleMutation.isError && (
