@@ -57,6 +57,18 @@ class Bot extends Model
         'total_conversations',
         'total_messages',
         'last_active_at',
+        // QA Inspector settings
+        'qa_inspector_enabled',
+        'qa_realtime_model',
+        'qa_realtime_fallback_model',
+        'qa_analysis_model',
+        'qa_analysis_fallback_model',
+        'qa_report_model',
+        'qa_report_fallback_model',
+        'qa_score_threshold',
+        'qa_sampling_rate',
+        'qa_report_schedule',
+        'qa_notifications',
     ];
 
     protected $casts = [
@@ -80,6 +92,11 @@ class Bot extends Model
         // Confidence Cascade settings
         'use_confidence_cascade' => 'boolean',
         'cascade_confidence_threshold' => 'float',
+        // QA Inspector settings
+        'qa_inspector_enabled' => 'boolean',
+        'qa_score_threshold' => 'decimal:2',
+        'qa_sampling_rate' => 'integer',
+        'qa_notifications' => 'array',
     ];
 
     protected $hidden = [
@@ -139,5 +156,15 @@ class Bot extends Model
     public function adminAssignments(): HasMany
     {
         return $this->hasMany(AdminBotAssignment::class);
+    }
+
+    public function qaEvaluationLogs(): HasMany
+    {
+        return $this->hasMany(QAEvaluationLog::class);
+    }
+
+    public function qaWeeklyReports(): HasMany
+    {
+        return $this->hasMany(QAWeeklyReport::class);
     }
 }
