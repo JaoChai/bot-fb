@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPut, apiPost } from '@/lib/api';
 import { useBotChannel } from '@/hooks/useEcho';
