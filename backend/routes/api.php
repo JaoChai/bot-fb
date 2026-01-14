@@ -137,7 +137,7 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
 
         // QA Inspector routes with rate limiting
         // GET endpoints: 60 req/min
-        Route::middleware(['throttle:qa-inspector-read'])->group(function () {
+        Route::middleware(['throttle.qa-inspector-read'])->group(function () {
             Route::get('/{bot}/qa-inspector/settings', [QAInspectorController::class, 'getSettings'])
                 ->name('bots.qa-inspector.settings');
             Route::get('/{bot}/qa-inspector/logs', [QAInspectorController::class, 'getLogs'])
@@ -153,7 +153,7 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         });
 
         // PUT/POST endpoints: 30 req/min
-        Route::middleware(['throttle:qa-inspector-write'])->group(function () {
+        Route::middleware(['throttle.qa-inspector-write'])->group(function () {
             Route::put('/{bot}/qa-inspector/settings', [QAInspectorController::class, 'updateSettings'])
                 ->name('bots.qa-inspector.settings.update');
             Route::post('/{bot}/qa-inspector/reports/{report}/suggestions/{index}/apply', [QAInspectorController::class, 'applySuggestion'])
@@ -163,7 +163,7 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
 
         // Report generation: 5 req/hour per bot
         Route::post('/{bot}/qa-inspector/reports/generate', [QAInspectorController::class, 'generateReport'])
-            ->middleware(['throttle:qa-report-generate'])
+            ->middleware(['throttle.qa-report-generate'])
             ->name('bots.qa-inspector.reports.generate');
 
         // Bot admin management routes (Owner only)
