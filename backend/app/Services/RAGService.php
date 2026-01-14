@@ -49,6 +49,7 @@ class RAGService
         Bot $bot,
         string $userMessage,
         array $conversationHistory = [],
+        ?Conversation $conversation = null,
         ?Flow $flow = null,
         ?string $apiKeyOverride = null
     ): array {
@@ -111,15 +112,25 @@ class RAGService
             );
         }
 
-        // Step 5: Build enhanced system prompt with KB context and multiple bubbles
+        // Step 5: Extract memory notes (type='memory' only) from conversation
+        $memoryNotes = [];
+        if ($conversation) {
+            $memoryNotes = collect($conversation->memory_notes ?? [])
+                ->where('type', 'memory')
+                ->pluck('content')
+                ->all();
+        }
+
+        // Step 6: Build enhanced system prompt with memory notes, KB context, and multiple bubbles
         // Priority: Bot system_prompt > Flow system_prompt > Default
         $systemPrompt = $this->buildEnhancedPrompt(
             $this->getSystemPromptForBot($bot),
             $kbContext,
-            $bot
+            $bot,
+            $memoryNotes
         );
 
-        // Step 6: Add Chain-of-Thought instruction if question is complex
+        // Step 7: Add Chain-of-Thought instruction if question is complex
         if ($complexity['is_complex'] && config('rag.chain_of_thought.enabled', true)) {
             $language = $this->detectLanguage($userMessage);
             $systemPrompt .= $this->buildChainOfThoughtInstruction($language);
@@ -132,18 +143,18 @@ class RAGService
             ]);
         }
 
-        // Step 7: Get chat models
+        // Step 8: Get chat models
         $chatModel = $this->getChatModelForBot($bot);
         $fallbackChatModel = $this->getFallbackChatModelForBot($bot);
 
-        // Step 8: Calculate max tokens (increase for complex questions)
+        // Step 9: Calculate max tokens (increase for complex questions)
         $maxTokens = $bot->llm_max_tokens;
         if ($complexity['is_complex']) {
             $multiplier = config('rag.chain_of_thought.max_tokens_multiplier', 1.5);
             $maxTokens = (int) min($maxTokens * $multiplier, 4096);
         }
 
-        // Step 9: Generate response using Chat Model
+        // Step 10: Generate response using Chat Model
         $result = $this->openRouter->generateBotResponse(
             userMessage: $userMessage,
             systemPrompt: $systemPrompt,
@@ -295,11 +306,23 @@ class RAGService
     }
 
     /**
-     * Build enhanced system prompt with KB context and multiple bubbles instruction.
+     * Build enhanced system prompt with memory notes, KB context, and multiple bubbles instruction.
      */
-    protected function buildEnhancedPrompt(string $basePrompt, string $kbContext, ?Bot $bot = null): string
-    {
+    protected function buildEnhancedPrompt(
+        string $basePrompt,
+        string $kbContext,
+        ?Bot $bot = null,
+        array $memoryNotes = []
+    ): string {
         $prompt = $basePrompt;
+
+        // Append memory notes if available (injected before KB context for priority)
+        if (!empty($memoryNotes)) {
+            $prompt .= "\n\n## ข้อมูลสำคัญเกี่ยวกับลูกค้า:\n";
+            foreach ($memoryNotes as $content) {
+                $prompt .= "- {$content}\n";
+            }
+        }
 
         // Append KB context if available
         if (!empty($kbContext)) {
