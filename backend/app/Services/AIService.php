@@ -38,7 +38,8 @@ class AIService
         $result = $this->ragService->generateResponse(
             bot: $bot,
             userMessage: $userMessage,
-            conversationHistory: $history
+            conversationHistory: $history,
+            conversation: $conversation
         );
 
         // Apply Second AI check if enabled on the flow
