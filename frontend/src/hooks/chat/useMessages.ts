@@ -190,7 +190,8 @@ export function useSendMessage(botId: number | undefined) {
         messageKeys.infinite(botId, conversationId)
       );
 
-      const optimisticId = Date.now();
+      // Use negative timestamp to guarantee no collision with DB IDs (always positive)
+      const optimisticId = -Date.now();
       const optimisticMessage: Message = {
         id: optimisticId,
         conversation_id: conversationId,

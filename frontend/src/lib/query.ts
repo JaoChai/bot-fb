@@ -2,15 +2,15 @@ import { QueryClient } from '@tanstack/react-query';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 
 // Query keys that should NOT be persisted (real-time data)
+// Note: 'conversation-messages' removed - now unified under 'messages' via messageKeys
 const NON_PERSISTENT_KEYS = [
   'bots',
   'conversations',
   'conversations-infinite',
-  'conversation-messages',
   'conversation',
   'conversation-stats',
   'conversation-notes',
-  'messages', // Prevent stale messages from localStorage on soft refresh
+  'messages', // Unified message cache (includes old 'conversation-messages')
 ];
 
 export const queryClient = new QueryClient({
