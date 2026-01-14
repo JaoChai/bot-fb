@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
+import { toast } from 'sonner';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Loader2, CheckCircle2, XCircle, AlertCircle, Settings, ExternalLink } from 'lucide-react';
-import { useQAInspectorSettings, useToggleQAInspector } from '@/hooks/useQAInspector';
+import { useQAInspectorSettings, useToggleQAInspector, useBotSettingsSync } from '@/hooks/useQAInspector';
 import { cn } from '@/lib/utils';
 
 interface QAInspectorToggleProps {
@@ -21,6 +22,9 @@ export function QAInspectorToggle({
 }: QAInspectorToggleProps) {
   const { data: settings, isLoading, isError, error } = useQAInspectorSettings(botId);
   const toggleMutation = useToggleQAInspector(botId);
+
+  // Enable realtime sync for multi-tab support
+  useBotSettingsSync(botId);
 
   // Local state for immediate UI feedback
   const [localEnabled, setLocalEnabled] = useState<boolean>(false);
@@ -38,9 +42,15 @@ export function QAInspectorToggle({
 
     // Send mutation to server
     toggleMutation.mutate(checked, {
+      onSuccess: () => {
+        toast.success(
+          checked ? 'QA Inspector enabled' : 'QA Inspector disabled'
+        );
+      },
       onError: () => {
         // Rollback local state on error
         setLocalEnabled(!checked);
+        toast.error('Failed to update QA Inspector setting');
       },
     });
   };

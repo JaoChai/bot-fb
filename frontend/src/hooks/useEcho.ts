@@ -6,6 +6,7 @@ import type {
   ConversationUpdatedEvent,
   AdminNotificationEvent,
   DocumentStatusUpdatedEvent,
+  BotSettingsUpdatedEvent,
 } from '@/types/realtime';
 import { CHANNELS, EVENTS } from '@/types/realtime';
 
@@ -64,6 +65,7 @@ export function useBotChannel(
     onMessage?: (event: MessageSentEvent) => void;
     onConversationUpdate?: (event: ConversationUpdatedEvent) => void;
     onNewConversation?: (event: ConversationUpdatedEvent) => void;
+    onSettingsUpdate?: (event: BotSettingsUpdatedEvent) => void;
   }
 ) {
   const channelRef = useRef<Channel | null>(null);
@@ -99,6 +101,10 @@ export function useBotChannel(
       .listen(`.${EVENTS.conversationMessageReceived}`, (event: ConversationUpdatedEvent) => {
         console.log('[useBotChannel] conversation.message_received:', event.id);
         callbacksRef.current.onConversationUpdate?.(event);
+      })
+      .listen(`.${EVENTS.settingsUpdated}`, (event: BotSettingsUpdatedEvent) => {
+        console.log('[useBotChannel] settings.updated:', event.setting_type);
+        callbacksRef.current.onSettingsUpdate?.(event);
       });
 
     console.log('[useBotChannel] Subscription complete for:', channelName);

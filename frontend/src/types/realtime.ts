@@ -53,6 +53,13 @@ export interface DocumentStatusUpdatedEvent {
   updated_at: string | null;
 }
 
+export interface BotSettingsUpdatedEvent {
+  bot_id: number;
+  setting_type: 'qa_inspector' | 'general';
+  qa_inspector_enabled: boolean;
+  updated_at: string;
+}
+
 /**
  * Channel names for subscription
  */
@@ -78,4 +85,5 @@ export const EVENTS = {
   conversationClosed: 'conversation.closed',
   notification: 'notification',
   documentStatusUpdated: 'document.status_updated',
+  settingsUpdated: 'settings.updated',
 } as const;
