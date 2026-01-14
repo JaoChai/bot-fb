@@ -60,6 +60,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'throttle.webhook' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':webhook',
             'throttle.bot-test' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':bot-test',
             'throttle.uploads' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':uploads',
+            'throttle.qa-inspector-read' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':qa-inspector-read',
+            'throttle.qa-inspector-write' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':qa-inspector-write',
+            'throttle.qa-report-generate' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':qa-report-generate',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
