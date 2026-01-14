@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPut, apiPost } from '@/lib/api';
+import { useBotChannel } from '@/hooks/useEcho';
 import type {
   QAInspectorSettings,
   UpdateQAInspectorSettingsData,
@@ -13,6 +15,7 @@ import type {
   ApplySuggestionConflict,
 } from '@/types/qa-inspector';
 import type { ApiResponse, PaginatedResponse } from '@/types/api';
+import type { BotSettingsUpdatedEvent } from '@/types/realtime';
 
 // Query keys for QA Inspector
 export const qaInspectorKeys = {
@@ -115,9 +118,12 @@ export function useToggleQAInspector(botId: number) {
         );
       }
     },
+    onSuccess: (data) => {
+      // Update cache with ACTUAL server response (ensures persistence)
+      queryClient.setQueryData(qaInspectorKeys.settings(botId), data);
+    },
     onSettled: () => {
-      // Refetch to ensure sync with server
-      queryClient.invalidateQueries({ queryKey: qaInspectorKeys.settings(botId) });
+      // Only invalidate dashboard (settings already updated via onSuccess)
       queryClient.invalidateQueries({ queryKey: qaInspectorKeys.dashboard(botId) });
     },
   });
@@ -320,6 +326,45 @@ export function useApplyPromptSuggestion(botId: number, reportId: number) {
       queryClient.invalidateQueries({
         queryKey: qaInspectorKeys.reports(botId),
       });
+    },
+  });
+}
+
+/**
+ * Hook to sync QA Inspector settings via WebSocket for realtime multi-tab sync
+ */
+export function useBotSettingsSync(botId: number) {
+  const queryClient = useQueryClient();
+
+  // Listen for settings updates via WebSocket
+  useBotChannel(botId, {
+    onSettingsUpdate: (event: BotSettingsUpdatedEvent) => {
+      if (event.setting_type === 'qa_inspector') {
+        // Update the cache with the new value from WebSocket
+        const currentSettings = queryClient.getQueryData<QAInspectorSettings>(
+          qaInspectorKeys.settings(botId)
+        );
+
+        if (currentSettings) {
+          queryClient.setQueryData<QAInspectorSettings>(
+            qaInspectorKeys.settings(botId),
+            {
+              ...currentSettings,
+              qa_inspector_enabled: event.qa_inspector_enabled,
+            }
+          );
+        } else {
+          // If no cached settings, invalidate to trigger refetch
+          queryClient.invalidateQueries({
+            queryKey: qaInspectorKeys.settings(botId),
+          });
+        }
+
+        // Also invalidate dashboard
+        queryClient.invalidateQueries({
+          queryKey: qaInspectorKeys.dashboard(botId),
+        });
+      }
     },
   });
 }

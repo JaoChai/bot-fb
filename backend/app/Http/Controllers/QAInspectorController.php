@@ -41,17 +41,17 @@ class QAInspectorController extends Controller
     /**
      * Update QA Inspector settings for a bot
      */
-    public function updateSettings(UpdateQAInspectorSettingsRequest $request, Bot $bot): JsonResponse
+    public function updateSettings(UpdateQAInspectorSettingsRequest $request, Bot $bot): QAInspectorSettingsResource
     {
         $this->authorize('update', $bot);
 
         $bot->update($request->validated());
+        $bot->refresh();
 
-        return response()->json([
-            'data' => [
-                'message' => 'QA Inspector settings updated successfully',
-            ],
-        ]);
+        // Broadcast settings update for realtime sync
+        event(new \App\Events\BotSettingsUpdated($bot, 'qa_inspector'));
+
+        return new QAInspectorSettingsResource($bot);
     }
 
     /**
