@@ -1,190 +1,155 @@
 # BotFacebook
 
-## Stack & URLs
+## Stack
 
 | Layer | Technology | URL |
 |-------|-----------|-----|
-| Frontend | React 19 | https://www.botjao.com |
-| Backend | Laravel 12 | https://api.botjao.com |
-| Database | PostgreSQL (Neon + pgvector) | - |
+| Frontend | React 19 + TypeScript + Tailwind v4 | https://www.botjao.com |
+| Backend | Laravel 12 + PHP 8.2 | https://api.botjao.com |
+| Database | PostgreSQL (Neon) + pgvector | - |
 | Deploy | Railway | - |
-| WebSocket | Reverb | - |
+| Real-time | Reverb (WebSocket) | - |
+| AI | OpenRouter API | - |
 
 ---
 
 ## Quick Commands
 
-### Development
 ```bash
-# Backend
-cd backend && php artisan serve
+# Development
+cd backend && php artisan serve    # Backend
+cd frontend && npm run dev         # Frontend
 
-# Frontend
-npm run dev
+# Testing
+php artisan test                   # All tests
+php artisan test --filter Unit     # Unit only
 
-# Database
-php artisan migrate
+# Deploy
+/commit-push-pr                    # Commit + Push + PR
+railway up                         # Manual deploy
 ```
 
-### Testing
-```bash
-php artisan test              # All tests
-php artisan test --filter Unit        # Unit only
-php artisan test --filter Feature     # Feature only
+---
+
+## Agent Skills (11 Available)
+
+Skills จะ auto-trigger จาก context หรือเรียกด้วย `/skill-name`
+
+| Skill | Use When | Key Features |
+|-------|----------|--------------|
+| `/frontend-dev` | React components, UI, styling | React 19, Tailwind v4, React Query v5 |
+| `/ui-ux-pro-max` | UI design, styles, colors, fonts | 50 styles, 21 palettes, 50 font pairings |
+| `/backend-dev` | Laravel API, services, jobs | Laravel 12, FormRequest, API Resources |
+| `/database-ops` | Migrations, queries, vectors | Neon, pgvector, query optimization |
+| `/code-review` | Before commit, security audit | OWASP Top 10, API design, code quality |
+| `/testing` | Write/run tests | PHPUnit, Playwright, UI testing |
+| `/performance` | Slow queries, optimization | N+1 detection, bundle size, Core Web Vitals |
+| `/deployment` | Deploy, production issues | Railway, logs, troubleshooting |
+| `/rag-debug` | Search not working | Embeddings, reranker, Thai NLP |
+| `/webhook-debug` | Bot not responding | LINE, Telegram, WebSocket |
+| `/prompt-eng` | AI prompt optimization | Prompt design, A/B testing |
+
+### Auto-Trigger Examples
+```
+"สร้าง React component" → /frontend-dev
+"ออกแบบ landing page"   → /ui-ux-pro-max
+"ทำไม search ไม่เจอ"    → /rag-debug
+"webhook LINE พัง"      → /webhook-debug
+"review ก่อน commit"    → /code-review
 ```
 
-### Deployment
-```bash
-/commit-push-pr              # Auto: commit + push + PR
-railway up                   # Manual deploy
-```
+---
 
-[→ Full Git workflow](docs/git-flow.md)
+## Decision Guide
+
+| Task | Action |
+|------|--------|
+| New feature (>30min) | `/speckit.specify` |
+| Bug fix | Search memory first, then fix |
+| UI implementation | `/frontend-dev` |
+| UI/UX design | `/ui-ux-pro-max` |
+| API work | `/backend-dev` |
+| Database | `/database-ops` |
+| Before commit | `/code-review` |
+| Performance | `/performance` |
 
 ---
 
 ## Critical Gotchas
 
-| Problem | Solution | Details |
-|---------|----------|---------|
-| `config('x','')` returns null | `config('x') ?? ''` | [→](docs/gotchas.md#config-returns-null) |
-| API response wrapped | Access `response.data` | [→](docs/gotchas.md#api-response-wrapped) |
-| Railway serve.json fails | Use Express server | [→](docs/gotchas.md#railway-servejson-fails) |
-| N+1 queries | Use eager loading | [→](docs/gotchas.md#n1-query-problem) |
-| Race condition | Use DB locks | [→](docs/gotchas.md#race-condition-in-customer-profile-creation) |
-| Component exists but not rendered | Verify import/usage with grep | [→](docs/gotchas.md#common-false-assumptions-debugging-traps) |
+| Problem | Solution |
+|---------|----------|
+| `config('x','')` returns null | `config('x') ?? ''` |
+| API response wrapped | Access `response.data` |
+| N+1 queries | Use `->with()` eager loading |
+| Race condition | Use DB locks |
 
-[→ All known issues](docs/gotchas.md)
+[→ All gotchas](docs/gotchas.md)
 
 ---
 
-## Quick Decision Guide
+## Code Rules
 
-### What should I do?
+### ⚠️ MUST: Use Agent Skills When Implementing
+หลังจาก plan mode หรือเมื่อลงมือทำงาน **ต้องเรียก agent skills เสมอ**:
 
-| Task | Action | Reference |
-|------|--------|-----------|
-| New feature (>30min) | `/speckit.specify` | [Speckit](#speckit-workflow) |
-| Bug fix | `/mem-search` first | [Decision Trees](docs/decision-trees.md) |
-| UI work | `frontend-dev` set | [Agent Sets](docs/agent-sets.md) |
-| API work | `backend-dev` set | [Agent Sets](docs/agent-sets.md) |
-| Database | `database` set | [Agent Sets](docs/agent-sets.md) |
-| Performance issue | `performance` set | [Performance Guide](docs/performance.md) |
-| Before commit | `code-review` set | Auto-triggered |
+| ไฟล์ที่แก้ | Agent ที่ต้องเรียก |
+|-----------|-------------------|
+| `.php` (Controller, Service, Job) | `/backend-dev` |
+| `.tsx`, `.ts` (Component, Hook) | `/frontend-dev` |
+| Migration, Query | `/database-ops` |
+| ก่อน commit | `/code-review` |
 
-[→ Full decision trees](docs/decision-trees.md)
-
----
-
-## Agent Sets (15 Available)
-
-| Icon | Set | Use When | Details |
-|------|-----|----------|---------|
-| 🎨 | frontend-dev | React, UI, components | [→](docs/agent-sets.md#frontend-dev) |
-| ⚙️ | backend-dev | Laravel, API, services | [→](docs/agent-sets.md#backend-dev) |
-| 🗄️ | database | Migrations, queries, pgvector | [→](docs/agent-sets.md#database) |
-| 🔍 | rag-debug | Semantic search, embeddings | [→](docs/agent-sets.md#rag-debug) |
-| 🔗 | webhook-debug | LINE, Telegram, WebSocket | [→](docs/agent-sets.md#webhook-debug) |
-| ⚡ | performance | Slow queries, optimize | [→](docs/agent-sets.md#performance) |
-| 📝 | code-review | Before commit | [→](docs/agent-sets.md#code-review) |
-| 🔒 | security | Security audit | [→](docs/agent-sets.md#security) |
-| 🌐 | api-design | API consistency | [→](docs/agent-sets.md#api-design) |
-| 📱 | ui-test | UI testing | [→](docs/agent-sets.md#ui-test) |
-| 🧪 | backend-test | Unit/feature tests | [→](docs/agent-sets.md#backend-test) |
-| 🔄 | integration-test | E2E flows | [→](docs/agent-sets.md#integration-test) |
-| 🚀 | deployment | Deploy issues | [→](docs/agent-sets.md#deployment) |
-| 💬 | prompt-eng | Prompt optimization | [→](docs/agent-sets.md#prompt-eng) |
-| 📚 | memory | Search past work | [→](docs/agent-sets.md#memory) |
-
-[→ Full agent sets guide](docs/agent-sets.md)
-
----
-
-## Code Change Rules
+**ห้ามแก้โค้ดโดยไม่เรียก agent** - ถ้าแก้ทั้ง backend + frontend ต้องเรียกทั้ง 2 agents
 
 ### Minimal Change Principle
+- แก้เฉพาะจุดที่เกี่ยวข้อง
+- ห้าม refactor โค้ดอื่น
+- ห้ามเพิ่ม feature ที่ไม่ได้ขอ
 
-| Rule | Description |
-|------|-------------|
-| แก้เฉพาะจุด | ห้ามแก้โค้ดที่ไม่เกี่ยวข้อง |
-| ห้าม refactor | แยกเป็น task ใหม่ |
-| ห้ามเพิ่ม feature | Focus เฉพาะที่ได้รับมอบหมาย |
-| ตรวจ git diff | ก่อน commit ต้องเช็คว่าเกี่ยวข้องทั้งหมด |
-
-### Before Every Commit
+### Before Commit
 - [ ] ทุกไฟล์เกี่ยวข้องกับ task?
-- [ ] ไม่มี refactor/cleanup ไม่เกี่ยวข้อง?
-- [ ] ไม่มี feature ใหม่ที่ไม่ได้ขอ?
-
-[→ Detailed rules & examples](docs/code-change-rules.md)
+- [ ] ไม่มี console.log/dd() ค้าง?
+- [ ] ไม่มี hardcoded values?
 
 ---
 
 ## Speckit Workflow
 
-### เมื่อไหร่ต้องใช้ Speckit?
-- งาน >30 นาที
-- แก้ไข >3 ไฟล์
-- Feature ซับซ้อน
+ใช้เมื่องาน >30 นาที หรือแก้ >3 ไฟล์
 
-### Workflow
 ```bash
-1. /speckit.specify "[feature description]"
-   → สร้าง branch + spec.md
-
-2. /speckit.clarify  (ถ้า requirements ไม่ชัด)
-
-3. /speckit.plan
-   → สร้าง technical plan
-
-4. /speckit.tasks
-   → สร้าง task breakdown
-
-5. /speckit.implement
-   → ลงมือทำ
+/speckit.specify "[description]"  # สร้าง spec
+/speckit.plan                     # วาง technical plan
+/speckit.tasks                    # แบ่ง tasks
+/speckit.implement                # ลงมือทำ
 ```
-
-### ไม่ต้องใช้ Speckit เมื่อ:
-- Bug fix เล็กๆ
-- งานที่แก้ไฟล์เดียว
-- งาน <30 นาที
 
 ---
 
 ## Git Flow
 
-### Branch Naming
 ```bash
-feature/xxx   # New features
-fix/xxx       # Bug fixes
-chore/xxx     # Maintenance
-```
+# Branch
+feature/xxx | fix/xxx | chore/xxx
 
-### Workflow
-```bash
-1. git checkout -b feature/xxx
-2. # Work & commit often
-3. /commit-push-pr
-```
-
-### Conventional Commits
-```bash
-feat: add user profile page
+# Commits
+feat: add user profile
 fix: resolve race condition
 chore: update dependencies
-refactor: extract service layer
-docs: update API guide
-test: add unit tests
-```
 
-[→ Full Git workflow](docs/git-flow.md)
+# Workflow
+git checkout -b feature/xxx
+# work...
+/commit-push-pr
+```
 
 ---
 
 ## API Standards
 
-### Response Format
 ```json
+// Response format
 {
   "data": { },
   "meta": { "timestamp": "..." },
@@ -192,15 +157,14 @@ test: add unit tests
 }
 ```
 
-### Status Codes
 ```
+// Status codes
 200 OK | 201 Created | 400 Bad Request
 401 Unauthorized | 404 Not Found | 422 Validation
-429 Rate Limit | 500 Server Error
 ```
 
-### RESTful Patterns
 ```
+// RESTful routes
 GET    /api/v1/bots
 POST   /api/v1/bots
 GET    /api/v1/bots/{id}
@@ -208,151 +172,59 @@ PUT    /api/v1/bots/{id}
 DELETE /api/v1/bots/{id}
 ```
 
-[→ Complete API guide](docs/api-standards.md)
-
 ---
 
-## Testing Strategy
+## Testing
 
-| Type | Command | Target |
-|------|---------|--------|
+| Type | Command | Coverage |
+|------|---------|----------|
 | Unit | `php artisan test --filter Unit` | Services 80%+ |
 | Feature | `php artisan test --filter Feature` | Controllers 60%+ |
-| E2E | `integration-test` set | Critical flows |
-
-[→ Full testing guide](docs/testing.md)
-
----
-
-## Security Checklist
-
-| Category | Status |
-|----------|--------|
-| Input validation | ✅ FormRequest |
-| Auth/Authorization | ✅ JWT + Policies |
-| XSS Prevention | ✅ Auto-escaped |
-| CSRF Protection | ✅ Laravel default |
-| Rate Limiting | ✅ 60 req/min |
-
-[→ Security best practices](docs/security.md)
+| E2E | `/testing` skill | Critical flows |
 
 ---
 
 ## Performance Targets
 
-| Metric | Target | Monitor |
-|--------|--------|---------|
-| API response | < 500ms | Sentry |
-| AI evaluation | < 1.5s | Logs |
-| Page load | < 2s | Lighthouse |
-| Database query | < 100ms | Neon |
-
-[→ Optimization guide](docs/performance.md)
+| Metric | Target |
+|--------|--------|
+| API response | < 500ms |
+| AI evaluation | < 1.5s |
+| Page load | < 2s |
+| DB query | < 100ms |
 
 ---
 
-## Monitoring & Debugging
+## Monitoring
 
-| Service | Purpose | Quick Link |
-|---------|---------|------------|
-| Sentry | Error tracking | [Dashboard](https://sentry.io/...) |
-| Railway | Deployment logs | [Console](https://railway.app/...) |
-| Neon | Database metrics | [Dashboard](https://neon.tech/...) |
+| Service | Purpose |
+|---------|---------|
+| Sentry | Error tracking |
+| Railway | Deploy logs |
+| Neon | DB metrics |
 
 **Debug workflow:**
 1. Check Sentry for errors
-2. `/mem-search` for similar issues
-3. Use appropriate debug set
-4. Check service logs
-
-[→ Debugging guide](docs/debugging.md)
+2. Use appropriate `/skill-name`
+3. Check service logs
 
 ---
 
-## Reference Documentation
+## AI Evaluation System
 
-### Core Guides
-| Document | Description |
-|----------|-------------|
-| [Agent Sets](docs/agent-sets.md) | All 15 agent sets + usage examples |
-| [Decision Trees](docs/decision-trees.md) | When to use what tool/agent |
-| [Git Workflow](docs/git-flow.md) | Complete Git + GitHub flow |
-| [Code Change Rules](docs/code-change-rules.md) | Minimal change principle |
+**Services:**
+- `ModelTierSelector` - Budget/Standard/Premium tier selection
+- `LLMJudgeService` - Evaluation with fallback
+- `UnifiedCheckService` - Combined Second AI checks
 
-### Technical Guides
-| Document | Description |
-|----------|-------------|
-| [API Standards](docs/api-standards.md) | RESTful API design guide |
-| [Testing](docs/testing.md) | Unit/Feature/E2E testing |
-| [Security](docs/security.md) | Security best practices |
-| [Performance](docs/performance.md) | Optimization techniques |
+**Cost:** 57% reduction with tiered models
 
-### Troubleshooting
-| Document | Description |
-|----------|-------------|
-| [Gotchas](docs/gotchas.md) | Known issues + solutions |
-| [Debugging](docs/debugging.md) | Debug workflow + tools |
-
----
-
-## AI Evaluation System (003-refactor-ai-evaluation)
-
-### Architecture
-
-**Key Services:**
-- `ModelTierSelector` - Smart model selection (budget/standard/premium tiers)
-- `LLMJudgeService` - Evaluation engine with automatic fallback
-- `UnifiedCheckService` - Combined Second AI checks (Fact/Policy/Personality)
-
-**Cost Optimization:**
-- Budget tier: Free models (Gemini Flash) for simple metrics
-- Standard tier: Cheap models (GPT-4o-mini) for moderate complexity
-- Premium tier: Expensive models (Claude Sonnet) for complex analysis
-- **Result**: 57% cost reduction vs all-premium baseline
-
-**Performance Improvements:**
-- Unified Second AI: 1 API call instead of 6-9 calls
-- Latency: 3-6s → ~1.5s (50% reduction)
-- Graceful fallback when primary model fails
-
-**Configuration:**
 ```bash
-# Force premium tier for all evaluations
-EVALUATION_FORCE_PREMIUM=false
-
-# Override tier for specific metrics
-EVALUATION_TIER_OVERRIDE_FAITHFULNESS=premium
-```
-
-### Testing Commands
-```bash
-# Test unified Second AI mode
+# Test commands
 php artisan test:unified-mode
-
-# Test model tier system
 php artisan test:model-tiers --test-cases=40
-
-# Run all evaluation tests
-php artisan test tests/Feature/Evaluation
-php artisan test tests/Unit/Evaluation
 ```
 
 ---
 
-## Active Technologies
-- PHP 8.2 (Backend), TypeScript 5.x (Frontend) + Laravel 12, React 19, TanStack Query v5, Zustand (006-bots-refactor)
-- PostgreSQL (Neon) with pgvector extension (006-bots-refactor)
-
-- **Backend:** PHP 8.2, Laravel 12, OpenRouter API
-- **Frontend:** TypeScript 5.x, React 19, TanStack Query
-- **Database:** PostgreSQL (Neon) with pgvector
-- **Deploy:** Railway with Reverb (WebSocket)
-
----
-
-**Last Updated:** 2026-01-12
-
-**Documentation Version:** 2.0 (Refactored)
-
-## Recent Changes
-- 006-bots-refactor: Added PHP 8.2 (Backend), TypeScript 5.x (Frontend) + Laravel 12, React 19, TanStack Query v5, Zustand
+**Last Updated:** 2026-01-14
