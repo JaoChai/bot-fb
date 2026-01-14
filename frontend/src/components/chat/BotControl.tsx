@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToggleHandover } from '@/hooks/useConversations';
 import { useToast } from '@/hooks/use-toast';
-import { toast } from 'sonner';
+import { toast as sonnerToast } from 'sonner';
 import { Bot, Headphones, Timer, Ban } from 'lucide-react';
 import type { Conversation } from '@/types/api';
 
@@ -183,11 +183,11 @@ export function BotControl({ botId, conversation }: BotControlProps) {
                 setPermanentDisable(isChecked);
 
                 if (isChecked) {
-                  toast.info('Bot จะปิดถาวรเมื่อคุณปิด Toggle', {
+                  sonnerToast.info('Bot จะปิดถาวรเมื่อคุณปิด Toggle', {
                     description: 'ไม่มีการเปิดกลับอัตโนมัติ',
                   });
                 } else {
-                  toast.info('Bot จะเปิดกลับอัตโนมัติใน 30 นาที', {
+                  sonnerToast.info('Bot จะเปิดกลับอัตโนมัติใน 30 นาที', {
                     description: 'หลังจากปิด Toggle',
                   });
                 }
