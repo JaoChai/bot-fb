@@ -232,14 +232,35 @@ export function useRealtime(
   );
 
   // T042: Stable callback for new conversations
+  // T044: Use targeted invalidation instead of full refetch to reduce network load
   const handleNewConversation = useCallback(
-    () => {
+    (event: ConversationUpdatedEvent) => {
       const currentBotId = botIdRef.current;
+      const currentFilters = filtersRef.current;
       if (!currentBotId) return;
 
-      queryClient.refetchQueries({
-        queryKey: conversationKeys.infinite(currentBotId),
-        exact: false,
+      // Check if conversation already exists in cache (e.g., from message event)
+      const existingData = queryClient.getQueryData<InfiniteData<ConversationsResponse>>(
+        conversationKeys.infinite(currentBotId, currentFilters)
+      );
+
+      if (existingData) {
+        const conversationExists = existingData.pages.some((page) =>
+          page.data.some((conv) => conv.id === event.id)
+        );
+
+        // If conversation already exists, no need to refetch
+        if (conversationExists) {
+          return;
+        }
+      }
+
+      // Invalidate only the first page to get new conversation
+      // This is more efficient than refetching all pages
+      queryClient.invalidateQueries({
+        queryKey: conversationKeys.infinite(currentBotId, currentFilters),
+        exact: true,
+        refetchType: 'active',
       });
     },
     [queryClient]

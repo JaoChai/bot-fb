@@ -27,14 +27,14 @@ class ConversationService
         $this->applySearch($query, $request);
         $this->applySorting($query, $request);
 
-        $statusCounts = $this->getStatusCounts($bot);
-        $responseCounts = $this->getResponseCounts($bot);
+        // Optimized: Single CTE query with cache instead of 3-4 separate queries
+        $allCounts = $this->getAllCounts($bot);
 
         $conversations = $query->paginate($request->input('per_page', 20));
 
         return [
             'conversations' => $conversations,
-            'status_counts' => array_merge($statusCounts, $responseCounts),
+            'status_counts' => $allCounts,
         ];
     }
 
@@ -292,67 +292,84 @@ class ConversationService
     }
 
     /**
-     * Get status counts for a bot.
+     * Get all counts (status + response) in a single optimized CTE query with caching.
+     *
+     * This replaces getStatusCounts() + getResponseCounts() to reduce DB queries from 3-4 to 1.
+     * Uses PostgreSQL window function ROW_NUMBER() instead of correlated subqueries.
+     *
+     * @return array{active: int, closed: int, handover: int, total: int, needs_response: int, waiting_customer: int}
      */
-    private function getStatusCounts(Bot $bot): array
+    private function getAllCounts(Bot $bot): array
     {
-        $statusCounts = $bot->conversations()
-            ->selectRaw('status, COUNT(*) as count')
-            ->groupBy('status')
-            ->pluck('count', 'status')
-            ->toArray();
+        $cacheKey = "bot:{$bot->id}:conversation:all_counts";
 
-        return [
-            'active' => $statusCounts['active'] ?? 0,
-            'closed' => $statusCounts['closed'] ?? 0,
-            'handover' => $statusCounts['handover'] ?? 0,
-            'total' => array_sum($statusCounts),
-        ];
+        return Cache::remember($cacheKey, 30, function () use ($bot) {
+            // For bots without auto_handover, use simpler query without response counts
+            if (! $bot->auto_handover) {
+                $result = DB::selectOne("
+                    SELECT
+                        COUNT(*) FILTER (WHERE status = 'active') as active,
+                        COUNT(*) FILTER (WHERE status = 'closed') as closed,
+                        COUNT(*) FILTER (WHERE status = 'handover') as handover,
+                        COUNT(*) as total
+                    FROM conversations
+                    WHERE bot_id = ? AND deleted_at IS NULL
+                ", [$bot->id]);
+
+                return [
+                    'active' => (int) ($result->active ?? 0),
+                    'closed' => (int) ($result->closed ?? 0),
+                    'handover' => (int) ($result->handover ?? 0),
+                    'total' => (int) ($result->total ?? 0),
+                    'needs_response' => 0,
+                    'waiting_customer' => 0,
+                ];
+            }
+
+            // Full query with response counts using window function
+            $result = DB::selectOne("
+                WITH last_messages AS (
+                    SELECT
+                        m.conversation_id,
+                        m.sender,
+                        ROW_NUMBER() OVER (PARTITION BY m.conversation_id ORDER BY m.id DESC) as rn
+                    FROM messages m
+                    INNER JOIN conversations c ON m.conversation_id = c.id
+                    WHERE c.bot_id = ? AND c.deleted_at IS NULL
+                ),
+                conv_with_last_sender AS (
+                    SELECT c.id, c.status, lm.sender as last_sender
+                    FROM conversations c
+                    LEFT JOIN last_messages lm ON lm.conversation_id = c.id AND lm.rn = 1
+                    WHERE c.bot_id = ? AND c.deleted_at IS NULL
+                )
+                SELECT
+                    COUNT(*) FILTER (WHERE status = 'active') as active,
+                    COUNT(*) FILTER (WHERE status = 'closed') as closed,
+                    COUNT(*) FILTER (WHERE status = 'handover') as handover,
+                    COUNT(*) as total,
+                    COUNT(*) FILTER (WHERE status != 'closed' AND last_sender = 'user') as needs_response,
+                    COUNT(*) FILTER (WHERE status != 'closed' AND last_sender IN ('bot', 'agent')) as waiting_customer
+                FROM conv_with_last_sender
+            ", [$bot->id, $bot->id]);
+
+            return [
+                'active' => (int) ($result->active ?? 0),
+                'closed' => (int) ($result->closed ?? 0),
+                'handover' => (int) ($result->handover ?? 0),
+                'total' => (int) ($result->total ?? 0),
+                'needs_response' => (int) ($result->needs_response ?? 0),
+                'waiting_customer' => (int) ($result->waiting_customer ?? 0),
+            ];
+        });
     }
 
     /**
-     * Get response counts (needs_response, waiting_customer) for a bot.
-     */
-    private function getResponseCounts(Bot $bot): array
-    {
-        $needsResponseCount = 0;
-        $waitingCustomerCount = 0;
-
-        if ($bot->auto_handover) {
-            $needsResponseCount = $bot->conversations()
-                ->where('status', '!=', 'closed')
-                ->whereExists(function ($query) {
-                    $query->selectRaw('1')
-                        ->from('messages as m')
-                        ->whereColumn('m.conversation_id', 'conversations.id')
-                        ->where('m.sender', 'user')
-                        ->whereRaw('m.id = (SELECT MAX(m2.id) FROM messages m2 WHERE m2.conversation_id = conversations.id)');
-                })
-                ->count();
-
-            $waitingCustomerCount = $bot->conversations()
-                ->where('status', '!=', 'closed')
-                ->whereExists(function ($query) {
-                    $query->selectRaw('1')
-                        ->from('messages as m')
-                        ->whereColumn('m.conversation_id', 'conversations.id')
-                        ->whereIn('m.sender', ['bot', 'agent'])
-                        ->whereRaw('m.id = (SELECT MAX(m2.id) FROM messages m2 WHERE m2.conversation_id = conversations.id)');
-                })
-                ->count();
-        }
-
-        return [
-            'needs_response' => $needsResponseCount,
-            'waiting_customer' => $waitingCustomerCount,
-        ];
-    }
-
-    /**
-     * Invalidate stats cache for a bot.
+     * Invalidate all stats caches for a bot.
      */
     private function invalidateStatsCache(int $botId): void
     {
         Cache::forget("bot:{$botId}:conversation:stats");
+        Cache::forget("bot:{$botId}:conversation:all_counts");
     }
 }

@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useConnectionStore } from '@/stores/connectionStore';
+import { messageKeys, type MessagesOptions } from '@/hooks/chat/useMessages';
 import type {
   AddTagsData,
   BulkTagsData,
@@ -153,12 +154,15 @@ export function useConversation(botId: number | undefined, conversationId: numbe
 export function useConversationMessages(
   botId: number | undefined,
   conversationId: number | undefined,
-  options: { page?: number; perPage?: number; order?: 'asc' | 'desc' } = {}
+  options: MessagesOptions = {}
 ) {
   const isConnected = useConnectionStore((state) => state.isConnected);
 
   return useQuery({
-    queryKey: ['conversation-messages', botId, conversationId, options],
+    // Use unified messageKeys for cache consistency with useMessages hook
+    queryKey: botId && conversationId
+      ? messageKeys.listWithOptions(botId, conversationId, options)
+      : ['messages', 'disabled'],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (options.page) params.append('page', String(options.page));
@@ -731,21 +735,22 @@ export function useSendAgentMessage(botId: number | undefined) {
       return response.data;
     },
     onMutate: async ({ conversationId, data }) => {
+      if (!botId) return;
+
+      const messageOptions: MessagesOptions = { order: 'asc', perPage: 100 };
+
       // Cancel any outgoing refetches to avoid overwriting optimistic update
       await queryClient.cancelQueries({
-        queryKey: ['conversation-messages', botId, conversationId],
+        queryKey: messageKeys.listWithOptions(botId, conversationId, messageOptions),
       });
 
       // Snapshot previous messages
-      const previousMessages = queryClient.getQueryData<MessagesResponse>([
-        'conversation-messages',
-        botId,
-        conversationId,
-        { order: 'asc', perPage: 100 },
-      ]);
+      const previousMessages = queryClient.getQueryData<MessagesResponse>(
+        messageKeys.listWithOptions(botId, conversationId, messageOptions)
+      );
 
-      // Generate optimistic ID before using it
-      const optimisticId = Date.now();
+      // Use negative timestamp to guarantee no collision with DB IDs (always positive)
+      const optimisticId = -Date.now();
 
       // Optimistically add the new message
       if (previousMessages) {
@@ -771,7 +776,7 @@ export function useSendAgentMessage(botId: number | undefined) {
         };
 
         queryClient.setQueryData<MessagesResponse>(
-          ['conversation-messages', botId, conversationId, { order: 'asc', perPage: 100 }],
+          messageKeys.listWithOptions(botId, conversationId, messageOptions),
           {
             ...previousMessages,
             data: [...previousMessages.data, optimisticMessage],
@@ -779,14 +784,15 @@ export function useSendAgentMessage(botId: number | undefined) {
         );
       }
 
-      return { previousMessages, optimisticId };
+      return { previousMessages, optimisticId, messageOptions };
     },
     onError: (_err, { conversationId }, context) => {
+      if (!botId) return;
+
       // Rollback: remove only the failed optimistic message
-      if (context?.optimisticId) {
-        const messageOptions = { order: 'asc' as const, perPage: 100 };
+      if (context?.optimisticId && context?.messageOptions) {
         queryClient.setQueryData<MessagesResponse>(
-          ['conversation-messages', botId, conversationId, messageOptions],
+          messageKeys.listWithOptions(botId, conversationId, context.messageOptions),
           (old) => {
             if (!old) return old;
             return {
@@ -798,13 +804,15 @@ export function useSendAgentMessage(botId: number | undefined) {
       }
     },
     onSuccess: (response, { conversationId }, context) => {
-      const messageOptions = { order: 'asc' as const, perPage: 100 };
+      if (!botId) return;
+
+      const messageOptions: MessagesOptions = context?.messageOptions ?? { order: 'asc', perPage: 100 };
       const optimisticId = context?.optimisticId;
 
       // Replace only the specific optimistic message with real message from server
       // This avoids invalidateQueries which causes race conditions with WebSocket updates
       queryClient.setQueryData<MessagesResponse>(
-        ['conversation-messages', botId, conversationId, messageOptions],
+        messageKeys.listWithOptions(botId, conversationId, messageOptions),
         (old) => {
           if (!old) return old;
 
