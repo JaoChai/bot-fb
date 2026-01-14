@@ -13,6 +13,12 @@ use Illuminate\Support\Facades\DB;
  */
 return new class extends Migration
 {
+    /**
+     * Disable transaction wrapping for this migration.
+     * Required because CREATE INDEX CONCURRENTLY cannot run inside a transaction.
+     */
+    public $withinTransaction = false;
+
     public function up(): void
     {
         // Only create on PostgreSQL (not SQLite for testing)
