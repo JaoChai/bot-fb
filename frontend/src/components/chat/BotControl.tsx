@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToggleHandover } from '@/hooks/useConversations';
 import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { Bot, Headphones, Timer, Ban } from 'lucide-react';
 import type { Conversation } from '@/types/api';
 
@@ -177,7 +178,20 @@ export function BotControl({ botId, conversation }: BotControlProps) {
             <Checkbox
               id="permanent-disable"
               checked={permanentDisable}
-              onCheckedChange={(checked) => setPermanentDisable(checked === true)}
+              onCheckedChange={(checked) => {
+                const isChecked = checked === true;
+                setPermanentDisable(isChecked);
+
+                if (isChecked) {
+                  toast.info('Bot จะปิดถาวรเมื่อคุณปิด Toggle', {
+                    description: 'ไม่มีการเปิดกลับอัตโนมัติ',
+                  });
+                } else {
+                  toast.info('Bot จะเปิดกลับอัตโนมัติใน 30 นาที', {
+                    description: 'หลังจากปิด Toggle',
+                  });
+                }
+              }}
             />
             <Label htmlFor="permanent-disable" className="text-sm text-muted-foreground cursor-pointer">
               Disable permanently (no auto-enable)
