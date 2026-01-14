@@ -1,7 +1,8 @@
 # Nixpacks configuration for React Frontend on Railway
 
 [phases.setup]
-nixPkgs = ["nodejs_20"]
+# Node.js 22 LTS required for Vite 7.x (needs ^20.19.0 || >=22.12.0)
+nixPkgs = ["nodejs_22"]
 
 [phases.install]
 cmds = ["npm ci"]
