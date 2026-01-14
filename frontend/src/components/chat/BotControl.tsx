@@ -5,7 +5,6 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToggleHandover } from '@/hooks/useConversations';
 import { useToast } from '@/hooks/use-toast';
-import { toast as sonnerToast } from 'sonner';
 import { Bot, Headphones, Timer, Ban } from 'lucide-react';
 import type { Conversation } from '@/types/api';
 
@@ -22,9 +21,6 @@ export function BotControl({ botId, conversation }: BotControlProps) {
   const { toast } = useToast();
   const toggleHandover = useToggleHandover(botId);
   const isTelegram = conversation.channel_type === 'telegram';
-
-  // Permanent disable option (no auto-enable)
-  const [permanentDisable, setPermanentDisable] = useState(false);
 
   // Auto-enable countdown
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(
@@ -97,11 +93,10 @@ export function BotControl({ botId, conversation }: BotControlProps) {
 
   const handleToggleBot = useCallback(async () => {
     try {
-      const autoEnableMinutes = conversation.is_handover ? 30 : (permanentDisable ? 0 : 30);
-
+      // Toggle always uses 30 min auto-enable (permanent disable handled by checkbox)
       await toggleHandover.mutateAsync({
         conversationId: conversation.id,
-        autoEnableMinutes,
+        autoEnableMinutes: 30,
       });
 
       if (conversation.is_handover) {
@@ -111,14 +106,10 @@ export function BotControl({ botId, conversation }: BotControlProps) {
         });
       } else {
         toast({
-          title: permanentDisable ? 'Bot Disabled Permanently' : 'Handover Mode',
-          description: permanentDisable
-            ? 'Bot will not respond until manually enabled'
-            : 'You can respond directly. Bot auto-enables in 30 minutes',
+          title: 'Handover Mode',
+          description: 'You can respond directly. Bot auto-enables in 30 minutes',
         });
       }
-
-      setPermanentDisable(false);
     } catch {
       toast({
         title: 'Error',
@@ -126,7 +117,7 @@ export function BotControl({ botId, conversation }: BotControlProps) {
         variant: 'destructive',
       });
     }
-  }, [toggleHandover, conversation.id, conversation.is_handover, permanentDisable, toast]);
+  }, [toggleHandover, conversation.id, conversation.is_handover, toast]);
 
   // Telegram: Human Agent Mode (no bot toggle)
   if (isTelegram) {
@@ -172,23 +163,32 @@ export function BotControl({ botId, conversation }: BotControlProps) {
           />
         </div>
 
-        {/* Permanent disable option - show when bot is ON (about to turn off) */}
+        {/* Permanent disable option - show when bot is ON, click to disable immediately */}
         {!conversation.is_handover && (
           <div className="flex items-center gap-2">
             <Checkbox
               id="permanent-disable"
-              checked={permanentDisable}
-              onCheckedChange={(checked) => {
-                const isChecked = checked === true;
-                setPermanentDisable(isChecked);
+              checked={false}
+              disabled={toggleHandover.isPending}
+              onCheckedChange={async (checked) => {
+                if (checked !== true) return;
 
-                if (isChecked) {
-                  sonnerToast.info('Bot จะปิดถาวรเมื่อคุณปิด Toggle', {
-                    description: 'ไม่มีการเปิดกลับอัตโนมัติ',
+                try {
+                  // Immediately disable bot permanently (no auto-enable)
+                  await toggleHandover.mutateAsync({
+                    conversationId: conversation.id,
+                    autoEnableMinutes: 0,
                   });
-                } else {
-                  sonnerToast.info('Bot จะเปิดกลับอัตโนมัติใน 30 นาที', {
-                    description: 'หลังจากปิด Toggle',
+
+                  toast({
+                    title: 'Bot Disabled Permanently',
+                    description: 'Bot will not respond until manually enabled',
+                  });
+                } catch {
+                  toast({
+                    title: 'Error',
+                    description: 'Failed to disable bot',
+                    variant: 'destructive',
                   });
                 }
               }}
