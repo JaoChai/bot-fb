@@ -11,6 +11,7 @@ import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useBotChannel } from '@/hooks/useEcho';
 import { messageKeys, type MessagesResponse } from './useMessages';
 import { conversationKeys, type ConversationsResponse } from './useConversationList';
+import { conversationDetailKeys } from './useConversationDetails';
 import { useConnectionStore } from '@/stores/connectionStore';
 import type { Message, Conversation, ConversationFilters } from '@/types/api';
 import type { MessageSentEvent, ConversationUpdatedEvent } from '@/types/realtime';
@@ -170,14 +171,22 @@ export function useRealtime(
   );
 
   // T042: Stable callback for conversation updates
+  // T045: Update both infinite list AND detail query for bot auto-enable sync
   const handleConversationUpdate = useCallback(
     (event: ConversationUpdatedEvent) => {
       const currentBotId = botIdRef.current;
       if (!currentBotId) return;
 
-      // T042: Only update if data actually changed
-      queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
-        conversationKeys.infinite(currentBotId, filtersRef.current),
+      // T045: Use predicate to update ALL infinite queries for this bot (regardless of filters)
+      queryClient.setQueriesData<InfiniteData<ConversationsResponse>>(
+        {
+          predicate: (query) => {
+            const key = query.queryKey;
+            return Array.isArray(key) &&
+              key[0] === 'conversations-infinite' &&
+              key[1] === currentBotId;
+          },
+        },
         (old) => {
           if (!old) return old;
 
@@ -224,6 +233,28 @@ export function useRealtime(
           return {
             ...old,
             pages: updatedPages,
+          };
+        }
+      );
+
+      // T045: Also update conversation detail query for bot auto-enable toggle sync
+      // This ensures BotControl component receives updated is_handover state
+      queryClient.setQueryData<Conversation>(
+        conversationDetailKeys.detail(currentBotId, event.id),
+        (old) => {
+          if (!old) return old;
+
+          const isSelected = event.id === selectedConversationIdRef.current;
+          return {
+            ...old,
+            status: event.status,
+            is_handover: event.is_handover,
+            assigned_user_id: event.assigned_user_id,
+            message_count: event.message_count,
+            last_message_at: event.last_message_at,
+            needs_response: event.needs_response,
+            unread_count: isSelected ? 0 : (event.unread_count ?? old.unread_count),
+            bot_auto_enable_at: event.bot_auto_enable_at,
           };
         }
       );
