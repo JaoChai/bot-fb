@@ -137,14 +137,14 @@ class ProcessLINEWebhook implements ShouldQueue
         // Check rate limit before processing
         $rateLimitResult = $rateLimitService->checkRateLimit($this->bot, $userId);
         if (!$rateLimitResult['allowed']) {
-            $this->handleRateLimitExceeded($lineService, $rateLimitService, $replyToken, $rateLimitResult['status']);
+            $this->handleRateLimitExceeded($lineService, $rateLimitService, $replyToken, $userId, $rateLimitResult['status']);
             return;
         }
 
         // Check response hours before processing
         $responseHoursResult = $responseHoursService->checkResponseHours($this->bot);
         if (!$responseHoursResult['allowed']) {
-            $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken);
+            $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken, $userId);
             return;
         }
 
@@ -357,10 +357,10 @@ class ProcessLINEWebhook implements ShouldQueue
                     // Parse content into bubbles and send with optional delays
                     $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
                     $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles);
-                } elseif ($replyToken) {
-                    // Standard single message reply with retry key for idempotency
+                } else {
+                    // Standard single message reply with fallback to push
                     $retryKey = $lineService->generateRetryKey();
-                    $lineService->reply($this->bot, $replyToken, [$botMessage->content], $retryKey);
+                    $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$botMessage->content], $retryKey);
                 }
             }
 
@@ -671,8 +671,8 @@ class ProcessLINEWebhook implements ShouldQueue
             ]);
 
             // Send offline message for non-sticker messages (stickers stay silent)
-            if ($messageType !== 'sticker' && $replyToken) {
-                $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken);
+            if ($messageType !== 'sticker') {
+                $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken, $userId);
             }
             return; // Skip AI response
         }
@@ -729,9 +729,9 @@ class ProcessLINEWebhook implements ShouldQueue
                 return;
             }
 
-            // Send reply with retry key for idempotency
+            // Send reply with fallback to push if token expired
             $retryKey = $lineService->generateRetryKey();
-            $lineService->reply($this->bot, $replyToken, [$responseMessage], $retryKey);
+            $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$responseMessage], $retryKey);
 
             // Save bot response
             $botMessage = $conversation->messages()->create([
@@ -927,14 +927,14 @@ class ProcessLINEWebhook implements ShouldQueue
                 'last_active_at' => now(),
             ]);
 
-            // Send reply to LINE with retry key for idempotency
+            // Send reply to LINE with fallback to push if token expired
             $bubblesService = app(MultipleBubblesService::class);
             if ($bubblesService->isEnabled($this->bot)) {
                 $bubbles = $bubblesService->parseIntoBubbles($responseContent, $this->bot);
                 $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles);
             } else {
                 $retryKey = $lineService->generateRetryKey();
-                $lineService->reply($this->bot, $replyToken, [$responseContent], $retryKey);
+                $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$responseContent], $retryKey);
             }
 
             // Refresh and broadcast
@@ -1085,20 +1085,21 @@ class ProcessLINEWebhook implements ShouldQueue
         LINEService $lineService,
         RateLimitService $rateLimitService,
         ?string $replyToken,
+        string $userId,
         string $status
     ): void {
         // Get custom message from bot settings (null = silent)
         $message = $rateLimitService->getRateLimitMessage($status, $this->bot->settings);
 
         // If no custom message, stay silent (default behavior)
-        if (!$message || !$replyToken) {
+        if (!$message) {
             return;
         }
 
-        // Send custom rate limit message to user with retry key
+        // Send custom rate limit message to user with fallback to push
         try {
             $retryKey = $lineService->generateRetryKey();
-            $lineService->reply($this->bot, $replyToken, [$message], $retryKey);
+            $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$message], $retryKey);
         } catch (\Exception $e) {
             Log::warning('Failed to send rate limit message', [
                 'bot_id' => $this->bot->id,
@@ -1115,7 +1116,8 @@ class ProcessLINEWebhook implements ShouldQueue
     protected function handleOutsideResponseHours(
         LINEService $lineService,
         ResponseHoursService $responseHoursService,
-        ?string $replyToken
+        ?string $replyToken,
+        string $userId
     ): void {
         $message = $responseHoursService->getOfflineMessage($this->bot->settings);
 
@@ -1124,13 +1126,13 @@ class ProcessLINEWebhook implements ShouldQueue
             'has_offline_message' => $message !== null,
         ]);
 
-        if (!$message || !$replyToken) {
+        if (!$message) {
             return;
         }
 
         try {
             $retryKey = $lineService->generateRetryKey();
-            $lineService->reply($this->bot, $replyToken, [$message], $retryKey);
+            $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$message], $retryKey);
         } catch (\Exception $e) {
             Log::warning('Failed to send offline message', [
                 'bot_id' => $this->bot->id,
