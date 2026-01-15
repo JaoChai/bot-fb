@@ -52,7 +52,7 @@ export function QAWeeklyReportView({
   if (isError || !report) {
     return (
       <div className="text-center p-8 text-muted-foreground">
-        Failed to load report
+        ไม่สามารถโหลดรายงานได้
       </div>
     );
   }
@@ -66,23 +66,23 @@ export function QAWeeklyReportView({
         {onBack && (
           <Button variant="ghost" size="sm" onClick={onBack}>
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
+            กลับ
           </Button>
         )}
         <div className="flex-1">
           <h2 className="text-xl font-semibold">
-            Weekly Report: {formatDate(report.week_start)} to{' '}
+            รายงานประจำสัปดาห์: {formatDate(report.week_start)} ถึง{' '}
             {formatDate(report.week_end)}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Generated{' '}
+            สร้างเมื่อ{' '}
             {report.generated_at
-              ? new Date(report.generated_at).toLocaleString()
-              : 'N/A'}
+              ? new Date(report.generated_at).toLocaleString('th-TH')
+              : 'ไม่ระบุ'}
           </p>
         </div>
         <Badge variant={report.status === 'completed' ? 'default' : 'secondary'}>
-          {report.status}
+          {report.status === 'completed' ? 'เสร็จสิ้น' : report.status === 'generating' ? 'กำลังสร้าง' : 'ล้มเหลว'}
         </Badge>
       </div>
 
@@ -91,17 +91,17 @@ export function QAWeeklyReportView({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5" />
-            Performance Summary
+            สรุปประสิทธิภาพ
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <SummaryCard
-              label="Total Evaluated"
+              label="ประเมินทั้งหมด"
               value={performance_summary?.total_evaluated || 0}
             />
             <SummaryCard
-              label="Flagged Issues"
+              label="พบปัญหา"
               value={performance_summary?.total_flagged || 0}
               variant={
                 (performance_summary?.total_flagged || 0) > 0
@@ -110,7 +110,7 @@ export function QAWeeklyReportView({
               }
             />
             <SummaryCard
-              label="Error Rate"
+              label="อัตราข้อผิดพลาด"
               value={`${(performance_summary?.error_rate || 0).toFixed(1)}%`}
               variant={
                 (performance_summary?.error_rate || 0) > 15
@@ -119,7 +119,7 @@ export function QAWeeklyReportView({
               }
             />
             <SummaryCard
-              label="Average Score"
+              label="คะแนนเฉลี่ย"
               value={`${normalizeScore(performance_summary?.average_score || 0).toFixed(1)}%`}
               variant={
                 normalizeScore(performance_summary?.average_score || 0) >= 70
@@ -137,7 +137,7 @@ export function QAWeeklyReportView({
           {/* Metric Averages */}
           {performance_summary?.metric_averages && (
             <div className="mt-4 pt-4 border-t">
-              <p className="text-sm font-medium mb-3">Metric Breakdown</p>
+              <p className="text-sm font-medium mb-3">คะแนนแยกตามเกณฑ์</p>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 {Object.entries(performance_summary.metric_averages).map(
                   ([metric, value]) => (
@@ -156,10 +156,10 @@ export function QAWeeklyReportView({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-destructive" />
-              Top Issues
+              ปัญหาหลัก
             </CardTitle>
             <CardDescription>
-              Most common problems identified this week
+              ปัญหาที่พบบ่อยที่สุดในสัปดาห์นี้
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -178,10 +178,10 @@ export function QAWeeklyReportView({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Lightbulb className="h-5 w-5 text-yellow-500" />
-              Prompt Improvement Suggestions
+              ข้อเสนอแนะการปรับปรุง Prompt
             </CardTitle>
             <CardDescription>
-              AI-generated suggestions to fix the identified issues. Click "Apply to Flow" to apply a suggestion.
+              ข้อเสนอแนะจาก AI เพื่อแก้ไขปัญหาที่พบ กด "นำไปใช้" เพื่อใช้ข้อเสนอแนะ
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -208,21 +208,21 @@ export function QAWeeklyReportView({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Report Metadata
+              ข้อมูลรายงาน
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
               <div>
-                <p className="text-muted-foreground">Generation Cost</p>
+                <p className="text-muted-foreground">ค่าใช้จ่ายในการสร้าง</p>
                 <p className="font-medium">${report.generation_cost.toFixed(4)}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">Total Conversations</p>
+                <p className="text-muted-foreground">สนทนาทั้งหมด</p>
                 <p className="font-medium">{report.total_conversations}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">Total Flagged</p>
+                <p className="text-muted-foreground">พบปัญหา</p>
                 <p className="font-medium">{report.total_flagged}</p>
               </div>
             </div>
@@ -241,7 +241,7 @@ function normalizeScore(score: number): number {
 // Format date to readable string
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', {
+  return date.toLocaleDateString('th-TH', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -289,13 +289,13 @@ function ScoreDistribution({
 
   return (
     <div className="mt-4">
-      <p className="text-sm font-medium mb-2">Score Distribution</p>
+      <p className="text-sm font-medium mb-2">การกระจายคะแนน</p>
       <div className="flex gap-1 h-8 rounded overflow-hidden">
         {distribution.excellent > 0 && (
           <div
             className="bg-green-500 flex items-center justify-center text-xs text-white font-medium"
             style={{ width: `${(distribution.excellent / total) * 100}%` }}
-            title={`Excellent: ${distribution.excellent}`}
+            title={`ดีเยี่ยม: ${distribution.excellent}`}
           >
             {distribution.excellent > 0 && distribution.excellent}
           </div>
@@ -304,7 +304,7 @@ function ScoreDistribution({
           <div
             className="bg-blue-500 flex items-center justify-center text-xs text-white font-medium"
             style={{ width: `${(distribution.good / total) * 100}%` }}
-            title={`Good: ${distribution.good}`}
+            title={`ดี: ${distribution.good}`}
           >
             {distribution.good > 0 && distribution.good}
           </div>
@@ -313,7 +313,7 @@ function ScoreDistribution({
           <div
             className="bg-yellow-500 flex items-center justify-center text-xs text-white font-medium"
             style={{ width: `${(distribution.needs_improvement / total) * 100}%` }}
-            title={`Needs Improvement: ${distribution.needs_improvement}`}
+            title={`ต้องปรับปรุง: ${distribution.needs_improvement}`}
           >
             {distribution.needs_improvement > 0 && distribution.needs_improvement}
           </div>
@@ -322,7 +322,7 @@ function ScoreDistribution({
           <div
             className="bg-red-500 flex items-center justify-center text-xs text-white font-medium"
             style={{ width: `${(distribution.poor / total) * 100}%` }}
-            title={`Poor: ${distribution.poor}`}
+            title={`ไม่ผ่าน: ${distribution.poor}`}
           >
             {distribution.poor > 0 && distribution.poor}
           </div>
@@ -331,19 +331,19 @@ function ScoreDistribution({
       <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 rounded bg-green-500" />
-          Excellent (90-100)
+          ดีเยี่ยม (90-100)
         </span>
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 rounded bg-blue-500" />
-          Good (70-89)
+          ดี (70-89)
         </span>
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 rounded bg-yellow-500" />
-          Needs Work (50-69)
+          ต้องปรับปรุง (50-69)
         </span>
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 rounded bg-red-500" />
-          Poor (0-49)
+          ไม่ผ่าน (0-49)
         </span>
       </div>
     </div>
@@ -385,33 +385,33 @@ function IssueCard({ issue }: { issue: QATopIssue }) {
           </span>
         </div>
         <span className="text-sm text-muted-foreground">
-          {issue.count} cases ({issue.percentage.toFixed(1)}%)
+          {issue.count} กรณี ({issue.percentage.toFixed(1)}%)
         </span>
       </div>
       <div className="space-y-2 text-sm">
         <p className="text-muted-foreground">
-          <strong className="text-foreground">Pattern:</strong> {issue.pattern}
+          <strong className="text-foreground">รูปแบบ:</strong> {issue.pattern}
         </p>
         <p className="text-muted-foreground">
-          <strong className="text-foreground">Root Cause:</strong>{' '}
+          <strong className="text-foreground">สาเหตุ:</strong>{' '}
           {issue.root_cause}
         </p>
         {issue.prompt_section && (
           <p className="text-muted-foreground">
-            <strong className="text-foreground">Affected Section:</strong>{' '}
+            <strong className="text-foreground">ส่วนที่ได้รับผลกระทบ:</strong>{' '}
             {issue.prompt_section}
           </p>
         )}
       </div>
       {issue.example_conversations && issue.example_conversations.length > 0 && (
         <div className="mt-3 pt-3 border-t">
-          <p className="text-sm font-medium mb-2">Example:</p>
+          <p className="text-sm font-medium mb-2">ตัวอย่าง:</p>
           <div className="bg-muted/50 rounded p-2 text-sm">
             <p className="text-muted-foreground">
-              <strong>Q:</strong> {issue.example_conversations[0].user_question}
+              <strong>ถาม:</strong> {issue.example_conversations[0].user_question}
             </p>
             <p className="text-muted-foreground mt-1">
-              <strong>A:</strong> {issue.example_conversations[0].bot_response}
+              <strong>ตอบ:</strong> {issue.example_conversations[0].bot_response}
             </p>
           </div>
         </div>

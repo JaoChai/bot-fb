@@ -54,7 +54,7 @@ export function QAWeeklyReportList({
   if (isError) {
     return (
       <div className="text-center p-8 text-muted-foreground">
-        Failed to load weekly reports
+        ไม่สามารถโหลดรายงานประจำสัปดาห์ได้
       </div>
     );
   }
@@ -72,12 +72,12 @@ export function QAWeeklyReportList({
       {/* Actions */}
       <div className="flex justify-between items-center">
         <p className="text-sm text-muted-foreground">
-          {meta.total} report(s) available
+          {meta.total} รายงาน
         </p>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => refetch()}>
             <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
+            รีเฟรช
           </Button>
           <Button
             size="sm"
@@ -89,7 +89,7 @@ export function QAWeeklyReportList({
             ) : (
               <Plus className="h-4 w-4 mr-2" />
             )}
-            Generate Report
+            สร้างรายงาน
           </Button>
         </div>
       </div>
@@ -98,13 +98,13 @@ export function QAWeeklyReportList({
       <div className="border rounded-lg overflow-hidden">
         {/* Table Header */}
         <div className="grid grid-cols-[1fr_100px_100px_100px_80px_80px_60px] gap-4 px-4 py-3 bg-muted/50 border-b text-sm font-medium text-muted-foreground">
-          <div>Week</div>
-          <div>Status</div>
-          <div className="text-right">Conversations</div>
-          <div className="text-right">Flagged</div>
-          <div className="text-right">Avg Score</div>
-          <div className="text-right">Trend</div>
-          <div className="text-right">Action</div>
+          <div>สัปดาห์</div>
+          <div>สถานะ</div>
+          <div className="text-right">สนทนา</div>
+          <div className="text-right">พบปัญหา</div>
+          <div className="text-right">คะแนนเฉลี่ย</div>
+          <div className="text-right">แนวโน้ม</div>
+          <div className="text-right">ดู</div>
         </div>
 
         {/* Table Body */}
@@ -162,7 +162,7 @@ export function QAWeeklyReportList({
             ))
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              No weekly reports yet. Click "Generate Report" to create one.
+              ยังไม่มีรายงานประจำสัปดาห์ กดปุ่ม "สร้างรายงาน" เพื่อสร้างรายงานใหม่
             </div>
           )}
         </div>
@@ -172,9 +172,9 @@ export function QAWeeklyReportList({
       {meta.last_page > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing {(meta.current_page - 1) * meta.per_page + 1} -{' '}
-            {Math.min(meta.current_page * meta.per_page, meta.total)} of{' '}
-            {meta.total}
+            แสดง {(meta.current_page - 1) * meta.per_page + 1} -{' '}
+            {Math.min(meta.current_page * meta.per_page, meta.total)} จาก{' '}
+            {meta.total} รายการ
           </p>
           <div className="flex gap-2">
             <Button
@@ -212,7 +212,7 @@ function formatWeekRange(start: string, end: string): string {
     month: 'short',
     day: 'numeric',
   };
-  return `${startDate.toLocaleDateString('en-US', formatOptions)} - ${endDate.toLocaleDateString('en-US', formatOptions)}`;
+  return `${startDate.toLocaleDateString('th-TH', formatOptions)} - ${endDate.toLocaleDateString('th-TH', formatOptions)}`;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -222,12 +222,18 @@ function StatusBadge({ status }: { status: string }) {
     failed: 'destructive',
   };
 
+  const statusLabels: Record<string, string> = {
+    completed: 'เสร็จสิ้น',
+    generating: 'กำลังสร้าง',
+    failed: 'ล้มเหลว',
+  };
+
   return (
-    <Badge variant={variants[status] || 'secondary'} className="capitalize">
+    <Badge variant={variants[status] || 'secondary'}>
       {status === 'generating' && (
         <Loader2 className="h-3 w-3 mr-1 animate-spin" />
       )}
-      {status}
+      {statusLabels[status] || status}
     </Badge>
   );
 }

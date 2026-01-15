@@ -50,7 +50,7 @@ export function QAEvaluationLogList({
   if (isError) {
     return (
       <div className="text-center p-8 text-muted-foreground">
-        Failed to load evaluation logs
+        ไม่สามารถโหลดบันทึกการประเมินได้
       </div>
     );
   }
@@ -79,12 +79,12 @@ export function QAEvaluationLogList({
           }
         >
           <SelectTrigger className="w-36">
-            <SelectValue placeholder="Status" />
+            <SelectValue placeholder="สถานะ" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="flagged">Flagged Only</SelectItem>
-            <SelectItem value="passed">Passed Only</SelectItem>
+            <SelectItem value="all">ทั้งหมด</SelectItem>
+            <SelectItem value="flagged">พบปัญหา</SelectItem>
+            <SelectItem value="passed">ผ่าน</SelectItem>
           </SelectContent>
         </Select>
 
@@ -99,16 +99,16 @@ export function QAEvaluationLogList({
           }
         >
           <SelectTrigger className="w-44">
-            <SelectValue placeholder="Issue Type" />
+            <SelectValue placeholder="ประเภทปัญหา" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Issue Types</SelectItem>
-            <SelectItem value="hallucination">Hallucination</SelectItem>
-            <SelectItem value="price_error">Price Error</SelectItem>
-            <SelectItem value="wrong_tone">Wrong Tone</SelectItem>
-            <SelectItem value="missing_info">Missing Info</SelectItem>
-            <SelectItem value="off_topic">Off Topic</SelectItem>
-            <SelectItem value="unanswered">Unanswered</SelectItem>
+            <SelectItem value="all">ทุกประเภท</SelectItem>
+            <SelectItem value="hallucination">สร้างข้อมูลเท็จ</SelectItem>
+            <SelectItem value="price_error">ราคาผิดพลาด</SelectItem>
+            <SelectItem value="wrong_tone">โทนไม่เหมาะสม</SelectItem>
+            <SelectItem value="missing_info">ข้อมูลไม่ครบ</SelectItem>
+            <SelectItem value="off_topic">นอกเรื่อง</SelectItem>
+            <SelectItem value="unanswered">ไม่ตอบคำถาม</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -117,12 +117,12 @@ export function QAEvaluationLogList({
       <div className="border rounded-lg overflow-hidden">
         {/* Table Header */}
         <div className="grid grid-cols-[1fr_80px_100px_120px_2fr_60px] gap-4 px-4 py-3 bg-muted/50 border-b text-sm font-medium text-muted-foreground">
-          <div>Time</div>
-          <div>Score</div>
-          <div>Status</div>
-          <div>Issue Type</div>
-          <div>Question</div>
-          <div className="text-right">Action</div>
+          <div>เวลา</div>
+          <div>คะแนน</div>
+          <div>สถานะ</div>
+          <div>ประเภทปัญหา</div>
+          <div>คำถาม</div>
+          <div className="text-right">ดู</div>
         </div>
 
         {/* Table Body */}
@@ -146,7 +146,7 @@ export function QAEvaluationLogList({
                   {log.is_flagged ? (
                     <Badge variant="destructive" className="gap-1">
                       <AlertTriangle className="h-3 w-3" />
-                      Flagged
+                      พบปัญหา
                     </Badge>
                   ) : (
                     <Badge
@@ -154,7 +154,7 @@ export function QAEvaluationLogList({
                       className="gap-1 bg-green-100 text-green-700"
                     >
                       <CheckCircle className="h-3 w-3" />
-                      Passed
+                      ผ่าน
                     </Badge>
                   )}
                 </div>
@@ -184,7 +184,7 @@ export function QAEvaluationLogList({
             ))
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              No evaluation logs found
+              ไม่พบบันทึกการประเมิน
             </div>
           )}
         </div>
@@ -194,9 +194,9 @@ export function QAEvaluationLogList({
       {meta.last_page > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing {(meta.current_page - 1) * meta.per_page + 1} -{' '}
-            {Math.min(meta.current_page * meta.per_page, meta.total)} of{' '}
-            {meta.total}
+            แสดง {(meta.current_page - 1) * meta.per_page + 1} -{' '}
+            {Math.min(meta.current_page * meta.per_page, meta.total)} จาก{' '}
+            {meta.total} รายการ
           </p>
           <div className="flex gap-2">
             <Button

@@ -44,7 +44,7 @@ export function QAEvaluationLogDetail({
   if (isError || !log) {
     return (
       <div className="text-center p-8 text-muted-foreground">
-        Failed to load evaluation details
+        ไม่สามารถโหลดรายละเอียดการประเมินได้
       </div>
     );
   }
@@ -56,24 +56,24 @@ export function QAEvaluationLogDetail({
         {onBack && (
           <Button variant="ghost" size="sm" onClick={onBack}>
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
+            กลับ
           </Button>
         )}
         <div className="flex-1">
-          <h2 className="text-xl font-semibold">Evaluation #{log.id}</h2>
+          <h2 className="text-xl font-semibold">การประเมิน #{log.id}</h2>
           <p className="text-sm text-muted-foreground">
-            {new Date(log.created_at).toLocaleString()}
+            {new Date(log.created_at).toLocaleString('th-TH')}
           </p>
         </div>
         {log.is_flagged ? (
           <Badge variant="destructive" className="gap-1">
             <AlertTriangle className="h-3 w-3" />
-            Flagged
+            พบปัญหา
           </Badge>
         ) : (
           <Badge className="gap-1 bg-green-500">
             <CheckCircle className="h-3 w-3" />
-            Passed
+            ผ่าน
           </Badge>
         )}
       </div>
@@ -81,7 +81,7 @@ export function QAEvaluationLogDetail({
       {/* Scores */}
       <Card>
         <CardHeader>
-          <CardTitle>Evaluation Scores</CardTitle>
+          <CardTitle>คะแนนการประเมิน</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -93,7 +93,7 @@ export function QAEvaluationLogDetail({
           </div>
           <div className="mt-4 pt-4 border-t">
             <div className="flex items-center justify-between">
-              <span className="font-medium">Overall Score</span>
+              <span className="font-medium">คะแนนรวม</span>
               <span
                 className={cn(
                   'text-2xl font-bold',
@@ -115,18 +115,18 @@ export function QAEvaluationLogDetail({
       {log.is_flagged && log.issue_type && (
         <Card className="border-destructive/50">
           <CardHeader>
-            <CardTitle className="text-destructive">Issue Details</CardTitle>
+            <CardTitle className="text-destructive">รายละเอียดปัญหา</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Type:</span>
+              <span className="text-sm text-muted-foreground">ประเภท:</span>
               <Badge variant="outline" className="capitalize">
                 {log.issue_type.replace('_', ' ')}
               </Badge>
             </div>
             {log.issue_details && (
               <div>
-                <span className="text-sm text-muted-foreground">Details:</span>
+                <span className="text-sm text-muted-foreground">รายละเอียด:</span>
                 <pre className="mt-1 p-2 bg-muted rounded text-sm overflow-x-auto">
                   {JSON.stringify(log.issue_details, null, 2)}
                 </pre>
@@ -139,13 +139,13 @@ export function QAEvaluationLogDetail({
       {/* Conversation */}
       <Card>
         <CardHeader>
-          <CardTitle>Conversation</CardTitle>
+          <CardTitle>บทสนทนา</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-3">
             <MessageSquare className="h-5 w-5 text-blue-500 mt-1 shrink-0" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-blue-600">User Question</p>
+              <p className="text-sm font-medium text-blue-600">คำถามผู้ใช้</p>
               <p className="mt-1 bg-blue-50 p-3 rounded-lg dark:bg-blue-950/30">
                 {log.user_question}
               </p>
@@ -154,7 +154,7 @@ export function QAEvaluationLogDetail({
           <div className="flex gap-3">
             <Bot className="h-5 w-5 text-green-500 mt-1 shrink-0" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-green-600">Bot Response</p>
+              <p className="text-sm font-medium text-green-600">คำตอบบอท</p>
               <p className="mt-1 bg-green-50 p-3 rounded-lg whitespace-pre-wrap dark:bg-green-950/30">
                 {log.bot_response}
               </p>
@@ -170,7 +170,7 @@ export function QAEvaluationLogDetail({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Context Used
+              บริบทที่ใช้
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -186,7 +186,7 @@ export function QAEvaluationLogDetail({
               <div>
                 <p className="text-sm font-medium mb-2 flex items-center gap-2">
                   <Database className="h-4 w-4" />
-                  Knowledge Base Chunks ({log.kb_chunks_used.length})
+                  ข้อมูลจากฐานความรู้ ({log.kb_chunks_used.length} รายการ)
                 </p>
                 <div className="space-y-2">
                   {log.kb_chunks_used.map((chunk: QAKBChunk, idx: number) => (
@@ -194,7 +194,7 @@ export function QAEvaluationLogDetail({
                       <div className="flex items-center gap-2 mb-1 text-xs text-muted-foreground">
                         <span>{chunk.document_name}</span>
                         <span>-</span>
-                        <span>Similarity: {(chunk.similarity * 100).toFixed(1)}%</span>
+                        <span>ความคล้ายคลึง: {(chunk.similarity * 100).toFixed(1)}%</span>
                       </div>
                       <p>{chunk.content}</p>
                     </div>
@@ -210,19 +210,19 @@ export function QAEvaluationLogDetail({
       {log.model_metadata && (
         <Card>
           <CardHeader>
-            <CardTitle>Evaluation Metadata</CardTitle>
+            <CardTitle>ข้อมูลการประเมิน</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
               {log.model_metadata.realtime_model && (
                 <div>
-                  <p className="text-muted-foreground">Realtime Model</p>
+                  <p className="text-muted-foreground">โมเดลเรียลไทม์</p>
                   <p className="font-mono">{log.model_metadata.realtime_model}</p>
                 </div>
               )}
               {log.model_metadata.analysis_model && (
                 <div>
-                  <p className="text-muted-foreground">Analysis Model</p>
+                  <p className="text-muted-foreground">โมเดลวิเคราะห์</p>
                   <p className="font-mono">{log.model_metadata.analysis_model}</p>
                 </div>
               )}
@@ -240,7 +240,7 @@ export function QAEvaluationLogDetail({
               )}
               {log.model_metadata.total_cost !== undefined && (
                 <div>
-                  <p className="text-muted-foreground">Total Cost</p>
+                  <p className="text-muted-foreground">ค่าใช้จ่าย</p>
                   <p>${log.model_metadata.total_cost.toFixed(4)}</p>
                 </div>
               )}

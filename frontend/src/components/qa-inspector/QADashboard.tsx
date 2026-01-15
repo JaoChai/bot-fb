@@ -47,7 +47,7 @@ export function QADashboard({ botId }: QADashboardProps) {
   if (isError || !stats) {
     return (
       <div className="text-center p-8 text-muted-foreground">
-        Failed to load dashboard data
+        ไม่สามารถโหลดข้อมูลได้
       </div>
     );
   }
@@ -63,9 +63,9 @@ export function QADashboard({ botId }: QADashboardProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="1d">Last 24h</SelectItem>
-            <SelectItem value="7d">Last 7 days</SelectItem>
-            <SelectItem value="30d">Last 30 days</SelectItem>
+            <SelectItem value="1d">24 ชั่วโมง</SelectItem>
+            <SelectItem value="7d">7 วัน</SelectItem>
+            <SelectItem value="30d">30 วัน</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -73,24 +73,24 @@ export function QADashboard({ botId }: QADashboardProps) {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard
-          title="Total Evaluated"
+          title="ประเมินทั้งหมด"
           value={summary.total_evaluated}
           icon={<BarChart3 className="h-4 w-4" />}
         />
         <SummaryCard
-          title="Flagged Issues"
+          title="พบปัญหา"
           value={summary.total_flagged}
           icon={<AlertTriangle className="h-4 w-4" />}
           variant={summary.total_flagged > 0 ? 'warning' : 'default'}
         />
         <SummaryCard
-          title="Error Rate"
+          title="อัตราข้อผิดพลาด"
           value={`${summary.error_rate}%`}
           icon={<TrendingUp className="h-4 w-4" />}
           variant={summary.error_rate > 15 ? 'destructive' : 'default'}
         />
         <SummaryCard
-          title="Average Score"
+          title="คะแนนเฉลี่ย"
           value={`${summary.average_score}%`}
           icon={<CheckCircle className="h-4 w-4" />}
           variant={summary.average_score >= 70 ? 'success' : 'warning'}
@@ -100,9 +100,9 @@ export function QADashboard({ botId }: QADashboardProps) {
       {/* Score Trend Chart */}
       <Card>
         <CardHeader>
-          <CardTitle>Score Trend</CardTitle>
+          <CardTitle>แนวโน้มคะแนน</CardTitle>
           <CardDescription>
-            Daily average scores over the selected period
+            คะแนนเฉลี่ยรายวันในช่วงเวลาที่เลือก
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -118,7 +118,7 @@ export function QADashboard({ botId }: QADashboardProps) {
               ))
             ) : (
               <div className="w-full text-center text-muted-foreground py-8">
-                No data for this period
+                ไม่มีข้อมูลในช่วงเวลานี้
               </div>
             )}
           </div>
@@ -136,9 +136,9 @@ export function QADashboard({ botId }: QADashboardProps) {
         {/* Issue Breakdown */}
         <Card>
           <CardHeader>
-            <CardTitle>Issue Breakdown</CardTitle>
+            <CardTitle>ประเภทปัญหา</CardTitle>
             <CardDescription>
-              Distribution of flagged issues by type
+              การกระจายของปัญหาที่พบแยกตามประเภท
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -167,7 +167,7 @@ export function QADashboard({ botId }: QADashboardProps) {
               </div>
             ) : (
               <div className="text-center text-muted-foreground py-4">
-                No flagged issues in this period
+                ไม่พบปัญหาในช่วงเวลานี้
               </div>
             )}
           </CardContent>
@@ -176,8 +176,8 @@ export function QADashboard({ botId }: QADashboardProps) {
         {/* Metric Averages */}
         <Card>
           <CardHeader>
-            <CardTitle>Metric Averages</CardTitle>
-            <CardDescription>Average scores across all 5 metrics</CardDescription>
+            <CardTitle>คะแนนเฉลี่ยแต่ละด้าน</CardTitle>
+            <CardDescription>คะแนนเฉลี่ยของ 5 เกณฑ์การประเมิน</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">

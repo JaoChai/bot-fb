@@ -43,7 +43,7 @@ export function QAInspectorPage() {
 
   if (!numericBotId) {
     return (
-      <div className="p-8 text-center text-muted-foreground">Invalid bot ID</div>
+      <div className="p-8 text-center text-muted-foreground">Bot ID ไม่ถูกต้อง</div>
     );
   }
 
@@ -76,9 +76,9 @@ export function QAInspectorPage() {
   return (
     <div className="container py-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">QA Inspector</h1>
+        <h1 className="text-2xl font-bold">ตรวจสอบคุณภาพ</h1>
         <p className="text-muted-foreground">
-          AI-powered quality assurance for bot responses
+          ระบบ AI ตรวจสอบคุณภาพการตอบของบอทอัตโนมัติ
         </p>
       </div>
 
@@ -86,19 +86,19 @@ export function QAInspectorPage() {
         <TabsList>
           <TabsTrigger value="dashboard" className="gap-2">
             <BarChart3 className="h-4 w-4" />
-            Dashboard
+            ภาพรวม
           </TabsTrigger>
           <TabsTrigger value="logs" className="gap-2">
             <List className="h-4 w-4" />
-            Evaluation Logs
+            บันทึกการประเมิน
           </TabsTrigger>
           <TabsTrigger value="reports" className="gap-2">
             <FileText className="h-4 w-4" />
-            Weekly Reports
+            รายงานประจำสัปดาห์
           </TabsTrigger>
           <TabsTrigger value="settings" className="gap-2">
             <Settings className="h-4 w-4" />
-            Settings
+            ตั้งค่า
           </TabsTrigger>
         </TabsList>
 
