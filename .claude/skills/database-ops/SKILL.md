@@ -1,0 +1,165 @@
+---
+name: database-ops
+description: Database operations specialist for PostgreSQL/Neon with pgvector extension. Handles migrations, schema design, query optimization, vector operations, semantic search. Use when creating migrations, optimizing slow queries, working with embeddings, or designing database schema.
+---
+
+# Database Operations
+
+PostgreSQL + Neon + pgvector specialist for BotFacebook.
+
+## Quick Start
+
+```bash
+# Create migration
+php artisan make:migration add_column_to_table
+
+# Run migrations
+php artisan migrate
+
+# Rollback
+php artisan migrate:rollback
+```
+
+## MCP Tools Available
+
+- **neon**: Full database access
+  - `run_sql` - Execute SQL queries
+  - `run_sql_transaction` - Multi-statement transactions
+  - `prepare_database_migration` - Test migrations safely
+  - `complete_database_migration` - Apply to main branch
+  - `prepare_query_tuning` - Analyze slow queries
+  - `explain_sql_statement` - Query execution plans
+  - `list_slow_queries` - Find performance issues
+  - `describe_table_schema` - Table structure
+  - `get_database_tables` - List all tables
+
+## Migration Best Practices
+
+### Safe Migration Pattern
+
+```php
+public function up(): void
+{
+    Schema::table('users', function (Blueprint $table) {
+        // Always make new columns nullable or have defaults
+        $table->string('new_column')->nullable();
+
+        // Add index for frequently queried columns
+        $table->index('new_column');
+    });
+}
+
+public function down(): void
+{
+    Schema::table('users', function (Blueprint $table) {
+        $table->dropColumn('new_column');
+    });
+}
+```
+
+### Breaking Change Checklist
+
+Before running migration:
+- [ ] New columns have defaults or are nullable
+- [ ] No column renames without data migration
+- [ ] No column type changes that lose data
+- [ ] Foreign keys have proper ON DELETE handling
+- [ ] Indexes added for new columns used in WHERE
+
+## pgvector Operations
+
+### Create Vector Column
+
+```php
+// In migration
+$table->vector('embedding', 1536); // OpenAI dimension
+
+// Add index for similarity search
+DB::statement('CREATE INDEX idx_embedding ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)');
+```
+
+### Semantic Search Query
+
+```sql
+SELECT id, content,
+       1 - (embedding <=> $1::vector) as similarity
+FROM documents
+WHERE 1 - (embedding <=> $1::vector) > 0.7
+ORDER BY embedding <=> $1::vector
+LIMIT 10;
+```
+
+## Query Optimization
+
+### Use EXPLAIN ANALYZE
+
+```sql
+EXPLAIN ANALYZE
+SELECT * FROM conversations
+WHERE bot_id = 123
+AND created_at > NOW() - INTERVAL '7 days';
+```
+
+### Common Optimizations
+
+| Issue | Solution |
+|-------|----------|
+| Sequential Scan | Add index on filtered columns |
+| Nested Loop (slow) | Add composite index |
+| High cost | Use covering index |
+| Too many rows | Add pagination |
+
+### Index Strategies
+
+```sql
+-- Single column
+CREATE INDEX idx_bot_id ON conversations(bot_id);
+
+-- Composite (order matters!)
+CREATE INDEX idx_bot_date ON conversations(bot_id, created_at DESC);
+
+-- Partial index
+CREATE INDEX idx_active_bots ON bots(id) WHERE is_active = true;
+
+-- GIN for JSONB
+CREATE INDEX idx_metadata ON messages USING GIN(metadata);
+```
+
+## Detailed Guides
+
+- **Migration Guide**: See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)
+- **pgvector Guide**: See [PGVECTOR_GUIDE.md](PGVECTOR_GUIDE.md)
+
+## Key Tables
+
+| Table | Purpose |
+|-------|---------|
+| `bots` | Bot configurations |
+| `flows` | Conversation flows |
+| `messages` | Chat messages |
+| `conversations` | Conversation sessions |
+| `knowledge_base_documents` | RAG documents |
+| `embeddings` | Vector embeddings |
+
+## Neon-Specific Features
+
+### Branching
+```bash
+# Create branch for testing migrations
+neon branches create --name test-migration
+
+# Test migration on branch
+php artisan migrate --database=neon-branch
+
+# If successful, apply to main
+neon branches delete test-migration
+```
+
+### Connection Pooling
+- Use `?pooler=true` for serverless
+- Connection limit: 100 (pooled)
+- Timeout: 5 seconds for queries
+
+## Utility Scripts
+
+- `scripts/validate_migration.py` - Check migration safety
