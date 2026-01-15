@@ -222,6 +222,70 @@ class LINEService
     }
 
     /**
+     * Reply with automatic fallback to push if reply token expired.
+     *
+     * LINE reply tokens expire very quickly (~10 seconds). This method attempts
+     * to use the free reply() first, and automatically falls back to push()
+     * if the token has expired.
+     *
+     * @param Bot $bot The bot instance
+     * @param string|null $replyToken Reply token (null = use push directly)
+     * @param string $userId LINE user ID for fallback push
+     * @param array $messages Messages to send (max 5)
+     * @param string|null $retryKey Optional retry key for idempotency
+     * @return array ['method' => 'reply'|'push', 'success' => bool]
+     * @throws LINEException If both reply and push fail
+     *
+     * @see https://developers.line.biz/en/docs/messaging-api/sending-messages/
+     */
+    public function replyWithFallback(
+        Bot $bot,
+        ?string $replyToken,
+        string $userId,
+        array $messages,
+        ?string $retryKey = null
+    ): array {
+        // If no reply token, use push directly
+        if (!$replyToken) {
+            $pushRetryKey = $retryKey ?? $this->generateRetryKey();
+            $this->push($bot, $userId, $messages, $pushRetryKey);
+
+            Log::debug('LINE replyWithFallback: used push (no reply token)', [
+                'bot_id' => $bot->id,
+                'user_id' => $userId,
+            ]);
+
+            return ['method' => 'push', 'success' => true];
+        }
+
+        try {
+            // Try reply first (free, doesn't count towards quota)
+            $this->reply($bot, $replyToken, $messages, $retryKey);
+
+            return ['method' => 'reply', 'success' => true];
+
+        } catch (LINEException $e) {
+            // Check if the error is due to expired reply token
+            if ($e->isReplyTokenExpired()) {
+                Log::info('LINE reply token expired, falling back to push', [
+                    'bot_id' => $bot->id,
+                    'user_id' => $userId,
+                    'original_error' => $e->getMessage(),
+                ]);
+
+                // Fallback to push (counts towards quota but ensures delivery)
+                $pushRetryKey = $this->generateRetryKey();
+                $this->push($bot, $userId, $messages, $pushRetryKey);
+
+                return ['method' => 'push', 'success' => true];
+            }
+
+            // For other errors, re-throw
+            throw $e;
+        }
+    }
+
+    /**
      * Get user profile from LINE.
      *
      * @throws LINEException

@@ -524,4 +524,137 @@ class LINEServiceTest extends TestCase
         $retryKey2 = $this->service->generateRetryKey();
         $this->assertNotEquals($retryKey, $retryKey2);
     }
+
+    // ========================================
+    // Reply-to-Push Fallback Tests
+    // ========================================
+
+    public function test_reply_with_fallback_uses_reply_when_token_valid(): void
+    {
+        Http::fake([
+            'api.line.me/v2/bot/message/reply' => Http::response([], 200),
+        ]);
+
+        $bot = $this->createBotInstance([
+            'channel_access_token' => 'test_token',
+        ]);
+
+        $result = $this->service->replyWithFallback(
+            $bot,
+            'valid_reply_token',
+            'U1234567890',
+            ['Hello!']
+        );
+
+        $this->assertEquals('reply', $result['method']);
+        $this->assertTrue($result['success']);
+
+        Http::assertSent(function ($request) {
+            return $request->url() === 'https://api.line.me/v2/bot/message/reply'
+                && $request['replyToken'] === 'valid_reply_token';
+        });
+    }
+
+    public function test_reply_with_fallback_uses_push_when_token_null(): void
+    {
+        Http::fake([
+            'api.line.me/v2/bot/message/push' => Http::response([], 200),
+        ]);
+
+        $bot = $this->createBotInstance([
+            'channel_access_token' => 'test_token',
+        ]);
+
+        $result = $this->service->replyWithFallback(
+            $bot,
+            null, // No reply token
+            'U1234567890',
+            ['Hello!']
+        );
+
+        $this->assertEquals('push', $result['method']);
+        $this->assertTrue($result['success']);
+
+        Http::assertSent(function ($request) {
+            return $request->url() === 'https://api.line.me/v2/bot/message/push'
+                && $request['to'] === 'U1234567890';
+        });
+    }
+
+    public function test_reply_with_fallback_falls_back_to_push_on_token_expired(): void
+    {
+        // First call to reply fails with expired token, then push succeeds
+        Http::fake([
+            'api.line.me/v2/bot/message/reply' => Http::response([
+                'message' => 'Invalid reply token',
+            ], 400),
+            'api.line.me/v2/bot/message/push' => Http::response([], 200),
+        ]);
+
+        $bot = $this->createBotInstance([
+            'channel_access_token' => 'test_token',
+        ]);
+
+        $result = $this->service->replyWithFallback(
+            $bot,
+            'expired_token',
+            'U1234567890',
+            ['Hello!']
+        );
+
+        $this->assertEquals('push', $result['method']);
+        $this->assertTrue($result['success']);
+
+        // Verify both reply and push were attempted
+        Http::assertSentCount(2);
+    }
+
+    public function test_reply_with_fallback_throws_on_other_errors(): void
+    {
+        Http::fake([
+            'api.line.me/v2/bot/message/reply' => Http::response([
+                'message' => 'Rate limit exceeded',
+            ], 429),
+        ]);
+
+        $bot = $this->createBotInstance([
+            'channel_access_token' => 'test_token',
+        ]);
+
+        $this->expectException(LINEException::class);
+        $this->expectExceptionMessage('Failed to send LINE reply: Rate limit exceeded');
+
+        $this->service->replyWithFallback(
+            $bot,
+            'valid_token',
+            'U1234567890',
+            ['Hello!']
+        );
+    }
+
+    public function test_reply_with_fallback_passes_retry_key(): void
+    {
+        Http::fake([
+            'api.line.me/v2/bot/message/reply' => Http::response([], 200),
+        ]);
+
+        $bot = $this->createBotInstance([
+            'channel_access_token' => 'test_token',
+        ]);
+        $retryKey = $this->service->generateRetryKey();
+
+        $result = $this->service->replyWithFallback(
+            $bot,
+            'valid_reply_token',
+            'U1234567890',
+            ['Hello!'],
+            $retryKey
+        );
+
+        $this->assertTrue($result['success']);
+
+        Http::assertSent(function ($request) use ($retryKey) {
+            return $request->hasHeader('X-Line-Retry-Key', $retryKey);
+        });
+    }
 }
