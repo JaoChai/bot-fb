@@ -145,17 +145,20 @@ class MessageService
     ): void {
         $userId = $conversation->external_customer_id;
 
+        // Generate retry key for idempotency (LINE best practice)
+        $retryKey = $this->lineService->generateRetryKey();
+
         match ($type) {
             'photo', 'image' => $mediaUrl
-                ? $this->lineService->push($bot, $userId, [$this->lineService->imageMessage($mediaUrl)])
-                : $this->lineService->push($bot, $userId, [$this->lineService->textMessage($content)]),
+                ? $this->lineService->push($bot, $userId, [$this->lineService->imageMessage($mediaUrl)], $retryKey)
+                : $this->lineService->push($bot, $userId, [$this->lineService->textMessage($content)], $retryKey),
             'video' => $mediaUrl
-                ? $this->lineService->push($bot, $userId, [$this->lineService->videoMessage($mediaUrl)])
-                : $this->lineService->push($bot, $userId, [$this->lineService->textMessage($content)]),
+                ? $this->lineService->push($bot, $userId, [$this->lineService->videoMessage($mediaUrl)], $retryKey)
+                : $this->lineService->push($bot, $userId, [$this->lineService->textMessage($content)], $retryKey),
             'audio', 'voice' => $mediaUrl
-                ? $this->lineService->push($bot, $userId, [$this->lineService->audioMessage($mediaUrl)])
-                : $this->lineService->push($bot, $userId, [$this->lineService->textMessage($content)]),
-            default => $this->lineService->push($bot, $userId, [$this->lineService->textMessage($content)]),
+                ? $this->lineService->push($bot, $userId, [$this->lineService->audioMessage($mediaUrl)], $retryKey)
+                : $this->lineService->push($bot, $userId, [$this->lineService->textMessage($content)], $retryKey),
+            default => $this->lineService->push($bot, $userId, [$this->lineService->textMessage($content)], $retryKey),
         };
     }
 

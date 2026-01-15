@@ -53,7 +53,9 @@ class SendDelayedBubbleJob implements ShouldQueue
     public function handle(LINEService $lineService): void
     {
         try {
-            $lineService->push($this->bot, $this->userId, [$this->bubbleContent]);
+            // Use retry key for idempotency (LINE best practice)
+            $retryKey = $lineService->generateRetryKey();
+            $lineService->push($this->bot, $this->userId, [$this->bubbleContent], $retryKey);
 
             Log::debug('Delayed bubble sent successfully', [
                 'bot_id' => $this->bot->id,

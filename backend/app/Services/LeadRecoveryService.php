@@ -155,7 +155,9 @@ class LeadRecoveryService
      */
     protected function sendViaLINE(Bot $bot, string $userId, string $message): bool
     {
-        $this->lineService->push($bot, $userId, [$message]);
+        // Use retry key for idempotency (LINE best practice)
+        $retryKey = $this->lineService->generateRetryKey();
+        $this->lineService->push($bot, $userId, [$message], $retryKey);
         return true;
     }
 

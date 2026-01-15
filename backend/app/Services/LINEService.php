@@ -77,6 +77,48 @@ class LINEService
     }
 
     /**
+     * Extract webhook event ID from a LINE event.
+     * This is a unique identifier assigned by LINE to each webhook event.
+     *
+     * @see https://developers.line.biz/en/docs/messaging-api/receiving-messages/
+     */
+    public function extractWebhookEventId(array $event): ?string
+    {
+        return $event['webhookEventId'] ?? null;
+    }
+
+    /**
+     * Check if this event is a redelivery.
+     * LINE may redeliver events if the initial delivery failed or timed out.
+     *
+     * @see https://developers.line.biz/en/docs/messaging-api/receiving-messages/
+     */
+    public function isRedelivery(array $event): bool
+    {
+        return ($event['deliveryContext']['isRedelivery'] ?? false) === true;
+    }
+
+    /**
+     * Extract event timestamp from a LINE event.
+     * Returns milliseconds since epoch.
+     */
+    public function extractEventTimestamp(array $event): ?int
+    {
+        return isset($event['timestamp']) ? (int) $event['timestamp'] : null;
+    }
+
+    /**
+     * Generate a retry key for idempotent API calls.
+     * Uses UUIDv4 format as required by LINE API.
+     *
+     * @see https://developers.line.biz/en/docs/messaging-api/retrying-api-request/
+     */
+    public function generateRetryKey(): string
+    {
+        return (string) \Illuminate\Support\Str::uuid();
+    }
+
+    /**
      * Check if the event is a message event.
      */
     public function isMessageEvent(array $event): bool
@@ -96,11 +138,22 @@ class LINEService
     /**
      * Reply to a message using the reply token.
      *
+     * @param Bot $bot The bot instance
+     * @param string $replyToken The reply token from webhook event
+     * @param array $messages Messages to send (max 5)
+     * @param string|null $retryKey Optional X-Line-Retry-Key for idempotent retry
      * @throws LINEException
+     *
+     * @see https://developers.line.biz/en/docs/messaging-api/retrying-api-request/
      */
-    public function reply(Bot $bot, string $replyToken, array $messages): bool
+    public function reply(Bot $bot, string $replyToken, array $messages, ?string $retryKey = null): bool
     {
-        $response = $this->client($bot)->post('/bot/message/reply', [
+        $headers = [];
+        if ($retryKey) {
+            $headers['X-Line-Retry-Key'] = $retryKey;
+        }
+
+        $response = $this->client($bot, $headers)->post('/bot/message/reply', [
             'replyToken' => $replyToken,
             'messages' => $this->formatMessages($messages),
         ]);
@@ -112,6 +165,7 @@ class LINEService
                 'status' => $response->status(),
                 'error' => $error,
                 'details' => $response->json('details'),
+                'retry_key' => $retryKey,
             ]);
 
             throw new LINEException(
@@ -127,11 +181,22 @@ class LINEService
     /**
      * Send a push message to a user.
      *
+     * @param Bot $bot The bot instance
+     * @param string $userId LINE user ID to send message to
+     * @param array $messages Messages to send (max 5)
+     * @param string|null $retryKey Optional X-Line-Retry-Key for idempotent retry
      * @throws LINEException
+     *
+     * @see https://developers.line.biz/en/docs/messaging-api/retrying-api-request/
      */
-    public function push(Bot $bot, string $userId, array $messages): bool
+    public function push(Bot $bot, string $userId, array $messages, ?string $retryKey = null): bool
     {
-        $response = $this->client($bot)->post('/bot/message/push', [
+        $headers = [];
+        if ($retryKey) {
+            $headers['X-Line-Retry-Key'] = $retryKey;
+        }
+
+        $response = $this->client($bot, $headers)->post('/bot/message/push', [
             'to' => $userId,
             'messages' => $this->formatMessages($messages),
         ]);
@@ -143,6 +208,7 @@ class LINEService
                 'user_id' => $userId,
                 'status' => $response->status(),
                 'error' => $error,
+                'retry_key' => $retryKey,
             ]);
 
             throw new LINEException(
@@ -402,17 +468,22 @@ class LINEService
 
     /**
      * Get configured HTTP client for LINE API.
+     *
+     * @param Bot $bot The bot instance with channel access token
+     * @param array $additionalHeaders Optional headers (e.g., X-Line-Retry-Key)
      */
-    protected function client(Bot $bot): PendingRequest
+    protected function client(Bot $bot, array $additionalHeaders = []): PendingRequest
     {
         if (empty($bot->channel_access_token)) {
             throw new LINEException('Bot has no LINE channel access token configured', 401);
         }
 
+        $headers = array_merge([
+            'Authorization' => 'Bearer ' . $bot->channel_access_token,
+        ], $additionalHeaders);
+
         return Http::baseUrl(self::API_BASE_URL)
-            ->withHeaders([
-                'Authorization' => 'Bearer ' . $bot->channel_access_token,
-            ])
+            ->withHeaders($headers)
             ->timeout(30)
             ->acceptJson();
     }
