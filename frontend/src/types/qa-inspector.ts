@@ -289,8 +289,7 @@ export type QAReportSchedule =
   | 'monday_00:00'
   | 'monday_09:00'
   | 'friday_18:00'
-  | 'sunday_00:00'
-  | 'daily_00:00';
+  | 'sunday_00:00';
 
 /**
  * Stats summary data
