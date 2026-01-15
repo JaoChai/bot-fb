@@ -23,7 +23,7 @@ class UpdateQAInspectorSettingsRequest extends FormRequest
             'qa_report_fallback_model' => ['sometimes', 'nullable', 'string', 'max:100', 'regex:/^[a-z0-9-]+\/[a-z0-9.-]+$/i'],
             'qa_score_threshold' => ['sometimes', 'numeric', 'between:0,1'],
             'qa_sampling_rate' => ['sometimes', 'integer', 'between:1,100'],
-            'qa_report_schedule' => ['sometimes', 'string', 'in:monday_00:00,monday_06:00,friday_18:00,sunday_00:00'],
+            'qa_report_schedule' => ['sometimes', 'string', 'in:monday_00:00,monday_09:00,friday_18:00,sunday_00:00'],
             'qa_notifications' => ['sometimes', 'array'],
             'qa_notifications.email' => ['sometimes', 'boolean'],
             'qa_notifications.alert' => ['sometimes', 'boolean'],
