@@ -25,10 +25,14 @@ class Message extends Model
         'completion_tokens',
         'cost',
         'external_message_id',
+        'webhook_event_id',
+        'is_redelivery',
+        'event_timestamp',
         'reply_to_message_id',
         'embedding',
         'sentiment',
         'intents',
+        'metadata',
     ];
 
     protected $casts = [
@@ -36,6 +40,9 @@ class Message extends Model
         'cost' => 'decimal:6',
         'embedding' => Vector::class,
         'intents' => 'array',
+        'is_redelivery' => 'boolean',
+        'event_timestamp' => 'integer',
+        'metadata' => 'array',
     ];
 
     public function conversation(): BelongsTo

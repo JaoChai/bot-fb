@@ -199,8 +199,9 @@ class ProcessAggregatedMessages implements ShouldQueue
                     // Use null for replyToken to force push message
                     $bubblesService->sendBubbles($this->bot, $this->externalUserId, null, $bubbles);
                 } else {
-                    // Single message via push
-                    $lineService->push($this->bot, $this->externalUserId, [$botMessage->content]);
+                    // Single message via push with retry key for idempotency
+                    $retryKey = $lineService->generateRetryKey();
+                    $lineService->push($this->bot, $this->externalUserId, [$botMessage->content], $retryKey);
                 }
             }
 

@@ -39,8 +39,9 @@ class ProcessLINEWebhook implements ShouldQueue
 
     /**
      * The number of seconds to wait before retrying the job.
+     * Uses exponential backoff: 5s, 15s, 45s
      */
-    public int $backoff = 5;
+    public array $backoff = [5, 15, 45];
 
     /**
      * Smart aggregation state (used to pass data outside transaction).
@@ -110,12 +111,27 @@ class ProcessLINEWebhook implements ShouldQueue
         $replyToken = $lineService->extractReplyToken($this->event);
         $messageData = $lineService->extractMessage($this->event);
 
+        // Extract LINE webhook event metadata (best practice)
+        $webhookEventId = $lineService->extractWebhookEventId($this->event);
+        $eventTimestamp = $lineService->extractEventTimestamp($this->event);
+        $isRedeliveryEvent = $lineService->isRedelivery($this->event);
+
         if (!$userId || !$messageData['text']) {
             Log::warning('Invalid LINE message event', [
                 'has_user_id' => (bool) $userId,
                 'has_text' => (bool) $messageData['text'],
             ]);
             return;
+        }
+
+        // Check if this is a redelivered event that we've already processed
+        if ($isRedeliveryEvent && $webhookEventId) {
+            if (Message::where('webhook_event_id', $webhookEventId)->exists()) {
+                Log::info('Redelivered webhook event already processed, skipping', [
+                    'webhook_event_id' => $webhookEventId,
+                ]);
+                return;
+            }
         }
 
         // Check rate limit before processing
@@ -161,6 +177,9 @@ class ProcessLINEWebhook implements ShouldQueue
             $messageData,
             $useAggregation,
             $waitTimeMs,
+            $webhookEventId,
+            $eventTimestamp,
+            $isRedeliveryEvent,
             &$userMessage,
             &$botMessage,
             &$conversation,
@@ -179,23 +198,37 @@ class ProcessLINEWebhook implements ShouldQueue
             $isNewConversation = !$existingConversation;
             $conversation = $existingConversation ?? $this->createNewConversation($userId, $lineService);
 
-            // Check for duplicate message (LINE may send webhook multiple times)
+            // Primary deduplication: webhookEventId (LINE best practice)
+            if ($webhookEventId && Message::where('conversation_id', $conversation->id)
+                ->where('webhook_event_id', $webhookEventId)
+                ->exists()) {
+                Log::info('Duplicate webhook ignored (by webhook_event_id)', [
+                    'conversation_id' => $conversation->id,
+                    'webhook_event_id' => $webhookEventId,
+                ]);
+                return;
+            }
+
+            // Fallback deduplication: external_message_id (backward compatibility)
             if ($messageData['id'] && Message::where('conversation_id', $conversation->id)
                 ->where('external_message_id', $messageData['id'])
                 ->exists()) {
-                Log::info('Duplicate webhook ignored', [
+                Log::info('Duplicate webhook ignored (by external_message_id)', [
                     'conversation_id' => $conversation->id,
                     'message_id' => $messageData['id'],
                 ]);
                 return;
             }
 
-            // Save user message (without separate increment)
+            // Save user message with LINE event metadata
             $userMessage = $conversation->messages()->create([
                 'sender' => 'user',
                 'content' => $messageData['text'],
                 'type' => 'text',
                 'external_message_id' => $messageData['id'],
+                'webhook_event_id' => $webhookEventId,
+                'is_redelivery' => $isRedeliveryEvent,
+                'event_timestamp' => $eventTimestamp,
             ]);
 
             // Increment rate limit counters after successful message save
@@ -325,8 +358,9 @@ class ProcessLINEWebhook implements ShouldQueue
                     $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
                     $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles);
                 } elseif ($replyToken) {
-                    // Standard single message reply
-                    $lineService->reply($this->bot, $replyToken, [$botMessage->content]);
+                    // Standard single message reply with retry key for idempotency
+                    $retryKey = $lineService->generateRetryKey();
+                    $lineService->reply($this->bot, $replyToken, [$botMessage->content], $retryKey);
                 }
             }
 
@@ -475,8 +509,24 @@ class ProcessLINEWebhook implements ShouldQueue
         $messageData = $lineService->extractMessage($this->event);
         $messageType = $messageData['type'];
 
+        // Extract LINE webhook event metadata (best practice)
+        $webhookEventId = $lineService->extractWebhookEventId($this->event);
+        $eventTimestamp = $lineService->extractEventTimestamp($this->event);
+        $isRedeliveryEvent = $lineService->isRedelivery($this->event);
+
         if (!$userId) {
             return;
+        }
+
+        // Check if this is a redelivered event that we've already processed
+        if ($isRedeliveryEvent && $webhookEventId) {
+            if (Message::where('webhook_event_id', $webhookEventId)->exists()) {
+                Log::info('Redelivered non-text webhook already processed, skipping', [
+                    'webhook_event_id' => $webhookEventId,
+                    'message_type' => $messageType,
+                ]);
+                return;
+            }
         }
 
         // Download media BEFORE transaction (external API call shouldn't be in transaction)
@@ -528,6 +578,9 @@ class ProcessLINEWebhook implements ShouldQueue
             $mediaUrl,
             $mediaType,
             $content,
+            $webhookEventId,
+            $eventTimestamp,
+            $isRedeliveryEvent,
             &$userMessage,
             &$conversation,
             &$isNewConversation
@@ -542,18 +595,29 @@ class ProcessLINEWebhook implements ShouldQueue
             $isNewConversation = !$existingConversation;
             $conversation = $existingConversation ?? $this->createNewConversation($userId, $lineService);
 
-            // Check for duplicate message INSIDE transaction to prevent race conditions
+            // Primary deduplication: webhookEventId (LINE best practice)
+            if ($webhookEventId && Message::where('conversation_id', $conversation->id)
+                ->where('webhook_event_id', $webhookEventId)
+                ->exists()) {
+                Log::info('Duplicate non-text webhook ignored (by webhook_event_id)', [
+                    'conversation_id' => $conversation->id,
+                    'webhook_event_id' => $webhookEventId,
+                ]);
+                return;
+            }
+
+            // Fallback deduplication: external_message_id (backward compatibility)
             if ($messageData['id'] && Message::where('conversation_id', $conversation->id)
                 ->where('external_message_id', $messageData['id'])
                 ->exists()) {
-                Log::info('Duplicate non-text webhook ignored', [
+                Log::info('Duplicate non-text webhook ignored (by external_message_id)', [
                     'conversation_id' => $conversation->id,
                     'message_id' => $messageData['id'],
                 ]);
                 return;
             }
 
-            // Save message to database
+            // Save message to database with LINE event metadata
             $userMessage = $conversation->messages()->create([
                 'sender' => 'user',
                 'content' => $content,
@@ -561,6 +625,9 @@ class ProcessLINEWebhook implements ShouldQueue
                 'media_url' => $mediaUrl,
                 'media_type' => $mediaType,
                 'external_message_id' => $messageData['id'],
+                'webhook_event_id' => $webhookEventId,
+                'is_redelivery' => $isRedeliveryEvent,
+                'event_timestamp' => $eventTimestamp,
             ]);
 
             // Update stats atomically with message creation
@@ -662,8 +729,9 @@ class ProcessLINEWebhook implements ShouldQueue
                 return;
             }
 
-            // Send reply
-            $lineService->reply($this->bot, $replyToken, [$responseMessage]);
+            // Send reply with retry key for idempotency
+            $retryKey = $lineService->generateRetryKey();
+            $lineService->reply($this->bot, $replyToken, [$responseMessage], $retryKey);
 
             // Save bot response
             $botMessage = $conversation->messages()->create([
@@ -859,13 +927,14 @@ class ProcessLINEWebhook implements ShouldQueue
                 'last_active_at' => now(),
             ]);
 
-            // Send reply to LINE
+            // Send reply to LINE with retry key for idempotency
             $bubblesService = app(MultipleBubblesService::class);
             if ($bubblesService->isEnabled($this->bot)) {
                 $bubbles = $bubblesService->parseIntoBubbles($responseContent, $this->bot);
                 $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles);
             } else {
-                $lineService->reply($this->bot, $replyToken, [$responseContent]);
+                $retryKey = $lineService->generateRetryKey();
+                $lineService->reply($this->bot, $replyToken, [$responseContent], $retryKey);
             }
 
             // Refresh and broadcast
@@ -1026,9 +1095,10 @@ class ProcessLINEWebhook implements ShouldQueue
             return;
         }
 
-        // Send custom rate limit message to user
+        // Send custom rate limit message to user with retry key
         try {
-            $lineService->reply($this->bot, $replyToken, [$message]);
+            $retryKey = $lineService->generateRetryKey();
+            $lineService->reply($this->bot, $replyToken, [$message], $retryKey);
         } catch (\Exception $e) {
             Log::warning('Failed to send rate limit message', [
                 'bot_id' => $this->bot->id,
@@ -1059,7 +1129,8 @@ class ProcessLINEWebhook implements ShouldQueue
         }
 
         try {
-            $lineService->reply($this->bot, $replyToken, [$message]);
+            $retryKey = $lineService->generateRetryKey();
+            $lineService->reply($this->bot, $replyToken, [$message], $retryKey);
         } catch (\Exception $e) {
             Log::warning('Failed to send offline message', [
                 'bot_id' => $this->bot->id,
