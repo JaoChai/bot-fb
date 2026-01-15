@@ -128,14 +128,10 @@ INSTRUCTION;
         $totalBubbles = count($bubbles);
 
         try {
-            // First bubble: send immediately using reply if we have a token (faster)
-            // Use retry key for idempotency (LINE best practice)
+            // First bubble: send with fallback (try reply first, then push if token expired)
+            // Uses retry key for idempotency (LINE best practice)
             $retryKey = $this->lineService->generateRetryKey();
-            if ($replyToken) {
-                $this->lineService->reply($bot, $replyToken, [$bubbles[0]], $retryKey);
-            } else {
-                $this->lineService->push($bot, $userId, [$bubbles[0]], $retryKey);
-            }
+            $this->lineService->replyWithFallback($bot, $replyToken, $userId, [$bubbles[0]], $retryKey);
 
             // If only one bubble, we're done
             if ($totalBubbles === 1) {
