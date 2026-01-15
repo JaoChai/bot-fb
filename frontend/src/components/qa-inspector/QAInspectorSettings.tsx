@@ -19,10 +19,10 @@ import type { QAInspectorSettings as QASettings, QAReportSchedule, DeepPartial }
 
 // Report schedule options
 const REPORT_SCHEDULES: { value: QAReportSchedule; label: string }[] = [
-  { value: 'monday_00:00', label: 'Monday 00:00' },
-  { value: 'monday_09:00', label: 'Monday 09:00' },
-  { value: 'friday_18:00', label: 'Friday 18:00' },
-  { value: 'sunday_00:00', label: 'Sunday 00:00' },
+  { value: 'monday_00:00', label: 'จันทร์ 00:00' },
+  { value: 'monday_09:00', label: 'จันทร์ 09:00' },
+  { value: 'friday_18:00', label: 'ศุกร์ 18:00' },
+  { value: 'sunday_00:00', label: 'อาทิตย์ 00:00' },
 ];
 
 // Base monthly cost at 100% sampling (200 conversations/day)
@@ -127,10 +127,10 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
   const thresholdWarning = useMemo(() => {
     const threshold = formData.settings?.score_threshold ?? 0.70;
     if (threshold < 0.50) {
-      return 'Very low threshold may produce many false flags';
+      return 'เกณฑ์ต่ำมากอาจทำให้เกิดการแจ้งเตือนผิดพลาดจำนวนมาก';
     }
     if (threshold > 0.85) {
-      return 'Very high threshold may miss real issues';
+      return 'เกณฑ์สูงมากอาจพลาดปัญหาที่แท้จริง';
     }
     return null;
   }, [formData.settings?.score_threshold]);
@@ -139,7 +139,7 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
   const samplingWarning = useMemo(() => {
     const rate = formData.settings?.sampling_rate ?? 100;
     if (rate < 25) {
-      return 'Low sampling may miss patterns. Consider higher rate.';
+      return 'อัตราสุ่มต่ำอาจพลาดรูปแบบปัญหา ควรเพิ่มอัตราการสุ่ม';
     }
     return null;
   }, [formData.settings?.sampling_rate]);
@@ -222,7 +222,7 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
     return (
       <div className="rounded-md bg-destructive/10 p-4 text-sm text-destructive flex items-center gap-2">
         <AlertCircle className="h-4 w-4" />
-        <span>Failed to load QA Inspector settings</span>
+        <span>ไม่สามารถโหลดการตั้งค่า QA Inspector ได้</span>
       </div>
     );
   }
@@ -232,9 +232,9 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
       {/* Enable/Disable Toggle */}
       <Card>
         <CardHeader>
-          <CardTitle>QA Inspector</CardTitle>
+          <CardTitle>ตรวจสอบคุณภาพ</CardTitle>
           <CardDescription>
-            AI-powered quality assurance for bot responses
+            ระบบ AI ตรวจสอบคุณภาพการตอบของบอทอัตโนมัติ
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -246,15 +246,15 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
       {settings?.qa_inspector_enabled && (
         <Card>
           <CardHeader>
-            <CardTitle>AI Model Configuration</CardTitle>
+            <CardTitle>ตั้งค่าโมเดล AI</CardTitle>
             <CardDescription>
-              Configure AI models for each evaluation layer. Use format: provider/model-name
+              กำหนดโมเดล AI สำหรับแต่ละขั้นตอนการประเมิน ใช้รูปแบบ: provider/model-name
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <ModelLayerConfig
-              layerName="Real-time Evaluation"
-              layerDescription="Fast evaluation of every bot response (Layer 1)"
+              layerName="ประเมินแบบเรียลไทม์"
+              layerDescription="ประเมินทุกการตอบของบอทอย่างรวดเร็ว (Layer 1)"
               primaryModel={formData.models?.realtime?.primary ?? ''}
               fallbackModel={formData.models?.realtime?.fallback ?? ''}
               primaryPlaceholder="google/gemini-2.5-flash-preview"
@@ -264,8 +264,8 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
             />
 
             <ModelLayerConfig
-              layerName="Deep Analysis"
-              layerDescription="Detailed analysis for flagged issues (Layer 2)"
+              layerName="วิเคราะห์เชิงลึก"
+              layerDescription="วิเคราะห์รายละเอียดสำหรับปัญหาที่พบ (Layer 2)"
               primaryModel={formData.models?.analysis?.primary ?? ''}
               fallbackModel={formData.models?.analysis?.fallback ?? ''}
               primaryPlaceholder="anthropic/claude-sonnet-4"
@@ -275,8 +275,8 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
             />
 
             <ModelLayerConfig
-              layerName="Weekly Report"
-              layerDescription="Comprehensive weekly report generation (Layer 3)"
+              layerName="รายงานประจำสัปดาห์"
+              layerDescription="สร้างรายงานสรุปรายสัปดาห์แบบครบถ้วน (Layer 3)"
               primaryModel={formData.models?.report?.primary ?? ''}
               fallbackModel={formData.models?.report?.fallback ?? ''}
               primaryPlaceholder="anthropic/claude-opus-4-5"
@@ -292,9 +292,9 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
       {settings?.qa_inspector_enabled && (
         <Card>
           <CardHeader>
-            <CardTitle>Evaluation Settings</CardTitle>
+            <CardTitle>ตั้งค่าการประเมิน</CardTitle>
             <CardDescription>
-              Configure thresholds, sampling, and report schedules
+              กำหนดเกณฑ์คะแนน อัตราการสุ่มตรวจ และกำหนดการสร้างรายงาน
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -302,7 +302,7 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label htmlFor="score-threshold" className="font-semibold">
-                  Score Threshold
+                  เกณฑ์คะแนน
                 </Label>
                 <span className="text-sm font-medium tabular-nums">
                   {(formData.settings?.score_threshold ?? 0.70).toFixed(2)}
@@ -318,7 +318,7 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
                 disabled={updateMutation.isPending}
               />
               <p className="text-xs text-muted-foreground">
-                Conversations scoring below this threshold will be flagged
+                การสนทนาที่คะแนนต่ำกว่าเกณฑ์นี้จะถูกแจ้งเตือน
               </p>
               {thresholdWarning && (
                 <div className="flex items-center gap-2 text-sm text-yellow-600 dark:text-yellow-500 bg-yellow-50 dark:bg-yellow-950/50 rounded-md p-2">
@@ -332,7 +332,7 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label htmlFor="sampling-rate" className="font-semibold">
-                  Sampling Rate
+                  อัตราการสุ่มตรวจ
                 </Label>
                 <span className="text-sm font-medium tabular-nums">
                   {formData.settings?.sampling_rate ?? 100}%
@@ -348,7 +348,7 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
                 disabled={updateMutation.isPending}
               />
               <p className="text-xs text-muted-foreground">
-                Percentage of conversations to evaluate (reduces cost)
+                เปอร์เซ็นต์การสนทนาที่จะประเมิน (ลดค่าใช้จ่าย)
               </p>
               {samplingWarning && (
                 <div className="flex items-center gap-2 text-sm text-yellow-600 dark:text-yellow-500 bg-yellow-50 dark:bg-yellow-950/50 rounded-md p-2">
@@ -360,14 +360,14 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
 
             {/* Report Schedule */}
             <div className="space-y-2">
-              <Label className="font-semibold">Report Schedule</Label>
+              <Label className="font-semibold">กำหนดการสร้างรายงาน</Label>
               <Select
                 value={formData.settings?.report_schedule ?? 'monday_00:00'}
                 onValueChange={(value) => handleSettingsChange('report_schedule', value)}
                 disabled={updateMutation.isPending}
               >
                 <SelectTrigger className="w-full sm:w-48">
-                  <SelectValue placeholder="Select schedule" />
+                  <SelectValue placeholder="เลือกกำหนดการ" />
                 </SelectTrigger>
                 <SelectContent>
                   {REPORT_SCHEDULES.map((schedule) => (
@@ -378,7 +378,7 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                When to generate weekly QA reports
+                เวลาที่จะสร้างรายงาน QA ประจำสัปดาห์
               </p>
             </div>
 
@@ -386,11 +386,11 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
             <div className="bg-muted/50 rounded-lg p-4">
               <div className="flex items-center gap-2 mb-2">
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Estimated Monthly Cost</span>
+                <span className="font-medium">ประมาณการค่าใช้จ่ายรายเดือน</span>
               </div>
-              <p className="text-2xl font-bold">~${estimatedMonthlyCost}/month</p>
+              <p className="text-2xl font-bold">~${estimatedMonthlyCost}/เดือน</p>
               <p className="text-sm text-muted-foreground">
-                Based on 200 conversations/day at {formData.settings?.sampling_rate ?? 100}% sampling rate
+                จากการสนทนา 200 ครั้ง/วัน ที่อัตราสุ่ม {formData.settings?.sampling_rate ?? 100}%
               </p>
             </div>
           </CardContent>
@@ -401,9 +401,9 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
       {settings?.qa_inspector_enabled && (
         <Card>
           <CardHeader>
-            <CardTitle>Notifications</CardTitle>
+            <CardTitle>การแจ้งเตือน</CardTitle>
             <CardDescription>
-              Configure how you want to be notified about QA issues
+              ตั้งค่าวิธีการแจ้งเตือนเมื่อพบปัญหา QA
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -413,10 +413,10 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
                 <Mail className="h-5 w-5 text-muted-foreground" />
                 <div>
                   <Label htmlFor="notify-email" className="font-semibold">
-                    Email Notifications
+                    แจ้งเตือนทางอีเมล
                   </Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Receive weekly report summaries via email
+                    รับสรุปรายงานประจำสัปดาห์ทางอีเมล
                   </p>
                 </div>
               </div>
@@ -434,10 +434,10 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
                 <Bell className="h-5 w-5 text-muted-foreground" />
                 <div>
                   <Label htmlFor="notify-alert" className="font-semibold">
-                    In-app Alerts
+                    แจ้งเตือนในแอป
                   </Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Get notified about critical issues in the dashboard
+                    รับการแจ้งเตือนปัญหาสำคัญในแดชบอร์ด
                   </p>
                 </div>
               </div>
@@ -455,10 +455,10 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
                 <Slack className="h-5 w-5 text-muted-foreground" />
                 <div>
                   <Label htmlFor="notify-slack" className="font-semibold">
-                    Slack Integration
+                    เชื่อมต่อ Slack
                   </Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Coming soon - Get alerts in your Slack channel
+                    เร็วๆ นี้ - รับการแจ้งเตือนใน Slack channel
                   </p>
                 </div>
               </div>
@@ -483,12 +483,12 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
             {updateMutation.isPending ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
+                กำลังบันทึก...
               </>
             ) : (
               <>
                 <Save className="h-4 w-4 mr-2" />
-                Save Changes
+                บันทึกการเปลี่ยนแปลง
               </>
             )}
           </Button>
@@ -501,7 +501,7 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
           <AlertCircle className="h-4 w-4" />
           <span>
             {(updateMutation.error as { message?: string })?.message ||
-              'Failed to save settings'}
+              'ไม่สามารถบันทึกการตั้งค่าได้'}
           </span>
         </div>
       )}

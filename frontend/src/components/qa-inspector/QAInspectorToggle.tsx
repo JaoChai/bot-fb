@@ -44,13 +44,13 @@ export function QAInspectorToggle({
     toggleMutation.mutate(checked, {
       onSuccess: () => {
         toast.success(
-          checked ? 'QA Inspector enabled' : 'QA Inspector disabled'
+          checked ? 'เปิดใช้งานการตรวจสอบคุณภาพแล้ว' : 'ปิดการตรวจสอบคุณภาพแล้ว'
         );
       },
       onError: () => {
         // Rollback local state on error
         setLocalEnabled(!checked);
-        toast.error('Failed to update QA Inspector setting');
+        toast.error('ไม่สามารถอัปเดตการตั้งค่าได้');
       },
     });
   };
@@ -59,7 +59,7 @@ export function QAInspectorToggle({
     return (
       <div className={cn('flex items-center gap-2', className)}>
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        <span className="text-sm text-muted-foreground">Loading...</span>
+        <span className="text-sm text-muted-foreground">กำลังโหลด...</span>
       </div>
     );
   }
@@ -69,7 +69,7 @@ export function QAInspectorToggle({
       <div className={cn('flex items-center gap-2 text-destructive', className)}>
         <XCircle className="h-4 w-4" />
         <span className="text-sm">
-          {(error as { message?: string })?.message || 'Failed to load settings'}
+          {(error as { message?: string })?.message || 'ไม่สามารถโหลดการตั้งค่าได้'}
         </span>
       </div>
     );
@@ -89,7 +89,7 @@ export function QAInspectorToggle({
             htmlFor="qa-inspector-toggle"
             className="text-sm font-medium cursor-pointer"
           >
-            QA Inspector
+            ตรวจสอบคุณภาพ
           </Label>
           {toggleMutation.isPending && (
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -101,10 +101,10 @@ export function QAInspectorToggle({
           {localEnabled ? (
             <span className="flex items-center gap-1">
               <CheckCircle2 className="h-3 w-3" />
-              Enabled
+              เปิดใช้งาน
             </span>
           ) : (
-            'Disabled'
+            'ปิดใช้งาน'
           )}
         </Badge>
       </div>
@@ -112,8 +112,8 @@ export function QAInspectorToggle({
       {showDescription && (
         <p className="text-sm text-muted-foreground">
           {localEnabled
-            ? 'QA Inspector is actively monitoring bot responses and creating evaluation logs.'
-            : 'Enable to automatically evaluate bot response quality with AI-powered analysis.'}
+            ? 'กำลังตรวจสอบการตอบของบอทและสร้างบันทึกการประเมินอยู่'
+            : 'เปิดใช้งานเพื่อให้ AI ประเมินคุณภาพการตอบของบอทโดยอัตโนมัติ'}
         </p>
       )}
 
@@ -123,13 +123,13 @@ export function QAInspectorToggle({
           <Button variant="outline" size="sm" asChild>
             <Link to={`/bots/${botId}/qa-inspector`}>
               <ExternalLink className="h-4 w-4 mr-2" />
-              View Dashboard
+              ดูแดชบอร์ด
             </Link>
           </Button>
           <Button variant="ghost" size="sm" asChild>
             <Link to={`/bots/${botId}/qa-inspector?tab=settings`}>
               <Settings className="h-4 w-4 mr-2" />
-              Configure Models
+              ตั้งค่าโมเดล
             </Link>
           </Button>
         </div>
@@ -139,7 +139,7 @@ export function QAInspectorToggle({
         <div className="flex items-center gap-2 text-sm text-destructive">
           <AlertCircle className="h-4 w-4" />
           <span>
-            {(toggleMutation.error as { message?: string })?.message || 'Failed to update setting'}
+            {(toggleMutation.error as { message?: string })?.message || 'ไม่สามารถอัปเดตการตั้งค่าได้'}
           </span>
         </div>
       )}
