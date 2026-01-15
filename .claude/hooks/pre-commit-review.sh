@@ -1,6 +1,6 @@
 #!/bin/bash
-# Pre-Commit Code Review Hook
-# Triggers code-reviewer agent before git commit
+# Pre-Commit Code Review Hook (Suggestion Only)
+# Suggests code-review skill before git commit
 
 # Get the bash command from environment
 BASH_COMMAND="${TOOL_INPUT_command:-}"
@@ -15,27 +15,11 @@ if [[ "$BASH_COMMAND" == *"--amend"* ]]; then
     exit 0
 fi
 
-cat << 'EOF'
-
-[PRE-COMMIT-REVIEW]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔍 Git commit detected - Running pre-commit checks
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-BEFORE committing, you SHOULD spawn code-reviewer agent:
-
-Task(subagent_type="code-reviewer", prompt="Review all staged changes before commit. Check:
-1. Code follows project conventions
-2. No console.log/dd() left in
-3. TypeScript strict compliance
-4. Laravel best practices
-5. No hardcoded values
-Return summary of issues found.")
-
-If issues found → Fix before committing
-If no issues → Proceed with commit
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EOF
+echo ""
+echo "💡 Tip: Consider using /code-review skill before committing for:"
+echo "   - Security audit (OWASP Top 10)"
+echo "   - API design review"
+echo "   - Code quality check"
+echo ""
 
 exit 0

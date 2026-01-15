@@ -127,6 +127,14 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
+        'qa_inspector' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/qa-inspector.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('QA_INSPECTOR_LOG_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
     ],
 
 ];

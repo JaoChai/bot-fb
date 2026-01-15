@@ -1141,41 +1141,45 @@ class ProcessLINEWebhook implements ShouldQueue
 
     /**
      * Find or create customer profile.
+     *
+     * Uses updateOrCreate with unique constraint to handle race conditions atomically.
+     * This approach works safely inside transactions because PostgreSQL's ON CONFLICT
+     * handles the race condition at database level without causing transaction abort.
      */
     protected function findOrCreateCustomerProfile(string $userId, LINEService $lineService): ?CustomerProfile
     {
-        // Try to find existing profile
-        $profile = CustomerProfile::where('external_id', $userId)
-            ->where('channel_type', 'line')
-            ->first();
-
-        if ($profile) {
-            return $profile;
-        }
-
-        // Get LINE profile
+        // Get LINE profile first (outside of DB operation)
         $lineProfile = $lineService->getProfile($this->bot, $userId);
 
-        // Create new profile with race condition handling
-        try {
-            return CustomerProfile::create([
+        // Use updateOrCreate which generates ON CONFLICT DO UPDATE in PostgreSQL
+        // This handles race conditions atomically at database level
+        $profile = CustomerProfile::updateOrCreate(
+            [
                 'external_id' => $userId,
                 'channel_type' => 'line',
+            ],
+            [
                 'display_name' => $lineProfile['displayName'] ?? null,
                 'picture_url' => $lineProfile['pictureUrl'] ?? null,
-                'first_interaction_at' => now(),
                 'last_interaction_at' => now(),
-                'interaction_count' => 1,
                 'metadata' => [
                     'status_message' => $lineProfile['statusMessage'] ?? null,
                 ],
+            ]
+        );
+
+        // Set first_interaction_at only for new profiles
+        if ($profile->wasRecentlyCreated) {
+            $profile->update([
+                'first_interaction_at' => now(),
+                'interaction_count' => 1,
             ]);
-        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
-            // Race condition: another job created the profile, query again
-            return CustomerProfile::where('external_id', $userId)
-                ->where('channel_type', 'line')
-                ->first();
+        } else {
+            // Increment interaction count for existing profiles
+            $profile->increment('interaction_count');
         }
+
+        return $profile;
     }
 
     /**

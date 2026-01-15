@@ -65,16 +65,32 @@ class LINEWebhookController extends Controller
             return response()->json(['message' => 'OK']);
         }
 
-        // Log webhook received
-        Log::info('LINE webhook received', [
-            'bot_id' => $bot->id,
-            'event_count' => count($events),
-        ]);
+        // Log webhook received with detailed event info for debugging
+        foreach ($events as $index => $event) {
+            Log::info('LINE webhook event received', [
+                'bot_id' => $bot->id,
+                'event_index' => $index + 1,
+                'event_count' => count($events),
+                'event_type' => $event['type'] ?? 'unknown',
+                'user_id' => $event['source']['userId'] ?? null,
+                'message_type' => $event['message']['type'] ?? null,
+                'message_id' => $event['message']['id'] ?? null,
+                'webhook_event_id' => $event['webhookEventId'] ?? null,
+                'timestamp' => $event['timestamp'] ?? null,
+                'is_redelivery' => $event['deliveryContext']['isRedelivery'] ?? false,
+            ]);
+        }
 
         // Dispatch job for each event
         foreach ($events as $event) {
             ProcessLINEWebhook::dispatch($bot, $event)
                 ->onQueue('webhooks');
+
+            Log::debug('LINE webhook job dispatched', [
+                'bot_id' => $bot->id,
+                'event_type' => $event['type'] ?? 'unknown',
+                'message_id' => $event['message']['id'] ?? null,
+            ]);
         }
 
         // Return 200 OK immediately - LINE requires fast response
