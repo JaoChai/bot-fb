@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\SendDelayedBubbleJob;
 use App\Models\Bot;
 use Illuminate\Support\Facades\Log;
 
@@ -109,9 +110,9 @@ INSTRUCTION;
 
     /**
      * Send bubbles to user via LINE.
-     * First bubble uses reply (fast), subsequent use push with delays.
+     * First bubble uses reply (fast), subsequent dispatched as async jobs with delays.
      *
-     * @return bool True if at least the first bubble was sent
+     * @return bool True if at least the first bubble was sent/dispatched
      */
     public function sendBubbles(
         Bot $bot,
@@ -124,9 +125,10 @@ INSTRUCTION;
         }
 
         $delayMs = $this->getDelayMs($bot);
+        $totalBubbles = count($bubbles);
 
         try {
-            // First bubble: use reply if we have a token (faster, within LINE's window)
+            // First bubble: send immediately using reply if we have a token (faster)
             if ($replyToken) {
                 $this->lineService->reply($bot, $replyToken, [$bubbles[0]]);
             } else {
@@ -134,17 +136,37 @@ INSTRUCTION;
             }
 
             // If only one bubble, we're done
-            if (count($bubbles) === 1) {
+            if ($totalBubbles === 1) {
                 return true;
             }
 
-            // Subsequent bubbles: use push with optional delay
-            for ($i = 1; $i < count($bubbles); $i++) {
-                if ($delayMs > 0) {
-                    usleep($delayMs * 1000); // Convert ms to microseconds
-                }
+            // Subsequent bubbles: dispatch as delayed jobs (non-blocking)
+            for ($i = 1; $i < $totalBubbles; $i++) {
+                // Cumulative delay: bubble 2 at t+delayMs, bubble 3 at t+2*delayMs, etc.
+                $cumulativeDelayMs = $delayMs * $i;
 
-                $this->lineService->push($bot, $userId, [$bubbles[$i]]);
+                if ($cumulativeDelayMs > 0) {
+                    // Async dispatch with delay - PHP returns immediately
+                    SendDelayedBubbleJob::dispatch(
+                        $bot,
+                        $userId,
+                        $bubbles[$i],
+                        $i + 1, // 1-indexed for logging
+                        $totalBubbles
+                    )->onQueue('webhooks')
+                     ->delay(now()->addMilliseconds($cumulativeDelayMs));
+
+                    Log::debug('Dispatched delayed bubble job', [
+                        'bot_id' => $bot->id,
+                        'user_id' => $userId,
+                        'bubble_index' => $i + 1,
+                        'total_bubbles' => $totalBubbles,
+                        'delay_ms' => $cumulativeDelayMs,
+                    ]);
+                } else {
+                    // No delay configured - send immediately via push
+                    $this->lineService->push($bot, $userId, [$bubbles[$i]]);
+                }
             }
 
             return true;
@@ -152,7 +174,7 @@ INSTRUCTION;
             Log::error('Failed to send bubbles', [
                 'bot_id' => $bot->id,
                 'user_id' => $userId,
-                'bubble_count' => count($bubbles),
+                'bubble_count' => $totalBubbles,
                 'error' => $e->getMessage(),
             ]);
 
