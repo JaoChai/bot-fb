@@ -45,10 +45,11 @@ class UnifiedCheckService
         ]);
 
         // Fetch Knowledge Base context if fact_check enabled
-        $kbContext = null;
+        $kbContext = '';
         if (in_array('fact_check', $enabledChecks) && $flow->knowledgeBases()->count() > 0) {
             try {
-                $kbContext = $this->ragService->search($userMessage, $flow->id, limit: 5);
+                $metadata = [];
+                $kbContext = $this->ragService->getFlowKnowledgeBaseContext($flow, $userMessage, $metadata);
             } catch (\Exception $e) {
                 Log::warning('UnifiedCheckService: Failed to fetch KB context', [
                     'error' => $e->getMessage(),
@@ -125,7 +126,7 @@ class UnifiedCheckService
         string $response,
         Flow $flow,
         string $userMessage,
-        ?array $kbContext = null
+        string $kbContext = ''
     ): string {
         $enabledChecks = $this->getEnabledChecks($flow);
         $systemPrompt = $flow->system_prompt ?? 'You are a helpful assistant.';
@@ -141,10 +142,8 @@ class UnifiedCheckService
 
         if (in_array('fact_check', $enabledChecks)) {
             $prompt .= "# Knowledge Base Context\n\n";
-            if ($kbContext && !empty($kbContext)) {
-                foreach ($kbContext as $idx => $context) {
-                    $prompt .= "Source ".($idx + 1).": {$context['content']}\n\n";
-                }
+            if (!empty($kbContext)) {
+                $prompt .= $kbContext . "\n\n";
             } else {
                 $prompt .= "No Knowledge Base available.\n\n";
             }
