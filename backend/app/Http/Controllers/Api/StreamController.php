@@ -125,6 +125,38 @@ class StreamController extends Controller
                     'agentic_mode' => $flow->agentic_mode,
                 ]);
 
+                // === STEP 1.5: Injection Detection (Security Guardrail) ===
+                if ($flow->second_ai_enabled) {
+                    $injectionResult = $this->secondAI->checkUserInput($message, $flow);
+
+                    if ($injectionResult->isBlocked()) {
+                        $this->sendSSE('injection_blocked', [
+                            'risk_score' => $injectionResult->riskScore,
+                            'patterns' => $injectionResult->getPatternNames(),
+                            'message' => $injectionResult->message,
+                        ]);
+
+                        // Send done event and exit
+                        $this->sendSSE('done', [
+                            'total_time_ms' => round((microtime(true) - $this->metrics['start_time']) * 1000),
+                            'prompt_tokens' => 0,
+                            'completion_tokens' => 0,
+                            'models_used' => [],
+                            'tool_calls' => 0,
+                            'blocked' => true,
+                        ]);
+                        return;
+                    }
+
+                    // Log flagged but allowed inputs
+                    if ($injectionResult->isFlagged()) {
+                        $this->sendSSE('injection_flagged', [
+                            'risk_score' => $injectionResult->riskScore,
+                            'patterns' => $injectionResult->getPatternNames(),
+                        ]);
+                    }
+                }
+
                 // === AGENTIC MODE: Use Agent Loop ===
                 if ($flow->agentic_mode && !empty($flow->enabled_tools)) {
                     $this->runAgentLoop($bot, $flow, $message, $conversationHistory, $apiKey, $user);

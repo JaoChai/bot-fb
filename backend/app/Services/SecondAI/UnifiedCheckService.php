@@ -210,9 +210,109 @@ class UnifiedCheckService
         $prompt .= "- If a check fails, set `required: true` and provide `rewritten` text\n";
         $prompt .= "- Apply modifications sequentially: fact_check → policy → personality\n";
         $prompt .= "- `final_response` must be the result after applying ALL modifications\n";
-        $prompt .= "- Return ONLY the JSON object, no other text\n";
+        $prompt .= "- Return ONLY the JSON object, no other text\n\n";
+
+        // Add examples section
+        $prompt .= $this->buildExamplesSection($enabledChecks);
 
         return $prompt;
+    }
+
+    /**
+     * Build examples section for few-shot learning
+     *
+     * @param array $enabledChecks List of enabled check types
+     * @return string Examples prompt section
+     */
+    protected function buildExamplesSection(array $enabledChecks): string
+    {
+        $examples = "# Examples\n\n";
+
+        // Good example - all checks pass
+        $examples .= "## Example 1: All Checks Pass\n";
+        $examples .= "User: ราคาสินค้า A เท่าไหร่\n";
+        $examples .= "Response: สินค้า A ราคา 599 บาทค่ะ (ข้อมูลจาก KB ตรงกัน)\n";
+        $examples .= "Result:\n```json\n";
+        $examples .= "{\n";
+        $examples .= '  "passed": true,'."\n";
+        $examples .= '  "modifications": {'."\n";
+
+        if (in_array('fact_check', $enabledChecks)) {
+            $examples .= '    "fact_check": { "required": false, "claims_extracted": ["ราคา 599 บาท"], "unverified_claims": [], "rewritten": null },'."\n";
+        }
+        if (in_array('policy', $enabledChecks)) {
+            $examples .= '    "policy": { "required": false, "violations": [], "rewritten": null },'."\n";
+        }
+        if (in_array('personality', $enabledChecks)) {
+            $examples .= '    "personality": { "required": false, "issues": [], "rewritten": null }'."\n";
+        }
+
+        $examples .= '  },'."\n";
+        $examples .= '  "final_response": "สินค้า A ราคา 599 บาทค่ะ"'."\n";
+        $examples .= "}\n```\n\n";
+
+        // Bad example - fact check fails
+        if (in_array('fact_check', $enabledChecks)) {
+            $examples .= "## Example 2: Fact Check Fails (Unverified Price)\n";
+            $examples .= "User: ราคาสินค้า A เท่าไหร่\n";
+            $examples .= "Response: สินค้า A ราคา 299 บาท ลดราคา 50% วันนี้เท่านั้น!\n";
+            $examples .= "Issue: Price (299) and discount (50%) not found in Knowledge Base\n";
+            $examples .= "Result:\n```json\n";
+            $examples .= "{\n";
+            $examples .= '  "passed": false,'."\n";
+            $examples .= '  "modifications": {'."\n";
+            $examples .= '    "fact_check": {'."\n";
+            $examples .= '      "required": true,'."\n";
+            $examples .= '      "claims_extracted": ["ราคา 299 บาท", "ลดราคา 50%"],'."\n";
+            $examples .= '      "unverified_claims": ["ราคา 299 บาท", "ลดราคา 50%"],'."\n";
+            $examples .= '      "rewritten": "สำหรับราคาสินค้า A กรุณาติดต่อสอบถามเจ้าหน้าที่โดยตรงค่ะ"'."\n";
+            $examples .= '    }'."\n";
+            $examples .= '  },'."\n";
+            $examples .= '  "final_response": "สำหรับราคาสินค้า A กรุณาติดต่อสอบถามเจ้าหน้าที่โดยตรงค่ะ"'."\n";
+            $examples .= "}\n```\n\n";
+        }
+
+        // Bad example - policy violation
+        if (in_array('policy', $enabledChecks)) {
+            $examples .= "## Example 3: Policy Violation (Inappropriate Language)\n";
+            $examples .= "User: ทำไมบริการห่วยจัง\n";
+            $examples .= "Response: ขอโทษที่บริการของเราห่วย จะปรับปรุงให้ดีขึ้นค่ะ\n";
+            $examples .= "Issue: Response uses inappropriate language (ห่วย)\n";
+            $examples .= "Result:\n```json\n";
+            $examples .= "{\n";
+            $examples .= '  "passed": false,'."\n";
+            $examples .= '  "modifications": {'."\n";
+            $examples .= '    "policy": {'."\n";
+            $examples .= '      "required": true,'."\n";
+            $examples .= '      "violations": ["ใช้คำไม่สุภาพ (ห่วย)"],'."\n";
+            $examples .= '      "rewritten": "ขออภัยที่บริการยังไม่เป็นที่พอใจค่ะ ทีมงานจะปรับปรุงให้ดีขึ้น"'."\n";
+            $examples .= '    }'."\n";
+            $examples .= '  },'."\n";
+            $examples .= '  "final_response": "ขออภัยที่บริการยังไม่เป็นที่พอใจค่ะ ทีมงานจะปรับปรุงให้ดีขึ้น"'."\n";
+            $examples .= "}\n```\n\n";
+        }
+
+        // Bad example - personality mismatch
+        if (in_array('personality', $enabledChecks)) {
+            $examples .= "## Example 4: Personality Mismatch (Wrong Tone)\n";
+            $examples .= "User: สวัสดีครับ\n";
+            $examples .= "Response: Hello! What do you need? (formal/English personality expected Thai)\n";
+            $examples .= "Issue: Bot personality is Thai-speaking, friendly. Response is English and abrupt.\n";
+            $examples .= "Result:\n```json\n";
+            $examples .= "{\n";
+            $examples .= '  "passed": false,'."\n";
+            $examples .= '  "modifications": {'."\n";
+            $examples .= '    "personality": {'."\n";
+            $examples .= '      "required": true,'."\n";
+            $examples .= '      "issues": ["ใช้ภาษาอังกฤษแทนที่จะเป็นภาษาไทย", "น้ำเสียงห้วนเกินไป"],'."\n";
+            $examples .= '      "rewritten": "สวัสดีค่ะ ยินดีให้บริการค่ะ มีอะไรให้ช่วยเหลือไหมคะ?"'."\n";
+            $examples .= '    }'."\n";
+            $examples .= '  },'."\n";
+            $examples .= '  "final_response": "สวัสดีค่ะ ยินดีให้บริการค่ะ มีอะไรให้ช่วยเหลือไหมคะ?"'."\n";
+            $examples .= "}\n```\n\n";
+        }
+
+        return $examples;
     }
 
     /**
