@@ -625,10 +625,13 @@ class StreamController extends Controller
                 );
             },
             function (\Throwable $e) use ($originalResponse, $flow) {
-                Log::warning('SecondAI: Process failed or timed out', [
+                Log::error('SecondAI: Process failed or timed out', [
                     'flow_id' => $flow->id,
                     'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
                 ]);
+                // Also log to stderr for Railway visibility
+                error_log('SecondAI ERROR: ' . $e->getMessage());
                 return [
                     'content' => $originalResponse,
                     'second_ai_applied' => false,
