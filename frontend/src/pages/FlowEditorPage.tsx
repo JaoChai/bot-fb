@@ -232,6 +232,16 @@ export function FlowEditorPage() {
     setHasChanges(true);
   };
 
+  // Validate Agentic Mode requires at least one tool
+  const validateAgenticMode = (): string | null => {
+    if (formData.agentic_mode) {
+      if (!formData.enabled_tools || formData.enabled_tools.length === 0) {
+        return 'กรุณาเลือกอย่างน้อย 1 tool เพื่อใช้งาน Agentic Mode';
+      }
+    }
+    return null;
+  };
+
   // Handle save
   const handleSave = async () => {
     if (!botId) {
@@ -246,6 +256,13 @@ export function FlowEditorPage() {
 
     if (!formData.system_prompt.trim()) {
       toast({ title: 'กรุณากรอก System Prompt', variant: 'destructive' });
+      return;
+    }
+
+    // Validate Agentic Mode
+    const agenticError = validateAgenticMode();
+    if (agenticError) {
+      toast({ title: 'ข้อผิดพลาด', description: agenticError, variant: 'destructive' });
       return;
     }
 
@@ -673,9 +690,14 @@ export function FlowEditorPage() {
                             </label>
                           </div>
                           {(!formData.enabled_tools || formData.enabled_tools.length === 0) && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              กรุณาเลือกอย่างน้อย 1 tool เพื่อใช้งาน Agentic Mode
-                            </p>
+                            <div className="flex items-center gap-2 p-3 mt-2 rounded-lg border border-orange-300 bg-orange-50 dark:border-orange-700 dark:bg-orange-950/30">
+                              <svg className="h-4 w-4 text-orange-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                              </svg>
+                              <p className="text-xs text-orange-700 dark:text-orange-300">
+                                กรุณาเลือกอย่างน้อย 1 tool เพื่อใช้งาน Agentic Mode
+                              </p>
+                            </div>
                           )}
                         </div>
 
