@@ -3,7 +3,9 @@
 namespace App\Services\QAInspector;
 
 use App\Models\Bot;
+use App\Models\InjectionAttemptLog;
 use App\Models\QAEvaluationLog;
+use App\Models\SecondAILog;
 use App\Services\Evaluation\LLMJudgeService;
 use App\Services\OpenRouterService;
 use Carbon\Carbon;
@@ -495,5 +497,122 @@ class QAInspectorService
         Cache::forget("qa:stats:{$bot->id}:1d");
         Cache::forget("qa:stats:{$bot->id}:7d");
         Cache::forget("qa:stats:{$bot->id}:30d");
+        Cache::forget("secondai:stats:{$bot->id}:1d");
+        Cache::forget("secondai:stats:{$bot->id}:7d");
+        Cache::forget("secondai:stats:{$bot->id}:30d");
+    }
+
+    /**
+     * Calculate Second AI dashboard statistics for a bot
+     *
+     * @param string $period One of: 1d, 7d, 30d
+     */
+    public function calculateSecondAIDashboardStats(Bot $bot, string $period = '7d'): array
+    {
+        $cacheKey = "secondai:stats:{$bot->id}:{$period}";
+        $ttl = $period === '30d' ? 900 : 300; // 15 min for 30d, 5 min for others
+
+        return Cache::remember($cacheKey, $ttl, function () use ($bot, $period) {
+            $days = match ($period) {
+                '1d' => 1,
+                '7d' => 7,
+                '30d' => 30,
+                default => 7,
+            };
+
+            $startDate = Carbon::now()->subDays($days)->startOfDay();
+            $endDate = Carbon::now()->endOfDay();
+
+            // Second AI Logs stats
+            $secondAiQuery = SecondAILog::byBot($bot->id)
+                ->byDateRange($startDate, $endDate);
+
+            $secondAiSummary = (clone $secondAiQuery)
+                ->selectRaw('
+                    COUNT(*) as total_checked,
+                    SUM(CASE WHEN was_modified = true THEN 1 ELSE 0 END) as total_modified,
+                    AVG(overall_score) as avg_overall_score,
+                    AVG(groundedness_score) as avg_groundedness,
+                    AVG(policy_compliance_score) as avg_policy,
+                    AVG(personality_match_score) as avg_personality,
+                    AVG(latency_ms) as avg_latency_ms
+                ')
+                ->first();
+
+            $totalChecked = (int) ($secondAiSummary->total_checked ?? 0);
+            $totalModified = (int) ($secondAiSummary->total_modified ?? 0);
+            $modificationRate = $totalChecked > 0
+                ? round(($totalModified / $totalChecked) * 100, 2)
+                : 0;
+
+            // Check type breakdown
+            $checkTypeBreakdown = (clone $secondAiQuery)
+                ->whereNotNull('checks_applied')
+                ->select('checks_applied')
+                ->get()
+                ->flatMap(fn ($row) => $row->checks_applied ?? [])
+                ->countBy()
+                ->toArray();
+
+            // Execution mode breakdown
+            $executionModeBreakdown = (clone $secondAiQuery)
+                ->selectRaw('execution_mode, COUNT(*) as count')
+                ->groupBy('execution_mode')
+                ->get()
+                ->mapWithKeys(fn ($row) => [$row->execution_mode => (int) $row->count])
+                ->toArray();
+
+            // Score trend (daily averages)
+            $scoreTrend = (clone $secondAiQuery)
+                ->selectRaw('DATE(created_at) as date, AVG(overall_score) as avg_score, COUNT(*) as count')
+                ->groupBy(DB::raw('DATE(created_at)'))
+                ->orderBy('date')
+                ->get()
+                ->map(fn ($row) => [
+                    'date' => $row->date,
+                    'avg_score' => round((float) ($row->avg_score ?? 0) * 100, 1),
+                    'count' => (int) $row->count,
+                ])
+                ->toArray();
+
+            // Injection Attempts stats
+            $injectionQuery = InjectionAttemptLog::byBot($bot->id)
+                ->byDateRange($startDate, $endDate);
+
+            $injectionSummary = (clone $injectionQuery)
+                ->selectRaw('
+                    COUNT(*) as total_attempts,
+                    SUM(CASE WHEN action_taken = \'blocked\' THEN 1 ELSE 0 END) as total_blocked,
+                    SUM(CASE WHEN action_taken = \'flagged\' THEN 1 ELSE 0 END) as total_flagged,
+                    AVG(risk_score) as avg_risk_score
+                ')
+                ->first();
+
+            return [
+                'second_ai' => [
+                    'summary' => [
+                        'total_checked' => $totalChecked,
+                        'total_modified' => $totalModified,
+                        'modification_rate' => $modificationRate,
+                        'avg_overall_score' => round((float) ($secondAiSummary->avg_overall_score ?? 0) * 100, 1),
+                        'avg_latency_ms' => (int) ($secondAiSummary->avg_latency_ms ?? 0),
+                    ],
+                    'score_averages' => [
+                        'groundedness' => round((float) ($secondAiSummary->avg_groundedness ?? 0), 2),
+                        'policy_compliance' => round((float) ($secondAiSummary->avg_policy ?? 0), 2),
+                        'personality_match' => round((float) ($secondAiSummary->avg_personality ?? 0), 2),
+                    ],
+                    'check_type_breakdown' => $checkTypeBreakdown,
+                    'execution_mode_breakdown' => $executionModeBreakdown,
+                    'score_trend' => $scoreTrend,
+                ],
+                'injection_detection' => [
+                    'total_attempts' => (int) ($injectionSummary->total_attempts ?? 0),
+                    'total_blocked' => (int) ($injectionSummary->total_blocked ?? 0),
+                    'total_flagged' => (int) ($injectionSummary->total_flagged ?? 0),
+                    'avg_risk_score' => round((float) ($injectionSummary->avg_risk_score ?? 0), 2),
+                ],
+            ];
+        });
     }
 }

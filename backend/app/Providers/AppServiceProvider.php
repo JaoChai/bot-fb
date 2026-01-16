@@ -26,6 +26,8 @@ use App\Services\SecondAI\FactCheckService;
 use App\Services\SecondAI\PolicyCheckService;
 use App\Services\SecondAI\PersonalityCheckService;
 use App\Services\SecondAI\UnifiedCheckService;
+use App\Services\SecondAI\PromptInjectionDetector;
+use App\Services\SecondAI\SecondAIMetricsService;
 use App\Services\Evaluation\ModelTierSelector;
 use App\Services\Evaluation\LLMJudgeService;
 use App\Services\QAInspector\QAInspectorService;
@@ -77,13 +79,25 @@ class AppServiceProvider extends ServiceProvider
             return new CostTrackingService();
         });
 
+        // Register PromptInjectionDetector
+        $this->app->singleton(PromptInjectionDetector::class, function ($app) {
+            return new PromptInjectionDetector();
+        });
+
+        // Register SecondAIMetricsService
+        $this->app->singleton(SecondAIMetricsService::class, function ($app) {
+            return new SecondAIMetricsService();
+        });
+
         // Register SecondAIService with all check services
         $this->app->singleton(SecondAIService::class, function ($app) {
             return new SecondAIService(
                 $app->make(FactCheckService::class),
                 $app->make(PolicyCheckService::class),
                 $app->make(PersonalityCheckService::class),
-                $app->make(UnifiedCheckService::class)
+                $app->make(UnifiedCheckService::class),
+                $app->make(PromptInjectionDetector::class),
+                $app->make(SecondAIMetricsService::class)
             );
         });
 

@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Log;
  * Coordinates the execution of Fact Check, Policy Check, and Personality Check
  * services in sequence. Implements a timeout and graceful fallback strategy
  * to ensure user experience is not impacted if checks fail or timeout.
+ *
+ * Now includes prompt injection detection as an input guardrail.
  */
 class SecondAIService
 {
@@ -24,6 +26,8 @@ class SecondAIService
         protected PolicyCheckService $policyCheck,
         protected PersonalityCheckService $personalityCheck,
         protected UnifiedCheckService $unifiedCheck,
+        protected PromptInjectionDetector $injectionDetector,
+        protected SecondAIMetricsService $metricsService,
     ) {}
 
     /**
@@ -67,6 +71,14 @@ class SecondAIService
                     'passed' => $result->passed,
                     'elapsed_ms' => $result->metadata['latency_ms'] ?? 0,
                 ]);
+
+                // Log metrics for analytics
+                $this->metricsService->logMetrics(
+                    botId: $flow->bot_id,
+                    flowId: $flow->id,
+                    result: $result,
+                    executionMode: 'unified'
+                );
 
                 // Convert to legacy format for backward compatibility
                 return $result->toLegacyFormat();
@@ -178,11 +190,21 @@ class SecondAIService
                 'elapsed_ms' => $elapsed,
             ]);
 
-            return $this->buildResult($currentContent, true, [
+            $resultArray = $this->buildResult($currentContent, true, [
                 'checks_applied' => $checksApplied,
                 'modifications' => $modifications,
                 'elapsed_ms' => $elapsed,
             ]);
+
+            // Log metrics for analytics (sequential mode)
+            $this->metricsService->logMetricsFromLegacy(
+                botId: $flow->bot_id,
+                flowId: $flow->id,
+                result: $resultArray,
+                executionMode: 'sequential'
+            );
+
+            return $resultArray;
         } catch (\Exception $e) {
             Log::error('SecondAI: Unexpected error', [
                 'error' => $e->getMessage(),
@@ -237,6 +259,70 @@ class SecondAIService
     {
         $this->timeout = $seconds;
         return $this;
+    }
+
+    /**
+     * Check user input for prompt injection attacks.
+     *
+     * Call this BEFORE generating AI response to block malicious inputs early.
+     *
+     * @param string $userMessage User input to check
+     * @param Flow $flow Flow for configuration and logging
+     * @param int|null $conversationId Optional conversation ID for logging
+     * @return DetectionResult Detection result with action and risk score
+     */
+    public function checkUserInput(
+        string $userMessage,
+        Flow $flow,
+        ?int $conversationId = null
+    ): DetectionResult {
+        $result = $this->injectionDetector->detect($userMessage);
+
+        // Log if detected (blocked or flagged)
+        if ($result->detected) {
+            $this->injectionDetector->log(
+                $flow->bot_id,
+                $userMessage,
+                $result,
+                $conversationId
+            );
+
+            Log::warning('SecondAI: Injection attempt detected', [
+                'flow_id' => $flow->id,
+                'bot_id' => $flow->bot_id,
+                'action' => $result->action,
+                'risk_score' => $result->riskScore,
+                'patterns' => $result->getPatternNames(),
+            ]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Check if user input should be blocked due to injection attempt.
+     *
+     * @param string $userMessage User input to check
+     * @param Flow $flow Flow for configuration
+     * @param int|null $conversationId Optional conversation ID
+     * @return bool True if input should be blocked
+     */
+    public function shouldBlockInput(
+        string $userMessage,
+        Flow $flow,
+        ?int $conversationId = null
+    ): bool {
+        return $this->checkUserInput($userMessage, $flow, $conversationId)->isBlocked();
+    }
+
+    /**
+     * Get the injection detector instance.
+     *
+     * @return PromptInjectionDetector
+     */
+    public function getInjectionDetector(): PromptInjectionDetector
+    {
+        return $this->injectionDetector;
     }
 
     /**
