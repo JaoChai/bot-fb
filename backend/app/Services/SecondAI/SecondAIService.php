@@ -151,9 +151,13 @@ class SecondAIService
                 }
 
                 return true;
-            }, function () use ($response) {
+            }, function (\Throwable $e) use ($response, $flow) {
                 // Fallback on timeout or error
-                Log::warning('SecondAI: Checks failed, using original response');
+                Log::error('SecondAI: Checks failed', [
+                    'flow_id' => $flow->id,
+                    'error' => $e->getMessage(),
+                ]);
+                error_log('SecondAI Sequential ERROR: ' . $e->getMessage());
                 return false;
             }, false);
 
