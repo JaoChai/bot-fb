@@ -152,3 +152,18 @@ const buttonVariants = cva(
 - Need latest React Query v5 docs
 - Checking Zustand middleware usage
 - Verifying Tailwind v4 utilities
+
+## Gotchas
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| `response.data` undefined | API wrapper | Access `response.data.data` for actual data |
+| Query not refetching | Stale queryKey | Use queryKeys factory, check key dependencies |
+| Infinite re-renders | Object in deps array | Memoize with `useMemo` or extract to constant |
+| Zustand state not persisting | Storage key conflict | Use unique `name` in persist middleware |
+| Tailwind classes not working | Class conflicts | Use `cn()` utility (tailwind-merge) |
+| Echo not connecting | Auth token missing | Check `window.Echo` setup, verify Sanctum token |
+| Type error on API response | Missing types | Define interface in `src/types/`, use generics |
+| Suspense fallback not showing | Missing boundary | Wrap with `<Suspense fallback={...}>` |
+| Form not submitting | Missing `type="submit"` | Add type attribute to button |
+| Modal closing unexpectedly | Event bubbling | Add `e.stopPropagation()` to modal content |

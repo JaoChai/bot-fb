@@ -158,6 +158,49 @@ $suspiciousPatterns = [
 ];
 ```
 
+## Common Tasks
+
+### 1. Create New System Prompt
+
+```markdown
+1. Define the goal → What should the bot achieve?
+2. Define persona → Who is the bot?
+3. Add knowledge → What does it need to know?
+4. Add examples → 2-3 input/output pairs
+5. Add constraints → What it must NOT do
+6. Test with edge cases → Verify behavior
+```
+
+### 2. Improve Existing Prompt
+
+```markdown
+1. Collect poor response examples
+2. Identify pattern (too long? wrong tone? missing info?)
+3. Add specific instruction to fix pattern
+4. Add counter-example in prompt
+5. A/B test improvement
+```
+
+### 3. Debug Poor Response
+
+```markdown
+1. Check: Is knowledge base complete?
+2. Check: Are examples representative?
+3. Check: Are constraints appropriate?
+4. Check: Is model suitable for task?
+5. Test: Try with different temperature
+```
+
+### 4. Secure Against Injection
+
+```markdown
+1. Add delimiter instruction to prompt
+2. Implement input sanitization
+3. Add injection detection patterns
+4. Test with known attack vectors
+5. Monitor for suspicious responses
+```
+
 ## Debugging Poor Responses
 
 ### Checklist

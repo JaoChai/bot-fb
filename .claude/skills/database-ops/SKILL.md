@@ -160,6 +160,52 @@ neon branches delete test-migration
 - Connection limit: 100 (pooled)
 - Timeout: 5 seconds for queries
 
+## Common Tasks
+
+### Create Safe Migration
+
+```markdown
+1. Check existing schema: `php artisan schema:dump`
+2. Create migration: `php artisan make:migration name`
+3. Add nullable columns or defaults
+4. Add indexes for WHERE columns
+5. Test on Neon branch first
+6. Run: `php artisan migrate`
+```
+
+### Optimize Slow Query
+
+```markdown
+1. Get query from logs/Sentry
+2. Use `explain_sql_statement` MCP tool
+3. Identify sequential scans
+4. Add appropriate index
+5. Test query again
+6. Create migration for index
+```
+
+### Add Vector Search
+
+```markdown
+1. Add vector column: `$table->vector('embedding', 1536)`
+2. Create ivfflat index
+3. Implement search query with cosine similarity
+4. Set similarity threshold (0.7 default)
+5. Test with sample queries
+```
+
+## Gotchas
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| Migration fails on production | Column not nullable | Add `->nullable()` or `->default()` |
+| Slow vector search | Missing ivfflat index | Create index with proper lists count |
+| Connection timeout | Pool exhausted | Use `?pooler=true`, check connection leaks |
+| Foreign key error | Dependent data exists | Add `ON DELETE CASCADE` or handle in code |
+| Enum change fails | PostgreSQL enum immutable | Create new enum type, migrate data |
+| Deadlock | Concurrent updates | Use `lockForUpdate()` or queue jobs |
+| Decimal precision loss | Wrong column type | Use `decimal(19,4)` not `float` |
+
 ## Utility Scripts
 
 - `scripts/validate_migration.py` - Check migration safety
