@@ -310,6 +310,16 @@ Slow API response
 | Connections | < 50 | > 80 |
 | Table Size Growth | Stable | >10%/day |
 
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `config/sentry.php` | Sentry configuration |
+| `config/logging.php` | Log channels configuration |
+| `routes/api.php` | Health check endpoint |
+| `app/Exceptions/Handler.php` | Exception handling |
+| `app/Http/Middleware/LogRequests.php` | Request logging |
+
 ## Detailed Guides
 
 - **Sentry Setup**: See [SENTRY_GUIDE.md](SENTRY_GUIDE.md)

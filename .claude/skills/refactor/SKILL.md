@@ -162,3 +162,28 @@ refactor(bot-service): extract message handling to dedicated service
 refactor(chat-list): split into smaller components
 refactor(queries): add indexes for slow bot lookups
 ```
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `app/Services/*.php` | Service layer (refactor targets) |
+| `app/Http/Controllers/*.php` | Controllers (should be thin) |
+| `app/Models/*.php` | Models (scopes, relationships) |
+| `src/components/*.tsx` | React components |
+| `src/hooks/*.ts` | Custom hooks |
+| `src/stores/*.ts` | Zustand stores |
+
+## Gotchas
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| Tests fail after refactor | Behavior changed | Refactor should not change behavior |
+| Import errors | Circular dependencies | Extract shared code to separate file |
+| Type errors | Missing types after move | Update all imports and types |
+| IDE not updating | Cached references | Restart IDE, clear cache |
+| Merge conflicts | Large diff | Smaller, incremental refactors |
+
+## Utility Scripts
+
+- `scripts/find_code_smells.sh` - Find potential refactor candidates

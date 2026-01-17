@@ -288,3 +288,19 @@ curl https://api.botjao.com/api/v1/bots \
 for i in {1..100}; do curl -s -o /dev/null -w "%{http_code}\n" \
   https://api.botjao.com/api/v1/bots; done
 ```
+
+## Gotchas
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| 401 on valid token | Token expired | Check `expiration` in sanctum config |
+| CORS error | Missing origin | Add domain to `config/cors.php` |
+| Rate limit too strict | Low limit | Adjust `RateLimiter::for()` |
+| Cookie not sent | SameSite issue | Set `SESSION_DOMAIN` properly |
+| Webhook signature fails | Body modified | Read raw body before any parsing |
+| Token abilities not working | Wrong middleware | Use `auth:sanctum` not `auth` |
+
+## Utility Scripts
+
+- `scripts/security_audit.sh` - Run security checks
+- `scripts/rotate_tokens.php` - Rotate expired tokens

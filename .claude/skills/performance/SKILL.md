@@ -190,6 +190,28 @@ Target: [endpoint/page]
 2. [specific fix]
 ```
 
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `config/cache.php` | Cache configuration |
+| `config/database.php` | DB connection settings |
+| `vite.config.ts` | Build optimization |
+| `tailwind.config.ts` | CSS purge settings |
+| `app/Http/Middleware/CacheResponse.php` | Response caching |
+
+## Gotchas
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| N+1 not detected | Lazy loading enabled | Use `preventLazyLoading()` in dev |
+| Cache not working | Wrong driver | Check `CACHE_DRIVER` env |
+| Bundle too large | No code splitting | Use `lazy()` for routes |
+| LCP slow | Large images | Use WebP, lazy loading |
+| Memory spike | Loading all records | Use `chunk()` or `cursor()` |
+| Query cache stale | No invalidation | Use proper cache tags |
+| React re-renders | Missing memoization | Add `useMemo`/`useCallback` |
+
 ## Utility Scripts
 
 - `scripts/find_n1_queries.php` - Detect N+1 patterns

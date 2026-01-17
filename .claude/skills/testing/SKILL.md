@@ -252,6 +252,29 @@ npm run test:e2e -- --headed            # With browser
 npm run test:e2e -- --debug             # Debug mode
 ```
 
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `tests/Unit/` | Unit tests for services |
+| `tests/Feature/` | Controller/API tests |
+| `tests/TestCase.php` | Base test class |
+| `database/factories/` | Model factories |
+| `playwright.config.ts` | Playwright configuration |
+| `phpunit.xml` | PHPUnit configuration |
+
+## Gotchas
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| Tests fail randomly | Database state | Use `RefreshDatabase` trait |
+| Slow tests | Too many DB operations | Use `LazilyRefreshDatabase` |
+| Factory errors | Missing relationship | Define relationship in factory |
+| Auth not working | Missing Sanctum setup | Use `Sanctum::actingAs($user)` |
+| Playwright timeout | Slow page load | Increase `timeout` in config |
+| Screenshot diff | CSS animation | Use `toHaveScreenshot({ animations: 'disabled' })` |
+| E2E flaky | Race condition | Add proper `waitFor` conditions |
+
 ## Utility Scripts
 
 - `scripts/run_unit.sh` - Run unit tests with coverage

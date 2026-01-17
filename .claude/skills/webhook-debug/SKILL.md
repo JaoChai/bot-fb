@@ -194,6 +194,51 @@ Message ID: [message_id]
 - [specific action]
 ```
 
+## Common Tasks
+
+### Debug Bot Not Responding
+
+```markdown
+1. Check Railway logs for webhook hits
+2. Check failed jobs: `php artisan queue:failed`
+3. Verify bot credentials in database
+4. Test webhook manually with curl
+5. Check AI service response
+6. Verify reply API call
+```
+
+### Verify LINE Webhook
+
+```markdown
+1. Get webhook URL: `https://api.botjao.com/api/webhook/line/{bot_id}`
+2. Set URL in LINE Console
+3. Test with LINE verification request
+4. Check signature validation in logs
+5. Send test message from LINE app
+```
+
+### Debug WebSocket Connection
+
+```markdown
+1. Check Reverb is running: `php artisan reverb:start`
+2. Check browser console for connection state
+3. Verify auth token is valid
+4. Check channel subscription
+5. Test broadcast manually
+```
+
+## Gotchas
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| Webhook returns 500 | Unhandled exception | Check Sentry/logs for stacktrace |
+| Signature validation fails | Wrong channel secret | Verify secret matches LINE Console |
+| Job stuck in queue | Worker not running | Start worker: `php artisan queue:work` |
+| Telegram webhook not set | Missing setWebhook call | Run `curl` to set webhook URL |
+| Echo not connecting | CORS or auth issue | Check broadcasting.php config |
+| Messages duplicated | Webhook retry | Implement idempotency check |
+| Slow response | Job queue backed up | Scale workers or increase timeout |
+
 ## Utility Scripts
 
 - `scripts/trace_webhook.sh` - Trace webhook from logs

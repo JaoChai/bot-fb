@@ -131,6 +131,61 @@ Bot ID: [bot_id]
 - [specific action with config values]
 ```
 
+## Common Tasks
+
+### Debug Search Not Finding Results
+
+```markdown
+1. Check document exists in knowledge_base
+2. Verify embedding was generated (not null)
+3. Run manual similarity query in SQL
+4. Check semantic_threshold setting
+5. Try lowering threshold to 0.5
+6. Check if reranker filters too much
+```
+
+### Fix Thai Language Search
+
+```markdown
+1. Verify using multilingual embedding model
+2. Enable hybrid search (semantic + keyword)
+3. Lower similarity threshold (0.65)
+4. Add keyword boost for Thai terms
+5. Test with normalized Thai query
+```
+
+### Improve Context Quality
+
+```markdown
+1. Review chunking settings (200-500 words)
+2. Increase chunk overlap (50-100 words)
+3. Raise max_context_tokens limit
+4. Check reranker is ordering correctly
+5. Verify context injection in prompt
+```
+
+### Reindex Documents
+
+```markdown
+1. Delete existing embeddings: DELETE FROM embeddings WHERE bot_id = X
+2. Re-chunk documents with new settings
+3. Generate new embeddings
+4. Rebuild ivfflat index
+5. Test search quality
+```
+
+## Gotchas
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| Embedding null | Generation failed | Check OpenAI API key, retry |
+| Search returns 0 | Threshold too high | Lower `semantic_threshold` to 0.6 |
+| Wrong results first | Missing reranker | Enable Jina reranker |
+| Context ignored by AI | Prompt issue | Check context injection template |
+| Slow search | Missing index | Create ivfflat index |
+| Thai search bad | English-only model | Use `text-embedding-3-large` |
+| Duplicate results | Same content chunks | Improve chunking, add dedup |
+
 ## Utility Scripts
 
 - `scripts/test_search.py` - Test search with sample queries

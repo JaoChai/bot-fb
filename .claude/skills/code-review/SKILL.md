@@ -5,6 +5,8 @@ description: Comprehensive code reviewer combining quality, security, and API de
 
 # Code Review Skill
 
+Comprehensive code review for BotFacebook.
+
 ## Quick Start
 
 1. **Before Commit:**
@@ -29,11 +31,140 @@ description: Comprehensive code reviewer combining quality, security, and API de
 - **context7**: `query-docs` - Get latest framework patterns
 - **sentry**: `search_issues`, `get_issue_details` - Find security issues and errors
 
-## Detailed Guides
+## Key Review Patterns
 
-- **Security:** See [SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md)
-- **API Design:** See [API_CHECKLIST.md](API_CHECKLIST.md)
-- **Code Quality:** See [CODE_QUALITY.md](CODE_QUALITY.md)
+### Backend (Laravel)
+
+```php
+// ✅ Good: Service layer pattern
+class BotController extends Controller
+{
+    public function __construct(private BotService $service) {}
+
+    public function store(StoreBotRequest $request): BotResource
+    {
+        $bot = $this->service->create($request->validated());
+        return new BotResource($bot);
+    }
+}
+
+// ❌ Bad: Fat controller
+public function store(Request $request)
+{
+    $data = $request->all();  // No validation
+    $bot = Bot::create($data);  // No service layer
+    return $bot;  // No resource transformation
+}
+```
+
+### Frontend (React)
+
+```typescript
+// ✅ Good: Proper hooks usage
+function BotList() {
+    const { data, isLoading } = useQuery({
+        queryKey: ['bots'],
+        queryFn: () => api.getBots(),
+    });
+
+    if (isLoading) return <Skeleton />;
+    return <List items={data} />;
+}
+
+// ❌ Bad: Missing loading/error states
+function BotList() {
+    const [bots, setBots] = useState([]);
+    useEffect(() => {
+        api.getBots().then(setBots);  // No error handling
+    }, []);
+    return <List items={bots} />;
+}
+```
+
+## Key Files to Review
+
+### Backend
+
+| File Pattern | What to Check |
+|--------------|---------------|
+| `app/Http/Controllers/*.php` | Thin controllers, uses services |
+| `app/Http/Requests/*.php` | Validation rules complete |
+| `app/Services/*.php` | Business logic, transactions |
+| `app/Models/*.php` | Relationships, $fillable, casts |
+| `routes/api.php` | RESTful, middleware applied |
+| `database/migrations/*.php` | Indexes, foreign keys |
+| `config/*.php` | No `env()` calls (use config) |
+
+### Frontend
+
+| File Pattern | What to Check |
+|--------------|---------------|
+| `src/components/*.tsx` | Props typed, no any |
+| `src/hooks/*.ts` | Error handling, loading states |
+| `src/stores/*.ts` | Proper Zustand patterns |
+| `src/lib/api.ts` | Error handling, types |
+| `src/pages/*.tsx` | Suspense boundaries |
+
+## Common Tasks
+
+### 1. Pre-Commit Review
+
+```bash
+# Check what's staged
+git diff --staged
+
+# Run linters
+cd backend && ./vendor/bin/pint --test
+cd frontend && npm run lint
+
+# Run tests
+php artisan test --filter=Unit
+npm run type-check
+```
+
+### 2. PR Review Checklist
+
+```markdown
+## Code Quality
+- [ ] No console.log/dd() left
+- [ ] Types complete (no `any`)
+- [ ] Error handling present
+- [ ] Loading states handled
+
+## Security
+- [ ] Input validated
+- [ ] Auth middleware applied
+- [ ] No SQL injection risks
+- [ ] Sensitive data not logged
+
+## API Design
+- [ ] RESTful naming
+- [ ] Consistent response format
+- [ ] Proper status codes
+- [ ] Rate limiting applied
+
+## Performance
+- [ ] No N+1 queries
+- [ ] Indexes for new columns
+- [ ] Pagination for lists
+```
+
+### 3. Security Audit
+
+```bash
+# Check for hardcoded secrets
+grep -rn "password\s*=\s*['\"]" app/ --include="*.php"
+grep -rn "api_key\|secret" app/ --include="*.php"
+
+# Check for SQL injection
+grep -rn "DB::raw\|whereRaw" app/ --include="*.php"
+
+# Check middleware coverage
+php artisan route:list --columns=uri,middleware | grep -v "auth"
+
+# Check composer vulnerabilities
+composer audit
+```
 
 ## Review Workflow
 
@@ -74,6 +205,39 @@ For all PHP/TypeScript:
 | N+1 queries | Use eager loading with `->with()` |
 | Hardcoded URLs | Use config/env variables |
 | Missing types | Add TypeScript/PHP type hints |
+| No error handling | Add try-catch, error boundaries |
+| Fat controller | Extract to service layer |
+| Prop drilling | Use custom hook or context |
+
+## Detailed Guides
+
+- **Security:** See [SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md)
+- **API Design:** See [API_CHECKLIST.md](API_CHECKLIST.md)
+- **Code Quality:** See [CODE_QUALITY.md](CODE_QUALITY.md)
+
+## Review Output Format
+
+```markdown
+## Code Review Report
+
+### Summary
+- Files reviewed: X
+- Issues found: X (Critical: X, Warning: X, Info: X)
+
+### Critical Issues 🔴
+1. [FILE:LINE] Description
+   - Problem: ...
+   - Fix: ...
+
+### Warnings 🟡
+1. [FILE:LINE] Description
+
+### Suggestions 🟢
+1. [FILE:LINE] Description
+
+### Approved ✅
+- List of files with no issues
+```
 
 ## Integration with Pre-Commit
 
