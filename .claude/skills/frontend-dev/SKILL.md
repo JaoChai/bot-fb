@@ -1,6 +1,6 @@
 ---
 name: frontend-dev
-description: React 19 specialist for UI development. Handles components, state management with Zustand, data fetching with React Query v5, styling with Tailwind v4. Use when creating/modifying React components, pages, hooks, or fixing UI issues. Includes UI/UX design guidance with 50 styles, 21 color palettes, responsive design, and accessibility.
+description: React 19 specialist for frontend implementation. Handles components, state management with Zustand, data fetching with React Query v5, styling with Tailwind v4. Use when creating/modifying React components, pages, hooks, or fixing UI issues. For design decisions (styles, colors, fonts), use /ui-ux-pro-max first.
 ---
 
 # Frontend Development
@@ -104,7 +104,7 @@ const buttonVariants = cva(
 
 - **React Patterns**: See [REACT_PATTERNS.md](REACT_PATTERNS.md)
 - **Query Patterns**: See [QUERY_PATTERNS.md](QUERY_PATTERNS.md)
-- **UI Design**: See [UI_DESIGN.md](UI_DESIGN.md)
+- **UI Design**: Use `/ui-ux-pro-max` skill for design decisions
 
 ## Key Files
 
