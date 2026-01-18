@@ -10,7 +10,9 @@ use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\AutoAssignmentService;
+use App\Services\CircuitBreakerService;
 use App\Services\LeadRecoveryService;
+use App\Exceptions\CircuitOpenException;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -45,10 +47,22 @@ class ProcessFacebookWebhook implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(AIService $aiService): void
+    public function handle(AIService $aiService, CircuitBreakerService $circuitBreaker): void
     {
         try {
-            $this->processPayload($aiService);
+            // Use circuit breaker to protect against DB failures
+            $circuitBreaker->execute(
+                'database',
+                fn () => $this->processPayload($aiService),
+                fn () => $this->sendFallbackMessage()
+            );
+        } catch (CircuitOpenException $e) {
+            // Circuit is open - send fallback and don't retry
+            Log::warning('Circuit breaker open for Facebook webhook', [
+                'bot_id' => $this->bot->id,
+                'service' => $e->getService(),
+            ]);
+            $this->sendFallbackMessage();
         } catch (\Exception $e) {
             Log::error('Facebook webhook processing failed', [
                 'bot_id' => $this->bot->id,
@@ -57,6 +71,50 @@ class ProcessFacebookWebhook implements ShouldQueue
             ]);
 
             throw $e;
+        }
+    }
+
+    /**
+     * Send fallback message when system is unavailable.
+     * This method doesn't depend on database operations.
+     */
+    protected function sendFallbackMessage(): void
+    {
+        if (! config('bot.send_fallback_on_circuit_open', true)) {
+            return;
+        }
+
+        // Extract sender ID from payload
+        $senderId = null;
+        foreach ($this->payload['entry'] ?? [] as $entry) {
+            foreach ($entry['messaging'] ?? [] as $event) {
+                $senderId = $event['sender']['id'] ?? null;
+                if ($senderId) {
+                    break 2;
+                }
+            }
+        }
+
+        if (! $senderId) {
+            return;
+        }
+
+        $fallbackMessage = config('bot.fallback_message', 'ขออภัยครับ ระบบกำลังมีปัญหาชั่วคราว กรุณาลองใหม่ในอีกสักครู่');
+
+        try {
+            $this->sendFacebookMessage($senderId, $fallbackMessage);
+
+            Log::info('Sent fallback message to Facebook user', [
+                'bot_id' => $this->bot->id,
+                'recipient_id' => $senderId,
+            ]);
+        } catch (\Exception $e) {
+            // Don't throw - fallback message is best-effort
+            Log::error('Failed to send fallback message to Facebook', [
+                'bot_id' => $this->bot->id,
+                'recipient_id' => $senderId,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
