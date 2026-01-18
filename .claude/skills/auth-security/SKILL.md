@@ -25,6 +25,29 @@ Authentication, authorization, and security for BotFacebook.
 - **context7**: `query-docs` - Get latest Laravel Sanctum docs
 - **sentry**: `search_issues` - Find auth-related errors
 - **neon**: `run_sql` - Check user sessions, tokens
+- **claude-mem**: `search`, `get_observations` - Search past security decisions
+
+## Memory Search (Before Starting)
+
+**Always search memory first** to find past security decisions and vulnerability fixes.
+
+### Recommended Searches
+
+```
+# Search for security fixes
+search(query="security fix", project="bot-fb", type="bugfix", limit=5)
+
+# Find auth implementations
+search(query="authentication", project="bot-fb", concepts=["pattern"], limit=5)
+```
+
+### Search by Scenario
+
+| Scenario | Search Query |
+|----------|--------------|
+| Auth implementation | `search(query="Sanctum auth", project="bot-fb", concepts=["pattern"], limit=5)` |
+| Rate limiting | `search(query="rate limit", project="bot-fb", type="feature", limit=5)` |
+| Security audit | `search(query="security vulnerability", project="bot-fb", type="bugfix", limit=5)` |
 
 ## Authentication Architecture
 

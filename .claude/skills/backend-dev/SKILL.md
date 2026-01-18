@@ -30,6 +30,29 @@ class BotController extends Controller
 - **context7**: `resolve-library-id`, `query-docs` - Get latest Laravel docs
 - **neon**: `run_sql`, `describe_table_schema` - Database operations
 - **sentry**: `search_issues`, `get_issue_details` - Error tracking
+- **claude-mem**: `search`, `get_observations` - Search past implementations
+
+## Memory Search (Before Starting)
+
+**Always search memory first** to find past API patterns and service implementations.
+
+### Recommended Searches
+
+```
+# Search for similar implementations
+search(query="API endpoint", project="bot-fb", type="feature", limit=5)
+
+# Find service patterns
+search(query="service implementation", project="bot-fb", concepts=["pattern"], limit=5)
+```
+
+### Search by Scenario
+
+| Scenario | Search Query |
+|----------|--------------|
+| Creating new endpoint | `search(query="controller resource", project="bot-fb", concepts=["pattern"], limit=5)` |
+| Adding validation | `search(query="FormRequest validation", project="bot-fb", type="feature", limit=5)` |
+| Creating job | `search(query="queue job", project="bot-fb", concepts=["pattern"], limit=5)` |
 
 ## Architecture
 

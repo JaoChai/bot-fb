@@ -19,6 +19,29 @@ Full-stack performance specialist for BotFacebook.
 - **neon**: `explain_sql_statement`, `list_slow_queries`, `prepare_query_tuning` - Database analysis
 - **chrome**: `screenshot`, `computer` - Frontend profiling
 - **sentry**: `search_events`, `get_trace_details` - Performance monitoring
+- **claude-mem**: `search`, `get_observations` - Search past optimizations
+
+## Memory Search (Before Starting)
+
+**Always search memory first** to find past optimizations and performance fixes.
+
+### Recommended Searches
+
+```
+# Search for performance fixes
+search(query="performance optimization", project="bot-fb", type="bugfix", limit=5)
+
+# Find N+1 and query fixes
+search(query="N+1 query fix", project="bot-fb", concepts=["problem-solution"], limit=5)
+```
+
+### Search by Scenario
+
+| Scenario | Search Query |
+|----------|--------------|
+| Slow API | `search(query="API slow response", project="bot-fb", type="bugfix", limit=5)` |
+| Database issues | `search(query="query optimization", project="bot-fb", concepts=["pattern"], limit=5)` |
+| Frontend bundle | `search(query="bundle size", project="bot-fb", type="bugfix", limit=5)` |
 
 ## Performance Targets
 

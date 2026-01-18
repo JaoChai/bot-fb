@@ -27,6 +27,29 @@ export function Component({ className, children }: Props) {
 
 - **context7**: `resolve-library-id`, `query-docs` - Get latest React/library docs
 - **chrome**: `screenshot`, `computer`, `read_page` - UI testing and automation
+- **claude-mem**: `search`, `get_observations` - Search past implementations
+
+## Memory Search (Before Starting)
+
+**Always search memory first** to find past component patterns and hook implementations.
+
+### Recommended Searches
+
+```
+# Search for similar components
+search(query="React component", project="bot-fb", type="feature", limit=5)
+
+# Find hook patterns
+search(query="custom hook", project="bot-fb", concepts=["pattern"], limit=5)
+```
+
+### Search by Scenario
+
+| Scenario | Search Query |
+|----------|--------------|
+| Creating new component | `search(query="component pattern", project="bot-fb", concepts=["pattern"], limit=5)` |
+| Adding state management | `search(query="Zustand store", project="bot-fb", type="feature", limit=5)` |
+| React Query usage | `search(query="useQuery mutation", project="bot-fb", concepts=["pattern"], limit=5)` |
 
 ## Tech Stack
 

@@ -30,6 +30,40 @@ Comprehensive code review for BotFacebook.
 
 - **context7**: `query-docs` - Get latest framework patterns
 - **sentry**: `search_issues`, `get_issue_details` - Find security issues and errors
+- **claude-mem**: `search`, `get_observations` - Search past bugs and patterns
+
+## Memory Search (Before Starting)
+
+**Always search memory first** to find past bugs, security issues, and patterns to avoid.
+
+### Recommended Searches
+
+```
+# Search for past bugs in this area
+search(query="bug fix", project="bot-fb", type="bugfix", limit=5)
+
+# Find gotchas and problem-solutions
+search(query="code review issue", project="bot-fb", concepts=["gotcha", "problem-solution"], limit=5)
+
+# Search for security issues
+search(query="security vulnerability", project="bot-fb", type="bugfix", limit=5)
+```
+
+### Search by Scenario
+
+| Scenario | Search Query |
+|----------|--------------|
+| Reviewing auth code | `search(query="auth security", project="bot-fb", concepts=["gotcha"], limit=5)` |
+| Reviewing API endpoints | `search(query="API validation", project="bot-fb", type="bugfix", limit=5)` |
+| Checking for N+1 | `search(query="N+1 query", project="bot-fb", concepts=["problem-solution"], limit=5)` |
+| Reviewing frontend | `search(query="React bug", project="bot-fb", type="bugfix", limit=5)` |
+
+### Using Search Results
+
+1. Run relevant searches based on code being reviewed
+2. Use `get_observations(ids=[...])` for full details on similar past bugs
+3. Check if current code has similar issues to past bugs
+4. Apply learnings to prevent regression
 
 ## Key Review Patterns
 

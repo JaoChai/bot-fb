@@ -32,6 +32,29 @@ php artisan migrate:rollback
   - `list_slow_queries` - Find performance issues
   - `describe_table_schema` - Table structure
   - `get_database_tables` - List all tables
+- **claude-mem**: `search`, `get_observations` - Search past migrations
+
+## Memory Search (Before Starting)
+
+**Always search memory first** to find past migrations and query optimizations.
+
+### Recommended Searches
+
+```
+# Search for past migrations
+search(query="migration schema", project="bot-fb", type="feature", limit=5)
+
+# Find query optimizations
+search(query="query optimization index", project="bot-fb", concepts=["pattern"], limit=5)
+```
+
+### Search by Scenario
+
+| Scenario | Search Query |
+|----------|--------------|
+| Creating migration | `search(query="migration", project="bot-fb", type="feature", limit=5)` |
+| Adding index | `search(query="index optimization", project="bot-fb", concepts=["pattern"], limit=5)` |
+| Vector operations | `search(query="pgvector embedding", project="bot-fb", type="feature", limit=5)` |
 
 ## Migration Best Practices
 

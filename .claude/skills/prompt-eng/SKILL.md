@@ -11,6 +11,29 @@ System prompt optimization specialist for BotFacebook.
 
 - **context7**: `query-docs` - Get latest OpenAI/Anthropic prompt engineering docs
 - **sentry**: `search_issues` - Find AI response quality issues
+- **claude-mem**: `search`, `get_observations` - Search past prompt iterations
+
+## Memory Search (Before Starting)
+
+**Always search memory first** to find past prompt iterations and improvements.
+
+### Recommended Searches
+
+```
+# Search for prompt changes
+search(query="prompt optimization", project="bot-fb", type="feature", limit=5)
+
+# Find A/B test results
+search(query="prompt test", project="bot-fb", concepts=["trade-off"], limit=5)
+```
+
+### Search by Scenario
+
+| Scenario | Search Query |
+|----------|--------------|
+| Improving prompts | `search(query="prompt improvement", project="bot-fb", type="feature", limit=5)` |
+| Injection prevention | `search(query="prompt injection", project="bot-fb", type="bugfix", limit=5)` |
+| Quality issues | `search(query="AI response quality", project="bot-fb", concepts=["problem-solution"], limit=5)` |
 
 ## Quick Start
 

@@ -31,6 +31,40 @@ Safe, incremental code refactoring for BotFacebook stack.
 - **Context7:** `/query-docs` for latest patterns
 - **Neon:** `run_sql` for DB schema analysis
 - **Sentry:** Check for related errors
+- **claude-mem**: `search`, `get_observations` - Search past decisions and trade-offs
+
+## Memory Search (Before Starting)
+
+**Always search memory first** to find past decisions, why code was structured this way, and trade-offs made.
+
+### Recommended Searches
+
+```
+# Search for past refactoring decisions
+search(query="refactor decision", project="bot-fb", type="refactor", limit=5)
+
+# Find why code exists this way
+search(query="code structure reason", project="bot-fb", concepts=["why-it-exists", "trade-off"], limit=5)
+
+# Search for patterns used
+search(query="architecture pattern", project="bot-fb", concepts=["pattern"], limit=5)
+```
+
+### Search by Scenario
+
+| Scenario | Search Query |
+|----------|--------------|
+| Refactoring a service | `search(query="service extraction", project="bot-fb", type="refactor", limit=5)` |
+| Changing component structure | `search(query="React component refactor", project="bot-fb", concepts=["pattern"], limit=5)` |
+| Database optimization | `search(query="query optimization", project="bot-fb", type="refactor", limit=5)` |
+| Understanding existing code | `search(query="why this code", project="bot-fb", concepts=["why-it-exists"], limit=5)` |
+
+### Using Search Results
+
+1. Run relevant searches before changing code structure
+2. Use `get_observations(ids=[...])` for full context on past decisions
+3. Understand why previous developers made certain choices
+4. Avoid repeating past mistakes or undoing intentional trade-offs
 
 ## Refactor Decision Tree
 
