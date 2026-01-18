@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiDelete } from '@/lib/api';
+import { buildFilterParams } from '@/lib/params';
 import { queryKeys } from '@/lib/query';
 import type {
   ApiResponse,
@@ -18,11 +19,12 @@ export function useEvaluations(botId: number | null, filters?: EvaluationFilters
   return useQuery({
     queryKey: queryKeys.evaluations.list(botId ?? 0, filters as Record<string, unknown> | undefined),
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (filters?.flow_id) params.append('flow_id', String(filters.flow_id));
-      if (filters?.status) params.append('status', filters.status);
-      if (filters?.per_page) params.append('per_page', String(filters.per_page));
-      if (filters?.page) params.append('page', String(filters.page));
+      const params = buildFilterParams({
+        flow_id: filters?.flow_id,
+        status: filters?.status,
+        per_page: filters?.per_page,
+        page: filters?.page,
+      });
 
       const queryString = params.toString();
       const url = `/bots/${botId}/evaluations${queryString ? `?${queryString}` : ''}`;
@@ -67,11 +69,12 @@ export function useEvaluationTestCases(
   return useQuery({
     queryKey: queryKeys.evaluations.testCases(botId ?? 0, evaluationId ?? 0),
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (filters?.status) params.append('status', filters.status);
-      if (filters?.persona_key) params.append('persona_key', filters.persona_key);
-      if (filters?.per_page) params.append('per_page', String(filters.per_page));
-      if (filters?.page) params.append('page', String(filters.page));
+      const params = buildFilterParams({
+        status: filters?.status,
+        persona_key: filters?.persona_key,
+        per_page: filters?.per_page,
+        page: filters?.page,
+      });
 
       const queryString = params.toString();
       const url = `/bots/${botId}/evaluations/${evaluationId}/test-cases${queryString ? `?${queryString}` : ''}`;

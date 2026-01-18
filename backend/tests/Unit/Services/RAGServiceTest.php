@@ -6,6 +6,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\User;
 use App\Services\HybridSearchService;
+use App\Services\IntentAnalysisService;
 use App\Services\OpenRouterService;
 use App\Services\RAGService;
 use App\Services\SemanticSearchService;
@@ -29,11 +30,13 @@ class RAGServiceTest extends TestCase
         $semanticSearch = $this->createMock(SemanticSearchService::class);
         $hybridSearch = $this->createMock(HybridSearchService::class);
         $openRouter = $this->createMock(OpenRouterService::class);
+        $intentAnalysis = $this->createMock(IntentAnalysisService::class);
 
         $this->service = new RAGService(
             $semanticSearch,
             $hybridSearch,
-            $openRouter
+            $openRouter,
+            $intentAnalysis
         );
 
         $this->user = User::factory()->create();

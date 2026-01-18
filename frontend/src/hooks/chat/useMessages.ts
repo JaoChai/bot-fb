@@ -14,6 +14,7 @@ import {
   type InfiniteData,
 } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { buildFilterParams } from '@/lib/params';
 import { useConnectionStore } from '@/stores/connectionStore';
 import type { Message, PaginationMeta } from '@/types/api';
 
@@ -78,10 +79,11 @@ export function useMessages(
         ? messageKeys.listWithOptions(botId, conversationId, options)
         : ['messages', 'disabled'],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (options.page) params.append('page', String(options.page));
-      if (options.perPage) params.append('per_page', String(options.perPage));
-      if (options.order) params.append('order', options.order);
+      const params = buildFilterParams({
+        page: options.page,
+        per_page: options.perPage,
+        order: options.order,
+      });
 
       const response = await api.get<MessagesResponse>(
         `/bots/${botId}/conversations/${conversationId}/messages?` + params.toString()

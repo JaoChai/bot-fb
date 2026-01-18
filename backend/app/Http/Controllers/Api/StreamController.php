@@ -9,7 +9,9 @@ use App\Models\User;
 use App\Services\AgentSafetyService;
 use App\Services\CostTrackingService;
 use App\Services\HybridSearchService;
+use App\Services\IntentAnalysisService;
 use App\Services\OpenRouterService;
+use App\Services\RAGService;
 use App\Services\SecondAI\SecondAIService;
 use App\Services\ToolService;
 use GuzzleHttp\Client;
@@ -37,6 +39,8 @@ class StreamController extends Controller
     protected CostTrackingService $costTracking;
     protected AgentSafetyService $agentSafety;
     protected SecondAIService $secondAI;
+    protected IntentAnalysisService $intentAnalysis;
+    protected RAGService $ragService;
 
     // Track process metrics
     protected array $metrics = [
@@ -53,7 +57,9 @@ class StreamController extends Controller
         ToolService $toolService,
         CostTrackingService $costTracking,
         AgentSafetyService $agentSafety,
-        SecondAIService $secondAI
+        SecondAIService $secondAI,
+        IntentAnalysisService $intentAnalysis,
+        RAGService $ragService
     ) {
         $this->openRouter = $openRouter;
         $this->hybridSearch = $hybridSearch;
@@ -61,6 +67,8 @@ class StreamController extends Controller
         $this->costTracking = $costTracking;
         $this->agentSafety = $agentSafety;
         $this->secondAI = $secondAI;
+        $this->intentAnalysis = $intentAnalysis;
+        $this->ragService = $ragService;
     }
 
     /**
@@ -224,7 +232,6 @@ class StreamController extends Controller
     protected function runDecisionModel(Bot $bot, string $message, ?string $apiKey): array
     {
         $decisionModel = $bot->decision_model;
-        $fallbackDecisionModel = $bot->fallback_decision_model;
 
         // Skip if no decision model configured
         if (empty($decisionModel)) {
@@ -234,7 +241,7 @@ class StreamController extends Controller
 
             // Default: use KB if enabled, otherwise chat
             return [
-                'intent' => $this->shouldUseKnowledgeBase($bot) ? 'knowledge' : 'chat',
+                'intent' => $this->intentAnalysis->shouldUseKnowledgeBase($bot) ? 'knowledge' : 'chat',
                 'confidence' => 1.0,
                 'skipped' => true,
             ];
@@ -245,77 +252,48 @@ class StreamController extends Controller
             'model' => $decisionModel,
         ]);
 
-        try {
-            $prompt = $this->buildIntentAnalysisPrompt($bot);
+        // Use IntentAnalysisService for analysis
+        $result = $this->intentAnalysis->analyzeIntent($bot, $message, [
+            'validIntents' => ['chat', 'knowledge'],
+            'includeExamples' => false,
+            'useFallback' => true,
+            'apiKey' => $apiKey,
+        ]);
 
-            $result = $this->openRouter->chat(
-                messages: [
-                    ['role' => 'system', 'content' => $prompt],
-                    ['role' => 'user', 'content' => $message],
-                ],
-                model: $decisionModel,
-                temperature: 0.1,
-                maxTokens: 150,
-                useFallback: true,
-                apiKeyOverride: $apiKey,
-                fallbackModelOverride: $fallbackDecisionModel
-            );
+        $timeMs = round((microtime(true) - $startTime) * 1000);
 
-            $rawContent = $result['content'] ?? '';
-            // TEMP: Log at ERROR level to debug 0% confidence issue (change back to INFO after debugging)
-            Log::error('[DEBUG] Decision Model Raw Response', [
-                'bot_id' => $bot->id,
-                'model' => $decisionModel,
-                'raw_content' => substr($rawContent, 0, 1000),
-            ]);
-
-            $parsed = $this->parseIntentResponse($rawContent);
-            $timeMs = round((microtime(true) - $startTime) * 1000);
-
-            // TEMP: Log at ERROR level to debug 0% confidence issue
-            Log::error('[DEBUG] Decision Model Parsed Result', [
-                'bot_id' => $bot->id,
-                'intent' => $parsed['intent'],
-                'confidence' => $parsed['confidence'],
-                'full_result_keys' => array_keys($result), // See what fields are available
-            ]);
-
-            $this->metrics['models_used'][] = $result['model'] ?? $decisionModel;
+        // Track metrics
+        if (!empty($result['model_used'])) {
+            $this->metrics['models_used'][] = $result['model_used'];
+        }
+        if (!empty($result['usage'])) {
             $this->metrics['prompt_tokens'] += $result['usage']['prompt_tokens'] ?? 0;
             $this->metrics['completion_tokens'] += $result['usage']['completion_tokens'] ?? 0;
-
-            $this->sendSSE('decision_result', [
-                'intent' => $parsed['intent'],
-                'confidence' => $parsed['confidence'],
-                'model' => $result['model'] ?? $decisionModel,
-                'tokens' => ($result['usage']['prompt_tokens'] ?? 0) + ($result['usage']['completion_tokens'] ?? 0),
-                'time_ms' => $timeMs,
-            ]);
-
-            return $parsed;
-
-        } catch (\Exception $e) {
-            Log::warning('Decision model failed', [
-                'bot_id' => $bot->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            // Send fallback event if we used fallback
-            if ($fallbackDecisionModel) {
-                $this->sendSSE('decision_fallback', [
-                    'original_model' => $decisionModel,
-                    'fallback_model' => $fallbackDecisionModel,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-
-            // Default to knowledge if KB enabled, otherwise chat
-            return [
-                'intent' => $this->shouldUseKnowledgeBase($bot) ? 'knowledge' : 'chat',
-                'confidence' => 0,
-                'error' => $e->getMessage(),
-            ];
         }
+
+        // Check if it was skipped (no decision model)
+        if (!empty($result['skipped'])) {
+            return $result;
+        }
+
+        // Check if there was an error
+        if (!empty($result['error'])) {
+            $this->sendSSE('decision_fallback', [
+                'original_model' => $decisionModel,
+                'fallback_model' => $bot->fallback_decision_model,
+                'error' => $result['error'],
+            ]);
+        }
+
+        $this->sendSSE('decision_result', [
+            'intent' => $result['intent'],
+            'confidence' => $result['confidence'],
+            'model' => $result['model_used'] ?? $decisionModel,
+            'tokens' => ($result['usage']['prompt_tokens'] ?? 0) + ($result['usage']['completion_tokens'] ?? 0),
+            'time_ms' => $timeMs,
+        ]);
+
+        return $result;
     }
 
     /**
@@ -325,7 +303,7 @@ class StreamController extends Controller
     {
         // Check if we should use KB
         $shouldUseKB = ($intent['intent'] === 'knowledge' || isset($intent['skipped']))
-            && $this->shouldUseKnowledgeBase($bot);
+            && $this->intentAnalysis->shouldUseKnowledgeBase($bot);
 
         // Also check flow-level KBs
         $flowKBs = $flow->knowledgeBases;
@@ -333,7 +311,7 @@ class StreamController extends Controller
 
         if (!$shouldUseKB && !$hasFlowKBs) {
             $this->sendSSE('kb_skip', [
-                'reason' => $this->shouldUseKnowledgeBase($bot)
+                'reason' => $this->intentAnalysis->shouldUseKnowledgeBase($bot)
                     ? 'Intent ไม่ต้องการ Knowledge Base'
                     : 'ไม่ได้เปิดใช้งาน Knowledge Base',
             ]);
@@ -425,8 +403,8 @@ class StreamController extends Controller
                 return '';
             }
 
-            // Format context for prompt
-            return $this->formatKnowledgeBaseContext($results);
+            // Format context for prompt (delegate to RAGService)
+            return $this->ragService->formatKnowledgeBaseContext($results);
 
         } catch (\Exception $e) {
             Log::error('KB search failed', [
@@ -748,194 +726,6 @@ class StreamController extends Controller
         return $bot->fallback_chat_model
             ?: $bot->llm_fallback_model
             ?: config('services.openrouter.fallback_model');
-    }
-
-    protected function shouldUseKnowledgeBase(Bot $bot): bool
-    {
-        if (!$bot->kb_enabled) {
-            return false;
-        }
-        return $bot->knowledgeBase !== null;
-    }
-
-    protected function buildIntentAnalysisPrompt(Bot $bot): string
-    {
-        $hasKB = $bot->kb_enabled && $bot->knowledgeBase;
-        $kbNote = $hasKB ? ' (Knowledge Base available for factual queries)' : '';
-
-        return <<<PROMPT
-You are an intent classifier. Analyze the user's message and determine the appropriate intent.
-Respond with JSON only: {"intent": "chat|knowledge", "confidence": 0.0-1.0}
-
-Available intents:
-- "chat": General conversation, greetings, opinions, casual talk, or when unsure
-- "knowledge": Questions requiring factual information, specific data, or documentation{$kbNote}
-
-Classification rules:
-- Use "knowledge" for: questions about facts, how-to queries, data lookups, technical questions
-- Use "chat" for: greetings (hi, hello), opinions, casual conversation, follow-up responses
-- When uncertain, prefer "chat" (safer default)
-
-Respond with JSON only, no explanation.
-PROMPT;
-    }
-
-    protected function parseIntentResponse(string $content): array
-    {
-        $content = trim($content);
-
-        // Remove markdown code blocks (greedy to capture full JSON)
-        if (preg_match('/```(?:json)?\s*(\{.+\})\s*```/s', $content, $matches)) {
-            $content = $matches[1];
-        }
-
-        // Extract JSON object with proper brace matching
-        $content = $this->extractJsonObject($content);
-
-        try {
-            $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
-
-            $intent = $data['intent'] ?? 'chat';
-            $confidence = (float) ($data['confidence'] ?? 0.5);
-
-            if (!in_array($intent, ['chat', 'knowledge'])) {
-                $intent = 'chat';
-            }
-
-            $confidence = max(0, min(1, $confidence));
-
-            return [
-                'intent' => $intent,
-                'confidence' => $confidence,
-            ];
-        } catch (\Exception $e) {
-            // JSON parse failed - try text-based fallback
-            $fallbackResult = $this->fallbackIntentFromText($content);
-
-            Log::warning('Decision Model JSON Parse Failed - using text fallback', [
-                'content' => substr($content, 0, 500),
-                'error' => $e->getMessage(),
-                'fallback_result' => $fallbackResult,
-            ]);
-
-            return $fallbackResult;
-        }
-    }
-
-    /**
-     * Extract JSON object from string with proper brace matching.
-     * Handles nested objects unlike simple regex.
-     */
-    protected function extractJsonObject(string $content): string
-    {
-        $start = strpos($content, '{');
-        if ($start === false) {
-            return $content;
-        }
-
-        $depth = 0;
-        $length = strlen($content);
-        $inString = false;
-        $escape = false;
-
-        for ($i = $start; $i < $length; $i++) {
-            $char = $content[$i];
-
-            if ($escape) {
-                $escape = false;
-                continue;
-            }
-
-            if ($char === '\\') {
-                $escape = true;
-                continue;
-            }
-
-            if ($char === '"') {
-                $inString = !$inString;
-                continue;
-            }
-
-            if ($inString) {
-                continue;
-            }
-
-            if ($char === '{') {
-                $depth++;
-            } elseif ($char === '}') {
-                $depth--;
-                if ($depth === 0) {
-                    return substr($content, $start, $i - $start + 1);
-                }
-            }
-        }
-
-        return $content;
-    }
-
-    /**
-     * Fallback intent detection from raw text when JSON parsing fails.
-     * Uses keyword matching to determine intent with reasonable confidence.
-     */
-    protected function fallbackIntentFromText(string $content): array
-    {
-        $content = strtolower($content);
-
-        // Keywords that suggest "knowledge" intent
-        $knowledgeKeywords = ['knowledge', 'information', 'factual', 'data', 'lookup', 'search', 'query', 'question'];
-        // Keywords that suggest "chat" intent
-        $chatKeywords = ['chat', 'greeting', 'casual', 'conversation', 'hello', 'hi', 'general'];
-
-        $knowledgeScore = 0;
-        $chatScore = 0;
-
-        foreach ($knowledgeKeywords as $keyword) {
-            if (str_contains($content, $keyword)) {
-                $knowledgeScore++;
-            }
-        }
-
-        foreach ($chatKeywords as $keyword) {
-            if (str_contains($content, $keyword)) {
-                $chatScore++;
-            }
-        }
-
-        // Default to "chat" with 0.5 confidence when no clear signals
-        if ($knowledgeScore === 0 && $chatScore === 0) {
-            return ['intent' => 'chat', 'confidence' => 0.5];
-        }
-
-        // Determine intent based on keyword matches
-        if ($knowledgeScore > $chatScore) {
-            $confidence = min(0.7, 0.5 + ($knowledgeScore * 0.1));
-            return ['intent' => 'knowledge', 'confidence' => $confidence];
-        }
-
-        $confidence = min(0.7, 0.5 + ($chatScore * 0.1));
-        return ['intent' => 'chat', 'confidence' => $confidence];
-    }
-
-    protected function formatKnowledgeBaseContext($results): string
-    {
-        if ($results->isEmpty()) {
-            return '';
-        }
-
-        $context = "## ข้อมูลอ้างอิงจาก Knowledge Base:\n\n";
-
-        foreach ($results as $i => $result) {
-            $relevance = round($result['similarity'] * 100);
-            $context .= "### แหล่งที่ " . ($i + 1) . " (ความเกี่ยวข้อง {$relevance}%)\n";
-            $context .= "📄 {$result['document_name']}\n\n";
-            $context .= $result['content'] . "\n\n";
-        }
-
-        $context .= "---\n";
-        $context .= "📌 **คำแนะนำ**: ใช้ข้อมูลด้านบนในการตอบคำถาม ";
-        $context .= "หากข้อมูลไม่เกี่ยวข้องหรือไม่เพียงพอ ให้ตอบตามความรู้ทั่วไปและแจ้งผู้ใช้ว่าไม่พบข้อมูลในระบบ\n";
-
-        return $context;
     }
 
     protected function buildMessages(string $systemPrompt, array $history, string $message): array

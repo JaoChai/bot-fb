@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPut, apiPost } from '@/lib/api';
+import { buildFilterParams } from '@/lib/params';
 import { useBotChannel } from '@/hooks/useEcho';
 import type {
   QAInspectorSettings,
@@ -135,15 +136,16 @@ export function useQAEvaluationLogs(botId: number, filters?: QAEvaluationLogFilt
   return useQuery({
     queryKey: qaInspectorKeys.logs(botId, filters),
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (filters?.is_flagged !== undefined) params.append('is_flagged', String(filters.is_flagged));
-      if (filters?.issue_type) params.append('issue_type', filters.issue_type);
-      if (filters?.min_score !== undefined) params.append('min_score', String(filters.min_score));
-      if (filters?.max_score !== undefined) params.append('max_score', String(filters.max_score));
-      if (filters?.from_date) params.append('from_date', filters.from_date);
-      if (filters?.to_date) params.append('to_date', filters.to_date);
-      if (filters?.per_page) params.append('per_page', String(filters.per_page));
-      if (filters?.page) params.append('page', String(filters.page));
+      const params = buildFilterParams({
+        is_flagged: filters?.is_flagged,
+        issue_type: filters?.issue_type,
+        min_score: filters?.min_score,
+        max_score: filters?.max_score,
+        from_date: filters?.from_date,
+        to_date: filters?.to_date,
+        per_page: filters?.per_page,
+        page: filters?.page,
+      });
 
       const queryString = params.toString();
       const url = `/bots/${botId}/qa-inspector/logs${queryString ? `?${queryString}` : ''}`;
@@ -177,12 +179,13 @@ export function useQAWeeklyReports(botId: number, filters?: QAWeeklyReportFilter
   return useQuery({
     queryKey: qaInspectorKeys.reports(botId, filters),
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (filters?.status) params.append('status', filters.status);
-      if (filters?.from_date) params.append('from_date', filters.from_date);
-      if (filters?.to_date) params.append('to_date', filters.to_date);
-      if (filters?.per_page) params.append('per_page', String(filters.per_page));
-      if (filters?.page) params.append('page', String(filters.page));
+      const params = buildFilterParams({
+        status: filters?.status,
+        from_date: filters?.from_date,
+        to_date: filters?.to_date,
+        per_page: filters?.per_page,
+        page: filters?.page,
+      });
 
       const queryString = params.toString();
       const url = `/bots/${botId}/qa-inspector/reports${queryString ? `?${queryString}` : ''}`;
