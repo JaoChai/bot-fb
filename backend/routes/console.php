@@ -42,3 +42,11 @@ Schedule::command('qa:cleanup-old-logs --days=90')
     ->at('03:00')
     ->withoutOverlapping()
     ->runInBackground();
+
+// Failed jobs cleanup - daily at 3:30am
+// Deletes failed jobs older than 7 days (168 hours) to manage storage
+Schedule::command('queue:prune-failed --hours=168')
+    ->daily()
+    ->at('03:30')
+    ->withoutOverlapping()
+    ->runInBackground();
