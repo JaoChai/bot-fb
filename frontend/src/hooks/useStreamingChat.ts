@@ -159,9 +159,13 @@ function generateId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+// Safety timeout (60 seconds) - auto-reset if no done event received
+const STREAM_SAFETY_TIMEOUT_MS = 60000;
+
 export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
   const [state, dispatch] = useReducer(chatReducer, initialState);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const safetyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
    * Send a message and stream the response
@@ -189,6 +193,13 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
     // Create abort controller
     abortControllerRef.current = createStreamAbortController();
 
+    // Set safety timeout - auto-reset state if stream doesn't complete
+    safetyTimeoutRef.current = setTimeout(() => {
+      console.warn('Stream safety timeout reached, forcing state reset');
+      dispatch({ type: 'SET_ABORTED', payload: { messageId: assistantMsgId } });
+      abortControllerRef.current?.abort();
+    }, STREAM_SAFETY_TIMEOUT_MS);
+
     try {
       await streamFlowTest(
         botId,
@@ -210,6 +221,11 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
             dispatch({ type: 'SET_ERROR', payload: { messageId: assistantMsgId, error } });
           },
           onDone: (summary) => {
+            // Clear safety timeout on successful completion
+            if (safetyTimeoutRef.current) {
+              clearTimeout(safetyTimeoutRef.current);
+              safetyTimeoutRef.current = null;
+            }
             dispatch({ type: 'SET_DONE', payload: { messageId: assistantMsgId, summary } });
           },
           signal: abortControllerRef.current.signal,
@@ -224,6 +240,11 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
         dispatch({ type: 'SET_ABORTED', payload: { messageId: assistantMsgId } });
       }
     } finally {
+      // Clean up safety timeout
+      if (safetyTimeoutRef.current) {
+        clearTimeout(safetyTimeoutRef.current);
+        safetyTimeoutRef.current = null;
+      }
       abortControllerRef.current = null;
     }
   }, [botId, flowId, state.messages, state.isStreaming]);
