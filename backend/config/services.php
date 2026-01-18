@@ -44,6 +44,15 @@ return [
         'site_name' => env('OPENROUTER_SITE_NAME', env('APP_NAME', 'BotFacebook')),
         'timeout' => env('OPENROUTER_TIMEOUT', 60),
         'max_tokens' => env('OPENROUTER_MAX_TOKENS', 4096),
+        // Provider preferences for routing optimization (OpenRouter Best Practice)
+        'provider_preferences' => [
+            // Max acceptable latency in seconds (null = no preference)
+            'preferred_max_latency' => env('OPENROUTER_MAX_LATENCY'),
+            // Min tokens per second throughput (null = no preference)
+            'preferred_min_throughput' => env('OPENROUTER_MIN_THROUGHPUT'),
+            // Data collection policy: 'allow' or 'deny'
+            'data_collection' => env('OPENROUTER_DATA_COLLECTION', 'deny'),
+        ],
     ],
 
     'line' => [

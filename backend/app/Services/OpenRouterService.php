@@ -41,6 +41,7 @@ class OpenRouterService
      * @param string|null $apiKeyOverride Override API key (from user settings)
      * @param string|null $fallbackModelOverride Override fallback model (from bot settings)
      * @param int|null $timeout Request timeout in seconds (null uses default)
+     * @param array|null $reasoning Reasoning config for o1/deepseek-r1 models: ['effort' => 'low'|'medium'|'high']
      */
     public function chat(
         array $messages,
@@ -50,7 +51,8 @@ class OpenRouterService
         bool $useFallback = true,
         ?string $apiKeyOverride = null,
         ?string $fallbackModelOverride = null,
-        ?int $timeout = null
+        ?int $timeout = null,
+        ?array $reasoning = null
     ): array {
         $model = $model ?? $this->defaultModel;
         $temperature = $temperature ?? 0.7;
@@ -60,12 +62,41 @@ class OpenRouterService
         $requestTimeout = $timeout ?? $this->timeout;
 
         try {
-            $response = $this->client($apiKey, $requestTimeout)->post('/chat/completions', [
-                'model' => $model,
+            // Build payload with native fallback support (OpenRouter Best Practice)
+            $payload = [
                 'messages' => $messages,
                 'temperature' => $temperature,
                 'max_tokens' => $maxTokens,
-            ]);
+                // Enable detailed usage tracking (OpenRouter Best Practice)
+                'usage' => [
+                    'include' => true,
+                ],
+            ];
+
+            // Use models array for server-side fallback (faster than client-side retry)
+            if ($useFallback && $fallbackModel && $model !== $fallbackModel) {
+                $payload['models'] = [$model, $fallbackModel];
+                Log::debug('Using native fallback', ['primary' => $model, 'fallback' => $fallbackModel]);
+            } else {
+                $payload['model'] = $model;
+            }
+
+            // Add reasoning config for supported models (o1, o1-mini, deepseek-r1)
+            $modelConfig = config("llm-models.models.{$model}");
+            if ($reasoning || ($modelConfig['supports_reasoning'] ?? false)) {
+                $payload['reasoning'] = $reasoning ?? [
+                    'effort' => $modelConfig['default_reasoning_effort'] ?? 'medium',
+                ];
+                Log::debug('Using reasoning mode', ['model' => $model, 'reasoning' => $payload['reasoning']]);
+            }
+
+            // Add provider preferences for routing optimization (OpenRouter Best Practice)
+            $providerPrefs = $this->buildProviderPreferences();
+            if (! empty($providerPrefs)) {
+                $payload['provider'] = $providerPrefs;
+            }
+
+            $response = $this->client($apiKey, $requestTimeout)->post('/chat/completions', $payload);
 
             if ($response->failed()) {
                 $error = $response->json('error.message', 'Unknown error');
@@ -76,27 +107,12 @@ class OpenRouterService
                     'error' => $error,
                 ]);
 
-                if ($useFallback && $model !== $fallbackModel) {
-                    Log::info('Attempting fallback model', ['fallback' => $fallbackModel]);
-                    return $this->chat($messages, $fallbackModel, $temperature, $maxTokens, false, $apiKeyOverride, null, $timeout);
-                }
-
                 throw new OpenRouterException("OpenRouter API error: {$error}", $response->status());
             }
 
             $data = $response->json();
 
-            return [
-                'content' => $data['choices'][0]['message']['content'] ?? '',
-                'model' => $data['model'] ?? $model,
-                'usage' => [
-                    'prompt_tokens' => $data['usage']['prompt_tokens'] ?? 0,
-                    'completion_tokens' => $data['usage']['completion_tokens'] ?? 0,
-                    'total_tokens' => $data['usage']['total_tokens'] ?? 0,
-                ],
-                'id' => $data['id'] ?? null,
-                'finish_reason' => $data['choices'][0]['finish_reason'] ?? null,
-            ];
+            return $this->parseResponse($data, $model);
         } catch (OpenRouterException $e) {
             throw $e;
         } catch (\Exception $e) {
@@ -104,11 +120,6 @@ class OpenRouterService
                 'model' => $model,
                 'error' => $e->getMessage(),
             ]);
-
-            if ($useFallback && $model !== $fallbackModel) {
-                Log::info('Attempting fallback model after exception', ['fallback' => $fallbackModel]);
-                return $this->chat($messages, $fallbackModel, $temperature, $maxTokens, false, $apiKeyOverride, null, $timeout);
-            }
 
             throw new OpenRouterException("OpenRouter request failed: {$e->getMessage()}", 500, $e);
         }
@@ -138,6 +149,8 @@ class OpenRouterService
      * @param int|null $maxTokens Maximum tokens in response
      * @param string|null $apiKeyOverride Override API key
      * @param string $toolChoice Tool calling behavior: 'auto', 'none', 'required'
+     * @param bool $useFallback Whether to try fallback model on failure
+     * @param string|null $fallbackModelOverride Override fallback model
      * @return array Response with possible tool_calls
      */
     public function chatWithTools(
@@ -147,25 +160,46 @@ class OpenRouterService
         ?float $temperature = null,
         ?int $maxTokens = null,
         ?string $apiKeyOverride = null,
-        string $toolChoice = 'auto'
+        string $toolChoice = 'auto',
+        bool $useFallback = true,
+        ?string $fallbackModelOverride = null
     ): array {
         $model = $model ?? $this->defaultModel;
         $temperature = $temperature ?? 0.7;
         $maxTokens = $maxTokens ?? $this->maxTokens;
         $apiKey = $apiKeyOverride ?? $this->apiKey;
+        $fallbackModel = $fallbackModelOverride ?? $this->fallbackModel;
 
         try {
+            // Build payload with native fallback support (OpenRouter Best Practice)
             $payload = [
-                'model' => $model,
                 'messages' => $messages,
                 'temperature' => $temperature,
                 'max_tokens' => $maxTokens,
+                // Enable detailed usage tracking (OpenRouter Best Practice)
+                'usage' => [
+                    'include' => true,
+                ],
             ];
 
+            // Use models array for server-side fallback
+            if ($useFallback && $fallbackModel && $model !== $fallbackModel) {
+                $payload['models'] = [$model, $fallbackModel];
+                Log::debug('Using native fallback for tools', ['primary' => $model, 'fallback' => $fallbackModel]);
+            } else {
+                $payload['model'] = $model;
+            }
+
             // Add tools if provided
-            if (!empty($tools)) {
+            if (! empty($tools)) {
                 $payload['tools'] = $tools;
                 $payload['tool_choice'] = $toolChoice;
+            }
+
+            // Add provider preferences for routing optimization (OpenRouter Best Practice)
+            $providerPrefs = $this->buildProviderPreferences();
+            if (! empty($providerPrefs)) {
+                $payload['provider'] = $providerPrefs;
             }
 
             $response = $this->client($apiKey)->post('/chat/completions', $payload);
@@ -183,30 +217,8 @@ class OpenRouterService
             }
 
             $data = $response->json();
-            $choice = $data['choices'][0] ?? [];
-            $message = $choice['message'] ?? [];
-            $finishReason = $choice['finish_reason'] ?? 'stop';
 
-            // Build response
-            $result = [
-                'content' => $message['content'] ?? '',
-                'model' => $data['model'] ?? $model,
-                'usage' => [
-                    'prompt_tokens' => $data['usage']['prompt_tokens'] ?? 0,
-                    'completion_tokens' => $data['usage']['completion_tokens'] ?? 0,
-                    'total_tokens' => $data['usage']['total_tokens'] ?? 0,
-                ],
-                'id' => $data['id'] ?? null,
-                'finish_reason' => $finishReason,
-                'tool_calls' => null,
-            ];
-
-            // Include tool calls if present
-            if ($finishReason === 'tool_calls' && isset($message['tool_calls'])) {
-                $result['tool_calls'] = $message['tool_calls'];
-            }
-
-            return $result;
+            return $this->parseToolResponse($data, $model);
         } catch (OpenRouterException $e) {
             throw $e;
         } catch (\Exception $e) {
@@ -330,6 +342,8 @@ class OpenRouterService
      * @param float|null $temperature Sampling temperature
      * @param int|null $maxTokens Maximum tokens in response
      * @param string|null $apiKeyOverride Override API key
+     * @param bool $useFallback Whether to try fallback model on failure
+     * @param string|null $fallbackModelOverride Override fallback model (must be vision-capable)
      * @return array Response with content and usage
      */
     public function chatWithVision(
@@ -338,23 +352,47 @@ class OpenRouterService
         ?string $model = null,
         ?float $temperature = null,
         ?int $maxTokens = null,
-        ?string $apiKeyOverride = null
+        ?string $apiKeyOverride = null,
+        bool $useFallback = true,
+        ?string $fallbackModelOverride = null
     ): array {
         $model = $model ?? 'google/gemini-2.0-flash-001'; // Default to Gemini for vision
         $temperature = $temperature ?? 0.7;
         $maxTokens = $maxTokens ?? $this->maxTokens;
         $apiKey = $apiKeyOverride ?? $this->apiKey;
+        // Default vision fallback to GPT-4o (also vision-capable)
+        $fallbackModel = $fallbackModelOverride ?? 'openai/gpt-4o';
 
         // Build multimodal messages
         $visionMessages = $this->buildVisionMessages($messages, $imageUrls);
 
         try {
-            $response = $this->client($apiKey)->post('/chat/completions', [
-                'model' => $model,
+            // Build payload with native fallback support (OpenRouter Best Practice)
+            $payload = [
                 'messages' => $visionMessages,
                 'temperature' => $temperature,
                 'max_tokens' => $maxTokens,
-            ]);
+                // Enable detailed usage tracking (OpenRouter Best Practice)
+                'usage' => [
+                    'include' => true,
+                ],
+            ];
+
+            // Use models array for server-side fallback
+            if ($useFallback && $fallbackModel && $model !== $fallbackModel) {
+                $payload['models'] = [$model, $fallbackModel];
+                Log::debug('Using native fallback for vision', ['primary' => $model, 'fallback' => $fallbackModel]);
+            } else {
+                $payload['model'] = $model;
+            }
+
+            // Add provider preferences for routing optimization (OpenRouter Best Practice)
+            $providerPrefs = $this->buildProviderPreferences();
+            if (! empty($providerPrefs)) {
+                $payload['provider'] = $providerPrefs;
+            }
+
+            $response = $this->client($apiKey)->post('/chat/completions', $payload);
 
             if ($response->failed()) {
                 $error = $response->json('error.message', 'Unknown error');
@@ -370,17 +408,7 @@ class OpenRouterService
 
             $data = $response->json();
 
-            return [
-                'content' => $data['choices'][0]['message']['content'] ?? '',
-                'model' => $data['model'] ?? $model,
-                'usage' => [
-                    'prompt_tokens' => $data['usage']['prompt_tokens'] ?? 0,
-                    'completion_tokens' => $data['usage']['completion_tokens'] ?? 0,
-                    'total_tokens' => $data['usage']['total_tokens'] ?? 0,
-                ],
-                'id' => $data['id'] ?? null,
-                'finish_reason' => $data['choices'][0]['finish_reason'] ?? null,
-            ];
+            return $this->parseResponse($data, $model);
         } catch (OpenRouterException $e) {
             throw $e;
         } catch (\Exception $e) {
@@ -458,6 +486,22 @@ class OpenRouterService
     }
 
     /**
+     * Check if a model supports reasoning (o1, o1-mini, deepseek-r1).
+     *
+     * Reasoning models can show their thought process through 'reasoning' field
+     * in the response. The effort level (low/medium/high) controls reasoning depth.
+     *
+     * @param string $model Model ID
+     * @return bool Whether the model supports reasoning
+     */
+    public function supportsReasoning(string $model): bool
+    {
+        $config = config("llm-models.models.{$model}");
+
+        return $config['supports_reasoning'] ?? false;
+    }
+
+    /**
      * Check if the service is properly configured.
      */
     public function isConfigured(): bool
@@ -484,6 +528,101 @@ class OpenRouterService
             Log::warning('OpenRouter connection test failed', ['error' => $e->getMessage()]);
             return false;
         }
+    }
+
+    /**
+     * Parse OpenRouter API response with enhanced usage tracking.
+     *
+     * Extracts standard response fields plus OpenRouter-specific usage details:
+     * - cached_tokens: Tokens read from prompt cache (cheaper pricing)
+     * - reasoning_tokens: Tokens used for reasoning (o1, deepseek-r1)
+     * - cost: Actual cost charged by OpenRouter
+     *
+     * @param array $data Raw API response
+     * @param string $requestedModel The model that was requested
+     * @return array Parsed response with enhanced usage data
+     */
+    protected function parseResponse(array $data, string $requestedModel): array
+    {
+        $usage = $data['usage'] ?? [];
+        $promptDetails = $usage['prompt_tokens_details'] ?? [];
+        $completionDetails = $usage['completion_tokens_details'] ?? [];
+        $message = $data['choices'][0]['message'] ?? [];
+
+        return [
+            'content' => $message['content'] ?? '',
+            // Reasoning content from o1/deepseek-r1 models (OpenRouter Best Practice)
+            'reasoning' => $message['reasoning'] ?? null,
+            'model' => $data['model'] ?? $requestedModel,
+            'usage' => [
+                'prompt_tokens' => $usage['prompt_tokens'] ?? 0,
+                'completion_tokens' => $usage['completion_tokens'] ?? 0,
+                'total_tokens' => $usage['total_tokens'] ?? 0,
+                // Enhanced usage tracking (OpenRouter Best Practice)
+                'cached_tokens' => $promptDetails['cached_tokens'] ?? 0,
+                'reasoning_tokens' => $completionDetails['reasoning_tokens'] ?? 0,
+                'cost' => $usage['cost'] ?? null,
+            ],
+            'id' => $data['id'] ?? null,
+            'finish_reason' => $data['choices'][0]['finish_reason'] ?? null,
+        ];
+    }
+
+    /**
+     * Parse OpenRouter API response for tool calls.
+     *
+     * Similar to parseResponse() but includes tool_calls field.
+     *
+     * @param array $data Raw API response
+     * @param string $requestedModel The model that was requested
+     * @return array Parsed response with tool calls
+     */
+    protected function parseToolResponse(array $data, string $requestedModel): array
+    {
+        $response = $this->parseResponse($data, $requestedModel);
+
+        $choice = $data['choices'][0] ?? [];
+        $message = $choice['message'] ?? [];
+        $finishReason = $choice['finish_reason'] ?? 'stop';
+
+        $response['tool_calls'] = null;
+
+        // Include tool calls if present
+        if ($finishReason === 'tool_calls' && isset($message['tool_calls'])) {
+            $response['tool_calls'] = $message['tool_calls'];
+        }
+
+        return $response;
+    }
+
+    /**
+     * Build provider preferences for OpenRouter routing optimization.
+     *
+     * Returns preferences for:
+     * - preferred_max_latency: Max acceptable latency in seconds
+     * - preferred_min_throughput: Min tokens per second
+     * - data_collection: 'allow' or 'deny' for model providers
+     *
+     * @return array Provider preferences (empty if none configured)
+     */
+    protected function buildProviderPreferences(): array
+    {
+        $config = config('services.openrouter.provider_preferences', []);
+        $provider = [];
+
+        if (! empty($config['preferred_max_latency'])) {
+            $provider['preferred_max_latency'] = (int) $config['preferred_max_latency'];
+        }
+
+        if (! empty($config['preferred_min_throughput'])) {
+            $provider['preferred_min_throughput'] = (int) $config['preferred_min_throughput'];
+        }
+
+        if (! empty($config['data_collection'])) {
+            $provider['data_collection'] = $config['data_collection'];
+        }
+
+        return $provider;
     }
 
     /**
