@@ -51,6 +51,9 @@ class StreamController extends Controller
         'tool_calls' => 0,
     ];
 
+    // Track if done event has been sent (to ensure it's always sent exactly once)
+    protected bool $doneSent = false;
+
     public function __construct(
         OpenRouterService $openRouter,
         HybridSearchService $hybridSearch,
@@ -123,7 +126,9 @@ class StreamController extends Controller
             @ini_set('zlib.output_compression', false);
             @ini_set('implicit_flush', true);
 
+            // Reset state for this request
             $this->metrics['start_time'] = microtime(true);
+            $this->doneSent = false;
 
             try {
                 // === STEP 1: Process Start ===
@@ -144,7 +149,7 @@ class StreamController extends Controller
                             'message' => $injectionResult->message,
                         ]);
 
-                        // Send done event and exit
+                        // Send done event and exit (doneSent will be set by sendSSE)
                         $this->sendSSE('done', [
                             'total_time_ms' => round((microtime(true) - $this->metrics['start_time']) * 1000),
                             'prompt_tokens' => 0,
@@ -184,15 +189,17 @@ class StreamController extends Controller
                     $this->runSecondAI($flow, $chatResponse, $message, $apiKey);
                 }
 
-                // === STEP 5: Done ===
-                $totalTime = round((microtime(true) - $this->metrics['start_time']) * 1000);
-                $this->sendSSE('done', [
-                    'total_time_ms' => $totalTime,
-                    'prompt_tokens' => $this->metrics['prompt_tokens'],
-                    'completion_tokens' => $this->metrics['completion_tokens'],
-                    'models_used' => $this->metrics['models_used'],
-                    'tool_calls' => $this->metrics['tool_calls'],
-                ]);
+                // === STEP 6: Done (if not already sent) ===
+                if (!$this->doneSent) {
+                    $totalTime = round((microtime(true) - $this->metrics['start_time']) * 1000);
+                    $this->sendSSE('done', [
+                        'total_time_ms' => $totalTime,
+                        'prompt_tokens' => $this->metrics['prompt_tokens'],
+                        'completion_tokens' => $this->metrics['completion_tokens'],
+                        'models_used' => $this->metrics['models_used'],
+                        'tool_calls' => $this->metrics['tool_calls'],
+                    ]);
+                }
 
             } catch (\Exception $e) {
                 Log::error('Stream error', [
@@ -204,16 +211,18 @@ class StreamController extends Controller
                     'message' => $e->getMessage(),
                     'step' => 'unknown',
                 ]);
-
-                // Always send done event even on error
-                $this->sendSSE('done', [
-                    'total_time_ms' => round((microtime(true) - $this->metrics['start_time']) * 1000),
-                    'prompt_tokens' => $this->metrics['prompt_tokens'],
-                    'completion_tokens' => $this->metrics['completion_tokens'],
-                    'models_used' => $this->metrics['models_used'],
-                    'tool_calls' => $this->metrics['tool_calls'],
-                    'error' => true,
-                ]);
+            } finally {
+                // ALWAYS send done event if not already sent (ensures frontend never hangs)
+                if (!$this->doneSent) {
+                    $this->sendSSE('done', [
+                        'total_time_ms' => round((microtime(true) - $this->metrics['start_time']) * 1000),
+                        'prompt_tokens' => $this->metrics['prompt_tokens'],
+                        'completion_tokens' => $this->metrics['completion_tokens'],
+                        'models_used' => $this->metrics['models_used'],
+                        'tool_calls' => $this->metrics['tool_calls'],
+                        'error' => isset($e),
+                    ]);
+                }
             }
         }, 200, [
             'Content-Type' => 'text/event-stream',
@@ -1177,19 +1186,34 @@ PROMPT;
         return $result;
     }
 
-    protected function sendSSE(string $event, array $data): void
+    /**
+     * Send SSE event to client.
+     *
+     * @param string $event Event name
+     * @param array $data Event data
+     * @return bool True if event was sent successfully, false if connection was aborted
+     */
+    protected function sendSSE(string $event, array $data): bool
     {
+        // Check connection before sending (don't exit, just return false)
+        if (connection_aborted()) {
+            return false;
+        }
+
+        // Track done event
+        if ($event === 'done') {
+            $this->doneSent = true;
+        }
+
         echo "event: {$event}\n";
         echo "data: " . json_encode($data, JSON_UNESCAPED_UNICODE) . "\n\n";
-
-        if (connection_aborted()) {
-            exit;
-        }
 
         if (ob_get_level() > 0) {
             ob_flush();
         }
         flush();
+
+        return true;
     }
 
     protected function errorResponse(string $message, int $status): StreamedResponse
