@@ -83,7 +83,7 @@ export function ChannelMessageArea({
         viewportRef={scrollViewportRef}
         onScroll={handleScroll}
       >
-        <div className="space-y-4 max-w-3xl mx-auto">
+        <div className="space-y-4 max-w-3xl mx-auto overflow-x-hidden">
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
