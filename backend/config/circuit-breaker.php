@@ -42,6 +42,12 @@ return [
             'recovery_timeout' => (int) env('CIRCUIT_BREAKER_OPENROUTER_RECOVERY_TIMEOUT', 60),
             'success_threshold' => (int) env('CIRCUIT_BREAKER_OPENROUTER_SUCCESS_THRESHOLD', 2),
         ],
+
+        'openrouter_models' => [
+            'failure_threshold' => (int) env('CIRCUIT_BREAKER_OPENROUTER_MODELS_FAILURE_THRESHOLD', 3),
+            'recovery_timeout' => (int) env('CIRCUIT_BREAKER_OPENROUTER_MODELS_RECOVERY_TIMEOUT', 60),
+            'success_threshold' => (int) env('CIRCUIT_BREAKER_OPENROUTER_MODELS_SUCCESS_THRESHOLD', 2),
+        ],
     ],
 
     /*
