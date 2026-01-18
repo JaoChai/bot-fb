@@ -20,15 +20,14 @@ class OpenRouterService
 
     public function __construct()
     {
-        // Use ?? to ensure string type even when config returns null
-        $this->apiKey = config('services.openrouter.api_key') ?? '';
-        $this->baseUrl = config('services.openrouter.base_url') ?? 'https://openrouter.ai/api/v1';
-        $this->defaultModel = config('services.openrouter.default_model') ?? 'anthropic/claude-3.5-sonnet';
-        $this->fallbackModel = config('services.openrouter.fallback_model') ?? 'openai/gpt-4o-mini';
-        $this->siteUrl = config('services.openrouter.site_url') ?? config('app.url') ?? '';
-        $this->siteName = config('services.openrouter.site_name') ?? config('app.name') ?? 'BotFacebook';
-        $this->timeout = (int) (config('services.openrouter.timeout') ?? 60);
-        $this->maxTokens = (int) (config('services.openrouter.max_tokens') ?? 4096);
+        $this->apiKey = config_string('services.openrouter.api_key');
+        $this->baseUrl = config_string('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
+        $this->defaultModel = config_string('services.openrouter.default_model', 'anthropic/claude-3.5-sonnet');
+        $this->fallbackModel = config_string('services.openrouter.fallback_model', 'openai/gpt-4o-mini');
+        $this->siteUrl = config_string('services.openrouter.site_url', config_string('app.url'));
+        $this->siteName = config_string('services.openrouter.site_name', config_string('app.name', 'BotFacebook'));
+        $this->timeout = config_int('services.openrouter.timeout', 60);
+        $this->maxTokens = config_int('services.openrouter.max_tokens', 4096);
     }
 
     /**

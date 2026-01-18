@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Bot\StoreBotRequest;
 use App\Http\Requests\Bot\UpdateBotRequest;
 use App\Http\Resources\BotResource;
+use App\Http\Traits\ApiResponseTrait;
 use App\Models\Bot;
 use App\Services\AIService;
 use App\Services\TelegramService;
@@ -18,6 +19,7 @@ use Illuminate\Support\Str;
 
 class BotController extends Controller
 {
+    use ApiResponseTrait;
     /**
      * List all bots accessible by the authenticated user.
      * Owner sees owned bots, Admin sees assigned bots.
@@ -139,11 +141,10 @@ class BotController extends Controller
             $webhookSetup = $this->setupTelegramWebhook($bot);
         }
 
-        return response()->json([
-            'message' => 'Bot created successfully',
-            'data' => new BotResource($bot->load('defaultFlow')),
+        return $this->created([
+            'bot' => new BotResource($bot->load('defaultFlow')),
             'webhook_setup' => $webhookSetup,
-        ], 201);
+        ], 'Bot created successfully');
     }
 
     /**
@@ -263,11 +264,10 @@ PROMPT;
             $webhookSetup = $this->setupTelegramWebhook($bot);
         }
 
-        return response()->json([
-            'message' => 'Bot updated successfully',
-            'data' => new BotResource($bot->fresh()),
+        return $this->success([
+            'bot' => new BotResource($bot->fresh()),
             'webhook_setup' => $webhookSetup,
-        ]);
+        ], 'Bot updated successfully');
     }
 
     /**
@@ -279,9 +279,7 @@ PROMPT;
 
         $bot->delete();
 
-        return response()->json([
-            'message' => 'Bot deleted successfully',
-        ]);
+        return $this->success(null, 'Bot deleted successfully');
     }
 
     /**
@@ -291,7 +289,7 @@ PROMPT;
     {
         $this->authorize('view', $bot);
 
-        return response()->json([
+        return $this->success([
             'webhook_url' => $bot->webhook_url,
             'channel_type' => $bot->channel_type,
         ]);
@@ -315,34 +313,30 @@ PROMPT;
             ?? config('services.openrouter.api_key');
 
         if (empty($apiKey)) {
-            return response()->json([
-                'message' => 'Test message received',
+            return $this->success([
                 'input' => $userMessage,
                 'response' => 'กรุณาตั้งค่า OpenRouter API Key ที่หน้า Settings ก่อนทดสอบ',
                 'bot_id' => $bot->id,
-            ]);
+            ], 'Test message received');
         }
 
         try {
             $result = $aiService->testBotConfiguration($bot, $userMessage);
 
-            return response()->json([
-                'message' => 'Test completed successfully',
+            return $this->success([
                 'input' => $userMessage,
                 'response' => $result['content'],
                 'bot_id' => $bot->id,
                 'model' => $result['model'],
                 'usage' => $result['usage'],
                 'cost' => $result['cost'],
-            ]);
+            ], 'Test completed successfully');
         } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'AI service error',
+            return $this->error('AI service error', 500, [
                 'input' => $userMessage,
                 'response' => 'Failed to generate AI response: ' . $e->getMessage(),
                 'bot_id' => $bot->id,
-                'error' => true,
-            ], 500);
+            ]);
         }
     }
 
@@ -355,17 +349,11 @@ PROMPT;
         $this->authorize('view', $bot);
 
         if ($bot->channel_type !== 'line') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Bot ไม่ได้ตั้งค่าสำหรับ LINE',
-            ], 400);
+            return $this->error('Bot ไม่ได้ตั้งค่าสำหรับ LINE', 400, ['success' => false]);
         }
 
         if (empty($bot->channel_access_token)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'ยังไม่ได้ตั้งค่า Channel Access Token',
-            ], 400);
+            return $this->error('ยังไม่ได้ตั้งค่า Channel Access Token', 400, ['success' => false]);
         }
 
         try {
@@ -376,9 +364,8 @@ PROMPT;
 
             if ($response->successful()) {
                 $botInfo = $response->json();
-                return response()->json([
+                return $this->success([
                     'success' => true,
-                    'message' => 'เชื่อมต่อสำเร็จ',
                     'bot_info' => [
                         'display_name' => $botInfo['displayName'] ?? null,
                         'user_id' => $botInfo['userId'] ?? null,
@@ -386,7 +373,7 @@ PROMPT;
                         'picture_url' => $botInfo['pictureUrl'] ?? null,
                         'premium_id' => $botInfo['premiumId'] ?? null,
                     ],
-                ]);
+                ], 'เชื่อมต่อสำเร็จ');
             }
 
             // Handle specific LINE API errors
@@ -397,17 +384,13 @@ PROMPT;
                 default => 'ไม่สามารถเชื่อมต่อได้ - กรุณาตรวจสอบ Channel Access Token',
             };
 
-            return response()->json([
+            return $this->error($errorMessage, 400, [
                 'success' => false,
-                'message' => $errorMessage,
                 'error_code' => $response->status(),
-            ], 400);
+            ]);
 
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'เกิดข้อผิดพลาดในการเชื่อมต่อ: ' . $e->getMessage(),
-            ], 500);
+            return $this->serverError('เกิดข้อผิดพลาดในการเชื่อมต่อ: ' . $e->getMessage());
         }
     }
 
@@ -419,17 +402,11 @@ PROMPT;
         $this->authorize('view', $bot);
 
         if ($bot->channel_type !== 'telegram') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Bot ไม่ได้ตั้งค่าสำหรับ Telegram',
-            ], 400);
+            return $this->error('Bot ไม่ได้ตั้งค่าสำหรับ Telegram', 400, ['success' => false]);
         }
 
         if (empty($bot->channel_access_token)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'ยังไม่ได้ตั้งค่า Bot Token',
-            ], 400);
+            return $this->error('ยังไม่ได้ตั้งค่า Bot Token', 400, ['success' => false]);
         }
 
         try {
@@ -455,9 +432,8 @@ PROMPT;
                 }
             }
 
-            return response()->json([
+            return $this->success([
                 'success' => true,
-                'message' => 'เชื่อมต่อสำเร็จ',
                 'bot_info' => [
                     'username' => $botInfo['username'] ?? null,
                     'first_name' => $botInfo['first_name'] ?? null,
@@ -477,13 +453,10 @@ PROMPT;
                     'matches' => $currentWebhookUrl === ($webhookInfo['url'] ?? ''),
                     'was_fixed' => $webhookFixed,
                 ],
-            ]);
+            ], 'เชื่อมต่อสำเร็จ');
 
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Bot Token ไม่ถูกต้อง: ' . $e->getMessage(),
-            ], 400);
+            return $this->error('Bot Token ไม่ถูกต้อง: ' . $e->getMessage(), 400, ['success' => false]);
         }
     }
 
@@ -504,11 +477,10 @@ PROMPT;
             $webhookSetup = $this->setupTelegramWebhook($bot);
         }
 
-        return response()->json([
-            'message' => 'Webhook URL regenerated successfully',
+        return $this->success([
             'webhook_url' => $bot->webhook_url,
             'webhook_setup' => $webhookSetup,
-        ]);
+        ], 'Webhook URL regenerated successfully');
     }
 
     /**
@@ -598,11 +570,9 @@ PROMPT;
     {
         $this->authorize('viewCredentials', $bot);
 
-        return response()->json([
-            'data' => [
-                'channel_access_token' => $bot->channel_access_token,
-                'channel_secret' => $bot->channel_secret,
-            ],
+        return $this->success([
+            'channel_access_token' => $bot->channel_access_token,
+            'channel_secret' => $bot->channel_secret,
         ]);
     }
 }

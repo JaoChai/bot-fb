@@ -8,6 +8,7 @@ use App\Http\Requests\Flow\StoreFlowRequest;
 use App\Http\Requests\Flow\UpdateFlowRequest;
 use App\Http\Resources\FlowListResource;
 use App\Http\Resources\FlowResource;
+use App\Http\Traits\ApiResponseTrait;
 use App\Models\Bot;
 use App\Models\Flow;
 use App\Services\FlowCacheService;
@@ -20,6 +21,8 @@ use Illuminate\Support\Facades\Log;
 
 class FlowController extends Controller
 {
+    use ApiResponseTrait;
+
     public function __construct(
         protected FlowCacheService $flowCache
     ) {}
@@ -181,10 +184,7 @@ class FlowController extends Controller
         // Invalidate cache for this bot
         $this->flowCache->invalidateBot($bot->id);
 
-        return response()->json([
-            'message' => 'Flow created successfully',
-            'data' => new FlowResource($flow->load('knowledgeBases')),
-        ], 201);
+        return $this->created(new FlowResource($flow->load('knowledgeBases')), 'Flow created successfully');
     }
 
     /**
@@ -338,10 +338,7 @@ class FlowController extends Controller
         // Invalidate cache (default flow may have changed)
         $this->flowCache->invalidateBot($bot->id);
 
-        return response()->json([
-            'message' => 'Flow updated successfully',
-            'data' => new FlowResource($flow->load('knowledgeBases')),
-        ]);
+        return $this->success(new FlowResource($flow->load('knowledgeBases')), 'Flow updated successfully');
     }
 
     /**
@@ -354,16 +351,12 @@ class FlowController extends Controller
 
         // Prevent deleting Base Flow (default flow)
         if ($flow->is_default) {
-            return response()->json([
-                'message' => 'ไม่สามารถลบ Base Flow ได้ Base Flow เป็น Flow หลักของ Bot หากต้องการลบ กรุณาตั้ง Flow อื่นเป็น Default ก่อน',
-            ], 422);
+            return $this->validationError('ไม่สามารถลบ Base Flow ได้ Base Flow เป็น Flow หลักของ Bot หากต้องการลบ กรุณาตั้ง Flow อื่นเป็น Default ก่อน');
         }
 
         // Don't allow deleting the only flow (check if other flows exist)
         if (!$bot->flows()->where('id', '!=', $flow->id)->exists()) {
-            return response()->json([
-                'message' => 'Cannot delete the only flow. Create another flow first.',
-            ], 422);
+            return $this->validationError('Cannot delete the only flow. Create another flow first.');
         }
 
         $flow->delete();
@@ -371,9 +364,7 @@ class FlowController extends Controller
         // Invalidate cache for this bot
         $this->flowCache->invalidateBot($bot->id);
 
-        return response()->json([
-            'message' => 'Flow deleted successfully',
-        ]);
+        return $this->success(null, 'Flow deleted successfully');
     }
 
     /**
@@ -437,10 +428,7 @@ class FlowController extends Controller
         // Invalidate default flow cache
         $this->flowCache->invalidateDefaultFlow($bot->id);
 
-        return response()->json([
-            'message' => 'Flow set as default successfully',
-            'data' => new FlowResource($flow),
-        ]);
+        return $this->success(new FlowResource($flow), 'Flow set as default successfully');
     }
 
     /**
@@ -472,10 +460,7 @@ class FlowController extends Controller
         // Invalidate cache (new flow added)
         $this->flowCache->invalidateBot($bot->id);
 
-        return response()->json([
-            'message' => 'Flow duplicated successfully',
-            'data' => new FlowResource($newFlow->load('knowledgeBases')),
-        ], 201);
+        return $this->created(new FlowResource($newFlow->load('knowledgeBases')), 'Flow duplicated successfully');
     }
 
     /**
@@ -501,11 +486,7 @@ class FlowController extends Controller
         $apiKey = $bot->user?->settings?->getOpenRouterApiKey() ?? config('services.openrouter.api_key');
 
         if (empty($apiKey)) {
-            return response()->json([
-                'success' => false,
-                'error' => 'ไม่พบ OpenRouter API Key กรุณาตั้งค่าในหน้า Settings',
-                'error_code' => 'NO_API_KEY',
-            ], 422);
+            return $this->validationError('ไม่พบ OpenRouter API Key กรุณาตั้งค่าในหน้า Settings', ['error_code' => 'NO_API_KEY']);
         }
 
         // Build messages array for OpenRouter
@@ -553,7 +534,7 @@ class FlowController extends Controller
                 'tokens' => $result['usage']['total_tokens'] ?? 0,
             ]);
 
-            return response()->json([
+            return $this->success([
                 'success' => true,
                 'response' => $result['content'],
                 'model' => $result['model'],
@@ -574,22 +555,18 @@ class FlowController extends Controller
                 $errorMessage = 'เกินอัตราการใช้งาน กรุณารอสักครู่';
             }
 
-            return response()->json([
+            $statusCode = $e->getCode() >= 400 && $e->getCode() < 600 ? $e->getCode() : 500;
+            return $this->error($errorMessage, $statusCode, [
                 'success' => false,
-                'error' => $errorMessage,
                 'error_code' => $e->isAuthError() ? 'AUTH_ERROR' : ($e->isRateLimited() ? 'RATE_LIMITED' : 'API_ERROR'),
-            ], $e->getCode() >= 400 && $e->getCode() < 600 ? $e->getCode() : 500);
+            ]);
         } catch (\Exception $e) {
             Log::error('Flow test unexpected error', [
                 'flow_id' => $flow->id,
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'success' => false,
-                'error' => 'เกิดข้อผิดพลาดที่ไม่คาดคิด',
-                'error_code' => 'UNEXPECTED_ERROR',
-            ], 500);
+            return $this->serverError('เกิดข้อผิดพลาดที่ไม่คาดคิด');
         }
     }
 
@@ -646,9 +623,7 @@ PROMPT;
             ],
         ];
 
-        return response()->json([
-            'data' => $templates,
-        ]);
+        return $this->success($templates);
     }
 
     /**

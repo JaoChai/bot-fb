@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiDelete, apiPost, apiPut } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
+import { useMutationWithToast } from './useMutationWithToast';
 import type { ApiResponse, Bot, Document, KnowledgeBase, PaginatedResponse, SearchResponse } from '@/types/api';
 
 // Knowledge base list item type (for listing all KBs)
@@ -58,18 +59,13 @@ export interface CreateKnowledgeBaseData {
 }
 
 export function useCreateKnowledgeBase() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
+  return useMutationWithToast({
     mutationFn: async (data: CreateKnowledgeBaseData) => {
       const response = await apiPost<ApiResponse<KnowledgeBase>>('/knowledge-bases', data);
       return response.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.knowledgeBase.lists(),
-      });
-    },
+    successMessage: (kb) => `สร้าง Knowledge Base "${kb.name}" สำเร็จ`,
+    invalidateKeys: [queryKeys.knowledgeBase.lists()],
   });
 }
 
@@ -80,21 +76,16 @@ export interface UpdateKnowledgeBaseData {
 }
 
 export function useUpdateKnowledgeBase(kbId: number) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
+  return useMutationWithToast({
     mutationFn: async (data: UpdateKnowledgeBaseData) => {
       const response = await apiPut<ApiResponse<KnowledgeBase>>(`/knowledge-bases/${kbId}`, data);
       return response.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.knowledgeBase.detail(kbId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.knowledgeBase.lists(),
-      });
-    },
+    successMessage: 'บันทึกการเปลี่ยนแปลงสำเร็จ',
+    invalidateKeys: [
+      queryKeys.knowledgeBase.detail(kbId),
+      queryKeys.knowledgeBase.lists(),
+    ],
   });
 }
 
@@ -179,9 +170,7 @@ export interface CreateDocumentData {
 }
 
 export function useCreateDocument(kbId: number | null) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
+  return useMutationWithToast({
     mutationFn: async (data: CreateDocumentData) => {
       if (!kbId) throw new Error('Knowledge Base ID is required');
 
@@ -192,18 +181,14 @@ export function useCreateDocument(kbId: number | null) {
 
       return response;
     },
-    onSuccess: () => {
-      if (!kbId) return;
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.knowledgeBase.detail(kbId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: [...queryKeys.knowledgeBase.detail(kbId), 'documents'],
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.knowledgeBase.lists(),
-      });
-    },
+    successMessage: 'เพิ่มเอกสารสำเร็จ กำลังประมวลผล...',
+    invalidateKeys: kbId
+      ? [
+          queryKeys.knowledgeBase.detail(kbId),
+          [...queryKeys.knowledgeBase.detail(kbId), 'documents'],
+          queryKeys.knowledgeBase.lists(),
+        ]
+      : [],
   });
 }
 
