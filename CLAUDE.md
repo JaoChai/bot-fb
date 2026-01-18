@@ -13,6 +13,53 @@
 
 ---
 
+## Project Structure
+
+```
+backend/
+├── app/
+│   ├── Services/           # 38+ services (business logic)
+│   ├── Models/             # 35 models
+│   ├── Http/Controllers/Api/
+│   ├── Jobs/               # 13 async jobs
+│   └── Events/             # WebSocket events
+├── config/
+│   ├── llm-models.php      # 40+ AI models + pricing
+│   ├── rag.php             # RAG settings (threshold, max results)
+│   └── tools.php           # Agent tool definitions
+├── routes/api.php          # All API routes
+└── database/migrations/
+
+frontend/
+├── src/
+│   ├── components/         # UI components
+│   ├── pages/              # 17 route pages
+│   ├── hooks/              # 21 custom hooks (useAuth, useBots, etc.)
+│   ├── stores/             # Zustand (auth, chat, ui)
+│   ├── lib/api.ts          # Axios client + interceptors
+│   └── types/              # TypeScript types
+└── package.json
+```
+
+---
+
+## Key Services (Backend)
+
+| Service | หน้าที่ | ใช้เมื่อ |
+|---------|--------|---------|
+| `RAGService` | AI orchestration หลัก | Chat, search, KB |
+| `OpenRouterService` | LLM API client + retry | AI calls |
+| `EmbeddingService` | Vector generation | Index documents |
+| `SemanticSearchService` | Vector search | KB queries |
+| `HybridSearchService` | Semantic + keyword | Better retrieval |
+| `CircuitBreakerService` | API resilience | Prevent cascading failures |
+| `QAInspectorService` | Real-time QA scoring | Quality checks |
+| `LINEService` / `TelegramService` | Channel APIs | Messaging |
+| `AgentSafetyService` | Tool validation | Agent protection |
+| `CostTrackingService` | Token usage | Analytics |
+
+---
+
 ## Quick Commands
 
 ```bash
