@@ -1021,39 +1021,43 @@ class ProcessLINEWebhook implements ShouldQueue
      * Get the vision-capable model to use for image analysis.
      *
      * Priority:
-     * 1. Bot's default Flow model (if vision-capable) - this is where user configures AI model
-     * 2. Bot's primary_chat_model (if vision-capable)
+     * 1. Bot's primary_chat_model (from Connection Settings UI)
+     * 2. Bot's fallback_chat_model (fallback model)
      * 3. User's openrouter_model (if vision-capable)
-     * 4. Bot's llm_model (if vision-capable)
+     * 4. Bot's llm_model (legacy, if vision-capable)
      * 5. Default vision model (Gemini 2.0 Flash)
      */
     protected function getVisionModel(): string
     {
         $openRouterService = app(OpenRouterService::class);
 
-        // Priority 1: Bot's default Flow model (from flow settings in UI)
-        $flow = $this->bot->defaultFlow;
-        if ($flow && $flow->model && $openRouterService->supportsVision($flow->model)) {
-            return $flow->model;
+        // Priority 1: Bot's primary chat model (from Connection Settings UI)
+        if ($this->bot->primary_chat_model && $openRouterService->supportsVision($this->bot->primary_chat_model)) {
+            Log::debug('Vision model: primary_chat_model', ['model' => $this->bot->primary_chat_model]);
+            return $this->bot->primary_chat_model;
         }
 
-        // Priority 2: Bot's primary chat model
-        if ($this->bot->primary_chat_model && $openRouterService->supportsVision($this->bot->primary_chat_model)) {
-            return $this->bot->primary_chat_model;
+        // Priority 2: Bot's fallback chat model
+        if ($this->bot->fallback_chat_model && $openRouterService->supportsVision($this->bot->fallback_chat_model)) {
+            Log::debug('Vision model: fallback_chat_model', ['model' => $this->bot->fallback_chat_model]);
+            return $this->bot->fallback_chat_model;
         }
 
         // Priority 3: User's model from settings
         $userModel = $this->bot->user?->settings?->openrouter_model;
         if ($userModel && $openRouterService->supportsVision($userModel)) {
+            Log::debug('Vision model: user settings', ['model' => $userModel]);
             return $userModel;
         }
 
-        // Priority 4: Bot's llm_model
+        // Priority 4: Bot's llm_model (legacy)
         if ($this->bot->llm_model && $openRouterService->supportsVision($this->bot->llm_model)) {
+            Log::debug('Vision model: llm_model (legacy)', ['model' => $this->bot->llm_model]);
             return $this->bot->llm_model;
         }
 
         // Priority 5: Default vision model
+        Log::debug('Vision model: default', ['model' => 'google/gemini-2.0-flash-001']);
         return 'google/gemini-2.0-flash-001';
     }
 
