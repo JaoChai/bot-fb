@@ -18,6 +18,40 @@ Debug และวิเคราะห์ RAG pipeline สำหรับ BotFa
 
 - **neon**: `run_sql`, `explain_sql_statement` - Check embeddings and search queries
 - **sentry**: `search_issues`, `analyze_issue_with_seer` - Find RAG pipeline errors
+- **claude-mem**: `search`, `get_observations` - Search past RAG fixes
+
+## Memory Search (Before Starting)
+
+**Always search memory first** to find past RAG issues, threshold tuning, and search fixes.
+
+### Recommended Searches
+
+```
+# Search for past RAG fixes
+search(query="RAG search fix", project="bot-fb", type="bugfix", limit=5)
+
+# Find threshold tuning decisions
+search(query="threshold tuning", project="bot-fb", concepts=["trade-off"], limit=5)
+
+# Search for embedding issues
+search(query="embedding problem", project="bot-fb", concepts=["problem-solution"], limit=5)
+```
+
+### Search by Scenario
+
+| Scenario | Search Query |
+|----------|--------------|
+| Search not finding results | `search(query="search no results threshold", project="bot-fb", type="bugfix", limit=5)` |
+| Thai language issues | `search(query="Thai search embedding", project="bot-fb", concepts=["problem-solution"], limit=5)` |
+| Reranker filtering too much | `search(query="reranker threshold", project="bot-fb", concepts=["trade-off"], limit=5)` |
+| Chunking problems | `search(query="chunking size overlap", project="bot-fb", type="bugfix", limit=5)` |
+
+### Using Search Results
+
+1. Run relevant searches based on the RAG issue
+2. Use `get_observations(ids=[...])` for full details on past fixes
+3. Check if similar threshold or config changes were made before
+4. Apply learnings to current debugging
 
 ## RAG Pipeline Overview
 

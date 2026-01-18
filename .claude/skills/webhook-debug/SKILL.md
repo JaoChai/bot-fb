@@ -20,6 +20,40 @@ Debug LINE, Telegram webhooks และ real-time messaging.
 - **neon**: `run_sql` - Query messages, conversations
 - **railway**: `get-logs` - Deployment and application logs
 - **sentry**: `search_issues`, `analyze_issue_with_seer` - Error analysis
+- **claude-mem**: `search`, `get_observations` - Search past webhook fixes
+
+## Memory Search (Before Starting)
+
+**Always search memory first** to find past webhook failures and platform-specific issues.
+
+### Recommended Searches
+
+```
+# Search for past webhook issues
+search(query="webhook failure", project="bot-fb", type="bugfix", limit=5)
+
+# Find LINE-specific problems
+search(query="LINE webhook", project="bot-fb", concepts=["gotcha", "problem-solution"], limit=5)
+
+# Search for Telegram issues
+search(query="Telegram bot", project="bot-fb", type="bugfix", limit=5)
+```
+
+### Search by Scenario
+
+| Scenario | Search Query |
+|----------|--------------|
+| Bot not responding | `search(query="bot not responding", project="bot-fb", type="bugfix", limit=5)` |
+| Webhook signature fails | `search(query="webhook signature validation", project="bot-fb", concepts=["gotcha"], limit=5)` |
+| Queue/job failures | `search(query="job queue failed", project="bot-fb", type="bugfix", limit=5)` |
+| WebSocket issues | `search(query="Reverb Echo WebSocket", project="bot-fb", concepts=["problem-solution"], limit=5)` |
+
+### Using Search Results
+
+1. Run relevant searches based on the webhook issue
+2. Use `get_observations(ids=[...])` for full details on past failures
+3. Check if similar platform issues occurred before
+4. Apply learnings to current debugging
 
 ## Message Flow
 

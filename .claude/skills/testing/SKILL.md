@@ -25,6 +25,29 @@ php artisan test --coverage
 - **chrome**: `computer`, `screenshot`, `read_page` - UI testing
 - **neon**: `run_sql` - Database state verification
 - **sentry**: `search_issues` - Check for errors after tests
+- **claude-mem**: `search`, `get_observations` - Search past test patterns
+
+## Memory Search (Before Starting)
+
+**Always search memory first** to find past test patterns and fixtures.
+
+### Recommended Searches
+
+```
+# Search for test patterns
+search(query="test pattern", project="bot-fb", concepts=["pattern"], limit=5)
+
+# Find fixture examples
+search(query="factory fixture", project="bot-fb", type="feature", limit=5)
+```
+
+### Search by Scenario
+
+| Scenario | Search Query |
+|----------|--------------|
+| Writing unit tests | `search(query="unit test service", project="bot-fb", concepts=["pattern"], limit=5)` |
+| Feature tests | `search(query="feature test controller", project="bot-fb", concepts=["pattern"], limit=5)` |
+| E2E tests | `search(query="Playwright E2E", project="bot-fb", type="feature", limit=5)` |
 
 ## Test Types & Coverage Targets
 
