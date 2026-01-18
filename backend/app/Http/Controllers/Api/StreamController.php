@@ -717,14 +717,13 @@ class StreamController extends Controller
     protected function getChatModel(Bot $bot): string
     {
         return $bot->primary_chat_model
-            ?: $bot->llm_model
+            ?: $bot->fallback_chat_model
             ?: config('services.openrouter.default_model', 'anthropic/claude-3.5-sonnet');
     }
 
     protected function getFallbackChatModel(Bot $bot): ?string
     {
         return $bot->fallback_chat_model
-            ?: $bot->llm_fallback_model
             ?: config('services.openrouter.fallback_model');
     }
 
