@@ -27,6 +27,7 @@ class RAGService
         protected SemanticSearchService $semanticSearchService,
         protected HybridSearchService $hybridSearchService,
         protected OpenRouterService $openRouter,
+        protected IntentAnalysisService $intentAnalysis,
         protected ?QueryEnhancementService $queryEnhancement = null,
         protected ?SemanticCacheService $semanticCache = null
     ) {}
@@ -86,7 +87,11 @@ class RAGService
         }
 
         // Step 1: Analyze intent using Decision Model
-        $intent = $this->analyzeIntent($bot, $userMessage, $apiKey);
+        $intent = $this->intentAnalysis->analyzeIntent($bot, $userMessage, [
+            'validIntents' => ['chat', 'knowledge', 'flow'],
+            'includeExamples' => true,
+            'apiKey' => $apiKey,
+        ]);
 
         // Step 2: Detect complexity for Chain-of-Thought
         $complexity = $this->detectComplexity($userMessage);
@@ -247,8 +252,9 @@ class RAGService
 
     /**
      * Format KB search results into context for the prompt.
+     * Public method to allow delegation from controllers.
      */
-    protected function formatKnowledgeBaseContext($results): string
+    public function formatKnowledgeBaseContext($results): string
     {
         if ($results->isEmpty()) {
             return '';
@@ -451,210 +457,6 @@ class RAGService
     {
         return $bot->user?->settings?->getOpenRouterApiKey()
             ?? config('services.openrouter.api_key');
-    }
-
-    /**
-     * Analyze user message intent using Decision Model.
-     *
-     * Flow:
-     * 1. If Decision Model configured, use it
-     * 2. If no Decision Model configured, use default behavior
-     *
-     * @param Bot $bot The bot
-     * @param string $userMessage The user's message
-     * @param string|null $apiKey API key override
-     * @return array Intent analysis result with 'intent' and 'confidence'
-     */
-    protected function analyzeIntent(Bot $bot, string $userMessage, ?string $apiKey): array
-    {
-        // Get Decision Model configuration
-        $decisionModel = $this->getDecisionModelForBot($bot);
-        $fallbackDecision = $this->getFallbackDecisionModelForBot($bot);
-
-        // Skip decision model if not configured (use default behavior)
-        if (!$decisionModel && !$bot->decision_model) {
-            // Default: use knowledge if KB enabled, otherwise chat
-            return [
-                'intent' => $this->shouldUseKnowledgeBase($bot) ? 'knowledge' : 'chat',
-                'confidence' => 1.0,
-                'model_used' => null,
-                'method' => 'default',
-                'skipped' => true,
-            ];
-        }
-
-        $prompt = $this->buildIntentAnalysisPrompt($bot);
-
-        try {
-            $result = $this->openRouter->chat(
-                messages: [
-                    ['role' => 'system', 'content' => $prompt],
-                    ['role' => 'user', 'content' => $userMessage],
-                ],
-                model: $decisionModel,
-                temperature: 0.1, // Low temp for consistent decisions
-                maxTokens: 150,
-                useFallback: true,
-                apiKeyOverride: $apiKey,
-                fallbackModelOverride: $fallbackDecision
-            );
-
-            $parsed = $this->parseIntentResponse($result['content']);
-            $parsed['model_used'] = $result['model'] ?? $decisionModel;
-            $parsed['method'] = 'llm_decision';
-            $parsed['usage'] = $result['usage'] ?? null;
-
-            Log::debug('Intent analysis completed via LLM', [
-                'bot_id' => $bot->id,
-                'intent' => $parsed['intent'],
-                'confidence' => $parsed['confidence'],
-                'model' => $parsed['model_used'],
-            ]);
-
-            return $parsed;
-        } catch (\Exception $e) {
-            Log::warning('Intent analysis failed, defaulting to chat', [
-                'bot_id' => $bot->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            // Default to knowledge if KB enabled, otherwise chat
-            return [
-                'intent' => $this->shouldUseKnowledgeBase($bot) ? 'knowledge' : 'chat',
-                'confidence' => 0,
-                'method' => 'error_fallback',
-                'error' => $e->getMessage(),
-            ];
-        }
-    }
-
-    /**
-     * Build the system prompt for intent analysis.
-     */
-    protected function buildIntentAnalysisPrompt(Bot $bot): string
-    {
-        $hasKB = $bot->kb_enabled && $bot->defaultFlow?->knowledgeBases()->exists();
-        $kbNote = $hasKB ? ' (Knowledge Base available for factual queries)' : '';
-
-        return <<<PROMPT
-You are an intent classifier. Analyze the user's message and determine the appropriate intent.
-Respond with JSON only: {"intent": "chat|knowledge", "confidence": 0.0-1.0}
-
-Available intents:
-- "chat": General conversation, greetings, opinions, casual talk, or when unsure
-- "knowledge": Questions requiring factual information, specific data, or documentation{$kbNote}
-
-Classification rules:
-- Use "knowledge" for: questions about facts, how-to queries, data lookups, technical questions
-- Use "chat" for: greetings (hi, hello), opinions, casual conversation, follow-up responses
-- When uncertain, prefer "chat" (safer default)
-- Confidence should reflect how certain you are (0.0 = uncertain, 1.0 = very certain)
-
-Examples:
-User: "สวัสดี" → {"intent": "chat", "confidence": 0.95}
-User: "ราคาสินค้า A เท่าไหร่" → {"intent": "knowledge", "confidence": 0.9}
-User: "ขอบคุณครับ" → {"intent": "chat", "confidence": 0.95}
-User: "วิธีใช้งานระบบ" → {"intent": "knowledge", "confidence": 0.85}
-
-Respond with JSON only, no explanation.
-PROMPT;
-    }
-
-    /**
-     * Parse the intent analysis response from the LLM.
-     */
-    protected function parseIntentResponse(string $content): array
-    {
-        $content = trim($content);
-
-        // Remove markdown code blocks if present (greedy to capture full JSON)
-        if (preg_match('/```(?:json)?\s*(\{.+\})\s*```/s', $content, $matches)) {
-            $content = $matches[1];
-        }
-
-        // Extract JSON object with proper brace matching
-        $content = $this->extractJsonObject($content);
-
-        try {
-            $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
-
-            $intent = $data['intent'] ?? 'chat';
-            $confidence = (float) ($data['confidence'] ?? 0.5);
-
-            // Validate intent value
-            if (!in_array($intent, ['chat', 'knowledge', 'flow'])) {
-                $intent = 'chat';
-            }
-
-            // Clamp confidence to 0-1
-            $confidence = max(0, min(1, $confidence));
-
-            return [
-                'intent' => $intent,
-                'confidence' => $confidence,
-            ];
-        } catch (\Exception $e) {
-            Log::warning('Failed to parse intent response', [
-                'content' => substr($content, 0, 200),
-                'error' => $e->getMessage(),
-            ]);
-
-            return [
-                'intent' => 'chat',
-                'confidence' => 0,
-            ];
-        }
-    }
-
-    /**
-     * Extract JSON object from string with proper brace matching.
-     * Handles nested objects unlike simple regex.
-     */
-    protected function extractJsonObject(string $content): string
-    {
-        $start = strpos($content, '{');
-        if ($start === false) {
-            return $content;
-        }
-
-        $depth = 0;
-        $length = strlen($content);
-        $inString = false;
-        $escape = false;
-
-        for ($i = $start; $i < $length; $i++) {
-            $char = $content[$i];
-
-            if ($escape) {
-                $escape = false;
-                continue;
-            }
-
-            if ($char === '\\') {
-                $escape = true;
-                continue;
-            }
-
-            if ($char === '"') {
-                $inString = !$inString;
-                continue;
-            }
-
-            if ($inString) {
-                continue;
-            }
-
-            if ($char === '{') {
-                $depth++;
-            } elseif ($char === '}') {
-                $depth--;
-                if ($depth === 0) {
-                    return substr($content, $start, $i - $start + 1);
-                }
-            }
-        }
-
-        return $content;
     }
 
     /**
