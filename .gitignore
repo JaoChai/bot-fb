@@ -47,3 +47,8 @@ coverage/
 
 # Auto Claude data directory
 .auto-claude/
+
+# Claude-mem auto-generated CLAUDE.md files (keep only root and .claude/)
+**/CLAUDE.md
+!/CLAUDE.md
+!/.claude/CLAUDE.md
