@@ -196,6 +196,16 @@ class StreamController extends Controller
                     'message' => $e->getMessage(),
                     'step' => 'unknown',
                 ]);
+
+                // Always send done event even on error
+                $this->sendSSE('done', [
+                    'total_time_ms' => round((microtime(true) - $this->metrics['start_time']) * 1000),
+                    'prompt_tokens' => $this->metrics['prompt_tokens'],
+                    'completion_tokens' => $this->metrics['completion_tokens'],
+                    'models_used' => $this->metrics['models_used'],
+                    'tool_calls' => $this->metrics['tool_calls'],
+                    'error' => true,
+                ]);
             }
         }, 200, [
             'Content-Type' => 'text/event-stream',

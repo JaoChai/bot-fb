@@ -129,6 +129,8 @@ export async function streamFlowTest(
 
   const decoder = new TextDecoder();
   let buffer = '';
+  let receivedDoneEvent = false;
+  const streamStartTime = Date.now();
 
   try {
     while (true) {
@@ -136,7 +138,21 @@ export async function streamFlowTest(
 
       if (done) {
         if (buffer.trim()) {
-          processSSEBuffer(buffer, options);
+          processSSEBuffer(buffer, options, (event) => {
+            if (event === 'done') receivedDoneEvent = true;
+          });
+        }
+
+        // If stream ended without done event, trigger done callback with fallback values
+        if (!receivedDoneEvent) {
+          console.warn('Stream ended without done event, triggering fallback');
+          options.onDone?.({
+            total_time_ms: Date.now() - streamStartTime,
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            models_used: [],
+            tool_calls: 0,
+          });
         }
         break;
       }
@@ -149,7 +165,9 @@ export async function streamFlowTest(
 
       for (const eventBlock of events) {
         if (!eventBlock.trim()) continue;
-        processSSEEvent(eventBlock, options);
+        processSSEEvent(eventBlock, options, (event) => {
+          if (event === 'done') receivedDoneEvent = true;
+        });
       }
     }
   } finally {
@@ -160,7 +178,11 @@ export async function streamFlowTest(
 /**
  * Process a complete SSE event block
  */
-function processSSEEvent(eventBlock: string, options: StreamOptions): void {
+function processSSEEvent(
+  eventBlock: string,
+  options: StreamOptions,
+  onEventType?: (event: string) => void
+): void {
   const lines = eventBlock.split('\n');
   let eventType: string | null = null;
   let data: string | null = null;
@@ -202,6 +224,7 @@ function processSSEEvent(eventBlock: string, options: StreamOptions): void {
         break;
 
       case 'done':
+        onEventType?.('done');
         options.onDone?.({
           total_time_ms: parsed.total_time_ms || 0,
           prompt_tokens: parsed.prompt_tokens || 0,
@@ -259,8 +282,12 @@ function processSSEEvent(eventBlock: string, options: StreamOptions): void {
 /**
  * Process remaining buffer (for incomplete events at end of stream)
  */
-function processSSEBuffer(buffer: string, options: StreamOptions): void {
-  processSSEEvent(buffer, options);
+function processSSEBuffer(
+  buffer: string,
+  options: StreamOptions,
+  onEventType?: (event: string) => void
+): void {
+  processSSEEvent(buffer, options, onEventType);
 }
 
 /**
