@@ -387,6 +387,10 @@ export interface Message {
   reply_to_message_id: string | null;
   sentiment: string | null;
   intents: string[] | null;
+  // Enhanced usage tracking (OpenRouter Best Practice)
+  cached_tokens?: number | null;
+  reasoning_tokens?: number | null;
+  reasoning_content?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -507,6 +511,11 @@ export interface CostSummary {
   today_cost: number;
   week_cost: number;
   month_cost: number;
+  // Enhanced cost tracking (OpenRouter Best Practice)
+  total_actual_cost?: number;
+  total_cached_tokens?: number;
+  total_reasoning_tokens?: number;
+  cost_savings?: number | null;
 }
 
 export interface CostByModel {

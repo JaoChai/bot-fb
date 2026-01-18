@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AgentCostUsage;
 use App\Models\Message;
 use App\Services\SemanticCacheService;
 use Illuminate\Http\JsonResponse;
@@ -199,6 +200,26 @@ class AnalyticsController extends Controller
                 ]);
         }
 
+        // Get enhanced cost data from agent_cost_usage table
+        $enhancedCostQuery = AgentCostUsage::where('user_id', $userId)
+            ->whereBetween('created_at', [$fromDate, $toDate]);
+
+        if ($botId) {
+            $enhancedCostQuery->where('bot_id', $botId);
+        }
+
+        $enhancedStats = $enhancedCostQuery->selectRaw('
+            COALESCE(SUM(actual_cost), 0) as total_actual_cost,
+            COALESCE(SUM(cached_tokens), 0) as total_cached_tokens,
+            COALESCE(SUM(reasoning_tokens), 0) as total_reasoning_tokens,
+            COALESCE(SUM(estimated_cost), 0) as total_estimated_cost_from_usage
+        ')->first();
+
+        // Calculate cost savings (estimated - actual, when actual is available)
+        $totalActualCost = (float) ($enhancedStats->total_actual_cost ?? 0);
+        $totalEstimatedCost = (float) ($stats->total_cost ?? 0);
+        $costSavings = $totalActualCost > 0 ? max(0, $totalEstimatedCost - $totalActualCost) : null;
+
         return [
             'summary' => [
                 'total_responses' => (int) ($stats->total_responses ?? 0),
@@ -209,6 +230,11 @@ class AnalyticsController extends Controller
                 'today_cost' => (float) ($stats->today_cost ?? 0),
                 'week_cost' => (float) ($stats->week_cost ?? 0),
                 'month_cost' => (float) ($stats->month_cost ?? 0),
+                // Enhanced cost tracking (OpenRouter Best Practice)
+                'total_actual_cost' => $totalActualCost,
+                'total_cached_tokens' => (int) ($enhancedStats->total_cached_tokens ?? 0),
+                'total_reasoning_tokens' => (int) ($enhancedStats->total_reasoning_tokens ?? 0),
+                'cost_savings' => $costSavings,
             ],
             'by_model' => $byModel,
             'time_series' => $timeSeries,

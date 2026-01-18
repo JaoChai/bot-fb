@@ -31,6 +31,10 @@ class AgentCostUsage extends Model
         'status',
         'error_message',
         'metadata',
+        // Enhanced usage tracking (OpenRouter Best Practice)
+        'actual_cost',
+        'cached_tokens',
+        'reasoning_tokens',
     ];
 
     protected $casts = [
@@ -41,6 +45,10 @@ class AgentCostUsage extends Model
         'duration_ms' => 'integer',
         'iterations' => 'integer',
         'metadata' => 'array',
+        // Enhanced usage tracking (OpenRouter Best Practice)
+        'actual_cost' => 'decimal:6',
+        'cached_tokens' => 'integer',
+        'reasoning_tokens' => 'integer',
     ];
 
     /**

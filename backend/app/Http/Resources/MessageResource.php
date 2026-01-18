@@ -31,6 +31,10 @@ class MessageResource extends JsonResource
             'reply_to_message_id' => $this->reply_to_message_id,
             'sentiment' => $this->sentiment,
             'intents' => $this->intents,
+            // Enhanced usage tracking (OpenRouter Best Practice)
+            'cached_tokens' => $this->cached_tokens,
+            'reasoning_tokens' => $this->reasoning_tokens,
+            'reasoning_content' => $this->reasoning_content,
             'created_at' => $this->created_at->toIso8601String(),
             'updated_at' => $this->updated_at->toIso8601String(),
         ];

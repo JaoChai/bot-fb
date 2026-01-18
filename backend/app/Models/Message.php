@@ -33,6 +33,10 @@ class Message extends Model
         'sentiment',
         'intents',
         'metadata',
+        // Enhanced usage tracking (OpenRouter Best Practice)
+        'cached_tokens',
+        'reasoning_tokens',
+        'reasoning_content',
     ];
 
     protected $casts = [
@@ -43,6 +47,9 @@ class Message extends Model
         'is_redelivery' => 'boolean',
         'event_timestamp' => 'integer',
         'metadata' => 'array',
+        // Enhanced usage tracking (OpenRouter Best Practice)
+        'cached_tokens' => 'integer',
+        'reasoning_tokens' => 'integer',
     ];
 
     public function conversation(): BelongsTo
