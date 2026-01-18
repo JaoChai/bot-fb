@@ -1023,9 +1023,7 @@ class ProcessLINEWebhook implements ShouldQueue
      * Priority:
      * 1. Bot's primary_chat_model (from Connection Settings UI)
      * 2. Bot's fallback_chat_model (fallback model)
-     * 3. User's openrouter_model (if vision-capable)
-     * 4. Bot's llm_model (legacy, if vision-capable)
-     * 5. Default vision model (Gemini 2.0 Flash)
+     * 3. Default vision model (Gemini 2.0 Flash)
      */
     protected function getVisionModel(): string
     {
@@ -1043,22 +1041,10 @@ class ProcessLINEWebhook implements ShouldQueue
             return $this->bot->fallback_chat_model;
         }
 
-        // Priority 3: User's model from settings
-        $userModel = $this->bot->user?->settings?->openrouter_model;
-        if ($userModel && $openRouterService->supportsVision($userModel)) {
-            Log::debug('Vision model: user settings', ['model' => $userModel]);
-            return $userModel;
-        }
-
-        // Priority 4: Bot's llm_model (legacy)
-        if ($this->bot->llm_model && $openRouterService->supportsVision($this->bot->llm_model)) {
-            Log::debug('Vision model: llm_model (legacy)', ['model' => $this->bot->llm_model]);
-            return $this->bot->llm_model;
-        }
-
-        // Priority 5: Default vision model
-        Log::debug('Vision model: default', ['model' => 'google/gemini-2.0-flash-001']);
-        return 'google/gemini-2.0-flash-001';
+        // Priority 3: Default vision model
+        $defaultModel = config('llm-models.default_vision_model', 'google/gemini-2.0-flash-001');
+        Log::debug('Vision model: default', ['model' => $defaultModel]);
+        return $defaultModel;
     }
 
     /**

@@ -25,15 +25,13 @@ class BotResource extends JsonResource
             'channel_secret' => $this->channel_secret ? '••••••••' : null,
             'credentials_visible' => $isOwner,
 
-            // LLM Settings (legacy)
-            'llm_model' => $this->llm_model,
-            'llm_fallback_model' => $this->llm_fallback_model,
+            // LLM Settings
             'system_prompt' => $this->system_prompt,
             'llm_temperature' => $this->llm_temperature,
             'llm_max_tokens' => $this->llm_max_tokens,
             'context_window' => $this->context_window,
 
-            // Multi-model LLM configuration
+            // LLM Models (from Connection Settings UI)
             'primary_chat_model' => $this->primary_chat_model,
             'fallback_chat_model' => $this->fallback_chat_model,
             'decision_model' => $this->decision_model,

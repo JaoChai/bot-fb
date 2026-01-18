@@ -36,9 +36,7 @@ class UpdateBotRequest extends FormRequest
             // Auto handover
             'auto_handover' => ['sometimes', 'boolean'],
 
-            // LLM Settings (legacy)
-            'llm_model' => ['sometimes', 'string', 'max:100'],
-            'llm_fallback_model' => ['sometimes', 'string', 'max:100'],
+            // LLM Settings
             'system_prompt' => ['nullable', 'string', 'max:50000'],
             'llm_temperature' => ['sometimes', 'numeric', 'min:0', 'max:2'],
             'llm_max_tokens' => ['sometimes', 'integer', 'min:100', 'max:8192'],

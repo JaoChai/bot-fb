@@ -26,10 +26,7 @@ class Bot extends Model
         'webhook_forwarder_enabled',
         'page_id',
         'default_flow_id',
-        // LLM Models (legacy) - API key now in User Settings
-        'llm_model',
-        'llm_fallback_model',
-        // LLM Models (new multi-model)
+        // LLM Models (from Connection Settings UI)
         'primary_chat_model',
         'fallback_chat_model',
         'decision_model',

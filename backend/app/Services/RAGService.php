@@ -351,30 +351,23 @@ class RAGService
      * Get the primary chat model to use for a bot.
      *
      * Priority:
-     * 1. Bot-specific primary_chat_model (new multi-model)
-     * 2. User Settings model (centralized)
-     * 3. Bot-specific llm_model (legacy)
-     * 4. Config default model
+     * 1. Bot's primary_chat_model (from Connection Settings UI)
+     * 2. Bot's fallback_chat_model
+     * 3. Config default model (handled by OpenRouterService)
      */
     protected function getChatModelForBot(Bot $bot): ?string
     {
-        // Priority 1: Bot-specific primary chat model (new)
+        // Priority 1: Bot's primary chat model (from Connection Settings UI)
         if ($bot->primary_chat_model) {
             return $bot->primary_chat_model;
         }
 
-        // Priority 2: User Settings (centralized model)
-        $user = $bot->user;
-        if ($user && $user->settings && $user->settings->openrouter_model) {
-            return $user->settings->openrouter_model;
+        // Priority 2: Bot's fallback chat model
+        if ($bot->fallback_chat_model) {
+            return $bot->fallback_chat_model;
         }
 
-        // Priority 3: Bot-specific model (legacy support)
-        if ($bot->llm_model) {
-            return $bot->llm_model;
-        }
-
-        // Priority 4: Config default (handled by OpenRouterService)
+        // Priority 3: Config default (handled by OpenRouterService)
         return null;
     }
 
@@ -382,23 +375,17 @@ class RAGService
      * Get the fallback chat model for a bot.
      *
      * Priority:
-     * 1. Bot-specific fallback_chat_model (new)
-     * 2. Bot-specific llm_fallback_model (legacy)
-     * 3. Config fallback (handled by OpenRouterService)
+     * 1. Bot's fallback_chat_model (from Connection Settings UI)
+     * 2. Config fallback (handled by OpenRouterService)
      */
     protected function getFallbackChatModelForBot(Bot $bot): ?string
     {
-        // Priority 1: Bot-specific fallback chat model (new)
+        // Priority 1: Bot's fallback chat model (from Connection Settings UI)
         if ($bot->fallback_chat_model) {
             return $bot->fallback_chat_model;
         }
 
-        // Priority 2: Bot legacy fallback
-        if ($bot->llm_fallback_model) {
-            return $bot->llm_fallback_model;
-        }
-
-        // Priority 3: Config fallback (handled by OpenRouterService)
+        // Priority 2: Config fallback (handled by OpenRouterService)
         return null;
     }
 

@@ -339,7 +339,7 @@ EXAMPLES;
      */
     protected function getDecisionModelForBot(Bot $bot): ?string
     {
-        // Priority 1: Bot-specific decision model
+        // Priority 1: Bot's decision model (from Connection Settings UI)
         if ($bot->decision_model) {
             return $bot->decision_model;
         }
@@ -349,14 +349,8 @@ EXAMPLES;
             return $bot->primary_chat_model;
         }
 
-        // Priority 3: User Settings (centralized model)
-        $user = $bot->user;
-        if ($user && $user->settings && $user->settings->openrouter_model) {
-            return $user->settings->openrouter_model;
-        }
-
-        // Priority 4: Bot legacy model
-        return $bot->llm_model;
+        // Priority 3: Fall back to fallback chat model
+        return $bot->fallback_chat_model;
     }
 
     /**
