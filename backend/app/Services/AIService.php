@@ -106,6 +106,10 @@ class AIService
                 'prompt_tokens' => $result['usage']['prompt_tokens'] ?? 0,
                 'completion_tokens' => $result['usage']['completion_tokens'] ?? 0,
                 'cost' => $result['cost'] ?? 0,
+                // Enhanced usage tracking (OpenRouter Best Practice)
+                'cached_tokens' => $result['usage']['cached_tokens'] ?? null,
+                'reasoning_tokens' => $result['usage']['reasoning_tokens'] ?? null,
+                'reasoning_content' => $result['reasoning'] ?? null,
             ];
 
             // Include RAG metadata if KB was used

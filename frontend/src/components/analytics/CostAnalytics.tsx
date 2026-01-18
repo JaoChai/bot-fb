@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/select';
 import { useCostAnalytics } from '@/hooks/useCostAnalytics';
 import type { CostAnalyticsFilters } from '@/types/api';
-import { Banknote, MessageSquare, TrendingUp, Coins } from 'lucide-react';
+import { Banknote, MessageSquare, TrendingUp, Coins, Brain, Sparkles, PiggyBank } from 'lucide-react';
 import { formatTHB, usdToTHB } from '@/lib/currency';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
@@ -160,7 +160,7 @@ export function CostAnalytics() {
             <div className="text-2xl font-bold">
               {formatCost(data.summary.total_cost)}
             </div>
-            <p className="text-xs text-muted-foreground">30 วันล่าสุด</p>
+            <p className="text-xs text-muted-foreground">30 วันล่าสุด (Estimated)</p>
           </CardContent>
         </Card>
 
@@ -190,6 +190,71 @@ export function CostAnalytics() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Enhanced Cost Tracking (OpenRouter Best Practice) */}
+      {(data.summary.total_actual_cost !== undefined || data.summary.total_cached_tokens !== undefined || data.summary.total_reasoning_tokens !== undefined) && (
+        <div className="grid gap-4 md:grid-cols-4">
+          {data.summary.total_actual_cost !== undefined && data.summary.total_actual_cost > 0 && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Actual Cost</CardTitle>
+                <Banknote className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">
+                  {formatCost(data.summary.total_actual_cost)}
+                </div>
+                <p className="text-xs text-muted-foreground">ค่าใช้จ่ายจริงจาก OpenRouter</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {data.summary.cost_savings !== undefined && data.summary.cost_savings !== null && data.summary.cost_savings > 0 && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">ประหยัดได้</CardTitle>
+                <PiggyBank className="h-4 w-4 text-emerald-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-emerald-600">
+                  {formatCost(data.summary.cost_savings)}
+                </div>
+                <p className="text-xs text-muted-foreground">Estimated vs Actual</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {data.summary.total_cached_tokens !== undefined && data.summary.total_cached_tokens > 0 && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Cached Tokens</CardTitle>
+                <Sparkles className="h-4 w-4 text-amber-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-amber-600">
+                  {formatTokens(data.summary.total_cached_tokens)}
+                </div>
+                <p className="text-xs text-muted-foreground">Tokens จาก prompt cache</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {data.summary.total_reasoning_tokens !== undefined && data.summary.total_reasoning_tokens > 0 && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Reasoning Tokens</CardTitle>
+                <Brain className="h-4 w-4 text-purple-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-purple-600">
+                  {formatTokens(data.summary.total_reasoning_tokens)}
+                </div>
+                <p className="text-xs text-muted-foreground">Tokens จาก o1, deepseek-r1</p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
 
       {/* Cost Over Time Chart */}
       {data.time_series.length > 0 && (

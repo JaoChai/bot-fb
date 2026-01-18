@@ -59,6 +59,13 @@ class CostTrackingService
     protected int $toolCallCount = 0;
 
     /**
+     * Enhanced usage tracking (OpenRouter Best Practice)
+     */
+    protected int $runningCachedTokens = 0;
+    protected int $runningReasoningTokens = 0;
+    protected ?float $runningActualCost = null;
+
+    /**
      * Start tracking a new request.
      */
     public function startRequest(): string
@@ -68,17 +75,30 @@ class CostTrackingService
         $this->runningPromptTokens = 0;
         $this->runningCompletionTokens = 0;
         $this->toolCallCount = 0;
+        $this->runningCachedTokens = 0;
+        $this->runningReasoningTokens = 0;
+        $this->runningActualCost = null;
 
         return $this->currentRequestId;
     }
 
     /**
      * Add cost from an API call.
+     *
+     * @param string $model Model ID
+     * @param int $promptTokens Prompt tokens used
+     * @param int $completionTokens Completion tokens used
+     * @param int $cachedTokens Tokens served from prompt cache (cheaper pricing)
+     * @param int $reasoningTokens Tokens used by reasoning models (o1, deepseek-r1)
+     * @param float|null $actualCost Real cost from OpenRouter API (vs estimated)
      */
     public function addCost(
         string $model,
         int $promptTokens,
-        int $completionTokens
+        int $completionTokens,
+        int $cachedTokens = 0,
+        int $reasoningTokens = 0,
+        ?float $actualCost = null
     ): float {
         $pricing = $this->modelPricing[$model] ?? $this->modelPricing['default'];
 
@@ -91,11 +111,21 @@ class CostTrackingService
         $this->runningPromptTokens += $promptTokens;
         $this->runningCompletionTokens += $completionTokens;
 
+        // Track enhanced usage from OpenRouter
+        $this->runningCachedTokens += $cachedTokens;
+        $this->runningReasoningTokens += $reasoningTokens;
+        if ($actualCost !== null) {
+            $this->runningActualCost = ($this->runningActualCost ?? 0) + $actualCost;
+        }
+
         Log::debug('CostTracking: Added cost', [
             'model' => $model,
             'prompt_tokens' => $promptTokens,
             'completion_tokens' => $completionTokens,
-            'cost' => $totalCost,
+            'cached_tokens' => $cachedTokens,
+            'reasoning_tokens' => $reasoningTokens,
+            'estimated_cost' => $totalCost,
+            'actual_cost' => $actualCost,
             'running_total' => $this->runningCost,
         ]);
 
@@ -196,14 +226,21 @@ class CostTrackingService
             'status' => $status,
             'error_message' => $errorMessage,
             'metadata' => $metadata,
+            // Enhanced usage tracking (OpenRouter Best Practice)
+            'actual_cost' => $this->runningActualCost,
+            'cached_tokens' => $this->runningCachedTokens,
+            'reasoning_tokens' => $this->runningReasoningTokens,
         ]);
 
         Log::info('CostTracking: Request finalized', [
             'request_id' => $usage->request_id,
             'user_id' => $userId,
-            'cost' => $this->runningCost,
+            'estimated_cost' => $this->runningCost,
+            'actual_cost' => $this->runningActualCost,
             'status' => $status,
             'tokens' => $this->runningPromptTokens + $this->runningCompletionTokens,
+            'cached_tokens' => $this->runningCachedTokens,
+            'reasoning_tokens' => $this->runningReasoningTokens,
         ]);
 
         // Reset tracking
@@ -212,6 +249,9 @@ class CostTrackingService
         $this->runningPromptTokens = 0;
         $this->runningCompletionTokens = 0;
         $this->toolCallCount = 0;
+        $this->runningCachedTokens = 0;
+        $this->runningReasoningTokens = 0;
+        $this->runningActualCost = null;
 
         return $usage;
     }

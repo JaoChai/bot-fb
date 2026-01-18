@@ -74,6 +74,9 @@ export interface ModelOption {
   context_length: number;
   pricing_prompt: number;
   pricing_completion: number;
+  // Enhanced model capabilities (OpenRouter Best Practice)
+  supports_reasoning?: boolean;
+  supports_vision?: boolean;
 }
 
 export interface FlowAuditLog {

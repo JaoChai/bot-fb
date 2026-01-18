@@ -9,6 +9,7 @@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -16,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Brain, Eye } from 'lucide-react';
 import { type FlowSectionProps, type ModelOption } from './types';
 
 // Common model options - can be moved to a shared config
@@ -27,6 +29,7 @@ const CHAT_MODEL_OPTIONS: ModelOption[] = [
     context_length: 1000000,
     pricing_prompt: 0,
     pricing_completion: 0,
+    supports_vision: true,
   },
   {
     id: 'openai/gpt-4o-mini',
@@ -35,6 +38,7 @@ const CHAT_MODEL_OPTIONS: ModelOption[] = [
     context_length: 128000,
     pricing_prompt: 0.15,
     pricing_completion: 0.6,
+    supports_vision: true,
   },
   {
     id: 'openai/gpt-4o',
@@ -43,6 +47,7 @@ const CHAT_MODEL_OPTIONS: ModelOption[] = [
     context_length: 128000,
     pricing_prompt: 2.5,
     pricing_completion: 10,
+    supports_vision: true,
   },
   {
     id: 'anthropic/claude-3.5-sonnet',
@@ -51,8 +56,59 @@ const CHAT_MODEL_OPTIONS: ModelOption[] = [
     context_length: 200000,
     pricing_prompt: 3,
     pricing_completion: 15,
+    supports_vision: true,
+  },
+  // Reasoning Models (OpenRouter Best Practice)
+  {
+    id: 'openai/o1',
+    name: 'OpenAI o1',
+    provider: 'OpenAI',
+    context_length: 200000,
+    pricing_prompt: 15,
+    pricing_completion: 60,
+    supports_reasoning: true,
+  },
+  {
+    id: 'openai/o1-mini',
+    name: 'OpenAI o1-mini',
+    provider: 'OpenAI',
+    context_length: 128000,
+    pricing_prompt: 3,
+    pricing_completion: 12,
+    supports_reasoning: true,
+  },
+  {
+    id: 'deepseek/deepseek-r1',
+    name: 'DeepSeek R1',
+    provider: 'DeepSeek',
+    context_length: 64000,
+    pricing_prompt: 0.55,
+    pricing_completion: 2.19,
+    supports_reasoning: true,
   },
 ];
+
+// Helper component to render model option with badges
+function ModelOptionLabel({ model }: { model: ModelOption }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span>{model.name}</span>
+      <span className="text-xs text-muted-foreground">({model.provider})</span>
+      {model.supports_reasoning && (
+        <Badge variant="secondary" className="h-5 px-1.5 text-[10px] gap-0.5">
+          <Brain className="h-3 w-3" />
+          Reasoning
+        </Badge>
+      )}
+      {model.supports_vision && !model.supports_reasoning && (
+        <Badge variant="outline" className="h-5 px-1.5 text-[10px] gap-0.5">
+          <Eye className="h-3 w-3" />
+          Vision
+        </Badge>
+      )}
+    </div>
+  );
+}
 
 interface ModelSettingsSectionProps extends FlowSectionProps {
   modelOptions?: ModelOption[];
@@ -82,10 +138,7 @@ export function ModelSettingsSection({
           <SelectContent>
             {modelOptions.map((model) => (
               <SelectItem key={model.id} value={model.id}>
-                <span>{model.name}</span>
-                <span className="text-xs text-muted-foreground ml-2">
-                  ({model.provider})
-                </span>
+                <ModelOptionLabel model={model} />
               </SelectItem>
             ))}
           </SelectContent>
@@ -110,10 +163,7 @@ export function ModelSettingsSection({
             <SelectItem value="">None</SelectItem>
             {modelOptions.map((model) => (
               <SelectItem key={model.id} value={model.id}>
-                <span>{model.name}</span>
-                <span className="text-xs text-muted-foreground ml-2">
-                  ({model.provider})
-                </span>
+                <ModelOptionLabel model={model} />
               </SelectItem>
             ))}
           </SelectContent>
@@ -138,10 +188,7 @@ export function ModelSettingsSection({
             <SelectItem value="">Same as primary</SelectItem>
             {modelOptions.map((model) => (
               <SelectItem key={model.id} value={model.id}>
-                <span>{model.name}</span>
-                <span className="text-xs text-muted-foreground ml-2">
-                  ({model.provider})
-                </span>
+                <ModelOptionLabel model={model} />
               </SelectItem>
             ))}
           </SelectContent>
@@ -166,10 +213,7 @@ export function ModelSettingsSection({
             <SelectItem value="">None</SelectItem>
             {modelOptions.map((model) => (
               <SelectItem key={model.id} value={model.id}>
-                <span>{model.name}</span>
-                <span className="text-xs text-muted-foreground ml-2">
-                  ({model.provider})
-                </span>
+                <ModelOptionLabel model={model} />
               </SelectItem>
             ))}
           </SelectContent>

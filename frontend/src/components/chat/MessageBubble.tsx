@@ -6,11 +6,16 @@
 import { memo, useState } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import {
   Dialog,
   DialogContent,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Bot, User, Headphones, Download } from 'lucide-react';
+import { Bot, User, Headphones, Download, Brain, ChevronDown, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -44,6 +49,7 @@ export const MessageBubble = memo(function MessageBubble({
   useChannelAdapter = false,
 }: MessageBubbleProps) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [reasoningOpen, setReasoningOpen] = useState(false);
   const { adapter, channelType } = useChannel();
 
   const isUser = message.sender === 'user';
@@ -117,6 +123,35 @@ export const MessageBubble = memo(function MessageBubble({
             </div>
           )}
 
+          {/* Reasoning content (for o1, deepseek-r1 models) */}
+          {message.reasoning_content && (
+            <Collapsible
+              open={reasoningOpen}
+              onOpenChange={setReasoningOpen}
+              className="mt-2 mb-2"
+            >
+              <CollapsibleTrigger asChild>
+                <button className="flex items-center gap-1 text-xs opacity-70 hover:opacity-100 transition-opacity">
+                  <Brain className="h-3 w-3" />
+                  <span>Thinking</span>
+                  {reasoningOpen ? (
+                    <ChevronDown className="h-3 w-3" />
+                  ) : (
+                    <ChevronRight className="h-3 w-3" />
+                  )}
+                  {message.reasoning_tokens && (
+                    <span className="ml-1 opacity-60">({message.reasoning_tokens} tokens)</span>
+                  )}
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="mt-2 p-2 rounded bg-black/10 dark:bg-white/10 text-xs whitespace-pre-wrap max-h-48 overflow-y-auto">
+                  {message.reasoning_content}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+
           {/* Message content - uses adapter when enabled */}
           {renderContent()}
 
@@ -126,6 +161,11 @@ export const MessageBubble = memo(function MessageBubble({
               {message.model_used}
               {message.prompt_tokens && message.completion_tokens && (
                 <span> - {message.prompt_tokens + message.completion_tokens} tokens</span>
+              )}
+              {message.cached_tokens && message.cached_tokens > 0 && (
+                <span className="ml-1 text-green-600 dark:text-green-400">
+                  ({message.cached_tokens} cached)
+                </span>
               )}
             </div>
           )}
