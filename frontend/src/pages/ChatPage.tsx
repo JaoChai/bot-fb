@@ -218,7 +218,7 @@ export function ChatPage() {
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select Bot" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper">
               {bots.map((bot) => (
                 <SelectItem key={bot.id} value={bot.id.toString()}>
                   {bot.name}
