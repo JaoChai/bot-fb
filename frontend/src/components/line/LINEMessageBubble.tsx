@@ -230,7 +230,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
       {/* Message bubble */}
       <div
         className={cn(
-          'flex gap-2 px-3',
+          'flex gap-2 px-3 w-full',
           isUser ? 'justify-end' : 'justify-start',
           senderChanged && 'mt-3'
         )}
@@ -251,7 +251,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
         {/* Message content */}
         <div
           className={cn(
-            'max-w-[75%] rounded-2xl px-4 py-2',
+            'max-w-[75%] min-w-0 rounded-2xl px-4 py-2',
             isUser
               ? 'bg-[#06C755] text-white rounded-br-md'
               : 'bg-muted rounded-bl-md'
@@ -259,9 +259,6 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
         >
           {renderContent()}
         </div>
-
-        {/* Avatar placeholder for user messages (to maintain alignment) */}
-        {isUser && <div className="w-8" />}
       </div>
 
       {/* Image Lightbox */}
