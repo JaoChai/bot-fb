@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\CircuitOpenException;
 use App\Http\Middleware\CacheHeaders;
 use App\Http\Middleware\CompressResponse;
 use App\Http\Middleware\SanitizeInput;
@@ -12,6 +13,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
+use Sentry\Breadcrumb;
 use Sentry\Laravel\Integration;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -69,6 +71,25 @@ return Application::configure(basePath: dirname(__DIR__))
         // Sentry error monitoring integration
         Integration::handles($exceptions);
 
+        // Add breadcrumb for CircuitOpenException to help debug cascading failures
+        $exceptions->report(function (CircuitOpenException $e): void {
+            if (app()->bound('sentry')) {
+                \Sentry\addBreadcrumb(
+                    new Breadcrumb(
+                        level: Breadcrumb::LEVEL_WARNING,
+                        type: 'default',
+                        category: 'circuit_breaker',
+                        message: "Circuit open for service: {$e->getService()}",
+                        metadata: [
+                            'service' => $e->getService(),
+                            'exception_message' => $e->getMessage(),
+                        ],
+                        timestamp: time()
+                    )
+                );
+            }
+        });
+
         // Return JSON 401 for unauthenticated API requests instead of redirecting
         $exceptions->render(function (AuthenticationException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
@@ -76,6 +97,17 @@ return Application::configure(basePath: dirname(__DIR__))
                     'message' => 'Unauthenticated.',
                     'error' => 'Token expired or invalid. Please login again.',
                 ], 401);
+            }
+        });
+
+        // Return JSON 503 for CircuitOpenException (Service Unavailable)
+        $exceptions->render(function (CircuitOpenException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Service temporarily unavailable.',
+                    'error' => 'The service is experiencing issues. Please try again later.',
+                    'service' => $e->getService(),
+                ], 503);
             }
         });
     })->create();

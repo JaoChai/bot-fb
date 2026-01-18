@@ -10,8 +10,10 @@ use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\AutoAssignmentService;
+use App\Services\CircuitBreakerService;
 use App\Services\LeadRecoveryService;
 use App\Services\TelegramService;
+use App\Exceptions\CircuitOpenException;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -45,10 +47,25 @@ class ProcessTelegramWebhook implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(TelegramService $telegramService, AIService $aiService): void
-    {
+    public function handle(
+        TelegramService $telegramService,
+        AIService $aiService,
+        CircuitBreakerService $circuitBreaker
+    ): void {
         try {
-            $this->processUpdate($telegramService, $aiService);
+            // Use circuit breaker to protect against DB failures
+            $circuitBreaker->execute(
+                'database',
+                fn () => $this->processUpdate($telegramService, $aiService),
+                fn () => $this->sendFallbackMessage($telegramService)
+            );
+        } catch (CircuitOpenException $e) {
+            // Circuit is open - send fallback and don't retry
+            Log::warning('Circuit breaker open for Telegram webhook', [
+                'bot_id' => $this->bot->id,
+                'service' => $e->getService(),
+            ]);
+            $this->sendFallbackMessage($telegramService);
         } catch (\Exception $e) {
             Log::error('Telegram webhook processing failed', [
                 'bot_id' => $this->bot->id,
@@ -58,6 +75,43 @@ class ProcessTelegramWebhook implements ShouldQueue
             ]);
 
             throw $e;
+        }
+    }
+
+    /**
+     * Send fallback message when system is unavailable.
+     * This method doesn't depend on database operations.
+     */
+    protected function sendFallbackMessage(TelegramService $telegramService): void
+    {
+        if (! config('bot.send_fallback_on_circuit_open', true)) {
+            return;
+        }
+
+        // Parse the update to get chat_id
+        $parsed = $telegramService->parseUpdate($this->update);
+        $chatId = $parsed['chat_id'] ?? null;
+
+        if (! $chatId) {
+            return;
+        }
+
+        $fallbackMessage = config('bot.fallback_message', 'ขออภัยครับ ระบบกำลังมีปัญหาชั่วคราว กรุณาลองใหม่ในอีกสักครู่');
+
+        try {
+            $telegramService->sendMessage($this->bot, $chatId, $fallbackMessage);
+
+            Log::info('Sent fallback message to Telegram user', [
+                'bot_id' => $this->bot->id,
+                'chat_id' => $chatId,
+            ]);
+        } catch (\Exception $e) {
+            // Don't throw - fallback message is best-effort
+            Log::error('Failed to send fallback message to Telegram', [
+                'bot_id' => $this->bot->id,
+                'chat_id' => $chatId,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

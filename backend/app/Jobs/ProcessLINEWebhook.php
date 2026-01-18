@@ -20,6 +20,8 @@ use App\Services\ResponseHoursService;
 use App\Services\SmartAggregation\SmartAggregationAnalyzer;
 use App\Services\SmartAggregation\UserTypingStats;
 use App\Services\StickerReplyService;
+use App\Services\CircuitBreakerService;
+use App\Exceptions\CircuitOpenException;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -66,10 +68,23 @@ class ProcessLINEWebhook implements ShouldQueue
         AIService $aiService,
         RateLimitService $rateLimitService,
         MessageAggregationService $aggregationService,
-        ResponseHoursService $responseHoursService
+        ResponseHoursService $responseHoursService,
+        CircuitBreakerService $circuitBreaker
     ): void {
         try {
-            $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService);
+            // Use circuit breaker to protect against DB failures
+            $circuitBreaker->execute(
+                'database',
+                fn () => $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService),
+                fn () => $this->sendFallbackMessage($lineService)
+            );
+        } catch (CircuitOpenException $e) {
+            // Circuit is open - send fallback and don't retry
+            Log::warning('Circuit breaker open for LINE webhook', [
+                'bot_id' => $this->bot->id,
+                'service' => $e->getService(),
+            ]);
+            $this->sendFallbackMessage($lineService);
         } catch (\Exception $e) {
             Log::error('LINE webhook processing failed', [
                 'bot_id' => $this->bot->id,
@@ -79,6 +94,41 @@ class ProcessLINEWebhook implements ShouldQueue
             ]);
 
             throw $e;
+        }
+    }
+
+    /**
+     * Send fallback message when system is unavailable.
+     * This method doesn't depend on database operations.
+     */
+    protected function sendFallbackMessage(LINEService $lineService): void
+    {
+        if (! config('bot.send_fallback_on_circuit_open', true)) {
+            return;
+        }
+
+        $userId = $lineService->extractUserId($this->event);
+        if (! $userId) {
+            return;
+        }
+
+        $fallbackMessage = config('bot.fallback_message', 'ขออภัยครับ ระบบกำลังมีปัญหาชั่วคราว กรุณาลองใหม่ในอีกสักครู่');
+
+        try {
+            // Use push instead of reply since we don't know if reply token is still valid
+            $lineService->push($this->bot, $userId, [$fallbackMessage]);
+
+            Log::info('Sent fallback message to LINE user', [
+                'bot_id' => $this->bot->id,
+                'user_id' => $userId,
+            ]);
+        } catch (\Exception $e) {
+            // Don't throw - fallback message is best-effort
+            Log::error('Failed to send fallback message', [
+                'bot_id' => $this->bot->id,
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

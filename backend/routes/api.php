@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\AgentApprovalController;
 use App\Http\Controllers\Api\ImprovementController;
 use App\Http\Controllers\Api\LeadRecoveryController;
 use App\Http\Controllers\Api\QuickReplyController;
+use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\QAInspectorController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
@@ -297,13 +298,11 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
     });
 });
 
-// Health check endpoint (no rate limiting needed)
-Route::get('/health', function () {
-    return response()->json([
-        'status' => 'ok',
-        'timestamp' => now()->toIso8601String(),
-    ]);
-})->name('health');
+// Health check endpoints (no rate limiting needed)
+Route::get('/health', [HealthController::class, 'index'])->name('health');
+Route::get('/health/detailed', [HealthController::class, 'detailed'])
+    ->middleware(['auth:sanctum'])
+    ->name('health.detailed');
 
 // Broadcasting authentication endpoint
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
