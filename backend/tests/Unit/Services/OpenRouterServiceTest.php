@@ -72,27 +72,70 @@ class OpenRouterServiceTest extends TestCase
         $this->assertEquals(8, $result['usage']['completion_tokens']);
     }
 
-    public function test_chat_uses_fallback_model_on_failure(): void
+    public function test_chat_uses_native_fallback_with_models_array(): void
     {
+        // With native fallback, OpenRouter handles server-side fallback
+        // We send models array and get response with the model that was actually used
         Http::fake([
-            'openrouter.ai/api/v1/chat/completions' => Http::sequence()
-                ->push(['error' => ['message' => 'Rate limited']], 429)
-                ->push([
-                    'id' => 'gen-456',
-                    'model' => 'openai/gpt-4o-mini',
-                    'choices' => [
-                        ['message' => ['content' => 'Fallback response'], 'finish_reason' => 'stop'],
-                    ],
-                    'usage' => ['prompt_tokens' => 5, 'completion_tokens' => 3, 'total_tokens' => 8],
-                ], 200),
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'gen-456',
+                'model' => 'openai/gpt-4o-mini', // OpenRouter used fallback
+                'choices' => [
+                    ['message' => ['content' => 'Fallback response'], 'finish_reason' => 'stop'],
+                ],
+                'usage' => ['prompt_tokens' => 5, 'completion_tokens' => 3, 'total_tokens' => 8],
+            ], 200),
         ]);
 
         $result = $this->service->chat([
             ['role' => 'user', 'content' => 'Hello'],
         ]);
 
+        // Verify models array was sent (native fallback)
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+
+            // Should use models array instead of single model
+            return isset($body['models']) &&
+                   $body['models'] === ['anthropic/claude-3.5-sonnet', 'openai/gpt-4o-mini'];
+        });
+
         $this->assertEquals('Fallback response', $result['content']);
         $this->assertEquals('openai/gpt-4o-mini', $result['model']);
+    }
+
+    public function test_chat_uses_single_model_when_fallback_disabled(): void
+    {
+        Http::fake([
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'gen-789',
+                'model' => 'anthropic/claude-3.5-sonnet',
+                'choices' => [
+                    ['message' => ['content' => 'Direct response'], 'finish_reason' => 'stop'],
+                ],
+                'usage' => ['prompt_tokens' => 5, 'completion_tokens' => 3, 'total_tokens' => 8],
+            ], 200),
+        ]);
+
+        $result = $this->service->chat(
+            [['role' => 'user', 'content' => 'Hello']],
+            null,
+            null,
+            null,
+            false // useFallback = false
+        );
+
+        // Verify single model was sent (no fallback)
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+
+            // Should use model string, not models array
+            return isset($body['model']) &&
+                   $body['model'] === 'anthropic/claude-3.5-sonnet' &&
+                   ! isset($body['models']);
+        });
+
+        $this->assertEquals('Direct response', $result['content']);
     }
 
     public function test_chat_throws_exception_when_all_models_fail(): void

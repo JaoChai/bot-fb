@@ -39,7 +39,7 @@ class ModelCapabilityServiceTest extends TestCase
     // Vision Detection Tests
     // -------------------------------------------------------------------------
 
-    public function test_supports_vision_returns_true_for_gpt4o(): void
+    public function test_supports_vision_returns_true_for_gpt4o_from_config(): void
     {
         // Use config fallback (no API key set)
         config(['services.openrouter.api_key' => null]);
@@ -49,7 +49,7 @@ class ModelCapabilityServiceTest extends TestCase
         $this->assertTrue($result);
     }
 
-    public function test_supports_vision_returns_true_for_gemini_models(): void
+    public function test_supports_vision_returns_true_for_gemini_models_from_config(): void
     {
         config(['services.openrouter.api_key' => null]);
 
@@ -58,7 +58,7 @@ class ModelCapabilityServiceTest extends TestCase
         $this->assertTrue($this->service->supportsVision('google/gemini-2.0-flash-exp'));
     }
 
-    public function test_supports_vision_returns_true_for_claude_3_models(): void
+    public function test_supports_vision_returns_true_for_claude_3_models_from_config(): void
     {
         config(['services.openrouter.api_key' => null]);
 
@@ -77,49 +77,11 @@ class ModelCapabilityServiceTest extends TestCase
         $this->assertFalse($this->service->supportsVision('deepseek/deepseek-chat'));
     }
 
-    // -------------------------------------------------------------------------
-    // Pattern Detection Tests
-    // -------------------------------------------------------------------------
-
-    public function test_pattern_detection_for_new_gpt5_model(): void
+    public function test_unknown_model_returns_false_for_vision(): void
     {
         config(['services.openrouter.api_key' => null]);
 
-        // Remove from config to force pattern detection
-        config(['llm-models.models.openai/gpt-5-mini' => null]);
-
-        $result = $this->service->supportsVision('openai/gpt-5-mini');
-
-        $this->assertTrue($result);
-    }
-
-    public function test_pattern_detection_for_new_o1_model(): void
-    {
-        config(['services.openrouter.api_key' => null]);
-        config(['llm-models.models.openai/o1-preview' => null]);
-
-        $this->assertTrue($this->service->supportsVision('openai/o1-preview'));
-    }
-
-    public function test_pattern_detection_for_vision_keyword(): void
-    {
-        config(['services.openrouter.api_key' => null]);
-
-        $this->assertTrue($this->service->supportsVision('some-provider/model-with-vision-capability'));
-    }
-
-    public function test_pattern_detection_for_multimodal_keyword(): void
-    {
-        config(['services.openrouter.api_key' => null]);
-
-        $this->assertTrue($this->service->supportsVision('provider/multimodal-model'));
-    }
-
-    public function test_pattern_detection_for_unknown_text_model(): void
-    {
-        config(['services.openrouter.api_key' => null]);
-
-        // Unknown model without vision patterns should return false
+        // Unknown model not in config/API should return false (no guessing)
         $this->assertFalse($this->service->supportsVision('unknown/text-only-model'));
     }
 
@@ -271,16 +233,16 @@ class ModelCapabilityServiceTest extends TestCase
         $this->assertTrue($capabilities['supports_vision']);
     }
 
-    public function test_fallback_to_pattern_when_api_and_config_fail(): void
+    public function test_fallback_to_default_when_api_and_config_fail(): void
     {
         config(['services.openrouter.api_key' => null]);
 
         // Unknown model not in config
-        $capabilities = $this->service->getCapabilities('openai/gpt-5-ultra');
+        $capabilities = $this->service->getCapabilities('unknown/new-model');
 
-        // Should use pattern detection
-        $this->assertEquals('pattern', $capabilities['source']);
-        $this->assertTrue($capabilities['supports_vision']); // gpt-5 matches pattern
+        // Should use default (no guessing)
+        $this->assertEquals('default', $capabilities['source']);
+        $this->assertFalse($capabilities['supports_vision']); // No guessing - default to false
     }
 
     // -------------------------------------------------------------------------

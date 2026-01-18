@@ -12,23 +12,6 @@ class ModelCapabilityService
     private const CACHE_PREFIX = 'model_cap';
     private const API_TIMEOUT = 10; // seconds
 
-    /**
-     * Patterns that indicate vision support.
-     * Used as fallback when API and config don't provide info.
-     */
-    private const VISION_PATTERNS = [
-        // OpenAI
-        'gpt-4o', 'gpt-4-vision', 'gpt-4-turbo', 'gpt-5', 'chatgpt-4o', 'o1', 'o3',
-        // Anthropic
-        'claude-3', 'claude-sonnet-4', 'claude-opus-4',
-        // Google
-        'gemini',
-        // Vision-specific models
-        'llava', 'cogvlm', 'qwen-vl', 'pixtral',
-        // Generic patterns
-        'vision', 'multimodal', 'vl-',
-    ];
-
     protected CircuitBreakerService $circuitBreaker;
 
     public function __construct(CircuitBreakerService $circuitBreaker)
@@ -39,11 +22,11 @@ class ModelCapabilityService
     /**
      * Check if a model supports vision/image input.
      *
-     * Resolution priority:
+     * Resolution priority (per OpenRouter API docs):
      * 1. Cache
-     * 2. OpenRouter API
+     * 2. OpenRouter API (supports_images, input_modalities, modality, description)
      * 3. Config (llm-models.php)
-     * 4. Pattern-based detection
+     * 4. Default: false (no guessing)
      */
     public function supportsVision(string $modelId): bool
     {
@@ -305,26 +288,40 @@ class ModelCapabilityService
         $architecture = $model['architecture'] ?? [];
         $pricing = $model['pricing'] ?? [];
 
-        // Check for vision capability
+        // Check for vision capability (per OpenRouter API docs)
         $supportsVision = false;
-        $modality = $architecture['modality'] ?? '';
-        if (str_contains($modality, 'image') || str_contains($modality, 'vision')) {
+
+        // Priority 1: Check supports_images field (most reliable per OpenRouter docs)
+        if (isset($model['supports_images']) && $model['supports_images'] === true) {
             $supportsVision = true;
         }
 
-        // Also check description and name
-        $description = strtolower($model['description'] ?? '');
-        $name = strtolower($model['name'] ?? '');
-        if (str_contains($description, 'vision') || str_contains($description, 'image')) {
-            $supportsVision = true;
-        }
-        if (str_contains($name, 'vision')) {
-            $supportsVision = true;
-        }
-
-        // Also use pattern detection as backup
+        // Priority 2: Check input_modalities array (per OpenRouter docs)
         if (! $supportsVision) {
-            $supportsVision = $this->matchesVisionPattern($model['id'] ?? '');
+            $inputModalities = $architecture['input_modalities'] ?? [];
+            if (in_array('image', $inputModalities, true)) {
+                $supportsVision = true;
+            }
+        }
+
+        // Priority 3: Check modality string
+        if (! $supportsVision) {
+            $modality = $architecture['modality'] ?? '';
+            if (str_contains($modality, 'image') || str_contains($modality, 'vision')) {
+                $supportsVision = true;
+            }
+        }
+
+        // Priority 4: Check description and name
+        if (! $supportsVision) {
+            $description = strtolower($model['description'] ?? '');
+            $name = strtolower($model['name'] ?? '');
+            if (str_contains($description, 'vision') || str_contains($description, 'image')) {
+                $supportsVision = true;
+            }
+            if (str_contains($name, 'vision')) {
+                $supportsVision = true;
+            }
         }
 
         return [
@@ -352,16 +349,10 @@ class ModelCapabilityService
             return null;
         }
 
-        // If supports_vision is not in config, try pattern detection
-        $supportsVision = $config['supports_vision'] ?? null;
-        if ($supportsVision === null) {
-            $supportsVision = $this->matchesVisionPattern($modelId);
-        }
-
         return [
             'model_id' => $modelId,
             'name' => $config['name'] ?? $modelId,
-            'supports_vision' => (bool) $supportsVision,
+            'supports_vision' => (bool) ($config['supports_vision'] ?? false),
             'context_length' => (int) ($config['context_length'] ?? 4096),
             'max_output_tokens' => (int) ($config['max_output_tokens'] ?? 4096),
             'pricing_prompt' => (float) ($config['pricing_prompt'] ?? 0),
@@ -371,37 +362,20 @@ class ModelCapabilityService
     }
 
     /**
-     * Detect capabilities from model ID pattern.
+     * Return default capabilities when no data available.
+     * No pattern detection - if we don't have data, we don't guess.
      */
     protected function detectFromPattern(string $modelId): array
     {
-        $supportsVision = $this->matchesVisionPattern($modelId);
-
         return [
             'model_id' => $modelId,
             'name' => $modelId,
-            'supports_vision' => $supportsVision,
+            'supports_vision' => false, // Don't guess - rely on API/config only
             'context_length' => 4096,
             'max_output_tokens' => 4096,
             'pricing_prompt' => 0.0,
             'pricing_completion' => 0.0,
-            'source' => 'pattern',
+            'source' => 'default',
         ];
-    }
-
-    /**
-     * Check if model ID matches vision patterns.
-     */
-    protected function matchesVisionPattern(string $modelId): bool
-    {
-        $lowerModelId = strtolower($modelId);
-
-        foreach (self::VISION_PATTERNS as $pattern) {
-            if (str_contains($lowerModelId, strtolower($pattern))) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
