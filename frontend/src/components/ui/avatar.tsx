@@ -21,14 +21,31 @@ function Avatar({
 
 function AvatarImage({
   className,
+  src,
+  alt,
   ...props
 }: React.ComponentProps<typeof AvatarPrimitive.Image>) {
+  const [hasError, setHasError] = React.useState(false)
+
+  // Reset error state when src changes
+  React.useEffect(() => {
+    setHasError(false)
+  }, [src])
+
+  // Don't render if no src or has error (let AvatarFallback show)
+  if (!src || hasError) {
+    return null
+  }
+
   return (
     <AvatarPrimitive.Image
       data-slot="avatar-image"
       className={cn("aspect-square size-full", className)}
+      src={src}
+      alt={alt}
       loading="lazy"
       decoding="async"
+      onError={() => setHasError(true)}
       {...props}
     />
   )
