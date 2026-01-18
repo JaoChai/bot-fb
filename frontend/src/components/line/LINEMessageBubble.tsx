@@ -55,7 +55,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
     switch (type) {
       case 'text':
         return (
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{message.content}</p>
         );
 
       case 'image':
@@ -71,7 +71,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
                   onClick={() => setLightboxOpen(true)}
                 />
                 {message.content && !message.content.includes('[รูปภาพ]') && (
-                  <p className="mt-2 text-sm whitespace-pre-wrap">{message.content}</p>
+                  <p className="mt-2 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{message.content}</p>
                 )}
               </>
             ) : (
@@ -97,7 +97,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
                   เบราว์เซอร์ของคุณไม่รองรับวิดีโอ
                 </video>
                 {message.content && !message.content.includes('[วิดีโอ]') && (
-                  <p className="mt-2 text-sm whitespace-pre-wrap">{message.content}</p>
+                  <p className="mt-2 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{message.content}</p>
                 )}
               </>
             ) : (
@@ -209,7 +209,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
 
       default:
         return (
-          <p className="whitespace-pre-wrap break-words">
+          <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">
             {message.content || '[ข้อความที่ไม่รองรับ]'}
           </p>
         );
