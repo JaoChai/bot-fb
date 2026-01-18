@@ -30,6 +30,8 @@ use App\Services\SecondAI\PromptInjectionDetector;
 use App\Services\SecondAI\SecondAIMetricsService;
 use App\Services\Evaluation\ModelTierSelector;
 use App\Services\Evaluation\LLMJudgeService;
+use App\Services\ModelCapabilityService;
+use App\Services\CircuitBreakerService;
 use App\Services\QAInspector\QAInspectorService;
 use App\Services\QAInspector\RealtimeEvaluator;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -137,6 +139,13 @@ class AppServiceProvider extends ServiceProvider
             return new LLMJudgeService(
                 $app->make(OpenRouterService::class),
                 $app->make(ModelTierSelector::class)
+            );
+        });
+
+        // Register ModelCapabilityService for dynamic model capability detection
+        $this->app->singleton(ModelCapabilityService::class, function ($app) {
+            return new ModelCapabilityService(
+                $app->make(CircuitBreakerService::class)
             );
         });
 

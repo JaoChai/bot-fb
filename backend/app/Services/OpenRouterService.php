@@ -444,38 +444,18 @@ class OpenRouterService
     /**
      * Check if a model supports vision/image analysis.
      *
-     * Vision-capable models:
-     * - Google Gemini (all versions)
-     * - OpenAI GPT-4o, GPT-4 Turbo, GPT-4 Vision
-     * - Anthropic Claude 3 and 3.5 (all versions)
+     * This method delegates to ModelCapabilityService which:
+     * 1. Checks cache first (24hr TTL)
+     * 2. Queries OpenRouter API if not cached
+     * 3. Falls back to config (llm-models.php)
+     * 4. Uses pattern-based detection as last resort
      *
      * @param string $model Model ID
      * @return bool Whether the model supports vision
      */
     public function supportsVision(string $model): bool
     {
-        $model = strtolower($model);
-
-        // Gemini models (all support vision)
-        if (str_starts_with($model, 'google/gemini')) {
-            return true;
-        }
-
-        // OpenAI vision models
-        if (str_starts_with($model, 'openai/gpt-4o') ||
-            str_starts_with($model, 'openai/gpt-4-turbo') ||
-            str_starts_with($model, 'openai/gpt-4-vision') ||
-            str_starts_with($model, 'openai/chatgpt-4o')) {
-            return true;
-        }
-
-        // Claude 3 and 3.5 models (all support vision)
-        if (str_starts_with($model, 'anthropic/claude-3') ||
-            str_starts_with($model, 'anthropic/claude-3.5')) {
-            return true;
-        }
-
-        return false;
+        return app(ModelCapabilityService::class)->supportsVision($model);
     }
 
     /**
