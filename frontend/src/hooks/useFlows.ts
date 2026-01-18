@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
+import { useMutationWithToast } from './useMutationWithToast';
 import type {
   ApiResponse,
   CreateFlowData,
@@ -47,20 +48,14 @@ export function useFlowTemplates() {
 
 // Create flow mutation
 export function useCreateFlow(botId: number | null) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
+  return useMutationWithToast({
     mutationFn: async (data: CreateFlowData) => {
       if (!botId) throw new Error('Bot ID is required');
       const response = await apiPost<ApiResponse<Flow>>(`/bots/${botId}/flows`, data);
       return response.data;
     },
-    onSuccess: () => {
-      if (!botId) return;
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.flows.list(botId),
-      });
-    },
+    successMessage: (flow) => `สร้าง Flow "${flow.name}" สำเร็จ`,
+    invalidateKeys: botId ? [queryKeys.flows.list(botId)] : [],
   });
 }
 
@@ -219,20 +214,14 @@ export function useDeleteFlow(botId: number | null) {
 
 // Duplicate flow mutation
 export function useDuplicateFlow(botId: number | null) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
+  return useMutationWithToast({
     mutationFn: async (flowId: number) => {
       if (!botId) throw new Error('Bot ID is required');
       const response = await apiPost<ApiResponse<Flow>>(`/bots/${botId}/flows/${flowId}/duplicate`);
       return response.data;
     },
-    onSuccess: () => {
-      if (!botId) return;
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.flows.list(botId),
-      });
-    },
+    successMessage: (flow) => `สร้างสำเนา Flow "${flow.name}" สำเร็จ`,
+    invalidateKeys: botId ? [queryKeys.flows.list(botId)] : [],
   });
 }
 

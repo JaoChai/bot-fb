@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiDelete, apiPost, apiPut } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
+import { useMutationWithToast } from './useMutationWithToast';
 import type { ApiResponse } from '@/types/api';
 import type {
   QuickReply,
@@ -66,38 +67,28 @@ export function useQuickReply(id: number | null) {
 
 // Create quick reply mutation
 export function useCreateQuickReply() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
+  return useMutationWithToast({
     mutationFn: async (data: QuickReplyInput) => {
       const response = await apiPost<ApiResponse<QuickReply>>('/quick-replies', data);
       return response.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.quickReplies.all,
-      });
-    },
+    successMessage: (qr) => `สร้าง Quick Reply "/${qr.shortcut}" สำเร็จ`,
+    invalidateKeys: [queryKeys.quickReplies.all],
   });
 }
 
 // Update quick reply mutation
 export function useUpdateQuickReply(id: number) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
+  return useMutationWithToast({
     mutationFn: async (data: Partial<QuickReplyInput>) => {
       const response = await apiPut<ApiResponse<QuickReply>>(`/quick-replies/${id}`, data);
       return response.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.quickReplies.detail(id),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.quickReplies.lists(),
-      });
-    },
+    successMessage: 'บันทึกการเปลี่ยนแปลงสำเร็จ',
+    invalidateKeys: [
+      queryKeys.quickReplies.detail(id),
+      queryKeys.quickReplies.lists(),
+    ],
   });
 }
 
@@ -168,17 +159,12 @@ export function useToggleQuickReply() {
 
 // Reorder quick replies mutation
 export function useReorderQuickReplies() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
+  return useMutationWithToast({
     mutationFn: async (data: ReorderQuickRepliesInput) => {
       await apiPost('/quick-replies/reorder', data);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.quickReplies.all,
-      });
-    },
+    successMessage: 'จัดเรียงลำดับสำเร็จ',
+    invalidateKeys: [queryKeys.quickReplies.all],
   });
 }
 

@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 import { buildConversationFilterParams } from '@/lib/params';
 import { useConnectionStore } from '@/stores/connectionStore';
 import { messageKeys, type MessagesOptions } from '@/hooks/chat/useMessages';
+import { useMutationWithToast } from './useMutationWithToast';
 import type {
   AddTagsData,
   BulkTagsData,
@@ -477,7 +478,7 @@ export function useConversationNotes(botId: number | undefined, conversationId: 
 export function useAddNote(botId: number | undefined) {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  return useMutationWithToast({
     mutationFn: async ({
       conversationId,
       data,
@@ -491,6 +492,7 @@ export function useAddNote(botId: number | undefined) {
       );
       return response.data;
     },
+    successMessage: 'บันทึก Note สำเร็จ',
     onSuccess: (_, { conversationId }) => {
       queryClient.invalidateQueries({ queryKey: ['conversation-notes', botId, conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
@@ -504,7 +506,7 @@ export function useAddNote(botId: number | undefined) {
 export function useUpdateNote(botId: number | undefined) {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  return useMutationWithToast({
     mutationFn: async ({
       conversationId,
       noteId,
@@ -520,6 +522,7 @@ export function useUpdateNote(botId: number | undefined) {
       );
       return response.data;
     },
+    successMessage: 'แก้ไข Note สำเร็จ',
     onSuccess: (_, { conversationId }) => {
       queryClient.invalidateQueries({ queryKey: ['conversation-notes', botId, conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });

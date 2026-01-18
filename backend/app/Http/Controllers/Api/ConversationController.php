@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Events\ConversationUpdated;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ConversationResource;
+use App\Http\Traits\ApiResponseTrait;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Services\Chat\ConversationService;
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\Log;
 
 class ConversationController extends Controller
 {
+    use ApiResponseTrait;
+
     public function __construct(
         private ConversationService $conversationService
     ) {}
@@ -43,11 +46,7 @@ class ConversationController extends Controller
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
             ]);
-            return response()->json([
-                'error' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-            ], 500);
+            return $this->serverError($e->getMessage());
         }
     }
 
@@ -84,10 +83,7 @@ class ConversationController extends Controller
 
         $conversation = $this->conversationService->updateConversation($conversation, $validated);
 
-        return response()->json([
-            'message' => 'Conversation updated successfully',
-            'data' => new ConversationResource($conversation),
-        ]);
+        return $this->success(new ConversationResource($conversation), 'Conversation updated successfully');
     }
 
     /**
@@ -100,10 +96,7 @@ class ConversationController extends Controller
 
         $conversation = $this->conversationService->closeConversation($conversation);
 
-        return response()->json([
-            'message' => 'Conversation closed successfully',
-            'data' => new ConversationResource($conversation),
-        ]);
+        return $this->success(new ConversationResource($conversation), 'Conversation closed successfully');
     }
 
     /**
@@ -116,10 +109,7 @@ class ConversationController extends Controller
 
         $conversation = $this->conversationService->reopenConversation($conversation);
 
-        return response()->json([
-            'message' => 'Conversation reopened successfully',
-            'data' => new ConversationResource($conversation),
-        ]);
+        return $this->success(new ConversationResource($conversation), 'Conversation reopened successfully');
     }
 
     /**
@@ -135,10 +125,7 @@ class ConversationController extends Controller
         // Broadcast the update for real-time sync
         broadcast(new ConversationUpdated($conversation))->toOthers();
 
-        return response()->json([
-            'message' => 'Bot context cleared successfully',
-            'data' => new ConversationResource($conversation),
-        ]);
+        return $this->success(new ConversationResource($conversation), 'Bot context cleared successfully');
     }
 
     /**
@@ -151,10 +138,7 @@ class ConversationController extends Controller
 
         $updatedCount = $this->conversationService->clearContextAll($bot);
 
-        return response()->json([
-            'message' => "Reset context for {$updatedCount} conversations",
-            'data' => ['updated_count' => $updatedCount],
-        ]);
+        return $this->success(['updated_count' => $updatedCount], "Reset context for {$updatedCount} conversations");
     }
 
     /**
@@ -168,9 +152,7 @@ class ConversationController extends Controller
 
         $stats = $this->conversationService->getStats($bot);
 
-        return response()->json([
-            'data' => $stats,
-        ]);
+        return $this->success($stats);
     }
 
     /**

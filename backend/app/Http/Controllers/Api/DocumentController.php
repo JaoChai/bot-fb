@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\KnowledgeBase\StoreDocumentRequest;
 use App\Http\Resources\DocumentResource;
+use App\Http\Traits\ApiResponseTrait;
 use App\Jobs\ProcessDocument;
 use App\Models\Document;
 use App\Models\KnowledgeBase;
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\Storage;
 
 class DocumentController extends Controller
 {
+    use ApiResponseTrait;
     /**
      * List all documents for a knowledge base.
      */
@@ -51,10 +53,7 @@ class DocumentController extends Controller
         // Dispatch processing job with user's ID for API key lookup
         ProcessDocument::dispatch($document, $request->user()->id);
 
-        return response()->json([
-            'message' => 'Document created successfully. Processing will begin shortly.',
-            'data' => new DocumentResource($document),
-        ], 201);
+        return $this->created(new DocumentResource($document), 'Document created successfully. Processing will begin shortly.');
     }
 
     /**
@@ -81,15 +80,11 @@ class DocumentController extends Controller
 
         // Ensure document belongs to this KB
         if ($document->knowledge_base_id !== $knowledgeBase->id) {
-            return response()->json([
-                'message' => 'Document not found',
-            ], 404);
+            return $this->notFound('Document not found');
         }
 
         if ($document->status !== 'failed') {
-            return response()->json([
-                'message' => 'Only failed documents can be reprocessed',
-            ], 422);
+            return $this->validationError('Only failed documents can be reprocessed');
         }
 
         // Clear existing chunks
@@ -106,10 +101,7 @@ class DocumentController extends Controller
         // Dispatch with user's ID for API key lookup
         ProcessDocument::dispatch($document, $request->user()->id);
 
-        return response()->json([
-            'message' => 'Document reprocessing started',
-            'data' => new DocumentResource($document->fresh()),
-        ]);
+        return $this->success(new DocumentResource($document->fresh()), 'Document reprocessing started');
     }
 
     /**
@@ -121,9 +113,7 @@ class DocumentController extends Controller
 
         // Ensure document belongs to this KB
         if ($document->knowledge_base_id !== $knowledgeBase->id) {
-            return response()->json([
-                'message' => 'Document not found',
-            ], 404);
+            return $this->notFound('Document not found');
         }
 
         // Delete file from storage if exists (for legacy file-based documents)
@@ -141,9 +131,7 @@ class DocumentController extends Controller
         // Delete document (soft delete)
         $document->delete();
 
-        return response()->json([
-            'message' => 'Document deleted successfully',
-        ]);
+        return $this->success(null, 'Document deleted successfully');
     }
 
     /**
