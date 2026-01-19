@@ -9,6 +9,7 @@ use App\Http\Resources\BotResource;
 use App\Http\Traits\ApiResponseTrait;
 use App\Models\Bot;
 use App\Services\AIService;
+use App\Services\ModelCapabilityService;
 use App\Services\TelegramService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -251,12 +252,24 @@ PROMPT;
 
         $validated = $request->validated();
 
+        // Track model changes for cache invalidation
+        $oldPrimaryModel = $bot->primary_chat_model;
+        $oldFallbackModel = $bot->fallback_chat_model;
+
         // Check if Telegram token changed (need to re-setup webhook)
         $telegramTokenChanged = $bot->channel_type === 'telegram'
             && isset($validated['channel_access_token'])
             && $validated['channel_access_token'] !== $bot->channel_access_token;
 
         $bot->update($validated);
+
+        // Warm cache for new models if they changed
+        $this->warmModelCacheIfChanged(
+            $oldPrimaryModel,
+            $oldFallbackModel,
+            $bot->primary_chat_model,
+            $bot->fallback_chat_model
+        );
 
         // Re-setup webhook if Telegram token changed
         $webhookSetup = null;
@@ -268,6 +281,42 @@ PROMPT;
             'bot' => new BotResource($bot->fresh()),
             'webhook_setup' => $webhookSetup,
         ], 'Bot updated successfully');
+    }
+
+    /**
+     * Warm model capability cache when bot models change.
+     */
+    protected function warmModelCacheIfChanged(
+        ?string $oldPrimary,
+        ?string $oldFallback,
+        ?string $newPrimary,
+        ?string $newFallback
+    ): void {
+        $modelService = app(ModelCapabilityService::class);
+        $modelsToWarm = [];
+
+        // Check if primary model changed
+        if ($newPrimary && $newPrimary !== $oldPrimary) {
+            $modelsToWarm[] = $newPrimary;
+        }
+
+        // Check if fallback model changed
+        if ($newFallback && $newFallback !== $oldFallback) {
+            $modelsToWarm[] = $newFallback;
+        }
+
+        // Warm cache for new models (fetch capabilities proactively)
+        foreach (array_unique($modelsToWarm) as $model) {
+            try {
+                $modelService->getCapabilities($model);
+                Log::info('Warmed model capability cache', ['model' => $model]);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to warm model cache', [
+                    'model' => $model,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     /**
