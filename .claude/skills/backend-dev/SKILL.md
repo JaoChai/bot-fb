@@ -5,7 +5,7 @@ description: Laravel 12 specialist for API development. Handles controllers, ser
 
 # Backend Development
 
-Laravel 12 + PHP 8.2 specialist for BotFacebook API.
+Laravel 12 + PHP 8.4 specialist for BotFacebook API.
 
 ## Quick Start
 

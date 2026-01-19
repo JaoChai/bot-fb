@@ -42,7 +42,7 @@
     "LOW": "Style, minor improvements"
   },
   "techStack": {
-    "backend": ["Laravel 12", "PHP 8.2", "PostgreSQL"],
+    "backend": ["Laravel 12", "PHP 8.4", "PostgreSQL"],
     "frontend": ["React 19", "TypeScript", "Tailwind v4"],
     "standards": ["PSR-12", "OWASP Top 10", "RESTful"]
   }

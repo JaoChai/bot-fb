@@ -38,7 +38,7 @@ Laravel 12 specialist for API development.
 - Controllers, Services, FormRequests
 - API Resources, Queue Jobs
 - Events & Broadcasting (Reverb)
-- Laravel 12 + PHP 8.2 patterns
+- Laravel 12 + PHP 8.4 patterns
 
 ---
 

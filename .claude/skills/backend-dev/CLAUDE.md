@@ -8,6 +8,4 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #383 | 11:34 AM | 🔵 | Backend-dev SKILL.md Provides Laravel Architecture and API Patterns Overview | ~614 |
-| #361 | 11:33 AM | 🔵 | CLAUDE.md Artifact: Empty System File Across Skills | ~382 |
-| #357 | " | 🔵 | Backend-dev Skill Contains Rich API Standards Documentation Ready for Modularization | ~481 |
 </claude-mem-context>
