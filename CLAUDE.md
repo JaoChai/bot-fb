@@ -31,6 +31,34 @@ frontend/
 └── src/lib/api.ts      # Axios client
 ```
 
+## Core Files
+
+| File | Purpose |
+|------|---------|
+| `config/llm-models.php` | 40+ AI models with pricing |
+| `config/rag.php` | RAG/embedding settings |
+| `config/tools.php` | Agent tool definitions |
+| `routes/api.php` | All API endpoints |
+| `app/Services/RAGService.php` | Main AI orchestration |
+| `app/Services/OpenRouterService.php` | LLM API client |
+
+## Setup
+
+**Requirements:** PHP 8.4+, Node 22.12+, PostgreSQL + pgvector
+
+**Critical .env:**
+```
+OPENROUTER_API_KEY=xxx   # LLM provider
+DATABASE_URL=xxx         # Neon PostgreSQL
+VITE_API_URL=xxx         # Backend URL
+```
+
+**Install:**
+```bash
+cd backend && composer install
+cd frontend && npm install
+```
+
 ## Commands
 
 ```bash
@@ -80,9 +108,9 @@ Auto-triggered from context or use `/skill-name`. → [Full reference](docs/skil
 
 ## Code Rules
 
-**MUST: Use Agent Skills** - ห้ามแก้โค้ดโดยไม่เรียก skill
+**IMPORTANT: Use Agent Skills** - ห้ามแก้โค้ดโดยไม่เรียก skill ที่เกี่ยวข้อง
 
-**Minimal Change Principle:**
+**YOU MUST follow Minimal Change Principle:**
 - แก้เฉพาะจุดที่เกี่ยวข้อง
 - ห้าม refactor โค้ดอื่น
 - ห้ามเพิ่ม feature ที่ไม่ได้ขอ
@@ -108,6 +136,12 @@ Auto-triggered from context or use `/skill-name`. → [Full reference](docs/skil
 # Commits: feat: | fix: | chore:
 git checkout -b feature/xxx && # work... && /commit-push-pr
 ```
+
+## Do Not Touch
+
+- `vendor/`, `node_modules/` - Dependencies
+- `*.lock` files - Managed by tools
+- `storage/`, `dist/` - Generated files
 
 ## References
 
