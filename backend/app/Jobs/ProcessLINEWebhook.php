@@ -712,6 +712,15 @@ class ProcessLINEWebhook implements ShouldQueue
 
         // Check response hours AFTER saving message but BEFORE AI response
         $responseHoursResult = $responseHoursService->checkResponseHours($this->bot);
+
+        // DEBUG: Log response hours check for images
+        if ($messageType === 'image') {
+            error_log('IMAGE DEBUG: Response hours check - bot_id=' . $this->bot->id .
+                ', allowed=' . ($responseHoursResult['allowed'] ? 'true' : 'false') .
+                ', status=' . ($responseHoursResult['status'] ?? 'N/A') .
+                ', current_time=' . ($responseHoursResult['current_time'] ?? 'N/A'));
+        }
+
         if (!$responseHoursResult['allowed']) {
             Log::info('Non-text message received outside response hours', [
                 'bot_id' => $this->bot->id,
@@ -728,17 +737,13 @@ class ProcessLINEWebhook implements ShouldQueue
         }
 
         // Handle image analysis with AI Vision
-        // DEBUG: Log all conditions for image analysis
+        // DEBUG: Log all conditions for image analysis (use error_log for Railway visibility)
         if ($messageType === 'image') {
-            Log::info('IMAGE DEBUG: Checking image analysis conditions', [
-                'bot_id' => $this->bot->id,
-                'conversation_id' => $conversation?->id,
-                'messageType' => $messageType,
-                'mediaUrl' => $mediaUrl ? 'SET' : 'NULL',
-                'conversation' => $conversation ? 'SET' : 'NULL',
-                'replyToken' => $replyToken ? 'SET' : 'NULL',
-                'will_process' => ($mediaUrl && $conversation && $replyToken) ? 'YES' : 'NO',
-            ]);
+            error_log('IMAGE DEBUG: Checking conditions - bot_id=' . $this->bot->id .
+                ', conversation=' . ($conversation ? $conversation->id : 'NULL') .
+                ', mediaUrl=' . ($mediaUrl ? 'SET' : 'NULL') .
+                ', replyToken=' . ($replyToken ? 'SET' : 'NULL') .
+                ', will_process=' . (($mediaUrl && $conversation && $replyToken) ? 'YES' : 'NO'));
         }
 
         if ($messageType === 'image' && $mediaUrl && $conversation && $replyToken) {
@@ -867,30 +872,18 @@ class ProcessLINEWebhook implements ShouldQueue
         string $replyToken,
         ?array $conversationData
     ): void {
-        // DEBUG: Log entry to handleImageAnalysis
-        Log::info('IMAGE DEBUG: Entered handleImageAnalysis', [
-            'bot_id' => $this->bot->id,
-            'conversation_id' => $conversation->id,
-            'imageUrl' => substr($imageUrl, 0, 50) . '...',
-        ]);
+        // DEBUG: Log entry to handleImageAnalysis (use error_log for Railway visibility)
+        error_log('IMAGE DEBUG: Entered handleImageAnalysis - bot_id=' . $this->bot->id . ', conversation=' . $conversation->id);
 
         // Check if bot is active
         if ($this->bot->status !== 'active') {
-            Log::info('IMAGE DEBUG: Bot inactive, skipping image analysis', [
-                'bot_id' => $this->bot->id,
-                'bot_status' => $this->bot->status,
-                'conversation_id' => $conversation->id,
-            ]);
+            error_log('IMAGE DEBUG: Bot inactive - bot_id=' . $this->bot->id . ', status=' . $this->bot->status);
             return;
         }
 
         // Check if conversation is in handover mode
         if ($conversation->is_handover) {
-            Log::info('IMAGE DEBUG: Conversation in handover mode, skipping image analysis', [
-                'bot_id' => $this->bot->id,
-                'conversation_id' => $conversation->id,
-                'is_handover' => $conversation->is_handover,
-            ]);
+            error_log('IMAGE DEBUG: Handover mode - bot_id=' . $this->bot->id . ', conversation=' . $conversation->id);
             return;
         }
 
@@ -899,28 +892,14 @@ class ProcessLINEWebhook implements ShouldQueue
         $model = $this->getVisionModel();
 
         // DEBUG: Log model selection
-        Log::info('IMAGE DEBUG: Vision model selected', [
-            'bot_id' => $this->bot->id,
-            'model' => $model,
-            'primary_chat_model' => $this->bot->primary_chat_model,
-            'fallback_chat_model' => $this->bot->fallback_chat_model,
-        ]);
+        error_log('IMAGE DEBUG: Model selected - bot_id=' . $this->bot->id . ', model=' . $model . ', primary=' . $this->bot->primary_chat_model);
 
         // Check if model supports vision
         $supportsVision = $model ? $openRouterService->supportsVision($model) : false;
-        Log::info('IMAGE DEBUG: Vision support check', [
-            'bot_id' => $this->bot->id,
-            'model' => $model,
-            'supportsVision' => $supportsVision,
-        ]);
+        error_log('IMAGE DEBUG: Vision check - model=' . $model . ', supportsVision=' . ($supportsVision ? 'true' : 'false'));
 
         if (!$model || !$supportsVision) {
-            Log::info('IMAGE DEBUG: Model does not support vision, skipping image analysis', [
-                'bot_id' => $this->bot->id,
-                'conversation_id' => $conversation->id,
-                'model' => $model,
-                'supportsVision' => $supportsVision,
-            ]);
+            error_log('IMAGE DEBUG: Vision not supported - model=' . $model . ', supportsVision=' . ($supportsVision ? 'true' : 'false'));
             return;
         }
 
