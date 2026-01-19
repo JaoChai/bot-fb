@@ -1,0 +1,27 @@
+{
+  "name": "performance",
+  "version": "2.0.0",
+  "description": "Performance optimization specialist for backend and frontend. Identifies N+1 queries, slow database operations, bundle size issues, Core Web Vitals problems, API response time.",
+  "ruleCount": 20,
+  "categories": [
+    { "prefix": "query", "name": "DB Optimization", "count": 5 },
+    { "prefix": "frontend", "name": "Frontend Performance", "count": 5 },
+    { "prefix": "cache", "name": "Caching", "count": 4 },
+    { "prefix": "vitals", "name": "Core Web Vitals", "count": 3 },
+    { "prefix": "react", "name": "React Performance", "count": 3 }
+  ],
+  "impactLevels": ["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+  "techStack": {
+    "backend": "Laravel 12",
+    "frontend": "React 19",
+    "database": "PostgreSQL (Neon)",
+    "bundler": "Vite"
+  },
+  "targets": {
+    "apiResponse": "< 500ms",
+    "aiEvaluation": "< 1.5s",
+    "pageLoad": "< 2.5s",
+    "dbQuery": "< 100ms",
+    "bundleSize": "< 500KB gzipped"
+  }
+}

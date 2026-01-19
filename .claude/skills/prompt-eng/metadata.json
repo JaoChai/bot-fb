@@ -1,0 +1,28 @@
+{
+  "name": "prompt-eng",
+  "version": "2.0.0",
+  "ruleCount": 15,
+  "categories": [
+    { "prefix": "design", "name": "Prompt Design", "count": 5 },
+    { "prefix": "injection", "name": "Injection Defense", "count": 4 },
+    { "prefix": "test", "name": "A/B Testing", "count": 3 },
+    { "prefix": "pattern", "name": "Prompt Patterns", "count": 3 }
+  ],
+  "impactLevels": {
+    "CRITICAL": "Prompt injection, security vulnerabilities",
+    "HIGH": "AI response quality, consistency",
+    "MEDIUM": "Optimization, performance",
+    "LOW": "Style, minor improvements"
+  },
+  "techStack": {
+    "llm": "OpenRouter API",
+    "models": ["GPT-4", "Claude", "Gemini", "Llama"],
+    "framework": "Laravel 12"
+  },
+  "bestPractices": [
+    "Always sanitize user input before including in prompts",
+    "Use system prompts for consistent behavior",
+    "Test prompts with edge cases",
+    "Document prompt versions and changes"
+  ]
+}

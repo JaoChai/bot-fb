@@ -1,0 +1,28 @@
+{
+  "name": "database-ops",
+  "version": "2.0.0",
+  "description": "Database operations specialist for PostgreSQL/Neon with pgvector extension",
+  "ruleCount": 48,
+  "techStack": {
+    "database": "PostgreSQL 15+ (Neon)",
+    "extensions": ["pgvector"],
+    "orm": "Eloquent (Laravel)"
+  },
+  "impactLevels": {
+    "CRITICAL": "Data loss, production failures, corruption",
+    "HIGH": "Performance degradation, operational issues",
+    "MEDIUM": "Code quality, maintainability",
+    "LOW": "Nice-to-have improvements"
+  },
+  "categories": [
+    {"prefix": "migration", "name": "Migrations", "count": 10, "anchor": "migration"},
+    {"prefix": "safety", "name": "Dangerous Operations", "count": 8, "anchor": "safety"},
+    {"prefix": "vector", "name": "pgvector Operations", "count": 7, "anchor": "vector"},
+    {"prefix": "index", "name": "Index Strategy", "count": 6, "anchor": "index"},
+    {"prefix": "perf", "name": "Performance", "count": 6, "anchor": "perf"},
+    {"prefix": "gotcha", "name": "Gotchas", "count": 8, "anchor": "gotcha"},
+    {"prefix": "neon", "name": "Neon-Specific", "count": 3, "anchor": "neon"}
+  ],
+  "mcpTools": ["neon", "claude-mem"],
+  "sourceFiles": ["MIGRATION_GUIDE.md", "PGVECTOR_GUIDE.md", "SKILL.md"]
+}

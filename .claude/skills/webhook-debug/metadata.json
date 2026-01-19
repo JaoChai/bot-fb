@@ -1,0 +1,24 @@
+{
+  "name": "webhook-debug",
+  "version": "2.0.0",
+  "description": "Webhook and messaging debugger for LINE, Telegram, and WebSocket",
+  "ruleCount": 23,
+  "categories": [
+    { "prefix": "line", "name": "LINE Debug", "count": 5 },
+    { "prefix": "telegram", "name": "Telegram Debug", "count": 4 },
+    { "prefix": "ws", "name": "WebSocket/Reverb", "count": 5 },
+    { "prefix": "queue", "name": "Job Queue", "count": 5 },
+    { "prefix": "flow", "name": "Message Flow", "count": 4 }
+  ],
+  "impactLevels": {
+    "CRITICAL": "Bot completely non-functional",
+    "HIGH": "Messages lost or delayed significantly",
+    "MEDIUM": "Intermittent issues or degraded experience",
+    "LOW": "Minor issues, workarounds available"
+  },
+  "techStack": {
+    "platforms": ["LINE Messaging API", "Telegram Bot API"],
+    "realtime": ["Laravel Reverb", "Laravel Echo"],
+    "queue": ["Laravel Queues", "Redis"]
+  }
+}

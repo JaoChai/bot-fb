@@ -1,0 +1,39 @@
+{
+  "name": "monitoring",
+  "version": "2.0.0",
+  "description": "Observability and monitoring specialist for Sentry, Railway logs, and application metrics. Handles error tracking, log analysis, alerting, health checks, and performance monitoring.",
+  "ruleCount": 17,
+  "categories": [
+    { "prefix": "sentry", "name": "Sentry Error Tracking", "count": 5 },
+    { "prefix": "logs", "name": "Log Analysis", "count": 4 },
+    { "prefix": "metrics", "name": "Metrics & Performance", "count": 3 },
+    { "prefix": "alerts", "name": "Alerting", "count": 3 },
+    { "prefix": "health", "name": "Health Checks", "count": 2 }
+  ],
+  "impactLevels": {
+    "CRITICAL": "Production outage, missed errors",
+    "HIGH": "Delayed incident response, missed alerts",
+    "MEDIUM": "Incomplete visibility, manual debugging",
+    "LOW": "Nice-to-have improvements"
+  },
+  "techStack": {
+    "errorTracking": "Sentry",
+    "logs": "Railway",
+    "database": "Neon PostgreSQL",
+    "notifications": "Slack"
+  },
+  "mcpTools": [
+    "mcp__sentry__search_issues",
+    "mcp__sentry__get_issue_details",
+    "mcp__sentry__analyze_issue_with_seer",
+    "mcp__railway__get-logs",
+    "mcp__railway__list-deployments",
+    "mcp__neon__list_slow_queries"
+  ],
+  "targets": {
+    "errorRate": "< 1%",
+    "alertResponseTime": "< 5 minutes",
+    "logRetention": "7 days",
+    "healthCheckInterval": "1 minute"
+  }
+}
