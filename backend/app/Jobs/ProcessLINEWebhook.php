@@ -4,12 +4,14 @@ namespace App\Jobs;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
+use App\Exceptions\CircuitOpenException;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\AutoAssignmentService;
+use App\Services\CircuitBreakerService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
 use App\Services\MessageAggregationService;
@@ -20,8 +22,6 @@ use App\Services\ResponseHoursService;
 use App\Services\SmartAggregation\SmartAggregationAnalyzer;
 use App\Services\SmartAggregation\UserTypingStats;
 use App\Services\StickerReplyService;
-use App\Services\CircuitBreakerService;
-use App\Exceptions\CircuitOpenException;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -49,7 +49,9 @@ class ProcessLINEWebhook implements ShouldQueue
      * Smart aggregation state (used to pass data outside transaction).
      */
     protected ?string $aggregationGroupId = null;
+
     protected bool $dispatchAggregation = false;
+
     protected ?int $adaptiveWaitTimeMs = null;
 
     /**
@@ -143,16 +145,18 @@ class ProcessLINEWebhook implements ShouldQueue
         ResponseHoursService $responseHoursService
     ): void {
         // Only process message events
-        if (!$lineService->isMessageEvent($this->event)) {
+        if (! $lineService->isMessageEvent($this->event)) {
             Log::debug('Ignoring non-message event', [
                 'type' => $this->event['type'] ?? 'unknown',
             ]);
+
             return;
         }
 
         // Only process text messages for now
-        if (!$lineService->isTextMessage($this->event)) {
+        if (! $lineService->isTextMessage($this->event)) {
             $this->handleNonTextMessage($lineService, $responseHoursService);
+
             return;
         }
 
@@ -166,11 +170,12 @@ class ProcessLINEWebhook implements ShouldQueue
         $eventTimestamp = $lineService->extractEventTimestamp($this->event);
         $isRedeliveryEvent = $lineService->isRedelivery($this->event);
 
-        if (!$userId || !$messageData['text']) {
+        if (! $userId || ! $messageData['text']) {
             Log::warning('Invalid LINE message event', [
                 'has_user_id' => (bool) $userId,
                 'has_text' => (bool) $messageData['text'],
             ]);
+
             return;
         }
 
@@ -180,21 +185,24 @@ class ProcessLINEWebhook implements ShouldQueue
                 Log::info('Redelivered webhook event already processed, skipping', [
                     'webhook_event_id' => $webhookEventId,
                 ]);
+
                 return;
             }
         }
 
         // Check rate limit before processing
         $rateLimitResult = $rateLimitService->checkRateLimit($this->bot, $userId);
-        if (!$rateLimitResult['allowed']) {
+        if (! $rateLimitResult['allowed']) {
             $this->handleRateLimitExceeded($lineService, $rateLimitService, $replyToken, $userId, $rateLimitResult['status']);
+
             return;
         }
 
         // Check response hours before processing
         $responseHoursResult = $responseHoursService->checkResponseHours($this->bot);
-        if (!$responseHoursResult['allowed']) {
+        if (! $responseHoursResult['allowed']) {
             $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken, $userId);
+
             return;
         }
 
@@ -239,13 +247,15 @@ class ProcessLINEWebhook implements ShouldQueue
             &$aggregationGroupId
         ) {
             // Find or create conversation (include handover status for auto_handover bots)
+            // Use lockForUpdate() to prevent race condition when multiple webhooks arrive simultaneously
             $existingConversation = Conversation::where('bot_id', $this->bot->id)
                 ->where('external_customer_id', $userId)
                 ->where('channel_type', 'line')
                 ->whereIn('status', ['active', 'handover'])
+                ->lockForUpdate()
                 ->first();
 
-            $isNewConversation = !$existingConversation;
+            $isNewConversation = ! $existingConversation;
             $conversation = $existingConversation ?? $this->createNewConversation($userId, $lineService);
 
             // Primary deduplication: webhookEventId (LINE best practice)
@@ -256,6 +266,7 @@ class ProcessLINEWebhook implements ShouldQueue
                     'conversation_id' => $conversation->id,
                     'webhook_event_id' => $webhookEventId,
                 ]);
+
                 return;
             }
 
@@ -267,6 +278,7 @@ class ProcessLINEWebhook implements ShouldQueue
                     'conversation_id' => $conversation->id,
                     'message_id' => $messageData['id'],
                 ]);
+
                 return;
             }
 
@@ -298,6 +310,7 @@ class ProcessLINEWebhook implements ShouldQueue
                         'total_conversations' => DB::raw('total_conversations + 1'),
                     ]);
                 }
+
                 return; // Exit transaction, message is saved
             }
 
@@ -310,6 +323,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 ]);
                 // Update stats for user message only (1 message)
                 $this->updateStatsForUserMessageOnly($conversation);
+
                 return;
             }
 
@@ -564,7 +578,7 @@ class ProcessLINEWebhook implements ShouldQueue
         $eventTimestamp = $lineService->extractEventTimestamp($this->event);
         $isRedeliveryEvent = $lineService->isRedelivery($this->event);
 
-        if (!$userId) {
+        if (! $userId) {
             return;
         }
 
@@ -575,6 +589,7 @@ class ProcessLINEWebhook implements ShouldQueue
                     'webhook_event_id' => $webhookEventId,
                     'message_type' => $messageType,
                 ]);
+
                 return;
             }
         }
@@ -636,13 +651,15 @@ class ProcessLINEWebhook implements ShouldQueue
             &$isNewConversation
         ) {
             // Find or create conversation (include handover status for auto_handover bots)
+            // Use lockForUpdate() to prevent race condition when multiple webhooks arrive simultaneously
             $existingConversation = Conversation::where('bot_id', $this->bot->id)
                 ->where('external_customer_id', $userId)
                 ->where('channel_type', 'line')
                 ->whereIn('status', ['active', 'handover'])
+                ->lockForUpdate()
                 ->first();
 
-            $isNewConversation = !$existingConversation;
+            $isNewConversation = ! $existingConversation;
             $conversation = $existingConversation ?? $this->createNewConversation($userId, $lineService);
 
             // Primary deduplication: webhookEventId (LINE best practice)
@@ -653,6 +670,7 @@ class ProcessLINEWebhook implements ShouldQueue
                     'conversation_id' => $conversation->id,
                     'webhook_event_id' => $webhookEventId,
                 ]);
+
                 return;
             }
 
@@ -664,6 +682,7 @@ class ProcessLINEWebhook implements ShouldQueue
                     'conversation_id' => $conversation->id,
                     'message_id' => $messageData['id'],
                 ]);
+
                 return;
             }
 
@@ -715,13 +734,13 @@ class ProcessLINEWebhook implements ShouldQueue
 
         // DEBUG: Log response hours check for images
         if ($messageType === 'image') {
-            error_log('IMAGE DEBUG: Response hours check - bot_id=' . $this->bot->id .
-                ', allowed=' . ($responseHoursResult['allowed'] ? 'true' : 'false') .
-                ', status=' . ($responseHoursResult['status'] ?? 'N/A') .
-                ', current_time=' . ($responseHoursResult['current_time'] ?? 'N/A'));
+            error_log('IMAGE DEBUG: Response hours check - bot_id='.$this->bot->id.
+                ', allowed='.($responseHoursResult['allowed'] ? 'true' : 'false').
+                ', status='.($responseHoursResult['status'] ?? 'N/A').
+                ', current_time='.($responseHoursResult['current_time'] ?? 'N/A'));
         }
 
-        if (!$responseHoursResult['allowed']) {
+        if (! $responseHoursResult['allowed']) {
             Log::info('Non-text message received outside response hours', [
                 'bot_id' => $this->bot->id,
                 'message_type' => $messageType,
@@ -733,26 +752,28 @@ class ProcessLINEWebhook implements ShouldQueue
             if ($messageType !== 'sticker') {
                 $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken, $userId);
             }
+
             return; // Skip AI response
         }
 
         // Handle image analysis with AI Vision
         // DEBUG: Log all conditions for image analysis (use error_log for Railway visibility)
         if ($messageType === 'image') {
-            error_log('IMAGE DEBUG: Checking conditions - bot_id=' . $this->bot->id .
-                ', conversation=' . ($conversation ? $conversation->id : 'NULL') .
-                ', mediaUrl=' . ($mediaUrl ? 'SET' : 'NULL') .
-                ', replyToken=' . ($replyToken ? 'SET' : 'NULL') .
-                ', will_process=' . (($mediaUrl && $conversation && $replyToken) ? 'YES' : 'NO'));
+            error_log('IMAGE DEBUG: Checking conditions - bot_id='.$this->bot->id.
+                ', conversation='.($conversation ? $conversation->id : 'NULL').
+                ', mediaUrl='.($mediaUrl ? 'SET' : 'NULL').
+                ', replyToken='.($replyToken ? 'SET' : 'NULL').
+                ', will_process='.(($mediaUrl && $conversation && $replyToken) ? 'YES' : 'NO'));
         }
 
         if ($messageType === 'image' && $mediaUrl && $conversation && $replyToken) {
             $this->handleImageAnalysis($lineService, $conversation, $userMessage, $mediaUrl, $userId, $replyToken, $conversationData ?? null);
+
             return; // Skip sticker reply handling for images
         }
 
         // Reply to stickers if enabled (and not in handover mode, and bot is active)
-        if ($messageType === 'sticker' && $replyToken && $conversation && !$conversation->is_handover && $this->bot->status === 'active') {
+        if ($messageType === 'sticker' && $replyToken && $conversation && ! $conversation->is_handover && $this->bot->status === 'active') {
             $this->handleStickerReply($lineService, $conversation, $messageData, $userId, $replyToken, $conversationData ?? null);
         }
 
@@ -761,13 +782,6 @@ class ProcessLINEWebhook implements ShouldQueue
 
     /**
      * Handle sticker reply with support for static and AI modes.
-     *
-     * @param LINEService $lineService
-     * @param Conversation $conversation
-     * @param array $messageData
-     * @param string $userId
-     * @param string $replyToken
-     * @param array|null $conversationData
      */
     protected function handleStickerReply(
         LINEService $lineService,
@@ -778,7 +792,7 @@ class ProcessLINEWebhook implements ShouldQueue
         ?array $conversationData
     ): void {
         $settings = $this->bot->settings;
-        if (!$settings?->reply_sticker_enabled) {
+        if (! $settings?->reply_sticker_enabled) {
             return;
         }
 
@@ -793,7 +807,7 @@ class ProcessLINEWebhook implements ShouldQueue
             $stickerService = app(StickerReplyService::class);
             $responseMessage = $stickerService->generateReply($this->bot, $conversation, $messageData);
 
-            if (!$responseMessage) {
+            if (! $responseMessage) {
                 return;
             }
 
@@ -854,14 +868,6 @@ class ProcessLINEWebhook implements ShouldQueue
      * - Bot is active
      * - Conversation is not in handover mode
      * - Bot's model supports vision
-     *
-     * @param LINEService $lineService
-     * @param Conversation $conversation
-     * @param Message $userMessage
-     * @param string $imageUrl
-     * @param string $userId
-     * @param string $replyToken
-     * @param array|null $conversationData
      */
     protected function handleImageAnalysis(
         LINEService $lineService,
@@ -873,17 +879,19 @@ class ProcessLINEWebhook implements ShouldQueue
         ?array $conversationData
     ): void {
         // DEBUG: Log entry to handleImageAnalysis (use error_log for Railway visibility)
-        error_log('IMAGE DEBUG: Entered handleImageAnalysis - bot_id=' . $this->bot->id . ', conversation=' . $conversation->id);
+        error_log('IMAGE DEBUG: Entered handleImageAnalysis - bot_id='.$this->bot->id.', conversation='.$conversation->id);
 
         // Check if bot is active
         if ($this->bot->status !== 'active') {
-            error_log('IMAGE DEBUG: Bot inactive - bot_id=' . $this->bot->id . ', status=' . $this->bot->status);
+            error_log('IMAGE DEBUG: Bot inactive - bot_id='.$this->bot->id.', status='.$this->bot->status);
+
             return;
         }
 
         // Check if conversation is in handover mode
         if ($conversation->is_handover) {
-            error_log('IMAGE DEBUG: Handover mode - bot_id=' . $this->bot->id . ', conversation=' . $conversation->id);
+            error_log('IMAGE DEBUG: Handover mode - bot_id='.$this->bot->id.', conversation='.$conversation->id);
+
             return;
         }
 
@@ -892,14 +900,15 @@ class ProcessLINEWebhook implements ShouldQueue
         $model = $this->getVisionModel();
 
         // DEBUG: Log model selection
-        error_log('IMAGE DEBUG: Model selected - bot_id=' . $this->bot->id . ', model=' . $model . ', primary=' . $this->bot->primary_chat_model);
+        error_log('IMAGE DEBUG: Model selected - bot_id='.$this->bot->id.', model='.$model.', primary='.$this->bot->primary_chat_model);
 
         // Check if model supports vision
         $supportsVision = $model ? $openRouterService->supportsVision($model) : false;
-        error_log('IMAGE DEBUG: Vision check - model=' . $model . ', supportsVision=' . ($supportsVision ? 'true' : 'false'));
+        error_log('IMAGE DEBUG: Vision check - model='.$model.', supportsVision='.($supportsVision ? 'true' : 'false'));
 
-        if (!$model || !$supportsVision) {
-            error_log('IMAGE DEBUG: Vision not supported - model=' . $model . ', supportsVision=' . ($supportsVision ? 'true' : 'false'));
+        if (! $model || ! $supportsVision) {
+            error_log('IMAGE DEBUG: Vision not supported - model='.$model.', supportsVision='.($supportsVision ? 'true' : 'false'));
+
             return;
         }
 
@@ -960,6 +969,7 @@ class ProcessLINEWebhook implements ShouldQueue
                     'bot_id' => $this->bot->id,
                     'conversation_id' => $conversation->id,
                 ]);
+
                 return;
             }
 
@@ -1049,18 +1059,21 @@ class ProcessLINEWebhook implements ShouldQueue
         // Priority 1: Bot's primary chat model (from Connection Settings UI)
         if ($this->bot->primary_chat_model && $openRouterService->supportsVision($this->bot->primary_chat_model)) {
             Log::debug('Vision model: primary_chat_model', ['model' => $this->bot->primary_chat_model]);
+
             return $this->bot->primary_chat_model;
         }
 
         // Priority 2: Bot's fallback chat model
         if ($this->bot->fallback_chat_model && $openRouterService->supportsVision($this->bot->fallback_chat_model)) {
             Log::debug('Vision model: fallback_chat_model', ['model' => $this->bot->fallback_chat_model]);
+
             return $this->bot->fallback_chat_model;
         }
 
         // Priority 3: Default vision model
         $defaultModel = config('llm-models.default_vision_model', 'google/gemini-2.0-flash-001');
         Log::debug('Vision model: default', ['model' => $defaultModel]);
+
         return $defaultModel;
     }
 
@@ -1073,11 +1086,11 @@ class ProcessLINEWebhook implements ShouldQueue
         // Get base system prompt from bot or flow
         $basePrompt = '';
 
-        if (!empty($this->bot->system_prompt)) {
+        if (! empty($this->bot->system_prompt)) {
             $basePrompt = $this->bot->system_prompt;
         } elseif ($this->bot->default_flow_id) {
             $flow = $this->bot->defaultFlow;
-            if ($flow && !empty($flow->system_prompt)) {
+            if ($flow && ! empty($flow->system_prompt)) {
                 $basePrompt = $flow->system_prompt;
             }
         }
@@ -1089,7 +1102,7 @@ class ProcessLINEWebhook implements ShouldQueue
         // Add vision-specific instruction
         $visionInstruction = "\n\nWhen analyzing images, describe what you see clearly and helpfully. Answer any questions about the image content.";
 
-        return $basePrompt . $visionInstruction;
+        return $basePrompt.$visionInstruction;
     }
 
     /**
@@ -1099,7 +1112,7 @@ class ProcessLINEWebhook implements ShouldQueue
     {
         // Check bot settings for custom image prompt
         $settings = $this->bot->settings;
-        if ($settings && !empty($settings->image_analysis_prompt)) {
+        if ($settings && ! empty($settings->image_analysis_prompt)) {
             return $settings->image_analysis_prompt;
         }
 
@@ -1149,7 +1162,7 @@ class ProcessLINEWebhook implements ShouldQueue
         $message = $rateLimitService->getRateLimitMessage($status, $this->bot->settings);
 
         // If no custom message, stay silent (default behavior)
-        if (!$message) {
+        if (! $message) {
             return;
         }
 
@@ -1183,7 +1196,7 @@ class ProcessLINEWebhook implements ShouldQueue
             'has_offline_message' => $message !== null,
         ]);
 
-        if (!$message) {
+        if (! $message) {
             return;
         }
 
