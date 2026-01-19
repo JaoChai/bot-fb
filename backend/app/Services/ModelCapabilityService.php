@@ -22,11 +22,11 @@ class ModelCapabilityService
     /**
      * Check if a model supports vision/image input.
      *
-     * Resolution priority (per OpenRouter API docs):
-     * 1. Cache
-     * 2. OpenRouter API (supports_images, input_modalities, modality, description)
-     * 3. Config (llm-models.php)
-     * 4. Default: false (no guessing)
+     * Resolution priority:
+     * 1. Config (llm-models.php) - trusted source of truth
+     * 2. Cache
+     * 3. OpenRouter API (supports_images, input_modalities, modality, description)
+     * 4. Pattern-based detection / Default: false
      */
     public function supportsVision(string $modelId): bool
     {
@@ -89,25 +89,23 @@ class ModelCapabilityService
         $normalizedId = $this->normalizeModelId($modelId);
         $cacheKey = $this->getCacheKey($normalizedId);
 
-        // 1. Check cache first
+        // 1. Check config first (trusted source of truth)
+        $configCapabilities = $this->getFromConfig($modelId);
+        if ($configCapabilities !== null) {
+            return $configCapabilities;
+        }
+
+        // 2. Check cache for non-config models
         $cached = $this->getFromCache($cacheKey);
         if ($cached !== null) {
             return $cached;
         }
 
-        // 2. Try OpenRouter API
+        // 3. Try OpenRouter API
         $apiCapabilities = $this->fetchFromOpenRouter($modelId);
         if ($apiCapabilities !== null) {
             $this->setToCache($cacheKey, $apiCapabilities);
             return $apiCapabilities;
-        }
-
-        // 3. Fallback to config
-        $configCapabilities = $this->getFromConfig($modelId);
-        if ($configCapabilities !== null) {
-            // Cache config values too (shorter TTL)
-            $this->setToCache($cacheKey, $configCapabilities, 3600);
-            return $configCapabilities;
         }
 
         // 4. Pattern-based detection as last resort
