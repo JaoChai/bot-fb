@@ -95,7 +95,7 @@ php -v  # Local
 
 # Specify version in composer.json
 "require": {
-    "php": "^8.2"
+    "php": "^8.4"
 }
 ```
 
@@ -151,7 +151,7 @@ railway logs --type build --lines 20
 ## Project-Specific Notes
 
 **BotFacebook Context:**
-- PHP 8.2+ required
+- PHP 8.4+ required
 - Node 20+ for frontend
 - Build command in `railway.toml` or Nixpacks
 - Memory: Composer may need `-1` limit

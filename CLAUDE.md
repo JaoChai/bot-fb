@@ -7,7 +7,7 @@ AI-powered chatbot platform for LINE and Telegram with RAG-based knowledge retri
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 19 + TypeScript + Tailwind v4 |
-| Backend | Laravel 12 + PHP 8.2 |
+| Backend | Laravel 12 + PHP 8.4 |
 | Database | PostgreSQL (Neon) + pgvector |
 | Deploy | Railway |
 | Real-time | Reverb (WebSocket) |

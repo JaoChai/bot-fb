@@ -68,10 +68,10 @@ railway variables set LOG_LEVEL=warning
 ```toml
 # nixpacks.toml
 [phases.setup]
-nixPkgs = ["php82"]  # Match local version
+nixPkgs = ["php84"]  # Match local version
 
 # Or Dockerfile
-FROM php:8.2-fpm
+FROM php:8.4-fpm
 ```
 
 3. **Database state sync**
@@ -112,7 +112,7 @@ docker-compose -f docker-compose.prod.yml up
 | Debug mode | true | false | Set APP_DEBUG=false |
 | Error display | detailed | generic | Expected behavior |
 | Cache | disabled | enabled | Use same caching |
-| PHP version | 8.3 | 8.2 | Match versions |
+| PHP version | 8.5 | 8.4 | Match versions |
 | Database | MySQL | PostgreSQL | Test with PostgreSQL |
 
 ## Verification

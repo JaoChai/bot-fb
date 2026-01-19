@@ -377,7 +377,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: 8.2
+          php-version: 8.4
 
       - name: Install Dependencies
         run: composer install

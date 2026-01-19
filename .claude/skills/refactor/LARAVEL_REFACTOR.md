@@ -1,6 +1,6 @@
 # Laravel Refactoring Guide
 
-Laravel 12 + PHP 8.2 refactoring patterns.
+Laravel 12 + PHP 8.4 refactoring patterns.
 
 ## Extract Service from Controller
 

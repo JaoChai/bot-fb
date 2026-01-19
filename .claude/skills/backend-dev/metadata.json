@@ -63,7 +63,7 @@
   },
   "techStack": {
     "laravel": "12.x",
-    "php": "8.2",
+    "php": "8.4",
     "sanctum": "4.x",
     "reverb": "1.x"
   }
