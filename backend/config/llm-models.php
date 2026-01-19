@@ -156,6 +156,26 @@ return [
             'pricing_completion' => 0.0,
             'description' => 'Latest experimental Gemini model (free during preview)',
         ],
+        'google/gemini-2.0-flash-001' => [
+            'name' => 'Gemini 2.0 Flash Stable',
+            'provider' => 'google',
+            'context_length' => 1000000,
+            'max_output_tokens' => 8192,
+            'supports_vision' => true,
+            'pricing_prompt' => 0.1,
+            'pricing_completion' => 0.4,
+            'description' => 'Stable Gemini 2.0 Flash with vision support',
+        ],
+        'google/gemini-3-flash-preview' => [
+            'name' => 'Gemini 3 Flash Preview',
+            'provider' => 'google',
+            'context_length' => 1048576,
+            'max_output_tokens' => 65535,
+            'supports_vision' => true,
+            'pricing_prompt' => 0.5,
+            'pricing_completion' => 3.0,
+            'description' => 'Latest Gemini 3 Flash with advanced reasoning and vision',
+        ],
 
         /*
         |--------------------------------------------------------------------------
