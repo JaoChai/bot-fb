@@ -728,6 +728,19 @@ class ProcessLINEWebhook implements ShouldQueue
         }
 
         // Handle image analysis with AI Vision
+        // DEBUG: Log all conditions for image analysis
+        if ($messageType === 'image') {
+            Log::info('IMAGE DEBUG: Checking image analysis conditions', [
+                'bot_id' => $this->bot->id,
+                'conversation_id' => $conversation?->id,
+                'messageType' => $messageType,
+                'mediaUrl' => $mediaUrl ? 'SET' : 'NULL',
+                'conversation' => $conversation ? 'SET' : 'NULL',
+                'replyToken' => $replyToken ? 'SET' : 'NULL',
+                'will_process' => ($mediaUrl && $conversation && $replyToken) ? 'YES' : 'NO',
+            ]);
+        }
+
         if ($messageType === 'image' && $mediaUrl && $conversation && $replyToken) {
             $this->handleImageAnalysis($lineService, $conversation, $userMessage, $mediaUrl, $userId, $replyToken, $conversationData ?? null);
             return; // Skip sticker reply handling for images
@@ -854,10 +867,18 @@ class ProcessLINEWebhook implements ShouldQueue
         string $replyToken,
         ?array $conversationData
     ): void {
+        // DEBUG: Log entry to handleImageAnalysis
+        Log::info('IMAGE DEBUG: Entered handleImageAnalysis', [
+            'bot_id' => $this->bot->id,
+            'conversation_id' => $conversation->id,
+            'imageUrl' => substr($imageUrl, 0, 50) . '...',
+        ]);
+
         // Check if bot is active
         if ($this->bot->status !== 'active') {
-            Log::info('Bot inactive, skipping image analysis', [
+            Log::info('IMAGE DEBUG: Bot inactive, skipping image analysis', [
                 'bot_id' => $this->bot->id,
+                'bot_status' => $this->bot->status,
                 'conversation_id' => $conversation->id,
             ]);
             return;
@@ -865,9 +886,10 @@ class ProcessLINEWebhook implements ShouldQueue
 
         // Check if conversation is in handover mode
         if ($conversation->is_handover) {
-            Log::info('Conversation in handover mode, skipping image analysis', [
+            Log::info('IMAGE DEBUG: Conversation in handover mode, skipping image analysis', [
                 'bot_id' => $this->bot->id,
                 'conversation_id' => $conversation->id,
+                'is_handover' => $conversation->is_handover,
             ]);
             return;
         }
@@ -876,12 +898,28 @@ class ProcessLINEWebhook implements ShouldQueue
         $openRouterService = app(OpenRouterService::class);
         $model = $this->getVisionModel();
 
+        // DEBUG: Log model selection
+        Log::info('IMAGE DEBUG: Vision model selected', [
+            'bot_id' => $this->bot->id,
+            'model' => $model,
+            'primary_chat_model' => $this->bot->primary_chat_model,
+            'fallback_chat_model' => $this->bot->fallback_chat_model,
+        ]);
+
         // Check if model supports vision
-        if (!$model || !$openRouterService->supportsVision($model)) {
-            Log::info('Model does not support vision, skipping image analysis', [
+        $supportsVision = $model ? $openRouterService->supportsVision($model) : false;
+        Log::info('IMAGE DEBUG: Vision support check', [
+            'bot_id' => $this->bot->id,
+            'model' => $model,
+            'supportsVision' => $supportsVision,
+        ]);
+
+        if (!$model || !$supportsVision) {
+            Log::info('IMAGE DEBUG: Model does not support vision, skipping image analysis', [
                 'bot_id' => $this->bot->id,
                 'conversation_id' => $conversation->id,
                 'model' => $model,
+                'supportsVision' => $supportsVision,
             ]);
             return;
         }
