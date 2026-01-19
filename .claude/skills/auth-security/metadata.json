@@ -1,0 +1,55 @@
+{
+  "name": "auth-security",
+  "version": "2.0.0",
+  "description": "Authentication and security specialist for Laravel Sanctum, OAuth, API keys, and platform credentials",
+  "ruleCount": 25,
+  "categories": [
+    {
+      "prefix": "sanctum",
+      "name": "Laravel Sanctum",
+      "count": 6,
+      "description": "Token authentication with Sanctum"
+    },
+    {
+      "prefix": "owasp",
+      "name": "OWASP Top 10",
+      "count": 6,
+      "description": "Common security vulnerabilities prevention"
+    },
+    {
+      "prefix": "creds",
+      "name": "Credential Management",
+      "count": 5,
+      "description": "API keys, secrets, and credential handling"
+    },
+    {
+      "prefix": "rate",
+      "name": "Rate Limiting",
+      "count": 3,
+      "description": "Request rate limiting and throttling"
+    },
+    {
+      "prefix": "webhook",
+      "name": "Webhook Security",
+      "count": 3,
+      "description": "Platform webhook signature validation"
+    },
+    {
+      "prefix": "policy",
+      "name": "Authorization",
+      "count": 2,
+      "description": "Policy-based access control"
+    }
+  ],
+  "impactLevels": {
+    "CRITICAL": "Security vulnerabilities, data breaches",
+    "HIGH": "Authentication bypass, authorization issues",
+    "MEDIUM": "Configuration issues, best practices",
+    "LOW": "Security enhancements"
+  },
+  "techStack": {
+    "auth": ["Laravel Sanctum", "OAuth 2.0"],
+    "platforms": ["LINE", "Telegram"],
+    "standards": ["OWASP Top 10", "JWT", "HTTPS"]
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "name": "frontend-dev",
+  "version": "2.0.0",
+  "description": "React 19 specialist for frontend implementation with rule-based best practices",
+  "author": "BotFacebook Team",
+  "lastUpdated": "2026-01-19",
+  "ruleCount": 38,
+  "categories": [
+    {
+      "prefix": "react",
+      "name": "React",
+      "count": 8,
+      "description": "Component patterns, hooks, React 19 features"
+    },
+    {
+      "prefix": "query",
+      "name": "React Query",
+      "count": 7,
+      "description": "Data fetching, caching, mutations"
+    },
+    {
+      "prefix": "state",
+      "name": "State",
+      "count": 3,
+      "description": "Zustand, local state, prop drilling"
+    },
+    {
+      "prefix": "perf",
+      "name": "Performance",
+      "count": 5,
+      "description": "Memoization, code splitting, bundle size"
+    },
+    {
+      "prefix": "a11y",
+      "name": "Accessibility",
+      "count": 4,
+      "description": "ARIA, keyboard nav, semantic HTML"
+    },
+    {
+      "prefix": "style",
+      "name": "Styling",
+      "count": 3,
+      "description": "Tailwind, CVA, cn utility"
+    },
+    {
+      "prefix": "ts",
+      "name": "TypeScript",
+      "count": 3,
+      "description": "Types, generics, inference"
+    },
+    {
+      "prefix": "gotcha",
+      "name": "Gotchas",
+      "count": 5,
+      "description": "Common mistakes and pitfalls"
+    }
+  ],
+  "impactLevels": {
+    "CRITICAL": "Runtime failures, data loss, security issues",
+    "HIGH": "UX degradation, performance issues",
+    "MEDIUM": "Code quality, maintainability",
+    "LOW": "Nice-to-have, minor improvements"
+  },
+  "techStack": {
+    "react": "19.2.0",
+    "reactRouter": "7.11.0",
+    "reactQuery": "5.90.12",
+    "zustand": "4.x",
+    "tailwind": "4.1.18",
+    "typescript": "5.9.3",
+    "vite": "7.2.4"
+  }
+}

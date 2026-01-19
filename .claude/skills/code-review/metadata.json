@@ -1,0 +1,49 @@
+{
+  "name": "code-review",
+  "version": "2.0.0",
+  "description": "Comprehensive code reviewer combining quality, security, and API design checks",
+  "ruleCount": 32,
+  "categories": [
+    {
+      "prefix": "backend",
+      "name": "Laravel Review",
+      "count": 8,
+      "description": "Laravel/PHP code quality patterns"
+    },
+    {
+      "prefix": "frontend",
+      "name": "React Review",
+      "count": 8,
+      "description": "React/TypeScript code quality patterns"
+    },
+    {
+      "prefix": "security",
+      "name": "Security Check",
+      "count": 6,
+      "description": "OWASP Top 10 and security vulnerabilities"
+    },
+    {
+      "prefix": "api",
+      "name": "API Design",
+      "count": 5,
+      "description": "RESTful API conventions and best practices"
+    },
+    {
+      "prefix": "perf",
+      "name": "Performance",
+      "count": 5,
+      "description": "Performance anti-patterns and optimization"
+    }
+  ],
+  "impactLevels": {
+    "CRITICAL": "Security vulnerabilities, data exposure",
+    "HIGH": "Bugs, maintainability issues",
+    "MEDIUM": "Code quality, conventions",
+    "LOW": "Style, minor improvements"
+  },
+  "techStack": {
+    "backend": ["Laravel 12", "PHP 8.2", "PostgreSQL"],
+    "frontend": ["React 19", "TypeScript", "Tailwind v4"],
+    "standards": ["PSR-12", "OWASP Top 10", "RESTful"]
+  }
+}

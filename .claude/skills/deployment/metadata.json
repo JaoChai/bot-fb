@@ -1,0 +1,21 @@
+{
+  "name": "deployment",
+  "version": "2.0.0",
+  "description": "Railway deployment specialist for production operations. Handles deployments, environment variables, logs, troubleshooting production issues, rollbacks.",
+  "ruleCount": 18,
+  "categories": [
+    { "prefix": "railway", "name": "Railway Ops", "count": 6 },
+    { "prefix": "env", "name": "Environment", "count": 4 },
+    { "prefix": "health", "name": "Health Checks", "count": 3 },
+    { "prefix": "rollback", "name": "Rollback", "count": 2 },
+    { "prefix": "troubleshoot", "name": "Troubleshooting", "count": 3 }
+  ],
+  "impactLevels": ["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+  "techStack": {
+    "platform": "Railway",
+    "backend": "Laravel 12",
+    "database": "Neon PostgreSQL",
+    "websocket": "Reverb",
+    "monitoring": "Sentry"
+  }
+}

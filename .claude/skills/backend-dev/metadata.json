@@ -1,0 +1,70 @@
+{
+  "name": "backend-dev",
+  "version": "2.0.0",
+  "description": "Laravel 12 specialist for API development. Handles controllers, services, FormRequests, API Resources, jobs, events, broadcasting.",
+  "author": "BotFacebook Team",
+  "lastUpdated": "2026-01-19",
+  "ruleCount": 42,
+  "categories": [
+    {
+      "prefix": "gotcha",
+      "name": "Gotchas (Common Mistakes)",
+      "count": 5,
+      "description": "Common mistakes and pitfalls in Laravel development"
+    },
+    {
+      "prefix": "laravel",
+      "name": "Laravel Core",
+      "count": 8,
+      "description": "Core Laravel patterns, service providers, configuration"
+    },
+    {
+      "prefix": "eloquent",
+      "name": "Eloquent",
+      "count": 7,
+      "description": "Model patterns, relationships, query scopes"
+    },
+    {
+      "prefix": "api",
+      "name": "API Design",
+      "count": 8,
+      "description": "RESTful API conventions, response formats, status codes"
+    },
+    {
+      "prefix": "job",
+      "name": "Queue Jobs",
+      "count": 4,
+      "description": "Queue jobs, job processing, failure handling"
+    },
+    {
+      "prefix": "event",
+      "name": "Events & Broadcasting",
+      "count": 3,
+      "description": "Events, listeners, real-time broadcasting"
+    },
+    {
+      "prefix": "policy",
+      "name": "Authorization",
+      "count": 3,
+      "description": "Policies, gates, authorization patterns"
+    },
+    {
+      "prefix": "security",
+      "name": "Security",
+      "count": 4,
+      "description": "Input validation, SQL injection prevention, security best practices"
+    }
+  ],
+  "impactLevels": {
+    "CRITICAL": "Runtime failures, data loss, security issues",
+    "HIGH": "UX degradation, performance issues",
+    "MEDIUM": "Code quality, maintainability",
+    "LOW": "Nice-to-have, minor improvements"
+  },
+  "techStack": {
+    "laravel": "12.x",
+    "php": "8.2",
+    "sanctum": "4.x",
+    "reverb": "1.x"
+  }
+}

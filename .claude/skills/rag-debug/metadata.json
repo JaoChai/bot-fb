@@ -1,0 +1,25 @@
+{
+  "name": "rag-debug",
+  "version": "2.0.0",
+  "description": "RAG pipeline debugger for semantic search and knowledge base issues",
+  "ruleCount": 20,
+  "categories": [
+    { "prefix": "embed", "name": "Embeddings", "count": 4 },
+    { "prefix": "search", "name": "Search Issues", "count": 5 },
+    { "prefix": "rerank", "name": "Reranker", "count": 4 },
+    { "prefix": "thai", "name": "Thai NLP", "count": 4 },
+    { "prefix": "thresh", "name": "Thresholds", "count": 3 }
+  ],
+  "impactLevels": {
+    "CRITICAL": "Knowledge base completely non-functional",
+    "HIGH": "Search returns wrong or no results",
+    "MEDIUM": "Degraded search quality",
+    "LOW": "Minor relevance issues"
+  },
+  "techStack": {
+    "vector": ["pgvector", "text-embedding-3-large"],
+    "search": ["Semantic Search", "Hybrid Search", "Full-text"],
+    "reranker": ["Jina Reranker"],
+    "database": ["PostgreSQL", "Neon"]
+  }
+}

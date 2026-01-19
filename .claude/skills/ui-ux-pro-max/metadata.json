@@ -1,0 +1,59 @@
+{
+  "name": "ui-ux-pro-max",
+  "version": "2.0.0",
+  "ruleCount": 26,
+  "description": "Critical UI/UX rules - complements searchable CSV databases",
+  "dataFiles": [
+    "styles.csv",
+    "colors.csv",
+    "typography.csv",
+    "landing.csv",
+    "charts.csv",
+    "products.csv",
+    "ux-guidelines.csv"
+  ],
+  "categories": [
+    {
+      "prefix": "ux",
+      "name": "UX Anti-patterns",
+      "count": 8,
+      "description": "Critical UX issues that break user experience"
+    },
+    {
+      "prefix": "a11y",
+      "name": "Accessibility",
+      "count": 6,
+      "description": "WCAG compliance and screen reader support"
+    },
+    {
+      "prefix": "responsive",
+      "name": "Responsive Design",
+      "count": 4,
+      "description": "Mobile-first and breakpoint issues"
+    },
+    {
+      "prefix": "style",
+      "name": "Style Anti-patterns",
+      "count": 4,
+      "description": "Common styling mistakes that look unprofessional"
+    },
+    {
+      "prefix": "form",
+      "name": "Form Design",
+      "count": 4,
+      "description": "Input validation and form UX"
+    }
+  ],
+  "impactLevels": {
+    "CRITICAL": "Accessibility violations, unusable on mobile",
+    "HIGH": "Poor UX, lost conversions, frustrated users",
+    "MEDIUM": "Minor friction, less professional appearance",
+    "LOW": "Nice-to-have improvements"
+  },
+  "techStack": {
+    "framework": "React 19",
+    "styling": "Tailwind CSS v4",
+    "components": "shadcn/ui + Radix",
+    "icons": "Heroicons, Lucide"
+  }
+}

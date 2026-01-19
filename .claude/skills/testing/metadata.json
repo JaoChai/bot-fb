@@ -1,0 +1,54 @@
+{
+  "name": "testing",
+  "version": "2.0.0",
+  "description": "Full-stack testing for PHPUnit, Playwright, and UI testing",
+  "ruleCount": 24,
+  "techStack": {
+    "backend": "PHPUnit 11",
+    "e2e": "Playwright",
+    "accessibility": "axe-core"
+  },
+  "impactLevels": {
+    "CRITICAL": "Test failures that miss bugs",
+    "HIGH": "Test quality and reliability",
+    "MEDIUM": "Test organization and maintainability",
+    "LOW": "Nice-to-have improvements"
+  },
+  "categories": [
+    {
+      "prefix": "unit",
+      "name": "Unit Testing",
+      "count": 6,
+      "description": "PHPUnit unit tests for services"
+    },
+    {
+      "prefix": "feature",
+      "name": "Feature Testing",
+      "count": 6,
+      "description": "Laravel feature/controller tests"
+    },
+    {
+      "prefix": "e2e",
+      "name": "E2E Testing",
+      "count": 5,
+      "description": "Playwright end-to-end tests"
+    },
+    {
+      "prefix": "ui",
+      "name": "UI Testing",
+      "count": 4,
+      "description": "Visual and responsive testing"
+    },
+    {
+      "prefix": "a11y",
+      "name": "Accessibility Testing",
+      "count": 3,
+      "description": "Accessibility compliance testing"
+    }
+  ],
+  "coverageTargets": {
+    "unit": "80%",
+    "feature": "60%",
+    "e2e": "critical flows"
+  }
+}
