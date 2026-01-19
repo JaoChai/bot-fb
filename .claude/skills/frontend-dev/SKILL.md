@@ -10,7 +10,7 @@ React 19 + TypeScript specialist for BotFacebook frontend.
 ## Quick Start
 
 ```typescript
-// Component pattern
+// Standard component pattern
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -23,6 +23,16 @@ export function Component({ className, children }: Props) {
 }
 ```
 
+## Critical Rules (Check First)
+
+| Rule | Impact | Issue |
+|------|--------|-------|
+| [gotcha-001](rules/gotcha-001-response-data-access.md) | CRITICAL | `response.data.data` access |
+| [gotcha-002](rules/gotcha-002-infinite-rerenders.md) | CRITICAL | Infinite re-renders from unstable refs |
+| [react-006](rules/react-006-error-boundaries.md) | CRITICAL | Missing error boundaries |
+| [query-001](rules/query-001-query-keys-factory.md) | CRITICAL | Inconsistent query keys |
+| [perf-004](rules/perf-004-stable-references.md) | CRITICAL | Unstable deps cause loops |
+
 ## MCP Tools Available
 
 - **context7**: `resolve-library-id`, `query-docs` - Get latest React/library docs
@@ -31,25 +41,12 @@ export function Component({ className, children }: Props) {
 
 ## Memory Search (Before Starting)
 
-**Always search memory first** to find past component patterns and hook implementations.
-
-### Recommended Searches
+**Always search memory first** to find past component patterns.
 
 ```
-# Search for similar components
 search(query="React component", project="bot-fb", type="feature", limit=5)
-
-# Find hook patterns
 search(query="custom hook", project="bot-fb", concepts=["pattern"], limit=5)
 ```
-
-### Search by Scenario
-
-| Scenario | Search Query |
-|----------|--------------|
-| Creating new component | `search(query="component pattern", project="bot-fb", concepts=["pattern"], limit=5)` |
-| Adding state management | `search(query="Zustand store", project="bot-fb", type="feature", limit=5)` |
-| React Query usage | `search(query="useQuery mutation", project="bot-fb", concepts=["pattern"], limit=5)` |
 
 ## Tech Stack
 
@@ -63,80 +60,30 @@ search(query="custom hook", project="bot-fb", concepts=["pattern"], limit=5)
 | TypeScript | 5.9.3 | Type safety |
 | Vite | 7.2.4 | Build tool |
 
-## Key Patterns
+## Rule Categories
 
-### State Management
+| Category | Rules | Key Topics |
+|----------|-------|------------|
+| [React](rules/) | react-001 to react-008 | Components, hooks, React 19 features |
+| [React Query](rules/) | query-001 to query-007 | Caching, mutations, invalidation |
+| [State](rules/) | state-001 to state-003 | Zustand, selectors, prop drilling |
+| [Performance](rules/) | perf-001 to perf-005 | Memoization, code splitting, bundle |
+| [Accessibility](rules/) | a11y-001 to a11y-004 | Semantic HTML, keyboard, ARIA |
+| [Styling](rules/) | style-001 to style-003 | cn(), CVA, Tailwind conflicts |
+| [TypeScript](rules/) | ts-001 to ts-003 | Types, unions, API responses |
+| [Gotchas](rules/) | gotcha-001 to gotcha-005 | Common mistakes |
 
-**Zustand Store Pattern:**
-```typescript
-const useStore = create<Store>()(
-  persist(
-    (set) => ({
-      state: initialValue,
-      action: () => set({ state: newValue }),
-    }),
-    { name: 'store-key' }
-  )
-)
-```
-
-**Available Stores:** `useAuthStore`, `useUIStore`, `useConnectionStore`, `useBotPreferencesStore`
-
-### React Query Pattern
-
-```typescript
-// Query Keys Factory
-queryKeys.bots.list(params)
-queryKeys.bots.detail(id)
-queryKeys.conversations.messages(convId)
-
-// Mutation with Optimistic Update
-useMutation({
-  mutationFn: api.update,
-  onMutate: async (newData) => {
-    await queryClient.cancelQueries(key)
-    const previous = queryClient.getQueryData(key)
-    queryClient.setQueryData(key, newData)
-    return { previous }
-  },
-  onError: (err, vars, context) => {
-    queryClient.setQueryData(key, context.previous)
-  },
-  onSettled: () => queryClient.invalidateQueries(key)
-})
-```
-
-### Styling with CVA
-
-```typescript
-const buttonVariants = cva(
-  "base-classes",
-  {
-    variants: {
-      variant: { default: "...", destructive: "..." },
-      size: { default: "...", sm: "...", lg: "..." }
-    },
-    defaultVariants: { variant: "default", size: "default" }
-  }
-)
-```
-
-**Always use `cn()` utility** (clsx + tailwind-merge)
-
-## Detailed Guides
-
-- **React Patterns**: See [REACT_PATTERNS.md](REACT_PATTERNS.md)
-- **Query Patterns**: See [QUERY_PATTERNS.md](QUERY_PATTERNS.md)
-- **UI Design**: Use `/ui-ux-pro-max` skill for design decisions
+**Full rule reference:** See [AGENTS.md](AGENTS.md)
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/lib/query.ts` | Query client setup |
+| `src/lib/query.ts` | Query client + keys factory |
 | `src/lib/api.ts` | API client (axios) |
+| `src/lib/utils.ts` | cn() utility |
 | `src/lib/echo.ts` | WebSocket setup |
-| `src/stores/*.ts` | Global state |
+| `src/stores/*.ts` | Zustand stores |
 | `src/hooks/*.ts` | Custom hooks |
 | `src/router.tsx` | Route definitions |
 | `src/components/ui/` | Radix-based UI primitives |
@@ -147,19 +94,20 @@ const buttonVariants = cva(
 1. Check if similar exists in `src/components/`
 2. Use Radix primitives from `src/components/ui/`
 3. Add TypeScript interface
-4. Use CVA for variants
-5. Export from index
+4. Use CVA for variants ([style-002](rules/style-002-cva-variants.md))
+5. Use cn() for class merging ([style-001](rules/style-001-cn-utility.md))
+
+### Add New Query
+1. Add key to query factory in `src/lib/query.ts`
+2. Create hook in `src/hooks/`
+3. Use proper types from `src/types/`
+4. Follow [query-001](rules/query-001-query-keys-factory.md) pattern
 
 ### Add New Page
 1. Create in `src/pages/`
 2. Add route in `src/router.tsx`
-3. Use `lazyWithRetryNamed()` for lazy loading
-4. Wrap with Suspense
-
-### Add New Query
-1. Add key to `src/lib/queryKeys.ts`
-2. Create hook in `src/hooks/`
-3. Use proper types from `src/types/`
+3. Use lazy loading ([perf-002](rules/perf-002-code-splitting.md))
+4. Wrap with Suspense ([react-007](rules/react-007-suspense-boundaries.md))
 
 ## Real-time (WebSocket/Echo)
 
@@ -167,26 +115,12 @@ const buttonVariants = cva(
 - `useConversationChannel()` - Single conversation
 - `useBotChannel()` - All bot conversations
 - `useNotifications()` - User notifications
-- `useBotPresence()` - Who's viewing
 
-## Use Context7 When
+**Auth setup:** See [gotcha-003](rules/gotcha-003-echo-auth-token.md)
 
-- Unsure about React 19 patterns
-- Need latest React Query v5 docs
-- Checking Zustand middleware usage
-- Verifying Tailwind v4 utilities
+## Detailed Guides
 
-## Gotchas
-
-| Problem | Cause | Solution |
-|---------|-------|----------|
-| `response.data` undefined | API wrapper | Access `response.data.data` for actual data |
-| Query not refetching | Stale queryKey | Use queryKeys factory, check key dependencies |
-| Infinite re-renders | Object in deps array | Memoize with `useMemo` or extract to constant |
-| Zustand state not persisting | Storage key conflict | Use unique `name` in persist middleware |
-| Tailwind classes not working | Class conflicts | Use `cn()` utility (tailwind-merge) |
-| Echo not connecting | Auth token missing | Check `window.Echo` setup, verify Sanctum token |
-| Type error on API response | Missing types | Define interface in `src/types/`, use generics |
-| Suspense fallback not showing | Missing boundary | Wrap with `<Suspense fallback={...}>` |
-| Form not submitting | Missing `type="submit"` | Add type attribute to button |
-| Modal closing unexpectedly | Event bubbling | Add `e.stopPropagation()` to modal content |
+- **React 19 Patterns**: See [REACT_PATTERNS.md](REACT_PATTERNS.md)
+- **React Query**: See [QUERY_PATTERNS.md](QUERY_PATTERNS.md)
+- **All Rules**: See [AGENTS.md](AGENTS.md)
+- **Decision Trees**: See [rules/_sections.md](rules/_sections.md)
