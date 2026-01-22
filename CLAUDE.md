@@ -143,6 +143,13 @@ git checkout -b feature/xxx && # work... && /commit-push-pr
 - `*.lock` files - Managed by tools
 - `storage/`, `dist/` - Generated files
 
+## CLAUDE.md Rules
+
+**ห้ามสร้าง CLAUDE.md ใน subdirectories**
+- CLAUDE.md ต้องอยู่ที่ root เท่านั้น (ไฟล์นี้)
+- ห้ามสร้างใน `backend/`, `frontend/`, `.claude/skills/`, หรือที่อื่น
+- ใช้ `.claude/rules/*.md` สำหรับ modular rules แทน
+
 ## References
 
 - [Skills Reference](docs/skills.md)

@@ -1,15 +1,4 @@
 {
-  "extraKnownMarketplaces": {
-    "botfb-local": {
-      "source": {
-        "source": "directory",
-        "path": ".claude/plugins/botfb-agents"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "botfb-agents@botfb-local": true
-  },
   "hooks": {
     "UserPromptSubmit": [
       {
