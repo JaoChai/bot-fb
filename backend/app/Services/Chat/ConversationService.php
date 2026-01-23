@@ -204,12 +204,15 @@ class ConversationService
      */
     private function applyFilters($query, Request $request): void
     {
-        // Filter by status
+        // Filter by status (default to active/handover if not specified)
         if ($request->filled('status')) {
             $statuses = is_array($request->status)
                 ? $request->status
                 : explode(',', $request->status);
             $query->whereIn('status', $statuses);
+        } else {
+            // Default: exclude closed conversations unless explicitly requested
+            $query->whereIn('status', ['active', 'handover']);
         }
 
         // Filter by channel type
