@@ -40,6 +40,7 @@ class MessageService
      * Send a message from agent to customer (HITL).
      *
      * @return array{message: Message, delivery_error: string|null}
+     *
      * @throws \InvalidArgumentException If conversation is not in handover mode
      */
     public function sendAgentMessage(
@@ -47,7 +48,7 @@ class MessageService
         Conversation $conversation,
         array $data
     ): array {
-        if (!$conversation->is_handover) {
+        if (! $conversation->is_handover) {
             throw new \InvalidArgumentException('Conversation must be in handover mode to send agent messages');
         }
 
@@ -94,8 +95,23 @@ class MessageService
         ];
 
         // Broadcast the message for real-time updates
-        broadcast(new MessageSent($message, $conversationData))->toOthers();
-        broadcast(new ConversationUpdated($conversation))->toOthers();
+        // Note: This always fires regardless of external API result (sendToChannel)
+        try {
+            broadcast(new MessageSent($message, $conversationData))->toOthers();
+            broadcast(new ConversationUpdated($conversation))->toOthers();
+
+            Log::debug('Agent message broadcast sent', [
+                'conversation_id' => $conversation->id,
+                'message_id' => $message->id,
+            ]);
+        } catch (\Exception $e) {
+            // Broadcast failure shouldn't prevent successful response
+            Log::error('Failed to broadcast agent message', [
+                'conversation_id' => $conversation->id,
+                'message_id' => $message->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return [
             'message' => $message,
@@ -110,7 +126,15 @@ class MessageService
     {
         if ($conversation->unread_count > 0) {
             $conversation->update(['unread_count' => 0]);
-            broadcast(new ConversationUpdated($conversation))->toOthers();
+
+            try {
+                broadcast(new ConversationUpdated($conversation))->toOthers();
+            } catch (\Exception $e) {
+                Log::error('Failed to broadcast mark as read', [
+                    'conversation_id' => $conversation->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         $conversation->load(['customerProfile']);
