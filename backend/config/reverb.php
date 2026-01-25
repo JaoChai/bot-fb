@@ -82,7 +82,12 @@ return [
                     'scheme' => env('REVERB_SCHEME', 'https'),
                     'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
                 ],
-                'allowed_origins' => ['*'],
+                // Allowed origins for CORS
+                // In production, set REVERB_ALLOWED_ORIGINS to your frontend URL
+                // Example: REVERB_ALLOWED_ORIGINS=https://your-frontend.com
+                'allowed_origins' => env('REVERB_ALLOWED_ORIGINS')
+                    ? explode(',', env('REVERB_ALLOWED_ORIGINS'))
+                    : ['*'],
                 // Keep-alive settings: ping_interval MUST be less than activity_timeout
                 // to ensure pings arrive before connection times out
                 'ping_interval' => env('REVERB_APP_PING_INTERVAL', 25),      // Send ping every 25 seconds

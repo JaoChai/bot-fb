@@ -304,7 +304,8 @@ export function useRealtime(
     onNewConversation: handleNewConversation,
   });
 
-  // T043: Handle reconnection with selective invalidation
+  // T043: Handle reconnection with comprehensive invalidation
+  // On reconnect, we must sync ALL data regardless of current filter
   useEffect(() => {
     const handleReconnect = () => {
       const currentBotId = botIdRef.current;
@@ -312,17 +313,30 @@ export function useRealtime(
 
       const currentSelectedId = selectedConversationIdRef.current;
 
-      // Only invalidate the currently viewed conversation's messages
+      console.log('[useRealtime] Reconnected - syncing all data for bot', currentBotId);
+
+      // Invalidate ALL conversation lists for this bot (all filters)
+      // This ensures no stale data regardless of which filter was active
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey;
+          return Array.isArray(key) &&
+            key[0] === 'conversations-infinite' &&
+            key[1] === currentBotId;
+        },
+      });
+
+      // Invalidate the currently viewed conversation's messages
       if (currentSelectedId) {
         queryClient.invalidateQueries({
           queryKey: messageKeys.list(currentBotId, currentSelectedId),
         });
-      }
 
-      // Invalidate conversation list to get any missed updates
-      queryClient.invalidateQueries({
-        queryKey: conversationKeys.infinite(currentBotId),
-      });
+        // Also invalidate conversation detail for bot control sync
+        queryClient.invalidateQueries({
+          queryKey: conversationDetailKeys.detail(currentBotId, currentSelectedId),
+        });
+      }
     };
 
     window.addEventListener('echo:reconnected', handleReconnect);
