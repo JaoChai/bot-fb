@@ -127,86 +127,13 @@ SELECT id, platform,
 FROM bots WHERE id = $bot_id;
 ```
 
-## LINE Specific
+## Platform-Specific Guides
 
-### Webhook Signature Validation
-
-```php
-// Signature must match
-$signature = $request->header('X-Line-Signature');
-$body = $request->getContent();
-$hash = base64_encode(hash_hmac('sha256', $body, $channelSecret, true));
-```
-
-### Common LINE Errors
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| 401 Unauthorized | Invalid channel access token | Refresh token in LINE Console |
-| 403 Forbidden | IP not whitelisted | Add server IP to LINE whitelist |
-| 429 Rate Limited | Too many requests | Implement rate limiting |
-
-### Flex Message Debugging
-
-```php
-// Validate Flex JSON before sending
-$validator = new FlexMessageValidator();
-$errors = $validator->validate($flexJson);
-```
-
-## Telegram Specific
-
-### Webhook Setup
-
-```bash
-# Set webhook URL
-curl -X POST "https://api.telegram.org/bot{TOKEN}/setWebhook" \
-  -d "url=https://api.botjao.com/api/webhook/telegram/{bot_id}"
-
-# Check webhook info
-curl "https://api.telegram.org/bot{TOKEN}/getWebhookInfo"
-```
-
-### Common Telegram Errors
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| 401 Unauthorized | Invalid bot token | Check TELEGRAM_BOT_TOKEN |
-| 409 Conflict | Multiple webhook handlers | Only one webhook URL allowed |
-| 400 Bad Request | Invalid message format | Validate message structure |
-
-## WebSocket (Reverb/Echo)
-
-### Check Connection
-
-```javascript
-// In browser console
-Echo.connector.pusher.connection.state // Should be 'connected'
-```
-
-### Common Issues
-
-| Issue | Cause | Fix |
-|-------|-------|-----|
-| Connection drops | Server timeout | Increase `ping_interval` |
-| Events not received | Wrong channel name | Check channel format |
-| Auth failure | Invalid token | Refresh auth token |
-
-### Debug Broadcast
-
-```php
-// Force broadcast for testing
-broadcast(new MessageReceived($message))->toOthers();
-
-// Check if event fired
-Log::info('Broadcasting message', ['message_id' => $message->id]);
-```
-
-## Detailed Guides
-
-- **LINE Debugging**: See [LINE_DEBUG.md](LINE_DEBUG.md)
-- **Telegram Debugging**: See [TELEGRAM_DEBUG.md](TELEGRAM_DEBUG.md)
-- **WebSocket Debugging**: See [WEBSOCKET_DEBUG.md](WEBSOCKET_DEBUG.md)
+| Platform | Guide | Key Issues |
+|----------|-------|------------|
+| LINE | [LINE_DEBUG.md](LINE_DEBUG.md) | Signature, tokens, Flex |
+| Telegram | [TELEGRAM_DEBUG.md](TELEGRAM_DEBUG.md) | Webhook setup, bot token |
+| WebSocket | [WEBSOCKET_DEBUG.md](WEBSOCKET_DEBUG.md) | Reverb, Echo auth |
 
 ## Key Files
 
@@ -240,51 +167,20 @@ Message ID: [message_id]
 - [specific action]
 ```
 
-## Common Tasks
+## Quick Debug Checklist
 
-### Debug Bot Not Responding
-
-```markdown
-1. Check Railway logs for webhook hits
-2. Check failed jobs: `php artisan queue:failed`
-3. Verify bot credentials in database
-4. Test webhook manually with curl
-5. Check AI service response
-6. Verify reply API call
-```
-
-### Verify LINE Webhook
-
-```markdown
-1. Get webhook URL: `https://api.botjao.com/api/webhook/line/{bot_id}`
-2. Set URL in LINE Console
-3. Test with LINE verification request
-4. Check signature validation in logs
-5. Send test message from LINE app
-```
-
-### Debug WebSocket Connection
-
-```markdown
-1. Check Reverb is running: `php artisan reverb:start`
-2. Check browser console for connection state
-3. Verify auth token is valid
-4. Check channel subscription
-5. Test broadcast manually
-```
+| Issue | First Check | Command |
+|-------|-------------|---------|
+| Bot not responding | Railway logs | `railway logs --filter webhook` |
+| Job stuck | Failed jobs | `php artisan queue:failed` |
+| Signature fails | Channel secret | Check bot settings in DB |
+| WebSocket fails | Reverb running | `php artisan reverb:start` |
 
 ## Gotchas
 
-| Problem | Cause | Solution |
-|---------|-------|----------|
-| Webhook returns 500 | Unhandled exception | Check Sentry/logs for stacktrace |
-| Signature validation fails | Wrong channel secret | Verify secret matches LINE Console |
-| Job stuck in queue | Worker not running | Start worker: `php artisan queue:work` |
-| Telegram webhook not set | Missing setWebhook call | Run `curl` to set webhook URL |
-| Echo not connecting | CORS or auth issue | Check broadcasting.php config |
-| Messages duplicated | Webhook retry | Implement idempotency check |
-| Slow response | Job queue backed up | Scale workers or increase timeout |
-
-## Utility Scripts
-
-- `scripts/trace_webhook.sh` - Trace webhook from logs
+| Problem | Solution |
+|---------|----------|
+| Webhook 500 | Check Sentry for stacktrace |
+| Signature fails | Verify secret in LINE Console |
+| Job stuck | `php artisan queue:work` |
+| Messages duplicated | Implement idempotency |
