@@ -50,3 +50,12 @@ Schedule::command('queue:prune-failed --hours=168')
     ->at('03:30')
     ->withoutOverlapping()
     ->runInBackground();
+
+// LINE profile picture URL refresh - daily at 4am
+// Refreshes expired LINE profile pictures for active users (30-day window)
+// LINE CDN URLs expire periodically, this ensures we have valid URLs
+Schedule::command('profiles:refresh-line-pictures')
+    ->daily()
+    ->at('04:00')
+    ->withoutOverlapping()
+    ->runInBackground();
