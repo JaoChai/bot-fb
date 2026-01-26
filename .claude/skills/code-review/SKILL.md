@@ -80,53 +80,15 @@ search(query="security vulnerability", project="bot-fb", type="bugfix", limit=5)
 
 ## Key Review Patterns
 
-### Backend (Laravel)
+| Area | Good | Bad |
+|------|------|-----|
+| Controller | Thin + Service | Fat with logic |
+| Validation | FormRequest | `$request->all()` |
+| Response | Resource class | Direct model |
+| React | useQuery + loading | useState + useEffect |
+| Error | Proper handling | Swallowed/missing |
 
-```php
-// ✅ Good: Service layer pattern
-class BotController extends Controller
-{
-    public function __construct(private BotService $service) {}
-
-    public function store(StoreBotRequest $request): BotResource
-    {
-        $bot = $this->service->create($request->validated());
-        return new BotResource($bot);
-    }
-}
-
-// ❌ Bad: Fat controller
-public function store(Request $request)
-{
-    $data = $request->all();  // No validation
-    $bot = Bot::create($data);  // No service layer
-    return $bot;  // No resource transformation
-}
-```
-
-### Frontend (React)
-
-```typescript
-// ✅ Good: Proper hooks usage
-function BotList() {
-    const { data, isLoading } = useQuery({
-        queryKey: ['bots'],
-        queryFn: () => api.getBots(),
-    });
-
-    if (isLoading) return <Skeleton />;
-    return <List items={data} />;
-}
-
-// ❌ Bad: Missing loading/error states
-function BotList() {
-    const [bots, setBots] = useState([]);
-    useEffect(() => {
-        api.getBots().then(setBots);  // No error handling
-    }, []);
-    return <List items={bots} />;
-}
-```
+**Full examples:** See [CODE_EXAMPLES.md](CODE_EXAMPLES.md)
 
 ## Key Files to Review
 
@@ -152,143 +114,42 @@ function BotList() {
 | `src/lib/api.ts` | Error handling, types |
 | `src/pages/*.tsx` | Suspense boundaries |
 
-## Common Tasks
-
-### 1. Pre-Commit Review
+## Quick Commands
 
 ```bash
-# Check what's staged
+# Pre-commit checks
 git diff --staged
+./vendor/bin/pint --test && npm run lint
+php artisan test --filter=Unit && npm run type-check
 
-# Run linters
-cd backend && ./vendor/bin/pint --test
-cd frontend && npm run lint
-
-# Run tests
-php artisan test --filter=Unit
-npm run type-check
-```
-
-### 2. PR Review Checklist
-
-```markdown
-## Code Quality
-- [ ] No console.log/dd() left
-- [ ] Types complete (no `any`)
-- [ ] Error handling present
-- [ ] Loading states handled
-
-## Security
-- [ ] Input validated
-- [ ] Auth middleware applied
-- [ ] No SQL injection risks
-- [ ] Sensitive data not logged
-
-## API Design
-- [ ] RESTful naming
-- [ ] Consistent response format
-- [ ] Proper status codes
-- [ ] Rate limiting applied
-
-## Performance
-- [ ] No N+1 queries
-- [ ] Indexes for new columns
-- [ ] Pagination for lists
-```
-
-### 3. Security Audit
-
-```bash
-# Check for hardcoded secrets
-grep -rn "password\s*=\s*['\"]" app/ --include="*.php"
-grep -rn "api_key\|secret" app/ --include="*.php"
-
-# Check for SQL injection
+# Security audit
 grep -rn "DB::raw\|whereRaw" app/ --include="*.php"
-
-# Check middleware coverage
-php artisan route:list --columns=uri,middleware | grep -v "auth"
-
-# Check composer vulnerabilities
 composer audit
 ```
 
-## Review Workflow
+## Detailed Guides
 
-### 1. Gather Changes
-```bash
-git diff --staged           # Staged changes
-git diff HEAD~1             # Last commit
-git log --oneline -10       # Recent commits
-```
+| Guide | Purpose |
+|-------|---------|
+| [SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md) | OWASP, auth, injection |
+| [API_CHECKLIST.md](API_CHECKLIST.md) | RESTful, responses, codes |
+| [CODE_QUALITY.md](CODE_QUALITY.md) | PSR-12, types, patterns |
+| [CODE_EXAMPLES.md](CODE_EXAMPLES.md) | Good/bad code examples |
 
-### 2. Security Scan
-Check all files for:
-- SQL injection (raw queries)
-- XSS (unescaped output)
-- Auth bypass (missing middleware)
-- Sensitive data exposure
-
-### 3. API Design Review
-For route/controller changes:
-- RESTful naming conventions
-- Consistent response format
-- Proper HTTP status codes
-- Rate limiting applied
-
-### 4. Code Quality Check
-For all PHP/TypeScript:
-- PSR-12 / ESLint compliance
-- Type declarations
-- No dead code
-- Meaningful variable names
-
-## Common Issues Found
+## Common Issues
 
 | Issue | Fix |
 |-------|-----|
-| `dd()` left in code | Remove or use proper logging |
-| Missing validation | Add FormRequest validation |
-| N+1 queries | Use eager loading with `->with()` |
-| Hardcoded URLs | Use config/env variables |
-| Missing types | Add TypeScript/PHP type hints |
-| No error handling | Add try-catch, error boundaries |
-| Fat controller | Extract to service layer |
-| Prop drilling | Use custom hook or context |
+| `dd()` left | Remove or use logging |
+| Missing validation | Add FormRequest |
+| N+1 queries | Use `->with()` |
+| Missing types | Add type hints |
+| Fat controller | Extract to service |
 
-## Detailed Guides
+## Output Format
 
-- **Security:** See [SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md)
-- **API Design:** See [API_CHECKLIST.md](API_CHECKLIST.md)
-- **Code Quality:** See [CODE_QUALITY.md](CODE_QUALITY.md)
+Report as: Summary → Critical 🔴 → Warnings 🟡 → Suggestions 🟢 → Approved ✅
 
-## Review Output Format
+## Usage
 
-```markdown
-## Code Review Report
-
-### Summary
-- Files reviewed: X
-- Issues found: X (Critical: X, Warning: X, Info: X)
-
-### Critical Issues 🔴
-1. [FILE:LINE] Description
-   - Problem: ...
-   - Fix: ...
-
-### Warnings 🟡
-1. [FILE:LINE] Description
-
-### Suggestions 🟢
-1. [FILE:LINE] Description
-
-### Approved ✅
-- List of files with no issues
-```
-
-## Integration with Pre-Commit
-
-Hook suggests this skill before git commit. Run review manually:
-```
-/code-review
-```
+Run `/code-review` before commit or PR.
