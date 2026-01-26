@@ -1,6 +1,16 @@
 ---
 name: rag-debug
-description: RAG pipeline debugger for semantic search and knowledge base issues. Diagnoses embedding problems, search not finding results, reranker filtering too much, context not being used in responses. Use when search returns wrong results, knowledge base queries fail, Thai language search has problems, or AI responses ignore retrieved context.
+description: |
+  RAG pipeline debugger for semantic search and knowledge base issues. Diagnoses embedding problems, search not finding results, reranker filtering, context injection.
+  Triggers: 'search not working', 'RAG', 'embedding', 'knowledge base', 'semantic search', 'context not used'.
+  Use when: search returns wrong results, knowledge base fails, Thai language search problems, AI ignores context.
+allowed-tools:
+  - Read
+  - Grep
+context:
+  - path: config/rag.php
+  - path: app/Services/RAGService.php
+  - path: app/Services/EmbeddingService.php
 ---
 
 # RAG Pipeline Debugger

@@ -1,6 +1,18 @@
 ---
 name: webhook-debug
-description: Webhook and messaging debugger for LINE, Telegram, and WebSocket. Traces message flow from platform to bot response, diagnoses job failures, queue issues, bot not responding. Use when messages don't arrive, webhooks fail with errors, real-time features (Reverb/Laravel Echo) don't work, or bot stops responding.
+description: |
+  Webhook and messaging debugger for LINE, Telegram, and WebSocket.
+  Triggers: 'webhook', 'bot not responding', 'message not arriving', 'queue failed', 'WebSocket', 'Echo'.
+  Use when: messages don't arrive, webhooks fail, real-time features don't work, bot stops responding.
+allowed-tools:
+  - Bash(php artisan queue*)
+  - Bash(curl*)
+  - Read
+  - Grep
+context:
+  - path: app/Http/Controllers/WebhookController.php
+  - path: app/Jobs/ProcessIncomingMessage.php
+  - path: config/broadcasting.php
 ---
 
 # Webhook & Messaging Debugger

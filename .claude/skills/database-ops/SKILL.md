@@ -1,6 +1,18 @@
 ---
 name: database-ops
-description: Database operations specialist for PostgreSQL/Neon with pgvector extension. Handles migrations, schema design, query optimization, vector operations, semantic search. Use when creating migrations, optimizing slow queries, working with embeddings, or designing database schema.
+description: |
+  Database operations specialist for PostgreSQL/Neon with pgvector extension. Handles migrations, schema design, query optimization, vector operations, semantic search.
+  Triggers: 'migration', 'database', 'schema', 'query', 'index', 'pgvector', 'embedding'.
+  Use when: creating migrations, optimizing slow queries, working with embeddings, designing schema.
+allowed-tools:
+  - Bash(php artisan migrate*)
+  - Bash(php artisan make:migration*)
+  - Bash(python3 *.py*)
+  - Read
+  - Grep
+context:
+  - path: database/migrations/
+  - path: config/database.php
 ---
 
 # Database Operations

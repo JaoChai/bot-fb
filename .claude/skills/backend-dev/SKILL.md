@@ -1,6 +1,18 @@
 ---
 name: backend-dev
-description: Laravel 12 specialist for API development. Handles controllers, services, FormRequests, API Resources, jobs, events, broadcasting. Use when creating/modifying API endpoints, business logic, backend services, or fixing server-side issues. Includes RESTful API design and database integration patterns.
+description: |
+  Laravel 12 specialist for API development. Handles controllers, services, FormRequests, API Resources, jobs, events, broadcasting.
+  Triggers: 'API', 'endpoint', 'controller', 'service', 'Laravel', 'backend', 'server'.
+  Use when: creating/modifying API endpoints, business logic, backend services, fixing server-side issues.
+allowed-tools:
+  - Bash(php artisan*)
+  - Read
+  - Grep
+  - Edit
+context:
+  - path: routes/api.php
+  - path: app/Http/Controllers/
+  - path: app/Services/
 ---
 
 # Backend Development
