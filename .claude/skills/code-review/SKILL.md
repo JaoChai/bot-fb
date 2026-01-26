@@ -1,6 +1,19 @@
 ---
 name: code-review
-description: Comprehensive code reviewer combining quality, security, and API design checks. Reviews against best practices, OWASP Top 10, RESTful conventions. Use before committing code, after major changes, or when auditing existing code.
+description: |
+  Comprehensive code reviewer combining quality, security, and API design checks. Reviews against best practices, OWASP Top 10, RESTful conventions.
+  Triggers: 'review', 'check code', 'security audit', 'before commit', 'PR review'.
+  Use when: reviewing code before commit, auditing existing code, checking for security issues.
+allowed-tools:
+  - Bash(git diff*)
+  - Bash(grep*)
+  - Bash(php artisan route:list*)
+  - Bash(python3 *.py*)
+  - Read
+  - Grep
+context:
+  - path: .php-cs-fixer.php
+  - path: eslint.config.js
 ---
 
 # Code Review Skill

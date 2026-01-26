@@ -1,6 +1,16 @@
 ---
 name: prompt-eng
-description: Prompt engineering specialist for system prompt optimization. Designs effective prompts, conducts A/B testing, detects prompt injection vulnerabilities, improves AI response quality. Use when creating/improving AI prompts, testing prompt effectiveness, debugging poor AI responses, or securing against prompt injection.
+description: |
+  Prompt engineering specialist for system prompt optimization. Designs effective prompts, A/B testing, prompt injection detection, AI response quality.
+  Triggers: 'prompt', 'system prompt', 'AI quality', 'prompt injection', 'LLM output'.
+  Use when: creating/improving prompts, testing effectiveness, debugging poor AI responses, securing against injection.
+allowed-tools:
+  - Read
+  - Grep
+  - Edit
+context:
+  - path: config/llm-models.php
+  - path: config/tools.php
 ---
 
 # Prompt Engineering

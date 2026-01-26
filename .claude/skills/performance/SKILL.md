@@ -1,6 +1,19 @@
 ---
 name: performance
-description: Performance optimization specialist for backend and frontend. Identifies N+1 queries, slow database operations, bundle size issues, Core Web Vitals problems, API response time. Use when the app is slow, queries take too long, pages load slowly, or when optimizing for production.
+description: |
+  Performance optimization specialist for backend and frontend.
+  Triggers: 'slow', 'performance', 'N+1', 'bundle size', 'Core Web Vitals', 'optimize'.
+  Use when: app is slow, queries take too long, pages load slowly, optimizing for production.
+allowed-tools:
+  - Bash(npm run build*)
+  - Bash(npx lighthouse*)
+  - Bash(python3 *.py*)
+  - Read
+  - Grep
+context:
+  - path: config/cache.php
+  - path: config/database.php
+  - path: vite.config.ts
 ---
 
 # Performance Optimization

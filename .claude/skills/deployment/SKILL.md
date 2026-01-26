@@ -1,6 +1,17 @@
 ---
 name: deployment
-description: Railway deployment specialist for production operations. Handles deployments, environment variables, logs, troubleshooting production issues, rollbacks. Use when deploying to Railway, debugging production errors, managing environment configuration, or checking deployment status.
+description: |
+  Railway deployment specialist for production operations. Handles deployments, environment variables, logs, troubleshooting production issues, rollbacks.
+  Triggers: 'deploy', 'production', 'Railway', 'environment', 'rollback', 'logs'.
+  Use when: deploying to Railway, debugging production errors, managing environment configuration.
+allowed-tools:
+  - Bash(railway*)
+  - Bash(git*)
+  - Read
+  - Grep
+context:
+  - path: railway.json
+  - path: .env.example
 ---
 
 # Deployment

@@ -1,6 +1,19 @@
 ---
 name: refactor
-description: Code refactoring specialist for Laravel 12 + React 19 + PostgreSQL. Handles Extract Method, Service extraction, component decomposition, query optimization refactoring. Use when cleaning up technical debt, improving code structure, or preparing for new features.
+description: |
+  Code refactoring specialist for Laravel 12 + React 19 + PostgreSQL. Handles Extract Method, Service extraction, component decomposition, query optimization refactoring.
+  Triggers: 'refactor', 'extract method', 'clean up', 'reduce complexity', 'technical debt'.
+  Use when: files >300 lines, duplicating logic, or preparing for new features.
+allowed-tools:
+  - Bash(git status*)
+  - Bash(php artisan test*)
+  - Bash(python3 *.py*)
+  - Read
+  - Grep
+  - Edit
+context:
+  - path: app/Services/
+  - path: src/components/
 ---
 
 # Refactor Skill

@@ -1,6 +1,20 @@
 ---
 name: frontend-dev
-description: React 19 specialist for frontend implementation. Handles components, state management with Zustand, data fetching with React Query v5, styling with Tailwind v4. Use when creating/modifying React components, pages, hooks, or fixing UI issues. For design decisions (styles, colors, fonts), use /ui-ux-pro-max first.
+description: |
+  React 19 specialist for frontend implementation. Handles components, state management with Zustand, data fetching with React Query v5, styling with Tailwind v4.
+  Triggers: 'React', 'component', 'hook', 'frontend', 'UI', 'TypeScript', 'Zustand'.
+  Use when: creating/modifying React components, pages, hooks, or fixing UI issues. For design decisions, use /ui-ux-pro-max first.
+allowed-tools:
+  - Bash(npm run*)
+  - Bash(npx*)
+  - Read
+  - Grep
+  - Edit
+context:
+  - path: src/lib/query.ts
+  - path: src/lib/api.ts
+  - path: src/router.tsx
+  - path: src/stores/
 ---
 
 # Frontend Development
