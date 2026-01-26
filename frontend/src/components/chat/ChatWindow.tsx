@@ -3,8 +3,9 @@
  * Container/orchestration component using extracted sub-components
  * Reduced from ~368 lines to ~100 lines
  */
-import { useState } from 'react';
-import { useMessages } from '@/hooks/chat';
+import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useMessages, messageKeys } from '@/hooks/chat';
 import { useChatActions } from '@/hooks/useChatActions';
 import type { Conversation } from '@/types/api';
 
@@ -38,6 +39,14 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
   );
   const messages = messagesResponse?.data || conversation.messages || [];
   const showMessagesLoading = (isLoadingMessages || isFetchingMessages) && messages.length === 0;
+
+  // Invalidate messages query when switching conversations to force refetch
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    queryClient.invalidateQueries({
+      queryKey: messageKeys.list(botId, conversation.id),
+    });
+  }, [conversation.id, botId, queryClient]);
 
   // Chat actions from custom hook
   const {
