@@ -155,6 +155,9 @@ Where should this component live?
 | perf-003 | MEDIUM | Virtualization for long lists |
 | perf-004 | CRITICAL | Stable references in deps |
 | perf-005 | HIGH | Bundle size monitoring |
+| perf-006 | HIGH | Functional setState for stale closures |
+| perf-007 | HIGH | Derive state in render, not effects |
+| perf-008 | MEDIUM | content-visibility for long lists |
 
 ### Accessibility (a11y-*)
 | Rule | Impact | Description |
@@ -186,3 +189,23 @@ Where should this component live?
 | gotcha-003 | HIGH | Echo auth token |
 | gotcha-004 | MEDIUM | Modal event bubbling |
 | gotcha-005 | MEDIUM | Form submit button type |
+
+### Async Patterns (async-*) - NEW
+| Rule | Impact | Description |
+|------|--------|-------------|
+| async-001 | CRITICAL | Parallel data fetching with Promise.all |
+| async-002 | CRITICAL | Avoid sequential awaits in loops |
+| async-003 | HIGH | Preload data before navigation |
+
+### Bundle Optimization (bundle-*) - NEW
+| Rule | Impact | Description |
+|------|--------|-------------|
+| bundle-001 | CRITICAL | Import from source, not barrel files |
+| bundle-002 | HIGH | Ensure proper tree-shaking |
+
+### JavaScript Performance (js-*) - NEW
+| Rule | Impact | Description |
+|------|--------|-------------|
+| js-001 | MEDIUM | Avoid layout thrashing |
+| js-002 | LOW-MEDIUM | Use Map for repeated lookups |
+| js-003 | LOW-MEDIUM | Use immutable array methods

@@ -19,6 +19,9 @@ Examples:
 | `query-` | React Query | Data fetching, caching, mutations |
 | `state-` | State | Zustand, local state, prop drilling |
 | `perf-` | Performance | Memoization, code splitting, bundle size |
+| `async-` | Async Patterns | Parallel fetching, waterfalls, preloading |
+| `bundle-` | Bundle | Tree-shaking, barrel imports, code splitting |
+| `js-` | JavaScript | Micro-optimizations, DOM, data structures |
 | `a11y-` | Accessibility | ARIA, keyboard nav, semantic HTML |
 | `style-` | Styling | Tailwind, CVA, cn utility |
 | `ts-` | TypeScript | Types, generics, inference |
