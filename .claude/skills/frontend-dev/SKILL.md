@@ -41,6 +41,9 @@ export function Component({ className, children }: Props) {
 
 | Rule | Impact | Issue |
 |------|--------|-------|
+| [async-001](rules/async-001-parallel-fetching.md) | CRITICAL | Waterfall requests - use Promise.all |
+| [async-002](rules/async-002-avoid-sequential-awaits.md) | CRITICAL | Sequential awaits in loops |
+| [bundle-001](rules/bundle-001-barrel-imports.md) | CRITICAL | Barrel imports prevent tree-shaking |
 | [gotcha-001](rules/gotcha-001-response-data-access.md) | CRITICAL | `response.data.data` access |
 | [gotcha-002](rules/gotcha-002-infinite-rerenders.md) | CRITICAL | Infinite re-renders from unstable refs |
 | [react-006](rules/react-006-error-boundaries.md) | CRITICAL | Missing error boundaries |
@@ -78,10 +81,13 @@ search(query="custom hook", project="bot-fb", concepts=["pattern"], limit=5)
 
 | Category | Rules | Key Topics |
 |----------|-------|------------|
+| [Async](rules/) | async-001 to async-003 | Parallel fetching, waterfalls, preloading |
+| [Bundle](rules/) | bundle-001 to bundle-002 | Tree-shaking, barrel imports |
 | [React](rules/) | react-001 to react-008 | Components, hooks, React 19 features |
 | [React Query](rules/) | query-001 to query-007 | Caching, mutations, invalidation |
 | [State](rules/) | state-001 to state-003 | Zustand, selectors, prop drilling |
-| [Performance](rules/) | perf-001 to perf-005 | Memoization, code splitting, bundle |
+| [Performance](rules/) | perf-001 to perf-008 | Memoization, code splitting, content-visibility |
+| [JavaScript](rules/) | js-001 to js-003 | Layout thrashing, Map lookups, immutability |
 | [Accessibility](rules/) | a11y-001 to a11y-004 | Semantic HTML, keyboard, ARIA |
 | [Styling](rules/) | style-001 to style-003 | cn(), CVA, Tailwind conflicts |
 | [TypeScript](rules/) | ts-001 to ts-003 | Types, unions, API responses |
