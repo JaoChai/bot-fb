@@ -23,6 +23,7 @@ import {
   Timer,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { toSafeArray } from '@/lib/utils';
 import type { ProcessLog, DoneSummary } from '@/hooks/useStreamingChat';
 
 interface ProcessDisplayProps {
@@ -204,12 +205,12 @@ function formatDetails(event: string, data: Record<string, unknown>): string {
       return `${data.original_model} → ${data.fallback_model}`;
 
     case 'kb_search': {
-      const kbs = data.knowledge_bases as Array<{ name: string }> || [];
+      const kbs = toSafeArray<{ name: string }>(data.knowledge_bases);
       return `${kbs.length} KB: ${kbs.map(k => k.name).join(', ')}`;
     }
 
     case 'kb_result': {
-      const results = data.results as Array<{ kb_name: string; chunks_found: number; top_relevance: number }> || [];
+      const results = toSafeArray<{ kb_name: string; chunks_found: number; top_relevance: number }>(data.results);
       if (results.length === 0) {
         return 'ไม่พบข้อมูลที่เกี่ยวข้อง';
       }
@@ -238,7 +239,7 @@ function formatDetails(event: string, data: Record<string, unknown>): string {
 
     // Agentic Mode events
     case 'agent_start': {
-      const tools = data.tools as string[] || [];
+      const tools = toSafeArray<string>(data.tools);
       return `Model: ${data.model || 'N/A'} • Max: ${data.max_iterations || '?'} รอบ • Tools: ${tools.length}`;
     }
 
@@ -288,11 +289,11 @@ function formatDetails(event: string, data: Record<string, unknown>): string {
 
     // Second AI events
     case 'second_ai_start': {
-      const checks = data.enabled_checks as string[] || [];
+      const checks = toSafeArray<string>(data.enabled_checks);
       return `ตรวจสอบ: ${checks.join(', ')} • Model: ${data.model || 'N/A'}`;
     }
     case 'second_ai_result': {
-      const checksApplied = data.checks_applied as string[] || [];
+      const checksApplied = toSafeArray<string>(data.checks_applied);
       const timeMs = data.time_ms as number || 0;
       if (data.error) return data.error as string;
       return `${checksApplied.join(', ')} • ${timeMs}ms`;
