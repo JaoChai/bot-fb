@@ -236,10 +236,6 @@ export interface Flow {
   name: string;
   description: string | null;
   system_prompt: string;
-  model: string;
-  fallback_model: string | null;
-  decision_model: string | null;
-  fallback_decision_model: string | null;
   temperature: number;
   max_tokens: number;
   agentic_mode: boolean;
@@ -279,10 +275,6 @@ export interface CreateFlowData {
   name: string;
   description?: string;
   system_prompt: string;
-  model?: string;
-  fallback_model?: string;
-  decision_model?: string;
-  fallback_decision_model?: string;
   temperature?: number;
   max_tokens?: number;
   agentic_mode?: boolean;
