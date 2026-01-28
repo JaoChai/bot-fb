@@ -12,7 +12,7 @@ import {
   ExternalLink,
   User,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, toSafeArray } from '@/lib/utils';
 import type { Message } from '@/types/api';
 
 // Telegram brand color
@@ -214,7 +214,7 @@ export function renderContact(message: Message, isUser: boolean): ReactNode {
 export function renderPoll(message: Message, isUser: boolean): ReactNode {
   const metadata = message.media_metadata as Record<string, unknown> | null;
   const question = metadata?.question as string;
-  const options = (metadata?.options as string[]) || [];
+  const options = toSafeArray<string>(metadata?.options);
 
   return (
     <div

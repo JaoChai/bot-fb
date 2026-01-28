@@ -104,7 +104,9 @@ export function buildConversationFilterParams(
   if (filters.assigned_user_id) {
     params.append('assigned_user_id', String(filters.assigned_user_id));
   }
-  if (filters.tags?.length) params.append('tags', filters.tags.join(','));
+  if (Array.isArray(filters.tags) && filters.tags.length) {
+    params.append('tags', filters.tags.join(','));
+  }
   if (filters.search) params.append('search', filters.search);
   if (filters.from_date) params.append('from_date', filters.from_date);
   if (filters.to_date) params.append('to_date', filters.to_date);
