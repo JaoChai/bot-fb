@@ -13,6 +13,7 @@ use App\Models\Bot;
 use App\Models\Flow;
 use App\Services\FlowCacheService;
 use App\Services\OpenRouterService;
+use App\Services\SemanticCacheService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -23,8 +24,24 @@ class FlowController extends Controller
 {
     use ApiResponseTrait;
 
+    /**
+     * Fields that affect AI response generation.
+     * When these change, semantic cache should be cleared.
+     */
+    private const RESPONSE_AFFECTING_FIELDS = [
+        'system_prompt',
+        'temperature',
+        'max_tokens',
+        'enabled_tools',
+        'model',
+        'agentic_mode',
+        'second_ai_enabled',
+        'second_ai_options',
+    ];
+
     public function __construct(
-        protected FlowCacheService $flowCache
+        protected FlowCacheService $flowCache,
+        protected SemanticCacheService $semanticCache
     ) {}
 
     /**
@@ -337,6 +354,21 @@ class FlowController extends Controller
 
         // Invalidate cache (default flow may have changed)
         $this->flowCache->invalidateBot($bot->id);
+
+        // Clear semantic cache if response-affecting fields changed
+        $shouldClearSemanticCache = $knowledgeBases !== null;
+        if (!$shouldClearSemanticCache) {
+            foreach (self::RESPONSE_AFFECTING_FIELDS as $field) {
+                if (array_key_exists($field, $data)) {
+                    $shouldClearSemanticCache = true;
+                    break;
+                }
+            }
+        }
+
+        if ($shouldClearSemanticCache) {
+            $this->semanticCache->clearForBot($bot->id);
+        }
 
         return $this->success(new FlowResource($flow->load('knowledgeBases')), 'Flow updated successfully');
     }
