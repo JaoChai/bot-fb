@@ -10,15 +10,28 @@
  * - T043: useConnectionStatus for WebSocket status indicator
  */
 
-// Messages (T039, T040)
+// Message Keys and Types
+export {
+  messageKeys,
+  FALLBACK_POLLING_INTERVAL,
+  DEFAULT_PAGE_SIZE,
+} from './messageKeys';
+export type {
+  MessagesOptions,
+  MessagesResponse,
+  SendMessageData,
+  AgentMessageResponse,
+} from './messageKeys';
+
+// Message Queries (T039)
 export {
   useMessages,
   useInfiniteMessages,
-  useSendMessage,
-  messageKeys,
   flattenInfiniteMessages,
-} from './useMessages';
-export type { MessagesOptions, MessagesResponse } from './useMessages';
+} from './useMessageQueries';
+
+// Message Mutations (T040)
+export { useSendMessage } from './useMessageMutations';
 
 // Conversation List
 export {

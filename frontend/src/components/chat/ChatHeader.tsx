@@ -7,14 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ArrowLeft, Info, Bot, Headphones, Loader2, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useChannelInfo } from '@/hooks/useChannelInfo';
 import type { Conversation } from '@/types/api';
-
-const channelLabels: Record<string, string> = {
-  line: 'LINE',
-  facebook: 'Facebook',
-  telegram: 'Telegram',
-  demo: 'Demo',
-};
 
 export interface ChatHeaderProps {
   conversation: Conversation;
@@ -36,11 +30,8 @@ export const ChatHeader = memo(function ChatHeader({
   showHandoverControls = true,
   actions,
 }: ChatHeaderProps) {
-  const isTelegram = conversation.channel_type === 'telegram';
-  const isGroup =
-    isTelegram &&
-    (conversation.telegram_chat_type === 'group' ||
-      conversation.telegram_chat_type === 'supergroup');
+  // Channel detection - using centralized hook
+  const { isTelegram, isGroup, supportsHandover, displayName } = useChannelInfo(conversation);
 
   // Display name: group title for telegram groups, otherwise customer name
   const customerName = isGroup
@@ -89,14 +80,14 @@ export const ChatHeader = memo(function ChatHeader({
             )}
           </div>
           <p className="text-xs text-muted-foreground truncate">
-            {channelLabels[conversation.channel_type]} - {conversation.message_count} messages
+            {displayName} - {conversation.message_count} messages
           </p>
         </div>
       </div>
 
       <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-        {/* Handover controls - not for telegram */}
-        {showHandoverControls && !isTelegram && onToggleHandover && (
+        {/* Handover controls - only for channels that support it */}
+        {showHandoverControls && supportsHandover && onToggleHandover && (
           <Button
             variant={conversation.is_handover ? 'default' : 'outline'}
             size="sm"

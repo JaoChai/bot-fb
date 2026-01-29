@@ -1,152 +1,23 @@
 /**
- * T016: useMessages hook
- * T039: Optimized with cursor-based pagination via useInfiniteQuery
- * T040: Optimistic updates for sendMessage and markAsRead
+ * Message mutation hooks
  *
- * Extract message queries from useConversations
- * Includes messageKeys factory pattern
+ * T040: Includes optimistic updates for sendMessage
+ *
+ * Extracted from useMessages.ts for single responsibility.
  */
 import {
-  useQuery,
   useMutation,
   useQueryClient,
-  useInfiniteQuery,
   type InfiniteData,
 } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { buildFilterParams } from '@/lib/params';
-import { useConnectionStore } from '@/stores/connectionStore';
-import type { Message, PaginationMeta } from '@/types/api';
-
-// Fallback polling interval when WebSocket is disconnected (10 seconds)
-const FALLBACK_POLLING_INTERVAL = 10000;
-
-// Default page size for messages
-const DEFAULT_PAGE_SIZE = 50;
-
-// Query key factory for messages
-export const messageKeys = {
-  all: ['messages'] as const,
-  list: (botId: number, conversationId: number) =>
-    [...messageKeys.all, 'list', botId, conversationId] as const,
-  listWithOptions: (
-    botId: number,
-    conversationId: number,
-    options: MessagesOptions
-  ) => [...messageKeys.list(botId, conversationId), options] as const,
-  infinite: (botId: number, conversationId: number) =>
-    [...messageKeys.all, 'infinite', botId, conversationId] as const,
-};
-
-// Types
-export interface MessagesResponse {
-  data: Message[];
-  meta: PaginationMeta;
-}
-
-export interface MessagesOptions {
-  page?: number;
-  perPage?: number;
-  order?: 'asc' | 'desc';
-}
-
-interface SendMessageData {
-  content: string;
-  type?: 'text' | 'image' | 'video' | 'audio' | 'file';
-  media_url?: string;
-}
-
-interface AgentMessageResponse {
-  message: string;
-  data: Message;
-  delivery_error?: string | null;
-}
-
-/**
- * Hook to fetch messages for a conversation (simple query)
- * Use this for conversations with less than 100 messages
- */
-export function useMessages(
-  botId: number | undefined,
-  conversationId: number | undefined,
-  options: MessagesOptions = { order: 'asc', perPage: 100 }
-) {
-  const isConnected = useConnectionStore((state) => state.isConnected);
-
-  return useQuery({
-    queryKey:
-      botId && conversationId
-        ? messageKeys.listWithOptions(botId, conversationId, options)
-        : ['messages', 'disabled'],
-    queryFn: async () => {
-      const params = buildFilterParams({
-        page: options.page,
-        per_page: options.perPage,
-        order: options.order,
-      });
-
-      const response = await api.get<MessagesResponse>(
-        `/bots/${botId}/conversations/${conversationId}/messages?` + params.toString()
-      );
-      return response.data;
-    },
-    enabled: !!botId && !!conversationId,
-    staleTime: 0,
-    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
-  });
-}
-
-/**
- * T039: Hook to fetch messages with infinite scroll for large conversations
- * Loads messages in pages, with "load more" for older messages
- * Order is descending (newest first) for cursor-based pagination
- */
-export function useInfiniteMessages(
-  botId: number | undefined,
-  conversationId: number | undefined,
-  pageSize: number = DEFAULT_PAGE_SIZE
-) {
-  const isConnected = useConnectionStore((state) => state.isConnected);
-
-  return useInfiniteQuery({
-    queryKey:
-      botId && conversationId
-        ? messageKeys.infinite(botId, conversationId)
-        : ['messages', 'infinite', 'disabled'],
-    queryFn: async ({ pageParam = 1 }) => {
-      const params = new URLSearchParams();
-      params.append('page', String(pageParam));
-      params.append('per_page', String(pageSize));
-      // Descending order for cursor pagination (newest first, load older on scroll up)
-      params.append('order', 'desc');
-
-      const response = await api.get<MessagesResponse>(
-        `/bots/${botId}/conversations/${conversationId}/messages?` + params.toString()
-      );
-      return response.data;
-    },
-    initialPageParam: 1,
-    getNextPageParam: (lastPage) => {
-      // Load older messages (next page in descending order)
-      const { current_page, last_page } = lastPage.meta;
-      return current_page < last_page ? current_page + 1 : undefined;
-    },
-    enabled: !!botId && !!conversationId,
-    staleTime: 0,
-    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
-  });
-}
-
-/**
- * Helper to flatten infinite messages and reverse for display (oldest first)
- */
-export function flattenInfiniteMessages(
-  data: InfiniteData<MessagesResponse> | undefined
-): Message[] {
-  if (!data) return [];
-  // Flatten all pages and reverse to show oldest first
-  return data.pages.flatMap((page) => page.data).reverse();
-}
+import type { Message } from '@/types/api';
+import {
+  messageKeys,
+  type MessagesResponse,
+  type SendMessageData,
+  type AgentMessageResponse,
+} from './messageKeys';
 
 /**
  * Hook to send a message from agent to customer (HITL mode)

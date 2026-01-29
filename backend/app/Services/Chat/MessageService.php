@@ -7,8 +7,7 @@ use App\Events\MessageSent;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
-use App\Services\LINEService;
-use App\Services\TelegramService;
+use App\Services\Channel\ChannelAdapterFactory;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -16,8 +15,7 @@ use Illuminate\Support\Facades\Log;
 class MessageService
 {
     public function __construct(
-        private LINEService $lineService,
-        private TelegramService $telegramService
+        private ChannelAdapterFactory $channelFactory
     ) {}
 
     /**
@@ -143,75 +141,30 @@ class MessageService
     }
 
     /**
-     * Send message to the appropriate channel.
+     * Send message to the appropriate channel using adapter pattern.
      */
     private function sendToChannel(Bot $bot, Conversation $conversation, array $data): void
     {
-        $type = $data['type'] ?? 'text';
-        $mediaUrl = $data['media_url'] ?? null;
+        $channelType = $conversation->channel_type;
 
-        if ($conversation->channel_type === 'line') {
-            $this->sendToLine($bot, $conversation, $type, $data['content'], $mediaUrl);
-        } elseif ($conversation->channel_type === 'telegram') {
-            $this->sendToTelegram($bot, $conversation, $type, $data['content'], $mediaUrl);
+        // Skip if channel not supported (e.g., facebook not yet implemented)
+        if (! $this->channelFactory->supports($channelType)) {
+            Log::warning('Unsupported channel type for message sending', [
+                'channel_type' => $channelType,
+                'conversation_id' => $conversation->id,
+            ]);
+
+            return;
         }
-    }
 
-    /**
-     * Send message via LINE.
-     */
-    private function sendToLine(
-        Bot $bot,
-        Conversation $conversation,
-        string $type,
-        string $content,
-        ?string $mediaUrl
-    ): void {
-        $userId = $conversation->external_customer_id;
+        $adapter = $this->channelFactory->make($channelType);
 
-        // Generate retry key for idempotency (LINE best practice)
-        $retryKey = $this->lineService->generateRetryKey();
-
-        match ($type) {
-            'photo', 'image' => $mediaUrl
-                ? $this->lineService->push($bot, $userId, [$this->lineService->imageMessage($mediaUrl)], $retryKey)
-                : $this->lineService->push($bot, $userId, [$this->lineService->textMessage($content)], $retryKey),
-            'video' => $mediaUrl
-                ? $this->lineService->push($bot, $userId, [$this->lineService->videoMessage($mediaUrl)], $retryKey)
-                : $this->lineService->push($bot, $userId, [$this->lineService->textMessage($content)], $retryKey),
-            'audio', 'voice' => $mediaUrl
-                ? $this->lineService->push($bot, $userId, [$this->lineService->audioMessage($mediaUrl)], $retryKey)
-                : $this->lineService->push($bot, $userId, [$this->lineService->textMessage($content)], $retryKey),
-            default => $this->lineService->push($bot, $userId, [$this->lineService->textMessage($content)], $retryKey),
-        };
-    }
-
-    /**
-     * Send message via Telegram.
-     */
-    private function sendToTelegram(
-        Bot $bot,
-        Conversation $conversation,
-        string $type,
-        string $content,
-        ?string $mediaUrl
-    ): void {
-        $chatId = $conversation->external_customer_id;
-
-        match ($type) {
-            'photo', 'image' => $mediaUrl
-                ? $this->telegramService->sendPhoto($bot, $chatId, $mediaUrl, $content ?: null)
-                : $this->telegramService->sendMessage($bot, $chatId, $content),
-            'video' => $mediaUrl
-                ? $this->telegramService->sendVideo($bot, $chatId, $mediaUrl, $content ?: null)
-                : $this->telegramService->sendMessage($bot, $chatId, $content),
-            'document', 'file' => $mediaUrl
-                ? $this->telegramService->sendDocument($bot, $chatId, $mediaUrl, $content ?: null)
-                : $this->telegramService->sendMessage($bot, $chatId, $content),
-            'voice' => $mediaUrl
-                ? $this->telegramService->sendVoice($bot, $chatId, $mediaUrl)
-                : $this->telegramService->sendMessage($bot, $chatId, $content),
-            default => $this->telegramService->sendMessage($bot, $chatId, $content),
-        };
+        $adapter->sendMessage(
+            $bot,
+            $conversation,
+            $data['type'] ?? 'text',
+            $data['content'],
+            $data['media_url'] ?? null
+        );
     }
 }

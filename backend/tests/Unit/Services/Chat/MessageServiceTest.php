@@ -6,9 +6,9 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\Channel\ChannelAdapterFactory;
+use App\Services\Channel\ChannelAdapterInterface;
 use App\Services\Chat\MessageService;
-use App\Services\LINEService;
-use App\Services\TelegramService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
 use Tests\TestCase;
@@ -20,20 +20,25 @@ class MessageServiceTest extends TestCase
     private MessageService $service;
     private User $user;
     private Bot $bot;
-    private LINEService $lineService;
-    private TelegramService $telegramService;
+    private ChannelAdapterFactory $channelFactory;
+    private ChannelAdapterInterface $channelAdapter;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->lineService = Mockery::mock(LINEService::class);
-        $this->telegramService = Mockery::mock(TelegramService::class);
+        $this->channelAdapter = Mockery::mock(ChannelAdapterInterface::class);
+        $this->channelFactory = Mockery::mock(ChannelAdapterFactory::class);
 
-        $this->service = new MessageService(
-            $this->lineService,
-            $this->telegramService
-        );
+        // By default, factory supports 'line' channel and returns the mock adapter
+        $this->channelFactory->shouldReceive('supports')
+            ->andReturn(true)
+            ->byDefault();
+        $this->channelFactory->shouldReceive('make')
+            ->andReturn($this->channelAdapter)
+            ->byDefault();
+
+        $this->service = new MessageService($this->channelFactory);
 
         $this->user = User::factory()->create();
         $this->bot = Bot::factory()->create(['user_id' => $this->user->id]);
@@ -91,15 +96,11 @@ class MessageServiceTest extends TestCase
             'external_customer_id' => 'U123456',
         ]);
 
-        // Mock LINE service
-        $this->lineService->shouldReceive('textMessage')
+        // Mock channel adapter to succeed
+        $this->channelAdapter->shouldReceive('sendMessage')
             ->once()
-            ->with('Test message')
-            ->andReturn(['type' => 'text', 'text' => 'Test message']);
-
-        $this->lineService->shouldReceive('push')
-            ->once()
-            ->andReturn(true);
+            ->with($this->bot, $conversation, 'text', 'Test message', null)
+            ->andReturn();
 
         $result = $this->service->sendAgentMessage($this->bot, $conversation, [
             'content' => 'Test message',
@@ -122,14 +123,10 @@ class MessageServiceTest extends TestCase
             'external_customer_id' => 'U123456',
         ]);
 
-        // Mock LINE service to throw exception
-        $this->lineService->shouldReceive('textMessage')
+        // Mock channel adapter to throw exception
+        $this->channelAdapter->shouldReceive('sendMessage')
             ->once()
-            ->andReturn(['type' => 'text', 'text' => 'Test message']);
-
-        $this->lineService->shouldReceive('push')
-            ->once()
-            ->andThrow(new \Exception('LINE API error'));
+            ->andThrow(new \Exception('Channel API error'));
 
         $result = $this->service->sendAgentMessage($this->bot, $conversation, [
             'content' => 'Test message',

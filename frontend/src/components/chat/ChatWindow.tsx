@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMessages, messageKeys } from '@/hooks/chat';
 import { useChatActions } from '@/hooks/useChatActions';
+import { useChannelInfo } from '@/hooks/useChannelInfo';
 import type { Conversation } from '@/types/api';
 
 // Extracted components
@@ -26,10 +27,8 @@ interface ChatWindowProps {
 export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWindowProps) {
   const [autoScroll, setAutoScroll] = useState(true);
 
-  // Channel detection
-  const isTelegram = conversation.channel_type === 'telegram';
-  const isLINE = conversation.channel_type === 'line';
-  const useCustomBubbles = isTelegram || isLINE;
+  // Channel detection - using centralized hook
+  const { isTelegram, useCustomBubbles, supportsHandover } = useChannelInfo(conversation);
 
   // Messages query - use useMessages for consistent query keys with WebSocket updates
   const { data: messagesResponse, isLoading: isLoadingMessages, isFetching: isFetchingMessages } = useMessages(
@@ -60,7 +59,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
     isClearingContext,
   } = useChatActions({ botId, conversation });
 
-  // Clear context button (rendered in header actions)
+  // Clear context button (rendered in header actions) - Telegram doesn't support context clearing
   const clearContextButton = isTelegram ? null : (
     <ClearContextDialog
       onClearContext={handleClearContext}
@@ -77,7 +76,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
         onShowInfo={onShowInfo}
         onToggleHandover={handleToggleHandover}
         isToggleLoading={isTogglingHandover}
-        showHandoverControls={!isTelegram}
+        showHandoverControls={supportsHandover}
         actions={clearContextButton}
       />
 

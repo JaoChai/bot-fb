@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToggleHandover } from '@/hooks/useConversations';
+import { useChannelInfo } from '@/hooks/useChannelInfo';
+import { useCountdown } from '@/hooks/useCountdown';
 import { useToast } from '@/hooks/use-toast';
 import { Bot, Headphones, Timer, Ban } from 'lucide-react';
 import type { Conversation } from '@/types/api';
@@ -20,76 +22,15 @@ interface BotControlProps {
 export function BotControl({ botId, conversation }: BotControlProps) {
   const { toast } = useToast();
   const toggleHandover = useToggleHandover(botId);
-  const isTelegram = conversation.channel_type === 'telegram';
 
-  // Auto-enable countdown
-  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(
-    conversation.bot_auto_enable_remaining_seconds
-  );
+  // Channel detection - using centralized hook
+  const { isTelegram, supportsHandover } = useChannelInfo(conversation);
 
-  // Update countdown - optimized to pause when tab is hidden
-  useEffect(() => {
-    if (!conversation.is_handover || !conversation.bot_auto_enable_at) {
-      setRemainingSeconds(null);
-      return;
-    }
-
-    const targetTime = new Date(conversation.bot_auto_enable_at).getTime();
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    const updateCountdown = () => {
-      const now = Date.now();
-      const diff = Math.max(0, Math.floor((targetTime - now) / 1000));
-      setRemainingSeconds(diff);
-      return diff;
-    };
-
-    const startInterval = () => {
-      if (intervalId) return;
-      const diff = updateCountdown();
-      if (diff <= 0) return;
-
-      intervalId = setInterval(() => {
-        const remaining = updateCountdown();
-        if (remaining <= 0 && intervalId) {
-          clearInterval(intervalId);
-          intervalId = null;
-        }
-      }, 1000);
-    };
-
-    const stopInterval = () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-        intervalId = null;
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        stopInterval();
-      } else {
-        startInterval();
-      }
-    };
-
-    if (!document.hidden) {
-      startInterval();
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      stopInterval();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [conversation.is_handover, conversation.bot_auto_enable_at]);
-
-  const formatCountdown = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  // Auto-enable countdown - using centralized hook
+  const { formatted: countdownFormatted, isActive: isCountdownActive } = useCountdown({
+    targetTime: conversation.bot_auto_enable_at,
+    enabled: conversation.is_handover,
+  });
 
   const handleToggleBot = useCallback(async () => {
     try {
@@ -119,17 +60,21 @@ export function BotControl({ botId, conversation }: BotControlProps) {
     }
   }, [toggleHandover, conversation.id, conversation.is_handover, toast]);
 
-  // Telegram: Human Agent Mode (no bot toggle)
-  if (isTelegram) {
+  // Channels without handover support: Human Agent Mode (no bot toggle)
+  if (!supportsHandover) {
+    const borderColor = isTelegram ? 'border-[#0088CC]/50' : 'border-muted';
+    const bgColor = isTelegram ? 'bg-[#0088CC]/5' : 'bg-muted/5';
+    const iconColor = isTelegram ? 'text-[#0088CC]' : 'text-muted-foreground';
+
     return (
-      <Card className="border-2 border-dashed border-[#0088CC]/50 bg-[#0088CC]/5">
+      <Card className={`border-2 border-dashed ${borderColor} ${bgColor}`}>
         <CardContent className="p-4 space-y-2">
           <div className="flex items-center gap-2">
-            <Headphones className="h-5 w-5 text-[#0088CC]" />
-            <span className="font-medium text-[#0088CC]">Human Agent Mode</span>
+            <Headphones className={`h-5 w-5 ${iconColor}`} />
+            <span className={`font-medium ${iconColor}`}>Human Agent Mode</span>
           </div>
           <p className="text-xs text-muted-foreground">
-            Telegram uses Human Agent mode only. No auto-responses.
+            This channel uses Human Agent mode only. No auto-responses.
           </p>
         </CardContent>
       </Card>
@@ -201,10 +146,10 @@ export function BotControl({ botId, conversation }: BotControlProps) {
 
         {/* Auto-enable countdown or permanent indicator */}
         {conversation.is_handover && (
-          remainingSeconds !== null && remainingSeconds > 0 ? (
+          isCountdownActive ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Timer className="h-4 w-4" />
-              <span>Auto-enables in {formatCountdown(remainingSeconds)}</span>
+              <span>Auto-enables in {countdownFormatted}</span>
             </div>
           ) : !conversation.bot_auto_enable_at && (
             <div className="flex items-center gap-2 text-sm text-destructive">
