@@ -42,7 +42,78 @@ export interface ChannelInfo {
 }
 
 /**
- * Get channel information from a conversation
+ * Default channel info for undefined conversation
+ */
+const defaultChannelInfo: ChannelInfo = {
+  channelType: null,
+  isTelegram: false,
+  isLINE: false,
+  isFacebook: false,
+  isDemo: false,
+  isGroup: false,
+  isPrivateChat: false,
+  supportsHandover: false,
+  supportsMedia: false,
+  useCustomBubbles: false,
+  displayName: 'Unknown',
+};
+
+/**
+ * Compute channel information from a conversation (internal helper)
+ * Single source of truth for channel detection logic
+ */
+function computeChannelInfo(
+  conversation: Conversation | undefined
+): ChannelInfo {
+  if (!conversation) {
+    return defaultChannelInfo;
+  }
+
+  const channelType = conversation.channel_type as ChannelType;
+
+  // Channel detection
+  const isTelegram = channelType === 'telegram';
+  const isLINE = channelType === 'line';
+  const isFacebook = channelType === 'facebook';
+  const isDemo = channelType === 'demo';
+
+  // Telegram-specific: group detection
+  const telegramChatType = conversation.telegram_chat_type;
+  const isGroup =
+    isTelegram &&
+    (telegramChatType === 'group' || telegramChatType === 'supergroup');
+  const isPrivateChat = isTelegram && telegramChatType === 'private';
+
+  // Feature support
+  // LINE and Facebook support handover mode, Telegram does not
+  const supportsHandover = isLINE || isFacebook;
+
+  // All channels except demo support media
+  const supportsMedia = !isDemo;
+
+  // LINE and Telegram use custom bubble rendering
+  const useCustomBubbles = isTelegram || isLINE;
+
+  // Display name for UI
+  const displayName = getDisplayName(channelType);
+
+  return {
+    channelType,
+    isTelegram,
+    isLINE,
+    isFacebook,
+    isDemo,
+    isGroup,
+    isPrivateChat,
+    supportsHandover,
+    supportsMedia,
+    useCustomBubbles,
+    displayName,
+  };
+}
+
+/**
+ * Get channel information from a conversation (React hook)
  *
  * @param conversation - The conversation object (can be undefined)
  * @returns ChannelInfo object with all channel detection utilities
@@ -50,66 +121,10 @@ export interface ChannelInfo {
 export function useChannelInfo(
   conversation: Conversation | undefined
 ): ChannelInfo {
-  return useMemo(() => {
-    // Handle undefined conversation
-    if (!conversation) {
-      return {
-        channelType: null,
-        isTelegram: false,
-        isLINE: false,
-        isFacebook: false,
-        isDemo: false,
-        isGroup: false,
-        isPrivateChat: false,
-        supportsHandover: false,
-        supportsMedia: false,
-        useCustomBubbles: false,
-        displayName: 'Unknown',
-      };
-    }
-
-    const channelType = conversation.channel_type as ChannelType;
-
-    // Channel detection
-    const isTelegram = channelType === 'telegram';
-    const isLINE = channelType === 'line';
-    const isFacebook = channelType === 'facebook';
-    const isDemo = channelType === 'demo';
-
-    // Telegram-specific: group detection
-    const telegramChatType = conversation.telegram_chat_type;
-    const isGroup =
-      isTelegram &&
-      (telegramChatType === 'group' || telegramChatType === 'supergroup');
-    const isPrivateChat = isTelegram && telegramChatType === 'private';
-
-    // Feature support
-    // LINE and Facebook support handover mode, Telegram does not
-    const supportsHandover = isLINE || isFacebook;
-
-    // All channels except demo support media
-    const supportsMedia = !isDemo;
-
-    // LINE and Telegram use custom bubble rendering
-    const useCustomBubbles = isTelegram || isLINE;
-
-    // Display name for UI
-    const displayName = getDisplayName(channelType);
-
-    return {
-      channelType,
-      isTelegram,
-      isLINE,
-      isFacebook,
-      isDemo,
-      isGroup,
-      isPrivateChat,
-      supportsHandover,
-      supportsMedia,
-      useCustomBubbles,
-      displayName,
-    };
-  }, [conversation?.channel_type, conversation?.telegram_chat_type]);
+  return useMemo(
+    () => computeChannelInfo(conversation),
+    [conversation?.channel_type, conversation?.telegram_chat_type]
+  );
 }
 
 /**
@@ -137,50 +152,5 @@ function getDisplayName(channelType: ChannelType): string {
 export function getChannelInfo(
   conversation: Conversation | undefined
 ): ChannelInfo {
-  if (!conversation) {
-    return {
-      channelType: null,
-      isTelegram: false,
-      isLINE: false,
-      isFacebook: false,
-      isDemo: false,
-      isGroup: false,
-      isPrivateChat: false,
-      supportsHandover: false,
-      supportsMedia: false,
-      useCustomBubbles: false,
-      displayName: 'Unknown',
-    };
-  }
-
-  const channelType = conversation.channel_type as ChannelType;
-  const isTelegram = channelType === 'telegram';
-  const isLINE = channelType === 'line';
-  const isFacebook = channelType === 'facebook';
-  const isDemo = channelType === 'demo';
-
-  const telegramChatType = conversation.telegram_chat_type;
-  const isGroup =
-    isTelegram &&
-    (telegramChatType === 'group' || telegramChatType === 'supergroup');
-  const isPrivateChat = isTelegram && telegramChatType === 'private';
-
-  const supportsHandover = isLINE || isFacebook;
-  const supportsMedia = !isDemo;
-  const useCustomBubbles = isTelegram || isLINE;
-  const displayName = getDisplayName(channelType);
-
-  return {
-    channelType,
-    isTelegram,
-    isLINE,
-    isFacebook,
-    isDemo,
-    isGroup,
-    isPrivateChat,
-    supportsHandover,
-    supportsMedia,
-    useCustomBubbles,
-    displayName,
-  };
+  return computeChannelInfo(conversation);
 }
