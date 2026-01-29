@@ -6,8 +6,12 @@
  */
 import type { Message, PaginationMeta } from '@/types/api';
 
-// Fallback polling interval when WebSocket is disconnected (10 seconds)
-export const FALLBACK_POLLING_INTERVAL = 10000;
+// Fallback polling interval when WebSocket is disconnected (5 seconds for faster recovery)
+export const FALLBACK_POLLING_INTERVAL = 5000;
+
+// Heartbeat refresh interval when connected (30 seconds)
+// This ensures data stays fresh even if WebSocket events are missed
+export const HEARTBEAT_INTERVAL = 30000;
 
 // Default page size for messages
 export const DEFAULT_PAGE_SIZE = 50;

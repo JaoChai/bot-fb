@@ -18,6 +18,7 @@ import type { Message } from '@/types/api';
 import {
   messageKeys,
   FALLBACK_POLLING_INTERVAL,
+  HEARTBEAT_INTERVAL,
   DEFAULT_PAGE_SIZE,
   type MessagesResponse,
   type MessagesOptions,
@@ -53,7 +54,9 @@ export function useMessages(
     },
     enabled: !!botId && !!conversationId,
     staleTime: 0,
-    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
+    // When connected: heartbeat refresh every 30s to catch missed events
+    // When disconnected: fast polling every 5s for quick recovery
+    refetchInterval: isConnected ? HEARTBEAT_INTERVAL : FALLBACK_POLLING_INTERVAL,
   });
 }
 
@@ -94,7 +97,9 @@ export function useInfiniteMessages(
     },
     enabled: !!botId && !!conversationId,
     staleTime: 0,
-    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
+    // When connected: heartbeat refresh every 30s to catch missed events
+    // When disconnected: fast polling every 5s for quick recovery
+    refetchInterval: isConnected ? HEARTBEAT_INTERVAL : FALLBACK_POLLING_INTERVAL,
   });
 }
 
