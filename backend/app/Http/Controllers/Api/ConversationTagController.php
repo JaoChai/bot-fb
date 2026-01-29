@@ -2,19 +2,22 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Services\Chat\TagService;
+use App\Services\ConversationCacheService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
-class ConversationTagController extends Controller
+class ConversationTagController extends BaseConversationController
 {
     public function __construct(
+        ConversationCacheService $cacheService,
         private TagService $tagService
-    ) {}
+    ) {
+        parent::__construct($cacheService);
+    }
 
     /**
      * Get all unique tags used in bot conversations.
@@ -112,13 +115,4 @@ class ConversationTagController extends Controller
         }
     }
 
-    /**
-     * Validate that a conversation belongs to the specified bot.
-     */
-    private function validateConversationBelongsToBot(Conversation $conversation, Bot $bot): void
-    {
-        if ($conversation->bot_id !== $bot->id) {
-            abort(404, 'Conversation not found');
-        }
-    }
 }
