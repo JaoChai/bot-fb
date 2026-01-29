@@ -2,21 +2,24 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
 use App\Http\Resources\ConversationResource;
 use App\Http\Resources\MessageResource;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Services\Chat\MessageService;
+use App\Services\ConversationCacheService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
-class ConversationMessageController extends Controller
+class ConversationMessageController extends BaseConversationController
 {
     public function __construct(
+        ConversationCacheService $cacheService,
         private MessageService $messageService
-    ) {}
+    ) {
+        parent::__construct($cacheService);
+    }
 
     /**
      * Get messages for a conversation with pagination.
@@ -130,16 +133,6 @@ class ConversationMessageController extends Controller
             'size' => $file->getSize(),
             'filename' => $file->getClientOriginalName(),
         ]);
-    }
-
-    /**
-     * Validate that a conversation belongs to the specified bot.
-     */
-    private function validateConversationBelongsToBot(Conversation $conversation, Bot $bot): void
-    {
-        if ($conversation->bot_id !== $bot->id) {
-            abort(404, 'Conversation not found');
-        }
     }
 
     /**

@@ -3,24 +3,27 @@
 namespace App\Http\Controllers\Api;
 
 use App\Events\ConversationUpdated;
-use App\Http\Controllers\Controller;
 use App\Http\Resources\ConversationResource;
 use App\Http\Traits\ApiResponseTrait;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Services\Chat\ConversationService;
+use App\Services\ConversationCacheService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Log;
 
-class ConversationController extends Controller
+class ConversationController extends BaseConversationController
 {
     use ApiResponseTrait;
 
     public function __construct(
+        ConversationCacheService $cacheService,
         private ConversationService $conversationService
-    ) {}
+    ) {
+        parent::__construct($cacheService);
+    }
 
     /**
      * List conversations for a bot with filters, pagination, and search.
@@ -155,13 +158,4 @@ class ConversationController extends Controller
         return $this->success($stats);
     }
 
-    /**
-     * Validate that a conversation belongs to the specified bot.
-     */
-    private function validateConversationBelongsToBot(Conversation $conversation, Bot $bot): void
-    {
-        if ($conversation->bot_id !== $bot->id) {
-            abort(404, 'Conversation not found');
-        }
-    }
 }

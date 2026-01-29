@@ -3,18 +3,21 @@
 namespace App\Http\Controllers\Api;
 
 use App\Events\ConversationUpdated;
-use App\Http\Controllers\Controller;
 use App\Http\Resources\ConversationResource;
 use App\Models\ActivityLog;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\User;
+use App\Services\ConversationCacheService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 
-class ConversationAssignmentController extends Controller
+class ConversationAssignmentController extends BaseConversationController
 {
+    public function __construct(ConversationCacheService $cacheService)
+    {
+        parent::__construct($cacheService);
+    }
     /**
      * Toggle handover mode (human-in-the-loop) with auto-enable timer.
      */
@@ -71,7 +74,7 @@ class ConversationAssignmentController extends Controller
         $conversation->load(['customerProfile', 'assignedUser']);
 
         // Invalidate stats cache (status changed to handover or active)
-        Cache::forget("bot:{$bot->id}:conversation:stats");
+        $this->cacheService->invalidateStats($bot->id);
 
         // Broadcast the update for real-time sync
         broadcast(new ConversationUpdated($conversation))->toOthers();
@@ -181,13 +184,4 @@ class ConversationAssignmentController extends Controller
         ]);
     }
 
-    /**
-     * Validate that a conversation belongs to the specified bot.
-     */
-    private function validateConversationBelongsToBot(Conversation $conversation, Bot $bot): void
-    {
-        if ($conversation->bot_id !== $bot->id) {
-            abort(404, 'Conversation not found');
-        }
-    }
 }
