@@ -18,7 +18,7 @@ class FlowApiTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->user = User::factory()->create();
+        $this->user = User::factory()->owner()->create();
         $this->bot = Bot::factory()->create(['user_id' => $this->user->id]);
     }
 
@@ -130,7 +130,7 @@ class FlowApiTest extends TestCase
         $response = $this->actingAs($this->user)->deleteJson("/api/bots/{$this->bot->id}/flows/{$flow->id}");
 
         $response->assertUnprocessable()
-            ->assertJsonPath('message', 'Cannot delete the only flow. Create another flow first.');
+            ->assertJsonPath('error', 'Cannot delete the only flow. Create another flow first.');
     }
 
     public function test_can_set_flow_as_default(): void
@@ -193,14 +193,14 @@ class FlowApiTest extends TestCase
         $this->assertFalse($flow1->fresh()->is_default);
     }
 
-    public function test_deleting_default_flow_sets_another_as_default(): void
+    public function test_cannot_delete_default_flow(): void
     {
         $flow1 = Flow::factory()->default()->create(['bot_id' => $this->bot->id]);
-        $flow2 = Flow::factory()->create(['bot_id' => $this->bot->id]);
+        Flow::factory()->create(['bot_id' => $this->bot->id]);
 
-        $this->actingAs($this->user)->deleteJson("/api/bots/{$this->bot->id}/flows/{$flow1->id}");
+        $response = $this->actingAs($this->user)->deleteJson("/api/bots/{$this->bot->id}/flows/{$flow1->id}");
 
-        $this->assertTrue($flow2->fresh()->is_default);
-        $this->assertEquals($flow2->id, $this->bot->fresh()->default_flow_id);
+        $response->assertUnprocessable();
+        $this->assertNotSoftDeleted('flows', ['id' => $flow1->id]);
     }
 }

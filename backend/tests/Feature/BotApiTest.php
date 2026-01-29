@@ -16,7 +16,7 @@ class BotApiTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->user = User::factory()->create();
+        $this->user = User::factory()->owner()->create();
     }
 
     public function test_can_list_user_bots(): void
@@ -39,9 +39,9 @@ class BotApiTest extends TestCase
         ]);
 
         $response->assertCreated()
-            ->assertJsonPath('data.name', 'Test Bot')
-            ->assertJsonPath('data.channel_type', 'line')
-            ->assertJsonPath('data.status', 'inactive');
+            ->assertJsonPath('data.bot.name', 'Test Bot')
+            ->assertJsonPath('data.bot.channel_type', 'line')
+            ->assertJsonPath('data.bot.status', 'inactive');
 
         $this->assertDatabaseHas('bots', [
             'name' => 'Test Bot',
@@ -86,8 +86,8 @@ class BotApiTest extends TestCase
         ]);
 
         $response->assertOk()
-            ->assertJsonPath('data.name', 'Updated Name')
-            ->assertJsonPath('data.status', 'active');
+            ->assertJsonPath('data.bot.name', 'Updated Name')
+            ->assertJsonPath('data.bot.status', 'active');
     }
 
     public function test_cannot_update_other_user_bot(): void
@@ -127,7 +127,7 @@ class BotApiTest extends TestCase
         $response = $this->actingAs($this->user)->getJson("/api/bots/{$bot->id}/webhook-url");
 
         $response->assertOk()
-            ->assertJsonStructure(['webhook_url', 'channel_type']);
+            ->assertJsonStructure(['data' => ['webhook_url', 'channel_type']]);
     }
 
     public function test_can_regenerate_webhook_url(): void
@@ -150,8 +150,8 @@ class BotApiTest extends TestCase
         ]);
 
         $response->assertOk()
-            ->assertJsonPath('input', 'Hello bot!')
-            ->assertJsonPath('bot_id', $bot->id)
-            ->assertJsonStructure(['message', 'input', 'response', 'bot_id']);
+            ->assertJsonPath('data.input', 'Hello bot!')
+            ->assertJsonPath('data.bot_id', $bot->id)
+            ->assertJsonStructure(['data' => ['input', 'response', 'bot_id']]);
     }
 }
