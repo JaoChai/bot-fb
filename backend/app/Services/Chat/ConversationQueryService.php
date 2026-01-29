@@ -4,7 +4,6 @@ namespace App\Services\Chat;
 
 use App\Models\Bot;
 use App\Models\Conversation;
-use App\Services\ConversationCacheService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 
@@ -16,7 +15,6 @@ use Illuminate\Http\Request;
 class ConversationQueryService
 {
     public function __construct(
-        private ConversationCacheService $cacheService,
         private ConversationStatsService $statsService,
     ) {}
 
