@@ -14,8 +14,13 @@ import type {
   PaginationMeta,
 } from '@/types/api';
 
-// Fallback polling interval when WebSocket is disconnected (10 seconds)
-const FALLBACK_POLLING_INTERVAL = 10000;
+// Fallback polling interval when WebSocket is disconnected (5 seconds for faster recovery)
+const FALLBACK_POLLING_INTERVAL = 5000;
+
+// Heartbeat refresh interval when connected (30 seconds)
+// This ensures data stays fresh even if WebSocket events are missed during reconnection gaps
+// Similar to how LINE OA maintains data sync with periodic refreshes
+const HEARTBEAT_INTERVAL = 30000;
 
 // Query key factory for conversations
 export const conversationKeys = {
@@ -56,7 +61,9 @@ export function useConversationList(
     },
     enabled: !!botId,
     staleTime: 0,
-    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
+    // When connected: heartbeat refresh every 30s to catch missed events
+    // When disconnected: fast polling every 5s for quick recovery
+    refetchInterval: isConnected ? HEARTBEAT_INTERVAL : FALLBACK_POLLING_INTERVAL,
   });
 }
 
@@ -90,7 +97,9 @@ export function useInfiniteConversationList(
       return current_page < last_page ? current_page + 1 : undefined;
     },
     enabled: !!botId,
-    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
+    // When connected: heartbeat refresh every 30s to catch missed events
+    // When disconnected: fast polling every 5s for quick recovery
+    refetchInterval: isConnected ? HEARTBEAT_INTERVAL : FALLBACK_POLLING_INTERVAL,
   });
 }
 

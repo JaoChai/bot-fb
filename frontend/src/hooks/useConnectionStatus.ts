@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useConnectionStore } from '@/stores/connectionStore';
+import { getEcho } from '@/lib/echo';
 
 /**
  * Hook to monitor WebSocket connection status and handle reconnection.
  *
  * Features:
+ * - Checks current connection state on mount (handles case where Echo connected before listener attached)
  * - Listens for echo:connected, echo:disconnected, echo:reconnected events
  * - Auto-invalidates all queries on reconnect to fetch fresh data
  * - Updates global connection state in Zustand store for fallback polling
@@ -20,6 +22,21 @@ export function useConnectionStatus() {
   const { isConnected, setConnected } = useConnectionStore();
 
   useEffect(() => {
+    // Check current connection state immediately on mount
+    // This handles the case where Echo connected before this listener was attached
+    // Pusher states: initialized, connecting, connected, unavailable, failed, disconnected
+    try {
+      const echo = getEcho();
+      const currentState = echo.connector?.pusher?.connection?.state;
+      if (currentState === 'connected') {
+        setConnected(true);
+        hasConnectedOnce.current = true;
+        console.log('[WebSocket] Already connected on mount');
+      }
+    } catch {
+      // Echo not initialized yet, will get connected event later
+    }
+
     const handleConnected = () => {
       setConnected(true);
       hasConnectedOnce.current = true;
