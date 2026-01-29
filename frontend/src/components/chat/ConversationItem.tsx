@@ -2,6 +2,7 @@ import { memo, useCallback, useRef } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { MessageCircle, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useChannelInfo } from '@/hooks/useChannelInfo';
 import type { Conversation } from '@/types/api';
 
 // Short time format for Thai (e.g., "16n." instead of "16 minutes")
@@ -54,13 +55,11 @@ export const ConversationItem = memo(function ConversationItem({
   onPrefetch,
   prefetchDelay = 150,
 }: ConversationItemProps) {
-  const isTelegram = conversation.channel_type === 'telegram';
+  // Channel detection - using centralized hook
+  const { isTelegram, isGroup } = useChannelInfo(conversation);
+
   const isClosed = conversation.status === 'closed';
   const hasUnread = conversation.unread_count > 0;
-  const isGroup = isTelegram && (
-    conversation.telegram_chat_type === 'group' ||
-    conversation.telegram_chat_type === 'supergroup'
-  );
 
   // T041: Ref for prefetch timer
   const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

@@ -4,6 +4,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Search, Loader2 } from 'lucide-react';
 import { ConversationItem } from './ConversationItem';
+import { getChannelInfo } from '@/hooks/useChannelInfo';
 import type { Conversation } from '@/types/api';
 
 interface ConversationListProps {
@@ -31,8 +32,8 @@ export function ConversationList({
   fetchNextPage,
 }: ConversationListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
-  // Derive isTelegram from conversations (all from same bot)
-  const isTelegram = conversations[0]?.channel_type === 'telegram';
+  // Derive channel info from first conversation (all from same bot)
+  const { isTelegram } = getChannelInfo(conversations[0]);
 
   // Infinite scroll using IntersectionObserver with debounce protection
   useEffect(() => {

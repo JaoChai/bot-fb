@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient, type QueryClient, type InfiniteD
 import { api } from '@/lib/api';
 import type { Conversation, ConversationStats, UpdateConversationData } from '@/types/api';
 import { conversationKeys, type ConversationsResponse } from './useConversationList';
-import { messageKeys, type MessagesResponse } from './useMessages';
+import { messageKeys, type MessagesResponse } from './messageKeys';
 
 // Query key factory for single conversation
 export const conversationDetailKeys = {

@@ -21,7 +21,7 @@ class ConversationServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new ConversationService();
+        $this->service = app(ConversationService::class);
         $this->user = User::factory()->create();
         $this->bot = Bot::factory()->create(['user_id' => $this->user->id]);
     }

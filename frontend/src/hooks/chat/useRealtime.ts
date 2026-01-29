@@ -9,7 +9,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useBotChannel } from '@/hooks/useEcho';
-import { messageKeys, type MessagesResponse } from './useMessages';
+import { messageKeys, type MessagesResponse } from './messageKeys';
 import { conversationKeys, type ConversationsResponse } from './useConversationList';
 import { conversationDetailKeys } from './useConversationDetails';
 import { useConnectionStore } from '@/stores/connectionStore';

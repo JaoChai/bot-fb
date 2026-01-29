@@ -12,14 +12,8 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
+import { useChannelInfo } from '@/hooks/useChannelInfo';
 import type { Conversation } from '@/types/api';
-
-const channelLabels: Record<string, string> = {
-  line: 'LINE',
-  facebook: 'Facebook',
-  telegram: 'Telegram',
-  demo: 'Demo',
-};
 
 interface CustomerDetailsProps {
   conversation: Conversation;
@@ -31,11 +25,9 @@ interface CustomerDetailsProps {
  */
 export function CustomerDetails({ conversation }: CustomerDetailsProps) {
   const customer = conversation.customer_profile;
-  const isTelegram = conversation.channel_type === 'telegram';
-  const isGroup = isTelegram && (
-    conversation.telegram_chat_type === 'group' ||
-    conversation.telegram_chat_type === 'supergroup'
-  );
+
+  // Channel detection - using centralized hook
+  const { isTelegram, isGroup, displayName } = useChannelInfo(conversation);
 
   return (
     <div className="space-y-6">
@@ -75,7 +67,7 @@ export function CustomerDetails({ conversation }: CustomerDetailsProps) {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              {channelLabels[conversation.channel_type]}
+              {displayName}
             </p>
           )}
         </div>

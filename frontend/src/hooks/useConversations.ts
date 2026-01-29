@@ -2,7 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteD
 import { api } from '@/lib/api';
 import { buildConversationFilterParams } from '@/lib/params';
 import { useConnectionStore } from '@/stores/connectionStore';
-import { messageKeys, type MessagesOptions } from '@/hooks/chat/useMessages';
+import { messageKeys, type MessagesOptions } from '@/hooks/chat';
 import { useMutationWithToast } from './useMutationWithToast';
 import type {
   AddTagsData,
