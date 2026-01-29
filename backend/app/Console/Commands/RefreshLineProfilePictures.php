@@ -32,6 +32,8 @@ class RefreshLineProfilePictures extends Command
 
     protected int $skipped = 0;
 
+    protected int $cleared = 0;
+
     protected int $errors = 0;
 
     protected Carbon $startTime;
@@ -133,25 +135,45 @@ class RefreshLineProfilePictures extends Command
         try {
             $lineProfile = $lineService->getProfile($bot, $profile->external_id);
 
-            // LINEService returns empty profile on failure, check for valid data
-            if (! empty($lineProfile['pictureUrl'])) {
-                $profile->update([
-                    'picture_url' => $lineProfile['pictureUrl'],
-                    'display_name' => $lineProfile['displayName'] ?? $profile->display_name,
-                    'metadata' => array_merge(
-                        $profile->metadata ?? [],
-                        ['status_message' => $lineProfile['statusMessage'] ?? null]
-                    ),
-                ]);
-                $this->updated++;
+            // Check if we have valid profile data (at least displayName should be present)
+            $hasValidProfile = ! empty($lineProfile['displayName']) || ! empty($lineProfile['pictureUrl']);
 
-                return true;
+            if (! $hasValidProfile) {
+                // API returned empty/invalid data - skip without modifying
+                $this->skipped++;
+                Log::debug('LINE profile refresh: Empty response from API', [
+                    'profile_id' => $profile->id,
+                    'external_id' => $profile->external_id,
+                ]);
+
+                return false;
             }
 
-            // No picture URL in response (user may have removed it or blocked bot)
-            $this->skipped++;
+            // Determine if picture_url should be cleared (LINE returned null/empty)
+            $newPictureUrl = ! empty($lineProfile['pictureUrl']) ? $lineProfile['pictureUrl'] : null;
+            $pictureWasCleared = $profile->picture_url !== null && $newPictureUrl === null;
 
-            return false;
+            // Always update profile with latest data from LINE
+            $profile->update([
+                'picture_url' => $newPictureUrl,
+                'display_name' => $lineProfile['displayName'] ?? $profile->display_name,
+                'metadata' => array_merge(
+                    $profile->metadata ?? [],
+                    ['status_message' => $lineProfile['statusMessage'] ?? null]
+                ),
+            ]);
+
+            if ($pictureWasCleared) {
+                $this->cleared++;
+                Log::debug('LINE profile picture cleared (expired or removed by user)', [
+                    'profile_id' => $profile->id,
+                    'external_id' => $profile->external_id,
+                ]);
+            } else {
+                $this->updated++;
+            }
+
+            return true;
 
         } catch (\Exception $e) {
             $this->errors++;
@@ -193,6 +215,7 @@ class RefreshLineProfilePictures extends Command
             ['Total profiles', $this->total],
             ['Processed', $this->processed],
             ['Updated', $this->updated],
+            ['Cleared (expired URLs)', $this->cleared],
             ['Skipped', $this->skipped],
             ['Errors', $this->errors],
             ['Duration', "{$duration} seconds"],
@@ -202,6 +225,7 @@ class RefreshLineProfilePictures extends Command
             'total' => $this->total,
             'processed' => $this->processed,
             'updated' => $this->updated,
+            'cleared' => $this->cleared,
             'skipped' => $this->skipped,
             'errors' => $this->errors,
             'duration_seconds' => $duration,
