@@ -324,7 +324,7 @@ class RAGService
 
         // Append memory notes if available (injected before KB context for priority)
         if (!empty($memoryNotes)) {
-            $prompt .= "\n\n## ข้อมูลสำคัญเกี่ยวกับลูกค้า:\n";
+            $prompt .= "\n\n## Memory:\n";
             foreach ($memoryNotes as $content) {
                 $prompt .= "- {$content}\n";
             }

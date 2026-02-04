@@ -66,7 +66,7 @@ class RAGServiceTest extends TestCase
 
         $result = $this->callBuildEnhancedPrompt($basePrompt, '', null, $memoryNotes);
 
-        $this->assertStringContainsString('## ข้อมูลสำคัญเกี่ยวกับลูกค้า:', $result);
+        $this->assertStringContainsString('## Memory:', $result);
         $this->assertStringContainsString('- ลูกค้าแพ้ถั่ว', $result);
         $this->assertStringContainsString('- ชอบกาแฟเย็น ไม่หวาน', $result);
     }
@@ -78,7 +78,7 @@ class RAGServiceTest extends TestCase
         $result = $this->callBuildEnhancedPrompt($basePrompt, '', null, []);
 
         // Should not contain memory section when empty
-        $this->assertStringNotContainsString('## ข้อมูลสำคัญเกี่ยวกับลูกค้า:', $result);
+        $this->assertStringNotContainsString('## Memory:', $result);
         $this->assertEquals($basePrompt, $result);
     }
 
@@ -91,7 +91,7 @@ class RAGServiceTest extends TestCase
         $result = $this->callBuildEnhancedPrompt($basePrompt, $kbContext, null, $memoryNotes);
 
         // Memory notes should appear before KB context
-        $memoryPos = strpos($result, '## ข้อมูลสำคัญเกี่ยวกับลูกค้า:');
+        $memoryPos = strpos($result, '## Memory:');
         $kbPos = strpos($result, '## ข้อมูลอ้างอิงจาก Knowledge Base:');
 
         $this->assertNotFalse($memoryPos);
@@ -179,7 +179,7 @@ class RAGServiceTest extends TestCase
 
         // Should contain all parts
         $this->assertStringContainsString('You are a helpful assistant.', $result);
-        $this->assertStringContainsString('## ข้อมูลสำคัญเกี่ยวกับลูกค้า:', $result);
+        $this->assertStringContainsString('## Memory:', $result);
         $this->assertStringContainsString('- ลูกค้า VIP', $result);
         $this->assertStringContainsString('- ได้ส่วนลด 10%', $result);
         $this->assertStringContainsString('## ข้อมูลอ้างอิง:', $result);
