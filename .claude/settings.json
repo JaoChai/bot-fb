@@ -2,7 +2,6 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
-  "teammateMode": "auto",
   "hooks": {
     "PreToolUse": [
       {
@@ -26,5 +25,11 @@
         ]
       }
     ]
-  }
+  },
+  "enabledPlugins": {
+    "php-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "laravel-boost@claude-plugins-official": true
+  },
+  "teammateMode": "auto"
 }
