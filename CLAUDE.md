@@ -95,6 +95,13 @@ Auto-triggered from context or use `/skill-name`. → [Full reference](docs/skil
 | Prompt optimization | `/prompt-eng` |
 | Code cleanup | `/refactor` |
 
+## Agent Teams
+
+Multi-agent collaboration enabled. ใช้ "Create an agent team" สำหรับงาน parallel.
+- **Mode**: `auto` (split panes ใน tmux, in-process ใน terminal ปกติ)
+- **ใช้เมื่อ**: parallel reviews, full-stack features, bug investigation
+- **Chrome E2E**: ใช้ claude-in-chrome แทน Playwright สำหรับ browser testing
+
 ## Critical Gotchas
 
 | Problem | Solution |
