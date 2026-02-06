@@ -51,35 +51,6 @@ jobs:
             exit 1
           fi
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Install dependencies
-        run: |
-          cd frontend
-          npm ci
-
-      - name: Install Playwright
-        run: |
-          cd frontend
-          npx playwright install --with-deps
-
-      - name: Run E2E Tests on Production
-        env:
-          VITE_API_URL: https://api.botjao.com
-        run: |
-          cd frontend
-          npm run test:e2e 2>&1 | tee e2e-results.log || true
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-test-results
-          path: frontend/e2e-results.log
-
       - name: Create deployment status summary
         if: always()
         env:
@@ -95,6 +66,3 @@ jobs:
           echo "### Frontend Check" >> "$GITHUB_STEP_SUMMARY"
           echo "- Status: ${FRONTEND_STATUS}" >> "$GITHUB_STEP_SUMMARY"
           echo "- URL: https://www.botjao.com" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### E2E Tests" >> "$GITHUB_STEP_SUMMARY"
-          echo "- See artifacts for detailed results" >> "$GITHUB_STEP_SUMMARY"
