@@ -97,9 +97,9 @@ export function useInfiniteMessages(
     },
     enabled: !!botId && !!conversationId,
     staleTime: 0,
-    // When connected: heartbeat refresh every 30s to catch missed events
-    // When disconnected: fast polling every 5s for quick recovery
-    refetchInterval: isConnected ? HEARTBEAT_INTERVAL : FALLBACK_POLLING_INTERVAL,
+    // Infinite query: only poll when disconnected to avoid refetching all loaded pages
+    // When connected, WebSocket events + regular useMessages heartbeat handle updates
+    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
   });
 }
 

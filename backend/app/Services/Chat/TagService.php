@@ -78,37 +78,41 @@ class TagService
             return 0;
         }
 
-        $validCount = $bot->conversations()
-            ->whereIn('id', $conversationIds)
-            ->count();
+        return DB::transaction(function () use ($bot, $conversationIds, $tags) {
+            $validCount = $bot->conversations()
+                ->whereIn('id', $conversationIds)
+                ->lockForUpdate()
+                ->count();
 
-        if ($validCount !== count($conversationIds)) {
-            throw new \InvalidArgumentException('Some conversations do not belong to this bot');
-        }
+            if ($validCount !== count($conversationIds)) {
+                throw new \InvalidArgumentException('Some conversations do not belong to this bot');
+            }
 
-        $newTagsJson = json_encode(array_values($tags), JSON_THROW_ON_ERROR);
-        $placeholders = implode(',', array_fill(0, count($conversationIds), '?'));
+            $newTagsJson = json_encode(array_values($tags), JSON_THROW_ON_ERROR);
+            $placeholders = implode(',', array_fill(0, count($conversationIds), '?'));
 
-        $updated = DB::update("
-            UPDATE conversations
-            SET tags = (
-                SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)
-                FROM jsonb_array_elements_text(
-                    COALESCE(tags, '[]'::jsonb) || ?::jsonb
-                ) AS elem
-            ),
-            updated_at = NOW()
-            WHERE bot_id = ?
-              AND deleted_at IS NULL
-              AND id IN ({$placeholders})
-        ", array_merge(
-            [$newTagsJson, $bot->id],
-            $conversationIds
-        ));
+            // SECURITY: $placeholders is always '?,?,?' from array_fill - never interpolate $conversationIds directly
+            $updated = DB::update("
+                UPDATE conversations
+                SET tags = (
+                    SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)
+                    FROM jsonb_array_elements_text(
+                        COALESCE(tags, '[]'::jsonb) || ?::jsonb
+                    ) AS elem
+                ),
+                updated_at = NOW()
+                WHERE bot_id = ?
+                  AND deleted_at IS NULL
+                  AND id IN ({$placeholders})
+            ", array_merge(
+                [$newTagsJson, $bot->id],
+                $conversationIds
+            ));
 
-        $this->invalidateTagsCache($bot->id);
+            $this->invalidateTagsCache($bot->id);
 
-        return $updated;
+            return $updated;
+        });
     }
 
     /**
