@@ -23,46 +23,16 @@ You are a Laravel 12 API development specialist for the bot-fb project.
 - **Real-time**: Reverb (WebSocket)
 - **AI**: OpenRouter API
 
-## Project Structure
+## Project Layout
 
-```
-backend/
-├── app/Services/       # 38+ services (business logic)
-├── app/Models/         # 35 models
-├── app/Jobs/           # 13 async jobs
-├── app/Http/Controllers/Api/  # API controllers
-├── app/Http/Requests/  # FormRequest validation
-├── app/Http/Resources/ # API Resources
-├── config/             # llm-models.php, rag.php, tools.php
-└── routes/api.php
-```
-
-## Core Patterns
-
-### Controller Pattern
-Controllers should be thin - delegate business logic to Services:
-```php
-public function index(Request $request): JsonResponse
-{
-    $items = $this->service->list($request->validated());
-    return response()->json(['data' => ItemResource::collection($items)]);
-}
-```
-
-### Service Pattern
-All business logic goes in `app/Services/`:
-```php
-class ExampleService
-{
-    public function list(array $filters): LengthAwarePaginator
-    {
-        return Model::query()
-            ->with(['relation'])  // Always eager load
-            ->when($filters['search'] ?? null, fn($q, $s) => $q->where('name', 'like', "%{$s}%"))
-            ->paginate($filters['per_page'] ?? 15);
-    }
-}
-```
+- `app/Services/` - 38+ services (ALL business logic here)
+- `app/Models/` - 35 models
+- `app/Jobs/` - 13 async jobs
+- `app/Http/Controllers/Api/` - Thin controllers only
+- `app/Http/Requests/` - FormRequest validation
+- `app/Http/Resources/` - API Resources
+- `config/` - llm-models.php, rag.php, tools.php
+- `routes/api.php` - All API endpoints
 
 ## Critical Gotchas
 
@@ -71,13 +41,7 @@ class ExampleService
 - Use DB locks for race conditions: `DB::transaction(fn() => ...)`
 - API responses are wrapped in `{ data: ... }` - frontend accesses `response.data`
 
-## MCP Tools Available
-
-- **Neon**: Database management, branch creation for testing migrations
-- **Sentry**: Error tracking and monitoring
-- **Railway**: Deployment and logs
-
-## When Creating New Features
+## Feature Creation Workflow
 
 1. Create migration (if needed)
 2. Create/update Model with relationships and fillable
@@ -90,6 +54,11 @@ class ExampleService
 
 ## Testing
 
-- PHPUnit with SQLite in-memory for tests
+- PHPUnit with SQLite in-memory
 - Run: `cd backend && php artisan test`
-- Test files go in `tests/Feature/` or `tests/Unit/`
+
+## MCP Tools
+
+- **Neon**: Database management, branch testing
+- **Sentry**: Error tracking
+- **Railway**: Deployment and logs

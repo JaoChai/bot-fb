@@ -127,6 +127,23 @@ Multi-agent collaboration enabled. ใช้ "Create an agent team" สำหร
 - [ ] ไม่มี console.log/dd() ค้าง?
 - [ ] ไม่มี hardcoded values?
 
+## Skill Priority Rules
+
+**Custom skills (14 ตัว) มี priority สูงกว่า everything-claude-code skills เสมอ**
+- Custom skills มี project-specific context (gotchas, patterns, tech versions)
+- ใช้ custom skill ก่อน แล้วค่อยเสริมด้วย ECC skill ถ้าจำเป็น
+
+**ห้ามใช้ ECC skills ที่ไม่เกี่ยวกับ project นี้:**
+- Go: `go-review`, `go-build`, `go-test`, `golang-patterns`, `golang-testing`
+- Spring Boot: `springboot-patterns`, `springboot-security`, `springboot-tdd`, `jpa-patterns`
+- ClickHouse: `clickhouse-io`
+- Node.js backend: `backend-patterns` (project นี้ใช้ Laravel ไม่ใช่ Node.js)
+
+**Planning hierarchy:**
+- งานใหญ่ (>30min): ใช้ `speckit.*`
+- งานกลาง: ใช้ `EnterPlanMode` (built-in)
+- ห้ามใช้ `everything-claude-code:plan` (ซ้ำกับข้างบน)
+
 ## Speckit (งานใหญ่ >30min)
 
 ```bash
