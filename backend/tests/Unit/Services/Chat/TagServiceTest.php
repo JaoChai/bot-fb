@@ -161,8 +161,15 @@ class TagServiceTest extends TestCase
         $this->service->removeTag($conversation, 'non-existent');
     }
 
+    /**
+     * @group postgres
+     */
     public function test_bulk_add_tags_updates_multiple_conversations(): void
     {
+        if (config('database.default') === 'sqlite') {
+            $this->markTestSkipped('This test requires PostgreSQL');
+        }
+
         $conversations = Conversation::factory()->count(3)->create([
             'bot_id' => $this->bot->id,
             'tags' => [],
@@ -198,5 +205,71 @@ class TagServiceTest extends TestCase
             $conversation->id,
             $otherConversation->id,
         ], ['tag']);
+    }
+
+    /**
+     * @group postgres
+     */
+    public function test_bulk_add_tags_merges_with_existing_tags(): void
+    {
+        if (config('database.default') === 'sqlite') {
+            $this->markTestSkipped('This test requires PostgreSQL');
+        }
+
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->bot->id,
+            'tags' => ['existing-tag'],
+        ]);
+
+        $this->service->bulkAddTags($this->bot, [$conversation->id], ['new-tag']);
+
+        $conversation->refresh();
+        $this->assertContains('existing-tag', $conversation->tags);
+        $this->assertContains('new-tag', $conversation->tags);
+        $this->assertCount(2, $conversation->tags);
+    }
+
+    /**
+     * @group postgres
+     */
+    public function test_bulk_add_tags_deduplicates(): void
+    {
+        if (config('database.default') === 'sqlite') {
+            $this->markTestSkipped('This test requires PostgreSQL');
+        }
+
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->bot->id,
+            'tags' => ['vip', 'urgent'],
+        ]);
+
+        $this->service->bulkAddTags($this->bot, [$conversation->id], ['vip', 'new-tag']);
+
+        $conversation->refresh();
+        $this->assertCount(3, $conversation->tags);
+        $this->assertContains('vip', $conversation->tags);
+        $this->assertContains('urgent', $conversation->tags);
+        $this->assertContains('new-tag', $conversation->tags);
+    }
+
+    /**
+     * @group postgres
+     */
+    public function test_bulk_add_tags_handles_null_tags(): void
+    {
+        if (config('database.default') === 'sqlite') {
+            $this->markTestSkipped('This test requires PostgreSQL');
+        }
+
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->bot->id,
+            'tags' => null,
+        ]);
+
+        $this->service->bulkAddTags($this->bot, [$conversation->id], ['first-tag']);
+
+        $conversation->refresh();
+        $this->assertContains('first-tag', $conversation->tags);
+        $this->assertCount(1, $conversation->tags);
     }
 }
