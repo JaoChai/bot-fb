@@ -166,4 +166,19 @@ class MessageServiceTest extends TestCase
 
         $this->assertEquals(0, $result->unread_count);
     }
+
+    public function test_mark_as_read_loads_customer_profile_and_assigned_user(): void
+    {
+        $assignedUser = User::factory()->create();
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->bot->id,
+            'unread_count' => 3,
+            'assigned_user_id' => $assignedUser->id,
+        ]);
+
+        $result = $this->service->markAsRead($conversation);
+
+        $this->assertTrue($result->relationLoaded('customerProfile'));
+        $this->assertTrue($result->relationLoaded('assignedUser'));
+    }
 }

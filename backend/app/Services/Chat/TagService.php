@@ -72,19 +72,39 @@ class TagService
      */
     public function bulkAddTags(Bot $bot, array $conversationIds, array $tags): int
     {
-        $conversations = $bot->conversations()->whereIn('id', $conversationIds)->get();
+        $conversationIds = array_values(array_unique($conversationIds));
 
-        if ($conversations->count() !== count($conversationIds)) {
+        if (empty($conversationIds) || empty($tags)) {
+            return 0;
+        }
+
+        $validCount = $bot->conversations()
+            ->whereIn('id', $conversationIds)
+            ->count();
+
+        if ($validCount !== count($conversationIds)) {
             throw new \InvalidArgumentException('Some conversations do not belong to this bot');
         }
 
-        $updated = 0;
-        foreach ($conversations as $conversation) {
-            $currentTags = $conversation->tags ?? [];
-            $newTags = array_unique(array_merge($currentTags, $tags));
-            $conversation->update(['tags' => array_values($newTags)]);
-            $updated++;
-        }
+        $newTagsJson = json_encode(array_values($tags), JSON_THROW_ON_ERROR);
+        $placeholders = implode(',', array_fill(0, count($conversationIds), '?'));
+
+        $updated = DB::update("
+            UPDATE conversations
+            SET tags = (
+                SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)
+                FROM jsonb_array_elements_text(
+                    COALESCE(tags, '[]'::jsonb) || ?::jsonb
+                ) AS elem
+            ),
+            updated_at = NOW()
+            WHERE bot_id = ?
+              AND deleted_at IS NULL
+              AND id IN ({$placeholders})
+        ", array_merge(
+            [$newTagsJson, $bot->id],
+            $conversationIds
+        ));
 
         $this->invalidateTagsCache($bot->id);
 

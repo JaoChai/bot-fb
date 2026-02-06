@@ -135,7 +135,7 @@ class MessageService
             }
         }
 
-        $conversation->load(['customerProfile']);
+        $conversation->load(['customerProfile', 'assignedUser']);
 
         return $conversation;
     }
