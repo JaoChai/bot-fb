@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\HybridSearchService;
 use App\Services\IntentAnalysisService;
 use App\Services\OpenRouterService;
+use App\Services\FlowCacheService;
 use App\Services\RAGService;
 use App\Services\SemanticSearchService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -31,12 +32,14 @@ class RAGServiceTest extends TestCase
         $hybridSearch = $this->createMock(HybridSearchService::class);
         $openRouter = $this->createMock(OpenRouterService::class);
         $intentAnalysis = $this->createMock(IntentAnalysisService::class);
+        $flowCache = $this->createMock(FlowCacheService::class);
 
         $this->service = new RAGService(
             $semanticSearch,
             $hybridSearch,
             $openRouter,
-            $intentAnalysis
+            $intentAnalysis,
+            $flowCache
         );
 
         $this->user = User::factory()->create();

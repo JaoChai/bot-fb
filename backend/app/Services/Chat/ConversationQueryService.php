@@ -53,12 +53,18 @@ class ConversationQueryService
             'assignedUser',
             'currentFlow',
             'messages' => function ($query) use ($messagesLimit) {
-                $query->orderBy('created_at', 'asc');
                 if ($messagesLimit) {
-                    $query->limit($messagesLimit);
+                    $query->orderBy('created_at', 'desc')->limit($messagesLimit);
+                } else {
+                    $query->orderBy('created_at', 'asc');
                 }
             },
         ]);
+
+        // When limited, reverse to get chronological order (asc)
+        if ($messagesLimit && $conversation->relationLoaded('messages')) {
+            $conversation->setRelation('messages', $conversation->messages->reverse()->values());
+        }
 
         return $conversation;
     }

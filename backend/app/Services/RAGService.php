@@ -28,6 +28,7 @@ class RAGService
         protected HybridSearchService $hybridSearchService,
         protected OpenRouterService $openRouter,
         protected IntentAnalysisService $intentAnalysis,
+        protected FlowCacheService $flowCacheService,
         protected ?QueryEnhancementService $queryEnhancement = null,
         protected ?SemanticCacheService $semanticCache = null
     ) {}
@@ -56,6 +57,8 @@ class RAGService
     ): array {
         // Get API key first (used for both decision and chat models)
         $apiKey = $apiKeyOverride ?? $this->getApiKeyForBot($bot);
+
+        $bot->loadMissing(['defaultFlow.knowledgeBases']);
 
         // Step 0: Check Semantic Cache first (fastest path)
         if ($this->semanticCache?->isEnabled()) {
@@ -219,7 +222,7 @@ class RAGService
         }
 
         // Must have a default flow with knowledge bases
-        $defaultFlow = $bot->defaultFlow;
+        $defaultFlow = $this->flowCacheService->getDefaultFlow($bot->id);
         if (!$defaultFlow || !$defaultFlow->knowledgeBases()->exists()) {
             Log::debug('Bot has KB enabled but no knowledge bases in default flow', [
                 'bot_id' => $bot->id,
@@ -242,7 +245,7 @@ class RAGService
         array &$metadata
     ): string {
         // Get default flow and delegate to flow-based context retrieval
-        $defaultFlow = $bot->defaultFlow;
+        $defaultFlow = $this->flowCacheService->getDefaultFlow($bot->id);
         if (!$defaultFlow) {
             return '';
         }
