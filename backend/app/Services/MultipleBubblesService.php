@@ -69,6 +69,8 @@ Example with 2 bubbles:
 
 Example with 3 bubbles:
 "Great question!{$delimiter}Let me explain that for you.{$delimiter}Here's what you need to know..."
+
+IMPORTANT: ข้อมูลสำคัญทั้งหมด (เลขบัญชี, ราคา, ลิงก์) ต้องอยู่ใน response นี้ ห้ามบอกว่า "เดี๋ยวส่งให้" หรือ "รอสักครู่"
 INSTRUCTION;
     }
 
@@ -105,7 +107,22 @@ INSTRUCTION;
         // Respect LINE's 5 message limit and configured max
         $limit = min(5, $max);
 
-        return array_slice($bubbles, 0, $limit);
+        if (count($bubbles) > $limit) {
+            // Merge overflow bubbles into the last kept bubble instead of silently truncating
+            $kept = array_slice($bubbles, 0, $limit);
+            $overflow = array_slice($bubbles, $limit);
+            $kept[$limit - 1] .= "\n" . implode("\n", $overflow);
+
+            Log::warning('Multiple bubbles exceeded limit, merged overflow into last bubble', [
+                'original_count' => count($bubbles),
+                'limit' => $limit,
+                'overflow_count' => count($overflow),
+            ]);
+
+            return $kept;
+        }
+
+        return $bubbles;
     }
 
     /**
