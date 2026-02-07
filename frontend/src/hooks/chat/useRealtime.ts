@@ -33,25 +33,26 @@ export function useConnectionStatus() {
   const isConnected = useConnectionStore((state) => state.isConnected);
   const setConnected = useConnectionStore((state) => state.setConnected);
   const [isReconnecting, setIsReconnecting] = useState(false);
+  const isConnectedRef = useRef(isConnected);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
 
   useEffect(() => {
+    let backoff = 2000;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
     const handleConnected = () => {
       setConnected(true);
       setIsReconnecting(false);
+      backoff = 2000; // Reset backoff on successful connection
     };
 
     const handleDisconnected = () => {
       setConnected(false);
     };
-
-    const handleReconnecting = () => {
-      setIsReconnecting(true);
-    };
-
-    // Listen for Echo connection events
-    window.addEventListener('echo:connected', handleConnected);
-    window.addEventListener('echo:disconnected', handleDisconnected);
-    window.addEventListener('echo:reconnected', handleConnected);
 
     // Check Pusher state changes for more granular status
     const checkPusherState = () => {
@@ -61,20 +62,34 @@ export function useConnectionStatus() {
       }
     };
 
-    // Check state periodically when disconnected
-    const interval = setInterval(() => {
-      if (!isConnected) {
-        checkPusherState();
-      }
-    }, 1000);
+    // Exponential backoff check when disconnected (uses ref to avoid stale closure)
+    const scheduleCheck = () => {
+      timer = setTimeout(() => {
+        if (!isConnectedRef.current) {
+          checkPusherState();
+          backoff = Math.min(backoff * 2, 30000); // Cap at 30s
+          scheduleCheck();
+        }
+      }, backoff);
+    };
+
+    // Listen for Echo connection events
+    window.addEventListener('echo:connected', handleConnected);
+    window.addEventListener('echo:disconnected', handleDisconnected);
+    window.addEventListener('echo:reconnected', handleConnected);
+
+    // Start checking if disconnected
+    if (!isConnectedRef.current) {
+      scheduleCheck();
+    }
 
     return () => {
       window.removeEventListener('echo:connected', handleConnected);
       window.removeEventListener('echo:disconnected', handleDisconnected);
-      window.removeEventListener('echo:reconnected', handleReconnecting);
-      clearInterval(interval);
+      window.removeEventListener('echo:reconnected', handleConnected);
+      if (timer) clearTimeout(timer);
     };
-  }, [setConnected, isConnected]);
+  }, [setConnected]);
 
   return { isConnected, isReconnecting };
 }
@@ -345,6 +360,7 @@ export function useRealtime(
 }
 
 // Helper to update conversation in infinite list
+// Uses direct page iteration instead of flatMap for O(pages) lookup
 function updateConversationInList(
   queryClient: ReturnType<typeof useQueryClient>,
   botId: number,
@@ -359,14 +375,22 @@ function updateConversationInList(
       if (!old) return old;
 
       const nowNeedsResponse = event.sender === 'user';
-      const allConversations = old.pages.flatMap((page) => page.data);
-      const conversationIndex = allConversations.findIndex(
-        (conv) => conv.id === conversationId
-      );
 
-      if (conversationIndex === -1) return old;
+      // Find conversation directly in pages (O(pages) instead of O(n) flatMap)
+      let targetPageIdx = -1;
+      let targetItemIdx = -1;
+      for (let p = 0; p < old.pages.length; p++) {
+        const idx = old.pages[p].data.findIndex((c) => c.id === conversationId);
+        if (idx !== -1) {
+          targetPageIdx = p;
+          targetItemIdx = idx;
+          break;
+        }
+      }
 
-      const existingConv = allConversations[conversationIndex];
+      if (targetPageIdx === -1) return old;
+
+      const existingConv = old.pages[targetPageIdx].data[targetItemIdx];
       const updatedConv: Conversation = {
         ...existingConv,
         last_message_at: event.conversation?.last_message_at ?? event.created_at,
@@ -398,19 +422,19 @@ function updateConversationInList(
         },
       };
 
-      allConversations.splice(conversationIndex, 1);
-      allConversations.unshift(updatedConv);
+      // Build new pages: remove from old position, prepend to first page
+      const newPages = old.pages.map((page, i) => {
+        const filteredData = i === targetPageIdx
+          ? page.data.filter((_, j) => j !== targetItemIdx)
+          : page.data;
 
-      let offset = 0;
-      return {
-        ...old,
-        pages: old.pages.map((page) => {
-          const pageSize = page.data.length;
-          const pageData = allConversations.slice(offset, offset + pageSize);
-          offset += pageSize;
-          return { ...page, data: pageData };
-        }),
-      };
+        if (i === 0) {
+          return { ...page, data: [updatedConv, ...filteredData] };
+        }
+        return { ...page, data: filteredData };
+      });
+
+      return { ...old, pages: newPages };
     }
   );
 }

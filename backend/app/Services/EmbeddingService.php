@@ -74,29 +74,39 @@ class EmbeddingService
         }
 
         try {
-            $response = Http::withHeaders($this->getHeaders())
-                ->timeout(60)
-                ->post("{$this->baseUrl}/embeddings", [
-                    'model' => $this->model,
-                    'input' => $texts,
-                ]);
-
-            if ($response->failed()) {
-                $error = $response->json('error.message', 'Unknown error');
-                Log::error('OpenRouter batch embedding failed', [
-                    'status' => $response->status(),
-                    'error' => $error,
-                    'model' => $this->model,
-                    'batch_size' => count($texts),
-                ]);
-                throw new RuntimeException("OpenRouter API error: {$error}");
-            }
-
-            $data = $response->json('data', []);
+            $chunks = array_chunk($texts, 25, true);
             $embeddings = [];
 
-            foreach ($data as $item) {
-                $embeddings[$item['index']] = $item['embedding'];
+            foreach ($chunks as $chunkIndex => $chunk) {
+                $response = Http::withHeaders($this->getHeaders())
+                    ->timeout(60)
+                    ->post("{$this->baseUrl}/embeddings", [
+                        'model' => $this->model,
+                        'input' => array_values($chunk),
+                    ]);
+
+                if ($response->failed()) {
+                    $error = $response->json('error.message', 'Unknown error');
+                    Log::error('OpenRouter batch embedding failed', [
+                        'status' => $response->status(),
+                        'error' => $error,
+                        'model' => $this->model,
+                        'batch_size' => count($chunk),
+                    ]);
+                    throw new RuntimeException("OpenRouter API error: {$error}");
+                }
+
+                $data = $response->json('data', []);
+                $offset = array_key_first($chunk);
+
+                foreach ($data as $item) {
+                    $embeddings[$offset + $item['index']] = $item['embedding'];
+                }
+
+                // Delay between chunks to avoid rate limiting (skip after last chunk)
+                if ($chunkIndex < count($chunks) - 1) {
+                    usleep(100_000);
+                }
             }
 
             ksort($embeddings);

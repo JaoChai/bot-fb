@@ -643,6 +643,11 @@ class OpenRouterService
                 'X-Title' => $this->siteName,
             ])
             ->timeout($requestTimeout)
+            ->retry(3, function (int $attempt) {
+                return $attempt * 200;
+            }, throw: false, when: function (\Exception $e, $response) {
+                return $response?->status() === 429 || $response?->status() >= 500;
+            })
             ->acceptJson();
     }
 }

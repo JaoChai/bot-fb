@@ -3,6 +3,7 @@
  * List of MessageBubble components with auto-scroll
  */
 import { useRef, useEffect, useCallback, useMemo, memo } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Loader2, ChevronDown, RotateCcw } from 'lucide-react';
@@ -71,7 +72,6 @@ export function MessageList({
   autoScroll: externalAutoScroll,
   onAutoScrollChange,
 }: MessageListProps) {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const internalAutoScroll = useRef(true);
 
@@ -84,12 +84,20 @@ export function MessageList({
     [contextClearedAt]
   );
 
+  // Virtualizer for efficient message rendering
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => scrollViewportRef.current,
+    estimateSize: () => 80,
+    overscan: 10,
+  });
+
   // Auto scroll to bottom when messages change
   useEffect(() => {
-    if (autoScroll && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (autoScroll && messages.length > 0) {
+      virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' });
     }
-  }, [messages, autoScroll]);
+  }, [messages.length, autoScroll, virtualizer]);
 
   // Handle scroll to detect when user scrolls to bottom
   const handleScroll = useCallback(
@@ -109,8 +117,8 @@ export function MessageList({
   const handleScrollToBottom = useCallback(() => {
     internalAutoScroll.current = true;
     onAutoScrollChange?.(true);
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [onAutoScrollChange]);
+    virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' });
+  }, [onAutoScrollChange, virtualizer, messages.length]);
 
   if (isLoading) {
     return (
@@ -135,7 +143,7 @@ export function MessageList({
         viewportRef={scrollViewportRef}
         onScroll={handleScroll}
       >
-        <div className="space-y-4 max-w-3xl mx-auto">
+        <div className="max-w-3xl mx-auto">
           {/* Conversation start indicator */}
           {conversationCreatedAt && (
             <div className="text-center text-sm text-muted-foreground py-2">
@@ -145,18 +153,41 @@ export function MessageList({
             </div>
           )}
 
-          {/* Messages */}
-          {messages.map((message, index) => (
-            <MemoizedMessageItem
-              key={message.id}
-              message={message}
-              previousMessage={index > 0 ? messages[index - 1] : undefined}
-              contextClearedAt={contextClearedAtDate}
-            />
-          ))}
-
-          {/* Scroll anchor */}
-          <div ref={messagesEndRef} />
+          {/* Virtualized messages */}
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualItem) => {
+              const message = messages[virtualItem.index];
+              const previousMessage = virtualItem.index > 0 ? messages[virtualItem.index - 1] : undefined;
+              return (
+                <div
+                  key={message.id}
+                  data-index={virtualItem.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
+                  <div className="py-2">
+                    <MemoizedMessageItem
+                      message={message}
+                      previousMessage={previousMessage}
+                      contextClearedAt={contextClearedAtDate}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </ScrollArea>
 
