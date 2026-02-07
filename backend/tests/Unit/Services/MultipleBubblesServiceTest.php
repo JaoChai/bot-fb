@@ -7,6 +7,7 @@ use App\Models\Bot;
 use App\Models\BotSetting;
 use App\Services\LINEService;
 use App\Services\MultipleBubblesService;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
 use Tests\TestCase;
@@ -256,7 +257,7 @@ class MultipleBubblesServiceTest extends TestCase
         $this->assertEquals(['Hello', 'World', 'Test'], $bubbles);
     }
 
-    public function test_parse_into_bubbles_respects_max_limit(): void
+    public function test_parse_into_bubbles_respects_max_limit_and_merges_overflow(): void
     {
         $bot = $this->createBotWithSettings(['multiple_bubbles_max' => 2]);
         $lineService = Mockery::mock(LINEService::class);
@@ -264,9 +265,10 @@ class MultipleBubblesServiceTest extends TestCase
 
         $bubbles = $service->parseIntoBubbles('One|||Two|||Three|||Four', $bot);
 
-        // Should be limited to 2 (max setting)
+        // Should be limited to 2 bubbles, with overflow merged into last bubble
         $this->assertCount(2, $bubbles);
-        $this->assertEquals(['One', 'Two'], $bubbles);
+        $this->assertEquals('One', $bubbles[0]);
+        $this->assertEquals("Two\nThree\nFour", $bubbles[1]);
     }
 
     public function test_parse_into_bubbles_trims_whitespace(): void
@@ -290,6 +292,53 @@ class MultipleBubblesServiceTest extends TestCase
 
         $this->assertCount(2, $bubbles);
         $this->assertEquals(['Hello', 'World'], $bubbles);
+    }
+
+    public function test_parse_into_bubbles_within_limit_returns_all(): void
+    {
+        $bot = $this->createBotWithSettings(['multiple_bubbles_max' => 3]);
+        $lineService = Mockery::mock(LINEService::class);
+        $service = new MultipleBubblesService($lineService);
+
+        $bubbles = $service->parseIntoBubbles('One|||Two|||Three', $bot);
+
+        $this->assertCount(3, $bubbles);
+        $this->assertEquals(['One', 'Two', 'Three'], $bubbles);
+    }
+
+    public function test_parse_into_bubbles_overflow_preserves_important_data(): void
+    {
+        $bot = $this->createBotWithSettings(['multiple_bubbles_max' => 2]);
+        $lineService = Mockery::mock(LINEService::class);
+        $service = new MultipleBubblesService($lineService);
+
+        $content = 'สวัสดีครับ|||รายละเอียดสินค้า|||เลขบัญชี: 123-456-789';
+        $bubbles = $service->parseIntoBubbles($content, $bot);
+
+        // Overflow merged into last bubble - important data (account number) preserved
+        $this->assertCount(2, $bubbles);
+        $this->assertEquals('สวัสดีครับ', $bubbles[0]);
+        $this->assertStringContainsString('เลขบัญชี: 123-456-789', $bubbles[1]);
+    }
+
+    public function test_parse_into_bubbles_overflow_logs_warning(): void
+    {
+        Log::shouldReceive('warning')
+            ->once()
+            ->with('Multiple bubbles exceeded limit, merged overflow into last bubble', Mockery::on(function ($context) {
+                return $context['original_count'] === 4
+                    && $context['limit'] === 2
+                    && $context['overflow_count'] === 2;
+            }));
+        Log::shouldReceive('debug')->zeroOrMoreTimes();
+
+        $bot = $this->createBotWithSettings(['multiple_bubbles_max' => 2]);
+        $lineService = Mockery::mock(LINEService::class);
+        $service = new MultipleBubblesService($lineService);
+
+        $bubbles = $service->parseIntoBubbles('A|||B|||C|||D', $bot);
+
+        $this->assertCount(2, $bubbles);
     }
 
     public function test_is_enabled_returns_correct_value(): void
