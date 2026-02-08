@@ -1,5 +1,5 @@
 <?php
-// watchPatterns test - safe to remove
+
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuthController;
