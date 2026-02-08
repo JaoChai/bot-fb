@@ -46,7 +46,7 @@ class StreamController extends Controller
     protected string $openRouterSiteUrl;
     protected string $openRouterSiteName;
 
-    // Track process metrics
+    // Track process metrics (reset at start of each request for Octane safety)
     protected array $metrics = [
         'start_time' => 0,
         'models_used' => [],
@@ -55,7 +55,7 @@ class StreamController extends Controller
         'tool_calls' => 0,
     ];
 
-    // Track if done event has been sent (to ensure it's always sent exactly once)
+    // Track if done event has been sent (reset at start of each request for Octane safety)
     protected bool $doneSent = false;
 
     public function __construct(
@@ -137,8 +137,14 @@ class StreamController extends Controller
             @ini_set('zlib.output_compression', false);
             @ini_set('implicit_flush', true);
 
-            // Reset state for this request
-            $this->metrics['start_time'] = microtime(true);
+            // Reset ALL state for this request (Octane safety: prevents cross-request data leak)
+            $this->metrics = [
+                'start_time' => microtime(true),
+                'models_used' => [],
+                'prompt_tokens' => 0,
+                'completion_tokens' => 0,
+                'tool_calls' => 0,
+            ];
             $this->doneSent = false;
 
             try {
