@@ -77,11 +77,15 @@ export const ChatEmulator = memo(function ChatEmulator({
 }: ChatEmulatorProps) {
   const [input, setInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const prevLengthRef = useRef(messages.length);
 
-  // Scroll to bottom when messages change
+  // F2: Only scroll when new messages are added (not on every content update)
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (messages.length > prevLengthRef.current) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+    prevLengthRef.current = messages.length;
+  }, [messages.length]);
 
   // Handle send message
   const handleSend = useCallback(async () => {

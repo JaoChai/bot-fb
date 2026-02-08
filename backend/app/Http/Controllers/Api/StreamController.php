@@ -13,6 +13,7 @@ use App\Services\IntentAnalysisService;
 use App\Services\OpenRouterService;
 use App\Services\RAGService;
 use App\Services\SecondAI\SecondAIService;
+use App\Services\SemanticCacheService;
 use App\Services\ToolService;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -41,6 +42,7 @@ class StreamController extends Controller
     protected SecondAIService $secondAI;
     protected IntentAnalysisService $intentAnalysis;
     protected RAGService $ragService;
+    protected ?SemanticCacheService $semanticCache;
 
     protected string $openRouterBaseUrl;
     protected string $openRouterSiteUrl;
@@ -66,7 +68,8 @@ class StreamController extends Controller
         AgentSafetyService $agentSafety,
         SecondAIService $secondAI,
         IntentAnalysisService $intentAnalysis,
-        RAGService $ragService
+        RAGService $ragService,
+        ?SemanticCacheService $semanticCache = null
     ) {
         $this->openRouter = $openRouter;
         $this->hybridSearch = $hybridSearch;
@@ -76,6 +79,7 @@ class StreamController extends Controller
         $this->secondAI = $secondAI;
         $this->intentAnalysis = $intentAnalysis;
         $this->ragService = $ragService;
+        $this->semanticCache = $semanticCache;
 
         $this->openRouterBaseUrl = config('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
         $this->openRouterSiteUrl = config('services.openrouter.site_url', config('app.url'));
@@ -147,6 +151,9 @@ class StreamController extends Controller
             ];
             $this->doneSent = false;
 
+            // Eager load knowledgeBases to prevent lazy loading in runKnowledgeBaseSearch()
+            $flow->loadMissing('knowledgeBases');
+
             try {
                 // === STEP 1: Process Start ===
                 $this->sendSSE('process_start', [
@@ -187,6 +194,43 @@ class StreamController extends Controller
                     }
                 }
 
+                // === SEMANTIC CACHE: Check for cached response ===
+                if (!$flow->agentic_mode && $this->semanticCache?->isEnabled()) {
+                    $cacheResult = rescue(function () use ($bot, $message, $apiKey) {
+                        return $this->semanticCache->get($bot, $message, $apiKey);
+                    }, null, report: false);
+
+                    if ($cacheResult) {
+                        $this->sendSSE('cache_hit', [
+                            'match_type' => $cacheResult['cache_match_type'] ?? 'unknown',
+                            'similarity' => $cacheResult['cache_similarity'] ?? 1.0,
+                        ]);
+
+                        // Stream cached content in chunks for natural feel
+                        $content = $cacheResult['content'];
+                        $chunkSize = 50;
+                        $offset = 0;
+                        while ($offset < mb_strlen($content)) {
+                            $chunk = mb_substr($content, $offset, $chunkSize);
+                            $this->sendSSE('content', ['text' => $chunk]);
+                            $offset += $chunkSize;
+                            usleep(5000); // 5ms delay
+                        }
+
+                        // Send done
+                        $totalTime = round((microtime(true) - $this->metrics['start_time']) * 1000);
+                        $this->sendSSE('done', [
+                            'total_time_ms' => $totalTime,
+                            'prompt_tokens' => 0,
+                            'completion_tokens' => 0,
+                            'models_used' => [],
+                            'tool_calls' => 0,
+                            'from_cache' => true,
+                        ]);
+                        return;
+                    }
+                }
+
                 // === AGENTIC MODE: Use Agent Loop ===
                 if ($flow->agentic_mode && !empty($flow->enabled_tools)) {
                     $this->runAgentLoop($bot, $flow, $message, $conversationHistory, $apiKey, $user);
@@ -203,7 +247,14 @@ class StreamController extends Controller
                     $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey);
 
                     // === STEP 5: Second AI - Content Verification ===
-                    $this->runSecondAI($flow, $chatResponse, $message, $apiKey);
+                    $finalResponse = $this->runSecondAI($flow, $chatResponse, $message, $apiKey);
+
+                    // === SEMANTIC CACHE: Save response ===
+                    if ($this->semanticCache?->isEnabled() && !empty($finalResponse)) {
+                        rescue(function () use ($bot, $message, $finalResponse) {
+                            $this->semanticCache->put($bot, $message, $finalResponse);
+                        }, null, report: false);
+                    }
                 }
 
                 // === STEP 6: Done (if not already sent) ===
