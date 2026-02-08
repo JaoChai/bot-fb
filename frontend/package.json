@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "prebuild": "vitest run",
+    "prebuild": "NODE_ENV=test vitest run",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
