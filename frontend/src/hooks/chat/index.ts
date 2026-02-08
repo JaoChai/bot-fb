@@ -58,4 +58,5 @@ export { useNotes, useAddNote, useUpdateNote, useDeleteNote, notesKeys } from '.
 export { useBotTags, useAddTags, useRemoveTag, tagsKeys } from './useTags';
 
 // Real-time (T042, T043)
-export { useRealtime, useConnectionStatus } from './useRealtime';
+export { useRealtime } from './useRealtime';
+export { useConnectionStatus } from '@/hooks/useConnectionStatus';

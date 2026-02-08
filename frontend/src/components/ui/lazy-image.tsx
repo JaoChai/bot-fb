@@ -2,6 +2,21 @@ import { useState, useRef, useEffect, memo } from 'react';
 import { ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+const observerCallbacks = new Map<Element, (entry: IntersectionObserverEntry) => void>();
+let sharedObserver: IntersectionObserver | null = null;
+
+function getSharedObserver(): IntersectionObserver {
+  if (!sharedObserver) {
+    sharedObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        const callback = observerCallbacks.get(entry.target);
+        callback?.(entry);
+      });
+    }, { rootMargin: '200px' });
+  }
+  return sharedObserver;
+}
+
 interface LazyImageProps {
   src: string;
   alt: string;
@@ -10,10 +25,6 @@ interface LazyImageProps {
   onClick?: () => void;
 }
 
-/**
- * LazyImage component - loads images only when they enter the viewport
- * Uses IntersectionObserver for efficient lazy loading
- */
 export const LazyImage = memo(function LazyImage({
   src,
   alt,
@@ -34,22 +45,25 @@ export const LazyImage = memo(function LazyImage({
     setHasError(false);
   }
 
-  // IntersectionObserver to detect when image enters viewport
   useEffect(() => {
-    if (!imgRef.current) return;
+    const el = imgRef.current;
+    if (!el) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          setIsInView(true);
-          observer.disconnect(); // Once in view, stop observing
-        }
-      },
-      { threshold: 0.1, rootMargin: '50px' }
-    );
+    const callback = (entry: IntersectionObserverEntry) => {
+      if (entry.isIntersecting) {
+        setIsInView(true);
+        observerCallbacks.delete(el);
+        getSharedObserver().unobserve(el);
+      }
+    };
 
-    observer.observe(imgRef.current);
-    return () => observer.disconnect();
+    observerCallbacks.set(el, callback);
+    getSharedObserver().observe(el);
+
+    return () => {
+      observerCallbacks.delete(el);
+      getSharedObserver().unobserve(el);
+    };
   }, []);
 
   return (

@@ -49,6 +49,10 @@ return [
     */
     'max_context_chars' => env('RAG_MAX_CONTEXT_CHARS', 4000),
 
+    'max_conversation_history' => env('RAG_MAX_CONVERSATION_HISTORY', 20),
+
+    'max_document_size' => env('RAG_MAX_DOCUMENT_SIZE', 50 * 1024 * 1024), // 50MB
+
     /*
     |--------------------------------------------------------------------------
     | Context Template

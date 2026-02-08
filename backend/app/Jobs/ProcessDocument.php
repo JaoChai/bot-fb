@@ -45,6 +45,14 @@ class ProcessDocument implements ShouldQueue
             $this->document->update(['status' => 'processing']);
             broadcast(new DocumentStatusUpdated($this->document, 'processing'));
 
+            // Check file size limit to prevent OOM
+            $maxFileSize = config('rag.max_document_size', 50 * 1024 * 1024); // 50MB
+            if ($this->document->file_size && $this->document->file_size > $maxFileSize) {
+                throw new \RuntimeException(
+                    "Document too large: " . number_format($this->document->file_size / 1024 / 1024, 1) . "MB exceeds limit of " . number_format($maxFileSize / 1024 / 1024, 1) . "MB"
+                );
+            }
+
             // Get user's API key from their settings
             $apiKey = $this->getUserApiKey();
             $embedder = new EmbeddingService($apiKey);
@@ -160,6 +168,11 @@ class ProcessDocument implements ShouldQueue
         $globalIndex = 0;
 
         foreach ($batches as $batchIndex => $batch) {
+            // Add throttle between batches (not before first)
+            if ($batchIndex > 0) {
+                usleep(50_000); // 50ms delay to prevent rate limiting
+            }
+
             // Prepare texts for embedding
             // If contextual retrieval is enabled, combine context + content
             $texts = [];

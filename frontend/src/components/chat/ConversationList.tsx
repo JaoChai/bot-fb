@@ -35,25 +35,17 @@ export function ConversationList({
   // Derive channel info from first conversation (all from same bot)
   const { isTelegram } = getChannelInfo(conversations[0]);
 
-  // Infinite scroll using IntersectionObserver with debounce protection
+  // Infinite scroll using IntersectionObserver
   useEffect(() => {
     if (!loadMoreRef.current || !hasNextPage || !fetchNextPage) return;
 
-    let isLoading = false;
-
     const observer = new IntersectionObserver(
       (entries) => {
-        // Debounce protection: prevent multiple triggers
-        if (entries[0].isIntersecting && !isFetchingNextPage && !isLoading) {
-          isLoading = true;
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
           fetchNextPage();
-          // Reset loading flag after a short delay to prevent rapid re-triggers
-          setTimeout(() => {
-            isLoading = false;
-          }, 500);
         }
       },
-      { threshold: 0.5, rootMargin: '100px' } // Higher threshold + rootMargin for earlier loading
+      { threshold: 0.5, rootMargin: '100px' }
     );
 
     observer.observe(loadMoreRef.current);

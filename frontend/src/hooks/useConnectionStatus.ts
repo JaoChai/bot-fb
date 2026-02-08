@@ -31,7 +31,6 @@ export function useConnectionStatus() {
       if (currentState === 'connected') {
         setConnected(true);
         hasConnectedOnce.current = true;
-        console.log('[WebSocket] Already connected on mount');
       }
     } catch {
       // Echo not initialized yet, will get connected event later
@@ -44,15 +43,10 @@ export function useConnectionStatus() {
 
     const handleDisconnected = () => {
       setConnected(false);
-      // Log to console for debugging, but don't show toast
-      console.log('[WebSocket] Disconnected, attempting to reconnect...');
     };
 
     const handleReconnected = () => {
-      // Invalidate ALL queries to fetch fresh data after reconnection
-      // This ensures we don't miss any updates that happened while disconnected
       queryClient.invalidateQueries();
-      console.log('[WebSocket] Reconnected, data refreshed');
     };
 
     window.addEventListener('echo:connected', handleConnected);

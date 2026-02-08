@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\EmbeddingService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -69,7 +70,8 @@ class HybridSearchService
         string $query,
         int $limit = 5,
         ?float $threshold = null,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?array $precomputedEmbedding = null
     ): Collection {
         // If hybrid search is disabled, fall back to semantic only
         if (!$this->enabled || !$this->keywordSearch->isAvailable()) {
@@ -77,7 +79,7 @@ class HybridSearchService
                 'enabled' => $this->enabled,
                 'fts_available' => $this->keywordSearch->isAvailable(),
             ]);
-            return $this->semanticSearch->search($knowledgeBaseId, $query, $limit, $threshold, $apiKey);
+            return $this->semanticSearch->search($knowledgeBaseId, $query, $limit, $threshold, $apiKey, $precomputedEmbedding);
         }
 
         // Determine candidate limit based on reranking
@@ -91,7 +93,8 @@ class HybridSearchService
             $query,
             $candidateLimit,
             $threshold,
-            $apiKey
+            $apiKey,
+            $precomputedEmbedding
         );
 
         $keywordResults = $this->keywordSearch->search(
@@ -150,6 +153,13 @@ class HybridSearchService
             return $this->semanticSearch->searchMultiple($kbConfigs, $query, $totalLimit, $apiKey);
         }
 
+        // Generate embedding ONCE for all searches
+        $embeddingService = app(EmbeddingService::class);
+        if ($apiKey) {
+            $embeddingService = $embeddingService->withApiKey($apiKey);
+        }
+        $precomputedEmbedding = $embeddingService->generate($query);
+
         $allResults = collect([]);
 
         foreach ($kbConfigs as $config) {
@@ -157,7 +167,7 @@ class HybridSearchService
             $limit = $config['kb_top_k'] ?? 5;
             $threshold = $config['kb_similarity_threshold'] ?? null;
 
-            $results = $this->search($kbId, $query, $limit, $threshold, $apiKey);
+            $results = $this->search($kbId, $query, $limit, $threshold, $apiKey, $precomputedEmbedding);
 
             // Add KB ID to each result
             $results = $results->map(function ($item) use ($kbId) {
