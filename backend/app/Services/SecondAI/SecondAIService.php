@@ -21,6 +21,11 @@ class SecondAIService
      */
     protected int $timeout = 5;
 
+    /**
+     * Maximum time (seconds) per individual check.
+     */
+    protected int $perCheckTimeout = 2;
+
     public function __construct(
         protected FactCheckService $factCheck,
         protected PolicyCheckService $policyCheck,
@@ -116,49 +121,72 @@ class SecondAIService
                 // 1. Fact Check (if enabled)
                 if (!empty($options['fact_check'])) {
                     $this->checkTimeout($startTime);
-                    $factResult = $this->factCheck->check(
-                        $currentContent,
-                        $flow,
-                        $userMessage,
-                        $apiKey
-                    );
+                    $checkResult = rescue(function () use ($currentContent, $flow, $userMessage, $apiKey) {
+                        $checkStart = microtime(true);
+                        $result = $this->factCheck->check($currentContent, $flow, $userMessage, $apiKey);
+                        if (microtime(true) - $checkStart > $this->perCheckTimeout) {
+                            Log::warning('SecondAI: fact_check exceeded per-check timeout', [
+                                'elapsed' => round(microtime(true) - $checkStart, 2),
+                            ]);
+                        }
+                        return $result;
+                    }, function (\Throwable $e) {
+                        Log::warning('SecondAI: fact_check failed', ['error' => $e->getMessage()]);
+                        return null;
+                    }, report: false);
 
                     $checksApplied[] = 'fact_check';
-                    if ($factResult->wasModified) {
-                        $currentContent = $factResult->content;
-                        $modifications['fact_check'] = $factResult->modifications;
+                    if ($checkResult?->wasModified) {
+                        $currentContent = $checkResult->content;
+                        $modifications['fact_check'] = $checkResult->modifications;
                     }
                 }
 
                 // 2. Policy Check (if enabled)
                 if (!empty($options['policy'])) {
                     $this->checkTimeout($startTime);
-                    $policyResult = $this->policyCheck->check(
-                        $currentContent,
-                        $flow,
-                        $apiKey
-                    );
+                    $checkResult = rescue(function () use ($currentContent, $flow, $apiKey) {
+                        $checkStart = microtime(true);
+                        $result = $this->policyCheck->check($currentContent, $flow, $apiKey);
+                        if (microtime(true) - $checkStart > $this->perCheckTimeout) {
+                            Log::warning('SecondAI: policy exceeded per-check timeout', [
+                                'elapsed' => round(microtime(true) - $checkStart, 2),
+                            ]);
+                        }
+                        return $result;
+                    }, function (\Throwable $e) {
+                        Log::warning('SecondAI: policy failed', ['error' => $e->getMessage()]);
+                        return null;
+                    }, report: false);
 
                     $checksApplied[] = 'policy';
-                    if ($policyResult->wasModified) {
-                        $currentContent = $policyResult->content;
-                        $modifications['policy'] = $policyResult->modifications;
+                    if ($checkResult?->wasModified) {
+                        $currentContent = $checkResult->content;
+                        $modifications['policy'] = $checkResult->modifications;
                     }
                 }
 
                 // 3. Personality Check (if enabled)
                 if (!empty($options['personality'])) {
                     $this->checkTimeout($startTime);
-                    $personalityResult = $this->personalityCheck->check(
-                        $currentContent,
-                        $flow,
-                        $apiKey
-                    );
+                    $checkResult = rescue(function () use ($currentContent, $flow, $apiKey) {
+                        $checkStart = microtime(true);
+                        $result = $this->personalityCheck->check($currentContent, $flow, $apiKey);
+                        if (microtime(true) - $checkStart > $this->perCheckTimeout) {
+                            Log::warning('SecondAI: personality exceeded per-check timeout', [
+                                'elapsed' => round(microtime(true) - $checkStart, 2),
+                            ]);
+                        }
+                        return $result;
+                    }, function (\Throwable $e) {
+                        Log::warning('SecondAI: personality failed', ['error' => $e->getMessage()]);
+                        return null;
+                    }, report: false);
 
                     $checksApplied[] = 'personality';
-                    if ($personalityResult->wasModified) {
-                        $currentContent = $personalityResult->content;
-                        $modifications['personality'] = $personalityResult->modifications;
+                    if ($checkResult?->wasModified) {
+                        $currentContent = $checkResult->content;
+                        $modifications['personality'] = $checkResult->modifications;
                     }
                 }
 

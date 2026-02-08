@@ -28,11 +28,15 @@ type ChatAction =
   | { type: 'APPEND_PROCESS_LOG'; payload: { messageId: string; log: ProcessLog } }
   | { type: 'APPEND_CONTENT'; payload: { messageId: string; text: string } }
   | { type: 'REPLACE_CONTENT'; payload: { messageId: string; content: string } }
+  | { type: 'FLUSH_STREAMING_CONTENT'; payload: { messageId: string; content: string } }
   | { type: 'SET_ERROR'; payload: { messageId: string; error: string } }
   | { type: 'SET_DONE'; payload: { messageId: string; summary?: DoneSummary } }
   | { type: 'SET_ABORTED'; payload: { messageId: string } }
   | { type: 'SET_STREAMING'; payload: boolean }
   | { type: 'CLEAR_MESSAGES' };
+
+// Maximum messages to keep in memory (F4: prevent memory leak)
+const MAX_MESSAGES = 100;
 
 // Initial state
 const initialState: ChatState = {
@@ -43,30 +47,34 @@ const initialState: ChatState = {
 // Reducer function - batches all state updates
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
-    case 'ADD_USER_MESSAGE':
+    case 'ADD_USER_MESSAGE': {
+      const newMessages = [
+        ...state.messages,
+        { id: action.payload.id, role: 'user' as const, content: action.payload.content }
+      ];
       return {
         ...state,
-        messages: [
-          ...state.messages,
-          { id: action.payload.id, role: 'user', content: action.payload.content }
-        ],
+        messages: newMessages.length > MAX_MESSAGES ? newMessages.slice(-MAX_MESSAGES) : newMessages,
       };
+    }
 
-    case 'ADD_ASSISTANT_PLACEHOLDER':
+    case 'ADD_ASSISTANT_PLACEHOLDER': {
+      const newMessages = [
+        ...state.messages,
+        {
+          id: action.payload.id,
+          role: 'assistant' as const,
+          content: '',
+          processLogs: [],
+          isStreaming: true,
+        }
+      ];
       return {
         ...state,
-        messages: [
-          ...state.messages,
-          {
-            id: action.payload.id,
-            role: 'assistant',
-            content: '',
-            processLogs: [],
-            isStreaming: true,
-          }
-        ],
+        messages: newMessages.length > MAX_MESSAGES ? newMessages.slice(-MAX_MESSAGES) : newMessages,
         isStreaming: true,
       };
+    }
 
     case 'APPEND_PROCESS_LOG':
       return {
@@ -89,6 +97,16 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       };
 
     case 'REPLACE_CONTENT':
+      return {
+        ...state,
+        messages: state.messages.map(m =>
+          m.id === action.payload.messageId
+            ? { ...m, content: action.payload.content }
+            : m
+        ),
+      };
+
+    case 'FLUSH_STREAMING_CONTENT':
       return {
         ...state,
         messages: state.messages.map(m =>
@@ -171,11 +189,48 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
   const lastEventTimeRef = useRef<number>(0);
   const isCompletedRef = useRef<boolean>(false);
 
+  // F1: Batched streaming content refs
+  const streamingContentRef = useRef<Map<string, string>>(new Map());
+  const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // F3: Refs for stable sendMessage callback
+  const messagesRef = useRef(state.messages);
+  messagesRef.current = state.messages;
+
+  const isStreamingRef = useRef(state.isStreaming);
+  isStreamingRef.current = state.isStreaming;
+
+  // F1: Flush accumulated streaming content to state
+  const flushStreamingContent = useCallback(() => {
+    streamingContentRef.current.forEach((content, messageId) => {
+      dispatch({ type: 'FLUSH_STREAMING_CONTENT', payload: { messageId, content } });
+    });
+  }, []);
+
+  // F1: Start flush interval (50ms)
+  const startFlushInterval = useCallback(() => {
+    if (flushIntervalRef.current) return;
+    flushIntervalRef.current = setInterval(() => {
+      flushStreamingContent();
+    }, 50);
+  }, [flushStreamingContent]);
+
+  // F1: Stop flush interval and do final flush
+  const stopFlushInterval = useCallback(() => {
+    if (flushIntervalRef.current) {
+      clearInterval(flushIntervalRef.current);
+      flushIntervalRef.current = null;
+    }
+    // Final flush of any remaining content
+    flushStreamingContent();
+    streamingContentRef.current.clear();
+  }, [flushStreamingContent]);
+
   /**
    * Send a message and stream the response
    */
   const sendMessage = useCallback(async (message: string) => {
-    if (!botId || !flowId || !message.trim() || state.isStreaming) {
+    if (!botId || !flowId || !message.trim() || isStreamingRef.current) {
       return;
     }
 
@@ -186,7 +241,7 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
     dispatch({ type: 'ADD_USER_MESSAGE', payload: { id: userMsgId, content: message.trim() } });
 
     // Build conversation history (exclude the current message)
-    const history = state.messages.map(m => ({
+    const history = messagesRef.current.map(m => ({
       role: m.role,
       content: m.content,
     }));
@@ -201,6 +256,9 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
     isCompletedRef.current = false;
     lastEventTimeRef.current = Date.now();
 
+    // F1: Initialize streaming content buffer
+    streamingContentRef.current.set(assistantMsgId, '');
+
     // Helper to reset heartbeat on any event
     const resetHeartbeat = () => {
       lastEventTimeRef.current = Date.now();
@@ -214,6 +272,7 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
         // Only abort if not already completed
         if (!isCompletedRef.current) {
           isCompletedRef.current = true;
+          stopFlushInterval();
           dispatch({ type: 'SET_ABORTED', payload: { messageId: assistantMsgId } });
           abortControllerRef.current?.abort();
         }
@@ -224,6 +283,9 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
         }
       }
     }, HEARTBEAT_CHECK_INTERVAL_MS);
+
+    // F1: Start flush interval before streaming
+    startFlushInterval();
 
     try {
       await streamFlowTest(
@@ -239,16 +301,21 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
           },
           onContent: (text) => {
             resetHeartbeat();
-            dispatch({ type: 'APPEND_CONTENT', payload: { messageId: assistantMsgId, text } });
+            // F1: Accumulate in ref instead of dispatching per-chunk
+            const current = streamingContentRef.current.get(assistantMsgId) ?? '';
+            streamingContentRef.current.set(assistantMsgId, current + text);
           },
           onContentReplace: (content) => {
             resetHeartbeat();
+            // F1: Update ref too so flush doesn't overwrite with stale data
+            streamingContentRef.current.set(assistantMsgId, content);
             dispatch({ type: 'REPLACE_CONTENT', payload: { messageId: assistantMsgId, content } });
           },
           onError: (error) => {
             resetHeartbeat();
             // Prevent double completion
             if (isCompletedRef.current) return;
+            stopFlushInterval();
             dispatch({ type: 'SET_ERROR', payload: { messageId: assistantMsgId, error } });
           },
           onDone: (summary) => {
@@ -262,6 +329,8 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
               clearInterval(heartbeatIntervalRef.current);
               heartbeatIntervalRef.current = null;
             }
+            // F1: Final flush before marking done
+            stopFlushInterval();
             dispatch({ type: 'SET_DONE', payload: { messageId: assistantMsgId, summary } });
           },
           signal: abortControllerRef.current.signal,
@@ -272,6 +341,8 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
       // Prevent double completion
       if (!isCompletedRef.current) {
         isCompletedRef.current = true;
+        // F1: Final flush before error/abort
+        stopFlushInterval();
         if (err.name !== 'AbortError') {
           dispatch({ type: 'SET_ERROR', payload: { messageId: assistantMsgId, error: err.message } });
         } else {
@@ -285,9 +356,11 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;
       }
+      // F1: Ensure flush interval is cleaned up
+      stopFlushInterval();
       abortControllerRef.current = null;
     }
-  }, [botId, flowId, state.messages, state.isStreaming]);
+  }, [botId, flowId, startFlushInterval, stopFlushInterval]);
 
   /**
    * Cancel the current stream
@@ -308,11 +381,12 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
    * Clear all messages
    */
   const clearMessages = useCallback(() => {
-    if (state.isStreaming) {
+    if (isStreamingRef.current) {
       cancelStream();
     }
+    streamingContentRef.current.clear();
     dispatch({ type: 'CLEAR_MESSAGES' });
-  }, [state.isStreaming, cancelStream]);
+  }, [cancelStream]);
 
   return {
     messages: state.messages,
