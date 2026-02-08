@@ -13,6 +13,7 @@ use App\Policies\DocumentPolicy;
 use App\Policies\KnowledgeBasePolicy;
 use App\Policies\QuickReplyPolicy;
 use App\Services\CostTrackingService;
+use App\Services\FlowCacheService;
 use App\Services\HybridSearchService;
 use App\Services\IntentAnalysisService;
 use App\Services\JinaRerankerService;
@@ -72,6 +73,7 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(HybridSearchService::class),
                 $app->make(OpenRouterService::class),
                 $app->make(IntentAnalysisService::class),
+                $app->make(FlowCacheService::class),
                 $app->make(QueryEnhancementService::class),
                 $app->make(SemanticCacheService::class)
             );
