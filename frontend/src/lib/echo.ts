@@ -124,8 +124,6 @@ export const createEcho = (): Echo<'reverb'> => {
     previous: string;
     current: string;
   }) => {
-    console.log(`[Echo] Connection: ${states.previous} → ${states.current}`);
-
     // Dispatch events for global listeners
     if (states.current === 'connected') {
       window.dispatchEvent(new CustomEvent('echo:connected'));

@@ -48,7 +48,7 @@ export interface ConversationItemProps {
  * T041: Supports prefetching on hover for cache warming
  * Displays customer avatar, name, last message preview, and unread badge
  */
-export const ConversationItem = memo(function ConversationItem({
+export const ConversationItem = memo(function ConversationItemInner({
   conversation,
   isSelected,
   onClick,
@@ -169,4 +169,16 @@ export const ConversationItem = memo(function ConversationItem({
       </div>
     </button>
   );
-});
+}, (prev, next) =>
+  prev.conversation.id === next.conversation.id &&
+  prev.conversation.last_message_at === next.conversation.last_message_at &&
+  prev.conversation.unread_count === next.conversation.unread_count &&
+  prev.conversation.status === next.conversation.status &&
+  prev.conversation.last_message?.content === next.conversation.last_message?.content &&
+  prev.conversation.customer_profile?.display_name === next.conversation.customer_profile?.display_name &&
+  prev.conversation.customer_profile?.picture_url === next.conversation.customer_profile?.picture_url &&
+  prev.isSelected === next.isSelected &&
+  prev.onClick === next.onClick &&
+  prev.onPrefetch === next.onPrefetch &&
+  prev.prefetchDelay === next.prefetchDelay
+);

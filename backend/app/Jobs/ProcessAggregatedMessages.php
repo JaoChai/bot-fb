@@ -126,9 +126,8 @@ class ProcessAggregatedMessages implements ShouldQueue
             return;
         }
 
-        // Count messages for stats
-        $messageIds = $aggregationService->getMessageIds($conversationId);
-        $messageCount = count($messageIds);
+        // Count messages for stats (reuse cached value from line 93)
+        $messageCount = count($cachedMessageIds);
 
         Log::info('Processing aggregated messages', [
             'conversation_id' => $conversationId,

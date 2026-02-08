@@ -42,13 +42,66 @@ export interface MessageBubbleProps {
   useChannelAdapter?: boolean;
 }
 
+function ContentWithLightbox({
+  message,
+  shouldUseAdapter,
+  adapter,
+}: {
+  message: Message;
+  shouldUseAdapter: boolean;
+  adapter: ReturnType<typeof useChannel>['adapter'];
+}) {
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  const content = shouldUseAdapter
+    ? adapter.renderMessageContent(message, {
+        onImageClick: (url: string) => setLightboxUrl(url),
+      })
+    : <p className="whitespace-pre-wrap break-words">{message.content}</p>;
+
+  return (
+    <>
+      {content}
+      {lightboxUrl && (
+        <Dialog open onOpenChange={() => setLightboxUrl(null)}>
+          <DialogContent className="max-w-4xl p-0 bg-black/90 border-0">
+            <div className="flex items-center justify-center min-h-[50vh]">
+              <img
+                src={lightboxUrl}
+                alt="Full size"
+                className="max-w-full max-h-[80vh] object-contain"
+              />
+            </div>
+            <div className="absolute bottom-4 right-4">
+              <Button
+                variant="secondary"
+                size="sm"
+                asChild
+              >
+                <a
+                  href={lightboxUrl}
+                  download
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
+                </a>
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
+  );
+}
+
 export const MessageBubble = memo(function MessageBubble({
   message,
   previousMessage,
   showTimestamp: forceShowTimestamp,
   useChannelAdapter = false,
 }: MessageBubbleProps) {
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [reasoningOpen, setReasoningOpen] = useState(false);
   const { adapter, channelType } = useChannel();
 
@@ -69,18 +122,6 @@ export const MessageBubble = memo(function MessageBubble({
   // Determine if we should use channel-specific rendering
   const hasMediaType = message.type && message.type !== 'text';
   const shouldUseAdapter = useChannelAdapter && channelType && (hasMediaType || message.media_url);
-
-  // Render message content
-  const renderContent = () => {
-    if (shouldUseAdapter) {
-      return adapter.renderMessageContent(message, {
-        onImageClick: (url) => setLightboxUrl(url),
-      });
-    }
-
-    // Default text rendering
-    return <p className="whitespace-pre-wrap break-words">{message.content}</p>;
-  };
 
   return (
     <>
@@ -144,16 +185,22 @@ export const MessageBubble = memo(function MessageBubble({
                   )}
                 </button>
               </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="mt-2 p-2 rounded bg-black/10 dark:bg-white/10 text-xs whitespace-pre-wrap max-h-48 overflow-y-auto">
-                  {message.reasoning_content}
-                </div>
-              </CollapsibleContent>
+              {reasoningOpen && (
+                <CollapsibleContent>
+                  <div className="mt-2 p-2 rounded bg-black/10 dark:bg-white/10 text-xs whitespace-pre-wrap max-h-48 overflow-y-auto">
+                    {message.reasoning_content}
+                  </div>
+                </CollapsibleContent>
+              )}
             </Collapsible>
           )}
 
           {/* Message content - uses adapter when enabled */}
-          {renderContent()}
+          <ContentWithLightbox
+            message={message}
+            shouldUseAdapter={!!shouldUseAdapter}
+            adapter={adapter}
+          />
 
           {/* AI metadata */}
           {message.model_used && (
@@ -188,37 +235,6 @@ export const MessageBubble = memo(function MessageBubble({
         )}
       </div>
 
-      {/* Image Lightbox */}
-      <Dialog open={!!lightboxUrl} onOpenChange={() => setLightboxUrl(null)}>
-        <DialogContent className="max-w-4xl p-0 bg-black/90 border-0">
-          <div className="flex items-center justify-center min-h-[50vh]">
-            {lightboxUrl && (
-              <img
-                src={lightboxUrl}
-                alt="Full size"
-                className="max-w-full max-h-[80vh] object-contain"
-              />
-            )}
-          </div>
-          <div className="absolute bottom-4 right-4">
-            <Button
-              variant="secondary"
-              size="sm"
-              asChild
-            >
-              <a
-                href={lightboxUrl || '#'}
-                download
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Download
-              </a>
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </>
   );
 });

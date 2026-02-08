@@ -76,41 +76,30 @@ export function useBotChannel(
 
   useEffect(() => {
     if (!botId) {
-      console.log('[useBotChannel] No botId, skipping subscription');
       return;
     }
 
     const echo = getEcho();
     const channelName = CHANNELS.bot(botId);
 
-    console.log('[useBotChannel] Subscribing to channel:', channelName);
-
     channelRef.current = echo.private(channelName)
       .listen(`.${EVENTS.messageSent}`, (event: MessageSentEvent) => {
-        console.log('[useBotChannel] message.sent:', event.conversation_id);
         callbacksRef.current.onMessage?.(event);
       })
       .listen(`.${EVENTS.conversationCreated}`, (event: ConversationUpdatedEvent) => {
-        console.log('[useBotChannel] conversation.created:', event.id);
         callbacksRef.current.onNewConversation?.(event);
       })
       .listen(`.${EVENTS.conversationUpdated}`, (event: ConversationUpdatedEvent) => {
-        console.log('[useBotChannel] conversation.updated:', event.id);
         callbacksRef.current.onConversationUpdate?.(event);
       })
       .listen(`.${EVENTS.conversationMessageReceived}`, (event: ConversationUpdatedEvent) => {
-        console.log('[useBotChannel] conversation.message_received:', event.id);
         callbacksRef.current.onConversationUpdate?.(event);
       })
       .listen(`.${EVENTS.settingsUpdated}`, (event: BotSettingsUpdatedEvent) => {
-        console.log('[useBotChannel] settings.updated:', event.setting_type);
         callbacksRef.current.onSettingsUpdate?.(event);
       });
 
-    console.log('[useBotChannel] Subscription complete for:', channelName);
-
     return () => {
-      console.log('[useBotChannel] Leaving channel:', channelName);
       if (channelRef.current) {
         echo.leave(channelName);
         channelRef.current = null;

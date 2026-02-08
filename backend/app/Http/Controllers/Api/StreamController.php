@@ -42,6 +42,10 @@ class StreamController extends Controller
     protected IntentAnalysisService $intentAnalysis;
     protected RAGService $ragService;
 
+    protected string $openRouterBaseUrl;
+    protected string $openRouterSiteUrl;
+    protected string $openRouterSiteName;
+
     // Track process metrics
     protected array $metrics = [
         'start_time' => 0,
@@ -72,6 +76,10 @@ class StreamController extends Controller
         $this->secondAI = $secondAI;
         $this->intentAnalysis = $intentAnalysis;
         $this->ragService = $ragService;
+
+        $this->openRouterBaseUrl = config('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
+        $this->openRouterSiteUrl = config('services.openrouter.site_url', config('app.url'));
+        $this->openRouterSiteName = config('services.openrouter.site_name', config('app.name'));
     }
 
     /**
@@ -89,6 +97,9 @@ class StreamController extends Controller
         // 2. Validate input
         $message = $request->input('message');
         $conversationHistory = $request->input('conversation_history', []);
+        // Limit conversation history to prevent excessive token usage
+        $maxHistory = (int) config('rag.max_conversation_history', 20);
+        $conversationHistory = array_slice($conversationHistory, -$maxHistory);
 
         if (empty($message)) {
             return $this->errorResponse('Message is required', 400);
@@ -506,15 +517,15 @@ class StreamController extends Controller
             'connect_timeout' => 10,
         ]);
 
-        $baseUrl = config('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
+        $baseUrl = $this->openRouterBaseUrl;
         $apiKey = $apiKey ?: config('services.openrouter.api_key');
 
         $response = $client->post($baseUrl . '/chat/completions', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $apiKey,
                 'Content-Type' => 'application/json',
-                'HTTP-Referer' => config('services.openrouter.site_url', config('app.url')),
-                'X-Title' => config('services.openrouter.site_name', config('app.name')),
+                'HTTP-Referer' => $this->openRouterSiteUrl,
+                'X-Title' => $this->openRouterSiteName,
             ],
             'json' => [
                 'model' => $model,

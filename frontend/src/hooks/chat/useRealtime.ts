@@ -6,13 +6,12 @@
  * Extract Echo/WebSocket subscriptions for chat
  * Listen for MessageReceived events and invalidate cache
  */
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useBotChannel } from '@/hooks/useEcho';
 import { messageKeys, type MessagesResponse } from './messageKeys';
 import { conversationKeys, type ConversationsResponse } from './useConversationList';
 import { conversationDetailKeys } from './useConversationDetails';
-import { useConnectionStore } from '@/stores/connectionStore';
 import type { Message, Conversation, ConversationFilters } from '@/types/api';
 import type { MessageSentEvent, ConversationUpdatedEvent } from '@/types/realtime';
 
@@ -23,75 +22,6 @@ interface UseRealtimeOptions {
    * @default true
    */
   enableFallbackPolling?: boolean;
-}
-
-/**
- * T043: Hook to track WebSocket connection status
- * Use this to show connection indicators in the UI
- */
-export function useConnectionStatus() {
-  const isConnected = useConnectionStore((state) => state.isConnected);
-  const setConnected = useConnectionStore((state) => state.setConnected);
-  const [isReconnecting, setIsReconnecting] = useState(false);
-  const isConnectedRef = useRef(isConnected);
-
-  // Keep ref in sync with state
-  useEffect(() => {
-    isConnectedRef.current = isConnected;
-  }, [isConnected]);
-
-  useEffect(() => {
-    let backoff = 2000;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const handleConnected = () => {
-      setConnected(true);
-      setIsReconnecting(false);
-      backoff = 2000; // Reset backoff on successful connection
-    };
-
-    const handleDisconnected = () => {
-      setConnected(false);
-    };
-
-    // Check Pusher state changes for more granular status
-    const checkPusherState = () => {
-      const pusher = (window as unknown as { Echo?: { connector?: { pusher?: { connection?: { state: string } } } } }).Echo?.connector?.pusher;
-      if (pusher?.connection?.state === 'connecting') {
-        setIsReconnecting(true);
-      }
-    };
-
-    // Exponential backoff check when disconnected (uses ref to avoid stale closure)
-    const scheduleCheck = () => {
-      timer = setTimeout(() => {
-        if (!isConnectedRef.current) {
-          checkPusherState();
-          backoff = Math.min(backoff * 2, 30000); // Cap at 30s
-          scheduleCheck();
-        }
-      }, backoff);
-    };
-
-    // Listen for Echo connection events
-    window.addEventListener('echo:connected', handleConnected);
-    window.addEventListener('echo:disconnected', handleDisconnected);
-    window.addEventListener('echo:reconnected', handleConnected);
-
-    // Start checking if disconnected
-    if (!isConnectedRef.current) {
-      scheduleCheck();
-    }
-
-    return () => {
-      window.removeEventListener('echo:connected', handleConnected);
-      window.removeEventListener('echo:disconnected', handleDisconnected);
-      window.removeEventListener('echo:reconnected', handleConnected);
-      if (timer) clearTimeout(timer);
-    };
-  }, [setConnected]);
-
-  return { isConnected, isReconnecting };
 }
 
 /**
@@ -327,8 +257,6 @@ export function useRealtime(
       if (!currentBotId) return;
 
       const currentSelectedId = selectedConversationIdRef.current;
-
-      console.log('[useRealtime] Reconnected - syncing all data for bot', currentBotId);
 
       // Invalidate ALL conversation lists for this bot (all filters)
       // This ensures no stale data regardless of which filter was active

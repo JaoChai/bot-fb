@@ -43,7 +43,7 @@ export default defineConfig({
             "@radix-ui/react-slot",
           ],
           // Data Fetching
-          "vendor-query": ["@tanstack/react-query", "axios"],
+          "vendor-query": ["@tanstack/react-query", "@tanstack/react-virtual", "axios"],
           // Charts
           "vendor-charts": ["recharts"],
           // Icons

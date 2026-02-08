@@ -2,6 +2,24 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import type { ApiError } from '@/types/api';
 import { getEcho } from './echo';
 
+let cachedSocketId: string | null = null;
+let socketIdTimestamp = 0;
+const SOCKET_ID_TTL = 5000;
+
+function getSocketId(): string | null {
+  const now = Date.now();
+  if (cachedSocketId && now - socketIdTimestamp < SOCKET_ID_TTL) {
+    return cachedSocketId;
+  }
+  try {
+    cachedSocketId = getEcho()?.socketId() ?? null;
+  } catch {
+    cachedSocketId = null;
+  }
+  socketIdTimestamp = now;
+  return cachedSocketId;
+}
+
 let API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 // Ensure API_BASE_URL ends with /api to fix auth routing
@@ -27,15 +45,9 @@ api.interceptors.request.use(
     }
 
     // Add X-Socket-ID header for Laravel's toOthers() to work
-    // This prevents WebSocket broadcasts from returning to the sender
-    try {
-      const echo = getEcho();
-      const socketId = echo.socketId();
-      if (socketId && config.headers) {
-        config.headers['X-Socket-ID'] = socketId;
-      }
-    } catch {
-      // Echo not initialized yet, skip socket ID
+    const socketId = getSocketId();
+    if (socketId && config.headers) {
+      config.headers['X-Socket-ID'] = socketId;
     }
 
     return config;

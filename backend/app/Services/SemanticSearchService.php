@@ -32,17 +32,23 @@ class SemanticSearchService
         string $query,
         int $limit = 5,
         ?float $threshold = null,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?array $precomputedEmbedding = null
     ): Collection {
         $threshold = $threshold ?? $this->relevanceThreshold;
 
-        // Use user's API key if provided, otherwise use default
-        $embeddingService = $apiKey
-            ? $this->embeddingService->withApiKey($apiKey)
-            : $this->embeddingService;
+        // Use precomputed embedding or generate new one
+        if ($precomputedEmbedding) {
+            $queryEmbedding = $precomputedEmbedding;
+        } else {
+            // Use user's API key if provided, otherwise use default
+            $embeddingService = $apiKey
+                ? $this->embeddingService->withApiKey($apiKey)
+                : $this->embeddingService;
 
-        // Generate embedding for the search query
-        $queryEmbedding = $embeddingService->generate($query);
+            // Generate embedding for the search query
+            $queryEmbedding = $embeddingService->generate($query);
+        }
 
         // Find nearest neighbors using pgvector
         // The HasNeighbors trait provides nearestNeighbors() method
