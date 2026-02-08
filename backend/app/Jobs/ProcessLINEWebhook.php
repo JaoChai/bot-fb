@@ -224,14 +224,16 @@ class ProcessLINEWebhook implements ShouldQueue
         $dispatchAggregation = false;
         $aggregationGroupId = null;
 
-        // Process in transaction (no broadcasts inside to prevent blocking)
+        // Flag to track if we should generate immediate response after transaction
+        $shouldGenerateResponse = false;
+
+        // Transaction 1: Fast validation, dedup, save user message (~50ms)
+        // API calls (AI generate + LINE reply) are moved OUTSIDE to avoid holding DB lock for 2-3s
         DB::transaction(function () use (
             $lineService,
-            $aiService,
             $rateLimitService,
             $aggregationService,
             $userId,
-            $replyToken,
             $messageData,
             $useAggregation,
             $waitTimeMs,
@@ -239,12 +241,12 @@ class ProcessLINEWebhook implements ShouldQueue
             $eventTimestamp,
             $isRedeliveryEvent,
             &$userMessage,
-            &$botMessage,
             &$conversation,
             &$isHandover,
             &$isNewConversation,
             &$dispatchAggregation,
-            &$aggregationGroupId
+            &$aggregationGroupId,
+            &$shouldGenerateResponse
         ) {
             // Find or create conversation (include handover status for auto_handover bots)
             // Use lockForUpdate() to prevent race condition when multiple webhooks arrive simultaneously
@@ -259,25 +261,60 @@ class ProcessLINEWebhook implements ShouldQueue
             $conversation = $existingConversation ?? $this->createNewConversation($userId, $lineService);
 
             // Primary deduplication: webhookEventId (LINE best practice)
-            if ($webhookEventId && Message::where('conversation_id', $conversation->id)
+            if ($webhookEventId && ($existingMsg = Message::where('conversation_id', $conversation->id)
                 ->where('webhook_event_id', $webhookEventId)
-                ->exists()) {
-                Log::info('Duplicate webhook ignored (by webhook_event_id)', [
-                    'conversation_id' => $conversation->id,
-                    'webhook_event_id' => $webhookEventId,
-                ]);
+                ->first())) {
+
+                // Retry recovery: if user message exists but bot never responded (AI failed on previous attempt),
+                // allow retry to generate the bot response
+                $botAlreadyResponded = Message::where('conversation_id', $conversation->id)
+                    ->where('sender', 'bot')
+                    ->where('created_at', '>=', $existingMsg->created_at)
+                    ->exists();
+
+                if (! $botAlreadyResponded && $this->bot->status === 'active' && ! $conversation->is_handover) {
+                    Log::info('Retry recovery: generating bot response for existing user message', [
+                        'conversation_id' => $conversation->id,
+                        'webhook_event_id' => $webhookEventId,
+                        'attempt' => $this->attempts(),
+                    ]);
+                    $userMessage = $existingMsg;
+                    $shouldGenerateResponse = true;
+                } else {
+                    Log::info('Duplicate webhook ignored (by webhook_event_id)', [
+                        'conversation_id' => $conversation->id,
+                        'webhook_event_id' => $webhookEventId,
+                    ]);
+                }
 
                 return;
             }
 
             // Fallback deduplication: external_message_id (backward compatibility)
-            if ($messageData['id'] && Message::where('conversation_id', $conversation->id)
+            if ($messageData['id'] && ($existingMsg = Message::where('conversation_id', $conversation->id)
                 ->where('external_message_id', $messageData['id'])
-                ->exists()) {
-                Log::info('Duplicate webhook ignored (by external_message_id)', [
-                    'conversation_id' => $conversation->id,
-                    'message_id' => $messageData['id'],
-                ]);
+                ->first())) {
+
+                // Retry recovery: same logic as webhook_event_id dedup
+                $botAlreadyResponded = Message::where('conversation_id', $conversation->id)
+                    ->where('sender', 'bot')
+                    ->where('created_at', '>=', $existingMsg->created_at)
+                    ->exists();
+
+                if (! $botAlreadyResponded && $this->bot->status === 'active' && ! $conversation->is_handover) {
+                    Log::info('Retry recovery: generating bot response for existing user message (by message_id)', [
+                        'conversation_id' => $conversation->id,
+                        'message_id' => $messageData['id'],
+                        'attempt' => $this->attempts(),
+                    ]);
+                    $userMessage = $existingMsg;
+                    $shouldGenerateResponse = true;
+                } else {
+                    Log::info('Duplicate webhook ignored (by external_message_id)', [
+                        'conversation_id' => $conversation->id,
+                        'message_id' => $messageData['id'],
+                    ]);
+                }
 
                 return;
             }
@@ -405,32 +442,49 @@ class ProcessLINEWebhook implements ShouldQueue
                 }
             }
 
-            // Immediate response mode (aggregation disabled)
-            // Generate AI response
-            $botMessage = $aiService->generateAndSaveResponse(
-                $this->bot,
-                $conversation,
-                $userMessage
-            );
-
-            // Send reply to LINE (with multiple bubbles support)
-            if ($botMessage->content) {
-                $bubblesService = app(MultipleBubblesService::class);
-
-                if ($bubblesService->isEnabled($this->bot)) {
-                    // Parse content into bubbles and send with optional delays
-                    $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
-                    $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles);
-                } else {
-                    // Standard single message reply with fallback to push
-                    $retryKey = $lineService->generateRetryKey();
-                    $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$botMessage->content], $retryKey);
-                }
-            }
-
-            // Update conversation and bot stats in batch (2 messages: user + bot)
-            $this->updateStatsInBatch($conversation, $isNewConversation);
+            // Mark that we should generate immediate response after transaction
+            $shouldGenerateResponse = true;
         });
+
+        // === API calls OUTSIDE transaction (no DB lock held) ===
+        // AI generate (~2-3s) + LINE reply (~200ms) no longer block concurrent requests
+        if ($shouldGenerateResponse && $userMessage && $conversation) {
+            try {
+                // Generate AI response (no transaction lock held)
+                $botMessage = $aiService->generateAndSaveResponse(
+                    $this->bot,
+                    $conversation,
+                    $userMessage
+                );
+
+                // Send reply to LINE (with multiple bubbles support)
+                if ($botMessage->content) {
+                    $bubblesService = app(MultipleBubblesService::class);
+
+                    if ($bubblesService->isEnabled($this->bot)) {
+                        $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
+                        $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles);
+                    } else {
+                        $retryKey = $lineService->generateRetryKey();
+                        $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$botMessage->content], $retryKey);
+                    }
+                }
+
+                // Update stats with atomic DB::raw operations (no transaction needed)
+                $this->updateStatsInBatch($conversation, $isNewConversation);
+            } catch (\Exception $e) {
+                // User message is already saved in transaction 1
+                // Log error but don't lose the user message
+                Log::error('Failed to generate/send AI response after transaction', [
+                    'bot_id' => $this->bot->id,
+                    'conversation_id' => $conversation->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+
+                throw $e;
+            }
+        }
 
         // Dispatch aggregation job AFTER transaction commits (to ensure message is saved)
         if ($dispatchAggregation && $conversation && $aggregationGroupId) {

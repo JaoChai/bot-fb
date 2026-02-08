@@ -138,15 +138,9 @@ class ProcessAggregatedMessages implements ShouldQueue
 
         $botMessage = null;
 
-        // Generate AI response and send to LINE
-        DB::transaction(function () use (
-            $aiService,
-            $lineService,
-            $bubblesService,
-            $mergedContent,
-            $messageCount,
-            &$botMessage
-        ) {
+        // Transaction 1: Fast validation only (~20ms) - refresh and check state
+        $shouldGenerate = false;
+        DB::transaction(function () use (&$shouldGenerate) {
             // Refresh conversation and bot to get latest state
             $this->conversation->refresh();
             $this->bot->refresh();
@@ -168,9 +162,15 @@ class ProcessAggregatedMessages implements ShouldQueue
                 return;
             }
 
+            $shouldGenerate = true;
+        });
+
+        // === API calls OUTSIDE transaction (no DB lock held) ===
+        // AI generate (~2-3s) + LINE push (~200ms) no longer block concurrent requests
+        if ($shouldGenerate) {
             error_log("[AGGREGATION_DEBUG] Generating AI response - conversation_id: {$this->conversation->id}, content_length: " . strlen($mergedContent));
 
-            // Generate AI response using merged content
+            // Generate AI response using merged content (no transaction lock held)
             $result = $aiService->generateResponse(
                 $this->bot,
                 $mergedContent,
@@ -204,9 +204,9 @@ class ProcessAggregatedMessages implements ShouldQueue
                 }
             }
 
-            // Update stats (only +1 for bot message, user messages already counted)
+            // Update stats with atomic DB::raw operations (no transaction needed)
             $this->updateStats($messageCount);
-        });
+        }
 
         // Clear aggregation data after successful processing
         $aggregationService->clearAggregation($conversationId);

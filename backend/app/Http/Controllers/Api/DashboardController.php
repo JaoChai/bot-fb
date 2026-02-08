@@ -133,18 +133,22 @@ class DashboardController extends Controller
             ->with(['evaluations' => fn ($q) => $q->latest('completed_at')->limit(1)])
             ->get();
 
-        return $bots->map(function ($bot) {
-            // Get messages today for this bot
-            $messagesToday = DB::selectOne("
-                SELECT COUNT(*) as count
-                FROM messages m
-                INNER JOIN conversations c ON m.conversation_id = c.id
-                WHERE c.bot_id = ?
-                    AND c.deleted_at IS NULL
-                    AND m.created_at >= CURRENT_DATE
-                    AND m.created_at < CURRENT_DATE + INTERVAL '1 day'
-            ", [$bot->id]);
+        // Batch query: get messages_today for ALL bots in 1 query (instead of N+1)
+        $messagesTodayByBot = [];
+        if ($bots->isNotEmpty()) {
+            $messagesTodayByBot = DB::table('messages')
+                ->join('conversations', 'messages.conversation_id', '=', 'conversations.id')
+                ->whereIn('conversations.bot_id', $bots->pluck('id'))
+                ->whereNull('conversations.deleted_at')
+                ->whereRaw("messages.created_at >= CURRENT_DATE")
+                ->whereRaw("messages.created_at < CURRENT_DATE + INTERVAL '1 day'")
+                ->groupBy('conversations.bot_id')
+                ->selectRaw('conversations.bot_id, COUNT(*) as count')
+                ->pluck('count', 'bot_id')
+                ->toArray();
+        }
 
+        return $bots->map(function ($bot) use ($messagesTodayByBot) {
             $latestEval = $bot->evaluations->first();
 
             return [
@@ -156,7 +160,7 @@ class DashboardController extends Controller
                 'conversation_count' => $bot->conversations_count,
                 'active_conversations' => $bot->active_conversations_count,
                 'handover_count' => $bot->handover_count,
-                'messages_today' => (int) ($messagesToday->count ?? 0),
+                'messages_today' => (int) ($messagesTodayByBot[$bot->id] ?? 0),
                 'latest_evaluation' => $latestEval ? [
                     'id' => $latestEval->id,
                     'overall_score' => $latestEval->overall_score,
