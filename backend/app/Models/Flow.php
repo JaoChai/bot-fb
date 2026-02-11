@@ -75,4 +75,9 @@ class Flow extends Model
     {
         return $this->hasMany(Evaluation::class);
     }
+
+    public function plugins(): HasMany
+    {
+        return $this->hasMany(FlowPlugin::class);
+    }
 }

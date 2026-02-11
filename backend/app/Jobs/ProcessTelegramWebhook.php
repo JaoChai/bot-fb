@@ -510,6 +510,19 @@ class ProcessTelegramWebhook implements ShouldQueue
                 ]);
             }
 
+            // Execute flow plugins (e.g., Telegram notifications)
+            if ($botMessage) {
+                try {
+                    app(\App\Services\FlowPluginService::class)
+                        ->executePlugins($this->bot, $conversation, $botMessage);
+                } catch (\Exception $e) {
+                    Log::warning('Flow plugin execution failed in Telegram webhook', [
+                        'conversation_id' => $conversation->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             return $botMessage;
 
         } catch (\Exception $e) {
