@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\ConversationNoteController;
 use App\Http\Controllers\Api\ConversationTagController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\FlowController;
+use App\Http\Controllers\Api\FlowPluginController;
 use App\Http\Controllers\Api\KnowledgeBaseController;
 use App\Http\Controllers\Api\StreamController;
 use App\Http\Controllers\Api\UserSearchController;
@@ -187,6 +188,14 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/{flow}/test', [FlowController::class, 'test'])
             ->middleware('throttle.bot-test')
             ->name('flows.test');
+
+        // Flow plugin routes
+        Route::prefix('/{flow}/plugins')->group(function () {
+            Route::get('/', [FlowPluginController::class, 'index'])->name('flows.plugins.index');
+            Route::post('/', [FlowPluginController::class, 'store'])->name('flows.plugins.store');
+            Route::put('/{plugin}', [FlowPluginController::class, 'update'])->name('flows.plugins.update');
+            Route::delete('/{plugin}', [FlowPluginController::class, 'destroy'])->name('flows.plugins.destroy');
+        });
     });
 
     // Flow templates (not nested)

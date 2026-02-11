@@ -470,6 +470,19 @@ class ProcessLINEWebhook implements ShouldQueue
                     }
                 }
 
+                // Execute flow plugins (e.g., Telegram notifications)
+                if ($botMessage) {
+                    try {
+                        app(\App\Services\FlowPluginService::class)
+                            ->executePlugins($this->bot, $conversation, $botMessage);
+                    } catch (\Exception $e2) {
+                        Log::warning('Flow plugin execution failed in LINE webhook', [
+                            'conversation_id' => $conversation->id,
+                            'error' => $e2->getMessage(),
+                        ]);
+                    }
+                }
+
                 // Update stats with atomic DB::raw operations (no transaction needed)
                 $this->updateStatsInBatch($conversation, $isNewConversation);
             } catch (\Exception $e) {

@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { KnowledgeBaseWarning } from '@/components/flow/KnowledgeBaseWarning';
+import { PluginSection } from '@/components/flow/PluginSection';
 import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations } from '@/hooks/useFlows';
 import { useStreamingChat } from '@/hooks/useStreamingChat';
 import { useAllKnowledgeBases } from '@/hooks/useKnowledgeBase';
@@ -40,8 +41,6 @@ import {
   ChevronUp,
   Bot,
   HelpCircle,
-  Zap,
-  Trash2,
   Code,
   Minimize2,
   List,
@@ -52,14 +51,6 @@ import {
   FileText,
 } from 'lucide-react';
 import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
-
-// Helper to generate unique IDs
-function generateId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
 
 // Default system prompt for new flows
 const DEFAULT_SYSTEM_PROMPT = `คุณคือผู้ช่วย AI ที่เป็นมิตรและช่วยเหลือลูกค้าอย่างมืออาชีพ
@@ -158,7 +149,7 @@ export function FlowEditorPage() {
     policy: false,
     personality: false,
   });
-  const [plugins, setPlugins] = useState<Array<{ id: string; name: string }>>([]);
+  // plugins state removed - handled by PluginSection component
   const [externalDataSources, setExternalDataSources] = useState<string>('');
 
   // Auto-redirect in editor entry mode
@@ -960,75 +951,8 @@ export function FlowEditorPage() {
                 </div>
               </div>
 
-              {/* Issue #56: Plugins */}
-              <div className="border rounded-lg p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <Label className="font-medium flex items-center gap-2">
-                      <Zap className="h-4 w-4" />
-                      Plugins
-                    </Label>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      เพิ่มฟังก์ชันเพิ่มเติมให้ AI ผ่าน plugins
-                    </p>
-                  </div>
-                </div>
-
-                {plugins.length === 0 ? (
-                  <div className="border-2 border-dashed rounded-lg p-6 text-center">
-                    <Plus className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground mb-3">ยังไม่มี plugins</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const newPlugin = {
-                          id: generateId(),
-                          name: `Plugin ${plugins.length + 1}`,
-                        };
-                        setPlugins([...plugins, newPlugin]);
-                      }}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      เพิ่ม Plugin
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {plugins.map((plugin) => (
-                      <div
-                        key={plugin.id}
-                        className="flex items-center justify-between p-3 border rounded-lg bg-muted/30"
-                      >
-                        <span className="text-sm font-medium">{plugin.name}</span>
-                        <button
-                          onClick={() =>
-                            setPlugins(plugins.filter((p) => p.id !== plugin.id))
-                          }
-                          className="text-destructive hover:text-destructive/80"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full mt-3"
-                      onClick={() => {
-                        const newPlugin = {
-                          id: generateId(),
-                          name: `Plugin ${plugins.length + 1}`,
-                        };
-                        setPlugins([...plugins, newPlugin]);
-                      }}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      เพิ่ม Plugin
-                    </Button>
-                  </div>
-                )}
-              </div>
+              {/* Plugins - Managed by PluginSection */}
+              <PluginSection botId={String(botId)} flowId={selectedFlowId} />
 
             </div>
           </div>
