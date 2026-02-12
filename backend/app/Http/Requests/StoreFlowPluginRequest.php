@@ -22,6 +22,8 @@ class StoreFlowPluginRequest extends FormRequest
             'config.access_token' => ['required', 'string'],
             'config.chat_id' => ['required', 'string'],
             'config.message_template' => ['required', 'string'],
+            'config.trigger_keywords' => ['nullable', 'array'],
+            'config.trigger_keywords.*' => ['string', 'max:100'],
         ];
     }
 }
