@@ -60,6 +60,35 @@ class FlowPluginService
     }
 
     /**
+     * Check if bot message contains any trigger keywords (pre-filter).
+     * Returns true if no keywords configured (backward compatible) or if any keyword matches.
+     */
+    protected function passesKeywordFilter(FlowPlugin $plugin, Message $botMessage): bool
+    {
+        $keywords = $plugin->config['trigger_keywords'] ?? [];
+
+        // No keywords configured = skip filter (always pass)
+        if (empty($keywords) || !is_array($keywords)) {
+            return true;
+        }
+
+        $content = mb_strtolower($botMessage->content ?? '');
+
+        foreach ($keywords as $keyword) {
+            if (is_string($keyword) && mb_strpos($content, mb_strtolower($keyword)) !== false) {
+                return true;
+            }
+        }
+
+        Log::debug('Plugin skipped: no keyword match', [
+            'plugin_id' => $plugin->id,
+            'keywords' => $keywords,
+        ]);
+
+        return false;
+    }
+
+    /**
      * Evaluate trigger condition and execute plugin if triggered.
      */
     protected function evaluateAndExecute(
@@ -68,6 +97,11 @@ class FlowPluginService
         Conversation $conversation,
         Message $botMessage
     ): void {
+        // Keyword pre-filter: skip AI call if bot message doesn't contain any trigger keywords
+        if (!$this->passesKeywordFilter($plugin, $botMessage)) {
+            return;
+        }
+
         // Get last 5 messages for context
         $recentMessages = $conversation->messages()
             ->orderBy('created_at', 'desc')

@@ -29,6 +29,7 @@ interface FlowPluginConfig {
   access_token: string;
   chat_id: string;
   message_template: string;
+  trigger_keywords?: string[];
 }
 
 interface FlowPlugin {
@@ -56,6 +57,7 @@ const EMPTY_FORM: Omit<FlowPlugin, 'id'> = {
     access_token: '',
     chat_id: '',
     message_template: '',
+    trigger_keywords: [],
   },
 };
 
@@ -405,6 +407,34 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
               <p className="text-xs text-muted-foreground">
                 อธิบายเงื่อนไขเป็นภาษาธรรมชาติ AI
                 จะประเมินจากบทสนทนาว่าเข้าเงื่อนไขหรือไม่
+              </p>
+            </div>
+
+            {/* Trigger Keywords */}
+            <div className="space-y-2">
+              <Label htmlFor="plugin-keywords">
+                คำสำคัญ (Keyword Pre-filter)
+              </Label>
+              <Input
+                id="plugin-keywords"
+                placeholder="เช่น ยืนยัน, เข้าบัญชี, จัดส่ง"
+                value={(form.config.trigger_keywords ?? []).join(', ')}
+                onChange={(e) => {
+                  const keywords = e.target.value
+                    .split(',')
+                    .map((k) => k.trim())
+                    .filter(Boolean);
+                  setForm((prev) => ({
+                    ...prev,
+                    config: { ...prev.config, trigger_keywords: keywords },
+                  }));
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                คั่นด้วยคอมม่า
+                ระบบจะเรียก AI ประเมินเฉพาะเมื่อข้อความ bot
+                มีคำเหล่านี้เท่านั้น (ประหยัดค่าใช้จ่าย)
+                ถ้าเว้นว่างจะประเมินทุกข้อความ
               </p>
             </div>
 
