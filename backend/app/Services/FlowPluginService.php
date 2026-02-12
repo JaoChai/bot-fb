@@ -6,6 +6,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
 use App\Models\Message;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -30,9 +31,23 @@ class FlowPluginService
             return;
         }
 
+        // Eager load user.settings to avoid N+1 query during API key resolution
+        if (!$bot->relationLoaded('user')) {
+            $bot->load('user.settings');
+        }
+
         foreach ($plugins as $plugin) {
             try {
+                // Rate limit: max 1 execution per plugin per conversation per 60 seconds
+                $cacheKey = "plugin_exec:{$plugin->id}:{$conversation->id}";
+                if (Cache::has($cacheKey)) {
+                    Log::debug('Plugin rate limited', ['plugin_id' => $plugin->id]);
+                    continue;
+                }
+
                 $this->evaluateAndExecute($plugin, $bot, $conversation, $botMessage);
+
+                Cache::put($cacheKey, true, 60);
             } catch (\Exception $e) {
                 Log::warning('Plugin execution failed', [
                     'plugin_id' => $plugin->id,
@@ -123,15 +138,34 @@ PROMPT,
         }
 
         $evaluation = json_decode(trim($jsonContent), true);
-        if (!$evaluation || !($evaluation['triggered'] ?? false)) {
+
+        // Validate JSON structure
+        if (!is_array($evaluation)) {
+            Log::warning('Plugin AI returned invalid JSON', [
+                'plugin_id' => $plugin->id,
+                'response' => mb_substr($responseContent, 0, 500),
+            ]);
+            return;
+        }
+
+        if (!($evaluation['triggered'] ?? false)) {
             return;
         }
 
         // Format message template with extracted variables
         $variables = $evaluation['variables'] ?? [];
+        if (!is_array($variables)) {
+            Log::warning('Plugin variables not an array', [
+                'plugin_id' => $plugin->id,
+            ]);
+            $variables = [];
+        }
+
         $message = $template;
         foreach ($variables as $key => $value) {
-            $message = str_replace("{{$key}}", $value, $message);
+            if (is_string($value) || is_numeric($value)) {
+                $message = str_replace("{{$key}}", (string) $value, $message);
+            }
         }
 
         // Execute based on plugin type
@@ -166,11 +200,23 @@ PROMPT,
                 'chat_id' => $chatId,
             ]);
         } else {
+            $status = $response->status();
+            $error = $response->json('description', 'Unknown error');
+
             Log::warning('Telegram plugin notification failed', [
                 'plugin_id' => $plugin->id,
-                'status' => $response->status(),
-                'body' => $response->body(),
+                'chat_id' => $chatId,
+                'status' => $status,
+                'error' => $error,
             ]);
+
+            // Auto-disable plugin on auth/not-found errors (invalid token or chat)
+            if (in_array($status, [401, 403, 404])) {
+                $plugin->update(['enabled' => false]);
+                Log::error('Plugin auto-disabled: invalid token or chat_id', [
+                    'plugin_id' => $plugin->id,
+                ]);
+            }
         }
     }
 }
