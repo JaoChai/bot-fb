@@ -1093,6 +1093,17 @@ class ProcessLINEWebhook implements ShouldQueue
             broadcast(new MessageSent($botMessage, $updatedConversationData))->toOthers();
             broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
 
+            // Execute flow plugins (e.g., Telegram notifications) after image analysis
+            try {
+                app(\App\Services\FlowPluginService::class)
+                    ->executePlugins($this->bot, $conversation, $botMessage);
+            } catch (\Exception $e2) {
+                Log::warning('Flow plugin execution failed after image analysis', [
+                    'conversation_id' => $conversation->id,
+                    'error' => $e2->getMessage(),
+                ]);
+            }
+
             Log::info('Image analyzed successfully', [
                 'bot_id' => $this->bot->id,
                 'conversation_id' => $conversation->id,
