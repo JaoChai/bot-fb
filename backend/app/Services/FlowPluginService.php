@@ -102,6 +102,10 @@ class FlowPluginService
             return;
         }
 
+        // Load customer profile for metadata
+        $conversation->loadMissing('customerProfile');
+        $customerName = $conversation->customerProfile?->display_name ?? 'ไม่ทราบชื่อ';
+
         // Get last 5 messages for context
         $recentMessages = $conversation->messages()
             ->orderBy('created_at', 'desc')
@@ -134,6 +138,7 @@ class FlowPluginService
                 'role' => 'user',
                 'content' => <<<PROMPT
 Conversation context:
+Customer display name: {$customerName}
 {$conversationContext}
 
 Trigger condition: "{$plugin->trigger_condition}"
