@@ -45,9 +45,11 @@ class FlowPluginService
                     continue;
                 }
 
-                $this->evaluateAndExecute($plugin, $bot, $conversation, $botMessage);
+                $triggered = $this->evaluateAndExecute($plugin, $bot, $conversation, $botMessage);
 
-                Cache::put($cacheKey, true, 60);
+                if ($triggered) {
+                    Cache::put($cacheKey, true, 60);
+                }
             } catch (\Exception $e) {
                 Log::warning('Plugin execution failed', [
                     'plugin_id' => $plugin->id,
@@ -96,10 +98,10 @@ class FlowPluginService
         Bot $bot,
         Conversation $conversation,
         Message $botMessage
-    ): void {
+    ): bool {
         // Keyword pre-filter: skip AI call if bot message doesn't contain any trigger keywords
         if (!$this->passesKeywordFilter($plugin, $botMessage)) {
-            return;
+            return false;
         }
 
         // Load customer profile for metadata
@@ -154,7 +156,7 @@ PROMPT,
         $apiKey = $bot->user?->settings?->getOpenRouterApiKey() ?? config('services.openrouter.api_key');
         if (empty($apiKey)) {
             Log::warning('No API key for plugin evaluation', ['plugin_id' => $plugin->id]);
-            return;
+            return false;
         }
 
         // Use lightweight model for evaluation
@@ -184,11 +186,11 @@ PROMPT,
                 'plugin_id' => $plugin->id,
                 'response' => mb_substr($responseContent, 0, 500),
             ]);
-            return;
+            return false;
         }
 
         if (!($evaluation['triggered'] ?? false)) {
-            return;
+            return false;
         }
 
         // Format message template with extracted variables
@@ -210,7 +212,10 @@ PROMPT,
         // Execute based on plugin type
         if ($plugin->type === 'telegram') {
             $this->sendTelegramNotification($plugin, $message);
+            return true;
         }
+
+        return false;
     }
 
     /**
