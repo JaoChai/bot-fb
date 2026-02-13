@@ -10,6 +10,7 @@ import {
   PieChart,
   Pie,
   Cell,
+  Legend,
   BarChart,
   Bar,
 } from 'recharts';
@@ -318,16 +319,19 @@ export function CostAnalytics() {
                       data={data.by_model.map((m) => ({
                         ...m,
                         model_used: m.model_used || 'unknown',
+                        short_name: (m.model_used || 'unknown').split('/').pop(),
                       }))}
                       dataKey="total_cost"
-                      nameKey="model_used"
+                      nameKey="short_name"
                       cx="50%"
                       cy="50%"
-                      outerRadius={100}
-                      label={({ name, percent }) =>
-                        `${String(name).split('/').pop()} (${((percent || 0) * 100).toFixed(0)}%)`
-                      }
-                      labelLine={{ stroke: 'currentColor' }}
+                      outerRadius={80}
+                      label={({ percent }) => {
+                        const pct = (percent || 0) * 100;
+                        if (pct < 5) return null;
+                        return `${pct.toFixed(0)}%`;
+                      }}
+                      labelLine={({ percent }) => (percent || 0) * 100 >= 5}
                     >
                       {data.by_model.map((_, index) => (
                         <Cell
@@ -343,6 +347,12 @@ export function CostAnalytics() {
                         border: '1px solid hsl(var(--border))',
                         borderRadius: '8px',
                       }}
+                    />
+                    <Legend
+                      verticalAlign="bottom"
+                      iconType="circle"
+                      iconSize={8}
+                      wrapperStyle={{ fontSize: '12px' }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
