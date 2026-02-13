@@ -29,6 +29,12 @@ class FlowResource extends JsonResource
             'max_tool_calls' => $this->max_tool_calls,
             'enabled_tools' => $this->enabled_tools ?? [],
 
+            // Agent Safety
+            'agent_timeout_seconds' => $this->agent_timeout_seconds,
+            'agent_max_cost_per_request' => $this->agent_max_cost_per_request,
+            'hitl_enabled' => $this->hitl_enabled,
+            'hitl_dangerous_actions' => $this->hitl_dangerous_actions ?? [],
+
             // Knowledge Bases (Many-to-Many)
             'knowledge_bases' => $this->whenLoaded('knowledgeBases', function () {
                 return $this->knowledgeBases->map(fn ($kb) => [

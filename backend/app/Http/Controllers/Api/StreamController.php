@@ -13,6 +13,7 @@ use App\Services\IntentAnalysisService;
 use App\Services\OpenRouterService;
 use App\Services\RAGService;
 use App\Services\SecondAI\SecondAIService;
+use App\Services\MultipleBubblesService;
 use App\Services\SemanticCacheService;
 use App\Services\ToolService;
 use GuzzleHttp\Client;
@@ -42,6 +43,7 @@ class StreamController extends Controller
     protected SecondAIService $secondAI;
     protected IntentAnalysisService $intentAnalysis;
     protected RAGService $ragService;
+    protected MultipleBubblesService $multipleBubbles;
     protected ?SemanticCacheService $semanticCache;
 
     protected string $openRouterBaseUrl;
@@ -69,6 +71,7 @@ class StreamController extends Controller
         SecondAIService $secondAI,
         IntentAnalysisService $intentAnalysis,
         RAGService $ragService,
+        MultipleBubblesService $multipleBubbles,
         ?SemanticCacheService $semanticCache = null
     ) {
         $this->openRouter = $openRouter;
@@ -79,6 +82,7 @@ class StreamController extends Controller
         $this->secondAI = $secondAI;
         $this->intentAnalysis = $intentAnalysis;
         $this->ragService = $ragService;
+        $this->multipleBubbles = $multipleBubbles;
         $this->semanticCache = $semanticCache;
 
         $this->openRouterBaseUrl = config('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
@@ -231,9 +235,32 @@ class StreamController extends Controller
                     }
                 }
 
-                // === AGENTIC MODE: Use Agent Loop ===
+                // === AGENTIC MODE: KB-First + Smart Routing ===
                 if ($flow->agentic_mode && !empty($flow->enabled_tools)) {
-                    $this->runAgentLoop($bot, $flow, $message, $conversationHistory, $apiKey, $user);
+                    // KB-First: Pre-search KB (always, no Decision Model needed)
+                    $kbContext = $this->runAgentKnowledgeBaseSearch($bot, $flow, $message);
+
+                    // Smart Routing: Skip agent loop for simple questions with KB results
+                    $complexity = $this->ragService->detectComplexity($message);
+
+                    if (!$complexity['is_complex'] && !empty($kbContext)) {
+                        // Simple question + KB has answer → Standard Mode path (fast & cheap)
+                        $this->sendSSE('agent_routing', [
+                            'action' => 'skip_agent',
+                            'reason' => 'simple_with_kb',
+                            'complexity_score' => $complexity['score'],
+                        ]);
+                        $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey);
+                        $this->runSecondAI($flow, $chatResponse, $message, $apiKey);
+                    } else {
+                        // Complex question OR no KB results → Full Agent Loop with KB context
+                        $this->sendSSE('agent_routing', [
+                            'action' => 'full_agent',
+                            'reason' => $complexity['is_complex'] ? 'complex_question' : 'no_kb_results',
+                            'complexity_score' => $complexity['score'],
+                        ]);
+                        $this->runAgentLoop($bot, $flow, $message, $conversationHistory, $apiKey, $user, $kbContext);
+                    }
                 } else {
                     // === STANDARD MODE: Decision → KB → Chat → Second AI ===
 
@@ -493,6 +520,92 @@ class StreamController extends Controller
                 'results' => [],
                 'total_chunks' => 0,
                 'error' => $e->getMessage(),
+            ]);
+
+            return '';
+        }
+    }
+
+    /**
+     * Run KB search for Agentic Mode (pre-search, no Decision Model needed).
+     * Always searches if flow has KBs attached. Returns formatted context or empty string.
+     */
+    protected function runAgentKnowledgeBaseSearch(Bot $bot, Flow $flow, string $message): string
+    {
+        $flowKBs = $flow->knowledgeBases;
+
+        if (!$flowKBs || $flowKBs->isEmpty()) {
+            return '';
+        }
+
+        $startTime = microtime(true);
+
+        $kbList = $flowKBs->map(fn ($kb) => ['id' => $kb->id, 'name' => $kb->name])->toArray();
+
+        $this->sendSSE('kb_search', [
+            'knowledge_bases' => $kbList,
+            'query' => substr($message, 0, 100) . (strlen($message) > 100 ? '...' : ''),
+            'source' => 'agent_pre_search',
+        ]);
+
+        try {
+            $embeddingApiKey = $bot->user?->settings?->getOpenRouterApiKey()
+                ?? config('services.openrouter.api_key');
+
+            $kbConfigs = $flowKBs->map(fn ($kb) => [
+                'id' => $kb->id,
+                'name' => $kb->name,
+                'kb_top_k' => $kb->pivot->kb_top_k ?? 5,
+                'kb_similarity_threshold' => $kb->pivot->kb_similarity_threshold ?? 0.7,
+            ])->toArray();
+
+            $results = $this->hybridSearch->searchMultiple(
+                kbConfigs: $kbConfigs,
+                query: $message,
+                totalLimit: config('rag.max_results', 5),
+                apiKey: $embeddingApiKey
+            );
+
+            $kbResults = [];
+            foreach ($flowKBs as $kb) {
+                $kbChunks = $results->filter(fn ($r) => $r['knowledge_base_id'] === $kb->id);
+                if ($kbChunks->isNotEmpty()) {
+                    $kbResults[] = [
+                        'kb_name' => $kb->name,
+                        'chunks_found' => $kbChunks->count(),
+                        'top_relevance' => round($kbChunks->max('similarity') * 100),
+                    ];
+                }
+            }
+
+            $timeMs = round((microtime(true) - $startTime) * 1000);
+
+            $this->sendSSE('kb_result', [
+                'results' => $kbResults,
+                'total_chunks' => $results->count(),
+                'search_mode' => $this->hybridSearch->isEnabled() ? 'hybrid' : 'semantic',
+                'time_ms' => $timeMs,
+                'source' => 'agent_pre_search',
+            ]);
+
+            if ($results->isEmpty()) {
+                return '';
+            }
+
+            return $this->ragService->formatKnowledgeBaseContext($results);
+
+        } catch (\Exception $e) {
+            Log::error('Agent KB pre-search failed', [
+                'bot_id' => $bot->id,
+                'flow_id' => $flow->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            $this->sendSSE('kb_result', [
+                'results' => [],
+                'total_chunks' => 0,
+                'error' => $e->getMessage(),
+                'source' => 'agent_pre_search',
             ]);
 
             return '';
@@ -858,19 +971,25 @@ PROMPT;
         string $message,
         array $conversationHistory,
         string $apiKey,
-        ?User $user = null
+        ?User $user = null,
+        string $kbContext = ''
     ): void {
         $maxIterations = $flow->max_tool_calls ?? 10;
         $tools = $this->toolService->getToolDefinitions($flow->enabled_tools ?? []);
-        $chatModel = $this->getChatModel($bot);
+
+        // Agentic Mode uses decision_model (smarter, better at tool calling)
+        $chatModel = $bot->decision_model ?: $this->getChatModel($bot);
+
+        // Reset tool search cache for this request
+        $this->toolService->resetCache();
 
         // === SAFETY: Initialize tracking ===
         $requestId = $this->costTracking->startRequest();
         $loopStartTime = microtime(true);
         $safetyConfig = $this->agentSafety->getSafetyConfig($flow);
 
-        // Build initial messages
-        $systemPrompt = $this->buildAgentSystemPrompt($bot, $flow);
+        // Build initial messages with KB context
+        $systemPrompt = $this->buildAgentSystemPrompt($bot, $flow, $kbContext);
         $messages = $this->buildMessages($systemPrompt, $conversationHistory, $message);
 
         $this->sendSSE('agent_start', [
@@ -1161,9 +1280,9 @@ PROMPT;
     }
 
     /**
-     * Build system prompt for agent mode.
+     * Build system prompt for agent mode with KB context and Multiple Bubbles support.
      */
-    protected function buildAgentSystemPrompt(Bot $bot, Flow $flow): string
+    protected function buildAgentSystemPrompt(Bot $bot, Flow $flow, string $kbContext = ''): string
     {
         $basePrompt = $flow->system_prompt ?: $this->getDefaultSystemPrompt($bot);
         $enabledTools = $flow->enabled_tools ?? [];
@@ -1172,53 +1291,53 @@ PROMPT;
             return $basePrompt;
         }
 
-        $agentPrompt = "\n\n## Agent Instructions\n";
+        $prompt = $basePrompt;
 
-        // --- Tool Usage Rules ---
-        $agentPrompt .= "\n### Tool Usage Rules\n";
+        // --- Pre-loaded KB Context ---
+        if (!empty(trim($kbContext))) {
+            $prompt .= "\n\n## Pre-loaded Knowledge Base Results\n";
+            $prompt .= $kbContext;
+            $prompt .= "\n---\nใช้ข้อมูลด้านบนในการตอบ ใช้ search_knowledge_base เมื่อต้องการข้อมูลเพิ่มเติมเท่านั้น";
+        }
+
+        // --- Agent Decision Framework ---
+        $prompt .= "\n\n## Agent Decision Framework\n";
+        $prompt .= "1. ตอบได้ทันที: ทักทาย, ขอบคุณ, มีข้อมูลใน KB แล้ว → ตอบเลย ไม่ต้องใช้ tool\n";
 
         if (in_array('search_kb', $enabledTools)) {
-            $agentPrompt .= <<<'TOOL'
-
-**search_knowledge_base**:
-- ใช้เมื่อ: ลูกค้าถามเรื่องสินค้า ราคา นโยบาย บริการ วิธีใช้ หรือข้อมูลเฉพาะทาง
-- ไม่ต้องใช้เมื่อ: ทักทาย ขอบคุณ ลาก่อน หรือคำถามทั่วไปที่ไม่ต้องการข้อมูลจากระบบ
-- ค้นด้วย keyword ที่ตรงประเด็น ถ้าค้น 1-2 ครั้งแล้วไม่เจอ ให้บอกลูกค้าว่าไม่มีข้อมูลในระบบ
-TOOL;
+            if (!empty($kbContext)) {
+                $prompt .= "2. ค้นหาเพิ่ม (search_knowledge_base): ข้อมูลที่โหลดไว้ไม่พอ หรือถามเรื่องอื่น\n";
+            } else {
+                $prompt .= "2. ค้นหา (search_knowledge_base): ลูกค้าถามเรื่องสินค้า ราคา นโยบาย บริการ\n";
+            }
         }
-
         if (in_array('calculate', $enabledTools)) {
-            $agentPrompt .= <<<'TOOL'
-
-**calculate**:
-- ใช้เมื่อ: ต้องคำนวณราคารวม ส่วนลด จำนวนสินค้า หรือตัวเลขที่ต้องคิด
-- ไม่ต้องใช้เมื่อ: ตัวเลขมีอยู่แล้วในข้อมูลที่ค้นเจอ ไม่ต้องคำนวณเพิ่ม
-TOOL;
+            $prompt .= "3. คำนวณ (calculate): คำนวณราคารวม/ส่วนลด\n";
         }
-
         if (in_array('think', $enabledTools)) {
-            $agentPrompt .= <<<'TOOL'
-
-**think**:
-- ใช้เมื่อ: คำถามซับซ้อนที่ต้องวิเคราะห์หลายขั้นตอนก่อนตอบ
-TOOL;
+            $prompt .= "4. วิเคราะห์ (think): คำถามซับซ้อน ต้องคิดหลายขั้นตอน\n";
         }
 
-        // --- Accuracy & Efficiency Rules (always included) ---
-        $agentPrompt .= <<<'RULES'
+        // --- Search Strategy ---
+        if (in_array('search_kb', $enabledTools)) {
+            $prompt .= "\n### Search Strategy\n";
+            $prompt .= "1. ค้นด้วย keyword ตรงประเด็น (2-4 คำ)\n";
+            $prompt .= "2. ไม่เจอ → ลอง synonym/กว้างขึ้น\n";
+            $prompt .= "3. สูงสุด 2 ครั้ง ห้ามค้นซ้ำ keyword เดิม\n";
+        }
 
-### Accuracy Rules
-- ตอบจากข้อมูลที่ค้นเจอเท่านั้น ห้ามเดาหรือสร้างข้อมูลขึ้นมาเอง
-- ห้ามสร้างราคา ส่วนลด นโยบาย หรือเงื่อนไขที่ไม่มีในฐานข้อมูล
-- ถ้าไม่มีข้อมูลเพียงพอ ให้แนะนำลูกค้าติดต่อเจ้าหน้าที่
+        // --- Response Rules ---
+        $prompt .= "\n### Response Rules\n";
+        $prompt .= "- ตอบจากข้อมูลที่ค้นเจอเท่านั้น ห้ามเดาหรือสร้างข้อมูลขึ้นมาเอง\n";
+        $prompt .= "- ตอบกระชับ ไม่ต้องบอกว่า \"จากการค้นหา...\"\n";
+        $prompt .= "- ถ้าไม่มีข้อมูลเพียงพอ ให้แนะนำลูกค้าติดต่อเจ้าหน้าที่\n";
 
-### Efficiency Rules
-- ค้นหาด้วย keyword ที่ตรงประเด็น ไม่ค้นซ้ำด้วยคำเดิม
-- ถ้าค้นแล้วได้ข้อมูลเพียงพอ ให้ตอบเลย ไม่ต้องค้นเพิ่ม
-- ตอบให้กระชับ ไม่ต้องอธิบายกระบวนการค้นหาให้ลูกค้า
-RULES;
+        // --- Multiple Bubbles Integration ---
+        if ($this->multipleBubbles->isEnabled($bot)) {
+            $prompt .= "\n" . $this->multipleBubbles->buildPromptInstruction($bot);
+        }
 
-        return $basePrompt . $agentPrompt;
+        return $prompt;
     }
 
     /**
@@ -1242,7 +1361,14 @@ RULES;
      */
     protected function truncateMessagesIfNeeded(array $messages, int $maxMessages = 30): array
     {
-        // If under limit, return as-is
+        $count = count($messages);
+
+        // Tier 1 (> 20 messages): Compress old tool results
+        if ($count > 20) {
+            $messages = $this->compressOldToolResults($messages);
+        }
+
+        // Tier 2 (> maxMessages): Drop oldest messages
         if (count($messages) <= $maxMessages) {
             return $messages;
         }
@@ -1264,7 +1390,6 @@ RULES;
         $truncatedMessages = array_slice($otherMessages, -$keepCount);
 
         // Ensure we don't start with orphaned tool result messages
-        // Tool results must follow their corresponding assistant message with tool_calls
         while (!empty($truncatedMessages) && $truncatedMessages[0]['role'] === 'tool') {
             array_shift($truncatedMessages);
         }
@@ -1273,10 +1398,50 @@ RULES;
         $result = [];
         if ($systemMessage) {
             $result[] = $systemMessage;
+
+            // Inject context note about dropped messages
+            $dropped = count($otherMessages) - count($truncatedMessages);
+            if ($dropped > 0) {
+                $result[] = [
+                    'role' => 'user',
+                    'content' => "[ระบบ: ข้อความก่อนหน้า {$dropped} ข้อความถูกตัดเพื่อประหยัด token]",
+                ];
+            }
         }
         $result = array_merge($result, $truncatedMessages);
 
         return $result;
+    }
+
+    /**
+     * Compress old tool result messages to save tokens.
+     * Keeps last 2 tool results intact, compresses older ones.
+     */
+    protected function compressOldToolResults(array $messages): array
+    {
+        // Find all tool result message indices
+        $toolIndices = [];
+        foreach ($messages as $i => $msg) {
+            if ($msg['role'] === 'tool') {
+                $toolIndices[] = $i;
+            }
+        }
+
+        // Keep last 2 tool results intact
+        $indicesToCompress = array_slice($toolIndices, 0, max(0, count($toolIndices) - 2));
+
+        if (empty($indicesToCompress)) {
+            return $messages;
+        }
+
+        foreach ($indicesToCompress as $i) {
+            $content = $messages[$i]['content'] ?? '';
+            if (mb_strlen($content) > 100) {
+                $messages[$i]['content'] = mb_substr($content, 0, 100) . ' [compressed]';
+            }
+        }
+
+        return $messages;
     }
 
     /**

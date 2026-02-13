@@ -611,7 +611,7 @@ PROMPT;
      * @param string $userMessage The user's message
      * @return array{is_complex: bool, score: int, reasons: array}
      */
-    protected function detectComplexity(string $userMessage): array
+    public function detectComplexity(string $userMessage): array
     {
         $score = 0;
         $reasons = [];
