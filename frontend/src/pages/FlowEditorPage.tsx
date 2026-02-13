@@ -555,6 +555,90 @@ export function FlowEditorPage() {
                   <span className="font-medium">AI Chatbot</span>
                 </div>
 
+                {/* ตั้งค่าพื้นฐาน */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">ตั้งค่าพื้นฐาน</span>
+                  <Badge variant="outline" className="text-[10px]">ทุกโหมด</Badge>
+                </div>
+
+                {/* Knowledge Bases (Multi-Select) */}
+                <KnowledgeBaseSelector
+                  allKnowledgeBases={allKnowledgeBases}
+                  selectedKnowledgeBases={formData.knowledge_bases || []}
+                  isLoading={isLoadingKBs}
+                  onChange={handleKnowledgeBasesChange}
+                />
+
+                {/* System Prompt */}
+                <div className="space-y-3 border rounded-lg overflow-hidden">
+                  <div className="px-4 pt-4 pb-2">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-sm font-medium">
+                        เขียนคำสั่งให้ AI สร้างการตอบกลับ - คุณสามารถดูตัวอย่างการเขียนคำสั่งได้ใน{' '}
+                        <a href="#" className="underline hover:text-muted-foreground">
+                          คู่มือการใช้งาน & Prompts Library
+                        </a>
+                      </span>
+                    </div>
+                    {/* Markdown Toolbar */}
+                    <MarkdownToolbar
+                      onBold={() => handleMarkdownAction('bold')}
+                      onItalic={() => handleMarkdownAction('italic')}
+                      onStrikethrough={() => handleMarkdownAction('strikethrough')}
+                      onHeading={(level) => handleMarkdownAction(`h${level}`)}
+                      onBulletList={() => handleMarkdownAction('bullet')}
+                      onNumberedList={() => handleMarkdownAction('numbered')}
+                      onLink={() => handleMarkdownAction('link')}
+                      onCode={() => handleMarkdownAction('code')}
+                      onPreviewToggle={() => setIsSystemPromptPreview(!isSystemPromptPreview)}
+                      onFullscreen={() => setIsFullscreenPrompt(true)}
+                      isPreviewMode={isSystemPromptPreview}
+                    />
+                  </div>
+                  {!isSystemPromptPreview ? (
+                    <>
+                      <Textarea
+                        ref={systemPromptRef}
+                        placeholder="คุณคือผู้ช่วยที่เป็นมิตร..."
+                        className="min-h-[300px] max-h-[500px] overflow-y-auto font-mono text-sm border-0 rounded-none focus-visible:ring-0 resize-y"
+                        value={formData.system_prompt}
+                        onChange={(e) => handleChange('system_prompt', e.target.value)}
+                      />
+                      <div className="flex justify-end gap-4 text-xs text-muted-foreground px-4 pb-4">
+                        <span>lines: {formData.system_prompt.split('\n').length}</span>
+                        <span>words: {formData.system_prompt.split(/\s+/).filter(Boolean).length}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="px-4 py-4 min-h-[300px] bg-muted/30 prose prose-sm max-w-none">
+                      <p className="text-sm text-muted-foreground">Preview mode coming soon</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Temperature */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Temperature: {formData.temperature}</Label>
+                    <span className="text-xs text-muted-foreground">
+                      ต่ำ = ตอบตรงประเด็น, สูง = ตอบสร้างสรรค์
+                    </span>
+                  </div>
+                  <Slider
+                    value={[formData.temperature || 0.7]}
+                    onValueChange={([v]) => handleChange('temperature', v)}
+                    min={0}
+                    max={1}
+                    step={0.1}
+                  />
+                </div>
+
+                {/* โหมดขั้นสูง */}
+                <div className="border-t" />
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">โหมดขั้นสูง</span>
+                  <Badge variant="secondary" className="text-[10px]">Agentic</Badge>
+                </div>
 
                 {/* Agentic Mode Toggle */}
                 <div className="flex items-start gap-4 p-4 border rounded-lg">
@@ -763,78 +847,6 @@ export function FlowEditorPage() {
                       </p>
                     </div>
                   </div>
-                </div>
-
-                {/* Knowledge Bases (Multi-Select) */}
-                <KnowledgeBaseSelector
-                  allKnowledgeBases={allKnowledgeBases}
-                  selectedKnowledgeBases={formData.knowledge_bases || []}
-                  isLoading={isLoadingKBs}
-                  onChange={handleKnowledgeBasesChange}
-                />
-
-                {/* System Prompt */}
-                <div className="space-y-3 border rounded-lg overflow-hidden">
-                  <div className="px-4 pt-4 pb-2">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-sm font-medium">
-                        เขียนคำสั่งให้ AI สร้างการตอบกลับ - คุณสามารถดูตัวอย่างการเขียนคำสั่งได้ใน{' '}
-                        <a href="#" className="underline hover:text-muted-foreground">
-                          คู่มือการใช้งาน & Prompts Library
-                        </a>
-                      </span>
-                    </div>
-                    {/* Markdown Toolbar */}
-                    <MarkdownToolbar
-                      onBold={() => handleMarkdownAction('bold')}
-                      onItalic={() => handleMarkdownAction('italic')}
-                      onStrikethrough={() => handleMarkdownAction('strikethrough')}
-                      onHeading={(level) => handleMarkdownAction(`h${level}`)}
-                      onBulletList={() => handleMarkdownAction('bullet')}
-                      onNumberedList={() => handleMarkdownAction('numbered')}
-                      onLink={() => handleMarkdownAction('link')}
-                      onCode={() => handleMarkdownAction('code')}
-                      onPreviewToggle={() => setIsSystemPromptPreview(!isSystemPromptPreview)}
-                      onFullscreen={() => setIsFullscreenPrompt(true)}
-                      isPreviewMode={isSystemPromptPreview}
-                    />
-                  </div>
-                  {!isSystemPromptPreview ? (
-                    <>
-                      <Textarea
-                        ref={systemPromptRef}
-                        placeholder="คุณคือผู้ช่วยที่เป็นมิตร..."
-                        className="min-h-[300px] max-h-[500px] overflow-y-auto font-mono text-sm border-0 rounded-none focus-visible:ring-0 resize-y"
-                        value={formData.system_prompt}
-                        onChange={(e) => handleChange('system_prompt', e.target.value)}
-                      />
-                      <div className="flex justify-end gap-4 text-xs text-muted-foreground px-4 pb-4">
-                        <span>lines: {formData.system_prompt.split('\n').length}</span>
-                        <span>words: {formData.system_prompt.split(/\s+/).filter(Boolean).length}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="px-4 py-4 min-h-[300px] bg-muted/30 prose prose-sm max-w-none">
-                      <p className="text-sm text-muted-foreground">Preview mode coming soon</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Temperature */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>Temperature: {formData.temperature}</Label>
-                    <span className="text-xs text-muted-foreground">
-                      ต่ำ = ตอบตรงประเด็น, สูง = ตอบสร้างสรรค์
-                    </span>
-                  </div>
-                  <Slider
-                    value={[formData.temperature || 0.7]}
-                    onValueChange={([v]) => handleChange('temperature', v)}
-                    min={0}
-                    max={1}
-                    step={0.1}
-                  />
                 </div>
 
                 {/* Set as Default */}
@@ -1092,6 +1104,55 @@ export function FlowEditorPage() {
                     />
                   </div>
 
+                  {/* ตั้งค่าพื้นฐาน */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-muted-foreground">ตั้งค่าพื้นฐาน</span>
+                    <Badge variant="outline" className="text-[10px]">ทุกโหมด</Badge>
+                  </div>
+
+                  {/* Knowledge Base Selector (Mobile) */}
+                  <KnowledgeBaseSelector
+                    allKnowledgeBases={allKnowledgeBases}
+                    selectedKnowledgeBases={formData.knowledge_bases || []}
+                    isLoading={isLoadingKBs}
+                    onChange={handleKnowledgeBasesChange}
+                  />
+
+                  {/* System Prompt (Mobile) */}
+                  <div className="space-y-2">
+                    <Label>System Prompt</Label>
+                    <Textarea
+                      placeholder="คุณคือผู้ช่วยที่เป็นมิตร..."
+                      className="min-h-[200px] text-base font-mono"
+                      value={formData.system_prompt}
+                      onChange={(e) => handleChange('system_prompt', e.target.value)}
+                    />
+                  </div>
+
+                  {/* Temperature (Mobile) */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Temperature: {formData.temperature}</Label>
+                    </div>
+                    <Slider
+                      value={[formData.temperature || 0.7]}
+                      onValueChange={([v]) => handleChange('temperature', v)}
+                      min={0}
+                      max={1}
+                      step={0.1}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      ต่ำ = ตอบตรงประเด็น, สูง = สร้างสรรค์
+                    </p>
+                  </div>
+
+                  {/* โหมดขั้นสูง */}
+                  <div className="border-t my-2" />
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-muted-foreground">โหมดขั้นสูง</span>
+                    <Badge variant="secondary" className="text-[10px]">Agentic</Badge>
+                  </div>
+
                   {/* Agentic Mode (Mobile) */}
                   <div className="border rounded-lg p-4 space-y-4">
                     <div className="flex items-start gap-3">
@@ -1216,42 +1277,6 @@ export function FlowEditorPage() {
                         <Badge variant="secondary" className="text-xs ml-auto">Active</Badge>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Knowledge Base Selector (Mobile) */}
-                  <KnowledgeBaseSelector
-                    allKnowledgeBases={allKnowledgeBases}
-                    selectedKnowledgeBases={formData.knowledge_bases || []}
-                    isLoading={isLoadingKBs}
-                    onChange={handleKnowledgeBasesChange}
-                  />
-
-                  {/* System Prompt (Mobile) */}
-                  <div className="space-y-2">
-                    <Label>System Prompt</Label>
-                    <Textarea
-                      placeholder="คุณคือผู้ช่วยที่เป็นมิตร..."
-                      className="min-h-[200px] text-base font-mono"
-                      value={formData.system_prompt}
-                      onChange={(e) => handleChange('system_prompt', e.target.value)}
-                    />
-                  </div>
-
-                  {/* Temperature (Mobile) */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label>Temperature: {formData.temperature}</Label>
-                    </div>
-                    <Slider
-                      value={[formData.temperature || 0.7]}
-                      onValueChange={([v]) => handleChange('temperature', v)}
-                      min={0}
-                      max={1}
-                      step={0.1}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      ต่ำ = ตอบตรงประเด็น, สูง = สร้างสรรค์
-                    </p>
                   </div>
 
                   {/* Set as Default (Mobile) */}
