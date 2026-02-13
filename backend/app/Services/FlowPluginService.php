@@ -124,7 +124,7 @@ class FlowPluginService
         // Extract variable names from message_template
         $template = $plugin->config['message_template'] ?? '';
         preg_match_all('/\{(\w+)\}/', $template, $matches);
-        $variableNames = $matches[1] ?? [];
+        $variableNames = array_values(array_diff($matches[1] ?? [], ['datetime']));
 
         $variablesPrompt = !empty($variableNames)
             ? 'Variables to extract: ' . implode(', ', $variableNames)
