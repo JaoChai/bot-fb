@@ -162,7 +162,7 @@ PROMPT,
         // Use lightweight model for evaluation
         $result = $this->openRouter->chat(
             messages: $messages,
-            model: 'openai/gpt-4o-mini',
+            model: 'openai/gpt-5-mini',
             temperature: 0.1,
             maxTokens: 256,
             useFallback: false,
@@ -203,6 +203,7 @@ PROMPT,
         }
 
         $message = $template;
+        $variables['datetime'] = now('Asia/Bangkok')->format('d/m/Y H:i');
         foreach ($variables as $key => $value) {
             if (is_string($value) || is_numeric($value)) {
                 $message = str_replace("{{$key}}", (string) $value, $message);
