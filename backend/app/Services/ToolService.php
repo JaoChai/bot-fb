@@ -14,9 +14,19 @@ use Illuminate\Support\Facades\Log;
  */
 class ToolService
 {
+    protected array $searchCache = [];
+
     public function __construct(
         protected HybridSearchService $hybridSearch
     ) {}
+
+    /**
+     * Reset search cache (call at start of each agent loop).
+     */
+    public function resetCache(): void
+    {
+        $this->searchCache = [];
+    }
 
     /**
      * Get tool definitions in OpenRouter/OpenAI format.
@@ -182,6 +192,28 @@ class ToolService
             return 'ไม่มีคำค้นหา';
         }
 
+        // Normalize query for cache lookup
+        $normalizedQuery = mb_strtolower(trim(preg_replace('/\s+/', ' ', $query)));
+
+        // Check exact cache match
+        if (isset($this->searchCache[$normalizedQuery])) {
+            Log::debug('ToolService: Search cache hit (exact)', ['query' => $query]);
+            return $this->searchCache[$normalizedQuery];
+        }
+
+        // Check similarity cache match (>80%)
+        foreach ($this->searchCache as $cachedQuery => $cachedResult) {
+            similar_text($normalizedQuery, $cachedQuery, $percent);
+            if ($percent > 80) {
+                Log::debug('ToolService: Search cache hit (similar)', [
+                    'query' => $query,
+                    'cached_query' => $cachedQuery,
+                    'similarity' => round($percent, 1),
+                ]);
+                return $cachedResult;
+            }
+        }
+
         /** @var Flow|null $flow */
         $flow = $context['flow'] ?? null;
 
@@ -238,11 +270,21 @@ class ToolService
         );
 
         if ($results->isEmpty()) {
-            return "ไม่พบข้อมูลที่เกี่ยวข้องกับ \"{$query}\"";
+            $emptyResult = "ไม่พบข้อมูลที่เกี่ยวข้องกับ \"{$query}\"";
+            if (count($this->searchCache) >= 20) {
+                array_shift($this->searchCache);
+            }
+            $this->searchCache[$normalizedQuery] = $emptyResult;
+            return $emptyResult;
         }
 
-        // Format results for AI
-        return $this->formatSearchResults($results, $query);
+        // Format results for AI and cache (limit cache size)
+        $formatted = $this->formatSearchResults($results, $query);
+        if (count($this->searchCache) >= 20) {
+            array_shift($this->searchCache);
+        }
+        $this->searchCache[$normalizedQuery] = $formatted;
+        return $formatted;
     }
 
     /**
