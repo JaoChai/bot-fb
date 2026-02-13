@@ -38,17 +38,17 @@ class FallbackTest extends TestCase
 
     public function test_fallback_to_sequential_when_unified_returns_invalid_json(): void
     {
-        // Mock OpenRouterService to return invalid JSON on first call (unified mode)
-        // Then valid responses for sequential mode
+        // Mock OpenRouterService to return invalid JSON from chat() (unified mode)
         $this->mock(OpenRouterService::class, function ($mock) {
-            $mock->shouldReceive('generateText')
-                ->andReturn('This is not valid JSON');  // Invalid response for unified mode
-
-            // Sequential mode calls would happen here but we'll skip for simplicity
+            $mock->shouldReceive('chat')
+                ->andReturn([
+                    'content' => 'This is not valid JSON at all, sorry I cannot help.',
+                    'model' => 'openai/gpt-4o-mini',
+                ]);
         });
 
         $this->mock(RAGService::class, function ($mock) {
-            $mock->shouldReceive('search')->andReturn([]);
+            $mock->shouldReceive('getFlowKnowledgeBaseContext')->andReturn('');
         });
 
         Log::shouldReceive('info')->andReturnSelf();
@@ -59,8 +59,9 @@ class FallbackTest extends TestCase
 
         $service = app(SecondAIService::class);
 
+        // Response must be >50 chars or contain digits to bypass skip logic
         $result = $service->process(
-            response: 'Original response',
+            response: 'สินค้า A รุ่นใหม่ล่าสุด ราคาพิเศษ 1,299 บาท พร้อมส่งฟรีทั่วประเทศค่ะ',
             flow: $this->flow,
             userMessage: 'Test message'
         );
@@ -72,14 +73,14 @@ class FallbackTest extends TestCase
 
     public function test_fallback_when_unified_throws_exception(): void
     {
-        // Mock OpenRouterService to throw exception
+        // Mock OpenRouterService to throw exception from chat()
         $this->mock(OpenRouterService::class, function ($mock) {
-            $mock->shouldReceive('generateText')
+            $mock->shouldReceive('chat')
                 ->andThrow(new \RuntimeException('LLM API timeout'));
         });
 
         $this->mock(RAGService::class, function ($mock) {
-            $mock->shouldReceive('search')->andReturn([]);
+            $mock->shouldReceive('getFlowKnowledgeBaseContext')->andReturn('');
         });
 
         Log::shouldReceive('info')->andReturnSelf();
@@ -90,8 +91,9 @@ class FallbackTest extends TestCase
 
         $service = app(SecondAIService::class);
 
+        // Response must be >50 chars or contain digits to bypass skip logic
         $result = $service->process(
-            response: 'Original response',
+            response: 'สินค้า B รุ่นพิเศษ ราคา 2,499 บาท รับประกัน 1 ปีเต็ม พร้อมส่งฟรีค่ะ',
             flow: $this->flow,
             userMessage: 'Test message'
         );
@@ -103,17 +105,20 @@ class FallbackTest extends TestCase
 
     public function test_fallback_when_missing_required_fields(): void
     {
-        // Mock OpenRouterService to return JSON missing required fields
+        // Mock OpenRouterService to return JSON missing required fields via chat()
         $this->mock(OpenRouterService::class, function ($mock) {
-            $mock->shouldReceive('generateText')
-                ->andReturn(json_encode([
-                    'passed' => true,
-                    // Missing 'modifications' and 'final_response'
-                ]));
+            $mock->shouldReceive('chat')
+                ->andReturn([
+                    'content' => json_encode([
+                        'passed' => true,
+                        // Missing 'modifications' and 'final_response'
+                    ]),
+                    'model' => 'openai/gpt-4o-mini',
+                ]);
         });
 
         $this->mock(RAGService::class, function ($mock) {
-            $mock->shouldReceive('search')->andReturn([]);
+            $mock->shouldReceive('getFlowKnowledgeBaseContext')->andReturn('');
         });
 
         Log::shouldReceive('info')->andReturnSelf();
@@ -122,8 +127,9 @@ class FallbackTest extends TestCase
 
         $service = app(SecondAIService::class);
 
+        // Response must bypass skip logic (contains digits)
         $result = $service->process(
-            response: 'Original response',
+            response: 'สินค้า C ราคา 899 บาท มีโปรโมชั่นลด 10% สำหรับสมาชิกค่ะ',
             flow: $this->flow,
             userMessage: 'Test message'
         );
@@ -134,14 +140,14 @@ class FallbackTest extends TestCase
 
     public function test_original_response_returned_on_complete_failure(): void
     {
-        // Mock both unified and sequential to fail
+        // Mock both unified and sequential to fail via chat()
         $this->mock(OpenRouterService::class, function ($mock) {
-            $mock->shouldReceive('generateText')
+            $mock->shouldReceive('chat')
                 ->andThrow(new \Exception('Complete API failure'));
         });
 
         $this->mock(RAGService::class, function ($mock) {
-            $mock->shouldReceive('search')->andReturn([]);
+            $mock->shouldReceive('getFlowKnowledgeBaseContext')->andReturn('');
         });
 
         Log::shouldReceive('info')->andReturnSelf();
@@ -151,7 +157,8 @@ class FallbackTest extends TestCase
 
         $service = app(SecondAIService::class);
 
-        $originalResponse = 'This is the original response';
+        // Response must bypass skip logic (contains digits)
+        $originalResponse = 'สินค้า D ราคาพิเศษ 3,999 บาท รับประกัน 2 ปี พร้อมส่งฟรีทั่วประเทศค่ะ';
 
         $result = $service->process(
             response: $originalResponse,
