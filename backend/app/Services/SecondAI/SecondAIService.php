@@ -104,6 +104,7 @@ class SecondAIService
                     'flow_id' => $flow->id,
                     'error' => $e->getMessage(),
                 ]);
+                error_log('UNIFIED_MODE_FAIL: ' . $e->getMessage());
                 // Fall through to sequential mode below
             }
         }

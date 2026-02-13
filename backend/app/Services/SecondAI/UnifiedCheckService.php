@@ -87,16 +87,24 @@ class UnifiedCheckService
             );
 
             $rawResponse = $apiResult['content'];
+            error_log('UNIFIED_RAW_RESPONSE: ' . substr($rawResponse, 0, 300));
         } catch (\Exception $e) {
             Log::error('UnifiedCheckService: LLM call failed', [
                 'error' => $e->getMessage(),
                 'timeout' => $this->timeout,
             ]);
+            error_log('UNIFIED_LLM_FAIL: ' . $e->getMessage());
             throw new \RuntimeException('Unified check LLM call failed: '.$e->getMessage());
         }
 
         // Parse and validate response
-        $parsedData = $this->parseResponse($rawResponse);
+        try {
+            $parsedData = $this->parseResponse($rawResponse);
+            error_log('UNIFIED_PARSE_OK: passed=' . ($parsedData['passed'] ? 'true' : 'false'));
+        } catch (\Exception $e) {
+            error_log('UNIFIED_PARSE_FAIL: ' . $e->getMessage());
+            throw $e;
+        }
 
         // Filter out low-confidence modifications
         $parsedData['modifications'] = $this->filterByConfidence($parsedData['modifications']);
