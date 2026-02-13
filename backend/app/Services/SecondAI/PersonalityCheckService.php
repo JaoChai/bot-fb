@@ -17,8 +17,9 @@ class PersonalityCheckService
 {
     /**
      * Model to use for personality checking.
+     * Set dynamically from Bot Settings in check().
      */
-    protected string $model = 'openai/gpt-4o-mini';
+    protected string $model;
 
     /**
      * Default brand guidelines if not specified in system prompt.
@@ -47,6 +48,11 @@ class PersonalityCheckService
         Flow $flow,
         ?string $apiKey = null
     ): CheckResult {
+        // Resolve model from Bot Settings
+        $this->model = $flow->bot?->decision_model
+            ?: $flow->bot?->primary_chat_model
+            ?: throw new \RuntimeException('Bot does not have a model configured. Please set decision_model or primary_chat_model in Bot Settings.');
+
         try {
             // Step 1: Extract brand guidelines from system prompt
             $brandGuidelines = $this->extractBrandGuidelines($flow->system_prompt, $apiKey);

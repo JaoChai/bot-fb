@@ -63,11 +63,12 @@ class UnifiedCheckService
         // Get models from Bot Settings (same as Decision/Intent Analysis)
         $bot = $flow->bot;
         $model = $bot?->decision_model
-            ?: $bot?->primary_chat_model
-            ?: 'openai/gpt-4o-mini';
+            ?: $bot?->primary_chat_model;
+        if (!$model) {
+            throw new \RuntimeException('Bot does not have a model configured. Please set decision_model or primary_chat_model in Bot Settings.');
+        }
         $fallbackModel = $bot?->fallback_decision_model
-            ?: $bot?->fallback_chat_model
-            ?: 'google/gemini-flash-1.5';
+            ?: $bot?->fallback_chat_model;
 
         Log::info('UnifiedCheckService: Using models from Bot Settings', [
             'primary_model' => $model,
@@ -80,7 +81,7 @@ class UnifiedCheckService
                 model: $model,
                 temperature: 0.3,
                 maxTokens: 2000,
-                useFallback: true, // Enable fallback for reliability
+                useFallback: $fallbackModel !== null,
                 apiKeyOverride: $apiKey,
                 fallbackModelOverride: $fallbackModel,
                 timeout: $this->timeout,

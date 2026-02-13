@@ -28,8 +28,9 @@ class FactCheckService
 
     /**
      * Model to use for claim extraction and rewriting.
+     * Set dynamically from Bot Settings in check().
      */
-    protected string $model = 'openai/gpt-4o-mini';
+    protected string $model;
 
     public function __construct(
         protected HybridSearchService $hybridSearch,
@@ -51,6 +52,11 @@ class FactCheckService
         string $userMessage,
         ?string $apiKey = null
     ): CheckResult {
+        // Resolve model from Bot Settings
+        $this->model = $flow->bot?->decision_model
+            ?: $flow->bot?->primary_chat_model
+            ?: throw new \RuntimeException('Bot does not have a model configured. Please set decision_model or primary_chat_model in Bot Settings.');
+
         // Skip if flow has no knowledge bases
         if (!$flow->relationLoaded('knowledgeBases')) {
             $flow->load('knowledgeBases');

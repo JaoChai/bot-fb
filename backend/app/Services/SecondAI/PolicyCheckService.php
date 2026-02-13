@@ -17,8 +17,9 @@ class PolicyCheckService
 {
     /**
      * Model to use for policy checking.
+     * Set dynamically from Bot Settings in check().
      */
-    protected string $model = 'openai/gpt-4o-mini';
+    protected string $model;
 
     /**
      * Default policy rules if not specified in system prompt.
@@ -48,6 +49,11 @@ class PolicyCheckService
         Flow $flow,
         ?string $apiKey = null
     ): CheckResult {
+        // Resolve model from Bot Settings
+        $this->model = $flow->bot?->decision_model
+            ?: $flow->bot?->primary_chat_model
+            ?: throw new \RuntimeException('Bot does not have a model configured. Please set decision_model or primary_chat_model in Bot Settings.');
+
         try {
             // Step 1: Extract policy rules from system prompt
             $policyRules = $this->extractPolicyRules($flow->system_prompt, $apiKey);
