@@ -23,13 +23,16 @@ class FlowPluginService
     {
         $flow = $conversation->currentFlow ?? $bot->defaultFlow;
         if (!$flow) {
+            error_log("PLUGIN DEBUG: No flow found - conversation={$conversation->id}");
             return;
         }
 
         $plugins = $flow->plugins()->where('enabled', true)->get();
         if ($plugins->isEmpty()) {
+            error_log("PLUGIN DEBUG: No enabled plugins - flow={$flow->id}");
             return;
         }
+        error_log("PLUGIN DEBUG: Found {$plugins->count()} plugin(s) - flow={$flow->id}, conversation={$conversation->id}");
 
         // Eager load user.settings to avoid N+1 query during API key resolution
         if (!$bot->relationLoaded('user')) {
@@ -51,6 +54,7 @@ class FlowPluginService
                     Cache::put($cacheKey, true, 60);
                 }
             } catch (\Exception $e) {
+                error_log("PLUGIN DEBUG: Exception - plugin={$plugin->id}, error={$e->getMessage()}");
                 Log::warning('Plugin execution failed', [
                     'plugin_id' => $plugin->id,
                     'plugin_type' => $plugin->type,
@@ -101,8 +105,10 @@ class FlowPluginService
     ): bool {
         // Keyword pre-filter: skip AI call if bot message doesn't contain any trigger keywords
         if (!$this->passesKeywordFilter($plugin, $botMessage)) {
+            error_log("PLUGIN DEBUG: Keyword filter failed - plugin={$plugin->id}");
             return false;
         }
+        error_log("PLUGIN DEBUG: Keyword filter passed - plugin={$plugin->id}");
 
         // Load customer profile for metadata
         $conversation->loadMissing('customerProfile');
@@ -162,7 +168,7 @@ PROMPT,
         // Use lightweight model for evaluation
         $result = $this->openRouter->chat(
             messages: $messages,
-            model: 'openai/gpt-5-mini',
+            model: 'openai/gpt-4o-mini',
             temperature: 0.1,
             maxTokens: 256,
             useFallback: false,
@@ -190,8 +196,10 @@ PROMPT,
         }
 
         if (!($evaluation['triggered'] ?? false)) {
+            error_log("PLUGIN DEBUG: AI said NOT triggered - plugin={$plugin->id}");
             return false;
         }
+        error_log("PLUGIN DEBUG: AI said TRIGGERED - plugin={$plugin->id}");
 
         // Format message template with extracted variables
         $variables = $evaluation['variables'] ?? [];
@@ -240,6 +248,7 @@ PROMPT,
             ]);
 
         if ($response->successful()) {
+            error_log("PLUGIN DEBUG: Telegram sent OK - plugin={$plugin->id}, chat_id={$chatId}");
             Log::info('Telegram plugin notification sent', [
                 'plugin_id' => $plugin->id,
                 'chat_id' => $chatId,
@@ -247,6 +256,7 @@ PROMPT,
         } else {
             $status = $response->status();
             $error = $response->json('description', 'Unknown error');
+            error_log("PLUGIN DEBUG: Telegram FAILED - plugin={$plugin->id}, status={$status}, error={$error}");
 
             Log::warning('Telegram plugin notification failed', [
                 'plugin_id' => $plugin->id,
