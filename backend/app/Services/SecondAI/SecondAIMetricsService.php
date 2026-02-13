@@ -269,7 +269,7 @@ class SecondAIMetricsService
                 'policy_compliance_score' => $policy,
                 'personality_match_score' => $personality,
                 'overall_score' => $overall,
-                'was_modified' => $result['second_ai_applied'] ?? false,
+                'was_modified' => !empty($modifications),
                 'checks_applied' => $checksApplied,
                 'modifications' => $modifications,
                 'latency_ms' => $secondAi['elapsed_ms'] ?? null,

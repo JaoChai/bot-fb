@@ -45,7 +45,7 @@ readonly class SecondAICheckResult
     }
 
     /**
-     * Get all applied check types
+     * Get all applied check types (only checks with required: true)
      */
     public function getAppliedChecks(): array
     {
@@ -53,6 +53,14 @@ readonly class SecondAICheckResult
             array_keys($this->modifications),
             fn($type) => $this->wasApplied($type)
         );
+    }
+
+    /**
+     * Get all check type keys that were evaluated (regardless of required status)
+     */
+    public function getAllCheckTypes(): array
+    {
+        return array_keys($this->modifications);
     }
 
     /**
@@ -64,9 +72,10 @@ readonly class SecondAICheckResult
             'content' => $this->finalResponse,
             'second_ai_applied' => !$this->passed,
             'second_ai' => [
-                'checks_applied' => $this->getAppliedChecks(),
+                'checks_applied' => $this->getAllCheckTypes(),
                 'modifications' => $this->modifications,
                 'elapsed_ms' => $this->metadata['latency_ms'] ?? 0,
+                'model_used' => $this->metadata['model_used'] ?? null,
             ],
         ];
     }
