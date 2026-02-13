@@ -234,7 +234,7 @@ class SecondAIService
                 'checks_applied' => $checksApplied,
                 'modifications' => $modifications,
                 'elapsed_ms' => $elapsed,
-                'model_used' => 'openai/gpt-4o-mini',
+                'model_used' => $flow->bot?->decision_model ?: $flow->bot?->primary_chat_model,
             ]);
 
             // Log metrics for analytics (sequential mode)

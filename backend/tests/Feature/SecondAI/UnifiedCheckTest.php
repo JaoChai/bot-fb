@@ -24,7 +24,9 @@ class UnifiedCheckTest extends TestCase
         parent::setUp();
 
         // Create bot and flow with Second AI enabled
-        $this->bot = Bot::factory()->create();
+        $this->bot = Bot::factory()->create([
+            'decision_model' => 'openai/gpt-4o-mini',
+        ]);
 
         $this->flow = Flow::factory()->create([
             'bot_id' => $this->bot->id,
