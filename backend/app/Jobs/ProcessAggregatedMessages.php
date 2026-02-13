@@ -67,7 +67,7 @@ class ProcessAggregatedMessages implements ShouldQueue
                 'conversation_id' => $this->conversation->id,
                 'group_id' => $this->groupId,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
 
             // Clear aggregation on failure so user can try again

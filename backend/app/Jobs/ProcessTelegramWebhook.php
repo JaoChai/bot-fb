@@ -71,7 +71,7 @@ class ProcessTelegramWebhook implements ShouldQueue
                 'bot_id' => $this->bot->id,
                 'update_id' => $this->update['update_id'] ?? null,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
 
             throw $e;

@@ -218,19 +218,13 @@ class SemanticCacheService
         $maxDistance = 1 - $this->similarityThreshold;
 
         $result = DB::table('rag_cache')
-            ->select([
-                'id',
-                'query_text',
-                'response',
-                'metadata',
-                'hit_count',
-                DB::raw("(1 - (query_embedding <=> '{$vector}')) as similarity"),
-            ])
+            ->select(['id', 'query_text', 'response', 'metadata', 'hit_count'])
+            ->selectRaw('(1 - (query_embedding <=> ?)) as similarity', [$vector])
             ->where('bot_id', $bot->id)
             ->where('expires_at', '>', now())
             ->whereNotNull('query_embedding')
-            ->whereRaw("(query_embedding <=> '{$vector}') <= ?", [$maxDistance])
-            ->orderByRaw("query_embedding <=> '{$vector}' ASC")
+            ->whereRaw('(query_embedding <=> ?) <= ?', [$vector, $maxDistance])
+            ->orderByRaw('query_embedding <=> ? ASC', [$vector])
             ->first();
 
         if (!$result) {

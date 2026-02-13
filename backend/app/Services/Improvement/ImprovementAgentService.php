@@ -100,7 +100,7 @@ class ImprovementAgentService
         } catch (\Exception $e) {
             Log::error("Improvement analysis failed: {$e->getMessage()}", [
                 'session_id' => $session->id,
-                'trace' => $e->getTraceAsString(),
+                ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
             $session->markAsFailed($e->getMessage());
             throw $e;

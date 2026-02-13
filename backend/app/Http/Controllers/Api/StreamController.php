@@ -725,7 +725,7 @@ class StreamController extends Controller
                 Log::error('SecondAI: Process failed or timed out', [
                     'flow_id' => $flow->id,
                     'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
+                    ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
                 ]);
                 // Also log to stderr for Railway visibility
                 error_log('SecondAI ERROR: ' . $e->getMessage());

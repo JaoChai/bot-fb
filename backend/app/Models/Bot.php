@@ -97,9 +97,8 @@ class Bot extends Model
     ];
 
     protected $hidden = [
-        // Credentials are now visible for debugging
-        // 'channel_access_token',
-        // 'channel_secret',
+        'channel_access_token',
+        'channel_secret',
     ];
 
     public function user(): BelongsTo

@@ -95,7 +95,7 @@ class EvaluationController extends Controller
             Log::error('Evaluation creation failed', [
                 'bot_id' => $bot->id,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
 
             return response()->json([
