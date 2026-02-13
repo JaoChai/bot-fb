@@ -49,7 +49,7 @@ class RunEvaluationJob implements ShouldQueue
             Log::error('Evaluation job failed', [
                 'evaluation_id' => $this->evaluation->id,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
 
             // Mark as failed (will be handled by failed() method if all retries exhausted)

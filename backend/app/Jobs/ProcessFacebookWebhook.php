@@ -67,7 +67,7 @@ class ProcessFacebookWebhook implements ShouldQueue
             Log::error('Facebook webhook processing failed', [
                 'bot_id' => $this->bot->id,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
 
             throw $e;

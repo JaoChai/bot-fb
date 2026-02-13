@@ -92,7 +92,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 'bot_id' => $this->bot->id,
                 'event_type' => $this->event['type'] ?? 'unknown',
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
 
             throw $e;
@@ -492,7 +492,7 @@ class ProcessLINEWebhook implements ShouldQueue
                     'bot_id' => $this->bot->id,
                     'conversation_id' => $conversation->id,
                     'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
+                    ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
                 ]);
 
                 throw $e;
@@ -1116,7 +1116,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 'bot_id' => $this->bot->id,
                 'conversation_id' => $conversation->id,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
             // Fail silently - image is already saved, just no AI response
         }

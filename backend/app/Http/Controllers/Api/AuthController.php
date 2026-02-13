@@ -26,7 +26,7 @@ class AuthController extends Controller
             'timezone' => $request->timezone ?? 'Asia/Bangkok',
         ]);
 
-        $token = $user->createToken('auth-token')->plainTextToken;
+        $token = $user->createToken('auth-token', ['*'], now()->addDays(30))->plainTextToken;
 
         return response()->json([
             'message' => 'Registration successful',
