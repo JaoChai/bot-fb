@@ -360,7 +360,7 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
 
       {/* Plugin Config Dialog */}
       <Dialog open={showConfigDialog} onOpenChange={setShowConfigDialog}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-xl max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
               {editingPlugin
@@ -372,7 +372,7 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto flex-1 pr-2">
             {/* Name */}
             <div className="space-y-2">
               <Label htmlFor="plugin-name">ชื่อเรียก</Label>
