@@ -58,6 +58,18 @@ class SecondAIService
             return $this->buildResult($response, false, []);
         }
 
+        $skipReason = $this->shouldSkipCheck($response);
+        if ($skipReason !== null) {
+            Log::info('SecondAI: Skipping', [
+                'flow_id' => $flow->id,
+                'reason' => $skipReason,
+            ]);
+            return $this->buildResult($response, false, [
+                'skipped' => true,
+                'skip_reason' => $skipReason,
+            ]);
+        }
+
         $options = $flow->second_ai_options ?? [];
         $startTime = microtime(true);
 
@@ -218,10 +230,11 @@ class SecondAIService
                 'elapsed_ms' => $elapsed,
             ]);
 
-            $resultArray = $this->buildResult($currentContent, true, [
+            $resultArray = $this->buildResult($currentContent, !empty($modifications), [
                 'checks_applied' => $checksApplied,
                 'modifications' => $modifications,
                 'elapsed_ms' => $elapsed,
+                'model_used' => 'openai/gpt-4o-mini',
             ]);
 
             // Log metrics for analytics (sequential mode)
@@ -377,5 +390,35 @@ class SecondAIService
         }
 
         return $enabledCount >= 2;
+    }
+
+    /**
+     * Check if the response should skip Second AI checks.
+     *
+     * @param string $response The AI response to evaluate
+     * @return string|null Skip reason, or null if check should proceed
+     */
+    protected function shouldSkipCheck(string $response): ?string
+    {
+        $trimmed = trim($response);
+
+        // Skip very short messages without factual content
+        // But don't skip if it contains numbers (prices, quantities, dates)
+        if (mb_strlen($trimmed) < 50 && !preg_match('/\d/', $trimmed)) {
+            return 'response_too_short';
+        }
+
+        // Skip greeting-only patterns (must match entire response, not just prefix)
+        $patterns = [
+            '/^(สวัสดี|หวัดดี|ดีค่ะ|ดีครับ|ขอบคุณ|ยินดี|รับทราบ)[ค่ะครับคะนะจ้า\s!\.]*$/u',
+            '/^(ยินดีให้บริการ|มีอะไรให้ช่วย|สอบถามเพิ่มเติม)[ค่ะครับคะนะจ้า\s!\.]*$/u',
+        ];
+        foreach ($patterns as $p) {
+            if (preg_match($p, $trimmed)) {
+                return 'greeting_or_acknowledgment';
+            }
+        }
+
+        return null;
     }
 }

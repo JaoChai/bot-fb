@@ -75,7 +75,7 @@ class UnifiedCheckService
         ]);
 
         try {
-            $response = $this->openRouter->chat(
+            $apiResult = $this->openRouter->chat(
                 messages: [['role' => 'user', 'content' => $prompt]],
                 model: $model,
                 temperature: 0.3,
@@ -86,7 +86,7 @@ class UnifiedCheckService
                 timeout: $this->timeout,
             );
 
-            $rawResponse = $response['content'];
+            $rawResponse = $apiResult['content'];
         } catch (\Exception $e) {
             Log::error('UnifiedCheckService: LLM call failed', [
                 'error' => $e->getMessage(),
@@ -97,6 +97,13 @@ class UnifiedCheckService
 
         // Parse and validate response
         $parsedData = $this->parseResponse($rawResponse);
+
+        // Filter out low-confidence modifications
+        $parsedData['modifications'] = $this->filterByConfidence($parsedData['modifications']);
+        $parsedData['passed'] = $this->inferPassedFromModifications($parsedData['modifications']);
+        if ($parsedData['passed']) {
+            $parsedData['final_response'] = $response;
+        }
 
         $elapsedMs = (int) ((microtime(true) - $startTime) * 1000);
 
@@ -114,7 +121,7 @@ class UnifiedCheckService
             'passed' => $parsedData['passed'],
             'modifications' => $parsedData['modifications'],
             'final_response' => $parsedData['final_response'],
-            'model_used' => $response['model'] ?? $model,
+            'model_used' => $apiResult['model'] ?? $model,
             'latency_ms' => $elapsedMs,
         ]);
     }
@@ -178,6 +185,7 @@ class UnifiedCheckService
         if (in_array('fact_check', $enabledChecks)) {
             $prompt .= '    "fact_check": {'."\n";
             $prompt .= '      "required": boolean,'."\n";
+            $prompt .= '      "confidence": 0.0-1.0,'."\n";
             $prompt .= '      "claims_extracted": ["claim1", "claim2"],'."\n";
             $prompt .= '      "unverified_claims": ["claim1"],'."\n";
             $prompt .= '      "rewritten": "rewritten text" | null'."\n";
@@ -187,6 +195,7 @@ class UnifiedCheckService
         if (in_array('policy', $enabledChecks)) {
             $prompt .= '    "policy": {'."\n";
             $prompt .= '      "required": boolean,'."\n";
+            $prompt .= '      "confidence": 0.0-1.0,'."\n";
             $prompt .= '      "violations": ["violation1"],'."\n";
             $prompt .= '      "rewritten": "rewritten text" | null'."\n";
             $prompt .= '    },'."\n";
@@ -195,6 +204,7 @@ class UnifiedCheckService
         if (in_array('personality', $enabledChecks)) {
             $prompt .= '    "personality": {'."\n";
             $prompt .= '      "required": boolean,'."\n";
+            $prompt .= '      "confidence": 0.0-1.0,'."\n";
             $prompt .= '      "issues": ["issue1"],'."\n";
             $prompt .= '      "rewritten": "rewritten text" | null'."\n";
             $prompt .= '    }'."\n";
@@ -210,6 +220,8 @@ class UnifiedCheckService
         $prompt .= "- If a check fails, set `required: true` and provide `rewritten` text\n";
         $prompt .= "- Apply modifications sequentially: fact_check → policy → personality\n";
         $prompt .= "- `final_response` must be the result after applying ALL modifications\n";
+        $prompt .= "- Include confidence (0.0-1.0) for each check reflecting how certain you are about the issue\n";
+        $prompt .= "- Only set required: true if confidence >= 0.7\n";
         $prompt .= "- Return ONLY the JSON object, no other text\n\n";
 
         // Add examples section
@@ -320,33 +332,107 @@ class UnifiedCheckService
      */
     protected function parseResponse(string $rawResponse): array
     {
-        // Strip markdown code blocks if present
-        $cleaned = preg_replace('/```json\s*|\s*```/', '', trim($rawResponse));
+        $trimmed = trim($rawResponse);
+        $json = null;
 
-        try {
-            $json = json_decode($cleaned, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException $e) {
-            Log::error('UnifiedCheckService: Invalid JSON response', [
-                'error' => $e->getMessage(),
+        // Strategy 1: Extract JSON from markdown code blocks
+        if (preg_match('/```(?:json|JSON)?\s*(\{[\s\S]*?\})\s*```/', $trimmed, $matches)) {
+            try {
+                $json = json_decode($matches[1], true, 512, JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                // Fall through to strategy 2
+            }
+        }
+
+        // Strategy 2: Extract first complete JSON object
+        if ($json === null && preg_match('/(\{[\s\S]*\})/s', $trimmed, $matches)) {
+            try {
+                $json = json_decode($matches[1], true, 512, JSON_THROW_ON_ERROR);
+            } catch (\JsonException $e) {
+                Log::error('UnifiedCheckService: Invalid JSON response', [
+                    'error' => $e->getMessage(),
+                    'raw_response' => substr($rawResponse, 0, 500),
+                ]);
+                throw new \RuntimeException('Invalid JSON response from unified check');
+            }
+        }
+
+        if ($json === null) {
+            Log::error('UnifiedCheckService: No JSON found in response', [
                 'raw_response' => substr($rawResponse, 0, 500),
             ]);
             throw new \RuntimeException('Invalid JSON response from unified check');
         }
 
-        // Validate required fields
+        // Lenient defaults for missing fields
+        $modifications = $json['modifications'] ?? [];
+
         if (!isset($json['passed']) || !is_bool($json['passed'])) {
-            throw new \RuntimeException('Missing or invalid "passed" field in unified check response');
+            $json['passed'] = $this->inferPassedFromModifications($modifications);
         }
 
-        if (!isset($json['modifications']) || !is_array($json['modifications'])) {
-            throw new \RuntimeException('Missing or invalid "modifications" field in unified check response');
+        if (!is_array($modifications)) {
+            $modifications = [];
         }
+        $json['modifications'] = $modifications;
 
         if (!isset($json['final_response']) || !is_string($json['final_response']) || empty($json['final_response'])) {
-            throw new \RuntimeException('Missing or invalid "final_response" field in unified check response');
+            $fallback = $this->extractLastRewritten($modifications);
+            if ($fallback === null) {
+                throw new \RuntimeException('Missing or invalid "final_response" field in unified check response');
+            }
+            $json['final_response'] = $fallback;
         }
 
         return $json;
+    }
+
+    /**
+     * Infer passed status from modifications when LLM omits it
+     */
+    protected function inferPassedFromModifications(array $modifications): bool
+    {
+        foreach ($modifications as $mod) {
+            if (is_array($mod) && ($mod['required'] ?? false)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Extract the last rewritten text from modifications as fallback
+     */
+    protected function extractLastRewritten(array $modifications): ?string
+    {
+        $lastRewritten = null;
+        foreach ($modifications as $mod) {
+            if (is_array($mod) && !empty($mod['rewritten'])) {
+                $lastRewritten = $mod['rewritten'];
+            }
+        }
+        return $lastRewritten;
+    }
+
+    /**
+     * Filter modifications by confidence threshold.
+     * Demotes low-confidence required checks to non-required.
+     */
+    protected function filterByConfidence(array $modifications, float $threshold = 0.7): array
+    {
+        foreach ($modifications as $checkType => &$mod) {
+            if (!is_array($mod)) continue;
+            $confidence = $mod['confidence'] ?? 1.0;
+            if (($mod['required'] ?? false) && $confidence < $threshold) {
+                Log::info('UnifiedCheck: Low confidence, demoting', [
+                    'check' => $checkType,
+                    'confidence' => $confidence,
+                ]);
+                $mod['required'] = false;
+                $mod['rewritten'] = null;
+            }
+        }
+        return $modifications;
     }
 
     /**
