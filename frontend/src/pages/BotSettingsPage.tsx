@@ -559,8 +559,9 @@ export function BotSettingsPage() {
           {/* Multiple Bubbles */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">
+              <CardTitle className="text-lg flex items-center gap-2">
                 การตอบแบบหลายบอลลูน
+                <Badge variant="outline" className="text-[10px]">ทุกโหมด</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
