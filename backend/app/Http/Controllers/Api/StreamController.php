@@ -536,7 +536,7 @@ class StreamController extends Controller
         $collectedResponse = '';
 
         try {
-            $collectedResponse = $this->streamFromOpenRouter($messages, $chatModel, $apiKey);
+            $collectedResponse = $this->streamFromOpenRouter($messages, $chatModel, $apiKey, $flow->temperature, $flow->max_tokens);
             $this->metrics['models_used'][] = $chatModel;
         } catch (\Exception $e) {
             // Try fallback model
@@ -548,7 +548,7 @@ class StreamController extends Controller
                 ]);
 
                 try {
-                    $collectedResponse = $this->streamFromOpenRouter($messages, $fallbackChatModel, $apiKey);
+                    $collectedResponse = $this->streamFromOpenRouter($messages, $fallbackChatModel, $apiKey, $flow->temperature, $flow->max_tokens);
                     $this->metrics['models_used'][] = $fallbackChatModel;
                     $usedFallback = true;
                 } catch (\Exception $fallbackError) {
@@ -567,7 +567,7 @@ class StreamController extends Controller
      *
      * @return string The full collected response content
      */
-    protected function streamFromOpenRouter(array $messages, string $model, ?string $apiKey): string
+    protected function streamFromOpenRouter(array $messages, string $model, ?string $apiKey, ?float $temperature = null, ?int $maxTokens = null): string
     {
         $client = new Client([
             'timeout' => 120,
@@ -588,8 +588,8 @@ class StreamController extends Controller
                 'model' => $model,
                 'messages' => $messages,
                 'stream' => true,
-                'temperature' => 0.7,
-                'max_tokens' => 4096,
+                'temperature' => $temperature ?? 0.7,
+                'max_tokens' => $maxTokens ?? 4096,
             ],
             'stream' => true,
         ]);
@@ -1130,7 +1130,7 @@ PROMPT;
                     $conversationHistory,
                     $message
                 );
-                $this->streamFromOpenRouter($fallbackMessages, $chatModel, $apiKey);
+                $this->streamFromOpenRouter($fallbackMessages, $chatModel, $apiKey, $flow->temperature, $flow->max_tokens);
                 break;
             }
         }
@@ -1166,34 +1166,59 @@ PROMPT;
     protected function buildAgentSystemPrompt(Bot $bot, Flow $flow): string
     {
         $basePrompt = $flow->system_prompt ?: $this->getDefaultSystemPrompt($bot);
-
-        $toolsInfo = '';
         $enabledTools = $flow->enabled_tools ?? [];
 
+        if (empty($enabledTools)) {
+            return $basePrompt;
+        }
+
+        $agentPrompt = "\n\n## Agent Instructions\n";
+
+        // --- Tool Usage Rules ---
+        $agentPrompt .= "\n### Tool Usage Rules\n";
+
         if (in_array('search_kb', $enabledTools)) {
-            $toolsInfo .= "\n- search_knowledge_base: ใช้เมื่อต้องการค้นหาข้อมูลในฐานความรู้";
+            $agentPrompt .= <<<'TOOL'
+
+**search_knowledge_base**:
+- ใช้เมื่อ: ลูกค้าถามเรื่องสินค้า ราคา นโยบาย บริการ วิธีใช้ หรือข้อมูลเฉพาะทาง
+- ไม่ต้องใช้เมื่อ: ทักทาย ขอบคุณ ลาก่อน หรือคำถามทั่วไปที่ไม่ต้องการข้อมูลจากระบบ
+- ค้นด้วย keyword ที่ตรงประเด็น ถ้าค้น 1-2 ครั้งแล้วไม่เจอ ให้บอกลูกค้าว่าไม่มีข้อมูลในระบบ
+TOOL;
         }
+
         if (in_array('calculate', $enabledTools)) {
-            $toolsInfo .= "\n- calculate: ใช้เมื่อต้องการคำนวณตัวเลข";
+            $agentPrompt .= <<<'TOOL'
+
+**calculate**:
+- ใช้เมื่อ: ต้องคำนวณราคารวม ส่วนลด จำนวนสินค้า หรือตัวเลขที่ต้องคิด
+- ไม่ต้องใช้เมื่อ: ตัวเลขมีอยู่แล้วในข้อมูลที่ค้นเจอ ไม่ต้องคำนวณเพิ่ม
+TOOL;
         }
+
         if (in_array('think', $enabledTools)) {
-            $toolsInfo .= "\n- think: ใช้เพื่อหยุดคิดและวิเคราะห์ก่อนตอบ";
+            $agentPrompt .= <<<'TOOL'
+
+**think**:
+- ใช้เมื่อ: คำถามซับซ้อนที่ต้องวิเคราะห์หลายขั้นตอนก่อนตอบ
+TOOL;
         }
 
-        if (!empty($toolsInfo)) {
-            $basePrompt .= "\n\n## Available Tools:{$toolsInfo}\n\nUse tools when needed to provide accurate information.";
-        }
+        // --- Accuracy & Efficiency Rules (always included) ---
+        $agentPrompt .= <<<'RULES'
 
-        // Add think tool guidance if enabled
-        if (in_array('think', $enabledTools)) {
-            $basePrompt .= "\n\n## วิธีใช้ Think Tool:";
-            $basePrompt .= "\n- ใช้ think ก่อนตอบคำถามที่ซับซ้อนหรือต้องวิเคราะห์หลายขั้นตอน";
-            $basePrompt .= "\n- ใช้ think หลังได้ผลลัพธ์จาก search_knowledge_base เพื่อวิเคราะห์ข้อมูล";
-            $basePrompt .= "\n- ใช้ think เพื่อวางแผนขั้นตอนการตอบคำถาม";
-            $basePrompt .= "\n- ใช้ think เพื่อตรวจสอบความถูกต้องก่อนให้คำตอบสุดท้าย";
-        }
+### Accuracy Rules
+- ตอบจากข้อมูลที่ค้นเจอเท่านั้น ห้ามเดาหรือสร้างข้อมูลขึ้นมาเอง
+- ห้ามสร้างราคา ส่วนลด นโยบาย หรือเงื่อนไขที่ไม่มีในฐานข้อมูล
+- ถ้าไม่มีข้อมูลเพียงพอ ให้แนะนำลูกค้าติดต่อเจ้าหน้าที่
 
-        return $basePrompt;
+### Efficiency Rules
+- ค้นหาด้วย keyword ที่ตรงประเด็น ไม่ค้นซ้ำด้วยคำเดิม
+- ถ้าค้นแล้วได้ข้อมูลเพียงพอ ให้ตอบเลย ไม่ต้องค้นเพิ่ม
+- ตอบให้กระชับ ไม่ต้องอธิบายกระบวนการค้นหาให้ลูกค้า
+RULES;
+
+        return $basePrompt . $agentPrompt;
     }
 
     /**
