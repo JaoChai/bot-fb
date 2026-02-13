@@ -54,10 +54,10 @@ class AgentSafetyService
         }
 
         // Check against flow's custom dangerous actions
-        $dangerousActions = $flow->hitl_dangerous_actions ?? [];
+        // null = not configured → use defaults; empty array = explicitly no dangerous actions
+        $dangerousActions = $flow->hitl_dangerous_actions;
 
-        // If no custom list, use defaults
-        if (empty($dangerousActions)) {
+        if ($dangerousActions === null) {
             $dangerousActions = $this->defaultDangerousPatterns;
         }
 
