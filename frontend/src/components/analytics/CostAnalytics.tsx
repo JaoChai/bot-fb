@@ -331,7 +331,7 @@ export function CostAnalytics() {
                         if (pct < 5) return null;
                         return `${pct.toFixed(0)}%`;
                       }}
-                      labelLine={({ percent }) => (percent || 0) * 100 >= 5}
+                      labelLine={false}
                     >
                       {data.by_model.map((_, index) => (
                         <Cell
