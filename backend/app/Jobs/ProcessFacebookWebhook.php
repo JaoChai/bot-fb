@@ -12,6 +12,7 @@ use App\Services\AIService;
 use App\Services\AutoAssignmentService;
 use App\Services\CircuitBreakerService;
 use App\Services\LeadRecoveryService;
+use App\Services\ProfilePictureService;
 use App\Exceptions\CircuitOpenException;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -477,7 +478,9 @@ class ProcessFacebookWebhook implements ShouldQueue
                 'external_id' => $psid,
                 'channel_type' => 'facebook',
                 'display_name' => $fbProfile['name'] ?? 'Facebook User',
-                'picture_url' => $fbProfile['profile_pic'] ?? null,
+                'picture_url' => app(ProfilePictureService::class)->downloadAndStore(
+                    'facebook', $psid, $fbProfile['profile_pic'] ?? null
+                ),
                 'first_interaction_at' => now(),
                 'last_interaction_at' => now(),
                 'interaction_count' => 1,

@@ -17,6 +17,7 @@ use App\Services\LINEService;
 use App\Services\MessageAggregationService;
 use App\Services\MultipleBubblesService;
 use App\Services\OpenRouterService;
+use App\Services\ProfilePictureService;
 use App\Services\RateLimitService;
 use App\Services\ResponseHoursService;
 use App\Services\SmartAggregation\SmartAggregationAnalyzer;
@@ -1340,7 +1341,9 @@ class ProcessLINEWebhook implements ShouldQueue
             ],
             [
                 'display_name' => $lineProfile['displayName'] ?? null,
-                'picture_url' => $lineProfile['pictureUrl'] ?? null,
+                'picture_url' => app(ProfilePictureService::class)->downloadAndStore(
+                    'line', $userId, $lineProfile['pictureUrl'] ?? null
+                ),
                 'last_interaction_at' => now(),
                 'metadata' => [
                     'status_message' => $lineProfile['statusMessage'] ?? null,
