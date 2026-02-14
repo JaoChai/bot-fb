@@ -7,7 +7,6 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\SecondAI\SecondAIService;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class AIService
@@ -34,16 +33,17 @@ class AIService
             ? $this->getConversationHistory($conversation, $bot->context_window)
             : [];
 
-        // Use RAGService to generate response (handles KB integration automatically)
+        // Get flow for RAGService (agentic mode) and Second AI check
+        $flow = $conversation?->currentFlow ?? $bot->defaultFlow;
+
+        // Use RAGService to generate response (handles KB integration + agentic mode automatically)
         $result = $this->ragService->generateResponse(
             bot: $bot,
             userMessage: $userMessage,
             conversationHistory: $history,
-            conversation: $conversation
+            conversation: $conversation,
+            flow: $flow
         );
-
-        // Apply Second AI check if enabled on the flow
-        $flow = $conversation?->currentFlow ?? $bot->defaultFlow;
         if ($flow && $flow->second_ai_enabled) {
             $secondAIResult = $this->secondAIService->process(
                 response: $result['content'],
