@@ -84,7 +84,8 @@ export async function streamFlowTest(
   message: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
   _enableThinking: boolean, // Deprecated - kept for backward compatibility
-  options: StreamOptions
+  options: StreamOptions,
+  conversationId?: number
 ): Promise<void> {
   const token = localStorage.getItem('auth_token');
 
@@ -105,6 +106,7 @@ export async function streamFlowTest(
       body: JSON.stringify({
         message,
         conversation_history: conversationHistory,
+        ...(conversationId && { conversation_id: conversationId }),
       }),
       signal: options.signal,
     }

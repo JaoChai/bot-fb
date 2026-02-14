@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Bot;
+use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\User;
 use App\Services\AgentSafetyService;
@@ -108,6 +109,7 @@ class StreamController extends Controller
         // 2. Validate input
         $message = $request->input('message');
         $conversationHistory = $request->input('conversation_history', []);
+        $conversationId = $request->input('conversation_id');
         // Limit conversation history to prevent excessive token usage
         $maxHistory = (int) config('rag.max_conversation_history', 20);
         $conversationHistory = array_slice($conversationHistory, -$maxHistory);
@@ -137,8 +139,22 @@ class StreamController extends Controller
             return $this->errorResponse('No API key configured. Please set up in Settings page.', 422);
         }
 
-        // 5. Create SSE response
-        return new StreamedResponse(function () use ($bot, $flow, $message, $conversationHistory, $apiKey, $user) {
+        // 5. Load memory notes from conversation (if provided)
+        $memoryNotes = [];
+        if ($conversationId) {
+            $conversation = Conversation::where('id', $conversationId)
+                ->where('bot_id', $botId)
+                ->first();
+            if ($conversation) {
+                $memoryNotes = collect($conversation->memory_notes ?? [])
+                    ->where('type', 'memory')
+                    ->pluck('content')
+                    ->all();
+            }
+        }
+
+        // 6. Create SSE response
+        return new StreamedResponse(function () use ($bot, $flow, $message, $conversationHistory, $apiKey, $user, $memoryNotes) {
             // Disable output buffering for streaming
             while (ob_get_level()) {
                 ob_end_clean();
@@ -266,7 +282,7 @@ class StreamController extends Controller
                             'complexity_score' => $complexity['score'],
                             'kb_top_relevance' => $kbMeta['top_relevance'] ?? 0,
                         ]);
-                        $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey);
+                        $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey, $memoryNotes);
                         $this->runSecondAI($flow, $chatResponse, $message, $apiKey, $kbContext);
                     } else {
                         // Complex / tool needed / low KB → Agent Loop
@@ -283,7 +299,7 @@ class StreamController extends Controller
                             'kb_top_relevance' => $kbMeta['top_relevance'] ?? 0,
                             'tool_intent' => $toolIntent['needs_tool'],
                         ]);
-                        $this->runAgentLoop($bot, $flow, $message, $conversationHistory, $apiKey, $user, $kbContext);
+                        $this->runAgentLoop($bot, $flow, $message, $conversationHistory, $apiKey, $user, $kbContext, $memoryNotes);
                     }
                 } else {
                     // === STANDARD MODE: Decision → KB → Chat → Second AI ===
@@ -295,7 +311,7 @@ class StreamController extends Controller
                     $kbContext = $this->runKnowledgeBaseSearch($bot, $flow, $message, $intent);
 
                     // === STEP 4: Chat Model - Generate Response ===
-                    $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey);
+                    $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey, $memoryNotes);
 
                     // === STEP 5: Second AI - Content Verification ===
                     $finalResponse = $this->runSecondAI($flow, $chatResponse, $message, $apiKey);
@@ -654,14 +670,16 @@ class StreamController extends Controller
         string $message,
         array $conversationHistory,
         string $kbContext,
-        ?string $apiKey
+        ?string $apiKey,
+        array $memoryNotes = []
     ): string {
         // Get models from Bot Settings
         $chatModel = $this->getChatModel($bot);
         $fallbackChatModel = $this->getFallbackChatModel($bot);
 
-        // Build system prompt
-        $systemPrompt = $flow->system_prompt ?: $this->getDefaultSystemPrompt($bot);
+        // Build system prompt with memory prefix (same format as RAGService)
+        $systemPrompt = $this->buildMemoryPrefix($memoryNotes)
+            . ($flow->system_prompt ?: $this->getDefaultSystemPrompt($bot));
         if (!empty($kbContext)) {
             $systemPrompt .= "\n\n" . $kbContext;
         }
@@ -986,6 +1004,24 @@ class StreamController extends Controller
         return $messages;
     }
 
+    /**
+     * Build memory notes prefix for system prompt (same format as RAGService).
+     */
+    protected function buildMemoryPrefix(array $memoryNotes): string
+    {
+        if (empty($memoryNotes)) {
+            return '';
+        }
+
+        $prefix = "## Memory:\n";
+        foreach ($memoryNotes as $content) {
+            $prefix .= "- {$content}\n";
+        }
+        $prefix .= "---\n\n";
+
+        return $prefix;
+    }
+
     protected function getDefaultSystemPrompt(Bot $bot): string
     {
         return <<<PROMPT
@@ -1010,7 +1046,8 @@ PROMPT;
         array $conversationHistory,
         string $apiKey,
         ?User $user = null,
-        string $kbContext = ''
+        string $kbContext = '',
+        array $memoryNotes = []
     ): void {
         $maxIterations = $flow->max_tool_calls ?? 10;
         $tools = $this->toolService->getToolDefinitions($flow->enabled_tools ?? []);
@@ -1026,8 +1063,8 @@ PROMPT;
         $loopStartTime = microtime(true);
         $safetyConfig = $this->agentSafety->getSafetyConfig($flow);
 
-        // Build initial messages with KB context
-        $systemPrompt = $this->buildAgentSystemPrompt($bot, $flow, $kbContext);
+        // Build initial messages with KB context and memory notes
+        $systemPrompt = $this->buildAgentSystemPrompt($bot, $flow, $kbContext, $memoryNotes);
         $messages = $this->buildMessages($systemPrompt, $conversationHistory, $message);
 
         $this->sendSSE('agent_start', [
@@ -1321,9 +1358,10 @@ PROMPT;
     /**
      * Build system prompt for agent mode with KB context and Multiple Bubbles support.
      */
-    protected function buildAgentSystemPrompt(Bot $bot, Flow $flow, string $kbContext = ''): string
+    protected function buildAgentSystemPrompt(Bot $bot, Flow $flow, string $kbContext = '', array $memoryNotes = []): string
     {
-        $basePrompt = $flow->system_prompt ?: $this->getDefaultSystemPrompt($bot);
+        $basePrompt = $this->buildMemoryPrefix($memoryNotes)
+            . ($flow->system_prompt ?: $this->getDefaultSystemPrompt($bot));
         $enabledTools = $flow->enabled_tools ?? [];
 
         if (empty($enabledTools)) {
