@@ -11,6 +11,7 @@ use App\Services\OpenRouterService;
 use App\Services\FlowCacheService;
 use App\Services\RAGService;
 use App\Services\SemanticSearchService;
+use App\Services\ToolService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use ReflectionClass;
 use Tests\TestCase;
@@ -33,13 +34,17 @@ class RAGServiceTest extends TestCase
         $openRouter = $this->createMock(OpenRouterService::class);
         $intentAnalysis = $this->createMock(IntentAnalysisService::class);
         $flowCache = $this->createMock(FlowCacheService::class);
+        $toolService = $this->createMock(ToolService::class);
 
         $this->service = new RAGService(
             $semanticSearch,
             $hybridSearch,
             $openRouter,
             $intentAnalysis,
-            $flowCache
+            $flowCache,
+            null, // queryEnhancement
+            null, // semanticCache
+            $toolService
         );
 
         $this->user = User::factory()->create();
