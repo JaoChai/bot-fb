@@ -1,6 +1,6 @@
 # Agent Skills Reference
 
-14 skills available - auto-triggered from context or use `/skill-name`
+15 skills available - auto-triggered from context or use `/skill-name`
 
 ---
 
@@ -14,6 +14,7 @@
 | Design | `/ui-ux-pro-max` | UI design, styles, colors, shadcn |
 | Data | `/database-ops` | migrations, queries, vectors |
 | Data | `/rag-debug` | search not working, embeddings |
+| Quality | `/dead-code` | dead code, unused, cleanup, knip |
 | Quality | `/code-review` | before commit, security audit |
 | Quality | `/testing` | write tests, PHPUnit, Playwright |
 | Operations | `/deployment` | deploy, production issues |
@@ -114,6 +115,19 @@ RAG pipeline debugger for semantic search.
 ---
 
 ### Quality
+
+#### `/dead-code`
+Dead code detection for full stack.
+
+**Use when:** Cleaning up unused code, before major refactoring, periodic maintenance
+
+**Covers:**
+- Frontend: knip (unused files, exports, dependencies)
+- Backend: grep-based analysis (unused Services, Models, Jobs, Controllers, routes)
+- Cross-stack: unused config keys, orphaned routes
+- Auto-fix mode with user confirmation
+
+---
 
 #### `/code-review`
 Comprehensive code reviewer.
@@ -240,6 +254,8 @@ Prompt engineering specialist.
 "ทำ login flow"          → /auth-security
 "webhook LINE พัง"       → /webhook-debug
 "ปรับ system prompt"     → /prompt-eng
+"หา dead code"           → /dead-code
+"unused imports"         → /dead-code
 ```
 
 ---
@@ -261,4 +277,4 @@ Prompt engineering specialist.
 | Auth/Security | `/auth-security` | - |
 | Bot not responding | `/webhook-debug` | - |
 | Prompt optimization | `/prompt-eng` | - |
-| Code cleanup | `/refactor` | - |
+| Code cleanup | `/refactor` | `/dead-code` |
