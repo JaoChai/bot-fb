@@ -208,7 +208,7 @@ export function FlowSafetySettings({ settings, onChange }: FlowSafetySettingsPro
                   <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                   <p className="text-amber-800 dark:text-amber-200">
                     เมื่อ agent ต้องการดำเนินการที่เลือกไว้ ระบบจะส่งการแจ้งเตือนและรอการอนุมัติจากคุณ
-                    (timeout 60 วินาที)
+                    (timeout {settings.agent_timeout_seconds} วินาที)
                   </p>
                 </div>
               </div>

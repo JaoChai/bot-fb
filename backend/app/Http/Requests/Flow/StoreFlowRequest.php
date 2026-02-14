@@ -24,7 +24,7 @@ class StoreFlowRequest extends FormRequest
             'agentic_mode' => ['nullable', 'boolean'],
             'max_tool_calls' => ['nullable', 'integer', 'min:1', 'max:20'],
             'enabled_tools' => ['nullable', 'array'],
-            'enabled_tools.*' => ['string', Rule::in(['search_kb', 'calculate', 'think'])],
+            'enabled_tools.*' => ['string', Rule::in(['search_kb', 'calculate', 'think', 'get_current_datetime', 'escalate_to_human'])],
             'knowledge_bases' => ['nullable', 'array'],
             'knowledge_bases.*.id' => ['required', 'exists:knowledge_bases,id'],
             'knowledge_bases.*.kb_top_k' => ['nullable', 'integer', 'min:1', 'max:20'],

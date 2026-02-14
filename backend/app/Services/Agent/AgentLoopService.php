@@ -121,7 +121,7 @@ class AgentLoopService
 
             try {
                 // Truncate messages if approaching token limit
-                $messages = $this->truncateMessagesIfNeeded($messages);
+                $messages = $this->truncateMessagesIfNeeded($messages, 30, $flow->language ?? 'th');
 
                 // Call LLM with tools
                 $response = $this->openRouter->chatWithTools(
@@ -176,25 +176,26 @@ class AgentLoopService
                             }
 
                             // SSE path: request approval and wait
+                            $hitlTimeout = $flow->hitl_timeout ?? $flow->agent_timeout_seconds ?? 60;
                             $approvalId = $this->agentSafety->requestApproval(
                                 $requestId,
                                 $flow,
                                 $toolName,
                                 $toolArgs,
-                                60
+                                $hitlTimeout
                             );
 
                             $callbacks->onApprovalRequired([
                                 'approval_id' => $approvalId,
                                 'tool_name' => $toolName,
                                 'tool_args' => $toolArgs,
-                                'timeout_seconds' => 60,
+                                'timeout_seconds' => $hitlTimeout,
                             ]);
 
                             // Wait for approval with heartbeat
                             $approval = $this->agentSafety->waitForApproval(
                                 $approvalId,
-                                60,
+                                $hitlTimeout,
                                 fn($elapsed, $timeout) => $callbacks->onApprovalWaiting([
                                     'approval_id' => $approvalId,
                                     'elapsed_seconds' => $elapsed,
@@ -304,7 +305,8 @@ class AgentLoopService
 
                 $finalStatus = 'error';
                 $errorMessage = $e->getMessage();
-                $finalContent = "ขออภัยค่ะ ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง";
+                $language = $flow->language ?? 'th';
+                $finalContent = config("agent-prompts.{$language}.error_message", config('agent-prompts.th.error_message'));
                 break;
             }
         }
@@ -347,7 +349,8 @@ class AgentLoopService
                 ]);
                 $finalStatus = 'error';
                 $errorMessage = $e->getMessage();
-                $finalContent = "ขออภัยค่ะ ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง";
+                $language = $flow->language ?? 'th';
+                $finalContent = config("agent-prompts.{$language}.error_message", config('agent-prompts.th.error_message'));
             }
         }
 
@@ -438,46 +441,47 @@ class AgentLoopService
             return $basePrompt;
         }
 
+        $language = $flow->language ?? 'th';
+        $prompts = config("agent-prompts.{$language}", config('agent-prompts.th'));
+
         $prompt = $basePrompt;
 
         // --- Pre-loaded KB Context ---
         if (!empty(trim($kbContext))) {
-            $prompt .= "\n\n## Pre-loaded Knowledge Base Results\n";
+            $prompt .= "\n\n" . $prompts['pre_loaded_kb'];
             $prompt .= $kbContext;
-            $prompt .= "\n---\nใช้ข้อมูลด้านบนในการตอบ ใช้ search_knowledge_base เมื่อต้องการข้อมูลเพิ่มเติมเท่านั้น";
+            $prompt .= $prompts['pre_loaded_kb_suffix'];
         }
 
         // --- Agent Decision Framework ---
-        $prompt .= "\n\n## Agent Decision Framework\n";
-        $prompt .= "1. ตอบได้ทันที: ทักทาย, ขอบคุณ, มีข้อมูลใน KB แล้ว ตอบเลย ไม่ต้องใช้ tool\n";
+        $prompt .= "\n\n" . $prompts['agent_decision_framework'];
+        $prompt .= $prompts['decision_instant'];
 
         if (in_array('search_kb', $enabledTools)) {
-            if (!empty($kbContext)) {
-                $prompt .= "2. ค้นหาเพิ่ม (search_knowledge_base): ข้อมูลที่โหลดไว้ไม่พอ หรือถามเรื่องอื่น\n";
-            } else {
-                $prompt .= "2. ค้นหา (search_knowledge_base): ลูกค้าถามเรื่องสินค้า ราคา นโยบาย บริการ\n";
-            }
+            $prompt .= !empty($kbContext)
+                ? $prompts['decision_search_with_kb']
+                : $prompts['decision_search_no_kb'];
         }
         if (in_array('calculate', $enabledTools)) {
-            $prompt .= "3. คำนวณ (calculate): คำนวณราคารวม/ส่วนลด\n";
+            $prompt .= $prompts['decision_calculate'];
         }
         if (in_array('think', $enabledTools)) {
-            $prompt .= "4. วิเคราะห์ (think): คำถามซับซ้อน ต้องคิดหลายขั้นตอน\n";
+            $prompt .= $prompts['decision_think'];
+        }
+        if (in_array('get_current_datetime', $enabledTools)) {
+            $prompt .= $prompts['decision_datetime'];
+        }
+        if (in_array('escalate_to_human', $enabledTools)) {
+            $prompt .= $prompts['decision_escalate'];
         }
 
         // --- Search Strategy ---
         if (in_array('search_kb', $enabledTools)) {
-            $prompt .= "\n### Search Strategy\n";
-            $prompt .= "1. ค้นด้วย keyword ตรงประเด็น (2-4 คำ)\n";
-            $prompt .= "2. ไม่เจอ ลอง synonym/กว้างขึ้น\n";
-            $prompt .= "3. สูงสุด 2 ครั้ง ห้ามค้นซ้ำ keyword เดิม\n";
+            $prompt .= "\n" . $prompts['search_strategy'];
         }
 
         // --- Response Rules ---
-        $prompt .= "\n### Response Rules\n";
-        $prompt .= "- ตอบจากข้อมูลที่ค้นเจอเท่านั้น ห้ามเดาหรือสร้างข้อมูลขึ้นมาเอง\n";
-        $prompt .= "- ตอบกระชับ ไม่ต้องบอกว่า \"จากการค้นหา...\"\n";
-        $prompt .= "- ถ้าไม่มีข้อมูลเพียงพอ ให้แนะนำลูกค้าติดต่อเจ้าหน้าที่\n";
+        $prompt .= "\n" . $prompts['response_rules'];
 
         // --- Multiple Bubbles Integration ---
         if ($this->multipleBubbles->isEnabled($bot)) {
@@ -509,7 +513,7 @@ class AgentLoopService
      * Truncate messages array if approaching token limit.
      * Keeps system message + recent messages to prevent memory growth.
      */
-    public function truncateMessagesIfNeeded(array $messages, int $maxMessages = 30): array
+    public function truncateMessagesIfNeeded(array $messages, int $maxMessages = 30, string $language = 'th'): array
     {
         $count = count($messages);
 
@@ -552,9 +556,10 @@ class AgentLoopService
             // Inject context note about dropped messages
             $dropped = count($otherMessages) - count($truncatedMessages);
             if ($dropped > 0) {
+                $truncationNote = config("agent-prompts.{$language}.truncation_note", config('agent-prompts.th.truncation_note'));
                 $result[] = [
                     'role' => 'user',
-                    'content' => "[ระบบ: ข้อความก่อนหน้า {$dropped} ข้อความถูกตัดเพื่อประหยัด token]",
+                    'content' => sprintf($truncationNote, $dropped),
                 ];
             }
         }

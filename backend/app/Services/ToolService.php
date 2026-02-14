@@ -102,6 +102,13 @@ class ToolService
                 'required' => ['thought'],
                 'maxLength' => ['thought' => 5000],
             ],
+            'get_current_datetime' => [
+                'required' => [],
+            ],
+            'escalate_to_human' => [
+                'required' => ['reason'],
+                'maxLength' => ['reason' => 1000],
+            ],
         ];
 
         $rules = $validationRules[$toolName] ?? [];
@@ -145,6 +152,8 @@ class ToolService
                 'search_knowledge_base' => $this->executeSearchKb($arguments, $context),
                 'calculate' => $this->executeCalculate($arguments),
                 'think' => $this->executeThink($arguments),
+                'get_current_datetime' => $this->executeGetDatetime($arguments),
+                'escalate_to_human' => $this->executeEscalateToHuman($arguments, $context),
                 default => throw new \InvalidArgumentException("Unknown tool: {$toolName}"),
             };
 
@@ -413,6 +422,50 @@ class ToolService
         }
 
         return mb_substr($text, 0, $maxLength) . '...';
+    }
+
+    protected function executeGetDatetime(array $args): string
+    {
+        $timezone = $args['timezone'] ?? 'Asia/Bangkok';
+
+        try {
+            $now = \Carbon\Carbon::now($timezone);
+        } catch (\Exception $e) {
+            $now = \Carbon\Carbon::now('Asia/Bangkok');
+            $timezone = 'Asia/Bangkok';
+        }
+
+        $dayNames = [
+            'th' => ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'],
+            'en' => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+        ];
+
+        $thDay = $dayNames['th'][$now->dayOfWeek];
+        $enDay = $dayNames['en'][$now->dayOfWeek];
+
+        return sprintf(
+            "Current Date/Time (%s):\n- Date: %s\n- Time: %s\n- Day: %s (%s)",
+            $timezone,
+            $now->format('Y-m-d'),
+            $now->format('H:i:s'),
+            $enDay,
+            "วัน{$thDay}"
+        );
+    }
+
+    protected function executeEscalateToHuman(array $args, array $context = []): string
+    {
+        $reason = $args['reason'] ?? 'No reason provided';
+        $priority = $args['priority'] ?? 'medium';
+
+        Log::info('Agent escalation to human requested', [
+            'reason' => $reason,
+            'priority' => $priority,
+            'flow_id' => $context['flow']?->id ?? null,
+            'bot_id' => $context['bot']?->id ?? null,
+        ]);
+
+        return "Escalation request recorded. Reason: {$reason}. Priority: {$priority}. A human agent will be notified.";
     }
 }
 
