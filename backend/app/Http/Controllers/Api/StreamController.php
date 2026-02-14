@@ -7,6 +7,9 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\User;
+use App\Services\Agent\AgentLoopConfig;
+use App\Services\Agent\AgentLoopService;
+use App\Services\Agent\SseAgentCallbacks;
 use App\Services\AgentSafetyService;
 use App\Services\CostTrackingService;
 use App\Services\HybridSearchService;
@@ -45,6 +48,7 @@ class StreamController extends Controller
     protected IntentAnalysisService $intentAnalysis;
     protected RAGService $ragService;
     protected MultipleBubblesService $multipleBubbles;
+    protected AgentLoopService $agentLoopService;
     protected ?SemanticCacheService $semanticCache;
 
     protected string $openRouterBaseUrl;
@@ -76,6 +80,7 @@ class StreamController extends Controller
         IntentAnalysisService $intentAnalysis,
         RAGService $ragService,
         MultipleBubblesService $multipleBubbles,
+        AgentLoopService $agentLoopService,
         ?SemanticCacheService $semanticCache = null
     ) {
         $this->openRouter = $openRouter;
@@ -87,6 +92,7 @@ class StreamController extends Controller
         $this->intentAnalysis = $intentAnalysis;
         $this->ragService = $ragService;
         $this->multipleBubbles = $multipleBubbles;
+        $this->agentLoopService = $agentLoopService;
         $this->semanticCache = $semanticCache;
 
         $this->openRouterBaseUrl = config('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
@@ -260,44 +266,36 @@ class StreamController extends Controller
                     $kbContext = $this->runAgentKnowledgeBaseSearch($bot, $flow, $message);
                     $kbMeta = $this->lastKbSearchMeta;
 
-                    // Smart Routing: Multi-signal
+                    // Smart Routing: Multi-signal via AgentLoopService
                     $complexity = $this->ragService->detectComplexity($message);
                     $toolIntent = $this->ragService->detectToolIntent($message, $flow->enabled_tools ?? []);
-
-                    // KB quality: use the configured threshold from Flow's KB settings
                     $configuredThreshold = $flow->knowledgeBases->first()?->pivot->kb_similarity_threshold ?? 0.7;
-                    $hasHighQualityKb = !empty($kbContext)
-                        && ($kbMeta['top_relevance'] ?? 0) >= $configuredThreshold;
 
-                    // Route decision: 3 signals
-                    $useAgentLoop = $complexity['is_complex']
-                        || $toolIntent['needs_tool']
-                        || !$hasHighQualityKb;
+                    $routing = $this->agentLoopService->shouldUseAgentLoop(
+                        $complexity,
+                        $toolIntent,
+                        !empty($kbContext) ? ($kbMeta['top_relevance'] ?? 0) : 0.0,
+                        $configuredThreshold
+                    );
 
-                    if (!$useAgentLoop) {
+                    if (!$routing['use_agent']) {
                         // Simple + high-quality KB → Standard Mode (fast & cheap)
                         $this->sendSSE('agent_routing', [
                             'action' => 'skip_agent',
-                            'reason' => 'simple_with_quality_kb',
-                            'complexity_score' => $complexity['score'],
-                            'kb_top_relevance' => $kbMeta['top_relevance'] ?? 0,
+                            'reason' => $routing['reason'],
+                            'complexity_score' => $routing['complexity_score'],
+                            'kb_top_relevance' => $routing['kb_top_relevance'],
                         ]);
                         $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey, $memoryNotes);
                         $this->runSecondAI($flow, $chatResponse, $message, $apiKey, $kbContext);
                     } else {
                         // Complex / tool needed / low KB → Agent Loop
-                        $routeReason = match(true) {
-                            $toolIntent['needs_tool'] => 'tool_intent:' . ($toolIntent['tool_hint'] ?? 'unknown'),
-                            $complexity['is_complex'] => 'complex_question',
-                            !$hasHighQualityKb && !empty($kbContext) => 'low_quality_kb',
-                            default => 'no_kb_results',
-                        };
                         $this->sendSSE('agent_routing', [
                             'action' => 'full_agent',
-                            'reason' => $routeReason,
-                            'complexity_score' => $complexity['score'],
-                            'kb_top_relevance' => $kbMeta['top_relevance'] ?? 0,
-                            'tool_intent' => $toolIntent['needs_tool'],
+                            'reason' => $routing['reason'],
+                            'complexity_score' => $routing['complexity_score'],
+                            'kb_top_relevance' => $routing['kb_top_relevance'],
+                            'tool_intent' => $routing['tool_intent'],
                         ]);
                         $this->runAgentLoop($bot, $flow, $message, $conversationHistory, $apiKey, $user, $kbContext, $memoryNotes);
                     }
@@ -1035,9 +1033,7 @@ PROMPT;
 
     /**
      * Run Agent Loop with tool calling (Agentic Mode).
-     *
-     * Implements ReAct pattern: Think → Act → Observe → Repeat
-     * Includes safety mechanisms: timeout, cost limits, HITL approval
+     * Delegates to AgentLoopService with SSE callbacks.
      */
     protected function runAgentLoop(
         Bot $bot,
@@ -1049,476 +1045,33 @@ PROMPT;
         string $kbContext = '',
         array $memoryNotes = []
     ): void {
-        $maxIterations = $flow->max_tool_calls ?? 10;
-        $tools = $this->toolService->getToolDefinitions($flow->enabled_tools ?? []);
+        $config = new AgentLoopConfig(
+            bot: $bot,
+            flow: $flow,
+            userMessage: $message,
+            conversationHistory: $conversationHistory,
+            apiKey: $apiKey,
+            userId: $user?->id,
+            kbContext: $kbContext,
+            memoryNotes: $memoryNotes,
+        );
 
-        // Agentic Mode uses decision_model (smarter, better at tool calling)
-        $chatModel = $bot->decision_model ?: $this->getChatModel($bot);
+        $callbacks = new SseAgentCallbacks(
+            fn(string $event, array $data) => $this->sendSSE($event, $data),
+            $this->metrics,
+        );
 
-        // Reset tool search cache for this request
-        $this->toolService->resetCache();
+        $result = $this->agentLoopService->run($config, $callbacks);
 
-        // === SAFETY: Initialize tracking ===
-        $requestId = $this->costTracking->startRequest();
-        $loopStartTime = microtime(true);
-        $safetyConfig = $this->agentSafety->getSafetyConfig($flow);
+        // Update metrics from result
+        $this->metrics['models_used'][] = $result->model;
+        $this->metrics['prompt_tokens'] += $result->usage['prompt_tokens'] ?? 0;
+        $this->metrics['completion_tokens'] += $result->usage['completion_tokens'] ?? 0;
 
-        // Build initial messages with KB context and memory notes
-        $systemPrompt = $this->buildAgentSystemPrompt($bot, $flow, $kbContext, $memoryNotes);
-        $messages = $this->buildMessages($systemPrompt, $conversationHistory, $message);
-
-        $this->sendSSE('agent_start', [
-            'max_iterations' => $maxIterations,
-            'tools' => array_map(fn($t) => $t['function']['name'] ?? 'unknown', $tools),
-            'model' => $chatModel,
-            'safety' => [
-                'timeout_seconds' => $safetyConfig['timeout_seconds'],
-                'max_cost' => $safetyConfig['max_cost_per_request'],
-                'hitl_enabled' => $safetyConfig['hitl_enabled'],
-            ],
-        ]);
-
-        $iteration = 0;
-        $finalStatus = 'completed';
-        $errorMessage = null;
-
-        while ($iteration < $maxIterations) {
-            $iteration++;
-
-            // === SAFETY: Check timeout ===
-            $safetyViolation = $this->agentSafety->checkLimits(
-                $flow,
-                $loopStartTime,
-                $this->costTracking->getRunningCost(),
-                $user?->id ?? 0
-            );
-
-            if ($safetyViolation) {
-                $this->sendSSE('agent_safety_stop', [
-                    'type' => $safetyViolation['type'],
-                    'details' => $safetyViolation,
-                    'iteration' => $iteration,
-                ]);
-
-                $finalStatus = $safetyViolation['type'] === 'timeout' ? 'timeout' : 'cost_limit';
-                break;
-            }
-
-            // === SAFETY: Check daily cost limit ===
-            if ($user && $this->costTracking->exceedsDailyLimit($user)) {
-                $this->sendSSE('agent_safety_stop', [
-                    'type' => 'daily_limit',
-                    'message' => 'ถึงวงเงินรายวันแล้ว',
-                    'iteration' => $iteration,
-                ]);
-
-                $finalStatus = 'cost_limit';
-                break;
-            }
-
-            $this->sendSSE('agent_thinking', [
-                'iteration' => $iteration,
-                'elapsed_seconds' => round(microtime(true) - $loopStartTime, 1),
-                'running_cost' => round($this->costTracking->getRunningCost(), 6),
-            ]);
-
-            try {
-                // Truncate messages if approaching token limit to prevent memory growth
-                $messages = $this->truncateMessagesIfNeeded($messages);
-
-                // Call LLM with tools
-                $response = $this->openRouter->chatWithTools(
-                    messages: $messages,
-                    tools: $tools,
-                    model: $chatModel,
-                    temperature: $flow->temperature ?? 0.7,
-                    maxTokens: $flow->max_tokens ?? 4096,
-                    apiKeyOverride: $apiKey,
-                    toolChoice: 'auto',
-                    timeout: (int) config('services.openrouter.tool_timeout', 30)
-                );
-
-                // === SAFETY: Track cost ===
-                $promptTokens = $response['usage']['prompt_tokens'] ?? 0;
-                $completionTokens = $response['usage']['completion_tokens'] ?? 0;
-                $this->costTracking->addCost($chatModel, $promptTokens, $completionTokens);
-
-                $this->metrics['models_used'][] = $response['model'] ?? $chatModel;
-                $this->metrics['prompt_tokens'] += $promptTokens;
-                $this->metrics['completion_tokens'] += $completionTokens;
-
-                $finishReason = $response['finish_reason'] ?? 'stop';
-
-                // Check if we should execute tools
-                if ($finishReason === 'tool_calls' && !empty($response['tool_calls'])) {
-                    // Collect all tool calls and results for proper batching (OpenAI spec)
-                    $processedToolCalls = [];
-                    $toolResults = [];
-
-                    // Process each tool call
-                    foreach ($response['tool_calls'] as $toolCall) {
-                        $this->metrics['tool_calls']++;
-                        $this->costTracking->addToolCall();
-
-                        $toolId = $toolCall['id'] ?? 'tool_' . $iteration . '_' . count($processedToolCalls);
-                        $toolName = $toolCall['function']['name'] ?? 'unknown';
-                        $toolArgs = json_decode($toolCall['function']['arguments'] ?? '{}', true) ?: [];
-
-                        // === SAFETY: Check HITL approval for dangerous actions ===
-                        if ($this->agentSafety->requiresApproval($flow, $toolName, $toolArgs)) {
-                            $approvalId = $this->agentSafety->requestApproval(
-                                $requestId,
-                                $flow,
-                                $toolName,
-                                $toolArgs,
-                                60 // 60 second timeout
-                            );
-
-                            $this->sendSSE('agent_approval_required', [
-                                'approval_id' => $approvalId,
-                                'tool_name' => $toolName,
-                                'tool_args' => $toolArgs,
-                                'timeout_seconds' => 60,
-                            ]);
-
-                            // Wait for approval with heartbeat to keep SSE alive
-                            $approval = $this->agentSafety->waitForApproval(
-                                $approvalId,
-                                60,
-                                fn($elapsed, $timeout) => $this->sendSSE('agent_approval_waiting', [
-                                    'approval_id' => $approvalId,
-                                    'elapsed_seconds' => $elapsed,
-                                    'timeout_seconds' => $timeout,
-                                    'tool_name' => $toolName,
-                                ])
-                            );
-
-                            $this->sendSSE('agent_approval_response', [
-                                'approval_id' => $approvalId,
-                                'approved' => $approval['approved'],
-                                'reason' => $approval['reason'] ?? null,
-                            ]);
-
-                            if (!$approval['approved']) {
-                                // Mark as rejected - still add to batch
-                                $processedToolCalls[] = $toolCall;
-                                $toolResults[] = [
-                                    'tool_call_id' => $toolId,
-                                    'content' => 'Action was rejected by user: ' . ($approval['reason'] ?? 'No reason provided'),
-                                ];
-                                continue;
-                            }
-                        }
-
-                        // Send tool call event
-                        $this->sendSSE('tool_call', [
-                            'iteration' => $iteration,
-                            'tool_id' => $toolId,
-                            'tool_name' => $toolName,
-                            'arguments' => $toolArgs,
-                        ]);
-
-                        // Execute tool
-                        $toolResult = $this->toolService->executeTool(
-                            $toolName,
-                            $toolArgs,
-                            ['flow' => $flow, 'bot' => $bot]
-                        );
-
-                        // Send tool result event
-                        $this->sendSSE('tool_result', [
-                            'iteration' => $iteration,
-                            'tool_id' => $toolId,
-                            'tool_name' => $toolName,
-                            'status' => $toolResult['status'],
-                            'result_preview' => $this->truncateForPreview($toolResult['result'] ?? $toolResult['error'] ?? ''),
-                            'time_ms' => $toolResult['time_ms'] ?? 0,
-                        ]);
-
-                        // Collect for batching
-                        $processedToolCalls[] = $toolCall;
-                        $toolResults[] = [
-                            'tool_call_id' => $toolId,
-                            'content' => $toolResult['status'] === 'success'
-                                ? ($toolResult['result'] ?? '')
-                                : ('Error: ' . ($toolResult['error'] ?? 'Unknown error')),
-                        ];
-                    }
-
-                    // Add ONE assistant message with ALL tool calls (OpenAI spec compliance)
-                    if (!empty($processedToolCalls)) {
-                        $messages[] = [
-                            'role' => 'assistant',
-                            'content' => null,
-                            'tool_calls' => $processedToolCalls,
-                        ];
-
-                        // Add all tool results
-                        foreach ($toolResults as $result) {
-                            $messages[] = [
-                                'role' => 'tool',
-                                'tool_call_id' => $result['tool_call_id'],
-                                'content' => $result['content'],
-                            ];
-                        }
-                    }
-
-                    // Continue loop to process tool results
-                    continue;
-                }
-
-                // No more tool calls - generate final response
-                $this->sendSSE('agent_done', [
-                    'iterations' => $iteration,
-                    'total_tool_calls' => $this->metrics['tool_calls'],
-                    'total_cost' => round($this->costTracking->getRunningCost(), 6),
-                    'elapsed_seconds' => round(microtime(true) - $loopStartTime, 1),
-                ]);
-
-                // Stream final response if available
-                if (!empty($response['content'])) {
-                    $this->sendSSE('chat_start', [
-                        'model' => $response['model'] ?? $chatModel,
-                        'source' => 'agent_final_response',
-                    ]);
-
-                    // Send content in chunks to simulate streaming
-                    $content = $response['content'];
-                    $chunkSize = 50;
-                    $offset = 0;
-
-                    while ($offset < mb_strlen($content)) {
-                        $chunk = mb_substr($content, $offset, $chunkSize);
-                        $this->sendSSE('content', ['text' => $chunk]);
-                        $offset += $chunkSize;
-                        usleep(10000); // 10ms delay for smooth streaming effect
-                    }
-
-                    // === Second AI - Content Verification for Agentic Mode ===
-                    $this->runSecondAI($flow, $content, $message, $apiKey, $kbContext);
-                }
-
-                break; // Exit loop - we're done
-
-            } catch (\Exception $e) {
-                Log::error('Agent loop error', [
-                    'iteration' => $iteration,
-                    'error' => $e->getMessage(),
-                ]);
-
-                $this->sendSSE('agent_error', [
-                    'iteration' => $iteration,
-                    'error' => $e->getMessage(),
-                ]);
-
-                // Try to generate a response without tools
-                $this->sendSSE('agent_fallback', [
-                    'reason' => 'Tool calling failed, generating direct response',
-                ]);
-
-                $finalStatus = 'error';
-                $errorMessage = $e->getMessage();
-
-                // Fall back to regular chat
-                $fallbackMessages = $this->buildMessages(
-                    $this->getDefaultSystemPrompt($bot),
-                    $conversationHistory,
-                    $message
-                );
-                $this->streamFromOpenRouter($fallbackMessages, $chatModel, $apiKey, $flow->temperature, $flow->max_tokens);
-                break;
-            }
+        // === Second AI - Content Verification for Agentic Mode ===
+        if (!empty($result->content)) {
+            $this->runSecondAI($flow, $result->content, $message, $apiKey, $kbContext);
         }
-
-        // Max iterations reached
-        if ($iteration >= $maxIterations) {
-            $this->sendSSE('agent_max_iterations', [
-                'iterations' => $iteration,
-                'message' => 'ถึงจำนวนรอบสูงสุดแล้ว',
-            ]);
-        }
-
-        // === SAFETY: Finalize cost tracking ===
-        $durationMs = round((microtime(true) - $loopStartTime) * 1000);
-
-        if ($user) {
-            $this->costTracking->finalizeRequest(
-                userId: $user->id,
-                botId: $bot->id,
-                flowId: $flow->id,
-                status: $finalStatus,
-                durationMs: $durationMs,
-                iterations: $iteration,
-                modelUsed: $chatModel,
-                errorMessage: $errorMessage
-            );
-        }
-    }
-
-    /**
-     * Build system prompt for agent mode with KB context and Multiple Bubbles support.
-     */
-    protected function buildAgentSystemPrompt(Bot $bot, Flow $flow, string $kbContext = '', array $memoryNotes = []): string
-    {
-        $basePrompt = $this->buildMemoryPrefix($memoryNotes)
-            . ($flow->system_prompt ?: $this->getDefaultSystemPrompt($bot));
-        $enabledTools = $flow->enabled_tools ?? [];
-
-        if (empty($enabledTools)) {
-            return $basePrompt;
-        }
-
-        $prompt = $basePrompt;
-
-        // --- Pre-loaded KB Context ---
-        if (!empty(trim($kbContext))) {
-            $prompt .= "\n\n## Pre-loaded Knowledge Base Results\n";
-            $prompt .= $kbContext;
-            $prompt .= "\n---\nใช้ข้อมูลด้านบนในการตอบ ใช้ search_knowledge_base เมื่อต้องการข้อมูลเพิ่มเติมเท่านั้น";
-        }
-
-        // --- Agent Decision Framework ---
-        $prompt .= "\n\n## Agent Decision Framework\n";
-        $prompt .= "1. ตอบได้ทันที: ทักทาย, ขอบคุณ, มีข้อมูลใน KB แล้ว → ตอบเลย ไม่ต้องใช้ tool\n";
-
-        if (in_array('search_kb', $enabledTools)) {
-            if (!empty($kbContext)) {
-                $prompt .= "2. ค้นหาเพิ่ม (search_knowledge_base): ข้อมูลที่โหลดไว้ไม่พอ หรือถามเรื่องอื่น\n";
-            } else {
-                $prompt .= "2. ค้นหา (search_knowledge_base): ลูกค้าถามเรื่องสินค้า ราคา นโยบาย บริการ\n";
-            }
-        }
-        if (in_array('calculate', $enabledTools)) {
-            $prompt .= "3. คำนวณ (calculate): คำนวณราคารวม/ส่วนลด\n";
-        }
-        if (in_array('think', $enabledTools)) {
-            $prompt .= "4. วิเคราะห์ (think): คำถามซับซ้อน ต้องคิดหลายขั้นตอน\n";
-        }
-
-        // --- Search Strategy ---
-        if (in_array('search_kb', $enabledTools)) {
-            $prompt .= "\n### Search Strategy\n";
-            $prompt .= "1. ค้นด้วย keyword ตรงประเด็น (2-4 คำ)\n";
-            $prompt .= "2. ไม่เจอ → ลอง synonym/กว้างขึ้น\n";
-            $prompt .= "3. สูงสุด 2 ครั้ง ห้ามค้นซ้ำ keyword เดิม\n";
-        }
-
-        // --- Response Rules ---
-        $prompt .= "\n### Response Rules\n";
-        $prompt .= "- ตอบจากข้อมูลที่ค้นเจอเท่านั้น ห้ามเดาหรือสร้างข้อมูลขึ้นมาเอง\n";
-        $prompt .= "- ตอบกระชับ ไม่ต้องบอกว่า \"จากการค้นหา...\"\n";
-        $prompt .= "- ถ้าไม่มีข้อมูลเพียงพอ ให้แนะนำลูกค้าติดต่อเจ้าหน้าที่\n";
-
-        // --- Multiple Bubbles Integration ---
-        if ($this->multipleBubbles->isEnabled($bot)) {
-            $prompt .= "\n" . $this->multipleBubbles->buildPromptInstruction($bot);
-        }
-
-        return $prompt;
-    }
-
-    /**
-     * Truncate text for preview in SSE events.
-     */
-    protected function truncateForPreview(string $text, int $maxLength = 200): string
-    {
-        if (mb_strlen($text) <= $maxLength) {
-            return $text;
-        }
-        return mb_substr($text, 0, $maxLength) . '...';
-    }
-
-    /**
-     * Truncate messages array if approaching token limit.
-     * Keeps system message + recent messages to prevent memory growth.
-     *
-     * @param array $messages Current messages array
-     * @param int $maxMessages Maximum messages to keep (default 30)
-     * @return array Truncated messages array
-     */
-    protected function truncateMessagesIfNeeded(array $messages, int $maxMessages = 30): array
-    {
-        $count = count($messages);
-
-        // Tier 1 (> 20 messages): Compress old tool results
-        if ($count > 20) {
-            $messages = $this->compressOldToolResults($messages);
-        }
-
-        // Tier 2 (> maxMessages): Drop oldest messages
-        if (count($messages) <= $maxMessages) {
-            return $messages;
-        }
-
-        // Keep system message (first) + last N messages
-        $systemMessage = null;
-        $otherMessages = [];
-
-        foreach ($messages as $msg) {
-            if ($msg['role'] === 'system') {
-                $systemMessage = $msg;
-            } else {
-                $otherMessages[] = $msg;
-            }
-        }
-
-        // Keep last (maxMessages - 1) non-system messages
-        $keepCount = $maxMessages - ($systemMessage ? 1 : 0);
-        $truncatedMessages = array_slice($otherMessages, -$keepCount);
-
-        // Ensure we don't start with orphaned tool result messages
-        while (!empty($truncatedMessages) && $truncatedMessages[0]['role'] === 'tool') {
-            array_shift($truncatedMessages);
-        }
-
-        // Rebuild with system message first
-        $result = [];
-        if ($systemMessage) {
-            $result[] = $systemMessage;
-
-            // Inject context note about dropped messages
-            $dropped = count($otherMessages) - count($truncatedMessages);
-            if ($dropped > 0) {
-                $result[] = [
-                    'role' => 'user',
-                    'content' => "[ระบบ: ข้อความก่อนหน้า {$dropped} ข้อความถูกตัดเพื่อประหยัด token]",
-                ];
-            }
-        }
-        $result = array_merge($result, $truncatedMessages);
-
-        return $result;
-    }
-
-    /**
-     * Compress old tool result messages to save tokens.
-     * Keeps last 2 tool results intact, compresses older ones.
-     */
-    protected function compressOldToolResults(array $messages): array
-    {
-        // Find all tool result message indices
-        $toolIndices = [];
-        foreach ($messages as $i => $msg) {
-            if ($msg['role'] === 'tool') {
-                $toolIndices[] = $i;
-            }
-        }
-
-        // Keep last 2 tool results intact
-        $indicesToCompress = array_slice($toolIndices, 0, max(0, count($toolIndices) - 2));
-
-        if (empty($indicesToCompress)) {
-            return $messages;
-        }
-
-        foreach ($indicesToCompress as $i) {
-            $content = $messages[$i]['content'] ?? '';
-            if (mb_strlen($content) > 100) {
-                $messages[$i]['content'] = mb_substr($content, 0, 100) . ' [compressed]';
-            }
-        }
-
-        return $messages;
     }
 
     /**

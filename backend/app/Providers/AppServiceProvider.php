@@ -12,6 +12,7 @@ use App\Policies\BotPolicy;
 use App\Policies\DocumentPolicy;
 use App\Policies\KnowledgeBasePolicy;
 use App\Policies\QuickReplyPolicy;
+use App\Services\Agent\AgentLoopService;
 use App\Services\CostTrackingService;
 use App\Services\FlowCacheService;
 use App\Services\HybridSearchService;
@@ -84,6 +85,9 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(CostTrackingService::class, function ($app) {
             return new CostTrackingService();
         });
+
+        // Register AgentLoopService as scoped (depends on scoped CostTrackingService)
+        $this->app->scoped(AgentLoopService::class);
 
         // Register PromptInjectionDetector
         $this->app->singleton(PromptInjectionDetector::class, function ($app) {
