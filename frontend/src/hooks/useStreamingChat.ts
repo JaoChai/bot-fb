@@ -13,6 +13,7 @@ export interface StreamingMessage {
 interface UseStreamingChatOptions {
   botId: number | null;
   flowId: number | null;
+  conversationId?: number | null;
 }
 
 // State shape
@@ -182,7 +183,7 @@ const HEARTBEAT_TIMEOUT_MS = 30000;
 // Heartbeat check interval (5 seconds)
 const HEARTBEAT_CHECK_INTERVAL_MS = 5000;
 
-export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
+export function useStreamingChat({ botId, flowId, conversationId }: UseStreamingChatOptions) {
   const [state, dispatch] = useReducer(chatReducer, initialState);
   const abortControllerRef = useRef<AbortController | null>(null);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -334,7 +335,8 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
             dispatch({ type: 'SET_DONE', payload: { messageId: assistantMsgId, summary } });
           },
           signal: abortControllerRef.current.signal,
-        }
+        },
+        conversationId ?? undefined
       );
     } catch (error) {
       const err = error as Error;
@@ -360,7 +362,7 @@ export function useStreamingChat({ botId, flowId }: UseStreamingChatOptions) {
       stopFlushInterval();
       abortControllerRef.current = null;
     }
-  }, [botId, flowId, startFlushInterval, stopFlushInterval]);
+  }, [botId, flowId, conversationId, startFlushInterval, stopFlushInterval]);
 
   /**
    * Cancel the current stream
