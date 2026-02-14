@@ -109,4 +109,3 @@ export const telegramAdapter: ChannelAdapter = {
   },
 };
 
-export default telegramAdapter;

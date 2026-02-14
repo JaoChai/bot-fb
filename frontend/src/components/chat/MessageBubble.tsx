@@ -239,4 +239,3 @@ export const MessageBubble = memo(function MessageBubble({
   );
 });
 
-export default MessageBubble;

@@ -295,4 +295,3 @@ function TrendIndicator({
   );
 }
 
-export default QAWeeklyReportList;

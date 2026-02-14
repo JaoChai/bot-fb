@@ -420,4 +420,3 @@ function IssueCard({ issue }: { issue: QATopIssue }) {
   );
 }
 
-export default QAWeeklyReportView;

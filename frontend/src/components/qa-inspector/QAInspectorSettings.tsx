@@ -509,4 +509,3 @@ export function QAInspectorSettings({ botId }: QAInspectorSettingsProps) {
   );
 }
 
-export default QAInspectorSettings;

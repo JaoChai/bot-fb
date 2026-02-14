@@ -33,14 +33,6 @@ function handleChunkError(): void {
 }
 
 /**
- * Clear the reload flag on successful page load
- * Call this in your app's root component
- */
-export function clearChunkReloadFlag(): void {
-  sessionStorage.removeItem(CHUNK_RELOAD_KEY)
-}
-
-/**
  * Check if we've already attempted a reload for chunk errors
  */
 export function hasAttemptedChunkReload(): boolean {

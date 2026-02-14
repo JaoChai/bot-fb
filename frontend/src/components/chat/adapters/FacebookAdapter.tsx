@@ -233,4 +233,3 @@ export const facebookAdapter: ChannelAdapter = {
   },
 };
 
-export default facebookAdapter;

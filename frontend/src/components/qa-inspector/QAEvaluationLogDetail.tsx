@@ -276,4 +276,3 @@ function ScoreCard({ metric, score }: { metric: string; score: number }) {
   );
 }
 
-export default QAEvaluationLogDetail;

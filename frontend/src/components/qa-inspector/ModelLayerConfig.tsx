@@ -103,4 +103,3 @@ export function ModelLayerConfig({
   );
 }
 
-export default ModelLayerConfig;

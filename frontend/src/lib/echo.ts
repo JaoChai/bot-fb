@@ -50,7 +50,7 @@ const setCachedAuth = (channelName: string, socketId: string, auth: string): voi
 /**
  * Clear auth cache (call on logout or token refresh)
  */
-export const clearAuthCache = (): void => {
+const clearAuthCache = (): void => {
   authCache.clear();
 };
 
@@ -190,4 +190,3 @@ declare global {
   }
 }
 
-export default getEcho;

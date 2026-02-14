@@ -381,4 +381,3 @@ export function PromptSuggestionCard({
   );
 }
 
-export default PromptSuggestionCard;
