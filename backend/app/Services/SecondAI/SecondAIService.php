@@ -51,7 +51,8 @@ class SecondAIService
         string $response,
         Flow $flow,
         string $userMessage,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        string $kbContext = ''
     ): array {
         // Quick exit if Second AI is not enabled
         if (!$flow->second_ai_enabled) {
@@ -81,7 +82,7 @@ class SecondAIService
             ]);
 
             try {
-                $result = $this->unifiedCheck->check($response, $flow, $userMessage, $apiKey);
+                $result = $this->unifiedCheck->check($response, $flow, $userMessage, $apiKey, $kbContext);
 
                 Log::info('SecondAI: Unified mode completed', [
                     'flow_id' => $flow->id,

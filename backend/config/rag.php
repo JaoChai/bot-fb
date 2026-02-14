@@ -356,4 +356,15 @@ return [
         // Action when grade is "incorrect": 'skip_kb' or 'fallback_general'
         'incorrect_action' => env('RAG_CRAG_INCORRECT_ACTION', 'skip_kb'),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Second AI Configuration
+    |--------------------------------------------------------------------------
+    */
+    'second_ai' => [
+        'pipeline_timeout' => (int) env('SECOND_AI_PIPELINE_TIMEOUT', 8),
+        'http_timeout' => (int) env('SECOND_AI_HTTP_TIMEOUT', 8),
+        'max_tokens' => (int) env('SECOND_AI_MAX_TOKENS', 1000),
+    ],
 ];

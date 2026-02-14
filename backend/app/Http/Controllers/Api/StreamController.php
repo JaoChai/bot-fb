@@ -62,6 +62,9 @@ class StreamController extends Controller
     // Track if done event has been sent (reset at start of each request for Octane safety)
     protected bool $doneSent = false;
 
+    // KB search metadata for smart routing decisions
+    protected array $lastKbSearchMeta = [];
+
     public function __construct(
         OpenRouterService $openRouter,
         HybridSearchService $hybridSearch,
@@ -237,27 +240,47 @@ class StreamController extends Controller
 
                 // === AGENTIC MODE: KB-First + Smart Routing ===
                 if ($flow->agentic_mode && !empty($flow->enabled_tools)) {
-                    // KB-First: Pre-search KB (always, no Decision Model needed)
+                    // KB-First: Pre-search
                     $kbContext = $this->runAgentKnowledgeBaseSearch($bot, $flow, $message);
+                    $kbMeta = $this->lastKbSearchMeta;
 
-                    // Smart Routing: Skip agent loop for simple questions with KB results
+                    // Smart Routing: Multi-signal
                     $complexity = $this->ragService->detectComplexity($message);
+                    $toolIntent = $this->ragService->detectToolIntent($message, $flow->enabled_tools ?? []);
 
-                    if (!$complexity['is_complex'] && !empty($kbContext)) {
-                        // Simple question + KB has answer → Standard Mode path (fast & cheap)
+                    // KB quality threshold
+                    $hasHighQualityKb = !empty($kbContext)
+                        && ($kbMeta['top_relevance'] ?? 0) >= 0.75;
+
+                    // Route decision: 3 signals
+                    $useAgentLoop = $complexity['is_complex']
+                        || $toolIntent['needs_tool']
+                        || !$hasHighQualityKb;
+
+                    if (!$useAgentLoop) {
+                        // Simple + high-quality KB → Standard Mode (fast & cheap)
                         $this->sendSSE('agent_routing', [
                             'action' => 'skip_agent',
-                            'reason' => 'simple_with_kb',
+                            'reason' => 'simple_with_quality_kb',
                             'complexity_score' => $complexity['score'],
+                            'kb_top_relevance' => $kbMeta['top_relevance'] ?? 0,
                         ]);
                         $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey);
-                        $this->runSecondAI($flow, $chatResponse, $message, $apiKey);
+                        $this->runSecondAI($flow, $chatResponse, $message, $apiKey, $kbContext);
                     } else {
-                        // Complex question OR no KB results → Full Agent Loop with KB context
+                        // Complex / tool needed / low KB → Agent Loop
+                        $routeReason = match(true) {
+                            $toolIntent['needs_tool'] => 'tool_intent:' . ($toolIntent['tool_hint'] ?? 'unknown'),
+                            $complexity['is_complex'] => 'complex_question',
+                            !$hasHighQualityKb && !empty($kbContext) => 'low_quality_kb',
+                            default => 'no_kb_results',
+                        };
                         $this->sendSSE('agent_routing', [
                             'action' => 'full_agent',
-                            'reason' => $complexity['is_complex'] ? 'complex_question' : 'no_kb_results',
+                            'reason' => $routeReason,
                             'complexity_score' => $complexity['score'],
+                            'kb_top_relevance' => $kbMeta['top_relevance'] ?? 0,
+                            'tool_intent' => $toolIntent['needs_tool'],
                         ]);
                         $this->runAgentLoop($bot, $flow, $message, $conversationHistory, $apiKey, $user, $kbContext);
                     }
@@ -578,6 +601,12 @@ class StreamController extends Controller
                 }
             }
 
+            $this->lastKbSearchMeta = [
+                'total_chunks' => $results->count(),
+                'top_relevance' => $results->isNotEmpty() ? $results->max('similarity') : 0,
+                'avg_relevance' => $results->isNotEmpty() ? round($results->avg('similarity'), 3) : 0,
+            ];
+
             $timeMs = round((microtime(true) - $startTime) * 1000);
 
             $this->sendSSE('kb_result', [
@@ -589,6 +618,7 @@ class StreamController extends Controller
             ]);
 
             if ($results->isEmpty()) {
+                $this->lastKbSearchMeta = ['total_chunks' => 0, 'top_relevance' => 0, 'avg_relevance' => 0];
                 return '';
             }
 
@@ -683,8 +713,8 @@ class StreamController extends Controller
     protected function streamFromOpenRouter(array $messages, string $model, ?string $apiKey, ?float $temperature = null, ?int $maxTokens = null): string
     {
         $client = new Client([
-            'timeout' => 120,
-            'connect_timeout' => 10,
+            'timeout' => (int) config('services.openrouter.stream_timeout', 120),
+            'connect_timeout' => (int) config('services.openrouter.connect_timeout', 10),
         ]);
 
         $baseUrl = $this->openRouterBaseUrl;
@@ -781,7 +811,8 @@ class StreamController extends Controller
         Flow $flow,
         string $originalResponse,
         string $userMessage,
-        ?string $apiKey
+        ?string $apiKey,
+        string $kbContext = ''
     ): string {
         // Check if client disconnected before starting
         if (connection_aborted()) {
@@ -824,14 +855,20 @@ class StreamController extends Controller
             'model' => $model,
         ]);
 
+        // Set tight timeout for Second AI in streaming context
+        $this->secondAI->setTimeout(
+            (int) config('rag.second_ai.pipeline_timeout', 8)
+        );
+
         // Use rescue() for graceful timeout handling
         $result = rescue(
-            function () use ($originalResponse, $flow, $userMessage, $apiKey) {
+            function () use ($originalResponse, $flow, $userMessage, $apiKey, $kbContext) {
                 return $this->secondAI->process(
                     $originalResponse,
                     $flow,
                     $userMessage,
-                    $apiKey
+                    $apiKey,
+                    $kbContext
                 );
             },
             function (\Throwable $e) use ($originalResponse, $flow) {
@@ -1059,7 +1096,8 @@ PROMPT;
                     temperature: $flow->temperature ?? 0.7,
                     maxTokens: $flow->max_tokens ?? 4096,
                     apiKeyOverride: $apiKey,
-                    toolChoice: 'auto'
+                    toolChoice: 'auto',
+                    timeout: (int) config('services.openrouter.tool_timeout', 30)
                 );
 
                 // === SAFETY: Track cost ===
@@ -1219,7 +1257,7 @@ PROMPT;
                     }
 
                     // === Second AI - Content Verification for Agentic Mode ===
-                    $this->runSecondAI($flow, $content, $message, $apiKey);
+                    $this->runSecondAI($flow, $content, $message, $apiKey, $kbContext);
                 }
 
                 break; // Exit loop - we're done

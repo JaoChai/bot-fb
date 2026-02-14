@@ -13,7 +13,7 @@ class UnifiedCheckService
      * Timeout for Second AI API calls (seconds).
      * Lower than default to prevent Chat Emulator from hanging.
      */
-    protected int $timeout = 15;
+    protected int $timeout = 8;
 
     public function __construct(
         protected OpenRouterService $openRouter,
@@ -34,7 +34,8 @@ class UnifiedCheckService
         string $response,
         Flow $flow,
         string $userMessage,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        string $preloadedKbContext = ''
     ): SecondAICheckResult {
         $startTime = microtime(true);
         $enabledChecks = $this->getEnabledChecks($flow);
@@ -44,9 +45,9 @@ class UnifiedCheckService
             'response_length' => strlen($response),
         ]);
 
-        // Fetch Knowledge Base context if fact_check enabled
-        $kbContext = '';
-        if (in_array('fact_check', $enabledChecks) && $flow->knowledgeBases()->count() > 0) {
+        // Use preloaded KB context if available, fallback to fetching
+        $kbContext = $preloadedKbContext;
+        if (empty($kbContext) && in_array('fact_check', $enabledChecks) && $flow->knowledgeBases()->count() > 0) {
             try {
                 $metadata = [];
                 $kbContext = $this->ragService->getFlowKnowledgeBaseContext($flow, $userMessage, $metadata);
@@ -60,7 +61,9 @@ class UnifiedCheckService
         // Build unified prompt
         $prompt = $this->buildUnifiedPrompt($response, $flow, $userMessage, $kbContext);
 
-        // Get models from Bot Settings (same as Decision/Intent Analysis)
+        // Get models from Bot Settings
+        // decision_model is ideal for Second AI (fast/cheap, e.g. gpt-4o-mini)
+        // fallback_decision_model is the backup (more capable, e.g. gpt-4o)
         $bot = $flow->bot;
         $model = $bot?->decision_model
             ?: $bot?->primary_chat_model;
@@ -80,7 +83,7 @@ class UnifiedCheckService
                 messages: [['role' => 'user', 'content' => $prompt]],
                 model: $model,
                 temperature: 0.3,
-                maxTokens: 2000,
+                maxTokens: 1000,
                 useFallback: $fallbackModel !== null,
                 apiKeyOverride: $apiKey,
                 fallbackModelOverride: $fallbackModel,
