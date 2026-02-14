@@ -248,9 +248,10 @@ class StreamController extends Controller
                     $complexity = $this->ragService->detectComplexity($message);
                     $toolIntent = $this->ragService->detectToolIntent($message, $flow->enabled_tools ?? []);
 
-                    // KB quality threshold
+                    // KB quality: use the configured threshold from Flow's KB settings
+                    $configuredThreshold = $flow->knowledgeBases->first()?->pivot->kb_similarity_threshold ?? 0.7;
                     $hasHighQualityKb = !empty($kbContext)
-                        && ($kbMeta['top_relevance'] ?? 0) >= 0.75;
+                        && ($kbMeta['top_relevance'] ?? 0) >= $configuredThreshold;
 
                     // Route decision: 3 signals
                     $useAgentLoop = $complexity['is_complex']

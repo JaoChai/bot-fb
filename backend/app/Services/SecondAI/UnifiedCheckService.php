@@ -13,12 +13,14 @@ class UnifiedCheckService
      * Timeout for Second AI API calls (seconds).
      * Lower than default to prevent Chat Emulator from hanging.
      */
-    protected int $timeout = 8;
+    protected int $timeout;
 
     public function __construct(
         protected OpenRouterService $openRouter,
         protected RAGService $ragService,
-    ) {}
+    ) {
+        $this->timeout = (int) config('rag.second_ai.http_timeout', 8);
+    }
 
     /**
      * Execute unified check for all enabled options
@@ -83,7 +85,7 @@ class UnifiedCheckService
                 messages: [['role' => 'user', 'content' => $prompt]],
                 model: $model,
                 temperature: 0.3,
-                maxTokens: 1000,
+                maxTokens: (int) config('rag.second_ai.max_tokens', 1000),
                 useFallback: $fallbackModel !== null,
                 apiKeyOverride: $apiKey,
                 fallbackModelOverride: $fallbackModel,
