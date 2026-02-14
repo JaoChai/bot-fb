@@ -6,7 +6,6 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\Message;
-use App\Exceptions\OpenRouterException;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -172,17 +171,27 @@ class RAGService
             && $this->toolService;
 
         if ($isAgentic) {
-            // Add Agent Decision Framework to system prompt
-            $systemPrompt = $this->buildAgentPromptAddons($systemPrompt, $resolvedFlow, $kbContext);
-
-            $result = $this->runAgentLoop(
+            // Delegate to AgentLoopService (handles prompt, tools, safety)
+            $agentConfig = new \App\Services\Agent\AgentLoopConfig(
                 bot: $bot,
                 flow: $resolvedFlow,
-                systemPrompt: $systemPrompt,
                 userMessage: $userMessage,
                 conversationHistory: $conversationHistory,
-                apiKey: $apiKey
+                apiKey: $apiKey,
+                autoRejectHitl: true,
+                kbContext: $kbContext,
+                memoryNotes: $memoryNotes,
             );
+            $agentCallbacks = new \App\Services\Agent\SyncAgentCallbacks();
+            $agentResult = $this->getAgentLoopService()->run($agentConfig, $agentCallbacks);
+
+            $result = [
+                'content' => $agentResult->content,
+                'model' => $agentResult->model,
+                'usage' => $agentResult->usage,
+                'cost' => $agentResult->cost,
+                'agentic' => $agentResult->agentic,
+            ];
         } else {
             $result = $this->openRouter->generateBotResponse(
                 userMessage: $userMessage,
@@ -234,248 +243,11 @@ class RAGService
     }
 
     /**
-     * Run agentic tool-calling loop for webhook path.
-     *
-     * Simplified version of StreamController's agent loop — no SSE, no HITL.
-     * Iterates: LLM → tool calls → tool results → LLM until final text response.
+     * Get AgentLoopService via lazy resolution to avoid circular dependency.
      */
-    protected function runAgentLoop(
-        Bot $bot,
-        Flow $flow,
-        string $systemPrompt,
-        string $userMessage,
-        array $conversationHistory,
-        string $apiKey
-    ): array {
-        $maxIterations = $flow->max_tool_calls ?? 10;
-        $tools = $this->toolService->getToolDefinitions($flow->enabled_tools ?? []);
-        $this->toolService->resetCache();
-
-        $chatModel = $bot->decision_model ?: $this->getChatModelForBot($bot);
-        $timeout = (int) config('services.openrouter.tool_timeout', 30);
-        $loopStartTime = microtime(true);
-        $maxTimeSeconds = $flow->agent_timeout_seconds ?? 120;
-
-        // Build initial messages
-        $messages = [['role' => 'system', 'content' => $systemPrompt]];
-        foreach ($conversationHistory as $msg) {
-            $messages[] = [
-                'role' => $msg['sender'] === 'user' ? 'user' : 'assistant',
-                'content' => $msg['content'],
-            ];
-        }
-        $messages[] = ['role' => 'user', 'content' => $userMessage];
-
-        $totalToolCalls = 0;
-        $totalPromptTokens = 0;
-        $totalCompletionTokens = 0;
-        $totalCost = 0;
-
-        for ($i = 0; $i < $maxIterations; $i++) {
-            if ((microtime(true) - $loopStartTime) > $maxTimeSeconds) {
-                Log::warning('Agent loop timeout', ['bot_id' => $bot->id, 'iteration' => $i]);
-                break;
-            }
-
-            try {
-                $response = $this->openRouter->chatWithTools(
-                    messages: $messages,
-                    tools: $tools,
-                    model: $chatModel,
-                    temperature: $flow->temperature ?? 0.7,
-                    maxTokens: $flow->max_tokens ?? 4096,
-                    apiKeyOverride: $apiKey,
-                    toolChoice: 'auto',
-                    timeout: $timeout
-                );
-            } catch (OpenRouterException $e) {
-                Log::error('Agent loop LLM call failed', [
-                    'bot_id' => $bot->id,
-                    'iteration' => $i,
-                    'error' => $e->getMessage(),
-                ]);
-                return [
-                    'content' => 'ขออภัยค่ะ ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง',
-                    'model' => $chatModel,
-                    'usage' => [
-                        'prompt_tokens' => $totalPromptTokens,
-                        'completion_tokens' => $totalCompletionTokens,
-                        'total_tokens' => $totalPromptTokens + $totalCompletionTokens,
-                    ],
-                    'cost' => $totalCost,
-                    'agentic' => [
-                        'iterations' => $i + 1,
-                        'tool_calls' => $totalToolCalls,
-                        'error' => $e->getMessage(),
-                    ],
-                ];
-            }
-
-            $totalPromptTokens += $response['usage']['prompt_tokens'] ?? 0;
-            $totalCompletionTokens += $response['usage']['completion_tokens'] ?? 0;
-            $totalCost += $response['usage']['cost'] ?? 0;
-
-            // No tool calls → final text response
-            if ($response['finish_reason'] !== 'tool_calls' || empty($response['tool_calls'])) {
-                return [
-                    'content' => $response['content'] ?? '',
-                    'model' => $response['model'] ?? $chatModel,
-                    'usage' => [
-                        'prompt_tokens' => $totalPromptTokens,
-                        'completion_tokens' => $totalCompletionTokens,
-                        'total_tokens' => $totalPromptTokens + $totalCompletionTokens,
-                    ],
-                    'cost' => $totalCost,
-                    'agentic' => [
-                        'iterations' => $i + 1,
-                        'tool_calls' => $totalToolCalls,
-                    ],
-                ];
-            }
-
-            // Process tool calls — OpenAI spec: assistant(tool_calls) → tool_result(s)
-            $toolCalls = $response['tool_calls'];
-            $processedToolCalls = [];
-            $toolResults = [];
-
-            foreach ($toolCalls as $toolCall) {
-                $toolId = $toolCall['id'] ?? 'tool_' . $i . '_' . count($processedToolCalls);
-                $toolName = $toolCall['function']['name'] ?? 'unknown';
-                $toolArgs = json_decode($toolCall['function']['arguments'] ?? '{}', true) ?: [];
-
-                $toolResult = $this->toolService->executeTool(
-                    $toolName, $toolArgs, ['flow' => $flow, 'bot' => $bot]
-                );
-
-                $processedToolCalls[] = [
-                    'id' => $toolId,
-                    'type' => 'function',
-                    'function' => [
-                        'name' => $toolName,
-                        'arguments' => $toolCall['function']['arguments'] ?? '{}',
-                    ],
-                ];
-
-                $toolResults[] = [
-                    'role' => 'tool',
-                    'tool_call_id' => $toolId,
-                    'content' => $toolResult['result'] ?? $toolResult['error'] ?? 'No result',
-                ];
-
-                $totalToolCalls++;
-            }
-
-            // Add assistant message with tool_calls FIRST (OpenAI spec)
-            $messages[] = [
-                'role' => 'assistant',
-                'content' => $response['content'] ?? null,
-                'tool_calls' => $processedToolCalls,
-            ];
-
-            // Then add tool results
-            foreach ($toolResults as $toolResultMsg) {
-                $messages[] = $toolResultMsg;
-            }
-
-            Log::debug('Agent loop iteration', [
-                'bot_id' => $bot->id,
-                'iteration' => $i + 1,
-                'tool_calls' => array_map(fn ($tc) => $tc['function']['name'], $processedToolCalls),
-            ]);
-        }
-
-        // Max iterations or timeout reached — final call without tools
-        Log::warning('Agent loop max iterations', ['bot_id' => $bot->id, 'iterations' => $maxIterations]);
-
-        try {
-            $finalResponse = $this->openRouter->chatWithTools(
-                messages: $messages,
-                tools: [],
-                model: $chatModel,
-                temperature: $flow->temperature ?? 0.7,
-                maxTokens: $flow->max_tokens ?? 4096,
-                apiKeyOverride: $apiKey,
-                toolChoice: 'none',
-                timeout: $timeout
-            );
-
-            $totalPromptTokens += $finalResponse['usage']['prompt_tokens'] ?? 0;
-            $totalCompletionTokens += $finalResponse['usage']['completion_tokens'] ?? 0;
-            $totalCost += $finalResponse['usage']['cost'] ?? 0;
-
-            return [
-                'content' => $finalResponse['content'] ?? '',
-                'model' => $finalResponse['model'] ?? $chatModel,
-                'usage' => [
-                    'prompt_tokens' => $totalPromptTokens,
-                    'completion_tokens' => $totalCompletionTokens,
-                    'total_tokens' => $totalPromptTokens + $totalCompletionTokens,
-                ],
-                'cost' => $totalCost,
-                'agentic' => [
-                    'iterations' => $maxIterations,
-                    'tool_calls' => $totalToolCalls,
-                    'max_iterations_reached' => true,
-                ],
-            ];
-        } catch (OpenRouterException $e) {
-            Log::error('Agent loop final call failed', ['bot_id' => $bot->id, 'error' => $e->getMessage()]);
-            return [
-                'content' => 'ขออภัยค่ะ ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง',
-                'model' => $chatModel,
-                'usage' => [
-                    'prompt_tokens' => $totalPromptTokens,
-                    'completion_tokens' => $totalCompletionTokens,
-                    'total_tokens' => $totalPromptTokens + $totalCompletionTokens,
-                ],
-                'cost' => $totalCost,
-                'agentic' => [
-                    'iterations' => $maxIterations,
-                    'tool_calls' => $totalToolCalls,
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-    }
-
-    /**
-     * Build Agent Decision Framework addons for system prompt.
-     *
-     * Appends tool usage instructions to guide LLM when to use tools vs answer directly.
-     */
-    protected function buildAgentPromptAddons(string $systemPrompt, Flow $flow, string $kbContext): string
+    protected function getAgentLoopService(): \App\Services\Agent\AgentLoopService
     {
-        $enabledTools = $flow->enabled_tools ?? [];
-
-        $systemPrompt .= "\n\n## Agent Decision Framework\n";
-        $systemPrompt .= "1. ตอบได้ทันที: ทักทาย, ขอบคุณ, มีข้อมูลใน KB แล้ว → ตอบเลย ไม่ต้องใช้ tool\n";
-
-        if (in_array('search_kb', $enabledTools)) {
-            if (!empty($kbContext)) {
-                $systemPrompt .= "2. ค้นหาเพิ่ม (search_knowledge_base): ข้อมูลที่มีไม่พอ\n";
-            } else {
-                $systemPrompt .= "2. ค้นหา (search_knowledge_base): ถามเรื่องสินค้า ราคา นโยบาย\n";
-            }
-        }
-        if (in_array('calculate', $enabledTools)) {
-            $systemPrompt .= "3. คำนวณ (calculate): คำนวณราคารวม/ส่วนลด\n";
-        }
-        if (in_array('think', $enabledTools)) {
-            $systemPrompt .= "4. วิเคราะห์ (think): คำถามซับซ้อน ต้องคิดหลายขั้นตอน\n";
-        }
-
-        if (in_array('search_kb', $enabledTools)) {
-            $systemPrompt .= "\n### Search Strategy\n";
-            $systemPrompt .= "1. ค้นด้วย keyword ตรงประเด็น (2-4 คำ)\n";
-            $systemPrompt .= "2. ไม่เจอ → ลอง synonym/กว้างขึ้น\n";
-            $systemPrompt .= "3. สูงสุด 2 ครั้ง ห้ามค้นซ้ำ keyword เดิม\n";
-        }
-
-        $systemPrompt .= "\n### Response Rules\n";
-        $systemPrompt .= "- ตอบจากข้อมูลที่ค้นเจอเท่านั้น ห้ามเดาหรือสร้างข้อมูลขึ้นมาเอง\n";
-        $systemPrompt .= "- ตอบกระชับ ไม่ต้องบอกว่า \"จากการค้นหา...\"\n";
-
-        return $systemPrompt;
+        return app(\App\Services\Agent\AgentLoopService::class);
     }
 
     /**

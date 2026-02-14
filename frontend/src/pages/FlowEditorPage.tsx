@@ -33,6 +33,7 @@ import {
   FlowSafetySettings,
   type KnowledgeBaseConfig,
 } from '@/components/flows';
+import type { AgentApprovalData } from '@/components/flows/AgentApprovalDialog';
 import {
   Loader2,
   Save,
@@ -122,6 +123,9 @@ export function FlowEditorPage() {
   const [formData, setFormData] = useState<CreateFlowData>(INITIAL_FORM_DATA);
   const [hasChanges, setHasChanges] = useState(false);
 
+  // HITL approval state
+  const [pendingApproval, setPendingApproval] = useState<AgentApprovalData | null>(null);
+
   // Streaming chat hook
   const {
     messages: chatMessages,
@@ -129,7 +133,13 @@ export function FlowEditorPage() {
     sendMessage: sendStreamingMessage,
     cancelStream,
     clearMessages,
-  } = useStreamingChat({ botId, flowId: selectedFlowId });
+  } = useStreamingChat({
+    botId,
+    flowId: selectedFlowId,
+    onApprovalRequired: useCallback((data: AgentApprovalData) => {
+      setPendingApproval(data);
+    }, []),
+  });
 
   // Refs
   const systemPromptRef = useRef<HTMLTextAreaElement>(null);
@@ -378,6 +388,11 @@ export function FlowEditorPage() {
   const handleSendChatMessage = useCallback(async (message: string) => {
     await sendStreamingMessage(message);
   }, [sendStreamingMessage]);
+
+  // Handle HITL approval dialog close
+  const handleApprovalClose = useCallback(() => {
+    setPendingApproval(null);
+  }, []);
 
   // Show loading during editor entry mode redirect
   if (isEditorEntryMode && (isLoadingFlows || flows.length > 0)) {
@@ -978,6 +993,8 @@ export function FlowEditorPage() {
           onSendMessage={handleSendChatMessage}
           onCancelStream={cancelStream}
           onClearMessages={clearMessages}
+          pendingApproval={pendingApproval}
+          onApprovalClose={handleApprovalClose}
           disabled={!selectedFlowId}
           disabledReason={!selectedFlowId ? 'บันทึก Flow ก่อนทดสอบ' : undefined}
         />
@@ -1302,6 +1319,8 @@ export function FlowEditorPage() {
                 onSendMessage={handleSendChatMessage}
                 onCancelStream={cancelStream}
                 onClearMessages={clearMessages}
+                pendingApproval={pendingApproval}
+                onApprovalClose={handleApprovalClose}
                 disabled={!selectedFlowId}
                 disabledReason={!selectedFlowId ? 'บันทึก Flow ก่อนทดสอบ' : undefined}
                 className="flex-1 w-full border-0"

@@ -14,6 +14,12 @@ interface UseStreamingChatOptions {
   botId: number | null;
   flowId: number | null;
   conversationId?: number | null;
+  onApprovalRequired?: (data: {
+    approval_id: string;
+    tool_name: string;
+    tool_args: Record<string, unknown>;
+    timeout_seconds: number;
+  }) => void;
 }
 
 // State shape
@@ -183,7 +189,7 @@ const HEARTBEAT_TIMEOUT_MS = 30000;
 // Heartbeat check interval (5 seconds)
 const HEARTBEAT_CHECK_INTERVAL_MS = 5000;
 
-export function useStreamingChat({ botId, flowId, conversationId }: UseStreamingChatOptions) {
+export function useStreamingChat({ botId, flowId, conversationId, onApprovalRequired }: UseStreamingChatOptions) {
   const [state, dispatch] = useReducer(chatReducer, initialState);
   const abortControllerRef = useRef<AbortController | null>(null);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -200,6 +206,10 @@ export function useStreamingChat({ botId, flowId, conversationId }: UseStreaming
 
   const isStreamingRef = useRef(state.isStreaming);
   isStreamingRef.current = state.isStreaming;
+
+  // Keep onApprovalRequired ref fresh to avoid stale closures
+  const onApprovalRequiredRef = useRef(onApprovalRequired);
+  onApprovalRequiredRef.current = onApprovalRequired;
 
   // F1: Flush accumulated streaming content to state
   const flushStreamingContent = useCallback(() => {
@@ -299,6 +309,16 @@ export function useStreamingChat({ botId, flowId, conversationId }: UseStreaming
           onProcessLog: (log) => {
             resetHeartbeat();
             dispatch({ type: 'APPEND_PROCESS_LOG', payload: { messageId: assistantMsgId, log } });
+            // Dispatch HITL approval required event
+            if (log.event === 'agent_approval_required' && onApprovalRequiredRef.current) {
+              const d = log.data as Record<string, unknown>;
+              onApprovalRequiredRef.current({
+                approval_id: d.approval_id as string,
+                tool_name: d.tool_name as string,
+                tool_args: (d.tool_args as Record<string, unknown>) ?? {},
+                timeout_seconds: (d.timeout_seconds as number) ?? 60,
+              });
+            }
           },
           onContent: (text) => {
             resetHeartbeat();

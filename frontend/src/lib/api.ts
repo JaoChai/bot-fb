@@ -92,6 +92,15 @@ export const apiPatch = <T>(url: string, data?: unknown) =>
 export const apiDelete = <T>(url: string) =>
   api.delete<T>(url).then((res) => res.data);
 
+// Agent Approval (HITL) actions
+export async function approveAgentAction(approvalId: string, reason?: string): Promise<void> {
+  await api.post(`/agent-approvals/${approvalId}/approve`, { reason });
+}
+
+export async function rejectAgentAction(approvalId: string, reason?: string): Promise<void> {
+  await api.post(`/agent-approvals/${approvalId}/reject`, { reason });
+}
+
 /**
  * Extract error message from various error types
  * Handles ApiError objects, Axios errors, and standard Error objects
