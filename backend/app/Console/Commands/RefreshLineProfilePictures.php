@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\CustomerProfile;
 use App\Services\LINEService;
+use App\Services\ProfilePictureService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -150,7 +151,11 @@ class RefreshLineProfilePictures extends Command
             }
 
             // Determine if picture_url should be cleared (LINE returned null/empty)
-            $newPictureUrl = ! empty($lineProfile['pictureUrl']) ? $lineProfile['pictureUrl'] : null;
+            $newPictureUrl = ! empty($lineProfile['pictureUrl'])
+                ? app(ProfilePictureService::class)->downloadAndStore(
+                    'line', $profile->external_id, $lineProfile['pictureUrl']
+                )
+                : null;
             $pictureWasCleared = $profile->picture_url !== null && $newPictureUrl === null;
 
             // Always update profile with latest data from LINE

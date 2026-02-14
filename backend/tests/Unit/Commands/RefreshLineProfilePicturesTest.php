@@ -2,11 +2,10 @@
 
 namespace Tests\Unit\Commands;
 
-use App\Console\Commands\RefreshLineProfilePictures;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
-use App\Services\LINEService;
+use App\Services\ProfilePictureService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Mockery;
@@ -20,6 +19,18 @@ class RefreshLineProfilePicturesTest extends TestCase
     {
         parent::setUp();
         Http::preventStrayRequests();
+
+        // Mock ProfilePictureService to return deterministic R2 URLs
+        $mock = Mockery::mock(ProfilePictureService::class);
+        $mock->shouldReceive('downloadAndStore')
+            ->andReturnUsing(function (string $channelType, string $externalId, ?string $sourceUrl) {
+                if (empty($sourceUrl)) {
+                    return null;
+                }
+
+                return "https://r2.example.com/profile-pictures/{$channelType}/{$externalId}.jpg";
+            });
+        $this->app->instance(ProfilePictureService::class, $mock);
     }
 
     /**
@@ -55,13 +66,13 @@ class RefreshLineProfilePicturesTest extends TestCase
     public function test_updates_profile_when_line_returns_valid_picture_url(): void
     {
         $setup = $this->createLineSetup();
-        $newPictureUrl = 'https://new-cdn.line-scdn.net/new-picture.jpg';
+        $expectedR2Url = 'https://r2.example.com/profile-pictures/line/U123456789.jpg';
 
         Http::fake([
             'api.line.me/v2/bot/profile/*' => Http::response([
                 'userId' => $setup['profile']->external_id,
                 'displayName' => 'Updated User',
-                'pictureUrl' => $newPictureUrl,
+                'pictureUrl' => 'https://new-cdn.line-scdn.net/new-picture.jpg',
                 'statusMessage' => 'New status',
             ], 200),
         ]);
@@ -71,7 +82,8 @@ class RefreshLineProfilePicturesTest extends TestCase
 
         $setup['profile']->refresh();
 
-        $this->assertEquals($newPictureUrl, $setup['profile']->picture_url);
+        // Should store R2 URL instead of LINE CDN URL
+        $this->assertEquals($expectedR2Url, $setup['profile']->picture_url);
         $this->assertEquals('Updated User', $setup['profile']->display_name);
     }
 
@@ -123,7 +135,7 @@ class RefreshLineProfilePicturesTest extends TestCase
 
         $setup['profile']->refresh();
 
-        // picture_url should be cleared to null
+        // picture_url should be cleared to null (empty string → downloadAndStore returns null)
         $this->assertNull($setup['profile']->picture_url);
         $this->assertEquals('User With Empty Picture', $setup['profile']->display_name);
     }
@@ -264,7 +276,9 @@ class RefreshLineProfilePicturesTest extends TestCase
         $recentSetup['profile']->refresh();
         $oldProfile->refresh();
 
+        $expectedR2Url = 'https://r2.example.com/profile-pictures/line/U_recent.jpg';
         $this->assertEquals('Updated Recent', $recentSetup['profile']->display_name);
+        $this->assertEquals($expectedR2Url, $recentSetup['profile']->picture_url);
         $this->assertEquals('Old User', $oldProfile->display_name); // Unchanged
     }
 }
