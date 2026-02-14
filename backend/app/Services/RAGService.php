@@ -323,15 +323,19 @@ class RAGService
         ?Bot $bot = null,
         array $memoryNotes = []
     ): string {
-        $prompt = $basePrompt;
+        $prompt = '';
 
-        // Append memory notes if available (injected before KB context for priority)
+        // Prepend memory notes BEFORE base prompt so LLM sees them first
+        // The system prompt itself handles VIP logic — memory just provides context
         if (!empty($memoryNotes)) {
-            $prompt .= "\n\n## Memory:\n";
+            $prompt .= "## Memory:\n";
             foreach ($memoryNotes as $content) {
                 $prompt .= "- {$content}\n";
             }
+            $prompt .= "---\n\n";
         }
+
+        $prompt .= $basePrompt;
 
         // Append KB context if available
         if (!empty($kbContext)) {

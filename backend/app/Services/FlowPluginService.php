@@ -210,12 +210,46 @@ PROMPT,
             $variables = [];
         }
 
+        // Inject customer_name from DB (don't rely on AI extraction)
+        $variables['customer_name'] = $variables['customer_name'] ?? $customerName;
+
+        Log::debug('Plugin AI-extracted variables', [
+            'plugin_id' => $plugin->id,
+            'variables' => $variables,
+        ]);
+
         $message = $template;
         $variables['datetime'] = now('Asia/Bangkok')->format('d/m/Y H:i');
         foreach ($variables as $key => $value) {
             if (is_string($value) || is_numeric($value)) {
                 $message = str_replace("{{$key}}", (string) $value, $message);
             }
+        }
+
+        // Fallback: extract unreplaced variables using regex from bot message
+        $unreplacedVars = [];
+        preg_match_all('/\{(\w+)\}/', $message, $unreplacedMatches);
+        $unreplacedVars = $unreplacedMatches[1] ?? [];
+
+        if (!empty($unreplacedVars)) {
+            Log::info('Plugin unreplaced variables detected, trying regex fallback', [
+                'plugin_id' => $plugin->id,
+                'unreplaced' => $unreplacedVars,
+            ]);
+
+            $fallbackValues = $this->extractVariablesFallback($botMessage->content ?? '', $unreplacedVars);
+
+            Log::debug('Plugin regex fallback results', [
+                'plugin_id' => $plugin->id,
+                'recovered' => $fallbackValues,
+            ]);
+
+            foreach ($fallbackValues as $key => $value) {
+                $message = str_replace("{{$key}}", $value, $message);
+            }
+
+            // Final cleanup: replace any remaining {var} with "-"
+            $message = preg_replace('/\{(\w+)\}/', '-', $message);
         }
 
         // Execute based on plugin type
@@ -225,6 +259,88 @@ PROMPT,
         }
 
         return false;
+    }
+
+    /**
+     * Regex fallback to extract variables from bot message content.
+     */
+    private function extractVariablesFallback(string $botContent, array $variableNames): array
+    {
+        $extracted = [];
+
+        foreach ($variableNames as $varName) {
+            $value = match ($varName) {
+                'amount' => $this->extractAmount($botContent),
+                'product' => $this->extractProduct($botContent),
+                'source_bank' => $this->extractBank($botContent),
+                default => null,
+            };
+
+            if ($value !== null) {
+                $extracted[$varName] = $value;
+            }
+        }
+
+        return $extracted;
+    }
+
+    private function extractAmount(string $content): ?string
+    {
+        // Match "เงินเข้าแล้ว 1,100 บาท" or "1,100.00 บาท ✅"
+        if (preg_match('/(?:เงินเข้าแล้ว\s*)([\d,]+\.?\d*)\s*บาท/u', $content, $m)) {
+            return $m[1];
+        }
+        if (preg_match('/([\d,]+\.?\d*)\s*บาท\s*✅/u', $content, $m)) {
+            return $m[1];
+        }
+        if (preg_match('/([\d,]+\.?\d*)\s*บาท/u', $content, $m)) {
+            return $m[1];
+        }
+        return null;
+    }
+
+    private function extractProduct(string $content): ?string
+    {
+        // Match "ออเดอร์:\n- Product line 1\n- Product line 2"
+        if (preg_match('/ออเดอร์[:\s]*\n([\s\S]*?)(?=\n\n|\n\[|\nส่งใน|$)/u', $content, $m)) {
+            $lines = array_filter(array_map(function ($line) {
+                return trim(preg_replace('/^[-•]\s*/', '', trim($line)));
+            }, explode("\n", trim($m[1]))));
+            $product = implode(', ', $lines);
+            return !empty($product) ? $product : null;
+        }
+        return null;
+    }
+
+    private function extractBank(string $content): ?string
+    {
+        $banks = [
+            'กสิกร' => 'กสิกรไทย (KBANK)',
+            'KBANK' => 'กสิกรไทย (KBANK)',
+            'K PLUS' => 'กสิกรไทย (KBANK)',
+            'ไทยพาณิชย์' => 'ไทยพาณิชย์ (SCB)',
+            'SCB' => 'ไทยพาณิชย์ (SCB)',
+            'กรุงเทพ' => 'กรุงเทพ (BBL)',
+            'BBL' => 'กรุงเทพ (BBL)',
+            'กรุงไทย' => 'กรุงไทย (KTB)',
+            'KTB' => 'กรุงไทย (KTB)',
+            'กรุงศรี' => 'กรุงศรี (BAY)',
+            'BAY' => 'กรุงศรี (BAY)',
+            'ทหารไทยธนชาต' => 'ทหารไทยธนชาต (ttb)',
+            'ttb' => 'ทหารไทยธนชาต (ttb)',
+            'TMB' => 'ทหารไทยธนชาต (ttb)',
+            'ออมสิน' => 'ออมสิน (GSB)',
+            'GSB' => 'ออมสิน (GSB)',
+            'PromptPay' => 'PromptPay',
+            'พร้อมเพย์' => 'PromptPay',
+        ];
+
+        foreach ($banks as $keyword => $label) {
+            if (mb_stripos($content, $keyword) !== false) {
+                return $label;
+            }
+        }
+        return null;
     }
 
     /**

@@ -176,16 +176,50 @@ class RAGServiceTest extends TestCase
     {
         $basePrompt = 'You are a helpful assistant.';
         $kbContext = "## ข้อมูลอ้างอิง:\nสินค้า A ราคา 100 บาท";
-        $memoryNotes = ['ลูกค้า VIP', 'ได้ส่วนลด 10%'];
+        $memoryNotes = ['ลูกค้า VIP ปิดขายให้เร็ว', 'ได้ส่วนลด 10%'];
 
         $result = $this->callBuildEnhancedPrompt($basePrompt, $kbContext, $this->bot, $memoryNotes);
 
-        // Should contain all parts
-        $this->assertStringContainsString('You are a helpful assistant.', $result);
+        // All memory notes prepended before base prompt
         $this->assertStringContainsString('## Memory:', $result);
-        $this->assertStringContainsString('- ลูกค้า VIP', $result);
+        $this->assertStringContainsString('- ลูกค้า VIP ปิดขายให้เร็ว', $result);
         $this->assertStringContainsString('- ได้ส่วนลด 10%', $result);
+        $this->assertStringContainsString('You are a helpful assistant.', $result);
         $this->assertStringContainsString('## ข้อมูลอ้างอิง:', $result);
-        $this->assertStringContainsString('สินค้า A ราคา 100 บาท', $result);
+
+        // Memory before base prompt
+        $memoryPos = strpos($result, '## Memory:');
+        $basePos = strpos($result, 'You are a helpful assistant.');
+        $this->assertLessThan($basePos, $memoryPos, 'Memory should be prepended before base prompt');
+    }
+
+    public function test_memory_prepended_before_base_prompt(): void
+    {
+        $basePrompt = 'You are Captain Ad sales bot.';
+        $memoryNotes = ['ลูกค้า VIP เคยซื้อ Nolimit Level Up+ 2 ครั้ง'];
+
+        $result = $this->callBuildEnhancedPrompt($basePrompt, '', $this->bot, $memoryNotes);
+
+        // Memory appears before base prompt
+        $memoryPos = strpos($result, '## Memory:');
+        $basePos = strpos($result, 'You are Captain Ad sales bot.');
+        $this->assertLessThan($basePos, $memoryPos, 'Memory must come before base prompt');
+        $this->assertStringContainsString('- ลูกค้า VIP เคยซื้อ Nolimit Level Up+ 2 ครั้ง', $result);
+    }
+
+    public function test_memory_before_base_prompt_before_kb(): void
+    {
+        $basePrompt = 'System prompt here.';
+        $kbContext = '## KB Context:';
+        $memoryNotes = ['ชอบสีดำ', 'ที่อยู่: สุขุมวิท 55'];
+
+        $result = $this->callBuildEnhancedPrompt($basePrompt, $kbContext, null, $memoryNotes);
+
+        // Order: Memory → base prompt → KB
+        $memoryPos = strpos($result, '## Memory:');
+        $basePos = strpos($result, 'System prompt here.');
+        $kbPos = strpos($result, '## KB Context:');
+        $this->assertLessThan($basePos, $memoryPos);
+        $this->assertLessThan($kbPos, $basePos);
     }
 }
