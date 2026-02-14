@@ -685,6 +685,56 @@ PROMPT;
     }
 
     /**
+     * Detect if user message explicitly requires a tool.
+     *
+     * @param string $userMessage User's message to analyze
+     * @param array $enabledTools List of enabled tool names for this flow
+     * @return array{needs_tool: bool, tool_hint: ?string, reasons: array}
+     */
+    public function detectToolIntent(string $userMessage, array $enabledTools = []): array
+    {
+        $lowerMessage = mb_strtolower($userMessage);
+        $reasons = [];
+        $toolHint = null;
+
+        // Calculate tool
+        if (in_array('calculate', $enabledTools)) {
+            $calcKeywords = ['คำนวณ', 'คิดราคา', 'คิดเงิน', 'รวมราคา', 'ส่วนลด', 'กี่บาท',
+                             'calculate', 'total', 'discount'];
+            foreach ($calcKeywords as $kw) {
+                if (mb_stripos($lowerMessage, $kw) !== false) {
+                    $reasons[] = "tool_keyword:{$kw}";
+                    $toolHint = 'calculate';
+                    break;
+                }
+            }
+            // Arithmetic expressions
+            if (preg_match('/\d+\s*[\+\-\*\/\%x]\s*\d+/', $userMessage)) {
+                $reasons[] = 'arithmetic_expression';
+                $toolHint = $toolHint ?? 'calculate';
+            }
+        }
+
+        // Think tool (complex analysis)
+        if (in_array('think', $enabledTools) && !$toolHint) {
+            $thinkKeywords = ['วิเคราะห์เชิงลึก', 'เปรียบเทียบทุกตัว', 'สรุปให้'];
+            foreach ($thinkKeywords as $kw) {
+                if (mb_stripos($lowerMessage, $kw) !== false) {
+                    $reasons[] = "tool_keyword:{$kw}";
+                    $toolHint = 'think';
+                    break;
+                }
+            }
+        }
+
+        return [
+            'needs_tool' => !empty($reasons),
+            'tool_hint' => $toolHint,
+            'reasons' => $reasons,
+        ];
+    }
+
+    /**
      * Build Chain-of-Thought instruction to append to system prompt.
      *
      * Instructs the LLM to think step-by-step for complex questions.

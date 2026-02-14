@@ -162,13 +162,15 @@ class OpenRouterService
         ?string $apiKeyOverride = null,
         string $toolChoice = 'auto',
         bool $useFallback = true,
-        ?string $fallbackModelOverride = null
+        ?string $fallbackModelOverride = null,
+        ?int $timeout = null
     ): array {
         $model = $model ?? $this->defaultModel;
         $temperature = $temperature ?? 0.7;
         $maxTokens = $maxTokens ?? $this->maxTokens;
         $apiKey = $apiKeyOverride ?? $this->apiKey;
         $fallbackModel = $fallbackModelOverride ?? $this->fallbackModel;
+        $requestTimeout = $timeout ?? $this->timeout;
 
         try {
             // Build payload with native fallback support (OpenRouter Best Practice)
@@ -202,7 +204,7 @@ class OpenRouterService
                 $payload['provider'] = $providerPrefs;
             }
 
-            $response = $this->client($apiKey)->post('/chat/completions', $payload);
+            $response = $this->client($apiKey, $requestTimeout)->post('/chat/completions', $payload);
 
             if ($response->failed()) {
                 $error = $response->json('error.message', 'Unknown error');
