@@ -405,6 +405,17 @@ class AgentLoopService
         float $kbTopRelevance,
         float $threshold
     ): array {
+        // Greeting circuit breaker — ALWAYS bypass agent loop
+        if (!$complexity['is_complex'] && in_array('greeting_detected', $complexity['reasons'] ?? [])) {
+            return [
+                'use_agent' => false,
+                'reason' => 'greeting_detected',
+                'complexity_score' => 0,
+                'kb_top_relevance' => $kbTopRelevance,
+                'tool_intent' => false,
+            ];
+        }
+
         $hasHighQualityKb = $kbTopRelevance >= $threshold;
 
         $useAgent = $complexity['is_complex']
@@ -605,8 +616,10 @@ class AgentLoopService
         $messages = [['role' => 'system', 'content' => $systemPrompt]];
 
         foreach ($conversationHistory as $msg) {
+            // Support both 'role' (chat emulator) and 'sender' (webhook path)
+            $role = $msg['role'] ?? ($msg['sender'] === 'user' ? 'user' : 'assistant');
             $messages[] = [
-                'role' => $msg['sender'] === 'user' ? 'user' : 'assistant',
+                'role' => $role,
                 'content' => $msg['content'],
             ];
         }
