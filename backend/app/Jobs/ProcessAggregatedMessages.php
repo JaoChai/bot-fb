@@ -15,6 +15,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -168,57 +169,118 @@ class ProcessAggregatedMessages implements ShouldQueue
         // === API calls OUTSIDE transaction (no DB lock held) ===
         // AI generate (~2-3s) + LINE push (~200ms) no longer block concurrent requests
         if ($shouldGenerate) {
-            error_log("[AGGREGATION_DEBUG] Generating AI response - conversation_id: {$this->conversation->id}, content_length: " . strlen($mergedContent));
+            // Safety check: skip if bot already responded after these messages
+            if (!empty($cachedMessageIds)) {
+                $earliestMessageId = min($cachedMessageIds);
+                $earliestMessage = \App\Models\Message::find($earliestMessageId);
 
-            // Generate AI response using merged content (no transaction lock held)
-            $result = $aiService->generateResponse(
-                $this->bot,
-                $mergedContent,
-                $this->conversation
-            );
+                if ($earliestMessage) {
+                    $alreadyResponded = \App\Models\Message::where('conversation_id', $conversationId)
+                        ->where('sender', 'bot')
+                        ->where('created_at', '>=', $earliestMessage->created_at)
+                        ->exists();
 
-            // Save bot response
-            $botMessage = $this->conversation->messages()->create([
-                'sender' => 'bot',
-                'content' => $result['content'],
-                'type' => 'text',
-                'model_used' => $result['model'],
-                'prompt_tokens' => $result['usage']['prompt_tokens'],
-                'completion_tokens' => $result['usage']['completion_tokens'],
-                'cost' => $result['cost'],
-                'metadata' => $result['rag_metadata'] ?? null,
-            ]);
-
-            // Send response to LINE using push message
-            // (reply token has likely expired after waiting)
-            if ($botMessage->content) {
-                if ($bubblesService->isEnabled($this->bot)) {
-                    // Parse and send multiple bubbles
-                    $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
-                    // Use null for replyToken to force push message
-                    $bubblesService->sendBubbles($this->bot, $this->externalUserId, null, $bubbles);
-                } else {
-                    // Single message via push with retry key for idempotency
-                    $retryKey = $lineService->generateRetryKey();
-                    $lineService->push($this->bot, $this->externalUserId, [$botMessage->content], $retryKey);
+                    if ($alreadyResponded) {
+                        Log::info('Safety net: bot already responded, skipping aggregation response', [
+                            'conversation_id' => $conversationId,
+                            'group_id' => $this->groupId,
+                        ]);
+                        $aggregationService->clearAggregation($conversationId);
+                        return;
+                    }
                 }
             }
 
-            // Execute flow plugins (e.g., Telegram notifications)
-            if ($botMessage) {
-                try {
-                    app(\App\Services\FlowPluginService::class)
-                        ->executePlugins($this->bot, $this->conversation, $botMessage);
-                } catch (\Exception $e) {
-                    Log::warning('Flow plugin execution failed in aggregation', [
-                        'conversation_id' => $this->conversation->id,
-                        'error' => $e->getMessage(),
+            // Acquire per-conversation response lock to prevent concurrent AI responses
+            $responseLock = Cache::lock("ai_response:{$conversationId}", 30);
+
+            if (!$responseLock->get()) {
+                // Limit re-dispatch attempts to prevent infinite loop
+                $redispatchKey = "ai_response_redispatch:{$conversationId}:{$this->groupId}";
+                $attempts = (int) Cache::get($redispatchKey, 0);
+
+                if ($attempts >= 3) {
+                    Log::warning('Aggregation: max re-dispatch attempts reached', [
+                        'conversation_id' => $conversationId,
+                        'group_id' => $this->groupId,
+                        'attempts' => $attempts,
                     ]);
+                    Cache::forget($redispatchKey);
+                    $aggregationService->clearAggregation($conversationId);
+                    return;
                 }
+
+                Cache::put($redispatchKey, $attempts + 1, now()->addMinutes(5));
+
+                Log::info('Aggregation: response lock held, re-dispatching', [
+                    'conversation_id' => $conversationId,
+                    'attempt' => $attempts + 1,
+                ]);
+                // Re-dispatch with shorter delay
+                ProcessAggregatedMessages::dispatch(
+                    $this->bot, $this->conversation, $this->groupId, $this->externalUserId
+                )->onQueue('webhooks')->delay(now()->addSeconds(5));
+                return;
             }
 
-            // Update stats with atomic DB::raw operations (no transaction needed)
-            $this->updateStats($messageCount);
+            // Clean up re-dispatch counter on successful lock acquisition
+            Cache::forget("ai_response_redispatch:{$conversationId}:{$this->groupId}");
+
+            try {
+                error_log("[AGGREGATION_DEBUG] Generating AI response - conversation_id: {$this->conversation->id}, content_length: " . strlen($mergedContent));
+
+                // Generate AI response using merged content (no transaction lock held)
+                $result = $aiService->generateResponse(
+                    $this->bot,
+                    $mergedContent,
+                    $this->conversation
+                );
+
+                // Save bot response
+                $botMessage = $this->conversation->messages()->create([
+                    'sender' => 'bot',
+                    'content' => $result['content'],
+                    'type' => 'text',
+                    'model_used' => $result['model'],
+                    'prompt_tokens' => $result['usage']['prompt_tokens'],
+                    'completion_tokens' => $result['usage']['completion_tokens'],
+                    'cost' => $result['cost'],
+                    'metadata' => $result['rag_metadata'] ?? null,
+                ]);
+
+                // Send response to LINE using push message
+                // (reply token has likely expired after waiting)
+                if ($botMessage->content) {
+                    if ($bubblesService->isEnabled($this->bot)) {
+                        // Parse and send multiple bubbles
+                        $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
+                        // Use null for replyToken to force push message
+                        $bubblesService->sendBubbles($this->bot, $this->externalUserId, null, $bubbles);
+                    } else {
+                        // Single message via push with retry key for idempotency
+                        $retryKey = $lineService->generateRetryKey();
+                        $lineService->push($this->bot, $this->externalUserId, [$botMessage->content], $retryKey);
+                    }
+                }
+
+                // Execute flow plugins (e.g., Telegram notifications)
+                if ($botMessage) {
+                    try {
+                        app(\App\Services\FlowPluginService::class)
+                            ->executePlugins($this->bot, $this->conversation, $botMessage);
+                    } catch (\Exception $e) {
+                        Log::warning('Flow plugin execution failed in aggregation', [
+                            'conversation_id' => $this->conversation->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+
+                // Update stats with atomic DB::raw operations (no transaction needed)
+                $this->updateStats($messageCount);
+            } finally {
+                $responseLock->release();
+            }
         }
 
         // Clear aggregation data after successful processing

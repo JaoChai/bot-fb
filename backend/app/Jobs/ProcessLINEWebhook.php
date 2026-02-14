@@ -27,6 +27,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -449,6 +450,33 @@ class ProcessLINEWebhook implements ShouldQueue
         // === API calls OUTSIDE transaction (no DB lock held) ===
         // AI generate (~2-3s) + LINE reply (~200ms) no longer block concurrent requests
         if ($shouldGenerateResponse && $userMessage && $conversation) {
+            // Acquire per-conversation response lock to prevent duplicate AI responses
+            $responseLock = Cache::lock("ai_response:{$conversation->id}", 30);
+
+            if (!$responseLock->get()) {
+                // Another job is already generating a response for this conversation
+                // Fallback: create aggregation group as safety net
+                Log::info('Response lock held, falling back to aggregation', [
+                    'conversation_id' => $conversation->id,
+                ]);
+
+                $fallbackResult = $aggregationService->startOrContinueAggregation(
+                    $conversation, $userMessage, 15000
+                );
+
+                if ($fallbackResult) {
+                    ProcessAggregatedMessages::dispatch(
+                        $this->bot,
+                        $conversation,
+                        $fallbackResult['group_id'],
+                        $userId
+                    )->onQueue('webhooks')->delay(now()->addSeconds(15));
+                }
+
+                // Stats will be updated by ProcessAggregatedMessages when it generates response
+                return;
+            }
+
             try {
                 // Generate AI response (no transaction lock held)
                 $botMessage = $aiService->generateAndSaveResponse(
@@ -496,6 +524,8 @@ class ProcessLINEWebhook implements ShouldQueue
                 ]);
 
                 throw $e;
+            } finally {
+                $responseLock->release();
             }
         }
 
