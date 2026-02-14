@@ -16,38 +16,7 @@ use Illuminate\Support\Str;
  */
 class CostTrackingService
 {
-    /**
-     * Model pricing per 1M tokens (USD)
-     * Source: OpenRouter pricing as of Dec 2024
-     */
-    protected array $modelPricing = [
-        // GPT-4o series
-        'openai/gpt-4o' => ['input' => 2.50, 'output' => 10.00],
-        'openai/gpt-4o-2024-11-20' => ['input' => 2.50, 'output' => 10.00],
-        'openai/gpt-4o-mini' => ['input' => 0.15, 'output' => 0.60],
-        'openai/gpt-4o-mini-2024-07-18' => ['input' => 0.15, 'output' => 0.60],
-
-        // GPT-4 Turbo
-        'openai/gpt-4-turbo' => ['input' => 10.00, 'output' => 30.00],
-        'openai/gpt-4-turbo-preview' => ['input' => 10.00, 'output' => 30.00],
-
-        // Claude series
-        'anthropic/claude-3.5-sonnet' => ['input' => 3.00, 'output' => 15.00],
-        'anthropic/claude-3-sonnet' => ['input' => 3.00, 'output' => 15.00],
-        'anthropic/claude-3-haiku' => ['input' => 0.25, 'output' => 1.25],
-        'anthropic/claude-3-opus' => ['input' => 15.00, 'output' => 75.00],
-
-        // Gemini series
-        'google/gemini-pro-1.5' => ['input' => 1.25, 'output' => 5.00],
-        'google/gemini-flash-1.5' => ['input' => 0.075, 'output' => 0.30],
-
-        // Llama series (often free or very cheap)
-        'meta-llama/llama-3.1-70b-instruct' => ['input' => 0.35, 'output' => 0.40],
-        'meta-llama/llama-3.1-8b-instruct' => ['input' => 0.06, 'output' => 0.06],
-
-        // Default fallback
-        'default' => ['input' => 1.00, 'output' => 3.00],
-    ];
+    protected ?array $modelPricingCache = null;
 
     /**
      * Current request tracking
@@ -100,7 +69,8 @@ class CostTrackingService
         int $reasoningTokens = 0,
         ?float $actualCost = null
     ): float {
-        $pricing = $this->modelPricing[$model] ?? $this->modelPricing['default'];
+        $pricingMap = $this->getModelPricingMap();
+        $pricing = $pricingMap[$model] ?? $pricingMap['default'];
 
         // Calculate cost per 1M tokens
         $inputCost = ($promptTokens / 1_000_000) * $pricing['input'];
@@ -264,7 +234,8 @@ class CostTrackingService
         int $estimatedPromptTokens,
         int $estimatedCompletionTokens
     ): float {
-        $pricing = $this->modelPricing[$model] ?? $this->modelPricing['default'];
+        $pricingMap = $this->getModelPricingMap();
+        $pricing = $pricingMap[$model] ?? $pricingMap['default'];
 
         $inputCost = ($estimatedPromptTokens / 1_000_000) * $pricing['input'];
         $outputCost = ($estimatedCompletionTokens / 1_000_000) * $pricing['output'];
@@ -277,7 +248,31 @@ class CostTrackingService
      */
     public function getModelPricing(string $model): array
     {
-        return $this->modelPricing[$model] ?? $this->modelPricing['default'];
+        $pricingMap = $this->getModelPricingMap();
+        return $pricingMap[$model] ?? $pricingMap['default'];
+    }
+
+    protected function getModelPricingMap(): array
+    {
+        if ($this->modelPricingCache !== null) {
+            return $this->modelPricingCache;
+        }
+
+        $models = config('llm-models.models', []);
+        $pricing = [];
+
+        foreach ($models as $modelId => $modelConfig) {
+            $pricing[$modelId] = [
+                'input' => $modelConfig['pricing_prompt'] ?? 1.0,
+                'output' => $modelConfig['pricing_completion'] ?? 3.0,
+            ];
+        }
+
+        // Fallback default
+        $pricing['default'] = ['input' => 1.0, 'output' => 3.0];
+
+        $this->modelPricingCache = $pricing;
+        return $pricing;
     }
 
     /**

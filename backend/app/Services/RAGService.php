@@ -660,6 +660,17 @@ PROMPT;
         $reasons = [];
         $threshold = config('rag.chain_of_thought.complexity_threshold', 2);
 
+        // Greeting patterns — should NOT trigger agent loop
+        $greetingPatterns = [
+            '/^(สวัสดี|หวัดดี|ดีครับ|ดีค่ะ|ดีจ้า|ดีจ้ะ|ดี|hello|hi|hey|yo|good\s*(morning|afternoon|evening))[\s!\.]*$/iu',
+        ];
+
+        foreach ($greetingPatterns as $pattern) {
+            if (preg_match($pattern, trim($userMessage))) {
+                return ['is_complex' => false, 'score' => 0, 'reasons' => ['greeting_detected']];
+            }
+        }
+
         // 1. Message length > 100 characters (indicates detailed question)
         if (mb_strlen($userMessage) > 100) {
             $score += 1;
@@ -755,6 +766,30 @@ PROMPT;
             if (preg_match('/\d+\s*[\+\-\*\/\%x]\s*\d+/', $userMessage)) {
                 $reasons[] = 'arithmetic_expression';
                 $toolHint = $toolHint ?? 'calculate';
+            }
+        }
+
+        // Datetime tool
+        if (in_array('get_current_datetime', $enabledTools) && !$toolHint) {
+            $datetimeKeywords = ['วันนี้', 'เวลา', 'กี่โมง', 'วันที่', 'วันอะไร', 'what time', 'what day', 'today', 'date', 'current time'];
+            foreach ($datetimeKeywords as $kw) {
+                if (mb_stripos($lowerMessage, $kw) !== false) {
+                    $reasons[] = "tool_keyword:{$kw}";
+                    $toolHint = 'get_current_datetime';
+                    break;
+                }
+            }
+        }
+
+        // Escalate tool
+        if (in_array('escalate_to_human', $enabledTools) && !$toolHint) {
+            $escalateKeywords = ['คุยกับคน', 'ติดต่อพนักงาน', 'ขอคุยกับเจ้าหน้าที่', 'talk to human', 'real person', 'human agent', 'speak to someone'];
+            foreach ($escalateKeywords as $kw) {
+                if (mb_stripos($lowerMessage, $kw) !== false) {
+                    $reasons[] = "tool_keyword:{$kw}";
+                    $toolHint = 'escalate_to_human';
+                    break;
+                }
             }
         }
 

@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   XCircle,
   Timer,
+  User,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toSafeArray } from '@/lib/utils';
@@ -79,6 +80,12 @@ function getEventIcon(event: string, data?: Record<string, unknown>) {
       }
       if (toolName === 'think') {
         return <Brain className="h-3.5 w-3.5 text-purple-500" />;
+      }
+      if (toolName === 'get_current_datetime') {
+        return <Clock className="h-3.5 w-3.5 text-orange-500" />;
+      }
+      if (toolName === 'escalate_to_human') {
+        return <User className="h-3.5 w-3.5 text-red-500" />;
       }
       return <Wrench className="h-3.5 w-3.5 text-foreground" />;
     }
@@ -159,6 +166,12 @@ function getEventLabel(event: string, data?: Record<string, unknown>): string {
       }
       if (toolName === 'think') {
         return '🧠 กำลังคิด...';
+      }
+      if (toolName === 'get_current_datetime') {
+        return '🕐 ดูวันที่/เวลา...';
+      }
+      if (toolName === 'escalate_to_human') {
+        return '👤 ส่งต่อพนักงาน...';
       }
       return `🔧 เรียกใช้ Tool: ${toolName || 'unknown'}`;
     }

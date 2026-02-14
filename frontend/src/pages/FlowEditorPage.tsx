@@ -770,6 +770,68 @@ export function FlowEditorPage() {
                                 </p>
                               </div>
                             </label>
+
+                            <label
+                              className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
+                                formData.enabled_tools?.includes('get_current_datetime')
+                                  ? 'bg-accent border-foreground'
+                                  : 'hover:bg-muted'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.enabled_tools?.includes('get_current_datetime') || false}
+                                onChange={(e) => {
+                                  const current = formData.enabled_tools || [];
+                                  if (e.target.checked) {
+                                    handleChange('enabled_tools', [...current, 'get_current_datetime']);
+                                  } else {
+                                    handleChange('enabled_tools', current.filter(t => t !== 'get_current_datetime'));
+                                  }
+                                }}
+                                className="rounded border-muted-foreground/50"
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center gap-1.5 text-sm font-medium">
+                                  <span>🕐</span>
+                                  <span>วันที่/เวลา</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  บอกวันที่ เวลา วันในสัปดาห์ปัจจุบัน
+                                </p>
+                              </div>
+                            </label>
+
+                            <label
+                              className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
+                                formData.enabled_tools?.includes('escalate_to_human')
+                                  ? 'bg-accent border-foreground'
+                                  : 'hover:bg-muted'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.enabled_tools?.includes('escalate_to_human') || false}
+                                onChange={(e) => {
+                                  const current = formData.enabled_tools || [];
+                                  if (e.target.checked) {
+                                    handleChange('enabled_tools', [...current, 'escalate_to_human']);
+                                  } else {
+                                    handleChange('enabled_tools', current.filter(t => t !== 'escalate_to_human'));
+                                  }
+                                }}
+                                className="rounded border-muted-foreground/50"
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center gap-1.5 text-sm font-medium">
+                                  <span>👤</span>
+                                  <span>ส่งต่อพนักงาน</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  ส่งต่อบทสนทนาให้พนักงานจริงเมื่อ AI ช่วยไม่ได้
+                                </p>
+                              </div>
+                            </label>
                           </div>
                           {(!formData.enabled_tools || formData.enabled_tools.length === 0) && (
                             <div className="flex items-center gap-2 p-3 mt-2 rounded-lg border border-orange-300 bg-orange-50 dark:border-orange-700 dark:bg-orange-950/30">
@@ -799,6 +861,26 @@ export function FlowEditorPage() {
                           />
                           <span className="text-xs text-muted-foreground">
                             5-15 ครั้ง • AI จะหยุดทำงานอัตโนมัติเมื่อถึงจำนวนนี้
+                          </span>
+                        </div>
+
+                        {/* Max Tokens */}
+                        <div className="flex items-center gap-4">
+                          <Label className="text-sm">Max Tokens (ความยาวคำตอบ)</Label>
+                          <Input
+                            type="number"
+                            min={512}
+                            max={8192}
+                            step={256}
+                            value={formData.max_tokens}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              if (!isNaN(val)) handleChange('max_tokens', val);
+                            }}
+                            className="w-24"
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            512-8192 • กำหนดความยาวสูงสุดของคำตอบ AI
                           </span>
                         </div>
 
@@ -1252,6 +1334,79 @@ export function FlowEditorPage() {
                               <span className="text-sm font-medium">🧠 คิดก่อนตอบ</span>
                             </div>
                           </label>
+                          <label className={cn(
+                            'flex items-center gap-3 p-3 rounded-lg border cursor-pointer',
+                            formData.enabled_tools?.includes('get_current_datetime') ? 'bg-accent border-foreground' : ''
+                          )}>
+                            <input
+                              type="checkbox"
+                              checked={formData.enabled_tools?.includes('get_current_datetime') || false}
+                              onChange={(e) => {
+                                const current = formData.enabled_tools || [];
+                                if (e.target.checked) {
+                                  handleChange('enabled_tools', [...current, 'get_current_datetime']);
+                                } else {
+                                  handleChange('enabled_tools', current.filter(t => t !== 'get_current_datetime'));
+                                }
+                              }}
+                            />
+                            <div>
+                              <span className="text-sm font-medium">🕐 วันที่/เวลา</span>
+                            </div>
+                          </label>
+                          <label className={cn(
+                            'flex items-center gap-3 p-3 rounded-lg border cursor-pointer',
+                            formData.enabled_tools?.includes('escalate_to_human') ? 'bg-accent border-foreground' : ''
+                          )}>
+                            <input
+                              type="checkbox"
+                              checked={formData.enabled_tools?.includes('escalate_to_human') || false}
+                              onChange={(e) => {
+                                const current = formData.enabled_tools || [];
+                                if (e.target.checked) {
+                                  handleChange('enabled_tools', [...current, 'escalate_to_human']);
+                                } else {
+                                  handleChange('enabled_tools', current.filter(t => t !== 'escalate_to_human'));
+                                }
+                              }}
+                            />
+                            <div>
+                              <span className="text-sm font-medium">👤 ส่งต่อพนักงาน</span>
+                            </div>
+                          </label>
+                        </div>
+
+                        {/* Max Tool Calls (Mobile) */}
+                        <div className="flex items-center gap-3">
+                          <Label className="text-xs">Tool Calls สูงสุด</Label>
+                          <Input
+                            type="number"
+                            min={5}
+                            max={15}
+                            value={formData.max_tool_calls}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              if (!isNaN(val)) handleChange('max_tool_calls', val);
+                            }}
+                            className="w-16 h-8 text-sm"
+                          />
+                        </div>
+
+                        {/* Max Tokens (Mobile) */}
+                        <div className="flex items-center gap-3">
+                          <Label className="text-xs">Max Tokens</Label>
+                          <Input
+                            type="number"
+                            min={512}
+                            max={8192}
+                            step={256}
+                            value={formData.max_tokens}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              if (!isNaN(val)) handleChange('max_tokens', val);
+                            }}
+                            className="w-20 h-8 text-sm"
+                          />
                         </div>
 
                         {/* Agent Safety Settings (Mobile) */}

@@ -72,6 +72,47 @@ return [
         ],
     ],
 
+    'get_current_datetime' => [
+        'type' => 'function',
+        'function' => [
+            'name' => 'get_current_datetime',
+            'description' => 'Get the current date, time, and day of the week. Use when user asks about today\'s date, current time, or day of week.',
+            'parameters' => [
+                'type' => 'object',
+                'properties' => [
+                    'timezone' => [
+                        'type' => 'string',
+                        'description' => 'IANA timezone (e.g. Asia/Bangkok). Defaults to Asia/Bangkok.',
+                    ],
+                ],
+                'required' => [],
+            ],
+        ],
+    ],
+
+    'escalate_to_human' => [
+        'type' => 'function',
+        'function' => [
+            'name' => 'escalate_to_human',
+            'description' => 'Escalate conversation to a human agent when AI cannot adequately help the customer.',
+            'parameters' => [
+                'type' => 'object',
+                'properties' => [
+                    'reason' => [
+                        'type' => 'string',
+                        'description' => 'Reason for escalation',
+                    ],
+                    'priority' => [
+                        'type' => 'string',
+                        'enum' => ['low', 'medium', 'high'],
+                        'description' => 'Priority level of the escalation',
+                    ],
+                ],
+                'required' => ['reason'],
+            ],
+        ],
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Tool Metadata (for UI)
@@ -96,6 +137,18 @@ return [
             'label' => 'คิดก่อนตอบ',
             'label_en' => 'Think',
             'color' => 'purple',
+        ],
+        'get_current_datetime' => [
+            'icon' => 'clock',
+            'label' => 'วันที่/เวลา',
+            'label_en' => 'Date/Time',
+            'color' => 'orange',
+        ],
+        'escalate_to_human' => [
+            'icon' => 'user',
+            'label' => 'ส่งต่อพนักงาน',
+            'label_en' => 'Escalate to Human',
+            'color' => 'red',
         ],
     ],
 ];
