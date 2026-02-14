@@ -273,4 +273,3 @@ function MetricBar({ name, score }: { name: string; score: number }) {
   );
 }
 
-export default QADashboard;

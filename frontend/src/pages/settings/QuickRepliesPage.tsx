@@ -551,4 +551,3 @@ export function QuickRepliesPage() {
   );
 }
 
-export default QuickRepliesPage;

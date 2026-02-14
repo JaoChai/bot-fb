@@ -107,4 +107,3 @@ export function MessageInput({
   );
 }
 
-export default MessageInput;

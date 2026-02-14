@@ -245,4 +245,3 @@ function ScoreBadge({ score }: { score: number }) {
   );
 }
 
-export default QAEvaluationLogList;

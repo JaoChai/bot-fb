@@ -22,26 +22,6 @@ export function formatTHB(
 }
 
 /**
- * Convert USD to THB with short format for large numbers
- * @param usdAmount - Amount in USD
- * @returns Formatted string like "฿1.2k" or "฿35.00"
- */
-export function formatTHBShort(
-  usdAmount: number | string | null | undefined
-): string {
-  const usd = Number(usdAmount) || 0;
-  const thb = usd * USD_TO_THB;
-
-  if (thb >= 1000000) {
-    return `฿${(thb / 1000000).toFixed(1)}M`;
-  }
-  if (thb >= 1000) {
-    return `฿${(thb / 1000).toFixed(1)}k`;
-  }
-  return `฿${thb.toFixed(2)}`;
-}
-
-/**
  * Convert USD to THB (raw number)
  * @param usdAmount - Amount in USD
  * @returns Amount in THB
@@ -49,11 +29,4 @@ export function formatTHBShort(
 export function usdToTHB(usdAmount: number | string | null | undefined): number {
   const usd = Number(usdAmount) || 0;
   return usd * USD_TO_THB;
-}
-
-/**
- * Get the current exchange rate
- */
-export function getExchangeRate(): number {
-  return USD_TO_THB;
 }

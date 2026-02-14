@@ -762,4 +762,3 @@ export function EvaluationDetailPage() {
   );
 }
 
-export default EvaluationDetailPage;

@@ -44,14 +44,3 @@ export async function reportWebVitals(onReport?: ReportHandler) {
   onTTFB(handler)
 }
 
-/**
- * Get performance thresholds for Core Web Vitals.
- * Values based on Google's recommendations.
- */
-export const webVitalsThresholds = {
-  CLS: { good: 0.1, poor: 0.25 },
-  LCP: { good: 2500, poor: 4000 }, // milliseconds
-  INP: { good: 200, poor: 500 }, // milliseconds
-  FCP: { good: 1800, poor: 3000 }, // milliseconds
-  TTFB: { good: 800, poor: 1800 }, // milliseconds
-}

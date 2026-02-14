@@ -117,4 +117,3 @@ export function getErrorMessage(error: unknown): string {
   return 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ';
 }
 
-export default api;

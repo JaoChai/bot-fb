@@ -128,4 +128,3 @@ export function QAInspectorPage() {
   );
 }
 
-export default QAInspectorPage;

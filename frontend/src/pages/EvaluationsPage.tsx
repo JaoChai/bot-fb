@@ -846,4 +846,3 @@ export function EvaluationsPage() {
   );
 }
 
-export default EvaluationsPage;

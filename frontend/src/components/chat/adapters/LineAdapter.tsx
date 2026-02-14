@@ -93,4 +93,3 @@ export const lineAdapter: ChannelAdapter = {
   },
 };
 
-export default lineAdapter;

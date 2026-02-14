@@ -129,4 +129,3 @@ export const ChatHeader = memo(function ChatHeader({
   );
 });
 
-export default ChatHeader;
