@@ -70,4 +70,4 @@ Schedule::call(function () {
         ->where('created_at', '<', now()->subDays(90))
         ->delete();
 })->weekly()->sundays()->at('03:30')
-    ->name('activity-logs-cleanup')->withoutOverlapping()->runInBackground();
+    ->name('activity-logs-cleanup')->withoutOverlapping();
