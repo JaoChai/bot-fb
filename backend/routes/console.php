@@ -59,3 +59,15 @@ Schedule::command('profiles:refresh-line-pictures')
     ->at('04:00')
     ->withoutOverlapping()
     ->runInBackground();
+
+// Prune expired cache entries - daily at 02:00
+Schedule::command('cache:prune-stale-tags')->daily()->at('02:00')
+    ->withoutOverlapping()->runInBackground();
+
+// Clean old activity logs (>90 days) - weekly Sunday 03:30
+Schedule::call(function () {
+    \Illuminate\Support\Facades\DB::table('activity_logs')
+        ->where('created_at', '<', now()->subDays(90))
+        ->delete();
+})->weekly()->sundays()->at('03:30')
+    ->name('activity-logs-cleanup')->withoutOverlapping()->runInBackground();
