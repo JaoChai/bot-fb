@@ -45,11 +45,25 @@ RUN mkdir -p /var/www/html/storage/logs \
 # Create nginx config template (PORT will be substituted at runtime)
 RUN mkdir -p /run/nginx
 COPY <<'NGINX' /etc/nginx/http.d/default.conf.template
+gzip on;
+gzip_vary on;
+gzip_proxied any;
+gzip_comp_level 6;
+gzip_min_length 256;
+gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
 server {
     listen ${PORT};
     server_name _;
     root /var/www/html/public;
     index index.php;
+
+    client_max_body_size 20M;
+    keepalive_timeout 65;
+
+    # Security headers
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
 
     location / {
         try_files $uri $uri/ /index.php?$query_string;
@@ -60,6 +74,8 @@ server {
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
         include fastcgi_params;
+        fastcgi_buffers 16 16k;
+        fastcgi_buffer_size 32k;
     }
 }
 NGINX
