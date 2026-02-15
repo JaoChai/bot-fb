@@ -45,18 +45,19 @@ RUN mkdir -p /var/www/html/storage/logs \
 # Create nginx config template (PORT will be substituted at runtime)
 RUN mkdir -p /run/nginx
 COPY <<'NGINX' /etc/nginx/http.d/default.conf.template
-gzip on;
-gzip_vary on;
-gzip_proxied any;
-gzip_comp_level 6;
-gzip_min_length 256;
-gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
-
 server {
     listen ${PORT};
     server_name _;
     root /var/www/html/public;
     index index.php;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_min_length 256;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
 
     client_max_body_size 20M;
     keepalive_timeout 65;
