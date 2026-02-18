@@ -66,7 +66,7 @@ class StickerReplyService
 
         // 2. Find vision-capable model
         $model = $this->getVisionModel($bot);
-        if (!$this->openRouterService->supportsVision($model)) {
+        if (!$model) {
             return $this->getStaticReply($bot->settings);
         }
 
@@ -84,7 +84,9 @@ class StickerReplyService
                 model: $model,
                 temperature: $bot->llm_temperature ?? 0.7,
                 maxTokens: 256,
-                apiKeyOverride: $apiKey
+                apiKeyOverride: $apiKey,
+                useFallback: (bool) $bot->fallback_chat_model,
+                fallbackModelOverride: $bot->fallback_chat_model
             );
 
             return $result['content'] ?: $this->getStaticReply($bot->settings);
@@ -102,19 +104,23 @@ class StickerReplyService
      * Get the vision-capable model to use.
      *
      * Priority:
-     * 1. Bot's primary_chat_model (if vision-capable)
-     * 2. Default vision model (Gemini 2.0 Flash)
+     * 1. Bot's primary_chat_model (from Connection Settings UI)
+     * 2. Bot's fallback_chat_model (fallback model)
      *
      * @param Bot $bot The bot instance
-     * @return string The model ID
+     * @return string|null The model ID or null if not configured
      */
-    protected function getVisionModel(Bot $bot): string
+    protected function getVisionModel(Bot $bot): ?string
     {
-        if ($bot->primary_chat_model && $this->openRouterService->supportsVision($bot->primary_chat_model)) {
+        if ($bot->primary_chat_model) {
             return $bot->primary_chat_model;
         }
 
-        return 'google/gemini-2.0-flash-001';
+        if ($bot->fallback_chat_model) {
+            return $bot->fallback_chat_model;
+        }
+
+        return null;
     }
 
     /**
