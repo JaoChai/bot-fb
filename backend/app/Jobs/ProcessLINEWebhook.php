@@ -1002,12 +1002,8 @@ class ProcessLINEWebhook implements ShouldQueue
         // DEBUG: Log model selection
         error_log('IMAGE DEBUG: Model selected - bot_id='.$this->bot->id.', model='.$model.', primary='.$this->bot->primary_chat_model);
 
-        // Check if model supports vision
-        $supportsVision = $model ? $openRouterService->supportsVision($model) : false;
-        error_log('IMAGE DEBUG: Vision check - model='.$model.', supportsVision='.($supportsVision ? 'true' : 'false'));
-
-        if (! $model || ! $supportsVision) {
-            error_log('IMAGE DEBUG: Vision not supported - model='.$model.', supportsVision='.($supportsVision ? 'true' : 'false'));
+        if (! $model) {
+            error_log('IMAGE DEBUG: No vision model configured for bot='.$this->bot->id);
 
             return;
         }
@@ -1059,7 +1055,9 @@ class ProcessLINEWebhook implements ShouldQueue
                 model: $model,
                 temperature: $this->bot->llm_temperature ?? 0.7,
                 maxTokens: $this->bot->llm_max_tokens ?? 1024,
-                apiKeyOverride: $apiKey
+                apiKeyOverride: $apiKey,
+                useFallback: (bool) $this->bot->fallback_chat_model,
+                fallbackModelOverride: $this->bot->fallback_chat_model
             );
 
             $responseContent = $result['content'] ?? '';
@@ -1161,31 +1159,20 @@ class ProcessLINEWebhook implements ShouldQueue
      * Priority:
      * 1. Bot's primary_chat_model (from Connection Settings UI)
      * 2. Bot's fallback_chat_model (fallback model)
-     * 3. Default vision model (Gemini 2.0 Flash)
      */
-    protected function getVisionModel(): string
+    protected function getVisionModel(): ?string
     {
-        $openRouterService = app(OpenRouterService::class);
-
-        // Priority 1: Bot's primary chat model (from Connection Settings UI)
-        if ($this->bot->primary_chat_model && $openRouterService->supportsVision($this->bot->primary_chat_model)) {
-            Log::debug('Vision model: primary_chat_model', ['model' => $this->bot->primary_chat_model]);
-
+        if ($this->bot->primary_chat_model) {
             return $this->bot->primary_chat_model;
         }
 
-        // Priority 2: Bot's fallback chat model
-        if ($this->bot->fallback_chat_model && $openRouterService->supportsVision($this->bot->fallback_chat_model)) {
-            Log::debug('Vision model: fallback_chat_model', ['model' => $this->bot->fallback_chat_model]);
-
+        if ($this->bot->fallback_chat_model) {
             return $this->bot->fallback_chat_model;
         }
 
-        // Priority 3: Default vision model
-        $defaultModel = config('llm-models.default_vision_model', 'google/gemini-2.0-flash-001');
-        Log::debug('Vision model: default', ['model' => $defaultModel]);
+        Log::warning('No vision model configured', ['bot_id' => $this->bot->id]);
 
-        return $defaultModel;
+        return null;
     }
 
     /**

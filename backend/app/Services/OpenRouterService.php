@@ -358,12 +358,14 @@ class OpenRouterService
         bool $useFallback = true,
         ?string $fallbackModelOverride = null
     ): array {
-        $model = $model ?? 'google/gemini-2.0-flash-001'; // Default to Gemini for vision
+        if (! $model) {
+            throw new \InvalidArgumentException('Vision model is required');
+        }
+
         $temperature = $temperature ?? 0.7;
         $maxTokens = $maxTokens ?? $this->maxTokens;
         $apiKey = $apiKeyOverride ?? $this->apiKey;
-        // Default vision fallback to GPT-4o (also vision-capable)
-        $fallbackModel = $fallbackModelOverride ?? 'openai/gpt-4o';
+        $fallbackModel = $fallbackModelOverride;
 
         // Build multimodal messages
         $visionMessages = $this->buildVisionMessages($messages, $imageUrls);
