@@ -236,6 +236,189 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('horizontal', $body['contents'][0]['layout']);
     }
 
+    // ────────────────────────────────────────────────────────
+    // Step 3: Terms Message Tests
+    // ────────────────────────────────────────────────────────
+
+    /** @test */
+    public function test_detects_terms_message(): void
+    {
+        $text = "📋 ก่อนชำระเงิน รบกวนอ่านข้อตกลงครับ\n🔗 https://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ' หลังอ่านจบครับ";
+
+        $this->assertTrue($this->service->isTermsMessage($text));
+    }
+
+    /** @test */
+    public function test_does_not_detect_terms_without_keyword(): void
+    {
+        // Has "ยอมรับ" but no "ข้อตกลง" → not a terms message
+        $text = "รบกวนอ่านก่อนนะครับ\nพิมพ์ 'ยอมรับ' หลังอ่านจบ";
+
+        $this->assertFalse($this->service->isTermsMessage($text));
+    }
+
+    /** @test */
+    public function test_does_not_detect_terms_for_payment(): void
+    {
+        // Has "ยอมรับ" + "ข้อตกลง" BUT also has bank account → should be Step 4
+        $text = "ข้อตกลง ยอมรับ\n223-3-24880-3\nรวมยอดโอน: 800 บาท";
+
+        $this->assertFalse($this->service->isTermsMessage($text));
+    }
+
+    /** @test */
+    public function test_does_not_detect_terms_for_verify(): void
+    {
+        // Has "ยอมรับ" BUT also has "เงินเข้าแล้ว" → should be Step 5
+        $text = "ข้อตกลง ยอมรับ\nเงินเข้าแล้ว 800 บาท";
+
+        $this->assertFalse($this->service->isTermsMessage($text));
+    }
+
+    /** @test */
+    public function test_does_not_detect_terms_for_verify_tag(): void
+    {
+        // Has "ยอมรับ" + "ข้อตกลง" BUT also has [ยืนยันชำระเงิน] tag → should be Step 5
+        $text = "ข้อตกลง ยอมรับ [ยืนยันชำระเงิน]";
+
+        $this->assertFalse($this->service->isTermsMessage($text));
+    }
+
+    /** @test */
+    public function test_builds_terms_flex_structure(): void
+    {
+        $flex = $this->service->buildTermsFlexMessage();
+
+        $this->assertEquals('flex', $flex['type']);
+        $this->assertStringContains('ข้อตกลง', $flex['altText']);
+        $this->assertEquals('bubble', $flex['contents']['type']);
+        $this->assertArrayHasKey('header', $flex['contents']);
+        $this->assertArrayHasKey('body', $flex['contents']);
+        $this->assertArrayHasKey('footer', $flex['contents']);
+
+        // Header should be blue
+        $this->assertEquals('#0367D3', $flex['contents']['header']['backgroundColor']);
+
+        // Footer should have URI button with fixed canva.site URL
+        $json = json_encode($flex, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $this->assertStringContains('uri', $json);
+        $this->assertStringContains('canva.site/ads-vance', $json);
+        $this->assertStringContains('อ่านข้อตกลง', $json);
+    }
+
+    /** @test */
+    public function test_try_convert_returns_flex_for_terms(): void
+    {
+        $text = "📋 ก่อนชำระเงิน รบกวนอ่านข้อตกลงครับ\n🔗 https://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ' หลังอ่านจบครับ";
+
+        $result = $this->service->tryConvertToFlex($text);
+
+        $this->assertIsArray($result);
+        $this->assertEquals('flex', $result['type']);
+        $this->assertEquals('bubble', $result['contents']['type']);
+        $this->assertEquals('#0367D3', $result['contents']['header']['backgroundColor']);
+    }
+
+    // ────────────────────────────────────────────────────────
+    // Step 5: Verify Success Message Tests
+    // ────────────────────────────────────────────────────────
+
+    /** @test */
+    public function test_detects_verify_success_message(): void
+    {
+        $text = "เงินเข้าแล้ว 1,600 บาท ✅\nออเดอร์:\n• Nolimit Level Up+ BM ×2\nส่งใน 5-10 นาที 📦\nขอบคุณครับ 🙏\n[ยืนยันชำระเงิน]";
+
+        $this->assertTrue($this->service->isVerifySuccessMessage($text));
+    }
+
+    /** @test */
+    public function test_does_not_detect_verify_without_tag(): void
+    {
+        // Has "เงินเข้าแล้ว" but missing [ยืนยันชำระเงิน] tag
+        $text = "เงินเข้าแล้ว 1,600 บาท ✅\nขอบคุณครับ 🙏";
+
+        $this->assertFalse($this->service->isVerifySuccessMessage($text));
+    }
+
+    /** @test */
+    public function test_does_not_detect_verify_without_amount(): void
+    {
+        // Has tag but no amount pattern
+        $text = "ยืนยันแล้ว [ยืนยันชำระเงิน]";
+
+        $this->assertFalse($this->service->isVerifySuccessMessage($text));
+    }
+
+    /** @test */
+    public function test_parses_verify_data(): void
+    {
+        $text = "เงินเข้าแล้ว 1,600 บาท ✅\nออเดอร์:\n• Nolimit Level Up+ BM ×2\n• Nolimit Personal\nส่งใน 5-10 นาที 📦\nขอบคุณครับ 🙏\n[ยืนยันชำระเงิน]";
+
+        $data = $this->service->parseVerifyData($text);
+
+        $this->assertNotNull($data);
+        $this->assertEquals('1,600', $data['amount']);
+        $this->assertCount(2, $data['items']);
+        $this->assertEquals('Nolimit Level Up+ BM ×2', $data['items'][0]);
+        $this->assertEquals('Nolimit Personal', $data['items'][1]);
+        $this->assertEquals('5-10 นาที 📦', $data['delivery']);
+    }
+
+    /** @test */
+    public function test_parses_verify_data_minimal(): void
+    {
+        $text = "เงินเข้าแล้ว 800 บาท ✅\nขอบคุณครับ 🙏\n[ยืนยันชำระเงิน]";
+
+        $data = $this->service->parseVerifyData($text);
+
+        $this->assertNotNull($data);
+        $this->assertEquals('800', $data['amount']);
+        $this->assertEmpty($data['items']);
+        $this->assertNull($data['delivery']);
+    }
+
+    /** @test */
+    public function test_builds_verify_flex_structure(): void
+    {
+        $data = [
+            'amount' => '1,600',
+            'items' => ['Nolimit Level Up+ BM ×2'],
+            'delivery' => '5-10 นาที',
+        ];
+
+        $flex = $this->service->buildVerifyFlexMessage($data);
+
+        $this->assertEquals('flex', $flex['type']);
+        $this->assertStringContains('1,600 บาท', $flex['altText']);
+        $this->assertStringContains('[ยืนยันชำระเงิน]', $flex['altText']);
+        $this->assertEquals('bubble', $flex['contents']['type']);
+
+        // Header should be green
+        $this->assertEquals('#1DB446', $flex['contents']['header']['backgroundColor']);
+
+        // Body should contain amount and items
+        $json = json_encode($flex, JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('1,600 บาท', $json);
+        $this->assertStringContains('Nolimit Level Up+ BM ×2', $json);
+        $this->assertStringContains('5-10 นาที', $json);
+        $this->assertStringContains('ขอบคุณ', $json);
+    }
+
+    /** @test */
+    public function test_try_convert_returns_flex_for_verify_success(): void
+    {
+        $text = "เงินเข้าแล้ว 1,600 บาท ✅\nออเดอร์:\n• Nolimit Level Up+ BM ×2\nส่งใน 5-10 นาที 📦\nขอบคุณครับ 🙏\n[ยืนยันชำระเงิน]";
+
+        $result = $this->service->tryConvertToFlex($text);
+
+        $this->assertIsArray($result);
+        $this->assertEquals('flex', $result['type']);
+        $this->assertEquals('bubble', $result['contents']['type']);
+        $this->assertEquals('#1DB446', $result['contents']['header']['backgroundColor']);
+        // altText must contain trigger tag for FlowPluginService
+        $this->assertStringContains('[ยืนยันชำระเงิน]', $result['altText']);
+    }
+
     /**
      * Helper: assert string contains substring (PHPUnit 10+ compatible).
      */

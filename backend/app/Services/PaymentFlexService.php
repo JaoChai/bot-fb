@@ -11,6 +11,7 @@ class PaymentFlexService
     private const ACCOUNT_NAME = 'หจก. มั่งมีทรัพย์ขายของออนไลน์';
     private const CLIPBOARD_TEXT = '2233248803';
     private const MAX_FLEX_SIZE = 30000;
+    private const TERMS_URL = 'https://mhhacoursecontent.my.canva.site/ads-vance';
 
     /**
      * Try to convert payment text to LINE Flex Message.
@@ -21,33 +22,28 @@ class PaymentFlexService
     public function tryConvertToFlex(string $text): string|array
     {
         try {
-            if (! $this->isPaymentMessage($text)) {
-                return $text;
+            // Step 4: Payment message (existing)
+            if ($this->isPaymentMessage($text)) {
+                $data = $this->parsePaymentData($text);
+                if ($data !== null) {
+                    return $this->safeBuildFlex($text, $this->buildFlexMessage($data));
+                }
             }
 
-            $data = $this->parsePaymentData($text);
-            if ($data === null) {
-                return $text;
+            // Step 3: Terms message (always uses fixed TERMS_URL)
+            if ($this->isTermsMessage($text)) {
+                return $this->safeBuildFlex($text, $this->buildTermsFlexMessage());
             }
 
-            $flex = $this->buildFlexMessage($data);
-
-            // Safety: ensure Flex JSON doesn't exceed LINE's size limit
-            $encoded = json_encode($flex);
-            if ($encoded === false) {
-                return $text;
-            }
-            $jsonSize = strlen($encoded);
-            if ($jsonSize > self::MAX_FLEX_SIZE) {
-                Log::warning('Payment Flex message exceeds size limit', [
-                    'size' => $jsonSize,
-                    'limit' => self::MAX_FLEX_SIZE,
-                ]);
-
-                return $text;
+            // Step 5: Verify success message
+            if ($this->isVerifySuccessMessage($text)) {
+                $data = $this->parseVerifyData($text);
+                if ($data !== null) {
+                    return $this->safeBuildFlex($text, $this->buildVerifyFlexMessage($data));
+                }
             }
 
-            return $flex;
+            return $text;
         } catch (\Throwable $e) {
             Log::warning('PaymentFlexService: fallback to text', [
                 'error' => $e->getMessage(),
@@ -55,6 +51,30 @@ class PaymentFlexService
 
             return $text;
         }
+    }
+
+    /**
+     * Safely encode Flex to JSON and check size limit.
+     * Returns Flex array if OK, or original text as fallback.
+     */
+    private function safeBuildFlex(string $fallbackText, array $flex): string|array
+    {
+        $encoded = json_encode($flex);
+        if ($encoded === false) {
+            return $fallbackText;
+        }
+
+        $jsonSize = strlen($encoded);
+        if ($jsonSize > self::MAX_FLEX_SIZE) {
+            Log::warning('Flex message exceeds size limit', [
+                'size' => $jsonSize,
+                'limit' => self::MAX_FLEX_SIZE,
+            ]);
+
+            return $fallbackText;
+        }
+
+        return $flex;
     }
 
     /**
@@ -302,6 +322,302 @@ class PaymentFlexService
                     'color' => '#333333',
                     'align' => 'end',
                     'flex' => 2,
+                ],
+            ],
+        ];
+    }
+
+    // ────────────────────────────────────────────────────────
+    // Step 3: Terms Message
+    // ────────────────────────────────────────────────────────
+
+    /**
+     * Detect if text is a terms/agreement message (Step 3).
+     * Must contain "ยอมรับ" + ("ข้อตกลง" or URL), but NOT bank account or "เงินเข้าแล้ว".
+     */
+    public function isTermsMessage(string $text): bool
+    {
+        // Exclude Step 4 (payment) and Step 5 (verify)
+        if (mb_strpos($text, self::BANK_ACCOUNT) !== false) {
+            return false;
+        }
+        if (mb_strpos($text, 'เงินเข้าแล้ว') !== false) {
+            return false;
+        }
+        if (mb_strpos($text, '[ยืนยันชำระเงิน]') !== false) {
+            return false;
+        }
+
+        // Must have "ยอมรับ" keyword
+        if (mb_strpos($text, 'ยอมรับ') === false) {
+            return false;
+        }
+
+        // Must have "ข้อตกลง"
+        return mb_strpos($text, 'ข้อตกลง') !== false;
+    }
+
+    /**
+     * Build LINE Flex Message for terms/agreement (Step 3).
+     * Always uses the fixed TERMS_URL constant.
+     */
+    public function buildTermsFlexMessage(): array
+    {
+        $url = self::TERMS_URL;
+
+        return [
+            'type' => 'flex',
+            'altText' => '📋 ข้อตกลงการใช้บริการ - กรุณาอ่านและพิมพ์ \'ยอมรับ\'',
+            'contents' => [
+                'type' => 'bubble',
+                'header' => [
+                    'type' => 'box',
+                    'layout' => 'vertical',
+                    'backgroundColor' => '#0367D3',
+                    'paddingAll' => 'lg',
+                    'contents' => [
+                        [
+                            'type' => 'text',
+                            'text' => '📋 ข้อตกลงการใช้บริการ',
+                            'color' => '#FFFFFF',
+                            'size' => 'lg',
+                            'weight' => 'bold',
+                        ],
+                    ],
+                ],
+                'body' => [
+                    'type' => 'box',
+                    'layout' => 'vertical',
+                    'contents' => [
+                        [
+                            'type' => 'text',
+                            'text' => 'ก่อนชำระเงิน',
+                            'size' => 'md',
+                            'color' => '#555555',
+                        ],
+                        [
+                            'type' => 'text',
+                            'text' => 'รบกวนอ่านข้อตกลงก่อนนะครับ',
+                            'size' => 'md',
+                            'color' => '#555555',
+                            'margin' => 'sm',
+                        ],
+                        [
+                            'type' => 'separator',
+                            'margin' => 'lg',
+                        ],
+                        [
+                            'type' => 'box',
+                            'layout' => 'vertical',
+                            'margin' => 'lg',
+                            'backgroundColor' => '#E8F4FD',
+                            'cornerRadius' => 'md',
+                            'paddingAll' => 'md',
+                            'contents' => [
+                                [
+                                    'type' => 'text',
+                                    'text' => "ℹ️ อ่านจบแล้ว พิมพ์ 'ยอมรับ' ได้เลยครับ",
+                                    'size' => 'sm',
+                                    'color' => '#0367D3',
+                                    'wrap' => true,
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+                'footer' => [
+                    'type' => 'box',
+                    'layout' => 'vertical',
+                    'spacing' => 'sm',
+                    'contents' => [
+                        [
+                            'type' => 'button',
+                            'action' => [
+                                'type' => 'uri',
+                                'label' => '📖 อ่านข้อตกลง',
+                                'uri' => $url,
+                            ],
+                            'style' => 'primary',
+                            'color' => '#0367D3',
+                        ],
+                        [
+                            'type' => 'text',
+                            'text' => "พิมพ์ 'ยอมรับ' หลังอ่านจบครับ",
+                            'size' => 'xs',
+                            'color' => '#AAAAAA',
+                            'align' => 'center',
+                            'margin' => 'md',
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    // ────────────────────────────────────────────────────────
+    // Step 5: Verify Success Message
+    // ────────────────────────────────────────────────────────
+
+    /**
+     * Detect if text is a verify-success message (Step 5).
+     * Must contain "[ยืนยันชำระเงิน]" tag AND "เงินเข้าแล้ว" + amount.
+     */
+    public function isVerifySuccessMessage(string $text): bool
+    {
+        if (mb_strpos($text, '[ยืนยันชำระเงิน]') === false) {
+            return false;
+        }
+
+        return (bool) preg_match('/เงินเข้าแล้ว\s*[\d,]+\s*บาท/u', $text);
+    }
+
+    /**
+     * Parse verify-success data from text.
+     * Returns null if amount cannot be parsed.
+     */
+    public function parseVerifyData(string $text): ?array
+    {
+        // Parse amount (required)
+        if (! preg_match('/เงินเข้าแล้ว\s*([\d,]+)\s*บาท/u', $text, $amountMatch)) {
+            return null;
+        }
+
+        $amount = $amountMatch[1];
+
+        // Parse items (optional): "• item" or "- item" at start of line
+        $items = [];
+        if (preg_match_all('/^[•\-]\s*(.+)/mu', $text, $itemMatches)) {
+            $items = array_map('trim', $itemMatches[1]);
+        }
+
+        // Parse delivery info (optional)
+        $delivery = null;
+        if (preg_match('/ส่งใน\s*(.+?)(?:\n|$)/u', $text, $deliveryMatch)) {
+            $delivery = trim($deliveryMatch[1]);
+        }
+
+        return [
+            'amount' => $amount,
+            'items' => $items,
+            'delivery' => $delivery,
+        ];
+    }
+
+    /**
+     * Build LINE Flex Message for verify-success (Step 5).
+     */
+    public function buildVerifyFlexMessage(array $data): array
+    {
+        $amount = $data['amount'];
+        $items = $data['items'];
+        $delivery = $data['delivery'];
+
+        $bodyContents = [];
+
+        // Amount display
+        $bodyContents[] = [
+            'type' => 'text',
+            'text' => 'เงินเข้าแล้ว',
+            'size' => 'md',
+            'color' => '#555555',
+        ];
+        $bodyContents[] = [
+            'type' => 'text',
+            'text' => "{$amount} บาท",
+            'size' => 'xxl',
+            'color' => '#1DB446',
+            'weight' => 'bold',
+            'margin' => 'sm',
+        ];
+
+        // Items section
+        if (! empty($items)) {
+            $bodyContents[] = [
+                'type' => 'separator',
+                'margin' => 'lg',
+            ];
+            $bodyContents[] = [
+                'type' => 'text',
+                'text' => 'ออเดอร์:',
+                'size' => 'sm',
+                'color' => '#555555',
+                'margin' => 'lg',
+            ];
+
+            foreach ($items as $item) {
+                $bodyContents[] = [
+                    'type' => 'text',
+                    'text' => "• {$item}",
+                    'size' => 'sm',
+                    'color' => '#333333',
+                    'margin' => 'sm',
+                    'wrap' => true,
+                ];
+            }
+        }
+
+        // Delivery info
+        if ($delivery !== null) {
+            $bodyContents[] = [
+                'type' => 'separator',
+                'margin' => 'lg',
+            ];
+            $bodyContents[] = [
+                'type' => 'box',
+                'layout' => 'vertical',
+                'margin' => 'lg',
+                'backgroundColor' => '#E8F5E9',
+                'cornerRadius' => 'md',
+                'paddingAll' => 'md',
+                'contents' => [
+                    [
+                        'type' => 'text',
+                        'text' => "📦 ส่งใน {$delivery}",
+                        'size' => 'sm',
+                        'color' => '#1B5E20',
+                        'wrap' => true,
+                    ],
+                ],
+            ];
+        }
+
+        return [
+            'type' => 'flex',
+            'altText' => "ชำระเงินสำเร็จ - {$amount} บาท [ยืนยันชำระเงิน]",
+            'contents' => [
+                'type' => 'bubble',
+                'header' => [
+                    'type' => 'box',
+                    'layout' => 'vertical',
+                    'backgroundColor' => '#1DB446',
+                    'paddingAll' => 'lg',
+                    'contents' => [
+                        [
+                            'type' => 'text',
+                            'text' => '✅ ชำระเงินสำเร็จ',
+                            'color' => '#FFFFFF',
+                            'size' => 'lg',
+                            'weight' => 'bold',
+                        ],
+                    ],
+                ],
+                'body' => [
+                    'type' => 'box',
+                    'layout' => 'vertical',
+                    'contents' => $bodyContents,
+                ],
+                'footer' => [
+                    'type' => 'box',
+                    'layout' => 'vertical',
+                    'contents' => [
+                        [
+                            'type' => 'text',
+                            'text' => 'ขอบคุณที่อุดหนุนครับ 🙏',
+                            'size' => 'sm',
+                            'color' => '#888888',
+                            'align' => 'center',
+                        ],
+                    ],
                 ],
             ],
         ];
