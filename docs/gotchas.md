@@ -439,32 +439,6 @@ env:
 
 ## Performance
 
-### AI Evaluation Taking 3-6 Seconds
-
-**Problem:**
-```
-Target: < 1.5s
-Current: 3-6s
-```
-
-**Solution:**
-```php
-// 1. Use model tier system
-$config = new ModelTierConfig();
-$model = $config->getModelForMetric('grammar'); // Use haiku for simple checks
-
-// 2. Cache results
-$cacheKey = 'ai.eval.' . md5($message->content);
-$result = Cache::remember($cacheKey, 3600, fn() => $this->evaluate($message));
-
-// 3. Run checks in parallel
-// (See specs/003-refactor-ai-evaluation/)
-```
-
-**Reference:** [AI Evaluation Refactor Spec](../specs/003-refactor-ai-evaluation/)
-
----
-
 ## Common False Assumptions (Debugging Traps)
 
 ข้อสมมติฐานที่มักผิดเมื่อ debug - ตรวจสอบให้แน่ใจก่อนแก้!
