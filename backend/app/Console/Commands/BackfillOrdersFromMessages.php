@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Message;
 use App\Models\Order;
+use App\Services\OrderService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -155,6 +156,7 @@ class BackfillOrdersFromMessages extends Command
                     $order->items()->create([
                         'product_name' => $line['name'],
                         'category' => $line['category'],
+                        'variant' => $line['variant'] ?? null,
                         'quantity' => $line['quantity'],
                         'unit_price' => $isSingleItem ? $amount / $line['quantity'] : null,
                         'subtotal' => $isSingleItem ? $amount : null,
@@ -205,7 +207,7 @@ class BackfillOrdersFromMessages extends Command
     }
 
     /**
-     * @return array<array{name: string, quantity: int, category: string}>
+     * @return array<array{name: string, quantity: int, category: string, variant: string|null}>
      */
     protected function extractProductLines(string $content): array
     {
@@ -240,16 +242,14 @@ class BackfillOrdersFromMessages extends Command
                 $quantity = (int) $pm[2];
             }
 
-            // Category detection
-            $category = 'nolimit';
-            if (mb_stripos($name, 'เพจ') !== false || mb_stripos($name, 'page') !== false) {
-                $category = 'page';
-            }
+            // Normalize product name using shared logic
+            $normalized = OrderService::normalizeProductName($name);
 
             $items[] = [
-                'name' => $name,
+                'name' => $normalized['name'],
                 'quantity' => $quantity,
-                'category' => $category,
+                'category' => $normalized['category'],
+                'variant' => $normalized['variant'],
             ];
         }
 
