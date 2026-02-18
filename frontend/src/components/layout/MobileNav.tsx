@@ -13,7 +13,6 @@ import {
   Settings,
   Sparkles,
   LogOut,
-  Target,
   Sun,
   Moon,
 } from 'lucide-react';
@@ -42,11 +41,6 @@ const mainNavItems = [
     title: 'แชท',
     href: '/chat',
     icon: MessageSquare,
-  },
-  {
-    title: 'ประเมินบอท',
-    href: '/evaluations',
-    icon: Target,
   },
 ];
 

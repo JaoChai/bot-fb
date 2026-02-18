@@ -22,7 +22,6 @@ import {
   Sparkles,
   LogOut,
   ChevronsUpDown,
-  Target,
   Sun,
   Moon,
   Users,
@@ -49,11 +48,6 @@ const mainNavItems = [
     title: 'การสนทนา',
     href: '/chat',
     icon: MessageSquare,
-  },
-  {
-    title: 'ประเมินบอท',
-    href: '/evaluations',
-    icon: Target,
   },
 ];
 

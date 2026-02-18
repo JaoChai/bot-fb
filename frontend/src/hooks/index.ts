@@ -72,18 +72,6 @@ export {
 } from './useConnections';
 
 export {
-  useImprovementSession,
-  useImprovementSuggestions,
-  useStartImprovement,
-  useToggleSuggestion,
-  useApplyImprovements,
-  useCancelImprovement,
-  useImprovementOperations,
-  isSessionRunning,
-  canCancelSession,
-} from './useImprovement';
-
-export {
   useDashboardSummary,
   hasActiveAlerts,
   getTotalAlertCount,
@@ -108,19 +96,6 @@ export {
   useReorderQuickReplies,
   useQuickReplyOperations,
 } from './useQuickReplies';
-
-export {
-  qaInspectorKeys,
-  useQAInspectorSettings,
-  useUpdateQAInspectorSettings,
-  useToggleQAInspector,
-  useQAEvaluationLogs,
-  useQAEvaluationLog,
-  useQAWeeklyReports,
-  useQAWeeklyReport,
-  useQAInspectorDashboard,
-  useQAInspectorOperations,
-} from './useQAInspector';
 
 export {
   useChannelInfo,

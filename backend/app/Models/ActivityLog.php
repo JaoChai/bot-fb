@@ -8,13 +8,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ActivityLog extends Model
 {
     // Activity types
-    public const TYPE_EVALUATION_STARTED = 'evaluation_started';
-    public const TYPE_EVALUATION_COMPLETED = 'evaluation_completed';
-    public const TYPE_EVALUATION_FAILED = 'evaluation_failed';
     public const TYPE_HANDOVER_STARTED = 'handover_started';
     public const TYPE_HANDOVER_RESOLVED = 'handover_resolved';
-    public const TYPE_IMPROVEMENT_STARTED = 'improvement_started';
-    public const TYPE_IMPROVEMENT_APPLIED = 'improvement_applied';
     public const TYPE_BOT_CREATED = 'bot_created';
     public const TYPE_BOT_UPDATED = 'bot_updated';
     public const TYPE_CONVERSATION_STARTED = 'conversation_started';
