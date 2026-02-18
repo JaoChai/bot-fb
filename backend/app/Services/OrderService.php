@@ -12,6 +12,43 @@ use Illuminate\Support\Facades\Log;
 class OrderService
 {
     /**
+     * Normalize a raw product name into standard name, variant, and category.
+     *
+     * @return array{name: string, variant: string|null, category: string}
+     */
+    public static function normalizeProductName(string $raw): array
+    {
+        $lower = mb_strtolower($raw);
+
+        // Extract variant
+        $variant = null;
+        if (mb_strpos($lower, 'ผูกบัตร') !== false) {
+            $variant = 'ผูกบัตร';
+        } elseif (mb_strpos($lower, 'เติมเงิน') !== false) {
+            $variant = 'เติมเงิน';
+        }
+
+        // Product detection (order matters: specific before generic)
+        if (mb_strpos($lower, 'ไก่') !== false || mb_strpos($lower, 'เฟสไก่') !== false || mb_strpos($lower, 'g3d') !== false) {
+            return ['name' => 'G3D', 'variant' => $variant, 'category' => 'g3d'];
+        }
+        if (mb_strpos($lower, 'เพจ') !== false || mb_strpos($lower, 'page') !== false || mb_strpos($lower, 'fanpage') !== false) {
+            return ['name' => 'Page', 'variant' => null, 'category' => 'page'];
+        }
+        if (mb_strpos($lower, 'bm') !== false || mb_strpos($lower, 'บีเอ็ม') !== false || mb_strpos($lower, 'บัญชีธุรกิจ') !== false) {
+            return ['name' => 'Nolimit BM', 'variant' => $variant, 'category' => 'nolimit'];
+        }
+        if (mb_strpos($lower, 'personal') !== false || mb_strpos($lower, 'ส่วนตัว') !== false) {
+            return ['name' => 'Nolimit Personal', 'variant' => $variant, 'category' => 'nolimit'];
+        }
+        if (mb_strpos($lower, 'nolimit') !== false || mb_strpos($lower, 'โนลิมิต') !== false) {
+            return ['name' => 'Nolimit', 'variant' => $variant, 'category' => 'nolimit'];
+        }
+
+        return ['name' => 'Unknown', 'variant' => null, 'category' => 'nolimit'];
+    }
+
+    /**
      * Create an order from plugin-extracted variables.
      * Returns null on failure or if no valid amount found (non-blocking).
      */
@@ -65,18 +102,15 @@ class OrderService
                     'raw_extraction' => $variables,
                 ]);
 
-                // Extract product info
-                $productName = $variables['product'] ?? $variables['product_category'] ?? null;
-                if ($productName && is_string($productName)) {
-                    // Category detection: keyword "เพจ"/"page" → 'page', else → 'nolimit'
-                    $category = 'nolimit';
-                    if (mb_stripos($productName, 'เพจ') !== false || mb_stripos($productName, 'page') !== false) {
-                        $category = 'page';
-                    }
+                // Extract product info and normalize
+                $rawProduct = $variables['product'] ?? $variables['product_category'] ?? null;
+                if ($rawProduct && is_string($rawProduct)) {
+                    $normalized = self::normalizeProductName($rawProduct);
 
                     $order->items()->create([
-                        'product_name' => $productName,
-                        'category' => $category,
+                        'product_name' => $normalized['name'],
+                        'category' => $normalized['category'],
+                        'variant' => $normalized['variant'],
                         'quantity' => 1,
                         'unit_price' => $amount,
                         'subtotal' => $amount,
