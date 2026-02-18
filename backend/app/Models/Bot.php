@@ -163,4 +163,9 @@ class Bot extends Model
     {
         return $this->hasMany(QAWeeklyReport::class);
     }
+
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
 }

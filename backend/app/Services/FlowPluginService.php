@@ -6,6 +6,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
 use App\Models\Message;
+use App\Services\OrderService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -255,6 +256,19 @@ PROMPT,
         // Execute based on plugin type
         if ($plugin->type === 'telegram') {
             $this->sendTelegramNotification($plugin, $message);
+
+            // Record order from extracted data
+            try {
+                app(OrderService::class)->createFromPluginExtraction(
+                    $bot,
+                    $conversation,
+                    $botMessage ?? null,
+                    array_merge($variables, $fallbackValues ?? [])
+                );
+            } catch (\Throwable $e) {
+                Log::warning('Order recording failed', ['error' => $e->getMessage()]);
+            }
+
             return true;
         }
 

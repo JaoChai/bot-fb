@@ -30,3 +30,18 @@ export function usdToTHB(usdAmount: number | string | null | undefined): number 
   const usd = Number(usdAmount) || 0;
   return usd * USD_TO_THB;
 }
+
+/**
+ * Format THB-native amount (no USD conversion)
+ * For amounts already in Thai Baht
+ * @param amount - Amount in THB
+ * @returns Formatted string like "฿1,500"
+ */
+export function formatBaht(amount: number): string {
+  return new Intl.NumberFormat('th-TH', {
+    style: 'currency',
+    currency: 'THB',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+}

@@ -28,6 +28,7 @@ const TeamPage = lazyWithRetryNamed(() => import("@/pages/TeamPage"), "TeamPage"
 const QuickRepliesPage = lazyWithRetryNamed(() => import("@/pages/settings/QuickRepliesPage"), "QuickRepliesPage")
 const QAInspectorPage = lazyWithRetryNamed(() => import("@/pages/QAInspectorPage"), "QAInspectorPage")
 const QAWeeklyReportPage = lazyWithRetryNamed(() => import("@/pages/QAWeeklyReportPage"), "QAWeeklyReportPage")
+const OrdersReportPage = lazyWithRetryNamed(() => import("@/pages/OrdersReportPage"), "OrdersReportPage")
 
 // Wrapper component for lazy loaded pages with error boundary
 function LazyPage({ children }: { children: React.ReactNode }) {
@@ -131,6 +132,10 @@ export const router = createBrowserRouter([
           {
             path: "team",
             element: <LazyPage><TeamPage /></LazyPage>,
+          },
+          {
+            path: "orders",
+            element: <LazyPage><OrdersReportPage /></LazyPage>,
           },
           {
             path: "bots/:botId/qa-inspector",
