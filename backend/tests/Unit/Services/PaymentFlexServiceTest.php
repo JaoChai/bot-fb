@@ -329,6 +329,10 @@ class PaymentFlexServiceTest extends TestCase
         $text = "เงินเข้าแล้ว 1,600 บาท ✅\nออเดอร์:\n• Nolimit Level Up+ BM ×2\nส่งใน 5-10 นาที 📦\nขอบคุณครับ 🙏\n[ยืนยันชำระเงิน]";
 
         $this->assertTrue($this->service->isVerifySuccessMessage($text));
+
+        // Decimal amount (e.g. 50.00)
+        $textDecimal = "เงินเข้าแล้ว 50.00 บาท ✅\nออเดอร์:\n- G3D x1\nส่งใน 5-10 นาที\nขอบคุณครับ\n[ยืนยันชำระเงิน]";
+        $this->assertTrue($this->service->isVerifySuccessMessage($textDecimal));
     }
 
     /** @test */
@@ -375,6 +379,19 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('800', $data['amount']);
         $this->assertEmpty($data['items']);
         $this->assertNull($data['delivery']);
+    }
+
+    /** @test */
+    public function test_parses_verify_data_decimal_amount(): void
+    {
+        $text = "เงินเข้าแล้ว 50.00 บาท ✅\nออเดอร์:\n- G3D x1\nส่งใน 5-10 นาที\nขอบคุณครับ\n[ยืนยันชำระเงิน]";
+
+        $data = $this->service->parseVerifyData($text);
+
+        $this->assertNotNull($data);
+        $this->assertEquals('50.00', $data['amount']);
+        $this->assertCount(1, $data['items']);
+        $this->assertEquals('G3D x1', $data['items'][0]);
     }
 
     /** @test */
