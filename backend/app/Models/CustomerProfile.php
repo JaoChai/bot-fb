@@ -33,4 +33,9 @@ class CustomerProfile extends Model
     {
         return $this->hasMany(Conversation::class);
     }
+
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
 }

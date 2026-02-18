@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\EvaluationController;
 use App\Http\Controllers\Api\AgentApprovalController;
 use App\Http\Controllers\Api\ImprovementController;
 use App\Http\Controllers\Api\LeadRecoveryController;
+use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\QuickReplyController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\QAInspectorController;
@@ -69,6 +70,16 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
     // Dashboard routes
     Route::prefix('dashboard')->group(function () {
         Route::get('/summary', [DashboardController::class, 'summary'])->name('dashboard.summary');
+    });
+
+    // Order routes
+    Route::prefix('orders')->group(function () {
+        Route::get('/', [OrderController::class, 'index'])->name('orders.index');
+        Route::get('/summary', [OrderController::class, 'summary'])->name('orders.summary');
+        Route::get('/by-customer', [OrderController::class, 'byCustomer'])->name('orders.by-customer');
+        Route::get('/by-product', [OrderController::class, 'byProduct'])->name('orders.by-product');
+        Route::get('/{order}', [OrderController::class, 'show'])->name('orders.show');
+        Route::put('/{order}', [OrderController::class, 'update'])->name('orders.update');
     });
 
     // User search route (Owner only)

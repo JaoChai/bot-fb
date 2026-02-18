@@ -898,3 +898,87 @@ export interface DashboardData {
   alerts: DashboardAlerts;
   recent_activity: DashboardActivity[];
 }
+
+// Orders
+export interface OrderItem {
+  id: number;
+  order_id: number;
+  product_name: string;
+  category: string;
+  quantity: number;
+  unit_price: number | null;
+  subtotal: number | null;
+}
+
+export interface Order {
+  id: number;
+  bot_id: number;
+  conversation_id: number;
+  customer_profile_id: number | null;
+  message_id: number | null;
+  total_amount: number;
+  payment_method: string | null;
+  status: string;
+  channel_type: string | null;
+  raw_extraction: Record<string, unknown> | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  items: OrderItem[];
+  customer_profile?: {
+    id: number;
+    display_name: string | null;
+    picture_url: string | null;
+  };
+}
+
+export interface OrderSummary {
+  total_orders: number;
+  total_revenue: number;
+  today_orders: number;
+  today_revenue: number;
+  this_week_orders: number;
+  this_week_revenue: number;
+  this_month_orders: number;
+  this_month_revenue: number;
+}
+
+export interface OrderTimeSeries {
+  date: string;
+  orders: number;
+  revenue: number;
+}
+
+export interface OrderSummaryData {
+  summary: OrderSummary;
+  time_series: OrderTimeSeries[];
+}
+
+export interface CustomerOrderBreakdown {
+  customer_profile_id: number;
+  customer_name: string;
+  picture_url: string | null;
+  order_count: number;
+  total_spent: number;
+  last_order_at: string;
+}
+
+export interface ProductOrderBreakdown {
+  product_name: string;
+  category: string;
+  quantity_sold: number;
+  total_revenue: number;
+  order_count: number;
+}
+
+export interface OrderFilters {
+  bot_id?: number;
+  start_date?: string;
+  end_date?: string;
+  status?: string;
+  category?: string;
+  customer_profile_id?: number;
+  search?: string;
+  page?: number;
+  per_page?: number;
+}
