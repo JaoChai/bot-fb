@@ -27,22 +27,6 @@ Schedule::command('rag:cleanup-cache')
 // Runs hourly to check for leads needing follow-up
 Schedule::job(new ProcessLeadRecovery)->hourly()->name('lead-recovery');
 
-// Generate QA Inspector weekly reports
-// Runs hourly to check each bot's individual schedule
-// Each bot can configure their own report schedule (e.g., "monday_00:00", "friday_18:00")
-Schedule::command('qa:generate-weekly-reports')
-    ->hourly()
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// QA Log cleanup - daily at 3am
-// Deletes evaluation logs older than 90 days to manage storage
-Schedule::command('qa:cleanup-old-logs --days=90')
-    ->daily()
-    ->at('03:00')
-    ->withoutOverlapping()
-    ->runInBackground();
-
 // Failed jobs cleanup - daily at 3:30am
 // Deletes failed jobs older than 7 days (168 hours) to manage storage
 Schedule::command('queue:prune-failed --hours=168')

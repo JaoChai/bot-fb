@@ -109,34 +109,6 @@ export const queryKeys = {
     detail: (botId: number, flowId: number) => [...queryKeys.flows.all, 'detail', botId, flowId] as const,
     templates: () => [...queryKeys.flows.all, 'templates'] as const,
   },
-  // Evaluations
-  evaluations: {
-    all: ['evaluations'] as const,
-    lists: () => [...queryKeys.evaluations.all, 'list'] as const,
-    list: (botId: number, filters?: Record<string, unknown>) =>
-      [...queryKeys.evaluations.lists(), botId, filters] as const,
-    details: () => [...queryKeys.evaluations.all, 'detail'] as const,
-    detail: (botId: number, evaluationId: number) =>
-      [...queryKeys.evaluations.details(), botId, evaluationId] as const,
-    testCases: (botId: number, evaluationId: number) =>
-      [...queryKeys.evaluations.detail(botId, evaluationId), 'test-cases'] as const,
-    progress: (botId: number, evaluationId: number) =>
-      [...queryKeys.evaluations.detail(botId, evaluationId), 'progress'] as const,
-    report: (botId: number, evaluationId: number) =>
-      [...queryKeys.evaluations.detail(botId, evaluationId), 'report'] as const,
-    personas: () => [...queryKeys.evaluations.all, 'personas'] as const,
-  },
-  // Improvement Sessions
-  improvements: {
-    all: ['improvements'] as const,
-    lists: () => [...queryKeys.improvements.all, 'list'] as const,
-    list: (botId: number) => [...queryKeys.improvements.lists(), botId] as const,
-    details: () => [...queryKeys.improvements.all, 'detail'] as const,
-    detail: (botId: number, sessionId: number) =>
-      [...queryKeys.improvements.details(), botId, sessionId] as const,
-    suggestions: (botId: number, sessionId: number) =>
-      [...queryKeys.improvements.detail(botId, sessionId), 'suggestions'] as const,
-  },
   // Quick Replies
   quickReplies: {
     all: ['quickReplies'] as const,

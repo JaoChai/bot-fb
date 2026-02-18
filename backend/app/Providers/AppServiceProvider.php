@@ -5,9 +5,7 @@ namespace App\Providers;
 use App\Models\Bot;
 use App\Models\Document;
 use App\Models\KnowledgeBase;
-use App\Models\Message;
 use App\Models\QuickReply;
-use App\Observers\QAInspectorMessageObserver;
 use App\Policies\BotPolicy;
 use App\Policies\DocumentPolicy;
 use App\Policies\KnowledgeBasePolicy;
@@ -31,12 +29,8 @@ use App\Services\SecondAI\PersonalityCheckService;
 use App\Services\SecondAI\UnifiedCheckService;
 use App\Services\SecondAI\PromptInjectionDetector;
 use App\Services\SecondAI\SecondAIMetricsService;
-use App\Services\Evaluation\ModelTierSelector;
-use App\Services\Evaluation\LLMJudgeService;
 use App\Services\ModelCapabilityService;
 use App\Services\CircuitBreakerService;
-use App\Services\QAInspector\QAInspectorService;
-use App\Services\QAInspector\RealtimeEvaluator;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -138,18 +132,6 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
-        // Register Evaluation services
-        $this->app->singleton(ModelTierSelector::class, function ($app) {
-            return new ModelTierSelector();
-        });
-
-        $this->app->singleton(LLMJudgeService::class, function ($app) {
-            return new LLMJudgeService(
-                $app->make(OpenRouterService::class),
-                $app->make(ModelTierSelector::class)
-            );
-        });
-
         // Register ModelCapabilityService for dynamic model capability detection
         $this->app->singleton(ModelCapabilityService::class, function ($app) {
             return new ModelCapabilityService(
@@ -157,20 +139,6 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
-        // Register QA Inspector services
-        $this->app->singleton(QAInspectorService::class, function ($app) {
-            return new QAInspectorService(
-                $app->make(LLMJudgeService::class),
-                $app->make(OpenRouterService::class)
-            );
-        });
-
-        $this->app->singleton(RealtimeEvaluator::class, function ($app) {
-            return new RealtimeEvaluator(
-                $app->make(QAInspectorService::class),
-                $app->make(OpenRouterService::class)
-            );
-        });
     }
 
     /**
@@ -182,9 +150,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(KnowledgeBase::class, KnowledgeBasePolicy::class);
         Gate::policy(Document::class, DocumentPolicy::class);
         Gate::policy(QuickReply::class, QuickReplyPolicy::class);
-
-        // Register observers
-        Message::observe(QAInspectorMessageObserver::class);
 
         $this->configureRateLimiting();
         $this->configureQueryLogging();
@@ -279,41 +244,5 @@ class AppServiceProvider extends ServiceProvider
             });
         });
 
-        // QA Inspector read endpoints: 60 requests per minute
-        RateLimiter::for('qa-inspector-read', function (Request $request) {
-            return Limit::perMinute(60)->by(
-                $request->user()?->id ?: $request->ip()
-            )->response(function (Request $request, array $headers) {
-                return response()->json([
-                    'message' => 'QA Inspector rate limit exceeded. Please try again later.',
-                    'retry_after' => $headers['Retry-After'] ?? 60,
-                ], 429, $headers);
-            });
-        });
-
-        // QA Inspector write endpoints: 30 requests per minute
-        RateLimiter::for('qa-inspector-write', function (Request $request) {
-            return Limit::perMinute(30)->by(
-                $request->user()?->id ?: $request->ip()
-            )->response(function (Request $request, array $headers) {
-                return response()->json([
-                    'message' => 'QA Inspector write rate limit exceeded. Please try again later.',
-                    'retry_after' => $headers['Retry-After'] ?? 60,
-                ], 429, $headers);
-            });
-        });
-
-        // QA Report generation: 5 per hour per bot
-        RateLimiter::for('qa-report-generate', function (Request $request) {
-            $botId = $request->route('bot')?->id ?? $request->route('bot');
-            return Limit::perHour(5)->by(
-                "bot:{$botId}:" . ($request->user()?->id ?: $request->ip())
-            )->response(function (Request $request, array $headers) {
-                return response()->json([
-                    'message' => 'Report generation limit exceeded. Maximum 5 reports per hour per bot.',
-                    'retry_after' => $headers['Retry-After'] ?? 3600,
-                ], 429, $headers);
-            });
-        });
     }
 }

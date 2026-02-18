@@ -2,9 +2,7 @@ import { Link } from 'react-router';
 import {
   MessageSquare,
   MessagesSquare,
-  Star,
   Settings,
-  TestTube,
   Clock,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,8 +26,6 @@ const statusConfig = {
 
 export function BotOverviewCard({ bot }: BotOverviewCardProps) {
   const status = statusConfig[bot.status];
-  const hasEvaluation = bot.latest_evaluation?.status === 'completed';
-  const score = bot.latest_evaluation?.overall_score;
 
   return (
     <Card>
@@ -53,23 +49,6 @@ export function BotOverviewCard({ bot }: BotOverviewCardProps) {
             <MessageSquare className="h-4 w-4" />
             <span>{bot.messages_today} msg/วัน</span>
           </div>
-          {hasEvaluation && typeof score === 'number' && (
-            <div className="flex items-center gap-1">
-              <Star
-                className={cn(
-                  'h-4 w-4',
-                  score >= 0.8 ? 'text-green-500' : score >= 0.6 ? 'text-yellow-500' : 'text-red-500'
-                )}
-              />
-              <span>{Math.round(score * 100)}%</span>
-            </div>
-          )}
-          {!hasEvaluation && (
-            <div className="flex items-center gap-1 text-muted-foreground/60">
-              <Star className="h-4 w-4" />
-              <span>ยังไม่ประเมิน</span>
-            </div>
-          )}
         </div>
 
         {/* Last Active */}
@@ -93,11 +72,6 @@ export function BotOverviewCard({ bot }: BotOverviewCardProps) {
           </Button>
           <Button variant="outline" size="sm" asChild className="flex-1">
             <Link to={`/flows/editor?botId=${bot.id}`}>AI Flow</Link>
-          </Button>
-          <Button variant="outline" size="sm" asChild>
-            <Link to={`/evaluations?bot=${bot.id}`}>
-              <TestTube className="h-4 w-4" />
-            </Link>
           </Button>
           <Button variant="ghost" size="sm" asChild>
             <Link to={`/bots/${bot.id}/settings`}>

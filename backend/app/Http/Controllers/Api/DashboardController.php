@@ -6,8 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Bot;
 use App\Models\Conversation;
-use App\Models\Evaluation;
-use App\Models\ImprovementSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -130,7 +128,6 @@ class DashboardController extends Controller
                 'conversations as active_conversations_count' => fn ($q) => $q->where('status', 'active'),
                 'conversations as handover_count' => fn ($q) => $q->where('status', 'handover'),
             ])
-            ->with(['evaluations' => fn ($q) => $q->latest('completed_at')->limit(1)])
             ->get();
 
         // Batch query: get messages_today for ALL bots in 1 query (instead of N+1)
@@ -149,8 +146,6 @@ class DashboardController extends Controller
         }
 
         return $bots->map(function ($bot) use ($messagesTodayByBot) {
-            $latestEval = $bot->evaluations->first();
-
             return [
                 'id' => $bot->id,
                 'name' => $bot->name,
@@ -161,26 +156,18 @@ class DashboardController extends Controller
                 'active_conversations' => $bot->active_conversations_count,
                 'handover_count' => $bot->handover_count,
                 'messages_today' => (int) ($messagesTodayByBot[$bot->id] ?? 0),
-                'latest_evaluation' => $latestEval ? [
-                    'id' => $latestEval->id,
-                    'overall_score' => $latestEval->overall_score,
-                    'status' => $latestEval->status,
-                    'completed_at' => $latestEval->completed_at?->toISOString(),
-                ] : null,
             ];
         })->toArray();
     }
 
     /**
-     * Get alerts (handover conversations, running evaluations, pending improvements)
+     * Get alerts (handover conversations)
      */
     protected function getAlerts(int $userId, $botIds): array
     {
         if ($botIds->isEmpty()) {
             return [
                 'handover_conversations' => [],
-                'running_evaluations' => [],
-                'pending_improvements' => [],
             ];
         }
 
@@ -199,49 +186,8 @@ class DashboardController extends Controller
                 'waiting_since' => $c->updated_at->toISOString(),
             ]);
 
-        // Running evaluations
-        $runningEvaluations = Evaluation::whereIn('bot_id', $botIds)
-            ->whereIn('status', [
-                Evaluation::STATUS_PENDING,
-                Evaluation::STATUS_GENERATING_TESTS,
-                Evaluation::STATUS_RUNNING,
-                Evaluation::STATUS_EVALUATING,
-            ])
-            ->with('bot:id,name')
-            ->orderBy('created_at', 'asc')
-            ->limit(5)
-            ->get()
-            ->map(fn ($e) => [
-                'id' => $e->id,
-                'bot_id' => $e->bot_id,
-                'bot_name' => $e->bot->name,
-                'status' => $e->status,
-                'progress_percent' => $e->total_test_cases > 0
-                    ? round(($e->completed_test_cases / $e->total_test_cases) * 100)
-                    : 0,
-                'name' => $e->name ?? "Evaluation #{$e->id}",
-            ]);
-
-        // Pending improvements (suggestions ready)
-        $pendingImprovements = ImprovementSession::whereIn('bot_id', $botIds)
-            ->where('status', ImprovementSession::STATUS_SUGGESTIONS_READY)
-            ->with('bot:id,name')
-            ->withCount('suggestions')
-            ->orderBy('created_at', 'asc')
-            ->limit(5)
-            ->get()
-            ->map(fn ($s) => [
-                'id' => $s->id,
-                'bot_id' => $s->bot_id,
-                'bot_name' => $s->bot->name,
-                'status' => $s->status,
-                'suggestions_count' => $s->suggestions_count,
-            ]);
-
         return [
             'handover_conversations' => $handoverConversations,
-            'running_evaluations' => $runningEvaluations,
-            'pending_improvements' => $pendingImprovements,
         ];
     }
 }

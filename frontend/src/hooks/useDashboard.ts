@@ -28,11 +28,7 @@ export function useDashboardSummary() {
 export function hasActiveAlerts(data: DashboardData | undefined): boolean {
   if (!data?.alerts) return false;
 
-  return (
-    data.alerts.handover_conversations.length > 0 ||
-    data.alerts.running_evaluations.length > 0 ||
-    data.alerts.pending_improvements.length > 0
-  );
+  return data.alerts.handover_conversations.length > 0;
 }
 
 /**
@@ -41,9 +37,5 @@ export function hasActiveAlerts(data: DashboardData | undefined): boolean {
 export function getTotalAlertCount(data: DashboardData | undefined): number {
   if (!data?.alerts) return 0;
 
-  return (
-    data.alerts.handover_conversations.length +
-    data.alerts.running_evaluations.length +
-    data.alerts.pending_improvements.length
-  );
+  return data.alerts.handover_conversations.length;
 }

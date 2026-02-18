@@ -1,12 +1,8 @@
 import {
-  CheckCircle2,
-  XCircle,
   Users,
   UserCheck,
-  Sparkles,
   Bot,
   MessageSquare,
-  FlaskConical,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -21,26 +17,11 @@ interface RecentActivityTimelineProps {
 const activityConfig: Record<
   DashboardActivityType,
   {
-    icon: typeof CheckCircle2;
+    icon: typeof Users;
     color: string;
     bgColor: string;
   }
 > = {
-  evaluation_started: {
-    icon: FlaskConical,
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-100',
-  },
-  evaluation_completed: {
-    icon: CheckCircle2,
-    color: 'text-green-600',
-    bgColor: 'bg-green-100',
-  },
-  evaluation_failed: {
-    icon: XCircle,
-    color: 'text-red-600',
-    bgColor: 'bg-red-100',
-  },
   handover_started: {
     icon: Users,
     color: 'text-orange-600',
@@ -50,16 +31,6 @@ const activityConfig: Record<
     icon: UserCheck,
     color: 'text-green-600',
     bgColor: 'bg-green-100',
-  },
-  improvement_started: {
-    icon: Sparkles,
-    color: 'text-purple-600',
-    bgColor: 'bg-purple-100',
-  },
-  improvement_applied: {
-    icon: CheckCircle2,
-    color: 'text-purple-600',
-    bgColor: 'bg-purple-100',
   },
   bot_created: {
     icon: Bot,

@@ -22,12 +22,8 @@ const SettingsPage = lazyWithRetryNamed(() => import("@/pages/SettingsPage"), "S
 const FlowEditorPage = lazyWithRetryNamed(() => import("@/pages/FlowEditorPage"), "FlowEditorPage")
 const AddConnectionPage = lazyWithRetryNamed(() => import("@/pages/AddConnectionPage"), "AddConnectionPage")
 const EditConnectionPage = lazyWithRetryNamed(() => import("@/pages/EditConnectionPage"), "EditConnectionPage")
-const EvaluationsPage = lazyWithRetryNamed(() => import("@/pages/EvaluationsPage"), "EvaluationsPage")
-const EvaluationDetailPage = lazyWithRetryNamed(() => import("@/pages/EvaluationDetailPage"), "EvaluationDetailPage")
 const TeamPage = lazyWithRetryNamed(() => import("@/pages/TeamPage"), "TeamPage")
 const QuickRepliesPage = lazyWithRetryNamed(() => import("@/pages/settings/QuickRepliesPage"), "QuickRepliesPage")
-const QAInspectorPage = lazyWithRetryNamed(() => import("@/pages/QAInspectorPage"), "QAInspectorPage")
-const QAWeeklyReportPage = lazyWithRetryNamed(() => import("@/pages/QAWeeklyReportPage"), "QAWeeklyReportPage")
 
 // Wrapper component for lazy loaded pages with error boundary
 function LazyPage({ children }: { children: React.ReactNode }) {
@@ -115,14 +111,6 @@ export const router = createBrowserRouter([
             path: "settings/quick-replies",
             element: <LazyPage><QuickRepliesPage /></LazyPage>,
           },
-          {
-            path: "evaluations",
-            element: <LazyPage><EvaluationsPage /></LazyPage>,
-          },
-          {
-            path: "evaluations/:evaluationId",
-            element: <LazyPage><EvaluationDetailPage /></LazyPage>,
-          },
           // Redirect old /telegram route to /chat with telegram filter
           {
             path: "telegram",
@@ -131,14 +119,6 @@ export const router = createBrowserRouter([
           {
             path: "team",
             element: <LazyPage><TeamPage /></LazyPage>,
-          },
-          {
-            path: "bots/:botId/qa-inspector",
-            element: <LazyPage><QAInspectorPage /></LazyPage>,
-          },
-          {
-            path: "bots/:botId/qa-inspector/reports/:reportId",
-            element: <LazyPage><QAWeeklyReportPage /></LazyPage>,
           },
         ],
       },
