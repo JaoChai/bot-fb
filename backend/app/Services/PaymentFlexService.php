@@ -468,7 +468,7 @@ class PaymentFlexService
             return false;
         }
 
-        return (bool) preg_match('/เงินเข้าแล้ว\s*[\d,]+\s*บาท/u', $text);
+        return (bool) preg_match('/เงินเข้าแล้ว\s*[\d,.]+\s*บาท/u', $text);
     }
 
     /**
@@ -478,7 +478,7 @@ class PaymentFlexService
     public function parseVerifyData(string $text): ?array
     {
         // Parse amount (required)
-        if (! preg_match('/เงินเข้าแล้ว\s*([\d,]+)\s*บาท/u', $text, $amountMatch)) {
+        if (! preg_match('/เงินเข้าแล้ว\s*([\d,.]+)\s*บาท/u', $text, $amountMatch)) {
             return null;
         }
 
