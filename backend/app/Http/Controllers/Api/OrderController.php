@@ -44,7 +44,10 @@ class OrderController extends Controller
         }
 
         if (isset($validated['end_date'])) {
-            $query->where('created_at', '<=', $validated['end_date']);
+            $endDate = str_contains($validated['end_date'], ' ')
+                ? $validated['end_date']
+                : $validated['end_date'] . ' 23:59:59';
+            $query->where('created_at', '<=', $endDate);
         }
 
         if (isset($validated['status'])) {
@@ -88,12 +91,14 @@ class OrderController extends Controller
         $botFilter = isset($validated['bot_id']) ? [$validated['bot_id']] : $botIds->toArray();
         $startDate = $validated['start_date'] ?? now()->subDays(30)->startOfDay()->toDateTimeString();
         $endDate = $validated['end_date'] ?? now()->endOfDay()->toDateTimeString();
+        if (!str_contains($endDate, ' ')) {
+            $endDate .= ' 23:59:59';
+        }
 
         $cacheKey = sprintf(
-            'orders:summary:%d:%s:%s',
+            'orders:summary:%d:%s',
             $user->id,
-            md5(json_encode([$botFilter, $startDate, $endDate])),
-            now()->format('Y-m-d-H-i')
+            md5(json_encode([$botFilter, $startDate, $endDate]))
         );
 
         $data = Cache::remember($cacheKey, 300, function () use ($botFilter, $startDate, $endDate) {
@@ -200,6 +205,9 @@ class OrderController extends Controller
         $botFilter = isset($validated['bot_id']) ? [$validated['bot_id']] : $botIds->toArray();
         $startDate = $validated['start_date'] ?? now()->subDays(30)->startOfDay()->toDateTimeString();
         $endDate = $validated['end_date'] ?? now()->endOfDay()->toDateTimeString();
+        if (!str_contains($endDate, ' ')) {
+            $endDate .= ' 23:59:59';
+        }
 
         $cacheKey = sprintf(
             'orders:by-customer:%d:%s',
@@ -256,6 +264,9 @@ class OrderController extends Controller
         $botFilter = isset($validated['bot_id']) ? [$validated['bot_id']] : $botIds->toArray();
         $startDate = $validated['start_date'] ?? now()->subDays(30)->startOfDay()->toDateTimeString();
         $endDate = $validated['end_date'] ?? now()->endOfDay()->toDateTimeString();
+        if (!str_contains($endDate, ' ')) {
+            $endDate .= ' 23:59:59';
+        }
 
         $cacheKey = sprintf(
             'orders:by-product:%d:%s',

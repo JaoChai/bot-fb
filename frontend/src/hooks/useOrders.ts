@@ -35,7 +35,7 @@ interface OrderResponse {
 /**
  * Hook to fetch order summary with time series data
  */
-export function useOrderSummary(filters: OrderFilters = {}) {
+export function useOrderSummary(filters: OrderFilters = {}, options?: { enabled?: boolean }) {
   const { user } = useAuthStore();
 
   return useQuery({
@@ -56,14 +56,14 @@ export function useOrderSummary(filters: OrderFilters = {}) {
       return response.data.data;
     },
     staleTime: 5 * 60 * 1000,
-    enabled: !!user,
+    enabled: !!user && options?.enabled !== false,
   });
 }
 
 /**
  * Hook to fetch paginated orders list
  */
-export function useOrders(filters: OrderFilters = {}) {
+export function useOrders(filters: OrderFilters = {}, options?: { enabled?: boolean }) {
   const { user } = useAuthStore();
 
   return useQuery({
@@ -91,14 +91,14 @@ export function useOrders(filters: OrderFilters = {}) {
       };
     },
     staleTime: 5 * 60 * 1000,
-    enabled: !!user,
+    enabled: !!user && options?.enabled !== false,
   });
 }
 
 /**
  * Hook to fetch orders grouped by customer
  */
-export function useOrdersByCustomer(filters: OrderFilters = {}) {
+export function useOrdersByCustomer(filters: OrderFilters = {}, options?: { enabled?: boolean }) {
   const { user } = useAuthStore();
 
   return useQuery({
@@ -118,14 +118,14 @@ export function useOrdersByCustomer(filters: OrderFilters = {}) {
       return response.data.data;
     },
     staleTime: 5 * 60 * 1000,
-    enabled: !!user,
+    enabled: !!user && options?.enabled !== false,
   });
 }
 
 /**
  * Hook to fetch orders grouped by product
  */
-export function useOrdersByProduct(filters: OrderFilters = {}) {
+export function useOrdersByProduct(filters: OrderFilters = {}, options?: { enabled?: boolean }) {
   const { user } = useAuthStore();
 
   return useQuery({
@@ -146,7 +146,7 @@ export function useOrdersByProduct(filters: OrderFilters = {}) {
       return response.data.data;
     },
     staleTime: 5 * 60 * 1000,
-    enabled: !!user,
+    enabled: !!user && options?.enabled !== false,
   });
 }
 
