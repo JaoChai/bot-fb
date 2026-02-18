@@ -165,7 +165,7 @@ php artisan test tests/Feature/BotControllerTest.php
    - Login → สร้าง bot → ตั้งค่า → ทดสอบ → activate
 
 3. Conversation Flow
-   - User ส่งข้อความ → Bot ตอบ → AI evaluation → บันทึก
+   - User ส่งข้อความ → Bot ตอบ → บันทึก
 ```
 
 ### ใช้ integration-test Set
@@ -185,8 +185,6 @@ tests/
 │   ├── SecondAI/
 │   │   ├── SecondAICheckResultTest.php
 │   │   └── UnifiedCheckServiceTest.php
-│   ├── Evaluation/
-│   │   └── ModelTierConfigTest.php
 │   └── Services/
 │       └── BotServiceTest.php
 ├── Feature/
@@ -267,7 +265,7 @@ Bot::factory()->inactive()->create();
 ### Mock External Services
 ```php
 // Mock OpenRouter API
-public function test_ai_evaluation_with_mock()
+public function test_ai_response_with_mock()
 {
     Http::fake([
         'openrouter.ai/*' => Http::response([
@@ -277,7 +275,7 @@ public function test_ai_evaluation_with_mock()
         ], 200),
     ]);
 
-    $result = $this->secondAIService->evaluate($message);
+    $result = $this->ragService->generateResponse($message);
 
     $this->assertNotNull($result);
 }
@@ -291,7 +289,7 @@ Queue::fake();
 $this->botService->processMessage($message);
 
 // Assert job ถูก dispatch
-Queue::assertPushed(ProcessAIEvaluationJob::class);
+Queue::assertPushed(ProcessMessageJob::class);
 ```
 
 ---
@@ -565,15 +563,15 @@ $this->assertDatabaseCount('bots', 5);
 
 ### Benchmark Critical Operations
 ```php
-public function test_ai_evaluation_performance()
+public function test_rag_response_performance()
 {
     $start = microtime(true);
 
-    $this->secondAIService->evaluate($message);
+    $this->ragService->generateResponse($message);
 
     $duration = microtime(true) - $start;
 
-    $this->assertLessThan(1.5, $duration, 'AI evaluation took too long');
+    $this->assertLessThan(1.5, $duration, 'RAG response took too long');
 }
 ```
 

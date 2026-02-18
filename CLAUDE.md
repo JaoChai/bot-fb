@@ -179,7 +179,6 @@ git checkout -b feature/xxx && # work... && /commit-push-pr
 
 - [Skills Reference](docs/skills.md)
 - [Services Reference](docs/services.md)
-- [AI System](docs/ai-system.md)
 - [Gotchas](docs/gotchas.md)
 - [Testing](docs/testing.md)
 - [Security](docs/security.md)

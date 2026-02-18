@@ -79,15 +79,7 @@ Tracks AI API costs:
 
 | Service | Purpose | Location |
 |---------|---------|----------|
-| `QAInspectorService` | Real-time QA scoring | `app/Services/QAInspectorService.php` |
 | `AgentSafetyService` | Tool validation | `app/Services/AgentSafetyService.php` |
-
-### QAInspectorService
-Evaluates AI response quality:
-- Relevance scoring
-- Accuracy checks
-- Tone analysis
-- Feedback collection
 
 ### AgentSafetyService
 Validates agent tool usage:

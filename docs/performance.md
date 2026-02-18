@@ -7,7 +7,6 @@
 | Metric | Target | Current | Status |
 |--------|--------|---------|--------|
 | API Response | < 500ms | ~300ms | ✅ Good |
-| AI Evaluation | < 1.5s | 3-6s | ⚠️ Needs work |
 | Page Load (FCP) | < 1.8s | ~1.5s | ✅ Good |
 | Page Load (LCP) | < 2.5s | ~2s | ✅ Good |
 | Database Query | < 100ms | varies | 🔄 Monitor |
@@ -266,46 +265,6 @@ public function index(Request $request)
 }
 
 // GET /api/v1/bots?fields=id,name,status
-```
-
----
-
-## AI Evaluation Optimization
-
-### Model Tier Selection
-```php
-// Use cheaper models for simple checks
-$config = new ModelTierConfig();
-
-// Budget tier for quick checks
-$model = $config->getModelForMetric('grammar'); // haiku
-
-// Premium tier for complex evaluation
-$model = $config->getModelForMetric('toxicity'); // sonnet
-```
-
-### Caching Evaluations
-```php
-// Cache evaluation results
-public function evaluate(Message $message)
-{
-    $cacheKey = 'ai.eval.' . md5($message->content);
-
-    return Cache::remember($cacheKey, 3600, function () use ($message) {
-        return $this->performEvaluation($message);
-    });
-}
-```
-
-### Parallel Evaluation
-```php
-// Run multiple checks in parallel
-$checks = [
-    'grammar' => fn() => $this->checkGrammar($message),
-    'relevance' => fn() => $this->checkRelevance($message),
-];
-
-$results = Promise::all($checks)->wait();
 ```
 
 ---

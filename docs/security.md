@@ -209,7 +209,7 @@ protected $middlewareGroups = [
 
 // Custom rate limit
 Route::middleware('throttle:10,1')->group(function () {
-    Route::post('/ai/evaluate', [AIController::class, 'evaluate']);
+    Route::post('/bots/{id}/test', [BotController::class, 'test']);
 });
 ```
 
@@ -223,7 +223,7 @@ Route::post('/login', [AuthController::class, 'login'])
 ### Custom Rate Limiter
 ```php
 // app/Providers/RouteServiceProvider.php
-RateLimiter::for('ai-evaluation', function (Request $request) {
+RateLimiter::for('bot-test', function (Request $request) {
     return Limit::perMinute(10)
         ->by($request->user()?->id ?: $request->ip())
         ->response(function () {

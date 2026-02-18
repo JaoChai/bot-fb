@@ -238,7 +238,6 @@ Response:
 API General: 60 requests/minute
 Login: 5 attempts/minute
 Webhook: 100 requests/minute
-AI Evaluation: 10 requests/minute
 ```
 
 ### Response Headers
@@ -287,7 +286,6 @@ BOT_NOT_FOUND
 CONVERSATION_CLOSED
 MESSAGE_TOO_LONG
 WEBHOOK_DELIVERY_FAILED
-AI_EVALUATION_TIMEOUT
 ```
 
 ---
