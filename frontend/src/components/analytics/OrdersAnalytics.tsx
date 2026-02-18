@@ -78,7 +78,7 @@ function getStatusLabel(status: string) {
   }
 }
 
-export function OrdersReportPage() {
+export function OrdersAnalytics() {
   const [filters, setFilters] = useState<OrderFilters>({
     page: 1,
     per_page: 20,
@@ -91,38 +91,26 @@ export function OrdersReportPage() {
 
   if (summaryLoading) {
     return (
-      <div className="space-y-8">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">รายงานออเดอร์</h1>
-          <p className="text-muted-foreground">ติดตามยอดขายและออเดอร์จากแชทบอท</p>
-        </div>
-        <div className="flex items-center justify-center py-12">
-          <div className="text-muted-foreground">กำลังโหลดข้อมูล...</div>
-        </div>
+      <div className="flex items-center justify-center py-12">
+        <div className="text-muted-foreground">กำลังโหลดข้อมูล...</div>
       </div>
     );
   }
 
   if (summaryError) {
     return (
-      <div className="space-y-8">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">รายงานออเดอร์</h1>
-          <p className="text-muted-foreground">ติดตามยอดขายและออเดอร์จากแชทบอท</p>
-        </div>
-        <Card className="border-destructive">
-          <CardContent className="py-8 text-center">
-            <p className="text-destructive">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>
-            <Button
-              variant="outline"
-              className="mt-4"
-              onClick={() => window.location.reload()}
-            >
-              ลองใหม่
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <Card className="border-destructive">
+        <CardContent className="py-8 text-center">
+          <p className="text-destructive">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>
+          <Button
+            variant="outline"
+            className="mt-4"
+            onClick={() => window.location.reload()}
+          >
+            ลองใหม่
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -147,13 +135,7 @@ export function OrdersReportPage() {
     : [];
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">รายงานออเดอร์</h1>
-        <p className="text-muted-foreground">ติดตามยอดขายและออเดอร์จากแชทบอท</p>
-      </div>
-
+    <div className="space-y-6">
       {/* Date Range Filters */}
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
@@ -560,5 +542,3 @@ export function OrdersReportPage() {
     </div>
   );
 }
-
-export default OrdersReportPage;

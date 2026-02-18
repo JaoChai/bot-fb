@@ -27,7 +27,6 @@ import {
   Moon,
   Users,
   Zap,
-  ShoppingCart,
 } from 'lucide-react';
 
 const mainNavItems = [
@@ -162,24 +161,6 @@ export function Sidebar() {
           </NavLink>
         )}
 
-        {/* Orders - Owner only */}
-        {user?.role === 'owner' && (
-          <NavLink
-            to="/orders"
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-foreground text-background'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                sidebarCollapsed && 'justify-center px-2'
-              )
-            }
-          >
-            <ShoppingCart className="h-4 w-4 shrink-0" />
-            {!sidebarCollapsed && <span>ออเดอร์</span>}
-          </NavLink>
-        )}
       </nav>
 
       {/* Bottom Section */}

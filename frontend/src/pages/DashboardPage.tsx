@@ -1,13 +1,15 @@
 import { useAuthStore } from '@/stores/authStore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bot, MessageSquare, Zap, Users, Banknote, Plus } from 'lucide-react';
-import { formatTHB } from '@/lib/currency';
+import { Bot, MessageSquare, Zap, Users, Banknote, Plus, ShoppingCart, DollarSign } from 'lucide-react';
+import { formatTHB, formatBaht } from '@/lib/currency';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CostAnalytics } from '@/components/analytics/CostAnalytics';
+import { OrdersAnalytics } from '@/components/analytics/OrdersAnalytics';
 import { useDashboardSummary } from '@/hooks/useDashboard';
 import { useCostAnalytics } from '@/hooks/useCostAnalytics';
+import { useOrderSummary } from '@/hooks/useOrders';
 import {
   DashboardStatCard,
   BotOverviewCard,
@@ -21,6 +23,7 @@ export function DashboardPage() {
 
   const { data, isLoading, error } = useDashboardSummary();
   const { data: costData } = useCostAnalytics({ group_by: 'day' });
+  const { data: orderData } = useOrderSummary();
 
   if (isLoading) {
     return (
@@ -39,6 +42,7 @@ export function DashboardPage() {
           <TabsList>
             <TabsTrigger value="overview">ภาพรวม</TabsTrigger>
             <TabsTrigger value="costs">ค่าใช้จ่าย API</TabsTrigger>
+            <TabsTrigger value="orders">ยอดขาย</TabsTrigger>
           </TabsList>
           <TabsContent value="overview">
             <DashboardSkeleton />
@@ -94,11 +98,12 @@ export function DashboardPage() {
         <TabsList>
           <TabsTrigger value="overview">ภาพรวม</TabsTrigger>
           <TabsTrigger value="costs">ค่าใช้จ่าย API</TabsTrigger>
+          <TabsTrigger value="orders">ยอดขาย</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
           {/* Stats Grid */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <DashboardStatCard
               title="Bots ทั้งหมด"
               value={data?.summary.total_bots ?? 0}
@@ -133,6 +138,18 @@ export function DashboardPage() {
               value={formatTHB(costData?.summary.today_cost ?? 0)}
               description={`เดือนนี้ ${formatTHB(costData?.summary.month_cost ?? 0)}`}
               icon={Banknote}
+            />
+            <DashboardStatCard
+              title="ยอดขายวันนี้"
+              value={formatBaht(orderData?.summary?.today_revenue ?? 0)}
+              description={`${orderData?.summary?.today_orders ?? 0} ออเดอร์`}
+              icon={ShoppingCart}
+            />
+            <DashboardStatCard
+              title="ยอดขายเดือนนี้"
+              value={formatBaht(orderData?.summary?.this_month_revenue ?? 0)}
+              description={`${orderData?.summary?.this_month_orders ?? 0} ออเดอร์`}
+              icon={DollarSign}
             />
           </div>
 
@@ -183,6 +200,10 @@ export function DashboardPage() {
 
         <TabsContent value="costs">
           <CostAnalytics />
+        </TabsContent>
+
+        <TabsContent value="orders">
+          <OrdersAnalytics />
         </TabsContent>
       </Tabs>
     </div>
