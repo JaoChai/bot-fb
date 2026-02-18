@@ -251,17 +251,21 @@ class ProcessAggregatedMessages implements ShouldQueue
                 // Send response to LINE using push message
                 // (reply token has likely expired after waiting)
                 if ($botMessage->content) {
-                    if ($bubblesService->isEnabled($this->bot)) {
-                        // Parse and send multiple bubbles
-                        $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
-                        // Use null for replyToken to force push message
-                        $bubblesService->sendBubbles($this->bot, $this->externalUserId, null, $bubbles);
-                    } else {
-                        // Single message via push with retry key for idempotency
-                        $paymentFlex = app(\App\Services\PaymentFlexService::class);
-                        $transformed = $paymentFlex->tryConvertToFlex($botMessage->content);
+                    $paymentFlex = app(\App\Services\PaymentFlexService::class);
+                    $transformed = $paymentFlex->tryConvertToFlex($botMessage->content);
+
+                    if (is_array($transformed)) {
+                        // Flex detected on full text → send as single message
                         $retryKey = $lineService->generateRetryKey();
                         $lineService->push($this->bot, $this->externalUserId, [$transformed], $retryKey);
+                    } elseif ($bubblesService->isEnabled($this->bot)) {
+                        // No Flex match → normal bubble flow
+                        $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
+                        $bubblesService->sendBubbles($this->bot, $this->externalUserId, null, $bubbles);
+                    } else {
+                        // No Flex, no bubbles → send as plain text
+                        $retryKey = $lineService->generateRetryKey();
+                        $lineService->push($this->bot, $this->externalUserId, [$botMessage->content], $retryKey);
                     }
                 }
 
