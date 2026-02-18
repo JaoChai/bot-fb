@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   LineChart,
   Line,
@@ -79,15 +79,30 @@ function getStatusLabel(status: string) {
 }
 
 export function OrdersAnalytics() {
+  const [activeTab, setActiveTab] = useState('overview');
   const [filters, setFilters] = useState<OrderFilters>({
     page: 1,
     per_page: 20,
   });
+  const [searchInput, setSearchInput] = useState('');
 
+  // Debounce search: sync searchInput → filters.search after 300ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFilters((prev) => ({
+        ...prev,
+        search: searchInput || undefined,
+        page: 1,
+      }));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Lazy-load: only fetch data for the active tab
   const { data: summaryData, isLoading: summaryLoading, error: summaryError } = useOrderSummary(filters);
-  const { data: ordersData, isLoading: ordersLoading } = useOrders(filters);
-  const { data: customersData, isLoading: customersLoading } = useOrdersByCustomer(filters);
-  const { data: productsData, isLoading: productsLoading } = useOrdersByProduct(filters);
+  const { data: ordersData, isLoading: ordersLoading } = useOrders(filters, { enabled: activeTab === 'orders' });
+  const { data: customersData, isLoading: customersLoading } = useOrdersByCustomer(filters, { enabled: activeTab === 'customers' });
+  const { data: productsData, isLoading: productsLoading } = useOrdersByProduct(filters, { enabled: activeTab === 'overview' || activeTab === 'products' });
 
   if (summaryLoading) {
     return (
@@ -159,7 +174,7 @@ export function OrdersAnalytics() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="overview" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="overview">ภาพรวม</TabsTrigger>
           <TabsTrigger value="orders">รายการออเดอร์</TabsTrigger>
@@ -274,15 +289,30 @@ export function OrdersAnalytics() {
               </SelectContent>
             </Select>
 
+            <Select
+              value={filters.category ?? 'all'}
+              onValueChange={(value) =>
+                setFilters({ ...filters, category: value === 'all' ? undefined : value, page: 1 })
+              }
+            >
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="หมวดหมู่" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">ทุกหมวดหมู่</SelectItem>
+                <SelectItem value="nolimit">Nolimit</SelectItem>
+                <SelectItem value="page">Page</SelectItem>
+                <SelectItem value="g3d">G3D</SelectItem>
+              </SelectContent>
+            </Select>
+
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="ค้นหาสินค้า..."
                 className="pl-9"
-                value={filters.search ?? ''}
-                onChange={(e) =>
-                  setFilters({ ...filters, search: e.target.value || undefined, page: 1 })
-                }
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
               />
             </div>
           </div>
