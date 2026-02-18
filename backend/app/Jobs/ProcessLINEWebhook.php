@@ -489,15 +489,21 @@ class ProcessLINEWebhook implements ShouldQueue
                 // Send reply to LINE (with multiple bubbles support)
                 if ($botMessage->content) {
                     $bubblesService = app(MultipleBubblesService::class);
+                    $paymentFlex = app(\App\Services\PaymentFlexService::class);
+                    $transformed = $paymentFlex->tryConvertToFlex($botMessage->content);
 
-                    if ($bubblesService->isEnabled($this->bot)) {
+                    if (is_array($transformed)) {
+                        // Flex detected on full text → send as single message
+                        $retryKey = $lineService->generateRetryKey();
+                        $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$transformed], $retryKey);
+                    } elseif ($bubblesService->isEnabled($this->bot)) {
+                        // No Flex match → normal bubble flow
                         $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
                         $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles);
                     } else {
-                        $paymentFlex = app(\App\Services\PaymentFlexService::class);
-                        $transformed = $paymentFlex->tryConvertToFlex($botMessage->content);
+                        // No Flex, no bubbles → send as plain text
                         $retryKey = $lineService->generateRetryKey();
-                        $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$transformed], $retryKey);
+                        $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$botMessage->content], $retryKey);
                     }
                 }
 
