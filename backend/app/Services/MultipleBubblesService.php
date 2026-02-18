@@ -9,7 +9,8 @@ use Illuminate\Support\Facades\Log;
 class MultipleBubblesService
 {
     public function __construct(
-        protected LINEService $lineService
+        protected LINEService $lineService,
+        protected PaymentFlexService $paymentFlexService,
     ) {}
 
     /**
@@ -126,6 +127,21 @@ INSTRUCTION;
     }
 
     /**
+     * Transform text bubbles into Flex messages where applicable.
+     * Each bubble is independently checked for payment content.
+     *
+     * @param  array<string>  $bubbles
+     * @return array<string|array>  Bubbles with payment texts converted to Flex arrays
+     */
+    public function transformBubbles(array $bubbles): array
+    {
+        return array_map(
+            fn (string $bubble) => $this->paymentFlexService->tryConvertToFlex($bubble),
+            $bubbles
+        );
+    }
+
+    /**
      * Send bubbles to user via LINE.
      * First bubble uses reply (fast), subsequent dispatched as async jobs with delays.
      *
@@ -140,6 +156,9 @@ INSTRUCTION;
         if (empty($bubbles)) {
             return false;
         }
+
+        // Transform text bubbles to Flex messages where applicable
+        $bubbles = $this->transformBubbles($bubbles);
 
         $delayMs = $this->getDelayMs($bot);
         $totalBubbles = count($bubbles);
@@ -160,8 +179,12 @@ INSTRUCTION;
                 // Cumulative delay: bubble 2 at t+delayMs, bubble 3 at t+2*delayMs, etc.
                 $cumulativeDelayMs = $delayMs * $i;
 
-                if ($cumulativeDelayMs > 0) {
-                    // Async dispatch with delay - PHP returns immediately
+                if (is_array($bubbles[$i])) {
+                    // Flex message: send immediately via push (delayed job only supports text)
+                    $pushRetryKey = $this->lineService->generateRetryKey();
+                    $this->lineService->push($bot, $userId, [$bubbles[$i]], $pushRetryKey);
+                } elseif ($cumulativeDelayMs > 0) {
+                    // Text bubble with delay: async dispatch - PHP returns immediately
                     SendDelayedBubbleJob::dispatch(
                         $bot,
                         $userId,
@@ -179,7 +202,7 @@ INSTRUCTION;
                         'delay_ms' => $cumulativeDelayMs,
                     ]);
                 } else {
-                    // No delay configured - send immediately via push with retry key
+                    // Text bubble no delay - send immediately via push with retry key
                     $pushRetryKey = $this->lineService->generateRetryKey();
                     $this->lineService->push($bot, $userId, [$bubbles[$i]], $pushRetryKey);
                 }

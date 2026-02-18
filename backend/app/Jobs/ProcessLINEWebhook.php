@@ -494,8 +494,10 @@ class ProcessLINEWebhook implements ShouldQueue
                         $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
                         $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles);
                     } else {
+                        $paymentFlex = app(\App\Services\PaymentFlexService::class);
+                        $transformed = $paymentFlex->tryConvertToFlex($botMessage->content);
                         $retryKey = $lineService->generateRetryKey();
-                        $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$botMessage->content], $retryKey);
+                        $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$transformed], $retryKey);
                     }
                 }
 

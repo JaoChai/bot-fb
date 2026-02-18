@@ -258,8 +258,10 @@ class ProcessAggregatedMessages implements ShouldQueue
                         $bubblesService->sendBubbles($this->bot, $this->externalUserId, null, $bubbles);
                     } else {
                         // Single message via push with retry key for idempotency
+                        $paymentFlex = app(\App\Services\PaymentFlexService::class);
+                        $transformed = $paymentFlex->tryConvertToFlex($botMessage->content);
                         $retryKey = $lineService->generateRetryKey();
-                        $lineService->push($this->bot, $this->externalUserId, [$botMessage->content], $retryKey);
+                        $lineService->push($this->bot, $this->externalUserId, [$transformed], $retryKey);
                     }
                 }
 
