@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Jobs\SendDelayedBubbleJob;
 use App\Models\Bot;
+use App\Models\Conversation;
 use Illuminate\Support\Facades\Log;
 
 class MultipleBubblesService
@@ -133,10 +134,10 @@ INSTRUCTION;
      * @param  array<string>  $bubbles
      * @return array<string|array>  Bubbles with payment texts converted to Flex arrays
      */
-    public function transformBubbles(array $bubbles): array
+    public function transformBubbles(array $bubbles, ?Conversation $conversation = null): array
     {
         return array_map(
-            fn (string $bubble) => $this->paymentFlexService->tryConvertToFlex($bubble),
+            fn (string $bubble) => $this->paymentFlexService->tryConvertToFlex($bubble, $conversation),
             $bubbles
         );
     }
@@ -151,14 +152,15 @@ INSTRUCTION;
         Bot $bot,
         string $userId,
         ?string $replyToken,
-        array $bubbles
+        array $bubbles,
+        ?Conversation $conversation = null
     ): bool {
         if (empty($bubbles)) {
             return false;
         }
 
         // Transform text bubbles to Flex messages where applicable
-        $bubbles = $this->transformBubbles($bubbles);
+        $bubbles = $this->transformBubbles($bubbles, $conversation);
 
         $delayMs = $this->getDelayMs($bot);
         $totalBubbles = count($bubbles);

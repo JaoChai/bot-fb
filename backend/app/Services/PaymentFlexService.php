@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Conversation;
 use Illuminate\Support\Facades\Log;
 
 class PaymentFlexService
@@ -13,6 +14,8 @@ class PaymentFlexService
     private const MAX_FLEX_SIZE = 30000;
     private const TERMS_URL = 'https://mhhacoursecontent.my.canva.site/ads-vance';
     private const SUPPORT_LINE_ID = '@743ddeqy';
+    private const NORMAL_PRIMARY_COLOR = '#1DB446';
+    private const VIP_PRIMARY_COLOR = '#D4A017';
 
     /**
      * Try to convert payment text to LINE Flex Message.
@@ -20,14 +23,16 @@ class PaymentFlexService
      *
      * @return string|array Original text or Flex message array
      */
-    public function tryConvertToFlex(string $text): string|array
+    public function tryConvertToFlex(string $text, ?Conversation $conversation = null): string|array
     {
         try {
+            $isVip = $this->isVipConversation($conversation);
+
             // Step 4: Payment message (existing)
             if ($this->isPaymentMessage($text)) {
                 $data = $this->parsePaymentData($text);
                 if ($data !== null) {
-                    return $this->safeBuildFlex($text, $this->buildFlexMessage($data));
+                    return $this->safeBuildFlex($text, $this->buildFlexMessage($data, $isVip));
                 }
             }
 
@@ -40,7 +45,7 @@ class PaymentFlexService
             if ($this->isVerifySuccessMessage($text)) {
                 $data = $this->parseVerifyData($text);
                 if ($data !== null) {
-                    return $this->safeBuildFlex($text, $this->buildVerifyFlexMessage($data));
+                    return $this->safeBuildFlex($text, $this->buildVerifyFlexMessage($data, $isVip));
                 }
             }
 
@@ -52,6 +57,34 @@ class PaymentFlexService
 
             return $text;
         }
+    }
+
+    /**
+     * Check if conversation belongs to a VIP customer.
+     * Looks for "VIP" keyword in memory_notes.
+     */
+    public function isVipConversation(?Conversation $conversation): bool
+    {
+        if ($conversation === null) {
+            return false;
+        }
+
+        $memoryNotes = $conversation->memory_notes;
+        if (empty($memoryNotes)) {
+            return false;
+        }
+
+        // memory_notes is cast as array - each entry can be:
+        // 1. A string: "ลูกค้า VIP ..."
+        // 2. An object with 'content' key: {"type":"memory","content":"ลูกค้า VIP ..."}
+        foreach ($memoryNotes as $note) {
+            $text = is_string($note) ? $note : ($note['content'] ?? null);
+            if (is_string($text) && preg_match('/\bVIP\b/iu', $text)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -136,10 +169,12 @@ class PaymentFlexService
     /**
      * Build LINE Flex Message array from parsed payment data.
      */
-    public function buildFlexMessage(array $data): array
+    public function buildFlexMessage(array $data, bool $isVip = false): array
     {
         $total = $data['total'];
         $items = $data['items'];
+        $primaryColor = $isVip ? self::VIP_PRIMARY_COLOR : self::NORMAL_PRIMARY_COLOR;
+        $headerText = $isVip ? '👑 VIP สรุปรายการสั่งซื้อ' : 'สรุปรายการสั่งซื้อ';
 
         $bodyContents = [];
 
@@ -172,7 +207,7 @@ class PaymentFlexService
                     'type' => 'text',
                     'text' => "{$total} บาท ✅",
                     'size' => 'lg',
-                    'color' => '#1DB446',
+                    'color' => $primaryColor,
                     'weight' => 'bold',
                     'align' => 'end',
                 ],
@@ -208,7 +243,7 @@ class PaymentFlexService
                     'type' => 'text',
                     'text' => self::BANK_ACCOUNT,
                     'size' => 'xxl',
-                    'color' => '#1DB446',
+                    'color' => $primaryColor,
                     'weight' => 'bold',
                 ],
                 [
@@ -241,18 +276,18 @@ class PaymentFlexService
 
         return [
             'type' => 'flex',
-            'altText' => "สรุปรายการสั่งซื้อ - ยอดโอน {$total} บาท",
+            'altText' => "{$headerText} - ยอดโอน {$total} บาท",
             'contents' => [
                 'type' => 'bubble',
                 'header' => [
                     'type' => 'box',
                     'layout' => 'vertical',
-                    'backgroundColor' => '#1DB446',
+                    'backgroundColor' => $primaryColor,
                     'paddingAll' => 'lg',
                     'contents' => [
                         [
                             'type' => 'text',
-                            'text' => 'สรุปรายการสั่งซื้อ',
+                            'text' => $headerText,
                             'color' => '#FFFFFF',
                             'size' => 'lg',
                             'weight' => 'bold',
@@ -277,7 +312,7 @@ class PaymentFlexService
                                 'clipboardText' => self::CLIPBOARD_TEXT,
                             ],
                             'style' => 'primary',
-                            'color' => '#1DB446',
+                            'color' => $primaryColor,
                         ],
                         [
                             'type' => 'text',
@@ -507,11 +542,14 @@ class PaymentFlexService
     /**
      * Build LINE Flex Message for verify-success (Step 5).
      */
-    public function buildVerifyFlexMessage(array $data): array
+    public function buildVerifyFlexMessage(array $data, bool $isVip = false): array
     {
         $amount = $data['amount'];
         $items = $data['items'];
         $delivery = $data['delivery'];
+        $primaryColor = $isVip ? self::VIP_PRIMARY_COLOR : self::NORMAL_PRIMARY_COLOR;
+        $headerText = $isVip ? '👑 VIP ยืนยันชำระเงินสำเร็จ' : '✅ ยืนยันชำระเงินสำเร็จ';
+        $footerText = $isVip ? 'ขอบคุณลูกค้า VIP ที่อุดหนุนครับ 🙏' : 'ขอบคุณที่อุดหนุนครับ 🙏';
 
         $bodyContents = [];
 
@@ -537,7 +575,7 @@ class PaymentFlexService
             'type' => 'text',
             'text' => "{$amount} บาท",
             'size' => 'xxl',
-            'color' => '#1DB446',
+            'color' => $primaryColor,
             'weight' => 'bold',
             'align' => 'center',
             'margin' => 'sm',
@@ -639,12 +677,12 @@ class PaymentFlexService
                 'header' => [
                     'type' => 'box',
                     'layout' => 'vertical',
-                    'backgroundColor' => '#1DB446',
+                    'backgroundColor' => $primaryColor,
                     'paddingAll' => 'lg',
                     'contents' => [
                         [
                             'type' => 'text',
-                            'text' => '✅ ยืนยันชำระเงินสำเร็จ',
+                            'text' => $headerText,
                             'color' => '#FFFFFF',
                             'size' => 'lg',
                             'weight' => 'bold',
@@ -669,14 +707,14 @@ class PaymentFlexService
                     'contents' => [
                         [
                             'type' => 'text',
-                            'text' => 'ขอบคุณที่อุดหนุนครับ 🙏',
+                            'text' => $footerText,
                             'size' => 'sm',
                             'color' => '#888888',
                             'align' => 'center',
                         ],
                         [
                             'type' => 'text',
-                            'text' => 'Captain Ad ยินดีให้บริการ',
+                            'text' => 'กัปตันแอด ยินดีให้บริการนะ',
                             'size' => 'xs',
                             'color' => '#AAAAAA',
                             'align' => 'center',
