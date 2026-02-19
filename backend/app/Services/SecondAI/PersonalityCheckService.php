@@ -46,7 +46,9 @@ class PersonalityCheckService
     public function check(
         string $response,
         Flow $flow,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?int $timeout = null,
+        ?string $fallbackModel = null
     ): CheckResult {
         // Resolve model from Bot Settings
         $this->model = $flow->bot?->decision_model
@@ -55,7 +57,7 @@ class PersonalityCheckService
 
         try {
             // Step 1: Extract brand guidelines from system prompt
-            $brandGuidelines = $this->extractBrandGuidelines($flow->system_prompt, $apiKey);
+            $brandGuidelines = $this->extractBrandGuidelines($flow->system_prompt, $apiKey, $timeout, $fallbackModel);
 
             if (empty($brandGuidelines)) {
                 Log::debug('PersonalityCheck: No brand guidelines found, using defaults');
@@ -67,7 +69,7 @@ class PersonalityCheckService
             ]);
 
             // Step 2: Check response against brand guidelines
-            $checkResult = $this->checkAgainstGuidelines($response, $brandGuidelines, $apiKey);
+            $checkResult = $this->checkAgainstGuidelines($response, $brandGuidelines, $apiKey, $timeout, $fallbackModel);
 
             // Step 3: If issues found, rewrite
             if (!$checkResult['matches']) {
@@ -79,7 +81,9 @@ class PersonalityCheckService
                     $response,
                     $brandGuidelines,
                     $checkResult['issues'] ?? [],
-                    $apiKey
+                    $apiKey,
+                    $timeout,
+                    $fallbackModel
                 );
 
                 return CheckResult::modified(
@@ -110,7 +114,7 @@ class PersonalityCheckService
      * @param string|null $apiKey Optional API key override
      * @return array Brand guidelines as key-value pairs
      */
-    protected function extractBrandGuidelines(string $systemPrompt, ?string $apiKey = null): array
+    protected function extractBrandGuidelines(string $systemPrompt, ?string $apiKey = null, ?int $timeout = null, ?string $fallbackModel = null): array
     {
         // If system prompt is short, use defaults
         if (strlen($systemPrompt) < 100) {
@@ -154,7 +158,9 @@ PROMPT;
             temperature: 0.0,
             maxTokens: 1000,
             useFallback: true,
-            apiKeyOverride: $apiKey
+            apiKeyOverride: $apiKey,
+            fallbackModelOverride: $fallbackModel,
+            timeout: $timeout
         );
 
         $content = trim($result['content']);
@@ -192,7 +198,9 @@ PROMPT;
     protected function checkAgainstGuidelines(
         string $response,
         array $guidelines,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?int $timeout = null,
+        ?string $fallbackModel = null
     ): array {
         $guidelinesJson = json_encode($guidelines, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 
@@ -231,7 +239,9 @@ PROMPT;
             temperature: 0.3,
             maxTokens: 2000,
             useFallback: true,
-            apiKeyOverride: $apiKey
+            apiKeyOverride: $apiKey,
+            fallbackModelOverride: $fallbackModel,
+            timeout: $timeout
         );
 
         $content = trim($result['content']);
@@ -273,7 +283,9 @@ PROMPT;
         string $originalResponse,
         array $guidelines,
         array $issues,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?int $timeout = null,
+        ?string $fallbackModel = null
     ): string {
         $guidelinesJson = json_encode($guidelines, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
         $issuesList = implode("\n", array_map(fn ($i) => "- {$i}", $issues));
@@ -309,7 +321,9 @@ PROMPT;
             temperature: 0.3,
             maxTokens: 2000,
             useFallback: true,
-            apiKeyOverride: $apiKey
+            apiKeyOverride: $apiKey,
+            fallbackModelOverride: $fallbackModel,
+            timeout: $timeout
         );
 
         return trim($result['content']);

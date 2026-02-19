@@ -363,8 +363,8 @@ return [
     |--------------------------------------------------------------------------
     */
     'second_ai' => [
-        'pipeline_timeout' => (int) env('SECOND_AI_PIPELINE_TIMEOUT', 8),
-        'http_timeout' => (int) env('SECOND_AI_HTTP_TIMEOUT', 8),
+        'pipeline_timeout' => (int) env('SECOND_AI_PIPELINE_TIMEOUT', 20),
+        'http_timeout' => (int) env('SECOND_AI_HTTP_TIMEOUT', 10),
         'max_tokens' => (int) env('SECOND_AI_MAX_TOKENS', 1000),
     ],
 ];

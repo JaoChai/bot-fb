@@ -19,12 +19,12 @@ class SecondAIService
     /**
      * Maximum time (seconds) for all Second AI checks combined.
      */
-    protected int $timeout = 5;
+    protected int $timeout;
 
     /**
-     * Maximum time (seconds) per individual check.
+     * Maximum time (seconds) per HTTP call to OpenRouter.
      */
-    protected int $perCheckTimeout = 2;
+    protected int $httpTimeout;
 
     public function __construct(
         protected FactCheckService $factCheck,
@@ -33,7 +33,14 @@ class SecondAIService
         protected UnifiedCheckService $unifiedCheck,
         protected PromptInjectionDetector $injectionDetector,
         protected SecondAIMetricsService $metricsService,
-    ) {}
+    ) {
+        $this->timeout = app()->bound('config')
+            ? (int) config('rag.second_ai.pipeline_timeout', 20)
+            : 20;
+        $this->httpTimeout = app()->bound('config')
+            ? (int) config('rag.second_ai.http_timeout', 10)
+            : 10;
+    }
 
     /**
      * Process a response through enabled Second AI checks.
@@ -74,6 +81,11 @@ class SecondAIService
         $options = $flow->second_ai_options ?? [];
         $startTime = microtime(true);
 
+        // Resolve fallback model once from Bot Settings
+        $bot = $flow->bot;
+        $fallbackModel = $bot?->fallback_decision_model
+            ?: $bot?->fallback_chat_model;
+
         // Try unified mode first if applicable
         if ($this->shouldUseUnifiedMode($options)) {
             Log::info('SecondAI: Using unified mode', [
@@ -105,7 +117,8 @@ class SecondAIService
                     'flow_id' => $flow->id,
                     'error' => $e->getMessage(),
                 ]);
-                // Fall through to sequential mode below
+                // Reset timer so sequential mode gets full budget
+                $startTime = microtime(true);
             }
         }
 
@@ -121,6 +134,8 @@ class SecondAIService
 
         try {
             // Use Laravel rescue for timeout-safe execution
+            $httpTimeout = $this->httpTimeout;
+
             $result = rescue(function () use (
                 &$currentContent,
                 &$modifications,
@@ -129,20 +144,15 @@ class SecondAIService
                 $flow,
                 $userMessage,
                 $apiKey,
-                $startTime
+                $startTime,
+                $fallbackModel,
+                $httpTimeout
             ) {
                 // 1. Fact Check (if enabled)
                 if (!empty($options['fact_check'])) {
                     $this->checkTimeout($startTime);
-                    $checkResult = rescue(function () use ($currentContent, $flow, $userMessage, $apiKey) {
-                        $checkStart = microtime(true);
-                        $result = $this->factCheck->check($currentContent, $flow, $userMessage, $apiKey);
-                        if (microtime(true) - $checkStart > $this->perCheckTimeout) {
-                            Log::warning('SecondAI: fact_check exceeded per-check timeout', [
-                                'elapsed' => round(microtime(true) - $checkStart, 2),
-                            ]);
-                        }
-                        return $result;
+                    $checkResult = rescue(function () use ($currentContent, $flow, $userMessage, $apiKey, $httpTimeout, $fallbackModel) {
+                        return $this->factCheck->check($currentContent, $flow, $userMessage, $apiKey, $httpTimeout, $fallbackModel);
                     }, function (\Throwable $e) {
                         Log::warning('SecondAI: fact_check failed', ['error' => $e->getMessage()]);
                         return null;
@@ -158,15 +168,8 @@ class SecondAIService
                 // 2. Policy Check (if enabled)
                 if (!empty($options['policy'])) {
                     $this->checkTimeout($startTime);
-                    $checkResult = rescue(function () use ($currentContent, $flow, $apiKey) {
-                        $checkStart = microtime(true);
-                        $result = $this->policyCheck->check($currentContent, $flow, $apiKey);
-                        if (microtime(true) - $checkStart > $this->perCheckTimeout) {
-                            Log::warning('SecondAI: policy exceeded per-check timeout', [
-                                'elapsed' => round(microtime(true) - $checkStart, 2),
-                            ]);
-                        }
-                        return $result;
+                    $checkResult = rescue(function () use ($currentContent, $flow, $apiKey, $httpTimeout, $fallbackModel) {
+                        return $this->policyCheck->check($currentContent, $flow, $apiKey, $httpTimeout, $fallbackModel);
                     }, function (\Throwable $e) {
                         Log::warning('SecondAI: policy failed', ['error' => $e->getMessage()]);
                         return null;
@@ -182,15 +185,8 @@ class SecondAIService
                 // 3. Personality Check (if enabled)
                 if (!empty($options['personality'])) {
                     $this->checkTimeout($startTime);
-                    $checkResult = rescue(function () use ($currentContent, $flow, $apiKey) {
-                        $checkStart = microtime(true);
-                        $result = $this->personalityCheck->check($currentContent, $flow, $apiKey);
-                        if (microtime(true) - $checkStart > $this->perCheckTimeout) {
-                            Log::warning('SecondAI: personality exceeded per-check timeout', [
-                                'elapsed' => round(microtime(true) - $checkStart, 2),
-                            ]);
-                        }
-                        return $result;
+                    $checkResult = rescue(function () use ($currentContent, $flow, $apiKey, $httpTimeout, $fallbackModel) {
+                        return $this->personalityCheck->check($currentContent, $flow, $apiKey, $httpTimeout, $fallbackModel);
                     }, function (\Throwable $e) {
                         Log::warning('SecondAI: personality failed', ['error' => $e->getMessage()]);
                         return null;
