@@ -410,15 +410,22 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContains('[ยืนยันชำระเงิน]', $flex['altText']);
         $this->assertEquals('bubble', $flex['contents']['type']);
 
-        // Header should be green
+        // Header should be green with subtitle
         $this->assertEquals('#1DB446', $flex['contents']['header']['backgroundColor']);
+        $headerJson = json_encode($flex['contents']['header'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('ยืนยันชำระเงินสำเร็จ', $headerJson);
+        $this->assertStringContains('ระบบตรวจสอบเรียบร้อยแล้ว', $headerJson);
 
-        // Body should contain amount and items
+        // Body should contain centered amount, items in box, delivery, and support contact
         $json = json_encode($flex, JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('เงินเข้าเรียบร้อย', $json);
         $this->assertStringContains('1,600 บาท', $json);
+        $this->assertStringContains('📋 รายการสินค้า', $json);
         $this->assertStringContains('Nolimit Level Up+ BM ×2', $json);
-        $this->assertStringContains('5-10 นาที', $json);
+        $this->assertStringContains('จัดส่งภายใน 5-10 นาที', $json);
+        $this->assertStringContains('@743ddeqy', $json);
         $this->assertStringContains('ขอบคุณ', $json);
+        $this->assertStringContains('Captain Ad', $json);
     }
 
     /** @test */
