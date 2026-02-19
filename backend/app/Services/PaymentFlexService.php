@@ -12,6 +12,7 @@ class PaymentFlexService
     private const CLIPBOARD_TEXT = '2233248803';
     private const MAX_FLEX_SIZE = 30000;
     private const TERMS_URL = 'https://mhhacoursecontent.my.canva.site/ads-vance';
+    private const SUPPORT_LINE_ID = '@743ddeqy';
 
     /**
      * Try to convert payment text to LINE Flex Message.
@@ -514,12 +515,23 @@ class PaymentFlexService
 
         $bodyContents = [];
 
-        // Amount display
+        // Centered checkmark icon
         $bodyContents[] = [
             'type' => 'text',
-            'text' => 'เงินเข้าแล้ว',
+            'text' => '✅',
+            'size' => 'xxl',
+            'align' => 'center',
+            'margin' => 'md',
+        ];
+
+        // Centered amount display
+        $bodyContents[] = [
+            'type' => 'text',
+            'text' => 'เงินเข้าเรียบร้อย',
             'size' => 'md',
             'color' => '#555555',
+            'align' => 'center',
+            'margin' => 'md',
         ];
         $bodyContents[] = [
             'type' => 'text',
@@ -527,6 +539,7 @@ class PaymentFlexService
             'size' => 'xxl',
             'color' => '#1DB446',
             'weight' => 'bold',
+            'align' => 'center',
             'margin' => 'sm',
         ];
 
@@ -538,14 +551,16 @@ class PaymentFlexService
             ];
             $bodyContents[] = [
                 'type' => 'text',
-                'text' => 'ออเดอร์:',
+                'text' => '📋 รายการสินค้า',
                 'size' => 'sm',
                 'color' => '#555555',
                 'margin' => 'lg',
             ];
 
+            // Items in a styled box
+            $itemContents = [];
             foreach ($items as $item) {
-                $bodyContents[] = [
+                $itemContents[] = [
                     'type' => 'text',
                     'text' => "• {$item}",
                     'size' => 'sm',
@@ -554,6 +569,16 @@ class PaymentFlexService
                     'wrap' => true,
                 ];
             }
+
+            $bodyContents[] = [
+                'type' => 'box',
+                'layout' => 'vertical',
+                'margin' => 'sm',
+                'backgroundColor' => '#F7F7F7',
+                'cornerRadius' => 'md',
+                'paddingAll' => 'md',
+                'contents' => $itemContents,
+            ];
         }
 
         // Delivery info
@@ -572,7 +597,7 @@ class PaymentFlexService
                 'contents' => [
                     [
                         'type' => 'text',
-                        'text' => "📦 ส่งใน {$delivery}",
+                        'text' => "📦 จัดส่งภายใน {$delivery}",
                         'size' => 'sm',
                         'color' => '#1B5E20',
                         'wrap' => true,
@@ -580,6 +605,31 @@ class PaymentFlexService
                 ],
             ];
         }
+
+        // Support contact box
+        $bodyContents[] = [
+            'type' => 'box',
+            'layout' => 'vertical',
+            'margin' => 'lg',
+            'backgroundColor' => '#E8F4FD',
+            'cornerRadius' => 'md',
+            'paddingAll' => 'md',
+            'contents' => [
+                [
+                    'type' => 'text',
+                    'text' => '💬 ต้องการความช่วยเหลือ?',
+                    'size' => 'xs',
+                    'color' => '#0367D3',
+                ],
+                [
+                    'type' => 'text',
+                    'text' => 'LINE: ' . self::SUPPORT_LINE_ID,
+                    'size' => 'xs',
+                    'color' => '#555555',
+                    'margin' => 'sm',
+                ],
+            ],
+        ];
 
         return [
             'type' => 'flex',
@@ -594,10 +644,17 @@ class PaymentFlexService
                     'contents' => [
                         [
                             'type' => 'text',
-                            'text' => '✅ ชำระเงินสำเร็จ',
+                            'text' => '✅ ยืนยันชำระเงินสำเร็จ',
                             'color' => '#FFFFFF',
                             'size' => 'lg',
                             'weight' => 'bold',
+                        ],
+                        [
+                            'type' => 'text',
+                            'text' => 'ระบบตรวจสอบเรียบร้อยแล้ว',
+                            'color' => '#FFFFFF',
+                            'size' => 'sm',
+                            'margin' => 'sm',
                         ],
                     ],
                 ],
@@ -616,6 +673,14 @@ class PaymentFlexService
                             'size' => 'sm',
                             'color' => '#888888',
                             'align' => 'center',
+                        ],
+                        [
+                            'type' => 'text',
+                            'text' => 'Captain Ad ยินดีให้บริการ',
+                            'size' => 'xs',
+                            'color' => '#AAAAAA',
+                            'align' => 'center',
+                            'margin' => 'sm',
                         ],
                     ],
                 ],
