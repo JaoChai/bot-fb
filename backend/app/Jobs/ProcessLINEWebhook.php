@@ -490,7 +490,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 if ($botMessage->content) {
                     $bubblesService = app(MultipleBubblesService::class);
                     $paymentFlex = app(\App\Services\PaymentFlexService::class);
-                    $transformed = $paymentFlex->tryConvertToFlex($botMessage->content);
+                    $transformed = $paymentFlex->tryConvertToFlex($botMessage->content, $conversation);
 
                     if (is_array($transformed)) {
                         // Flex detected on full text → send as single message
@@ -499,7 +499,7 @@ class ProcessLINEWebhook implements ShouldQueue
                     } elseif ($bubblesService->isEnabled($this->bot)) {
                         // No Flex match → normal bubble flow
                         $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
-                        $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles);
+                        $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles, $conversation);
                     } else {
                         // No Flex, no bubbles → send as plain text
                         $retryKey = $lineService->generateRetryKey();
@@ -1112,10 +1112,12 @@ class ProcessLINEWebhook implements ShouldQueue
             $bubblesService = app(MultipleBubblesService::class);
             if ($bubblesService->isEnabled($this->bot)) {
                 $bubbles = $bubblesService->parseIntoBubbles($responseContent, $this->bot);
-                $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles);
+                $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles, $conversation);
             } else {
+                $paymentFlex = app(\App\Services\PaymentFlexService::class);
+                $transformed = $paymentFlex->tryConvertToFlex($responseContent, $conversation);
                 $retryKey = $lineService->generateRetryKey();
-                $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$responseContent], $retryKey);
+                $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$transformed], $retryKey);
             }
 
             // Refresh and broadcast

@@ -252,7 +252,7 @@ class ProcessAggregatedMessages implements ShouldQueue
                 // (reply token has likely expired after waiting)
                 if ($botMessage->content) {
                     $paymentFlex = app(\App\Services\PaymentFlexService::class);
-                    $transformed = $paymentFlex->tryConvertToFlex($botMessage->content);
+                    $transformed = $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation);
 
                     if (is_array($transformed)) {
                         // Flex detected on full text → send as single message
@@ -261,7 +261,7 @@ class ProcessAggregatedMessages implements ShouldQueue
                     } elseif ($bubblesService->isEnabled($this->bot)) {
                         // No Flex match → normal bubble flow
                         $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
-                        $bubblesService->sendBubbles($this->bot, $this->externalUserId, null, $bubbles);
+                        $bubblesService->sendBubbles($this->bot, $this->externalUserId, null, $bubbles, $this->conversation);
                     } else {
                         // No Flex, no bubbles → send as plain text
                         $retryKey = $lineService->generateRetryKey();

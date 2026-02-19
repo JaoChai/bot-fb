@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services;
 
+use App\Models\Conversation;
 use App\Services\PaymentFlexService;
 use Tests\TestCase;
 
@@ -425,7 +426,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContains('จัดส่งภายใน 5-10 นาที', $json);
         $this->assertStringContains('@743ddeqy', $json);
         $this->assertStringContains('ขอบคุณ', $json);
-        $this->assertStringContains('Captain Ad', $json);
+        $this->assertStringContains('กัปตันแอด', $json);
     }
 
     /** @test */
@@ -443,11 +444,211 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContains('[ยืนยันชำระเงิน]', $result['altText']);
     }
 
+    // ────────────────────────────────────────────────────────
+    // VIP Detection & Styling Tests
+    // ────────────────────────────────────────────────────────
+
+    /** @test */
+    public function test_detects_vip_from_memory_notes_string(): void
+    {
+        $conversation = new Conversation;
+        $conversation->memory_notes = ['ลูกค้า VIP เคยซื้อ Nolimit 3 ครั้ง'];
+
+        $this->assertTrue($this->service->isVipConversation($conversation));
+    }
+
+    /** @test */
+    public function test_detects_vip_from_memory_notes_object(): void
+    {
+        // Production format: array of objects with 'content' key
+        $conversation = new Conversation;
+        $conversation->memory_notes = [
+            [
+                'id' => 'test-uuid',
+                'type' => 'memory',
+                'content' => 'ลูกค้า VIP เคยซื้อ Nolimit Level Up+ BM มาแล้ว',
+                'created_at' => '2026-01-16T05:26:19.002451Z',
+            ],
+        ];
+
+        $this->assertTrue($this->service->isVipConversation($conversation));
+    }
+
+    /** @test */
+    public function test_detects_vip_case_insensitive(): void
+    {
+        $conversation = new Conversation;
+        $conversation->memory_notes = ['ลูกค้า vip ประจำ'];
+
+        $this->assertTrue($this->service->isVipConversation($conversation));
+    }
+
+    /** @test */
+    public function test_not_vip_without_keyword(): void
+    {
+        $conversation = new Conversation;
+        $conversation->memory_notes = ['ลูกค้าใหม่ สนใจ Nolimit'];
+
+        $this->assertFalse($this->service->isVipConversation($conversation));
+    }
+
+    /** @test */
+    public function test_not_vip_object_without_keyword(): void
+    {
+        $conversation = new Conversation;
+        $conversation->memory_notes = [
+            ['type' => 'memory', 'content' => 'ลูกค้าใหม่ สนใจ Nolimit'],
+        ];
+
+        $this->assertFalse($this->service->isVipConversation($conversation));
+    }
+
+    /** @test */
+    public function test_not_vip_with_null_conversation(): void
+    {
+        $this->assertFalse($this->service->isVipConversation(null));
+    }
+
+    /** @test */
+    public function test_not_vip_with_empty_memory_notes(): void
+    {
+        $conversation = new Conversation;
+        $conversation->memory_notes = [];
+
+        $this->assertFalse($this->service->isVipConversation($conversation));
+    }
+
+    /** @test */
+    public function test_not_vip_with_non_string_memory_notes(): void
+    {
+        $conversation = new Conversation;
+        $conversation->memory_notes = [['type' => 'vip'], null, 123];
+
+        $this->assertFalse($this->service->isVipConversation($conversation));
+    }
+
+    /** @test */
+    public function test_payment_flex_vip_has_gold_header(): void
+    {
+        $data = [
+            'items' => [['name' => 'Nolimit Level Up+ BM', 'total' => '800']],
+            'total' => '800',
+        ];
+
+        $flex = $this->service->buildFlexMessage($data, true);
+
+        $this->assertEquals('#D4A017', $flex['contents']['header']['backgroundColor']);
+        $headerJson = json_encode($flex['contents']['header'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('👑 VIP', $headerJson);
+        $this->assertStringContains('สรุปรายการสั่งซื้อ', $headerJson);
+    }
+
+    /** @test */
+    public function test_payment_flex_normal_has_green_header(): void
+    {
+        $data = [
+            'items' => [],
+            'total' => '800',
+        ];
+
+        $flex = $this->service->buildFlexMessage($data, false);
+
+        $this->assertEquals('#1DB446', $flex['contents']['header']['backgroundColor']);
+        $headerJson = json_encode($flex['contents']['header'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('สรุปรายการสั่งซื้อ', $headerJson);
+        $this->assertStringNotContains('VIP', $headerJson);
+    }
+
+    /** @test */
+    public function test_verify_flex_vip_has_gold_header(): void
+    {
+        $data = [
+            'amount' => '1,600',
+            'items' => ['Nolimit Level Up+ BM ×2'],
+            'delivery' => '5-10 นาที',
+        ];
+
+        $flex = $this->service->buildVerifyFlexMessage($data, true);
+
+        $this->assertEquals('#D4A017', $flex['contents']['header']['backgroundColor']);
+        $headerJson = json_encode($flex['contents']['header'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('👑 VIP', $headerJson);
+        $this->assertStringContains('ยืนยันชำระเงินสำเร็จ', $headerJson);
+
+        // Footer should mention VIP
+        $footerJson = json_encode($flex['contents']['footer'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('VIP', $footerJson);
+    }
+
+    /** @test */
+    public function test_verify_flex_normal_has_green_header(): void
+    {
+        $data = [
+            'amount' => '800',
+            'items' => [],
+            'delivery' => null,
+        ];
+
+        $flex = $this->service->buildVerifyFlexMessage($data, false);
+
+        $this->assertEquals('#1DB446', $flex['contents']['header']['backgroundColor']);
+        $footerJson = json_encode($flex['contents']['footer'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringNotContains('VIP', $footerJson);
+    }
+
+    /** @test */
+    public function test_try_convert_with_vip_conversation_returns_gold_flex(): void
+    {
+        $conversation = new Conversation;
+        $conversation->memory_notes = [
+            ['type' => 'memory', 'content' => 'ลูกค้า VIP ประจำ'],
+        ];
+
+        $text = <<<'TEXT'
+        สรุปรายการสั่งซื้อ
+        1. Nolimit Level Up+ BM 800 บาท
+
+        รวมยอดโอน: 800 บาท
+
+        โอนเข้าบัญชี
+        223-3-24880-3
+        TEXT;
+
+        $result = $this->service->tryConvertToFlex($text, $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertEquals('#D4A017', $result['contents']['header']['backgroundColor']);
+    }
+
+    /** @test */
+    public function test_try_convert_without_conversation_returns_green_flex(): void
+    {
+        $text = <<<'TEXT'
+        สรุปรายการสั่งซื้อ
+        1. Nolimit Level Up+ BM 800 บาท
+
+        รวมยอดโอน: 800 บาท
+
+        โอนเข้าบัญชี
+        223-3-24880-3
+        TEXT;
+
+        $result = $this->service->tryConvertToFlex($text);
+
+        $this->assertIsArray($result);
+        $this->assertEquals('#1DB446', $result['contents']['header']['backgroundColor']);
+    }
+
     /**
      * Helper: assert string contains substring (PHPUnit 10+ compatible).
      */
     private function assertStringContains(string $needle, string $haystack): void
     {
         $this->assertStringContainsString($needle, $haystack);
+    }
+
+    private function assertStringNotContains(string $needle, string $haystack): void
+    {
+        $this->assertStringNotContainsString($needle, $haystack);
     }
 }
