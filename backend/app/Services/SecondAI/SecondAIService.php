@@ -35,11 +35,11 @@ class SecondAIService
         protected SecondAIMetricsService $metricsService,
     ) {
         $this->timeout = app()->bound('config')
-            ? (int) config('rag.second_ai.pipeline_timeout', 20)
-            : 20;
+            ? (int) config('rag.second_ai.pipeline_timeout', 25)
+            : 25;
         $this->httpTimeout = app()->bound('config')
-            ? (int) config('rag.second_ai.http_timeout', 10)
-            : 10;
+            ? (int) config('rag.second_ai.http_timeout', 15)
+            : 15;
     }
 
     /**

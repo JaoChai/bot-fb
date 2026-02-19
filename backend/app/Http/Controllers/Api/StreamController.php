@@ -872,9 +872,9 @@ class StreamController extends Controller
             'model' => $model,
         ]);
 
-        // Set tight timeout for Second AI in streaming context
+        // Set pipeline timeout for Second AI (must be < frontend heartbeat 30s)
         $this->secondAI->setTimeout(
-            (int) config('rag.second_ai.pipeline_timeout', 8)
+            (int) config('rag.second_ai.pipeline_timeout', 25)
         );
 
         // Use rescue() for graceful timeout handling

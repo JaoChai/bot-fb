@@ -19,7 +19,7 @@ class UnifiedCheckService
         protected OpenRouterService $openRouter,
         protected RAGService $ragService,
     ) {
-        $this->timeout = (int) config('rag.second_ai.http_timeout', 8);
+        $this->timeout = (int) config('rag.second_ai.http_timeout', 15);
     }
 
     /**
