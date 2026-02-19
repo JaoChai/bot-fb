@@ -47,7 +47,9 @@ class PolicyCheckService
     public function check(
         string $response,
         Flow $flow,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?int $timeout = null,
+        ?string $fallbackModel = null
     ): CheckResult {
         // Resolve model from Bot Settings
         $this->model = $flow->bot?->decision_model
@@ -56,7 +58,7 @@ class PolicyCheckService
 
         try {
             // Step 1: Extract policy rules from system prompt
-            $policyRules = $this->extractPolicyRules($flow->system_prompt, $apiKey);
+            $policyRules = $this->extractPolicyRules($flow->system_prompt, $apiKey, $timeout, $fallbackModel);
 
             if (empty($policyRules)) {
                 Log::debug('PolicyCheck: No policies found, using defaults');
@@ -66,7 +68,7 @@ class PolicyCheckService
             Log::debug('PolicyCheck: Extracted policies', ['count' => count($policyRules)]);
 
             // Step 2: Check response against policies
-            $checkResult = $this->checkAgainstPolicies($response, $policyRules, $apiKey);
+            $checkResult = $this->checkAgainstPolicies($response, $policyRules, $apiKey, $timeout, $fallbackModel);
 
             // Step 3: If violations found, rewrite
             if (!empty($checkResult['violations'])) {
@@ -78,7 +80,9 @@ class PolicyCheckService
                     $response,
                     $checkResult['violations'],
                     $policyRules,
-                    $apiKey
+                    $apiKey,
+                    $timeout,
+                    $fallbackModel
                 );
 
                 return CheckResult::modified(
@@ -111,7 +115,7 @@ class PolicyCheckService
      * @param string|null $apiKey Optional API key override
      * @return array List of policy rules
      */
-    protected function extractPolicyRules(string $systemPrompt, ?string $apiKey = null): array
+    protected function extractPolicyRules(string $systemPrompt, ?string $apiKey = null, ?int $timeout = null, ?string $fallbackModel = null): array
     {
         // If system prompt is short or doesn't seem to have policies, use defaults
         if (strlen($systemPrompt) < 100) {
@@ -145,7 +149,9 @@ PROMPT;
             temperature: 0.0,
             maxTokens: 1000,
             useFallback: true,
-            apiKeyOverride: $apiKey
+            apiKeyOverride: $apiKey,
+            fallbackModelOverride: $fallbackModel,
+            timeout: $timeout
         );
 
         $content = trim($result['content']);
@@ -183,7 +189,9 @@ PROMPT;
     protected function checkAgainstPolicies(
         string $response,
         array $policies,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?int $timeout = null,
+        ?string $fallbackModel = null
     ): array {
         $policiesList = implode("\n", array_map(fn ($i, $p) => ($i + 1) . ". {$p}", array_keys($policies), $policies));
 
@@ -219,7 +227,9 @@ PROMPT;
             temperature: 0.0,
             maxTokens: 1000,
             useFallback: true,
-            apiKeyOverride: $apiKey
+            apiKeyOverride: $apiKey,
+            fallbackModelOverride: $fallbackModel,
+            timeout: $timeout
         );
 
         $content = trim($result['content']);
@@ -259,7 +269,9 @@ PROMPT;
         string $originalResponse,
         array $violations,
         array $policies,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?int $timeout = null,
+        ?string $fallbackModel = null
     ): string {
         $violationsList = implode("\n", array_map(
             fn ($v) => "- {$v['policy']}: {$v['reason']}",
@@ -299,7 +311,9 @@ PROMPT;
             temperature: 0.3,
             maxTokens: 2000,
             useFallback: true,
-            apiKeyOverride: $apiKey
+            apiKeyOverride: $apiKey,
+            fallbackModelOverride: $fallbackModel,
+            timeout: $timeout
         );
 
         return trim($result['content']);

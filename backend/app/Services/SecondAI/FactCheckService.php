@@ -50,7 +50,9 @@ class FactCheckService
         string $response,
         Flow $flow,
         string $userMessage,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?int $timeout = null,
+        ?string $fallbackModel = null
     ): CheckResult {
         // Resolve model from Bot Settings
         $this->model = $flow->bot?->decision_model
@@ -69,7 +71,7 @@ class FactCheckService
 
         try {
             // Step 1: Extract factual claims from response
-            $claims = $this->extractClaims($response, $apiKey);
+            $claims = $this->extractClaims($response, $apiKey, $timeout, $fallbackModel);
 
             if (empty($claims)) {
                 Log::debug('FactCheck: No factual claims found in response');
@@ -101,7 +103,9 @@ class FactCheckService
                 $response,
                 $verifiedClaims,
                 $userMessage,
-                $apiKey
+                $apiKey,
+                $timeout,
+                $fallbackModel
             );
 
             return CheckResult::modified(
@@ -132,7 +136,7 @@ class FactCheckService
      * @param string|null $apiKey Optional API key override
      * @return array List of extracted claims
      */
-    protected function extractClaims(string $response, ?string $apiKey = null): array
+    protected function extractClaims(string $response, ?string $apiKey = null, ?int $timeout = null, ?string $fallbackModel = null): array
     {
         $prompt = <<<PROMPT
 Analyze the following response and extract all factual claims that can be verified against a knowledge base.
@@ -160,7 +164,9 @@ PROMPT;
             temperature: 0.0,
             maxTokens: 1000,
             useFallback: true,
-            apiKeyOverride: $apiKey
+            apiKeyOverride: $apiKey,
+            fallbackModelOverride: $fallbackModel,
+            timeout: $timeout
         );
 
         $content = trim($result['content']);
@@ -251,7 +257,9 @@ PROMPT;
         string $originalResponse,
         array $verifiedClaims,
         string $userMessage,
-        ?string $apiKey = null
+        ?string $apiKey = null,
+        ?int $timeout = null,
+        ?string $fallbackModel = null
     ): string {
         $unverifiedList = collect($verifiedClaims)
             ->where('has_evidence', false)
@@ -297,7 +305,9 @@ PROMPT;
             temperature: 0.3,
             maxTokens: 2000,
             useFallback: true,
-            apiKeyOverride: $apiKey
+            apiKeyOverride: $apiKey,
+            fallbackModelOverride: $fallbackModel,
+            timeout: $timeout
         );
 
         return trim($result['content']);
