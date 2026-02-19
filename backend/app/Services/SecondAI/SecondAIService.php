@@ -117,8 +117,8 @@ class SecondAIService
                     'flow_id' => $flow->id,
                     'error' => $e->getMessage(),
                 ]);
-                // Reset timer so sequential mode gets full budget
-                $startTime = microtime(true);
+                // Share pipeline budget — don't reset timer to stay within
+                // frontend heartbeat threshold (30s)
             }
         }
 
