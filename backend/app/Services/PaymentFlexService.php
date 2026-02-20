@@ -264,20 +264,40 @@ class PaymentFlexService
             ],
         ];
 
-        // TrueMoney warning box
+        // Warning & slip instruction box
         $bodyContents[] = [
             'type' => 'box',
-            'layout' => 'horizontal',
+            'layout' => 'vertical',
             'margin' => 'lg',
             'backgroundColor' => '#FFF9E6',
             'cornerRadius' => 'md',
             'paddingAll' => 'md',
+            'spacing' => 'sm',
             'contents' => [
                 [
                     'type' => 'text',
                     'text' => '⚠️ ไม่รับโอนเงินจากทรูมันนี่',
                     'size' => 'xs',
                     'color' => '#996600',
+                    'wrap' => true,
+                ],
+                [
+                    'type' => 'separator',
+                    'margin' => 'sm',
+                ],
+                [
+                    'type' => 'text',
+                    'text' => '📸 เมื่อโอนเงินเสร็จแล้ว กรุณาส่งเป็นรูปสลิปจากแอปธนาคารเท่านั้น',
+                    'size' => 'xs',
+                    'color' => '#555555',
+                    'wrap' => true,
+                ],
+                [
+                    'type' => 'text',
+                    'text' => '❌ ไม่รับรูปถ่ายจากกล้องมือถือ',
+                    'size' => 'xs',
+                    'color' => '#CC0000',
+                    'weight' => 'bold',
                     'wrap' => true,
                 ],
             ],
