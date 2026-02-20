@@ -16,6 +16,7 @@ class PaymentFlexService
     private const SUPPORT_LINE_ID = '@743ddeqy';
     private const NORMAL_PRIMARY_COLOR = '#1DB446';
     private const VIP_PRIMARY_COLOR = '#D4A017';
+    private const CONFIRM_PRIMARY_COLOR = '#FF6B00';
 
     /**
      * Try to convert payment text to LINE Flex Message.
@@ -46,6 +47,14 @@ class PaymentFlexService
                 $data = $this->parseVerifyData($text);
                 if ($data !== null) {
                     return $this->safeBuildFlex($text, $this->buildVerifyFlexMessage($data, $isVip));
+                }
+            }
+
+            // Step 2: Confirm message (least specific — check last)
+            if ($this->isConfirmMessage($text)) {
+                $data = $this->parseConfirmData($text);
+                if ($data !== null) {
+                    return $this->safeBuildFlex($text, $this->buildConfirmFlexMessage($data, $isVip));
                 }
             }
 
@@ -358,6 +367,199 @@ class PaymentFlexService
                     'color' => '#333333',
                     'align' => 'end',
                     'flex' => 2,
+                ],
+            ],
+        ];
+    }
+
+    // ────────────────────────────────────────────────────────
+    // Step 2: Confirm Message
+    // ────────────────────────────────────────────────────────
+
+    /**
+     * Detect if text is a confirm message (Step 2).
+     * Must contain "รวม...บาท" + "ยืนยัน", but NOT bank account, verify tag, or terms keywords.
+     */
+    public function isConfirmMessage(string $text): bool
+    {
+        // Exclude Step 4 (payment - has bank account)
+        if (mb_strpos($text, self::BANK_ACCOUNT) !== false) {
+            return false;
+        }
+        // Exclude Step 5 (verify - has เงินเข้าแล้ว)
+        if (mb_strpos($text, 'เงินเข้าแล้ว') !== false) {
+            return false;
+        }
+        // Exclude Step 5 (verify - has tag)
+        if (mb_strpos($text, '[ยืนยันชำระเงิน]') !== false) {
+            return false;
+        }
+        // Exclude Step 3 (terms)
+        if (mb_strpos($text, 'ข้อตกลง') !== false) {
+            return false;
+        }
+
+        // Must have total pattern: รวม...บาท (รองรับ รวม, รวมทั้งหมด, รวมยอด, รวมเป็นเงิน)
+        if (! preg_match('/รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?\s*:?\s*[\d,]+\s*บาท/u', $text)) {
+            return false;
+        }
+
+        // Must have "ยืนยัน"
+        return mb_strpos($text, 'ยืนยัน') !== false;
+    }
+
+    /**
+     * Parse confirm data from text.
+     * Returns null if total cannot be parsed (required field).
+     */
+    public function parseConfirmData(string $text): ?array
+    {
+        // Parse total (required) — รองรับ รวม, รวมทั้งหมด, รวมยอด, รวมเป็นเงิน
+        if (! preg_match('/รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?\s*:?\s*([\d,]+)\s*บาท/u', $text, $totalMatch)) {
+            return null;
+        }
+
+        $total = $totalMatch[1];
+
+        // Parse items (optional) — reuse same regex as parsePaymentData
+        $items = [];
+        preg_match_all(
+            '/(?:^|\n)\s*(?:\d+[\.\)]\s*|[-•]\s*)(.+?)\s*(?:\(([\d,]+)\s*[x×]\s*(\d+)\)\s*=\s*)?([\d,]+)\s*บาท/u',
+            $text,
+            $itemMatches,
+            PREG_SET_ORDER
+        );
+
+        foreach ($itemMatches as $match) {
+            $item = [
+                'name' => trim($match[1]),
+                'total' => $match[4],
+            ];
+
+            if (! empty($match[2]) && ! empty($match[3])) {
+                $item['price'] = $match[2];
+                $item['qty'] = (int) $match[3];
+            }
+
+            $items[] = $item;
+        }
+
+        return [
+            'items' => $items,
+            'total' => $total,
+        ];
+    }
+
+    /**
+     * Build LINE Flex Message for order confirmation (Step 2).
+     */
+    public function buildConfirmFlexMessage(array $data, bool $isVip = false): array
+    {
+        $total = $data['total'];
+        $items = $data['items'];
+        $primaryColor = $isVip ? self::VIP_PRIMARY_COLOR : self::CONFIRM_PRIMARY_COLOR;
+        $headerText = $isVip ? '👑 VIP ยืนยันรายการสั่งซื้อ' : '📋 ยืนยันรายการสั่งซื้อ';
+
+        $bodyContents = [];
+
+        // Subheader text
+        $bodyContents[] = [
+            'type' => 'text',
+            'text' => 'กรุณาตรวจสอบความถูกต้อง',
+            'size' => 'sm',
+            'color' => '#888888',
+        ];
+
+        // Items section
+        if (! empty($items)) {
+            $bodyContents[] = [
+                'type' => 'separator',
+                'margin' => 'lg',
+            ];
+
+            foreach ($items as $item) {
+                $bodyContents[] = $this->buildItemRow($item);
+            }
+
+            $bodyContents[] = [
+                'type' => 'separator',
+                'margin' => 'lg',
+            ];
+        }
+
+        // Total row
+        $bodyContents[] = [
+            'type' => 'box',
+            'layout' => 'horizontal',
+            'margin' => 'lg',
+            'contents' => [
+                [
+                    'type' => 'text',
+                    'text' => 'รวม',
+                    'size' => 'md',
+                    'color' => '#555555',
+                    'flex' => 0,
+                ],
+                [
+                    'type' => 'text',
+                    'text' => "{$total} บาท",
+                    'size' => 'lg',
+                    'color' => $primaryColor,
+                    'weight' => 'bold',
+                    'align' => 'end',
+                ],
+            ],
+        ];
+
+        return [
+            'type' => 'flex',
+            'altText' => "{$headerText} - รวม {$total} บาท",
+            'contents' => [
+                'type' => 'bubble',
+                'header' => [
+                    'type' => 'box',
+                    'layout' => 'vertical',
+                    'backgroundColor' => $primaryColor,
+                    'paddingAll' => 'lg',
+                    'contents' => [
+                        [
+                            'type' => 'text',
+                            'text' => $headerText,
+                            'color' => '#FFFFFF',
+                            'size' => 'lg',
+                            'weight' => 'bold',
+                        ],
+                    ],
+                ],
+                'body' => [
+                    'type' => 'box',
+                    'layout' => 'vertical',
+                    'contents' => $bodyContents,
+                ],
+                'footer' => [
+                    'type' => 'box',
+                    'layout' => 'vertical',
+                    'spacing' => 'sm',
+                    'contents' => [
+                        [
+                            'type' => 'button',
+                            'action' => [
+                                'type' => 'message',
+                                'label' => '✅ ยืนยันรายการ',
+                                'text' => 'ยืนยัน',
+                            ],
+                            'style' => 'primary',
+                            'color' => $primaryColor,
+                        ],
+                        [
+                            'type' => 'text',
+                            'text' => "พิมพ์ 'ยืนยัน' ได้เลยครับ 🙏",
+                            'size' => 'xs',
+                            'color' => '#AAAAAA',
+                            'align' => 'center',
+                            'margin' => 'md',
+                        ],
+                    ],
                 ],
             ],
         ];

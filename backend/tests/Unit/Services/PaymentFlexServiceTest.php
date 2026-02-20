@@ -238,6 +238,244 @@ class PaymentFlexServiceTest extends TestCase
     }
 
     // ────────────────────────────────────────────────────────
+    // Step 2: Confirm Message Tests
+    // ────────────────────────────────────────────────────────
+
+    /** @test */
+    public function test_detects_confirm_message(): void
+    {
+        $text = <<<'TEXT'
+        สรุปรายการสั่งซื้อ
+        1. Nolimit Level Up+ BM 800 บาท
+
+        รวม: 800 บาท
+
+        หากถูกต้อง กรุณาพิมพ์ "ยืนยัน" เพื่อดำเนินการต่อครับ
+        TEXT;
+
+        $this->assertTrue($this->service->isConfirmMessage($text));
+    }
+
+    /** @test */
+    public function test_does_not_detect_payment_as_confirm(): void
+    {
+        // Step 4: has bank account → should NOT be detected as confirm
+        $text = "รวม: 800 บาท\nยืนยัน\n223-3-24880-3";
+
+        $this->assertFalse($this->service->isConfirmMessage($text));
+    }
+
+    /** @test */
+    public function test_does_not_detect_verify_as_confirm(): void
+    {
+        // Step 5: has เงินเข้าแล้ว
+        $text = "เงินเข้าแล้ว 800 บาท\nรวม: 800 บาท\nยืนยัน\n[ยืนยันชำระเงิน]";
+
+        $this->assertFalse($this->service->isConfirmMessage($text));
+
+        // Step 5: has tag only
+        $text2 = "รวม: 800 บาท\nยืนยัน\n[ยืนยันชำระเงิน]";
+
+        $this->assertFalse($this->service->isConfirmMessage($text2));
+    }
+
+    /** @test */
+    public function test_does_not_detect_terms_as_confirm(): void
+    {
+        // Step 3: has ข้อตกลง
+        $text = "รวม: 800 บาท\nยืนยัน\nข้อตกลงการใช้บริการ";
+
+        $this->assertFalse($this->service->isConfirmMessage($text));
+    }
+
+    /** @test */
+    public function test_parses_confirm_data_with_items(): void
+    {
+        $text = <<<'TEXT'
+        1. Nolimit Level Up+ BM (800 x 2) = 1,600 บาท
+        2. Nolimit Level Up+ Personal 900 บาท
+
+        รวม: 2,500 บาท
+        TEXT;
+
+        $data = $this->service->parseConfirmData($text);
+
+        $this->assertNotNull($data);
+        $this->assertEquals('2,500', $data['total']);
+        $this->assertCount(2, $data['items']);
+        $this->assertEquals('Nolimit Level Up+ BM', $data['items'][0]['name']);
+        $this->assertEquals('1,600', $data['items'][0]['total']);
+        $this->assertEquals('800', $data['items'][0]['price']);
+        $this->assertEquals(2, $data['items'][0]['qty']);
+        $this->assertEquals('Nolimit Level Up+ Personal', $data['items'][1]['name']);
+        $this->assertEquals('900', $data['items'][1]['total']);
+    }
+
+    /** @test */
+    public function test_parses_confirm_data_total_only(): void
+    {
+        $text = "รวม: 800 บาท\nกรุณาพิมพ์ ยืนยัน";
+
+        $data = $this->service->parseConfirmData($text);
+
+        $this->assertNotNull($data);
+        $this->assertEquals('800', $data['total']);
+        $this->assertEmpty($data['items']);
+    }
+
+    /** @test */
+    public function test_detects_confirm_with_total_variants(): void
+    {
+        // รวมทั้งหมด
+        $text1 = "รวมทั้งหมด: 1,600 บาท\nกรุณาพิมพ์ ยืนยัน";
+        $this->assertTrue($this->service->isConfirmMessage($text1));
+        $data1 = $this->service->parseConfirmData($text1);
+        $this->assertNotNull($data1);
+        $this->assertEquals('1,600', $data1['total']);
+
+        // รวมยอด
+        $text2 = "รวมยอด: 800 บาท\nยืนยัน";
+        $this->assertTrue($this->service->isConfirmMessage($text2));
+        $data2 = $this->service->parseConfirmData($text2);
+        $this->assertNotNull($data2);
+        $this->assertEquals('800', $data2['total']);
+
+        // รวมเป็นเงิน
+        $text3 = "รวมเป็นเงิน 2,500 บาท\nยืนยัน";
+        $this->assertTrue($this->service->isConfirmMessage($text3));
+        $data3 = $this->service->parseConfirmData($text3);
+        $this->assertNotNull($data3);
+        $this->assertEquals('2,500', $data3['total']);
+
+        // ยอดรวม (รวม อยู่ข้างใน — match ได้เลย)
+        $text4 = "ยอดรวม: 900 บาท\nยืนยัน";
+        $this->assertTrue($this->service->isConfirmMessage($text4));
+    }
+
+    /** @test */
+    public function test_parse_confirm_returns_null_without_total(): void
+    {
+        $text = "สรุปรายการ\nกรุณาพิมพ์ ยืนยัน";
+
+        $data = $this->service->parseConfirmData($text);
+
+        $this->assertNull($data);
+    }
+
+    /** @test */
+    public function test_builds_confirm_flex_structure(): void
+    {
+        $data = [
+            'items' => [
+                ['name' => 'Nolimit Level Up+ BM', 'total' => '800'],
+            ],
+            'total' => '800',
+        ];
+
+        $flex = $this->service->buildConfirmFlexMessage($data);
+
+        $this->assertEquals('flex', $flex['type']);
+        $this->assertStringContains('ยืนยันรายการสั่งซื้อ', $flex['altText']);
+        $this->assertStringContains('800 บาท', $flex['altText']);
+        $this->assertEquals('bubble', $flex['contents']['type']);
+        $this->assertArrayHasKey('header', $flex['contents']);
+        $this->assertArrayHasKey('body', $flex['contents']);
+        $this->assertArrayHasKey('footer', $flex['contents']);
+
+        // Header should be orange
+        $this->assertEquals('#FF6B00', $flex['contents']['header']['backgroundColor']);
+
+        // Body should have subheader text
+        $json = json_encode($flex, JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('กรุณาตรวจสอบความถูกต้อง', $json);
+        $this->assertStringContains('Nolimit Level Up+ BM', $json);
+        $this->assertStringContains('800 บาท', $json);
+    }
+
+    /** @test */
+    public function test_confirm_flex_has_message_button(): void
+    {
+        $data = [
+            'items' => [],
+            'total' => '800',
+        ];
+
+        $flex = $this->service->buildConfirmFlexMessage($data);
+        $json = json_encode($flex, JSON_UNESCAPED_UNICODE);
+
+        // Button should be message action type (not URI, not clipboard)
+        $this->assertStringContains('"type":"message"', $json);
+        $this->assertStringContains('"text":"ยืนยัน"', $json);
+        $this->assertStringContains('ยืนยันรายการ', $json);
+    }
+
+    /** @test */
+    public function test_confirm_flex_vip_has_gold_header(): void
+    {
+        $data = [
+            'items' => [['name' => 'Nolimit Level Up+ BM', 'total' => '800']],
+            'total' => '800',
+        ];
+
+        $flex = $this->service->buildConfirmFlexMessage($data, true);
+
+        $this->assertEquals('#D4A017', $flex['contents']['header']['backgroundColor']);
+        $headerJson = json_encode($flex['contents']['header'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('👑 VIP', $headerJson);
+        $this->assertStringContains('ยืนยันรายการสั่งซื้อ', $headerJson);
+
+        // Button should also be gold
+        $footerJson = json_encode($flex['contents']['footer'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('#D4A017', $footerJson);
+    }
+
+    /** @test */
+    public function test_try_convert_returns_flex_for_confirm(): void
+    {
+        $text = <<<'TEXT'
+        สรุปรายการสั่งซื้อ
+        1. Nolimit Level Up+ BM 800 บาท
+
+        รวม: 800 บาท
+
+        หากถูกต้อง กรุณาพิมพ์ "ยืนยัน" เพื่อดำเนินการต่อครับ
+        TEXT;
+
+        $result = $this->service->tryConvertToFlex($text);
+
+        $this->assertIsArray($result);
+        $this->assertEquals('flex', $result['type']);
+        $this->assertEquals('bubble', $result['contents']['type']);
+        $this->assertEquals('#FF6B00', $result['contents']['header']['backgroundColor']);
+    }
+
+    /** @test */
+    public function test_try_convert_returns_flex_for_confirm_vip(): void
+    {
+        $conversation = new Conversation;
+        $conversation->memory_notes = [
+            ['type' => 'memory', 'content' => 'ลูกค้า VIP ประจำ'],
+        ];
+
+        $text = <<<'TEXT'
+        สรุปรายการสั่งซื้อ
+        1. Nolimit Level Up+ BM 800 บาท
+
+        รวม: 800 บาท
+
+        หากถูกต้อง กรุณาพิมพ์ "ยืนยัน" เพื่อดำเนินการต่อครับ
+        TEXT;
+
+        $result = $this->service->tryConvertToFlex($text, $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertEquals('flex', $result['type']);
+        $this->assertEquals('#D4A017', $result['contents']['header']['backgroundColor']);
+        $headerJson = json_encode($result['contents']['header'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('👑 VIP', $headerJson);
+    }
+
+    // ────────────────────────────────────────────────────────
     // Step 3: Terms Message Tests
     // ────────────────────────────────────────────────────────
 
