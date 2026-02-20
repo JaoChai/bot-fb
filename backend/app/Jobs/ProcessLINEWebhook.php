@@ -11,6 +11,7 @@ use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\AutoAssignmentService;
+use App\Services\Chat\ConversationContextService;
 use App\Services\CircuitBreakerService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
@@ -479,6 +480,9 @@ class ProcessLINEWebhook implements ShouldQueue
             }
 
             try {
+                // Auto-clear stale context before AI generates response
+                app(ConversationContextService::class)->autoClearIfIdle($conversation);
+
                 // Generate AI response (no transaction lock held)
                 $botMessage = $aiService->generateAndSaveResponse(
                     $this->bot,
@@ -1018,6 +1022,9 @@ class ProcessLINEWebhook implements ShouldQueue
         $lineService->showLoadingIndicator($this->bot, $userId, 30);
 
         try {
+            // Auto-clear stale context before image analysis
+            app(ConversationContextService::class)->autoClearIfIdle($conversation);
+
             // Build system prompt for image analysis
             $systemPrompt = $this->buildVisionSystemPrompt();
 

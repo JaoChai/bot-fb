@@ -7,6 +7,7 @@ use App\Events\MessageSent;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Services\AIService;
+use App\Services\Chat\ConversationContextService;
 use App\Services\LINEService;
 use App\Services\MessageAggregationService;
 use App\Services\MultipleBubblesService;
@@ -225,6 +226,9 @@ class ProcessAggregatedMessages implements ShouldQueue
 
             // Clean up re-dispatch counter on successful lock acquisition
             Cache::forget("ai_response_redispatch:{$conversationId}:{$this->groupId}");
+
+            // Auto-clear stale context before AI generates response
+            app(ConversationContextService::class)->autoClearIfIdle($this->conversation);
 
             try {
                 error_log("[AGGREGATION_DEBUG] Generating AI response - conversation_id: {$this->conversation->id}, content_length: " . strlen($mergedContent));
