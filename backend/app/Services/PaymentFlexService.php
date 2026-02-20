@@ -542,6 +542,13 @@ class PaymentFlexService
                     'spacing' => 'sm',
                     'contents' => [
                         [
+                            'type' => 'text',
+                            'text' => '👇 กดปุ่มด้านล่างเพื่อยืนยันรายการ',
+                            'size' => 'sm',
+                            'color' => '#555555',
+                            'align' => 'center',
+                        ],
+                        [
                             'type' => 'button',
                             'action' => [
                                 'type' => 'message',
@@ -553,7 +560,7 @@ class PaymentFlexService
                         ],
                         [
                             'type' => 'text',
-                            'text' => "พิมพ์ 'ยืนยัน' ได้เลยครับ 🙏",
+                            'text' => "หรือพิมพ์ 'ยืนยัน' ได้เลยครับ 🙏",
                             'size' => 'xs',
                             'color' => '#AAAAAA',
                             'align' => 'center',
