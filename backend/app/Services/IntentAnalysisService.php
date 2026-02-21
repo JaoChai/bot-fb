@@ -10,6 +10,11 @@ use Illuminate\Support\Facades\Log;
  *
  * Analyzes user messages to determine intent (chat vs knowledge).
  * Consolidates logic from RAGService::analyzeIntent() and StreamController::runDecisionModel().
+ *
+ * Enhanced Decision (reasoning models):
+ * When the Decision Model is a reasoning model (e.g., gpt-5-mini), it extracts
+ * additional data: entities, search_query, and complexity assessment.
+ * This enables Smart Chat Routing and improved KB search accuracy.
  */
 class IntentAnalysisService
 {
@@ -51,21 +56,38 @@ class IntentAnalysisService
             ];
         }
 
-        $prompt = $this->buildIntentAnalysisPrompt($bot, $validIntents, $includeExamples);
+        // Determine if we should use enhanced prompt (reasoning models extract more data)
+        $useEnhanced = $this->isReasoningModel($decisionModel);
+        $prompt = $useEnhanced
+            ? $this->buildEnhancedIntentPrompt($bot, $validIntents)
+            : $this->buildIntentAnalysisPrompt($bot, $validIntents, $includeExamples);
+
+        // Build chat parameters based on model capabilities
+        $chatParams = [
+            'messages' => [
+                ['role' => 'system', 'content' => $prompt],
+                ['role' => 'user', 'content' => $userMessage],
+            ],
+            'model' => $decisionModel,
+            'temperature' => 0.1, // Low temp for consistent decisions
+            'maxTokens' => $useEnhanced ? 300 : 150,
+            'useFallback' => true,
+            'apiKeyOverride' => $apiKey,
+            'fallbackModelOverride' => $fallbackDecisionModel,
+        ];
+
+        // Use structured output (JSON mode) for models that support it
+        if ($this->openRouter->supportsStructuredOutput($decisionModel)) {
+            $chatParams['responseFormat'] = ['type' => 'json_object'];
+        }
+
+        // Use low reasoning effort for non-mandatory reasoning models (save tokens)
+        if ($this->isReasoningModel($decisionModel) && !$this->isMandatoryReasoningModel($decisionModel)) {
+            $chatParams['reasoning'] = ['effort' => 'low'];
+        }
 
         try {
-            $result = $this->openRouter->chat(
-                messages: [
-                    ['role' => 'system', 'content' => $prompt],
-                    ['role' => 'user', 'content' => $userMessage],
-                ],
-                model: $decisionModel,
-                temperature: 0.1, // Low temp for consistent decisions
-                maxTokens: 150,
-                useFallback: true,
-                apiKeyOverride: $apiKey,
-                fallbackModelOverride: $fallbackDecisionModel
-            );
+            $result = $this->openRouter->chat(...$chatParams);
 
             $parsed = $this->parseIntentResponse(
                 $result['content'] ?? '',
@@ -155,6 +177,60 @@ EXAMPLES;
     }
 
     /**
+     * Build an enhanced system prompt for reasoning models.
+     *
+     * Reasoning models (gpt-5-mini, o1, etc.) can extract additional data
+     * beyond simple intent classification, making their thinking tokens productive.
+     *
+     * Enhanced response includes:
+     * - intent & confidence (same as basic)
+     * - entities: key entities/topics mentioned
+     * - search_query: optimized query for KB search
+     * - complexity: "simple" or "complex" for Smart Chat Routing
+     *
+     * @param Bot $bot The bot
+     * @param array $validIntents Valid intent types
+     * @return string The enhanced system prompt
+     */
+    protected function buildEnhancedIntentPrompt(Bot $bot, array $validIntents): string
+    {
+        $hasKB = $bot->kb_enabled && ($bot->defaultFlow?->knowledgeBases()->exists() || $bot->knowledgeBase);
+        $kbNote = $hasKB ? ' (Knowledge Base available for factual queries)' : '';
+
+        $intentsStr = implode('|', $validIntents);
+
+        return <<<PROMPT
+You are an intent classifier and message analyzer. Analyze the user's message and respond with JSON only.
+
+Required JSON format:
+{
+  "intent": "{$intentsStr}",
+  "confidence": 0.0-1.0,
+  "entities": ["entity1", "entity2"],
+  "search_query": "optimized search query or null",
+  "complexity": "simple|complex"
+}
+
+Field definitions:
+- "intent": Message classification
+  - "chat": Greetings, casual talk, opinions, acknowledgments, follow-ups
+  - "knowledge": Questions about facts, products, pricing, how-to, documentation{$kbNote}
+- "confidence": How certain you are (0.0 = uncertain, 1.0 = very certain)
+- "entities": Key topics, product names, or concepts mentioned (empty array if none)
+- "search_query": An optimized search query for knowledge base lookup. Extract core keywords, remove filler words. Set to null for chat intent.
+- "complexity": Message complexity assessment
+  - "simple": Greetings, yes/no questions, single-topic queries, acknowledgments
+  - "complex": Multi-part questions, comparisons, calculations, reasoning required, detailed explanations
+
+Rules:
+- When uncertain about intent, prefer "chat"
+- For Thai messages, extract entities in Thai
+- search_query should be concise keywords, not the full message
+- Respond with JSON only, no explanation
+PROMPT;
+    }
+
+    /**
      * Parse the intent analysis response from the LLM.
      *
      * @param string $content The raw response content
@@ -188,10 +264,23 @@ EXAMPLES;
             // Clamp confidence to 0-1
             $confidence = max(0, min(1, $confidence));
 
-            return [
+            $result = [
                 'intent' => $intent,
                 'confidence' => $confidence,
             ];
+
+            // Extract enhanced fields if present (from reasoning models)
+            if (isset($data['entities']) && is_array($data['entities'])) {
+                $result['entities'] = $data['entities'];
+            }
+            if (isset($data['search_query']) && is_string($data['search_query']) && $data['search_query'] !== '') {
+                $result['search_query'] = $data['search_query'];
+            }
+            if (isset($data['complexity']) && in_array($data['complexity'], ['simple', 'complex'])) {
+                $result['complexity'] = $data['complexity'];
+            }
+
+            return $result;
         } catch (\Exception $e) {
             // Use text fallback if enabled
             if ($useFallback) {
@@ -370,6 +459,22 @@ EXAMPLES;
 
         // Priority 3: Bot legacy fallback
         return $bot->llm_fallback_model;
+    }
+
+    /**
+     * Check if a model supports reasoning (thinking capability).
+     */
+    protected function isReasoningModel(string $model): bool
+    {
+        return $this->openRouter->supportsReasoning($model);
+    }
+
+    /**
+     * Check if a model has mandatory reasoning that cannot be disabled.
+     */
+    protected function isMandatoryReasoningModel(string $model): bool
+    {
+        return $this->openRouter->isMandatoryReasoning($model);
     }
 
     /**

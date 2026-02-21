@@ -42,6 +42,7 @@ class OpenRouterService
      * @param string|null $fallbackModelOverride Override fallback model (from bot settings)
      * @param int|null $timeout Request timeout in seconds (null uses default)
      * @param array|null $reasoning Reasoning config for o1/deepseek-r1 models: ['effort' => 'low'|'medium'|'high']
+     * @param array|null $responseFormat Response format config: ['type' => 'json_object'] for structured JSON output
      */
     public function chat(
         array $messages,
@@ -52,7 +53,8 @@ class OpenRouterService
         ?string $apiKeyOverride = null,
         ?string $fallbackModelOverride = null,
         ?int $timeout = null,
-        ?array $reasoning = null
+        ?array $reasoning = null,
+        ?array $responseFormat = null
     ): array {
         $model = $model ?? $this->defaultModel;
         $temperature = $temperature ?? 0.7;
@@ -81,13 +83,21 @@ class OpenRouterService
                 $payload['model'] = $model;
             }
 
-            // Add reasoning config for supported models (o1, o1-mini, deepseek-r1)
+            // Load model config once for capability checks
             $modelConfig = config("llm-models.models.{$model}");
+
+            // Add reasoning config for supported models (o1, o1-mini, deepseek-r1, gpt-5-mini)
             if ($reasoning || ($modelConfig['supports_reasoning'] ?? false)) {
                 $payload['reasoning'] = $reasoning ?? [
                     'effort' => $modelConfig['default_reasoning_effort'] ?? 'medium',
                 ];
                 Log::debug('Using reasoning mode', ['model' => $model, 'reasoning' => $payload['reasoning']]);
+            }
+
+            // Add response_format for structured output (JSON mode)
+            if ($responseFormat !== null && ($modelConfig['supports_structured_output'] ?? false)) {
+                $payload['response_format'] = $responseFormat;
+                Log::debug('Using structured output', ['model' => $model, 'format' => $responseFormat]);
             }
 
             // Add provider preferences for routing optimization (OpenRouter Best Practice)
@@ -503,6 +513,38 @@ class OpenRouterService
         $config = config("llm-models.models.{$model}");
 
         return $config['supports_reasoning'] ?? false;
+    }
+
+    /**
+     * Check if a model supports structured output (response_format: json_object).
+     *
+     * Models with structured output support can reliably return JSON responses
+     * when response_format is set, reducing parsing errors.
+     *
+     * @param string $model Model ID
+     * @return bool Whether the model supports structured output
+     */
+    public function supportsStructuredOutput(string $model): bool
+    {
+        $config = config("llm-models.models.{$model}");
+
+        return $config['supports_structured_output'] ?? false;
+    }
+
+    /**
+     * Check if a model has mandatory reasoning (cannot be disabled).
+     *
+     * Models like gpt-5-mini and o1 always use reasoning tokens.
+     * Use this to adjust prompts and token budgets accordingly.
+     *
+     * @param string $model Model ID
+     * @return bool Whether reasoning is mandatory
+     */
+    public function isMandatoryReasoning(string $model): bool
+    {
+        $config = config("llm-models.models.{$model}");
+
+        return $config['is_mandatory_reasoning'] ?? false;
     }
 
     /**

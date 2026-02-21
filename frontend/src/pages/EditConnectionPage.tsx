@@ -26,7 +26,7 @@ import {
   useToggleBotStatus,
 } from '@/hooks/useConnections';
 import { ArrowLeft, Loader2, Eye, EyeOff, ExternalLink, Trash2, MessageCircle, Settings, Cpu, Key, Zap, Copy, Check, Send, User } from 'lucide-react';
-import { ModelConfiguration } from '@/components/ModelSelector';
+import { ModelConfiguration, ModelSelector } from '@/components/ModelSelector';
 import { cn } from '@/lib/utils';
 
 const PLATFORMS = [
@@ -81,6 +81,10 @@ interface ConnectionFormData {
   telegram_bot_token: string;
   webhook_forwarder_enabled: boolean;
   auto_handover: boolean;
+  // Smart Routing
+  use_confidence_cascade: boolean;
+  cascade_cheap_model: string;
+  cascade_expensive_model: string;
 }
 
 const DEFAULT_FORM_DATA: ConnectionFormData = {
@@ -96,6 +100,9 @@ const DEFAULT_FORM_DATA: ConnectionFormData = {
   telegram_bot_token: '',
   webhook_forwarder_enabled: false,
   auto_handover: false,
+  use_confidence_cascade: false,
+  cascade_cheap_model: 'openai/gpt-4o-mini',
+  cascade_expensive_model: 'openai/gpt-5-mini',
 };
 
 const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://api.botjao.com';
@@ -142,6 +149,9 @@ export function EditConnectionPage() {
         telegram_bot_token: '', // Hidden field - don't populate
         webhook_forwarder_enabled: existingBot.webhook_forwarder_enabled || false,
         auto_handover: existingBot.auto_handover || false,
+        use_confidence_cascade: existingBot.use_confidence_cascade || false,
+        cascade_cheap_model: existingBot.cascade_cheap_model || DEFAULT_FORM_DATA.cascade_cheap_model,
+        cascade_expensive_model: existingBot.cascade_expensive_model || DEFAULT_FORM_DATA.cascade_expensive_model,
       });
     }
   }, [existingBot]);
@@ -221,6 +231,9 @@ export function EditConnectionPage() {
           fallback_decision_model: formData.fallback_decision_model,
           webhook_forwarder_enabled: formData.webhook_forwarder_enabled,
           auto_handover: formData.auto_handover,
+          use_confidence_cascade: formData.use_confidence_cascade,
+          cascade_cheap_model: formData.cascade_cheap_model,
+          cascade_expensive_model: formData.cascade_expensive_model,
           // Only send credentials if they were changed (not empty)
           ...(formData.platform === 'line' && formData.line_channel_secret && { channel_secret: formData.line_channel_secret }),
           ...(formData.platform === 'line' && formData.line_channel_access_token && { channel_access_token: formData.line_channel_access_token }),
@@ -241,6 +254,9 @@ export function EditConnectionPage() {
           fallback_decision_model: formData.fallback_decision_model,
           webhook_forwarder_enabled: formData.webhook_forwarder_enabled,
           auto_handover: formData.auto_handover,
+          use_confidence_cascade: formData.use_confidence_cascade,
+          cascade_cheap_model: formData.cascade_cheap_model,
+          cascade_expensive_model: formData.cascade_expensive_model,
         };
 
         // Set credentials based on platform
@@ -615,6 +631,43 @@ export function EditConnectionPage() {
                     onFallbackDecisionChange={(value) => handleChange('fallback_decision_model', value)}
                     showDecisionModels={true}
                   />
+                </Section>
+
+                {/* Smart Routing Section */}
+                <div className="border-t" />
+                <Section
+                  icon={Zap}
+                  title="Smart Routing"
+                  description="กระจายคำถามไปยัง model ที่เหมาะสมตามความซับซ้อน"
+                >
+                  <div className="flex items-center justify-between max-w-md">
+                    <div>
+                      <Label htmlFor="smart-routing" className="font-normal">เปิดใช้ Smart Routing</Label>
+                      <p className="text-xs text-muted-foreground">คำถามง่าย → model ถูก/เร็ว, คำถามซับซ้อน → model ฉลาด</p>
+                    </div>
+                    <Switch
+                      id="smart-routing"
+                      checked={formData.use_confidence_cascade}
+                      onCheckedChange={(checked) => handleChange('use_confidence_cascade', checked)}
+                    />
+                  </div>
+
+                  {formData.use_confidence_cascade && (
+                    <div className="space-y-4 mt-4 p-4 bg-muted/50 rounded-lg max-w-md">
+                      <ModelSelector
+                        label="โมเดลคำถามง่าย (ถูก/เร็ว)"
+                        value={formData.cascade_cheap_model}
+                        onChange={(value) => handleChange('cascade_cheap_model', value)}
+                        placeholder="เช่น openai/gpt-4o-mini"
+                      />
+                      <ModelSelector
+                        label="โมเดลคำถามซับซ้อน (ฉลาด)"
+                        value={formData.cascade_expensive_model}
+                        onChange={(value) => handleChange('cascade_expensive_model', value)}
+                        placeholder="เช่น openai/gpt-5-mini"
+                      />
+                    </div>
+                  )}
                 </Section>
 
                 {/* Advanced Options Section */}

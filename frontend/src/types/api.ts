@@ -75,6 +75,10 @@ export interface Bot {
   llm_temperature: number;
   llm_max_tokens: number;
   context_window: number;
+  // Smart Routing (Confidence Cascade)
+  use_confidence_cascade: boolean;
+  cascade_cheap_model: string | null;
+  cascade_expensive_model: string | null;
   // Knowledge Base Settings
   kb_enabled: boolean;
   kb_relevance_threshold: number;
@@ -109,6 +113,10 @@ export interface CreateConnectionData {
   channel_secret?: string;
   webhook_forwarder_enabled?: boolean;
   auto_handover?: boolean;
+  // Smart Routing (Confidence Cascade)
+  use_confidence_cascade?: boolean;
+  cascade_cheap_model?: string;
+  cascade_expensive_model?: string;
 }
 
 // Connection/Bot update data (API key now in User Settings)
@@ -124,6 +132,10 @@ export interface UpdateConnectionData {
   channel_secret?: string;
   webhook_forwarder_enabled?: boolean;
   auto_handover?: boolean;
+  // Smart Routing (Confidence Cascade)
+  use_confidence_cascade?: boolean;
+  cascade_cheap_model?: string;
+  cascade_expensive_model?: string;
 }
 
 // Bot Settings Types

@@ -24,6 +24,13 @@ class IntentAnalysisServiceTest extends TestCase
         parent::setUp();
 
         $this->mockOpenRouter = Mockery::mock(OpenRouterService::class);
+
+        // Default mock expectations for new capability check methods
+        // anthropic/claude-3-haiku is NOT a reasoning model and does NOT support structured output
+        $this->mockOpenRouter->shouldReceive('supportsReasoning')->andReturn(false)->byDefault();
+        $this->mockOpenRouter->shouldReceive('supportsStructuredOutput')->andReturn(false)->byDefault();
+        $this->mockOpenRouter->shouldReceive('isMandatoryReasoning')->andReturn(false)->byDefault();
+
         $this->service = new IntentAnalysisService($this->mockOpenRouter);
     }
 
