@@ -38,6 +38,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Database\Connection;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -146,6 +147,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Force HTTPS in production to prevent redirect loops
+        // when behind Cloudflare/Railway reverse proxies
+        if (app()->environment('production')) {
+            URL::forceScheme('https');
+        }
+
         Gate::policy(Bot::class, BotPolicy::class);
         Gate::policy(KnowledgeBase::class, KnowledgeBasePolicy::class);
         Gate::policy(Document::class, DocumentPolicy::class);
