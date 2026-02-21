@@ -7,6 +7,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Health check endpoint for Railway auto-restart
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
 // Enable gzip compression for all responses
 app.use(compression());
 
