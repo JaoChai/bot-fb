@@ -37,6 +37,11 @@ class BotResource extends JsonResource
             'decision_model' => $this->decision_model,
             'fallback_decision_model' => $this->fallback_decision_model,
 
+            // Smart Routing (Confidence Cascade)
+            'use_confidence_cascade' => $this->use_confidence_cascade ?? false,
+            'cascade_cheap_model' => $this->cascade_cheap_model,
+            'cascade_expensive_model' => $this->cascade_expensive_model,
+
             // Webhook forwarder
             'webhook_forwarder_enabled' => $this->webhook_forwarder_enabled ?? false,
 
