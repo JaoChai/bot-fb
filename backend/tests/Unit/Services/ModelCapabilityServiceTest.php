@@ -276,7 +276,8 @@ class ModelCapabilityServiceTest extends TestCase
 
         $capabilities = $this->service->getCapabilities('openai/gpt-4o');
 
-        $this->assertEquals('api', $capabilities['source']);
+        // openai/gpt-4o is in both API and config, so source is merged
+        $this->assertContains($capabilities['source'], ['api', 'api+config']);
         $this->assertTrue($capabilities['supports_vision']);
         $this->assertEquals(128000, $capabilities['context_length']);
     }

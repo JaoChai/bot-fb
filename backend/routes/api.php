@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\UserSearchController;
 use App\Http\Controllers\Api\UserSettingController;
 use App\Http\Controllers\Api\AgentApprovalController;
 use App\Http\Controllers\Api\LeadRecoveryController;
+use App\Http\Controllers\Api\ModelController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\QuickReplyController;
 use App\Http\Controllers\Api\HealthController;
@@ -177,6 +178,9 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
 
     // Flow templates (not nested)
     Route::get('/flow-templates', [FlowController::class, 'templates'])->name('flows.templates');
+
+    // Models endpoint (dynamic model discovery)
+    Route::get('/models', [ModelController::class, 'index'])->name('models.index');
 
     // Knowledge Base routes (standalone, not nested under bots)
     Route::prefix('knowledge-bases')->group(function () {

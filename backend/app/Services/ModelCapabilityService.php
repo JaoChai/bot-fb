@@ -8,9 +8,11 @@ use Illuminate\Support\Facades\Log;
 
 class ModelCapabilityService
 {
-    private const CACHE_TTL = 86400; // 24 hours
+    private const CACHE_TTL = 86400; // 24 hours for per-model merged cache
     private const CACHE_PREFIX = 'model_cap';
-    private const API_TIMEOUT = 10; // seconds
+    private const ALL_MODELS_CACHE_KEY = 'model_cap:all_models';
+    private const ALL_MODELS_CACHE_TTL = 21600; // 6 hours
+    private const API_TIMEOUT = 15; // seconds
 
     protected CircuitBreakerService $circuitBreaker;
 
@@ -21,18 +23,42 @@ class ModelCapabilityService
 
     /**
      * Check if a model supports vision/image input.
-     *
-     * Resolution priority:
-     * 1. Config (llm-models.php) - trusted source of truth
-     * 2. Cache
-     * 3. OpenRouter API (supports_images, input_modalities, modality, description)
-     * 4. Pattern-based detection / Default: false
      */
     public function supportsVision(string $modelId): bool
     {
-        $capabilities = $this->getCapabilities($modelId);
+        return $this->getCapabilities($modelId)['supports_vision'] ?? false;
+    }
 
-        return $capabilities['supports_vision'] ?? false;
+    /**
+     * Check if a model supports reasoning (o1, deepseek-r1, gpt-5-mini, etc).
+     */
+    public function supportsReasoning(string $modelId): bool
+    {
+        return $this->getCapabilities($modelId)['supports_reasoning'] ?? false;
+    }
+
+    /**
+     * Check if reasoning is mandatory (cannot be disabled).
+     */
+    public function isMandatoryReasoning(string $modelId): bool
+    {
+        return $this->getCapabilities($modelId)['is_mandatory_reasoning'] ?? false;
+    }
+
+    /**
+     * Get default reasoning effort for a model.
+     */
+    public function getDefaultReasoningEffort(string $modelId): ?string
+    {
+        return $this->getCapabilities($modelId)['default_reasoning_effort'] ?? null;
+    }
+
+    /**
+     * Check if a model supports structured output (JSON mode).
+     */
+    public function supportsStructuredOutput(string $modelId): bool
+    {
+        return $this->getCapabilities($modelId)['supports_structured_output'] ?? false;
     }
 
     /**
@@ -40,9 +66,7 @@ class ModelCapabilityService
      */
     public function getContextLength(string $modelId): int
     {
-        $capabilities = $this->getCapabilities($modelId);
-
-        return $capabilities['context_length'] ?? 4096;
+        return $this->getCapabilities($modelId)['context_length'] ?? 4096;
     }
 
     /**
@@ -50,9 +74,7 @@ class ModelCapabilityService
      */
     public function getMaxOutputTokens(string $modelId): int
     {
-        $capabilities = $this->getCapabilities($modelId);
-
-        return $capabilities['max_output_tokens'] ?? 4096;
+        return $this->getCapabilities($modelId)['max_output_tokens'] ?? 4096;
     }
 
     /**
@@ -73,47 +95,97 @@ class ModelCapabilityService
     /**
      * Get all capabilities for a model.
      *
-     * @return array{
-     *     model_id: string,
-     *     name: string,
-     *     supports_vision: bool,
-     *     context_length: int,
-     *     max_output_tokens: int,
-     *     pricing_prompt: float,
-     *     pricing_completion: float,
-     *     source: string
-     * }
+     * Resolution priority:
+     * 1. Per-model merged cache (24hr)
+     * 2. OpenRouter API (via full-list cache) + config overrides merged
+     * 3. Config-only (models not on OpenRouter)
+     * 4. Conservative defaults
      */
     public function getCapabilities(string $modelId): array
     {
         $normalizedId = $this->normalizeModelId($modelId);
         $cacheKey = $this->getCacheKey($normalizedId);
 
-        // 1. Check config first (trusted source of truth)
-        $configCapabilities = $this->getFromConfig($modelId);
-        if ($configCapabilities !== null) {
-            return $configCapabilities;
-        }
-
-        // 2. Check cache for non-config models
+        // 1. Check per-model merged cache
         $cached = $this->getFromCache($cacheKey);
         if ($cached !== null) {
             return $cached;
         }
 
-        // 3. Try OpenRouter API
-        $apiCapabilities = $this->fetchFromOpenRouter($modelId);
+        // 2. Try API (using full-list cache) + merge config overrides
+        $apiCapabilities = $this->getFromApi($modelId);
+        $configOverrides = $this->getConfigOverrides($modelId);
+
         if ($apiCapabilities !== null) {
-            $this->setToCache($cacheKey, $apiCapabilities);
-            return $apiCapabilities;
+            $merged = $this->mergeCapabilities($apiCapabilities, $configOverrides);
+            $this->setToCache($cacheKey, $merged);
+
+            return $merged;
         }
 
-        // 4. Pattern-based detection as last resort
-        $patternCapabilities = $this->detectFromPattern($modelId);
-        // Don't cache pattern-based results for long
-        $this->setToCache($cacheKey, $patternCapabilities, 1800);
+        // 3. Config-only model (not on OpenRouter API)
+        $configCapabilities = $this->getFromConfig($modelId);
+        if ($configCapabilities !== null) {
+            $this->setToCache($cacheKey, $configCapabilities);
 
-        return $patternCapabilities;
+            return $configCapabilities;
+        }
+
+        // 4. Conservative defaults
+        $defaults = $this->getDefaults($modelId);
+        $this->setToCache($cacheKey, $defaults, 1800); // Short cache for unknowns
+
+        return $defaults;
+    }
+
+    /**
+     * Get all available models (API + config-only).
+     *
+     * @param string|null $search Filter by name, provider, or model ID
+     * @return array<int, array>
+     */
+    public function getAvailableModels(?string $search = null): array
+    {
+        $allModels = [];
+
+        // Get API models (cached 6hr)
+        $apiModels = $this->fetchAllModels();
+        foreach ($apiModels as $modelId => $model) {
+            $configOverrides = $this->getConfigOverrides($modelId);
+            $allModels[$modelId] = $this->mergeCapabilities($model, $configOverrides);
+        }
+
+        // Add config-only models (not in API)
+        $configModels = config('llm-models.models', []);
+        foreach ($configModels as $modelId => $config) {
+            if (! isset($allModels[$modelId])) {
+                $allModels[$modelId] = $this->getFromConfig($modelId);
+            }
+        }
+
+        // Apply search filter
+        if ($search) {
+            $search = strtolower($search);
+            $allModels = array_filter($allModels, function ($model) use ($search) {
+                return str_contains(strtolower($model['model_id'] ?? ''), $search)
+                    || str_contains(strtolower($model['name'] ?? ''), $search)
+                    || str_contains(strtolower($model['provider'] ?? ''), $search)
+                    || str_contains(strtolower($model['description'] ?? ''), $search);
+            });
+        }
+
+        // Sort by provider then name
+        $models = array_values($allModels);
+        usort($models, function ($a, $b) {
+            $providerCmp = strcasecmp($a['provider'] ?? '', $b['provider'] ?? '');
+            if ($providerCmp !== 0) {
+                return $providerCmp;
+            }
+
+            return strcasecmp($a['name'] ?? '', $b['name'] ?? '');
+        });
+
+        return $models;
     }
 
     /**
@@ -127,6 +199,16 @@ class ModelCapabilityService
         Cache::forget($cacheKey);
 
         Log::info('Model capability cache invalidated', ['model_id' => $modelId]);
+    }
+
+    /**
+     * Invalidate the full model list cache.
+     */
+    public function invalidateAllModelsCache(): void
+    {
+        Cache::forget(self::ALL_MODELS_CACHE_KEY);
+
+        Log::info('All models cache invalidated');
     }
 
     /**
@@ -156,6 +238,24 @@ class ModelCapabilityService
         return ['success' => $success, 'failed' => $failed];
     }
 
+    /**
+     * Warm cache by fetching all models from OpenRouter API.
+     *
+     * @return array{total: int, source: string}
+     */
+    public function warmAllModelsCache(): array
+    {
+        // Force refresh by invalidating first
+        $this->invalidateAllModelsCache();
+
+        $models = $this->fetchAllModels();
+
+        return [
+            'total' => count($models),
+            'source' => 'api',
+        ];
+    }
+
     // -------------------------------------------------------------------------
     // Protected Methods
     // -------------------------------------------------------------------------
@@ -165,7 +265,6 @@ class ModelCapabilityService
      */
     protected function normalizeModelId(string $modelId): string
     {
-        // Replace slashes and special chars with underscores
         return preg_replace('/[^a-zA-Z0-9_-]/', '_', strtolower($modelId));
     }
 
@@ -213,30 +312,54 @@ class ModelCapabilityService
     }
 
     /**
-     * Fetch model capabilities from OpenRouter API.
+     * Look up a single model from the full-list cache.
      */
-    protected function fetchFromOpenRouter(string $modelId): ?array
+    protected function getFromApi(string $modelId): ?array
     {
-        return $this->circuitBreaker->execute(
-            'openrouter_models',
-            function () use ($modelId) {
-                return $this->doFetchFromOpenRouter($modelId);
-            },
-            function () {
-                // Fallback returns null to trigger config/pattern fallback
-                return null;
-            }
-        );
+        $allModels = $this->fetchAllModels();
+
+        return $allModels[$modelId] ?? null;
     }
 
     /**
-     * Actually fetch from OpenRouter API.
+     * Fetch all models from OpenRouter API (cached 6hr).
+     *
+     * @return array<string, array> Keyed by model_id
      */
-    protected function doFetchFromOpenRouter(string $modelId): ?array
+    protected function fetchAllModels(): array
+    {
+        $cached = $this->getFromCache(self::ALL_MODELS_CACHE_KEY);
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $models = $this->circuitBreaker->execute(
+            'openrouter_models',
+            function () {
+                return $this->doFetchAllModels();
+            },
+            function () {
+                return [];
+            }
+        );
+
+        if (! empty($models)) {
+            $this->setToCache(self::ALL_MODELS_CACHE_KEY, $models, self::ALL_MODELS_CACHE_TTL);
+        }
+
+        return $models;
+    }
+
+    /**
+     * Actually fetch all models from OpenRouter API.
+     *
+     * @return array<string, array> Keyed by model_id
+     */
+    protected function doFetchAllModels(): array
     {
         $apiKey = config('services.openrouter.api_key');
         if (empty($apiKey)) {
-            return null;
+            return [];
         }
 
         try {
@@ -250,28 +373,24 @@ class ModelCapabilityService
             if (! $response->successful()) {
                 Log::warning('OpenRouter models API returned error', [
                     'status' => $response->status(),
-                    'model_id' => $modelId,
                 ]);
-                return null;
+
+                return [];
             }
 
             $data = $response->json();
-            $models = $data['data'] ?? [];
+            $models = [];
 
-            // Find the requested model
-            foreach ($models as $model) {
-                if (($model['id'] ?? '') === $modelId) {
-                    return $this->parseOpenRouterModel($model);
-                }
+            foreach ($data['data'] ?? [] as $model) {
+                $parsed = $this->parseOpenRouterModel($model);
+                $models[$parsed['model_id']] = $parsed;
             }
 
-            // Model not found in API response
-            Log::debug('Model not found in OpenRouter API', ['model_id' => $modelId]);
-            return null;
+            Log::info('Fetched models from OpenRouter API', ['count' => count($models)]);
 
+            return $models;
         } catch (\Throwable $e) {
-            Log::warning('Failed to fetch from OpenRouter API', [
-                'model_id' => $modelId,
+            Log::warning('Failed to fetch all models from OpenRouter API', [
                 'error' => $e->getMessage(),
             ]);
             throw $e; // Let circuit breaker handle it
@@ -285,47 +404,31 @@ class ModelCapabilityService
     {
         $architecture = $model['architecture'] ?? [];
         $pricing = $model['pricing'] ?? [];
+        $supportedParams = $model['supported_parameters'] ?? [];
 
-        // Check for vision capability (per OpenRouter API docs)
-        $supportsVision = false;
+        // Vision detection
+        $supportsVision = $this->detectVisionSupport($model, $architecture);
 
-        // Priority 1: Check supports_images field (most reliable per OpenRouter docs)
-        if (isset($model['supports_images']) && $model['supports_images'] === true) {
-            $supportsVision = true;
-        }
+        // Reasoning detection from supported_parameters
+        $supportsReasoning = in_array('reasoning', $supportedParams, true);
 
-        // Priority 2: Check input_modalities array (per OpenRouter docs)
-        if (! $supportsVision) {
-            $inputModalities = $architecture['input_modalities'] ?? [];
-            if (in_array('image', $inputModalities, true)) {
-                $supportsVision = true;
-            }
-        }
+        // Structured output detection from supported_parameters
+        $supportsStructuredOutput = in_array('structured_outputs', $supportedParams, true);
 
-        // Priority 3: Check modality string
-        if (! $supportsVision) {
-            $modality = $architecture['modality'] ?? '';
-            if (str_contains($modality, 'image') || str_contains($modality, 'vision')) {
-                $supportsVision = true;
-            }
-        }
-
-        // Priority 4: Check description and name
-        if (! $supportsVision) {
-            $description = strtolower($model['description'] ?? '');
-            $name = strtolower($model['name'] ?? '');
-            if (str_contains($description, 'vision') || str_contains($description, 'image')) {
-                $supportsVision = true;
-            }
-            if (str_contains($name, 'vision')) {
-                $supportsVision = true;
-            }
-        }
+        // Extract provider from model ID
+        $parts = explode('/', $model['id'] ?? '');
+        $provider = $parts[0] ?? '';
 
         return [
             'model_id' => $model['id'] ?? '',
             'name' => $model['name'] ?? '',
+            'provider' => $provider,
+            'description' => $model['description'] ?? '',
             'supports_vision' => $supportsVision,
+            'supports_reasoning' => $supportsReasoning,
+            'is_mandatory_reasoning' => false, // Only from config override
+            'default_reasoning_effort' => null, // Only from config override
+            'supports_structured_output' => $supportsStructuredOutput,
             'context_length' => (int) ($model['context_length'] ?? $architecture['context_length'] ?? 4096),
             'max_output_tokens' => (int) ($architecture['max_output_tokens'] ?? $model['top_provider']['max_completion_tokens'] ?? 4096),
             'pricing_prompt' => (float) (($pricing['prompt'] ?? 0) * 1000000), // Convert to per 1M tokens
@@ -335,11 +438,107 @@ class ModelCapabilityService
     }
 
     /**
-     * Get capabilities from config (llm-models.php).
+     * Detect vision support from OpenRouter model data.
+     */
+    protected function detectVisionSupport(array $model, array $architecture): bool
+    {
+        // Priority 1: Check supports_images field
+        if (isset($model['supports_images']) && $model['supports_images'] === true) {
+            return true;
+        }
+
+        // Priority 2: Check input_modalities array
+        $inputModalities = $architecture['input_modalities'] ?? [];
+        if (in_array('image', $inputModalities, true)) {
+            return true;
+        }
+
+        // Priority 3: Check modality string
+        $modality = $architecture['modality'] ?? '';
+        if (str_contains($modality, 'image') || str_contains($modality, 'vision')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Get config overrides for a model (fields to merge on top of API data).
+     * Returns null if model is not in config.
+     */
+    protected function getConfigOverrides(string $modelId): ?array
+    {
+        $models = config('llm-models.models', []);
+        $config = $models[$modelId] ?? null;
+
+        if ($config === null) {
+            return null;
+        }
+
+        // Only return fields that are explicitly set in config
+        $overrides = [];
+
+        if (isset($config['name'])) {
+            $overrides['name'] = $config['name'];
+        }
+        if (isset($config['provider'])) {
+            $overrides['provider'] = $config['provider'];
+        }
+        if (isset($config['description'])) {
+            $overrides['description'] = $config['description'];
+        }
+        if (isset($config['supports_vision'])) {
+            $overrides['supports_vision'] = (bool) $config['supports_vision'];
+        }
+        if (isset($config['supports_reasoning'])) {
+            $overrides['supports_reasoning'] = (bool) $config['supports_reasoning'];
+        }
+        if (isset($config['is_mandatory_reasoning'])) {
+            $overrides['is_mandatory_reasoning'] = (bool) $config['is_mandatory_reasoning'];
+        }
+        if (isset($config['default_reasoning_effort'])) {
+            $overrides['default_reasoning_effort'] = $config['default_reasoning_effort'];
+        }
+        if (isset($config['supports_structured_output'])) {
+            $overrides['supports_structured_output'] = (bool) $config['supports_structured_output'];
+        }
+        if (isset($config['context_length'])) {
+            $overrides['context_length'] = (int) $config['context_length'];
+        }
+        if (isset($config['max_output_tokens'])) {
+            $overrides['max_output_tokens'] = (int) $config['max_output_tokens'];
+        }
+        if (isset($config['pricing_prompt'])) {
+            $overrides['pricing_prompt'] = (float) $config['pricing_prompt'];
+        }
+        if (isset($config['pricing_completion'])) {
+            $overrides['pricing_completion'] = (float) $config['pricing_completion'];
+        }
+
+        return $overrides;
+    }
+
+    /**
+     * Merge API data with config overrides.
+     * Config values take precedence where explicitly set.
+     */
+    protected function mergeCapabilities(array $apiData, ?array $configOverrides): array
+    {
+        if ($configOverrides === null) {
+            return $apiData;
+        }
+
+        $merged = array_merge($apiData, $configOverrides);
+        $merged['source'] = 'api+config';
+
+        return $merged;
+    }
+
+    /**
+     * Get full capabilities from config only (for models not on OpenRouter).
      */
     protected function getFromConfig(string $modelId): ?array
     {
-        // Use array access instead of dot notation because model IDs contain slashes
         $models = config('llm-models.models', []);
         $config = $models[$modelId] ?? null;
 
@@ -350,7 +549,13 @@ class ModelCapabilityService
         return [
             'model_id' => $modelId,
             'name' => $config['name'] ?? $modelId,
+            'provider' => $config['provider'] ?? explode('/', $modelId)[0] ?? '',
+            'description' => $config['description'] ?? '',
             'supports_vision' => (bool) ($config['supports_vision'] ?? false),
+            'supports_reasoning' => (bool) ($config['supports_reasoning'] ?? false),
+            'is_mandatory_reasoning' => (bool) ($config['is_mandatory_reasoning'] ?? false),
+            'default_reasoning_effort' => $config['default_reasoning_effort'] ?? null,
+            'supports_structured_output' => (bool) ($config['supports_structured_output'] ?? false),
             'context_length' => (int) ($config['context_length'] ?? 4096),
             'max_output_tokens' => (int) ($config['max_output_tokens'] ?? 4096),
             'pricing_prompt' => (float) ($config['pricing_prompt'] ?? 0),
@@ -360,15 +565,22 @@ class ModelCapabilityService
     }
 
     /**
-     * Return default capabilities when no data available.
-     * No pattern detection - if we don't have data, we don't guess.
+     * Return conservative default capabilities when no data available.
      */
-    protected function detectFromPattern(string $modelId): array
+    protected function getDefaults(string $modelId): array
     {
+        $parts = explode('/', $modelId);
+
         return [
             'model_id' => $modelId,
             'name' => $modelId,
-            'supports_vision' => false, // Don't guess - rely on API/config only
+            'provider' => $parts[0] ?? '',
+            'description' => '',
+            'supports_vision' => false,
+            'supports_reasoning' => false,
+            'is_mandatory_reasoning' => false,
+            'default_reasoning_effort' => null,
+            'supports_structured_output' => false,
             'context_length' => 4096,
             'max_output_tokens' => 4096,
             'pricing_prompt' => 0.0,

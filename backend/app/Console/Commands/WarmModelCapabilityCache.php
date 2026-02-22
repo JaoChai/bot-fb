@@ -14,6 +14,7 @@ class WarmModelCapabilityCache extends Command
      */
     protected $signature = 'model:warm-cache
                             {--all : Warm cache for all models in config}
+                            {--fetch-all : Fetch and cache all models from OpenRouter API}
                             {--model= : Specific model ID to warm}';
 
     /**
@@ -34,11 +35,12 @@ class WarmModelCapabilityCache extends Command
      */
     public function handle(): int
     {
-        $this->info('🔄 Warming model capability cache...');
-        $this->newLine();
-
         if ($model = $this->option('model')) {
             return $this->warmSingleModel($model);
+        }
+
+        if ($this->option('fetch-all')) {
+            return $this->fetchAllModels();
         }
 
         return $this->warmAllModels();
@@ -59,7 +61,11 @@ class WarmModelCapabilityCache extends Command
                 [
                     ['Model ID', $capabilities['model_id']],
                     ['Name', $capabilities['name']],
-                    ['Supports Vision', $capabilities['supports_vision'] ? '✅ Yes' : '❌ No'],
+                    ['Provider', $capabilities['provider'] ?? '-'],
+                    ['Vision', $capabilities['supports_vision'] ? 'Yes' : 'No'],
+                    ['Reasoning', $capabilities['supports_reasoning'] ? 'Yes' : 'No'],
+                    ['Mandatory Reasoning', ($capabilities['is_mandatory_reasoning'] ?? false) ? 'Yes' : 'No'],
+                    ['Structured Output', ($capabilities['supports_structured_output'] ?? false) ? 'Yes' : 'No'],
                     ['Context Length', number_format($capabilities['context_length'])],
                     ['Max Output Tokens', number_format($capabilities['max_output_tokens'])],
                     ['Pricing (Prompt)', '$' . number_format($capabilities['pricing_prompt'], 4) . '/1M'],
@@ -69,11 +75,12 @@ class WarmModelCapabilityCache extends Command
             );
 
             $this->newLine();
-            $this->info('✅ Cache warmed successfully!');
+            $this->info('Cache warmed successfully!');
 
             return Command::SUCCESS;
         } catch (\Throwable $e) {
             $this->error("Failed to fetch capabilities: {$e->getMessage()}");
+
             return Command::FAILURE;
         }
     }
@@ -87,6 +94,7 @@ class WarmModelCapabilityCache extends Command
 
         if (empty($models)) {
             $this->warn('No models found in llm-models.php config.');
+
             return Command::SUCCESS;
         }
 
@@ -102,14 +110,18 @@ class WarmModelCapabilityCache extends Command
                 $caps = $this->capabilityService->getCapabilities($modelId);
                 $tableData[] = [
                     $modelId,
-                    $caps['supports_vision'] ? '✅' : '❌',
+                    $caps['supports_vision'] ? 'Y' : '-',
+                    ($caps['supports_reasoning'] ?? false) ? 'Y' : '-',
+                    ($caps['supports_structured_output'] ?? false) ? 'Y' : '-',
                     number_format($caps['context_length']),
                     $caps['source'],
                 ];
             } catch (\Throwable $e) {
                 $tableData[] = [
                     $modelId,
-                    '❓',
+                    '?',
+                    '?',
+                    '?',
                     'N/A',
                     'error',
                 ];
@@ -117,13 +129,57 @@ class WarmModelCapabilityCache extends Command
         }
 
         $this->table(
-            ['Model ID', 'Vision', 'Context', 'Source'],
+            ['Model ID', 'Vision', 'Reason', 'JSON', 'Context', 'Source'],
             $tableData
         );
 
         $this->newLine();
-        $this->info("✅ Success: {$results['success']} | ❌ Failed: {$results['failed']}");
+        $this->info("Success: {$results['success']} | Failed: {$results['failed']}");
 
         return $results['failed'] > 0 ? Command::FAILURE : Command::SUCCESS;
+    }
+
+    /**
+     * Fetch and cache all models from OpenRouter API.
+     */
+    protected function fetchAllModels(): int
+    {
+        $this->info('Fetching all models from OpenRouter API...');
+
+        try {
+            $results = $this->capabilityService->warmAllModelsCache();
+
+            $this->info("Cached {$results['total']} models from OpenRouter API.");
+
+            // Show first few models as preview
+            $allModels = $this->capabilityService->getAvailableModels();
+            $preview = array_slice($allModels, 0, 20);
+
+            $tableData = [];
+            foreach ($preview as $model) {
+                $tableData[] = [
+                    $model['model_id'],
+                    $model['provider'] ?? '-',
+                    $model['supports_vision'] ? 'Y' : '-',
+                    ($model['supports_reasoning'] ?? false) ? 'Y' : '-',
+                    $model['source'],
+                ];
+            }
+
+            $this->table(
+                ['Model ID', 'Provider', 'Vision', 'Reason', 'Source'],
+                $tableData
+            );
+
+            if (count($allModels) > 20) {
+                $this->info('... and ' . (count($allModels) - 20) . ' more models.');
+            }
+
+            return Command::SUCCESS;
+        } catch (\Throwable $e) {
+            $this->error("Failed to fetch models: {$e->getMessage()}");
+
+            return Command::FAILURE;
+        }
     }
 }
