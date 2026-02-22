@@ -69,8 +69,7 @@ class CostTrackingService
         int $reasoningTokens = 0,
         ?float $actualCost = null
     ): float {
-        $pricingMap = $this->getModelPricingMap();
-        $pricing = $pricingMap[$model] ?? $pricingMap['default'];
+        $pricing = $this->getModelPricingDynamic($model);
 
         // Calculate cost per 1M tokens
         $inputCost = ($promptTokens / 1_000_000) * $pricing['input'];
@@ -234,8 +233,7 @@ class CostTrackingService
         int $estimatedPromptTokens,
         int $estimatedCompletionTokens
     ): float {
-        $pricingMap = $this->getModelPricingMap();
-        $pricing = $pricingMap[$model] ?? $pricingMap['default'];
+        $pricing = $this->getModelPricingDynamic($model);
 
         $inputCost = ($estimatedPromptTokens / 1_000_000) * $pricing['input'];
         $outputCost = ($estimatedCompletionTokens / 1_000_000) * $pricing['output'];
@@ -248,8 +246,7 @@ class CostTrackingService
      */
     public function getModelPricing(string $model): array
     {
-        $pricingMap = $this->getModelPricingMap();
-        return $pricingMap[$model] ?? $pricingMap['default'];
+        return $this->getModelPricingDynamic($model);
     }
 
     protected function getModelPricingMap(): array
@@ -273,6 +270,42 @@ class CostTrackingService
 
         $this->modelPricingCache = $pricing;
         return $pricing;
+    }
+
+    /**
+     * Get pricing for a model, with dynamic fallback to ModelCapabilityService.
+     * If model is not in config, lookup from API via ModelCapabilityService.
+     */
+    public function getModelPricingDynamic(string $model): array
+    {
+        $pricingMap = $this->getModelPricingMap();
+
+        // Return from config if available
+        if (isset($pricingMap[$model])) {
+            return $pricingMap[$model];
+        }
+
+        // Dynamic lookup from ModelCapabilityService
+        try {
+            $capService = app(ModelCapabilityService::class);
+            $pricing = $capService->getPricing($model);
+
+            if ($pricing['prompt'] > 0 || $pricing['completion'] > 0) {
+                $result = [
+                    'input' => $pricing['prompt'],
+                    'output' => $pricing['completion'],
+                ];
+
+                // Cache it for this request
+                $this->modelPricingCache[$model] = $result;
+
+                return $result;
+            }
+        } catch (\Throwable $e) {
+            // Fall through to default
+        }
+
+        return $pricingMap['default'];
     }
 
     /**

@@ -10,6 +10,10 @@ class ValidLLMModel implements ValidationRule
     /**
      * Run the validation rule.
      *
+     * Validates that the model ID follows the provider/model-name format.
+     * No longer restricted to config-only models since the system now
+     * supports any OpenRouter model dynamically.
+     *
      * @param  \Closure(string, ?string=): \Illuminate\Translation\PotentiallyTranslatedString  $fail
      */
     public function validate(string $attribute, mixed $value, Closure $fail): void
@@ -19,32 +23,9 @@ class ValidLLMModel implements ValidationRule
             return;
         }
 
-        // Get list of valid model IDs from config
-        $validModels = array_keys(config('llm-models.models', []));
-
-        if (! in_array($value, $validModels, true)) {
-            $fail('The selected :attribute is not a supported LLM model.');
+        // Validate format: provider/model-name
+        if (! is_string($value) || ! preg_match('#^[a-z0-9_-]+/[a-z0-9._-]+$#i', $value)) {
+            $fail('The :attribute must be a valid model ID in provider/model-name format (e.g., openai/gpt-4o-mini).');
         }
-    }
-
-    /**
-     * Get the list of valid model IDs.
-     *
-     * @return array<string>
-     */
-    public static function getValidModels(): array
-    {
-        return array_keys(config('llm-models.models', []));
-    }
-
-    /**
-     * Get model information by ID.
-     *
-     * @param  string  $modelId
-     * @return array|null
-     */
-    public static function getModelInfo(string $modelId): ?array
-    {
-        return config("llm-models.models.{$modelId}");
     }
 }

@@ -83,19 +83,19 @@ class OpenRouterService
                 $payload['model'] = $model;
             }
 
-            // Load model config once for capability checks
-            $modelConfig = config("llm-models.models.{$model}");
+            // Use ModelCapabilityService for dynamic capability checks
+            $capService = app(ModelCapabilityService::class);
 
             // Add reasoning config for supported models (o1, o1-mini, deepseek-r1, gpt-5-mini)
-            if ($reasoning || ($modelConfig['supports_reasoning'] ?? false)) {
+            if ($reasoning || $capService->supportsReasoning($model)) {
                 $payload['reasoning'] = $reasoning ?? [
-                    'effort' => $modelConfig['default_reasoning_effort'] ?? 'medium',
+                    'effort' => $capService->getDefaultReasoningEffort($model) ?? 'medium',
                 ];
                 Log::debug('Using reasoning mode', ['model' => $model, 'reasoning' => $payload['reasoning']]);
             }
 
             // Add response_format for structured output (JSON mode)
-            if ($responseFormat !== null && ($modelConfig['supports_structured_output'] ?? false)) {
+            if ($responseFormat !== null && $capService->supportsStructuredOutput($model)) {
                 $payload['response_format'] = $responseFormat;
                 Log::debug('Using structured output', ['model' => $model, 'format' => $responseFormat]);
             }
@@ -500,51 +500,30 @@ class OpenRouterService
     }
 
     /**
-     * Check if a model supports reasoning (o1, o1-mini, deepseek-r1).
-     *
-     * Reasoning models can show their thought process through 'reasoning' field
-     * in the response. The effort level (low/medium/high) controls reasoning depth.
-     *
-     * @param string $model Model ID
-     * @return bool Whether the model supports reasoning
+     * Check if a model supports reasoning.
+     * Delegates to ModelCapabilityService for dynamic resolution.
      */
     public function supportsReasoning(string $model): bool
     {
-        $config = config("llm-models.models.{$model}");
-
-        return $config['supports_reasoning'] ?? false;
+        return app(ModelCapabilityService::class)->supportsReasoning($model);
     }
 
     /**
-     * Check if a model supports structured output (response_format: json_object).
-     *
-     * Models with structured output support can reliably return JSON responses
-     * when response_format is set, reducing parsing errors.
-     *
-     * @param string $model Model ID
-     * @return bool Whether the model supports structured output
+     * Check if a model supports structured output (JSON mode).
+     * Delegates to ModelCapabilityService for dynamic resolution.
      */
     public function supportsStructuredOutput(string $model): bool
     {
-        $config = config("llm-models.models.{$model}");
-
-        return $config['supports_structured_output'] ?? false;
+        return app(ModelCapabilityService::class)->supportsStructuredOutput($model);
     }
 
     /**
      * Check if a model has mandatory reasoning (cannot be disabled).
-     *
-     * Models like gpt-5-mini and o1 always use reasoning tokens.
-     * Use this to adjust prompts and token budgets accordingly.
-     *
-     * @param string $model Model ID
-     * @return bool Whether reasoning is mandatory
+     * Delegates to ModelCapabilityService for dynamic resolution.
      */
     public function isMandatoryReasoning(string $model): bool
     {
-        $config = config("llm-models.models.{$model}");
-
-        return $config['is_mandatory_reasoning'] ?? false;
+        return app(ModelCapabilityService::class)->isMandatoryReasoning($model);
     }
 
     /**
