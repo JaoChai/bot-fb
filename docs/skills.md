@@ -1,6 +1,6 @@
 # Agent Skills Reference
 
-15 skills available - auto-triggered from context or use `/skill-name`
+18 skills available - auto-triggered from context or use `/skill-name`
 
 ---
 
@@ -22,7 +22,10 @@
 | Operations | `/monitoring` | error tracking, Sentry, logs |
 | Security | `/auth-security` | auth, API keys, credentials |
 | Debug | `/webhook-debug` | bot not responding, webhook |
+| Debug | `/agentic-debug` | agent loop, ReAct, tool calls, smart routing |
+| Debug | `/concurrency` | race condition, deadlock, locks, duplicate |
 | AI | `/prompt-eng` | prompt optimization |
+| AI | `/payment-orders` | payment, order, Flex, VIP, bank transfer |
 
 ---
 
@@ -241,6 +244,51 @@ Prompt engineering specialist.
 
 ---
 
+#### `/agentic-debug`
+Agent loop and smart routing debugger.
+
+**Use when:** Agent loop stuck, tool calls failing, smart routing choosing wrong mode
+
+**Covers:**
+- AgentLoopService ReAct loop debugging
+- Smart routing decision tree analysis
+- Tool execution failures (search_kb, calculate, think, etc.)
+- Safety controls (timeout, cost, HITL)
+- Second AI verification issues
+- Message truncation debugging
+
+---
+
+#### `/concurrency`
+Race condition and locking specialist.
+
+**Use when:** Duplicate messages, data corruption, deadlocks, race conditions
+
+**Covers:**
+- Pessimistic locking (lockForUpdate)
+- Response cache locks
+- Message aggregation patterns
+- Unique constraint catch patterns
+- Circuit breaker implementation
+- WebSocket deduplication
+
+---
+
+#### `/payment-orders`
+Payment flow and order management specialist.
+
+**Use when:** Payment Flex detection issues, order tracking, VIP pricing, bank transfer verification
+
+**Covers:**
+- 5-step payment flow (Confirm→Terms→Payment→Verify→Success)
+- PaymentFlexService detection priority
+- LINE Flex message builder
+- VIP detection and pricing tiers
+- Order deduplication
+- Bank transfer verification
+
+---
+
 ## Auto-Trigger Examples
 
 ```
@@ -256,6 +304,12 @@ Prompt engineering specialist.
 "ปรับ system prompt"     → /prompt-eng
 "หา dead code"           → /dead-code
 "unused imports"         → /dead-code
+"agent loop ค้าง"        → /agentic-debug
+"smart routing เลือกผิด"  → /agentic-debug
+"ข้อความซ้ำ duplicate"    → /concurrency
+"race condition"         → /concurrency
+"payment Flex ไม่ detect" → /payment-orders
+"order tracking"         → /payment-orders
 ```
 
 ---
@@ -278,3 +332,6 @@ Prompt engineering specialist.
 | Bot not responding | `/webhook-debug` | - |
 | Prompt optimization | `/prompt-eng` | - |
 | Code cleanup | `/refactor` | `/dead-code` |
+| Agent loop issues | `/agentic-debug` | `/webhook-debug` |
+| Duplicate/race conditions | `/concurrency` | - |
+| Payment/order issues | `/payment-orders` | - |

@@ -74,7 +74,7 @@ php artisan test --filter Unit
 railway up
 ```
 
-## Skills (15 available)
+## Skills (18 available)
 
 Auto-triggered from context or use `/skill-name`. → [Full reference](docs/skills.md)
 
@@ -95,6 +95,9 @@ Auto-triggered from context or use `/skill-name`. → [Full reference](docs/skil
 | Prompt optimization | `/prompt-eng` |
 | Dead code detection | `/dead-code` |
 | Code cleanup | `/refactor` |
+| Agent loop debug | `/agentic-debug` |
+| Race conditions, locks | `/concurrency` |
+| Payment, orders, Flex | `/payment-orders` |
 
 ## Agent Teams
 
@@ -130,7 +133,7 @@ Multi-agent collaboration enabled. ใช้ "Create an agent team" สำหร
 
 ## Skill Priority Rules
 
-**Custom skills (15 ตัว) มี priority สูงกว่า everything-claude-code skills เสมอ**
+**Custom skills (18 ตัว) มี priority สูงกว่า everything-claude-code skills เสมอ**
 - Custom skills มี project-specific context (gotchas, patterns, tech versions)
 - ใช้ custom skill ก่อน แล้วค่อยเสริมด้วย ECC skill ถ้าจำเป็น
 

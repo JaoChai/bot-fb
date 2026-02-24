@@ -1,35 +1,8 @@
-# React 19 Patterns
+# React 19 Patterns (SPA - Vite + React Router)
 
-## Server Components
-
-```tsx
-// Default: Server Component
-async function ProductList() {
-  const products = await db.products.findMany();
-  return (
-    <ul>
-      {products.map(p => <ProductCard key={p.id} product={p} />)}
-    </ul>
-  );
-}
-```
-
-## Client Components
-
-```tsx
-'use client';
-
-import { useState } from 'react';
-
-export function Counter() {
-  const [count, setCount] = useState(0);
-  return (
-    <button onClick={() => setCount(c => c + 1)}>
-      Count: {count}
-    </button>
-  );
-}
-```
+> **Note**: This project is a Single Page Application (SPA) using Vite + React Router.
+> Server Components and 'use client' directives are NOT applicable here.
+> All components are client components by default.
 
 ## use() Hook (React 19)
 

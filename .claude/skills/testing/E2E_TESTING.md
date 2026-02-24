@@ -348,3 +348,107 @@ npx playwright show-report
 - Hardcode credentials in tests
 - Skip error scenarios
 - Rely on test order
+
+## Bot-FB Critical User Journeys
+
+### 1. Bot Creation & Configuration
+
+```typescript
+test('creates bot and configures flow', async ({ page }) => {
+  // Login
+  await page.goto('/login');
+  await page.fill('[name="email"]', process.env.TEST_EMAIL!);
+  await page.fill('[name="password"]', process.env.TEST_PASSWORD!);
+  await page.click('button[type="submit"]');
+  await page.waitForURL('/dashboard');
+
+  // Create bot
+  await page.click('text=Create Bot');
+  await page.fill('[name="name"]', 'E2E Test Bot');
+  await page.selectOption('[name="platform"]', 'line');
+  await page.click('button[type="submit"]');
+  await expect(page.getByText('E2E Test Bot')).toBeVisible();
+
+  // Navigate to Flow editor
+  await page.click('text=Flows');
+  await page.click('text=Base Flow');
+
+  // Edit system prompt
+  const promptEditor = page.locator('textarea[name="system_prompt"]');
+  await promptEditor.fill('Test system prompt');
+
+  // Set temperature
+  await page.fill('input[name="temperature"]', '0.5');
+
+  // Save
+  await page.click('button:has-text("Save")');
+  await expect(page.getByText('Flow updated')).toBeVisible();
+});
+```
+
+### 2. Chat Emulator Test
+
+```typescript
+test('sends message and receives AI response', async ({ page }) => {
+  // Navigate to flow editor with emulator
+  await page.goto('/bots/26/flows/24');
+
+  // Open chat emulator
+  await page.click('button:has-text("Test")');
+
+  // Send message
+  const chatInput = page.locator('input[placeholder*="message"]');
+  await chatInput.fill('สวัสดีครับ');
+  await chatInput.press('Enter');
+
+  // Wait for AI response (may take 5-15 seconds)
+  await expect(page.locator('.assistant-message').first())
+    .toBeVisible({ timeout: 30000 });
+});
+```
+
+### 3. Knowledge Base Attachment
+
+```typescript
+test('attaches KB to flow', async ({ page }) => {
+  await page.goto('/bots/26/flows/24');
+
+  // Open KB section
+  await page.click('text=Knowledge Bases');
+
+  // Select KB
+  await page.click('text=Line Adsvance');
+
+  // Verify attached
+  await expect(page.locator('.kb-badge')).toBeVisible();
+
+  // Save
+  await page.click('button:has-text("Save")');
+});
+```
+
+## Test Coverage Strategy
+
+### Priority Matrix
+
+| Area | Priority | Tests Needed |
+|------|----------|-------------|
+| Auth (login/register/logout) | P0 | Feature + E2E |
+| Bot CRUD | P0 | Feature |
+| Flow CRUD + save | P0 | Feature + E2E |
+| Chat emulator | P1 | E2E |
+| KB management | P1 | Feature |
+| Payment Flex detection | P1 | Unit (exists) |
+| Agent loop | P1 | Unit (exists) |
+| Order tracking | P2 | Feature |
+| Dashboard analytics | P2 | Feature |
+| Real-time (WebSocket) | P3 | E2E |
+
+### Pre-existing Test Failures (Known)
+
+| Test | Issue | Status |
+|------|-------|--------|
+| SendDelayedBubbleJobTest | Constructor mismatch | Pre-existing |
+| MultipleBubblesServiceTest | Missing PaymentFlexService param | Pre-existing |
+| ModelCapabilityServiceTest | Config mismatch | Pre-existing |
+| InputValidationTest | Null name assertion | Pre-existing |
