@@ -648,6 +648,37 @@ export function FlowEditorPage() {
                   />
                 </div>
 
+                {/* Max Tokens */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Max Tokens: {formData.max_tokens}</Label>
+                    <span className="text-xs text-muted-foreground">
+                      ความยาวสูงสุดของคำตอบ AI
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Slider
+                      value={[formData.max_tokens || 2048]}
+                      onValueChange={([v]) => handleChange('max_tokens', v)}
+                      min={512}
+                      max={16384}
+                      step={256}
+                    />
+                    <Input
+                      type="number"
+                      min={512}
+                      max={16384}
+                      step={256}
+                      value={formData.max_tokens}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val)) handleChange('max_tokens', val);
+                      }}
+                      className="w-24"
+                    />
+                  </div>
+                </div>
+
                 {/* โหมดขั้นสูง */}
                 <div className="border-t" />
                 <div className="flex items-center gap-2">
@@ -1242,6 +1273,37 @@ export function FlowEditorPage() {
                     />
                     <p className="text-xs text-muted-foreground">
                       ต่ำ = ตอบตรงประเด็น, สูง = สร้างสรรค์
+                    </p>
+                  </div>
+
+                  {/* Max Tokens (Mobile) */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Max Tokens: {formData.max_tokens}</Label>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Slider
+                        value={[formData.max_tokens || 2048]}
+                        onValueChange={([v]) => handleChange('max_tokens', v)}
+                        min={512}
+                        max={16384}
+                        step={256}
+                      />
+                      <Input
+                        type="number"
+                        min={512}
+                        max={16384}
+                        step={256}
+                        value={formData.max_tokens}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val)) handleChange('max_tokens', val);
+                        }}
+                        className="w-20 h-8 text-sm"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      ความยาวสูงสุดของคำตอบ AI
                     </p>
                   </div>
 
