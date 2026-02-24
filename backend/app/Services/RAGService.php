@@ -263,21 +263,15 @@ class RAGService
 
     /**
      * Check if the bot should use its Knowledge Base.
+     *
+     * Uses Flow-level KB attachment as source of truth (consistent with StreamController).
+     * If the default flow has KBs attached, they will be used regardless of bot.kb_enabled.
      */
     protected function shouldUseKnowledgeBase(Bot $bot): bool
     {
-        // Must have KB enabled
-        if (!$bot->kb_enabled) {
-            return false;
-        }
-
-        // Must have a default flow with knowledge bases
         $defaultFlow = $this->flowCacheService->getDefaultFlow($bot->id);
+
         if (!$defaultFlow || !$defaultFlow->knowledgeBases()->exists()) {
-            Log::debug('Bot has KB enabled but no knowledge bases in default flow', [
-                'bot_id' => $bot->id,
-                'has_default_flow' => $defaultFlow !== null,
-            ]);
             return false;
         }
 
