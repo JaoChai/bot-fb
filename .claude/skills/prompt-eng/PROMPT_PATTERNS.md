@@ -235,3 +235,61 @@ Casual (สินค้าทั่วไป):
 5. **A/B Test** - ทดสอบกับ users จริง
 6. **Measure** - วัดผลด้วย metrics
 7. **Iterate** - ทำซ้ำจนได้ผลดี
+
+## Bot-FB Prompt Templates
+
+### Sales Bot Template (Line Adsvance Pattern)
+
+Flow 24 (v21) structure ที่ผ่านการ iterate มาแล้ว:
+
+```markdown
+Captain Ad - Sales Assistant v21
+
+<identity>
+กัปตันแอด | Sales Assistant | Thai
+Tone: มืออาชีพ กระชับ ตรงประเด็น ไม่ยืดยาว
+Greeting: "สวัสดีครับพี่ สนใจตัวไหนดีครับ?" (ครั้งแรกเท่านั้น)
+การตอบ: 1-2 ประโยค (ไม่เกิน 3 บรรทัด)
+ห้าม: ถามซ้ำ, อธิบายยาวถ้าไม่ถาม, upsell ซ้ำหลังปฏิเสธ, ทักซ้ำระหว่างบทสนทนา
+</identity>
+
+<products>
+[product catalog with pricing tiers]
+</products>
+
+<pricing_rules>
+[VIP vs normal pricing logic]
+[Anti-hallucination checks]
+</pricing_rules>
+
+<sales_flow>
+[step-by-step sales process]
+[payment verification steps]
+</sales_flow>
+```
+
+### Key Prompt Engineering Lessons (from git history)
+
+| Version | Change | Result |
+|---------|--------|--------|
+| v18→v19 | เพิ่ม VIP pricing tiers | ลด hallucination ราคา |
+| v19→v20 | เพิ่ม anti-hallucination check | ป้องกันสร้างราคาเอง |
+| v20→v21 | เพิ่ม "เฟส" disambiguation | แยก Page vs G3D ถูกต้อง |
+
+### Prompt Structure Best Practices (จาก Flow 24)
+
+1. **XML tags** สำหรับ section boundaries (`<identity>`, `<products>`, `<rules>`)
+2. **Explicit constraints** ดีกว่า implicit (ระบุ "ห้าม" ชัดเจน)
+3. **Version tracking** ใส่ version ใน header เพื่อ track changes
+4. **Anti-hallucination**: ระบุว่า "ถ้าไม่มีราคาใน KB ห้ามตอบเอง"
+5. **Greeting guard**: กำหนดให้ทักแค่ครั้งเดียว ป้องกัน repetitive greetings
+6. **Response length**: กำหนดจำนวนประโยคที่ชัดเจน (1-2 ประโยค)
+
+### Temperature Guidelines
+
+| Use Case | Temperature | Reason |
+|----------|-------------|--------|
+| Sales (accurate pricing) | 0.3 | ลด hallucination |
+| Customer support | 0.7 | Natural conversation |
+| Creative/casual | 0.8-1.0 | Diverse responses |
+| FAQ/factual | 0.1-0.3 | Consistent answers |
