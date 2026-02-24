@@ -159,15 +159,17 @@ class RAGService
         $chatModel = $this->resolveSmartChatModel($bot, $intent, $complexity);
         $fallbackChatModel = $this->getFallbackChatModelForBot($bot);
 
-        // Step 9: Calculate max tokens (increase for complex questions)
-        $maxTokens = $bot->llm_max_tokens;
+        // Step 9: Resolve flow (used for agentic check + LLM params)
+        $resolvedFlow = $flow ?? $this->flowCacheService->getDefaultFlow($bot->id);
+
+        // Step 9b: Calculate max tokens — Flow takes priority, Bot as fallback
+        $maxTokens = $resolvedFlow?->max_tokens ?? $bot->llm_max_tokens;
         if ($complexity['is_complex']) {
             $multiplier = config('rag.chain_of_thought.max_tokens_multiplier', 1.5);
             $maxTokens = (int) min($maxTokens * $multiplier, 4096);
         }
 
         // Step 10: Generate response — Agentic or Standard
-        $resolvedFlow = $flow ?? $this->flowCacheService->getDefaultFlow($bot->id);
         $isAgentic = $resolvedFlow
             && $resolvedFlow->agentic_mode
             && !empty($resolvedFlow->enabled_tools)
@@ -202,7 +204,7 @@ class RAGService
                 conversationHistory: $conversationHistory,
                 model: $chatModel,
                 fallbackModel: $fallbackChatModel,
-                temperature: $bot->llm_temperature,
+                temperature: $resolvedFlow?->temperature ?? $bot->llm_temperature,
                 maxTokens: $maxTokens,
                 apiKeyOverride: $apiKey
             );
