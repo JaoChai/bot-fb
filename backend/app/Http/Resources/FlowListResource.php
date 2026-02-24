@@ -21,9 +21,6 @@ class FlowListResource extends JsonResource
             'name' => $this->name,
             'description' => $this->description ? Str::limit($this->description, 100) : null,
 
-            // Essential AI config (no system_prompt)
-            'model' => $this->model,
-
             // Agentic mode flag only (no enabled_tools array)
             'agentic_mode' => $this->agentic_mode,
 

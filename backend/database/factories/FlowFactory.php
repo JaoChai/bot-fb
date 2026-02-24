@@ -17,11 +17,6 @@ class FlowFactory extends Factory
             'name' => fake()->words(3, true) . ' Flow',
             'description' => fake()->sentence(),
             'system_prompt' => fake()->paragraph(),
-            'model' => fake()->randomElement([
-                'anthropic/claude-3.5-sonnet',
-                'openai/gpt-4o',
-                'openai/gpt-4o-mini',
-            ]),
             'temperature' => fake()->randomFloat(2, 0, 1),
             'max_tokens' => fake()->randomElement([1024, 2048, 4096]),
             'agentic_mode' => false,
