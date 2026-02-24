@@ -26,7 +26,7 @@ import {
   useToggleBotStatus,
 } from '@/hooks/useConnections';
 import { ArrowLeft, Loader2, Eye, EyeOff, ExternalLink, Trash2, MessageCircle, Settings, Cpu, Key, Zap, Copy, Check, Send, User } from 'lucide-react';
-import { ModelConfiguration, ModelSelector } from '@/components/ModelSelector';
+import { ModelConfiguration } from '@/components/ModelSelector';
 import { cn } from '@/lib/utils';
 
 const PLATFORMS = [
@@ -631,43 +631,6 @@ export function EditConnectionPage() {
                     onFallbackDecisionChange={(value) => handleChange('fallback_decision_model', value)}
                     showDecisionModels={true}
                   />
-                </Section>
-
-                {/* Smart Routing Section */}
-                <div className="border-t" />
-                <Section
-                  icon={Zap}
-                  title="Smart Routing"
-                  description="กระจายคำถามไปยัง model ที่เหมาะสมตามความซับซ้อน"
-                >
-                  <div className="flex items-center justify-between max-w-md">
-                    <div>
-                      <Label htmlFor="smart-routing" className="font-normal">เปิดใช้ Smart Routing</Label>
-                      <p className="text-xs text-muted-foreground">คำถามง่าย → model ถูก/เร็ว, คำถามซับซ้อน → model ฉลาด</p>
-                    </div>
-                    <Switch
-                      id="smart-routing"
-                      checked={formData.use_confidence_cascade}
-                      onCheckedChange={(checked) => handleChange('use_confidence_cascade', checked)}
-                    />
-                  </div>
-
-                  {formData.use_confidence_cascade && (
-                    <div className="space-y-4 mt-4 p-4 bg-muted/50 rounded-lg max-w-md">
-                      <ModelSelector
-                        label="โมเดลคำถามง่าย (ถูก/เร็ว)"
-                        value={formData.cascade_cheap_model}
-                        onChange={(value) => handleChange('cascade_cheap_model', value)}
-                        placeholder="เช่น openai/gpt-4o-mini"
-                      />
-                      <ModelSelector
-                        label="โมเดลคำถามซับซ้อน (ฉลาด)"
-                        value={formData.cascade_expensive_model}
-                        onChange={(value) => handleChange('cascade_expensive_model', value)}
-                        placeholder="เช่น openai/gpt-5-mini"
-                      />
-                    </div>
-                  )}
                 </Section>
 
                 {/* Advanced Options Section */}
