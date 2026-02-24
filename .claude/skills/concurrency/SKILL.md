@@ -162,7 +162,7 @@ broadcast(new MessageSent($message))->toOthers();
 | Table | Constraint | Purpose |
 |-------|-----------|---------|
 | customer_profiles | (external_id, channel_type) | Per-platform unique |
-| messages | (conversation_id, webhook_event_id) | Webhook dedup |
+| messages | webhook_event_id (app-level check) | Webhook dedup (no DB constraint) |
 | messages | (conversation_id, external_message_id) | Message dedup |
 | quick_replies | (user_id, shortcut) | Unique shortcuts |
 | bot_settings | bot_id | One settings per bot |
@@ -173,7 +173,7 @@ broadcast(new MessageSent($message))->toOthers();
 | File | Pattern |
 |------|---------|
 | `app/Jobs/ProcessLINEWebhook.php` | lockForUpdate + dedup + response lock |
-| `app/Jobs/ProcessTelegramWebhook.php` | Same patterns |
+| `app/Jobs/ProcessTelegramWebhook.php` | Simpler: dedup + broadcast, no lockForUpdate |
 | `app/Services/MessageAggregationService.php` | Cache::lock + timer reset |
 | `app/Services/CircuitBreakerService.php` | 3-state circuit breaker |
 | `app/Services/OpenRouterService.php` | HTTP retry with backoff |
