@@ -41,7 +41,7 @@ Step 5: VERIFY SUCCESS (Green/Gold)
 | `app/Services/OrderService.php` | Order creation & product normalization |
 | `app/Models/Order.php` | Order model with relationships |
 | `app/Models/OrderItem.php` | Order item with product/variant |
-| `app/Http/Controllers/Api/OrderController.php` | Dashboard API (347 lines) |
+| `app/Http/Controllers/Api/OrderController.php` | Dashboard API (346 lines) |
 | `app/Commands/BackfillOrdersFromMessages.php` | Retroactive order creation |
 | `app/Commands/NormalizeOrderItems.php` | Product name standardization |
 
@@ -116,7 +116,7 @@ User Message → ProcessLINEWebhook → AI generates response
 
 - Max: 30,000 bytes JSON
 - `safeBuildFlex()` checks size, falls back to plain text if exceeded
-- Encoding: `JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES`
+- Encoding: `json_encode()` (no special flags)
 
 ## Critical Gotchas
 
