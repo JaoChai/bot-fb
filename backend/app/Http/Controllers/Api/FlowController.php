@@ -33,7 +33,6 @@ class FlowController extends Controller
         'temperature',
         'max_tokens',
         'enabled_tools',
-        'model',
         'agentic_mode',
         'second_ai_enabled',
         'second_ai_options',

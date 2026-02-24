@@ -18,7 +18,6 @@ class StoreFlowRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
             'system_prompt' => ['required', 'string', 'max:50000'],
-            'model' => ['nullable', 'string', 'max:100'],
             'temperature' => ['nullable', 'numeric', 'between:0,2'],
             'max_tokens' => ['nullable', 'integer', 'min:1', 'max:128000'],
             'agentic_mode' => ['nullable', 'boolean'],
