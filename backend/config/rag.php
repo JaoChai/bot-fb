@@ -143,7 +143,9 @@ return [
         ],
 
         // Skip cache when conversation has active history (ongoing conversation = context-dependent)
-        'skip_if_has_history' => env('RAG_SEMANTIC_CACHE_SKIP_HAS_HISTORY', true),
+        // Default: false — conditions 1-3 (length, patterns, memory_notes) are sufficient
+        // Set to true only if you want maximum safety at the cost of disabling cache for ~95% of messages
+        'skip_if_has_history' => env('RAG_SEMANTIC_CACHE_SKIP_HAS_HISTORY', false),
     ],
 
     /*

@@ -315,9 +315,11 @@ class RAGServiceTest extends TestCase
         $this->assertFalse($this->callShouldSkipCache($msg, $conversation));
     }
 
-    public function test_skip_cache_when_history_non_empty(): void
+    public function test_skip_cache_when_history_non_empty_and_config_enabled(): void
     {
-        // Long message, no memory, but has conversation history → skip
+        // When skip_if_has_history is explicitly enabled, long message with history → skip
+        config(['rag.semantic_cache.skip_if_has_history' => true]);
+
         $msg = 'สินค้า Nolimit Level Up+ มีกี่แบบ ราคาเท่าไหร่บ้าง';
         $history = [
             ['role' => 'user', 'content' => 'สวัสดีครับ'],
@@ -325,6 +327,20 @@ class RAGServiceTest extends TestCase
         ];
 
         $this->assertTrue($this->callShouldSkipCache($msg, null, $history));
+    }
+
+    public function test_no_skip_when_history_exists_but_config_disabled(): void
+    {
+        // Default: skip_if_has_history = false → cache still works for returning users
+        config(['rag.semantic_cache.skip_if_has_history' => false]);
+
+        $msg = 'สินค้า Nolimit Level Up+ มีกี่แบบ ราคาเท่าไหร่บ้าง';
+        $history = [
+            ['role' => 'user', 'content' => 'สวัสดีครับ'],
+            ['role' => 'assistant', 'content' => 'สวัสดีค่ะ ยินดีให้บริการค่ะ'],
+        ];
+
+        $this->assertFalse($this->callShouldSkipCache($msg, null, $history));
     }
 
     public function test_no_skip_for_fresh_conversation_long_message(): void
