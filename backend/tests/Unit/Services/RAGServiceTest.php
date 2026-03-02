@@ -52,6 +52,21 @@ class RAGServiceTest extends TestCase
     }
 
     /**
+     * Helper to call protected shouldSkipCache method.
+     */
+    private function callShouldSkipCache(
+        string $userMessage,
+        ?Conversation $conversation = null,
+        array $conversationHistory = []
+    ): bool {
+        $reflection = new ReflectionClass($this->service);
+        $method = $reflection->getMethod('shouldSkipCache');
+        $method->setAccessible(true);
+
+        return $method->invoke($this->service, $userMessage, $conversation, $conversationHistory);
+    }
+
+    /**
      * Helper to call protected buildEnhancedPrompt method.
      */
     private function callBuildEnhancedPrompt(
@@ -226,5 +241,97 @@ class RAGServiceTest extends TestCase
         $kbPos = strpos($result, '## KB Context:');
         $this->assertLessThan($basePos, $memoryPos);
         $this->assertLessThan($kbPos, $basePos);
+    }
+
+    // =========================================================================
+    // shouldSkipCache Tests
+    // =========================================================================
+
+    public function test_skip_cache_for_short_message(): void
+    {
+        // "ครับ" = 4 Thai chars, well under 20
+        $this->assertTrue($this->callShouldSkipCache('ครับ'));
+    }
+
+    public function test_skip_cache_for_message_at_threshold(): void
+    {
+        // Exactly 20 chars = should skip (≤ 20)
+        $msg = str_repeat('a', 20);
+        $this->assertTrue($this->callShouldSkipCache($msg));
+    }
+
+    public function test_no_skip_for_long_general_question(): void
+    {
+        // 25+ chars, no conversation, no memory, no history
+        $msg = 'สินค้า Nolimit Level Up+ มีกี่แบบ ราคาเท่าไหร่บ้าง';
+        $this->assertGreaterThan(20, mb_strlen($msg));
+        $this->assertFalse($this->callShouldSkipCache($msg));
+    }
+
+    public function test_skip_cache_for_thai_confirmation_keyword(): void
+    {
+        // "ยืนยัน" = 6 chars, under threshold → skip via length
+        $this->assertTrue($this->callShouldSkipCache('ยืนยัน'));
+    }
+
+    public function test_skip_cache_for_thai_negation_keyword(): void
+    {
+        // "ยกเลิก" = 6 chars, under threshold → skip via length
+        $this->assertTrue($this->callShouldSkipCache('ยกเลิก'));
+    }
+
+    public function test_no_skip_for_keyword_in_longer_sentence(): void
+    {
+        // "ยืนยัน" appears as substring but the full message is > 20 chars
+        // and doesn't match anchored pattern (not standalone)
+        $msg = 'ยืนยันตัวตนและกรอกข้อมูลสมัครสมาชิก';
+        $this->assertGreaterThan(20, mb_strlen($msg));
+        $this->assertFalse($this->callShouldSkipCache($msg));
+    }
+
+    public function test_skip_cache_when_memory_notes_exist(): void
+    {
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->bot->id,
+            'memory_notes' => [
+                ['id' => 'mem-1', 'content' => 'VIP ลูกค้าประจำ', 'type' => 'memory', 'created_by' => $this->user->id, 'created_at' => now()->toISOString(), 'updated_at' => now()->toISOString()],
+            ],
+        ]);
+
+        // Long message that would normally NOT skip, but memory_notes present → skip
+        $msg = 'สินค้า Nolimit Level Up+ มีกี่แบบ ราคาเท่าไหร่บ้าง';
+        $this->assertTrue($this->callShouldSkipCache($msg, $conversation));
+    }
+
+    public function test_no_skip_when_no_memory_notes(): void
+    {
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->bot->id,
+            'memory_notes' => null,
+        ]);
+
+        // Long message, no memory, no history → should NOT skip
+        $msg = 'สินค้า Nolimit Level Up+ มีกี่แบบ ราคาเท่าไหร่บ้าง';
+        $this->assertFalse($this->callShouldSkipCache($msg, $conversation));
+    }
+
+    public function test_skip_cache_when_history_non_empty(): void
+    {
+        // Long message, no memory, but has conversation history → skip
+        $msg = 'สินค้า Nolimit Level Up+ มีกี่แบบ ราคาเท่าไหร่บ้าง';
+        $history = [
+            ['role' => 'user', 'content' => 'สวัสดีครับ'],
+            ['role' => 'assistant', 'content' => 'สวัสดีค่ะ ยินดีให้บริการค่ะ'],
+        ];
+
+        $this->assertTrue($this->callShouldSkipCache($msg, null, $history));
+    }
+
+    public function test_no_skip_for_fresh_conversation_long_message(): void
+    {
+        // No conversation, no history, long general question → NOT skip
+        $msg = 'อยากทราบรายละเอียดสินค้าทั้งหมดของ Nolimit ครับ';
+        $this->assertGreaterThan(20, mb_strlen($msg));
+        $this->assertFalse($this->callShouldSkipCache($msg, null, []));
     }
 }

@@ -129,6 +129,21 @@ return [
         // Maximum cache entries per bot (prevents unbounded growth)
         // Oldest entries are removed when limit is reached
         'max_entries_per_bot' => env('RAG_SEMANTIC_CACHE_MAX_ENTRIES', 10000),
+
+        // Skip cache for short messages (context-dependent like "ยืนยัน", "ครับ")
+        // Messages with mb_strlen <= this value will bypass cache entirely
+        'skip_if_length_lte' => (int) env('RAG_SEMANTIC_CACHE_SKIP_LENGTH', 20),
+
+        // Regex patterns for context-dependent keywords (anchored = standalone only)
+        // Messages matching any pattern bypass cache even if longer than skip_if_length_lte
+        'skip_patterns' => [
+            '/^(ยืนยัน|ยอมรับ|ตกลง|โอเค|ใช่|ถูกต้อง|ครับ|ค่ะ|จ้า|จ้ะ|ได้เลย|เอา|สั่ง|สั่งเลย|ok|yes|sure|confirm)$/iu',
+            '/^(ยกเลิก|ไม่เอา|ไม่ต้อง|ไม่ใช่|เปลี่ยน|แก้ไข|cancel|no|reject)$/iu',
+            '/^(จ่าย|โอน|โอนแล้ว|ชำระ|ชำระแล้ว|pay|paid|transfer|sent)$/iu',
+        ],
+
+        // Skip cache when conversation has active history (ongoing conversation = context-dependent)
+        'skip_if_has_history' => env('RAG_SEMANTIC_CACHE_SKIP_HAS_HISTORY', true),
     ],
 
     /*

@@ -62,7 +62,10 @@ class RAGService
         $bot->loadMissing(['defaultFlow.knowledgeBases']);
 
         // Step 0: Check Semantic Cache first (fastest path)
-        if ($this->semanticCache?->isEnabled()) {
+        // Skip cache for context-dependent messages to prevent cross-conversation contamination
+        $skipCache = $this->shouldSkipCache($userMessage, $conversation, $conversationHistory);
+
+        if (!$skipCache && $this->semanticCache?->isEnabled()) {
             $cachedResponse = $this->semanticCache->get($bot, $userMessage, $apiKey);
             if ($cachedResponse) {
                 Log::debug('RAGService: Cache hit, returning cached response', [
@@ -227,7 +230,8 @@ class RAGService
         $result['from_cache'] = false;
 
         // Step 10: Save to Semantic Cache for future similar queries
-        if ($this->semanticCache?->isEnabled() && !empty($result['content'])) {
+        // Skip saving context-dependent responses to prevent cross-conversation contamination
+        if (!$skipCache && $this->semanticCache?->isEnabled() && !empty($result['content'])) {
             try {
                 $this->semanticCache->put(
                     $bot,
@@ -701,6 +705,45 @@ PROMPT;
             'query_enhancement_enabled' => $this->queryEnhancement?->isEnabled() ?? false,
             'reranking_enabled' => $this->hybridSearchService->isRerankingEnabled(),
         ];
+    }
+
+    /**
+     * Determine if semantic cache should be skipped for this request.
+     *
+     * Context-dependent messages (confirmations, short replies, ongoing conversations)
+     * must NOT be cached because the same text means different things in different contexts.
+     * e.g., "ยืนยัน" from Customer A confirms order X, but Customer B has order Y.
+     */
+    protected function shouldSkipCache(string $userMessage, ?Conversation $conversation, array $conversationHistory): bool
+    {
+        // Checks ordered cheapest → most expensive for early return optimization
+
+        // 1. Conversation history is non-empty (ongoing conversation) — ~0.1μs
+        if (config('rag.semantic_cache.skip_if_has_history', true) && !empty($conversationHistory)) {
+            return true;
+        }
+
+        // 2. Short messages are almost always context-dependent — ~0.5μs
+        $trimmed = trim($userMessage);
+        $maxLength = config('rag.semantic_cache.skip_if_length_lte', 20);
+        if (mb_strlen($trimmed) <= $maxLength) {
+            return true;
+        }
+
+        // 3. Conversation has memory notes (personalized state = VIP customers) — ~0.1μs
+        if ($conversation && !empty($conversation->memory_notes)) {
+            return true;
+        }
+
+        // 4. Keyword pattern match for standalone context-dependent terms — ~10-50μs
+        $patterns = config('rag.semantic_cache.skip_patterns', []);
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $trimmed)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // =========================================================================
