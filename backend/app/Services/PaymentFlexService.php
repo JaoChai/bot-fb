@@ -35,6 +35,9 @@ class PaymentFlexService
      */
     public function tryConvertToFlex(string $text, ?Conversation $conversation = null): string|array
     {
+        // Strip markdown bold before regex parsing (LINE doesn't render markdown)
+        $text = str_replace('**', '', $text);
+
         try {
             $isVip = $this->isVipConversation($conversation);
 

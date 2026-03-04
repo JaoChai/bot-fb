@@ -455,7 +455,7 @@ class LINEService
     {
         return [
             'type' => 'text',
-            'text' => mb_substr($text, 0, 5000), // LINE limit
+            'text' => mb_substr(str_replace('**', '', $text), 0, 5000), // LINE limit
         ];
     }
 
