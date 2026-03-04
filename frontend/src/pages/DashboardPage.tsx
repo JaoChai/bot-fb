@@ -11,7 +11,6 @@ import {
   DashboardStatCard,
   RecentActivityTimeline,
   DashboardSkeleton,
-  HandoverAlertBanner,
   BotStatusList,
   RevenueChart,
   TopProductsList,
@@ -83,11 +82,6 @@ export function DashboardPage() {
     <div className="space-y-6">
       {/* Section 0: Header */}
       <DashboardHeader today={today} />
-
-      {/* Section 1: Alert Banner */}
-      <HandoverAlertBanner
-        conversations={data?.alerts.handover_conversations ?? []}
-      />
 
       {/* Section 2: Key Metrics (4 cards) */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
