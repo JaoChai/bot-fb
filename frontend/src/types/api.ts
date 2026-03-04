@@ -158,7 +158,8 @@ export interface BotSettings {
   lead_recovery_max_attempts: number;
   // Response hours
   response_hours_enabled: boolean;
-  response_hours: Record<string, { start: string; end: string }> | null;
+  response_hours: Record<string, { start: string; end: string }[]> | null;
+  response_hours_timezone: string;
   offline_message: string | null;
   // Auto-responses
   welcome_message: string | null;
@@ -178,6 +179,24 @@ export interface BotSettings {
   response_style: 'professional' | 'casual' | 'friendly' | 'formal';
   // Conversation management
   auto_archive_days: number | null;
+  // Multiple bubbles
+  multiple_bubbles_enabled: boolean;
+  multiple_bubbles_min: number;
+  multiple_bubbles_max: number;
+  multiple_bubbles_delimiter: string | null;
+  wait_multiple_bubbles_enabled: boolean;
+  wait_multiple_bubbles_ms: number;
+  // Smart aggregation
+  smart_aggregation_enabled: boolean;
+  smart_min_wait_ms: number;
+  smart_max_wait_ms: number;
+  smart_early_trigger_enabled: boolean;
+  smart_per_user_learning_enabled: boolean;
+  // Reply sticker
+  reply_sticker_enabled: boolean;
+  reply_sticker_message: string | null;
+  reply_sticker_mode: string;
+  reply_sticker_ai_prompt: string | null;
   // Auto-assignment settings
   auto_assignment_enabled: boolean;
   auto_assignment_mode: 'round_robin' | 'load_balanced';
