@@ -91,6 +91,7 @@ class UnifiedCheckService
                 apiKeyOverride: $apiKey,
                 fallbackModelOverride: $fallbackModel,
                 timeout: $this->timeout,
+                reasoning: ['effort' => config('rag.second_ai.reasoning_effort', 'low')],
             );
 
             $rawResponse = $apiResult['content'];

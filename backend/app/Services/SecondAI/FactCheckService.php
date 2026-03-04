@@ -169,7 +169,8 @@ PROMPT;
             useFallback: true,
             apiKeyOverride: $apiKey,
             fallbackModelOverride: $fallbackModel,
-            timeout: $timeout
+            timeout: $timeout,
+            reasoning: ['effort' => config('rag.second_ai.reasoning_effort', 'low')],
         );
 
         $content = trim($result['content']);
@@ -312,7 +313,8 @@ PROMPT;
             useFallback: true,
             apiKeyOverride: $apiKey,
             fallbackModelOverride: $fallbackModel,
-            timeout: $timeout
+            timeout: $timeout,
+            reasoning: ['effort' => config('rag.second_ai.reasoning_effort', 'low')],
         );
 
         return trim($result['content']);
