@@ -137,7 +137,7 @@ class DashboardController extends Controller
                 ->join('conversations', 'messages.conversation_id', '=', 'conversations.id')
                 ->whereIn('conversations.bot_id', $bots->pluck('id'))
                 ->whereNull('conversations.deleted_at')
-                ->whereRaw("messages.created_at >= CURRENT_DATE")
+                ->whereRaw('messages.created_at >= CURRENT_DATE')
                 ->whereRaw("messages.created_at < CURRENT_DATE + INTERVAL '1 day'")
                 ->groupBy('conversations.bot_id')
                 ->selectRaw('conversations.bot_id, COUNT(*) as count')

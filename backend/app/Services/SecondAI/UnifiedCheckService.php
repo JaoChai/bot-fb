@@ -25,11 +25,12 @@ class UnifiedCheckService
     /**
      * Execute unified check for all enabled options
      *
-     * @param string $response Original AI response to check
-     * @param Flow $flow Flow with second_ai_options configuration
-     * @param string $userMessage Original user message for context
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $response  Original AI response to check
+     * @param  Flow  $flow  Flow with second_ai_options configuration
+     * @param  string  $userMessage  Original user message for context
+     * @param  string|null  $apiKey  Optional API key override
      * @return SecondAICheckResult Structured check result
+     *
      * @throws \RuntimeException If LLM call fails or returns invalid JSON
      */
     public function check(
@@ -69,7 +70,7 @@ class UnifiedCheckService
         $bot = $flow->bot;
         $model = $bot?->decision_model
             ?: $bot?->primary_chat_model;
-        if (!$model) {
+        if (! $model) {
             throw new \RuntimeException('Bot does not have a model configured. Please set decision_model or primary_chat_model in Bot Settings.');
         }
         $fallbackModel = $bot?->fallback_decision_model
@@ -118,7 +119,7 @@ class UnifiedCheckService
             'passed' => $parsedData['passed'],
             'checks_applied' => array_keys(array_filter(
                 $parsedData['modifications'] ?? [],
-                fn($mod) => $mod['required'] ?? false
+                fn ($mod) => $mod['required'] ?? false
             )),
         ]);
 
@@ -155,20 +156,20 @@ class UnifiedCheckService
 
         if (in_array('fact_check', $enabledChecks)) {
             $prompt .= "# Knowledge Base Context\n\n";
-            if (!empty($kbContext)) {
-                $prompt .= $kbContext . "\n\n";
+            if (! empty($kbContext)) {
+                $prompt .= $kbContext."\n\n";
             } else {
                 $prompt .= "No Knowledge Base available.\n\n";
             }
 
-            $checksDescription[] = "**Fact Check**: Identify all factual claims. Mark claims as unverified if they cannot be confirmed by the Knowledge Base context above. Rewrite the response removing or rephrasing unverified claims.";
+            $checksDescription[] = '**Fact Check**: Identify all factual claims. Mark claims as unverified if they cannot be confirmed by the Knowledge Base context above. Rewrite the response removing or rephrasing unverified claims.';
         }
 
         if (in_array('policy', $enabledChecks)) {
             $policyRules = $flow->second_ai_options['policy_rules'] ?? 'Follow general business ethics and consumer protection laws.';
             $prompt .= "# Policy Rules\n\n{$policyRules}\n\n";
 
-            $checksDescription[] = "**Policy Check**: Check for violations of the policy rules above. Rewrite the response to comply with all policies if violations found.";
+            $checksDescription[] = '**Policy Check**: Check for violations of the policy rules above. Rewrite the response to comply with all policies if violations found.';
         }
 
         if (in_array('personality', $enabledChecks)) {
@@ -239,7 +240,7 @@ class UnifiedCheckService
     /**
      * Build examples section for few-shot learning
      *
-     * @param array $enabledChecks List of enabled check types
+     * @param  array  $enabledChecks  List of enabled check types
      * @return string Examples prompt section
      */
     protected function buildExamplesSection(array $enabledChecks): string
@@ -373,16 +374,16 @@ class UnifiedCheckService
         // Lenient defaults for missing fields
         $modifications = $json['modifications'] ?? [];
 
-        if (!isset($json['passed']) || !is_bool($json['passed'])) {
+        if (! isset($json['passed']) || ! is_bool($json['passed'])) {
             $json['passed'] = $this->inferPassedFromModifications($modifications);
         }
 
-        if (!is_array($modifications)) {
+        if (! is_array($modifications)) {
             $modifications = [];
         }
         $json['modifications'] = $modifications;
 
-        if (!isset($json['final_response']) || !is_string($json['final_response']) || empty($json['final_response'])) {
+        if (! isset($json['final_response']) || ! is_string($json['final_response']) || empty($json['final_response'])) {
             $fallback = $this->extractLastRewritten($modifications);
             if ($fallback === null) {
                 throw new \RuntimeException('Missing or invalid "final_response" field in unified check response');
@@ -403,6 +404,7 @@ class UnifiedCheckService
                 return false;
             }
         }
+
         return true;
     }
 
@@ -413,10 +415,11 @@ class UnifiedCheckService
     {
         $lastRewritten = null;
         foreach ($modifications as $mod) {
-            if (is_array($mod) && !empty($mod['rewritten'])) {
+            if (is_array($mod) && ! empty($mod['rewritten'])) {
                 $lastRewritten = $mod['rewritten'];
             }
         }
+
         return $lastRewritten;
     }
 
@@ -427,7 +430,9 @@ class UnifiedCheckService
     protected function filterByConfidence(array $modifications, float $threshold = 0.7): array
     {
         foreach ($modifications as $checkType => &$mod) {
-            if (!is_array($mod)) continue;
+            if (! is_array($mod)) {
+                continue;
+            }
             $confidence = $mod['confidence'] ?? 1.0;
             if (($mod['required'] ?? false) && $confidence < $threshold) {
                 Log::info('UnifiedCheck: Low confidence, demoting', [
@@ -438,6 +443,7 @@ class UnifiedCheckService
                 $mod['rewritten'] = null;
             }
         }
+
         return $modifications;
     }
 

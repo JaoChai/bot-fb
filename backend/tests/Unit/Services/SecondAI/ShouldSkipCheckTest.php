@@ -15,6 +15,7 @@ use ReflectionMethod;
 class ShouldSkipCheckTest extends TestCase
 {
     private SecondAIService $service;
+
     private ReflectionMethod $method;
 
     protected function setUp(): void
@@ -66,7 +67,7 @@ class ShouldSkipCheckTest extends TestCase
         // Pad greeting with allowed trailing characters (spaces, particles)
         // to push length >= 50 while still matching the greeting regex
         // Pattern: /^(สวัสดี|...)[ค่ะครับคะนะจ้า\s!\.]*$/u
-        $greeting = 'สวัสดี' . str_repeat('ค่ะ ', 15); // 6 + 45 = 51 chars
+        $greeting = 'สวัสดี'.str_repeat('ค่ะ ', 15); // 6 + 45 = 51 chars
         $greeting = trim($greeting);
 
         $result = $this->invoke($greeting);

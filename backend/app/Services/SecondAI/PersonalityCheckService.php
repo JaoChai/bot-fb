@@ -38,9 +38,9 @@ class PersonalityCheckService
     /**
      * Check the response for brand personality consistency.
      *
-     * @param string $response The AI-generated response to check
-     * @param Flow $flow The flow containing system prompt with brand guidelines
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $response  The AI-generated response to check
+     * @param  Flow  $flow  The flow containing system prompt with brand guidelines
+     * @param  string|null  $apiKey  Optional API key override
      * @return CheckResult The personality check result
      */
     public function check(
@@ -72,7 +72,7 @@ class PersonalityCheckService
             $checkResult = $this->checkAgainstGuidelines($response, $brandGuidelines, $apiKey, $timeout, $fallbackModel);
 
             // Step 3: If issues found, rewrite
-            if (!$checkResult['matches']) {
+            if (! $checkResult['matches']) {
                 Log::info('PersonalityCheck: Tone issues found', [
                     'issues' => $checkResult['issues'] ?? [],
                 ]);
@@ -97,6 +97,7 @@ class PersonalityCheckService
             }
 
             Log::debug('PersonalityCheck: Response matches brand personality');
+
             return CheckResult::passed($response);
         } catch (\Exception $e) {
             Log::error('PersonalityCheck: Error during check', [
@@ -110,8 +111,8 @@ class PersonalityCheckService
     /**
      * Extract brand guidelines from system prompt.
      *
-     * @param string $systemPrompt The flow's system prompt
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $systemPrompt  The flow's system prompt
+     * @param  string|null  $apiKey  Optional API key override
      * @return array Brand guidelines as key-value pairs
      */
     protected function extractBrandGuidelines(string $systemPrompt, ?string $apiKey = null, ?int $timeout = null, ?string $fallbackModel = null): array
@@ -174,7 +175,7 @@ PROMPT;
 
             $guidelines = json_decode($content, true);
 
-            if (!is_array($guidelines)) {
+            if (! is_array($guidelines)) {
                 return [];
             }
 
@@ -183,6 +184,7 @@ PROMPT;
             Log::warning('PersonalityCheck: Failed to parse guidelines', [
                 'error' => $e->getMessage(),
             ]);
+
             return [];
         }
     }
@@ -190,9 +192,9 @@ PROMPT;
     /**
      * Check response against brand guidelines.
      *
-     * @param string $response The response to check
-     * @param array $guidelines Brand guidelines
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $response  The response to check
+     * @param  array  $guidelines  Brand guidelines
+     * @param  string|null  $apiKey  Optional API key override
      * @return array Check result with matches status and issues
      */
     protected function checkAgainstGuidelines(
@@ -255,7 +257,7 @@ PROMPT;
 
             $check = json_decode($content, true);
 
-            if (!is_array($check)) {
+            if (! is_array($check)) {
                 return ['matches' => true, 'issues' => [], 'rewritten' => null];
             }
 
@@ -264,6 +266,7 @@ PROMPT;
             Log::warning('PersonalityCheck: Failed to parse check result', [
                 'error' => $e->getMessage(),
             ]);
+
             return ['matches' => true, 'issues' => [], 'rewritten' => null];
         }
     }
@@ -273,10 +276,10 @@ PROMPT;
      *
      * Fallback method if the combined check didn't provide a rewrite.
      *
-     * @param string $originalResponse The original response
-     * @param array $guidelines Brand guidelines
-     * @param array $issues Found issues
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $originalResponse  The original response
+     * @param  array  $guidelines  Brand guidelines
+     * @param  array  $issues  Found issues
+     * @param  string|null  $apiKey  Optional API key override
      * @return string Rewritten response matching brand personality
      */
     protected function rewriteWithBrandPersonality(

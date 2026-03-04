@@ -13,7 +13,9 @@ class RateLimitService
      * Rate limit result statuses
      */
     public const STATUS_ALLOWED = 'allowed';
+
     public const STATUS_BOT_DAILY_EXCEEDED = 'bot_daily_exceeded';
+
     public const STATUS_USER_DAILY_EXCEEDED = 'user_daily_exceeded';
 
     /**
@@ -25,30 +27,32 @@ class RateLimitService
         $settings = $bot->settings;
 
         // If no settings, allow (defaults will be used)
-        if (!$settings) {
+        if (! $settings) {
             return $this->allowedResponse();
         }
 
         // Check bot daily limit first
         $botDailyResult = $this->checkBotDailyLimit($bot, $settings);
-        if (!$botDailyResult['allowed']) {
+        if (! $botDailyResult['allowed']) {
             Log::info('Rate limit exceeded: bot daily', [
                 'bot_id' => $bot->id,
                 'current' => $botDailyResult['current_count'],
                 'limit' => $botDailyResult['limit'],
             ]);
+
             return $botDailyResult;
         }
 
         // Check per-user daily limit
         $userDailyResult = $this->checkUserDailyLimit($bot, $externalUserId, $settings);
-        if (!$userDailyResult['allowed']) {
+        if (! $userDailyResult['allowed']) {
             Log::info('Rate limit exceeded: user daily', [
                 'bot_id' => $bot->id,
                 'external_user_id' => $externalUserId,
                 'current' => $userDailyResult['current_count'],
                 'limit' => $userDailyResult['limit'],
             ]);
+
             return $userDailyResult;
         }
 
@@ -69,7 +73,7 @@ class RateLimitService
 
         // Increment bot daily counter (atomic)
         $botDailyKey = $this->getBotDailyKey($bot->id);
-        if (!Cache::has($botDailyKey)) {
+        if (! Cache::has($botDailyKey)) {
             Cache::put($botDailyKey, 1, $ttl);
         } else {
             Cache::increment($botDailyKey);
@@ -77,7 +81,7 @@ class RateLimitService
 
         // Increment user daily counter (atomic)
         $userDailyKey = $this->getUserDailyKey($bot->id, $externalUserId);
-        if (!Cache::has($userDailyKey)) {
+        if (! Cache::has($userDailyKey)) {
             Cache::put($userDailyKey, 1, $ttl);
         } else {
             Cache::increment($userDailyKey);
@@ -90,7 +94,7 @@ class RateLimitService
      */
     public function getRateLimitMessage(string $status, ?BotSetting $settings = null): ?string
     {
-        if (!$settings) {
+        if (! $settings) {
             return null; // Silent by default
         }
 
@@ -163,7 +167,7 @@ class RateLimitService
      */
     private function getBotDailyKey(int $botId): string
     {
-        return "rate_limit:bot:{$botId}:daily:" . now()->format('Y-m-d');
+        return "rate_limit:bot:{$botId}:daily:".now()->format('Y-m-d');
     }
 
     /**
@@ -173,7 +177,8 @@ class RateLimitService
     {
         // Hash for consistent key length and to avoid special characters
         $hash = md5($externalUserId);
-        return "rate_limit:bot:{$botId}:user:{$hash}:daily:" . now()->format('Y-m-d');
+
+        return "rate_limit:bot:{$botId}:user:{$hash}:daily:".now()->format('Y-m-d');
     }
 
     /**
@@ -183,6 +188,7 @@ class RateLimitService
     {
         $now = now();
         $seconds = $now->endOfDay()->diffInSeconds($now);
+
         // Ensure minimum TTL of 1 second to prevent immediate expiration
         return max($seconds, 1);
     }

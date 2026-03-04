@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Storage;
 class FacebookService
 {
     protected const API_VERSION = 'v18.0';
+
     protected const API_BASE_URL = 'https://graph.facebook.com';
 
     /**
@@ -26,13 +27,13 @@ class FacebookService
         }
 
         // Signature format: sha256=xxx
-        if (!str_starts_with($signature, 'sha256=')) {
+        if (! str_starts_with($signature, 'sha256=')) {
             throw new FacebookException('Invalid signature format', 401);
         }
 
-        $expectedSignature = 'sha256=' . hash_hmac('sha256', $payload, $appSecret);
+        $expectedSignature = 'sha256='.hash_hmac('sha256', $payload, $appSecret);
 
-        if (!hash_equals($expectedSignature, $signature)) {
+        if (! hash_equals($expectedSignature, $signature)) {
             throw new FacebookException('Invalid Facebook webhook signature', 401);
         }
 
@@ -98,7 +99,7 @@ class FacebookService
      */
     public function isMessageEvent(array $event): bool
     {
-        return isset($event['message']) && !($event['message']['is_echo'] ?? false);
+        return isset($event['message']) && ! ($event['message']['is_echo'] ?? false);
     }
 
     /**
@@ -108,7 +109,7 @@ class FacebookService
     {
         return $this->isMessageEvent($event)
             && isset($event['message']['text'])
-            && !isset($event['message']['attachments']);
+            && ! isset($event['message']['attachments']);
     }
 
     /**
@@ -168,7 +169,7 @@ class FacebookService
      */
     public function sendQuickReplies(Bot $bot, string $recipientId, string $text, array $quickReplies): array
     {
-        $formattedReplies = array_map(fn($reply) => [
+        $formattedReplies = array_map(fn ($reply) => [
             'content_type' => 'text',
             'title' => mb_substr($reply['title'] ?? $reply, 0, 20), // Facebook limit
             'payload' => $reply['payload'] ?? $reply['title'] ?? $reply,
@@ -401,6 +402,7 @@ class FacebookService
                     'url' => $url,
                     'status' => $response->status(),
                 ]);
+
                 return null;
             }
 
@@ -420,7 +422,7 @@ class FacebookService
             }
 
             // Generate storage path
-            $storagePath = 'facebook/' . $bot->id . '/' . date('Y/m/d') . '/' . uniqid() . '.' . $extension;
+            $storagePath = 'facebook/'.$bot->id.'/'.date('Y/m/d').'/'.uniqid().'.'.$extension;
 
             // Store file
             $disk = config('filesystems.default');
@@ -449,6 +451,7 @@ class FacebookService
                 'type' => $type,
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -549,8 +552,9 @@ class FacebookService
             }
 
             $attachments = $event['message']['attachments'] ?? [];
-            if (!empty($attachments)) {
+            if (! empty($attachments)) {
                 $type = $attachments[0]['type'] ?? 'unknown';
+
                 return match ($type) {
                     'image' => 'image',
                     'video' => 'video',
@@ -627,7 +631,7 @@ class FacebookService
         if ($disk === 'r2') {
             $r2Url = env('R2_URL') ?: config('filesystems.disks.r2.url');
             if ($r2Url) {
-                return rtrim($r2Url, '/') . '/' . $path;
+                return rtrim($r2Url, '/').'/'.$path;
             }
         }
 
@@ -645,7 +649,7 @@ class FacebookService
             throw new FacebookException('Bot has no Facebook Page Access Token configured', 401);
         }
 
-        return Http::baseUrl(self::API_BASE_URL . '/' . self::API_VERSION)
+        return Http::baseUrl(self::API_BASE_URL.'/'.self::API_VERSION)
             ->withToken($token)
             ->timeout(30)
             ->acceptJson();

@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Services\EmbeddingService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -58,11 +57,11 @@ class HybridSearchService
     /**
      * Perform hybrid search combining semantic and keyword results.
      *
-     * @param int $knowledgeBaseId The knowledge base to search in
-     * @param string $query The search query
-     * @param int $limit Final number of results to return
-     * @param float|null $threshold Minimum similarity threshold for semantic search
-     * @param string|null $apiKey Optional API key to use (from user settings)
+     * @param  int  $knowledgeBaseId  The knowledge base to search in
+     * @param  string  $query  The search query
+     * @param  int  $limit  Final number of results to return
+     * @param  float|null  $threshold  Minimum similarity threshold for semantic search
+     * @param  string|null  $apiKey  Optional API key to use (from user settings)
      * @return Collection Merged and ranked results
      */
     public function search(
@@ -74,11 +73,12 @@ class HybridSearchService
         ?array $precomputedEmbedding = null
     ): Collection {
         // If hybrid search is disabled, fall back to semantic only
-        if (!$this->enabled || !$this->keywordSearch->isAvailable()) {
+        if (! $this->enabled || ! $this->keywordSearch->isAvailable()) {
             Log::debug('HybridSearch: Using semantic-only mode', [
                 'enabled' => $this->enabled,
                 'fts_available' => $this->keywordSearch->isAvailable(),
             ]);
+
             return $this->semanticSearch->search($knowledgeBaseId, $query, $limit, $threshold, $apiKey, $precomputedEmbedding);
         }
 
@@ -132,10 +132,10 @@ class HybridSearchService
     /**
      * Search multiple knowledge bases using hybrid approach.
      *
-     * @param array $kbConfigs Array of KB configs with per-KB settings
-     * @param string $query The search query
-     * @param int $totalLimit Maximum total results across all KBs
-     * @param string|null $apiKey Optional API key to use (from user settings)
+     * @param  array  $kbConfigs  Array of KB configs with per-KB settings
+     * @param  string  $query  The search query
+     * @param  int  $totalLimit  Maximum total results across all KBs
+     * @param  string|null  $apiKey  Optional API key to use (from user settings)
      * @return Collection Merged results from all KBs
      */
     public function searchMultiple(
@@ -149,7 +149,7 @@ class HybridSearchService
         }
 
         // If hybrid disabled, delegate to semantic service
-        if (!$this->enabled || !$this->keywordSearch->isAvailable()) {
+        if (! $this->enabled || ! $this->keywordSearch->isAvailable()) {
             return $this->semanticSearch->searchMultiple($kbConfigs, $query, $totalLimit, $apiKey);
         }
 
@@ -172,6 +172,7 @@ class HybridSearchService
             // Add KB ID to each result
             $results = $results->map(function ($item) use ($kbId) {
                 $item['knowledge_base_id'] = $kbId;
+
                 return $item;
             });
 
@@ -193,9 +194,9 @@ class HybridSearchService
      * This algorithm is robust and doesn't require score normalization
      * between different retrieval methods.
      *
-     * @param Collection $semanticResults Results from semantic search
-     * @param Collection $keywordResults Results from keyword search
-     * @param int $limit Maximum results to return
+     * @param  Collection  $semanticResults  Results from semantic search
+     * @param  Collection  $keywordResults  Results from keyword search
+     * @param  int  $limit  Maximum results to return
      * @return Collection Fused and sorted results
      */
     protected function reciprocalRankFusion(
@@ -226,7 +227,7 @@ class HybridSearchService
             $scores[$id] = ($scores[$id] ?? 0) + $rrfScore;
 
             // If document not seen in semantic results, add it
-            if (!isset($documents[$id])) {
+            if (! isset($documents[$id])) {
                 $documents[$id] = $result;
                 $documents[$id]['semantic_rank'] = null;
                 $documents[$id]['semantic_score'] = 0;
@@ -272,6 +273,7 @@ class HybridSearchService
         // Normalize to 0-1 range, capping at reasonable values
         $maxRrf = 2.0 / ($this->rrfK + 1); // Max possible score (rank 1 in both)
         $normalized = min(1.0, $rrfScore / $maxRrf);
+
         return round($normalized, 4);
     }
 
@@ -289,6 +291,7 @@ class HybridSearchService
     public function setEnabled(bool $enabled): self
     {
         $this->enabled = $enabled;
+
         return $this;
     }
 
@@ -311,9 +314,9 @@ class HybridSearchService
     /**
      * Apply reranking to search results using Jina Reranker.
      *
-     * @param string $query The search query
-     * @param Collection $results Results to rerank
-     * @param int $topN Number of top results to return
+     * @param  string  $query  The search query
+     * @param  Collection  $results  Results to rerank
+     * @param  int  $topN  Number of top results to return
      * @return Collection Reranked results
      */
     protected function applyReranking(string $query, Collection $results, int $topN): Collection
@@ -344,7 +347,7 @@ class HybridSearchService
             // Find original result by ID
             $original = $results->firstWhere('id', $doc['id']);
 
-            if (!$original) {
+            if (! $original) {
                 return null;
             }
 

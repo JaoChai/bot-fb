@@ -18,7 +18,7 @@ class UserSearchController extends Controller
         $user = $request->user();
 
         // Only owners can search for users
-        if (!$user->isOwner()) {
+        if (! $user->isOwner()) {
             return response()->json([
                 'message' => 'Unauthorized',
             ], 403);

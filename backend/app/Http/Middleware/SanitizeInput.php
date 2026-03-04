@@ -44,6 +44,7 @@ class SanitizeInput
             // Skip fields that shouldn't be sanitized
             if (in_array($key, $this->except) || in_array($fullKey, $this->except)) {
                 $sanitized[$key] = $value;
+
                 continue;
             }
 

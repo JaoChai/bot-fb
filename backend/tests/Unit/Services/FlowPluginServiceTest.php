@@ -43,7 +43,7 @@ class FlowPluginServiceTest extends TestCase
 
     public function test_extract_fallback_amount_without_decimal(): void
     {
-        $content = "เงินเข้าแล้ว 1,100 บาท ✅";
+        $content = 'เงินเข้าแล้ว 1,100 บาท ✅';
 
         $result = $this->callPrivate('extractVariablesFallback', $content, ['amount']);
 
@@ -84,7 +84,7 @@ class FlowPluginServiceTest extends TestCase
 
     public function test_extract_fallback_scb_bank(): void
     {
-        $content = "โอนจาก SCB 1,100 บาท";
+        $content = 'โอนจาก SCB 1,100 บาท';
 
         $result = $this->callPrivate('extractVariablesFallback', $content, ['source_bank']);
 
@@ -95,7 +95,7 @@ class FlowPluginServiceTest extends TestCase
     public function test_unreplaced_variables_get_dash(): void
     {
         // Test the final cleanup pattern: {varName} → "-"
-        $message = "สินค้า: {product}, จำนวน: {quantity}";
+        $message = 'สินค้า: {product}, จำนวน: {quantity}';
 
         // Simulate what the service does: preg_replace remaining vars with dash
         $result = preg_replace('/\{(\w+)\}/', '-', $message);
@@ -107,7 +107,7 @@ class FlowPluginServiceTest extends TestCase
 
     public function test_extract_fallback_returns_empty_for_unknown_vars(): void
     {
-        $content = "เงินเข้าแล้ว 1,100 บาท ✅";
+        $content = 'เงินเข้าแล้ว 1,100 บาท ✅';
 
         $result = $this->callPrivate('extractVariablesFallback', $content, ['unknown_var']);
 

@@ -18,9 +18,6 @@ class FlowCacheService
 
     /**
      * Get the default flow for a bot with caching.
-     *
-     * @param int $botId
-     * @return Flow|null
      */
     public function getDefaultFlow(int $botId): ?Flow
     {
@@ -35,9 +32,6 @@ class FlowCacheService
 
     /**
      * Check if bot has any flows (cached).
-     *
-     * @param int $botId
-     * @return bool
      */
     public function hasFlows(int $botId): bool
     {
@@ -51,9 +45,6 @@ class FlowCacheService
     /**
      * Invalidate all cache for a specific bot.
      * Call this when flows are created, updated, or deleted.
-     *
-     * @param int $botId
-     * @return void
      */
     public function invalidateBot(int $botId): void
     {
@@ -64,9 +55,6 @@ class FlowCacheService
     /**
      * Invalidate only the default flow cache.
      * Call this when default flow status changes.
-     *
-     * @param int $botId
-     * @return void
      */
     public function invalidateDefaultFlow(int $botId): void
     {

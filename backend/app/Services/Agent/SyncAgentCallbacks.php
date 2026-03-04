@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Log;
 class SyncAgentCallbacks implements AgentLoopCallbacks
 {
     protected string $content = '';
+
     protected array $logs = [];
 
     public function onAgentStart(array $data): void

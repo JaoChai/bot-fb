@@ -12,6 +12,7 @@ use Tests\TestCase;
 class ModelCapabilityServiceTest extends TestCase
 {
     protected ModelCapabilityService $service;
+
     protected CircuitBreakerService $circuitBreaker;
 
     protected function setUp(): void

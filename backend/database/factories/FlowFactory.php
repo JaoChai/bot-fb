@@ -14,7 +14,7 @@ class FlowFactory extends Factory
     {
         return [
             'bot_id' => Bot::factory(),
-            'name' => fake()->words(3, true) . ' Flow',
+            'name' => fake()->words(3, true).' Flow',
             'description' => fake()->sentence(),
             'system_prompt' => fake()->paragraph(),
             'temperature' => fake()->randomFloat(2, 0, 1),

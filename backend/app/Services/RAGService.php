@@ -43,9 +43,9 @@ class RAGService
      * 3. Get KB context if intent is 'knowledge' and KB enabled
      * 4. Generate response using Chat Model (with CoT if complex)
      *
-     * @param Bot $bot The bot to respond as
-     * @param string $userMessage The user's message
-     * @param array $conversationHistory Previous messages for context
+     * @param  Bot  $bot  The bot to respond as
+     * @param  string  $userMessage  The user's message
+     * @param  array  $conversationHistory  Previous messages for context
      * @return array Response with content, usage stats, intent, and RAG metadata
      */
     public function generateResponse(
@@ -65,7 +65,7 @@ class RAGService
         // Skip cache for context-dependent messages to prevent cross-conversation contamination
         $skipCache = $this->shouldSkipCache($userMessage, $conversation, $conversationHistory);
 
-        if (!$skipCache && $this->semanticCache?->isEnabled()) {
+        if (! $skipCache && $this->semanticCache?->isEnabled()) {
             $cachedResponse = $this->semanticCache->get($bot, $userMessage, $apiKey);
             if ($cachedResponse) {
                 Log::debug('RAGService: Cache hit, returning cached response', [
@@ -175,7 +175,7 @@ class RAGService
         // Step 10: Generate response — Agentic or Standard
         $isAgentic = $resolvedFlow
             && $resolvedFlow->agentic_mode
-            && !empty($resolvedFlow->enabled_tools)
+            && ! empty($resolvedFlow->enabled_tools)
             && $this->toolService;
 
         if ($isAgentic) {
@@ -190,7 +190,7 @@ class RAGService
                 kbContext: $kbContext,
                 memoryNotes: $memoryNotes,
             );
-            $agentCallbacks = new \App\Services\Agent\SyncAgentCallbacks();
+            $agentCallbacks = new \App\Services\Agent\SyncAgentCallbacks;
             $agentResult = $this->getAgentLoopService()->run($agentConfig, $agentCallbacks);
 
             $result = [
@@ -231,7 +231,7 @@ class RAGService
 
         // Step 10: Save to Semantic Cache for future similar queries
         // Skip saving context-dependent responses to prevent cross-conversation contamination
-        if (!$skipCache && $this->semanticCache?->isEnabled() && !empty($result['content'])) {
+        if (! $skipCache && $this->semanticCache?->isEnabled() && ! empty($result['content'])) {
             try {
                 $this->semanticCache->put(
                     $bot,
@@ -275,7 +275,7 @@ class RAGService
     {
         $defaultFlow = $this->flowCacheService->getDefaultFlow($bot->id);
 
-        if (!$defaultFlow || !$defaultFlow->knowledgeBases()->exists()) {
+        if (! $defaultFlow || ! $defaultFlow->knowledgeBases()->exists()) {
             return false;
         }
 
@@ -294,7 +294,7 @@ class RAGService
     ): string {
         // Get default flow and delegate to flow-based context retrieval
         $defaultFlow = $this->flowCacheService->getDefaultFlow($bot->id);
-        if (!$defaultFlow) {
+        if (! $defaultFlow) {
             return '';
         }
 
@@ -329,13 +329,13 @@ class RAGService
 
         foreach ($results as $i => $result) {
             $relevance = round($result['similarity'] * 100);
-            $context .= "### แหล่งที่ " . ($i + 1) . " (ความเกี่ยวข้อง {$relevance}%)\n";
+            $context .= '### แหล่งที่ '.($i + 1)." (ความเกี่ยวข้อง {$relevance}%)\n";
             $context .= "📄 {$result['document_name']}\n\n";
-            $context .= $result['content'] . "\n\n";
+            $context .= $result['content']."\n\n";
         }
 
         $context .= "---\n";
-        $context .= "📌 **คำแนะนำ**: ใช้ข้อมูลด้านบนในการตอบคำถาม ";
+        $context .= '📌 **คำแนะนำ**: ใช้ข้อมูลด้านบนในการตอบคำถาม ';
         $context .= "หากข้อมูลไม่เกี่ยวข้องหรือไม่เพียงพอ ให้ตอบตามความรู้ทั่วไปและแจ้งผู้ใช้ว่าไม่พบข้อมูลในระบบ\n";
 
         return $context;
@@ -350,9 +350,9 @@ class RAGService
 
         foreach ($results as $i => $result) {
             $relevance = round($result['similarity'] * 100);
-            $context .= "### Source " . ($i + 1) . " (Relevance: {$relevance}%)\n";
+            $context .= '### Source '.($i + 1)." (Relevance: {$relevance}%)\n";
             $context .= "Document: {$result['document_name']}\n\n";
-            $context .= $result['content'] . "\n\n";
+            $context .= $result['content']."\n\n";
         }
 
         $context .= "---\n";
@@ -375,7 +375,7 @@ class RAGService
 
         // Prepend memory notes BEFORE base prompt so LLM sees them first
         // The system prompt itself handles VIP logic — memory just provides context
-        if (!empty($memoryNotes)) {
+        if (! empty($memoryNotes)) {
             $prompt .= "## Memory:\n";
             foreach ($memoryNotes as $content) {
                 $prompt .= "- {$content}\n";
@@ -386,16 +386,16 @@ class RAGService
         $prompt .= $basePrompt;
 
         // Append KB context if available
-        if (!empty($kbContext)) {
-            $prompt .= "\n\n" . $kbContext;
+        if (! empty($kbContext)) {
+            $prompt .= "\n\n".$kbContext;
         }
 
         // Append multiple bubbles instruction if enabled
         if ($bot) {
             $bubblesService = app(MultipleBubblesService::class);
             $instruction = $bubblesService->buildPromptInstruction($bot);
-            if (!empty($instruction)) {
-                $prompt .= "\n" . $instruction;
+            if (! empty($instruction)) {
+                $prompt .= "\n".$instruction;
             }
         }
 
@@ -416,15 +416,15 @@ class RAGService
      * When Smart Routing is disabled or models not configured:
      * Falls back to getChatModelForBot() (existing behavior)
      *
-     * @param Bot $bot The bot
-     * @param array $intent Intent analysis result (may include 'complexity' from enhanced decision)
-     * @param array $complexity Heuristic complexity result from detectComplexity()
+     * @param  Bot  $bot  The bot
+     * @param  array  $intent  Intent analysis result (may include 'complexity' from enhanced decision)
+     * @param  array  $complexity  Heuristic complexity result from detectComplexity()
      * @return string|null The resolved chat model
      */
     protected function resolveSmartChatModel(Bot $bot, array $intent, array $complexity): ?string
     {
         // Smart Routing disabled → use default chat model
-        if (!$bot->use_confidence_cascade) {
+        if (! $bot->use_confidence_cascade) {
             return $this->getChatModelForBot($bot);
         }
 
@@ -440,15 +440,17 @@ class RAGService
                 'model' => $bot->cascade_expensive_model,
                 'complexity_source' => isset($intent['complexity']) ? 'enhanced_decision' : 'heuristic',
             ]);
+
             return $bot->cascade_expensive_model;
         }
 
-        if (!$isComplex && $bot->cascade_cheap_model) {
+        if (! $isComplex && $bot->cascade_cheap_model) {
             Log::debug('Smart Routing: using cheap model for simple query', [
                 'bot_id' => $bot->id,
                 'model' => $bot->cascade_cheap_model,
                 'complexity_source' => isset($intent['complexity']) ? 'enhanced_decision' : 'heuristic',
             ]);
+
             return $bot->cascade_cheap_model;
         }
 
@@ -456,6 +458,7 @@ class RAGService
         Log::debug('Smart Routing: cascade models not configured, using default', [
             'bot_id' => $bot->id,
         ]);
+
         return $this->getChatModelForBot($bot);
     }
 
@@ -567,19 +570,20 @@ class RAGService
     protected function getSystemPromptForBot(Bot $bot): string
     {
         // 1. Use bot's own system_prompt if set
-        if (!empty($bot->system_prompt)) {
+        if (! empty($bot->system_prompt)) {
             return $bot->system_prompt;
         }
 
         // 2. Use default flow's system_prompt if available
         if ($bot->default_flow_id) {
             $flow = Flow::find($bot->default_flow_id);
-            if ($flow && !empty($flow->system_prompt)) {
+            if ($flow && ! empty($flow->system_prompt)) {
                 Log::debug('Using system_prompt from Flow', [
                     'bot_id' => $bot->id,
                     'flow_id' => $flow->id,
                     'flow_name' => $flow->name,
                 ]);
+
                 return $flow->system_prompt;
             }
         }
@@ -641,6 +645,7 @@ PROMPT;
                     'query' => substr($query, 0, 100),
                     'search_mode' => $this->hybridSearchService->isEnabled() ? 'hybrid' : 'semantic',
                 ]);
+
                 return '';
             }
 
@@ -663,6 +668,7 @@ PROMPT;
                 'flow_id' => $flow->id,
                 'error' => $e->getMessage(),
             ]);
+
             return '';
         }
     }
@@ -698,8 +704,8 @@ PROMPT;
             'kb_enabled' => $bot->kb_enabled,
             'has_knowledge_base' => $bot->defaultFlow?->knowledgeBases()->exists() ?? false,
             'test_query' => $testQuery,
-            'context_generated' => !empty($context),
-            'context_preview' => substr($context, 0, 500) . (strlen($context) > 500 ? '...' : ''),
+            'context_generated' => ! empty($context),
+            'context_preview' => substr($context, 0, 500).(strlen($context) > 500 ? '...' : ''),
             'metadata' => $metadata,
             'hybrid_search_enabled' => $this->hybridSearchService->isEnabled(),
             'query_enhancement_enabled' => $this->queryEnhancement?->isEnabled() ?? false,
@@ -719,7 +725,7 @@ PROMPT;
         // Checks ordered cheapest → most expensive for early return optimization
 
         // 1. Conversation history is non-empty (ongoing conversation) — ~0.1μs
-        if (config('rag.semantic_cache.skip_if_has_history', true) && !empty($conversationHistory)) {
+        if (config('rag.semantic_cache.skip_if_has_history', true) && ! empty($conversationHistory)) {
             return true;
         }
 
@@ -731,7 +737,7 @@ PROMPT;
         }
 
         // 3. Conversation has memory notes (personalized state = VIP customers) — ~0.1μs
-        if ($conversation && !empty($conversation->memory_notes)) {
+        if ($conversation && ! empty($conversation->memory_notes)) {
             return true;
         }
 
@@ -756,7 +762,7 @@ PROMPT;
      * Uses heuristics-based detection to avoid additional LLM calls.
      * Returns complexity score and reasons for activation.
      *
-     * @param string $userMessage The user's message
+     * @param  string  $userMessage  The user's message
      * @return array{is_complex: bool, score: int, reasons: array}
      */
     public function detectComplexity(string $userMessage): array
@@ -846,8 +852,8 @@ PROMPT;
     /**
      * Detect if user message explicitly requires a tool.
      *
-     * @param string $userMessage User's message to analyze
-     * @param array $enabledTools List of enabled tool names for this flow
+     * @param  string  $userMessage  User's message to analyze
+     * @param  array  $enabledTools  List of enabled tool names for this flow
      * @return array{needs_tool: bool, tool_hint: ?string, reasons: array}
      */
     public function detectToolIntent(string $userMessage, array $enabledTools = []): array
@@ -859,7 +865,7 @@ PROMPT;
         // Calculate tool
         if (in_array('calculate', $enabledTools)) {
             $calcKeywords = ['คำนวณ', 'คิดราคา', 'คิดเงิน', 'รวมราคา', 'ส่วนลด', 'กี่บาท',
-                             'calculate', 'total', 'discount'];
+                'calculate', 'total', 'discount'];
             foreach ($calcKeywords as $kw) {
                 if (mb_stripos($lowerMessage, $kw) !== false) {
                     $reasons[] = "tool_keyword:{$kw}";
@@ -875,7 +881,7 @@ PROMPT;
         }
 
         // Datetime tool
-        if (in_array('get_current_datetime', $enabledTools) && !$toolHint) {
+        if (in_array('get_current_datetime', $enabledTools) && ! $toolHint) {
             $datetimeKeywords = ['วันนี้', 'เวลา', 'กี่โมง', 'วันที่', 'วันอะไร', 'what time', 'what day', 'today', 'date', 'current time'];
             foreach ($datetimeKeywords as $kw) {
                 if (mb_stripos($lowerMessage, $kw) !== false) {
@@ -887,7 +893,7 @@ PROMPT;
         }
 
         // Escalate tool
-        if (in_array('escalate_to_human', $enabledTools) && !$toolHint) {
+        if (in_array('escalate_to_human', $enabledTools) && ! $toolHint) {
             $escalateKeywords = ['คุยกับคน', 'ติดต่อพนักงาน', 'ขอคุยกับเจ้าหน้าที่', 'talk to human', 'real person', 'human agent', 'speak to someone'];
             foreach ($escalateKeywords as $kw) {
                 if (mb_stripos($lowerMessage, $kw) !== false) {
@@ -899,7 +905,7 @@ PROMPT;
         }
 
         // Think tool (complex analysis)
-        if (in_array('think', $enabledTools) && !$toolHint) {
+        if (in_array('think', $enabledTools) && ! $toolHint) {
             $thinkKeywords = ['วิเคราะห์เชิงลึก', 'เปรียบเทียบทุกตัว', 'สรุปให้'];
             foreach ($thinkKeywords as $kw) {
                 if (mb_stripos($lowerMessage, $kw) !== false) {
@@ -911,7 +917,7 @@ PROMPT;
         }
 
         return [
-            'needs_tool' => !empty($reasons),
+            'needs_tool' => ! empty($reasons),
             'tool_hint' => $toolHint,
             'reasons' => $reasons,
         ];
@@ -922,13 +928,13 @@ PROMPT;
      *
      * Instructs the LLM to think step-by-step for complex questions.
      *
-     * @param string $language 'thai' or 'english'
+     * @param  string  $language  'thai' or 'english'
      * @return string The CoT instruction to append
      */
     protected function buildChainOfThoughtInstruction(string $language = 'thai'): string
     {
         if ($language === 'thai') {
-            return <<<PROMPT
+            return <<<'PROMPT'
 
 
 ## คำแนะนำสำหรับคำถามซับซ้อน
@@ -940,7 +946,7 @@ PROMPT;
 PROMPT;
         }
 
-        return <<<PROMPT
+        return <<<'PROMPT'
 
 
 ## Instructions for Complex Questions
@@ -957,7 +963,7 @@ PROMPT;
      *
      * Simple detection based on Thai character presence.
      *
-     * @param string $message The message to analyze
+     * @param  string  $message  The message to analyze
      * @return string 'thai' or 'english'
      */
     protected function detectLanguage(string $message): string

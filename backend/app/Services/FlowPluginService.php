@@ -6,7 +6,6 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
 use App\Models\Message;
-use App\Services\OrderService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -23,20 +22,22 @@ class FlowPluginService
     public function executePlugins(Bot $bot, Conversation $conversation, Message $botMessage): void
     {
         $flow = $conversation->currentFlow ?? $bot->defaultFlow;
-        if (!$flow) {
+        if (! $flow) {
             error_log("PLUGIN DEBUG: No flow found - conversation={$conversation->id}");
+
             return;
         }
 
         $plugins = $flow->plugins()->where('enabled', true)->get();
         if ($plugins->isEmpty()) {
             error_log("PLUGIN DEBUG: No enabled plugins - flow={$flow->id}");
+
             return;
         }
         error_log("PLUGIN DEBUG: Found {$plugins->count()} plugin(s) - flow={$flow->id}, conversation={$conversation->id}");
 
         // Eager load user.settings to avoid N+1 query during API key resolution
-        if (!$bot->relationLoaded('user')) {
+        if (! $bot->relationLoaded('user')) {
             $bot->load('user.settings');
         }
 
@@ -46,6 +47,7 @@ class FlowPluginService
                 $cacheKey = "plugin_exec:{$plugin->id}:{$conversation->id}";
                 if (Cache::has($cacheKey)) {
                     Log::debug('Plugin rate limited', ['plugin_id' => $plugin->id]);
+
                     continue;
                 }
 
@@ -75,7 +77,7 @@ class FlowPluginService
         $keywords = $plugin->config['trigger_keywords'] ?? [];
 
         // No keywords configured = skip filter (always pass)
-        if (empty($keywords) || !is_array($keywords)) {
+        if (empty($keywords) || ! is_array($keywords)) {
             return true;
         }
 
@@ -105,8 +107,9 @@ class FlowPluginService
         Message $botMessage
     ): bool {
         // Keyword pre-filter: skip AI call if bot message doesn't contain any trigger keywords
-        if (!$this->passesKeywordFilter($plugin, $botMessage)) {
+        if (! $this->passesKeywordFilter($plugin, $botMessage)) {
             error_log("PLUGIN DEBUG: Keyword filter failed - plugin={$plugin->id}");
+
             return false;
         }
         error_log("PLUGIN DEBUG: Keyword filter passed - plugin={$plugin->id}");
@@ -125,6 +128,7 @@ class FlowPluginService
 
         $conversationContext = $recentMessages->map(function ($msg) {
             $role = $msg->sender === 'bot' ? 'Assistant' : 'User';
+
             return "{$role}: {$msg->content}";
         })->implode("\n");
 
@@ -133,8 +137,8 @@ class FlowPluginService
         preg_match_all('/\{(\w+)\}/', $template, $matches);
         $variableNames = array_values(array_diff($matches[1] ?? [], ['datetime']));
 
-        $variablesPrompt = !empty($variableNames)
-            ? 'Variables to extract: ' . implode(', ', $variableNames)
+        $variablesPrompt = ! empty($variableNames)
+            ? 'Variables to extract: '.implode(', ', $variableNames)
             : 'No variables to extract';
 
         // Build evaluation prompt
@@ -163,6 +167,7 @@ PROMPT,
         $apiKey = $bot->user?->settings?->getOpenRouterApiKey() ?? config('services.openrouter.api_key');
         if (empty($apiKey)) {
             Log::warning('No API key for plugin evaluation', ['plugin_id' => $plugin->id]);
+
             return false;
         }
 
@@ -188,23 +193,25 @@ PROMPT,
         $evaluation = json_decode(trim($jsonContent), true);
 
         // Validate JSON structure
-        if (!is_array($evaluation)) {
+        if (! is_array($evaluation)) {
             Log::warning('Plugin AI returned invalid JSON', [
                 'plugin_id' => $plugin->id,
                 'response' => mb_substr($responseContent, 0, 500),
             ]);
+
             return false;
         }
 
-        if (!($evaluation['triggered'] ?? false)) {
+        if (! ($evaluation['triggered'] ?? false)) {
             error_log("PLUGIN DEBUG: AI said NOT triggered - plugin={$plugin->id}");
+
             return false;
         }
         error_log("PLUGIN DEBUG: AI said TRIGGERED - plugin={$plugin->id}");
 
         // Format message template with extracted variables
         $variables = $evaluation['variables'] ?? [];
-        if (!is_array($variables)) {
+        if (! is_array($variables)) {
             Log::warning('Plugin variables not an array', [
                 'plugin_id' => $plugin->id,
             ]);
@@ -232,7 +239,7 @@ PROMPT,
         preg_match_all('/\{(\w+)\}/', $message, $unreplacedMatches);
         $unreplacedVars = $unreplacedMatches[1] ?? [];
 
-        if (!empty($unreplacedVars)) {
+        if (! empty($unreplacedVars)) {
             Log::info('Plugin unreplaced variables detected, trying regex fallback', [
                 'plugin_id' => $plugin->id,
                 'unreplaced' => $unreplacedVars,
@@ -310,6 +317,7 @@ PROMPT,
         if (preg_match('/([\d,]+\.?\d*)\s*บาท/u', $content, $m)) {
             return $m[1];
         }
+
         return null;
     }
 
@@ -321,8 +329,10 @@ PROMPT,
                 return trim(preg_replace('/^[-•]\s*/', '', trim($line)));
             }, explode("\n", trim($m[1]))));
             $product = implode(', ', $lines);
-            return !empty($product) ? $product : null;
+
+            return ! empty($product) ? $product : null;
         }
+
         return null;
     }
 
@@ -354,6 +364,7 @@ PROMPT,
                 return $label;
             }
         }
+
         return null;
     }
 
@@ -367,6 +378,7 @@ PROMPT,
 
         if (empty($token) || empty($chatId)) {
             Log::warning('Telegram plugin missing config', ['plugin_id' => $plugin->id]);
+
             return;
         }
 

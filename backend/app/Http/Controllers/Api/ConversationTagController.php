@@ -41,6 +41,7 @@ class ConversationTagController extends BaseConversationController
                 'message' => $e->getMessage(),
                 'bot_id' => $bot->id,
             ]);
+
             return response()->json([
                 'error' => $e->getMessage(),
                 'type' => get_class($e),
@@ -114,5 +115,4 @@ class ConversationTagController extends BaseConversationController
             abort(400, $e->getMessage());
         }
     }
-
 }

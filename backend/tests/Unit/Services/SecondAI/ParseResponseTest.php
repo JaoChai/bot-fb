@@ -11,6 +11,7 @@ use Tests\TestCase;
 class ParseResponseTest extends TestCase
 {
     private UnifiedCheckService $service;
+
     private ReflectionMethod $parseResponse;
 
     protected function setUp(): void
@@ -44,7 +45,7 @@ class ParseResponseTest extends TestCase
     /** @test */
     public function it_parses_json_wrapped_in_markdown_code_block(): void
     {
-        $input = "```json\n" . json_encode([
+        $input = "```json\n".json_encode([
             'passed' => false,
             'modifications' => [
                 'fact_check' => [
@@ -56,7 +57,7 @@ class ParseResponseTest extends TestCase
                 ],
             ],
             'final_response' => 'Please contact support for pricing.',
-        ], JSON_PRETTY_PRINT) . "\n```";
+        ], JSON_PRETTY_PRINT)."\n```";
 
         $result = $this->parseResponse->invoke($this->service, $input);
 
@@ -68,7 +69,7 @@ class ParseResponseTest extends TestCase
     /** @test */
     public function it_extracts_json_with_preamble_text(): void
     {
-        $input = "Here is my analysis of the response:\n\n" . json_encode([
+        $input = "Here is my analysis of the response:\n\n".json_encode([
             'passed' => true,
             'modifications' => [],
             'final_response' => 'All checks passed.',
@@ -94,7 +95,7 @@ class ParseResponseTest extends TestCase
                 ],
             ],
             'final_response' => 'Cleaned response.',
-        ]) . "\n\nI hope this analysis helps!";
+        ])."\n\nI hope this analysis helps!";
 
         $result = $this->parseResponse->invoke($this->service, $input);
 

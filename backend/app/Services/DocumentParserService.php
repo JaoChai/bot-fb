@@ -20,7 +20,7 @@ class DocumentParserService
     {
         $disk = $disk ?? $this->getStorageDisk();
 
-        if (!Storage::disk($disk)->exists($storagePath)) {
+        if (! Storage::disk($disk)->exists($storagePath)) {
             throw new RuntimeException("File not found: {$storagePath}");
         }
 
@@ -37,7 +37,7 @@ class DocumentParserService
     protected function parsePdf(string $content): string
     {
         try {
-            $parser = new PdfParser();
+            $parser = new PdfParser;
             $pdf = $parser->parseContent($content);
 
             $text = $pdf->getText();
@@ -50,7 +50,7 @@ class DocumentParserService
             return $text;
         } catch (\Exception $e) {
             Log::error('PDF parsing failed', ['error' => $e->getMessage()]);
-            throw new RuntimeException('Failed to parse PDF: ' . $e->getMessage());
+            throw new RuntimeException('Failed to parse PDF: '.$e->getMessage());
         }
     }
 
@@ -70,7 +70,7 @@ class DocumentParserService
         file_put_contents($tempFile, $content);
 
         try {
-            $zip = new \ZipArchive();
+            $zip = new \ZipArchive;
             if ($zip->open($tempFile) !== true) {
                 throw new RuntimeException('Failed to open DOCX file');
             }
@@ -82,7 +82,7 @@ class DocumentParserService
                 throw new RuntimeException('Invalid DOCX structure');
             }
 
-            $dom = new \DOMDocument();
+            $dom = new \DOMDocument;
             @$dom->loadXML($xml);
 
             $paragraphs = $dom->getElementsByTagNameNS(
@@ -92,7 +92,7 @@ class DocumentParserService
 
             $text = '';
             foreach ($paragraphs as $paragraph) {
-                $text .= $paragraph->textContent . "\n";
+                $text .= $paragraph->textContent."\n";
             }
 
             return $this->cleanText($text);

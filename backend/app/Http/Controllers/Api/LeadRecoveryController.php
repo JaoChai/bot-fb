@@ -24,24 +24,31 @@ class LeadRecoveryController extends Controller
      *     operationId="getLeadRecoveryStats",
      *     tags={"Lead Recovery"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="botId",
      *         in="path",
      *         description="Bot ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="period",
      *         in="query",
      *         description="Time period (day, week, month)",
      *         required=false,
+     *
      *         @OA\Schema(type="string", enum={"day", "week", "month"}, default="week")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="data", type="object",
      *                 @OA\Property(property="total_sent", type="integer"),
      *                 @OA\Property(property="total_responded", type="integer"),
@@ -51,6 +58,7 @@ class LeadRecoveryController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=403, description="Forbidden"),
      *     @OA\Response(response=404, description="Bot not found")
@@ -98,7 +106,7 @@ class LeadRecoveryController extends Controller
 
             // Daily breakdown
             $dailyBreakdown = (clone $logsQuery)
-                ->selectRaw("DATE(sent_at) as date, COUNT(*) as sent, SUM(CASE WHEN customer_responded = true THEN 1 ELSE 0 END) as responded")
+                ->selectRaw('DATE(sent_at) as date, COUNT(*) as sent, SUM(CASE WHEN customer_responded = true THEN 1 ELSE 0 END) as responded')
                 ->groupBy(DB::raw('DATE(sent_at)'))
                 ->orderBy('date')
                 ->get()
@@ -157,31 +165,40 @@ class LeadRecoveryController extends Controller
      *     operationId="getLeadRecoveryLogs",
      *     tags={"Lead Recovery"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="botId",
      *         in="path",
      *         description="Bot ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="page",
      *         in="query",
      *         description="Page number",
      *         required=false,
+     *
      *         @OA\Schema(type="integer", default=1)
      *     ),
+     *
      *     @OA\Parameter(
      *         name="per_page",
      *         in="query",
      *         description="Items per page (max 100)",
      *         required=false,
+     *
      *         @OA\Schema(type="integer", default=20)
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="data", type="array", @OA\Items(type="object")),
      *             @OA\Property(property="meta", type="object",
      *                 @OA\Property(property="current_page", type="integer"),
@@ -191,6 +208,7 @@ class LeadRecoveryController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=403, description="Forbidden"),
      *     @OA\Response(response=404, description="Bot not found")

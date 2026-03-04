@@ -3,7 +3,6 @@
 namespace App\Http\Traits;
 
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
  * Standardized API response methods for controllers.

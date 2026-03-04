@@ -24,21 +24,24 @@ class LINEWebhookController extends Controller
         // Find bot by webhook token (only LINE bots)
         $bot = $this->findBotByToken($token);
 
-        if (!$bot) {
-            Log::warning('LINE webhook: Invalid token', ['token' => substr($token, 0, 8) . '...']);
+        if (! $bot) {
+            Log::warning('LINE webhook: Invalid token', ['token' => substr($token, 0, 8).'...']);
+
             return response()->json(['message' => 'Invalid webhook token'], 404);
         }
 
         // Validate LINE signature
         $signature = $request->header('X-Line-Signature');
-        if (!$signature) {
+        if (! $signature) {
             Log::warning('LINE webhook: Missing signature', ['bot_id' => $bot->id]);
+
             return response()->json(['message' => 'Missing X-Line-Signature header'], 401);
         }
 
         // Check if channel_secret is configured
         if (empty($bot->channel_secret)) {
             Log::warning('LINE webhook: Channel secret not configured', ['bot_id' => $bot->id]);
+
             return response()->json(['message' => 'Bot channel secret not configured'], 500);
         }
 
@@ -53,6 +56,7 @@ class LINEWebhookController extends Controller
                 'bot_id' => $bot->id,
                 'error' => $e->getMessage(),
             ]);
+
             return response()->json(['message' => 'Invalid signature'], 401);
         }
 
@@ -103,7 +107,7 @@ class LINEWebhookController extends Controller
     protected function findBotByToken(string $token): ?Bot
     {
         // Build the expected webhook URL (using /api/webhook/ path for proxy compatibility)
-        $webhookUrl = config('app.url') . '/api/webhook/' . $token;
+        $webhookUrl = config('app.url').'/api/webhook/'.$token;
 
         return Bot::where('webhook_url', $webhookUrl)
             ->where('channel_type', 'line')

@@ -10,12 +10,19 @@ use Illuminate\Support\Facades\Log;
 class OpenRouterService
 {
     protected string $apiKey;
+
     protected string $baseUrl;
+
     protected string $defaultModel;
+
     protected string $fallbackModel;
+
     protected string $siteUrl;
+
     protected string $siteName;
+
     protected int $timeout;
+
     protected int $maxTokens;
 
     public function __construct()
@@ -33,16 +40,16 @@ class OpenRouterService
     /**
      * Send a chat completion request to OpenRouter.
      *
-     * @param array $messages Chat messages
-     * @param string|null $model Model ID (e.g., 'openai/gpt-4o-mini')
-     * @param float|null $temperature Sampling temperature
-     * @param int|null $maxTokens Maximum tokens in response
-     * @param bool $useFallback Whether to try fallback model on failure
-     * @param string|null $apiKeyOverride Override API key (from user settings)
-     * @param string|null $fallbackModelOverride Override fallback model (from bot settings)
-     * @param int|null $timeout Request timeout in seconds (null uses default)
-     * @param array|null $reasoning Reasoning config for o1/deepseek-r1 models: ['effort' => 'low'|'medium'|'high']
-     * @param array|null $responseFormat Response format config: ['type' => 'json_object'] for structured JSON output
+     * @param  array  $messages  Chat messages
+     * @param  string|null  $model  Model ID (e.g., 'openai/gpt-4o-mini')
+     * @param  float|null  $temperature  Sampling temperature
+     * @param  int|null  $maxTokens  Maximum tokens in response
+     * @param  bool  $useFallback  Whether to try fallback model on failure
+     * @param  string|null  $apiKeyOverride  Override API key (from user settings)
+     * @param  string|null  $fallbackModelOverride  Override fallback model (from bot settings)
+     * @param  int|null  $timeout  Request timeout in seconds (null uses default)
+     * @param  array|null  $reasoning  Reasoning config for o1/deepseek-r1 models: ['effort' => 'low'|'medium'|'high']
+     * @param  array|null  $responseFormat  Response format config: ['type' => 'json_object'] for structured JSON output
      */
     public function chat(
         array $messages,
@@ -144,6 +151,7 @@ class OpenRouterService
         ?float $temperature = null
     ): string {
         $result = $this->chat($messages, $model, $temperature);
+
         return $result['content'];
     }
 
@@ -152,15 +160,15 @@ class OpenRouterService
      *
      * Used for agentic mode where AI can decide to call tools.
      *
-     * @param array $messages Chat messages
-     * @param array $tools Tool definitions in OpenAI format
-     * @param string|null $model Model ID
-     * @param float|null $temperature Sampling temperature
-     * @param int|null $maxTokens Maximum tokens in response
-     * @param string|null $apiKeyOverride Override API key
-     * @param string $toolChoice Tool calling behavior: 'auto', 'none', 'required'
-     * @param bool $useFallback Whether to try fallback model on failure
-     * @param string|null $fallbackModelOverride Override fallback model
+     * @param  array  $messages  Chat messages
+     * @param  array  $tools  Tool definitions in OpenAI format
+     * @param  string|null  $model  Model ID
+     * @param  float|null  $temperature  Sampling temperature
+     * @param  int|null  $maxTokens  Maximum tokens in response
+     * @param  string|null  $apiKeyOverride  Override API key
+     * @param  string  $toolChoice  Tool calling behavior: 'auto', 'none', 'required'
+     * @param  bool  $useFallback  Whether to try fallback model on failure
+     * @param  string|null  $fallbackModelOverride  Override fallback model
      * @return array Response with possible tool_calls
      */
     public function chatWithTools(
@@ -246,14 +254,14 @@ class OpenRouterService
     /**
      * Generate a bot response with system prompt and conversation history.
      *
-     * @param string $userMessage The user's message
-     * @param string|null $systemPrompt System prompt for the bot
-     * @param array $conversationHistory Previous messages
-     * @param string|null $model Primary model to use
-     * @param string|null $fallbackModel Fallback model if primary fails
-     * @param float|null $temperature Sampling temperature
-     * @param int|null $maxTokens Maximum tokens in response
-     * @param string|null $apiKeyOverride Override API key
+     * @param  string  $userMessage  The user's message
+     * @param  string|null  $systemPrompt  System prompt for the bot
+     * @param  array  $conversationHistory  Previous messages
+     * @param  string|null  $model  Primary model to use
+     * @param  string|null  $fallbackModel  Fallback model if primary fails
+     * @param  float|null  $temperature  Sampling temperature
+     * @param  int|null  $maxTokens  Maximum tokens in response
+     * @param  string|null  $apiKeyOverride  Override API key
      */
     public function generateBotResponse(
         string $userMessage,
@@ -348,14 +356,14 @@ class OpenRouterService
     /**
      * Send a chat completion request with vision/image analysis support.
      *
-     * @param array $messages Chat messages (can include multimodal content)
-     * @param array $imageUrls Array of image URLs to analyze
-     * @param string|null $model Model ID (must be vision-capable)
-     * @param float|null $temperature Sampling temperature
-     * @param int|null $maxTokens Maximum tokens in response
-     * @param string|null $apiKeyOverride Override API key
-     * @param bool $useFallback Whether to try fallback model on failure
-     * @param string|null $fallbackModelOverride Override fallback model (must be vision-capable)
+     * @param  array  $messages  Chat messages (can include multimodal content)
+     * @param  array  $imageUrls  Array of image URLs to analyze
+     * @param  string|null  $model  Model ID (must be vision-capable)
+     * @param  float|null  $temperature  Sampling temperature
+     * @param  int|null  $maxTokens  Maximum tokens in response
+     * @param  string|null  $apiKeyOverride  Override API key
+     * @param  bool  $useFallback  Whether to try fallback model on failure
+     * @param  string|null  $fallbackModelOverride  Override fallback model (must be vision-capable)
      * @return array Response with content and usage
      */
     public function chatWithVision(
@@ -441,8 +449,8 @@ class OpenRouterService
      * Converts standard messages to multimodal format when images are present.
      * Format follows OpenRouter/OpenAI vision API spec.
      *
-     * @param array $messages Original messages
-     * @param array $imageUrls Array of image URLs
+     * @param  array  $messages  Original messages
+     * @param  array  $imageUrls  Array of image URLs
      * @return array Multimodal messages
      */
     protected function buildVisionMessages(array $messages, array $imageUrls): array
@@ -491,7 +499,7 @@ class OpenRouterService
      * 3. Falls back to config (llm-models.php)
      * 4. Uses pattern-based detection as last resort
      *
-     * @param string $model Model ID
+     * @param  string  $model  Model ID
      * @return bool Whether the model supports vision
      */
     public function supportsVision(string $model): bool
@@ -551,6 +559,7 @@ class OpenRouterService
             return ! empty($response['content']);
         } catch (\Exception $e) {
             Log::warning('OpenRouter connection test failed', ['error' => $e->getMessage()]);
+
             return false;
         }
     }
@@ -563,8 +572,8 @@ class OpenRouterService
      * - reasoning_tokens: Tokens used for reasoning (o1, deepseek-r1)
      * - cost: Actual cost charged by OpenRouter
      *
-     * @param array $data Raw API response
-     * @param string $requestedModel The model that was requested
+     * @param  array  $data  Raw API response
+     * @param  string  $requestedModel  The model that was requested
      * @return array Parsed response with enhanced usage data
      */
     protected function parseResponse(array $data, string $requestedModel): array
@@ -598,8 +607,8 @@ class OpenRouterService
      *
      * Similar to parseResponse() but includes tool_calls field.
      *
-     * @param array $data Raw API response
-     * @param string $requestedModel The model that was requested
+     * @param  array  $data  Raw API response
+     * @param  string  $requestedModel  The model that was requested
      * @return array Parsed response with tool calls
      */
     protected function parseToolResponse(array $data, string $requestedModel): array
@@ -653,8 +662,8 @@ class OpenRouterService
     /**
      * Get configured HTTP client.
      *
-     * @param string|null $apiKey API key (uses default from config if not provided)
-     * @param int|null $timeout Request timeout in seconds (null uses default)
+     * @param  string|null  $apiKey  API key (uses default from config if not provided)
+     * @param  int|null  $timeout  Request timeout in seconds (null uses default)
      */
     protected function client(?string $apiKey = null, ?int $timeout = null): PendingRequest
     {
@@ -663,7 +672,7 @@ class OpenRouterService
 
         return Http::baseUrl($this->baseUrl)
             ->withHeaders([
-                'Authorization' => 'Bearer ' . $key,
+                'Authorization' => 'Bearer '.$key,
                 'HTTP-Referer' => $this->siteUrl,
                 'X-Title' => $this->siteName,
             ])

@@ -3,8 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Bot;
-use App\Models\BotSetting;
 use App\Models\BotHITLSettings;
+use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\LeadRecoveryLog;
@@ -18,6 +18,7 @@ class LeadRecoveryTest extends TestCase
     use RefreshDatabase;
 
     protected User $user;
+
     protected Bot $bot;
 
     protected function setUp(): void
@@ -55,7 +56,7 @@ class LeadRecoveryTest extends TestCase
     protected function createCustomerProfile(array $attributes = []): CustomerProfile
     {
         return CustomerProfile::create(array_merge([
-            'external_id' => 'U' . fake()->uuid(),
+            'external_id' => 'U'.fake()->uuid(),
             'channel_type' => 'line',
             'display_name' => fake()->name(),
             'picture_url' => fake()->imageUrl(),
@@ -292,8 +293,10 @@ class LeadRecoveryTest extends TestCase
         $this->assertCount(3, $logs);
 
         // Most recent first
-        $sentTimes = array_map(fn($log) => Carbon::parse($log['sent_at'])->timestamp, $logs);
-        $sortedTimes = $sentTimes; rsort($sortedTimes); $this->assertEquals($sortedTimes, $sentTimes);
+        $sentTimes = array_map(fn ($log) => Carbon::parse($log['sent_at'])->timestamp, $logs);
+        $sortedTimes = $sentTimes;
+        rsort($sortedTimes);
+        $this->assertEquals($sortedTimes, $sentTimes);
     }
 
     // ===== Authorization Tests =====

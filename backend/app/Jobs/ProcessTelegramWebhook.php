@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
+use App\Exceptions\CircuitOpenException;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
@@ -13,7 +14,6 @@ use App\Services\AutoAssignmentService;
 use App\Services\CircuitBreakerService;
 use App\Services\LeadRecoveryService;
 use App\Services\TelegramService;
-use App\Exceptions\CircuitOpenException;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -71,7 +71,7 @@ class ProcessTelegramWebhook implements ShouldQueue
                 'bot_id' => $this->bot->id,
                 'update_id' => $this->update['update_id'] ?? null,
                 'error' => $e->getMessage(),
-                ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
+                ...(! app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
 
             throw $e;
@@ -124,11 +124,12 @@ class ProcessTelegramWebhook implements ShouldQueue
         $parsed = $telegramService->parseUpdate($this->update);
 
         // Only process message updates
-        if ($parsed['type'] === 'unknown' || !$parsed['chat_id']) {
+        if ($parsed['type'] === 'unknown' || ! $parsed['chat_id']) {
             Log::debug('Ignoring non-message update', [
                 'update_id' => $parsed['update_id'],
                 'type' => $parsed['type'],
             ]);
+
             return;
         }
 
@@ -157,7 +158,7 @@ class ProcessTelegramWebhook implements ShouldQueue
                 ->whereIn('status', ['active', 'handover'])
                 ->first();
 
-            $isNewConversation = !$existingConversation;
+            $isNewConversation = ! $existingConversation;
             $conversation = $existingConversation ?? $this->createNewConversation($parsed, $telegramService);
             $isHandover = $conversation->is_handover;
 
@@ -170,6 +171,7 @@ class ProcessTelegramWebhook implements ShouldQueue
                     'conversation_id' => $conversation->id,
                     'message_id' => $messageId,
                 ]);
+
                 return;
             }
 
@@ -178,7 +180,7 @@ class ProcessTelegramWebhook implements ShouldQueue
 
             // Determine message content
             $content = $parsed['text'];
-            if (!$content && $parsed['type'] !== 'text') {
+            if (! $content && $parsed['type'] !== 'text') {
                 // Generate placeholder for non-text messages
                 $content = $this->generateMediaPlaceholder($parsed['type'], $mediaData);
             }
@@ -215,7 +217,7 @@ class ProcessTelegramWebhook implements ShouldQueue
             $this->bot->update($botUpdate);
 
             // Generate AI response if not in handover mode, bot is active, and is a text message
-            if (!$isHandover && $this->bot->status === 'active' && $parsed['type'] === 'text' && $userMessage) {
+            if (! $isHandover && $this->bot->status === 'active' && $parsed['type'] === 'text' && $userMessage) {
                 $botMessage = $this->generateAIResponse(
                     $conversation,
                     $userMessage,
@@ -317,7 +319,7 @@ class ProcessTelegramWebhook implements ShouldQueue
 
         // Get file_id
         $fileId = $telegramService->extractFileId($rawMessage);
-        if (!$fileId) {
+        if (! $fileId) {
             // For location, contact, poll - extract metadata only
             return [
                 'metadata' => $telegramService->extractMediaMetadata($rawMessage),
@@ -327,7 +329,7 @@ class ProcessTelegramWebhook implements ShouldQueue
         // Download and store the file
         $fileData = $telegramService->downloadAndStoreFile($this->bot, $fileId);
 
-        if (!$fileData) {
+        if (! $fileData) {
             Log::warning('Failed to download Telegram media', [
                 'bot_id' => $this->bot->id,
                 'file_id' => $fileId,
@@ -429,15 +431,16 @@ class ProcessTelegramWebhook implements ShouldQueue
                 'last_interaction_at' => now(),
                 'interaction_count' => DB::raw('interaction_count + 1'),
             ]);
+
             return $profile;
         }
 
         // Determine display name
         $displayName = $parsed['chat_type'] === 'private'
-            ? trim(($parsed['first_name'] ?? '') . ' ' . ($parsed['last_name'] ?? ''))
+            ? trim(($parsed['first_name'] ?? '').' '.($parsed['last_name'] ?? ''))
             : $parsed['chat_title'];
 
-        if (!$displayName) {
+        if (! $displayName) {
             $displayName = $parsed['username'] ?? null;
         }
 
@@ -471,7 +474,7 @@ class ProcessTelegramWebhook implements ShouldQueue
         }
 
         $userId = $parsed['user_id'] ?? null;
-        if (!$userId) {
+        if (! $userId) {
             return null;
         }
 

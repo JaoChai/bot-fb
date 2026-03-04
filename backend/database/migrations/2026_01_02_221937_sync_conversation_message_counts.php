@@ -16,7 +16,7 @@ return new class extends Migration
 
         if ($driver === 'pgsql') {
             // PostgreSQL supports table aliases in UPDATE
-            $updated = DB::update("
+            $updated = DB::update('
                 UPDATE conversations c
                 SET message_count = (
                     SELECT COUNT(*)
@@ -28,12 +28,12 @@ return new class extends Migration
                     FROM messages m
                     WHERE m.conversation_id = c.id
                 )
-            ");
+            ');
 
             Log::info("Synced message_count for {$updated} conversations");
         } elseif ($driver === 'sqlite') {
             // SQLite doesn't support table aliases in UPDATE
-            $updated = DB::update("
+            $updated = DB::update('
                 UPDATE conversations
                 SET message_count = (
                     SELECT COUNT(*)
@@ -45,7 +45,7 @@ return new class extends Migration
                     FROM messages
                     WHERE messages.conversation_id = conversations.id
                 )
-            ");
+            ');
 
             Log::info("Synced message_count for {$updated} conversations");
         }

@@ -72,7 +72,7 @@ class ConversationQueryService
     /**
      * Apply filters to the query.
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\HasMany $query
+     * @param  \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\HasMany  $query
      */
     private function applyFilters($query, Request $request): void
     {
@@ -130,7 +130,7 @@ class ConversationQueryService
     /**
      * Apply search to the query.
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\HasMany $query
+     * @param  \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\HasMany  $query
      */
     private function applySearch($query, Request $request): void
     {
@@ -151,7 +151,7 @@ class ConversationQueryService
     /**
      * Apply sorting to the query.
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\HasMany $query
+     * @param  \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\HasMany  $query
      */
     private function applySorting($query, Request $request): void
     {

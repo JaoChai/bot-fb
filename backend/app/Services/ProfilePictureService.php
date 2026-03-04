@@ -112,7 +112,7 @@ class ProfilePictureService
             // Use env() directly as workaround for Railway config cache issues (see TelegramService.php)
             $r2Url = env('R2_URL') ?: config('filesystems.disks.r2.url');
             if ($r2Url) {
-                return rtrim($r2Url, '/') . '/' . $path;
+                return rtrim($r2Url, '/').'/'.$path;
             }
         }
 

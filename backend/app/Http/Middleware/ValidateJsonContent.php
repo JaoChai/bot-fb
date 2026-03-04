@@ -36,7 +36,7 @@ class ValidateJsonContent
         if ($request->isJson() && in_array($request->method(), ['POST', 'PUT', 'PATCH'])) {
             $content = $request->getContent();
 
-            if (!empty($content)) {
+            if (! empty($content)) {
                 // Check JSON depth
                 $decoded = json_decode($content, true, $this->maxJsonDepth);
 
@@ -65,6 +65,7 @@ class ValidateJsonContent
     {
         $units = ['B', 'KB', 'MB', 'GB'];
         $pow = floor(log($bytes) / log(1024));
-        return round($bytes / (1024 ** $pow), 2) . ' ' . $units[$pow];
+
+        return round($bytes / (1024 ** $pow), 2).' '.$units[$pow];
     }
 }

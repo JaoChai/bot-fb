@@ -16,9 +16,13 @@ use Illuminate\Support\Facades\Log;
 class QueryEnhancementService
 {
     protected bool $enabled;
+
     protected string $model;
+
     protected int $maxVariations;
+
     protected int $minQueryLength;
+
     protected int $timeout;
 
     public function __construct(
@@ -34,8 +38,8 @@ class QueryEnhancementService
     /**
      * Enhance a query by generating search variations.
      *
-     * @param string $query The original user query
-     * @param array|null $context Optional context (bot_name, kb_topics)
+     * @param  string  $query  The original user query
+     * @param  array|null  $context  Optional context (bot_name, kb_topics)
      * @return array Enhanced query with variations
      */
     public function enhance(string $query, ?array $context = null): array
@@ -48,12 +52,13 @@ class QueryEnhancementService
         ];
 
         // Skip if disabled or query too short
-        if (!$this->isEnabled() || !$this->shouldEnhance($query)) {
+        if (! $this->isEnabled() || ! $this->shouldEnhance($query)) {
             Log::debug('QueryEnhancement: Skipped', [
                 'enabled' => $this->enabled,
                 'query_length' => mb_strlen($query),
                 'min_length' => $this->minQueryLength,
             ]);
+
             return $result;
         }
 
@@ -74,7 +79,7 @@ class QueryEnhancementService
 
             $parsed = $this->parseResponse($response['content'] ?? '');
 
-            if (!empty($parsed['variations'])) {
+            if (! empty($parsed['variations'])) {
                 // Merge original with LLM variations, deduplicate
                 $allVariations = array_unique(array_merge(
                     [$query],
@@ -197,8 +202,7 @@ PROMPT;
 
             if (is_array($decoded)) {
                 if (isset($decoded['variations']) && is_array($decoded['variations'])) {
-                    $result['variations'] = array_filter($decoded['variations'], fn($v) =>
-                        is_string($v) && !empty(trim($v))
+                    $result['variations'] = array_filter($decoded['variations'], fn ($v) => is_string($v) && ! empty(trim($v))
                     );
                 }
                 if (isset($decoded['reasoning']) && is_string($decoded['reasoning'])) {
@@ -221,6 +225,7 @@ PROMPT;
     public function setEnabled(bool $enabled): self
     {
         $this->enabled = $enabled;
+
         return $this;
     }
 
@@ -241,7 +246,7 @@ PROMPT;
      */
     public function test(): array
     {
-        $testQuery = "ราคา";
+        $testQuery = 'ราคา';
         $result = $this->enhance($testQuery, [
             'bot_name' => 'Test Bot',
             'kb_topics' => 'products, services, pricing',

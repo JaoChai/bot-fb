@@ -31,21 +31,23 @@ class CreateMcpToken extends Command
 
             if ($users->isEmpty()) {
                 $this->error('No users found. Please create a user first.');
+
                 return self::FAILURE;
             }
 
             if ($users->count() === 1) {
                 $user = $users->first();
             } else {
-                $choices = $users->map(fn($u) => "{$u->id}: {$u->name} ({$u->email})")->toArray();
+                $choices = $users->map(fn ($u) => "{$u->id}: {$u->name} ({$u->email})")->toArray();
                 $selected = $this->choice('Select user to create token for:', $choices);
                 $userId = (int) explode(':', $selected)[0];
                 $user = User::find($userId);
             }
         }
 
-        if (!$user) {
+        if (! $user) {
             $this->error('User not found.');
+
             return self::FAILURE;
         }
 
@@ -83,7 +85,7 @@ class CreateMcpToken extends Command
         $this->newLine();
 
         $this->line('Add to .mcp.json:');
-        $this->line('"LARAVEL_AUTH_TOKEN": "' . $token->plainTextToken . '"');
+        $this->line('"LARAVEL_AUTH_TOKEN": "'.$token->plainTextToken.'"');
 
         return self::SUCCESS;
     }

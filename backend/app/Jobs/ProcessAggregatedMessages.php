@@ -69,7 +69,7 @@ class ProcessAggregatedMessages implements ShouldQueue
                 'conversation_id' => $this->conversation->id,
                 'group_id' => $this->groupId,
                 'error' => $e->getMessage(),
-                ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
+                ...(! app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
 
             // Clear aggregation on failure so user can try again
@@ -112,9 +112,10 @@ class ProcessAggregatedMessages implements ShouldQueue
         error_log("[AGGREGATION_DEBUG] Job started: {$debugData}");
 
         // Verify this group is still active (no newer messages came in)
-        if (!$aggregationService->isActiveGroup($conversationId, $this->groupId)) {
+        if (! $aggregationService->isActiveGroup($conversationId, $this->groupId)) {
             $reason = $cachedGroupId === null ? 'cache_expired_or_missing' : 'newer_group_exists';
             error_log("[AGGREGATION_DEBUG] Early exit: group_id mismatch - reason: {$reason}, job_group_id: {$this->groupId}, cached_group_id: {$cachedGroupId}");
+
             return;
         }
 
@@ -123,8 +124,9 @@ class ProcessAggregatedMessages implements ShouldQueue
 
         if (empty($mergedContent)) {
             $reason = empty($cachedMessageIds) ? 'message_ids_empty' : 'messages_not_found_in_db';
-            error_log("[AGGREGATION_DEBUG] Early exit: no content - reason: {$reason}, message_ids: " . json_encode($cachedMessageIds));
+            error_log("[AGGREGATION_DEBUG] Early exit: no content - reason: {$reason}, message_ids: ".json_encode($cachedMessageIds));
             $aggregationService->clearAggregation($conversationId);
+
             return;
         }
 
@@ -155,12 +157,14 @@ class ProcessAggregatedMessages implements ShouldQueue
                     'conversation_id' => $this->conversation->id,
                     'status' => $this->bot->status,
                 ]);
+
                 return;
             }
 
             // Check if handover mode was enabled while waiting
             if ($this->conversation->is_handover) {
                 error_log("[AGGREGATION_DEBUG] Early exit: handover mode enabled - conversation_id: {$this->conversation->id}");
+
                 return;
             }
 
@@ -171,7 +175,7 @@ class ProcessAggregatedMessages implements ShouldQueue
         // AI generate (~2-3s) + LINE push (~200ms) no longer block concurrent requests
         if ($shouldGenerate) {
             // Safety check: skip if bot already responded after these messages
-            if (!empty($cachedMessageIds)) {
+            if (! empty($cachedMessageIds)) {
                 $earliestMessageId = min($cachedMessageIds);
                 $earliestMessage = \App\Models\Message::find($earliestMessageId);
 
@@ -187,6 +191,7 @@ class ProcessAggregatedMessages implements ShouldQueue
                             'group_id' => $this->groupId,
                         ]);
                         $aggregationService->clearAggregation($conversationId);
+
                         return;
                     }
                 }
@@ -195,7 +200,7 @@ class ProcessAggregatedMessages implements ShouldQueue
             // Acquire per-conversation response lock to prevent concurrent AI responses
             $responseLock = Cache::lock("ai_response:{$conversationId}", 30);
 
-            if (!$responseLock->get()) {
+            if (! $responseLock->get()) {
                 // Limit re-dispatch attempts to prevent infinite loop
                 $redispatchKey = "ai_response_redispatch:{$conversationId}:{$this->groupId}";
                 $attempts = (int) Cache::get($redispatchKey, 0);
@@ -208,6 +213,7 @@ class ProcessAggregatedMessages implements ShouldQueue
                     ]);
                     Cache::forget($redispatchKey);
                     $aggregationService->clearAggregation($conversationId);
+
                     return;
                 }
 
@@ -221,6 +227,7 @@ class ProcessAggregatedMessages implements ShouldQueue
                 ProcessAggregatedMessages::dispatch(
                     $this->bot, $this->conversation, $this->groupId, $this->externalUserId
                 )->onQueue('webhooks')->delay(now()->addSeconds(5));
+
                 return;
             }
 
@@ -231,7 +238,7 @@ class ProcessAggregatedMessages implements ShouldQueue
             app(ConversationContextService::class)->autoClearIfIdle($this->conversation);
 
             try {
-                error_log("[AGGREGATION_DEBUG] Generating AI response - conversation_id: {$this->conversation->id}, content_length: " . strlen($mergedContent));
+                error_log("[AGGREGATION_DEBUG] Generating AI response - conversation_id: {$this->conversation->id}, content_length: ".strlen($mergedContent));
 
                 // Generate AI response using merged content (no transaction lock held)
                 $result = $aiService->generateResponse(

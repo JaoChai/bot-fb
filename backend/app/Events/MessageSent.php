@@ -3,7 +3,6 @@
 namespace App\Events;
 
 use App\Models\Message;
-use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -24,8 +23,8 @@ class MessageSent implements ShouldBroadcast
     /**
      * Create a new event instance.
      *
-     * @param Message $message The message being sent
-     * @param array|null $conversationData Pre-captured conversation data (optional, will fetch fresh if not provided)
+     * @param  Message  $message  The message being sent
+     * @param  array|null  $conversationData  Pre-captured conversation data (optional, will fetch fresh if not provided)
      */
     public function __construct(
         public Message $message,

@@ -21,6 +21,7 @@ use Illuminate\Support\Str;
 class BotController extends Controller
 {
     use ApiResponseTrait;
+
     /**
      * List all bots accessible by the authenticated user.
      * Owner sees owned bots, Admin sees assigned bots.
@@ -38,26 +39,34 @@ class BotController extends Controller
      *     operationId="listBots",
      *     tags={"Bots"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="per_page",
      *         in="query",
      *         description="Number of items per page",
      *         required=false,
+     *
      *         @OA\Schema(type="integer", default=15, minimum=1, maximum=100)
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(
      *                 property="data",
      *                 type="array",
+     *
      *                 @OA\Items(ref="#/components/schemas/Bot")
      *             ),
+     *
      *             @OA\Property(property="meta", ref="#/components/schemas/PaginationMeta")
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated")
      * )
      */
@@ -84,10 +93,13 @@ class BotController extends Controller
      *     operationId="createBot",
      *     tags={"Bots"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\JsonContent(
      *             required={"name", "channel_type"},
+     *
      *             @OA\Property(property="name", type="string", maxLength=255, example="My Support Bot"),
      *             @OA\Property(property="channel_type", type="string", enum={"line", "telegram", "facebook"}, example="line"),
      *             @OA\Property(property="channel_access_token", type="string", description="Channel access token for the messaging platform"),
@@ -95,15 +107,19 @@ class BotController extends Controller
      *             @OA\Property(property="description", type="string", maxLength=1000)
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=201,
      *         description="Bot created successfully",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="message", type="string", example="Bot created successfully"),
      *             @OA\Property(property="data", ref="#/components/schemas/Bot"),
      *             @OA\Property(property="webhook_setup", type="boolean", nullable=true, description="Telegram webhook setup result")
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=422, description="Validation error", @OA\JsonContent(ref="#/components/schemas/ErrorResponse"))
      * )
@@ -138,7 +154,7 @@ class BotController extends Controller
 
         // Auto setup Telegram webhook if token is provided
         $webhookSetup = null;
-        if ($channelType === 'telegram' && !empty($bot->channel_access_token)) {
+        if ($channelType === 'telegram' && ! empty($bot->channel_access_token)) {
             $webhookSetup = $this->setupTelegramWebhook($bot);
         }
 
@@ -178,20 +194,26 @@ PROMPT;
      *     operationId="getBot",
      *     tags={"Bots"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="bot",
      *         in="path",
      *         description="Bot ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="data", ref="#/components/schemas/Bot")
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=403, description="Forbidden"),
      *     @OA\Response(response=404, description="Bot not found")
@@ -214,16 +236,21 @@ PROMPT;
      *     operationId="updateBot",
      *     tags={"Bots"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="bot",
      *         in="path",
      *         description="Bot ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="name", type="string", maxLength=255),
      *             @OA\Property(property="description", type="string", maxLength=1000),
      *             @OA\Property(property="channel_access_token", type="string"),
@@ -231,15 +258,19 @@ PROMPT;
      *             @OA\Property(property="status", type="string", enum={"active", "inactive"})
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Bot updated successfully",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="message", type="string", example="Bot updated successfully"),
      *             @OA\Property(property="data", ref="#/components/schemas/Bot"),
      *             @OA\Property(property="webhook_setup", type="boolean", nullable=true)
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=403, description="Forbidden"),
      *     @OA\Response(response=404, description="Bot not found"),
@@ -273,7 +304,7 @@ PROMPT;
 
         // Re-setup webhook if Telegram token changed
         $webhookSetup = null;
-        if ($telegramTokenChanged && !empty($bot->channel_access_token)) {
+        if ($telegramTokenChanged && ! empty($bot->channel_access_token)) {
             $webhookSetup = $this->setupTelegramWebhook($bot);
         }
 
@@ -383,7 +414,7 @@ PROMPT;
         } catch (\Exception $e) {
             return $this->error('AI service error', 500, [
                 'input' => $userMessage,
-                'response' => 'Failed to generate AI response: ' . $e->getMessage(),
+                'response' => 'Failed to generate AI response: '.$e->getMessage(),
                 'bot_id' => $bot->id,
             ]);
         }
@@ -408,11 +439,12 @@ PROMPT;
         try {
             // Call LINE Bot Info API to verify credentials
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $bot->channel_access_token,
+                'Authorization' => 'Bearer '.$bot->channel_access_token,
             ])->timeout(10)->get('https://api.line.me/v2/bot/info');
 
             if ($response->successful()) {
                 $botInfo = $response->json();
+
                 return $this->success([
                     'success' => true,
                     'bot_info' => [
@@ -439,7 +471,7 @@ PROMPT;
             ]);
 
         } catch (\Exception $e) {
-            return $this->serverError('เกิดข้อผิดพลาดในการเชื่อมต่อ: ' . $e->getMessage());
+            return $this->serverError('เกิดข้อผิดพลาดในการเชื่อมต่อ: '.$e->getMessage());
         }
     }
 
@@ -474,7 +506,7 @@ PROMPT;
 
             // 4. If webhook doesn't match, try to set it
             $webhookFixed = false;
-            if (!$webhookMatches && !empty($expectedWebhookUrl)) {
+            if (! $webhookMatches && ! empty($expectedWebhookUrl)) {
                 $webhookFixed = $telegramService->setWebhook($bot, $expectedWebhookUrl);
                 if ($webhookFixed) {
                     $webhookInfo = $telegramService->getWebhookInfo($bot);
@@ -505,7 +537,7 @@ PROMPT;
             ], 'เชื่อมต่อสำเร็จ');
 
         } catch (\Exception $e) {
-            return $this->error('Bot Token ไม่ถูกต้อง: ' . $e->getMessage(), 400, ['success' => false]);
+            return $this->error('Bot Token ไม่ถูกต้อง: '.$e->getMessage(), 400, ['success' => false]);
         }
     }
 
@@ -522,7 +554,7 @@ PROMPT;
 
         // Re-setup Telegram webhook with new URL
         $webhookSetup = null;
-        if ($bot->channel_type === 'telegram' && !empty($bot->channel_access_token)) {
+        if ($bot->channel_type === 'telegram' && ! empty($bot->channel_access_token)) {
             $webhookSetup = $this->setupTelegramWebhook($bot);
         }
 
@@ -546,7 +578,7 @@ PROMPT;
             default => '/api/webhook/',
         };
 
-        return config('app.url') . $path . $token;
+        return config('app.url').$path.$token;
     }
 
     /**
@@ -576,6 +608,7 @@ PROMPT;
                 'bot_id' => $bot->id,
                 'error' => $e->getMessage(),
             ]);
+
             return false;
         }
     }
@@ -591,17 +624,22 @@ PROMPT;
      *     operationId="getBotCredentials",
      *     tags={"Bots"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="bot",
      *         in="path",
      *         description="Bot ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Credentials retrieved successfully",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(
      *                 property="data",
      *                 type="object",
@@ -610,6 +648,7 @@ PROMPT;
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=403, description="Forbidden - only owners can view credentials"),
      *     @OA\Response(response=404, description="Bot not found")

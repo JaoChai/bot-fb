@@ -95,7 +95,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 'bot_id' => $this->bot->id,
                 'event_type' => $this->event['type'] ?? 'unknown',
                 'error' => $e->getMessage(),
-                ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
+                ...(! app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
 
             throw $e;
@@ -455,7 +455,7 @@ class ProcessLINEWebhook implements ShouldQueue
             // Acquire per-conversation response lock to prevent duplicate AI responses
             $responseLock = Cache::lock("ai_response:{$conversation->id}", 30);
 
-            if (!$responseLock->get()) {
+            if (! $responseLock->get()) {
                 // Another job is already generating a response for this conversation
                 // Fallback: create aggregation group as safety net
                 Log::info('Response lock held, falling back to aggregation', [
@@ -533,7 +533,7 @@ class ProcessLINEWebhook implements ShouldQueue
                     'bot_id' => $this->bot->id,
                     'conversation_id' => $conversation->id,
                     'error' => $e->getMessage(),
-                    ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
+                    ...(! app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
                 ]);
 
                 throw $e;
@@ -1162,7 +1162,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 'bot_id' => $this->bot->id,
                 'conversation_id' => $conversation->id,
                 'error' => $e->getMessage(),
-                ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
+                ...(! app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
             // Fail silently - image is already saved, just no AI response
         }

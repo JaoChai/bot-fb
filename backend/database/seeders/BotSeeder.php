@@ -13,7 +13,7 @@ class BotSeeder extends Seeder
     {
         $adminUser = User::where('email', 'admin@botfacebook.test')->first();
 
-        if (!$adminUser) {
+        if (! $adminUser) {
             return;
         }
 

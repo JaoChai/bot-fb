@@ -9,9 +9,13 @@ class ActivityLog extends Model
 {
     // Activity types
     public const TYPE_HANDOVER_STARTED = 'handover_started';
+
     public const TYPE_HANDOVER_RESOLVED = 'handover_resolved';
+
     public const TYPE_BOT_CREATED = 'bot_created';
+
     public const TYPE_BOT_UPDATED = 'bot_updated';
+
     public const TYPE_CONVERSATION_STARTED = 'conversation_started';
 
     protected $fillable = [

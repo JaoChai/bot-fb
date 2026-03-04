@@ -43,7 +43,7 @@ class MultipleBubblesServiceTest extends TestCase
      */
     protected function createBotInstance(array $attributes = []): Bot
     {
-        $bot = new Bot();
+        $bot = new Bot;
         $bot->setRawAttributes(array_merge([
             'id' => 1,
             'user_id' => 1,

@@ -102,19 +102,43 @@ class OrderService
                     'raw_extraction' => $variables,
                 ]);
 
-                // Extract product info and normalize
+                // Extract product info and create items (supports multi-product strings)
                 $rawProduct = $variables['product'] ?? $variables['product_category'] ?? null;
                 if ($rawProduct && is_string($rawProduct)) {
-                    $normalized = self::normalizeProductName($rawProduct);
+                    $productParts = array_filter(array_map('trim', preg_split('/,\s*/', $rawProduct)));
+                    $items = [];
 
-                    $order->items()->create([
-                        'product_name' => $normalized['name'],
-                        'category' => $normalized['category'],
-                        'variant' => $normalized['variant'],
-                        'quantity' => 1,
-                        'unit_price' => $amount,
-                        'subtotal' => $amount,
-                    ]);
+                    foreach ($productParts as $part) {
+                        $quantity = 1;
+                        $name = $part;
+
+                        // Parse "x2" quantity pattern
+                        if (preg_match('/^(.+?)\s*x(\d+)\s*$/u', $part, $pm)) {
+                            $name = trim($pm[1]);
+                            $quantity = (int) $pm[2];
+                        }
+
+                        $normalized = self::normalizeProductName($name);
+                        $items[] = [
+                            'product_name' => $normalized['name'],
+                            'category' => $normalized['category'],
+                            'variant' => $normalized['variant'],
+                            'quantity' => $quantity,
+                        ];
+                    }
+
+                    $isSingleItem = count($items) === 1;
+
+                    foreach ($items as $item) {
+                        $order->items()->create([
+                            'product_name' => $item['product_name'],
+                            'category' => $item['category'],
+                            'variant' => $item['variant'],
+                            'quantity' => $item['quantity'],
+                            'unit_price' => $isSingleItem ? $amount / $item['quantity'] : null,
+                            'subtotal' => $isSingleItem ? $amount : null,
+                        ]);
+                    }
                 }
 
                 return $order->load('items');

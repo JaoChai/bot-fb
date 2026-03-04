@@ -12,8 +12,11 @@ use Illuminate\Support\Facades\Log;
 class UserTypingStats
 {
     private const CACHE_PREFIX = 'user_typing_stats';
+
     private const MIN_SAMPLES = 5;
+
     private const MAX_SAMPLES = 20;
+
     private const CACHE_TTL_DAYS = 30;
 
     /**
@@ -59,7 +62,7 @@ class UserTypingStats
     {
         $stats = Cache::get($this->getCacheKey($botId, $customerId));
 
-        if (!$stats || count($stats['gaps'] ?? []) < self::MIN_SAMPLES) {
+        if (! $stats || count($stats['gaps'] ?? []) < self::MIN_SAMPLES) {
             return null; // Not enough data
         }
 
@@ -104,7 +107,7 @@ class UserTypingStats
      */
     private function getCacheKey(int $botId, string $customerId): string
     {
-        return self::CACHE_PREFIX . ':' . $botId . ':' . $customerId;
+        return self::CACHE_PREFIX.':'.$botId.':'.$customerId;
     }
 
     /**

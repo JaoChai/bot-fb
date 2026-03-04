@@ -14,13 +14,15 @@ class NoteServiceTest extends TestCase
     use RefreshDatabase;
 
     private NoteService $service;
+
     private User $user;
+
     private Bot $bot;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new NoteService();
+        $this->service = new NoteService;
         $this->user = User::factory()->create();
         $this->bot = Bot::factory()->create(['user_id' => $this->user->id]);
     }

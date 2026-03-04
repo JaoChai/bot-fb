@@ -22,8 +22,9 @@ class FacebookWebhookController extends Controller
     {
         $bot = $this->findBotByToken($token);
 
-        if (!$bot) {
-            Log::warning('Facebook webhook verify: Invalid token', ['token' => substr($token, 0, 8) . '...']);
+        if (! $bot) {
+            Log::warning('Facebook webhook verify: Invalid token', ['token' => substr($token, 0, 8).'...']);
+
             return response('Bot not found', 404);
         }
 
@@ -36,6 +37,7 @@ class FacebookWebhookController extends Controller
         // and page_access_token for the Page Access Token
         if ($mode === 'subscribe' && $verifyToken === $bot->channel_secret) {
             Log::info('Facebook webhook verified', ['bot_id' => $bot->id]);
+
             return response($challenge, 200);
         }
 
@@ -54,14 +56,16 @@ class FacebookWebhookController extends Controller
     {
         $bot = $this->findBotByToken($token);
 
-        if (!$bot) {
-            Log::warning('Facebook webhook: Invalid token', ['token' => substr($token, 0, 8) . '...']);
+        if (! $bot) {
+            Log::warning('Facebook webhook: Invalid token', ['token' => substr($token, 0, 8).'...']);
+
             return response()->json(['error' => 'Invalid webhook token'], 404);
         }
 
         // Validate X-Hub-Signature-256 header
-        if (!$this->validateSignature($request, $bot)) {
+        if (! $this->validateSignature($request, $bot)) {
             Log::warning('Facebook webhook: Invalid signature', ['bot_id' => $bot->id]);
+
             return response()->json(['error' => 'Invalid signature'], 400);
         }
 
@@ -74,6 +78,7 @@ class FacebookWebhookController extends Controller
                 'bot_id' => $bot->id,
                 'object' => $body['object'] ?? null,
             ]);
+
             return response()->json(['status' => 'ok']);
         }
 
@@ -81,6 +86,7 @@ class FacebookWebhookController extends Controller
 
         if (empty($entries)) {
             Log::debug('Facebook webhook: No entries', ['bot_id' => $bot->id]);
+
             return response()->json(['status' => 'ok']);
         }
 
@@ -104,7 +110,7 @@ class FacebookWebhookController extends Controller
     protected function findBotByToken(string $token): ?Bot
     {
         // Build the expected webhook URL (using /api/webhook/ path for proxy compatibility)
-        $webhookUrl = config('app.url') . '/api/webhook/facebook/' . $token;
+        $webhookUrl = config('app.url').'/api/webhook/facebook/'.$token;
 
         return Bot::where('webhook_url', $webhookUrl)
             ->where('channel_type', 'facebook')
@@ -121,21 +127,23 @@ class FacebookWebhookController extends Controller
     {
         $signature = $request->header('X-Hub-Signature-256');
 
-        if (!$signature) {
+        if (! $signature) {
             Log::debug('Facebook webhook: Missing signature header', ['bot_id' => $bot->id]);
+
             return false;
         }
 
         // Get app secret from environment (shared across all Facebook bots)
         $appSecret = config('services.facebook.app_secret');
 
-        if (!$appSecret) {
+        if (! $appSecret) {
             Log::warning('Facebook webhook: App secret not configured');
+
             return false;
         }
 
         $payload = $request->getContent();
-        $expectedSignature = 'sha256=' . hash_hmac('sha256', $payload, $appSecret);
+        $expectedSignature = 'sha256='.hash_hmac('sha256', $payload, $appSecret);
 
         return hash_equals($expectedSignature, $signature);
     }

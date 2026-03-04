@@ -518,7 +518,7 @@ class PaymentFlexServiceTest extends TestCase
     public function test_does_not_detect_terms_for_verify_tag(): void
     {
         // Has "ยอมรับ" + "ข้อตกลง" BUT also has [ยืนยันชำระเงิน] tag → should be Step 5
-        $text = "ข้อตกลง ยอมรับ [ยืนยันชำระเงิน]";
+        $text = 'ข้อตกลง ยอมรับ [ยืนยันชำระเงิน]';
 
         $this->assertFalse($this->service->isTermsMessage($text));
     }
@@ -587,7 +587,7 @@ class PaymentFlexServiceTest extends TestCase
     public function test_does_not_detect_verify_without_amount(): void
     {
         // Has tag but no amount pattern
-        $text = "ยืนยันแล้ว [ยืนยันชำระเงิน]";
+        $text = 'ยืนยันแล้ว [ยืนยันชำระเงิน]';
 
         $this->assertFalse($this->service->isVerifySuccessMessage($text));
     }

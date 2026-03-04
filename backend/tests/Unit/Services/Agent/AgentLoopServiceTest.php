@@ -7,7 +7,6 @@ use App\Models\Flow;
 use App\Models\User;
 use App\Services\Agent\AgentLoopCallbacks;
 use App\Services\Agent\AgentLoopConfig;
-use App\Services\Agent\AgentLoopResult;
 use App\Services\Agent\AgentLoopService;
 use App\Services\AgentSafetyService;
 use App\Services\CostTrackingService;
@@ -22,13 +21,21 @@ class AgentLoopServiceTest extends TestCase
     use RefreshDatabase;
 
     private AgentLoopService $service;
+
     private OpenRouterService $openRouter;
+
     private ToolService $toolService;
+
     private AgentSafetyService $agentSafety;
+
     private CostTrackingService $costTracking;
+
     private MultipleBubblesService $multipleBubbles;
+
     private User $user;
+
     private Bot $bot;
+
     private Flow $flow;
 
     protected function setUp(): void
@@ -90,7 +97,7 @@ class AgentLoopServiceTest extends TestCase
 
     private function makeCallbacks(): MockAgentCallbacks
     {
-        return new MockAgentCallbacks();
+        return new MockAgentCallbacks;
     }
 
     public function test_happy_path_no_tools(): void
@@ -656,12 +663,12 @@ class MockAgentCallbacks implements AgentLoopCallbacks
 
     public function hasEvent(string $type): bool
     {
-        return !empty($this->getEventsOfType($type));
+        return ! empty($this->getEventsOfType($type));
     }
 
     public function getEventsOfType(string $type): array
     {
-        return array_filter($this->events, fn($e) => $e['type'] === $type);
+        return array_filter($this->events, fn ($e) => $e['type'] === $type);
     }
 
     public function getAllEvents(): array

@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Storage;
 class LINEService
 {
     protected const API_BASE_URL = 'https://api.line.me/v2';
+
     protected const DATA_API_BASE_URL = 'https://api-data.line.me/v2';
 
     /**
@@ -24,7 +25,7 @@ class LINEService
         $hash = hash_hmac('sha256', $body, $channelSecret, true);
         $expectedSignature = base64_encode($hash);
 
-        if (!hash_equals($expectedSignature, $signature)) {
+        if (! hash_equals($expectedSignature, $signature)) {
             throw new LINEException('Invalid LINE webhook signature', 401);
         }
 
@@ -138,10 +139,11 @@ class LINEService
     /**
      * Reply to a message using the reply token.
      *
-     * @param Bot $bot The bot instance
-     * @param string $replyToken The reply token from webhook event
-     * @param array $messages Messages to send (max 5)
-     * @param string|null $retryKey Optional X-Line-Retry-Key for idempotent retry
+     * @param  Bot  $bot  The bot instance
+     * @param  string  $replyToken  The reply token from webhook event
+     * @param  array  $messages  Messages to send (max 5)
+     * @param  string|null  $retryKey  Optional X-Line-Retry-Key for idempotent retry
+     *
      * @throws LINEException
      *
      * @see https://developers.line.biz/en/docs/messaging-api/retrying-api-request/
@@ -181,10 +183,11 @@ class LINEService
     /**
      * Send a push message to a user.
      *
-     * @param Bot $bot The bot instance
-     * @param string $userId LINE user ID to send message to
-     * @param array $messages Messages to send (max 5)
-     * @param string|null $retryKey Optional X-Line-Retry-Key for idempotent retry
+     * @param  Bot  $bot  The bot instance
+     * @param  string  $userId  LINE user ID to send message to
+     * @param  array  $messages  Messages to send (max 5)
+     * @param  string|null  $retryKey  Optional X-Line-Retry-Key for idempotent retry
+     *
      * @throws LINEException
      *
      * @see https://developers.line.biz/en/docs/messaging-api/retrying-api-request/
@@ -228,12 +231,13 @@ class LINEService
      * to use the free reply() first, and automatically falls back to push()
      * if the token has expired.
      *
-     * @param Bot $bot The bot instance
-     * @param string|null $replyToken Reply token (null = use push directly)
-     * @param string $userId LINE user ID for fallback push
-     * @param array $messages Messages to send (max 5)
-     * @param string|null $retryKey Optional retry key for idempotency
+     * @param  Bot  $bot  The bot instance
+     * @param  string|null  $replyToken  Reply token (null = use push directly)
+     * @param  string  $userId  LINE user ID for fallback push
+     * @param  array  $messages  Messages to send (max 5)
+     * @param  string|null  $retryKey  Optional retry key for idempotency
      * @return array ['method' => 'reply'|'push', 'success' => bool]
+     *
      * @throws LINEException If both reply and push fail
      *
      * @see https://developers.line.biz/en/docs/messaging-api/sending-messages/
@@ -246,7 +250,7 @@ class LINEService
         ?string $retryKey = null
     ): array {
         // If no reply token, use push directly
-        if (!$replyToken) {
+        if (! $replyToken) {
             $pushRetryKey = $retryKey ?? $this->generateRetryKey();
             $this->push($bot, $userId, $messages, $pushRetryKey);
 
@@ -317,10 +321,8 @@ class LINEService
      * Display loading indicator to user.
      * Shows typing animation while bot is processing.
      *
-     * @param Bot $bot
-     * @param string $userId LINE User ID (chatId)
-     * @param int $seconds Duration 5-60 seconds (default: 20)
-     * @return bool
+     * @param  string  $userId  LINE User ID (chatId)
+     * @param  int  $seconds  Duration 5-60 seconds (default: 20)
      */
     public function showLoadingIndicator(Bot $bot, string $userId, int $seconds = 20): bool
     {
@@ -340,6 +342,7 @@ class LINEService
                     'status' => $response->status(),
                     'error' => $response->json('message'),
                 ]);
+
                 return false;
             }
 
@@ -351,6 +354,7 @@ class LINEService
                 'user_id' => $userId,
                 'error' => $e->getMessage(),
             ]);
+
             return false;
         }
     }
@@ -363,12 +367,12 @@ class LINEService
     public function getContent(Bot $bot, string $messageId): string
     {
         $response = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $bot->channel_access_token,
-        ])->timeout(30)->get(self::DATA_API_BASE_URL . "/bot/message/{$messageId}/content");
+            'Authorization' => 'Bearer '.$bot->channel_access_token,
+        ])->timeout(30)->get(self::DATA_API_BASE_URL."/bot/message/{$messageId}/content");
 
         if ($response->failed()) {
             throw new LINEException(
-                "Failed to get message content",
+                'Failed to get message content',
                 $response->status()
             );
         }
@@ -395,7 +399,7 @@ class LINEService
             };
 
             // Generate storage path
-            $storagePath = 'line/' . $bot->id . '/' . date('Y/m/d') . '/' . uniqid() . '.' . $extension;
+            $storagePath = 'line/'.$bot->id.'/'.date('Y/m/d').'/'.uniqid().'.'.$extension;
 
             // Store file
             $disk = config('filesystems.default');
@@ -424,6 +428,7 @@ class LINEService
                 'type' => $type,
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -436,7 +441,7 @@ class LINEService
         if ($disk === 'r2') {
             $r2Url = env('R2_URL') ?: config('filesystems.disks.r2.url');
             if ($r2Url) {
-                return rtrim($r2Url, '/') . '/' . $path;
+                return rtrim($r2Url, '/').'/'.$path;
             }
         }
 
@@ -526,6 +531,7 @@ class LINEService
             if (is_string($message)) {
                 return $this->textMessage($message);
             }
+
             return $message;
         }, $messages), 0, 5); // LINE limit is 5 messages per request
     }
@@ -533,8 +539,8 @@ class LINEService
     /**
      * Get configured HTTP client for LINE API.
      *
-     * @param Bot $bot The bot instance with channel access token
-     * @param array $additionalHeaders Optional headers (e.g., X-Line-Retry-Key)
+     * @param  Bot  $bot  The bot instance with channel access token
+     * @param  array  $additionalHeaders  Optional headers (e.g., X-Line-Retry-Key)
      */
     protected function client(Bot $bot, array $additionalHeaders = []): PendingRequest
     {
@@ -543,7 +549,7 @@ class LINEService
         }
 
         $headers = array_merge([
-            'Authorization' => 'Bearer ' . $bot->channel_access_token,
+            'Authorization' => 'Bearer '.$bot->channel_access_token,
         ], $additionalHeaders);
 
         return Http::baseUrl(self::API_BASE_URL)

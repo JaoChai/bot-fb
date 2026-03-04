@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
+use App\Exceptions\CircuitOpenException;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
@@ -13,7 +14,6 @@ use App\Services\AutoAssignmentService;
 use App\Services\CircuitBreakerService;
 use App\Services\LeadRecoveryService;
 use App\Services\ProfilePictureService;
-use App\Exceptions\CircuitOpenException;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -68,7 +68,7 @@ class ProcessFacebookWebhook implements ShouldQueue
             Log::error('Facebook webhook processing failed', [
                 'bot_id' => $this->bot->id,
                 'error' => $e->getMessage(),
-                ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
+                ...(! app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
 
             throw $e;
@@ -129,6 +129,7 @@ class ProcessFacebookWebhook implements ShouldQueue
             Log::debug('Ignoring non-page Facebook webhook', [
                 'object' => $this->payload['object'] ?? 'unknown',
             ]);
+
             return;
         }
 
@@ -150,14 +151,16 @@ class ProcessFacebookWebhook implements ShouldQueue
         $recipientId = $event['recipient']['id'] ?? null;
         $timestamp = $event['timestamp'] ?? null;
 
-        if (!$senderId) {
+        if (! $senderId) {
             Log::warning('Facebook messaging event missing sender ID');
+
             return;
         }
 
         // Ignore echo messages (messages sent by the page itself)
         if (isset($event['message']['is_echo']) && $event['message']['is_echo']) {
             Log::debug('Ignoring echo message from page');
+
             return;
         }
 
@@ -186,7 +189,7 @@ class ProcessFacebookWebhook implements ShouldQueue
                 ->whereIn('status', ['active', 'handover'])
                 ->first();
 
-            $isNewConversation = !$existingConversation;
+            $isNewConversation = ! $existingConversation;
             $conversation = $existingConversation ?? $this->createNewConversation($senderId);
             $isHandover = $conversation->is_handover;
 
@@ -260,6 +263,7 @@ class ProcessFacebookWebhook implements ShouldQueue
                 'conversation_id' => $conversation->id,
                 'message_id' => $messageId,
             ]);
+
             return [null, null];
         }
 
@@ -272,7 +276,7 @@ class ProcessFacebookWebhook implements ShouldQueue
         $mediaMetadata = null;
 
         // Process attachments if present
-        if (!empty($attachments)) {
+        if (! empty($attachments)) {
             $attachment = $attachments[0]; // Process first attachment
             $attachmentType = $attachment['type'] ?? 'unknown';
             $payload = $attachment['payload'] ?? [];
@@ -286,7 +290,7 @@ class ProcessFacebookWebhook implements ShouldQueue
             ];
 
             // Generate placeholder text for non-text messages
-            if (!$text) {
+            if (! $text) {
                 $text = $this->generateAttachmentPlaceholder($attachmentType, $mediaMetadata);
             }
         }
@@ -321,7 +325,7 @@ class ProcessFacebookWebhook implements ShouldQueue
 
         // Generate AI response if not in handover mode, bot is active, and is a text message
         $botMessage = null;
-        if (!$isHandover && $this->bot->status === 'active' && $messageType === 'text' && $text) {
+        if (! $isHandover && $this->bot->status === 'active' && $messageType === 'text' && $text) {
             $botMessage = $this->generateAIResponse(
                 $conversation,
                 $userMessage,
@@ -390,7 +394,7 @@ class ProcessFacebookWebhook implements ShouldQueue
 
         // Generate AI response for postbacks if not in handover mode and bot is active
         $botMessage = null;
-        if (!$isHandover && $this->bot->status === 'active') {
+        if (! $isHandover && $this->bot->status === 'active') {
             $botMessage = $this->generateAIResponse(
                 $conversation,
                 $userMessage,
@@ -466,6 +470,7 @@ class ProcessFacebookWebhook implements ShouldQueue
                 'last_interaction_at' => now(),
                 'interaction_count' => DB::raw('interaction_count + 1'),
             ]);
+
             return $profile;
         }
 
@@ -505,10 +510,11 @@ class ProcessFacebookWebhook implements ShouldQueue
         try {
             $accessToken = $this->bot->channel_access_token;
 
-            if (!$accessToken) {
+            if (! $accessToken) {
                 Log::warning('No Facebook access token configured', [
                     'bot_id' => $this->bot->id,
                 ]);
+
                 return [];
             }
 
@@ -594,27 +600,29 @@ class ProcessFacebookWebhook implements ShouldQueue
         try {
             $accessToken = $this->bot->channel_access_token;
 
-            if (!$accessToken) {
+            if (! $accessToken) {
                 Log::error('No Facebook access token configured', [
                     'bot_id' => $this->bot->id,
                 ]);
+
                 return false;
             }
 
-            $response = Http::post("https://graph.facebook.com/v19.0/me/messages", [
+            $response = Http::post('https://graph.facebook.com/v19.0/me/messages', [
                 'recipient' => ['id' => $recipientId],
                 'messaging_type' => 'RESPONSE',
                 'message' => ['text' => $text],
                 'access_token' => $accessToken,
             ]);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 Log::error('Failed to send Facebook message', [
                     'bot_id' => $this->bot->id,
                     'recipient_id' => $recipientId,
                     'status' => $response->status(),
                     'error' => $response->json()['error'] ?? null,
                 ]);
+
                 return false;
             }
 
@@ -639,11 +647,11 @@ class ProcessFacebookWebhook implements ShouldQueue
         try {
             $accessToken = $this->bot->channel_access_token;
 
-            if (!$accessToken) {
+            if (! $accessToken) {
                 return;
             }
 
-            Http::post("https://graph.facebook.com/v19.0/me/messages", [
+            Http::post('https://graph.facebook.com/v19.0/me/messages', [
                 'recipient' => ['id' => $recipientId],
                 'sender_action' => $action,
                 'access_token' => $accessToken,

@@ -5,7 +5,6 @@ namespace Database\Factories;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
-use App\Models\Flow;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -43,7 +42,7 @@ class ConversationFactory extends Factory
     /**
      * Indicate that the conversation is in handover mode.
      */
-    public function handover(User $agent = null): static
+    public function handover(?User $agent = null): static
     {
         return $this->state(fn (array $attributes) => [
             'is_handover' => true,

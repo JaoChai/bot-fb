@@ -89,5 +89,4 @@ class ConversationNoteController extends BaseConversationController
             'message' => 'Note deleted successfully',
         ]);
     }
-
 }

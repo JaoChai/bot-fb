@@ -24,7 +24,7 @@ return new class extends Migration
                 'single_turn',
                 'multi_turn',
                 'edge_case',
-                'persona_adherence'
+                'persona_adherence',
             ])->default('single_turn');
             $table->json('expected_topics')->nullable(); // Topics the response should cover
             $table->json('source_chunks')->nullable(); // KB chunk IDs used to generate this test

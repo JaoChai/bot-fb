@@ -14,14 +14,13 @@ use App\Services\AgentSafetyService;
 use App\Services\CostTrackingService;
 use App\Services\HybridSearchService;
 use App\Services\IntentAnalysisService;
+use App\Services\MultipleBubblesService;
 use App\Services\OpenRouterService;
 use App\Services\RAGService;
 use App\Services\SecondAI\SecondAIService;
-use App\Services\MultipleBubblesService;
 use App\Services\SemanticCacheService;
 use App\Services\ToolService;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -40,19 +39,31 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class StreamController extends Controller
 {
     protected OpenRouterService $openRouter;
+
     protected HybridSearchService $hybridSearch;
+
     protected ToolService $toolService;
+
     protected CostTrackingService $costTracking;
+
     protected AgentSafetyService $agentSafety;
+
     protected SecondAIService $secondAI;
+
     protected IntentAnalysisService $intentAnalysis;
+
     protected RAGService $ragService;
+
     protected MultipleBubblesService $multipleBubbles;
+
     protected AgentLoopService $agentLoopService;
+
     protected ?SemanticCacheService $semanticCache;
 
     protected string $openRouterBaseUrl;
+
     protected string $openRouterSiteUrl;
+
     protected string $openRouterSiteName;
 
     // Track process metrics (reset at start of each request for Octane safety)
@@ -108,7 +119,7 @@ class StreamController extends Controller
     {
         // 1. Manual authentication (before streaming starts)
         $user = $this->authenticateFromToken($request);
-        if (!$user) {
+        if (! $user) {
             return $this->errorResponse('Unauthorized', 401);
         }
 
@@ -130,12 +141,12 @@ class StreamController extends Controller
 
         // 3. Load bot and flow (with authorization)
         $bot = Bot::find($botId);
-        if (!$bot || $bot->user_id !== $user->id) {
+        if (! $bot || $bot->user_id !== $user->id) {
             return $this->errorResponse('Bot not found', 404);
         }
 
         $flow = Flow::where('id', $flowId)->where('bot_id', $botId)->first();
-        if (!$flow) {
+        if (! $flow) {
             return $this->errorResponse('Flow not found', 404);
         }
 
@@ -211,6 +222,7 @@ class StreamController extends Controller
                             'tool_calls' => 0,
                             'blocked' => true,
                         ]);
+
                         return;
                     }
 
@@ -224,7 +236,7 @@ class StreamController extends Controller
                 }
 
                 // === SEMANTIC CACHE: Check for cached response ===
-                if (!$flow->agentic_mode && $this->semanticCache?->isEnabled()) {
+                if (! $flow->agentic_mode && $this->semanticCache?->isEnabled()) {
                     $cacheResult = rescue(function () use ($bot, $message, $apiKey) {
                         return $this->semanticCache->get($bot, $message, $apiKey);
                     }, null, report: false);
@@ -256,12 +268,13 @@ class StreamController extends Controller
                             'tool_calls' => 0,
                             'from_cache' => true,
                         ]);
+
                         return;
                     }
                 }
 
                 // === AGENTIC MODE: KB-First + Smart Routing ===
-                if ($flow->agentic_mode && !empty($flow->enabled_tools)) {
+                if ($flow->agentic_mode && ! empty($flow->enabled_tools)) {
                     // KB-First: Pre-search
                     $kbContext = $this->runAgentKnowledgeBaseSearch($bot, $flow, $message);
                     $kbMeta = $this->lastKbSearchMeta;
@@ -274,11 +287,11 @@ class StreamController extends Controller
                     $routing = $this->agentLoopService->shouldUseAgentLoop(
                         $complexity,
                         $toolIntent,
-                        !empty($kbContext) ? ($kbMeta['top_relevance'] ?? 0) : 0.0,
+                        ! empty($kbContext) ? ($kbMeta['top_relevance'] ?? 0) : 0.0,
                         $configuredThreshold
                     );
 
-                    if (!$routing['use_agent']) {
+                    if (! $routing['use_agent']) {
                         // Simple + high-quality KB → Standard Mode (fast & cheap)
                         $this->sendSSE('agent_routing', [
                             'action' => 'skip_agent',
@@ -315,7 +328,7 @@ class StreamController extends Controller
                     $finalResponse = $this->runSecondAI($flow, $chatResponse, $message, $apiKey);
 
                     // === SEMANTIC CACHE: Save response ===
-                    if ($this->semanticCache?->isEnabled() && !empty($finalResponse)) {
+                    if ($this->semanticCache?->isEnabled() && ! empty($finalResponse)) {
                         rescue(function () use ($bot, $message, $finalResponse) {
                             $this->semanticCache->put($bot, $message, $finalResponse);
                         }, null, report: false);
@@ -323,7 +336,7 @@ class StreamController extends Controller
                 }
 
                 // === STEP 6: Done (if not already sent) ===
-                if (!$this->doneSent) {
+                if (! $this->doneSent) {
                     $totalTime = round((microtime(true) - $this->metrics['start_time']) * 1000);
                     $this->sendSSE('done', [
                         'total_time_ms' => $totalTime,
@@ -346,7 +359,7 @@ class StreamController extends Controller
                 ]);
             } finally {
                 // ALWAYS send done event if not already sent (ensures frontend never hangs)
-                if (!$this->doneSent) {
+                if (! $this->doneSent) {
                     $this->sendSSE('done', [
                         'total_time_ms' => round((microtime(true) - $this->metrics['start_time']) * 1000),
                         'prompt_tokens' => $this->metrics['prompt_tokens'],
@@ -405,21 +418,21 @@ class StreamController extends Controller
         $timeMs = round((microtime(true) - $startTime) * 1000);
 
         // Track metrics
-        if (!empty($result['model_used'])) {
+        if (! empty($result['model_used'])) {
             $this->metrics['models_used'][] = $result['model_used'];
         }
-        if (!empty($result['usage'])) {
+        if (! empty($result['usage'])) {
             $this->metrics['prompt_tokens'] += $result['usage']['prompt_tokens'] ?? 0;
             $this->metrics['completion_tokens'] += $result['usage']['completion_tokens'] ?? 0;
         }
 
         // Check if it was skipped (no decision model)
-        if (!empty($result['skipped'])) {
+        if (! empty($result['skipped'])) {
             return $result;
         }
 
         // Check if there was an error
-        if (!empty($result['error'])) {
+        if (! empty($result['error'])) {
             $this->sendSSE('decision_fallback', [
                 'original_model' => $decisionModel,
                 'fallback_model' => $bot->fallback_decision_model,
@@ -451,12 +464,13 @@ class StreamController extends Controller
         $flowKBs = $flow->knowledgeBases;
         $hasFlowKBs = $flowKBs && $flowKBs->isNotEmpty();
 
-        if (!$shouldUseKB && !$hasFlowKBs) {
+        if (! $shouldUseKB && ! $hasFlowKBs) {
             $this->sendSSE('kb_skip', [
                 'reason' => $this->intentAnalysis->shouldUseKnowledgeBase($bot)
                     ? 'Intent ไม่ต้องการ Knowledge Base'
                     : 'ไม่ได้เปิดใช้งาน Knowledge Base',
             ]);
+
             return '';
         }
 
@@ -474,7 +488,7 @@ class StreamController extends Controller
 
         $this->sendSSE('kb_search', [
             'knowledge_bases' => $kbList,
-            'query' => substr($message, 0, 100) . (strlen($message) > 100 ? '...' : ''),
+            'query' => substr($message, 0, 100).(strlen($message) > 100 ? '...' : ''),
         ]);
 
         try {
@@ -572,7 +586,7 @@ class StreamController extends Controller
     {
         $flowKBs = $flow->knowledgeBases;
 
-        if (!$flowKBs || $flowKBs->isEmpty()) {
+        if (! $flowKBs || $flowKBs->isEmpty()) {
             return '';
         }
 
@@ -582,7 +596,7 @@ class StreamController extends Controller
 
         $this->sendSSE('kb_search', [
             'knowledge_bases' => $kbList,
-            'query' => substr($message, 0, 100) . (strlen($message) > 100 ? '...' : ''),
+            'query' => substr($message, 0, 100).(strlen($message) > 100 ? '...' : ''),
             'source' => 'agent_pre_search',
         ]);
 
@@ -634,6 +648,7 @@ class StreamController extends Controller
 
             if ($results->isEmpty()) {
                 $this->lastKbSearchMeta = ['total_chunks' => 0, 'top_relevance' => 0, 'avg_relevance' => 0];
+
                 return '';
             }
 
@@ -677,15 +692,15 @@ class StreamController extends Controller
 
         // Build system prompt with memory prefix (same format as RAGService)
         $systemPrompt = $this->buildMemoryPrefix($memoryNotes)
-            . ($flow->system_prompt ?: $this->getDefaultSystemPrompt($bot));
-        if (!empty($kbContext)) {
-            $systemPrompt .= "\n\n" . $kbContext;
+            .($flow->system_prompt ?: $this->getDefaultSystemPrompt($bot));
+        if (! empty($kbContext)) {
+            $systemPrompt .= "\n\n".$kbContext;
         }
 
         $this->sendSSE('chat_start', [
             'model' => $chatModel,
             'system_prompt_length' => strlen($systemPrompt),
-            'has_kb_context' => !empty($kbContext),
+            'has_kb_context' => ! empty($kbContext),
         ]);
 
         // Build messages array
@@ -712,7 +727,7 @@ class StreamController extends Controller
                     $this->metrics['models_used'][] = $fallbackChatModel;
                     $usedFallback = true;
                 } catch (\Exception $fallbackError) {
-                    throw new \Exception('Both primary and fallback models failed: ' . $fallbackError->getMessage());
+                    throw new \Exception('Both primary and fallback models failed: '.$fallbackError->getMessage());
                 }
             } else {
                 throw $e;
@@ -737,9 +752,9 @@ class StreamController extends Controller
         $baseUrl = $this->openRouterBaseUrl;
         $apiKey = $apiKey ?: config('services.openrouter.api_key');
 
-        $response = $client->post($baseUrl . '/chat/completions', [
+        $response = $client->post($baseUrl.'/chat/completions', [
             'headers' => [
-                'Authorization' => 'Bearer ' . $apiKey,
+                'Authorization' => 'Bearer '.$apiKey,
                 'Content-Type' => 'application/json',
                 'HTTP-Referer' => $this->openRouterSiteUrl,
                 'X-Title' => $this->openRouterSiteName,
@@ -758,7 +773,7 @@ class StreamController extends Controller
         $buffer = '';
         $collectedContent = '';
 
-        while (!$body->eof()) {
+        while (! $body->eof()) {
             $chunk = $body->read(1024);
             if (empty($chunk)) {
                 continue;
@@ -805,6 +820,7 @@ class StreamController extends Controller
 
             if (connection_aborted()) {
                 Log::info('Stream aborted by client');
+
                 return $collectedContent;
             }
         }
@@ -818,10 +834,10 @@ class StreamController extends Controller
      * Executes Second AI checks (Fact Check, Policy, Personality) if enabled.
      * Sends SSE events for timeline display in Chat Emulator.
      *
-     * @param Flow $flow The flow with second_ai configuration
-     * @param string $originalResponse The original AI response to check
-     * @param string $userMessage The original user message (for context)
-     * @param string|null $apiKey Optional API key override
+     * @param  Flow  $flow  The flow with second_ai configuration
+     * @param  string  $originalResponse  The original AI response to check
+     * @param  string  $userMessage  The original user message (for context)
+     * @param  string|null  $apiKey  Optional API key override
      * @return string The final response (modified or original)
      */
     protected function runSecondAI(
@@ -834,24 +850,25 @@ class StreamController extends Controller
         // Check if client disconnected before starting
         if (connection_aborted()) {
             Log::info('SecondAI: Client disconnected before starting');
+
             return $originalResponse;
         }
 
         // Skip if Second AI is not enabled or response is empty
-        if (!$flow->second_ai_enabled || empty($originalResponse)) {
+        if (! $flow->second_ai_enabled || empty($originalResponse)) {
             return $originalResponse;
         }
 
         $options = $flow->second_ai_options ?? [];
         $enabledChecks = [];
 
-        if (!empty($options['fact_check'])) {
+        if (! empty($options['fact_check'])) {
             $enabledChecks[] = 'fact_check';
         }
-        if (!empty($options['policy'])) {
+        if (! empty($options['policy'])) {
             $enabledChecks[] = 'policy';
         }
-        if (!empty($options['personality'])) {
+        if (! empty($options['personality'])) {
             $enabledChecks[] = 'personality';
         }
 
@@ -892,10 +909,11 @@ class StreamController extends Controller
                 Log::error('SecondAI: Process failed or timed out', [
                     'flow_id' => $flow->id,
                     'error' => $e->getMessage(),
-                    ...(!app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
+                    ...(! app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
                 ]);
                 // Also log to stderr for Railway visibility
-                error_log('SecondAI ERROR: ' . $e->getMessage());
+                error_log('SecondAI ERROR: '.$e->getMessage());
+
                 return [
                     'content' => $originalResponse,
                     'second_ai_applied' => false,
@@ -908,7 +926,7 @@ class StreamController extends Controller
         $timeMs = round((microtime(true) - $startTime) * 1000);
 
         // Determine if checks passed (no modifications applied)
-        $passed = !($result['second_ai_applied'] ?? false);
+        $passed = ! ($result['second_ai_applied'] ?? false);
         $checksApplied = $result['second_ai']['checks_applied'] ?? [];
         $modifications = $result['second_ai']['modifications'] ?? [];
         $error = $result['second_ai']['error'] ?? null;
@@ -924,7 +942,7 @@ class StreamController extends Controller
 
         // If content was modified, send the modified content event
         $finalContent = $result['content'] ?? $originalResponse;
-        if (!$passed && $finalContent !== $originalResponse && empty($error)) {
+        if (! $passed && $finalContent !== $originalResponse && empty($error)) {
             $this->sendSSE('second_ai_modified', [
                 'content' => $finalContent,
                 'original_length' => strlen($originalResponse),
@@ -942,12 +960,12 @@ class StreamController extends Controller
     protected function authenticateFromToken(Request $request): ?User
     {
         $token = $request->bearerToken();
-        if (!$token) {
+        if (! $token) {
             return null;
         }
 
         $accessToken = PersonalAccessToken::findToken($token);
-        if (!$accessToken) {
+        if (! $accessToken) {
             return null;
         }
 
@@ -986,7 +1004,7 @@ class StreamController extends Controller
             $role = $msg['role'] ?? 'user';
             $content = $msg['content'] ?? '';
 
-            if (!empty($content) && in_array($role, ['user', 'assistant'])) {
+            if (! empty($content) && in_array($role, ['user', 'assistant'])) {
                 $messages[] = [
                     'role' => $role,
                     'content' => $content,
@@ -1057,7 +1075,7 @@ PROMPT;
         );
 
         $callbacks = new SseAgentCallbacks(
-            fn(string $event, array $data) => $this->sendSSE($event, $data),
+            fn (string $event, array $data) => $this->sendSSE($event, $data),
             $this->metrics,
         );
 
@@ -1069,7 +1087,7 @@ PROMPT;
         $this->metrics['completion_tokens'] += $result->usage['completion_tokens'] ?? 0;
 
         // === Second AI - Content Verification for Agentic Mode ===
-        if (!empty($result->content)) {
+        if (! empty($result->content)) {
             $this->runSecondAI($flow, $result->content, $message, $apiKey, $kbContext);
         }
     }
@@ -1077,8 +1095,8 @@ PROMPT;
     /**
      * Send SSE event to client.
      *
-     * @param string $event Event name
-     * @param array $data Event data
+     * @param  string  $event  Event name
+     * @param  array  $data  Event data
      * @return bool True if event was sent successfully, false if connection was aborted
      */
     protected function sendSSE(string $event, array $data): bool
@@ -1094,7 +1112,7 @@ PROMPT;
         }
 
         echo "event: {$event}\n";
-        echo "data: " . json_encode($data, JSON_UNESCAPED_UNICODE) . "\n\n";
+        echo 'data: '.json_encode($data, JSON_UNESCAPED_UNICODE)."\n\n";
 
         if (ob_get_level() > 0) {
             ob_flush();

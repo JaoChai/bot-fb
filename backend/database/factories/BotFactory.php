@@ -15,11 +15,11 @@ class BotFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
-            'name' => fake()->company() . ' Bot',
+            'name' => fake()->company().' Bot',
             'description' => fake()->sentence(),
             'status' => fake()->randomElement(['active', 'inactive', 'paused']),
             'channel_type' => fake()->randomElement(['line', 'facebook', 'telegram']),
-            'webhook_url' => config('app.url') . '/webhook/' . Str::random(32),
+            'webhook_url' => config('app.url').'/webhook/'.Str::random(32),
             'total_conversations' => fake()->numberBetween(0, 1000),
             'total_messages' => fake()->numberBetween(0, 10000),
         ];

@@ -15,8 +15,8 @@ class SseAgentCallbacks implements AgentLoopCallbacks
     protected bool $chatStartSent = false;
 
     /**
-     * @param Closure(string, array): bool $sendSSE fn($event, $data) => bool
-     * @param array $metrics Reference to StreamController's metrics array
+     * @param  Closure(string, array): bool  $sendSSE  fn($event, $data) => bool
+     * @param  array  $metrics  Reference to StreamController's metrics array
      */
     public function __construct(
         protected Closure $sendSSE,
@@ -82,7 +82,7 @@ class SseAgentCallbacks implements AgentLoopCallbacks
     public function onContent(string $content, string $model, string $source): void
     {
         // Send chat_start before first content chunk (matches StreamController behavior)
-        if (!$this->chatStartSent) {
+        if (! $this->chatStartSent) {
             ($this->sendSSE)('chat_start', [
                 'model' => $model,
                 'source' => $source,

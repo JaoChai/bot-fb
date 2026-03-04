@@ -8,14 +8,23 @@ use Illuminate\Support\Facades\Log;
 class PaymentFlexService
 {
     private const BANK_ACCOUNT = '223-3-24880-3';
+
     private const BANK_NAME = 'ธนาคารกสิกรไทย (KBANK)';
+
     private const ACCOUNT_NAME = 'หจก. มั่งมีทรัพย์ขายของออนไลน์';
+
     private const CLIPBOARD_TEXT = '2233248803';
+
     private const MAX_FLEX_SIZE = 30000;
+
     private const TERMS_URL = 'https://mhhacoursecontent.my.canva.site/ads-vance';
+
     private const SUPPORT_LINE_ID = '@743ddeqy';
+
     private const NORMAL_PRIMARY_COLOR = '#1DB446';
+
     private const VIP_PRIMARY_COLOR = '#D4A017';
+
     private const CONFIRM_PRIMARY_COLOR = '#FF6B00';
 
     /**
@@ -890,7 +899,7 @@ class PaymentFlexService
                 ],
                 [
                     'type' => 'text',
-                    'text' => 'LINE: ' . self::SUPPORT_LINE_ID,
+                    'text' => 'LINE: '.self::SUPPORT_LINE_ID,
                     'size' => 'xs',
                     'color' => '#555555',
                     'margin' => 'sm',

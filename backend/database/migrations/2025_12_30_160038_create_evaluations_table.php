@@ -26,7 +26,7 @@ return new class extends Migration
                 'running',
                 'evaluating',
                 'completed',
-                'failed'
+                'failed',
             ])->default('pending');
             $table->string('judge_model')->default('anthropic/claude-3.5-sonnet');
             $table->json('personas')->nullable(); // Array of persona keys

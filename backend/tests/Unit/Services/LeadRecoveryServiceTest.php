@@ -24,7 +24,9 @@ class LeadRecoveryServiceTest extends TestCase
     use RefreshDatabase;
 
     private LeadRecoveryService $service;
+
     private User $user;
+
     private Bot $bot;
 
     protected function setUp(): void
@@ -468,7 +470,7 @@ class LeadRecoveryServiceTest extends TestCase
         // Create a customer profile with all required fields
         $customerProfile = CustomerProfile::create([
             'display_name' => 'Test Customer',
-            'external_id' => 'U' . fake()->uuid(),
+            'external_id' => 'U'.fake()->uuid(),
             'channel_type' => 'line',
         ]);
 

@@ -2,8 +2,6 @@
 
 namespace App\Support;
 
-use Illuminate\Support\Str;
-
 class Sanitizer
 {
     /**
@@ -82,6 +80,7 @@ class Sanitizer
     public static function email(string $input): string
     {
         $sanitized = filter_var(trim($input), FILTER_SANITIZE_EMAIL);
+
         return $sanitized ?: '';
     }
 
@@ -133,6 +132,7 @@ class Sanitizer
         if (is_numeric($input)) {
             return (int) $input;
         }
+
         return null;
     }
 
@@ -156,6 +156,7 @@ class Sanitizer
             if (is_array($item)) {
                 return self::array($item, $method);
             }
+
             return $item;
         }, $input);
     }
@@ -197,8 +198,8 @@ class Sanitizer
         }
 
         return substr($input, 0, $visibleChars)
-            . str_repeat('*', $length - ($visibleChars * 2))
-            . substr($input, -$visibleChars);
+            .str_repeat('*', $length - ($visibleChars * 2))
+            .substr($input, -$visibleChars);
     }
 
     /**
@@ -214,7 +215,7 @@ class Sanitizer
 
         // Limit length for logs
         if (mb_strlen($sanitized) > 1000) {
-            $sanitized = mb_substr($sanitized, 0, 1000) . '...[truncated]';
+            $sanitized = mb_substr($sanitized, 0, 1000).'...[truncated]';
         }
 
         return $sanitized;

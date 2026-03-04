@@ -15,7 +15,7 @@ class LINEServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new LINEService();
+        $this->service = new LINEService;
     }
 
     /**

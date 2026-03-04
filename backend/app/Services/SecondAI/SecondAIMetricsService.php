@@ -19,7 +19,7 @@ class SecondAIMetricsService
     /**
      * Extract scores from a SecondAICheckResult
      *
-     * @param SecondAICheckResult $result Check result to extract scores from
+     * @param  SecondAICheckResult  $result  Check result to extract scores from
      * @return array Extracted scores with groundedness, policy, and personality
      */
     public function extractScores(SecondAICheckResult $result): array
@@ -68,13 +68,13 @@ class SecondAIMetricsService
      * - No modifications needed = 1.0 (perfect)
      * - Modifications needed: score based on ratio of verified claims
      *
-     * @param array $factCheckResult Fact check modifications
+     * @param  array  $factCheckResult  Fact check modifications
      * @return float Score from 0.0 to 1.0
      */
     public function calculateGroundednessScore(array $factCheckResult): float
     {
         // If no modification required, perfect score
-        if (!($factCheckResult['required'] ?? false)) {
+        if (! ($factCheckResult['required'] ?? false)) {
             return 1.0;
         }
 
@@ -91,6 +91,7 @@ class SecondAIMetricsService
 
         // Score is ratio of verified claims
         $verifiedCount = $totalClaims - $unverifiedCount;
+
         return max(0.0, round($verifiedCount / $totalClaims, 2));
     }
 
@@ -101,13 +102,13 @@ class SecondAIMetricsService
      * - No violations = 1.0 (perfect)
      * - Violations found: penalize based on count
      *
-     * @param array $policyResult Policy check modifications
+     * @param  array  $policyResult  Policy check modifications
      * @return float Score from 0.0 to 1.0
      */
     public function calculatePolicyScore(array $policyResult): float
     {
         // If no modification required, perfect score
-        if (!($policyResult['required'] ?? false)) {
+        if (! ($policyResult['required'] ?? false)) {
             return 1.0;
         }
 
@@ -134,13 +135,13 @@ class SecondAIMetricsService
      * - No issues = 1.0 (perfect)
      * - Issues found: penalize based on severity
      *
-     * @param array $personalityResult Personality check modifications
+     * @param  array  $personalityResult  Personality check modifications
      * @return float Score from 0.0 to 1.0
      */
     public function calculatePersonalityScore(array $personalityResult): float
     {
         // If no modification required, perfect score
-        if (!($personalityResult['required'] ?? false)) {
+        if (! ($personalityResult['required'] ?? false)) {
             return 1.0;
         }
 
@@ -163,12 +164,12 @@ class SecondAIMetricsService
     /**
      * Log metrics to database
      *
-     * @param int $botId Bot ID
-     * @param int $flowId Flow ID
-     * @param SecondAICheckResult $result Check result
-     * @param int|null $conversationId Optional conversation ID
-     * @param int|null $messageId Optional message ID
-     * @param string $executionMode Execution mode (unified/sequential)
+     * @param  int  $botId  Bot ID
+     * @param  int  $flowId  Flow ID
+     * @param  SecondAICheckResult  $result  Check result
+     * @param  int|null  $conversationId  Optional conversation ID
+     * @param  int|null  $messageId  Optional message ID
+     * @param  string  $executionMode  Execution mode (unified/sequential)
      * @return SecondAILog|null Created log entry or null on failure
      */
     public function logMetrics(
@@ -191,7 +192,7 @@ class SecondAIMetricsService
                 'policy_compliance_score' => $scores['policy_compliance'],
                 'personality_match_score' => $scores['personality_match'],
                 'overall_score' => $scores['overall'],
-                'was_modified' => !$result->passed,
+                'was_modified' => ! $result->passed,
                 'checks_applied' => $result->getAppliedChecks(),
                 'modifications' => $result->modifications,
                 'latency_ms' => $result->metadata['latency_ms'] ?? null,
@@ -204,6 +205,7 @@ class SecondAIMetricsService
                 'flow_id' => $flowId,
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -211,13 +213,12 @@ class SecondAIMetricsService
     /**
      * Log metrics from legacy format result array
      *
-     * @param int $botId Bot ID
-     * @param int $flowId Flow ID
-     * @param array $result Legacy format result from SecondAIService
-     * @param int|null $conversationId Optional conversation ID
-     * @param int|null $messageId Optional message ID
-     * @param string $executionMode Execution mode
-     * @return SecondAILog|null
+     * @param  int  $botId  Bot ID
+     * @param  int  $flowId  Flow ID
+     * @param  array  $result  Legacy format result from SecondAIService
+     * @param  int|null  $conversationId  Optional conversation ID
+     * @param  int|null  $messageId  Optional message ID
+     * @param  string  $executionMode  Execution mode
      */
     public function logMetricsFromLegacy(
         int $botId,
@@ -269,7 +270,7 @@ class SecondAIMetricsService
                 'policy_compliance_score' => $policy,
                 'personality_match_score' => $personality,
                 'overall_score' => $overall,
-                'was_modified' => !empty($modifications),
+                'was_modified' => ! empty($modifications),
                 'checks_applied' => $checksApplied,
                 'modifications' => $modifications,
                 'latency_ms' => $secondAi['elapsed_ms'] ?? null,
@@ -282,6 +283,7 @@ class SecondAIMetricsService
                 'flow_id' => $flowId,
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }

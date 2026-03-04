@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Decouples Knowledge Bases from Bots to allow:
      * - 1 KB can be used by multiple Bots (via Flow relationship)
      * - Deleting a Bot won't delete its KB
@@ -19,10 +19,10 @@ return new class extends Migration
         Schema::table('knowledge_bases', function (Blueprint $table) {
             // Drop foreign key constraint first
             $table->dropForeign(['bot_id']);
-            
+
             // Drop the index
             $table->dropIndex(['bot_id']);
-            
+
             // Drop the column
             $table->dropColumn('bot_id');
         });
@@ -38,7 +38,7 @@ return new class extends Migration
                 ->after('user_id')
                 ->constrained()
                 ->cascadeOnDelete();
-                
+
             $table->index('bot_id');
         });
     }

@@ -13,7 +13,7 @@ class PromptInjectionDetectorTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->detector = new PromptInjectionDetector();
+        $this->detector = new PromptInjectionDetector;
     }
 
     // ==========================================

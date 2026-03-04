@@ -44,7 +44,7 @@ class MessageAggregationService
 
             // Check if there's an active aggregation group
             $existingGroupId = Cache::get($groupKey);
-            $isNewGroup = !$existingGroupId;
+            $isNewGroup = ! $existingGroupId;
 
             if ($isNewGroup) {
                 // Create new aggregation group
@@ -92,6 +92,7 @@ class MessageAggregationService
                 'conversation_id' => $conversationId,
                 'error' => $e->getMessage(),
             ]);
+
             return null; // Signal to use immediate response
         } finally {
             optional($lock)->release();
@@ -105,6 +106,7 @@ class MessageAggregationService
     public function isActiveGroup(int $conversationId, string $groupId): bool
     {
         $currentGroupId = Cache::get($this->getGroupIdKey($conversationId));
+
         return $currentGroupId === $groupId;
     }
 
@@ -180,6 +182,7 @@ class MessageAggregationService
     public function isEnabled(Bot $bot): bool
     {
         $settings = $bot->settings;
+
         return $settings && $settings->wait_multiple_bubbles_enabled;
     }
 
@@ -189,6 +192,7 @@ class MessageAggregationService
     public function getWaitTimeMs(Bot $bot): int
     {
         $settings = $bot->settings;
+
         return $settings ? ($settings->wait_multiple_bubbles_ms ?? 1500) : 1500;
     }
 
@@ -206,9 +210,10 @@ class MessageAggregationService
     public function getElapsedMs(int $conversationId): int
     {
         $startedAt = $this->getStartedAt($conversationId);
-        if (!$startedAt) {
+        if (! $startedAt) {
             return 0;
         }
+
         return (int) ((now()->timestamp - $startedAt) * 1000);
     }
 
@@ -226,11 +231,11 @@ class MessageAggregationService
 
         // Get recent messages with timestamps
         $recentMessages = [];
-        if (!empty($messageIds)) {
+        if (! empty($messageIds)) {
             $recentMessages = Message::whereIn('id', $messageIds)
                 ->orderBy('created_at', 'asc')
                 ->get(['id', 'content', 'created_at'])
-                ->map(fn($m) => [
+                ->map(fn ($m) => [
                     'id' => $m->id,
                     'content' => $m->content,
                     'created_at' => $m->created_at->toIso8601String(),
@@ -251,7 +256,7 @@ class MessageAggregationService
             recentMessages: $recentMessages,
             messageCount: count($messageIds) + 1, // +1 for current message being added
             elapsedMs: $this->getElapsedMs($conversationId),
-            lastGapMs: !empty($gaps) ? end($gaps) : null,
+            lastGapMs: ! empty($gaps) ? end($gaps) : null,
             avgGapMs: count($gaps) > 0 ? array_sum($gaps) / count($gaps) : 0,
             baseWaitMs: $this->getWaitTimeMs($bot),
             bot: $bot,
@@ -264,7 +269,7 @@ class MessageAggregationService
      */
     private function getGroupIdKey(int $conversationId): string
     {
-        return self::CACHE_PREFIX . ":{$conversationId}:group_id";
+        return self::CACHE_PREFIX.":{$conversationId}:group_id";
     }
 
     /**
@@ -272,7 +277,7 @@ class MessageAggregationService
      */
     private function getMessagesKey(int $conversationId): string
     {
-        return self::CACHE_PREFIX . ":{$conversationId}:messages";
+        return self::CACHE_PREFIX.":{$conversationId}:messages";
     }
 
     /**
@@ -280,6 +285,6 @@ class MessageAggregationService
      */
     private function getTimestampKey(int $conversationId): string
     {
-        return self::CACHE_PREFIX . ":{$conversationId}:started_at";
+        return self::CACHE_PREFIX.":{$conversationId}:started_at";
     }
 }

@@ -201,7 +201,7 @@ class Conversation extends Model
             ->where('last_message_at', '<', now()->subHours($timeoutHours))
             ->where(function ($q) {
                 $q->whereNull('last_recovery_at')
-                  ->orWhere('last_recovery_at', '<', now()->subHours(24));
+                    ->orWhere('last_recovery_at', '<', now()->subHours(24));
             });
     }
 

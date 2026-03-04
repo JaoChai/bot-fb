@@ -39,9 +39,9 @@ class PolicyCheckService
     /**
      * Check the response for policy compliance.
      *
-     * @param string $response The AI-generated response to check
-     * @param Flow $flow The flow containing system prompt with policies
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $response  The AI-generated response to check
+     * @param  Flow  $flow  The flow containing system prompt with policies
+     * @param  string|null  $apiKey  Optional API key override
      * @return CheckResult The policy check result
      */
     public function check(
@@ -71,7 +71,7 @@ class PolicyCheckService
             $checkResult = $this->checkAgainstPolicies($response, $policyRules, $apiKey, $timeout, $fallbackModel);
 
             // Step 3: If violations found, rewrite
-            if (!empty($checkResult['violations'])) {
+            if (! empty($checkResult['violations'])) {
                 Log::info('PolicyCheck: Found violations', [
                     'count' => count($checkResult['violations']),
                 ]);
@@ -96,6 +96,7 @@ class PolicyCheckService
             }
 
             Log::debug('PolicyCheck: Response is policy-compliant');
+
             return CheckResult::passed($response);
         } catch (\Exception $e) {
             Log::error('PolicyCheck: Error during check', [
@@ -111,8 +112,8 @@ class PolicyCheckService
      *
      * Looks for policy-related instructions in the system prompt.
      *
-     * @param string $systemPrompt The flow's system prompt
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $systemPrompt  The flow's system prompt
+     * @param  string|null  $apiKey  Optional API key override
      * @return array List of policy rules
      */
     protected function extractPolicyRules(string $systemPrompt, ?string $apiKey = null, ?int $timeout = null, ?string $fallbackModel = null): array
@@ -165,7 +166,7 @@ PROMPT;
 
             $policies = json_decode($content, true);
 
-            if (!is_array($policies)) {
+            if (! is_array($policies)) {
                 return [];
             }
 
@@ -174,6 +175,7 @@ PROMPT;
             Log::warning('PolicyCheck: Failed to parse policies', [
                 'error' => $e->getMessage(),
             ]);
+
             return [];
         }
     }
@@ -181,9 +183,9 @@ PROMPT;
     /**
      * Check response against policy rules.
      *
-     * @param string $response The response to check
-     * @param array $policies Policy rules to check against
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $response  The response to check
+     * @param  array  $policies  Policy rules to check against
+     * @param  string|null  $apiKey  Optional API key override
      * @return array Check result with violations
      */
     protected function checkAgainstPolicies(
@@ -193,7 +195,7 @@ PROMPT;
         ?int $timeout = null,
         ?string $fallbackModel = null
     ): array {
-        $policiesList = implode("\n", array_map(fn ($i, $p) => ($i + 1) . ". {$p}", array_keys($policies), $policies));
+        $policiesList = implode("\n", array_map(fn ($i, $p) => ($i + 1).". {$p}", array_keys($policies), $policies));
 
         $prompt = <<<PROMPT
 Check if the following response violates any of the business policies.
@@ -243,7 +245,7 @@ PROMPT;
 
             $check = json_decode($content, true);
 
-            if (!is_array($check)) {
+            if (! is_array($check)) {
                 return ['compliant' => true, 'violations' => []];
             }
 
@@ -252,6 +254,7 @@ PROMPT;
             Log::warning('PolicyCheck: Failed to parse check result', [
                 'error' => $e->getMessage(),
             ]);
+
             return ['compliant' => true, 'violations' => []];
         }
     }
@@ -259,10 +262,10 @@ PROMPT;
     /**
      * Rewrite response to be policy-compliant.
      *
-     * @param string $originalResponse The original response
-     * @param array $violations Found policy violations
-     * @param array $policies All policy rules
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $originalResponse  The original response
+     * @param  array  $violations  Found policy violations
+     * @param  array  $policies  All policy rules
+     * @param  string|null  $apiKey  Optional API key override
      * @return string Rewritten policy-compliant response
      */
     protected function rewritePolicyCompliant(

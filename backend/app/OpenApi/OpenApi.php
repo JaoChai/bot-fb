@@ -7,10 +7,12 @@ namespace App\OpenApi;
  *     version="1.0.0",
  *     title="BotJao API",
  *     description="API for BotJao chatbot platform - manage bots, flows, knowledge bases, and conversations",
+ *
  *     @OA\Contact(
  *         email="support@botjao.com",
  *         name="BotJao Support"
  *     ),
+ *
  *     @OA\License(
  *         name="Proprietary",
  *         url="https://www.botjao.com/terms"
@@ -21,7 +23,6 @@ namespace App\OpenApi;
  *     url="https://api.botjao.com",
  *     description="Production server"
  * )
- *
  * @OA\Server(
  *     url="http://localhost:8000",
  *     description="Local development server"
@@ -39,12 +40,10 @@ namespace App\OpenApi;
  *     name="Bots",
  *     description="Bot management endpoints"
  * )
- *
  * @OA\Tag(
  *     name="Flows",
  *     description="Flow management endpoints for bot conversation configuration"
  * )
- *
  * @OA\Tag(
  *     name="Bot Settings",
  *     description="Bot configuration and settings endpoints"
@@ -53,6 +52,7 @@ namespace App\OpenApi;
  * @OA\Schema(
  *     schema="PaginationMeta",
  *     type="object",
+ *
  *     @OA\Property(property="current_page", type="integer", example=1),
  *     @OA\Property(property="from", type="integer", example=1),
  *     @OA\Property(property="last_page", type="integer", example=5),
@@ -64,6 +64,7 @@ namespace App\OpenApi;
  * @OA\Schema(
  *     schema="ErrorResponse",
  *     type="object",
+ *
  *     @OA\Property(property="message", type="string", example="The given data was invalid."),
  *     @OA\Property(
  *         property="errors",
@@ -76,6 +77,7 @@ namespace App\OpenApi;
  *     schema="Bot",
  *     type="object",
  *     required={"id", "name", "channel_type", "status"},
+ *
  *     @OA\Property(property="id", type="integer", example=1),
  *     @OA\Property(property="name", type="string", example="My Support Bot"),
  *     @OA\Property(property="description", type="string", nullable=true),
@@ -106,6 +108,7 @@ namespace App\OpenApi;
  *     schema="Flow",
  *     type="object",
  *     required={"id", "bot_id", "name"},
+ *
  *     @OA\Property(property="id", type="integer", example=1),
  *     @OA\Property(property="bot_id", type="integer", example=1),
  *     @OA\Property(property="name", type="string", example="Customer Support Flow"),
@@ -122,8 +125,10 @@ namespace App\OpenApi;
  *     @OA\Property(
  *         property="knowledge_bases",
  *         type="array",
+ *
  *         @OA\Items(
  *             type="object",
+ *
  *             @OA\Property(property="id", type="integer"),
  *             @OA\Property(property="name", type="string"),
  *             @OA\Property(property="kb_top_k", type="integer"),
@@ -149,6 +154,7 @@ namespace App\OpenApi;
  *     type="object",
  *     description="Slim flow resource for list endpoints (excludes system_prompt, enabled_tools)",
  *     required={"id", "bot_id", "name"},
+ *
  *     @OA\Property(property="id", type="integer", example=1),
  *     @OA\Property(property="bot_id", type="integer", example=1),
  *     @OA\Property(property="name", type="string", example="Customer Support Flow"),
@@ -164,6 +170,7 @@ namespace App\OpenApi;
  * @OA\Schema(
  *     schema="BotSettings",
  *     type="object",
+ *
  *     @OA\Property(property="id", type="integer"),
  *     @OA\Property(property="bot_id", type="integer"),
  *     @OA\Property(property="daily_message_limit", type="integer", example=1000),
@@ -196,6 +203,4 @@ namespace App\OpenApi;
  *     @OA\Property(property="auto_assignment_mode", type="string", enum={"round_robin", "load_balanced"})
  * )
  */
-class OpenApi
-{
-}
+class OpenApi {}

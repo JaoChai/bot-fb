@@ -49,7 +49,7 @@ class AgentSafetyService
     public function requiresApproval(Flow $flow, string $toolName, array $toolArgs = []): bool
     {
         // HITL must be enabled
-        if (!$flow->hitl_enabled) {
+        if (! $flow->hitl_enabled) {
             return false;
         }
 
@@ -68,6 +68,7 @@ class AgentSafetyService
                     'tool' => $toolName,
                     'pattern' => $pattern,
                 ]);
+
                 return true;
             }
         }
@@ -86,7 +87,8 @@ class AgentSafetyService
         }
 
         // Wildcard pattern matching
-        $regex = '/^' . str_replace('*', '.*', preg_quote($pattern, '/')) . '$/i';
+        $regex = '/^'.str_replace('*', '.*', preg_quote($pattern, '/')).'$/i';
+
         return (bool) preg_match($regex, $toolName);
     }
 
@@ -101,7 +103,7 @@ class AgentSafetyService
         array $toolArgs,
         int $timeoutSeconds = 60
     ): string {
-        $approvalId = $requestId . ':' . uniqid();
+        $approvalId = $requestId.':'.uniqid();
 
         $approvalData = [
             'id' => $approvalId,
@@ -134,9 +136,7 @@ class AgentSafetyService
      * Wait for approval (blocking with timeout).
      * Optionally sends heartbeat callbacks during wait.
      *
-     * @param string $approvalId
-     * @param int $timeoutSeconds
-     * @param callable|null $heartbeat Callback fn($elapsedSeconds, $timeoutSeconds) for SSE heartbeat
+     * @param  callable|null  $heartbeat  Callback fn($elapsedSeconds, $timeoutSeconds) for SSE heartbeat
      */
     public function waitForApproval(string $approvalId, int $timeoutSeconds = 60, ?callable $heartbeat = null): array
     {
@@ -155,7 +155,7 @@ class AgentSafetyService
 
             $approval = Cache::get("hitl_approval:{$approvalId}");
 
-            if (!$approval) {
+            if (! $approval) {
                 return [
                     'approved' => false,
                     'reason' => 'expired',
@@ -187,7 +187,7 @@ class AgentSafetyService
     {
         $approval = Cache::get("hitl_approval:{$approvalId}");
 
-        if (!$approval || $approval['status'] !== 'pending') {
+        if (! $approval || $approval['status'] !== 'pending') {
             return false;
         }
 
@@ -217,7 +217,7 @@ class AgentSafetyService
     {
         $approval = Cache::get("hitl_approval:{$approvalId}");
 
-        if (!$approval || $approval['status'] !== 'pending') {
+        if (! $approval || $approval['status'] !== 'pending') {
             return false;
         }
 
@@ -255,6 +255,7 @@ class AgentSafetyService
     public function checkTimeout(float $startTime, int $timeoutSeconds): bool
     {
         $elapsed = microtime(true) - $startTime;
+
         return $elapsed >= $timeoutSeconds;
     }
 

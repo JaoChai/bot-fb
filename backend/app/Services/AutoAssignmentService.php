@@ -14,6 +14,7 @@ class AutoAssignmentService
      * Assignment modes
      */
     public const MODE_ROUND_ROBIN = 'round_robin';
+
     public const MODE_LOAD_BALANCED = 'load_balanced';
 
     /**
@@ -25,7 +26,7 @@ class AutoAssignmentService
         $settings = $bot->settings;
 
         // Check if auto-assignment is enabled
-        if (!$settings?->auto_assignment_enabled) {
+        if (! $settings?->auto_assignment_enabled) {
             return null;
         }
 
@@ -37,6 +38,7 @@ class AutoAssignmentService
                 'bot_id' => $bot->id,
                 'conversation_id' => $conversation->id,
             ]);
+
             return null;
         }
 
@@ -88,6 +90,7 @@ class AutoAssignmentService
             $lastIndex = array_search($lastAssignedUserId, $adminIds);
             if ($lastIndex !== false) {
                 $nextIndex = ($lastIndex + 1) % count($adminIds);
+
                 return $admins->firstWhere('id', $adminIds[$nextIndex]);
             }
         }
@@ -111,7 +114,7 @@ class AutoAssignmentService
         // Add assigned admins
         $assignedAdmins = $bot->admins()->get();
         foreach ($assignedAdmins as $admin) {
-            if (!$admins->contains('id', $admin->id)) {
+            if (! $admins->contains('id', $admin->id)) {
                 $admins->push($admin);
             }
         }

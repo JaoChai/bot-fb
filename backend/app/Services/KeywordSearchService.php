@@ -20,9 +20,9 @@ class KeywordSearchService
     /**
      * Search for document chunks using keyword matching.
      *
-     * @param int $knowledgeBaseId The knowledge base to search in
-     * @param string $query The search query
-     * @param int $limit Maximum number of results
+     * @param  int  $knowledgeBaseId  The knowledge base to search in
+     * @param  string  $query  The search query
+     * @param  int  $limit  Maximum number of results
      * @return Collection Collection of search results with ts_rank scores
      */
     public function search(
@@ -33,6 +33,7 @@ class KeywordSearchService
         // Skip if not PostgreSQL
         if (DB::connection()->getDriverName() !== 'pgsql') {
             Log::warning('KeywordSearchService: Full-text search requires PostgreSQL');
+
             return collect([]);
         }
 
@@ -86,6 +87,7 @@ class KeywordSearchService
                 'query' => substr($query, 0, 100),
                 'error' => $e->getMessage(),
             ]);
+
             return collect([]);
         }
     }
@@ -93,9 +95,9 @@ class KeywordSearchService
     /**
      * Search multiple knowledge bases using keywords.
      *
-     * @param array $kbConfigs Array of KB configs: [['id' => int, 'kb_top_k' => int], ...]
-     * @param string $query The search query
-     * @param int $totalLimit Maximum total results across all KBs
+     * @param  array  $kbConfigs  Array of KB configs: [['id' => int, 'kb_top_k' => int], ...]
+     * @param  string  $query  The search query
+     * @param  int  $totalLimit  Maximum total results across all KBs
      * @return Collection Merged results sorted by keyword score
      */
     public function searchMultiple(
@@ -118,6 +120,7 @@ class KeywordSearchService
             // Add KB ID to each result
             $results = $results->map(function ($item) use ($kbId) {
                 $item['knowledge_base_id'] = $kbId;
+
                 return $item;
             });
 

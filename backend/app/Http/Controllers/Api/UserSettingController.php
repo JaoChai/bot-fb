@@ -3,8 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\UserSetting;
-use App\Services\OpenRouterService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -47,7 +45,7 @@ class UserSettingController extends Controller
         $settings = $user->getOrCreateSettings();
 
         // Only update API key if provided (not empty)
-        if (!empty($validated['api_key'])) {
+        if (! empty($validated['api_key'])) {
             $settings->openrouter_api_key = $validated['api_key'];
         }
 
@@ -78,10 +76,10 @@ class UserSettingController extends Controller
         $settings = $user->getOrCreateSettings();
 
         // Only update if provided
-        if (!empty($validated['channel_secret'])) {
+        if (! empty($validated['channel_secret'])) {
             $settings->line_channel_secret = $validated['channel_secret'];
         }
-        if (!empty($validated['channel_access_token'])) {
+        if (! empty($validated['channel_access_token'])) {
             $settings->line_channel_access_token = $validated['channel_access_token'];
         }
 
@@ -105,7 +103,7 @@ class UserSettingController extends Controller
         $user = $request->user();
         $settings = $user->settings;
 
-        if (!$settings?->hasOpenRouterKey()) {
+        if (! $settings?->hasOpenRouterKey()) {
             return response()->json([
                 'success' => false,
                 'message' => 'OpenRouter API key not configured',
@@ -114,7 +112,7 @@ class UserSettingController extends Controller
 
         try {
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $settings->openrouter_api_key,
+                'Authorization' => 'Bearer '.$settings->openrouter_api_key,
             ])
                 ->timeout(10)
                 ->post('https://openrouter.ai/api/v1/chat/completions', [
@@ -128,20 +126,22 @@ class UserSettingController extends Controller
             if ($response->successful()) {
                 return response()->json([
                     'success' => true,
-                    'message' => 'Connection successful! Model: ' . $settings->openrouter_model,
+                    'message' => 'Connection successful! Model: '.$settings->openrouter_model,
                 ]);
             }
 
             $error = $response->json('error.message', 'Unknown error');
+
             return response()->json([
                 'success' => false,
                 'message' => "API error: {$error}",
             ], 400);
         } catch (\Exception $e) {
             Log::warning('OpenRouter test failed', ['error' => $e->getMessage()]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Connection failed: ' . $e->getMessage(),
+                'message' => 'Connection failed: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -154,7 +154,7 @@ class UserSettingController extends Controller
         $user = $request->user();
         $settings = $user->settings;
 
-        if (!$settings?->hasLineCredentials()) {
+        if (! $settings?->hasLineCredentials()) {
             return response()->json([
                 'success' => false,
                 'message' => 'LINE credentials not configured',
@@ -164,30 +164,33 @@ class UserSettingController extends Controller
         try {
             // Test by getting bot info
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $settings->line_channel_access_token,
+                'Authorization' => 'Bearer '.$settings->line_channel_access_token,
             ])
                 ->timeout(10)
                 ->get('https://api.line.me/v2/bot/info');
 
             if ($response->successful()) {
                 $botInfo = $response->json();
+
                 return response()->json([
                     'success' => true,
-                    'message' => 'Connected to LINE Bot: ' . ($botInfo['displayName'] ?? 'Unknown'),
+                    'message' => 'Connected to LINE Bot: '.($botInfo['displayName'] ?? 'Unknown'),
                     'bot_name' => $botInfo['displayName'] ?? null,
                 ]);
             }
 
             $error = $response->json('message', 'Unknown error');
+
             return response()->json([
                 'success' => false,
                 'message' => "LINE API error: {$error}",
             ], 400);
         } catch (\Exception $e) {
             Log::warning('LINE test failed', ['error' => $e->getMessage()]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Connection failed: ' . $e->getMessage(),
+                'message' => 'Connection failed: '.$e->getMessage(),
             ], 500);
         }
     }
