@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   LineChart,
   Line,
@@ -48,6 +48,7 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  Crown,
 } from 'lucide-react';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
@@ -103,6 +104,17 @@ export function OrdersAnalytics() {
   const { data: ordersData, isLoading: ordersLoading } = useOrders(filters, { enabled: activeTab === 'orders' });
   const { data: customersData, isLoading: customersLoading } = useOrdersByCustomer(filters, { enabled: activeTab === 'customers' });
   const { data: productsData, isLoading: productsLoading } = useOrdersByProduct(filters, { enabled: activeTab === 'overview' || activeTab === 'products' });
+
+  const vipStats = useMemo(() => {
+    if (!customersData || customersData.length === 0) return null;
+    const vipCustomers = customersData.filter((c) => c.is_vip);
+    const vipCount = vipCustomers.length;
+    if (vipCount === 0) return null;
+    const vipSpent = vipCustomers.reduce((sum, c) => sum + c.total_spent, 0);
+    const totalSpent = customersData.reduce((sum, c) => sum + c.total_spent, 0);
+    const vipPercentage = totalSpent > 0 ? (vipSpent / totalSpent) * 100 : 0;
+    return { vipCount, vipSpent, vipPercentage, totalCustomers: customersData.length };
+  }, [customersData]);
 
   if (summaryLoading) {
     return (
@@ -422,6 +434,31 @@ export function OrdersAnalytics() {
               <div className="text-muted-foreground">กำลังโหลด...</div>
             </div>
           ) : customersData && customersData.length > 0 ? (
+            <>
+              {/* VIP Summary Cards */}
+              {vipStats && (
+                <div className="grid gap-4 md:grid-cols-3">
+                  <DashboardStatCard
+                    title="VIP ทั้งหมด"
+                    value={`${vipStats.vipCount} คน`}
+                    description={`จาก ${vipStats.totalCustomers} คน`}
+                    icon={Crown}
+                  />
+                  <DashboardStatCard
+                    title="ยอดซื้อ VIP"
+                    value={formatBaht(vipStats.vipSpent)}
+                    description={`${vipStats.vipCount} ลูกค้า VIP`}
+                    icon={DollarSign}
+                  />
+                  <DashboardStatCard
+                    title="สัดส่วน VIP"
+                    value={`${vipStats.vipPercentage.toFixed(1)}%`}
+                    description="ของยอดขายทั้งหมด"
+                    icon={TrendingUp}
+                  />
+                </div>
+              )}
+
             <Card>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
@@ -438,7 +475,14 @@ export function OrdersAnalytics() {
                       {customersData.map((customer) => (
                         <TableRow key={customer.customer_profile_id}>
                           <TableCell className="font-medium">
-                            {customer.customer_name}
+                            <span className="flex items-center gap-2">
+                              {customer.customer_name}
+                              {customer.is_vip && (
+                                <Badge className="bg-amber-500/15 text-amber-700 border-amber-200 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-800">
+                                  VIP
+                                </Badge>
+                              )}
+                            </span>
                           </TableCell>
                           <TableCell className="text-right">
                             {customer.order_count}
@@ -460,6 +504,7 @@ export function OrdersAnalytics() {
                 </div>
               </CardContent>
             </Card>
+            </>
           ) : (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
