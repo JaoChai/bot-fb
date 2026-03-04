@@ -28,9 +28,9 @@ class JinaRerankerService
 
     public function __construct()
     {
-        $this->apiKey = config('services.jina.api_key', '');
-        $this->baseUrl = config('services.jina.base_url', 'https://api.jina.ai/v1');
-        $this->model = config('services.jina.rerank_model', 'jina-reranker-v2-base-multilingual');
+        $this->apiKey = config('services.jina.api_key') ?? '';
+        $this->baseUrl = config('services.jina.base_url') ?? 'https://api.jina.ai/v1';
+        $this->model = config('services.jina.rerank_model') ?? 'jina-reranker-v2-base-multilingual';
         $this->timeout = (int) config('services.jina.timeout', 30);
         $this->enabled = (bool) config('rag.reranking.enabled', false);
     }
