@@ -1,12 +1,13 @@
-name: PR Validation
+name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 concurrency:
-  group: pr-check-${{ github.head_ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -14,69 +15,71 @@ jobs:
     name: Backend Tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup PHP 8.4
-        uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.4"
           extensions: mbstring, pdo, pdo_sqlite, sqlite3
           coverage: none
-
       - name: Get Composer cache directory
         id: composer-cache
         run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Composer dependencies
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: composer-${{ hashFiles('backend/composer.lock') }}
           restore-keys: composer-
-
       - name: Install dependencies
         working-directory: backend
         run: composer install --no-interaction --prefer-dist
-
       - name: Run tests
         working-directory: backend
         run: php artisan test
-
       - name: Check code style
         working-directory: backend
         run: vendor/bin/pint --test
 
-  frontend-tests:
-    name: Frontend Tests
+  frontend-checks:
+    name: Frontend Checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
-
       - name: Run linter
         working-directory: frontend
         run: npm run lint
-
       - name: Run tests
         working-directory: frontend
         run: npm run test
-
       - name: TypeScript check
         working-directory: frontend
         run: npx tsc --noEmit
+
+  post-deploy-smoke:
+    name: Post-Deploy Smoke Test
+    needs: [backend-tests, frontend-checks]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wait for Railway deployment
+        run: sleep 180
+      - name: Check Backend Health
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.botjao.com/up)
+          echo "Backend: $STATUS"
+          [ "$STATUS" = "200" ] || exit 1
+      - name: Check Frontend Health
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://www.botjao.com/health)
+          echo "Frontend: $STATUS"
+          [ "$STATUS" = "200" ] || exit 1
