@@ -224,12 +224,15 @@ class OrderController extends Controller
                     DB::raw('COUNT(*) as order_count'),
                     DB::raw('COALESCE(SUM(total_amount), 0) as total_spent'),
                     DB::raw('MAX(orders.created_at) as last_order_at'),
+                    DB::raw("BOOL_OR(conversations.memory_notes::text ILIKE '%VIP%') as is_vip"),
                 ])
                 ->join('customer_profiles', 'orders.customer_profile_id', '=', 'customer_profiles.id')
+                ->leftJoin('conversations', 'conversations.customer_profile_id', '=', 'customer_profiles.id')
                 ->whereIn('orders.bot_id', $botFilter)
                 ->whereBetween('orders.created_at', [$startDate, $endDate])
                 ->whereNotNull('customer_profile_id')
                 ->groupBy('customer_profile_id', 'customer_profiles.display_name', 'customer_profiles.picture_url')
+                ->orderByDesc('is_vip')
                 ->orderByDesc('total_spent')
                 ->limit(100)
                 ->get()
@@ -240,6 +243,7 @@ class OrderController extends Controller
                     'order_count' => (int) $row->order_count,
                     'total_spent' => (float) $row->total_spent,
                     'last_order_at' => $row->last_order_at,
+                    'is_vip' => (bool) $row->is_vip,
                 ]);
         });
 

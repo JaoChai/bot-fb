@@ -685,6 +685,7 @@ export interface CustomerOrderBreakdown {
   order_count: number;
   total_spent: number;
   last_order_at: string;
+  is_vip: boolean;
 }
 
 export interface ProductOrderBreakdown {
