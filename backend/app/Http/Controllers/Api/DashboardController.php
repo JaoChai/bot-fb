@@ -65,6 +65,8 @@ class DashboardController extends Controller
                 'active_conversations' => 0,
                 'handover_conversations' => 0,
                 'messages_today' => 0,
+                'vip_customers' => 0,
+                'vip_total_spent' => 0,
             ];
         }
 
@@ -94,6 +96,17 @@ class DashboardController extends Controller
                     AND c.deleted_at IS NULL
                     AND m.created_at >= CURRENT_DATE
                     AND m.created_at < CURRENT_DATE + INTERVAL '1 day'
+            ),
+            vip_stats AS (
+                SELECT
+                    COUNT(DISTINCT cp.id) as vip_customers,
+                    COALESCE(SUM(o.total_amount), 0) as vip_total_spent
+                FROM customer_profiles cp
+                INNER JOIN conversations c ON c.customer_profile_id = cp.id
+                INNER JOIN orders o ON o.customer_profile_id = cp.id
+                WHERE c.bot_id IN ({$botIdsStr})
+                    AND c.deleted_at IS NULL
+                    AND c.memory_notes::text ILIKE '%VIP%'
             )
             SELECT
                 bs.total_bots,
@@ -101,10 +114,13 @@ class DashboardController extends Controller
                 cs.total_conversations,
                 cs.active_conversations,
                 cs.handover_conversations,
-                mt.messages_today
+                mt.messages_today,
+                vs.vip_customers,
+                vs.vip_total_spent
             FROM bot_stats bs
             CROSS JOIN conv_stats cs
             CROSS JOIN msg_today mt
+            CROSS JOIN vip_stats vs
         ");
 
         return [
@@ -114,6 +130,8 @@ class DashboardController extends Controller
             'active_conversations' => (int) ($stats->active_conversations ?? 0),
             'handover_conversations' => (int) ($stats->handover_conversations ?? 0),
             'messages_today' => (int) ($stats->messages_today ?? 0),
+            'vip_customers' => (int) ($stats->vip_customers ?? 0),
+            'vip_total_spent' => (float) ($stats->vip_total_spent ?? 0),
         ];
     }
 

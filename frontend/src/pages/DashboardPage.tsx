@@ -1,6 +1,6 @@
 import { useAuthStore } from '@/stores/authStore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bot, MessageSquare, Zap, Users, Banknote, Plus, ShoppingCart, DollarSign } from 'lucide-react';
+import { Bot, MessageSquare, Zap, Users, Banknote, Plus, ShoppingCart, DollarSign, Crown } from 'lucide-react';
 import { formatTHB, formatBaht } from '@/lib/currency';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
@@ -151,6 +151,14 @@ export function DashboardPage() {
               description={`${orderData?.summary?.this_month_orders ?? 0} ออเดอร์`}
               icon={DollarSign}
             />
+            {(data?.summary.vip_customers ?? 0) > 0 && (
+              <DashboardStatCard
+                title="ลูกค้า VIP"
+                value={`${data?.summary.vip_customers ?? 0} คน`}
+                description={`ยอดซื้อรวม ${formatBaht(data?.summary.vip_total_spent ?? 0)}`}
+                icon={Crown}
+              />
+            )}
           </div>
 
           {/* Bot Overview Cards */}
