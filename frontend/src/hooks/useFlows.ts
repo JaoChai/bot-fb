@@ -85,7 +85,7 @@ export function useUpdateFlow(botId: number | null, flowId: number | null) {
       );
 
       // Extract only safe fields to update (exclude knowledge_bases which has different type)
-      const { knowledge_bases: _kb, ...safeData } = data;
+      const { knowledge_bases: _kb, ...safeData } = data; // eslint-disable-line @typescript-eslint/no-unused-vars
       const partialUpdate = safeData as Partial<Flow>;
 
       // Optimistically update detail cache

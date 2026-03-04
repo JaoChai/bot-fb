@@ -104,9 +104,10 @@ export function ChatInputArea({
         </div>
       );
 
-    default:
+    default: {
       // Exhaustive check - TypeScript will error if we miss a case
       const _exhaustive: never = inputState.type;
       return _exhaustive;
+    }
   }
 }

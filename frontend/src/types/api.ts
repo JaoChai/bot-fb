@@ -305,7 +305,7 @@ export interface CreateFlowData {
   second_ai_options?: SecondAIOptions;
 }
 
-export interface UpdateFlowData extends Partial<CreateFlowData> {}
+export type UpdateFlowData = Partial<CreateFlowData>;
 
 // Semantic Search Types
 export interface SearchResult {

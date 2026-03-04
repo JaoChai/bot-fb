@@ -53,11 +53,6 @@ export function TeamPage() {
 
   const deferredSearch = useDeferredValue(searchEmail);
 
-  // Redirect non-owners
-  if (user?.role !== 'owner') {
-    return <Navigate to="/dashboard" replace />;
-  }
-
   const { data: botsResponse, isLoading: botsLoading } = useBots();
   const bots = botsResponse?.data;
   const { data: admins, isLoading: adminsLoading } = useBotAdminsWithCounts(selectedBotId);
@@ -65,6 +60,11 @@ export function TeamPage() {
   const addAdmin = useAddAdmin(selectedBotId);
   const removeAdmin = useRemoveAdmin(selectedBotId);
   const updateAutoAssignment = useUpdateAutoAssignment(selectedBotId);
+
+  // Redirect non-owners
+  if (user?.role !== 'owner') {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   const selectedBot = bots?.find((b: { id: number }) => b.id === selectedBotId);
 

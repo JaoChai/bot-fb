@@ -60,7 +60,7 @@ export function SettingsPage() {
       setApiKey('');
       setTestStatus('idle');
       toast.success('บันทึก API Key สำเร็จ');
-    } catch (error) {
+    } catch {
       toast.error('ไม่สามารถบันทึก API Key ได้');
     }
   };
@@ -75,7 +75,7 @@ export function SettingsPage() {
         setTestStatus('error');
         toast.error(result.message || 'เชื่อมต่อไม่สำเร็จ');
       }
-    } catch (error) {
+    } catch {
       setTestStatus('error');
       toast.error('ไม่สามารถทดสอบการเชื่อมต่อได้');
     }
@@ -88,7 +88,7 @@ export function SettingsPage() {
       await clearMutation.mutateAsync();
       setTestStatus('idle');
       toast.success('ลบ API Key สำเร็จ');
-    } catch (error) {
+    } catch {
       toast.error('ไม่สามารถลบ API Key ได้');
     }
   };

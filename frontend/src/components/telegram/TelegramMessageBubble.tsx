@@ -122,7 +122,7 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
           </div>
         );
 
-      case 'file':
+      case 'file': {
         const fileName = (metadata?.file_name as string) || 'ไฟล์';
         return (
           <a
@@ -148,6 +148,7 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
             <Download className="h-4 w-4 flex-shrink-0 opacity-60" />
           </a>
         );
+      }
 
       case 'sticker':
         return (
@@ -165,7 +166,7 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
           </div>
         );
 
-      case 'location':
+      case 'location': {
         const lat = metadata?.latitude as number;
         const lng = metadata?.longitude as number;
         const title = metadata?.title as string;
@@ -198,8 +199,9 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
             <ExternalLink className="h-4 w-4 flex-shrink-0 opacity-60" />
           </a>
         );
+      }
 
-      case 'contact':
+      case 'contact': {
         const contactName = [
           metadata?.first_name as string,
           metadata?.last_name as string,
@@ -224,8 +226,9 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
             </div>
           </div>
         );
+      }
 
-      case 'poll':
+      case 'poll': {
         const question = metadata?.question as string;
         const options = toSafeArray<string>(metadata?.options);
 
@@ -247,6 +250,7 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
             </div>
           </div>
         );
+      }
 
       default:
         return (

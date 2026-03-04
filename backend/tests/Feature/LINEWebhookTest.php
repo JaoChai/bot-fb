@@ -27,7 +27,7 @@ class LINEWebhookTest extends TestCase
             'channel_type' => 'line',
             'channel_secret' => $this->channelSecret,
             'channel_access_token' => 'test_access_token',
-            'webhook_url' => config('app.url') . '/webhook/test_webhook_token_123',
+            'webhook_url' => config('app.url') . '/api/webhook/test_webhook_token_123',
         ]);
     }
 
@@ -59,7 +59,7 @@ class LINEWebhookTest extends TestCase
             ],
         ]);
 
-        $response = $this->postJson('/webhook/test_webhook_token_123', json_decode($body, true), [
+        $response = $this->postJson('/api/webhook/test_webhook_token_123', json_decode($body, true), [
             'X-Line-Signature' => $this->generateSignature($body),
         ]);
 
@@ -83,7 +83,7 @@ class LINEWebhookTest extends TestCase
             ],
         ]);
 
-        $this->postJson('/webhook/test_webhook_token_123', json_decode($body, true), [
+        $this->postJson('/api/webhook/test_webhook_token_123', json_decode($body, true), [
             'X-Line-Signature' => $this->generateSignature($body),
         ]);
 
@@ -94,7 +94,7 @@ class LINEWebhookTest extends TestCase
     {
         $body = json_encode(['events' => []]);
 
-        $response = $this->postJson('/webhook/invalid_token', [], [
+        $response = $this->postJson('/api/webhook/invalid_token', [], [
             'X-Line-Signature' => $this->generateSignature($body),
         ]);
 
@@ -104,7 +104,7 @@ class LINEWebhookTest extends TestCase
 
     public function test_webhook_returns_401_for_missing_signature(): void
     {
-        $response = $this->postJson('/webhook/test_webhook_token_123', [
+        $response = $this->postJson('/api/webhook/test_webhook_token_123', [
             'events' => [],
         ]);
 
@@ -116,7 +116,7 @@ class LINEWebhookTest extends TestCase
     {
         $body = json_encode(['events' => []]);
 
-        $response = $this->postJson('/webhook/test_webhook_token_123', json_decode($body, true), [
+        $response = $this->postJson('/api/webhook/test_webhook_token_123', json_decode($body, true), [
             'X-Line-Signature' => 'invalid_signature',
         ]);
 
@@ -132,12 +132,12 @@ class LINEWebhookTest extends TestCase
             'user_id' => $this->user->id,
             'channel_type' => 'facebook',
             'channel_secret' => $this->channelSecret,
-            'webhook_url' => config('app.url') . '/webhook/facebook_token_123',
+            'webhook_url' => config('app.url') . '/api/webhook/facebook_token_123',
         ]);
 
         $body = json_encode(['events' => []]);
 
-        $response = $this->postJson('/webhook/facebook_token_123', json_decode($body, true), [
+        $response = $this->postJson('/api/webhook/facebook_token_123', json_decode($body, true), [
             'X-Line-Signature' => $this->generateSignature($body),
         ]);
 
@@ -152,7 +152,7 @@ class LINEWebhookTest extends TestCase
 
         $body = json_encode(['events' => []]);
 
-        $response = $this->postJson('/webhook/test_webhook_token_123', json_decode($body, true), [
+        $response = $this->postJson('/api/webhook/test_webhook_token_123', json_decode($body, true), [
             'X-Line-Signature' => $this->generateSignature($body),
         ]);
 
@@ -169,7 +169,7 @@ class LINEWebhookTest extends TestCase
         // LINE sends empty body for verification
         $body = json_encode(['destination' => 'U12345']);
 
-        $response = $this->postJson('/webhook/test_webhook_token_123', json_decode($body, true), [
+        $response = $this->postJson('/api/webhook/test_webhook_token_123', json_decode($body, true), [
             'X-Line-Signature' => $this->generateSignature($body),
         ]);
 
@@ -194,7 +194,7 @@ class LINEWebhookTest extends TestCase
             ],
         ]);
 
-        $this->postJson('/webhook/test_webhook_token_123', json_decode($body, true), [
+        $this->postJson('/api/webhook/test_webhook_token_123', json_decode($body, true), [
             'X-Line-Signature' => $this->generateSignature($body),
         ]);
 
@@ -211,7 +211,7 @@ class LINEWebhookTest extends TestCase
             ],
         ]);
 
-        $this->postJson('/webhook/test_webhook_token_123', json_decode($body, true), [
+        $this->postJson('/api/webhook/test_webhook_token_123', json_decode($body, true), [
             'X-Line-Signature' => $this->generateSignature($body),
         ])->assertStatus(200);
     }
@@ -222,7 +222,7 @@ class LINEWebhookTest extends TestCase
 
         $body = json_encode(['events' => []]);
 
-        $response = $this->postJson('/webhook/test_webhook_token_123', json_decode($body, true), [
+        $response = $this->postJson('/api/webhook/test_webhook_token_123', json_decode($body, true), [
             'X-Line-Signature' => $this->generateSignature($body),
         ]);
 

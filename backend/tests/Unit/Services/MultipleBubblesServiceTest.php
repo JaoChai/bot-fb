@@ -7,6 +7,7 @@ use App\Models\Bot;
 use App\Models\BotSetting;
 use App\Services\LINEService;
 use App\Services\MultipleBubblesService;
+use App\Services\PaymentFlexService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
@@ -25,6 +26,15 @@ class MultipleBubblesServiceTest extends TestCase
     {
         Mockery::close();
         parent::tearDown();
+    }
+
+    protected function createPaymentFlexMock(): PaymentFlexService
+    {
+        $mock = Mockery::mock(PaymentFlexService::class);
+        $mock->shouldReceive('tryConvertToFlex')
+            ->andReturnUsing(fn (string $bubble) => $bubble);
+
+        return $mock;
     }
 
     /**
@@ -74,14 +84,15 @@ class MultipleBubblesServiceTest extends TestCase
 
         $bot = $this->createBotWithSettings();
 
-        // Mock LINEService to verify reply is called
+        // Mock LINEService to verify replyWithFallback is called
         $lineService = Mockery::mock(LINEService::class);
-        $lineService->shouldReceive('reply')
+        $lineService->shouldReceive('generateRetryKey')->andReturn('retry-key');
+        $lineService->shouldReceive('replyWithFallback')
             ->once()
-            ->with($bot, 'reply_token', ['Hello'])
-            ->andReturn(true);
+            ->with($bot, 'reply_token', 'U_user_123', ['Hello'], 'retry-key')
+            ->andReturn(['method' => 'reply', 'success' => true]);
 
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $result = $service->sendBubbles(
             $bot,
@@ -102,14 +113,15 @@ class MultipleBubblesServiceTest extends TestCase
 
         $bot = $this->createBotWithSettings(['wait_multiple_bubbles_ms' => 1000]);
 
-        // Mock LINEService - only first bubble uses reply
+        // Mock LINEService - only first bubble uses replyWithFallback
         $lineService = Mockery::mock(LINEService::class);
-        $lineService->shouldReceive('reply')
+        $lineService->shouldReceive('generateRetryKey')->andReturn('retry-key');
+        $lineService->shouldReceive('replyWithFallback')
             ->once()
-            ->with($bot, 'reply_token', ['Bubble 1'])
-            ->andReturn(true);
+            ->with($bot, 'reply_token', 'U_user_123', ['Bubble 1'], 'retry-key')
+            ->andReturn(['method' => 'reply', 'success' => true]);
 
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $result = $service->sendBubbles(
             $bot,
@@ -147,14 +159,15 @@ class MultipleBubblesServiceTest extends TestCase
 
         $bot = $this->createBotWithSettings();
 
-        // Mock LINEService - first bubble uses push (no reply token)
+        // Mock LINEService - first bubble uses replyWithFallback (handles null token internally)
         $lineService = Mockery::mock(LINEService::class);
-        $lineService->shouldReceive('push')
+        $lineService->shouldReceive('generateRetryKey')->andReturn('retry-key');
+        $lineService->shouldReceive('replyWithFallback')
             ->once()
-            ->with($bot, 'U_user_123', ['Bubble 1'])
-            ->andReturn(true);
+            ->with($bot, null, 'U_user_123', ['Bubble 1'], 'retry-key')
+            ->andReturn(['method' => 'push', 'success' => true]);
 
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $result = $service->sendBubbles(
             $bot,
@@ -178,16 +191,17 @@ class MultipleBubblesServiceTest extends TestCase
 
         // Mock LINEService - both bubbles sent immediately
         $lineService = Mockery::mock(LINEService::class);
-        $lineService->shouldReceive('reply')
+        $lineService->shouldReceive('generateRetryKey')->andReturn('retry-key');
+        $lineService->shouldReceive('replyWithFallback')
             ->once()
-            ->with($bot, 'reply_token', ['Bubble 1'])
-            ->andReturn(true);
+            ->with($bot, 'reply_token', 'U_user_123', ['Bubble 1'], 'retry-key')
+            ->andReturn(['method' => 'reply', 'success' => true]);
         $lineService->shouldReceive('push')
             ->once()
-            ->with($bot, 'U_user_123', ['Bubble 2'])
+            ->with($bot, 'U_user_123', ['Bubble 2'], 'retry-key')
             ->andReturn(true);
 
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $result = $service->sendBubbles(
             $bot,
@@ -206,7 +220,7 @@ class MultipleBubblesServiceTest extends TestCase
     {
         $bot = $this->createBotWithSettings();
         $lineService = Mockery::mock(LINEService::class);
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $result = $service->sendBubbles(
             $bot,
@@ -226,11 +240,12 @@ class MultipleBubblesServiceTest extends TestCase
 
         // Mock LINEService to throw exception
         $lineService = Mockery::mock(LINEService::class);
-        $lineService->shouldReceive('reply')
+        $lineService->shouldReceive('generateRetryKey')->andReturn('retry-key');
+        $lineService->shouldReceive('replyWithFallback')
             ->once()
             ->andThrow(new \Exception('Invalid reply token'));
 
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $result = $service->sendBubbles(
             $bot,
@@ -249,7 +264,7 @@ class MultipleBubblesServiceTest extends TestCase
     {
         $bot = $this->createBotWithSettings();
         $lineService = Mockery::mock(LINEService::class);
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $bubbles = $service->parseIntoBubbles('Hello|||World|||Test', $bot);
 
@@ -261,7 +276,7 @@ class MultipleBubblesServiceTest extends TestCase
     {
         $bot = $this->createBotWithSettings(['multiple_bubbles_max' => 2]);
         $lineService = Mockery::mock(LINEService::class);
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $bubbles = $service->parseIntoBubbles('One|||Two|||Three|||Four', $bot);
 
@@ -275,7 +290,7 @@ class MultipleBubblesServiceTest extends TestCase
     {
         $bot = $this->createBotWithSettings();
         $lineService = Mockery::mock(LINEService::class);
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $bubbles = $service->parseIntoBubbles('  Hello  |||  World  ', $bot);
 
@@ -286,7 +301,7 @@ class MultipleBubblesServiceTest extends TestCase
     {
         $bot = $this->createBotWithSettings();
         $lineService = Mockery::mock(LINEService::class);
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $bubbles = $service->parseIntoBubbles('Hello||||||World', $bot);
 
@@ -298,7 +313,7 @@ class MultipleBubblesServiceTest extends TestCase
     {
         $bot = $this->createBotWithSettings(['multiple_bubbles_max' => 3]);
         $lineService = Mockery::mock(LINEService::class);
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $bubbles = $service->parseIntoBubbles('One|||Two|||Three', $bot);
 
@@ -310,7 +325,7 @@ class MultipleBubblesServiceTest extends TestCase
     {
         $bot = $this->createBotWithSettings(['multiple_bubbles_max' => 2]);
         $lineService = Mockery::mock(LINEService::class);
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $content = 'สวัสดีครับ|||รายละเอียดสินค้า|||เลขบัญชี: 123-456-789';
         $bubbles = $service->parseIntoBubbles($content, $bot);
@@ -334,7 +349,7 @@ class MultipleBubblesServiceTest extends TestCase
 
         $bot = $this->createBotWithSettings(['multiple_bubbles_max' => 2]);
         $lineService = Mockery::mock(LINEService::class);
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $bubbles = $service->parseIntoBubbles('A|||B|||C|||D', $bot);
 
@@ -344,7 +359,7 @@ class MultipleBubblesServiceTest extends TestCase
     public function test_is_enabled_returns_correct_value(): void
     {
         $lineService = Mockery::mock(LINEService::class);
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $enabledBot = $this->createBotWithSettings(['multiple_bubbles_enabled' => true]);
         $disabledBot = $this->createBotWithSettings(['multiple_bubbles_enabled' => false]);
@@ -356,7 +371,7 @@ class MultipleBubblesServiceTest extends TestCase
     public function test_get_delay_ms_returns_configured_value(): void
     {
         $lineService = Mockery::mock(LINEService::class);
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $bot = $this->createBotWithSettings([
             'wait_multiple_bubbles_enabled' => true,
@@ -369,7 +384,7 @@ class MultipleBubblesServiceTest extends TestCase
     public function test_get_delay_ms_returns_zero_when_disabled(): void
     {
         $lineService = Mockery::mock(LINEService::class);
-        $service = new MultipleBubblesService($lineService);
+        $service = new MultipleBubblesService($lineService, $this->createPaymentFlexMock());
 
         $bot = $this->createBotWithSettings([
             'wait_multiple_bubbles_enabled' => false,

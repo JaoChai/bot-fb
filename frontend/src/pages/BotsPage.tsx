@@ -55,14 +55,14 @@ export function BotsPage() {
   const { toast } = useToast();
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [botToDelete, setBotToDelete] = useState<any | null>(null);
+  const [botToDelete, setBotToDelete] = useState<{ id: number; name: string } | null>(null);
   const [togglingBotId, setTogglingBotId] = useState<number | null>(null);
   // Local state for immediate UI updates - key fix for toggle not updating
   const [localStatuses, setLocalStatuses] = useState<Record<number, string>>({});
 
   const bots = botsResponse?.data || [];
 
-  const handleToggleStatus = useCallback(async (bot: any) => {
+  const handleToggleStatus = useCallback(async (bot: { id: number; name: string; status: string }) => {
     const currentStatus = localStatuses[bot.id] ?? bot.status;
     const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
     setTogglingBotId(bot.id);
@@ -118,7 +118,7 @@ export function BotsPage() {
     }
   };
 
-  const handleDeleteClick = (bot: any) => {
+  const handleDeleteClick = (bot: { id: number; name: string }) => {
     setBotToDelete(bot);
     setDeleteDialogOpen(true);
   };

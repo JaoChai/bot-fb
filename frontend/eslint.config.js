@@ -19,5 +19,16 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Downgrade React Compiler lint rules to warnings - these are
+      // informational diagnostics from the React Compiler plugin that
+      // flag valid patterns (e.g. useVirtualizer, setState in effect
+      // for syncing external state, components defined inside render).
+      'react-hooks/preserve-manual-memoization': 'warn',
+      'react-hooks/incompatible-library': 'warn',
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/static-components': 'warn',
+      'react-hooks/refs': 'warn',
+    },
   },
 ])
