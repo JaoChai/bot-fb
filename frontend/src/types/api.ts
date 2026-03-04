@@ -572,6 +572,8 @@ export interface DashboardSummary {
   active_conversations: number;
   handover_conversations: number;
   messages_today: number;
+  vip_customers: number;
+  vip_total_spent: number;
 }
 
 export interface DashboardBotSummary {
