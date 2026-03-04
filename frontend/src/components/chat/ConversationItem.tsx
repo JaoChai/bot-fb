@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { MessageCircle, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -31,38 +31,22 @@ export interface ConversationItemProps {
   conversation: Conversation;
   isSelected: boolean;
   onClick: (conversation: Conversation) => void;
-  /**
-   * T041: Callback for prefetching on hover
-   * Called after a short delay to avoid prefetching on quick mouse movements
-   */
-  onPrefetch?: (conversationId: number) => void;
-  /**
-   * Delay before triggering prefetch (ms)
-   * @default 150
-   */
-  prefetchDelay?: number;
 }
 
 /**
  * T029: Single conversation row component
- * T041: Supports prefetching on hover for cache warming
  * Displays customer avatar, name, last message preview, and unread badge
  */
 export const ConversationItem = memo(function ConversationItemInner({
   conversation,
   isSelected,
   onClick,
-  onPrefetch,
-  prefetchDelay = 150,
 }: ConversationItemProps) {
   // Channel detection - using centralized hook
   const { isTelegram, isGroup } = useChannelInfo(conversation);
 
   const isClosed = conversation.status === 'closed';
   const hasUnread = conversation.unread_count > 0;
-
-  // T041: Ref for prefetch timer
-  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Display name: group title for telegram groups, otherwise customer name
   const customerName = isGroup
@@ -86,29 +70,6 @@ export const ConversationItem = memo(function ConversationItemInner({
     onClick(conversation);
   }, [onClick, conversation]);
 
-  // T041: Handle mouse enter for prefetch
-  const handleMouseEnter = useCallback(() => {
-    if (!onPrefetch || isSelected) return;
-
-    // Clear any existing timer
-    if (prefetchTimerRef.current) {
-      clearTimeout(prefetchTimerRef.current);
-    }
-
-    // Start prefetch after delay
-    prefetchTimerRef.current = setTimeout(() => {
-      onPrefetch(conversation.id);
-    }, prefetchDelay);
-  }, [onPrefetch, isSelected, conversation.id, prefetchDelay]);
-
-  // T041: Handle mouse leave to cancel pending prefetch
-  const handleMouseLeave = useCallback(() => {
-    if (prefetchTimerRef.current) {
-      clearTimeout(prefetchTimerRef.current);
-      prefetchTimerRef.current = null;
-    }
-  }, []);
-
   // Simple row styling - no orange highlighting
   const rowClassName = cn(
     'w-full p-3 rounded-lg flex items-start gap-3 text-left transition-colors cursor-pointer',
@@ -121,8 +82,6 @@ export const ConversationItem = memo(function ConversationItemInner({
   return (
     <button
       onClick={handleClick}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       className={rowClassName}
     >
       {/* Avatar with channel indicator */}
@@ -178,7 +137,5 @@ export const ConversationItem = memo(function ConversationItemInner({
   prev.conversation.customer_profile?.display_name === next.conversation.customer_profile?.display_name &&
   prev.conversation.customer_profile?.picture_url === next.conversation.customer_profile?.picture_url &&
   prev.isSelected === next.isSelected &&
-  prev.onClick === next.onClick &&
-  prev.onPrefetch === next.onPrefetch &&
-  prev.prefetchDelay === next.prefetchDelay
+  prev.onClick === next.onClick
 );
