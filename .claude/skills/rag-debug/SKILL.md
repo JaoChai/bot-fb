@@ -230,6 +230,72 @@ Bot ID: [bot_id]
 | Thai search bad | English-only model | Use `text-embedding-3-large` |
 | Duplicate results | Same content chunks | Improve chunking, add dedup |
 
+## Semantic Cache Skip Logic
+
+The `shouldSkipCache()` method in `RAGService.php` decides whether to bypass semantic cache.
+Checks are ordered cheapest-to-most-expensive for early return.
+
+| # | Check | Cost | Config Key |
+|---|-------|------|------------|
+| 1 | Conversation history non-empty | ~0.1us | `rag.semantic_cache.skip_if_has_history` |
+| 2 | Message length <= threshold | ~0.5us | `rag.semantic_cache.skip_if_length_lte` (default 20) |
+| 3 | Conversation has `memory_notes` | ~0.1us | (no config, always checked) |
+| 4 | Regex pattern match | ~10-50us | `rag.semantic_cache.skip_patterns` |
+
+### `skip_if_has_history`
+
+- **Default:** `false` (env: `RAG_SEMANTIC_CACHE_SKIP_HAS_HISTORY`)
+- **When to enable:** Only if you want maximum safety — skips cache for any message in an ongoing conversation (~95% of traffic)
+- **Why default is false:** Conditions 1-3 (length, patterns, memory_notes) already catch most context-dependent messages
+- **Use case for true:** Conversations where even long, unique-looking messages depend heavily on prior turns (e.g., multi-step ordering flows)
+
+### How cache decision works
+
+```
+Message arrives
+  → skip_if_has_history=true && history non-empty? → SKIP
+  → mb_strlen(trim(msg)) <= 20? → SKIP (short = context-dependent)
+  → conversation.memory_notes not empty? → SKIP (personalized state)
+  → matches skip_patterns regex? → SKIP (standalone terms like "ยืนยัน")
+  → otherwise → USE CACHE (exact match first, then semantic similarity)
+```
+
+## Embedding Batching
+
+`EmbeddingService::generateBatch()` uses chunked batching for performance.
+
+### Pattern
+
+```php
+$chunks = array_chunk($texts, 25, true);  // preserve_keys = true
+foreach ($chunks as $chunkIndex => $chunk) {
+    $response = Http::post(..., ['input' => array_values($chunk)]);
+    $offset = array_key_first($chunk);
+    foreach ($data as $item) {
+        $embeddings[$offset + $item['index']] = $item['embedding'];
+    }
+}
+ksort($embeddings);
+return array_values($embeddings);
+```
+
+### Key details
+
+| Detail | Value | Why |
+|--------|-------|-----|
+| Batch size | 25 | OpenRouter/OpenAI embedding API limit per request |
+| `preserve_keys` | `true` | Keeps original array indices so `array_key_first($chunk)` gives correct offset |
+| `array_values($chunk)` | Strip keys before sending | API expects 0-indexed input array |
+| `$offset + $item['index']` | Re-map response indices | API returns 0-based index per batch; offset restores global position |
+| `ksort` + `array_values` | Final ordering | Ensures output order matches input order regardless of batch boundaries |
+| Inter-batch delay | `usleep(100_000)` (100ms) | Avoid rate limiting between chunks |
+
+### When to check
+
+- Embedding generation fails partway through large documents
+- Index ordering is wrong after re-embedding
+- Rate limit errors from OpenRouter on bulk operations
+
 ## Utility Scripts
 
 - `scripts/test_search.py` - Test search with sample queries

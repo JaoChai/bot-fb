@@ -74,6 +74,48 @@ timestamps
 
 **G3D Variants**: ผูกบัตร, เติมเงิน
 
+## Multi-Product Order Processing
+
+Orders can contain multiple products in a single transaction. The `product` variable from plugin extraction is a comma-separated string.
+
+**Parsing flow** (`OrderService::createFromPluginExtraction`):
+```php
+// Split comma-separated products: "Page, G3D x2, BM"
+$productParts = array_filter(array_map('trim', preg_split('/,\s*/', $rawProduct)));
+```
+
+**Quantity patterns** (checked per product part):
+| Pattern | Example | Regex |
+|---------|---------|-------|
+| `x{N}` suffix | `G3D x2` | `/^(.+?)\s*x(\d+)\s*$/u` |
+| `{N} ตัว/เพจ/ชุด/รายการ` | `เพจ 5 เพจ` | `/^(.+?)\s+(\d+)\s*(?:ตัว\|เพจ\|ชุด\|รายการ)\s*$/u` (backfill only) |
+
+**Per-product OrderItem creation**:
+- Each part is normalized via `OrderService::normalizeProductName()` then inserted as a separate `OrderItem`
+- **unit_price logic**: only calculated when `count($items) === 1` (single product) — set to `total_amount / quantity`
+- **Multi-product**: `unit_price` and `subtotal` are both `null` (cannot split total across products without per-item pricing)
+
+## Product Normalization Pipeline
+
+**`extractProductLines()`** (in `BackfillOrdersFromMessages`):
+1. Strip markdown bold markers (`**`)
+2. Match order block: `/ออเดอร์[:\s]*\n([\s\S]*?)(?=\n\n|\n\[|\nส่งใน|$)/u`
+3. Split into lines, strip leading bullets (`-` or `•`)
+4. Parse quantity from each line (x2 or Thai unit patterns)
+5. Normalize each product name via `OrderService::normalizeProductName()`
+
+**`extractProduct()`** (in `FlowPluginService` regex fallback):
+- Same regex to match `ออเดอร์:` block from bot message
+- Joins extracted lines with `, ` for comma-separated format
+- Used when AI variable extraction misses the `product` field
+
+**Conversation lookback**: `FlowPluginService::evaluateAndExecute()` fetches last **5 messages** for AI trigger evaluation context. The `extractProductLines()` method in backfill works on the single bot confirmation message (no lookback needed since all product info is in the confirmation).
+
+**Resolution sources**: Product info comes from one of these paths:
+1. **AI extraction** — LLM extracts `product` variable from conversation context (primary)
+2. **Regex fallback** — `extractProduct()` parses `ออเดอร์:` block from bot message when AI misses it
+3. **Backfill** — `extractProductLines()` parses historical confirmation messages retroactively
+
 ## VIP Detection
 
 ```php
@@ -86,6 +128,7 @@ timestamps
 
 ## Bank Constants
 
+**Receiving account** (in `PaymentFlexService`):
 ```php
 BANK_ACCOUNT   = '223-3-24880-3'
 BANK_NAME      = 'ธนาคารกสิกรไทย (KBANK)'
@@ -94,6 +137,21 @@ CLIPBOARD_TEXT = '2233248803'
 TERMS_URL      = 'https://mhhacoursecontent.my.canva.site/ads-vance'
 SUPPORT_LINE_ID = '@743ddeqy'
 ```
+
+**Source bank detection** (in `FlowPluginService::extractBank` and `BackfillOrdersFromMessages::extractBank`):
+
+| Keyword(s) | Normalized Label |
+|-------------|-----------------|
+| กสิกร, KBANK, K PLUS | กสิกรไทย (KBANK) |
+| ไทยพาณิชย์, SCB | ไทยพาณิชย์ (SCB) |
+| กรุงเทพ, BBL | กรุงเทพ (BBL) |
+| กรุงไทย, KTB | กรุงไทย (KTB) |
+| กรุงศรี, BAY | กรุงศรี (BAY) |
+| ทหารไทยธนชาต, ttb, TMB | ทหารไทยธนชาต (ttb) |
+| ออมสิน, GSB | ออมสิน (GSB) |
+| PromptPay, พร้อมเพย์ | PromptPay |
+
+Total: **8 banks** mapped from **17 keyword variants**. Detection uses `mb_stripos` (case-insensitive, multibyte-safe).
 
 ## Integration Flow
 
@@ -105,6 +163,71 @@ User Message → ProcessLINEWebhook → AI generates response
   → FlowPluginService.executePlugins()
     └─ Telegram notification + OrderService.createFromPluginExtraction()
 ```
+
+## Decimal Amount Parsing
+
+Amount extraction uses a 3-tier regex cascade (in both `FlowPluginService::extractAmount` and `BackfillOrdersFromMessages::extractAmount`):
+
+```php
+// 1. Highest priority: "เงินเข้าแล้ว 1,600.50 บาท"
+'/(?:เงินเข้าแล้ว\s*)([\d,]+\.?\d*)\s*บาท/u'
+
+// 2. Amount with checkmark: "1,600.50 บาท ✅"
+'/([\d,]+\.?\d*)\s*บาท\s*✅/u'
+
+// 3. Generic fallback: any "N บาท"
+'/([\d,]+\.?\d*)\s*บาท/u'
+```
+
+- Supports comma-separated thousands: `1,600`
+- Supports optional decimals: `1,600.50`
+- Backfill additionally strips `**` bold markers before matching
+- Amount is then cleaned: `str_replace([',', ' '], '', $raw)` and cast to float
+
+## raw_extraction Field
+
+The `orders.raw_extraction` column (jsonb) stores the original extraction data for debugging and audit.
+
+**From plugin extraction** (`OrderService::createFromPluginExtraction`):
+```json
+{
+  "amount": "1,600",
+  "product": "Page, G3D x2",
+  "source_bank": "กสิกรไทย (KBANK)",
+  "customer_name": "สมชาย",
+  "datetime": "04/03/2026 15:30"
+}
+```
+Stored as-is from the merged AI + regex fallback variables.
+
+**From backfill** (`BackfillOrdersFromMessages`):
+```json
+{
+  "source": "backfill",
+  "amount": 1600.00,
+  "bank": "กสิกรไทย (KBANK)",
+  "products": [
+    {"name": "Page", "quantity": 1, "category": "page", "variant": null},
+    {"name": "G3D", "quantity": 2, "category": "g3d", "variant": "ผูกบัตร"}
+  ]
+}
+```
+Note: backfill uses `json_encode()` explicitly and stores parsed (not raw) values. The `"source": "backfill"` flag distinguishes retroactive orders from live ones.
+
+## Plugin Variable Handling
+
+`OrderService::createFromPluginExtraction` supports **dual field names** for product:
+
+```php
+$rawProduct = $variables['product'] ?? $variables['product_category'] ?? null;
+```
+
+- `product` — primary field, extracted by AI from conversation context
+- `product_category` — fallback field, used by some older plugin message templates
+
+Both fields contain the same format: a string that may be comma-separated for multi-product orders (e.g., `"Page, G3D x2, BM"`).
+
+**Variable flow**: Plugin template `{product}` placeholder --> AI extracts value --> regex fallback if AI misses it --> merged into `$variables` array --> passed to `createFromPluginExtraction()`.
 
 ## Order Deduplication
 

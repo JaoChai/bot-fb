@@ -135,15 +135,140 @@ FROM bots WHERE id = $bot_id;
 | Telegram | [TELEGRAM_DEBUG.md](TELEGRAM_DEBUG.md) | Webhook setup, bot token |
 | WebSocket | [WEBSOCKET_DEBUG.md](WEBSOCKET_DEBUG.md) | Reverb, Echo auth |
 
+## Flex Message Detection
+
+Flex detection runs on the **full text before bubble splitting**. This is critical to understand when debugging missing Flex messages.
+
+```
+AI Response (full text)
+    ↓
+PaymentFlexService::tryConvertToFlex(fullText)  ← checks full text first
+    ↓
+If Flex detected → send as single Flex message (skip bubble splitting)
+If no Flex match → MultipleBubblesService::parseIntoBubbles → transformBubbles (per-bubble Flex check)
+```
+
+**Key behavior** (`ProcessLINEWebhook` line ~497):
+- Full text is checked first via `PaymentFlexService::tryConvertToFlex()`
+- If it returns an array (Flex detected), the entire response is sent as a single Flex message
+- If it returns a string (no Flex), normal bubble splitting takes over
+- When bubbles are enabled, each individual bubble is also checked for Flex via `transformBubbles()`
+
+**Detection order in PaymentFlexService** (most specific first):
+1. Payment message (`isPaymentMessage`) - requires bank account + total keyword
+2. Terms message (`isTermsMessage`) - requires "ยอมรับ" + "ข้อตกลง"
+3. Verify success (`isVerifySuccessMessage`) - requires "[ยืนยันชำระเงิน]" tag + amount
+4. Confirm message (`isConfirmMessage`) - requires total + "ยืนยัน" (least specific, checked last)
+
+**Image analysis path**: After vision AI responds, the same Flex detection applies to the response content. If bubbles are enabled, it uses `MultipleBubblesService`; otherwise, `PaymentFlexService::tryConvertToFlex()` runs directly on the response (`ProcessLINEWebhook` line ~1124).
+
+## FlowPluginService Debugging
+
+Plugins execute **after** bot message is sent. The flow is:
+
+```
+Bot sends reply → FlowPluginService::executePlugins()
+                      ↓
+                  Load enabled plugins for current flow
+                      ↓
+                  For each plugin:
+                    1. Keyword pre-filter (cheap, no API call)
+                    2. AI evaluation via gpt-4o-mini (triggered check)
+                    3. Variable extraction + template formatting
+                    4. Send Telegram notification
+                    5. Record order from extracted data
+```
+
+### Keyword Pre-filter
+
+The keyword pre-filter (`passesKeywordFilter`) is a cost-saving mechanism:
+- Checks `plugin.config.trigger_keywords` array against bot message content
+- If no keywords configured (empty array) → filter passes (backward compatible)
+- If keywords exist → at least one must appear in `$botMessage->content` (case-insensitive, `mb_strtolower`)
+- Only if keywords match does the system call the AI evaluation (saves API costs)
+
+### Rate Limiting
+
+Rate limiting applies **only on successful trigger**, not on all attempts:
+- Cache key: `plugin_exec:{plugin_id}:{conversation_id}`
+- Duration: 60 seconds
+- Rate limit check happens **before** `evaluateAndExecute()`
+- `Cache::put()` only runs when `$triggered === true` (after AI confirms)
+- This means: keyword filter fail, AI "not triggered", or execution error do NOT consume rate limit
+
+### Plugin Auto-Disable
+
+Telegram plugins auto-disable on auth errors:
+- HTTP 401, 403, 404 from Telegram API → `plugin.update(['enabled' => false])`
+- Check `flow_plugins.enabled` column if plugin suddenly stops working
+
+### Common Plugin Debug Patterns
+
+```bash
+# Check plugin execution logs
+railway logs --filter "PLUGIN DEBUG"
+
+# Check if keywords are filtering correctly
+railway logs --filter "Plugin skipped: no keyword match"
+
+# Check AI evaluation results
+railway logs --filter "PLUGIN DEBUG: AI said"
+
+# Check Telegram send status
+railway logs --filter "PLUGIN DEBUG: Telegram"
+```
+
+```sql
+-- List all plugins for a bot's flows
+SELECT fp.id, fp.type, fp.name, fp.enabled, fp.trigger_condition,
+       fp.config->>'trigger_keywords' as keywords,
+       f.name as flow_name
+FROM flow_plugins fp
+JOIN flows f ON fp.flow_id = f.id
+WHERE f.bot_id = {bot_id};
+
+-- Check if plugin was auto-disabled
+SELECT id, name, enabled, updated_at
+FROM flow_plugins
+WHERE enabled = false
+ORDER BY updated_at DESC
+LIMIT 10;
+```
+
+## Plugin Config Dialog Issues
+
+The plugin config UI is in `frontend/src/components/flow/PluginSection.tsx`.
+
+**Common issues:**
+- Plugin requires `flowId` to exist first (flow must be saved before adding plugins)
+- API endpoints: `GET/POST /bots/{botId}/flows/{flowId}/plugins`
+- Trigger keywords are stored as comma-separated in the UI, converted to array on save
+- `trigger_condition` is required (natural language description for AI evaluation)
+- `config.access_token` and `config.chat_id` are required for Telegram type
+
+**Config dialog fields:**
+| Field | Required | Notes |
+|-------|----------|-------|
+| name | No | Display name for the plugin |
+| trigger_condition | Yes | Natural language condition for AI |
+| trigger_keywords | No | Comma-separated pre-filter keywords |
+| access_token | Yes | Telegram Bot token |
+| chat_id | Yes | Telegram user/group ID |
+| message_template | Yes | Template with `{variable}` placeholders |
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `app/Http/Controllers/WebhookController.php` | Webhook handler |
-| `app/Jobs/ProcessIncomingMessage.php` | Message processing job |
-| `app/Services/LineService.php` | LINE API integration |
+| `app/Jobs/ProcessLINEWebhook.php` | LINE message processing job |
+| `app/Services/PaymentFlexService.php` | Flex message detection & building |
+| `app/Services/MultipleBubblesService.php` | Bubble splitting & per-bubble Flex |
+| `app/Services/FlowPluginService.php` | Plugin execution (keyword + AI eval) |
+| `app/Services/LINEService.php` | LINE API integration |
 | `app/Services/TelegramService.php` | Telegram API integration |
 | `config/broadcasting.php` | Reverb configuration |
+| `frontend/src/components/flow/PluginSection.tsx` | Plugin config UI |
 
 ## Debug Output Format
 
@@ -184,3 +309,7 @@ Message ID: [message_id]
 | Signature fails | Verify secret in LINE Console |
 | Job stuck | `php artisan queue:work` |
 | Messages duplicated | Implement idempotency |
+| Flex not showing | Check full text has required keywords before bubble split |
+| Plugin not firing | Check keyword pre-filter matches bot response, not user message |
+| Plugin rate limited | Rate limit is per plugin+conversation, 60s, only on success |
+| Plugin auto-disabled | Telegram 401/403/404 auto-disables; fix token then re-enable |

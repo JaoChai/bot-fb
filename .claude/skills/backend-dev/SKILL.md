@@ -82,6 +82,85 @@ app/
 └── Policies/            # Authorization logic
 ```
 
+### Flow-Centric Architecture
+
+**Flow is the central configuration entity, not Bot.**
+
+Bot still exists as the top-level entity (owns platform credentials, user association),
+but Flow holds the active runtime configuration:
+
+| Concern | Owned by Flow (not Bot) |
+|---------|------------------------|
+| System prompt | `flow.system_prompt` |
+| LLM parameters | `flow.temperature`, `flow.max_tokens` |
+| Agentic mode | `flow.agentic_mode`, `flow.enabled_tools` |
+| Knowledge bases | `flow.knowledgeBases()` (many-to-many pivot) |
+| Agent safety | `flow.agent_timeout_seconds`, `flow.hitl_enabled` |
+| Second AI | `flow.second_ai_enabled`, `flow.second_ai_options` |
+
+```
+Bot (1) ──→ (N) Flow ──→ (M) KnowledgeBase   (pivot: kb_top_k, kb_similarity_threshold)
+              │
+              └──→ (N) FlowPlugin
+```
+
+A Bot has one **default flow** (`bot.default_flow_id`). When resolving config, always
+prefer Flow values with Bot as fallback:
+
+```php
+$resolvedFlow = $flow ?? $this->flowCacheService->getDefaultFlow($bot->id);
+$maxTokens = $resolvedFlow?->max_tokens ?? $bot->llm_max_tokens;
+$temperature = $resolvedFlow?->temperature ?? $bot->llm_temperature;
+```
+
+### FlowCacheService
+
+`FlowCacheService` caches Flow lookups to reduce database load. It is injected via
+constructor into services that need frequent Flow access (e.g., `RAGService`).
+
+```php
+// Constructor injection pattern (RAGService)
+public function __construct(
+    protected SemanticSearchService $semanticSearchService,
+    protected HybridSearchService $hybridSearchService,
+    protected OpenRouterService $openRouter,
+    protected IntentAnalysisService $intentAnalysis,
+    protected FlowCacheService $flowCacheService,       // 5th parameter
+    protected ?QueryEnhancementService $queryEnhancement = null,
+    // ...optional params after
+) {}
+```
+
+Key methods:
+- `getDefaultFlow(int $botId): ?Flow` — cached lookup (30-min TTL)
+- `hasFlows(int $botId): bool` — cached existence check
+- `invalidateBot(int $botId): void` — call when flows are created/updated/deleted
+- `invalidateDefaultFlow(int $botId): void` — call when default flow changes
+
+**Important**: When adding `FlowCacheService` to a new service constructor, place it
+before optional (`?Type`) parameters. Update corresponding test files to match
+the constructor signature.
+
+### KB Detection (Flow-Level, Not Bot-Level)
+
+Knowledge base availability is determined by **Flow KB attachment**, not `bot.kb_enabled`.
+
+```php
+// CORRECT — RAGService pattern (source of truth)
+protected function shouldUseKnowledgeBase(Bot $bot): bool
+{
+    $defaultFlow = $this->flowCacheService->getDefaultFlow($bot->id);
+    return $defaultFlow && $defaultFlow->knowledgeBases()->exists();
+}
+```
+
+The old `bot.kb_enabled` flag is still referenced in `IntentAnalysisService` for
+backward compatibility, but RAGService intentionally ignores it — if the default
+flow has KBs attached, they will be used regardless of `bot.kb_enabled`.
+
+When writing new code that needs to check KB availability, follow the RAGService
+pattern (Flow attachment) rather than checking `bot.kb_enabled`.
+
 ## Key Patterns
 
 ### Service Layer Pattern

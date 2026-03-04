@@ -253,6 +253,39 @@ railway logs --filter "line" --lines 100
 
 ## Flex Message Debugging
 
+### Flex Detection Flow
+
+Flex detection happens on **full text before bubble splitting**. This is the critical path:
+
+```
+Bot response (full text)
+    ↓
+PaymentFlexService::tryConvertToFlex(fullText)
+    ↓
+┌── Flex detected (returns array) → send as single Flex message
+│                                   (skip bubble splitting entirely)
+└── No Flex (returns string) → MultipleBubblesService flow
+                                    ↓
+                              parseIntoBubbles()
+                                    ↓
+                              transformBubbles() → per-bubble tryConvertToFlex()
+```
+
+**Detection priority order** (in `PaymentFlexService::tryConvertToFlex`):
+1. `isPaymentMessage()` - bank account number + total keyword ("รวมยอดโอน", "สรุปยอด")
+2. `isTermsMessage()` - "ยอมรับ" + "ข้อตกลง" (exclusion: no bank account, no "เงินเข้าแล้ว")
+3. `isVerifySuccessMessage()` - "[ยืนยันชำระเงิน]" tag + "เงินเข้าแล้ว" + amount
+4. `isConfirmMessage()` - total pattern + "ยืนยัน" (exclusions: no bank account, no "เงินเข้าแล้ว", no "ข้อตกลง")
+
+**Why detection order matters**: Each detector excludes the others' keywords. If Flex isn't triggering, check that the AI response contains the exact required keywords.
+
+### Image Analysis Path
+
+Image analysis (`handleImageAnalysis`) also runs Flex detection on the vision AI response:
+- If bubbles enabled: `MultipleBubblesService` flow (includes per-bubble Flex)
+- If bubbles disabled: direct `PaymentFlexService::tryConvertToFlex()` on full response
+- Plugin execution also runs after image analysis (same as text path)
+
 ### Validate Flex JSON
 
 ```bash
@@ -265,8 +298,14 @@ railway logs --filter "line" --lines 100
 | Error | Cause | Fix |
 |-------|-------|-----|
 | Invalid flex | Malformed JSON | Validate in simulator |
-| Too large | >50KB message | Reduce content |
+| Too large | >30KB in code (MAX_FLEX_SIZE) | Reduce content |
 | Missing altText | Required field | Add altText property |
+| Flex not triggering | Missing keywords in AI response | Check detection conditions above |
+| Wrong Flex type | Step overlap (e.g., confirm vs payment) | Check exclusion conditions |
+
+### Size Limit
+
+The project uses `MAX_FLEX_SIZE = 30000` bytes (30KB) in `PaymentFlexService`, which is more conservative than LINE's 50KB limit. If Flex exceeds this, `safeBuildFlex()` returns the original text as fallback.
 
 ### Flex Template
 
@@ -302,6 +341,75 @@ railway logs --filter "line" --lines 100
 }
 ```
 
+## Plugin Debugging (FlowPluginService)
+
+Plugins execute after the bot sends its reply. They are configured per-flow.
+
+### Execution Flow
+
+```
+Bot message sent to LINE
+    ↓
+FlowPluginService::executePlugins(bot, conversation, botMessage)
+    ↓
+For each enabled plugin in the flow:
+    1. Rate limit check (1 per plugin per conversation per 60s)
+    2. Keyword pre-filter on botMessage.content (cheap, no API)
+    3. AI evaluation via gpt-4o-mini (trigger condition check)
+    4. Variable extraction from AI + regex fallback
+    5. Template formatting with {variables}
+    6. Send Telegram notification
+    7. Record order via OrderService
+```
+
+### Keyword Pre-filter
+
+- Configured via `plugin.config.trigger_keywords` (array of strings)
+- If empty/not set: filter always passes (backward compatible)
+- Checks against `mb_strtolower($botMessage->content)` using `mb_strpos`
+- Any single keyword match = pass filter
+- No match = skip AI evaluation entirely (saves API cost)
+
+### Rate Limiting Behavior
+
+Rate limit applies **only after successful trigger**:
+- Cache key: `plugin_exec:{plugin_id}:{conversation_id}`, TTL 60s
+- `Cache::has()` check runs before `evaluateAndExecute()`
+- `Cache::put()` runs only when AI says `triggered: true`
+- Failed keyword filter, AI rejection, or errors do NOT consume rate limit
+
+### Plugin on Image Analysis Path
+
+When a user sends an image:
+1. Vision AI analyzes the image and generates a response
+2. Response is sent back to LINE (with Flex detection)
+3. Plugin execution runs on the bot's response message (same as text path)
+4. This means slip verification responses can trigger order notification plugins
+
+### Common Plugin Issues
+
+| Issue | Debug Command | Fix |
+|-------|--------------|-----|
+| Plugin not firing | `railway logs --filter "PLUGIN DEBUG: Keyword filter"` | Check keywords match bot response |
+| AI says not triggered | `railway logs --filter "PLUGIN DEBUG: AI said NOT"` | Adjust trigger_condition wording |
+| Rate limited | `railway logs --filter "Plugin rate limited"` | Wait 60s or check conversation_id |
+| Telegram send fails | `railway logs --filter "PLUGIN DEBUG: Telegram FAILED"` | Check token/chat_id in config |
+| Plugin auto-disabled | Check `flow_plugins.enabled = false` | Re-enable after fixing token/chat_id |
+| Variables not extracted | `railway logs --filter "Plugin unreplaced"` | Check template {variable} names |
+
+### Plugin Config Dialog (Frontend)
+
+The config UI is at `frontend/src/components/flow/PluginSection.tsx`.
+
+**Prerequisites:**
+- Flow must be saved first (flowId required)
+- API: `GET/POST /bots/{botId}/flows/{flowId}/plugins`
+
+**Common frontend issues:**
+- "กรุณาบันทึก Flow ก่อน" error: Flow not yet saved, no flowId
+- Keywords appear wrong after save: input is comma-separated, stored as array
+- Toggle not working: optimistic update in state, check network for actual error
+
 ## Checklist
 
 - [ ] Webhook URL set correctly in LINE Console
@@ -311,3 +419,6 @@ railway logs --filter "line" --lines 100
 - [ ] Webhook events enabled (message, postback)
 - [ ] Server can reach LINE API (no firewall)
 - [ ] Reply within 30 seconds (or use Push)
+- [ ] Flex detection keywords present in AI response (if expecting Flex)
+- [ ] Plugin trigger_keywords match bot response content (if using plugins)
+- [ ] Plugin Telegram token and chat_id valid (if plugin auto-disabled)

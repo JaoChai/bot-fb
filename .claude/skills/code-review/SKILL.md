@@ -38,6 +38,8 @@ Comprehensive code review for BotFacebook.
    - No hardcoded credentials or API keys
    - Proper error handling
    - TypeScript strict compliance
+   - Verify TypeScript interface matches Laravel model `$fillable`/`$casts` (e.g., `BotSettings` in `api.ts` vs `BotSetting.php`)
+   - Only changes directly related to the task? No unrelated refactoring? (see CLAUDE.md Minimal Change Principle)
 
 ## MCP Tools Available
 
@@ -145,6 +147,8 @@ composer audit
 | N+1 queries | Use `->with()` |
 | Missing types | Add type hints |
 | Fat controller | Extract to service |
+| TS interface out of sync with Laravel model | Compare `$fillable`/`$casts` with TypeScript interface fields |
+| Unrelated changes in PR | Revert; follow Minimal Change Principle (CLAUDE.md) |
 
 ## Output Format
 
