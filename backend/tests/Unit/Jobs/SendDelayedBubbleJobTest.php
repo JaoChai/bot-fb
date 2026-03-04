@@ -39,11 +39,14 @@ class SendDelayedBubbleJobTest extends TestCase
     {
         $bot = $this->createBotInstance();
 
-        // Mock LINEService to verify push is called correctly
+        // Mock LINEService to verify push is called correctly with retry key
         $lineService = Mockery::mock(LINEService::class);
+        $lineService->shouldReceive('generateRetryKey')
+            ->once()
+            ->andReturn('retry-key');
         $lineService->shouldReceive('push')
             ->once()
-            ->with($bot, 'U_user_123', ['Hello bubble 2'])
+            ->with($bot, 'U_user_123', ['Hello bubble 2'], 'retry-key')
             ->andReturn(true);
 
         $job = new SendDelayedBubbleJob(
@@ -82,6 +85,9 @@ class SendDelayedBubbleJobTest extends TestCase
 
         // Mock LINEService to simulate API failure
         $lineService = Mockery::mock(LINEService::class);
+        $lineService->shouldReceive('generateRetryKey')
+            ->once()
+            ->andReturn('retry-key');
         $lineService->shouldReceive('push')
             ->once()
             ->andThrow(new \Exception('LINE API error'));

@@ -124,7 +124,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
           </div>
         );
 
-      case 'file':
+      case 'file': {
         const fileName = (metadata?.file_name as string) || 'ไฟล์';
         return (
           <a
@@ -150,6 +150,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
             <Download className="h-4 w-4 flex-shrink-0 opacity-60" />
           </a>
         );
+      }
 
       case 'sticker':
         return (
@@ -170,7 +171,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
           </div>
         );
 
-      case 'location':
+      case 'location': {
         // Parse location from content: "[ตำแหน่ง] address (lat, lng)"
         const locationMatch = message.content?.match(/\[ตำแหน่ง\]\s*([^(]*)\s*\(([^,]+),\s*([^)]+)\)/);
         const address = locationMatch?.[1]?.trim() || '';
@@ -206,6 +207,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
             <ExternalLink className="h-4 w-4 flex-shrink-0 opacity-60" />
           </a>
         );
+      }
 
       default:
         return (

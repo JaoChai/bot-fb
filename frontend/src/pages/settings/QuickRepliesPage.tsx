@@ -150,7 +150,7 @@ export function QuickRepliesPage() {
         toast.success('สร้าง Quick Reply สำเร็จ');
       }
       handleCloseDialog();
-    } catch (error) {
+    } catch {
       toast.error(editingId ? 'ไม่สามารถบันทึกได้' : 'ไม่สามารถสร้างได้');
     }
   };
@@ -162,7 +162,7 @@ export function QuickRepliesPage() {
       await deleteMutation.mutateAsync(deleteTarget.id);
       toast.success('ลบ Quick Reply สำเร็จ');
       setDeleteTarget(null);
-    } catch (error) {
+    } catch {
       toast.error('ไม่สามารถลบได้');
     }
   };
@@ -171,7 +171,7 @@ export function QuickRepliesPage() {
     try {
       await toggleMutation.mutateAsync(qr.id);
       toast.success(qr.is_active ? 'ปิดใช้งานแล้ว' : 'เปิดใช้งานแล้ว');
-    } catch (error) {
+    } catch {
       toast.error('ไม่สามารถเปลี่ยนสถานะได้');
     }
   };
@@ -182,7 +182,7 @@ export function QuickRepliesPage() {
     [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
     try {
       await reorderMutation.mutateAsync({ ids: newOrder.map((qr) => qr.id) });
-    } catch (error) {
+    } catch {
       toast.error('ไม่สามารถเรียงลำดับได้');
       refetch();
     }
@@ -194,7 +194,7 @@ export function QuickRepliesPage() {
     [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
     try {
       await reorderMutation.mutateAsync({ ids: newOrder.map((qr) => qr.id) });
-    } catch (error) {
+    } catch {
       toast.error('ไม่สามารถเรียงลำดับได้');
       refetch();
     }

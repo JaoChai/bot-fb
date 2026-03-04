@@ -247,7 +247,7 @@ function processSSEEvent(
       case 'kb_skip':
       case 'chat_start':
       case 'chat_fallback':
-      // Agentic mode events
+      // Agentic mode events - falls through
       case 'agent_start':
       case 'agent_thinking':
       case 'agent_done':
@@ -256,7 +256,7 @@ function processSSEEvent(
       case 'agent_max_iterations':
       case 'tool_call':
       case 'tool_result':
-      // HITL Safety events
+      // HITL Safety events - falls through
       case 'agent_safety_stop':
       case 'agent_approval_required':
       case 'agent_approval_waiting':
@@ -264,7 +264,7 @@ function processSSEEvent(
         // Already handled by onProcessLog above
         break;
 
-      // Second AI events
+      // Second AI events - already handled by onProcessLog above
       case 'second_ai_start':
       case 'second_ai_result':
         // Already handled by onProcessLog above

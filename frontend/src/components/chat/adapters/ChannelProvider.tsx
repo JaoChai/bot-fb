@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 /**
  * T050: Channel Provider Context
  * React Context for providing channel adapter based on conversation.channel_type

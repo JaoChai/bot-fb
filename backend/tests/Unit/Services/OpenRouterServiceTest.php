@@ -224,7 +224,10 @@ class OpenRouterServiceTest extends TestCase
         );
 
         Http::assertSent(function ($request) {
-            $body = $request->data();
+            $body = json_decode($request->body(), true);
+            if (! isset($body['messages'])) {
+                return false;
+            }
             $messages = $body['messages'];
 
             return count($messages) === 3 &&

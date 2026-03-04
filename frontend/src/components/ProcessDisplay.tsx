@@ -393,14 +393,14 @@ export const ProcessDisplay = memo(function ProcessDisplay({
 }: ProcessDisplayProps) {
   const [isExpanded, setIsExpanded] = useState(true);
 
-  // Don't render if no logs and not streaming
-  if (logs.length === 0 && !isStreaming) return null;
-
   // Memoize filtered logs to prevent re-filtering on every render
   const displayLogs = useMemo(
     () => logs.filter((log) => log.event !== 'process_start'),
     [logs]
   );
+
+  // Don't render if no logs and not streaming
+  if (logs.length === 0 && !isStreaming) return null;
 
   return (
     <div className="mb-2">

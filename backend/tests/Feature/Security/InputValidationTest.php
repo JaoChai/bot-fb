@@ -38,7 +38,8 @@ class InputValidationTest extends TestCase
 
         // If bot was created, check that name is sanitized
         if ($response->status() === 201) {
-            $this->assertStringNotContainsString('<script>', $response->json('data.name'));
+            $name = $response->json('data.bot.name') ?? '';
+            $this->assertStringNotContainsString('<script>', $name);
         }
     }
 

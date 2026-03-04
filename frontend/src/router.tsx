@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { Suspense } from "react"
 import { createBrowserRouter, Navigate } from "react-router"
 import { RootLayout } from "@/components/layout/RootLayout"
