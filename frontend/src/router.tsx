@@ -16,7 +16,7 @@ const RegisterPage = lazyWithRetryNamed(() => import("@/pages/auth/RegisterPage"
 const DashboardPage = lazyWithRetryNamed(() => import("@/pages/DashboardPage"), "DashboardPage")
 const BotsPage = lazyWithRetryNamed(() => import("@/pages/BotsPage"), "BotsPage")
 const BotSettingsPage = lazyWithRetryNamed(() => import("@/pages/BotSettingsPage"), "BotSettingsPage")
-const BotEditPage = lazyWithRetryNamed(() => import("@/pages/BotEditPage"), "BotEditPage")
+
 const KnowledgeBasePage = lazyWithRetryNamed(() => import("@/pages/KnowledgeBasePage"), "KnowledgeBasePage")
 const ChatPage = lazyWithRetryNamed(() => import("@/pages/ChatPage"), "ChatPage")
 const SettingsPage = lazyWithRetryNamed(() => import("@/pages/SettingsPage"), "SettingsPage")
@@ -91,10 +91,6 @@ export const router = createBrowserRouter([
           {
             path: "bots/:botId/edit",
             element: <LazyPage><EditConnectionPage /></LazyPage>,
-          },
-          {
-            path: "bots/:botId/edit-old",
-            element: <LazyPage><BotEditPage /></LazyPage>,
           },
           {
             path: "knowledge-base",

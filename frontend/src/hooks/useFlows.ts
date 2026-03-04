@@ -36,13 +36,14 @@ export function useFlow(botId: number | null, flowId: number | null) {
 }
 
 // Fetch flow templates
-export function useFlowTemplates() {
+export function useFlowTemplates(enabled = true) {
   return useQuery({
     queryKey: queryKeys.flows.templates(),
     queryFn: async () => {
       const response = await apiGet<ApiResponse<FlowTemplate[]>>('/flow-templates');
       return response.data;
     },
+    enabled,
   });
 }
 
@@ -333,9 +334,9 @@ export function useTestFlow(botId: number | null, flowId: number | null) {
 }
 
 // Convenience hook combining all flow operations
-export function useFlowOperations(botId: number | null) {
+export function useFlowOperations(botId: number | null, options?: { includeTemplates?: boolean }) {
   const flows = useFlows(botId);
-  const templates = useFlowTemplates();
+  const templates = useFlowTemplates(options?.includeTemplates ?? false);
   const createMutation = useCreateFlow(botId);
   const deleteMutation = useDeleteFlow(botId);
   const duplicateMutation = useDuplicateFlow(botId);

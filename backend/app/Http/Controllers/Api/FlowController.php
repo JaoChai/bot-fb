@@ -362,33 +362,35 @@ class FlowController extends Controller
         // Cast boolean fields for PostgreSQL compatibility
         $data = $this->castBooleanFields($data);
 
-        // If setting as default, unset other defaults
-        if ($data['is_default'] ?? false) {
-            $bot->flows()->where('id', '!=', $flow->id)->update(['is_default' => false]);
-        }
-
         // Extract knowledge_bases before updating flow
         $knowledgeBases = $data['knowledge_bases'] ?? null;
         unset($data['knowledge_bases']);
 
-        $flow->update($data);
-
-        // Sync knowledge bases if provided
-        if ($knowledgeBases !== null) {
-            $syncData = [];
-            foreach ($knowledgeBases as $kb) {
-                $syncData[$kb['id']] = [
-                    'kb_top_k' => $kb['kb_top_k'] ?? 5,
-                    'kb_similarity_threshold' => $kb['kb_similarity_threshold'] ?? 0.7,
-                ];
+        DB::transaction(function () use ($bot, $flow, $data, $knowledgeBases) {
+            // If setting as default, unset other defaults
+            if ($data['is_default'] ?? false) {
+                $bot->flows()->where('id', '!=', $flow->id)->update(['is_default' => false]);
             }
-            $flow->knowledgeBases()->sync($syncData);
-        }
 
-        // Update bot's default flow if this is now the default
-        if ($flow->is_default) {
-            $bot->update(['default_flow_id' => $flow->id]);
-        }
+            $flow->update($data);
+
+            // Sync knowledge bases if provided
+            if ($knowledgeBases !== null) {
+                $syncData = [];
+                foreach ($knowledgeBases as $kb) {
+                    $syncData[$kb['id']] = [
+                        'kb_top_k' => $kb['kb_top_k'] ?? 5,
+                        'kb_similarity_threshold' => $kb['kb_similarity_threshold'] ?? 0.7,
+                    ];
+                }
+                $flow->knowledgeBases()->sync($syncData);
+            }
+
+            // Update bot's default flow if this is now the default
+            if ($flow->is_default) {
+                $bot->update(['default_flow_id' => $flow->id]);
+            }
+        });
 
         // Refresh to get updated data without full reload
         $flow->refresh();

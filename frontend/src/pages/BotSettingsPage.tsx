@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Loader2, Clock, Plus, Trash2, Copy, MessageSquare, Sparkles } from 'lucide-react';
-import { apiGet, apiPut } from '@/lib/api';
+import { useBotSettings, useUpdateBotSettings } from '@/hooks/useBotSettings';
 
 // Response Hours types
 interface TimeSlot {
@@ -130,9 +130,12 @@ export function BotSettingsPage() {
   const navigate = useNavigate();
   const { botId } = useParams<{ botId: string }>();
   const { toast } = useToast();
+  const numericBotId = botId ? Number(botId) : null;
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const { data: serverSettings, isLoading } = useBotSettings(numericBotId);
+  const updateMutation = useUpdateBotSettings(numericBotId);
+  const isSaving = updateMutation.isPending;
+
   const [formData, setFormData] = useState<BotSettingsFormData>({
     daily_message_limit: 100,
     per_user_limit: 10,
@@ -238,63 +241,42 @@ export function BotSettingsPage() {
     }));
   };
 
-  // Fetch settings on mount
+  // Sync form data from server settings
   useEffect(() => {
-    if (!botId) return;
+    if (!serverSettings) return;
+    const settings = serverSettings as Record<string, unknown>;
 
-    const fetchSettings = async () => {
-      try {
-        setIsLoading(true);
-        const response = await apiGet<{ data: Record<string, unknown> }>(`/bots/${botId}/settings`);
-        const settings = response.data;
-
-        setFormData({
-          daily_message_limit: (settings.daily_message_limit as number) ?? 100,
-          per_user_limit: (settings.per_user_limit as number) ?? 10,
-          rate_limit_bot_message: (settings.rate_limit_bot_message as string) ?? '',
-          rate_limit_user_message: (settings.rate_limit_user_message as string) ?? '',
-          easy_slip_enabled: false,
-          hitl_enabled: (settings.hitl_enabled as boolean) ?? false,
-          reply_when_called_only: false,
-          reply_when_called_only_override_hitl: false,
-          lead_recovery_enabled: false,
-          lead_recovery_description: 'ติดตามลูกค้าอัตโนมัติเมื่อบทสนทนาเงียบ',
-          multiple_bubbles_enabled: (settings.multiple_bubbles_enabled as boolean) ?? false,
-          multiple_bubbles_min: (settings.multiple_bubbles_min as number) ?? 1,
-          multiple_bubbles_max: (settings.multiple_bubbles_max as number) ?? 3,
-          wait_multiple_bubbles_enabled: (settings.wait_multiple_bubbles_enabled as boolean) ?? false,
-          // Convert ms to seconds for display
-          wait_multiple_bubbles_seconds: ((settings.wait_multiple_bubbles_ms as number) ?? 1500) / 1000,
-          // Smart Aggregation - convert ms to seconds for display
-          smart_aggregation_enabled: (settings.smart_aggregation_enabled as boolean) ?? false,
-          smart_min_wait_seconds: ((settings.smart_min_wait_ms as number) ?? 500) / 1000,
-          smart_max_wait_seconds: ((settings.smart_max_wait_ms as number) ?? 3000) / 1000,
-          smart_early_trigger_enabled: (settings.smart_early_trigger_enabled as boolean) ?? true,
-          smart_per_user_learning_enabled: (settings.smart_per_user_learning_enabled as boolean) ?? false,
-          reply_sticker_enabled: (settings.reply_sticker_enabled as boolean) ?? false,
-          reply_sticker_message: (settings.reply_sticker_message as string) ?? '',
-          reply_sticker_mode: (settings.reply_sticker_mode as 'static' | 'ai') ?? 'static',
-          reply_sticker_ai_prompt: (settings.reply_sticker_ai_prompt as string) ?? '',
-          response_hours_enabled: (settings.response_hours_enabled as boolean) ?? false,
-          response_hours: parseResponseHours(settings.response_hours as Record<string, TimeSlot[]> | null),
-          response_hours_timezone: (settings.response_hours_timezone as string) ?? 'Asia/Bangkok',
-          offline_message: (settings.offline_message as string) ?? '',
-        });
-      } catch (error) {
-        console.error('Failed to fetch settings:', error);
-        toast({
-          title: 'ข้อผิดพลาด',
-          description: 'ไม่สามารถโหลดตั้งค่าบอทได้',
-          variant: 'destructive',
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchSettings();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [botId]); // Remove toast from deps - it causes infinite loop
+    setFormData({
+      daily_message_limit: (settings.daily_message_limit as number) ?? 100,
+      per_user_limit: (settings.per_user_limit as number) ?? 10,
+      rate_limit_bot_message: (settings.rate_limit_bot_message as string) ?? '',
+      rate_limit_user_message: (settings.rate_limit_user_message as string) ?? '',
+      easy_slip_enabled: false,
+      hitl_enabled: (settings.hitl_enabled as boolean) ?? false,
+      reply_when_called_only: false,
+      reply_when_called_only_override_hitl: false,
+      lead_recovery_enabled: false,
+      lead_recovery_description: 'ติดตามลูกค้าอัตโนมัติเมื่อบทสนทนาเงียบ',
+      multiple_bubbles_enabled: (settings.multiple_bubbles_enabled as boolean) ?? false,
+      multiple_bubbles_min: (settings.multiple_bubbles_min as number) ?? 1,
+      multiple_bubbles_max: (settings.multiple_bubbles_max as number) ?? 3,
+      wait_multiple_bubbles_enabled: (settings.wait_multiple_bubbles_enabled as boolean) ?? false,
+      wait_multiple_bubbles_seconds: ((settings.wait_multiple_bubbles_ms as number) ?? 1500) / 1000,
+      smart_aggregation_enabled: (settings.smart_aggregation_enabled as boolean) ?? false,
+      smart_min_wait_seconds: ((settings.smart_min_wait_ms as number) ?? 500) / 1000,
+      smart_max_wait_seconds: ((settings.smart_max_wait_ms as number) ?? 3000) / 1000,
+      smart_early_trigger_enabled: (settings.smart_early_trigger_enabled as boolean) ?? true,
+      smart_per_user_learning_enabled: (settings.smart_per_user_learning_enabled as boolean) ?? false,
+      reply_sticker_enabled: (settings.reply_sticker_enabled as boolean) ?? false,
+      reply_sticker_message: (settings.reply_sticker_message as string) ?? '',
+      reply_sticker_mode: (settings.reply_sticker_mode as 'static' | 'ai') ?? 'static',
+      reply_sticker_ai_prompt: (settings.reply_sticker_ai_prompt as string) ?? '',
+      response_hours_enabled: (settings.response_hours_enabled as boolean) ?? false,
+      response_hours: parseResponseHours(settings.response_hours as Record<string, TimeSlot[]> | null),
+      response_hours_timezone: (settings.response_hours_timezone as string) ?? 'Asia/Bangkok',
+      offline_message: (settings.offline_message as string) ?? '',
+    });
+  }, [serverSettings]);
 
   const handleChange = <K extends keyof BotSettingsFormData>(
     field: K,
@@ -304,11 +286,10 @@ export function BotSettingsPage() {
   };
 
   const handleSave = async () => {
-    if (!botId) return;
+    if (!numericBotId) return;
 
-    setIsSaving(true);
     try {
-      await apiPut(`/bots/${botId}/settings`, {
+      await updateMutation.mutateAsync({
         daily_message_limit: formData.daily_message_limit,
         per_user_limit: formData.per_user_limit,
         rate_limit_bot_message: formData.rate_limit_bot_message || null,
@@ -318,20 +299,16 @@ export function BotSettingsPage() {
         response_hours: serializeResponseHours(formData.response_hours),
         response_hours_timezone: formData.response_hours_timezone,
         offline_message: formData.offline_message || null,
-        // Multiple bubbles settings
         multiple_bubbles_enabled: formData.multiple_bubbles_enabled,
         multiple_bubbles_min: formData.multiple_bubbles_min,
         multiple_bubbles_max: formData.multiple_bubbles_max,
         wait_multiple_bubbles_enabled: formData.wait_multiple_bubbles_enabled,
-        // Convert seconds to ms for backend
         wait_multiple_bubbles_ms: Math.round(formData.wait_multiple_bubbles_seconds * 1000),
-        // Smart Aggregation settings - convert seconds to ms for backend
         smart_aggregation_enabled: formData.smart_aggregation_enabled,
         smart_min_wait_ms: Math.round(formData.smart_min_wait_seconds * 1000),
         smart_max_wait_ms: Math.round(formData.smart_max_wait_seconds * 1000),
         smart_early_trigger_enabled: formData.smart_early_trigger_enabled,
         smart_per_user_learning_enabled: formData.smart_per_user_learning_enabled,
-        // Reply sticker settings
         reply_sticker_enabled: formData.reply_sticker_enabled,
         reply_sticker_message: formData.reply_sticker_message || null,
         reply_sticker_mode: formData.reply_sticker_mode,
@@ -342,15 +319,12 @@ export function BotSettingsPage() {
         title: 'บันทึกสำเร็จ',
         description: 'ตั้งค่าบอทได้รับการบันทึกแล้ว',
       });
-    } catch (error) {
-      console.error('Failed to save settings:', error);
+    } catch {
       toast({
         title: 'ข้อผิดพลาด',
         description: 'ไม่สามารถบันทึกตั้งค่าบอทได้',
         variant: 'destructive',
       });
-    } finally {
-      setIsSaving(false);
     }
   };
 

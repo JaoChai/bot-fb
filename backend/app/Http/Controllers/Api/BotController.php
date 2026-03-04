@@ -309,7 +309,7 @@ PROMPT;
         }
 
         return $this->success([
-            'bot' => new BotResource($bot->fresh()),
+            'bot' => new BotResource($bot->refresh()),
             'webhook_setup' => $webhookSetup,
         ], 'Bot updated successfully');
     }
