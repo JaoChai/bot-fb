@@ -11,6 +11,7 @@ allowed-tools:
 context:
   - path: config/llm-models.php
   - path: config/tools.php
+  - path: config/agent-prompts.php
 ---
 
 # Prompt Engineering
@@ -105,10 +106,7 @@ search(query="prompt test", project="bot-fb", concepts=["trade-off"], limit=5)
 
 | File | Purpose |
 |------|---------|
-| Bot settings | System prompt storage |
+| `config/agent-prompts.php` | Agent prompt templates (Thai/English) |
+| `flows.system_prompt` column | System prompt storage (Flow model, not Bot) |
 | `app/Services/SecondAI/` | AI orchestration |
-| `app/Services/Evaluation/` | Quality evaluation |
 
-## Utility Scripts
-
-- `scripts/test_prompt.py` - Test prompt with sample inputs

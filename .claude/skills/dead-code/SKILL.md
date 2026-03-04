@@ -160,7 +160,7 @@ const mod = await import('./module')
 
 ## Integration with refactor-cleaner
 
-After generating report, use `everything-claude-code:refactor-cleaner` agent for:
+After generating report, use the local `refactor` skill for:
 - Automated safe removal of confirmed dead code
 - Running knip, depcheck, ts-prune analysis
 - Consolidating duplicated code found during analysis

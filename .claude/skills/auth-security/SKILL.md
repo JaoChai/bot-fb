@@ -23,7 +23,7 @@ Authentication, authorization, and security for BotFacebook.
 
 1. **Auth Type:**
    - API Token → Laravel Sanctum
-   - OAuth → LINE/Telegram Login
+   - OAuth → LINE/Telegram/Facebook Login
    - Bot Credentials → Platform API keys
 
 2. **Security Check:**
@@ -59,10 +59,16 @@ User Login          API Request
 
 ## Platform Auth
 
-| Platform | Credentials |
-|----------|-------------|
-| LINE | Channel Access Token, Channel Secret, LIFF Token |
-| Telegram | Bot Token, Webhook Secret |
+| Platform | Credentials | Signature Validation |
+|----------|-------------|---------------------|
+| LINE | Channel Access Token, Channel Secret, LIFF Token | HMAC-SHA256 via Channel Secret |
+| Telegram | Bot Token, Webhook Secret | Secret token header |
+| Facebook | Page Access Token, App Secret, Verify Token | X-Hub-Signature-256 (HMAC-SHA256 via App Secret) |
+
+Webhook signature validation is handled by platform-specific controllers:
+- `app/Http/Controllers/Webhook/LINEWebhookController.php`
+- `app/Http/Controllers/Webhook/TelegramWebhookController.php`
+- `app/Http/Controllers/Webhook/FacebookWebhookController.php`
 
 ## Key Patterns
 
@@ -94,6 +100,7 @@ class Bot extends Model
 | `config/cors.php` | CORS settings |
 | `app/Policies/*.php` | Authorization |
 | `routes/api.php` | Protected routes |
+| `app/Services/SecondAI/PromptInjectionDetector.php` | AI prompt injection detection and prevention |
 
 ## Common Tasks
 

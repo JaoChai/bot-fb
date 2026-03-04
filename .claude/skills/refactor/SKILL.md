@@ -7,7 +7,6 @@ description: |
 allowed-tools:
   - Bash(git status*)
   - Bash(php artisan test*)
-  - Bash(python3 *.py*)
   - Read
   - Grep
   - Edit
@@ -231,6 +230,3 @@ refactor(queries): add indexes for slow bot lookups
 | IDE not updating | Cached references | Restart IDE, clear cache |
 | Merge conflicts | Large diff | Smaller, incremental refactors |
 
-## Utility Scripts
-
-- `scripts/find_code_smells.sh` - Find potential refactor candidates

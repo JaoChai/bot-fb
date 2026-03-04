@@ -102,6 +102,17 @@ $response = $this->actingAs($user)
 - **Unit Testing**: See [UNIT_TESTING.md](UNIT_TESTING.md)
 - **E2E Testing**: See [E2E_TESTING.md](E2E_TESTING.md)
 
+## Known Pre-existing Test Failures
+
+These tests have pre-existing failures and should not block new work:
+- `SendDelayedBubbleJobTest` - pre-existing failure
+- `ModelCapabilityServiceTest` - pre-existing failure
+- `MultipleBubblesServiceTest` - pre-existing failure
+
+## E2E Testing Note
+
+CLAUDE.md recommends using `claude-in-chrome` over Playwright for browser testing in this project.
+
 ## Gotchas
 
 | Problem | Solution |
@@ -112,3 +123,4 @@ $response = $this->actingAs($user)
 | Auth not working | Use `Sanctum::actingAs($user)` |
 | Playwright timeout | Increase `timeout` in config |
 | E2E flaky | Add proper `waitFor` conditions |
+| RAGServiceTest constructor mismatch | `RAGServiceTest.php` must mirror `RAGService` constructor exactly. `FlowCacheService` was added as 5th required parameter - tests must include it |

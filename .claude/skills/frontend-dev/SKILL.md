@@ -105,6 +105,11 @@ search(query="custom hook", project="bot-fb", concepts=["pattern"], limit=5)
 | `src/lib/echo.ts` | WebSocket setup |
 | `src/stores/*.ts` | Zustand stores |
 | `src/hooks/*.ts` | Custom hooks |
+| `src/hooks/chat/` | 8 specialized chat hooks (useConversationDetails, useConversationList, useMessageMutations, useRealtime, useTags, etc.) |
+| `src/types/api.ts` | TypeScript API interfaces - most frequently changed file, critical for TS-Laravel sync |
+| `src/types/realtime.ts` | WebSocket/realtime event types |
+| `src/types/quick-reply.ts` | Quick reply types |
+| `src/lib/stream.ts` | Streaming utilities |
 | `src/router.tsx` | Route definitions |
 | `src/components/ui/` | Radix-based UI primitives |
 
@@ -128,6 +133,14 @@ search(query="custom hook", project="bot-fb", concepts=["pattern"], limit=5)
 2. Add route in `src/router.tsx`
 3. Use lazy loading ([perf-002](rules/perf-002-code-splitting.md))
 4. Wrap with Suspense ([react-007](rules/react-007-suspense-boundaries.md))
+
+## Tailwind v4 Note
+
+This project uses **Tailwind v4** - configuration is via CSS (`src/index.css` with `@theme` directive), NOT via `tailwind.config.ts`. There is no `tailwind.config.ts` file.
+
+## Stale Closure Warning (useRealtime)
+
+`src/hooks/chat/useRealtime.ts` has a known stale closure pattern: recursive `setTimeout` inside `useEffect` captures state at effect creation time. Fix with `useRef` to keep current values accessible in async callbacks (see project MEMORY.md).
 
 ## Real-time (WebSocket/Echo)
 
