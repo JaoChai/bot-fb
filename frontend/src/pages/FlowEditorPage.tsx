@@ -31,6 +31,7 @@ import {
   KnowledgeBaseSelector,
   ChatEmulator,
   FlowSafetySettings,
+  ToolCheckboxGrid,
   type KnowledgeBaseConfig,
 } from '@/components/flows';
 import type { AgentApprovalData } from '@/components/flows/AgentApprovalDialog';
@@ -52,6 +53,82 @@ import {
   FileText,
 } from 'lucide-react';
 import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
+
+type MobileTab = 'flows' | 'editor' | 'test';
+
+function MobileBottomTabs({ activeTab, onTabChange }: { activeTab: MobileTab; onTabChange: (tab: MobileTab) => void }) {
+  return (
+    <div className="fixed bottom-0 left-0 right-0 border-t bg-background md:hidden z-50 pb-safe">
+      <div className="grid grid-cols-3 h-14">
+        <button
+          onClick={() => onTabChange('flows')}
+          className={cn(
+            'flex flex-col items-center justify-center gap-0.5 transition-colors',
+            activeTab === 'flows'
+              ? 'text-foreground bg-muted'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <List className="h-5 w-5" />
+          <span className="text-xs">Flows</span>
+        </button>
+        <button
+          onClick={() => onTabChange('editor')}
+          className={cn(
+            'flex flex-col items-center justify-center gap-0.5 transition-colors',
+            activeTab === 'editor'
+              ? 'text-foreground bg-muted'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Settings className="h-5 w-5" />
+          <span className="text-xs">Editor</span>
+        </button>
+        <button
+          onClick={() => onTabChange('test')}
+          className={cn(
+            'flex flex-col items-center justify-center gap-0.5 transition-colors',
+            activeTab === 'test'
+              ? 'text-foreground bg-muted'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <MessageSquare className="h-5 w-5" />
+          <span className="text-xs">ทดสอบ</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MobileHeader({ name, isDefault, onSave, isSaving, hasChanges }: {
+  name: string;
+  isDefault: boolean;
+  onSave: () => void;
+  isSaving: boolean;
+  hasChanges: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3 border-b bg-background md:hidden">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        <span className="font-bold text-lg truncate">
+          {name || 'Flow ใหม่'}
+        </span>
+        {isDefault && (
+          <span className="text-xs bg-muted px-2 py-0.5 rounded flex-shrink-0">Base</span>
+        )}
+      </div>
+      <Button
+        size="sm"
+        onClick={onSave}
+        disabled={isSaving || !hasChanges}
+        className="flex-shrink-0"
+      >
+        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+      </Button>
+    </div>
+  );
+}
 
 // Default system prompt for new flows
 const DEFAULT_SYSTEM_PROMPT = `คุณคือผู้ช่วย AI ที่เป็นมิตรและช่วยเหลือลูกค้าอย่างมืออาชีพ
@@ -284,7 +361,6 @@ export function FlowEditorPage() {
       }
       setHasChanges(false);
     } catch (err) {
-      console.error('Failed to save flow:', err);
       toast({
         title: 'ผิดพลาด',
         description: err instanceof Error ? err.message : 'ไม่สามารถบันทึกได้',
@@ -420,72 +496,6 @@ export function FlowEditorPage() {
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const showEditor = selectedFlowId || isCreatingNew;
-
-  // Mobile tab navigation component
-  const MobileBottomTabs = () => (
-    <div className="fixed bottom-0 left-0 right-0 border-t bg-background md:hidden z-50 pb-safe">
-      <div className="grid grid-cols-3 h-14">
-        <button
-          onClick={() => setMobileActiveTab('flows')}
-          className={cn(
-            'flex flex-col items-center justify-center gap-0.5 transition-colors',
-            mobileActiveTab === 'flows'
-              ? 'text-foreground bg-muted'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          <List className="h-5 w-5" />
-          <span className="text-xs">Flows</span>
-        </button>
-        <button
-          onClick={() => setMobileActiveTab('editor')}
-          className={cn(
-            'flex flex-col items-center justify-center gap-0.5 transition-colors',
-            mobileActiveTab === 'editor'
-              ? 'text-foreground bg-muted'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          <Settings className="h-5 w-5" />
-          <span className="text-xs">Editor</span>
-        </button>
-        <button
-          onClick={() => setMobileActiveTab('test')}
-          className={cn(
-            'flex flex-col items-center justify-center gap-0.5 transition-colors',
-            mobileActiveTab === 'test'
-              ? 'text-foreground bg-muted'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          <MessageSquare className="h-5 w-5" />
-          <span className="text-xs">ทดสอบ</span>
-        </button>
-      </div>
-    </div>
-  );
-
-  // Mobile header component
-  const MobileHeader = () => (
-    <div className="flex items-center justify-between px-4 py-3 border-b bg-background md:hidden">
-      <div className="flex items-center gap-2 min-w-0 flex-1">
-        <span className="font-bold text-lg truncate">
-          {formData.name || 'Flow ใหม่'}
-        </span>
-        {formData.is_default && (
-          <span className="text-xs bg-muted px-2 py-0.5 rounded flex-shrink-0">Base</span>
-        )}
-      </div>
-      <Button
-        size="sm"
-        onClick={handleSave}
-        disabled={isSaving || !hasChanges}
-        className="flex-shrink-0"
-      >
-        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-      </Button>
-    </div>
-  );
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
@@ -708,162 +718,10 @@ export function FlowEditorPage() {
                         {/* Tool Selection */}
                         <div className="space-y-2">
                           <Label className="text-sm font-medium">เลือก Tools ที่ AI สามารถใช้ได้</Label>
-                          <div className="grid grid-cols-2 gap-2">
-                            <label
-                              className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
-                                formData.enabled_tools?.includes('search_kb')
-                                  ? 'bg-accent border-foreground'
-                                  : 'hover:bg-muted'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={formData.enabled_tools?.includes('search_kb') || false}
-                                onChange={(e) => {
-                                  const current = formData.enabled_tools || [];
-                                  if (e.target.checked) {
-                                    handleChange('enabled_tools', [...current, 'search_kb']);
-                                  } else {
-                                    handleChange('enabled_tools', current.filter(t => t !== 'search_kb'));
-                                  }
-                                }}
-                                className="rounded border-muted-foreground/50"
-                              />
-                              <div className="flex-1">
-                                <div className="flex items-center gap-1.5 text-sm font-medium">
-                                  <span>🔍</span>
-                                  <span>ค้นหาฐานความรู้</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                  ค้นหาข้อมูลจาก KB ที่เชื่อมต่อ
-                                </p>
-                              </div>
-                            </label>
-
-                            <label
-                              className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
-                                formData.enabled_tools?.includes('calculate')
-                                  ? 'bg-accent border-foreground'
-                                  : 'hover:bg-muted'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={formData.enabled_tools?.includes('calculate') || false}
-                                onChange={(e) => {
-                                  const current = formData.enabled_tools || [];
-                                  if (e.target.checked) {
-                                    handleChange('enabled_tools', [...current, 'calculate']);
-                                  } else {
-                                    handleChange('enabled_tools', current.filter(t => t !== 'calculate'));
-                                  }
-                                }}
-                                className="rounded border-muted-foreground/50"
-                              />
-                              <div className="flex-1">
-                                <div className="flex items-center gap-1.5 text-sm font-medium">
-                                  <span>🧮</span>
-                                  <span>คำนวณ</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                  คำนวณตัวเลข ราคา เปอร์เซ็นต์
-                                </p>
-                              </div>
-                            </label>
-
-                            <label
-                              className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
-                                formData.enabled_tools?.includes('think')
-                                  ? 'bg-accent border-foreground'
-                                  : 'hover:bg-muted'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={formData.enabled_tools?.includes('think') || false}
-                                onChange={(e) => {
-                                  const current = formData.enabled_tools || [];
-                                  if (e.target.checked) {
-                                    handleChange('enabled_tools', [...current, 'think']);
-                                  } else {
-                                    handleChange('enabled_tools', current.filter(t => t !== 'think'));
-                                  }
-                                }}
-                                className="rounded border-muted-foreground/50"
-                              />
-                              <div className="flex-1">
-                                <div className="flex items-center gap-1.5 text-sm font-medium">
-                                  <span>🧠</span>
-                                  <span>คิดก่อนตอบ</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                  ให้ AI หยุดคิด วิเคราะห์ก่อนตอบ
-                                </p>
-                              </div>
-                            </label>
-
-                            <label
-                              className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
-                                formData.enabled_tools?.includes('get_current_datetime')
-                                  ? 'bg-accent border-foreground'
-                                  : 'hover:bg-muted'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={formData.enabled_tools?.includes('get_current_datetime') || false}
-                                onChange={(e) => {
-                                  const current = formData.enabled_tools || [];
-                                  if (e.target.checked) {
-                                    handleChange('enabled_tools', [...current, 'get_current_datetime']);
-                                  } else {
-                                    handleChange('enabled_tools', current.filter(t => t !== 'get_current_datetime'));
-                                  }
-                                }}
-                                className="rounded border-muted-foreground/50"
-                              />
-                              <div className="flex-1">
-                                <div className="flex items-center gap-1.5 text-sm font-medium">
-                                  <span>🕐</span>
-                                  <span>วันที่/เวลา</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                  บอกวันที่ เวลา วันในสัปดาห์ปัจจุบัน
-                                </p>
-                              </div>
-                            </label>
-
-                            <label
-                              className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
-                                formData.enabled_tools?.includes('escalate_to_human')
-                                  ? 'bg-accent border-foreground'
-                                  : 'hover:bg-muted'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={formData.enabled_tools?.includes('escalate_to_human') || false}
-                                onChange={(e) => {
-                                  const current = formData.enabled_tools || [];
-                                  if (e.target.checked) {
-                                    handleChange('enabled_tools', [...current, 'escalate_to_human']);
-                                  } else {
-                                    handleChange('enabled_tools', current.filter(t => t !== 'escalate_to_human'));
-                                  }
-                                }}
-                                className="rounded border-muted-foreground/50"
-                              />
-                              <div className="flex-1">
-                                <div className="flex items-center gap-1.5 text-sm font-medium">
-                                  <span>👤</span>
-                                  <span>ส่งต่อพนักงาน</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                  ส่งต่อบทสนทนาให้พนักงานจริงเมื่อ AI ช่วยไม่ได้
-                                </p>
-                              </div>
-                            </label>
-                          </div>
+                          <ToolCheckboxGrid
+                            enabledTools={formData.enabled_tools || []}
+                            onChange={(tools) => handleChange('enabled_tools', tools)}
+                          />
                           {(!formData.enabled_tools || formData.enabled_tools.length === 0) && (
                             <div className="flex items-center gap-2 p-3 mt-2 rounded-lg border border-orange-300 bg-orange-50 dark:border-orange-700 dark:bg-orange-950/30">
                               <svg className="h-4 w-4 text-orange-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1116,7 +974,13 @@ export function FlowEditorPage() {
       {/* ============ MOBILE LAYOUT ============ */}
       <div className="flex flex-col flex-1 md:hidden pb-14">
         {/* Mobile Header */}
-        <MobileHeader />
+        <MobileHeader
+          name={formData.name}
+          isDefault={formData.is_default ?? false}
+          onSave={handleSave}
+          isSaving={isSaving}
+          hasChanges={hasChanges}
+        />
 
         {/* Mobile Tab Content */}
         <div className="flex-1 overflow-hidden">
@@ -1335,108 +1199,11 @@ export function FlowEditorPage() {
                     {formData.agentic_mode && (
                       <div className="space-y-3 pt-3 border-t">
                         <Label className="text-xs">เลือก Tools</Label>
-                        <div className="space-y-2">
-                          <label className={cn(
-                            'flex items-center gap-3 p-3 rounded-lg border cursor-pointer',
-                            formData.enabled_tools?.includes('search_kb') ? 'bg-accent border-foreground' : ''
-                          )}>
-                            <input
-                              type="checkbox"
-                              checked={formData.enabled_tools?.includes('search_kb') || false}
-                              onChange={(e) => {
-                                const current = formData.enabled_tools || [];
-                                if (e.target.checked) {
-                                  handleChange('enabled_tools', [...current, 'search_kb']);
-                                } else {
-                                  handleChange('enabled_tools', current.filter(t => t !== 'search_kb'));
-                                }
-                              }}
-                            />
-                            <div>
-                              <span className="text-sm font-medium">🔍 ค้นหาฐานความรู้</span>
-                            </div>
-                          </label>
-                          <label className={cn(
-                            'flex items-center gap-3 p-3 rounded-lg border cursor-pointer',
-                            formData.enabled_tools?.includes('calculate') ? 'bg-accent border-foreground' : ''
-                          )}>
-                            <input
-                              type="checkbox"
-                              checked={formData.enabled_tools?.includes('calculate') || false}
-                              onChange={(e) => {
-                                const current = formData.enabled_tools || [];
-                                if (e.target.checked) {
-                                  handleChange('enabled_tools', [...current, 'calculate']);
-                                } else {
-                                  handleChange('enabled_tools', current.filter(t => t !== 'calculate'));
-                                }
-                              }}
-                            />
-                            <div>
-                              <span className="text-sm font-medium">🧮 คำนวณ</span>
-                            </div>
-                          </label>
-                          <label className={cn(
-                            'flex items-center gap-3 p-3 rounded-lg border cursor-pointer',
-                            formData.enabled_tools?.includes('think') ? 'bg-accent border-foreground' : ''
-                          )}>
-                            <input
-                              type="checkbox"
-                              checked={formData.enabled_tools?.includes('think') || false}
-                              onChange={(e) => {
-                                const current = formData.enabled_tools || [];
-                                if (e.target.checked) {
-                                  handleChange('enabled_tools', [...current, 'think']);
-                                } else {
-                                  handleChange('enabled_tools', current.filter(t => t !== 'think'));
-                                }
-                              }}
-                            />
-                            <div>
-                              <span className="text-sm font-medium">🧠 คิดก่อนตอบ</span>
-                            </div>
-                          </label>
-                          <label className={cn(
-                            'flex items-center gap-3 p-3 rounded-lg border cursor-pointer',
-                            formData.enabled_tools?.includes('get_current_datetime') ? 'bg-accent border-foreground' : ''
-                          )}>
-                            <input
-                              type="checkbox"
-                              checked={formData.enabled_tools?.includes('get_current_datetime') || false}
-                              onChange={(e) => {
-                                const current = formData.enabled_tools || [];
-                                if (e.target.checked) {
-                                  handleChange('enabled_tools', [...current, 'get_current_datetime']);
-                                } else {
-                                  handleChange('enabled_tools', current.filter(t => t !== 'get_current_datetime'));
-                                }
-                              }}
-                            />
-                            <div>
-                              <span className="text-sm font-medium">🕐 วันที่/เวลา</span>
-                            </div>
-                          </label>
-                          <label className={cn(
-                            'flex items-center gap-3 p-3 rounded-lg border cursor-pointer',
-                            formData.enabled_tools?.includes('escalate_to_human') ? 'bg-accent border-foreground' : ''
-                          )}>
-                            <input
-                              type="checkbox"
-                              checked={formData.enabled_tools?.includes('escalate_to_human') || false}
-                              onChange={(e) => {
-                                const current = formData.enabled_tools || [];
-                                if (e.target.checked) {
-                                  handleChange('enabled_tools', [...current, 'escalate_to_human']);
-                                } else {
-                                  handleChange('enabled_tools', current.filter(t => t !== 'escalate_to_human'));
-                                }
-                              }}
-                            />
-                            <div>
-                              <span className="text-sm font-medium">👤 ส่งต่อพนักงาน</span>
-                            </div>
-                          </label>
-                        </div>
+                        <ToolCheckboxGrid
+                          enabledTools={formData.enabled_tools || []}
+                          onChange={(tools) => handleChange('enabled_tools', tools)}
+                          compact
+                        />
 
                         {/* Max Tool Calls (Mobile) */}
                         <div className="flex items-center gap-3">
@@ -1547,7 +1314,7 @@ export function FlowEditorPage() {
         </div>
 
         {/* Mobile Bottom Tabs */}
-        <MobileBottomTabs />
+        <MobileBottomTabs activeTab={mobileActiveTab} onTabChange={setMobileActiveTab} />
       </div>
 
       {/* Unsaved changes toast */}
