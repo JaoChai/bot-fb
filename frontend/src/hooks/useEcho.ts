@@ -118,6 +118,8 @@ export function useNotifications(
   onNotification: (event: AdminNotificationEvent) => void
 ) {
   const channelRef = useRef<Channel | null>(null);
+  const callbackRef = useRef(onNotification);
+  callbackRef.current = onNotification;
 
   useEffect(() => {
     if (!userId) return;
@@ -127,7 +129,7 @@ export function useNotifications(
 
     channelRef.current = echo.private(channelName)
       .listen(`.${EVENTS.notification}`, (event: AdminNotificationEvent) => {
-        onNotification(event);
+        callbackRef.current(event);
       });
 
     return () => {
@@ -136,7 +138,7 @@ export function useNotifications(
         channelRef.current = null;
       }
     };
-  }, [userId, onNotification]);
+  }, [userId]);
 
   return channelRef.current;
 }
@@ -169,6 +171,8 @@ export function useBotPresence(
   }
 ) {
   const channelRef = useRef<PresenceChannel | null>(null);
+  const callbacksRef = useRef(callbacks);
+  callbacksRef.current = callbacks;
 
   useEffect(() => {
     if (!botId) return;
@@ -178,13 +182,13 @@ export function useBotPresence(
 
     channelRef.current = echo.join(channelName)
       .here((members: { id: number; name: string }[]) => {
-        callbacks.onHere?.(members);
+        callbacksRef.current.onHere?.(members);
       })
       .joining((member: { id: number; name: string }) => {
-        callbacks.onJoining?.(member);
+        callbacksRef.current.onJoining?.(member);
       })
       .leaving((member: { id: number; name: string }) => {
-        callbacks.onLeaving?.(member);
+        callbacksRef.current.onLeaving?.(member);
       });
 
     return () => {
@@ -193,7 +197,7 @@ export function useBotPresence(
         channelRef.current = null;
       }
     };
-  }, [botId, callbacks.onHere, callbacks.onJoining, callbacks.onLeaving]);
+  }, [botId]);
 
   return channelRef.current;
 }
@@ -208,6 +212,8 @@ export function useKnowledgeBaseChannel(
   }
 ) {
   const channelRef = useRef<Channel | null>(null);
+  const callbacksRef = useRef(callbacks);
+  callbacksRef.current = callbacks;
 
   useEffect(() => {
     if (!knowledgeBaseId) return;
@@ -217,7 +223,7 @@ export function useKnowledgeBaseChannel(
 
     channelRef.current = echo.private(channelName)
       .listen(`.${EVENTS.documentStatusUpdated}`, (event: DocumentStatusUpdatedEvent) => {
-        callbacks.onDocumentStatusUpdate?.(event);
+        callbacksRef.current.onDocumentStatusUpdate?.(event);
       });
 
     return () => {
@@ -226,7 +232,7 @@ export function useKnowledgeBaseChannel(
         channelRef.current = null;
       }
     };
-  }, [knowledgeBaseId, callbacks.onDocumentStatusUpdate]);
+  }, [knowledgeBaseId]);
 
   return channelRef.current;
 }

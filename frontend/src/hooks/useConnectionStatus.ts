@@ -46,7 +46,14 @@ export function useConnectionStatus() {
     };
 
     const handleReconnected = () => {
-      queryClient.invalidateQueries();
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey;
+          return Array.isArray(key) &&
+            typeof key[0] === 'string' &&
+            ['conversations-infinite', 'messages', 'conversation', 'conversation-detail', 'conversation-stats'].includes(key[0]);
+        },
+      });
     };
 
     window.addEventListener('echo:connected', handleConnected);
