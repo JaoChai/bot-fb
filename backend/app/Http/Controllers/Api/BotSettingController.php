@@ -130,100 +130,100 @@ class BotSettingController extends Controller
     {
         $this->authorize('update', $bot);
 
-            $validated = $request->validate([
-                // Usage limits
-                'daily_message_limit' => 'integer|min:0|max:100000',
-                'per_user_limit' => 'integer|min:0|max:10000',
-                'rate_limit_per_minute' => 'integer|min:1|max:1000',
-                'max_tokens_per_response' => 'integer|min:100|max:32000',
+        $validated = $request->validate([
+            // Usage limits
+            'daily_message_limit' => 'integer|min:0|max:100000',
+            'per_user_limit' => 'integer|min:0|max:10000',
+            'rate_limit_per_minute' => 'integer|min:1|max:1000',
+            'max_tokens_per_response' => 'integer|min:100|max:32000',
 
-                // HITL settings
-                'hitl_enabled' => 'boolean',
-                'hitl_triggers' => 'nullable|array',
-                'hitl_triggers.*' => 'string|max:100',
+            // HITL settings
+            'hitl_enabled' => 'boolean',
+            'hitl_triggers' => 'nullable|array',
+            'hitl_triggers.*' => 'string|max:100',
 
-                // Response hours (multiple slots per day)
-                // Format: { "mon": [{"start":"09:00","end":"18:00"}], ... }
-                'response_hours_enabled' => 'boolean',
-                'response_hours' => 'nullable|array',
-                'response_hours.*' => 'nullable|array',
-                'response_hours.*.*.start' => 'date_format:H:i',
-                'response_hours.*.*.end' => 'date_format:H:i',
-                'response_hours_timezone' => 'nullable|string|timezone',
-                'offline_message' => 'nullable|string|max:1000',
+            // Response hours (multiple slots per day)
+            // Format: { "mon": [{"start":"09:00","end":"18:00"}], ... }
+            'response_hours_enabled' => 'boolean',
+            'response_hours' => 'nullable|array',
+            'response_hours.*' => 'nullable|array',
+            'response_hours.*.*.start' => 'date_format:H:i',
+            'response_hours.*.*.end' => 'date_format:H:i',
+            'response_hours_timezone' => 'nullable|string|timezone',
+            'offline_message' => 'nullable|string|max:1000',
 
-                // Auto-responses
-                'welcome_message' => 'nullable|string|max:2000',
-                'fallback_message' => 'nullable|string|max:1000',
-                'rate_limit_bot_message' => 'nullable|string|max:500',
-                'rate_limit_user_message' => 'nullable|string|max:500',
-                'typing_indicator' => 'boolean',
-                'typing_delay_ms' => 'integer|min:0|max:5000',
+            // Auto-responses
+            'welcome_message' => 'nullable|string|max:2000',
+            'fallback_message' => 'nullable|string|max:1000',
+            'rate_limit_bot_message' => 'nullable|string|max:500',
+            'rate_limit_user_message' => 'nullable|string|max:500',
+            'typing_indicator' => 'boolean',
+            'typing_delay_ms' => 'integer|min:0|max:5000',
 
-                // Content moderation
-                'content_filter_enabled' => 'boolean',
-                'blocked_keywords' => 'nullable|array',
-                'blocked_keywords.*' => 'string|max:100',
+            // Content moderation
+            'content_filter_enabled' => 'boolean',
+            'blocked_keywords' => 'nullable|array',
+            'blocked_keywords.*' => 'string|max:100',
 
-                // Analytics
-                'analytics_enabled' => 'boolean',
-                'save_conversations' => 'boolean',
+            // Analytics
+            'analytics_enabled' => 'boolean',
+            'save_conversations' => 'boolean',
 
-                // Language and style
-                'language' => 'string|in:th,en,zh,ja,ko',
-                'response_style' => 'string|in:professional,casual,friendly,formal',
+            // Language and style
+            'language' => 'string|in:th,en,zh,ja,ko',
+            'response_style' => 'string|in:professional,casual,friendly,formal',
 
-                // Conversation management
-                'auto_archive_days' => 'nullable|integer|min:1|max:365',
+            // Conversation management
+            'auto_archive_days' => 'nullable|integer|min:1|max:365',
 
-                // Multiple bubbles settings
-                'multiple_bubbles_enabled' => 'boolean',
-                'multiple_bubbles_min' => 'integer|min:1|max:5',
-                'multiple_bubbles_max' => 'integer|min:1|max:5|gte:multiple_bubbles_min',
-                'multiple_bubbles_delimiter' => 'string|max:10',
-                'wait_multiple_bubbles_enabled' => 'boolean',
-                'wait_multiple_bubbles_ms' => 'integer|min:500|max:20000',
+            // Multiple bubbles settings
+            'multiple_bubbles_enabled' => 'boolean',
+            'multiple_bubbles_min' => 'integer|min:1|max:5',
+            'multiple_bubbles_max' => 'integer|min:1|max:5|gte:multiple_bubbles_min',
+            'multiple_bubbles_delimiter' => 'string|max:10',
+            'wait_multiple_bubbles_enabled' => 'boolean',
+            'wait_multiple_bubbles_ms' => 'integer|min:500|max:20000',
 
-                // Smart aggregation settings
-                'smart_aggregation_enabled' => 'boolean',
-                'smart_min_wait_ms' => 'sometimes|integer|min:300|max:3000',
-                'smart_max_wait_ms' => ['sometimes', 'integer', 'min:1000', 'max:10000'],
-                'smart_early_trigger_enabled' => 'boolean',
-                'smart_per_user_learning_enabled' => 'boolean',
+            // Smart aggregation settings
+            'smart_aggregation_enabled' => 'boolean',
+            'smart_min_wait_ms' => 'sometimes|integer|min:300|max:3000',
+            'smart_max_wait_ms' => ['sometimes', 'integer', 'min:1000', 'max:10000'],
+            'smart_early_trigger_enabled' => 'boolean',
+            'smart_per_user_learning_enabled' => 'boolean',
 
-                // Reply sticker settings
-                'reply_sticker_enabled' => 'boolean',
-                'reply_sticker_message' => 'nullable|string|max:500',
-                'reply_sticker_mode' => 'string|in:static,ai',
-                'reply_sticker_ai_prompt' => 'nullable|string|max:1000',
+            // Reply sticker settings
+            'reply_sticker_enabled' => 'boolean',
+            'reply_sticker_message' => 'nullable|string|max:500',
+            'reply_sticker_mode' => 'string|in:static,ai',
+            'reply_sticker_ai_prompt' => 'nullable|string|max:1000',
 
-                // Auto-assignment settings
-                'auto_assignment_enabled' => 'boolean',
-                'auto_assignment_mode' => 'string|in:round_robin,load_balanced',
-            ]);
+            // Auto-assignment settings
+            'auto_assignment_enabled' => 'boolean',
+            'auto_assignment_mode' => 'string|in:round_robin,load_balanced',
+        ]);
 
-            // Validate smart_max_wait_ms >= smart_min_wait_ms
-            if (isset($validated['smart_max_wait_ms'], $validated['smart_min_wait_ms'])) {
-                if ($validated['smart_max_wait_ms'] < $validated['smart_min_wait_ms']) {
-                    return response()->json([
-                        'message' => 'The smart max wait must be greater than or equal to smart min wait.',
-                        'errors' => [
-                            'smart_max_wait_ms' => ['The smart max wait must be greater than or equal to smart min wait.'],
-                        ],
-                    ], 422);
-                }
+        // Validate smart_max_wait_ms >= smart_min_wait_ms
+        if (isset($validated['smart_max_wait_ms'], $validated['smart_min_wait_ms'])) {
+            if ($validated['smart_max_wait_ms'] < $validated['smart_min_wait_ms']) {
+                return response()->json([
+                    'message' => 'The smart max wait must be greater than or equal to smart min wait.',
+                    'errors' => [
+                        'smart_max_wait_ms' => ['The smart max wait must be greater than or equal to smart min wait.'],
+                    ],
+                ], 422);
             }
+        }
 
-            // Get or create settings
-            $settings = $bot->settings ?? $this->createDefaultSettings($bot);
+        // Get or create settings
+        $settings = $bot->settings ?? $this->createDefaultSettings($bot);
 
-            // Update BotSetting
-            $settings->update($validated);
+        // Update BotSetting
+        $settings->update($validated);
 
-            return response()->json([
-                'message' => 'Settings updated successfully',
-                'data' => $settings->fresh(),
-            ]);
+        return response()->json([
+            'message' => 'Settings updated successfully',
+            'data' => $settings->fresh(),
+        ]);
     }
 
     /**
