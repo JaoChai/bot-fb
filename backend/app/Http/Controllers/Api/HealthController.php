@@ -80,7 +80,7 @@ class HealthController extends Controller
 
             if ($detailed) {
                 $result['connection'] = config('database.default');
-                $result['driver'] = config('database.connections.' . config('database.default') . '.driver');
+                $result['driver'] = config('database.connections.'.config('database.default').'.driver');
             }
         } catch (\Throwable $e) {
             $result['latency_ms'] = round((microtime(true) - $start) * 1000, 2);
@@ -106,7 +106,7 @@ class HealthController extends Controller
         ];
 
         try {
-            $testKey = 'health_check_' . uniqid();
+            $testKey = 'health_check_'.uniqid();
             Cache::put($testKey, true, 10);
             $retrieved = Cache::get($testKey);
             Cache::forget($testKey);

@@ -45,7 +45,7 @@ return new class extends Migration
                     }
                 }
 
-                if (!empty($existingColumns)) {
+                if (! empty($existingColumns)) {
                     $table->dropColumn($existingColumns);
                 }
             });

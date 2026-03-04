@@ -21,9 +21,6 @@ trait ValidatesConversationOwnership
     /**
      * Validate that the conversation belongs to the given bot.
      *
-     * @param Conversation $conversation
-     * @param Bot $bot
-     * @return void
      *
      * @throws \Symfony\Component\HttpKernel\Exception\NotFoundHttpException
      */

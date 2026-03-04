@@ -344,7 +344,7 @@ class BackfillOrdersFromMessages extends Command
             ['Would create orders', $this->created],
             ['Would create items', $this->itemsCreated],
             ['Would skip (existing)', $this->skipped],
-            ['Total revenue', number_format($this->totalRevenue, 2) . ' ฿'],
+            ['Total revenue', number_format($this->totalRevenue, 2).' ฿'],
         ]);
     }
 
@@ -358,7 +358,7 @@ class BackfillOrdersFromMessages extends Command
             ['Items created', $this->itemsCreated],
             ['Skipped (existing)', $this->skipped],
             ['Errors', $this->errors],
-            ['Total revenue', number_format($this->totalRevenue, 2) . ' ฿'],
+            ['Total revenue', number_format($this->totalRevenue, 2).' ฿'],
             ['Duration', "{$duration} seconds"],
         ];
 

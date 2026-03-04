@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Storage;
 class TelegramService
 {
     protected const API_BASE_URL = 'https://api.telegram.org/bot';
+
     protected const FILE_BASE_URL = 'https://api.telegram.org/file/bot';
 
     /**
@@ -27,12 +28,13 @@ class TelegramService
 
         $response = $this->client($bot)->post('/setWebhook', $params);
 
-        if ($response->failed() || !$response->json('ok')) {
+        if ($response->failed() || ! $response->json('ok')) {
             Log::error('Telegram setWebhook failed', [
                 'bot_id' => $bot->id,
                 'url' => $url,
                 'error' => $response->json('description'),
             ]);
+
             return false;
         }
 
@@ -70,9 +72,9 @@ class TelegramService
     {
         $response = $this->client($bot)->get('/getMe');
 
-        if ($response->failed() || !$response->json('ok')) {
+        if ($response->failed() || ! $response->json('ok')) {
             throw new TelegramException(
-                'Invalid Telegram bot token: ' . $response->json('description', 'Unknown error'),
+                'Invalid Telegram bot token: '.$response->json('description', 'Unknown error'),
                 401
             );
         }
@@ -95,6 +97,7 @@ class TelegramService
                 'chat_id' => $chatId,
                 'error' => $response->json('description'),
             ]);
+
             return [];
         }
 
@@ -110,9 +113,9 @@ class TelegramService
             'file_id' => $fileId,
         ]);
 
-        if ($response->failed() || !$response->json('ok')) {
+        if ($response->failed() || ! $response->json('ok')) {
             throw new TelegramException(
-                'Failed to get file: ' . $response->json('description', 'Unknown error'),
+                'Failed to get file: '.$response->json('description', 'Unknown error'),
                 $response->status()
             );
         }
@@ -125,7 +128,7 @@ class TelegramService
      */
     public function getFileUrl(Bot $bot, string $filePath): string
     {
-        return self::FILE_BASE_URL . $bot->channel_access_token . '/' . $filePath;
+        return self::FILE_BASE_URL.$bot->channel_access_token.'/'.$filePath;
     }
 
     /**
@@ -137,7 +140,7 @@ class TelegramService
             $fileInfo = $this->getFile($bot, $fileId);
             $filePath = $fileInfo['file_path'] ?? null;
 
-            if (!$filePath) {
+            if (! $filePath) {
                 return null;
             }
 
@@ -146,7 +149,7 @@ class TelegramService
 
             // Generate storage path (use 'chat/' prefix for R2 compatibility)
             $extension = pathinfo($filePath, PATHINFO_EXTENSION);
-            $storagePath = 'chat/' . $bot->id . '/' . date('Y/m/d') . '/' . uniqid() . '.' . $extension;
+            $storagePath = 'chat/'.$bot->id.'/'.date('Y/m/d').'/'.uniqid().'.'.$extension;
 
             // Store file (use configured disk - r2 in production, public locally)
             $disk = config('filesystems.default');
@@ -167,6 +170,7 @@ class TelegramService
                 'file_id' => $fileId,
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -183,7 +187,7 @@ class TelegramService
                 'limit' => 1,
             ]);
 
-            if ($response->failed() || !$response->json('ok')) {
+            if ($response->failed() || ! $response->json('ok')) {
                 return null;
             }
 
@@ -197,7 +201,7 @@ class TelegramService
             $largestPhoto = end($photoSizes);
             $fileId = $largestPhoto['file_id'] ?? null;
 
-            if (!$fileId) {
+            if (! $fileId) {
                 return null;
             }
 
@@ -212,6 +216,7 @@ class TelegramService
                 'user_id' => $userId,
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -225,7 +230,7 @@ class TelegramService
             // Use R2_URL env directly to avoid Laravel config cache issues
             $r2Url = env('R2_URL') ?: config('filesystems.disks.r2.url');
             if ($r2Url) {
-                return rtrim($r2Url, '/') . '/' . $path;
+                return rtrim($r2Url, '/').'/'.$path;
             }
         }
 
@@ -246,7 +251,7 @@ class TelegramService
 
         $response = $this->client($bot)->post('/sendMessage', $params);
 
-        if ($response->failed() || !$response->json('ok')) {
+        if ($response->failed() || ! $response->json('ok')) {
             $error = $response->json('description', 'Unknown Telegram API error');
             Log::error('Telegram sendMessage failed', [
                 'bot_id' => $bot->id,
@@ -277,9 +282,9 @@ class TelegramService
 
         $response = $this->client($bot)->post('/sendPhoto', $params);
 
-        if ($response->failed() || !$response->json('ok')) {
+        if ($response->failed() || ! $response->json('ok')) {
             throw new TelegramException(
-                'Failed to send photo: ' . $response->json('description', 'Unknown error'),
+                'Failed to send photo: '.$response->json('description', 'Unknown error'),
                 $response->status()
             );
         }
@@ -304,9 +309,9 @@ class TelegramService
 
         $response = $this->client($bot)->post('/sendVideo', $params);
 
-        if ($response->failed() || !$response->json('ok')) {
+        if ($response->failed() || ! $response->json('ok')) {
             throw new TelegramException(
-                'Failed to send video: ' . $response->json('description', 'Unknown error'),
+                'Failed to send video: '.$response->json('description', 'Unknown error'),
                 $response->status()
             );
         }
@@ -331,9 +336,9 @@ class TelegramService
 
         $response = $this->client($bot)->post('/sendDocument', $params);
 
-        if ($response->failed() || !$response->json('ok')) {
+        if ($response->failed() || ! $response->json('ok')) {
             throw new TelegramException(
-                'Failed to send document: ' . $response->json('description', 'Unknown error'),
+                'Failed to send document: '.$response->json('description', 'Unknown error'),
                 $response->status()
             );
         }
@@ -357,9 +362,9 @@ class TelegramService
 
         $response = $this->client($bot)->post('/sendVoice', $params);
 
-        if ($response->failed() || !$response->json('ok')) {
+        if ($response->failed() || ! $response->json('ok')) {
             throw new TelegramException(
-                'Failed to send voice: ' . $response->json('description', 'Unknown error'),
+                'Failed to send voice: '.$response->json('description', 'Unknown error'),
                 $response->status()
             );
         }
@@ -387,7 +392,7 @@ class TelegramService
     {
         $message = $update['message'] ?? $update['edited_message'] ?? $update['channel_post'] ?? null;
 
-        if (!$message) {
+        if (! $message) {
             return [
                 'type' => 'unknown',
                 'update_id' => $update['update_id'] ?? null,
@@ -447,6 +452,7 @@ class TelegramService
         // Photo array - get largest size
         if (isset($message['photo']) && is_array($message['photo'])) {
             $largest = end($message['photo']);
+
             return $largest['file_id'] ?? null;
         }
 
@@ -578,7 +584,7 @@ class TelegramService
                 $poll = $message['poll'] ?? [];
                 $metadata = [
                     'question' => $poll['question'] ?? null,
-                    'options' => array_map(fn($o) => $o['text'] ?? '', $poll['options'] ?? []),
+                    'options' => array_map(fn ($o) => $o['text'] ?? '', $poll['options'] ?? []),
                     'total_voter_count' => $poll['total_voter_count'] ?? 0,
                     'is_closed' => $poll['is_closed'] ?? false,
                     'is_anonymous' => $poll['is_anonymous'] ?? true,
@@ -635,7 +641,7 @@ class TelegramService
             throw new TelegramException('Bot has no Telegram token configured', 401);
         }
 
-        return Http::baseUrl(self::API_BASE_URL . $token)
+        return Http::baseUrl(self::API_BASE_URL.$token)
             ->timeout(30)
             ->acceptJson();
     }

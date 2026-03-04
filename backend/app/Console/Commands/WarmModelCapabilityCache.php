@@ -68,8 +68,8 @@ class WarmModelCapabilityCache extends Command
                     ['Structured Output', ($capabilities['supports_structured_output'] ?? false) ? 'Yes' : 'No'],
                     ['Context Length', number_format($capabilities['context_length'])],
                     ['Max Output Tokens', number_format($capabilities['max_output_tokens'])],
-                    ['Pricing (Prompt)', '$' . number_format($capabilities['pricing_prompt'], 4) . '/1M'],
-                    ['Pricing (Completion)', '$' . number_format($capabilities['pricing_completion'], 4) . '/1M'],
+                    ['Pricing (Prompt)', '$'.number_format($capabilities['pricing_prompt'], 4).'/1M'],
+                    ['Pricing (Completion)', '$'.number_format($capabilities['pricing_completion'], 4).'/1M'],
                     ['Source', $capabilities['source']],
                 ]
             );
@@ -98,7 +98,7 @@ class WarmModelCapabilityCache extends Command
             return Command::SUCCESS;
         }
 
-        $this->info('Found ' . count($models) . ' models in config.');
+        $this->info('Found '.count($models).' models in config.');
         $this->newLine();
 
         $results = $this->capabilityService->warmCache();
@@ -172,7 +172,7 @@ class WarmModelCapabilityCache extends Command
             );
 
             if (count($allModels) > 20) {
-                $this->info('... and ' . (count($allModels) - 20) . ' more models.');
+                $this->info('... and '.(count($allModels) - 20).' more models.');
             }
 
             return Command::SUCCESS;

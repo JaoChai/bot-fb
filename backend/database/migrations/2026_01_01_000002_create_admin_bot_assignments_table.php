@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         // Only create if table doesn't exist
-        if (!Schema::hasTable('admin_bot_assignments')) {
+        if (! Schema::hasTable('admin_bot_assignments')) {
             Schema::create('admin_bot_assignments', function (Blueprint $table) {
                 $table->id();
                 $table->foreignId('user_id')->constrained()->onDelete('cascade');

@@ -21,8 +21,8 @@ return [
         'decision_escalate' => "6. ส่งต่อเจ้าหน้าที่ (escalate_to_human): ลูกค้าต้องการคุยกับคน\n",
         'search_strategy' => "### Search Strategy\n1. ค้นด้วย keyword ตรงประเด็น (2-4 คำ)\n2. ไม่เจอ ลอง synonym/กว้างขึ้น\n3. สูงสุด 2 ครั้ง ห้ามค้นซ้ำ keyword เดิม\n",
         'response_rules' => "### Response Rules\n- ตอบจากข้อมูลที่ค้นเจอเท่านั้น ห้ามเดาหรือสร้างข้อมูลขึ้นมาเอง\n- ตอบกระชับ ไม่ต้องบอกว่า \"จากการค้นหา...\"\n- ถ้าไม่มีข้อมูลเพียงพอ ให้แนะนำลูกค้าติดต่อเจ้าหน้าที่\n",
-        'truncation_note' => "[ระบบ: ข้อความก่อนหน้า %d ข้อความถูกตัดเพื่อประหยัด token]",
-        'error_message' => "ขออภัยค่ะ ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง",
+        'truncation_note' => '[ระบบ: ข้อความก่อนหน้า %d ข้อความถูกตัดเพื่อประหยัด token]',
+        'error_message' => 'ขออภัยค่ะ ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้ง',
     ],
 
     'en' => [
@@ -38,7 +38,7 @@ return [
         'decision_escalate' => "6. Escalate (escalate_to_human): Customer wants to speak with a human agent.\n",
         'search_strategy' => "### Search Strategy\n1. Search with precise keywords (2-4 words)\n2. If not found, try synonyms or broader terms\n3. Maximum 2 searches, never repeat the same keywords\n",
         'response_rules' => "### Response Rules\n- Only respond based on retrieved information. Never guess or fabricate data.\n- Be concise. Don't say \"Based on my search...\"\n- If information is insufficient, suggest the customer contact support.\n",
-        'truncation_note' => "[System: %d previous messages were truncated to save tokens]",
-        'error_message' => "I apologize, a temporary error occurred. Please try again.",
+        'truncation_note' => '[System: %d previous messages were truncated to save tokens]',
+        'error_message' => 'I apologize, a temporary error occurred. Please try again.',
     ],
 ];

@@ -32,8 +32,8 @@ class AgentLoopService
     /**
      * Run the agent loop with tool calling (Agentic Mode).
      *
-     * @param AgentLoopConfig $config All inputs for the agent run
-     * @param AgentLoopCallbacks $callbacks Event handler (SSE or sync)
+     * @param  AgentLoopConfig  $config  All inputs for the agent run
+     * @param  AgentLoopCallbacks  $callbacks  Event handler (SSE or sync)
      * @return AgentLoopResult Final response with usage data
      */
     public function run(AgentLoopConfig $config, AgentLoopCallbacks $callbacks): AgentLoopResult
@@ -58,7 +58,7 @@ class AgentLoopService
 
         $callbacks->onAgentStart([
             'max_iterations' => $maxIterations,
-            'tools' => array_map(fn($t) => $t['function']['name'] ?? 'unknown', $tools),
+            'tools' => array_map(fn ($t) => $t['function']['name'] ?? 'unknown', $tools),
             'model' => $chatModel,
             'safety' => [
                 'timeout_seconds' => $safetyConfig['timeout_seconds'],
@@ -104,7 +104,7 @@ class AgentLoopService
                 if ($user && $this->costTracking->exceedsDailyLimit($user)) {
                     $callbacks->onSafetyStop([
                         'type' => 'daily_limit',
-                        'message' => "ถึงวงเงินรายวันแล้ว",
+                        'message' => 'ถึงวงเงินรายวันแล้ว',
                         'iteration' => $iteration,
                     ]);
 
@@ -146,7 +146,7 @@ class AgentLoopService
                 $finishReason = $response['finish_reason'] ?? 'stop';
 
                 // Check if we should execute tools
-                if ($finishReason === 'tool_calls' && !empty($response['tool_calls'])) {
+                if ($finishReason === 'tool_calls' && ! empty($response['tool_calls'])) {
                     $processedToolCalls = [];
                     $toolResults = [];
 
@@ -154,7 +154,7 @@ class AgentLoopService
                         $totalToolCalls++;
                         $this->costTracking->addToolCall();
 
-                        $toolId = $toolCall['id'] ?? 'tool_' . $iteration . '_' . count($processedToolCalls);
+                        $toolId = $toolCall['id'] ?? 'tool_'.$iteration.'_'.count($processedToolCalls);
                         $toolName = $toolCall['function']['name'] ?? 'unknown';
                         $toolArgs = json_decode($toolCall['function']['arguments'] ?? '{}', true) ?: [];
 
@@ -172,6 +172,7 @@ class AgentLoopService
                                     'tool_call_id' => $toolId,
                                     'content' => 'Action was auto-rejected: This action requires human approval which is not available in this context.',
                                 ];
+
                                 continue;
                             }
 
@@ -196,7 +197,7 @@ class AgentLoopService
                             $approval = $this->agentSafety->waitForApproval(
                                 $approvalId,
                                 $hitlTimeout,
-                                fn($elapsed, $timeout) => $callbacks->onApprovalWaiting([
+                                fn ($elapsed, $timeout) => $callbacks->onApprovalWaiting([
                                     'approval_id' => $approvalId,
                                     'elapsed_seconds' => $elapsed,
                                     'timeout_seconds' => $timeout,
@@ -210,12 +211,13 @@ class AgentLoopService
                                 'reason' => $approval['reason'] ?? null,
                             ]);
 
-                            if (!$approval['approved']) {
+                            if (! $approval['approved']) {
                                 $processedToolCalls[] = $toolCall;
                                 $toolResults[] = [
                                     'tool_call_id' => $toolId,
-                                    'content' => 'Action was rejected by user: ' . ($approval['reason'] ?? 'No reason provided'),
+                                    'content' => 'Action was rejected by user: '.($approval['reason'] ?? 'No reason provided'),
                                 ];
+
                                 continue;
                             }
                         }
@@ -251,12 +253,12 @@ class AgentLoopService
                             'tool_call_id' => $toolId,
                             'content' => $toolResult['status'] === 'success'
                                 ? ($toolResult['result'] ?? '')
-                                : ('Error: ' . ($toolResult['error'] ?? 'Unknown error')),
+                                : ('Error: '.($toolResult['error'] ?? 'Unknown error')),
                         ];
                     }
 
                     // Add ONE assistant message with ALL tool calls (OpenAI spec compliance)
-                    if (!empty($processedToolCalls)) {
+                    if (! empty($processedToolCalls)) {
                         $messages[] = [
                             'role' => 'assistant',
                             'content' => null,
@@ -286,7 +288,7 @@ class AgentLoopService
                     'elapsed_seconds' => round(microtime(true) - $loopStartTime, 1),
                 ]);
 
-                if (!empty($finalContent)) {
+                if (! empty($finalContent)) {
                     $callbacks->onContent($finalContent, $finalModel, 'agent_final_response');
                 }
 
@@ -315,7 +317,7 @@ class AgentLoopService
         if ($iteration >= $maxIterations && $finalStatus === 'completed') {
             $callbacks->onMaxIterations([
                 'iterations' => $iteration,
-                'message' => "ถึงจำนวนรอบสูงสุดแล้ว",
+                'message' => 'ถึงจำนวนรอบสูงสุดแล้ว',
             ]);
 
             try {
@@ -340,7 +342,7 @@ class AgentLoopService
                 $finalModel = $fallbackResponse['model'] ?? $chatModel;
                 $finalStatus = 'max_iterations';
 
-                if (!empty($finalContent)) {
+                if (! empty($finalContent)) {
                     $callbacks->onContent($finalContent, $finalModel, 'max_iterations_fallback');
                 }
             } catch (\Exception $e) {
@@ -393,10 +395,10 @@ class AgentLoopService
      *
      * Receives pre-computed signals to avoid circular dependency with RAGService.
      *
-     * @param array{is_complex: bool, score: int} $complexity From RAGService::detectComplexity()
-     * @param array{needs_tool: bool, tool_hint: ?string} $toolIntent From RAGService::detectToolIntent()
-     * @param float $kbTopRelevance Top KB result relevance score
-     * @param float $threshold KB similarity threshold from Flow settings
+     * @param  array{is_complex: bool, score: int}  $complexity  From RAGService::detectComplexity()
+     * @param  array{needs_tool: bool, tool_hint: ?string}  $toolIntent  From RAGService::detectToolIntent()
+     * @param  float  $kbTopRelevance  Top KB result relevance score
+     * @param  float  $threshold  KB similarity threshold from Flow settings
      * @return array{use_agent: bool, reason: string, complexity_score: int, kb_top_relevance: float, tool_intent: bool}
      */
     public function shouldUseAgentLoop(
@@ -406,7 +408,7 @@ class AgentLoopService
         float $threshold
     ): array {
         // Greeting circuit breaker — ALWAYS bypass agent loop
-        if (!$complexity['is_complex'] && in_array('greeting_detected', $complexity['reasons'] ?? [])) {
+        if (! $complexity['is_complex'] && in_array('greeting_detected', $complexity['reasons'] ?? [])) {
             return [
                 'use_agent' => false,
                 'reason' => 'greeting_detected',
@@ -420,13 +422,13 @@ class AgentLoopService
 
         $useAgent = $complexity['is_complex']
             || $toolIntent['needs_tool']
-            || !$hasHighQualityKb;
+            || ! $hasHighQualityKb;
 
         $reason = match (true) {
-            !$useAgent => 'simple_with_quality_kb',
-            $toolIntent['needs_tool'] => 'tool_intent:' . ($toolIntent['tool_hint'] ?? 'unknown'),
+            ! $useAgent => 'simple_with_quality_kb',
+            $toolIntent['needs_tool'] => 'tool_intent:'.($toolIntent['tool_hint'] ?? 'unknown'),
             $complexity['is_complex'] => 'complex_question',
-            !$hasHighQualityKb && $kbTopRelevance > 0 => 'low_quality_kb',
+            ! $hasHighQualityKb && $kbTopRelevance > 0 => 'low_quality_kb',
             default => 'no_kb_results',
         };
 
@@ -445,7 +447,7 @@ class AgentLoopService
     public function buildAgentSystemPrompt(Bot $bot, Flow $flow, string $kbContext = '', array $memoryNotes = []): string
     {
         $basePrompt = $this->buildMemoryPrefix($memoryNotes)
-            . ($flow->system_prompt ?: $this->getDefaultSystemPrompt($bot));
+            .($flow->system_prompt ?: $this->getDefaultSystemPrompt($bot));
         $enabledTools = $flow->enabled_tools ?? [];
 
         if (empty($enabledTools)) {
@@ -458,18 +460,18 @@ class AgentLoopService
         $prompt = $basePrompt;
 
         // --- Pre-loaded KB Context ---
-        if (!empty(trim($kbContext))) {
-            $prompt .= "\n\n" . $prompts['pre_loaded_kb'];
+        if (! empty(trim($kbContext))) {
+            $prompt .= "\n\n".$prompts['pre_loaded_kb'];
             $prompt .= $kbContext;
             $prompt .= $prompts['pre_loaded_kb_suffix'];
         }
 
         // --- Agent Decision Framework ---
-        $prompt .= "\n\n" . $prompts['agent_decision_framework'];
+        $prompt .= "\n\n".$prompts['agent_decision_framework'];
         $prompt .= $prompts['decision_instant'];
 
         if (in_array('search_kb', $enabledTools)) {
-            $prompt .= !empty($kbContext)
+            $prompt .= ! empty($kbContext)
                 ? $prompts['decision_search_with_kb']
                 : $prompts['decision_search_no_kb'];
         }
@@ -488,15 +490,15 @@ class AgentLoopService
 
         // --- Search Strategy ---
         if (in_array('search_kb', $enabledTools)) {
-            $prompt .= "\n" . $prompts['search_strategy'];
+            $prompt .= "\n".$prompts['search_strategy'];
         }
 
         // --- Response Rules ---
-        $prompt .= "\n" . $prompts['response_rules'];
+        $prompt .= "\n".$prompts['response_rules'];
 
         // --- Multiple Bubbles Integration ---
         if ($this->multipleBubbles->isEnabled($bot)) {
-            $prompt .= "\n" . $this->multipleBubbles->buildPromptInstruction($bot);
+            $prompt .= "\n".$this->multipleBubbles->buildPromptInstruction($bot);
         }
 
         return $prompt;
@@ -555,7 +557,7 @@ class AgentLoopService
         $truncatedMessages = array_slice($otherMessages, -$keepCount);
 
         // Ensure we don't start with orphaned tool result messages
-        while (!empty($truncatedMessages) && $truncatedMessages[0]['role'] === 'tool') {
+        while (! empty($truncatedMessages) && $truncatedMessages[0]['role'] === 'tool') {
             array_shift($truncatedMessages);
         }
 
@@ -601,7 +603,7 @@ class AgentLoopService
         foreach ($indicesToCompress as $i) {
             $content = $messages[$i]['content'] ?? '';
             if (mb_strlen($content) > 100) {
-                $messages[$i]['content'] = mb_substr($content, 0, 100) . ' [compressed]';
+                $messages[$i]['content'] = mb_substr($content, 0, 100).' [compressed]';
             }
         }
 
@@ -664,6 +666,7 @@ PROMPT;
         if (mb_strlen($text) <= $maxLength) {
             return $text;
         }
-        return mb_substr($text, 0, $maxLength) . '...';
+
+        return mb_substr($text, 0, $maxLength).'...';
     }
 }

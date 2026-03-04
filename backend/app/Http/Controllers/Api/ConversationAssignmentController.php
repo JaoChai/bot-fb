@@ -18,6 +18,7 @@ class ConversationAssignmentController extends BaseConversationController
     {
         parent::__construct($cacheService);
     }
+
     /**
      * Toggle handover mode (human-in-the-loop) with auto-enable timer.
      */
@@ -99,7 +100,7 @@ class ConversationAssignmentController extends BaseConversationController
 
         // Verify user is an admin of this bot or the owner
         $targetUser = User::find($validated['user_id']);
-        if (!$targetUser->canAccessBot($bot)) {
+        if (! $targetUser->canAccessBot($bot)) {
             return response()->json([
                 'message' => 'User is not an admin of this bot',
             ], 422);
@@ -164,7 +165,7 @@ class ConversationAssignmentController extends BaseConversationController
         $isOwner = $user->isOwner() && $user->id === $bot->user_id;
         $isAssignedUser = $conversation->assigned_user_id === $user->id;
 
-        if (!$isOwner && !$isAssignedUser) {
+        if (! $isOwner && ! $isAssignedUser) {
             return response()->json([
                 'message' => 'You can only unassign conversations assigned to you',
             ], 403);
@@ -183,5 +184,4 @@ class ConversationAssignmentController extends BaseConversationController
             'data' => new ConversationResource($conversation),
         ]);
     }
-
 }

@@ -11,7 +11,7 @@ class SecondAIMetricsTest extends TestCase
     // toLegacyFormat() tests
     // -------------------------------------------------------
 
-    public function test_toLegacyFormat_second_ai_applied_is_true_when_not_passed(): void
+    public function test_to_legacy_format_second_ai_applied_is_true_when_not_passed(): void
     {
         $result = new SecondAICheckResult(
             passed: false,
@@ -27,7 +27,7 @@ class SecondAIMetricsTest extends TestCase
         $this->assertTrue($legacy['second_ai_applied']);
     }
 
-    public function test_toLegacyFormat_second_ai_applied_is_false_when_passed(): void
+    public function test_to_legacy_format_second_ai_applied_is_false_when_passed(): void
     {
         $result = new SecondAICheckResult(
             passed: true,
@@ -44,7 +44,7 @@ class SecondAIMetricsTest extends TestCase
         $this->assertFalse($legacy['second_ai_applied']);
     }
 
-    public function test_toLegacyFormat_second_ai_applied_equals_not_passed(): void
+    public function test_to_legacy_format_second_ai_applied_equals_not_passed(): void
     {
         // Verify the relationship: second_ai_applied === !$passed
         foreach ([true, false] as $passed) {
@@ -58,14 +58,14 @@ class SecondAIMetricsTest extends TestCase
             $legacy = $result->toLegacyFormat();
 
             $this->assertSame(
-                !$passed,
+                ! $passed,
                 $legacy['second_ai_applied'],
-                "second_ai_applied should be " . (!$passed ? 'true' : 'false') . " when passed=$passed"
+                'second_ai_applied should be '.(! $passed ? 'true' : 'false')." when passed=$passed"
             );
         }
     }
 
-    public function test_toLegacyFormat_includes_model_used_in_second_ai(): void
+    public function test_to_legacy_format_includes_model_used_in_second_ai(): void
     {
         $result = new SecondAICheckResult(
             passed: true,
@@ -80,7 +80,7 @@ class SecondAIMetricsTest extends TestCase
         $this->assertSame('openai/gpt-4o-mini', $legacy['second_ai']['model_used']);
     }
 
-    public function test_toLegacyFormat_model_used_is_null_when_not_in_metadata(): void
+    public function test_to_legacy_format_model_used_is_null_when_not_in_metadata(): void
     {
         $result = new SecondAICheckResult(
             passed: true,
@@ -95,7 +95,7 @@ class SecondAIMetricsTest extends TestCase
         $this->assertNull($legacy['second_ai']['model_used']);
     }
 
-    public function test_toLegacyFormat_checks_applied_includes_all_check_types(): void
+    public function test_to_legacy_format_checks_applied_includes_all_check_types(): void
     {
         $result = new SecondAICheckResult(
             passed: false,
@@ -118,7 +118,7 @@ class SecondAIMetricsTest extends TestCase
         $this->assertContains('personality', $checksApplied);
     }
 
-    public function test_toLegacyFormat_checks_applied_includes_non_required_checks(): void
+    public function test_to_legacy_format_checks_applied_includes_non_required_checks(): void
     {
         // Even checks with required:false should appear in checks_applied
         $result = new SecondAICheckResult(
@@ -143,7 +143,7 @@ class SecondAIMetricsTest extends TestCase
     // getAllCheckTypes() tests
     // -------------------------------------------------------
 
-    public function test_getAllCheckTypes_returns_all_keys_regardless_of_required(): void
+    public function test_get_all_check_types_returns_all_keys_regardless_of_required(): void
     {
         $result = new SecondAICheckResult(
             passed: true,
@@ -163,7 +163,7 @@ class SecondAIMetricsTest extends TestCase
         $this->assertContains('personality', $allTypes);
     }
 
-    public function test_getAllCheckTypes_differs_from_getAppliedChecks(): void
+    public function test_get_all_check_types_differs_from_get_applied_checks(): void
     {
         $result = new SecondAICheckResult(
             passed: false,
@@ -188,7 +188,7 @@ class SecondAIMetricsTest extends TestCase
         $this->assertNotContains('policy', $appliedChecks);
     }
 
-    public function test_getAllCheckTypes_returns_empty_when_no_modifications(): void
+    public function test_get_all_check_types_returns_empty_when_no_modifications(): void
     {
         $result = new SecondAICheckResult(
             passed: true,
@@ -203,7 +203,7 @@ class SecondAIMetricsTest extends TestCase
     // toLegacyFormat() structure completeness
     // -------------------------------------------------------
 
-    public function test_toLegacyFormat_has_complete_structure(): void
+    public function test_to_legacy_format_has_complete_structure(): void
     {
         $result = new SecondAICheckResult(
             passed: false,

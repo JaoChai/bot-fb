@@ -11,33 +11,33 @@ use App\Policies\DocumentPolicy;
 use App\Policies\KnowledgeBasePolicy;
 use App\Policies\QuickReplyPolicy;
 use App\Services\Agent\AgentLoopService;
+use App\Services\CircuitBreakerService;
 use App\Services\CostTrackingService;
 use App\Services\FlowCacheService;
 use App\Services\HybridSearchService;
 use App\Services\IntentAnalysisService;
 use App\Services\JinaRerankerService;
 use App\Services\KeywordSearchService;
+use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
 use App\Services\QueryEnhancementService;
 use App\Services\RAGService;
-use App\Services\SemanticCacheService;
-use App\Services\SemanticSearchService;
-use App\Services\SecondAI\SecondAIService;
 use App\Services\SecondAI\FactCheckService;
-use App\Services\SecondAI\PolicyCheckService;
 use App\Services\SecondAI\PersonalityCheckService;
-use App\Services\SecondAI\UnifiedCheckService;
+use App\Services\SecondAI\PolicyCheckService;
 use App\Services\SecondAI\PromptInjectionDetector;
 use App\Services\SecondAI\SecondAIMetricsService;
-use App\Services\ModelCapabilityService;
-use App\Services\CircuitBreakerService;
+use App\Services\SecondAI\SecondAIService;
+use App\Services\SecondAI\UnifiedCheckService;
+use App\Services\SemanticCacheService;
+use App\Services\SemanticSearchService;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Database\Connection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
@@ -78,7 +78,7 @@ class AppServiceProvider extends ServiceProvider
         // Register CostTrackingService as scoped (request-bound) to prevent
         // concurrent requests from corrupting each other's cost tracking state
         $this->app->scoped(CostTrackingService::class, function ($app) {
-            return new CostTrackingService();
+            return new CostTrackingService;
         });
 
         // Register AgentLoopService as scoped (depends on scoped CostTrackingService)
@@ -86,12 +86,12 @@ class AppServiceProvider extends ServiceProvider
 
         // Register PromptInjectionDetector
         $this->app->singleton(PromptInjectionDetector::class, function ($app) {
-            return new PromptInjectionDetector();
+            return new PromptInjectionDetector;
         });
 
         // Register SecondAIMetricsService
         $this->app->singleton(SecondAIMetricsService::class, function ($app) {
-            return new SecondAIMetricsService();
+            return new SecondAIMetricsService;
         });
 
         // Register SecondAIService with all check services
@@ -207,7 +207,7 @@ class AppServiceProvider extends ServiceProvider
         // Strict rate limit for authentication: 5 attempts per minute
         RateLimiter::for('auth', function (Request $request) {
             return Limit::perMinute(5)->by(
-                $request->input('email') . '|' . $request->ip()
+                $request->input('email').'|'.$request->ip()
             )->response(function (Request $request, array $headers) {
                 return response()->json([
                     'message' => 'Too many login attempts. Please try again later.',

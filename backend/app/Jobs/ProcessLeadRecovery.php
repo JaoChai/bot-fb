@@ -98,7 +98,7 @@ class ProcessLeadRecovery implements ShouldQueue
     {
         Log::error('LeadRecovery: Job failed permanently', [
             'error' => $exception->getMessage(),
-            ...(!app()->environment('production') ? ['trace' => $exception->getTraceAsString()] : []),
+            ...(! app()->environment('production') ? ['trace' => $exception->getTraceAsString()] : []),
         ]);
     }
 }

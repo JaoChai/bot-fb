@@ -21,9 +21,13 @@ use Illuminate\Support\Facades\Log;
 class JinaRerankerService
 {
     protected string $apiKey;
+
     protected string $baseUrl;
+
     protected string $model;
+
     protected int $timeout;
+
     protected bool $enabled;
 
     public function __construct()
@@ -38,15 +42,16 @@ class JinaRerankerService
     /**
      * Rerank documents based on relevance to the query.
      *
-     * @param string $query The search query
-     * @param array $documents Array of document contents (strings) or objects with 'content' key
-     * @param int $topN Number of top results to return
+     * @param  string  $query  The search query
+     * @param  array  $documents  Array of document contents (strings) or objects with 'content' key
+     * @param  int  $topN  Number of top results to return
      * @return Collection Reranked documents with relevance_score
      */
     public function rerank(string $query, array $documents, int $topN = 5): Collection
     {
-        if (!$this->isAvailable()) {
+        if (! $this->isAvailable()) {
             Log::debug('JinaReranker: Not available, returning original order');
+
             return $this->formatAsCollection($documents, $topN);
         }
 
@@ -63,16 +68,16 @@ class JinaRerankerService
 
         try {
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Authorization' => 'Bearer '.$this->apiKey,
                 'Content-Type' => 'application/json',
             ])
-            ->timeout($this->timeout)
-            ->post("{$this->baseUrl}/rerank", [
-                'model' => $this->model,
-                'query' => $query,
-                'documents' => $docTexts,
-                'top_n' => min($topN, count($documents)),
-            ]);
+                ->timeout($this->timeout)
+                ->post("{$this->baseUrl}/rerank", [
+                    'model' => $this->model,
+                    'query' => $query,
+                    'documents' => $docTexts,
+                    'top_n' => min($topN, count($documents)),
+                ]);
 
             if ($response->failed()) {
                 $error = $response->json('detail', $response->body());
@@ -80,6 +85,7 @@ class JinaRerankerService
                     'status' => $response->status(),
                     'error' => $error,
                 ]);
+
                 return $this->formatAsCollection($documents, $topN);
             }
 
@@ -87,6 +93,7 @@ class JinaRerankerService
 
             if (empty($results)) {
                 Log::warning('JinaReranker: Empty results from API');
+
                 return $this->formatAsCollection($documents, $topN);
             }
 
@@ -98,6 +105,7 @@ class JinaRerankerService
                 'error' => $e->getMessage(),
                 'query' => substr($query, 0, 100),
             ]);
+
             return $this->formatAsCollection($documents, $topN);
         }
     }
@@ -107,7 +115,7 @@ class JinaRerankerService
      */
     public function isAvailable(): bool
     {
-        return $this->enabled && !empty($this->apiKey);
+        return $this->enabled && ! empty($this->apiKey);
     }
 
     /**
@@ -124,6 +132,7 @@ class JinaRerankerService
     public function setEnabled(bool $enabled): self
     {
         $this->enabled = $enabled;
+
         return $this;
     }
 
@@ -159,7 +168,7 @@ class JinaRerankerService
             $index = $result['index'] ?? null;
             $relevanceScore = $result['relevance_score'] ?? 0;
 
-            if ($index === null || !isset($originalDocs[$index])) {
+            if ($index === null || ! isset($originalDocs[$index])) {
                 continue;
             }
 
@@ -188,6 +197,7 @@ class JinaRerankerService
                 if (is_array($doc)) {
                     $doc['reranked'] = false;
                 }
+
                 return $doc;
             })
             ->values();
@@ -206,11 +216,11 @@ class JinaRerankerService
      */
     public function test(): array
     {
-        $testQuery = "What is machine learning?";
+        $testQuery = 'What is machine learning?';
         $testDocs = [
-            "Machine learning is a subset of artificial intelligence.",
-            "The weather today is sunny.",
-            "Deep learning uses neural networks for complex tasks.",
+            'Machine learning is a subset of artificial intelligence.',
+            'The weather today is sunny.',
+            'Deep learning uses neural networks for complex tasks.',
         ];
 
         $results = $this->rerank($testQuery, $testDocs, 3);

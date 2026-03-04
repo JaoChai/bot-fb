@@ -60,7 +60,7 @@ class AIService
         }
 
         // Ensure usage key exists with defaults (some models may not return usage data)
-        if (!isset($result['usage'])) {
+        if (! isset($result['usage'])) {
             $result['usage'] = [
                 'prompt_tokens' => 0,
                 'completion_tokens' => 0,
@@ -113,14 +113,14 @@ class AIService
             ];
 
             // Include RAG metadata if KB was used
-            if (!empty($result['rag']) && $result['rag']['enabled']) {
+            if (! empty($result['rag']) && $result['rag']['enabled']) {
                 $messageData['metadata'] = [
                     'rag' => $result['rag'],
                 ];
             }
 
             // Include Second AI metadata if applied
-            if (!empty($result['second_ai']) && $result['second_ai']['applied']) {
+            if (! empty($result['second_ai']) && $result['second_ai']['applied']) {
                 $messageData['metadata'] = array_merge(
                     $messageData['metadata'] ?? [],
                     ['second_ai' => $result['second_ai']]

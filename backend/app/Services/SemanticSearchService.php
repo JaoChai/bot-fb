@@ -4,12 +4,12 @@ namespace App\Services;
 
 use App\Models\DocumentChunk;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
 use Pgvector\Laravel\Distance;
 
 class SemanticSearchService
 {
     protected EmbeddingService $embeddingService;
+
     protected float $relevanceThreshold;
 
     public function __construct(EmbeddingService $embeddingService)
@@ -21,11 +21,11 @@ class SemanticSearchService
     /**
      * Search for relevant document chunks using semantic similarity.
      *
-     * @param int $knowledgeBaseId The knowledge base to search in
-     * @param string $query The search query
-     * @param int $limit Maximum number of results
-     * @param float|null $threshold Minimum similarity score (0-1)
-     * @param string|null $apiKey Optional API key to use (from user settings)
+     * @param  int  $knowledgeBaseId  The knowledge base to search in
+     * @param  string  $query  The search query
+     * @param  int  $limit  Maximum number of results
+     * @param  float|null  $threshold  Minimum similarity score (0-1)
+     * @param  string|null  $apiKey  Optional API key to use (from user settings)
      */
     public function search(
         int $knowledgeBaseId,
@@ -84,7 +84,7 @@ class SemanticSearchService
                     'chunk_index' => $chunk->chunk_index,
                     'similarity' => round($similarity, 4),
                     'metadata' => $chunk->metadata,
-                    'has_context' => !empty($chunk->context_text),
+                    'has_context' => ! empty($chunk->context_text),
                 ];
             })
             ->filter(fn ($item) => $item['similarity'] >= $threshold)
@@ -95,10 +95,10 @@ class SemanticSearchService
     /**
      * Search multiple knowledge bases and merge results by similarity score.
      *
-     * @param array $kbConfigs Array of KB configs: [['id' => int, 'kb_top_k' => int, 'kb_similarity_threshold' => float], ...]
-     * @param string $query The search query
-     * @param int $totalLimit Maximum total results to return across all KBs
-     * @param string|null $apiKey Optional API key to use (from user settings)
+     * @param  array  $kbConfigs  Array of KB configs: [['id' => int, 'kb_top_k' => int, 'kb_similarity_threshold' => float], ...]
+     * @param  string  $query  The search query
+     * @param  int  $totalLimit  Maximum total results to return across all KBs
+     * @param  string|null  $apiKey  Optional API key to use (from user settings)
      */
     public function searchMultiple(
         array $kbConfigs,
@@ -151,7 +151,7 @@ class SemanticSearchService
                         'chunk_index' => $chunk->chunk_index,
                         'similarity' => round($similarity, 4),
                         'metadata' => $chunk->metadata,
-                        'has_context' => !empty($chunk->context_text),
+                        'has_context' => ! empty($chunk->context_text),
                     ];
                 })
                 ->filter(fn ($item) => $item['similarity'] >= $threshold)
@@ -189,6 +189,7 @@ class SemanticSearchService
             ->get()
             ->filter(function ($chunk) use ($threshold) {
                 $distance = $chunk->neighbor_distance ?? 0;
+
                 return (1 - ($distance / 2)) >= $threshold;
             });
     }
@@ -209,12 +210,12 @@ class SemanticSearchService
         }
 
         $context = $results
-            ->map(fn ($r) => "--- From: {$r['document_name']} (relevance: " . round($r['similarity'] * 100) . "%) ---\n{$r['content']}")
+            ->map(fn ($r) => "--- From: {$r['document_name']} (relevance: ".round($r['similarity'] * 100)."%) ---\n{$r['content']}")
             ->join("\n\n");
 
         // Truncate if too long
         if (strlen($context) > $maxChars) {
-            $context = substr($context, 0, $maxChars) . '...';
+            $context = substr($context, 0, $maxChars).'...';
         }
 
         return $context;
@@ -226,6 +227,7 @@ class SemanticSearchService
     public function setThreshold(float $threshold): self
     {
         $this->relevanceThreshold = max(0, min(1, $threshold));
+
         return $this;
     }
 }

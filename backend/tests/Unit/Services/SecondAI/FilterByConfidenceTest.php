@@ -11,6 +11,7 @@ use Tests\TestCase;
 class FilterByConfidenceTest extends TestCase
 {
     private UnifiedCheckService $service;
+
     private ReflectionMethod $method;
 
     protected function setUp(): void

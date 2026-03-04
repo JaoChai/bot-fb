@@ -49,6 +49,7 @@ class ConversationController extends BaseConversationController
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
             ]);
+
             return $this->serverError($e->getMessage());
         }
     }
@@ -157,5 +158,4 @@ class ConversationController extends BaseConversationController
 
         return $this->success($stats);
     }
-
 }

@@ -44,13 +44,13 @@ return new class extends Migration
         DB::transaction(function () use ($tables) {
             foreach ($tables as $table => $columns) {
                 // Check if table exists
-                if (!DB::getSchemaBuilder()->hasTable($table)) {
+                if (! DB::getSchemaBuilder()->hasTable($table)) {
                     continue;
                 }
 
                 foreach ($columns as $column) {
                     // Check if column exists
-                    if (!DB::getSchemaBuilder()->hasColumn($table, $column)) {
+                    if (! DB::getSchemaBuilder()->hasColumn($table, $column)) {
                         continue;
                     }
 
@@ -109,12 +109,12 @@ return new class extends Migration
 
         DB::transaction(function () use ($tables) {
             foreach ($tables as $table => $columns) {
-                if (!DB::getSchemaBuilder()->hasTable($table)) {
+                if (! DB::getSchemaBuilder()->hasTable($table)) {
                     continue;
                 }
 
                 foreach ($columns as $column) {
-                    if (!DB::getSchemaBuilder()->hasColumn($table, $column)) {
+                    if (! DB::getSchemaBuilder()->hasColumn($table, $column)) {
                         continue;
                     }
 

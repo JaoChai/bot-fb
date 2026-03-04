@@ -40,10 +40,10 @@ class FactCheckService
     /**
      * Check the response for factual accuracy against Knowledge Base.
      *
-     * @param string $response The AI-generated response to verify
-     * @param Flow $flow The flow containing KB configuration
-     * @param string $userMessage The original user message (for context)
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $response  The AI-generated response to verify
+     * @param  Flow  $flow  The flow containing KB configuration
+     * @param  string  $userMessage  The original user message (for context)
+     * @param  string|null  $apiKey  Optional API key override
      * @return CheckResult The verification result
      */
     public function check(
@@ -60,12 +60,13 @@ class FactCheckService
             ?: throw new \RuntimeException('Bot does not have a model configured. Please set decision_model or primary_chat_model in Bot Settings.');
 
         // Skip if flow has no knowledge bases
-        if (!$flow->relationLoaded('knowledgeBases')) {
+        if (! $flow->relationLoaded('knowledgeBases')) {
             $flow->load('knowledgeBases');
         }
 
         if ($flow->knowledgeBases->isEmpty()) {
             Log::debug('FactCheck: Skipped - no knowledge bases attached to flow');
+
             return CheckResult::passed($response);
         }
 
@@ -75,6 +76,7 @@ class FactCheckService
 
             if (empty($claims)) {
                 Log::debug('FactCheck: No factual claims found in response');
+
                 return CheckResult::passed($response);
             }
 
@@ -90,6 +92,7 @@ class FactCheckService
 
             if (empty($unverifiedClaims)) {
                 Log::debug('FactCheck: All claims verified');
+
                 return CheckResult::passed($response);
             }
 
@@ -132,8 +135,8 @@ class FactCheckService
      *
      * Uses LLM to identify specific factual statements that can be verified.
      *
-     * @param string $response The response to analyze
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $response  The response to analyze
+     * @param  string|null  $apiKey  Optional API key override
      * @return array List of extracted claims
      */
     protected function extractClaims(string $response, ?string $apiKey = null, ?int $timeout = null, ?string $fallbackModel = null): array
@@ -181,8 +184,9 @@ PROMPT;
 
             $claims = json_decode($content, true);
 
-            if (!is_array($claims)) {
+            if (! is_array($claims)) {
                 Log::warning('FactCheck: Invalid claims format', ['content' => $content]);
+
                 return [];
             }
 
@@ -192,6 +196,7 @@ PROMPT;
                 'error' => $e->getMessage(),
                 'content' => $content,
             ]);
+
             return [];
         }
     }
@@ -199,9 +204,9 @@ PROMPT;
     /**
      * Verify claims against the Knowledge Base.
      *
-     * @param array $claims List of claims to verify
-     * @param Flow $flow Flow with knowledge bases
-     * @param string|null $apiKey Optional API key override
+     * @param  array  $claims  List of claims to verify
+     * @param  Flow  $flow  Flow with knowledge bases
+     * @param  string|null  $apiKey  Optional API key override
      * @return array Claims with verification status and evidence
      */
     protected function verifyClaims(array $claims, Flow $flow, ?string $apiKey = null): array
@@ -247,10 +252,10 @@ PROMPT;
     /**
      * Rewrite response without unverified claims.
      *
-     * @param string $originalResponse The original response
-     * @param array $verifiedClaims Claims with verification status
-     * @param string $userMessage Original user message for context
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $originalResponse  The original response
+     * @param  array  $verifiedClaims  Claims with verification status
+     * @param  string  $userMessage  Original user message for context
+     * @param  string|null  $apiKey  Optional API key override
      * @return string Rewritten response
      */
     protected function rewriteWithoutUnverifiedClaims(
@@ -268,7 +273,7 @@ PROMPT;
 
         $verifiedList = collect($verifiedClaims)
             ->where('has_evidence', true)
-            ->map(fn ($c) => $c['claim'] . ' (evidence: ' . implode('; ', array_slice($c['evidence'], 0, 1)) . ')')
+            ->map(fn ($c) => $c['claim'].' (evidence: '.implode('; ', array_slice($c['evidence'], 0, 1)).')')
             ->implode("\n- ");
 
         $prompt = <<<PROMPT

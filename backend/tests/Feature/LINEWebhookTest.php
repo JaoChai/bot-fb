@@ -14,7 +14,9 @@ class LINEWebhookTest extends TestCase
     use RefreshDatabase;
 
     protected User $user;
+
     protected Bot $bot;
+
     protected string $channelSecret = 'test_channel_secret_12345';
 
     protected function setUp(): void
@@ -27,7 +29,7 @@ class LINEWebhookTest extends TestCase
             'channel_type' => 'line',
             'channel_secret' => $this->channelSecret,
             'channel_access_token' => 'test_access_token',
-            'webhook_url' => config('app.url') . '/api/webhook/test_webhook_token_123',
+            'webhook_url' => config('app.url').'/api/webhook/test_webhook_token_123',
         ]);
     }
 
@@ -132,7 +134,7 @@ class LINEWebhookTest extends TestCase
             'user_id' => $this->user->id,
             'channel_type' => 'facebook',
             'channel_secret' => $this->channelSecret,
-            'webhook_url' => config('app.url') . '/api/webhook/facebook_token_123',
+            'webhook_url' => config('app.url').'/api/webhook/facebook_token_123',
         ]);
 
         $body = json_encode(['events' => []]);

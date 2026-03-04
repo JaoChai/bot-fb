@@ -117,7 +117,7 @@ class ConversationMessageController extends BaseConversationController
 
         // Generate storage path
         $extension = $file->getClientOriginalExtension();
-        $storagePath = 'chat/' . $bot->id . '/' . date('Y/m/d') . '/' . uniqid() . '.' . $extension;
+        $storagePath = 'chat/'.$bot->id.'/'.date('Y/m/d').'/'.uniqid().'.'.$extension;
 
         // Store file
         $disk = config('filesystems.default');
@@ -143,7 +143,7 @@ class ConversationMessageController extends BaseConversationController
         if ($disk === 'r2') {
             $r2Url = env('R2_URL') ?: config('filesystems.disks.r2.url');
             if ($r2Url) {
-                return rtrim($r2Url, '/') . '/' . $path;
+                return rtrim($r2Url, '/').'/'.$path;
             }
         }
 

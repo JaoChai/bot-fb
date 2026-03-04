@@ -12,14 +12,12 @@
  *   $maxTokens = config_int('rag.max_tokens', 1000);
  *   $providers = config_array('services.ai.providers', []);
  */
-
-if (!function_exists('config_string')) {
+if (! function_exists('config_string')) {
     /**
      * Get a string config value with null coalescing.
      *
-     * @param string $key The config key to retrieve
-     * @param string $default The default value if config is null
-     * @return string
+     * @param  string  $key  The config key to retrieve
+     * @param  string  $default  The default value if config is null
      */
     function config_string(string $key, string $default = ''): string
     {
@@ -33,13 +31,12 @@ if (!function_exists('config_string')) {
     }
 }
 
-if (!function_exists('config_int')) {
+if (! function_exists('config_int')) {
     /**
      * Get an integer config value with null coalescing.
      *
-     * @param string $key The config key to retrieve
-     * @param int $default The default value if config is null
-     * @return int
+     * @param  string  $key  The config key to retrieve
+     * @param  int  $default  The default value if config is null
      */
     function config_int(string $key, int $default = 0): int
     {
@@ -53,13 +50,12 @@ if (!function_exists('config_int')) {
     }
 }
 
-if (!function_exists('config_float')) {
+if (! function_exists('config_float')) {
     /**
      * Get a float config value with null coalescing.
      *
-     * @param string $key The config key to retrieve
-     * @param float $default The default value if config is null
-     * @return float
+     * @param  string  $key  The config key to retrieve
+     * @param  float  $default  The default value if config is null
      */
     function config_float(string $key, float $default = 0.0): float
     {
@@ -73,13 +69,12 @@ if (!function_exists('config_float')) {
     }
 }
 
-if (!function_exists('config_bool')) {
+if (! function_exists('config_bool')) {
     /**
      * Get a boolean config value with null coalescing.
      *
-     * @param string $key The config key to retrieve
-     * @param bool $default The default value if config is null
-     * @return bool
+     * @param  string  $key  The config key to retrieve
+     * @param  bool  $default  The default value if config is null
      */
     function config_bool(string $key, bool $default = false): bool
     {
@@ -93,19 +88,19 @@ if (!function_exists('config_bool')) {
     }
 }
 
-if (!function_exists('config_array')) {
+if (! function_exists('config_array')) {
     /**
      * Get an array config value with null coalescing.
      *
-     * @param string $key The config key to retrieve
-     * @param array<mixed> $default The default value if config is null
+     * @param  string  $key  The config key to retrieve
+     * @param  array<mixed>  $default  The default value if config is null
      * @return array<mixed>
      */
     function config_array(string $key, array $default = []): array
     {
         $value = config($key);
 
-        if ($value === null || !is_array($value)) {
+        if ($value === null || ! is_array($value)) {
             return $default;
         }
 

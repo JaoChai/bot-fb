@@ -11,7 +11,9 @@ use Illuminate\Support\Facades\Log;
 class LeadRecoveryService
 {
     protected const DEFAULT_TIMEOUT_HOURS = 24;
+
     protected const DEFAULT_MAX_ATTEMPTS = 3;
+
     protected const DEFAULT_MESSAGE = 'สวัสดีค่ะ ไม่ทราบว่ายังสนใจอยู่ไหมคะ? หากมีข้อสงสัยสามารถสอบถามได้เลยนะคะ';
 
     public function __construct(
@@ -25,7 +27,6 @@ class LeadRecoveryService
     /**
      * Find conversations that need recovery for a specific bot.
      *
-     * @param Bot $bot
      * @return Collection<int, Conversation>
      */
     public function findEligibleConversations(Bot $bot): Collection
@@ -47,7 +48,6 @@ class LeadRecoveryService
      * Process recovery for a conversation.
      * Main entry point for lead recovery.
      *
-     * @param Conversation $conversation
      * @return bool Success status
      */
     public function processRecovery(Conversation $conversation): bool
@@ -56,12 +56,13 @@ class LeadRecoveryService
 
         // Check response hours
         $responseCheck = $this->responseHoursService->checkResponseHours($bot);
-        if (!$responseCheck['allowed']) {
+        if (! $responseCheck['allowed']) {
             Log::debug('Lead recovery skipped: outside response hours', [
                 'conversation_id' => $conversation->id,
                 'bot_id' => $bot->id,
                 'status' => $responseCheck['status'],
             ]);
+
             return false;
         }
 
@@ -116,8 +117,6 @@ class LeadRecoveryService
     /**
      * Send a static follow-up message via the appropriate channel.
      *
-     * @param Conversation $conversation
-     * @param string $message
      * @return bool Success status
      */
     public function sendStaticFollowUp(Conversation $conversation, string $message): bool
@@ -130,6 +129,7 @@ class LeadRecoveryService
             Log::warning('Lead recovery: no external customer ID', [
                 'conversation_id' => $conversation->id,
             ]);
+
             return false;
         }
 
@@ -146,6 +146,7 @@ class LeadRecoveryService
                 'channel_type' => $channelType,
                 'error' => $e->getMessage(),
             ]);
+
             return false;
         }
     }
@@ -158,6 +159,7 @@ class LeadRecoveryService
         // Use retry key for idempotency (LINE best practice)
         $retryKey = $this->lineService->generateRetryKey();
         $this->lineService->push($bot, $userId, [$message], $retryKey);
+
         return true;
     }
 
@@ -167,6 +169,7 @@ class LeadRecoveryService
     protected function sendViaTelegram(Bot $bot, string $chatId, string $message): bool
     {
         $this->telegramService->sendMessage($bot, $chatId, $message);
+
         return true;
     }
 
@@ -176,6 +179,7 @@ class LeadRecoveryService
     protected function sendViaFacebook(Bot $bot, string $recipientId, string $message): bool
     {
         $this->facebookService->sendMessage($bot, $recipientId, $message);
+
         return true;
     }
 
@@ -188,21 +192,19 @@ class LeadRecoveryService
             'conversation_id' => $conversationId,
             'channel_type' => $channelType,
         ]);
+
         return false;
     }
 
     /**
      * Generate a static follow-up message for the bot.
-     *
-     * @param Bot $bot
-     * @return string
      */
     public function generateStaticMessage(Bot $bot): string
     {
         $settings = $bot->settings?->hitlSettings;
         $customMessage = $settings?->lead_recovery_message;
 
-        if (!empty($customMessage)) {
+        if (! empty($customMessage)) {
             return $customMessage;
         }
 
@@ -212,12 +214,10 @@ class LeadRecoveryService
     /**
      * Log a recovery attempt to the database.
      *
-     * @param Conversation $conversation
-     * @param string $mode 'static' or 'ai'
-     * @param string $message The message that was sent
-     * @param string $status 'sent', 'failed', 'pending'
-     * @param string|null $error Error message if failed
-     * @return LeadRecoveryLog
+     * @param  string  $mode  'static' or 'ai'
+     * @param  string  $message  The message that was sent
+     * @param  string  $status  'sent', 'failed', 'pending'
+     * @param  string|null  $error  Error message if failed
      */
     public function logRecoveryAttempt(
         Conversation $conversation,
@@ -241,9 +241,6 @@ class LeadRecoveryService
 
     /**
      * Update conversation after a successful recovery attempt.
-     *
-     * @param Conversation $conversation
-     * @return void
      */
     public function updateConversationAfterRecovery(Conversation $conversation): void
     {
@@ -255,8 +252,6 @@ class LeadRecoveryService
 
     /**
      * Get the default Thai follow-up message.
-     *
-     * @return string
      */
     public function getDefaultMessage(): string
     {
@@ -270,7 +265,6 @@ class LeadRecoveryService
     /**
      * Generate an AI-powered follow-up message.
      *
-     * @param Conversation $conversation
      * @return string|null Returns null if AI generation fails
      */
     public function generateAIFollowUp(Conversation $conversation): ?string
@@ -285,6 +279,7 @@ class LeadRecoveryService
                     'conversation_id' => $conversation->id,
                     'bot_id' => $bot->id,
                 ]);
+
                 return null;
             }
 
@@ -333,6 +328,7 @@ class LeadRecoveryService
                     'conversation_id' => $conversation->id,
                     'bot_id' => $bot->id,
                 ]);
+
                 return null;
             }
 
@@ -350,30 +346,29 @@ class LeadRecoveryService
                 'bot_id' => $conversation->bot_id,
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
 
     /**
      * Get the system prompt from the bot's default flow.
-     *
-     * @param Bot $bot
-     * @return string|null
      */
     public function getSystemPromptFromDefaultFlow(Bot $bot): ?string
     {
         try {
             // Load default flow if not already loaded
-            if (!$bot->relationLoaded('defaultFlow')) {
+            if (! $bot->relationLoaded('defaultFlow')) {
                 $bot->load('defaultFlow');
             }
 
             $defaultFlow = $bot->defaultFlow;
 
-            if (!$defaultFlow) {
+            if (! $defaultFlow) {
                 Log::debug('Lead recovery: bot has no default flow', [
                     'bot_id' => $bot->id,
                 ]);
+
                 return null;
             }
 
@@ -384,6 +379,7 @@ class LeadRecoveryService
                     'bot_id' => $bot->id,
                     'flow_id' => $defaultFlow->id,
                 ]);
+
                 return null;
             }
 
@@ -393,6 +389,7 @@ class LeadRecoveryService
                 'bot_id' => $bot->id,
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -402,9 +399,6 @@ class LeadRecoveryService
      *
      * Finds the most recent LeadRecoveryLog for this conversation where
      * customer_responded = false and updates it to mark the response.
-     *
-     * @param Conversation $conversation
-     * @return void
      */
     public function markCustomerResponded(Conversation $conversation): void
     {
@@ -430,8 +424,7 @@ class LeadRecoveryService
     /**
      * Get recent conversation context for AI message generation.
      *
-     * @param Conversation $conversation
-     * @param int $limit Number of recent messages to retrieve
+     * @param  int  $limit  Number of recent messages to retrieve
      * @return array Array of messages with role (customer/assistant) and content
      */
     public function getConversationContext(Conversation $conversation, int $limit = 5): array
@@ -467,6 +460,7 @@ class LeadRecoveryService
                 'conversation_id' => $conversation->id,
                 'error' => $e->getMessage(),
             ]);
+
             return [];
         }
     }

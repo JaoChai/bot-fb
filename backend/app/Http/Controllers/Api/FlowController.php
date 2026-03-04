@@ -54,33 +54,43 @@ class FlowController extends Controller
      *     operationId="listFlows",
      *     tags={"Flows"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="bot",
      *         in="path",
      *         description="Bot ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="per_page",
      *         in="query",
      *         description="Number of items per page",
      *         required=false,
+     *
      *         @OA\Schema(type="integer", default=15, minimum=1, maximum=100)
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
      *             type="object",
+     *
      *             @OA\Property(
      *                 property="data",
      *                 type="array",
+     *
      *                 @OA\Items(ref="#/components/schemas/FlowList")
      *             ),
+     *
      *             @OA\Property(property="meta", ref="#/components/schemas/PaginationMeta")
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=403, description="Forbidden"),
      *     @OA\Response(response=404, description="Bot not found")
@@ -109,17 +119,22 @@ class FlowController extends Controller
      *     operationId="createFlow",
      *     tags={"Flows"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="bot",
      *         in="path",
      *         description="Bot ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\JsonContent(
      *             required={"name"},
+     *
      *             @OA\Property(property="name", type="string", maxLength=255, example="Customer Support Flow"),
      *             @OA\Property(property="description", type="string", maxLength=1000),
      *             @OA\Property(property="system_prompt", type="string", description="AI system prompt"),
@@ -133,8 +148,10 @@ class FlowController extends Controller
      *             @OA\Property(
      *                 property="knowledge_bases",
      *                 type="array",
+     *
      *                 @OA\Items(
      *                     type="object",
+     *
      *                     @OA\Property(property="id", type="integer"),
      *                     @OA\Property(property="kb_top_k", type="integer", default=5),
      *                     @OA\Property(property="kb_similarity_threshold", type="number", format="float", default=0.7)
@@ -142,14 +159,18 @@ class FlowController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=201,
      *         description="Flow created successfully",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="message", type="string", example="Flow created successfully"),
      *             @OA\Property(property="data", ref="#/components/schemas/Flow")
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=403, description="Forbidden"),
      *     @OA\Response(response=422, description="Validation error")
@@ -170,7 +191,7 @@ class FlowController extends Controller
         }
 
         // If this is the first flow, make it default
-        if (!$bot->flows()->exists()) {
+        if (! $bot->flows()->exists()) {
             $data['is_default'] = true;
         }
 
@@ -181,7 +202,7 @@ class FlowController extends Controller
         $flow = $bot->flows()->create($data);
 
         // Sync knowledge bases with pivot data
-        if (!empty($knowledgeBases)) {
+        if (! empty($knowledgeBases)) {
             $syncData = [];
             foreach ($knowledgeBases as $kb) {
                 $syncData[$kb['id']] = [
@@ -213,27 +234,35 @@ class FlowController extends Controller
      *     operationId="getFlow",
      *     tags={"Flows"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="bot",
      *         in="path",
      *         description="Bot ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="flow",
      *         in="path",
      *         description="Flow ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="data", ref="#/components/schemas/Flow")
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=403, description="Forbidden"),
      *     @OA\Response(response=404, description="Flow not found")
@@ -257,23 +286,30 @@ class FlowController extends Controller
      *     operationId="updateFlow",
      *     tags={"Flows"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="bot",
      *         in="path",
      *         description="Bot ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="flow",
      *         in="path",
      *         description="Flow ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="name", type="string", maxLength=255),
      *             @OA\Property(property="description", type="string", maxLength=1000),
      *             @OA\Property(property="system_prompt", type="string"),
@@ -287,8 +323,10 @@ class FlowController extends Controller
      *             @OA\Property(
      *                 property="knowledge_bases",
      *                 type="array",
+     *
      *                 @OA\Items(
      *                     type="object",
+     *
      *                     @OA\Property(property="id", type="integer"),
      *                     @OA\Property(property="kb_top_k", type="integer"),
      *                     @OA\Property(property="kb_similarity_threshold", type="number", format="float")
@@ -296,14 +334,18 @@ class FlowController extends Controller
      *             )
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Flow updated successfully",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="message", type="string", example="Flow updated successfully"),
      *             @OA\Property(property="data", ref="#/components/schemas/Flow")
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=403, description="Forbidden"),
      *     @OA\Response(response=404, description="Flow not found"),
@@ -356,7 +398,7 @@ class FlowController extends Controller
 
         // Clear semantic cache if response-affecting fields changed
         $shouldClearSemanticCache = $knowledgeBases !== null;
-        if (!$shouldClearSemanticCache) {
+        if (! $shouldClearSemanticCache) {
             foreach (self::RESPONSE_AFFECTING_FIELDS as $field) {
                 if (array_key_exists($field, $data)) {
                     $shouldClearSemanticCache = true;
@@ -386,7 +428,7 @@ class FlowController extends Controller
         }
 
         // Don't allow deleting the only flow (check if other flows exist)
-        if (!$bot->flows()->where('id', '!=', $flow->id)->exists()) {
+        if (! $bot->flows()->where('id', '!=', $flow->id)->exists()) {
             return $this->validationError('Cannot delete the only flow. Create another flow first.');
         }
 
@@ -408,28 +450,36 @@ class FlowController extends Controller
      *     operationId="setDefaultFlow",
      *     tags={"Flows"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="bot",
      *         in="path",
      *         description="Bot ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Parameter(
      *         name="flow",
      *         in="path",
      *         description="Flow ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Flow set as default successfully",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="message", type="string", example="Flow set as default successfully"),
      *             @OA\Property(property="data", ref="#/components/schemas/Flow")
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=403, description="Forbidden"),
      *     @OA\Response(response=404, description="Flow not found")
@@ -474,7 +524,7 @@ class FlowController extends Controller
         $flow->loadMissing('knowledgeBases');
 
         $newFlow = $flow->replicate();
-        $newFlow->name = $flow->name . ' (Copy)';
+        $newFlow->name = $flow->name.' (Copy)';
         $newFlow->is_default = false;
         $newFlow->save();
 
@@ -587,6 +637,7 @@ class FlowController extends Controller
             }
 
             $statusCode = $e->getCode() >= 400 && $e->getCode() < 600 ? $e->getCode() : 500;
+
             return $this->error($errorMessage, $statusCode, [
                 'success' => false,
                 'error_code' => $e->isAuthError() ? 'AUTH_ERROR' : ($e->isRateLimited() ? 'RATE_LIMITED' : 'API_ERROR'),
@@ -679,6 +730,7 @@ PROMPT;
         if (array_key_exists('is_default', $data)) {
             $data['is_default'] = filter_var($data['is_default'], FILTER_VALIDATE_BOOLEAN);
         }
+
         return $data;
     }
 

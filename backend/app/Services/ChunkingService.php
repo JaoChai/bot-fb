@@ -5,6 +5,7 @@ namespace App\Services;
 class ChunkingService
 {
     protected int $chunkSize;
+
     protected int $chunkOverlap;
 
     public function __construct()
@@ -31,7 +32,7 @@ class ChunkingService
         foreach ($sentences as $sentence) {
             $sentenceWordCount = str_word_count($sentence);
 
-            if ($currentWordCount + $sentenceWordCount > $this->chunkSize && !empty($currentChunk)) {
+            if ($currentWordCount + $sentenceWordCount > $this->chunkSize && ! empty($currentChunk)) {
                 $chunkText = implode(' ', $currentChunk);
                 $chunks[] = [
                     'content' => $chunkText,
@@ -52,7 +53,7 @@ class ChunkingService
             $currentWordCount += $sentenceWordCount;
         }
 
-        if (!empty($currentChunk)) {
+        if (! empty($currentChunk)) {
             $chunkText = implode(' ', $currentChunk);
             $chunks[] = [
                 'content' => $chunkText,
@@ -81,7 +82,7 @@ class ChunkingService
         $pattern = '/(?<=[.!?])\s+(?=[A-Z])|(?<=\n)\s*(?=\S)/u';
         $sentences = preg_split($pattern, $text, -1, PREG_SPLIT_NO_EMPTY);
 
-        return array_filter(array_map('trim', $sentences), fn ($s) => !empty($s));
+        return array_filter(array_map('trim', $sentences), fn ($s) => ! empty($s));
     }
 
     protected function getOverlapSentences(array $sentences): array

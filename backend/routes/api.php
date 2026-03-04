@@ -1,30 +1,29 @@
 <?php
 
 use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\AgentApprovalController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BotController;
-use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\BotSettingController;
 use App\Http\Controllers\Api\ConversationAssignmentController;
 use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\ConversationMessageController;
 use App\Http\Controllers\Api\ConversationNoteController;
 use App\Http\Controllers\Api\ConversationTagController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\FlowController;
 use App\Http\Controllers\Api\FlowPluginController;
+use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\KnowledgeBaseController;
-use App\Http\Controllers\Api\StreamController;
-use App\Http\Controllers\Api\UserSearchController;
-use App\Http\Controllers\Api\UserSettingController;
-use App\Http\Controllers\Api\AgentApprovalController;
 use App\Http\Controllers\Api\LeadRecoveryController;
 use App\Http\Controllers\Api\ModelController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\QuickReplyController;
-use App\Http\Controllers\Api\HealthController;
-use Illuminate\Http\Request;
+use App\Http\Controllers\Api\StreamController;
+use App\Http\Controllers\Api\UserSearchController;
+use App\Http\Controllers\Api\UserSettingController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 

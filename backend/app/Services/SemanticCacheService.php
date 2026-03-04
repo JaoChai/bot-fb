@@ -65,14 +65,14 @@ class SemanticCacheService
     /**
      * Try to get a cached response for the given query.
      *
-     * @param Bot $bot The bot to search cache for
-     * @param string $query The user's query
-     * @param string|null $apiKey Optional API key for embedding
+     * @param  Bot  $bot  The bot to search cache for
+     * @param  string  $query  The user's query
+     * @param  string|null  $apiKey  Optional API key for embedding
      * @return array|null Cached response or null if not found
      */
     public function get(Bot $bot, string $query, ?string $apiKey = null): ?array
     {
-        if (!$this->enabled) {
+        if (! $this->enabled) {
             return null;
         }
 
@@ -123,11 +123,11 @@ class SemanticCacheService
     /**
      * Save a response to the cache.
      *
-     * @param Bot $bot The bot
-     * @param string $query The user's query
-     * @param string $response The generated response
-     * @param array $metadata Additional metadata (intent, rag info, etc.)
-     * @param string|null $apiKey Optional API key for embedding
+     * @param  Bot  $bot  The bot
+     * @param  string  $query  The user's query
+     * @param  string  $response  The generated response
+     * @param  array  $metadata  Additional metadata (intent, rag info, etc.)
+     * @param  string|null  $apiKey  Optional API key for embedding
      * @return RagCache|null The created cache entry
      */
     public function put(
@@ -137,7 +137,7 @@ class SemanticCacheService
         array $metadata = [],
         ?string $apiKey = null
     ): ?RagCache {
-        if (!$this->enabled) {
+        if (! $this->enabled) {
             return null;
         }
 
@@ -227,7 +227,7 @@ class SemanticCacheService
             ->orderByRaw('query_embedding <=> ? ASC', [$vector])
             ->first();
 
-        if (!$result) {
+        if (! $result) {
             return null;
         }
 

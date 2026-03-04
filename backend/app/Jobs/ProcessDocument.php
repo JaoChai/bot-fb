@@ -23,7 +23,9 @@ class ProcessDocument implements ShouldQueue
     use InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
+
     public array $backoff = [30, 60, 120];
+
     public int $timeout = 300;
 
     public function __construct(
@@ -49,7 +51,7 @@ class ProcessDocument implements ShouldQueue
             $maxFileSize = config('rag.max_document_size', 50 * 1024 * 1024); // 50MB
             if ($this->document->file_size && $this->document->file_size > $maxFileSize) {
                 throw new \RuntimeException(
-                    "Document too large: " . number_format($this->document->file_size / 1024 / 1024, 1) . "MB exceeds limit of " . number_format($maxFileSize / 1024 / 1024, 1) . "MB"
+                    'Document too large: '.number_format($this->document->file_size / 1024 / 1024, 1).'MB exceeds limit of '.number_format($maxFileSize / 1024 / 1024, 1).'MB'
                 );
             }
 
@@ -58,7 +60,7 @@ class ProcessDocument implements ShouldQueue
             $embedder = new EmbeddingService($apiKey);
 
             // Use content directly for text-only documents, parse file for legacy
-            if (!empty($this->document->content)) {
+            if (! empty($this->document->content)) {
                 $text = $this->document->content;
             } elseif ($this->document->storage_path) {
                 $text = $parser->parse(
@@ -164,7 +166,7 @@ class ProcessDocument implements ShouldQueue
         $batchSize = 20;
         $batches = array_chunk($chunks, $batchSize, true);
         $contextBatches = array_chunk($chunkContexts, $batchSize, true);
-        $useContextualRetrieval = $contextualRetrieval->isEnabled() && !empty($chunkContexts);
+        $useContextualRetrieval = $contextualRetrieval->isEnabled() && ! empty($chunkContexts);
         $globalIndex = 0;
 
         foreach ($batches as $batchIndex => $batch) {
@@ -181,7 +183,7 @@ class ProcessDocument implements ShouldQueue
             foreach ($batch as $chunkIndex => $chunk) {
                 $context = $batchContexts[$chunkIndex] ?? '';
 
-                if ($useContextualRetrieval && !empty($context)) {
+                if ($useContextualRetrieval && ! empty($context)) {
                     // Combine context and content for embedding
                     $texts[] = $contextualRetrieval->combineForEmbedding($context, $chunk['content']);
                 } else {
@@ -205,7 +207,7 @@ class ProcessDocument implements ShouldQueue
                         'embedding' => $embeddings[$localIndex] ?? null,
                         'metadata' => [
                             'word_count' => $chunk['word_count'] ?? null,
-                            'has_context' => !empty($context),
+                            'has_context' => ! empty($context),
                         ],
                     ]);
 
@@ -239,6 +241,7 @@ class ProcessDocument implements ShouldQueue
 
         // Fallback to document owner's API key
         $owner = $this->document->knowledgeBase?->user;
+
         return $owner?->settings?->getOpenRouterApiKey();
     }
 
@@ -251,7 +254,7 @@ class ProcessDocument implements ShouldQueue
 
         $this->document->update([
             'status' => 'failed',
-            'error_message' => 'Processing failed after retries: ' . $exception->getMessage(),
+            'error_message' => 'Processing failed after retries: '.$exception->getMessage(),
         ]);
         broadcast(new DocumentStatusUpdated($this->document->fresh(), 'failed'));
     }

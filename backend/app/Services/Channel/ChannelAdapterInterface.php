@@ -21,11 +21,11 @@ interface ChannelAdapterInterface
     /**
      * Send a message to a customer via this channel.
      *
-     * @param Bot $bot The bot sending the message
-     * @param Conversation $conversation The conversation context
-     * @param string $type Message type (text, image, video, audio, file)
-     * @param string $content Text content of the message
-     * @param string|null $mediaUrl Optional media URL for non-text messages
+     * @param  Bot  $bot  The bot sending the message
+     * @param  Conversation  $conversation  The conversation context
+     * @param  string  $type  Message type (text, image, video, audio, file)
+     * @param  string  $content  Text content of the message
+     * @param  string|null  $mediaUrl  Optional media URL for non-text messages
      */
     public function sendMessage(
         Bot $bot,

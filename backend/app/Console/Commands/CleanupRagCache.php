@@ -31,8 +31,9 @@ class CleanupRagCache extends Command
             $this->info('DRY RUN MODE - No changes will be made');
         }
 
-        if (!$cacheService->isEnabled()) {
+        if (! $cacheService->isEnabled()) {
             $this->warn('Semantic cache is disabled. Nothing to clean up.');
+
             return Command::SUCCESS;
         }
 
@@ -41,11 +42,13 @@ class CleanupRagCache extends Command
             if ($dryRun) {
                 $stats = $cacheService->getStats((int) $botId);
                 $this->info("Bot {$botId} has {$stats['expired_entries']} expired entries.");
+
                 return Command::SUCCESS;
             }
 
             $deleted = $cacheService->clearForBot((int) $botId);
             $this->info("Cleared {$deleted} cache entries for bot {$botId}.");
+
             return Command::SUCCESS;
         }
 
@@ -53,6 +56,7 @@ class CleanupRagCache extends Command
         if ($dryRun) {
             $count = \App\Models\RagCache::where('expires_at', '<', now())->count();
             $this->info("Found {$count} expired cache entries that would be deleted.");
+
             return Command::SUCCESS;
         }
 

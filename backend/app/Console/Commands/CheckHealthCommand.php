@@ -142,7 +142,7 @@ class CheckHealthCommand extends Command
         $start = microtime(true);
 
         try {
-            $key = 'health_check_cli_' . uniqid();
+            $key = 'health_check_cli_'.uniqid();
             Cache::put($key, true, 10);
             $retrieved = Cache::get($key);
             Cache::forget($key);

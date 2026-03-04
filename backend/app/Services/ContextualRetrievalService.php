@@ -36,9 +36,9 @@ class ContextualRetrievalService
     /**
      * Generate a summary of the document for context generation.
      *
-     * @param string $documentTitle The document title/filename
-     * @param string $documentContent The full document content
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $documentTitle  The document title/filename
+     * @param  string  $documentContent  The full document content
+     * @param  string|null  $apiKey  Optional API key override
      * @return array{summary: string, tokens_used: int}
      */
     public function generateDocumentSummary(
@@ -95,7 +95,7 @@ PROMPT;
 
             // Fallback: use first 200 chars as summary
             return [
-                'summary' => mb_substr($documentContent, 0, 200) . '...',
+                'summary' => mb_substr($documentContent, 0, 200).'...',
                 'tokens_used' => 0,
             ];
         }
@@ -104,10 +104,10 @@ PROMPT;
     /**
      * Generate context for a batch of chunks.
      *
-     * @param string $documentTitle The document title
-     * @param string $documentSummary The document summary
-     * @param array $chunks Array of chunk contents
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $documentTitle  The document title
+     * @param  string  $documentSummary  The document summary
+     * @param  array  $chunks  Array of chunk contents
+     * @param  string|null  $apiKey  Optional API key override
      * @return array{contexts: array<string>, tokens_used: int}
      */
     public function generateChunkContexts(
@@ -235,7 +235,7 @@ PROMPT;
             if (preg_match_all('/(?:CONTEXT\s*\d+\s*:|^\d+[\.\)]\s*)(.+?)(?=(?:CONTEXT\s*\d+|^\d+[\.\)]|$))/ims', $response, $matches)) {
                 foreach ($matches[1] as $match) {
                     $context = trim($match);
-                    if (!empty($context)) {
+                    if (! empty($context)) {
                         $contexts[] = $context;
                     }
                 }
@@ -259,7 +259,7 @@ PROMPT;
         // Extract first sentence or first 100 chars
         $firstSentence = preg_match('/^[^.!?]+[.!?]/', $chunkContent, $matches)
             ? $matches[0]
-            : mb_substr($chunkContent, 0, 100) . '...';
+            : mb_substr($chunkContent, 0, 100).'...';
 
         return "From document '{$documentTitle}': {$firstSentence}";
     }
@@ -267,10 +267,10 @@ PROMPT;
     /**
      * Generate context for a single chunk.
      *
-     * @param string $documentTitle The document title
-     * @param string $documentSummary The document summary
-     * @param string $chunkContent The chunk content
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $documentTitle  The document title
+     * @param  string  $documentSummary  The document summary
+     * @param  string  $chunkContent  The chunk content
+     * @param  string|null  $apiKey  Optional API key override
      * @return array{context: string, tokens_used: int}
      */
     public function generateSingleChunkContext(
@@ -329,8 +329,8 @@ PROMPT;
     /**
      * Combine context and content for embedding.
      *
-     * @param string $context The generated context
-     * @param string $content The original chunk content
+     * @param  string  $context  The generated context
+     * @param  string  $content  The original chunk content
      * @return string The combined text for embedding
      */
     public function combineForEmbedding(string $context, string $content): string

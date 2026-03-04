@@ -51,7 +51,7 @@ readonly class SecondAICheckResult
     {
         return array_filter(
             array_keys($this->modifications),
-            fn($type) => $this->wasApplied($type)
+            fn ($type) => $this->wasApplied($type)
         );
     }
 
@@ -70,7 +70,7 @@ readonly class SecondAICheckResult
     {
         return [
             'content' => $this->finalResponse,
-            'second_ai_applied' => !$this->passed,
+            'second_ai_applied' => ! $this->passed,
             'second_ai' => [
                 'checks_applied' => $this->getAllCheckTypes(),
                 'modifications' => $this->modifications,

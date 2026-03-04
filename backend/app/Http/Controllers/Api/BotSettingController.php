@@ -20,20 +20,26 @@ class BotSettingController extends Controller
      *     operationId="getBotSettings",
      *     tags={"Bot Settings"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="bot",
      *         in="path",
      *         description="Bot ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Successful operation",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="data", ref="#/components/schemas/BotSettings")
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=403, description="Forbidden"),
      *     @OA\Response(response=404, description="Bot not found")
@@ -56,6 +62,7 @@ class BotSettingController extends Controller
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
             ]);
+
             return response()->json([
                 'error' => $e->getMessage(),
                 'file' => basename($e->getFile()),
@@ -74,16 +81,21 @@ class BotSettingController extends Controller
      *     operationId="updateBotSettings",
      *     tags={"Bot Settings"},
      *     security={{"bearerAuth":{}}},
+     *
      *     @OA\Parameter(
      *         name="bot",
      *         in="path",
      *         description="Bot ID",
      *         required=true,
+     *
      *         @OA\Schema(type="integer")
      *     ),
+     *
      *     @OA\RequestBody(
      *         required=true,
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="daily_message_limit", type="integer", minimum=0, maximum=100000, example=1000),
      *             @OA\Property(property="per_user_limit", type="integer", minimum=0, maximum=10000, example=100),
      *             @OA\Property(property="rate_limit_per_minute", type="integer", minimum=1, maximum=1000, example=20),
@@ -110,14 +122,18 @@ class BotSettingController extends Controller
      *             @OA\Property(property="auto_assignment_mode", type="string", enum={"round_robin", "load_balanced"})
      *         )
      *     ),
+     *
      *     @OA\Response(
      *         response=200,
      *         description="Settings updated successfully",
+     *
      *         @OA\JsonContent(
+     *
      *             @OA\Property(property="message", type="string", example="Settings updated successfully"),
      *             @OA\Property(property="data", ref="#/components/schemas/BotSettings")
      *         )
      *     ),
+     *
      *     @OA\Response(response=401, description="Unauthenticated"),
      *     @OA\Response(response=403, description="Forbidden"),
      *     @OA\Response(response=404, description="Bot not found"),
@@ -219,7 +235,7 @@ class BotSettingController extends Controller
             // Log for debugging
             \Log::debug('BotSettingController::update - updating settings', [
                 'bot_id' => $bot->id,
-                'smart_fields' => array_filter($validated, fn($k) => str_starts_with($k, 'smart_'), ARRAY_FILTER_USE_KEY),
+                'smart_fields' => array_filter($validated, fn ($k) => str_starts_with($k, 'smart_'), ARRAY_FILTER_USE_KEY),
             ]);
 
             // Update BotSetting
@@ -235,6 +251,7 @@ class BotSettingController extends Controller
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
             ]);
+
             return response()->json([
                 'error' => $e->getMessage(),
                 'file' => basename($e->getFile()),

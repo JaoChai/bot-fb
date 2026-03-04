@@ -6,7 +6,6 @@ use App\Models\Bot;
 use App\Models\Flow;
 use App\Services\SecondAI\SecondAIService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 
 class TestUnifiedMode extends Command
 {
@@ -40,15 +39,17 @@ class TestUnifiedMode extends Command
 
         if ($flowId) {
             $flow = Flow::find($flowId);
-            if (!$flow) {
+            if (! $flow) {
                 $this->error("Flow {$flowId} not found");
+
                 return 1;
             }
         } else {
             // Create test flow
             $bot = Bot::first();
-            if (!$bot) {
+            if (! $bot) {
                 $this->error('No bots found. Please create a bot first.');
+
                 return 1;
             }
 
@@ -73,7 +74,7 @@ class TestUnifiedMode extends Command
         $userMessage = $this->option('message');
         $response = $this->option('response');
 
-        $this->info("📝 Test Input:");
+        $this->info('📝 Test Input:');
         $this->line("   User Message: {$userMessage}");
         $this->line("   AI Response: {$response}");
         $this->newLine();
@@ -96,12 +97,12 @@ class TestUnifiedMode extends Command
             $this->info('✅ Second AI Process Completed');
             $this->newLine();
 
-            $this->line("📊 Results:");
-            $this->line("   Applied: " . ($result['second_ai_applied'] ? 'Yes' : 'No'));
+            $this->line('📊 Results:');
+            $this->line('   Applied: '.($result['second_ai_applied'] ? 'Yes' : 'No'));
             $this->line("   Elapsed: {$elapsed}ms");
 
             if (isset($result['second_ai']['checks_applied'])) {
-                $this->line("   Checks Applied: " . implode(', ', $result['second_ai']['checks_applied']));
+                $this->line('   Checks Applied: '.implode(', ', $result['second_ai']['checks_applied']));
             }
 
             if (isset($result['second_ai']['elapsed_ms'])) {
@@ -109,7 +110,7 @@ class TestUnifiedMode extends Command
             }
 
             $this->newLine();
-            $this->line("📝 Final Response:");
+            $this->line('📝 Final Response:');
             $this->line("   {$result['content']}");
 
             // Performance check
@@ -129,8 +130,9 @@ class TestUnifiedMode extends Command
             return 0;
 
         } catch (\Exception $e) {
-            $this->error('❌ Test failed: ' . $e->getMessage());
+            $this->error('❌ Test failed: '.$e->getMessage());
             $this->error($e->getTraceAsString());
+
             return 1;
         }
     }

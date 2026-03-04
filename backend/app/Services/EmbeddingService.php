@@ -10,12 +10,15 @@ use RuntimeException;
 class EmbeddingService
 {
     protected string $model;
+
     protected int $dimensions;
+
     protected string $apiKey;
+
     protected string $baseUrl;
 
     /**
-     * @param string|null $apiKey User's API key (takes priority over env config)
+     * @param  string|null  $apiKey  User's API key (takes priority over env config)
      */
     public function __construct(?string $apiKey = null)
     {
@@ -52,14 +55,14 @@ class EmbeddingService
 
             $embedding = $response->json('data.0.embedding');
 
-            if (!$embedding || !is_array($embedding)) {
+            if (! $embedding || ! is_array($embedding)) {
                 throw new RuntimeException('Invalid embedding response from OpenRouter');
             }
 
             return $embedding;
         } catch (ConnectionException $e) {
             Log::error('OpenRouter connection failed', ['error' => $e->getMessage()]);
-            throw new RuntimeException('Failed to connect to OpenRouter API: ' . $e->getMessage());
+            throw new RuntimeException('Failed to connect to OpenRouter API: '.$e->getMessage());
         }
     }
 
@@ -114,14 +117,14 @@ class EmbeddingService
             return array_values($embeddings);
         } catch (ConnectionException $e) {
             Log::error('OpenRouter connection failed', ['error' => $e->getMessage()]);
-            throw new RuntimeException('Failed to connect to OpenRouter API: ' . $e->getMessage());
+            throw new RuntimeException('Failed to connect to OpenRouter API: '.$e->getMessage());
         }
     }
 
     protected function getHeaders(): array
     {
         return [
-            'Authorization' => 'Bearer ' . $this->apiKey,
+            'Authorization' => 'Bearer '.$this->apiKey,
             'Content-Type' => 'application/json',
             'HTTP-Referer' => config('services.openrouter.site_url', config('app.url')),
             'X-Title' => config('services.openrouter.site_name', config('app.name')),
@@ -143,7 +146,7 @@ class EmbeddingService
      *
      * Useful for per-user API keys from UserSettings.
      *
-     * @param string $apiKey The API key to use
+     * @param  string  $apiKey  The API key to use
      * @return self New instance with the specified API key
      */
     public function withApiKey(string $apiKey): self
@@ -159,6 +162,6 @@ class EmbeddingService
      */
     public function hasApiKey(): bool
     {
-        return !empty($this->apiKey);
+        return ! empty($this->apiKey);
     }
 }

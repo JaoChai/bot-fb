@@ -8,22 +8,20 @@ use Illuminate\Support\Facades\Log;
 
 class StickerReplyService
 {
-    public function __construct(protected OpenRouterService $openRouterService)
-    {
-    }
+    public function __construct(protected OpenRouterService $openRouterService) {}
 
     /**
      * Generate a reply for a sticker message.
      *
-     * @param Bot $bot The bot instance
-     * @param Conversation $conversation The conversation
-     * @param array $messageData The sticker message data
+     * @param  Bot  $bot  The bot instance
+     * @param  Conversation  $conversation  The conversation
+     * @param  array  $messageData  The sticker message data
      * @return string|null The reply message or null if reply is disabled
      */
     public function generateReply(Bot $bot, Conversation $conversation, array $messageData): ?string
     {
         $settings = $bot->settings;
-        if (!$settings?->reply_sticker_enabled) {
+        if (! $settings?->reply_sticker_enabled) {
             return null;
         }
 
@@ -38,7 +36,7 @@ class StickerReplyService
     /**
      * Get static reply message from settings.
      *
-     * @param mixed $settings Bot settings
+     * @param  mixed  $settings  Bot settings
      * @return string The static reply message
      */
     protected function getStaticReply($settings): string
@@ -49,16 +47,16 @@ class StickerReplyService
     /**
      * Generate AI reply by analyzing sticker with Vision API.
      *
-     * @param Bot $bot The bot instance
-     * @param Conversation $conversation The conversation
-     * @param array $messageData The sticker message data
+     * @param  Bot  $bot  The bot instance
+     * @param  Conversation  $conversation  The conversation
+     * @param  array  $messageData  The sticker message data
      * @return string The AI-generated reply or fallback to static reply
      */
     protected function generateAIReply(Bot $bot, Conversation $conversation, array $messageData): string
     {
         // 1. Get sticker URL
         $stickerId = $messageData['sticker_id'] ?? null;
-        if (!$stickerId) {
+        if (! $stickerId) {
             return $this->getStaticReply($bot->settings);
         }
 
@@ -66,7 +64,7 @@ class StickerReplyService
 
         // 2. Find vision-capable model
         $model = $this->getVisionModel($bot);
-        if (!$model) {
+        if (! $model) {
             return $this->getStaticReply($bot->settings);
         }
 
@@ -107,7 +105,7 @@ class StickerReplyService
      * 1. Bot's primary_chat_model (from Connection Settings UI)
      * 2. Bot's fallback_chat_model (fallback model)
      *
-     * @param Bot $bot The bot instance
+     * @param  Bot  $bot  The bot instance
      * @return string|null The model ID or null if not configured
      */
     protected function getVisionModel(Bot $bot): ?string
@@ -126,8 +124,8 @@ class StickerReplyService
     /**
      * Build messages array for vision API including personality context.
      *
-     * @param Bot $bot The bot instance
-     * @param Conversation $conversation The conversation
+     * @param  Bot  $bot  The bot instance
+     * @param  Conversation  $conversation  The conversation
      * @return array Messages array for API call
      */
     protected function buildVisionMessages(Bot $bot, Conversation $conversation): array
@@ -158,14 +156,14 @@ class StickerReplyService
     /**
      * Build system prompt with bot personality for sticker analysis.
      *
-     * @param Bot $bot The bot instance
+     * @param  Bot  $bot  The bot instance
      * @return string The system prompt
      */
     protected function buildSystemPrompt(Bot $bot): string
     {
         // Get base personality from bot or flow
         $basePrompt = '';
-        if (!empty($bot->system_prompt)) {
+        if (! empty($bot->system_prompt)) {
             $basePrompt = $bot->system_prompt;
         } elseif ($bot->default_flow_id && $bot->defaultFlow?->system_prompt) {
             $basePrompt = $bot->defaultFlow->system_prompt;
@@ -183,14 +181,14 @@ class StickerReplyService
 4. Be friendly and match the casual tone
 5. Respond in the same language the user has been using";
 
-        return $basePrompt . $stickerInstruction;
+        return $basePrompt.$stickerInstruction;
     }
 
     /**
      * Get recent conversation history for context.
      *
-     * @param Conversation $conversation The conversation
-     * @param int $limit Maximum number of messages to retrieve
+     * @param  Conversation  $conversation  The conversation
+     * @param  int  $limit  Maximum number of messages to retrieve
      * @return array Array of messages with sender and content
      */
     protected function getRecentHistory(Conversation $conversation, int $limit = 3): array
@@ -207,7 +205,7 @@ class StickerReplyService
             ->take($limit)
             ->get()
             ->reverse()
-            ->map(fn($msg) => ['sender' => $msg->sender, 'content' => $msg->content])
+            ->map(fn ($msg) => ['sender' => $msg->sender, 'content' => $msg->content])
             ->values()
             ->toArray();
     }

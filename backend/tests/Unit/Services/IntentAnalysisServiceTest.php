@@ -17,6 +17,7 @@ class IntentAnalysisServiceTest extends TestCase
     use RefreshDatabase;
 
     protected IntentAnalysisService $service;
+
     protected $mockOpenRouter;
 
     protected function setUp(): void

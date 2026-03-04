@@ -48,10 +48,10 @@ class SecondAIService
      * Executes checks in sequence: Fact → Policy → Personality
      * Each check receives the output of the previous check as input.
      *
-     * @param string $response The original AI response
-     * @param Flow $flow The flow with second_ai configuration
-     * @param string $userMessage The original user message (for context)
-     * @param string|null $apiKey Optional API key override
+     * @param  string  $response  The original AI response
+     * @param  Flow  $flow  The flow with second_ai configuration
+     * @param  string  $userMessage  The original user message (for context)
+     * @param  string|null  $apiKey  Optional API key override
      * @return array Response with second_ai metadata
      */
     public function process(
@@ -62,7 +62,7 @@ class SecondAIService
         string $kbContext = ''
     ): array {
         // Quick exit if Second AI is not enabled
-        if (!$flow->second_ai_enabled) {
+        if (! $flow->second_ai_enabled) {
             return $this->buildResult($response, false, []);
         }
 
@@ -72,6 +72,7 @@ class SecondAIService
                 'flow_id' => $flow->id,
                 'reason' => $skipReason,
             ]);
+
             return $this->buildResult($response, false, [
                 'skipped' => true,
                 'skip_reason' => $skipReason,
@@ -149,12 +150,13 @@ class SecondAIService
                 $httpTimeout
             ) {
                 // 1. Fact Check (if enabled)
-                if (!empty($options['fact_check'])) {
+                if (! empty($options['fact_check'])) {
                     $this->checkTimeout($startTime);
                     $checkResult = rescue(function () use ($currentContent, $flow, $userMessage, $apiKey, $httpTimeout, $fallbackModel) {
                         return $this->factCheck->check($currentContent, $flow, $userMessage, $apiKey, $httpTimeout, $fallbackModel);
                     }, function (\Throwable $e) {
                         Log::warning('SecondAI: fact_check failed', ['error' => $e->getMessage()]);
+
                         return null;
                     }, report: false);
 
@@ -166,12 +168,13 @@ class SecondAIService
                 }
 
                 // 2. Policy Check (if enabled)
-                if (!empty($options['policy'])) {
+                if (! empty($options['policy'])) {
                     $this->checkTimeout($startTime);
                     $checkResult = rescue(function () use ($currentContent, $flow, $apiKey, $httpTimeout, $fallbackModel) {
                         return $this->policyCheck->check($currentContent, $flow, $apiKey, $httpTimeout, $fallbackModel);
                     }, function (\Throwable $e) {
                         Log::warning('SecondAI: policy failed', ['error' => $e->getMessage()]);
+
                         return null;
                     }, report: false);
 
@@ -183,12 +186,13 @@ class SecondAIService
                 }
 
                 // 3. Personality Check (if enabled)
-                if (!empty($options['personality'])) {
+                if (! empty($options['personality'])) {
                     $this->checkTimeout($startTime);
                     $checkResult = rescue(function () use ($currentContent, $flow, $apiKey, $httpTimeout, $fallbackModel) {
                         return $this->personalityCheck->check($currentContent, $flow, $apiKey, $httpTimeout, $fallbackModel);
                     }, function (\Throwable $e) {
                         Log::warning('SecondAI: personality failed', ['error' => $e->getMessage()]);
+
                         return null;
                     }, report: false);
 
@@ -200,13 +204,14 @@ class SecondAIService
                 }
 
                 return true;
-            }, function (\Throwable $e) use ($response, $flow) {
+            }, function (\Throwable $e) use ($flow) {
                 // Fallback on timeout or error
                 Log::error('SecondAI: Checks failed', [
                     'flow_id' => $flow->id,
                     'error' => $e->getMessage(),
                 ]);
-                error_log('SecondAI Sequential ERROR: ' . $e->getMessage());
+                error_log('SecondAI Sequential ERROR: '.$e->getMessage());
+
                 return false;
             }, false);
 
@@ -223,11 +228,11 @@ class SecondAIService
             Log::info('SecondAI: Checks completed', [
                 'flow_id' => $flow->id,
                 'checks_applied' => $checksApplied,
-                'was_modified' => !empty($modifications),
+                'was_modified' => ! empty($modifications),
                 'elapsed_ms' => $elapsed,
             ]);
 
-            $resultArray = $this->buildResult($currentContent, !empty($modifications), [
+            $resultArray = $this->buildResult($currentContent, ! empty($modifications), [
                 'checks_applied' => $checksApplied,
                 'modifications' => $modifications,
                 'elapsed_ms' => $elapsed,
@@ -259,7 +264,8 @@ class SecondAIService
     /**
      * Check if we've exceeded the timeout.
      *
-     * @param float $startTime Start time from microtime(true)
+     * @param  float  $startTime  Start time from microtime(true)
+     *
      * @throws \RuntimeException if timeout exceeded
      */
     protected function checkTimeout(float $startTime): void
@@ -273,10 +279,9 @@ class SecondAIService
     /**
      * Build the result array.
      *
-     * @param string $content The final response content
-     * @param bool $applied Whether Second AI checks were applied
-     * @param array $metadata Additional metadata
-     * @return array
+     * @param  string  $content  The final response content
+     * @param  bool  $applied  Whether Second AI checks were applied
+     * @param  array  $metadata  Additional metadata
      */
     protected function buildResult(string $content, bool $applied, array $metadata = []): array
     {
@@ -290,12 +295,12 @@ class SecondAIService
     /**
      * Set the timeout for Second AI checks.
      *
-     * @param int $seconds Timeout in seconds
-     * @return self
+     * @param  int  $seconds  Timeout in seconds
      */
     public function setTimeout(int $seconds): self
     {
         $this->timeout = $seconds;
+
         return $this;
     }
 
@@ -304,9 +309,9 @@ class SecondAIService
      *
      * Call this BEFORE generating AI response to block malicious inputs early.
      *
-     * @param string $userMessage User input to check
-     * @param Flow $flow Flow for configuration and logging
-     * @param int|null $conversationId Optional conversation ID for logging
+     * @param  string  $userMessage  User input to check
+     * @param  Flow  $flow  Flow for configuration and logging
+     * @param  int|null  $conversationId  Optional conversation ID for logging
      * @return DetectionResult Detection result with action and risk score
      */
     public function checkUserInput(
@@ -340,9 +345,9 @@ class SecondAIService
     /**
      * Check if user input should be blocked due to injection attempt.
      *
-     * @param string $userMessage User input to check
-     * @param Flow $flow Flow for configuration
-     * @param int|null $conversationId Optional conversation ID
+     * @param  string  $userMessage  User input to check
+     * @param  Flow  $flow  Flow for configuration
+     * @param  int|null  $conversationId  Optional conversation ID
      * @return bool True if input should be blocked
      */
     public function shouldBlockInput(
@@ -355,8 +360,6 @@ class SecondAIService
 
     /**
      * Get the injection detector instance.
-     *
-     * @return PromptInjectionDetector
      */
     public function getInjectionDetector(): PromptInjectionDetector
     {
@@ -369,20 +372,19 @@ class SecondAIService
      * Unified mode is enabled when 2 or more check options are enabled.
      * This provides better performance by combining checks into a single LLM call.
      *
-     * @param array $options Second AI options from flow configuration
-     * @return bool
+     * @param  array  $options  Second AI options from flow configuration
      */
     protected function shouldUseUnifiedMode(array $options): bool
     {
         $enabledCount = 0;
 
-        if (!empty($options['fact_check'])) {
+        if (! empty($options['fact_check'])) {
             $enabledCount++;
         }
-        if (!empty($options['policy'])) {
+        if (! empty($options['policy'])) {
             $enabledCount++;
         }
-        if (!empty($options['personality'])) {
+        if (! empty($options['personality'])) {
             $enabledCount++;
         }
 
@@ -392,7 +394,7 @@ class SecondAIService
     /**
      * Check if the response should skip Second AI checks.
      *
-     * @param string $response The AI response to evaluate
+     * @param  string  $response  The AI response to evaluate
      * @return string|null Skip reason, or null if check should proceed
      */
     protected function shouldSkipCheck(string $response): ?string
@@ -401,7 +403,7 @@ class SecondAIService
 
         // Skip very short messages without factual content
         // But don't skip if it contains numbers (prices, quantities, dates)
-        if (mb_strlen($trimmed) < 50 && !preg_match('/\d/', $trimmed)) {
+        if (mb_strlen($trimmed) < 50 && ! preg_match('/\d/', $trimmed)) {
             return 'response_too_short';
         }
 

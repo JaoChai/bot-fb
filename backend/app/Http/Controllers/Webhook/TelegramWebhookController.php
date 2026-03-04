@@ -24,8 +24,9 @@ class TelegramWebhookController extends Controller
         // Find bot by webhook token
         $bot = $this->findBotByToken($token);
 
-        if (!$bot) {
-            Log::warning('Telegram webhook: Invalid token', ['token' => substr($token, 0, 8) . '...']);
+        if (! $bot) {
+            Log::warning('Telegram webhook: Invalid token', ['token' => substr($token, 0, 8).'...']);
+
             return response()->json(['ok' => false, 'error' => 'Invalid webhook token'], 404);
         }
 
@@ -33,6 +34,7 @@ class TelegramWebhookController extends Controller
         $secretToken = $request->header('X-Telegram-Bot-Api-Secret-Token');
         if ($bot->channel_secret && $secretToken !== $bot->channel_secret) {
             Log::warning('Telegram webhook: Invalid secret token', ['bot_id' => $bot->id]);
+
             return response()->json(['ok' => false, 'error' => 'Invalid secret token'], 401);
         }
 
@@ -41,6 +43,7 @@ class TelegramWebhookController extends Controller
 
         if (empty($update)) {
             Log::debug('Telegram webhook: Empty update', ['bot_id' => $bot->id]);
+
             return response()->json(['ok' => true]);
         }
 
@@ -65,7 +68,7 @@ class TelegramWebhookController extends Controller
     protected function findBotByToken(string $token): ?Bot
     {
         // Build the expected webhook URL (using /api/webhook/ path for proxy compatibility)
-        $webhookUrl = config('app.url') . '/api/webhook/telegram/' . $token;
+        $webhookUrl = config('app.url').'/api/webhook/telegram/'.$token;
 
         return Bot::where('webhook_url', $webhookUrl)
             ->where('channel_type', 'telegram')

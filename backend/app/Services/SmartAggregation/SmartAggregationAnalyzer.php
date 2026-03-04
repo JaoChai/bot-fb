@@ -27,7 +27,7 @@ class SmartAggregationAnalyzer
         $settings = $bot->settings;
 
         // Must have base aggregation enabled first
-        if (!$settings?->wait_multiple_bubbles_enabled) {
+        if (! $settings?->wait_multiple_bubbles_enabled) {
             return false;
         }
 
@@ -42,7 +42,7 @@ class SmartAggregationAnalyzer
         $settings = $context->bot?->settings;
 
         // If smart not enabled, return fixed wait time
-        if (!$this->isSmartEnabled($context->bot)) {
+        if (! $this->isSmartEnabled($context->bot)) {
             return $context->baseWaitMs;
         }
 
@@ -59,6 +59,7 @@ class SmartAggregationAnalyzer
                     'customer_id' => $context->customerId,
                     'wait_ms' => $personalizedWait,
                 ]);
+
                 return $personalizedWait;
             }
         }
@@ -111,12 +112,12 @@ class SmartAggregationAnalyzer
         $settings = $context->bot?->settings;
 
         // Skip if smart not enabled
-        if (!$this->isSmartEnabled($context->bot)) {
+        if (! $this->isSmartEnabled($context->bot)) {
             return false;
         }
 
         // Skip if early trigger disabled
-        if (!($settings?->smart_early_trigger_enabled ?? true)) {
+        if (! ($settings?->smart_early_trigger_enabled ?? true)) {
             return false;
         }
 
@@ -125,6 +126,7 @@ class SmartAggregationAnalyzer
         // Trigger immediately for greetings (first message only)
         if ($analysis->isGreeting && $context->messageCount === 1) {
             Log::debug('Early trigger: greeting detected', ['content' => $content]);
+
             return true;
         }
 
@@ -134,6 +136,7 @@ class SmartAggregationAnalyzer
                 'content' => $content,
                 'score' => $analysis->completenessScore,
             ]);
+
             return true;
         }
 
@@ -143,6 +146,7 @@ class SmartAggregationAnalyzer
                 'content' => $content,
                 'score' => $analysis->completenessScore,
             ]);
+
             return true;
         }
 
@@ -164,7 +168,7 @@ class SmartAggregationAnalyzer
         if ($isThaiText) {
             $endMarker = ThaiLanguagePatterns::detectEndParticle($content);
         }
-        if (!$endMarker) {
+        if (! $endMarker) {
             $lastChar = mb_substr($content, -1);
             if (in_array($lastChar, ['.', '!', '?'])) {
                 $endMarker = $lastChar;
@@ -213,7 +217,7 @@ class SmartAggregationAnalyzer
         }
 
         // Very short messages likely incomplete (unless greeting)
-        if ($length < 5 && !ThaiLanguagePatterns::isGreeting($content)) {
+        if ($length < 5 && ! ThaiLanguagePatterns::isGreeting($content)) {
             $score = min($score, 0.4);
             $reason = 'very short message';
         }

@@ -43,13 +43,13 @@ class AuthController extends Controller
     {
         $user = User::where('email', $request->email)->first();
 
-        if (!$user) {
+        if (! $user) {
             throw ValidationException::withMessages([
                 'email' => ['ไม่พบอีเมลนี้ในระบบ'],
             ]);
         }
 
-        if (!Hash::check($request->password, $user->password)) {
+        if (! Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
                 'password' => ['รหัสผ่านไม่ถูกต้อง'],
             ]);
@@ -82,7 +82,7 @@ class AuthController extends Controller
         $user = $request->user();
 
         return response()->json([
-            'user' => $user->load(['bots' => fn($q) => $q->withCount('conversations')]),
+            'user' => $user->load(['bots' => fn ($q) => $q->withCount('conversations')]),
         ]);
     }
 
@@ -151,7 +151,7 @@ class AuthController extends Controller
     {
         $deleted = $request->user()->tokens()->where('id', $tokenId)->delete();
 
-        if (!$deleted) {
+        if (! $deleted) {
             return response()->json([
                 'message' => 'Token not found',
             ], 404);

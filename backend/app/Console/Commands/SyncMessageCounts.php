@@ -57,6 +57,7 @@ class SyncMessageCounts extends Command
 
         if ($mismatched->isEmpty()) {
             $this->info('All conversation message counts are in sync!');
+
             return Command::SUCCESS;
         }
 
@@ -66,6 +67,7 @@ class SyncMessageCounts extends Command
         $rows = $mismatched->map(function ($row) {
             $diff = $row->stored_count - $row->actual_count;
             $diffStr = $diff > 0 ? "+{$diff}" : (string) $diff;
+
             return [
                 $row->id,
                 $row->bot_id,
@@ -79,11 +81,13 @@ class SyncMessageCounts extends Command
 
         if ($dryRun) {
             $this->warn('Dry run complete. Run without --dry-run to apply fixes.');
+
             return Command::SUCCESS;
         }
 
-        if (!$this->confirm('Do you want to sync these counts?')) {
+        if (! $this->confirm('Do you want to sync these counts?')) {
             $this->info('Aborted.');
+
             return Command::SUCCESS;
         }
 

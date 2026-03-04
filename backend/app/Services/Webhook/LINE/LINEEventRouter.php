@@ -108,7 +108,7 @@ class LINEEventRouter
     private function handleJoin(Bot $bot, array $event): void
     {
         $sourceType = $event['source']['type'] ?? 'unknown';
-        $sourceId = $event['source'][$sourceType . 'Id'] ?? null;
+        $sourceId = $event['source'][$sourceType.'Id'] ?? null;
 
         Log::info('LINEEventRouter: Bot joined group/room', [
             'bot_id' => $bot->id,
@@ -123,7 +123,7 @@ class LINEEventRouter
     private function handleLeave(Bot $bot, array $event): void
     {
         $sourceType = $event['source']['type'] ?? 'unknown';
-        $sourceId = $event['source'][$sourceType . 'Id'] ?? null;
+        $sourceId = $event['source'][$sourceType.'Id'] ?? null;
 
         Log::info('LINEEventRouter: Bot left group/room', [
             'bot_id' => $bot->id,

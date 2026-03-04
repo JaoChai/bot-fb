@@ -13,6 +13,7 @@ class FlowApiTest extends TestCase
     use RefreshDatabase;
 
     protected User $user;
+
     protected Bot $bot;
 
     protected function setUp(): void

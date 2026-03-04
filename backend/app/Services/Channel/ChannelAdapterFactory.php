@@ -33,7 +33,7 @@ class ChannelAdapterFactory
     {
         if (! isset($this->adapters[$channelType])) {
             throw new InvalidArgumentException(
-                "Unsupported channel type: {$channelType}. Supported: " . implode(', ', $this->getSupportedChannels())
+                "Unsupported channel type: {$channelType}. Supported: ".implode(', ', $this->getSupportedChannels())
             );
         }
 

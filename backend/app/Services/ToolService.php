@@ -31,7 +31,7 @@ class ToolService
     /**
      * Get tool definitions in OpenRouter/OpenAI format.
      *
-     * @param array $enabledTools List of tool keys to enable
+     * @param  array  $enabledTools  List of tool keys to enable
      * @return array Tool definitions for API
      */
     public function getToolDefinitions(array $enabledTools): array
@@ -82,8 +82,9 @@ class ToolService
     /**
      * Validate tool arguments against schema.
      *
-     * @param string $toolName The tool function name
-     * @param array $arguments Tool arguments
+     * @param  string  $toolName  The tool function name
+     * @param  array  $arguments  Tool arguments
+     *
      * @throws \InvalidArgumentException If validation fails
      */
     protected function validateArguments(string $toolName, array $arguments): void
@@ -115,7 +116,7 @@ class ToolService
 
         // Check required fields
         foreach ($rules['required'] ?? [] as $field) {
-            if (!isset($arguments[$field]) || $arguments[$field] === '') {
+            if (! isset($arguments[$field]) || $arguments[$field] === '') {
                 throw new \InvalidArgumentException("Missing required field: {$field}");
             }
         }
@@ -135,9 +136,9 @@ class ToolService
     /**
      * Execute a tool and return result.
      *
-     * @param string $toolName The tool function name
-     * @param array $arguments Tool arguments
-     * @param array $context Execution context (flow, bot, etc.)
+     * @param  string  $toolName  The tool function name
+     * @param  array  $arguments  Tool arguments
+     * @param  array  $context  Execution context (flow, bot, etc.)
      * @return array Result with status and data
      */
     public function executeTool(string $toolName, array $arguments, array $context = []): array
@@ -189,8 +190,8 @@ class ToolService
     /**
      * Execute knowledge base search tool.
      *
-     * @param array $args Tool arguments
-     * @param array $context Execution context with flow info
+     * @param  array  $args  Tool arguments
+     * @param  array  $context  Execution context with flow info
      * @return string Search results formatted for AI
      */
     protected function executeSearchKb(array $args, array $context): string
@@ -207,6 +208,7 @@ class ToolService
         // Check exact cache match
         if (isset($this->searchCache[$normalizedQuery])) {
             Log::debug('ToolService: Search cache hit (exact)', ['query' => $query]);
+
             return $this->searchCache[$normalizedQuery];
         }
 
@@ -219,6 +221,7 @@ class ToolService
                     'cached_query' => $cachedQuery,
                     'similarity' => round($percent, 1),
                 ]);
+
                 return $cachedResult;
             }
         }
@@ -226,7 +229,7 @@ class ToolService
         /** @var Flow|null $flow */
         $flow = $context['flow'] ?? null;
 
-        if (!$flow) {
+        if (! $flow) {
             return 'ไม่พบการตั้งค่า Flow';
         }
 
@@ -249,9 +252,9 @@ class ToolService
         Log::debug('ToolService: API key resolution', [
             'flow_id' => $flow->id,
             'bot_id' => $bot?->id,
-            'has_user_api_key' => !empty($bot?->user?->settings?->getOpenRouterApiKey()),
-            'has_env_api_key' => !empty(config('services.openrouter.api_key')),
-            'final_has_key' => !empty($apiKey),
+            'has_user_api_key' => ! empty($bot?->user?->settings?->getOpenRouterApiKey()),
+            'has_env_api_key' => ! empty(config('services.openrouter.api_key')),
+            'final_has_key' => ! empty($apiKey),
         ]);
 
         if (empty($apiKey)) {
@@ -259,6 +262,7 @@ class ToolService
                 'flow_id' => $flow->id,
                 'bot_id' => $flow->bot_id,
             ]);
+
             return 'กรุณาตั้งค่า OpenRouter API Key ในหน้าตั้งค่าบอทหรือตั้งค่าผู้ใช้ก่อนใช้งานค้นหาฐานความรู้';
         }
 
@@ -284,6 +288,7 @@ class ToolService
                 array_shift($this->searchCache);
             }
             $this->searchCache[$normalizedQuery] = $emptyResult;
+
             return $emptyResult;
         }
 
@@ -293,14 +298,15 @@ class ToolService
             array_shift($this->searchCache);
         }
         $this->searchCache[$normalizedQuery] = $formatted;
+
         return $formatted;
     }
 
     /**
      * Format search results for AI consumption.
      *
-     * @param Collection $results Search results
-     * @param string $query Original query
+     * @param  Collection  $results  Search results
+     * @param  string  $query  Original query
      * @return string Formatted results
      */
     protected function formatSearchResults(Collection $results, string $query): string
@@ -329,7 +335,7 @@ class ToolService
      *
      * Uses a simple recursive descent parser for safety.
      *
-     * @param array $args Tool arguments
+     * @param  array  $args  Tool arguments
      * @return string Calculation result
      */
     protected function executeCalculate(array $args): string
@@ -341,7 +347,7 @@ class ToolService
         }
 
         try {
-            $calculator = new SafeMathCalculator();
+            $calculator = new SafeMathCalculator;
             $result = $calculator->calculate($expression);
 
             if ($result === null) {
@@ -368,7 +374,7 @@ class ToolService
      * This tool allows the AI to pause and reflect before responding.
      * The thought is logged for debugging but not shown to end users.
      *
-     * @param array $args Tool arguments
+     * @param  array  $args  Tool arguments
      * @return string Confirmation message
      */
     protected function executeThink(array $args): string
@@ -391,7 +397,7 @@ class ToolService
     /**
      * Format a number nicely.
      *
-     * @param float $number Number to format
+     * @param  float  $number  Number to format
      * @return string Formatted number
      */
     protected function formatNumber(float $number): string
@@ -411,8 +417,8 @@ class ToolService
     /**
      * Truncate text to max length.
      *
-     * @param string $text Text to truncate
-     * @param int $maxLength Maximum length
+     * @param  string  $text  Text to truncate
+     * @param  int  $maxLength  Maximum length
      * @return string Truncated text
      */
     protected function truncateText(string $text, int $maxLength): string
@@ -421,7 +427,7 @@ class ToolService
             return $text;
         }
 
-        return mb_substr($text, 0, $maxLength) . '...';
+        return mb_substr($text, 0, $maxLength).'...';
     }
 
     protected function executeGetDatetime(array $args): string
@@ -479,25 +485,29 @@ class ToolService
 class SafeMathCalculator
 {
     private string $expression;
+
     private int $pos;
+
     private int $length;
 
     // Safety limits to prevent DoS attacks
     private const MAX_EXPRESSION_LENGTH = 500;
+
     private const MAX_PARENTHESES_DEPTH = 20;
 
     /**
      * Calculate a math expression safely.
      *
-     * @param string $expression Math expression
+     * @param  string  $expression  Math expression
      * @return float|null Result or null on error
+     *
      * @throws \Exception If expression exceeds safety limits
      */
     public function calculate(string $expression): ?float
     {
         // Safety check: expression length
         if (strlen($expression) > self::MAX_EXPRESSION_LENGTH) {
-            throw new \Exception('Expression too long (max ' . self::MAX_EXPRESSION_LENGTH . ' characters)');
+            throw new \Exception('Expression too long (max '.self::MAX_EXPRESSION_LENGTH.' characters)');
         }
 
         // Safety check: parentheses nesting depth
@@ -511,7 +521,7 @@ class SafeMathCalculator
                 $depth--;
             }
             if ($maxDepth > self::MAX_PARENTHESES_DEPTH) {
-                throw new \Exception('Parentheses nesting too deep (max ' . self::MAX_PARENTHESES_DEPTH . ')');
+                throw new \Exception('Parentheses nesting too deep (max '.self::MAX_PARENTHESES_DEPTH.')');
             }
         }
 
@@ -604,12 +614,14 @@ class SafeMathCalculator
         // Handle unary minus
         if ($this->pos < $this->length && $this->expression[$this->pos] === '-') {
             $this->pos++;
+
             return -$this->parseFactor();
         }
 
         // Handle unary plus
         if ($this->pos < $this->length && $this->expression[$this->pos] === '+') {
             $this->pos++;
+
             return $this->parseFactor();
         }
 
@@ -644,7 +656,7 @@ class SafeMathCalculator
         }
 
         if ($start === $this->pos) {
-            throw new \Exception('Expected number at position ' . $this->pos);
+            throw new \Exception('Expected number at position '.$this->pos);
         }
 
         $numStr = substr($this->expression, $start, $this->pos - $start);

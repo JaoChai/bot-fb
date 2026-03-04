@@ -67,7 +67,7 @@ readonly class DetectionResult
     /**
      * Get patterns by category
      *
-     * @param string $category Category name (english, thai, encoding, custom)
+     * @param  string  $category  Category name (english, thai, encoding, custom)
      * @return array<array{pattern: string, risk: float, category: string}>
      */
     public function getPatternsByCategory(string $category): array
@@ -91,8 +91,7 @@ readonly class DetectionResult
 
         return array_reduce(
             $this->patterns,
-            fn (?array $carry, array $item) =>
-                $carry === null || $item['risk'] > $carry['risk'] ? $item : $carry
+            fn (?array $carry, array $item) => $carry === null || $item['risk'] > $carry['risk'] ? $item : $carry
         );
     }
 

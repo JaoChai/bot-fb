@@ -113,7 +113,7 @@ INSTRUCTION;
             // Merge overflow bubbles into the last kept bubble instead of silently truncating
             $kept = array_slice($bubbles, 0, $limit);
             $overflow = array_slice($bubbles, $limit);
-            $kept[$limit - 1] .= "\n" . implode("\n", $overflow);
+            $kept[$limit - 1] .= "\n".implode("\n", $overflow);
 
             Log::warning('Multiple bubbles exceeded limit, merged overflow into last bubble', [
                 'original_count' => count($bubbles),
@@ -132,7 +132,7 @@ INSTRUCTION;
      * Each bubble is independently checked for payment content.
      *
      * @param  array<string>  $bubbles
-     * @return array<string|array>  Bubbles with payment texts converted to Flex arrays
+     * @return array<string|array> Bubbles with payment texts converted to Flex arrays
      */
     public function transformBubbles(array $bubbles, ?Conversation $conversation = null): array
     {
@@ -194,7 +194,7 @@ INSTRUCTION;
                         $i + 1, // 1-indexed for logging
                         $totalBubbles
                     )->onQueue('webhooks')
-                     ->delay(now()->addMilliseconds($cumulativeDelayMs));
+                        ->delay(now()->addMilliseconds($cumulativeDelayMs));
 
                     Log::debug('Dispatched delayed bubble job', [
                         'bot_id' => $bot->id,

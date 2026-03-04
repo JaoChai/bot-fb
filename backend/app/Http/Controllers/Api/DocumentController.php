@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Storage;
 class DocumentController extends Controller
 {
     use ApiResponseTrait;
+
     /**
      * List all documents for a knowledge base.
      */

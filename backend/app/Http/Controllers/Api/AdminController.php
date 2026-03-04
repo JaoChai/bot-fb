@@ -102,7 +102,7 @@ class AdminController extends Controller
             ->where('user_id', $user->id)
             ->delete();
 
-        if (!$deleted) {
+        if (! $deleted) {
             return response()->json([
                 'message' => 'Admin not found for this bot',
             ], 404);

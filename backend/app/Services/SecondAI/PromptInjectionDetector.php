@@ -125,7 +125,7 @@ class PromptInjectionDetector
     /**
      * Detect prompt injection in user input
      *
-     * @param string $input User input to check
+     * @param  string  $input  User input to check
      * @return DetectionResult Detection result with risk score and matched patterns
      */
     public function detect(string $input): DetectionResult
@@ -165,7 +165,7 @@ class PromptInjectionDetector
         $action = $this->determineAction($riskScore);
 
         return new DetectionResult(
-            detected: !empty($matches),
+            detected: ! empty($matches),
             riskScore: $riskScore,
             patterns: $matches,
             action: $action,
@@ -267,11 +267,10 @@ class PromptInjectionDetector
     /**
      * Log injection attempt to database
      *
-     * @param int $botId Bot ID
-     * @param string $input Original user input
-     * @param DetectionResult $result Detection result
-     * @param int|null $conversationId Optional conversation ID
-     * @return InjectionAttemptLog|null
+     * @param  int  $botId  Bot ID
+     * @param  string  $input  Original user input
+     * @param  DetectionResult  $result  Detection result
+     * @param  int|null  $conversationId  Optional conversation ID
      */
     public function log(
         int $botId,
@@ -280,7 +279,7 @@ class PromptInjectionDetector
         ?int $conversationId = null
     ): ?InjectionAttemptLog {
         // Only log if something was detected
-        if (!$result->detected) {
+        if (! $result->detected) {
             return null;
         }
 
@@ -298,6 +297,7 @@ class PromptInjectionDetector
                 'bot_id' => $botId,
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -308,6 +308,7 @@ class PromptInjectionDetector
     public function setBlockThreshold(float $threshold): self
     {
         $this->blockThreshold = max(0.0, min(1.0, $threshold));
+
         return $this;
     }
 
@@ -317,6 +318,7 @@ class PromptInjectionDetector
     public function setFlagThreshold(float $threshold): self
     {
         $this->flagThreshold = max(0.0, min(1.0, $threshold));
+
         return $this;
     }
 

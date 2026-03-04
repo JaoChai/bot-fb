@@ -16,7 +16,9 @@ class ConversationCacheService
      * Cache TTL constants (in seconds)
      */
     public const STATS_TTL = 30;
+
     public const COUNTS_TTL = 30;
+
     public const TAGS_TTL = 60;
 
     /**
@@ -79,10 +81,6 @@ class ConversationCacheService
 
     /**
      * Remember stats in cache with callback.
-     *
-     * @param int $botId
-     * @param callable $callback
-     * @return mixed
      */
     public function rememberStats(int $botId, callable $callback): mixed
     {
@@ -95,10 +93,6 @@ class ConversationCacheService
 
     /**
      * Remember counts in cache with callback.
-     *
-     * @param int $botId
-     * @param callable $callback
-     * @return mixed
      */
     public function rememberCounts(int $botId, callable $callback): mixed
     {
@@ -111,10 +105,6 @@ class ConversationCacheService
 
     /**
      * Remember tags in cache with callback.
-     *
-     * @param int $botId
-     * @param callable $callback
-     * @return mixed
      */
     public function rememberTags(int $botId, callable $callback): mixed
     {

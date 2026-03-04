@@ -9,11 +9,15 @@ use Illuminate\Support\Facades\Log;
 class CircuitBreakerService
 {
     public const STATE_CLOSED = 'closed';
+
     public const STATE_OPEN = 'open';
+
     public const STATE_HALF_OPEN = 'half_open';
 
     protected string $cachePrefix;
+
     protected bool $enabled;
+
     protected ?ResilienceMetricsService $metrics;
 
     public function __construct(?ResilienceMetricsService $metrics = null)
@@ -26,9 +30,9 @@ class CircuitBreakerService
     /**
      * Execute an operation with circuit breaker protection.
      *
-     * @param string $service Service identifier (e.g., 'database', 'cache')
-     * @param callable $operation The operation to execute
-     * @param callable|null $fallback Fallback to execute if circuit is open or operation fails
+     * @param  string  $service  Service identifier (e.g., 'database', 'cache')
+     * @param  callable  $operation  The operation to execute
+     * @param  callable|null  $fallback  Fallback to execute if circuit is open or operation fails
      * @return mixed Result from operation or fallback
      *
      * @throws CircuitOpenException When circuit is open and no fallback provided

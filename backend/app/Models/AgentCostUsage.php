@@ -55,10 +55,15 @@ class AgentCostUsage extends Model
      * Status constants
      */
     public const STATUS_COMPLETED = 'completed';
+
     public const STATUS_TIMEOUT = 'timeout';
+
     public const STATUS_COST_LIMIT = 'cost_limit';
+
     public const STATUS_RATE_LIMIT = 'rate_limit';
+
     public const STATUS_ERROR = 'error';
+
     public const STATUS_CANCELLED = 'cancelled';
 
     public function user(): BelongsTo

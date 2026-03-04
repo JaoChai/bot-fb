@@ -15,7 +15,9 @@ class ConversationServiceTest extends TestCase
     use RefreshDatabase;
 
     private ConversationService $service;
+
     private User $user;
+
     private Bot $bot;
 
     protected function setUp(): void
@@ -30,7 +32,7 @@ class ConversationServiceTest extends TestCase
     {
         Conversation::factory()->count(5)->create(['bot_id' => $this->bot->id]);
 
-        $request = new Request();
+        $request = new Request;
         $result = $this->service->listConversations($this->bot, $request);
 
         $this->assertArrayHasKey('conversations', $result);
@@ -175,7 +177,7 @@ class ConversationServiceTest extends TestCase
             'status' => 'active',
         ]);
 
-        $request = new Request();
+        $request = new Request;
         $result = $this->service->listConversations($this->bot, $request);
 
         // Verify all count keys exist (from getAllCounts)
@@ -218,7 +220,7 @@ class ConversationServiceTest extends TestCase
             'status' => 'handover',
         ]);
 
-        $request = new Request();
+        $request = new Request;
         $result = $this->service->listConversations($this->bot, $request);
 
         $statusCounts = $result['status_counts'];
@@ -273,7 +275,7 @@ class ConversationServiceTest extends TestCase
             'sender' => 'agent',
         ]);
 
-        $request = new Request();
+        $request = new Request;
         $result = $this->service->listConversations($this->bot, $request);
 
         $statusCounts = $result['status_counts'];
@@ -297,7 +299,7 @@ class ConversationServiceTest extends TestCase
             'status' => 'active',
         ]);
 
-        $request = new Request();
+        $request = new Request;
 
         // First call - should query database
         $result1 = $this->service->listConversations($this->bot, $request);

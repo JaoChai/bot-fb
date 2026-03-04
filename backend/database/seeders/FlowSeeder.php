@@ -12,7 +12,7 @@ class FlowSeeder extends Seeder
     {
         $demoBot = Bot::where('name', 'Demo Bot')->first();
 
-        if (!$demoBot) {
+        if (! $demoBot) {
             return;
         }
 
@@ -21,7 +21,7 @@ class FlowSeeder extends Seeder
             'bot_id' => $demoBot->id,
             'name' => 'Default Flow',
             'description' => 'Default conversation flow for general inquiries',
-            'system_prompt' => <<<PROMPT
+            'system_prompt' => <<<'PROMPT'
 คุณเป็นผู้ช่วย AI ที่เป็นมิตรและช่วยเหลือดี ชื่อ "Demo Bot"
 
 ## บทบาท
@@ -51,7 +51,7 @@ PROMPT,
             'bot_id' => $demoBot->id,
             'name' => 'Customer Support',
             'description' => 'Flow for handling customer support inquiries',
-            'system_prompt' => <<<PROMPT
+            'system_prompt' => <<<'PROMPT'
 คุณเป็นพนักงานบริการลูกค้าที่มีความเชี่ยวชาญ
 
 ## บทบาท
@@ -78,7 +78,7 @@ PROMPT,
             'bot_id' => $demoBot->id,
             'name' => 'Sales Assistant',
             'description' => 'AI sales assistant with product lookup capability',
-            'system_prompt' => <<<PROMPT
+            'system_prompt' => <<<'PROMPT'
 คุณเป็นผู้ช่วยขายที่ฉลาดและเป็นมิตร
 
 ## บทบาท

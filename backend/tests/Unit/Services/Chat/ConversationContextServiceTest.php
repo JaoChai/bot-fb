@@ -15,6 +15,7 @@ class ConversationContextServiceTest extends TestCase
     use RefreshDatabase;
 
     private ConversationContextService $service;
+
     private Bot $bot;
 
     protected function setUp(): void

@@ -61,6 +61,7 @@ class UserSetting extends Model
                 'user_id' => $this->user_id,
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -70,7 +71,7 @@ class UserSetting extends Model
      */
     public function hasOpenRouterKey(): bool
     {
-        return !empty($this->getOpenRouterApiKey());
+        return ! empty($this->getOpenRouterApiKey());
     }
 
     /**
@@ -78,7 +79,7 @@ class UserSetting extends Model
      */
     public function hasLineCredentials(): bool
     {
-        return !empty($this->line_channel_secret) && !empty($this->line_channel_access_token);
+        return ! empty($this->line_channel_secret) && ! empty($this->line_channel_access_token);
     }
 
     /**
@@ -89,7 +90,8 @@ class UserSetting extends Model
         if (empty($this->openrouter_api_key)) {
             return null;
         }
-        return '••••••••' . substr($this->openrouter_api_key, -4);
+
+        return '••••••••'.substr($this->openrouter_api_key, -4);
     }
 
     /**
@@ -100,7 +102,8 @@ class UserSetting extends Model
         if (empty($this->line_channel_secret)) {
             return null;
         }
-        return '••••••••' . substr($this->line_channel_secret, -4);
+
+        return '••••••••'.substr($this->line_channel_secret, -4);
     }
 
     /**
@@ -111,6 +114,7 @@ class UserSetting extends Model
         if (empty($this->line_channel_access_token)) {
             return null;
         }
-        return '••••••••' . substr($this->line_channel_access_token, -8);
+
+        return '••••••••'.substr($this->line_channel_access_token, -8);
     }
 }

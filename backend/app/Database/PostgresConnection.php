@@ -42,7 +42,6 @@ class PostgresConnection extends BasePostgresConnection
      * because the parent method converts booleans to integers (0/1) which
      * PostgreSQL rejects for boolean columns.
      *
-     * @param  array  $bindings
      * @return array
      */
     public function prepareBindings(array $bindings)

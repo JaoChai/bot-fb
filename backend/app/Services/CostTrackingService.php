@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\AgentCostUsage;
 use App\Models\User;
-use App\Models\UserSetting;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -22,16 +21,22 @@ class CostTrackingService
      * Current request tracking
      */
     protected ?string $currentRequestId = null;
+
     protected float $runningCost = 0;
+
     protected int $runningPromptTokens = 0;
+
     protected int $runningCompletionTokens = 0;
+
     protected int $toolCallCount = 0;
 
     /**
      * Enhanced usage tracking (OpenRouter Best Practice)
      */
     protected int $runningCachedTokens = 0;
+
     protected int $runningReasoningTokens = 0;
+
     protected ?float $runningActualCost = null;
 
     /**
@@ -54,12 +59,12 @@ class CostTrackingService
     /**
      * Add cost from an API call.
      *
-     * @param string $model Model ID
-     * @param int $promptTokens Prompt tokens used
-     * @param int $completionTokens Completion tokens used
-     * @param int $cachedTokens Tokens served from prompt cache (cheaper pricing)
-     * @param int $reasoningTokens Tokens used by reasoning models (o1, deepseek-r1)
-     * @param float|null $actualCost Real cost from OpenRouter API (vs estimated)
+     * @param  string  $model  Model ID
+     * @param  int  $promptTokens  Prompt tokens used
+     * @param  int  $completionTokens  Completion tokens used
+     * @param  int  $cachedTokens  Tokens served from prompt cache (cheaper pricing)
+     * @param  int  $reasoningTokens  Tokens used by reasoning models (o1, deepseek-r1)
+     * @param  float|null  $actualCost  Real cost from OpenRouter API (vs estimated)
      */
     public function addCost(
         string $model,
@@ -135,12 +140,12 @@ class CostTrackingService
     public function exceedsDailyLimit(User $user): bool
     {
         $settings = $user->settings;
-        if (!$settings) {
+        if (! $settings) {
             return false;
         }
 
         $maxDaily = $settings->max_daily_cost;
-        if (!$maxDaily) {
+        if (! $maxDaily) {
             return false;
         }
 
@@ -156,11 +161,12 @@ class CostTrackingService
     public function getRemainingDailyBudget(User $user): ?float
     {
         $settings = $user->settings;
-        if (!$settings || !$settings->max_daily_cost) {
+        if (! $settings || ! $settings->max_daily_cost) {
             return null;
         }
 
         $dailyCost = AgentCostUsage::getDailyCost($user->id);
+
         return max(0, $settings->max_daily_cost - $dailyCost);
     }
 
@@ -269,6 +275,7 @@ class CostTrackingService
         $pricing['default'] = ['input' => 1.0, 'output' => 3.0];
 
         $this->modelPricingCache = $pricing;
+
         return $pricing;
     }
 
@@ -314,12 +321,12 @@ class CostTrackingService
     public function isApproachingLimit(User $user): ?array
     {
         $settings = $user->settings;
-        if (!$settings || !$settings->cost_alert_enabled) {
+        if (! $settings || ! $settings->cost_alert_enabled) {
             return null;
         }
 
         $maxDaily = $settings->max_daily_cost;
-        if (!$maxDaily) {
+        if (! $maxDaily) {
             return null;
         }
 

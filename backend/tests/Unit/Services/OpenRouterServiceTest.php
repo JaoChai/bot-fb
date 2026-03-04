@@ -26,7 +26,7 @@ class OpenRouterServiceTest extends TestCase
             'services.openrouter.max_tokens' => 4096,
         ]);
 
-        $this->service = new OpenRouterService();
+        $this->service = new OpenRouterService;
     }
 
     public function test_service_is_configured_when_api_key_present(): void
@@ -37,7 +37,7 @@ class OpenRouterServiceTest extends TestCase
     public function test_service_is_not_configured_when_api_key_missing(): void
     {
         config(['services.openrouter.api_key' => '']);
-        $service = new OpenRouterService();
+        $service = new OpenRouterService;
 
         $this->assertFalse($service->isConfigured());
     }

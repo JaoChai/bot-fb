@@ -25,13 +25,13 @@ class IntentAnalysisService
     /**
      * Analyze user message intent using Decision Model.
      *
-     * @param Bot $bot The bot
-     * @param string $userMessage The user's message
-     * @param array $options Configuration options:
-     *   - validIntents: array of valid intent types (default: ['chat', 'knowledge'])
-     *   - includeExamples: whether to include examples in prompt (default: false)
-     *   - useFallback: whether to use text fallback on JSON parse failure (default: true)
-     *   - apiKey: API key override (default: null, uses bot's key)
+     * @param  Bot  $bot  The bot
+     * @param  string  $userMessage  The user's message
+     * @param  array  $options  Configuration options:
+     *                          - validIntents: array of valid intent types (default: ['chat', 'knowledge'])
+     *                          - includeExamples: whether to include examples in prompt (default: false)
+     *                          - useFallback: whether to use text fallback on JSON parse failure (default: true)
+     *                          - apiKey: API key override (default: null, uses bot's key)
      * @return array Intent analysis result with 'intent', 'confidence', 'model_used', 'method'
      */
     public function analyzeIntent(Bot $bot, string $userMessage, array $options = []): array
@@ -46,7 +46,7 @@ class IntentAnalysisService
         $fallbackDecisionModel = $this->getFallbackDecisionModelForBot($bot);
 
         // Skip decision model if not configured (use default behavior)
-        if (!$decisionModel && !$bot->decision_model) {
+        if (! $decisionModel && ! $bot->decision_model) {
             return [
                 'intent' => $this->shouldUseKnowledgeBase($bot) ? 'knowledge' : 'chat',
                 'confidence' => 1.0,
@@ -82,7 +82,7 @@ class IntentAnalysisService
         }
 
         // Use low reasoning effort for non-mandatory reasoning models (save tokens)
-        if ($this->isReasoningModel($decisionModel) && !$this->isMandatoryReasoningModel($decisionModel)) {
+        if ($this->isReasoningModel($decisionModel) && ! $this->isMandatoryReasoningModel($decisionModel)) {
             $chatParams['reasoning'] = ['effort' => 'low'];
         }
 
@@ -127,9 +127,9 @@ class IntentAnalysisService
     /**
      * Build the system prompt for intent analysis.
      *
-     * @param Bot $bot The bot
-     * @param array $validIntents Valid intent types
-     * @param bool $includeExamples Whether to include examples
+     * @param  Bot  $bot  The bot
+     * @param  array  $validIntents  Valid intent types
+     * @param  bool  $includeExamples  Whether to include examples
      * @return string The system prompt
      */
     protected function buildIntentAnalysisPrompt(Bot $bot, array $validIntents, bool $includeExamples): string
@@ -154,13 +154,13 @@ Classification rules:
 PROMPT;
 
         // Add confidence instruction
-        if (!$includeExamples) {
+        if (! $includeExamples) {
             $prompt .= "\n\nRespond with JSON only, no explanation.";
         } else {
             $prompt .= "\n- Confidence should reflect how certain you are (0.0 = uncertain, 1.0 = very certain)";
 
             // Add examples for RAG-style prompts
-            $prompt .= <<<EXAMPLES
+            $prompt .= <<<'EXAMPLES'
 
 
 Examples:
@@ -188,8 +188,8 @@ EXAMPLES;
      * - search_query: optimized query for KB search
      * - complexity: "simple" or "complex" for Smart Chat Routing
      *
-     * @param Bot $bot The bot
-     * @param array $validIntents Valid intent types
+     * @param  Bot  $bot  The bot
+     * @param  array  $validIntents  Valid intent types
      * @return string The enhanced system prompt
      */
     protected function buildEnhancedIntentPrompt(Bot $bot, array $validIntents): string
@@ -233,9 +233,9 @@ PROMPT;
     /**
      * Parse the intent analysis response from the LLM.
      *
-     * @param string $content The raw response content
-     * @param array $validIntents Valid intent types
-     * @param bool $useFallback Whether to use text fallback on JSON parse failure
+     * @param  string  $content  The raw response content
+     * @param  array  $validIntents  Valid intent types
+     * @param  bool  $useFallback  Whether to use text fallback on JSON parse failure
      * @return array Parsed intent with 'intent' and 'confidence'
      */
     protected function parseIntentResponse(string $content, array $validIntents, bool $useFallback): array
@@ -257,7 +257,7 @@ PROMPT;
             $confidence = (float) ($data['confidence'] ?? 0.5);
 
             // Validate intent value
-            if (!in_array($intent, $validIntents)) {
+            if (! in_array($intent, $validIntents)) {
                 $intent = 'chat';
             }
 
@@ -328,16 +328,19 @@ PROMPT;
 
             if ($escape) {
                 $escape = false;
+
                 continue;
             }
 
             if ($char === '\\') {
                 $escape = true;
+
                 continue;
             }
 
             if ($char === '"') {
-                $inString = !$inString;
+                $inString = ! $inString;
+
                 continue;
             }
 
@@ -362,8 +365,8 @@ PROMPT;
      * Fallback intent detection from raw text when JSON parsing fails.
      * Uses keyword matching to determine intent with reasonable confidence.
      *
-     * @param string $content The raw content
-     * @param array $validIntents Valid intent types
+     * @param  string  $content  The raw content
+     * @param  array  $validIntents  Valid intent types
      * @return array Intent with 'intent' and 'confidence'
      */
     protected function fallbackIntentFromText(string $content, array $validIntents): array
@@ -398,10 +401,12 @@ PROMPT;
         // Determine intent based on keyword matches
         if ($knowledgeScore > $chatScore && in_array('knowledge', $validIntents)) {
             $confidence = min(0.7, 0.5 + ($knowledgeScore * 0.1));
+
             return ['intent' => 'knowledge', 'confidence' => $confidence];
         }
 
         $confidence = min(0.7, 0.5 + ($chatScore * 0.1));
+
         return ['intent' => 'chat', 'confidence' => $confidence];
     }
 
@@ -410,7 +415,7 @@ PROMPT;
      */
     public function shouldUseKnowledgeBase(Bot $bot): bool
     {
-        if (!$bot->kb_enabled) {
+        if (! $bot->kb_enabled) {
             return false;
         }
 

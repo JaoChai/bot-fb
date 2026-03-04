@@ -18,9 +18,13 @@ class MessageServiceTest extends TestCase
     use RefreshDatabase;
 
     private MessageService $service;
+
     private User $user;
+
     private Bot $bot;
+
     private ChannelAdapterFactory $channelFactory;
+
     private ChannelAdapterInterface $channelAdapter;
 
     protected function setUp(): void

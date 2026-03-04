@@ -25,7 +25,7 @@ class BotSettingsUpdated implements ShouldBroadcast
      */
     public function broadcastOn(): array
     {
-        return [new PrivateChannel('bot.' . $this->bot->id)];
+        return [new PrivateChannel('bot.'.$this->bot->id)];
     }
 
     /**

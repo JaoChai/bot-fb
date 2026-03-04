@@ -59,7 +59,7 @@ return new class extends Migration
 
         $migratedFlows = [];
         foreach ($pivotData as $record) {
-            if (!in_array($record->flow_id, $migratedFlows)) {
+            if (! in_array($record->flow_id, $migratedFlows)) {
                 \DB::table('flows')
                     ->where('id', $record->flow_id)
                     ->update([

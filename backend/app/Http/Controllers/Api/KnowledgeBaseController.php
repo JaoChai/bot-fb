@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 class KnowledgeBaseController extends Controller
 {
     use ApiResponseTrait;
+
     /**
      * List all knowledge bases for the authenticated user.
      */
@@ -127,7 +128,7 @@ class KnowledgeBaseController extends Controller
                 'count' => $results->count(),
             ]);
         } catch (\Exception $e) {
-            return $this->error('Search failed: ' . $e->getMessage(), 500, [
+            return $this->error('Search failed: '.$e->getMessage(), 500, [
                 'query' => $validated['query'],
                 'results' => [],
                 'count' => 0,

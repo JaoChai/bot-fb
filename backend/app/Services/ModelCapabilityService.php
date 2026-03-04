@@ -9,9 +9,13 @@ use Illuminate\Support\Facades\Log;
 class ModelCapabilityService
 {
     private const CACHE_TTL = 86400; // 24 hours for per-model merged cache
+
     private const CACHE_PREFIX = 'model_cap';
+
     private const ALL_MODELS_CACHE_KEY = 'model_cap:all_models';
+
     private const ALL_MODELS_CACHE_TTL = 21600; // 6 hours
+
     private const API_TIMEOUT = 15; // seconds
 
     protected CircuitBreakerService $circuitBreaker;
@@ -141,7 +145,7 @@ class ModelCapabilityService
     /**
      * Get all available models (API + config-only).
      *
-     * @param string|null $search Filter by name, provider, or model ID
+     * @param  string|null  $search  Filter by name, provider, or model ID
      * @return array<int, array>
      */
     public function getAvailableModels(?string $search = null): array
@@ -273,7 +277,7 @@ class ModelCapabilityService
      */
     protected function getCacheKey(string $normalizedId): string
     {
-        return self::CACHE_PREFIX . ':' . $normalizedId;
+        return self::CACHE_PREFIX.':'.$normalizedId;
     }
 
     /**
@@ -364,11 +368,11 @@ class ModelCapabilityService
 
         try {
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $apiKey,
+                'Authorization' => 'Bearer '.$apiKey,
                 'HTTP-Referer' => config('app.url', 'https://botjao.com'),
             ])
-            ->timeout(self::API_TIMEOUT)
-            ->get('https://openrouter.ai/api/v1/models');
+                ->timeout(self::API_TIMEOUT)
+                ->get('https://openrouter.ai/api/v1/models');
 
             if (! $response->successful()) {
                 Log::warning('OpenRouter models API returned error', [

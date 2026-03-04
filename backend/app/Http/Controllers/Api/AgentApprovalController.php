@@ -26,7 +26,7 @@ class AgentApprovalController extends Controller
     {
         $approval = $this->safetyService->getApproval($approvalId);
 
-        if (!$approval) {
+        if (! $approval) {
             return response()->json([
                 'error' => 'Approval not found or expired',
             ], 404);
@@ -53,7 +53,7 @@ class AgentApprovalController extends Controller
             $request->input('reason')
         );
 
-        if (!$success) {
+        if (! $success) {
             return response()->json([
                 'error' => 'Cannot approve: approval not found, expired, or already responded',
             ], 400);
@@ -81,7 +81,7 @@ class AgentApprovalController extends Controller
             $request->input('reason')
         );
 
-        if (!$success) {
+        if (! $success) {
             return response()->json([
                 'error' => 'Cannot reject: approval not found, expired, or already responded',
             ], 400);

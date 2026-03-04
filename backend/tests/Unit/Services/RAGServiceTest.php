@@ -5,10 +5,10 @@ namespace Tests\Unit\Services;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\User;
+use App\Services\FlowCacheService;
 use App\Services\HybridSearchService;
 use App\Services\IntentAnalysisService;
 use App\Services\OpenRouterService;
-use App\Services\FlowCacheService;
 use App\Services\RAGService;
 use App\Services\SemanticSearchService;
 use App\Services\ToolService;
@@ -21,7 +21,9 @@ class RAGServiceTest extends TestCase
     use RefreshDatabase;
 
     private RAGService $service;
+
     private User $user;
+
     private Bot $bot;
 
     protected function setUp(): void
