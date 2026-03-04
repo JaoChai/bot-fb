@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Loader2, Clock, Plus, Trash2, Copy, MessageSquare, Sparkles } from 'lucide-react';
 import { useBotSettings, useUpdateBotSettings } from '@/hooks/useBotSettings';
+import type { BotSettings } from '@/types/api';
 
 // Response Hours types
 interface TimeSlot {
@@ -244,7 +245,7 @@ export function BotSettingsPage() {
   // Sync form data from server settings
   useEffect(() => {
     if (!serverSettings) return;
-    const settings = serverSettings as Record<string, unknown>;
+    const settings = serverSettings as unknown as Record<string, unknown>;
 
     setFormData({
       daily_message_limit: (settings.daily_message_limit as number) ?? 100,
@@ -296,7 +297,7 @@ export function BotSettingsPage() {
         rate_limit_user_message: formData.rate_limit_user_message || null,
         hitl_enabled: formData.hitl_enabled,
         response_hours_enabled: formData.response_hours_enabled,
-        response_hours: serializeResponseHours(formData.response_hours),
+        response_hours: serializeResponseHours(formData.response_hours) as BotSettings['response_hours'],
         response_hours_timezone: formData.response_hours_timezone,
         offline_message: formData.offline_message || null,
         multiple_bubbles_enabled: formData.multiple_bubbles_enabled,
