@@ -10,7 +10,6 @@ allowed-tools:
   - Grep
   - WebFetch
 context:
-  - path: frontend/tailwind.config.ts
   - path: frontend/src/index.css
   - path: frontend/src/components/ui/
 ---
@@ -89,8 +88,7 @@ python3 .claude/skills/ui-ux-pro-max/scripts/search.py "<keyword>" --domain <dom
 
 | File | Purpose |
 |------|---------|
-| `frontend/tailwind.config.ts` | Theme configuration |
-| `frontend/src/index.css` | Global styles |
+| `frontend/src/index.css` | Tailwind v4 theme config (via CSS `@theme` directive, no `tailwind.config.ts`) |
 | `frontend/src/components/ui/` | UI primitives (Radix) |
 | `frontend/src/lib/utils.ts` | cn() utility |
 

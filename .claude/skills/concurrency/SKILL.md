@@ -180,6 +180,19 @@ broadcast(new MessageSent($message))->toOthers();
 | `app/Http/Controllers/Api/FlowController.php` | lockForUpdate for setDefault |
 | `app/Services/Chat/TagService.php` | Bulk tag with lockForUpdate |
 
+### 8. SmartAggregation Sub-system
+
+Builds on top of `MessageAggregationService` with intelligent message grouping:
+
+| File | Purpose |
+|------|---------|
+| `app/Services/SmartAggregation/SmartAggregationAnalyzer.php` | Intelligent message grouping decisions |
+| `app/Services/SmartAggregation/AggregationContext.php` | Aggregation state tracking |
+| `app/Services/SmartAggregation/ThaiLanguagePatterns.php` | Thai language-specific handling |
+| `app/Services/SmartAggregation/UserTypingStats.php` | Typing pattern analysis for wait-time tuning |
+
+**Use when**: Fine-tuning message batching behavior, especially for Thai language conversations where splitting patterns differ from English.
+
 ## Critical Gotchas
 
 | Gotcha | Detail |

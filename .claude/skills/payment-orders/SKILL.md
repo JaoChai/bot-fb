@@ -1,3 +1,8 @@
+---
+description: Payment flow and order management specialist for LINE Flex messages, order tracking, and VIP detection
+triggers: ['payment', 'order', 'flex message', 'VIP', 'ชำระเงิน', 'สั่งซื้อ', 'คำสั่งซื้อ']
+---
+
 # Payment & Order Workflows
 
 LINE Flex messages, payment verification, order tracking for Line Adsvance.
@@ -42,8 +47,8 @@ Step 5: VERIFY SUCCESS (Green/Gold)
 | `app/Models/Order.php` | Order model with relationships |
 | `app/Models/OrderItem.php` | Order item with product/variant |
 | `app/Http/Controllers/Api/OrderController.php` | Dashboard API (346 lines) |
-| `app/Commands/BackfillOrdersFromMessages.php` | Retroactive order creation |
-| `app/Commands/NormalizeOrderItems.php` | Product name standardization |
+| `app/Console/Commands/BackfillOrdersFromMessages.php` | Retroactive order creation |
+| `app/Console/Commands/NormalizeOrderItems.php` | Product name standardization |
 
 ## Database Schema
 

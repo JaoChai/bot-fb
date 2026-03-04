@@ -1,7 +1,7 @@
 ---
 name: webhook-debug
 description: |
-  Webhook and messaging debugger for LINE, Telegram, and WebSocket.
+  Webhook and messaging debugger for LINE, Telegram, Facebook, and WebSocket.
   Triggers: 'webhook', 'bot not responding', 'message not arriving', 'queue failed', 'WebSocket', 'Echo'.
   Use when: messages don't arrive, webhooks fail, real-time features don't work, bot stops responding.
 allowed-tools:
@@ -10,14 +10,18 @@ allowed-tools:
   - Read
   - Grep
 context:
-  - path: app/Http/Controllers/WebhookController.php
-  - path: app/Jobs/ProcessIncomingMessage.php
+  - path: app/Http/Controllers/Webhook/LINEWebhookController.php
+  - path: app/Http/Controllers/Webhook/TelegramWebhookController.php
+  - path: app/Http/Controllers/Webhook/FacebookWebhookController.php
+  - path: app/Jobs/ProcessLINEWebhook.php
+  - path: app/Jobs/ProcessTelegramWebhook.php
+  - path: app/Jobs/ProcessFacebookWebhook.php
   - path: config/broadcasting.php
 ---
 
 # Webhook & Messaging Debugger
 
-Debug LINE, Telegram webhooks และ real-time messaging.
+Debug LINE, Telegram, Facebook webhooks และ real-time messaging.
 
 ## Quick Start
 
@@ -49,6 +53,9 @@ search(query="LINE webhook", project="bot-fb", concepts=["gotcha", "problem-solu
 
 # Search for Telegram issues
 search(query="Telegram bot", project="bot-fb", type="bugfix", limit=5)
+
+# Search for Facebook issues
+search(query="Facebook webhook", project="bot-fb", type="bugfix", limit=5)
 ```
 
 ### Search by Scenario
@@ -70,22 +77,34 @@ search(query="Telegram bot", project="bot-fb", type="bugfix", limit=5)
 ## Message Flow
 
 ```
-Platform (LINE/Telegram)
+Platform (LINE/Telegram/Facebook)
     ↓
 Webhook Endpoint (/api/webhook/{platform}/{bot_id})
     ↓
-WebhookController → Validate signature
+Platform-specific Controller → Validate signature
+  (LINEWebhookController / TelegramWebhookController / FacebookWebhookController)
     ↓
-ProcessIncomingMessage Job (queued)
+Platform-specific Job (queued)
+  (ProcessLINEWebhook / ProcessTelegramWebhook / ProcessFacebookWebhook)
     ↓
 MessageProcessor Service
+  (LINE uses LINEEventRouter → LINEMessageProcessor for event routing)
     ↓
 AI Response (OpenRouter/Flow)
     ↓
-Send Reply via Platform API
+Send Reply via ChannelAdapterFactory → Platform Adapter
     ↓
-Platform (LINE/Telegram)
+Platform (LINE/Telegram/Facebook)
 ```
+
+### Architecture Notes
+
+- **Webhook controllers** are split per platform in `app/Http/Controllers/Webhook/`
+  - `LINEWebhookController.php`, `TelegramWebhookController.php`, `FacebookWebhookController.php`
+- **Jobs** are split per platform in `app/Jobs/`
+  - `ProcessLINEWebhook.php`, `ProcessTelegramWebhook.php`, `ProcessFacebookWebhook.php`
+- **LINE event routing** is handled by `app/Services/Webhook/LINE/LINEEventRouter.php` and `LINEMessageProcessor.php`
+- **Platform abstraction** via `app/Services/Channel/ChannelAdapterFactory.php` provides a unified interface for sending replies
 
 ## Debug Steps
 
@@ -133,6 +152,7 @@ FROM bots WHERE id = $bot_id;
 |----------|-------|------------|
 | LINE | [LINE_DEBUG.md](LINE_DEBUG.md) | Signature, tokens, Flex |
 | Telegram | [TELEGRAM_DEBUG.md](TELEGRAM_DEBUG.md) | Webhook setup, bot token |
+| Facebook | N/A | X-Hub-Signature-256, page token, app secret |
 | WebSocket | [WEBSOCKET_DEBUG.md](WEBSOCKET_DEBUG.md) | Reverb, Echo auth |
 
 ## Flex Message Detection
@@ -260,13 +280,21 @@ The plugin config UI is in `frontend/src/components/flow/PluginSection.tsx`.
 
 | File | Purpose |
 |------|---------|
-| `app/Http/Controllers/WebhookController.php` | Webhook handler |
+| `app/Http/Controllers/Webhook/LINEWebhookController.php` | LINE webhook handler |
+| `app/Http/Controllers/Webhook/TelegramWebhookController.php` | Telegram webhook handler |
+| `app/Http/Controllers/Webhook/FacebookWebhookController.php` | Facebook webhook handler |
 | `app/Jobs/ProcessLINEWebhook.php` | LINE message processing job |
+| `app/Jobs/ProcessTelegramWebhook.php` | Telegram message processing job |
+| `app/Jobs/ProcessFacebookWebhook.php` | Facebook message processing job |
+| `app/Services/Webhook/LINE/LINEEventRouter.php` | LINE event routing |
+| `app/Services/Webhook/LINE/LINEMessageProcessor.php` | LINE message processing |
+| `app/Services/Channel/ChannelAdapterFactory.php` | Platform abstraction layer |
 | `app/Services/PaymentFlexService.php` | Flex message detection & building |
 | `app/Services/MultipleBubblesService.php` | Bubble splitting & per-bubble Flex |
 | `app/Services/FlowPluginService.php` | Plugin execution (keyword + AI eval) |
 | `app/Services/LINEService.php` | LINE API integration |
 | `app/Services/TelegramService.php` | Telegram API integration |
+| `app/Services/FacebookService.php` | Facebook API integration |
 | `config/broadcasting.php` | Reverb configuration |
 | `frontend/src/components/flow/PluginSection.tsx` | Plugin config UI |
 
@@ -276,7 +304,7 @@ The plugin config UI is in `frontend/src/components/flow/PluginSection.tsx`.
 🔗 Webhook Debug Report
 ━━━━━━━━━━━━━━━━━━━━━━━
 Bot ID: [bot_id]
-Platform: [LINE/Telegram]
+Platform: [LINE/Telegram/Facebook]
 Message ID: [message_id]
 
 📊 Flow Analysis:

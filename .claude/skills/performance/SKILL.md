@@ -7,7 +7,6 @@ description: |
 allowed-tools:
   - Bash(npm run build*)
   - Bash(npx lighthouse*)
-  - Bash(python3 *.py*)
   - Read
   - Grep
 context:

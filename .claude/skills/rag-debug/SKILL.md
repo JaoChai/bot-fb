@@ -80,8 +80,8 @@ Query → QueryEnhancement → Search → Rerank → Context → LLM Response
 -- Check if document exists
 SELECT id, content,
        1 - (embedding <=> $query_embedding::vector) as similarity
-FROM knowledge_base_documents
-WHERE bot_id = $bot_id
+FROM documents
+WHERE knowledge_base_id = $kb_id
 ORDER BY embedding <=> $query_embedding::vector
 LIMIT 10;
 ```
@@ -104,7 +104,7 @@ LIMIT 10;
 SELECT
     LENGTH(content) as chars,
     array_length(regexp_split_to_array(content, '\s+'), 1) as words
-FROM knowledge_base_chunks
+FROM document_chunks
 WHERE document_id = $doc_id;
 ```
 
@@ -148,6 +148,9 @@ $query = normalize_thai($query);
 | `app/Services/JinaRerankerService.php` | Reranking results |
 | `app/Services/EmbeddingService.php` | Generate embeddings |
 | `app/Services/ChunkingService.php` | Document chunking |
+| `app/Services/SemanticCacheService.php` | Semantic cache skip logic |
+| `app/Services/QueryEnhancementService.php` | Query enhancement |
+| `app/Services/ContextualRetrievalService.php` | Contextual retrieval |
 
 ## Detailed Guides
 
@@ -296,7 +299,3 @@ return array_values($embeddings);
 - Index ordering is wrong after re-embedding
 - Rate limit errors from OpenRouter on bulk operations
 
-## Utility Scripts
-
-- `scripts/test_search.py` - Test search with sample queries
-- `scripts/analyze_embedding.py` - Analyze embedding quality

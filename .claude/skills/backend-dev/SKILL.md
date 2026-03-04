@@ -75,8 +75,14 @@ app/
 │   ├── Requests/        # FormRequest validation
 │   └── Resources/       # API response transformation
 ├── Services/            # Business logic (80%+ test coverage)
+│   ├── SecondAI/        # AI response validation (PromptInjectionDetector, etc.)
+│   ├── Agent/           # Agentic mode loop
+│   ├── Channel/         # Platform adapter pattern (ChannelAdapterFactory, LINEChannelAdapter, TelegramChannelAdapter)
+│   ├── Chat/            # Chat-related services
+│   ├── SmartAggregation/# Message aggregation intelligence
+│   └── Webhook/LINE/    # LINE event routing (LINEEventRouter, LINEMessageProcessor)
 ├── Models/              # Eloquent models with relationships
-├── Jobs/                # Queue jobs for async tasks
+├── Jobs/                # Queue jobs for async tasks (ProcessLINEWebhook, ProcessTelegramWebhook, ProcessFacebookWebhook)
 ├── Events/              # Event classes
 ├── Listeners/           # Event handlers
 └── Policies/            # Authorization logic
@@ -193,7 +199,7 @@ class StoreBotRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'platform' => ['required', Rule::in(['line', 'telegram'])],
+            'platform' => ['required', Rule::in(['line', 'telegram', 'facebook'])],
         ];
     }
 }
@@ -255,6 +261,25 @@ DELETE /api/v1/bots/{id}
 | `routes/api.php` | API route definitions |
 | `app/Providers/AppServiceProvider.php` | Service registration |
 | `config/*.php` | Configuration files |
+| `app/Http/Controllers/Webhook/` | Platform-specific webhook controllers (LINE, Telegram, Facebook) |
+| `app/Services/Channel/ChannelAdapterFactory.php` | Platform abstraction layer for sending messages |
+
+## Console Commands
+
+`app/Console/Commands/` has 11 artisan commands:
+
+| Command | Purpose |
+|---------|---------|
+| `AutoEnableBots` | Auto-enable bots |
+| `BackfillOrdersFromMessages` | Backfill orders from message history |
+| `CheckHealthCommand` | Health check |
+| `CleanupRagCache` | Clean up RAG cache |
+| `CreateMcpToken` | Create MCP token |
+| `NormalizeOrderItems` | Normalize order items |
+| `RefreshLineProfilePictures` | Refresh LINE profile pictures |
+| `SyncMessageCounts` | Sync message counts |
+| `TestUnifiedMode` | Test unified mode |
+| `WarmModelCapabilityCache` | Warm model capability cache |
 
 ## Common Tasks
 

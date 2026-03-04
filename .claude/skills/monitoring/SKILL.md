@@ -97,6 +97,15 @@ mcp__neon__list_slow_queries(
 | Queue Size | < 100 | > 500 |
 | DB Query | < 100ms | > 500ms |
 
+## Application Observability Models
+
+| Model/Service | Purpose |
+|---------------|---------|
+| `AgentCostUsage` | AI cost tracking per agent/model - monitor spend and usage patterns |
+| `ResilienceMetricsService.php` | Circuit breaker metrics - track service health and failure rates |
+| `SecondAILog` | Second AI audit logging - trace secondary AI decisions and responses |
+| `InjectionAttemptLog` | Prompt injection monitoring - detect and log injection attempts |
+
 ## Key Files
 
 | File | Purpose |

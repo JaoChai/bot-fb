@@ -173,8 +173,15 @@ CREATE INDEX idx_metadata ON messages USING GIN(metadata);
 | `flows` | Conversation flows |
 | `messages` | Chat messages |
 | `conversations` | Conversation sessions |
-| `knowledge_base_documents` | RAG documents |
+| `documents` | RAG documents (model: Document) |
+| `document_chunks` | Chunked document content (model: DocumentChunk) |
 | `embeddings` | Vector embeddings |
+| `agent_cost_usages` | AI cost tracking (model: AgentCostUsage) |
+| `second_ai_logs` | Second AI audit log (model: SecondAILog) |
+| `injection_attempt_logs` | Security monitoring (model: InjectionAttemptLog) |
+| `lead_recovery_logs` | Lead recovery tracking (model: LeadRecoveryLog) |
+| `rag_caches` | Semantic cache (model: RagCache) |
+| `activity_logs` | General activity (model: ActivityLog) |
 
 ## Neon-Specific Features
 
@@ -241,6 +248,9 @@ neon branches delete test-migration
 | Deadlock | Concurrent updates | Use `lockForUpdate()` or queue jobs |
 | Decimal precision loss | Wrong column type | Use `decimal(19,4)` not `float` |
 
-## Utility Scripts
+## Recent Schema Changes
 
-- `scripts/validate_migration.py` - Check migration safety
+| Date | Change |
+|------|--------|
+| 2026-02-18 | Evaluation/QA tables dropped (no longer in schema) |
+| 2026-02-24 | `model`, `fallback_model`, `decision_model`, `fallback_decision_model` columns dropped from `flows` table |

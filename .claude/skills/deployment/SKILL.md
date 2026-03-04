@@ -203,6 +203,13 @@ railway exec "php artisan queue:retry all"
 - [ ] Changelog updated
 - [ ] Sentry release created
 
-## Utility Scripts
+## Platform Credentials
 
-- `scripts/deploy.sh` - Full deploy with checks
+In addition to LINE/Telegram variables above, Facebook integration requires:
+
+| Variable | Description |
+|----------|-------------|
+| `FACEBOOK_APP_ID` | Facebook App ID |
+| `FACEBOOK_APP_SECRET` | Facebook App Secret |
+| `FACEBOOK_PAGE_ACCESS_TOKEN` | Page access token |
+| `FACEBOOK_VERIFY_TOKEN` | Webhook verification token |
