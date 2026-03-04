@@ -103,6 +103,84 @@ npx lighthouse https://www.botjao.com --view
 npm run build && du -sh dist/
 ```
 
+## Real Case Studies
+
+Actual performance fixes applied to this project, with measured results.
+
+### Dropping 21 Unused Indexes
+
+Queried `pg_stat_user_indexes` to find indexes with `idx_scan = 0`. Dropped in 3 migrations:
+
+| Migration | What | Count |
+|-----------|------|-------|
+| `2026_02_16_100001_drop_redundant_indexes` | Redundant single-column indexes covered by composites | 4 |
+| `2026_02_16_100002_drop_indexes_on_empty_tables` | Indexes on 0-row tables (unused features) | 15 |
+| `2026_02_16_100003_drop_unused_indexes_on_active_tables` | Indexes with 0 scans on active tables | 6 |
+
+All use `DROP INDEX CONCURRENTLY` with `$withinTransaction = false` to avoid locking.
+
+### Webhook Index Optimization
+
+Added partial composite index for the hottest query path (webhook conversation lookup):
+
+```sql
+-- 2026_02_16_100000_add_webhook_lookup_index_to_conversations
+CREATE INDEX CONCURRENTLY idx_conversations_webhook_lookup
+ON conversations (bot_id, external_customer_id, channel_type, status)
+WHERE deleted_at IS NULL;
+```
+
+The `WHERE deleted_at IS NULL` partial index keeps it small and fast since soft-deleted rows are excluded.
+
+### Embedding Chunking (array_chunk with preserve_keys)
+
+`EmbeddingService::generateBatch()` chunks texts into batches of 25:
+
+```php
+$chunks = array_chunk($texts, 25, true);  // preserve_keys=true is critical
+
+foreach ($chunks as $chunk) {
+    $response = Http::post('/embeddings', ['input' => array_values($chunk)]);
+    $offset = array_key_first($chunk);
+    foreach ($data as $item) {
+        $embeddings[$offset + $item['index']] = $item['embedding'];
+    }
+}
+ksort($embeddings);
+```
+
+**Why `preserve_keys=true`**: Without it, each chunk resets keys to 0. The `$offset = array_key_first($chunk)` calculation needs original keys to map API response indexes back to the correct positions. Without preserved keys, embeddings get assigned to wrong texts.
+
+### Message Pagination (DESC-then-reverse)
+
+`ConversationQueryService::getConversation()` loads the latest N messages efficiently:
+
+```php
+// Step 1: Fetch latest N in DESC order (uses index, avoids OFFSET)
+'messages' => fn($query) => $query->orderBy('created_at', 'desc')->limit($messagesLimit),
+
+// Step 2: Reverse to chronological order for display
+$conversation->setRelation('messages', $conversation->messages->reverse()->values());
+```
+
+**Why not ASC with OFFSET?** `OFFSET` requires scanning and discarding rows. DESC + LIMIT reads only the rows needed from the index tail, then `->reverse()->values()` flips to chronological in-memory (cheap for small N like 50-100).
+
+### Laravel HTTP Retry Pattern
+
+`OpenRouterService::client()` uses retry with exponential backoff:
+
+```php
+Http::baseUrl($this->baseUrl)
+    ->timeout($requestTimeout)
+    ->retry(3, function (int $attempt) {
+        return $attempt * 200;  // 200ms, 400ms, 600ms
+    }, throw: false, when: function (\Exception $e, $response) {
+        return $response?->status() === 429 || $response?->status() >= 500;
+    })
+```
+
+**Key: `throw: false`** — Without this, the retry mechanism throws its own exception after exhausting retries, bypassing the existing error handling in `chat()`. With `throw: false`, the failed response is returned normally and handled by the `$response->failed()` check downstream.
+
 ## Gotchas
 
 | Problem | Solution |

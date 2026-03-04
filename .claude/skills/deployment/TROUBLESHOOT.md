@@ -5,11 +5,13 @@
 ### 1. Check Health Status
 
 ```bash
-# Backend health
+# Public health check (load balancer level)
 curl https://api.botjao.com/health
+# Expected: {"status":"healthy","timestamp":"..."}
 
-# Expected response
-{"status":"ok","database":"connected","timestamp":"..."}
+# Detailed health check (requires auth token)
+curl -H "Authorization: Bearer <token>" https://api.botjao.com/health/detailed
+# Returns: status + checks (database, cache, queue) + circuit_breakers
 ```
 
 ### 2. Check Recent Errors (Sentry)
@@ -24,6 +26,52 @@ mcp__sentry__search_issues --organizationSlug=botjao --naturalLanguageQuery="err
 ```bash
 # Railway logs
 railway logs --filter "error" --lines 100
+```
+
+## Common Build Failures
+
+### TypeScript Interface Not Matching Backend Model
+
+**Symptoms:** Frontend build fails on Railway with TypeScript errors like `Property 'x' does not exist on type 'Y'`.
+
+**Root cause:** Backend adds a new column/field to a model, but the frontend TypeScript interface in `frontend/src/types/api.ts` was not updated to match.
+
+**Example (BotSettings pattern):**
+
+The backend `BotSetting` model gains new fields (e.g. `lead_recovery_enabled`, `hitl_triggers`), but the frontend `BotSettings` interface in `types/api.ts` still has the old shape. The `BotSettingsPage.tsx` references the new fields, causing:
+
+```
+TS2339: Property 'lead_recovery_enabled' does not exist on type 'BotSettings'.
+```
+
+**Fix pattern:**
+1. Check the backend model/migration for all current fields
+2. Update the TypeScript interface in `frontend/src/types/api.ts`
+3. Run `npm run build` locally before pushing
+
+**Related commits:** `97c67c0` (fix: add missing BotSettings fields to fix TypeScript build)
+
+### RAILPACK / NIXPACKS Builder Issues
+
+**Symptoms:** Build fails during Railway's build phase with errors from the builder itself, not from your code.
+
+**Common causes:**
+
+| Cause | Fix |
+|-------|-----|
+| Node version mismatch | Check `engines` in `package.json` matches Railway's Node version |
+| Missing nixpacks.toml | Frontend requires `frontend/nixpacks.toml` for build config |
+| Build command not found | Verify `build` script exists in `package.json` |
+| Memory exceeded during build | Split large imports, reduce chunk count, or upgrade plan |
+
+**Debug steps:**
+```bash
+# Check build logs
+railway logs --type build --lines 200
+
+# Test build locally
+cd frontend && npm run build
+cd backend && composer install --no-dev
 ```
 
 ## Common Issues
