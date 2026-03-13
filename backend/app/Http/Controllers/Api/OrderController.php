@@ -226,7 +226,7 @@ class OrderController extends Controller
                     DB::raw('MAX(orders.created_at) as last_order_at'),
                     DB::raw("EXISTS (
                         SELECT 1 FROM conversations
-                        WHERE conversations.customer_profile_id = customer_profiles.id
+                        WHERE conversations.customer_profile_id = orders.customer_profile_id
                         AND conversations.memory_notes::text ILIKE '%VIP%'
                     ) as is_vip"),
                 ])
