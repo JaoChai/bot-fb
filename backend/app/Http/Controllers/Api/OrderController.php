@@ -218,20 +218,23 @@ class OrderController extends Controller
         $data = Cache::remember($cacheKey, 300, function () use ($botFilter, $startDate, $endDate) {
             return Order::query()
                 ->select([
-                    'customer_profile_id',
+                    'orders.customer_profile_id',
                     'customer_profiles.display_name',
                     'customer_profiles.picture_url',
                     DB::raw('COUNT(*) as order_count'),
                     DB::raw('COALESCE(SUM(total_amount), 0) as total_spent'),
                     DB::raw('MAX(orders.created_at) as last_order_at'),
-                    DB::raw("BOOL_OR(conversations.memory_notes::text ILIKE '%VIP%') as is_vip"),
+                    DB::raw("EXISTS (
+                        SELECT 1 FROM conversations
+                        WHERE conversations.customer_profile_id = customer_profiles.id
+                        AND conversations.memory_notes::text ILIKE '%VIP%'
+                    ) as is_vip"),
                 ])
                 ->join('customer_profiles', 'orders.customer_profile_id', '=', 'customer_profiles.id')
-                ->leftJoin('conversations', 'conversations.customer_profile_id', '=', 'customer_profiles.id')
                 ->whereIn('orders.bot_id', $botFilter)
                 ->whereBetween('orders.created_at', [$startDate, $endDate])
-                ->whereNotNull('customer_profile_id')
-                ->groupBy('customer_profile_id', 'customer_profiles.display_name', 'customer_profiles.picture_url')
+                ->whereNotNull('orders.customer_profile_id')
+                ->groupBy('orders.customer_profile_id', 'customer_profiles.display_name', 'customer_profiles.picture_url')
                 ->orderByDesc('is_vip')
                 ->orderByDesc('total_spent')
                 ->limit(100)

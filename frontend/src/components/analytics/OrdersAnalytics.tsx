@@ -231,7 +231,7 @@ export function OrdersAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                     <LineChart data={timeSeries}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis
@@ -566,7 +566,7 @@ export function OrdersAnalytics() {
                   </CardHeader>
                   <CardContent>
                     <div className="h-[300px]">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                         <PieChart>
                           <Pie
                             data={categoryData}
