@@ -476,6 +476,107 @@ class PaymentFlexServiceTest extends TestCase
     }
 
     // ────────────────────────────────────────────────────────
+    // Step 2.5: Support Delay Warning Tests
+    // ────────────────────────────────────────────────────────
+
+    /** @test */
+    public function test_detects_support_delay_message(): void
+    {
+        $text = "ขอแจ้งให้ทราบก่อนนะครับพี่ ช่วงนี้ทีม Support อาจใช้เวลาซัพพอร์ตนานกว่าปกติหน่อยครับ หากบัญชีมีปัญหาต้องรอคิวนิดนึง ถ้าพี่รับเงื่อนไขตรงนี้ได้ ผมจะดำเนินการจำหน่ายให้ครับผม\n[แจ้งเตือน Support]";
+
+        $this->assertTrue($this->service->isSupportDelayMessage($text));
+    }
+
+    /** @test */
+    public function test_does_not_detect_support_delay_in_normal_text(): void
+    {
+        $this->assertFalse($this->service->isSupportDelayMessage('สวัสดีครับ ยินดีต้อนรับ'));
+        $this->assertFalse($this->service->isSupportDelayMessage('ทีม Support พร้อมดูแลครับ'));
+        $this->assertFalse($this->service->isSupportDelayMessage('แจ้งเตือน'));
+    }
+
+    /** @test */
+    public function test_builds_support_delay_flex_normal(): void
+    {
+        $flex = $this->service->buildSupportDelayFlexMessage(false);
+
+        $this->assertEquals('flex', $flex['type']);
+        $this->assertStringContains('แจ้งระยะเวลา Support', $flex['altText']);
+        $this->assertEquals('bubble', $flex['contents']['type']);
+
+        // Header should be orange
+        $this->assertEquals('#FF6B00', $flex['contents']['header']['backgroundColor']);
+        $headerJson = json_encode($flex['contents']['header'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('⏰', $headerJson);
+        $this->assertStringNotContains('VIP', $headerJson);
+
+        // Body should have warning text and info box
+        $json = json_encode($flex['contents']['body'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('ทีม Support อาจใช้เวลาซัพพอร์ตนานกว่าปกติ', $json);
+        $this->assertStringContains('รับเงื่อนไข', $json);
+
+        // Footer should have only ตกลง button (no ยังไม่ตกลง)
+        $footerJson = json_encode($flex['contents']['footer'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('ตกลง', $footerJson);
+        $this->assertStringNotContains('ยังไม่ตกลง', $footerJson);
+        $this->assertStringContains('"type":"message"', $footerJson);
+    }
+
+    /** @test */
+    public function test_builds_support_delay_flex_vip(): void
+    {
+        $flex = $this->service->buildSupportDelayFlexMessage(true);
+
+        $this->assertEquals('flex', $flex['type']);
+
+        // Header should be gold
+        $this->assertEquals('#D4A017', $flex['contents']['header']['backgroundColor']);
+        $headerJson = json_encode($flex['contents']['header'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('👑 VIP', $headerJson);
+
+        // Body should have VIP greeting and priority note
+        $json = json_encode($flex['contents']['body'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('ขอบคุณที่อุดหนุนเสมอ', $json);
+        $this->assertStringContains('VIP จะได้รับการดูแลเป็นลำดับต้นๆ', $json);
+
+        // Footer should have only ตกลง button (no ยังไม่ตกลง)
+        $footerJson = json_encode($flex['contents']['footer'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('ตกลง', $footerJson);
+        $this->assertStringNotContains('ยังไม่ตกลง', $footerJson);
+    }
+
+    /** @test */
+    public function test_try_convert_returns_flex_for_support_delay(): void
+    {
+        $text = "ขอแจ้งให้ทราบก่อนนะครับพี่ ช่วงนี้ทีม Support อาจใช้เวลาซัพพอร์ตนานกว่าปกติ\n[แจ้งเตือน Support]";
+
+        $result = $this->service->tryConvertToFlex($text);
+
+        $this->assertIsArray($result);
+        $this->assertEquals('flex', $result['type']);
+        $this->assertEquals('#FF6B00', $result['contents']['header']['backgroundColor']);
+    }
+
+    /** @test */
+    public function test_try_convert_returns_vip_flex_for_support_delay(): void
+    {
+        $conversation = new Conversation;
+        $conversation->memory_notes = [
+            ['type' => 'memory', 'content' => 'ลูกค้า VIP ประจำ'],
+        ];
+
+        $text = "ขอแจ้งให้ทราบก่อนนะครับพี่ ช่วงนี้ทีม Support อาจใช้เวลาซัพพอร์ตนานกว่าปกติ\n[แจ้งเตือน Support]";
+
+        $result = $this->service->tryConvertToFlex($text, $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertEquals('flex', $result['type']);
+        $this->assertEquals('#D4A017', $result['contents']['header']['backgroundColor']);
+        $headerJson = json_encode($result['contents']['header'], JSON_UNESCAPED_UNICODE);
+        $this->assertStringContains('👑 VIP', $headerJson);
+    }
+
+    // ────────────────────────────────────────────────────────
     // Step 3: Terms Message Tests
     // ────────────────────────────────────────────────────────
 
