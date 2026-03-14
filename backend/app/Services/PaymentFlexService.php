@@ -49,6 +49,11 @@ class PaymentFlexService
                 }
             }
 
+            // Step 2.5: Support delay warning
+            if ($this->isSupportDelayMessage($text)) {
+                return $this->safeBuildFlex($text, $this->buildSupportDelayFlexMessage($isVip));
+            }
+
             // Step 3: Terms message (always uses fixed TERMS_URL)
             if ($this->isTermsMessage($text)) {
                 return $this->safeBuildFlex($text, $this->buildTermsFlexMessage());
@@ -399,6 +404,140 @@ class PaymentFlexService
                     'color' => '#333333',
                     'align' => 'end',
                     'flex' => 2,
+                ],
+            ],
+        ];
+    }
+
+    // ────────────────────────────────────────────────────────
+    // Step 2.5: Support Delay Warning
+    // ────────────────────────────────────────────────────────
+
+    /**
+     * Detect if text is a support delay warning message.
+     * Must contain "[แจ้งเตือน Support]" tag.
+     */
+    public function isSupportDelayMessage(string $text): bool
+    {
+        return mb_strpos($text, '[แจ้งเตือน Support]') !== false;
+    }
+
+    /**
+     * Build LINE Flex Message for support delay warning.
+     * VIP gets gold styling with priority note; normal gets orange with secondary button.
+     */
+    public function buildSupportDelayFlexMessage(bool $isVip = false): array
+    {
+        $primaryColor = $isVip ? self::VIP_PRIMARY_COLOR : self::CONFIRM_PRIMARY_COLOR;
+        $headerText = $isVip ? '👑 VIP แจ้งระยะเวลา Support' : '⏰ แจ้งระยะเวลา Support';
+
+        $bodyContents = [];
+
+        // VIP greeting
+        if ($isVip) {
+            $bodyContents[] = [
+                'type' => 'text',
+                'text' => 'ขอบคุณที่อุดหนุนเสมอครับพี่ 🙏',
+                'size' => 'sm',
+                'color' => self::VIP_PRIMARY_COLOR,
+                'weight' => 'bold',
+            ];
+        }
+
+        // Warning message
+        $warningText = [
+            'type' => 'text',
+            'text' => 'ช่วงนี้ทีม Support อาจใช้เวลาซัพพอร์ตนานกว่าปกติหน่อยครับ หากบัญชีมีปัญหาต้องรอคิวนิดนึง',
+            'size' => 'sm',
+            'color' => '#555555',
+            'wrap' => true,
+        ];
+        if ($isVip) {
+            $warningText['margin'] = 'lg';
+        }
+        $bodyContents[] = $warningText;
+
+        $bodyContents[] = [
+            'type' => 'separator',
+            'margin' => 'lg',
+        ];
+
+        // Condition text
+        $bodyContents[] = [
+            'type' => 'text',
+            'text' => 'ถ้าพี่รับเงื่อนไขตรงนี้ได้ ผมจะดำเนินการจำหน่ายให้ครับผม',
+            'size' => 'sm',
+            'color' => '#555555',
+            'wrap' => true,
+            'margin' => 'lg',
+        ];
+
+        // Info box
+        $infoText = $isVip
+            ? 'ลูกค้า VIP จะได้รับการดูแลเป็นลำดับต้นๆ ครับ'
+            : 'กดปุ่มด้านล่างเพื่อตอบรับเงื่อนไข';
+        $infoColor = $isVip ? self::VIP_PRIMARY_COLOR : self::CONFIRM_PRIMARY_COLOR;
+        $infoBg = $isVip ? '#FFF8E1' : '#FFF3E0';
+
+        $bodyContents[] = [
+            'type' => 'box',
+            'layout' => 'vertical',
+            'margin' => 'lg',
+            'backgroundColor' => $infoBg,
+            'cornerRadius' => 'md',
+            'paddingAll' => 'md',
+            'contents' => [
+                [
+                    'type' => 'text',
+                    'text' => "ℹ️ {$infoText}",
+                    'size' => 'sm',
+                    'color' => $infoColor,
+                    'wrap' => true,
+                ],
+            ],
+        ];
+
+        return [
+            'type' => 'flex',
+            'altText' => $headerText,
+            'contents' => [
+                'type' => 'bubble',
+                'header' => [
+                    'type' => 'box',
+                    'layout' => 'vertical',
+                    'backgroundColor' => $primaryColor,
+                    'paddingAll' => 'lg',
+                    'contents' => [
+                        [
+                            'type' => 'text',
+                            'text' => $headerText,
+                            'color' => '#FFFFFF',
+                            'size' => 'lg',
+                            'weight' => 'bold',
+                        ],
+                    ],
+                ],
+                'body' => [
+                    'type' => 'box',
+                    'layout' => 'vertical',
+                    'contents' => $bodyContents,
+                ],
+                'footer' => [
+                    'type' => 'box',
+                    'layout' => 'vertical',
+                    'spacing' => 'sm',
+                    'contents' => [
+                        [
+                            'type' => 'button',
+                            'action' => [
+                                'type' => 'message',
+                                'label' => '✅ ตกลง',
+                                'text' => 'ตกลง',
+                            ],
+                            'style' => 'primary',
+                            'color' => $primaryColor,
+                        ],
+                    ],
                 ],
             ],
         ];
