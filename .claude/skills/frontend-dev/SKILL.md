@@ -151,6 +151,41 @@ This project uses **Tailwind v4** - configuration is via CSS (`src/index.css` wi
 
 **Auth setup:** See [gotcha-003](rules/gotcha-003-echo-auth-token.md)
 
+## Dashboard Architecture
+
+Single-scrollable page with 7 sections, responsive grid layout.
+
+### Sections (top to bottom)
+
+| # | Section | Components | Grid |
+|---|---------|-----------|------|
+| 1 | StatCards | 4 metric cards | 2-col mobile, 4-col desktop |
+| 2 | RevenueChart + BotStatus | Chart + status panel | 3-col layout |
+| 3 | Products | Product breakdown | Full width |
+| 4 | Cost | Cost analytics | Full width |
+| 5 | Orders | Order summary | Full width |
+| 6 | Activity | Recent activity | Full width |
+| 7 | VIP Stats | Crown icon + customer count + total spent | In RevenueChart |
+
+### Key Components (11 total)
+
+All in `frontend/src/components/dashboard/`:
+- `StatCard`, `StatCards` — Key metric display
+- `RevenueChart` — Revenue over time + VIP stats
+- `BotStatusPanel` — Bot health indicators
+- `ProductBreakdown` — Product analytics
+- `CostAnalytics` — Cost tracking
+- `OrderSummary` — Order statistics
+- `ActivityFeed` — Recent conversation activity
+
+### Data Hooks
+
+| Hook | Purpose |
+|------|---------|
+| `useDashboardSummary` | Main dashboard metrics |
+| `useCostAnalytics` | Cost breakdown data |
+| `useOrderSummary` | Order statistics |
+
 ## Detailed Guides
 
 - **React 19 Patterns**: See [REACT_PATTERNS.md](REACT_PATTERNS.md)

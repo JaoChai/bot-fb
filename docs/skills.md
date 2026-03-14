@@ -1,6 +1,6 @@
 # Agent Skills Reference
 
-18 skills available - auto-triggered from context or use `/skill-name`
+17 skills available - auto-triggered from context or use `/skill-name`
 
 ---
 
@@ -14,18 +14,17 @@
 | Design | `/ui-ux-pro-max` | UI design, styles, colors, shadcn |
 | Data | `/database-ops` | migrations, queries, vectors |
 | Data | `/rag-debug` | search not working, embeddings |
-| Quality | `/dead-code` | dead code, unused, cleanup, knip |
+| Quality | `/refactor` (dead-code) | dead code, unused, cleanup, knip |
 | Quality | `/code-review` | before commit, security audit |
 | Quality | `/testing` | write tests, PHPUnit, Playwright |
 | Operations | `/deployment` | deploy, production issues |
 | Operations | `/performance` | slow queries, optimization |
 | Operations | `/monitoring` | error tracking, Sentry, logs |
 | Security | `/auth-security` | auth, API keys, credentials |
-| Debug | `/webhook-debug` | bot not responding, webhook |
-| Debug | `/agentic-debug` | agent loop, ReAct, tool calls, smart routing |
-| Debug | `/concurrency` | race condition, deadlock, locks, duplicate |
-| AI | `/prompt-eng` | prompt optimization |
-| AI | `/payment-orders` | payment, order, Flex, VIP, bank transfer |
+| Debug | `/webhook-debug` | bot not responding, webhook, race condition, deadlock, locks, concurrency |
+| Debug | `/agentic-debug` | agent loop, ReAct, tool calls, smart routing, Second AI |
+| AI | `/prompt-eng` | prompt optimization, injection detection |
+| AI | `/payment-orders` | payment, order, Flex, VIP, bank transfer, vip-check, promote VIP |
 
 ---
 
@@ -119,19 +118,6 @@ RAG pipeline debugger for semantic search.
 
 ### Quality
 
-#### `/dead-code`
-Dead code detection for full stack.
-
-**Use when:** Cleaning up unused code, before major refactoring, periodic maintenance
-
-**Covers:**
-- Frontend: knip (unused files, exports, dependencies)
-- Backend: grep-based analysis (unused Services, Models, Jobs, Controllers, routes)
-- Cross-stack: unused config keys, orphaned routes
-- Auto-fix mode with user confirmation
-
----
-
 #### `/code-review`
 Comprehensive code reviewer.
 
@@ -217,13 +203,16 @@ Authentication and security specialist.
 ### Debug
 
 #### `/webhook-debug`
-Webhook and messaging debugger.
+Webhook, messaging, and concurrency debugger.
 
-**Use when:** Bot not responding, webhook failures
+**Use when:** Bot not responding, webhook failures, duplicate messages, race conditions
 
 **Covers:**
-- LINE webhook debugging
-- Telegram webhook debugging
+- LINE/Telegram/Facebook webhook debugging
+- ProcessLINEWebhook pipeline (dedup, circuit breaker, transaction splitting)
+- Message aggregation pipeline (SmartAggregation, timer reset)
+- Vision & sticker routing
+- Concurrency patterns (8 patterns: locks, dedup, circuit breaker, etc.)
 - WebSocket (Reverb) issues
 - Queue job failures
 
@@ -245,47 +234,37 @@ Prompt engineering specialist.
 ---
 
 #### `/agentic-debug`
-Agent loop and smart routing debugger.
+Agent loop, smart routing, and Second AI debugger.
 
-**Use when:** Agent loop stuck, tool calls failing, smart routing choosing wrong mode
+**Use when:** Agent loop stuck, tool calls failing, smart routing choosing wrong mode, Second AI issues
 
 **Covers:**
 - AgentLoopService ReAct loop debugging
 - Smart routing decision tree analysis
 - Tool execution failures (search_kb, calculate, think, etc.)
 - Safety controls (timeout, cost, HITL)
-- Second AI verification issues
+- Second AI pipeline (unified vs sequential mode, skip patterns)
+- Timeout layering (pipeline 25s, HTTP 15s, agent 120s, SSE 30s)
+- StreamController SSE architecture
 - Message truncation debugging
 
 ---
 
-#### `/concurrency`
-Race condition and locking specialist.
-
-**Use when:** Duplicate messages, data corruption, deadlocks, race conditions
-
-**Covers:**
-- Pessimistic locking (lockForUpdate)
-- Response cache locks
-- Message aggregation patterns
-- Unique constraint catch patterns
-- Circuit breaker implementation
-- WebSocket deduplication
-
----
-
 #### `/payment-orders`
-Payment flow and order management specialist.
+Payment flow, order management, and VIP promotion specialist.
 
-**Use when:** Payment Flex detection issues, order tracking, VIP pricing, bank transfer verification
+**Use when:** Payment Flex detection issues, order tracking, VIP pricing, bank transfer verification, VIP promotion
 
 **Covers:**
-- 5-step payment flow (Confirm→Terms→Payment→Verify→Success)
-- PaymentFlexService detection priority
+- 6-type payment flow (Payment→SupportDelay→Terms→Verify→Confirm + VIP variants)
+- PaymentFlexService detection priority (6 types)
+- SupportDelay Flex (VIP gold / normal orange)
+- VIP color system (5 Flex types with normal/VIP colors)
+- VIP promotion workflow (via `/vip-check` trigger)
 - LINE Flex message builder
-- VIP detection and pricing tiers
 - Order deduplication
 - Bank transfer verification
+- Markdown stripping for regex detection
 
 ---
 
@@ -302,14 +281,17 @@ Payment flow and order management specialist.
 "ทำ login flow"          → /auth-security
 "webhook LINE พัง"       → /webhook-debug
 "ปรับ system prompt"     → /prompt-eng
-"หา dead code"           → /dead-code
-"unused imports"         → /dead-code
+"หา dead code"           → /refactor
+"unused imports"         → /refactor
 "agent loop ค้าง"        → /agentic-debug
 "smart routing เลือกผิด"  → /agentic-debug
-"ข้อความซ้ำ duplicate"    → /concurrency
-"race condition"         → /concurrency
+"ข้อความซ้ำ duplicate"    → /webhook-debug
+"race condition"         → /webhook-debug
 "payment Flex ไม่ detect" → /payment-orders
 "order tracking"         → /payment-orders
+"promote VIP"            → /payment-orders
+"vip-check"              → /payment-orders
+"Second AI ไม่ทำงาน"     → /agentic-debug
 ```
 
 ---
@@ -331,7 +313,7 @@ Payment flow and order management specialist.
 | Auth/Security | `/auth-security` | - |
 | Bot not responding | `/webhook-debug` | - |
 | Prompt optimization | `/prompt-eng` | - |
-| Code cleanup | `/refactor` | `/dead-code` |
+| Code cleanup | `/refactor` | - |
 | Agent loop issues | `/agentic-debug` | `/webhook-debug` |
-| Duplicate/race conditions | `/concurrency` | - |
-| Payment/order issues | `/payment-orders` | - |
+| Duplicate/race conditions | `/webhook-debug` | - |
+| Payment/order/VIP issues | `/payment-orders` | - |

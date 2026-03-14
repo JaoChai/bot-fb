@@ -160,6 +160,28 @@ git diff main                       # Review all changes
 | Slow query | Query optimization | Indexes/limits |
 | Denormalize | Add computed column | Performance |
 
+### Dead Code Detection
+
+For finding and removing unused code, use this workflow:
+
+**Frontend** (knip):
+```bash
+cd frontend && npx knip --reporter compact
+```
+Detects: unused files, exports, dependencies, types/interfaces.
+
+**Backend** (grep-based):
+1. Glob all Service/Model/Job/Controller files
+2. For each class, Grep for usage across `app/`, `routes/`, `config/`
+3. Items with 0 references (excluding self) = likely unused
+
+**Safety rules**:
+- Never auto-delete — always report first
+- Check for dynamic usage: `app()`, `resolve()`, `config()`, `React.lazy()`
+- Run `php artisan test` and `npx tsc --noEmit` after removal
+
+**Full scan script**: `scripts/backend-scan.sh` (if needed, recreate from the pattern above)
+
 ## Anti-Patterns (Don't Do)
 
 | Bad | Why | Do Instead |

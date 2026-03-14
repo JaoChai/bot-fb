@@ -1,9 +1,9 @@
 ---
 name: webhook-debug
 description: |
-  Webhook and messaging debugger for LINE, Telegram, Facebook, and WebSocket.
-  Triggers: 'webhook', 'bot not responding', 'message not arriving', 'queue failed', 'WebSocket', 'Echo'.
-  Use when: messages don't arrive, webhooks fail, real-time features don't work, bot stops responding.
+  Webhook and messaging debugger for LINE, Telegram, Facebook, and WebSocket. Includes concurrency patterns and race condition debugging.
+  Triggers: 'webhook', 'bot not responding', 'message not arriving', 'queue failed', 'WebSocket', 'Echo', 'race condition', 'deadlock', 'locks', 'duplicate', 'concurrency'.
+  Use when: messages don't arrive, webhooks fail, real-time features don't work, bot stops responding, duplicate messages, race conditions.
 allowed-tools:
   - Bash(php artisan queue*)
   - Bash(curl*)
@@ -106,6 +106,84 @@ Platform (LINE/Telegram/Facebook)
 - **LINE event routing** is handled by `app/Services/Webhook/LINE/LINEEventRouter.php` and `LINEMessageProcessor.php`
 - **Platform abstraction** via `app/Services/Channel/ChannelAdapterFactory.php` provides a unified interface for sending replies
 
+## ProcessLINEWebhook Pipeline
+
+`ProcessLINEWebhook.php` (1,383 lines, most-changed file) is the central LINE message processing job.
+
+### Execution Flow
+
+```
+handle()
+  → CircuitBreakerService.execute(processEvent, sendFallback)
+    → TX1: lockForUpdate + save message (~50ms)
+    → AI response generation (OUTSIDE transaction, 2-3s)
+    → Flex detection + bubble splitting
+    → Send reply via LINEService
+    → Plugin execution (FlowPluginService)
+```
+
+### Dedup Stack
+
+| Layer | Method | Purpose |
+|-------|--------|---------|
+| 1 | `webhook_event_id` | LINE best practice, first check |
+| 2 | `external_message_id` | Fallback dedup per conversation |
+| 3 | Retry recovery | If user msg exists but no bot response → retry AI |
+
+### Transaction Splitting
+
+Critical pattern: DB transaction holds lock for ~50ms only. AI response generation happens OUTSIDE the transaction to avoid blocking other webhook jobs for the same conversation.
+
+```php
+// TX1: Save message (fast, ~50ms)
+DB::transaction(function () {
+    $conversation = Conversation::lockForUpdate()->first();
+    $userMessage = Message::create([...]);
+});
+// AI response (slow, outside lock)
+$response = $aiService->generate(...);
+```
+
+## Message Aggregation Pipeline
+
+When multiple messages arrive rapidly, they're batched before AI responds.
+
+```
+User sends msg1 → MessageAggregationService: start group, set timer
+User sends msg2 → Reset timer (new UUID invalidates old delayed job)
+User sends msg3 → Reset timer again
+Timer expires   → ProcessAggregatedMessages job: merge & respond
+```
+
+### Key Services
+
+| Service | Purpose |
+|---------|---------|
+| `SmartAggregationAnalyzer` | Adaptive wait time, early trigger detection (!, ?, ...) |
+| `MessageAggregationService` | Cache-based grouping, timer reset via new UUID |
+| `ProcessAggregatedMessages` | group_id verification, content merge, AI response |
+
+### Early Trigger Detection
+
+SmartAggregationAnalyzer detects message-ending signals to skip the wait:
+- Complete sentences with Thai/English punctuation
+- Single characters like `!`, `?`, `ครับ`, `ค่ะ`
+- Configurable per-bot with min/max wait time bounds
+
+## Vision & Sticker Routing
+
+```
+Image message → handleImageAnalysis()
+  → Model capability gate (does current model support vision?)
+    → YES: Vision API call with image
+    → NO: Default text response
+  → Same Flex detection + bubble splitting on response
+
+Sticker message → handleStickerReply()
+  → StickerReplyService
+  → Friendly sticker-appropriate response
+```
+
 ## Debug Steps
 
 ### 1. Check Webhook Arrival
@@ -176,9 +254,12 @@ If no Flex match → MultipleBubblesService::parseIntoBubbles → transformBubbl
 
 **Detection order in PaymentFlexService** (most specific first):
 1. Payment message (`isPaymentMessage`) - requires bank account + total keyword
-2. Terms message (`isTermsMessage`) - requires "ยอมรับ" + "ข้อตกลง"
-3. Verify success (`isVerifySuccessMessage`) - requires "[ยืนยันชำระเงิน]" tag + amount
-4. Confirm message (`isConfirmMessage`) - requires total + "ยืนยัน" (least specific, checked last)
+2. SupportDelay (`isSupportDelayMessage`) - requires `[แจ้งเตือน Support]` tag
+3. Terms message (`isTermsMessage`) - requires "ยอมรับ" + "ข้อตกลง"
+4. Verify success (`isVerifySuccessMessage`) - requires "[ยืนยันชำระเงิน]" tag + amount
+5. Confirm message (`isConfirmMessage`) - requires total + "ยืนยัน" (least specific, checked last)
+
+**Note**: Markdown stripping (`str_replace('**', '', $text)`) runs before all regex detection.
 
 **Image analysis path**: After vision AI responds, the same Flex detection applies to the response content. If bubbles are enabled, it uses `MultipleBubblesService`; otherwise, `PaymentFlexService::tryConvertToFlex()` runs directly on the response (`ProcessLINEWebhook` line ~1124).
 
@@ -328,6 +409,55 @@ Message ID: [message_id]
 | Job stuck | Failed jobs | `php artisan queue:failed` |
 | Signature fails | Channel secret | Check bot settings in DB |
 | WebSocket fails | Reverb running | `php artisan reverb:start` |
+
+## Concurrency Patterns
+
+Race condition and locking patterns used in webhook processing.
+
+### Decision Tree
+
+```
+Race Condition Type?
+├─ DB State → lockForUpdate() in DB::transaction
+├─ Unique Violation → catch UniqueConstraintViolationException + retry
+├─ Cache/Memory State → Cache::lock with block timeout
+├─ Long-Held Lock → Move API calls OUTSIDE DB::transaction
+├─ Webhook Dedup → webhook_event_id → external_message_id
+├─ Duplicate AI Response → Response cache lock ("ai_response:{conversation_id}")
+├─ Service Failing → CircuitBreakerService (closed/open/half-open)
+└─ API Rate Limited → HTTP retry with linear backoff
+```
+
+### Patterns Quick Reference
+
+| # | Pattern | Use When |
+|---|---------|----------|
+| 1 | Pessimistic Lock (`lockForUpdate`) | Multiple jobs may create same record |
+| 2 | Response Cache Lock | Multiple webhooks trigger AI for same conversation |
+| 3 | Message Aggregation Lock (`Cache::lock`) | Rapid-fire messages need batching |
+| 4 | Unique Constraint + Catch | INSERT may conflict with concurrent INSERT |
+| 5 | Split Transactions | API call inside transaction (move outside) |
+| 6 | Circuit Breaker (3-state) | External service unreliable |
+| 7 | WebSocket Dedup (`X-Socket-ID`) | Frontend sends + listens for same message |
+| 8 | SmartAggregation | Fine-tuning message batching behavior |
+
+### Unique Constraints
+
+| Table | Constraint | Purpose |
+|-------|-----------|---------|
+| customer_profiles | (external_id, channel_type) | Per-platform unique |
+| messages | webhook_event_id (app-level) | Webhook dedup |
+| messages | (conversation_id, external_message_id) | Message dedup |
+| quick_replies | (user_id, shortcut) | Unique shortcuts |
+| bot_settings | bot_id | One settings per bot |
+
+### Critical Gotchas
+
+| Gotcha | Detail |
+|--------|--------|
+| Lock duration | Keep transactions < 100ms, move API calls outside |
+| Null vs empty | `hitl_dangerous_actions: null` = defaults, `[]` = allow all |
+| Cache driver | Must use Redis/Memcached for Cache::lock (file driver won't work) |
 
 ## Gotchas
 

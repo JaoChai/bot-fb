@@ -247,6 +247,82 @@ php artisan tinker --execute="dd(App\Models\Flow::find(ID)->only(['agentic_mode'
 php artisan tinker --execute="dd(App\Models\AgentCostUsage::where('bot_id', ID)->latest()->first())"
 ```
 
+## Second AI Pipeline
+
+### Unified vs Sequential Mode
+
+`SecondAIService::process()` orchestrates content verification with two modes:
+
+- **Sequential** (1 check): Runs individual check service directly
+- **Unified** (`shouldUseUnifiedMode()` — 2+ checks): Single LLM call via `UnifiedCheckService` instead of 3 separate calls
+
+```
+SecondAIService::process()
+  → shouldUseUnifiedMode()? (2+ checks enabled)
+    → YES: UnifiedCheckService (single LLM call, confidence filtering)
+    → NO: Run individual check (FactCheck/Policy/Personality)
+```
+
+### Skip Patterns
+
+Second AI skips verification when:
+- Response < 50 chars AND contains no numbers (short greetings)
+- Response matches greeting patterns
+
+### Model Selection
+
+```
+bot.decision_model → fallback_decision_model → primary_chat_model
+```
+
+### Check Services
+
+| Service | Purpose | Key File |
+|---------|---------|----------|
+| FactCheckService | Verify factual claims against KB | `app/Services/SecondAI/FactCheckService.php` |
+| PolicyCheckService | Check policy compliance | `app/Services/SecondAI/PolicyCheckService.php` |
+| PersonalityCheckService | Brand consistency | `app/Services/SecondAI/PersonalityCheckService.php` |
+| UnifiedCheckService | Combined single-call mode | `app/Services/SecondAI/UnifiedCheckService.php` |
+| PromptInjectionDetector | Detect injection attempts | `app/Services/SecondAI/PromptInjectionDetector.php` |
+
+## Timeout Layering
+
+| Layer | Default | Config Key |
+|-------|---------|------------|
+| Second AI Pipeline | 25s | `rag.second_ai.pipeline_timeout` |
+| Second AI HTTP | 15s | `rag.second_ai.http_timeout` |
+| Agent Loop | 120s | `flow.agent_timeout_seconds` |
+| SSE Heartbeat | 30s | frontend threshold |
+
+Timeouts are independent — pipeline timeout governs the entire Second AI process,
+HTTP timeout governs individual LLM calls within it. Agent timeout is separate and
+governs the agentic ReAct loop.
+
+## StreamController Architecture
+
+`StreamController` is the central orchestration point for the entire AI response pipeline.
+
+### SSE Pipeline
+
+```
+Auth → Bot/Flow Resolution → Intent Analysis (Decision Model)
+  → KB Search (if enabled) → Chat/Agent Response Generation
+    → Second AI Verification → Multiple Bubbles Splitting
+      → SSE Events to Frontend
+```
+
+### Key Behaviors
+
+- **Heartbeat management**: Timer resets on each SSE event to keep connection alive
+- **Memory notes injection**: Conversation memory_notes injected into system prompt for personalization
+- **Octane-compatible resets**: All metrics/state reset at request start (no cross-request leaks)
+- **Cost tracking**: Token usage recorded after each LLM call via CostTrackingService
+- **Error recovery**: Catches exceptions at each stage, returns partial results with error context
+
+### Key File
+
+`app/Http/Controllers/Api/StreamController.php` (1,135 lines)
+
 ## MCP Tools
 
 - `mcp__neon__run_sql` - Query agent_cost_usage, flow settings
