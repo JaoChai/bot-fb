@@ -281,6 +281,54 @@ DELETE /api/v1/bots/{id}
 | `TestUnifiedMode` | Test unified mode |
 | `WarmModelCapabilityCache` | Warm model capability cache |
 
+## Flow Plugin System
+
+`FlowPluginService.php` (419 lines) manages plugin execution after bot replies.
+
+### Lifecycle
+
+```
+Bot sends reply → FlowPluginService::executePlugins()
+  → Load enabled plugins for current flow
+  → For each plugin:
+    1. Keyword pre-filter (cheap, no API call)
+    2. AI evaluation via gpt-4o-mini (triggered check)
+    3. Variable extraction + template formatting
+    4. Telegram notification
+    5. Order record via OrderService
+```
+
+### Rate Limiting
+
+- Per plugin+conversation, 60s TTL
+- Only on successful trigger (keyword fail / AI "not triggered" / errors don't consume limit)
+- Cache key: `plugin_exec:{plugin_id}:{conversation_id}`
+
+### Auto-Disable
+
+Telegram plugins auto-disable on auth errors (401/403/404).
+Check `flow_plugins.enabled` column if plugin suddenly stops.
+
+### Key File
+
+`app/Services/FlowPluginService.php`
+
+## FlowCacheService Patterns
+
+Caches Flow lookups with 30-min TTL. Injected as constructor dependency.
+
+| Method | Purpose |
+|--------|---------|
+| `getDefaultFlow(int $botId)` | Cached default flow lookup |
+| `hasFlows(int $botId)` | Cached existence check |
+| `invalidateBot(int $botId)` | Call when flows created/updated/deleted |
+| `invalidateDefaultFlow(int $botId)` | Call when default flow changes |
+
+**Constructor gotcha**: When adding `FlowCacheService` to a new service constructor,
+place it before optional (`?Type`) parameters. Update corresponding test files to match.
+
+Example (RAGService): `FlowCacheService` is the 5th required parameter.
+
 ## Common Tasks
 
 ### Create New Endpoint

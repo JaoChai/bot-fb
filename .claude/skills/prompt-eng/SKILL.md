@@ -102,11 +102,31 @@ search(query="prompt test", project="bot-fb", concepts=["trade-off"], limit=5)
 - [ ] Boundaries appropriate?
 - [ ] Model suitable for task?
 
+## Second AI Prompt Patterns
+
+Second AI checks use specialized prompt templates for verification:
+
+| Service | Prompt Pattern | Purpose |
+|---------|---------------|---------|
+| `FactCheckService` | KB context + claim extraction | Verify factual accuracy against knowledge base |
+| `PolicyCheckService` | Policy rules + response analysis | Check business rule compliance |
+| `PersonalityCheckService` | Brand guidelines + tone analysis | Ensure brand consistency |
+| `UnifiedCheckService` | Combined single-call prompt | All checks in one LLM call (2+ checks) |
+
+### PromptInjectionDetector
+
+`app/Services/SecondAI/PromptInjectionDetector.php` runs BEFORE Second AI checks:
+- Pattern-based detection (regex) for common injection attempts
+- Detects role-playing attacks, system prompt extraction, instruction override
+- Lightweight (no LLM call) — runs on every incoming user message
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `config/agent-prompts.php` | Agent prompt templates (Thai/English) |
 | `flows.system_prompt` column | System prompt storage (Flow model, not Bot) |
-| `app/Services/SecondAI/` | AI orchestration |
+| `app/Services/SecondAI/` | AI verification pipeline |
+| `app/Services/SecondAI/PromptInjectionDetector.php` | Injection detection (regex-based) |
+| `app/Services/SecondAI/UnifiedCheckService.php` | Single-call unified mode |
 

@@ -263,6 +263,24 @@ Message arrives
   → otherwise → USE CACHE (exact match first, then semantic similarity)
 ```
 
+## FlowCacheService Constructor Gotcha
+
+`RAGService` requires `FlowCacheService` as its 5th constructor parameter (before optional params).
+When modifying `RAGService` constructor or writing tests, ensure the signature matches:
+
+```php
+public function __construct(
+    protected SemanticSearchService $semanticSearchService,
+    protected HybridSearchService $hybridSearchService,
+    protected OpenRouterService $openRouter,
+    protected IntentAnalysisService $intentAnalysis,
+    protected FlowCacheService $flowCacheService,       // 5th - required
+    protected ?QueryEnhancementService $queryEnhancement = null,  // optional after
+)
+```
+
+Tests at `tests/Unit/Services/RAGServiceTest.php` must mirror this signature.
+
 ## Embedding Batching
 
 `EmbeddingService::generateBatch()` uses chunked batching for performance.

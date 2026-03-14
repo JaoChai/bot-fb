@@ -13,21 +13,48 @@ AI-powered chatbot platform for LINE and Telegram with RAG-based knowledge retri
 | Real-time | Reverb (WebSocket) |
 | AI | OpenRouter API |
 
+## Working Directories
+
+```
+bot-fb/
+├── backend/    ← cd here for php artisan, composer
+└── frontend/   ← cd here for npm, npx
+```
+
+## Common Commands
+
+```bash
+# Backend (run from backend/)
+cd backend
+php artisan test                        # All tests
+php artisan test --filter=Unit          # Unit tests only
+php artisan test --filter=PaymentFlex   # Specific test
+php artisan queue:failed                # Check failed jobs
+php artisan tinker                      # REPL
+
+# Frontend (run from frontend/)
+cd frontend
+npm run dev                             # Dev server
+npm run build                           # Production build
+npm run type-check                      # TypeScript check
+npx knip --reporter compact             # Dead code scan
+```
+
 ## Project Structure
 
 ```
 backend/
-├── app/Services/       # 38+ services (business logic)
-├── app/Models/         # 35 models
-├── app/Jobs/           # 13 async jobs
-├── config/             # llm-models.php, rag.php, tools.php
+├── app/Services/       # ~37 services (business logic)
+├── app/Models/         # ~26 models
+├── app/Jobs/           # 7 async jobs
+├── config/             # llm-models.php, rag.php, agent-prompts.php
 └── routes/api.php
 
 frontend/
 ├── src/components/     # UI components
-├── src/pages/          # 17 route pages
-├── src/hooks/          # 21 custom hooks
-├── src/stores/         # Zustand (auth, chat, ui)
+├── src/pages/          # 10 pages
+├── src/hooks/          # ~23 custom hooks
+├── src/stores/         # Zustand (auth, chat, ui, botPreferences, connection)
 └── src/lib/api.ts      # Axios client
 ```
 
@@ -35,76 +62,17 @@ frontend/
 
 | File | Purpose |
 |------|---------|
-| `config/llm-models.php` | 40+ AI models with pricing |
+| `config/llm-models.php` | ~33 AI models with pricing |
 | `config/rag.php` | RAG/embedding settings |
-| `config/tools.php` | Agent tool definitions |
+| `config/agent-prompts.php` | Agent prompt templates (Thai/English) |
 | `routes/api.php` | All API endpoints |
 | `app/Services/RAGService.php` | Main AI orchestration |
 | `app/Services/OpenRouterService.php` | LLM API client |
+| `app/Services/FlowCacheService.php` | Flow config caching (30-min TTL) |
 
-## Setup
+## Skills
 
-**Requirements:** PHP 8.4+, Node 22.12+, PostgreSQL + pgvector
-
-**Critical .env:**
-```
-OPENROUTER_API_KEY=xxx   # LLM provider
-DATABASE_URL=xxx         # Neon PostgreSQL
-VITE_API_URL=xxx         # Backend URL
-```
-
-**Install:**
-```bash
-cd backend && composer install
-cd frontend && npm install
-```
-
-## Commands
-
-```bash
-# Dev
-cd backend && php artisan serve
-cd frontend && npm run dev
-
-# Test
-php artisan test
-php artisan test --filter Unit
-
-# Deploy
-railway up
-```
-
-## Skills (18 available)
-
-Auto-triggered from context or use `/skill-name`. → [Full reference](docs/skills.md)
-
-| Task | Skill |
-|------|-------|
-| Laravel API, services | `/backend-dev` |
-| React components | `/frontend-dev` |
-| UI design, shadcn | `/ui-ux-pro-max` |
-| Database, migrations | `/database-ops` |
-| Search/RAG issues | `/rag-debug` |
-| Before commit | `/code-review` |
-| Write tests | `/testing` |
-| Deploy issues | `/deployment` |
-| Performance | `/performance` |
-| Error tracking | `/monitoring` |
-| Auth, API keys | `/auth-security` |
-| Bot not responding | `/webhook-debug` |
-| Prompt optimization | `/prompt-eng` |
-| Dead code detection | `/dead-code` |
-| Code cleanup | `/refactor` |
-| Agent loop debug | `/agentic-debug` |
-| Race conditions, locks | `/concurrency` |
-| Payment, orders, Flex | `/payment-orders` |
-
-## Agent Teams
-
-Multi-agent collaboration enabled. ใช้ "Create an agent team" สำหรับงาน parallel.
-- **Mode**: `auto` (split panes ใน tmux, in-process ใน terminal ปกติ)
-- **ใช้เมื่อ**: parallel reviews, full-stack features, bug investigation
-- **Chrome E2E**: ใช้ claude-in-chrome แทน Playwright สำหรับ browser testing
+Skills auto-triggered from context or use `/skill-name`. → [Full reference](docs/skills.md)
 
 ## Critical Gotchas
 
@@ -114,17 +82,17 @@ Multi-agent collaboration enabled. ใช้ "Create an agent team" สำหร
 | API response wrapped | Access `response.data` |
 | N+1 queries | Use `->with()` eager loading |
 | Race condition | Use DB locks |
+| TypeScript interface ไม่ match Laravel model | Verify `api.ts` matches `$fillable/$casts` |
+| Flow ≠ Bot | Flow เป็น central config, ไม่ใช่ Bot |
 
 → [All gotchas](docs/gotchas.md)
 
 ## Code Rules
 
-**IMPORTANT: Use Agent Skills** - ห้ามแก้โค้ดโดยไม่เรียก skill ที่เกี่ยวข้อง
+**Minimal Change Principle:**
+- แก้เฉพาะจุดที่เกี่ยวข้อง ห้าม refactor โค้ดอื่น ห้ามเพิ่ม feature ที่ไม่ได้ขอ
 
-**YOU MUST follow Minimal Change Principle:**
-- แก้เฉพาะจุดที่เกี่ยวข้อง
-- ห้าม refactor โค้ดอื่น
-- ห้ามเพิ่ม feature ที่ไม่ได้ขอ
+**Use skills for non-trivial changes** — งานที่แก้หลายไฟล์หรือต้องรู้ context ของ domain ให้เรียก skill ที่เกี่ยวข้อง งานเล็กๆ (แก้ typo, เปลี่ยน config ค่าเดียว) ทำได้เลย
 
 **Before Commit:**
 - [ ] ทุกไฟล์เกี่ยวข้องกับ task?
@@ -133,29 +101,11 @@ Multi-agent collaboration enabled. ใช้ "Create an agent team" สำหร
 
 ## Skill Priority Rules
 
-**Custom skills (18 ตัว) มี priority สูงกว่า everything-claude-code skills เสมอ**
-- Custom skills มี project-specific context (gotchas, patterns, tech versions)
-- ใช้ custom skill ก่อน แล้วค่อยเสริมด้วย ECC skill ถ้าจำเป็น
+**Custom skills มี priority สูงกว่า everything-claude-code (ECC) skills เสมอ** — ใช้ custom skill ก่อน เสริมด้วย ECC ถ้าจำเป็น
 
-**ห้ามใช้ ECC skills ที่ไม่เกี่ยวกับ project นี้:**
-- Go: `go-review`, `go-build`, `go-test`, `golang-patterns`, `golang-testing`
-- Spring Boot: `springboot-patterns`, `springboot-security`, `springboot-tdd`, `jpa-patterns`
-- ClickHouse: `clickhouse-io`
-- Node.js backend: `backend-patterns` (project นี้ใช้ Laravel ไม่ใช่ Node.js)
+**ห้ามใช้ ECC skills สำหรับ stack อื่น** (Go, Spring Boot, ClickHouse, Django, Node.js backend) — project นี้ใช้ Laravel + React เท่านั้น
 
-**Planning hierarchy:**
-- งานใหญ่ (>30min): ใช้ `speckit.*`
-- งานกลาง: ใช้ `EnterPlanMode` (built-in)
-- ห้ามใช้ `everything-claude-code:plan` (ซ้ำกับข้างบน)
-
-## Speckit (งานใหญ่ >30min)
-
-```bash
-/speckit.specify "[description]"  # สร้าง spec
-/speckit.plan                     # วาง plan
-/speckit.tasks                    # แบ่ง tasks
-/speckit.implement                # ลงมือทำ (ต้องเรียก skills ด้วย)
-```
+**Planning:** งานใหญ่ (>30min) ใช้ `speckit.*` / งานกลาง ใช้ `EnterPlanMode`
 
 ## Git Flow
 
@@ -170,13 +120,6 @@ git checkout -b feature/xxx && # work... && /commit-push-pr
 - `vendor/`, `node_modules/` - Dependencies
 - `*.lock` files - Managed by tools
 - `storage/`, `dist/` - Generated files
-
-## CLAUDE.md Rules
-
-**ห้ามสร้าง CLAUDE.md ใน subdirectories**
-- CLAUDE.md ต้องอยู่ที่ root เท่านั้น (ไฟล์นี้)
-- ห้ามสร้างใน `backend/`, `frontend/`, `.claude/skills/`, หรือที่อื่น
-- ใช้ `.claude/rules/*.md` สำหรับ modular rules แทน
 
 ## References
 
