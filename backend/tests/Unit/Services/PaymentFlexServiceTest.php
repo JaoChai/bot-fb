@@ -654,7 +654,7 @@ class PaymentFlexServiceTest extends TestCase
     public function test_does_not_detect_terms_with_เงื่อนไข_alone(): void
     {
         // "เงื่อนไข" without URL is too broad — should NOT trigger
-        $text = "เงื่อนไขการจัดส่ง ยอมรับได้ค่ะ";
+        $text = 'เงื่อนไขการจัดส่ง ยอมรับได้ค่ะ';
 
         $this->assertFalse($this->service->isTermsMessage($text));
     }
