@@ -399,6 +399,9 @@ class RAGService
             }
         }
 
+        // Reinforce that system prompt overrides conversation history
+        $prompt .= "\n\n⚠️ ข้อมูลสินค้า ราคา และ stock ใน prompt นี้เป็นข้อมูลล่าสุด หากขัดแย้งกับข้อความก่อนหน้าในแชท ให้ยึดข้อมูลจาก prompt นี้เสมอ และแจ้งลูกค้าตามข้อมูลปัจจุบัน";
+
         return $prompt;
     }
 
