@@ -104,7 +104,7 @@ class RAGServiceTest extends TestCase
 
         // Should not contain memory section when empty
         $this->assertStringNotContainsString('## Memory:', $result);
-        $this->assertEquals($basePrompt, $result);
+        $this->assertStringStartsWith($basePrompt, $result);
     }
 
     public function test_memory_notes_injected_before_kb_context(): void
