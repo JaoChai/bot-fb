@@ -147,7 +147,7 @@ class PaymentFlexService
             return false;
         }
 
-        return (bool) preg_match('/รวมยอดโอน|สรุปยอด|ยอดโอน/u', $text);
+        return (bool) preg_match('/รวมยอดโอน|สรุปยอด|ยอดโอน|ยอดรวม|รวมเป็นเงิน/u', $text);
     }
 
     /**
@@ -157,7 +157,7 @@ class PaymentFlexService
     public function parsePaymentData(string $text): ?array
     {
         // Parse total (required)
-        if (! preg_match('/(?:รวมยอดโอน|สรุปยอด(?:โอน)?|ยอดโอน)\s*:?\s*([\d,]+)\s*บาท/u', $text, $totalMatch)) {
+        if (! preg_match('/(?:รวมยอดโอน|สรุปยอด(?:โอน)?|ยอดโอน|ยอดรวม|รวมเป็นเงิน)\s*:?\s*([\d,]+)\s*บาท/u', $text, $totalMatch)) {
             return null;
         }
 
@@ -415,11 +415,21 @@ class PaymentFlexService
 
     /**
      * Detect if text is a support delay warning message.
-     * Must contain "[แจ้งเตือน Support]" tag.
+     * Primary: "[แจ้งเตือน Support]" tag from prompt template.
+     * Fallback: content-based detection when LLM omits the tag.
      */
     public function isSupportDelayMessage(string $text): bool
     {
-        return mb_strpos($text, '[แจ้งเตือน Support]') !== false;
+        // Primary: tag from prompt template
+        if (mb_strpos($text, '[แจ้งเตือน Support]') !== false) {
+            return true;
+        }
+
+        // Fallback: content-based — must mention support delay + ask for "ตกลง"
+        $hasSupportDelay = (bool) preg_match('/(?:ซัพพอร์ต|Support)[\s\S]*?(?:นานกว่าปกติ|ล่าช้า|รอคิว)/iu', $text);
+        $hasAcceptKeyword = mb_strpos($text, 'ตกลง') !== false;
+
+        return $hasSupportDelay && $hasAcceptKeyword;
     }
 
     /**
@@ -567,6 +577,10 @@ class PaymentFlexService
         }
         // Exclude Step 3 (terms)
         if (mb_strpos($text, 'ข้อตกลง') !== false) {
+            return false;
+        }
+        // Exclude Step 3 (terms fallback keyword)
+        if (mb_strpos($text, 'เงื่อนไข') !== false) {
             return false;
         }
 
@@ -749,7 +763,8 @@ class PaymentFlexService
 
     /**
      * Detect if text is a terms/agreement message (Step 3).
-     * Must contain "ยอมรับ" + ("ข้อตกลง" or URL), but NOT bank account or "เงินเข้าแล้ว".
+     * Must contain "ยอมรับ" + ("ข้อตกลง" or "เงื่อนไข" or TERMS_URL).
+     * Excludes payment, verify messages.
      */
     public function isTermsMessage(string $text): bool
     {
@@ -769,8 +784,13 @@ class PaymentFlexService
             return false;
         }
 
-        // Must have "ข้อตกลง"
-        return mb_strpos($text, 'ข้อตกลง') !== false;
+        // Primary: "ข้อตกลง"
+        if (mb_strpos($text, 'ข้อตกลง') !== false) {
+            return true;
+        }
+
+        // Fallback: TERMS_URL present (very reliable signal)
+        return mb_strpos($text, 'canva.site/ads-vance') !== false;
     }
 
     /**
@@ -876,14 +896,11 @@ class PaymentFlexService
 
     /**
      * Detect if text is a verify-success message (Step 5).
-     * Must contain "[ยืนยันชำระเงิน]" tag AND "เงินเข้าแล้ว" + amount.
+     * "เงินเข้าแล้ว X บาท" pattern is sufficient — tag is optional
+     * because buildVerifyFlexMessage() hardcodes the tag in altText.
      */
     public function isVerifySuccessMessage(string $text): bool
     {
-        if (mb_strpos($text, '[ยืนยันชำระเงิน]') === false) {
-            return false;
-        }
-
         return (bool) preg_match('/เงินเข้าแล้ว\s*[\d,.]+\s*บาท/u', $text);
     }
 
