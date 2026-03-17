@@ -35,6 +35,33 @@ class PaymentFlexServiceTest extends TestCase
     }
 
     /** @test */
+    public function test_detects_payment_with_ยอดรวม_fallback(): void
+    {
+        $text = "ยอดรวม: 1,100 บาท\n223-3-24880-3";
+
+        $this->assertTrue($this->service->isPaymentMessage($text));
+    }
+
+    /** @test */
+    public function test_detects_payment_with_รวมเป็นเงิน_fallback(): void
+    {
+        $text = "รวมเป็นเงิน: 2,200 บาท\n223-3-24880-3";
+
+        $this->assertTrue($this->service->isPaymentMessage($text));
+    }
+
+    /** @test */
+    public function test_parses_payment_with_ยอดรวม(): void
+    {
+        $text = "ยอดรวม: 1,100 บาท\n223-3-24880-3";
+
+        $data = $this->service->parsePaymentData($text);
+
+        $this->assertNotNull($data);
+        $this->assertEquals('1,100', $data['total']);
+    }
+
+    /** @test */
     public function test_does_not_detect_normal_message(): void
     {
         $this->assertFalse($this->service->isPaymentMessage('สวัสดีครับ ยินดีต้อนรับ'));
@@ -286,6 +313,11 @@ class PaymentFlexServiceTest extends TestCase
         $text = "รวม: 800 บาท\nยืนยัน\nข้อตกลงการใช้บริการ";
 
         $this->assertFalse($this->service->isConfirmMessage($text));
+
+        // Step 3 fallback: has เงื่อนไข
+        $text2 = "รวม: 800 บาท\nยืนยัน\nเงื่อนไขการใช้บริการ";
+
+        $this->assertFalse($this->service->isConfirmMessage($text2));
     }
 
     /** @test */
@@ -488,11 +520,32 @@ class PaymentFlexServiceTest extends TestCase
     }
 
     /** @test */
+    public function test_detects_support_delay_without_tag(): void
+    {
+        // Real LLM output: no [แจ้งเตือน Support] tag — fallback detection
+        $text = 'ช่วงนี้ทีม Support อาจใช้เวลาซัพพอร์ตนานกว่าปกติหน่อยครับ หากบัญชีมีปัญหาต้องรอคิวนิดนึง ถ้าพี่รับเงื่อนไขตรงนี้ได้ ผมจะดำเนินการจำหน่ายให้ครับผม พิมพ์ "ตกลง" ได้เลยครับ';
+
+        $this->assertTrue($this->service->isSupportDelayMessage($text));
+    }
+
+    /** @test */
+    public function test_detects_support_delay_fallback_with_rอคิว(): void
+    {
+        $text = 'ทีม Support อาจต้องรอคิวหน่อยครับ พิมพ์ "ตกลง" ได้เลยครับ';
+
+        $this->assertTrue($this->service->isSupportDelayMessage($text));
+    }
+
+    /** @test */
     public function test_does_not_detect_support_delay_in_normal_text(): void
     {
         $this->assertFalse($this->service->isSupportDelayMessage('สวัสดีครับ ยินดีต้อนรับ'));
         $this->assertFalse($this->service->isSupportDelayMessage('ทีม Support พร้อมดูแลครับ'));
         $this->assertFalse($this->service->isSupportDelayMessage('แจ้งเตือน'));
+        // Has support delay but no "ตกลง" — not a support delay message
+        $this->assertFalse($this->service->isSupportDelayMessage('ซัพพอร์ตนานกว่าปกติ'));
+        // Has "ตกลง" but no support delay context
+        $this->assertFalse($this->service->isSupportDelayMessage('พิมพ์ ตกลง ได้เลยครับ'));
     }
 
     /** @test */
@@ -589,9 +642,36 @@ class PaymentFlexServiceTest extends TestCase
     }
 
     /** @test */
+    public function test_detects_terms_with_เงื่อนไข_and_url(): void
+    {
+        // "เงื่อนไข" alone is too broad — but with URL it triggers via URL fallback
+        $text = "รบกวนอ่านเงื่อนไขก่อนนะครับ\nhttps://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ' หลังอ่านจบ";
+
+        $this->assertTrue($this->service->isTermsMessage($text));
+    }
+
+    /** @test */
+    public function test_does_not_detect_terms_with_เงื่อนไข_alone(): void
+    {
+        // "เงื่อนไข" without URL is too broad — should NOT trigger
+        $text = "เงื่อนไขการจัดส่ง ยอมรับได้ค่ะ";
+
+        $this->assertFalse($this->service->isTermsMessage($text));
+    }
+
+    /** @test */
+    public function test_detects_terms_with_url_fallback(): void
+    {
+        // LLM omits both "ข้อตกลง" and "เงื่อนไข" but includes TERMS_URL
+        $text = "อ่านก่อนนะครับ\nhttps://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ'";
+
+        $this->assertTrue($this->service->isTermsMessage($text));
+    }
+
+    /** @test */
     public function test_does_not_detect_terms_without_keyword(): void
     {
-        // Has "ยอมรับ" but no "ข้อตกลง" → not a terms message
+        // Has "ยอมรับ" but no "ข้อตกลง"/"เงื่อนไข"/URL → not a terms message
         $text = "รบกวนอ่านก่อนนะครับ\nพิมพ์ 'ยอมรับ' หลังอ่านจบ";
 
         $this->assertFalse($this->service->isTermsMessage($text));
@@ -676,12 +756,12 @@ class PaymentFlexServiceTest extends TestCase
     }
 
     /** @test */
-    public function test_does_not_detect_verify_without_tag(): void
+    public function test_detects_verify_without_tag(): void
     {
-        // Has "เงินเข้าแล้ว" but missing [ยืนยันชำระเงิน] tag
+        // LLM omits [ยืนยันชำระเงิน] tag — should still detect from content
         $text = "เงินเข้าแล้ว 1,600 บาท ✅\nขอบคุณครับ 🙏";
 
-        $this->assertFalse($this->service->isVerifySuccessMessage($text));
+        $this->assertTrue($this->service->isVerifySuccessMessage($text));
     }
 
     /** @test */
