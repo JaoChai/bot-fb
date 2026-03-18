@@ -693,6 +693,7 @@ class StreamController extends Controller
         // Build system prompt with memory prefix (same format as RAGService)
         $systemPrompt = $this->buildMemoryPrefix($memoryNotes)
             .($flow->system_prompt ?: $this->getDefaultSystemPrompt($bot));
+        $systemPrompt = $this->ragService->injectStockStatus($systemPrompt);
         if (! empty($kbContext)) {
             $systemPrompt .= "\n\n".$kbContext;
         }

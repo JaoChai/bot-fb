@@ -13,6 +13,7 @@ use App\Models\Bot;
 use App\Models\Flow;
 use App\Services\FlowCacheService;
 use App\Services\OpenRouterService;
+use App\Services\RAGService;
 use App\Services\SemanticCacheService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -577,6 +578,7 @@ class FlowController extends Controller
 
         // Add system prompt
         $systemPrompt = $flow->system_prompt ?: $this->getDefaultSystemPrompt($bot);
+        $systemPrompt = app(RAGService::class)->injectStockStatus($systemPrompt);
         $messages[] = [
             'role' => 'system',
             'content' => $systemPrompt,

@@ -496,6 +496,31 @@ class RAGService
     }
 
     /**
+     * Inject stock status (header + reminder) around a prompt.
+     *
+     * Used by test/emulator endpoints that don't go through buildEnhancedPrompt().
+     */
+    public function injectStockStatus(string $prompt): string
+    {
+        $stocks = $this->getStockStatus();
+
+        $result = '';
+        $stockInjection = $this->buildStockInjection($stocks);
+        if (! empty($stockInjection)) {
+            $result .= $stockInjection."\n---\n\n";
+        }
+
+        $result .= $prompt;
+
+        $stockReminder = $this->buildStockReminder($stocks);
+        if (! empty($stockReminder)) {
+            $result .= "\n\n".$stockReminder;
+        }
+
+        return $result;
+    }
+
+    /**
      * Resolve the chat model using Smart Routing (confidence cascade).
      *
      * When Smart Routing is enabled (use_confidence_cascade = true):
