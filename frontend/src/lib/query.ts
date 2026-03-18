@@ -5,6 +5,7 @@ import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persist
 // Note: 'conversation-messages' removed - now unified under 'messages' via messageKeys
 const NON_PERSISTENT_KEYS = [
   'bots',
+  'bot-tags',              // ป้องกัน tags เก่าค้างใน localStorage
   'conversations',
   'conversations-infinite',
   'conversation',
