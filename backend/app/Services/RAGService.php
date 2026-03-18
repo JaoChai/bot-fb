@@ -31,7 +31,8 @@ class RAGService
         protected FlowCacheService $flowCacheService,
         protected ?QueryEnhancementService $queryEnhancement = null,
         protected ?SemanticCacheService $semanticCache = null,
-        protected ?ToolService $toolService = null
+        protected ?ToolService $toolService = null,
+        protected ?CRAGService $cragService = null
     ) {}
 
     /**
@@ -172,6 +173,19 @@ class RAGService
             $maxTokens = (int) min($maxTokens * $multiplier, 4096);
         }
 
+        // Step 9c: Adaptive temperature based on intent
+        $baseTemp = $resolvedFlow?->temperature ?? $bot->llm_temperature;
+        $tempConfig = config('rag.adaptive_temperature');
+        if ($tempConfig['enabled'] ?? true) {
+            $temperature = match ($intent['intent']) {
+                'knowledge' => min($baseTemp, $tempConfig['knowledge_max'] ?? 0.3),
+                'chat' => max($baseTemp, $tempConfig['chat_min'] ?? 0.6),
+                default => $baseTemp,
+            };
+        } else {
+            $temperature = $baseTemp;
+        }
+
         // Step 10: Generate response — Agentic or Standard
         $isAgentic = $resolvedFlow
             && $resolvedFlow->agentic_mode
@@ -207,7 +221,7 @@ class RAGService
                 conversationHistory: $conversationHistory,
                 model: $chatModel,
                 fallbackModel: $fallbackChatModel,
-                temperature: $resolvedFlow?->temperature ?? $bot->llm_temperature,
+                temperature: $temperature,
                 maxTokens: $maxTokens,
                 apiKeyOverride: $apiKey
             );
@@ -641,6 +655,9 @@ PROMPT;
                 apiKey: $apiKey
             );
 
+            // CRAG: Evaluate retrieval quality and take corrective action
+            $results = $this->applyCRAG($results, $query, $kbConfigs, $metadata, $apiKey);
+
             if ($results->isEmpty()) {
                 Log::debug('No relevant results from Flow KBs', [
                     'flow_id' => $flow->id,
@@ -981,5 +998,82 @@ PROMPT;
         }
 
         return 'english';
+    }
+
+    /**
+     * Apply Corrective RAG (CRAG) evaluation to search results.
+     *
+     * Evaluates retrieval quality and takes corrective action:
+     * - "correct" (high similarity): use results directly
+     * - "ambiguous" (mid similarity): rewrite query and re-search
+     * - "incorrect" (low similarity): return empty (skip KB)
+     *
+     * Wrapped in try-catch so CRAG failures never break the KB search.
+     */
+    protected function applyCRAG(
+        \Illuminate\Support\Collection $results,
+        string $query,
+        array $kbConfigs,
+        array &$metadata,
+        ?string $apiKey
+    ): \Illuminate\Support\Collection {
+        if (! $this->cragService?->isEnabled() || $results->isEmpty()) {
+            return $results;
+        }
+
+        try {
+            $evaluation = $this->cragService->evaluate($results, $query);
+            $metadata['crag'] = $evaluation;
+
+            Log::debug('CRAG: Evaluation result', [
+                'grade' => $evaluation['grade'],
+                'top_similarity' => $evaluation['top_similarity'],
+            ]);
+
+            if ($evaluation['grade'] === CRAGService::GRADE_INCORRECT) {
+                return collect([]);
+            }
+
+            if ($evaluation['grade'] === CRAGService::GRADE_AMBIGUOUS) {
+                for ($attempt = 0; $attempt < $this->cragService->getMaxRewriteAttempts(); $attempt++) {
+                    $rewrittenQuery = $this->cragService->rewriteQuery($query, $results, $apiKey);
+
+                    $newResults = $this->hybridSearchService->searchMultiple(
+                        kbConfigs: $kbConfigs,
+                        query: $rewrittenQuery,
+                        totalLimit: config('rag.max_results', 5),
+                        apiKey: $apiKey
+                    );
+
+                    if ($newResults->isEmpty()) {
+                        continue;
+                    }
+
+                    $newEval = $this->cragService->evaluate($newResults, $rewrittenQuery);
+
+                    Log::debug('CRAG: Rewrite attempt result', [
+                        'attempt' => $attempt + 1,
+                        'rewritten_query' => $rewrittenQuery,
+                        'grade' => $newEval['grade'],
+                        'top_similarity' => $newEval['top_similarity'],
+                    ]);
+
+                    if ($newEval['grade'] === CRAGService::GRADE_CORRECT) {
+                        $metadata['crag']['rewrite_attempts'] = $attempt + 1;
+                        $metadata['crag']['rewritten_query'] = $rewrittenQuery;
+
+                        return $newResults;
+                    }
+                }
+            }
+
+            return $results;
+        } catch (\Exception $e) {
+            Log::warning('CRAG: Evaluation failed, using original results', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return $results;
+        }
     }
 }

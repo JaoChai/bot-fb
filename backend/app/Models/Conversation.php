@@ -214,4 +214,24 @@ class Conversation extends Model
     {
         return $this->hasMany(Order::class);
     }
+
+    /**
+     * Add a memory note to this conversation.
+     *
+     * @param  string  $content  The note content
+     * @param  string  $source  The source of the note (e.g., 'auto_entity_extraction', 'manual')
+     */
+    public function addMemoryNote(string $content, string $source = 'manual'): void
+    {
+        $notes = $this->memory_notes ?? [];
+
+        $notes[] = [
+            'type' => 'memory',
+            'content' => $content,
+            'extracted_at' => now()->toISOString(),
+            'source' => $source,
+        ];
+
+        $this->update(['memory_notes' => $notes]);
+    }
 }
