@@ -29,6 +29,8 @@ cd backend
 php artisan test                        # All tests
 php artisan test --filter=Unit          # Unit tests only
 php artisan test --filter=PaymentFlex   # Specific test
+vendor/bin/pint --test                  # Code style check (CI uses this)
+vendor/bin/pint                         # Auto-fix code style
 php artisan queue:failed                # Check failed jobs
 php artisan tinker                      # REPL
 
@@ -36,8 +38,18 @@ php artisan tinker                      # REPL
 cd frontend
 npm run dev                             # Dev server
 npm run build                           # Production build
+npm run lint                            # ESLint check (CI uses this)
 npm run type-check                      # TypeScript check
 npx knip --reporter compact             # Dead code scan
+```
+
+```bash
+# Production DB (Neon) — project: solitary-math-34010034
+# ใช้ mcp__neon__run_sql สำหรับ query/update production data
+
+# Clear Flow Cache หลังแก้ prompt (via mcp__laravel-boost__tinker)
+# Cache::forget('bot:{BOT_ID}:default_flow');
+# Cache::forget('bot:{BOT_ID}:has_flows');
 ```
 
 ## Project Structure
@@ -69,6 +81,7 @@ frontend/
 | `app/Services/RAGService.php` | Main AI orchestration |
 | `app/Services/OpenRouterService.php` | LLM API client |
 | `app/Services/FlowCacheService.php` | Flow config caching (30-min TTL) |
+| `app/Services/PaymentFlexService.php` | Text→Flex detection (keyword-based, ดู detection rules ก่อนแก้ prompt) |
 
 ## Skills
 
@@ -84,6 +97,9 @@ Skills auto-triggered from context or use `/skill-name`. → [Full reference](do
 | Race condition | Use DB locks |
 | TypeScript interface ไม่ match Laravel model | Verify `api.ts` matches `$fillable/$casts` |
 | Flow ≠ Bot | Flow เป็น central config, ไม่ใช่ Bot |
+| Prompt อยู่ใน Flow | `bots.system_prompt` มักเป็น null → ดูที่ `flows.system_prompt` |
+| Local DB ≠ Production | Laravel Boost query ไป SQLite local → ข้อมูลจริงใช้ `mcp__neon__run_sql` |
+| แก้ prompt ต้อง clear cache | `Cache::forget('bot:{id}:default_flow')` via tinker |
 
 → [All gotchas](docs/gotchas.md)
 
@@ -109,10 +125,16 @@ Skills auto-triggered from context or use `/skill-name`. → [Full reference](do
 
 ## Git Flow
 
+Branch protection บน `main` — ต้องผ่าน PR + CI (Backend Tests, Frontend Checks) ก่อน merge
+
 ```bash
 # Branch: feature/xxx | fix/xxx | chore/xxx
 # Commits: feat: | fix: | chore:
-git checkout -b feature/xxx && # work... && /commit-push-pr
+git checkout -b feature/xxx
+# work...
+git push -u origin feature/xxx
+gh pr create --title "feat: xxx" --body "..."
+# รอ CI ผ่าน → merge PR → Railway auto-deploy
 ```
 
 ## Do Not Touch
