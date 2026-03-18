@@ -11,6 +11,15 @@ export function StockManagementCard() {
   const { mutate: updateStock } = useUpdateProductStock();
   const [pendingSlug, setPendingSlug] = useState<string | null>(null);
 
+  const lastUpdated = useMemo(
+    () =>
+      (products ?? []).reduce((latest, p) => {
+        const d = new Date(p.updated_at);
+        return d > latest ? d : latest;
+      }, new Date(0)),
+    [products],
+  );
+
   if (isLoading) {
     return (
       <Card>
@@ -32,15 +41,6 @@ export function StockManagementCard() {
   }
 
   if (!products?.length) return null;
-
-  const lastUpdated = useMemo(
-    () =>
-      products.reduce((latest, p) => {
-        const d = new Date(p.updated_at);
-        return d > latest ? d : latest;
-      }, new Date(0)),
-    [products],
-  );
 
   return (
     <Card>
