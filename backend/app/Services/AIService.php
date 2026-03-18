@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\OpenRouterException;
+use App\Jobs\ExtractEntitiesJob;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -133,6 +134,11 @@ class AIService
             // Update bot stats
             $bot->increment('total_messages');
             $bot->update(['last_active_at' => now()]);
+
+            // Auto-extract entities from conversation (async, throttled every 5 messages)
+            if (ExtractEntitiesJob::shouldExtract($conversation)) {
+                ExtractEntitiesJob::dispatch($conversation);
+            }
 
             return $botMessage;
         } catch (OpenRouterException $e) {
