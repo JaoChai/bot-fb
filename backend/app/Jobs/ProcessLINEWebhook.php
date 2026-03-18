@@ -38,6 +38,12 @@ class ProcessLINEWebhook implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
+     * Keywords indicating a pending order in conversation history.
+     * Used by vision analysis to detect when a slip image is expected.
+     */
+    private const ORDER_CONTEXT_KEYWORDS = ['รวมยอดโอน', 'สรุปรายการ', 'เลขบัญชี', 'รวมทั้งหมด', 'โอนเข้าบัญชี', 'ส่งสลิป'];
+
+    /**
      * The number of times the job may be attempted.
      */
     public int $tries = 3;
@@ -1050,8 +1056,8 @@ class ProcessLINEWebhook implements ShouldQueue
                 ];
             }
 
-            // Add current image message with prompt
-            $imagePrompt = $this->getImageAnalysisPrompt();
+            // Add current image message with prompt (context-aware: detects pending orders)
+            $imagePrompt = $this->getImageAnalysisPrompt($history);
             $messages[] = [
                 'role' => 'user',
                 'content' => $imagePrompt,
@@ -1193,6 +1199,7 @@ class ProcessLINEWebhook implements ShouldQueue
     /**
      * Build system prompt for vision/image analysis.
      * Uses bot's system prompt with vision-specific additions.
+     * Includes payment slip detection instructions.
      */
     protected function buildVisionSystemPrompt(): string
     {
@@ -1212,16 +1219,28 @@ class ProcessLINEWebhook implements ShouldQueue
             $basePrompt = "You are a helpful AI assistant for {$this->bot->name}. Be friendly, professional, and helpful.";
         }
 
-        // Add vision-specific instruction
-        $visionInstruction = "\n\nWhen analyzing images, describe what you see clearly and helpfully. Answer any questions about the image content.";
+        // Add vision-specific instruction with payment slip detection
+        $visionInstruction = "\n\n## การวิเคราะห์รูปภาพ\n"
+            ."เมื่อได้รับรูปภาพ ให้ตรวจสอบก่อนว่าเป็นสลิปโอนเงิน/หลักฐานการชำระเงินหรือไม่\n\n"
+            ."**ถ้าเป็นสลิปโอนเงิน:**\n"
+            ."- อ่านยอดเงินที่โอนจากสลิป\n"
+            ."- ดู conversation history เพื่อหาออเดอร์ที่รอชำระเงิน\n"
+            ."- ตอบในรูปแบบนี้เท่านั้น:\n"
+            ."  เงินเข้าแล้ว [จำนวนเงิน] บาท ✅\n"
+            ."  ออเดอร์: [สรุปรายการจาก conversation history]\n"
+            ."  ส่งใน 5-10 นาที ขอบคุณครับ\n"
+            ."  [ยืนยันชำระเงิน]\n\n"
+            ."**ถ้าไม่ใช่สลิป:**\n"
+            .'- อธิบายรูปภาพและช่วยตอบคำถามตามบริบทของการสนทนา';
 
         return $basePrompt.$visionInstruction;
     }
 
     /**
      * Get the prompt to use when analyzing an image.
+     * Context-aware: detects pending orders and instructs slip verification.
      */
-    protected function getImageAnalysisPrompt(): string
+    protected function getImageAnalysisPrompt(array $conversationHistory = []): string
     {
         // Check bot settings for custom image prompt
         $settings = $this->bot->settings;
@@ -1229,8 +1248,31 @@ class ProcessLINEWebhook implements ShouldQueue
             return $settings->image_analysis_prompt;
         }
 
-        // Default Thai prompt (since most users are Thai based on existing code)
+        // Check if conversation has a pending order (payment context)
+        $hasPendingOrder = $this->detectPendingOrder($conversationHistory);
+
+        if ($hasPendingOrder) {
+            return 'ลูกค้าส่งรูปมา — ตรวจสอบว่าเป็นสลิปโอนเงินหรือไม่ ถ้าเป็นสลิปให้ยืนยันยอดตาม conversation history';
+        }
+
         return 'กรุณาอธิบายรูปภาพนี้ และช่วยตอบคำถามหากมี';
+    }
+
+    /**
+     * Detect if conversation history indicates a pending order awaiting payment.
+     */
+    protected function detectPendingOrder(array $conversationHistory): bool
+    {
+        foreach ($conversationHistory as $msg) {
+            $content = $msg['content'] ?? '';
+            foreach (self::ORDER_CONTEXT_KEYWORDS as $keyword) {
+                if (mb_strpos($content, $keyword) !== false) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
