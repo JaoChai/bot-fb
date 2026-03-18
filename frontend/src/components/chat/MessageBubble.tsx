@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Bot, User, Headphones, Download, Brain, ChevronDown, ChevronRight } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/types/api';
@@ -108,13 +108,18 @@ export const MessageBubble = memo(function MessageBubble({
   const isUser = message.sender === 'user';
   const SenderIcon = senderIcons[message.sender];
 
+  // Parse dates safely
+  const messageDate = new Date(message.created_at);
+  const isMessageDateValid = isValid(messageDate);
+
   // Show timestamp if more than 5 minutes since last message
   const showTimestamp =
     forceShowTimestamp ??
-    (!previousMessage ||
-      new Date(message.created_at).getTime() -
-        new Date(previousMessage.created_at).getTime() >
-        5 * 60 * 1000);
+    (isMessageDateValid &&
+      (!previousMessage ||
+        messageDate.getTime() -
+          new Date(previousMessage.created_at).getTime() >
+          5 * 60 * 1000));
 
   // Show sender change indicator
   const senderChanged = previousMessage && previousMessage.sender !== message.sender;
@@ -128,7 +133,7 @@ export const MessageBubble = memo(function MessageBubble({
       {/* Timestamp separator */}
       {showTimestamp && (
         <div className="text-center text-xs text-muted-foreground py-2">
-          {format(new Date(message.created_at), 'HH:mm', { locale: th })}
+          {format(messageDate, 'HH:mm', { locale: th })}
         </div>
       )}
 

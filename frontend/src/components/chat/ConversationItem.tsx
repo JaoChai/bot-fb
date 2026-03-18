@@ -7,6 +7,7 @@ import type { Conversation } from '@/types/api';
 
 // Short time format for Thai (e.g., "16n." instead of "16 minutes")
 function formatTimeShort(date: Date): string {
+  if (isNaN(date.getTime())) return '';
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);

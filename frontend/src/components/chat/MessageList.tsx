@@ -7,7 +7,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Loader2, ChevronDown, RotateCcw } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { MessageBubble } from './MessageBubble';
 import type { Message } from '@/types/api';
@@ -34,6 +34,7 @@ const MemoizedMessageItem = memo(function MemoizedMessageItem({
   const showContextSeparator = useMemo(() => {
     if (!contextClearedAt) return false;
     const messageTime = new Date(message.created_at);
+    if (isNaN(messageTime.getTime())) return false;
     const previousMessageTime = previousMessage
       ? new Date(previousMessage.created_at)
       : null;
@@ -47,13 +48,13 @@ const MemoizedMessageItem = memo(function MemoizedMessageItem({
 
   return (
     <div>
-      {showContextSeparator && contextClearedAt && (
+      {showContextSeparator && (
         <div className="flex items-center gap-3 py-3 my-2">
           <div className="flex-1 h-px bg-border" />
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full border">
             <RotateCcw className="h-3 w-3" />
             <span>
-              Bot context reset - {format(contextClearedAt, 'PPp', { locale: th })}
+              Bot context reset - {format(contextClearedAt!, 'PPp', { locale: th })}
             </span>
           </div>
           <div className="flex-1 h-px bg-border" />
@@ -78,11 +79,12 @@ export function MessageList({
   // Use external state if provided, otherwise use internal
   const autoScroll = externalAutoScroll ?? internalAutoScroll.current;
 
-  // Memoize contextClearedAt as Date
-  const contextClearedAtDate = useMemo(
-    () => (contextClearedAt ? new Date(contextClearedAt) : null),
-    [contextClearedAt]
-  );
+  // Memoize contextClearedAt as Date (null if invalid)
+  const contextClearedAtDate = useMemo(() => {
+    if (!contextClearedAt) return null;
+    const d = new Date(contextClearedAt);
+    return isValid(d) ? d : null;
+  }, [contextClearedAt]);
 
   // Virtualizer for efficient message rendering
   const virtualizer = useVirtualizer({
@@ -145,7 +147,7 @@ export function MessageList({
       >
         <div className="max-w-3xl mx-auto">
           {/* Conversation start indicator */}
-          {conversationCreatedAt && (
+          {conversationCreatedAt && isValid(new Date(conversationCreatedAt)) && (
             <div className="text-center text-sm text-muted-foreground py-2">
               <span className="bg-muted px-3 py-1 rounded-full text-xs">
                 Started {format(new Date(conversationCreatedAt), 'PPp', { locale: th })}
