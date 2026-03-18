@@ -9,3 +9,4 @@ export { TopProductsList } from './TopProductsList';
 export { CategoryPieChart } from './CategoryPieChart';
 export { CostSummaryCollapsible } from './CostSummaryCollapsible';
 export { CollapsibleCard } from './CollapsibleCard';
+export { StockManagementCard } from './StockManagementCard';

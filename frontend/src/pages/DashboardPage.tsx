@@ -17,7 +17,9 @@ import {
   CategoryPieChart,
   CostSummaryCollapsible,
   CollapsibleCard,
+  StockManagementCard,
 } from '@/components/dashboard';
+import { useAuthStore } from '@/stores/authStore';
 
 function DashboardHeader({ today }: { today: string }) {
   return (
@@ -29,6 +31,7 @@ function DashboardHeader({ today }: { today: string }) {
 }
 
 export function DashboardPage() {
+  const { user } = useAuthStore();
   const { data, isLoading, error } = useDashboardSummary();
   const { data: costData } = useCostAnalytics({ group_by: 'day' });
   const { data: orderData } = useOrderSummary();
@@ -82,6 +85,9 @@ export function DashboardPage() {
     <div className="space-y-6">
       {/* Section 0: Header */}
       <DashboardHeader today={today} />
+
+      {/* Section 1: Stock Management (Owner only) */}
+      {user?.role === 'owner' && <StockManagementCard />}
 
       {/* Section 2: Key Metrics (4 cards) */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">

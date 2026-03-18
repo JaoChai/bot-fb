@@ -39,7 +39,7 @@ cd frontend
 npm run dev                             # Dev server
 npm run build                           # Production build
 npm run lint                            # ESLint check (CI uses this)
-npm run type-check                      # TypeScript check
+npx tsc --noEmit                        # TypeScript check
 npx knip --reporter compact             # Dead code scan
 ```
 
@@ -56,16 +56,16 @@ npx knip --reporter compact             # Dead code scan
 
 ```
 backend/
-├── app/Services/       # ~37 services (business logic)
+├── app/Services/       # ~45 services (business logic)
 ├── app/Models/         # ~26 models
-├── app/Jobs/           # 7 async jobs
+├── app/Jobs/           # 8 async jobs
 ├── config/             # llm-models.php, rag.php, agent-prompts.php
 └── routes/api.php
 
 frontend/
-├── src/components/     # UI components
-├── src/pages/          # 10 pages
-├── src/hooks/          # ~23 custom hooks
+├── src/components/     # UI components (13 dirs: chat/, conversation/, telegram/, line/, ui/, ...)
+├── src/pages/          # 12 pages
+├── src/hooks/          # ~25 custom hooks
 ├── src/stores/         # Zustand (auth, chat, ui, botPreferences, connection)
 └── src/lib/api.ts      # Axios client
 ```
@@ -100,6 +100,7 @@ Skills auto-triggered from context or use `/skill-name`. → [Full reference](do
 | Prompt อยู่ใน Flow | `bots.system_prompt` มักเป็น null → ดูที่ `flows.system_prompt` |
 | Local DB ≠ Production | Laravel Boost query ไป SQLite local → ข้อมูลจริงใช้ `mcp__neon__run_sql` |
 | แก้ prompt ต้อง clear cache | `Cache::forget('bot:{id}:default_flow')` via tinker |
+| `memory_notes` อาจเป็น object | บาง conversation มี `memory_notes` เป็น `{vip:true}` แทน array → Backend ต้อง validate ด้วย `array_is_list()` |
 
 → [All gotchas](docs/gotchas.md)
 
