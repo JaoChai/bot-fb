@@ -39,7 +39,7 @@ import {
   X,
 } from 'lucide-react';
 import type { ConversationNote } from '@/types/api';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 
 interface NotesPanelProps {
@@ -332,10 +332,12 @@ export function NotesPanel({ botId, conversationId }: NotesPanelProps) {
                     </div>
                     <p className="mt-2 text-sm whitespace-pre-wrap">{note.content}</p>
                     <p className="mt-2 text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(note.created_at), {
-                        addSuffix: true,
-                        locale: th,
-                      })}
+                      {note.created_at && isValid(new Date(note.created_at))
+                        ? formatDistanceToNow(new Date(note.created_at), {
+                            addSuffix: true,
+                            locale: th,
+                          })
+                        : ''}
                     </p>
                   </>
                 )}

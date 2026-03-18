@@ -14,7 +14,17 @@ class NoteService
     {
         $notes = $conversation->memory_notes ?? [];
 
-        return collect($notes)->sortByDesc('created_at')->values()->all();
+        // Guard: memory_notes must be a sequential array of note objects.
+        // Some conversations have legacy object format (e.g. {"vip": true, ...})
+        if (! is_array($notes) || (! empty($notes) && ! array_is_list($notes))) {
+            return [];
+        }
+
+        return collect($notes)
+            ->filter(fn ($note) => is_array($note) && isset($note['id'], $note['content'], $note['created_at']))
+            ->sortByDesc('created_at')
+            ->values()
+            ->all();
     }
 
     /**
