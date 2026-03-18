@@ -644,6 +644,18 @@ export interface DashboardData {
   recent_activity: DashboardActivity[];
 }
 
+// Product Stock
+export interface ProductStock {
+  id: number;
+  name: string;
+  slug: string;
+  aliases: string[];
+  in_stock: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // Orders
 export interface OrderItem {
   id: number;

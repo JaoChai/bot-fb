@@ -120,4 +120,9 @@ export const queryKeys = {
     detail: (id: number) => [...queryKeys.quickReplies.details(), id] as const,
     search: (query: string) => [...queryKeys.quickReplies.all, 'search', query] as const,
   },
+  // Product Stocks
+  productStocks: {
+    all: ['productStocks'] as const,
+    list: () => [...queryKeys.productStocks.all, 'list'] as const,
+  },
 } as const;
