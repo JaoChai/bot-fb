@@ -376,6 +376,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Adaptive Temperature Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Automatically adjusts LLM temperature based on intent type.
+    | Factual questions (knowledge) use lower temperature for accuracy.
+    | Casual chat uses higher temperature for natural conversation.
+    |
+    */
+    'adaptive_temperature' => [
+        'enabled' => env('RAG_ADAPTIVE_TEMP_ENABLED', true),
+        'knowledge_max' => (float) env('RAG_ADAPTIVE_TEMP_KNOWLEDGE_MAX', 0.3),
+        'chat_min' => (float) env('RAG_ADAPTIVE_TEMP_CHAT_MIN', 0.6),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Second AI Configuration
     |--------------------------------------------------------------------------
     */
