@@ -15,7 +15,7 @@ import {
   Download,
   ExternalLink,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn, toSafeArray } from '@/lib/utils';
 import type { Message } from '@/types/api';
@@ -33,11 +33,16 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const isUser = message.sender === 'user';
 
+  // Parse date safely
+  const messageDate = new Date(message.created_at);
+  const isMessageDateValid = isValid(messageDate);
+
   // Show timestamp if more than 5 minutes since last message
   const showTimestamp =
-    !previousMessage ||
-    new Date(message.created_at).getTime() - new Date(previousMessage.created_at).getTime() >
-      5 * 60 * 1000;
+    isMessageDateValid &&
+    (!previousMessage ||
+      messageDate.getTime() - new Date(previousMessage.created_at).getTime() >
+        5 * 60 * 1000);
 
   // Show sender change indicator
   const senderChanged = previousMessage && previousMessage.sender !== message.sender;
@@ -266,7 +271,7 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
       {/* Timestamp separator */}
       {showTimestamp && (
         <div className="text-center text-xs text-muted-foreground py-2">
-          {format(new Date(message.created_at), 'HH:mm', { locale: th })}
+          {format(messageDate, 'HH:mm', { locale: th })}
         </div>
       )}
 
