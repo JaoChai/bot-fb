@@ -6,6 +6,8 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\Message;
+use App\Models\ProductStock;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -397,6 +399,15 @@ class RAGService
             $prompt .= "---\n\n";
         }
 
+        // Fetch stock data once for both injection points
+        $stocks = $this->getStockStatus();
+
+        // Inject stock status BEFORE base prompt (double reinforcement: point 1)
+        $stockInjection = $this->buildStockInjection($stocks);
+        if (! empty($stockInjection)) {
+            $prompt .= $stockInjection."\n---\n\n";
+        }
+
         $prompt .= $basePrompt;
 
         // Append KB context if available
@@ -413,10 +424,75 @@ class RAGService
             }
         }
 
-        // Reinforce that system prompt overrides conversation history
-        $prompt .= "\n\n⚠️ ข้อมูลสินค้า ราคา และ stock ใน prompt นี้เป็นข้อมูลล่าสุด หากขัดแย้งกับข้อความก่อนหน้าในแชท ให้ยึดข้อมูลจาก prompt นี้เสมอ และแจ้งลูกค้าตามข้อมูลปัจจุบัน";
+        // Stock reminder at the end (double reinforcement: point 2 — closest to user message)
+        $stockReminder = $this->buildStockReminder($stocks);
+        if (! empty($stockReminder)) {
+            $prompt .= "\n\n".$stockReminder;
+        } else {
+            // Fallback: generic prompt override reminder
+            $prompt .= "\n\n⚠️ ข้อมูลสินค้า ราคา และ stock ใน prompt นี้เป็นข้อมูลล่าสุด หากขัดแย้งกับข้อความก่อนหน้าในแชท ให้ยึดข้อมูลจาก prompt นี้เสมอ และแจ้งลูกค้าตามข้อมูลปัจจุบัน";
+        }
 
         return $prompt;
+    }
+
+    /**
+     * Get all product stocks from cache (5 min TTL).
+     */
+    protected function getStockStatus(): \Illuminate\Support\Collection
+    {
+        return Cache::remember(ProductStock::STOCK_CACHE_KEY, 300, function () {
+            return ProductStock::orderBy('display_order')->get();
+        });
+    }
+
+    /**
+     * Build stock injection block (placed before base prompt).
+     */
+    protected function buildStockInjection(\Illuminate\Support\Collection $stocks): string
+    {
+        if ($stocks->isEmpty()) {
+            return '';
+        }
+
+        $outOfStock = $stocks->where('in_stock', false);
+        $inStock = $stocks->where('in_stock', true);
+
+        $lines = ['⛔⛔⛔ STOCK STATUS (ข้อมูลล่าสุดจากระบบ — ยึดข้อมูลนี้เหนือทุกอย่าง):'];
+
+        if ($outOfStock->isNotEmpty()) {
+            $items = $outOfStock->map(function ($p) {
+                $aliases = implode(', ', $p->aliases ?? []);
+
+                return $aliases ? "{$p->name} (รวม: {$aliases})" : $p->name;
+            })->implode(', ');
+            $lines[] = "[สินค้าที่หมดชั่วคราว]: {$items}";
+        }
+
+        if ($inStock->isNotEmpty()) {
+            $items = $inStock->map(fn ($p) => $p->name)->implode(', ');
+            $lines[] = "[สินค้าที่มีพร้อมส่ง]: {$items}";
+        }
+
+        $lines[] = 'ห้ามขาย/แนะนำ/คำนวณราคาสินค้าที่หมด stock เด็ดขาด!';
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Build short stock reminder (placed at end of prompt, closest to user message).
+     */
+    protected function buildStockReminder(\Illuminate\Support\Collection $stocks): string
+    {
+        $outOfStock = $stocks->where('in_stock', false);
+
+        if ($outOfStock->isEmpty()) {
+            return '';
+        }
+
+        $names = $outOfStock->map(fn ($p) => $p->name)->implode(', ');
+
+        return "⛔ STOCK REMINDER: สินค้าหมด stock → {$names} — ห้ามขาย/แนะนำเด็ดขาด! ดูข้อมูลจาก STOCK STATUS ด้านบน";
     }
 
     /**

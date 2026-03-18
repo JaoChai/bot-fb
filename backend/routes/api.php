@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\KnowledgeBaseController;
 use App\Http\Controllers\Api\LeadRecoveryController;
 use App\Http\Controllers\Api\ModelController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\ProductStockController;
 use App\Http\Controllers\Api\QuickReplyController;
 use App\Http\Controllers\Api\StreamController;
 use App\Http\Controllers\Api\UserSearchController;
@@ -77,6 +78,12 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::get('/by-product', [OrderController::class, 'byProduct'])->name('orders.by-product');
         Route::get('/{order}', [OrderController::class, 'show'])->name('orders.show');
         Route::put('/{order}', [OrderController::class, 'update'])->name('orders.update');
+    });
+
+    // Product Stocks routes (Owner only)
+    Route::prefix('product-stocks')->group(function () {
+        Route::get('/', [ProductStockController::class, 'index'])->name('product-stocks.index');
+        Route::put('/{slug}', [ProductStockController::class, 'update'])->name('product-stocks.update');
     });
 
     // User search route (Owner only)
