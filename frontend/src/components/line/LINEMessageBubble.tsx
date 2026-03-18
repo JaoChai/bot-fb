@@ -14,7 +14,7 @@ import {
   ExternalLink,
   Smile,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/types/api';
@@ -39,11 +39,16 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const isUser = message.sender === 'user';
 
+  // Parse date safely
+  const messageDate = new Date(message.created_at);
+  const isMessageDateValid = isValid(messageDate);
+
   // Show timestamp if more than 5 minutes since last message
   const showTimestamp =
-    !previousMessage ||
-    new Date(message.created_at).getTime() - new Date(previousMessage.created_at).getTime() >
-      5 * 60 * 1000;
+    isMessageDateValid &&
+    (!previousMessage ||
+      messageDate.getTime() - new Date(previousMessage.created_at).getTime() >
+        5 * 60 * 1000);
 
   // Show sender change indicator
   const senderChanged = previousMessage && previousMessage.sender !== message.sender;
@@ -224,7 +229,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
       {showTimestamp && (
         <div className="flex justify-center my-3">
           <span className="text-xs text-muted-foreground bg-muted/50 px-3 py-1 rounded-full">
-            {format(new Date(message.created_at), 'PPp', { locale: th })}
+            {format(messageDate, 'PPp', { locale: th })}
           </span>
         </div>
       )}
