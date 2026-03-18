@@ -10,7 +10,7 @@ import {
   Users,
   User,
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useChannelInfo } from '@/hooks/useChannelInfo';
 import type { Conversation } from '@/types/api';
@@ -28,6 +28,10 @@ export function CustomerDetails({ conversation }: CustomerDetailsProps) {
 
   // Channel detection - using centralized hook
   const { isTelegram, isGroup, displayName } = useChannelInfo(conversation);
+
+  // Parse dates once
+  const firstInteractionDate = customer?.first_interaction_at ? new Date(customer.first_interaction_at) : null;
+  const lastMessageDate = conversation.last_message_at ? new Date(conversation.last_message_at) : null;
 
   return (
     <div className="space-y-6">
@@ -135,8 +139,8 @@ export function CustomerDetails({ conversation }: CustomerDetailsProps) {
           <Calendar className="h-4 w-4 text-muted-foreground" />
           <span>
             First contact:{' '}
-            {customer?.first_interaction_at
-              ? formatDistanceToNow(new Date(customer.first_interaction_at), {
+            {firstInteractionDate && isValid(firstInteractionDate)
+              ? formatDistanceToNow(firstInteractionDate, {
                   addSuffix: true,
                   locale: th,
                 })
@@ -148,8 +152,8 @@ export function CustomerDetails({ conversation }: CustomerDetailsProps) {
           <Clock className="h-4 w-4 text-muted-foreground" />
           <span>
             Last message:{' '}
-            {conversation.last_message_at
-              ? formatDistanceToNow(new Date(conversation.last_message_at), {
+            {lastMessageDate && isValid(lastMessageDate)
+              ? formatDistanceToNow(lastMessageDate, {
                   addSuffix: true,
                   locale: th,
                 })

@@ -4,7 +4,7 @@
  * Extracted from ChatWindow.tsx
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -56,6 +56,9 @@ export function ChannelMessageArea({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
+  const createdDate = new Date(conversation.created_at);
+  const isCreatedDateValid = isValid(createdDate);
+
   const renderMessages = () => {
     if (channelType === 'telegram') {
       return messages.map((message, index) => (
@@ -94,11 +97,13 @@ export function ChannelMessageArea({
             </div>
           ) : (
             <>
-              <div className="text-center text-sm text-muted-foreground py-2">
-                <span className="bg-muted px-3 py-1 rounded-full text-xs">
-                  Started {format(new Date(conversation.created_at), 'PPp', { locale: th })}
-                </span>
-              </div>
+              {isCreatedDateValid && (
+                <div className="text-center text-sm text-muted-foreground py-2">
+                  <span className="bg-muted px-3 py-1 rounded-full text-xs">
+                    Started {format(createdDate, 'PPp', { locale: th })}
+                  </span>
+                </div>
+              )}
               {renderMessages()}
             </>
           )}
