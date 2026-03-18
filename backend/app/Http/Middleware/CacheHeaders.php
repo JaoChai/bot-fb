@@ -21,22 +21,24 @@ class CacheHeaders
      * Note: paths INCLUDE the api/ prefix (from $request->path())
      */
     private array $cacheRules = [
-        // Static/stable data - cache 5 minutes
-        'api/bots' => 300,
-        'api/bots/*' => 300,
-        'api/flows' => 300,
-        'api/flows/*' => 300,
-        'api/knowledge-bases' => 300,
-        'api/knowledge-bases/*' => 300,
+        // Mutation-sensitive — ห้ามแคช (React Query staleTime คุม freshness แทน)
+        'api/bots' => 0,
+        'api/bots/*' => 0,
+        'api/flows' => 0,
+        'api/flows/*' => 0,
+        'api/knowledge-bases' => 0,
+        'api/knowledge-bases/*' => 0,
+
+        // Read-only static data — แคชได้นาน
         'api/evaluation-personas' => 3600, // 1 hour - rarely changes
 
-        // User-specific data - cache 1 minute
+        // User-specific data — แคชสั้น (ไม่มี mutation ที่ต้อง invalidate)
         'api/auth/user' => 60,
         'api/dashboard/summary' => 60,
         'api/settings' => 60,
         'api/analytics/*' => 60,
 
-        // Real-time data - never cache
+        // Real-time data — ไม่แคช
         'api/conversations' => 0,
         'api/conversations/*' => 0,
         'api/webhook/*' => 0,
