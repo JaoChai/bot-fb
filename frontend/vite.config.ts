@@ -37,7 +37,7 @@ export default defineConfig({
             "@radix-ui/react-slider",
             "@radix-ui/react-collapsible",
             "@radix-ui/react-alert-dialog",
-            "@radix-ui/react-progress",
+            "@radix-ui/react-visually-hidden",
             "@radix-ui/react-separator",
             "@radix-ui/react-label",
             "@radix-ui/react-slot",
