@@ -7,7 +7,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Conversation extends Model
@@ -32,6 +31,7 @@ class Conversation extends Model
         'message_count',
         'unread_count',
         'last_message_at',
+        'last_message_id',
         'context_cleared_at',
         'recovery_attempts',
         'last_recovery_at',
@@ -75,10 +75,11 @@ class Conversation extends Model
 
     /**
      * Get the last message for the conversation.
+     * Uses denormalized last_message_id FK for O(1) lookup instead of MAX() subquery.
      */
-    public function lastMessage(): HasOne
+    public function lastMessage(): BelongsTo
     {
-        return $this->hasOne(Message::class)->ofMany('id', 'max');
+        return $this->belongsTo(Message::class, 'last_message_id');
     }
 
     /**

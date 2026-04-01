@@ -350,7 +350,7 @@ class ProcessLINEWebhook implements ShouldQueue
                     'status' => $this->bot->status,
                 ]);
                 // Update stats for user message only
-                $this->updateStatsForUserMessageOnly($conversation);
+                $this->updateStatsForUserMessageOnly($conversation, $userMessage->id);
                 if ($isNewConversation) {
                     $this->bot->update([
                         'total_conversations' => DB::raw('total_conversations + 1'),
@@ -368,7 +368,7 @@ class ProcessLINEWebhook implements ShouldQueue
                     'conversation_id' => $conversation->id,
                 ]);
                 // Update stats for user message only (1 message)
-                $this->updateStatsForUserMessageOnly($conversation);
+                $this->updateStatsForUserMessageOnly($conversation, $userMessage->id);
 
                 return;
             }
@@ -434,7 +434,7 @@ class ProcessLINEWebhook implements ShouldQueue
                         ]);
 
                         // Update stats for user message only (bot response will be counted later)
-                        $this->updateStatsForUserMessageOnly($conversation);
+                        $this->updateStatsForUserMessageOnly($conversation, $userMessage->id);
 
                         // Increment total_conversations for new conversations
                         if ($isNewConversation) {
@@ -633,13 +633,13 @@ class ProcessLINEWebhook implements ShouldQueue
     /**
      * Update stats for user message only (handover mode).
      */
-    protected function updateStatsForUserMessageOnly(Conversation $conversation): void
+    protected function updateStatsForUserMessageOnly(Conversation $conversation, int $lastMessageId): void
     {
-        // Batch update conversation stats (1 query instead of 2)
         $conversation->update([
             'unread_count' => DB::raw('unread_count + 1'),
             'message_count' => DB::raw('message_count + 1'),
             'last_message_at' => now(),
+            'last_message_id' => $lastMessageId,
         ]);
 
         // Batch update bot stats (1 query instead of 3)
@@ -816,7 +816,7 @@ class ProcessLINEWebhook implements ShouldQueue
             ]);
 
             // Update stats atomically with message creation
-            $this->updateStatsForUserMessageOnly($conversation);
+            $this->updateStatsForUserMessageOnly($conversation, $userMessage->id);
             if ($isNewConversation) {
                 $this->bot->update([
                     'total_conversations' => DB::raw('total_conversations + 1'),
@@ -947,6 +947,7 @@ class ProcessLINEWebhook implements ShouldQueue
             $conversation->update([
                 'message_count' => DB::raw('message_count + 1'),
                 'last_message_at' => now(),
+                'last_message_id' => $botMessage->id,
             ]);
             $this->bot->update([
                 'total_messages' => DB::raw('total_messages + 1'),
@@ -1113,6 +1114,7 @@ class ProcessLINEWebhook implements ShouldQueue
             $conversation->update([
                 'message_count' => DB::raw('message_count + 1'),
                 'last_message_at' => now(),
+                'last_message_id' => $botMessage->id,
             ]);
 
             // Update bot stats

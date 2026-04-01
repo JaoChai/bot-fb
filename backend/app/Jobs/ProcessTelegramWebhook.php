@@ -202,6 +202,7 @@ class ProcessTelegramWebhook implements ShouldQueue
                 'unread_count' => DB::raw('unread_count + 1'),
                 'message_count' => DB::raw('message_count + 1'),
                 'last_message_at' => now(),
+                'last_message_id' => $userMessage->id,
             ]);
 
             // Update bot stats
@@ -231,6 +232,7 @@ class ProcessTelegramWebhook implements ShouldQueue
                     $conversation->update([
                         'message_count' => DB::raw('message_count + 1'),
                         'last_message_at' => now(),
+                        'last_message_id' => $botMessage->id,
                     ]);
                     $this->bot->update([
                         'total_messages' => DB::raw('total_messages + 1'),
