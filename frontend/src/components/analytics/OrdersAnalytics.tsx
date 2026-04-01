@@ -200,13 +200,13 @@ export function OrdersAnalytics() {
             <DashboardStatCard
               title="ออเดอร์ทั้งหมด"
               value={summary?.total_orders ?? 0}
-              description={`ยอดขายรวม ${formatBaht(summary?.total_revenue ?? 0)}`}
+              description={`ยอดขายรวม ${formatBaht(summary?.total_revenue ?? 0)} (ในช่วงที่เลือก)`}
               icon={ShoppingCart}
             />
             <DashboardStatCard
               title="ยอดขายรวม"
               value={formatBaht(summary?.total_revenue ?? 0)}
-              description={`${summary?.total_orders ?? 0} ออเดอร์`}
+              description={`${summary?.total_orders ?? 0} ออเดอร์ (ในช่วงที่เลือก)`}
               icon={DollarSign}
             />
             <DashboardStatCard

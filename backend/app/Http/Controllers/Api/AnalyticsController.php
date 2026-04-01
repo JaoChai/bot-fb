@@ -209,6 +209,7 @@ class AnalyticsController extends Controller
         }
 
         $enhancedStats = $enhancedCostQuery->selectRaw('
+            COUNT(*) as record_count,
             COALESCE(SUM(actual_cost), 0) as total_actual_cost,
             COALESCE(SUM(cached_tokens), 0) as total_cached_tokens,
             COALESCE(SUM(reasoning_tokens), 0) as total_reasoning_tokens,
@@ -220,9 +221,16 @@ class AnalyticsController extends Controller
         $totalEstimatedCost = (float) ($stats->total_cost ?? 0);
         $costSavings = $totalActualCost > 0 ? max(0, $totalEstimatedCost - $totalActualCost) : null;
 
+        // Calculate enhanced data coverage from the same query (no extra DB round-trip)
+        $totalResponses = (int) ($stats->total_responses ?? 0);
+        $enhancedRecordCount = (int) ($enhancedStats->record_count ?? 0);
+        $coveragePercent = $totalResponses > 0
+            ? round(($enhancedRecordCount / $totalResponses) * 100, 1)
+            : 0;
+
         return [
             'summary' => [
-                'total_responses' => (int) ($stats->total_responses ?? 0),
+                'total_responses' => $totalResponses,
                 'total_cost' => (float) ($stats->total_cost ?? 0),
                 'total_prompt_tokens' => (int) ($stats->total_prompt_tokens ?? 0),
                 'total_completion_tokens' => (int) ($stats->total_completion_tokens ?? 0),
@@ -235,6 +243,7 @@ class AnalyticsController extends Controller
                 'total_cached_tokens' => (int) ($enhancedStats->total_cached_tokens ?? 0),
                 'total_reasoning_tokens' => (int) ($enhancedStats->total_reasoning_tokens ?? 0),
                 'cost_savings' => $costSavings,
+                'enhanced_data_coverage' => $coveragePercent,
             ],
             'by_model' => $byModel,
             'time_series' => $timeSeries,

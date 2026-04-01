@@ -21,6 +21,15 @@ import {
 } from '@/components/dashboard';
 import { useAuthStore } from '@/stores/authStore';
 
+function calcTrend(today: number, yesterday: number) {
+  if (yesterday <= 0) return undefined;
+  const pct = ((today - yesterday) / yesterday) * 100;
+  return {
+    value: Math.abs(Math.round(pct)),
+    direction: pct > 0 ? 'up' as const : pct < 0 ? 'down' as const : 'stable' as const,
+  };
+}
+
 function DashboardHeader({ today }: { today: string }) {
   return (
     <div className="flex items-center justify-between">
@@ -81,6 +90,9 @@ export function DashboardPage() {
   const activities = data?.recent_activity ?? [];
   const displayActivities = activityExpanded ? activities : activities.slice(0, 5);
 
+  const revTrend = calcTrend(orderData?.summary?.today_revenue ?? 0, orderData?.summary?.yesterday_revenue ?? 0);
+  const msgTrend = calcTrend(data?.summary.messages_today ?? 0, data?.summary.messages_yesterday ?? 0);
+
   return (
     <div className="space-y-6">
       {/* Section 0: Header */}
@@ -96,6 +108,8 @@ export function DashboardPage() {
           value={formatBaht(orderData?.summary?.today_revenue ?? 0)}
           description={`${orderData?.summary?.today_orders ?? 0} ออเดอร์`}
           icon={ShoppingCart}
+          trend={revTrend}
+          className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20"
         />
         <DashboardStatCard
           title="ยอดขายเดือนนี้"
@@ -108,6 +122,7 @@ export function DashboardPage() {
           value={data?.summary.messages_today ?? 0}
           description={`จาก ${data?.summary.total_bots ?? 0} บอท`}
           icon={MessageSquare}
+          trend={msgTrend}
         />
         <DashboardStatCard
           title="ค่า API วันนี้"

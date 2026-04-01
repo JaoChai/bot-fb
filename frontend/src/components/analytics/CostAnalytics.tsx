@@ -62,7 +62,6 @@ export function CostAnalytics() {
 
   // Use THB formatting from currency utility
   const formatCost = (value: number | string | null | undefined) => formatTHB(value, 2);
-  const formatCostShort = (value: number | string | null | undefined) => formatTHB(value, 2);
   const formatTokens = (value: number | string | null | undefined) => {
     const num = Number(value) || 0;
     return num.toLocaleString();
@@ -103,7 +102,7 @@ export function CostAnalytics() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCostShort(data.summary.today_cost)}
+              {formatCost(data.summary.today_cost)}
             </div>
             <p className="text-xs text-muted-foreground">ค่าใช้จ่ายวันนี้</p>
           </CardContent>
@@ -116,7 +115,7 @@ export function CostAnalytics() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCostShort(data.summary.week_cost)}
+              {formatCost(data.summary.week_cost)}
             </div>
             <p className="text-xs text-muted-foreground">ค่าใช้จ่ายสัปดาห์นี้</p>
           </CardContent>
@@ -129,7 +128,7 @@ export function CostAnalytics() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCostShort(data.summary.month_cost)}
+              {formatCost(data.summary.month_cost)}
             </div>
             <p className="text-xs text-muted-foreground">ค่าใช้จ่ายเดือนนี้</p>
           </CardContent>
@@ -194,67 +193,77 @@ export function CostAnalytics() {
 
       {/* Enhanced Cost Tracking (OpenRouter Best Practice) */}
       {(data.summary.total_actual_cost !== undefined || data.summary.total_cached_tokens !== undefined || data.summary.total_reasoning_tokens !== undefined) && (
-        <div className="grid gap-4 md:grid-cols-4">
-          {data.summary.total_actual_cost !== undefined && data.summary.total_actual_cost > 0 && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Actual Cost</CardTitle>
-                <Banknote className="h-4 w-4 text-green-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-green-600">
-                  {formatCost(data.summary.total_actual_cost)}
-                </div>
-                <p className="text-xs text-muted-foreground">ค่าใช้จ่ายจริงจาก OpenRouter</p>
-              </CardContent>
-            </Card>
-          )}
+        data.summary.enhanced_data_coverage !== undefined && data.summary.enhanced_data_coverage < 10 ? (
+          <Card>
+            <CardContent className="py-4">
+              <p className="text-sm text-muted-foreground text-center">
+                Enhanced cost tracking covers {data.summary.enhanced_data_coverage.toFixed(1)}% of data — metrics may not be representative
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-4">
+            {data.summary.total_actual_cost !== undefined && data.summary.total_actual_cost > 0 && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Actual Cost</CardTitle>
+                  <Banknote className="h-4 w-4 text-green-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-green-600">
+                    {formatCost(data.summary.total_actual_cost)}
+                  </div>
+                  <p className="text-xs text-muted-foreground">ค่าใช้จ่ายจริงจาก OpenRouter</p>
+                </CardContent>
+              </Card>
+            )}
 
-          {data.summary.cost_savings !== undefined && data.summary.cost_savings !== null && data.summary.cost_savings > 0 && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">ประหยัดได้</CardTitle>
-                <PiggyBank className="h-4 w-4 text-emerald-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-emerald-600">
-                  {formatCost(data.summary.cost_savings)}
-                </div>
-                <p className="text-xs text-muted-foreground">Estimated vs Actual</p>
-              </CardContent>
-            </Card>
-          )}
+            {data.summary.cost_savings !== undefined && data.summary.cost_savings !== null && data.summary.cost_savings > 0 && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">ประหยัดได้</CardTitle>
+                  <PiggyBank className="h-4 w-4 text-emerald-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-emerald-600">
+                    {formatCost(data.summary.cost_savings)}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Estimated vs Actual</p>
+                </CardContent>
+              </Card>
+            )}
 
-          {data.summary.total_cached_tokens !== undefined && data.summary.total_cached_tokens > 0 && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Cached Tokens</CardTitle>
-                <Sparkles className="h-4 w-4 text-amber-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-amber-600">
-                  {formatTokens(data.summary.total_cached_tokens)}
-                </div>
-                <p className="text-xs text-muted-foreground">Tokens จาก prompt cache</p>
-              </CardContent>
-            </Card>
-          )}
+            {data.summary.total_cached_tokens !== undefined && data.summary.total_cached_tokens > 0 && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Cached Tokens</CardTitle>
+                  <Sparkles className="h-4 w-4 text-amber-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-amber-600">
+                    {formatTokens(data.summary.total_cached_tokens)}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Tokens จาก prompt cache</p>
+                </CardContent>
+              </Card>
+            )}
 
-          {data.summary.total_reasoning_tokens !== undefined && data.summary.total_reasoning_tokens > 0 && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Reasoning Tokens</CardTitle>
-                <Brain className="h-4 w-4 text-purple-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-purple-600">
-                  {formatTokens(data.summary.total_reasoning_tokens)}
-                </div>
-                <p className="text-xs text-muted-foreground">Tokens จาก o1, deepseek-r1</p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+            {data.summary.total_reasoning_tokens !== undefined && data.summary.total_reasoning_tokens > 0 && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Reasoning Tokens</CardTitle>
+                  <Brain className="h-4 w-4 text-purple-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-purple-600">
+                    {formatTokens(data.summary.total_reasoning_tokens)}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Tokens จาก o1, deepseek-r1</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )
       )}
 
       {/* Cost Over Time Chart */}
