@@ -523,6 +523,7 @@ export interface CostSummary {
   total_cached_tokens?: number;
   total_reasoning_tokens?: number;
   cost_savings?: number | null;
+  enhanced_data_coverage?: number;
 }
 
 export interface CostByModel {
@@ -575,6 +576,7 @@ export interface DashboardSummary {
   active_conversations: number;
   handover_conversations: number;
   messages_today: number;
+  messages_yesterday?: number;
   vip_customers: number;
   vip_total_spent: number;
 }
@@ -678,10 +680,14 @@ export interface OrderSummary {
   total_revenue: number;
   today_orders: number;
   today_revenue: number;
+  yesterday_orders?: number;
+  yesterday_revenue?: number;
   this_week_orders: number;
   this_week_revenue: number;
   this_month_orders: number;
   this_month_revenue: number;
+  all_time_orders?: number;
+  all_time_revenue?: number;
 }
 
 export interface OrderTimeSeries {

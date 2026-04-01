@@ -21,11 +21,13 @@ class DashboardController extends Controller
         $user = $request->user();
         $botIds = Bot::where('user_id', $user->id)->pluck('id');
 
+        $isSqlite = DB::connection()->getDriverName() === 'sqlite';
+
         // Get aggregated summary using CTE for efficiency
-        $summaryStats = $this->getSummaryStats($botIds);
+        $summaryStats = $this->getSummaryStats($botIds, $isSqlite);
 
         // Get bots with their metrics
-        $bots = $this->getBotsWithMetrics($user->id);
+        $bots = $this->getBotsWithMetrics($user->id, $isSqlite);
 
         // Get alerts
         $alerts = $this->getAlerts($user->id, $botIds);
@@ -55,7 +57,7 @@ class DashboardController extends Controller
     /**
      * Get aggregated summary statistics
      */
-    protected function getSummaryStats($botIds): array
+    protected function getSummaryStats($botIds, bool $isSqlite = false): array
     {
         if ($botIds->isEmpty()) {
             return [
@@ -65,12 +67,16 @@ class DashboardController extends Controller
                 'active_conversations' => 0,
                 'handover_conversations' => 0,
                 'messages_today' => 0,
+                'messages_yesterday' => 0,
                 'vip_customers' => 0,
                 'vip_total_spent' => 0,
             ];
         }
 
         $botIdsStr = $botIds->implode(',');
+        $todayEnd = $isSqlite ? "date(CURRENT_DATE, '+1 day')" : "CURRENT_DATE + INTERVAL '1 day'";
+        $yesterdayStart = $isSqlite ? "date(CURRENT_DATE, '-1 day')" : "CURRENT_DATE - INTERVAL '1 day'";
+        $notesLike = $isSqlite ? "CAST(c.memory_notes AS TEXT) LIKE '%VIP%'" : "c.memory_notes::text ILIKE '%VIP%'";
 
         $stats = DB::selectOne("
             WITH bot_stats AS (
@@ -95,18 +101,29 @@ class DashboardController extends Controller
                 WHERE c.bot_id IN ({$botIdsStr})
                     AND c.deleted_at IS NULL
                     AND m.created_at >= CURRENT_DATE
-                    AND m.created_at < CURRENT_DATE + INTERVAL '1 day'
+                    AND m.created_at < {$todayEnd}
+            ),
+            yesterday_msgs AS (
+                SELECT COUNT(*) as messages_yesterday
+                FROM messages m
+                INNER JOIN conversations c ON m.conversation_id = c.id
+                WHERE c.bot_id IN ({$botIdsStr})
+                    AND c.deleted_at IS NULL
+                    AND m.created_at >= {$yesterdayStart}
+                    AND m.created_at < CURRENT_DATE
+            ),
+            vip_customers AS (
+                SELECT DISTINCT cp.id
+                FROM customer_profiles cp
+                INNER JOIN conversations c ON c.customer_profile_id = cp.id
+                WHERE c.bot_id IN ({$botIdsStr})
+                    AND c.deleted_at IS NULL
+                    AND {$notesLike}
             ),
             vip_stats AS (
                 SELECT
-                    COUNT(DISTINCT cp.id) as vip_customers,
-                    COALESCE(SUM(o.total_amount), 0) as vip_total_spent
-                FROM customer_profiles cp
-                INNER JOIN conversations c ON c.customer_profile_id = cp.id
-                INNER JOIN orders o ON o.customer_profile_id = cp.id
-                WHERE c.bot_id IN ({$botIdsStr})
-                    AND c.deleted_at IS NULL
-                    AND c.memory_notes::text ILIKE '%VIP%'
+                    (SELECT COUNT(*) FROM vip_customers) as vip_customers,
+                    COALESCE((SELECT SUM(total_amount) FROM orders WHERE customer_profile_id IN (SELECT id FROM vip_customers)), 0) as vip_total_spent
             )
             SELECT
                 bs.total_bots,
@@ -115,11 +132,13 @@ class DashboardController extends Controller
                 cs.active_conversations,
                 cs.handover_conversations,
                 mt.messages_today,
+                ym.messages_yesterday,
                 vs.vip_customers,
                 vs.vip_total_spent
             FROM bot_stats bs
             CROSS JOIN conv_stats cs
             CROSS JOIN msg_today mt
+            CROSS JOIN yesterday_msgs ym
             CROSS JOIN vip_stats vs
         ");
 
@@ -130,6 +149,7 @@ class DashboardController extends Controller
             'active_conversations' => (int) ($stats->active_conversations ?? 0),
             'handover_conversations' => (int) ($stats->handover_conversations ?? 0),
             'messages_today' => (int) ($stats->messages_today ?? 0),
+            'messages_yesterday' => (int) ($stats->messages_yesterday ?? 0),
             'vip_customers' => (int) ($stats->vip_customers ?? 0),
             'vip_total_spent' => (float) ($stats->vip_total_spent ?? 0),
         ];
@@ -138,7 +158,7 @@ class DashboardController extends Controller
     /**
      * Get bots with their metrics
      */
-    protected function getBotsWithMetrics(int $userId): array
+    protected function getBotsWithMetrics(int $userId, bool $isSqlite = false): array
     {
         $bots = Bot::where('user_id', $userId)
             ->withCount([
@@ -151,12 +171,13 @@ class DashboardController extends Controller
         // Batch query: get messages_today for ALL bots in 1 query (instead of N+1)
         $messagesTodayByBot = [];
         if ($bots->isNotEmpty()) {
+            $todayEnd = $isSqlite ? "messages.created_at < date(CURRENT_DATE, '+1 day')" : "messages.created_at < CURRENT_DATE + INTERVAL '1 day'";
             $messagesTodayByBot = DB::table('messages')
                 ->join('conversations', 'messages.conversation_id', '=', 'conversations.id')
                 ->whereIn('conversations.bot_id', $bots->pluck('id'))
                 ->whereNull('conversations.deleted_at')
                 ->whereRaw('messages.created_at >= CURRENT_DATE')
-                ->whereRaw("messages.created_at < CURRENT_DATE + INTERVAL '1 day'")
+                ->whereRaw($todayEnd)
                 ->groupBy('conversations.bot_id')
                 ->selectRaw('conversations.bot_id, COUNT(*) as count')
                 ->pluck('count', 'bot_id')

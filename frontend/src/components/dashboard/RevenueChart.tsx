@@ -23,7 +23,7 @@ export function RevenueChart({ timeSeries, vipCustomers, vipTotalSpent }: Revenu
   return (
     <Card className="h-full">
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">แนวโน้มยอดขาย</CardTitle>
+        <CardTitle className="text-base">แนวโน้มยอดขาย (30 วัน)</CardTitle>
       </CardHeader>
       <CardContent>
         {timeSeries.length > 0 ? (
