@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Flow;
-use App\Models\Message;
 use App\Models\ProductStock;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -25,6 +24,10 @@ use Illuminate\Support\Facades\Log;
  */
 class RAGService
 {
+    private const SIMPLE_MESSAGE_PATTERN = '/^(สวัสดี|หวัดดี|ดี(ครับ|ค่ะ)?|ขอบคุณ|ขอบใจ|บาย|ลาก่อน|ok|oke|โอเค|hi|hello|hey|thanks|thank you|bye|good\s?(morning|evening|night))$/iu';
+
+    private const PRODUCT_KEYWORD_PATTERN = '/สินค้า|ราคา|ซื้อ|สั่ง|order|price|product|หมด|stock|มี.*(ไหม|มั้ย)|เหลือ|พร้อมส่ง|จอง/iu';
+
     public function __construct(
         protected SemanticSearchService $semanticSearchService,
         protected HybridSearchService $hybridSearchService,
@@ -114,9 +117,12 @@ class RAGService
             'chunks_used' => [],
         ];
 
+        $isSimpleMessage = mb_strlen($userMessage) <= 30 && preg_match(self::SIMPLE_MESSAGE_PATTERN, trim($userMessage));
+
         // Step 4: Get KB context if intent is 'knowledge' and KB enabled
         // Also get KB context if intent was skipped and KB is enabled (backward compatibility)
-        $shouldUseKB = ($intent['intent'] === 'knowledge' || isset($intent['skipped']))
+        $shouldUseKB = ! $isSimpleMessage
+            && ($intent['intent'] === 'knowledge' || isset($intent['skipped']))
             && $this->shouldUseKnowledgeBase($bot);
 
         if ($shouldUseKB) {
@@ -145,7 +151,9 @@ class RAGService
             $this->getSystemPromptForBot($bot),
             $kbContext,
             $bot,
-            $memoryNotes
+            $memoryNotes,
+            $userMessage,
+            $conversationHistory
         );
 
         // Step 7: Add Chain-of-Thought instruction if question is complex
@@ -385,7 +393,9 @@ class RAGService
         string $basePrompt,
         string $kbContext,
         ?Bot $bot = null,
-        array $memoryNotes = []
+        array $memoryNotes = [],
+        string $userMessage = '',
+        array $conversationHistory = []
     ): string {
         $prompt = '';
 
@@ -399,13 +409,18 @@ class RAGService
             $prompt .= "---\n\n";
         }
 
-        // Fetch stock data once for both injection points
-        $stocks = $this->getStockStatus();
+        // Inject stock only when product-related or first message — skip unnecessary cache/DB lookup otherwise
+        $isProductRelated = $userMessage !== '' && preg_match(self::PRODUCT_KEYWORD_PATTERN, $userMessage);
+        $isFirstMessage = empty($conversationHistory);
 
-        // Inject stock status BEFORE base prompt (double reinforcement: point 1)
-        $stockInjection = $this->buildStockInjection($stocks);
-        if (! empty($stockInjection)) {
-            $prompt .= $stockInjection."\n---\n\n";
+        if ($isProductRelated || $isFirstMessage) {
+            $stocks = $this->getStockStatus();
+            if ($stocks->where('in_stock', false)->isNotEmpty()) {
+                $stockInjection = $this->buildStockInjection($stocks);
+                if (! empty($stockInjection)) {
+                    $prompt .= $stockInjection."\n---\n\n";
+                }
+            }
         }
 
         $prompt .= $basePrompt;
@@ -422,15 +437,6 @@ class RAGService
             if (! empty($instruction)) {
                 $prompt .= "\n".$instruction;
             }
-        }
-
-        // Stock reminder at the end (double reinforcement: point 2 — closest to user message)
-        $stockReminder = $this->buildStockReminder($stocks);
-        if (! empty($stockReminder)) {
-            $prompt .= "\n\n".$stockReminder;
-        } else {
-            // Fallback: generic prompt override reminder
-            $prompt .= "\n\n⚠️ ข้อมูลสินค้า ราคา และ stock ใน prompt นี้เป็นข้อมูลล่าสุด หากขัดแย้งกับข้อความก่อนหน้าในแชท ให้ยึดข้อมูลจาก prompt นี้เสมอ และแจ้งลูกค้าตามข้อมูลปัจจุบัน";
         }
 
         return $prompt;

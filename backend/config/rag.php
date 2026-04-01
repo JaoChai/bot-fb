@@ -51,6 +51,8 @@ return [
 
     'max_conversation_history' => env('RAG_MAX_CONVERSATION_HISTORY', 20),
 
+    'max_history_tokens' => env('RAG_MAX_HISTORY_TOKENS', 4000),
+
     'max_document_size' => env('RAG_MAX_DOCUMENT_SIZE', 50 * 1024 * 1024), // 50MB
 
     /*

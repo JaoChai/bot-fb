@@ -294,7 +294,7 @@ class ProcessAggregatedMessages implements ShouldQueue
                 }
 
                 // Update stats with atomic DB::raw operations (no transaction needed)
-                $this->updateStats($messageCount);
+                $this->updateStats($messageCount, $botMessage->id);
             } finally {
                 $responseLock->release();
             }
@@ -321,7 +321,7 @@ class ProcessAggregatedMessages implements ShouldQueue
     /**
      * Update conversation and bot statistics.
      */
-    protected function updateStats(int $aggregatedMessageCount): void
+    protected function updateStats(int $aggregatedMessageCount, int $lastMessageId): void
     {
         // Update conversation stats
         // unread_count: +1 for bot response
@@ -330,6 +330,7 @@ class ProcessAggregatedMessages implements ShouldQueue
             'unread_count' => DB::raw('unread_count + 1'),
             'message_count' => DB::raw('message_count + 1'),
             'last_message_at' => now(),
+            'last_message_id' => $lastMessageId,
         ]);
 
         // Update bot stats
