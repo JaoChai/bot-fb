@@ -134,22 +134,42 @@ class OrderController extends Controller
                     SELECT
                         COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE) as today_orders,
                         COALESCE(SUM(total_amount) FILTER (WHERE DATE(created_at) = CURRENT_DATE), 0) as today_revenue,
+                        COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE - INTERVAL '1 day') as yesterday_orders,
+                        COALESCE(SUM(total_amount) FILTER (WHERE DATE(created_at) = CURRENT_DATE - INTERVAL '1 day'), 0) as yesterday_revenue,
                         COUNT(*) FILTER (WHERE created_at >= DATE_TRUNC('week', CURRENT_DATE)) as this_week_orders,
                         COALESCE(SUM(total_amount) FILTER (WHERE created_at >= DATE_TRUNC('week', CURRENT_DATE)), 0) as this_week_revenue,
                         COUNT(*) FILTER (WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)) as this_month_orders,
                         COALESCE(SUM(total_amount) FILTER (WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)), 0) as this_month_revenue
                     FROM order_data
+                ),
+                filtered_stats AS (
+                    SELECT
+                        COUNT(*) as total_orders,
+                        COALESCE(SUM(total_amount), 0) as total_revenue
+                    FROM filtered
+                ),
+                all_time AS (
+                    SELECT
+                        COUNT(*) as all_time_orders,
+                        COALESCE(SUM(total_amount), 0) as all_time_revenue
+                    FROM order_data
                 )
                 SELECT
-                    (SELECT COUNT(*) FROM filtered) as total_orders,
-                    (SELECT COALESCE(SUM(total_amount), 0) FROM filtered) as total_revenue,
+                    fs.total_orders,
+                    fs.total_revenue,
                     qs.today_orders,
                     qs.today_revenue,
+                    qs.yesterday_orders,
+                    qs.yesterday_revenue,
                     qs.this_week_orders,
                     qs.this_week_revenue,
                     qs.this_month_orders,
-                    qs.this_month_revenue
+                    qs.this_month_revenue,
+                    at.all_time_orders,
+                    at.all_time_revenue
                 FROM quick_stats qs
+                CROSS JOIN filtered_stats fs
+                CROSS JOIN all_time at
             ", [...$botFilter, $startDate, $endDate]);
 
             // Time series: daily aggregation
@@ -171,10 +191,14 @@ class OrderController extends Controller
                     'total_revenue' => (float) ($stats->total_revenue ?? 0),
                     'today_orders' => (int) ($stats->today_orders ?? 0),
                     'today_revenue' => (float) ($stats->today_revenue ?? 0),
+                    'yesterday_orders' => (int) ($stats->yesterday_orders ?? 0),
+                    'yesterday_revenue' => (float) ($stats->yesterday_revenue ?? 0),
                     'this_week_orders' => (int) ($stats->this_week_orders ?? 0),
                     'this_week_revenue' => (float) ($stats->this_week_revenue ?? 0),
                     'this_month_orders' => (int) ($stats->this_month_orders ?? 0),
                     'this_month_revenue' => (float) ($stats->this_month_revenue ?? 0),
+                    'all_time_orders' => (int) ($stats->all_time_orders ?? 0),
+                    'all_time_revenue' => (float) ($stats->all_time_revenue ?? 0),
                 ],
                 'time_series' => array_map(fn ($row) => [
                     'date' => $row->date,

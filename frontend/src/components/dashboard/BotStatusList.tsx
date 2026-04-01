@@ -1,5 +1,6 @@
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { Plus, MessageSquare, MessagesSquare } from 'lucide-react';
+import { Plus, MessageSquare, MessagesSquare, ChevronDown, ChevronUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -17,11 +18,26 @@ const statusDot: Record<string, string> = {
   paused: 'bg-yellow-500',
 };
 
+function isActiveBot(bot: DashboardBotSummary): boolean {
+  return bot.messages_today > 0 || bot.active_conversations > 0 || bot.status === 'active';
+}
+
 export function BotStatusList({ bots }: BotStatusListProps) {
+  const [showInactive, setShowInactive] = useState(false);
+
+  const { activeBots, inactiveBots } = useMemo(() => {
+    const a: DashboardBotSummary[] = [];
+    const b: DashboardBotSummary[] = [];
+    for (const bot of bots) (isActiveBot(bot) ? a : b).push(bot);
+    return { activeBots: a, inactiveBots: b };
+  }, [bots]);
+
+  const visibleBots = showInactive ? [...activeBots, ...inactiveBots] : activeBots;
+
   return (
     <Card className="h-full">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">บอททั้งหมด ({bots.length})</CardTitle>
+        <CardTitle className="text-base">บอทที่ใช้งาน ({activeBots.length})</CardTitle>
       </CardHeader>
       <CardContent className="space-y-0">
         {bots.length === 0 ? (
@@ -36,7 +52,7 @@ export function BotStatusList({ bots }: BotStatusListProps) {
           </div>
         ) : (
           <>
-            {bots.map((bot, index) => (
+            {visibleBots.map((bot, index) => (
               <div key={bot.id}>
                 {index > 0 && <Separator className="my-2" />}
                 <Link
@@ -66,6 +82,23 @@ export function BotStatusList({ bots }: BotStatusListProps) {
                 </Link>
               </div>
             ))}
+
+            {inactiveBots.length > 0 && (
+              <>
+                <Separator className="my-2" />
+                <button
+                  onClick={() => setShowInactive(!showInactive)}
+                  className="flex items-center gap-1 w-full py-1 px-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showInactive ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                  และอีก {inactiveBots.length} บอทที่ไม่ใช้งาน
+                </button>
+              </>
+            )}
 
             <Separator className="my-2" />
             <div className="pt-1">
