@@ -63,7 +63,7 @@ class MessageService
             ]);
 
             // Update conversation stats atomically
-            $conversation->update(['last_message_at' => now()]);
+            $conversation->update(['last_message_at' => now(), 'last_message_id' => $message->id]);
             $conversation->increment('message_count');
 
             return $message;

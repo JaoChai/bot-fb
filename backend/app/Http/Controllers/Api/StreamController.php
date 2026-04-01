@@ -130,6 +130,10 @@ class StreamController extends Controller
         // Limit conversation history to prevent excessive token usage
         $maxHistory = (int) config('rag.max_conversation_history', 20);
         $conversationHistory = array_slice($conversationHistory, -$maxHistory);
+        $conversationHistory = $this->truncateHistoryByTokens(
+            $conversationHistory,
+            (int) config('rag.max_history_tokens', 4000)
+        );
 
         if (empty($message)) {
             return $this->errorResponse('Message is required', 400);
@@ -1132,5 +1136,35 @@ PROMPT;
             'Cache-Control' => 'no-cache',
             'Access-Control-Allow-Origin' => config('app.frontend_url', '*'),
         ]);
+    }
+
+    /**
+     * Truncate conversation history to fit within token budget.
+     * Keeps most recent messages, drops oldest first.
+     */
+    private function truncateHistoryByTokens(array $history, int $maxTokens): array
+    {
+        if (empty($history) || $maxTokens <= 0) {
+            return $history;
+        }
+
+        $totalTokens = 0;
+        $result = [];
+
+        // Walk backwards (most recent first)
+        for ($i = count($history) - 1; $i >= 0; $i--) {
+            $content = $history[$i]['content'] ?? '';
+            // Approximate: 1 token ≈ 4 chars for Thai/English mix
+            $estimatedTokens = (int) ceil(mb_strlen($content) / 4);
+
+            if ($totalTokens + $estimatedTokens > $maxTokens && ! empty($result)) {
+                break;
+            }
+
+            $totalTokens += $estimatedTokens;
+            array_unshift($result, $history[$i]);
+        }
+
+        return $result;
     }
 }
