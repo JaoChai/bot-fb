@@ -57,7 +57,7 @@ const clearAuthCache = (): void => {
 /**
  * Create and configure Laravel Echo instance for Reverb WebSocket
  */
-export const createEcho = (): Echo<'reverb'> => {
+const createEcho = (): Echo<'reverb'> => {
   const baseUrl = getBaseUrl();
 
   const echo = new Echo({

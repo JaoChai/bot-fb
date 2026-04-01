@@ -27,10 +27,6 @@ export interface QuickReplyListParams {
   search?: string;
 }
 
-export interface QuickReplySearchParams {
-  q: string;
-}
-
 export interface ReorderQuickRepliesInput {
   ids: number[];
 }

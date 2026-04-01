@@ -205,17 +205,6 @@ export interface BotSettings {
   updated_at: string;
 }
 
-// Admin Bot Assignment Types
-export interface AdminBotAssignment {
-  id: number;
-  user_id: number;
-  bot_id: number;
-  assigned_by: number | null;
-  user?: User;
-  assigned_at: string;
-  created_at: string;
-}
-
 // Knowledge Base Types
 export interface KnowledgeBase {
   id: number;
@@ -511,11 +500,6 @@ export interface UserSettings {
 export interface UpdateOpenRouterSettings {
   api_key?: string;
   model: string;
-}
-
-export interface UpdateLineSettings {
-  channel_secret?: string;
-  channel_access_token?: string;
 }
 
 export interface TestConnectionResponse {
