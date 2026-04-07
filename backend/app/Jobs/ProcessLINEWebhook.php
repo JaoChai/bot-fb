@@ -864,10 +864,8 @@ class ProcessLINEWebhook implements ShouldQueue
                 'current_time' => $responseHoursResult['current_time'] ?? null,
             ]);
 
-            // Send offline message for non-sticker messages (stickers stay silent)
-            if ($messageType !== 'sticker') {
-                $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken, $userId);
-            }
+            // Send offline message for all non-text message types (including stickers)
+            $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken, $userId);
 
             return; // Skip AI response
         }
