@@ -2,4 +2,4 @@
 # All services watch their own directory + shared config changes
 
 [build]
-watchPatterns = ["/backend/**", "/frontend/**"]
+watchPatterns = ["/backend/**"]
