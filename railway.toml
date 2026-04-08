@@ -1,5 +1,0 @@
-# Railway configuration for monorepo
-# All services watch their own directory + shared config changes
-
-[build]
-watchPatterns = ["/backend/**", "/frontend/**"]
