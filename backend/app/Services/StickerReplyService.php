@@ -99,24 +99,35 @@ class StickerReplyService
     }
 
     /**
-     * Get the vision-capable model to use.
+     * Get the vision-capable model from bot connection settings.
      *
-     * Priority:
-     * 1. Bot's primary_chat_model (from Connection Settings UI)
-     * 2. Bot's fallback_chat_model (fallback model)
-     *
-     * @param  Bot  $bot  The bot instance
-     * @return string|null The model ID or null if not configured
+     * Checks supportsVision() for each model in priority order:
+     * 1. primary_chat_model
+     * 2. fallback_chat_model
+     * 3. decision_model
+     * 4. fallback_decision_model
      */
     protected function getVisionModel(Bot $bot): ?string
     {
-        if ($bot->primary_chat_model) {
-            return $bot->primary_chat_model;
+        $capabilityService = app(ModelCapabilityService::class);
+
+        $candidates = [
+            $bot->primary_chat_model,
+            $bot->fallback_chat_model,
+            $bot->decision_model,
+            $bot->fallback_decision_model,
+        ];
+
+        foreach ($candidates as $model) {
+            if ($model && $capabilityService->supportsVision($model)) {
+                return $model;
+            }
         }
 
-        if ($bot->fallback_chat_model) {
-            return $bot->fallback_chat_model;
-        }
+        Log::warning('No vision-capable model found for sticker reply', [
+            'bot_id' => $bot->id,
+            'models_checked' => array_values(array_filter($candidates)),
+        ]);
 
         return null;
     }
