@@ -174,21 +174,25 @@ class ProcessAggregatedMessages implements ShouldQueue
         // === API calls OUTSIDE transaction (no DB lock held) ===
         // AI generate (~2-3s) + LINE push (~200ms) no longer block concurrent requests
         if ($shouldGenerate) {
-            // Safety check: skip if bot already responded after these messages
+            // Safety check: skip if bot already responded after the LATEST message in this group
+            // Uses max() to prevent false-positive skips when old "fallback" messages
+            // contaminate the group (they joined because the AI lock was held)
             if (! empty($cachedMessageIds)) {
-                $earliestMessageId = min($cachedMessageIds);
-                $earliestMessage = \App\Models\Message::find($earliestMessageId);
+                $latestMessageId = max($cachedMessageIds);
+                $latestMessage = \App\Models\Message::find($latestMessageId);
 
-                if ($earliestMessage) {
+                if ($latestMessage) {
                     $alreadyResponded = \App\Models\Message::where('conversation_id', $conversationId)
                         ->where('sender', 'bot')
-                        ->where('created_at', '>=', $earliestMessage->created_at)
+                        ->where('created_at', '>=', $latestMessage->created_at)
                         ->exists();
 
                     if ($alreadyResponded) {
-                        Log::info('Safety net: bot already responded, skipping aggregation response', [
+                        Log::info('Safety net: bot already responded after latest message, skipping aggregation response', [
                             'conversation_id' => $conversationId,
                             'group_id' => $this->groupId,
+                            'latest_message_id' => $latestMessageId,
+                            'skipped_message_ids' => $cachedMessageIds,
                         ]);
                         $aggregationService->clearAggregation($conversationId);
 
