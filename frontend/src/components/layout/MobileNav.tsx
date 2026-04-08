@@ -15,6 +15,7 @@ import {
   LogOut,
   Sun,
   Moon,
+  ShoppingCart,
 } from 'lucide-react';
 
 interface MobileNavProps {
@@ -26,6 +27,11 @@ const mainNavItems = [
     title: 'แดชบอร์ด',
     href: '/dashboard',
     icon: LayoutDashboard,
+  },
+  {
+    title: 'ออเดอร์',
+    href: '/orders',
+    icon: ShoppingCart,
   },
   {
     title: 'การเชื่อมต่อ',

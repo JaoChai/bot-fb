@@ -26,6 +26,7 @@ import {
   Moon,
   Users,
   Zap,
+  ShoppingCart,
 } from 'lucide-react';
 
 const mainNavItems = [
@@ -33,6 +34,11 @@ const mainNavItems = [
     title: 'แดชบอร์ด',
     href: '/dashboard',
     icon: LayoutDashboard,
+  },
+  {
+    title: 'ออเดอร์',
+    href: '/orders',
+    icon: ShoppingCart,
   },
   {
     title: 'การเชื่อมต่อ',

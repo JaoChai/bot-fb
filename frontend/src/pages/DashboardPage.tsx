@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { ShoppingCart, DollarSign, MessageSquare, Banknote } from 'lucide-react';
 import { formatTHB, formatBaht } from '@/lib/currency';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { OrdersAnalytics } from '@/components/analytics/OrdersAnalytics';
 import { useDashboardSummary } from '@/hooks/useDashboard';
 import { useCostAnalytics } from '@/hooks/useCostAnalytics';
 import { useOrderSummary, useOrdersByProduct } from '@/hooks/useOrders';
@@ -12,12 +11,12 @@ import {
   RecentActivityTimeline,
   DashboardSkeleton,
   BotStatusList,
-  RevenueChart,
-  TopProductsList,
-  CategoryPieChart,
-  CostSummaryCollapsible,
-  CollapsibleCard,
-  StockManagementCard,
+  BusinessHealthBar,
+  DualAxisChart,
+  CompactCostBreakdown,
+  CompactStockToggle,
+  RecentOrdersPreview,
+  ProductsSummaryCard,
 } from '@/components/dashboard';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -45,8 +44,6 @@ export function DashboardPage() {
   const { data: costData } = useCostAnalytics({ group_by: 'day' });
   const { data: orderData } = useOrderSummary();
   const { data: productsData } = useOrdersByProduct({});
-
-  const [activityExpanded, setActivityExpanded] = useState(false);
 
   const today = useMemo(
     () =>
@@ -88,18 +85,19 @@ export function DashboardPage() {
   }
 
   const activities = data?.recent_activity ?? [];
-  const displayActivities = activityExpanded ? activities : activities.slice(0, 5);
-
   const revTrend = calcTrend(orderData?.summary?.today_revenue ?? 0, orderData?.summary?.yesterday_revenue ?? 0);
   const msgTrend = calcTrend(data?.summary.messages_today ?? 0, data?.summary.messages_yesterday ?? 0);
 
   return (
     <div className="space-y-6">
-      {/* Section 0: Header */}
+      {/* Header */}
       <DashboardHeader today={today} />
 
-      {/* Section 1: Stock Management (Owner only) */}
-      {user?.role === 'owner' && <StockManagementCard />}
+      {/* Section 1: Business Health Bar */}
+      <BusinessHealthBar
+        bots={data?.bots ?? []}
+        alerts={data?.alerts ?? { handover_conversations: [] }}
+      />
 
       {/* Section 2: Key Metrics (4 cards) */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
@@ -132,49 +130,35 @@ export function DashboardPage() {
         />
       </div>
 
-      {/* Section 3: Revenue Chart (2/3) + Bot Status (1/3) */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <RevenueChart
-            timeSeries={orderData?.time_series ?? []}
-            vipCustomers={data?.summary.vip_customers}
-            vipTotalSpent={data?.summary.vip_total_spent}
-          />
-        </div>
-        <div className="lg:col-span-1">
-          <BotStatusList bots={data?.bots ?? []} />
+      {/* Section 3: Dual Axis Chart (Revenue + Cost) */}
+      <DualAxisChart
+        orderTimeSeries={orderData?.time_series ?? []}
+        costTimeSeries={costData?.time_series ?? []}
+        vipCustomers={data?.summary.vip_customers}
+        vipTotalSpent={data?.summary.vip_total_spent}
+      />
+
+      {/* Section 4: Bots + Products (2 columns) */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <BotStatusList bots={data?.bots ?? []} />
+        {productsData && productsData.length > 0 && (
+          <ProductsSummaryCard products={productsData} />
+        )}
+      </div>
+
+      {/* Section 5: Cost Breakdown + Stock/Activity (2 columns) */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {costData?.summary && (
+          <CompactCostBreakdown summary={costData.summary} />
+        )}
+        <div className="space-y-4">
+          {user?.role === 'owner' && <CompactStockToggle />}
+          <RecentActivityTimeline activities={activities.slice(0, 3)} />
         </div>
       </div>
 
-      {/* Section 4: Sales + Products (2 col) */}
-      {productsData && productsData.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <TopProductsList products={productsData} />
-          <CategoryPieChart products={productsData} />
-        </div>
-      )}
-
-      {/* Section 5: Cost Breakdown (collapsible) */}
-      <CostSummaryCollapsible monthCost={costData?.summary.month_cost} />
-
-      {/* Section 6: Orders Detail (collapsible) */}
-      <CollapsibleCard icon={ShoppingCart} title="รายละเอียดยอดขาย">
-        <OrdersAnalytics />
-      </CollapsibleCard>
-
-      {/* Section 7: Recent Activity */}
-      <RecentActivityTimeline activities={displayActivities} />
-      {activities.length > 5 && (
-        <div className="flex justify-center -mt-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setActivityExpanded(!activityExpanded)}
-          >
-            {activityExpanded ? 'ย่อ' : `ดูทั้งหมด (${activities.length})`}
-          </Button>
-        </div>
-      )}
+      {/* Section 6: Recent Orders Preview */}
+      <RecentOrdersPreview />
     </div>
   );
 }
