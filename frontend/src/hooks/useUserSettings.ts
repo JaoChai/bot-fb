@@ -14,18 +14,6 @@ export function useUserSettings() {
   });
 }
 
-// Simplified convenience hook for user settings
-export function useUserSettingsOperations() {
-  const settings = useUserSettings();
-
-  return {
-    settings: settings.data,
-    isLoading: settings.isLoading,
-    error: settings.error,
-    refetch: settings.refetch,
-  };
-}
-
 // Update OpenRouter API key and model
 export function useUpdateOpenRouterSettings() {
   const queryClient = useQueryClient();

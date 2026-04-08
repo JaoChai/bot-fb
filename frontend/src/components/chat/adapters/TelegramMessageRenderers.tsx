@@ -18,8 +18,7 @@ import type { Message } from '@/types/api';
 // Telegram brand color
 export const TELEGRAM_BLUE = '#0088CC';
 
-/** Format file size to human readable string */
-export function formatFileSize(bytes: number): string {
+function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];

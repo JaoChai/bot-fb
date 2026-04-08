@@ -114,10 +114,3 @@ export function useChatInputState(
     };
   }, [conversation, isTelegram, isLINE]);
 }
-
-/**
- * Type guard to check if state allows sending
- */
-export function canSend(state: InputState): boolean {
-  return state.canSendMessage;
-}

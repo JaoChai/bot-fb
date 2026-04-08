@@ -271,37 +271,3 @@ export function useSemanticSearch(kbId: number) {
     },
   });
 }
-
-// Convenience hook combining all KB operations
-export function useKnowledgeBaseOperations(kbId: number | null) {
-  const knowledgeBase = useKnowledgeBase(kbId);
-  const documents = useDocuments(kbId);
-  const createMutation = useCreateDocument(kbId);
-  const deleteMutation = useDeleteDocument(kbId);
-
-  return {
-    // Data
-    knowledgeBase: knowledgeBase.data,
-    documents: documents.data?.data ?? [],
-
-    // Loading states
-    isLoading: knowledgeBase.isLoading || documents.isLoading,
-    isSubmitting: createMutation.isPending,
-    isDeleting: deleteMutation.isPending,
-
-    // Errors
-    error: knowledgeBase.error || documents.error,
-    createError: createMutation.error,
-    deleteError: deleteMutation.error,
-
-    // Actions
-    createDocument: kbId ? createMutation.mutateAsync : undefined,
-    deleteDocument: kbId ? deleteMutation.mutateAsync : undefined,
-
-    // Refetch
-    refetch: () => {
-      knowledgeBase.refetch();
-      documents.refetch();
-    },
-  };
-}

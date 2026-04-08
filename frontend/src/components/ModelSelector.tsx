@@ -8,7 +8,7 @@ interface ModelSelectorProps {
   placeholder?: string;
 }
 
-export function ModelSelector({ label, value, onChange, placeholder }: ModelSelectorProps) {
+function ModelSelector({ label, value, onChange, placeholder }: ModelSelectorProps) {
   return (
     <div className="space-y-2">
       <Label className="text-sm text-muted-foreground">{label}</Label>

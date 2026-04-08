@@ -109,36 +109,3 @@ export function useToggleBotStatus() {
     },
   });
 }
-
-// Convenience hook combining all connection operations
-export function useConnectionOperations(botId: number | null) {
-  const connection = useConnection(botId);
-  const createMutation = useCreateConnection();
-  const updateMutation = useUpdateConnection(botId);
-  const deleteMutation = useDeleteConnection();
-
-  return {
-    // Data
-    connection: connection.data,
-
-    // Loading states
-    isLoading: connection.isLoading,
-    isCreating: createMutation.isPending,
-    isUpdating: updateMutation.isPending,
-    isDeleting: deleteMutation.isPending,
-
-    // Errors
-    error: connection.error,
-    createError: createMutation.error,
-    updateError: updateMutation.error,
-    deleteError: deleteMutation.error,
-
-    // Actions
-    createConnection: createMutation.mutateAsync,
-    updateConnection: botId ? updateMutation.mutateAsync : undefined,
-    deleteConnection: deleteMutation.mutateAsync,
-
-    // Refetch
-    refetch: connection.refetch,
-  };
-}
