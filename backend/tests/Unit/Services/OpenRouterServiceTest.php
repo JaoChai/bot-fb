@@ -306,4 +306,111 @@ class OpenRouterServiceTest extends TestCase
 
         $this->assertNull($model);
     }
+
+    // -------------------------------------------------------------------------
+    // buildVisionMessages Tests
+    // -------------------------------------------------------------------------
+
+    public function test_build_vision_messages_attaches_images_only_to_last_user_message(): void
+    {
+        $method = new \ReflectionMethod(OpenRouterService::class, 'buildVisionMessages');
+
+        $messages = [
+            ['role' => 'system', 'content' => 'You are helpful.'],
+            ['role' => 'user', 'content' => 'Hello'],
+            ['role' => 'assistant', 'content' => 'Hi there!'],
+            ['role' => 'user', 'content' => 'Look at this image'],
+        ];
+        $imageUrls = ['https://example.com/image.jpg'];
+
+        $result = $method->invoke($this->service, $messages, $imageUrls);
+
+        // System message unchanged
+        $this->assertEquals('system', $result[0]['role']);
+        $this->assertEquals('You are helpful.', $result[0]['content']);
+
+        // First user message unchanged (plain string)
+        $this->assertEquals('user', $result[1]['role']);
+        $this->assertIsString($result[1]['content']);
+        $this->assertEquals('Hello', $result[1]['content']);
+
+        // Assistant message unchanged
+        $this->assertEquals('assistant', $result[2]['role']);
+        $this->assertEquals('Hi there!', $result[2]['content']);
+
+        // Last user message is multimodal with image
+        $this->assertEquals('user', $result[3]['role']);
+        $this->assertIsArray($result[3]['content']);
+        $this->assertCount(2, $result[3]['content']);
+        $this->assertEquals('text', $result[3]['content'][0]['type']);
+        $this->assertEquals('Look at this image', $result[3]['content'][0]['text']);
+        $this->assertEquals('image_url', $result[3]['content'][1]['type']);
+        $this->assertEquals('https://example.com/image.jpg', $result[3]['content'][1]['image_url']['url']);
+    }
+
+    public function test_build_vision_messages_returns_unchanged_when_no_images(): void
+    {
+        $method = new \ReflectionMethod(OpenRouterService::class, 'buildVisionMessages');
+
+        $messages = [
+            ['role' => 'system', 'content' => 'You are helpful.'],
+            ['role' => 'user', 'content' => 'Hello'],
+        ];
+
+        $result = $method->invoke($this->service, $messages, []);
+
+        $this->assertEquals($messages, $result);
+    }
+
+    public function test_build_vision_messages_works_with_single_user_message(): void
+    {
+        $method = new \ReflectionMethod(OpenRouterService::class, 'buildVisionMessages');
+
+        $messages = [
+            ['role' => 'user', 'content' => 'Analyze this'],
+        ];
+        $imageUrls = ['https://example.com/photo.png'];
+
+        $result = $method->invoke($this->service, $messages, $imageUrls);
+
+        $this->assertIsArray($result[0]['content']);
+        $this->assertEquals('text', $result[0]['content'][0]['type']);
+        $this->assertEquals('image_url', $result[0]['content'][1]['type']);
+    }
+
+    public function test_build_vision_messages_handles_multiple_images(): void
+    {
+        $method = new \ReflectionMethod(OpenRouterService::class, 'buildVisionMessages');
+
+        $messages = [
+            ['role' => 'user', 'content' => 'Compare these'],
+        ];
+        $imageUrls = ['https://example.com/a.jpg', 'https://example.com/b.jpg'];
+
+        $result = $method->invoke($this->service, $messages, $imageUrls);
+
+        // text + 2 images = 3 content items
+        $this->assertCount(3, $result[0]['content']);
+        $this->assertEquals('text', $result[0]['content'][0]['type']);
+        $this->assertEquals('image_url', $result[0]['content'][1]['type']);
+        $this->assertEquals('image_url', $result[0]['content'][2]['type']);
+        $this->assertEquals('https://example.com/a.jpg', $result[0]['content'][1]['image_url']['url']);
+        $this->assertEquals('https://example.com/b.jpg', $result[0]['content'][2]['image_url']['url']);
+    }
+
+    public function test_build_vision_messages_returns_unchanged_when_no_user_messages(): void
+    {
+        $method = new \ReflectionMethod(OpenRouterService::class, 'buildVisionMessages');
+
+        $messages = [
+            ['role' => 'system', 'content' => 'You are helpful.'],
+            ['role' => 'assistant', 'content' => 'Hello!'],
+        ];
+        $imageUrls = ['https://example.com/image.jpg'];
+
+        $result = $method->invoke($this->service, $messages, $imageUrls);
+
+        // No user messages to attach images to, return unchanged
+        $this->assertEquals($messages, $result);
+    }
 }
