@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { buildFilterParams } from '@/lib/params';
 import { useAuthStore } from '@/stores/authStore';
@@ -26,10 +26,6 @@ interface CustomerBreakdownResponse {
 
 interface ProductBreakdownResponse {
   data: ProductOrderBreakdown[];
-}
-
-interface OrderResponse {
-  data: Order;
 }
 
 /**
@@ -147,22 +143,5 @@ export function useOrdersByProduct(filters: OrderFilters = {}, options?: { enabl
     },
     staleTime: 5 * 60 * 1000,
     enabled: !!user && options?.enabled !== false,
-  });
-}
-
-/**
- * Hook to update an order (status, notes, etc.)
- */
-export function useUpdateOrder() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<Order> }) => {
-      const response = await api.put<OrderResponse>(`/orders/${id}`, data);
-      return response.data.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['orders'] });
-    },
   });
 }

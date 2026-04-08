@@ -53,18 +53,6 @@ export function useQuickReplySearch(query: string, enabled = true) {
   });
 }
 
-// Fetch a specific quick reply
-export function useQuickReply(id: number | null) {
-  return useQuery({
-    queryKey: queryKeys.quickReplies.detail(id ?? 0),
-    queryFn: async () => {
-      const response = await apiGet<ApiResponse<QuickReply>>(`/quick-replies/${id}`);
-      return response.data;
-    },
-    enabled: !!id,
-  });
-}
-
 // Create quick reply mutation
 export function useCreateQuickReply() {
   return useMutationWithToast({
@@ -166,28 +154,4 @@ export function useReorderQuickReplies() {
     successMessage: 'จัดเรียงลำดับสำเร็จ',
     invalidateKeys: [queryKeys.quickReplies.all],
   });
-}
-
-// Convenience hook combining all Quick Reply operations
-export function useQuickReplyOperations() {
-  const quickReplies = useActiveQuickReplies();
-  const createMutation = useCreateQuickReply();
-  const deleteMutation = useDeleteQuickReply();
-  const toggleMutation = useToggleQuickReply();
-  const reorderMutation = useReorderQuickReplies();
-
-  return {
-    quickReplies: quickReplies.data ?? [],
-    isLoading: quickReplies.isLoading,
-    isCreating: createMutation.isPending,
-    isDeleting: deleteMutation.isPending,
-    isToggling: toggleMutation.isPending,
-    isReordering: reorderMutation.isPending,
-    error: quickReplies.error,
-    createQuickReply: createMutation.mutateAsync,
-    deleteQuickReply: deleteMutation.mutateAsync,
-    toggleQuickReply: toggleMutation.mutateAsync,
-    reorderQuickReplies: reorderMutation.mutateAsync,
-    refetch: quickReplies.refetch,
-  };
 }

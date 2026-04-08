@@ -155,20 +155,3 @@ export function useMutationWithToast<TData = unknown, TError = Error, TVariables
     },
   });
 }
-
-/**
- * Simplified version for mutations that only need basic toast behavior
- */
-export function useSimpleMutation<TData = unknown, TVariables = void>(
-  mutationFn: (variables: TVariables) => Promise<TData>,
-  options?: {
-    successMessage?: string;
-    errorMessage?: string;
-    invalidateKeys?: readonly (readonly unknown[])[];
-  }
-) {
-  return useMutationWithToast({
-    mutationFn,
-    ...options,
-  });
-}
