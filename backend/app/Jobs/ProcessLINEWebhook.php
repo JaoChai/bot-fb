@@ -16,6 +16,7 @@ use App\Services\CircuitBreakerService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
 use App\Services\MessageAggregationService;
+use App\Services\ModelCapabilityService;
 use App\Services\MultipleBubblesService;
 use App\Services\OpenRouterService;
 use App\Services\ProfilePictureService;
@@ -871,15 +872,6 @@ class ProcessLINEWebhook implements ShouldQueue
         }
 
         // Handle image analysis with AI Vision
-        // DEBUG: Log all conditions for image analysis (use error_log for Railway visibility)
-        if ($messageType === 'image') {
-            error_log('IMAGE DEBUG: Checking conditions - bot_id='.$this->bot->id.
-                ', conversation='.($conversation ? $conversation->id : 'NULL').
-                ', mediaUrl='.($mediaUrl ? 'SET' : 'NULL').
-                ', replyToken='.($replyToken ? 'SET' : 'NULL').
-                ', will_process='.(($mediaUrl && $conversation && $replyToken) ? 'YES' : 'NO'));
-        }
-
         if ($messageType === 'image' && $mediaUrl && $conversation && $replyToken) {
             $this->handleImageAnalysis($lineService, $conversation, $userMessage, $mediaUrl, $userId, $replyToken, $conversationData ?? null);
 
@@ -993,33 +985,21 @@ class ProcessLINEWebhook implements ShouldQueue
         string $replyToken,
         ?array $conversationData
     ): void {
-        // DEBUG: Log entry to handleImageAnalysis (use error_log for Railway visibility)
-        error_log('IMAGE DEBUG: Entered handleImageAnalysis - bot_id='.$this->bot->id.', conversation='.$conversation->id);
-
         // Check if bot is active
         if ($this->bot->status !== 'active') {
-            error_log('IMAGE DEBUG: Bot inactive - bot_id='.$this->bot->id.', status='.$this->bot->status);
-
             return;
         }
 
         // Check if conversation is in handover mode
         if ($conversation->is_handover) {
-            error_log('IMAGE DEBUG: Handover mode - bot_id='.$this->bot->id.', conversation='.$conversation->id);
-
             return;
         }
 
-        // Get the model from bot/flow settings
+        // Get vision-capable model from bot settings
         $openRouterService = app(OpenRouterService::class);
         $model = $this->getVisionModel();
 
-        // DEBUG: Log model selection
-        error_log('IMAGE DEBUG: Model selected - bot_id='.$this->bot->id.', model='.$model.', primary='.$this->bot->primary_chat_model);
-
         if (! $model) {
-            error_log('IMAGE DEBUG: No vision model configured for bot='.$this->bot->id);
-
             return;
         }
 
@@ -1175,23 +1155,35 @@ class ProcessLINEWebhook implements ShouldQueue
     }
 
     /**
-     * Get the vision-capable model to use for image analysis.
+     * Get the vision-capable model from bot connection settings.
      *
-     * Priority:
-     * 1. Bot's primary_chat_model (from Connection Settings UI)
-     * 2. Bot's fallback_chat_model (fallback model)
+     * Checks supportsVision() for each model in priority order:
+     * 1. primary_chat_model
+     * 2. fallback_chat_model
+     * 3. decision_model
+     * 4. fallback_decision_model
      */
     protected function getVisionModel(): ?string
     {
-        if ($this->bot->primary_chat_model) {
-            return $this->bot->primary_chat_model;
+        $capabilityService = app(ModelCapabilityService::class);
+
+        $candidates = [
+            $this->bot->primary_chat_model,
+            $this->bot->fallback_chat_model,
+            $this->bot->decision_model,
+            $this->bot->fallback_decision_model,
+        ];
+
+        foreach ($candidates as $model) {
+            if ($model && $capabilityService->supportsVision($model)) {
+                return $model;
+            }
         }
 
-        if ($this->bot->fallback_chat_model) {
-            return $this->bot->fallback_chat_model;
-        }
-
-        Log::warning('No vision model configured', ['bot_id' => $this->bot->id]);
+        Log::warning('No vision-capable model found in bot settings', [
+            'bot_id' => $this->bot->id,
+            'models_checked' => array_values(array_filter($candidates)),
+        ]);
 
         return null;
     }

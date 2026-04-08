@@ -446,7 +446,7 @@ class OpenRouterService
     /**
      * Build multimodal messages with image URLs for vision models.
      *
-     * Converts standard messages to multimodal format when images are present.
+     * Attaches image URLs only to the last user message to avoid token waste.
      * Format follows OpenRouter/OpenAI vision API spec.
      *
      * @param  array  $messages  Original messages
@@ -459,17 +459,28 @@ class OpenRouterService
             return $messages;
         }
 
+        // Find index of last user message with string content
+        $lastUserIndex = null;
+        for ($i = count($messages) - 1; $i >= 0; $i--) {
+            if ($messages[$i]['role'] === 'user' && is_string($messages[$i]['content'])) {
+                $lastUserIndex = $i;
+                break;
+            }
+        }
+
+        if ($lastUserIndex === null) {
+            return $messages;
+        }
+
         $visionMessages = [];
 
-        foreach ($messages as $message) {
-            // Only convert user messages with text content to multimodal
-            if ($message['role'] === 'user' && is_string($message['content'])) {
-                // Build multimodal content array
+        foreach ($messages as $index => $message) {
+            if ($index === $lastUserIndex) {
+                // Convert only the last user message to multimodal format
                 $content = [
                     ['type' => 'text', 'text' => $message['content']],
                 ];
 
-                // Add all images to this message
                 foreach ($imageUrls as $imageUrl) {
                     $content[] = [
                         'type' => 'image_url',
@@ -482,7 +493,7 @@ class OpenRouterService
                     'content' => $content,
                 ];
             } else {
-                // Keep system and assistant messages as-is
+                // Keep all other messages as-is
                 $visionMessages[] = $message;
             }
         }
