@@ -38,28 +38,3 @@ export function useUpdateBotSettings(botId: number | null) {
     },
   });
 }
-
-// Convenience hook combining settings operations
-export function useBotSettingsOperations(botId: number | null) {
-  const settings = useBotSettings(botId);
-  const updateMutation = useUpdateBotSettings(botId);
-
-  return {
-    // Data
-    settings: settings.data,
-
-    // Loading states
-    isLoading: settings.isLoading,
-    isUpdating: updateMutation.isPending,
-
-    // Errors
-    error: settings.error,
-    updateError: updateMutation.error,
-
-    // Actions
-    updateSettings: botId ? updateMutation.mutateAsync : undefined,
-
-    // Refetch
-    refetch: settings.refetch,
-  };
-}
