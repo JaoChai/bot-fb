@@ -14,6 +14,7 @@ const RegisterPage = lazyWithRetryNamed(() => import("@/pages/auth/RegisterPage"
 
 // Lazy load main pages with retry support
 const DashboardPage = lazyWithRetryNamed(() => import("@/pages/DashboardPage"), "DashboardPage")
+const OrdersPage = lazyWithRetryNamed(() => import("@/pages/OrdersPage"), "OrdersPage")
 const BotsPage = lazyWithRetryNamed(() => import("@/pages/BotsPage"), "BotsPage")
 const BotSettingsPage = lazyWithRetryNamed(() => import("@/pages/BotSettingsPage"), "BotSettingsPage")
 
@@ -71,6 +72,10 @@ export const router = createBrowserRouter([
           {
             path: "dashboard",
             element: <LazyPage><DashboardPage /></LazyPage>,
+          },
+          {
+            path: "orders",
+            element: <LazyPage><OrdersPage /></LazyPage>,
           },
           {
             path: "bots",
