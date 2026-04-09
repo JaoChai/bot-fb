@@ -319,6 +319,83 @@ class ModelCapabilityServiceTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Pattern-Based Vision Heuristic Tests (for unknown models)
+    // -------------------------------------------------------------------------
+
+    public function test_heuristic_detects_vision_for_new_gpt_models(): void
+    {
+        config(['services.openrouter.api_key' => null]);
+
+        // These are NOT in config/llm-models.php
+        $this->assertTrue($this->service->supportsVision('openai/gpt-5.4'));
+        $this->assertTrue($this->service->supportsVision('openai/gpt-5.4-mini'));
+        $this->assertTrue($this->service->supportsVision('openai/gpt-4.2'));
+    }
+
+    public function test_heuristic_detects_vision_for_new_claude_models(): void
+    {
+        config(['services.openrouter.api_key' => null]);
+
+        $this->assertTrue($this->service->supportsVision('anthropic/claude-4-sonnet'));
+        $this->assertTrue($this->service->supportsVision('anthropic/claude-sonnet-5'));
+        $this->assertTrue($this->service->supportsVision('anthropic/claude-opus-5'));
+    }
+
+    public function test_heuristic_detects_vision_for_new_gemini_models(): void
+    {
+        config(['services.openrouter.api_key' => null]);
+
+        $this->assertTrue($this->service->supportsVision('google/gemini-4.0-flash'));
+        $this->assertTrue($this->service->supportsVision('google/gemini-ultra'));
+    }
+
+    public function test_heuristic_detects_vision_for_new_qwen_models(): void
+    {
+        config(['services.openrouter.api_key' => null]);
+
+        $this->assertTrue($this->service->supportsVision('qwen/qwen3.6-plus'));
+        $this->assertTrue($this->service->supportsVision('qwen/qwen3-vl-72b'));
+    }
+
+    public function test_heuristic_does_not_detect_vision_for_text_only_families(): void
+    {
+        config(['services.openrouter.api_key' => null]);
+
+        $this->assertFalse($this->service->supportsVision('deepseek/deepseek-v3'));
+        $this->assertFalse($this->service->supportsVision('mistralai/mistral-next'));
+        $this->assertFalse($this->service->supportsVision('meta-llama/llama-3.3-70b'));
+        $this->assertFalse($this->service->supportsVision('qwen/qwen-2.5-plus'));
+    }
+
+    public function test_heuristic_detects_vision_for_llama_4_plus(): void
+    {
+        config(['services.openrouter.api_key' => null]);
+
+        $this->assertTrue($this->service->supportsVision('meta-llama/llama-4-maverick'));
+        $this->assertFalse($this->service->supportsVision('meta-llama/llama-3.2-90b'));
+    }
+
+    public function test_unknown_model_returns_heuristic_source(): void
+    {
+        config(['services.openrouter.api_key' => null]);
+
+        $capabilities = $this->service->getCapabilities('openai/gpt-5.4');
+
+        $this->assertEquals('default+heuristic', $capabilities['source']);
+        $this->assertTrue($capabilities['supports_vision']);
+    }
+
+    public function test_truly_unknown_model_returns_default_source(): void
+    {
+        config(['services.openrouter.api_key' => null]);
+
+        $capabilities = $this->service->getCapabilities('unknown/text-only-model');
+
+        $this->assertEquals('default', $capabilities['source']);
+        $this->assertFalse($capabilities['supports_vision']);
+    }
+
+    // -------------------------------------------------------------------------
     // Case Insensitivity Tests
     // -------------------------------------------------------------------------
 
