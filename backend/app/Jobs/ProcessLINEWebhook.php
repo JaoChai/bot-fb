@@ -1174,10 +1174,24 @@ class ProcessLINEWebhook implements ShouldQueue
             $this->bot->fallback_decision_model,
         ];
 
+        // Level 1+2: Check supportsVision (API + config + heuristic)
         foreach ($candidates as $model) {
             if ($model && $capabilityService->supportsVision($model)) {
                 return $model;
             }
+        }
+
+        // Level 3: Last resort — use primary_chat_model directly
+        // Better to try and let OpenRouter error than fail silently
+        $primaryModel = $this->bot->primary_chat_model;
+        if ($primaryModel) {
+            Log::warning('Vision model detection failed, using primary model as last resort', [
+                'bot_id' => $this->bot->id,
+                'primary_model' => $primaryModel,
+                'models_checked' => array_values(array_filter($candidates)),
+            ]);
+
+            return $primaryModel;
         }
 
         Log::warning('No vision-capable model found in bot settings', [

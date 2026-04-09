@@ -570,17 +570,19 @@ class ModelCapabilityService
 
     /**
      * Return conservative default capabilities when no data available.
+     * Uses pattern-based heuristic for vision detection on unknown models.
      */
     protected function getDefaults(string $modelId): array
     {
         $parts = explode('/', $modelId);
+        $inferredVision = $this->inferVisionFromModelId($modelId);
 
         return [
             'model_id' => $modelId,
             'name' => $modelId,
             'provider' => $parts[0] ?? '',
             'description' => '',
-            'supports_vision' => false,
+            'supports_vision' => $inferredVision,
             'supports_reasoning' => false,
             'is_mandatory_reasoning' => false,
             'default_reasoning_effort' => null,
@@ -589,7 +591,35 @@ class ModelCapabilityService
             'max_output_tokens' => 4096,
             'pricing_prompt' => 0.0,
             'pricing_completion' => 0.0,
-            'source' => 'default',
+            'source' => $inferredVision ? 'default+heuristic' : 'default',
         ];
+    }
+
+    /**
+     * Infer vision support from model ID using known family patterns.
+     *
+     * Modern flagship models from major providers almost always support vision.
+     * This heuristic catches new model versions not yet in config or API.
+     */
+    protected function inferVisionFromModelId(string $modelId): bool
+    {
+        $visionPatterns = [
+            '/^openai\/gpt-[45]/i',                       // GPT-4.x, GPT-4o, GPT-5.x
+            '/^openai\/o[1-9]/i',                         // o1, o3, o4, etc.
+            '/^anthropic\/claude-[3-9]/i',                // Claude 3+
+            '/^anthropic\/claude-(sonnet|opus|haiku)/i',  // Claude named variants (4+)
+            '/^google\/gemini/i',                         // All Gemini
+            '/^qwen\/qwen[3-9]/i',                       // Qwen 3+ (not qwen-2.x)
+            '/^qwen\/qwen\d*[-.]?vl/i',                  // Qwen VL variants (qwen-vl, qwen2-vl, qwen2.5-vl)
+            '/^meta-llama\/llama-[4-9]/i',               // Llama 4+
+        ];
+
+        foreach ($visionPatterns as $pattern) {
+            if (preg_match($pattern, $modelId)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
