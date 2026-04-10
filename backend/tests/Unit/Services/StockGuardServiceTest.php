@@ -197,6 +197,84 @@ class StockGuardServiceTest extends TestCase
         $this->assertContains('Page', $result['blocked_products']);
     }
 
+    public function test_does_not_block_payment_instruction_with_product_as_line_item(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Page',
+            'slug' => 'page',
+            'aliases' => ['เพจ', 'fanpage'],
+        ]);
+
+        $response = "สรุปรายการที่พี่สั่งซื้อครับ:\n\n"
+            . "1. Nolimit Level Up+ Personal (1,000 x 2) = 2,000 บาท\n"
+            . "2. บริการเสริม Page = 199 บาท\n\n"
+            . "รวมยอดโอน: 2,199 บาท\n\n"
+            . "ธนาคารกสิกรไทย (KBANK)\n"
+            . "223-3-24880-3\n"
+            . "ชื่อบัญชี: หจก. มั่งมีทรัพย์ขายของออนไลน์";
+
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertEquals($response, $result['content']);
+    }
+
+    public function test_does_not_block_payment_with_zero_price_line_item(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Page',
+            'slug' => 'page',
+            'aliases' => ['เพจ', 'fanpage'],
+        ]);
+
+        $response = "สรุปรายการ:\n\n"
+            . "1. Nolimit Level Up+ Personal 2,000 บาท\n"
+            . "2. Page = 0 บาท\n\n"
+            . "รวมยอดโอน: 2,000 บาท\n\n"
+            . "223-3-24880-3";
+
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+    }
+
+    public function test_blocks_selling_out_of_stock_even_with_bank_account_if_not_line_item(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Page',
+            'slug' => 'page',
+            'aliases' => ['เพจ', 'fanpage'],
+        ]);
+
+        $response = "แนะนำ Page ราคา 599 บาท\n\n"
+            . "โอนมาที่:\n"
+            . "223-3-24880-3";
+
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+        $this->assertContains('Page', $result['blocked_products']);
+    }
+
+    public function test_does_not_block_payment_with_alias_as_line_item(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Page',
+            'slug' => 'page',
+            'aliases' => ['เพจ', 'fanpage'],
+        ]);
+
+        $response = "สรุปรายการ:\n\n"
+            . "1. Nolimit Level Up+ Personal 2,000 บาท\n"
+            . "- เพจ 199 บาท\n\n"
+            . "รวมยอดโอน: 2,199 บาท\n\n"
+            . "223-3-24880-3";
+
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+    }
+
     public function test_blocks_price_only_response_without_thai_currency(): void
     {
         ProductStock::factory()->outOfStock()->create([
