@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ProductStock;
+use App\Models\RagCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class ProductStockController extends Controller
 {
@@ -41,9 +43,22 @@ class ProductStockController extends Controller
             'in_stock' => 'required|boolean',
         ]);
 
-        $product->update($validated);
+        DB::transaction(function () use ($product, $validated) {
+            $product->update($validated);
 
-        // Invalidate stock cache so RAGService picks up changes
+            // Clear semantic cache entries atomically with the stock update
+            if ($product->wasChanged('in_stock')) {
+                $escapedName = '%'.addcslashes($product->name, '%_').'%';
+                $query = RagCache::where('query_text', 'ILIKE', $escapedName);
+                foreach ($product->aliases ?? [] as $alias) {
+                    $escapedAlias = '%'.addcslashes($alias, '%_').'%';
+                    $query->orWhere('query_text', 'ILIKE', $escapedAlias);
+                }
+                $query->delete();
+            }
+        });
+
+        // Invalidate stock cache after transaction commits
         Cache::forget(ProductStock::STOCK_CACHE_KEY);
 
         return response()->json(['data' => $product->fresh()]);

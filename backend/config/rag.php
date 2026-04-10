@@ -403,4 +403,17 @@ return [
         'max_tokens' => (int) env('SECOND_AI_MAX_TOKENS', 1000),
         'reasoning_effort' => env('SECOND_AI_REASONING_EFFORT', 'low'),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Stock Guard Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Post-generation guard that validates LLM responses against stock status.
+    | When enabled, blocks responses that attempt to sell out-of-stock products.
+    |
+    */
+    'stock_guard' => [
+        'enabled' => env('STOCK_GUARD_ENABLED', true),
+    ],
 ];

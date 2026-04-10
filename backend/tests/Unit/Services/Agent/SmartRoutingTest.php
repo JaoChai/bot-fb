@@ -24,6 +24,7 @@ class SmartRoutingTest extends TestCase
             $this->createMock(AgentSafetyService::class),
             $this->createMock(CostTrackingService::class),
             $this->createMock(MultipleBubblesService::class),
+            app(\App\Services\StockInjectionService::class),
         );
     }
 
