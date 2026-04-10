@@ -91,14 +91,25 @@ class StockGuardService
                     continue;
                 }
 
-                // If selling context detected, it's a violation even if refusal is nearby
-                // (prevents bypass: "BM หมดชั่วคราว แต่ Page ราคา 199 บาท" — Page is selling)
+                // Informational: response mentions price BUT also refuses the same product
+                // → allowed (e.g., "BM ราคา 1,100 บาท แต่หมดชั่วคราว")
+                // UNLESS there are active selling keywords (cart/order/recommendation)
+                if ($isSelling && $isRefused) {
+                    if ($this->isActivelySelling($response, $name)) {
+                        $violations[] = $product->name;
+                        break;
+                    }
+
+                    continue;
+                }
+
+                // Selling without refusal → violation
                 if ($isSelling) {
                     $violations[] = $product->name;
                     break;
                 }
 
-                // Only skip if refusal detected WITHOUT any selling context
+                // Refusal without selling → skip
                 if ($isRefused) {
                     continue;
                 }
@@ -166,6 +177,39 @@ class StockGuardService
         ];
 
         foreach ($sellingPatterns as $pattern) {
+            if (preg_match($pattern, $response)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if the response has ACTIVE selling intent (cart/order/recommendation),
+     * not just a price mention. Used when both selling and refusal contexts are detected
+     * to distinguish informational responses from actual selling attempts.
+     */
+    protected function isActivelySelling(string $response, string $productName): bool
+    {
+        $quotedName = preg_quote($productName, '/');
+
+        $activePatterns = [
+            // Cart/order keywords
+            '/(เพิ่ม|ลง).{0,20}(ตะกร้า|cart)/iu',
+            "/{$quotedName}.{0,40}(x\\d|จำนวน)/iu",
+            // Payment processing near product
+            "/(โอน|ชำระ|จ่าย|เลขบัญชี|QR|พร้อมเพย์).{0,60}{$quotedName}/iu",
+            "/{$quotedName}.{0,60}(โอน|ชำระ|จ่าย|เลขบัญชี|QR|พร้อมเพย์)/iu",
+            // Active recommendation/upsell
+            "/รับ.{0,10}{$quotedName}.{0,10}(ไหม|มั้ย|ด้วย)/iu",
+            "/{$quotedName}.{0,30}(ด้วยไหม|ดีไหม|สนใจไหม|เพิ่มไหม)/iu",
+            // Order summary
+            "/(สรุป|รวม|ยอด).{0,40}{$quotedName}/iu",
+            "/{$quotedName}.{0,40}(สรุป|รวม[:=])/iu",
+        ];
+
+        foreach ($activePatterns as $pattern) {
             if (preg_match($pattern, $response)) {
                 return true;
             }
