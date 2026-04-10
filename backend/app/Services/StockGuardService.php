@@ -196,11 +196,11 @@ class StockGuardService
 
         $lineItemPatterns = [
             // Numbered list: "2. บริการเสริม Page 199 บาท"
-            '/(?:^|\n)\s*\d+[\.\)]\s*(?:.*?)' . $quotedName . '/imu',
+            '/(?:^|\n)\s*\d+[\.\)]\s*(?:.*?)'.$quotedName.'/imu',
             // Bulleted list: "- Page 199 บาท"
-            '/(?:^|\n)\s*[-•]\s*(?:.*?)' . $quotedName . '/imu',
+            '/(?:^|\n)\s*[-•]\s*(?:.*?)'.$quotedName.'/imu',
             // Zero-price: "Page = 0 บาท"
-            '/' . $quotedName . '\s*[=:]\s*0\s*บาท/iu',
+            '/'.$quotedName.'\s*[=:]\s*0\s*บาท/iu',
         ];
 
         foreach ($lineItemPatterns as $pattern) {

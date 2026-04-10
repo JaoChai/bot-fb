@@ -206,12 +206,12 @@ class StockGuardServiceTest extends TestCase
         ]);
 
         $response = "สรุปรายการที่พี่สั่งซื้อครับ:\n\n"
-            . "1. Nolimit Level Up+ Personal (1,000 x 2) = 2,000 บาท\n"
-            . "2. บริการเสริม Page = 199 บาท\n\n"
-            . "รวมยอดโอน: 2,199 บาท\n\n"
-            . "ธนาคารกสิกรไทย (KBANK)\n"
-            . "223-3-24880-3\n"
-            . "ชื่อบัญชี: หจก. มั่งมีทรัพย์ขายของออนไลน์";
+            ."1. Nolimit Level Up+ Personal (1,000 x 2) = 2,000 บาท\n"
+            ."2. บริการเสริม Page = 199 บาท\n\n"
+            ."รวมยอดโอน: 2,199 บาท\n\n"
+            ."ธนาคารกสิกรไทย (KBANK)\n"
+            ."223-3-24880-3\n"
+            .'ชื่อบัญชี: หจก. มั่งมีทรัพย์ขายของออนไลน์';
 
         $result = $this->guard->validate($response);
 
@@ -228,10 +228,10 @@ class StockGuardServiceTest extends TestCase
         ]);
 
         $response = "สรุปรายการ:\n\n"
-            . "1. Nolimit Level Up+ Personal 2,000 บาท\n"
-            . "2. Page = 0 บาท\n\n"
-            . "รวมยอดโอน: 2,000 บาท\n\n"
-            . "223-3-24880-3";
+            ."1. Nolimit Level Up+ Personal 2,000 บาท\n"
+            ."2. Page = 0 บาท\n\n"
+            ."รวมยอดโอน: 2,000 บาท\n\n"
+            .'223-3-24880-3';
 
         $result = $this->guard->validate($response);
 
@@ -247,8 +247,8 @@ class StockGuardServiceTest extends TestCase
         ]);
 
         $response = "แนะนำ Page ราคา 599 บาท\n\n"
-            . "โอนมาที่:\n"
-            . "223-3-24880-3";
+            ."โอนมาที่:\n"
+            .'223-3-24880-3';
 
         $result = $this->guard->validate($response);
 
@@ -265,10 +265,10 @@ class StockGuardServiceTest extends TestCase
         ]);
 
         $response = "สรุปรายการ:\n\n"
-            . "1. Nolimit Level Up+ Personal 2,000 บาท\n"
-            . "- เพจ 199 บาท\n\n"
-            . "รวมยอดโอน: 2,199 บาท\n\n"
-            . "223-3-24880-3";
+            ."1. Nolimit Level Up+ Personal 2,000 บาท\n"
+            ."- เพจ 199 บาท\n\n"
+            ."รวมยอดโอน: 2,199 บาท\n\n"
+            .'223-3-24880-3';
 
         $result = $this->guard->validate($response);
 
