@@ -15,7 +15,8 @@ class AIService
     public function __construct(
         protected OpenRouterService $openRouter,
         protected RAGService $ragService,
-        protected SecondAIService $secondAIService
+        protected SecondAIService $secondAIService,
+        protected StockGuardService $stockGuard
     ) {}
 
     /**
@@ -57,6 +58,16 @@ class AIService
             $result['second_ai'] = [
                 'applied' => $secondAIResult['second_ai_applied'],
                 'metadata' => $secondAIResult['second_ai'] ?? [],
+            ];
+        }
+
+        // Stock Guard: hard-block selling out-of-stock products
+        $guardResult = $this->stockGuard->validate($result['content'], $userMessage);
+        if ($guardResult['blocked']) {
+            $result['content'] = $guardResult['content'];
+            $result['stock_guard'] = [
+                'blocked' => true,
+                'blocked_products' => $guardResult['blocked_products'],
             ];
         }
 

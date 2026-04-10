@@ -12,6 +12,7 @@ use App\Services\AgentSafetyService;
 use App\Services\CostTrackingService;
 use App\Services\MultipleBubblesService;
 use App\Services\OpenRouterService;
+use App\Services\StockInjectionService;
 use App\Services\ToolService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -54,6 +55,7 @@ class AgentLoopServiceTest extends TestCase
             $this->agentSafety,
             $this->costTracking,
             $this->multipleBubbles,
+            app(StockInjectionService::class),
         );
 
         $this->user = User::factory()->create();
@@ -283,6 +285,7 @@ class AgentLoopServiceTest extends TestCase
             $this->agentSafety,
             $this->costTracking,
             $this->multipleBubbles,
+            app(StockInjectionService::class),
         );
 
         $callbacks = $this->makeCallbacks();
@@ -313,6 +316,7 @@ class AgentLoopServiceTest extends TestCase
             $this->agentSafety,
             $this->costTracking,
             $this->multipleBubbles,
+            app(StockInjectionService::class),
         );
 
         $callbacks = $this->makeCallbacks();
@@ -370,6 +374,7 @@ class AgentLoopServiceTest extends TestCase
             $this->agentSafety,
             $this->costTracking,
             $this->multipleBubbles,
+            app(StockInjectionService::class),
         );
 
         $callbacks = $this->makeCallbacks();
@@ -439,6 +444,7 @@ class AgentLoopServiceTest extends TestCase
             $this->agentSafety,
             $this->costTracking,
             $this->multipleBubbles,
+            app(StockInjectionService::class),
         );
 
         $callbacks = $this->makeCallbacks();
@@ -503,6 +509,7 @@ class AgentLoopServiceTest extends TestCase
             $this->agentSafety,
             $this->costTracking,
             $this->multipleBubbles,
+            app(StockInjectionService::class),
         );
 
         $callbacks = $this->makeCallbacks();

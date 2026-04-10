@@ -9,6 +9,7 @@ use App\Services\AgentSafetyService;
 use App\Services\CostTrackingService;
 use App\Services\MultipleBubblesService;
 use App\Services\OpenRouterService;
+use App\Services\StockInjectionService;
 use App\Services\ToolService;
 use Illuminate\Support\Facades\Log;
 
@@ -27,6 +28,7 @@ class AgentLoopService
         protected AgentSafetyService $agentSafety,
         protected CostTrackingService $costTracking,
         protected MultipleBubblesService $multipleBubbles,
+        protected StockInjectionService $stockInjection,
     ) {}
 
     /**
@@ -446,7 +448,19 @@ class AgentLoopService
      */
     public function buildAgentSystemPrompt(Bot $bot, Flow $flow, string $kbContext = '', array $memoryNotes = []): string
     {
-        $basePrompt = $this->buildMemoryPrefix($memoryNotes)
+        $stocks = $this->stockInjection->getStockStatus();
+        $hasOutOfStock = $stocks->where('in_stock', false)->isNotEmpty();
+
+        $stockBlock = '';
+        if ($hasOutOfStock) {
+            $stockInjection = $this->stockInjection->buildStockInjection($stocks);
+            if (! empty($stockInjection)) {
+                $stockBlock = $stockInjection."\n---\n\n";
+            }
+        }
+
+        $basePrompt = $stockBlock
+            .$this->buildMemoryPrefix($memoryNotes)
             .($flow->system_prompt ?: $this->getDefaultSystemPrompt($bot));
         $enabledTools = $flow->enabled_tools ?? [];
 
@@ -499,6 +513,13 @@ class AgentLoopService
         // --- Multiple Bubbles Integration ---
         if ($this->multipleBubbles->isEnabled($bot)) {
             $prompt .= "\n".$this->multipleBubbles->buildPromptInstruction($bot);
+        }
+
+        if ($hasOutOfStock) {
+            $stockReminder = $this->stockInjection->buildStockReminder($stocks);
+            if (! empty($stockReminder)) {
+                $prompt .= "\n\n".$stockReminder;
+            }
         }
 
         return $prompt;
