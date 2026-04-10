@@ -66,6 +66,10 @@ class StockGuardService
     {
         $violations = [];
 
+        // Payment instructions (STEP 4) list products as order line items,
+        // not as selling recommendations. Skip guard for those.
+        $isPayment = $this->isPaymentInstruction($response);
+
         foreach ($outOfStock as $product) {
             $names = array_merge([$product->name], $product->aliases ?? []);
 
@@ -81,6 +85,11 @@ class StockGuardService
                 // Product name found — check both refusal and selling contexts
                 $isRefused = $this->isRefusingContext($response, $name);
                 $isSelling = $this->isSellingContext($response, $name);
+
+                // In payment instructions, product names as line items are not violations
+                if ($isSelling && $isPayment && $this->isOrderLineItem($response, $name)) {
+                    continue;
+                }
 
                 // If selling context detected, it's a violation even if refusal is nearby
                 // (prevents bypass: "BM หมดชั่วคราว แต่ Page ราคา 199 บาท" — Page is selling)
@@ -157,6 +166,44 @@ class StockGuardService
         ];
 
         foreach ($sellingPatterns as $pattern) {
+            if (preg_match($pattern, $response)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if the response is a payment instruction (STEP 4).
+     *
+     * Payment instructions contain bank account details and are finalizing
+     * an already-confirmed order — product names here are line items, not sales.
+     */
+    protected function isPaymentInstruction(string $response): bool
+    {
+        return mb_strpos($response, '223-3-24880-3') !== false
+            || mb_strpos($response, '2233248803') !== false;
+    }
+
+    /**
+     * Check if the product name appears as an order line item,
+     * not as a standalone selling recommendation.
+     */
+    protected function isOrderLineItem(string $response, string $productName): bool
+    {
+        $quotedName = preg_quote($productName, '/');
+
+        $lineItemPatterns = [
+            // Numbered list: "2. บริการเสริม Page 199 บาท"
+            '/(?:^|\n)\s*\d+[\.\)]\s*(?:.*?)'.$quotedName.'/imu',
+            // Bulleted list: "- Page 199 บาท"
+            '/(?:^|\n)\s*[-•]\s*(?:.*?)'.$quotedName.'/imu',
+            // Zero-price: "Page = 0 บาท"
+            '/'.$quotedName.'\s*[=:]\s*0\s*บาท/iu',
+        ];
+
+        foreach ($lineItemPatterns as $pattern) {
             if (preg_match($pattern, $response)) {
                 return true;
             }
