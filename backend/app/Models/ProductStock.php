@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class ProductStock extends Model
 {
+    use HasFactory;
+
     public const STOCK_CACHE_KEY = 'product_stocks:all';
 
     protected $fillable = [

@@ -5,8 +5,6 @@ namespace App\Services;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Flow;
-use App\Models\ProductStock;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -26,8 +24,6 @@ class RAGService
 {
     private const SIMPLE_MESSAGE_PATTERN = '/^(สวัสดี|หวัดดี|ดี(ครับ|ค่ะ)?|ขอบคุณ|ขอบใจ|บาย|ลาก่อน|ok|oke|โอเค|hi|hello|hey|thanks|thank you|bye|good\s?(morning|evening|night))$/iu';
 
-    private const PRODUCT_KEYWORD_PATTERN = '/สินค้า|ราคา|ซื้อ|สั่ง|order|price|product|หมด|stock|มี.*(ไหม|มั้ย)|เหลือ|พร้อมส่ง|จอง/iu';
-
     public function __construct(
         protected SemanticSearchService $semanticSearchService,
         protected HybridSearchService $hybridSearchService,
@@ -37,7 +33,8 @@ class RAGService
         protected ?QueryEnhancementService $queryEnhancement = null,
         protected ?SemanticCacheService $semanticCache = null,
         protected ?ToolService $toolService = null,
-        protected ?CRAGService $cragService = null
+        protected ?CRAGService $cragService = null,
+        protected StockInjectionService $stockInjectionService = new StockInjectionService
     ) {}
 
     /**
@@ -151,9 +148,7 @@ class RAGService
             $this->getSystemPromptForBot($bot),
             $kbContext,
             $bot,
-            $memoryNotes,
-            $userMessage,
-            $conversationHistory
+            $memoryNotes
         );
 
         // Step 7: Add Chain-of-Thought instruction if question is complex
@@ -393,14 +388,10 @@ class RAGService
         string $basePrompt,
         string $kbContext,
         ?Bot $bot = null,
-        array $memoryNotes = [],
-        string $userMessage = '',
-        array $conversationHistory = []
+        array $memoryNotes = []
     ): string {
         $prompt = '';
 
-        // Prepend memory notes BEFORE base prompt so LLM sees them first
-        // The system prompt itself handles VIP logic — memory just provides context
         if (! empty($memoryNotes)) {
             $prompt .= "## Memory:\n";
             foreach ($memoryNotes as $content) {
@@ -409,28 +400,23 @@ class RAGService
             $prompt .= "---\n\n";
         }
 
-        // Inject stock only when product-related or first message — skip unnecessary cache/DB lookup otherwise
-        $isProductRelated = $userMessage !== '' && preg_match(self::PRODUCT_KEYWORD_PATTERN, $userMessage);
-        $isFirstMessage = empty($conversationHistory);
+        // Always inject stock — conditional injection caused sales of out-of-stock products
+        $stocks = $this->stockInjectionService->getStockStatus();
+        $hasOutOfStock = $stocks->where('in_stock', false)->isNotEmpty();
 
-        if ($isProductRelated || $isFirstMessage) {
-            $stocks = $this->getStockStatus();
-            if ($stocks->where('in_stock', false)->isNotEmpty()) {
-                $stockInjection = $this->buildStockInjection($stocks);
-                if (! empty($stockInjection)) {
-                    $prompt .= $stockInjection."\n---\n\n";
-                }
+        if ($hasOutOfStock) {
+            $stockInjection = $this->stockInjectionService->buildStockInjection($stocks);
+            if (! empty($stockInjection)) {
+                $prompt .= $stockInjection."\n---\n\n";
             }
         }
 
         $prompt .= $basePrompt;
 
-        // Append KB context if available
         if (! empty($kbContext)) {
             $prompt .= "\n\n".$kbContext;
         }
 
-        // Append multiple bubbles instruction if enabled
         if ($bot) {
             $bubblesService = app(MultipleBubblesService::class);
             $instruction = $bubblesService->buildPromptInstruction($bot);
@@ -439,66 +425,15 @@ class RAGService
             }
         }
 
+        // Stock reminder at END of prompt — closest to user message = highest LLM attention
+        if ($hasOutOfStock) {
+            $stockReminder = $this->stockInjectionService->buildStockReminder($stocks);
+            if (! empty($stockReminder)) {
+                $prompt .= "\n\n".$stockReminder;
+            }
+        }
+
         return $prompt;
-    }
-
-    /**
-     * Get all product stocks from cache (5 min TTL).
-     */
-    protected function getStockStatus(): \Illuminate\Support\Collection
-    {
-        return Cache::remember(ProductStock::STOCK_CACHE_KEY, 300, function () {
-            return ProductStock::orderBy('display_order')->get();
-        });
-    }
-
-    /**
-     * Build stock injection block (placed before base prompt).
-     */
-    protected function buildStockInjection(\Illuminate\Support\Collection $stocks): string
-    {
-        if ($stocks->isEmpty()) {
-            return '';
-        }
-
-        $outOfStock = $stocks->where('in_stock', false);
-        $inStock = $stocks->where('in_stock', true);
-
-        $lines = ['⛔⛔⛔ STOCK STATUS (ข้อมูลล่าสุดจากระบบ — ยึดข้อมูลนี้เหนือทุกอย่าง):'];
-
-        if ($outOfStock->isNotEmpty()) {
-            $items = $outOfStock->map(function ($p) {
-                $aliases = implode(', ', $p->aliases ?? []);
-
-                return $aliases ? "{$p->name} (รวม: {$aliases})" : $p->name;
-            })->implode(', ');
-            $lines[] = "[สินค้าที่หมดชั่วคราว]: {$items}";
-        }
-
-        if ($inStock->isNotEmpty()) {
-            $items = $inStock->map(fn ($p) => $p->name)->implode(', ');
-            $lines[] = "[สินค้าที่มีพร้อมส่ง]: {$items}";
-        }
-
-        $lines[] = 'ห้ามขาย/แนะนำ/คำนวณราคาสินค้าที่หมด stock เด็ดขาด!';
-
-        return implode("\n", $lines);
-    }
-
-    /**
-     * Build short stock reminder (placed at end of prompt, closest to user message).
-     */
-    protected function buildStockReminder(\Illuminate\Support\Collection $stocks): string
-    {
-        $outOfStock = $stocks->where('in_stock', false);
-
-        if ($outOfStock->isEmpty()) {
-            return '';
-        }
-
-        $names = $outOfStock->map(fn ($p) => $p->name)->implode(', ');
-
-        return "⛔ STOCK REMINDER: สินค้าหมด stock → {$names} — ห้ามขาย/แนะนำเด็ดขาด! ดูข้อมูลจาก STOCK STATUS ด้านบน";
     }
 
     /**
@@ -508,22 +443,7 @@ class RAGService
      */
     public function injectStockStatus(string $prompt): string
     {
-        $stocks = $this->getStockStatus();
-
-        $result = '';
-        $stockInjection = $this->buildStockInjection($stocks);
-        if (! empty($stockInjection)) {
-            $result .= $stockInjection."\n---\n\n";
-        }
-
-        $result .= $prompt;
-
-        $stockReminder = $this->buildStockReminder($stocks);
-        if (! empty($stockReminder)) {
-            $result .= "\n\n".$stockReminder;
-        }
-
-        return $result;
+        return $this->stockInjectionService->injectStockStatus($prompt);
     }
 
     /**
@@ -868,7 +788,15 @@ PROMPT;
             return true;
         }
 
-        // 4. Keyword pattern match for standalone context-dependent terms — ~10-50μs
+        // 4. Message mentions a product name/alias — skip cache to ensure fresh stock check
+        $productTerms = $this->stockInjectionService->getProductNamesAndAliases();
+        foreach ($productTerms as $term) {
+            if (mb_strlen($term) >= 2 && mb_stripos($trimmed, $term) !== false) {
+                return true;
+            }
+        }
+
+        // 5. Keyword pattern match for standalone context-dependent terms — ~10-50μs
         $patterns = config('rag.semantic_cache.skip_patterns', []);
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $trimmed)) {

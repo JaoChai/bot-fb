@@ -1,0 +1,214 @@
+<?php
+
+namespace Tests\Unit\Services;
+
+use App\Models\ProductStock;
+use App\Services\StockGuardService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Tests\TestCase;
+
+class StockGuardServiceTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected StockGuardService $guard;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Cache::forget(ProductStock::STOCK_CACHE_KEY);
+        $this->guard = app(StockGuardService::class);
+    }
+
+    public function test_passes_through_when_no_out_of_stock_products(): void
+    {
+        ProductStock::factory()->create(['name' => 'Product A', 'slug' => 'a', 'in_stock' => true]);
+
+        $result = $this->guard->validate('Product A ราคา 1,100 บาท');
+
+        $this->assertFalse($result['blocked']);
+        $this->assertEquals('Product A ราคา 1,100 บาท', $result['content']);
+    }
+
+    public function test_passes_through_when_response_correctly_refuses_sale(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM'],
+        ]);
+
+        $response = 'ขออภัยครับ Nolimit Level Up+ BM หมดชั่วคราวครับ ไม่สามารถสั่งซื้อได้';
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertEquals($response, $result['content']);
+    }
+
+    public function test_blocks_response_with_price_for_out_of_stock_product(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM'],
+        ]);
+
+        $response = 'เพิ่ม Nolimit Level Up+ BM ลงตะกร้าแล้วครับ รวม 1,100 บาท';
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+        $this->assertContains('Nolimit Level Up+ BM', $result['blocked_products']);
+        $this->assertStringContainsString('หมด stock', $result['content']);
+    }
+
+    public function test_blocks_response_recommending_out_of_stock_product(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Page',
+            'slug' => 'page',
+            'aliases' => ['เพจ'],
+        ]);
+
+        $response = 'รับเพจเพิ่มด้วยไหมครับ ตัวละ 199 บาท';
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+        $this->assertContains('Page', $result['blocked_products']);
+    }
+
+    public function test_replacement_response_includes_available_products(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM'],
+        ]);
+        ProductStock::factory()->create([
+            'name' => 'Nolimit Level Up+ Personal',
+            'slug' => 'personal',
+            'in_stock' => true,
+        ]);
+
+        $response = 'Nolimit Level Up+ BM ราคา 1,100 บาทครับ';
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+        $this->assertStringContainsString('Nolimit Level Up+ Personal', $result['content']);
+    }
+
+    public function test_passes_when_config_disabled(): void
+    {
+        config(['rag.stock_guard.enabled' => false]);
+
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM'],
+        ]);
+
+        $response = 'Nolimit Level Up+ BM ราคา 1,100 บาท';
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+    }
+
+    public function test_detects_product_by_alias(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM', 'บีเอ็ม', 'พอร์ตโฟลิโอ'],
+        ]);
+
+        $response = 'พอร์ตโฟลิโอ ราคา 1,100 บาทครับ';
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+        $this->assertContains('Nolimit Level Up+ BM', $result['blocked_products']);
+    }
+
+    public function test_does_not_block_unrelated_response(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM'],
+        ]);
+
+        $response = 'สวัสดีครับ ยินดีให้บริการ มีอะไรให้ช่วยครับ?';
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+    }
+
+    public function test_handles_multiple_out_of_stock_violations(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM'],
+        ]);
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Page',
+            'slug' => 'page',
+            'aliases' => ['เพจ'],
+        ]);
+
+        $response = 'สรุปยอด: Nolimit Level Up+ BM x1 = 1,100 บาท, Page x1 = 199 บาท รวม 1,299 บาท';
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+        $this->assertCount(2, $result['blocked_products']);
+    }
+
+    public function test_short_alias_is_skipped_to_avoid_false_positive(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Test Product',
+            'slug' => 'test',
+            'aliases' => ['T'], // Single char alias
+        ]);
+
+        $response = 'The price is 500 บาท';
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+    }
+
+    public function test_blocks_selling_product_even_when_another_is_refused(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM'],
+        ]);
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Page',
+            'slug' => 'page',
+            'aliases' => ['เพจ'],
+        ]);
+
+        // Response refuses BM but sells Page — guard blocks the whole response (conservative)
+        $response = 'ขออภัยครับ Nolimit Level Up+ BM หมดชั่วคราว แต่ Page ราคา 199 บาท เพิ่มลงตะกร้าได้เลยครับ';
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+        $this->assertContains('Page', $result['blocked_products']);
+    }
+
+    public function test_blocks_price_only_response_without_thai_currency(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM'],
+        ]);
+
+        // Price with digits only (no บาท keyword) — tests the \d{3,} pattern
+        $response = 'Nolimit Level Up+ BM ราคา 1100';
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+    }
+}

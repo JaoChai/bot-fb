@@ -46,7 +46,9 @@ class RAGServiceTest extends TestCase
             $flowCache,
             null, // queryEnhancement
             null, // semanticCache
-            $toolService
+            $toolService,
+            null, // CRAGService
+            app(\App\Services\StockInjectionService::class)
         );
 
         $this->user = User::factory()->create();
