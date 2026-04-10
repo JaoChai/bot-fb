@@ -31,6 +31,7 @@ use App\Services\SecondAI\SecondAIService;
 use App\Services\SecondAI\UnifiedCheckService;
 use App\Services\SemanticCacheService;
 use App\Services\SemanticSearchService;
+use App\Services\StockInjectionService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Connection;
 use Illuminate\Http\Request;
@@ -71,7 +72,10 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(IntentAnalysisService::class),
                 $app->make(FlowCacheService::class),
                 $app->make(QueryEnhancementService::class),
-                $app->make(SemanticCacheService::class)
+                $app->make(SemanticCacheService::class),
+                null, // ToolService
+                null, // CRAGService
+                $app->make(StockInjectionService::class)
             );
         });
 
