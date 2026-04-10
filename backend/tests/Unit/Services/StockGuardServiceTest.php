@@ -197,6 +197,52 @@ class StockGuardServiceTest extends TestCase
         $this->assertContains('Page', $result['blocked_products']);
     }
 
+    public function test_allows_informational_price_with_refusal(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM', 'บีเอ็ม'],
+        ]);
+
+        // Customer asks about price — bot gives info + says out of stock
+        $response = 'Nolimit Level Up+ BM ราคา 1,100 บาทครับ แต่ตอนนี้หมดชั่วคราว ถ้ารอได้จะแจ้งเมื่อกลับมาครับ';
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertEquals($response, $result['content']);
+    }
+
+    public function test_blocks_active_selling_even_with_refusal(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM'],
+        ]);
+
+        // Bot says out of stock but also adds to cart — should block
+        $response = 'Nolimit Level Up+ BM หมดชั่วคราว แต่เพิ่มลงตะกร้าให้แล้วครับ ราคา 1,100 บาท';
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+    }
+
+    public function test_allows_feature_explanation_for_out_of_stock(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Page',
+            'slug' => 'page',
+            'aliases' => ['เพจ'],
+        ]);
+
+        // Bot answers price question + says out of stock (informational, no active selling)
+        $response = 'Page ราคา 199 บาทครับ แต่ตอนนี้ Page หมดสต็อกชั่วคราว ถ้ารอได้จะแจ้งนะครับ';
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+    }
+
     public function test_does_not_block_payment_instruction_with_product_as_line_item(): void
     {
         ProductStock::factory()->outOfStock()->create([

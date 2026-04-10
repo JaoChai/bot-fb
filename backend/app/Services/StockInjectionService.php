@@ -48,7 +48,7 @@ class StockInjectionService
             $lines[] = "[สินค้าที่มีพร้อมส่ง]: {$items}";
         }
 
-        $lines[] = 'ห้ามขาย/แนะนำ/คำนวณราคาสินค้าที่หมด stock เด็ดขาด!';
+        $lines[] = 'ห้ามขาย/เพิ่มตะกร้า/สร้างออเดอร์สินค้าที่หมด stock เด็ดขาด! (ตอบราคาและรายละเอียดได้ถ้าลูกค้าถาม แต่ต้องแจ้งว่าหมดชั่วคราว)';
 
         return implode("\n", $lines);
     }
@@ -63,7 +63,7 @@ class StockInjectionService
 
         $names = $outOfStock->map(fn ($p) => $p->name)->implode(', ');
 
-        return "⛔ STOCK REMINDER: สินค้าหมด stock → {$names} — ห้ามขาย/แนะนำเด็ดขาด! ดูข้อมูลจาก STOCK STATUS ด้านบน";
+        return "⛔ STOCK REMINDER: สินค้าหมด stock → {$names} — ห้ามขาย/เพิ่มตะกร้า/สร้างออเดอร์เด็ดขาด! ตอบราคา/รายละเอียดได้ถ้าลูกค้าถาม + ต้องแจ้งว่าหมดชั่วคราว";
     }
 
     /**
