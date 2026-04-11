@@ -62,7 +62,7 @@ class StockGuardServiceTest extends TestCase
         $this->assertStringContainsString('หมด stock', $result['content']);
     }
 
-    public function test_blocks_response_recommending_out_of_stock_product(): void
+    public function test_strips_upsell_for_out_of_stock_product(): void
     {
         ProductStock::factory()->outOfStock()->create([
             'name' => 'Page',
@@ -73,8 +73,8 @@ class StockGuardServiceTest extends TestCase
         $response = 'รับเพจเพิ่มด้วยไหมครับ ตัวละ 199 บาท';
         $result = $this->guard->validate($response);
 
-        $this->assertTrue($result['blocked']);
-        $this->assertContains('Page', $result['blocked_products']);
+        $this->assertFalse($result['blocked']);
+        $this->assertStringNotContainsString('เพจ', $result['content']);
     }
 
     public function test_replacement_response_includes_available_products(): void
@@ -334,5 +334,51 @@ class StockGuardServiceTest extends TestCase
         $result = $this->guard->validate($response);
 
         $this->assertTrue($result['blocked']);
+    }
+
+    public function test_strips_upsell_from_cart_response_keeping_main_product(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Page',
+            'slug' => 'page',
+            'aliases' => ['เพจ'],
+        ]);
+        ProductStock::factory()->create([
+            'name' => 'Nolimit Level Up+ Personal',
+            'slug' => 'personal',
+            'in_stock' => true,
+        ]);
+
+        $response = "เพิ่ม Nolimit Level Up+ Personal ลงตะกร้าแล้วครับ\n\n"
+            ."ตะกร้า:\n"
+            ."- Nolimit Level Up+ Personal x1 - 1,100 บาท\n"
+            ."รวม: 1,100 บาท\n\n"
+            ."📌 Limit เริ่มต้น 1,600 บาท\n\n"
+            ."รับ Page เพิ่มไหมครับ? ตัวละ 199 บาท\n\n"
+            ."ถ้าไม่รับพิมพ์ 'พอแล้ว' มาได้เลยครับ";
+
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertStringContainsString('Nolimit Level Up+ Personal', $result['content']);
+        $this->assertStringContainsString('1,100 บาท', $result['content']);
+        $this->assertStringNotContainsString('รับ Page เพิ่ม', $result['content']);
+        $this->assertStringNotContainsString('พอแล้ว', $result['content']);
+    }
+
+    public function test_still_blocks_direct_selling_of_out_of_stock_page(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Page',
+            'slug' => 'page',
+            'aliases' => ['เพจ'],
+        ]);
+
+        // Direct selling (not upsell) — should still block
+        $response = 'Page ราคา 199 บาท เพิ่มลงตะกร้าให้แล้วครับ';
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+        $this->assertContains('Page', $result['blocked_products']);
     }
 }

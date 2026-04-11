@@ -92,6 +92,11 @@ INSTRUCTION;
         $delimiter = $settings->multiple_bubbles_delimiter ?? '|||';
         $max = $settings->multiple_bubbles_max ?? 3;
 
+        // Don't split payment instructions — bank details + total must stay together
+        if ($this->containsPaymentInfo($content)) {
+            return [str_replace($delimiter, "\n", $content)];
+        }
+
         // Split by delimiter
         $bubbles = explode($delimiter, $content);
 
@@ -221,5 +226,15 @@ INSTRUCTION;
 
             return false;
         }
+    }
+
+    /**
+     * Check if content contains payment instruction data (bank account number).
+     * Used to prevent splitting payment info across multiple bubbles.
+     */
+    protected function containsPaymentInfo(string $content): bool
+    {
+        return mb_strpos($content, '223-3-24880-3') !== false
+            || mb_strpos($content, '2233248803') !== false;
     }
 }
