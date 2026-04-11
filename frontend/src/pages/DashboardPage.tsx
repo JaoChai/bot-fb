@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { ShoppingCart, DollarSign, MessageSquare, Banknote } from 'lucide-react';
 import { formatTHB, formatBaht } from '@/lib/currency';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useDashboardSummary } from '@/hooks/useDashboard';
 import { useCostAnalytics } from '@/hooks/useCostAnalytics';
@@ -32,8 +31,13 @@ function calcTrend(today: number, yesterday: number) {
 function DashboardHeader({ today }: { today: string }) {
   return (
     <div className="flex items-center justify-between">
-      <h1 className="text-2xl font-semibold tracking-tight">แดชบอร์ด</h1>
-      <span className="text-sm text-muted-foreground">{today}</span>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">แดชบอร์ด</h1>
+        <p className="text-sm text-muted-foreground mt-1">ภาพรวมธุรกิจของคุณ</p>
+      </div>
+      <div className="rounded-lg bg-primary/5 px-3 py-1.5 text-sm font-medium text-muted-foreground border border-primary/10">
+        {today}
+      </div>
     </div>
   );
 }
@@ -68,18 +72,16 @@ export function DashboardPage() {
     return (
       <div className="space-y-6">
         <DashboardHeader today={today} />
-        <Card className="border-destructive">
-          <CardContent className="py-8 text-center">
-            <p className="text-destructive">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>
-            <Button
-              variant="outline"
-              className="mt-4"
-              onClick={() => window.location.reload()}
-            >
-              ลองใหม่
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center">
+          <p className="text-destructive font-medium">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>
+          <Button
+            variant="outline"
+            className="mt-4"
+            onClick={() => window.location.reload()}
+          >
+            ลองใหม่
+          </Button>
+        </div>
       </div>
     );
   }
@@ -107,13 +109,14 @@ export function DashboardPage() {
           description={`${orderData?.summary?.today_orders ?? 0} ออเดอร์`}
           icon={ShoppingCart}
           trend={revTrend}
-          className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20"
+          className="border-blue-200/50 bg-gradient-to-br from-blue-50/80 to-card dark:border-blue-800/30 dark:from-blue-950/20 dark:to-card"
         />
         <DashboardStatCard
           title="ยอดขายเดือนนี้"
           value={formatBaht(orderData?.summary?.this_month_revenue ?? 0)}
           description={`${orderData?.summary?.this_month_orders ?? 0} ออเดอร์`}
           icon={DollarSign}
+          className="border-emerald-200/50 bg-gradient-to-br from-emerald-50/80 to-card dark:border-emerald-800/30 dark:from-emerald-950/20 dark:to-card"
         />
         <DashboardStatCard
           title="ข้อความวันนี้"
@@ -121,12 +124,14 @@ export function DashboardPage() {
           description={`จาก ${data?.summary.total_bots ?? 0} บอท`}
           icon={MessageSquare}
           trend={msgTrend}
+          className="border-violet-200/50 bg-gradient-to-br from-violet-50/80 to-card dark:border-violet-800/30 dark:from-violet-950/20 dark:to-card"
         />
         <DashboardStatCard
           title="ค่า API วันนี้"
           value={formatTHB(costData?.summary.today_cost ?? 0)}
           description={`เดือน ${formatTHB(costData?.summary.month_cost ?? 0)}`}
           icon={Banknote}
+          className="border-amber-200/50 bg-gradient-to-br from-amber-50/80 to-card dark:border-amber-800/30 dark:from-amber-950/20 dark:to-card"
         />
       </div>
 
