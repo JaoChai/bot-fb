@@ -147,7 +147,7 @@ class PaymentFlexService
             return false;
         }
 
-        return (bool) preg_match('/รวมยอดโอน|สรุปยอด|ยอดโอน|ยอดรวม|รวมเป็นเงิน/u', $text);
+        return (bool) preg_match('/รวมยอดโอน|สรุปยอด|ยอดโอน|ยอดรวม|รวมเป็นเงิน|สรุปรายการ/u', $text);
     }
 
     /**

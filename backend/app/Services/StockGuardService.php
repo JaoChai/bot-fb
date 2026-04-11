@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ProductStock;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -41,6 +42,20 @@ class StockGuardService
 
         if (empty($violations)) {
             return ['content' => $response, 'blocked' => false, 'blocked_products' => []];
+        }
+
+        // Check if ALL violations are upsell-only (not main product being sold)
+        $allUpsell = $this->areAllViolationsUpsell($responseToCheck, $violations, $outOfStock);
+
+        if ($allUpsell) {
+            Log::info('StockGuard: stripped upsell for out-of-stock products', [
+                'violations' => $violations,
+                'user_message' => mb_substr(str_replace(["\n", "\r"], ' ', $userMessage), 0, 200),
+            ]);
+
+            $stripped = $this->stripUpsellBlock($response, $violations, $outOfStock);
+
+            return ['content' => $stripped, 'blocked' => false, 'blocked_products' => []];
         }
 
         Log::warning('StockGuard: blocked out-of-stock sale', [
@@ -254,6 +269,103 @@ class StockGuardService
         }
 
         return false;
+    }
+
+    /**
+     * Check if ALL violations are in upsell-only context (not main cart items).
+     */
+    protected function areAllViolationsUpsell(string $response, array $violations, Collection $outOfStock): bool
+    {
+        foreach ($violations as $productName) {
+            $product = $outOfStock->firstWhere('name', $productName);
+            if (! $product || ! $this->isUpsellContext($response, $product)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if an out-of-stock product appears ONLY in an upsell question,
+     * not as a main cart item or direct sale.
+     */
+    protected function isUpsellContext(string $response, ProductStock $product): bool
+    {
+        $names = array_merge([$product->name], $product->aliases ?? []);
+
+        foreach ($names as $name) {
+            if (mb_strlen($name) < 2 || mb_stripos($response, $name) === false) {
+                continue;
+            }
+
+            $quotedName = preg_quote($name, '/');
+
+            // Must match upsell question patterns
+            $upsellPatterns = [
+                "/รับ.{0,20}{$quotedName}.{0,30}(?:เพิ่ม|ด้วย)/iu",
+                "/{$quotedName}.{0,20}(?:เพิ่มไหม|ด้วยไหม|สนใจไหม)/iu",
+            ];
+
+            $hasUpsell = false;
+            foreach ($upsellPatterns as $pattern) {
+                if (preg_match($pattern, $response)) {
+                    $hasUpsell = true;
+                    break;
+                }
+            }
+
+            if (! $hasUpsell) {
+                return false;
+            }
+
+            // Must NOT appear as a main cart line item
+            $cartPattern = '/(?:^|\n)\s*[-•]\s*'.$quotedName.'\s*x?\d/imu';
+            if (preg_match($cartPattern, $response)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Strip upsell block for out-of-stock products from response,
+     * preserving the main cart content.
+     */
+    protected function stripUpsellBlock(string $response, array $violations, Collection $outOfStock): string
+    {
+        $stripped = $response;
+
+        foreach ($violations as $productName) {
+            $product = $outOfStock->firstWhere('name', $productName);
+            $names = array_merge([$productName], $product->aliases ?? []);
+            $quotedNames = array_map(fn ($n) => preg_quote($n, '/'), array_filter($names, fn ($n) => mb_strlen($n) >= 2));
+            $namePattern = implode('|', $quotedNames);
+
+            if (empty($namePattern)) {
+                continue;
+            }
+
+            // Remove "รับ [product] เพิ่มไหม..." line(s) through end or "พอแล้ว" line
+            $stripped = preg_replace(
+                '/\n*รับ.{0,20}(?:'.$namePattern.').+(?:\n(?!(?:ตะกร้า|เพิ่ม\s|สรุป|รวม|📌|\d+\.)).+)*/iu',
+                '',
+                $stripped
+            ) ?? $stripped;
+        }
+
+        // Remove leftover "ถ้าไม่รับพิมพ์ 'พอแล้ว'" line
+        $stripped = preg_replace('/\n*.*?(?:ถ้าไม่รับ|ไม่รับพิมพ์).*?พอแล้ว.*$/imu', '', $stripped) ?? $stripped;
+
+        $stripped = rtrim($stripped);
+
+        // Append a closing prompt if response now ends abruptly (no question/period)
+        if (! preg_match('/(ครับ|ค่ะ|เลย|ได้|ไหม|มั้ย|[?？])\s*$/u', $stripped)) {
+            $stripped .= "\n\nถูกต้องไหมครับ? พิมพ์ 'ยืนยัน' ได้เลยครับ";
+        }
+
+        return $stripped;
     }
 
     /**
