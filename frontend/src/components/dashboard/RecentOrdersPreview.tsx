@@ -1,6 +1,5 @@
 import { ShoppingCart } from 'lucide-react';
 import { Link } from 'react-router';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -32,14 +31,10 @@ export function RecentOrdersPreview() {
 
   if (isLoading) {
     return (
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">ออเดอร์ล่าสุด</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">กำลังโหลด...</p>
-        </CardContent>
-      </Card>
+      <div className="rounded-xl border bg-card p-6 shadow-sm">
+        <h3 className="text-base font-semibold">ออเดอร์ล่าสุด</h3>
+        <p className="mt-4 text-sm text-muted-foreground">กำลังโหลด...</p>
+      </div>
     );
   }
 
@@ -47,77 +42,70 @@ export function RecentOrdersPreview() {
 
   if (!orders.length) {
     return (
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">ออเดอร์ล่าสุด</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col items-center justify-center gap-2 py-8">
-            <ShoppingCart className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">ยังไม่มีออเดอร์</p>
+      <div className="rounded-xl border bg-card p-6 shadow-sm">
+        <h3 className="text-base font-semibold">ออเดอร์ล่าสุด</h3>
+        <div className="flex flex-col items-center justify-center gap-2 py-8">
+          <div className="rounded-full bg-muted p-3">
+            <ShoppingCart className="h-6 w-6 text-muted-foreground" />
           </div>
-        </CardContent>
-      </Card>
+          <p className="text-sm text-muted-foreground">ยังไม่มีออเดอร์</p>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">ออเดอร์ล่าสุด</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <Table className="text-sm">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="whitespace-nowrap">วันที่</TableHead>
-                <TableHead className="whitespace-nowrap">ลูกค้า</TableHead>
-                <TableHead className="whitespace-nowrap">สินค้า</TableHead>
-                <TableHead className="whitespace-nowrap text-right">จำนวนเงิน</TableHead>
-                <TableHead className="whitespace-nowrap">สถานะ</TableHead>
+    <div className="rounded-xl border bg-card p-6 shadow-sm">
+      <h3 className="mb-4 text-base font-semibold">ออเดอร์ล่าสุด</h3>
+      <div className="overflow-x-auto rounded-lg border">
+        <Table className="text-sm">
+          <TableHeader>
+            <TableRow className="bg-accent/30 hover:bg-accent/30">
+              <TableHead className="whitespace-nowrap font-semibold">วันที่</TableHead>
+              <TableHead className="whitespace-nowrap font-semibold">ลูกค้า</TableHead>
+              <TableHead className="whitespace-nowrap font-semibold">สินค้า</TableHead>
+              <TableHead className="whitespace-nowrap text-right font-semibold">จำนวนเงิน</TableHead>
+              <TableHead className="whitespace-nowrap font-semibold">สถานะ</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {orders.map((order: Order) => (
+              <TableRow key={order.id} className="transition-colors hover:bg-accent/20">
+                <TableCell className="whitespace-nowrap">
+                  {new Date(order.created_at).toLocaleDateString('th-TH', {
+                    day: '2-digit',
+                    month: 'short',
+                  })}
+                </TableCell>
+                <TableCell className="whitespace-nowrap font-medium">
+                  {order.customer_profile?.display_name ?? '-'}
+                </TableCell>
+                <TableCell className="max-w-xs truncate text-muted-foreground">
+                  {order.items.length > 0
+                    ? order.items.map((item) => `${item.product_name} x${item.quantity}`).join(', ')
+                    : '-'}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right font-semibold">
+                  {formatBaht(order.total_amount)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <Badge variant={STATUS_VARIANTS[order.status] || 'secondary'}>
+                    {STATUS_LABELS[order.status] || order.status}
+                  </Badge>
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {orders.map((order: Order) => (
-                <TableRow key={order.id}>
-                  <TableCell className="whitespace-nowrap">
-                    {new Date(order.created_at).toLocaleDateString('th-TH', {
-                      day: '2-digit',
-                      month: 'short',
-                    })}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {order.customer_profile?.display_name ?? '-'}
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate">
-                    {order.items.length > 0
-                      ? order.items.map((item) => `${item.product_name} x${item.quantity}`).join(', ')
-                      : '-'}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-right font-medium">
-                    {formatBaht(order.total_amount)}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    <Badge variant={STATUS_VARIANTS[order.status] || 'secondary'}>
-                      {STATUS_LABELS[order.status] || order.status}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
 
-        {/* View All Button */}
-        <div className="mt-4 flex justify-center">
-          <Link to="/orders">
-            <Button variant="ghost" size="sm" className="text-xs">
-              ดูทั้งหมด →
-            </Button>
-          </Link>
-        </div>
-      </CardContent>
-    </Card>
+      <div className="mt-4 flex justify-center">
+        <Link to="/orders">
+          <Button variant="ghost" size="sm" className="text-xs text-primary hover:text-primary">
+            ดูทั้งหมด →
+          </Button>
+        </Link>
+      </div>
+    </div>
   );
 }
