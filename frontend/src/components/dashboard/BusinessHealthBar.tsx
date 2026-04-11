@@ -8,18 +8,15 @@ interface BusinessHealthBarProps {
 }
 
 export function BusinessHealthBar({ bots, alerts }: BusinessHealthBarProps) {
-  // Calculate metrics
   const activeBotCount = bots.filter((b) => b.status === 'active').length;
   const totalBotCount = bots.length;
   const handoverCount = alerts.handover_conversations.length;
 
-  // Determine status and styling
   const isNoBots = totalBotCount === 0;
   const isAllBotsInactive = totalBotCount > 0 && activeBotCount === 0;
   const hasHandovers = handoverCount > 0;
   const hasSomeBotsInactive = activeBotCount < totalBotCount && activeBotCount > 0;
 
-  // Status determination: RED > YELLOW > GREEN
   let status: 'green' | 'yellow' | 'red' = 'green';
   let statusText = '';
   let Icon = Activity;
@@ -50,29 +47,48 @@ export function BusinessHealthBar({ bots, alerts }: BusinessHealthBarProps) {
     Icon = Activity;
   }
 
-  // Color classes by status
   const colorClasses = {
     green:
-      'bg-green-50 border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400',
+      'bg-emerald-50/80 border-emerald-200/60 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800/40 dark:text-emerald-400',
     yellow:
-      'bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-950/30 dark:border-yellow-800 dark:text-yellow-400',
-    red: 'bg-red-50 border-red-200 text-red-700 dark:bg-red-950/30 dark:border-red-800 dark:text-red-400',
+      'bg-amber-50/80 border-amber-200/60 text-amber-700 dark:bg-amber-950/30 dark:border-amber-800/40 dark:text-amber-400',
+    red: 'bg-red-50/80 border-red-200/60 text-red-700 dark:bg-red-950/30 dark:border-red-800/40 dark:text-red-400',
   };
 
   const dotColorClasses = {
-    green: 'bg-green-500 dark:bg-green-400',
-    yellow: 'bg-yellow-500 dark:bg-yellow-400',
-    red: 'bg-red-500 dark:bg-red-400',
+    green: 'bg-emerald-500',
+    yellow: 'bg-amber-500',
+    red: 'bg-red-500',
+  };
+
+  const pulseColorClasses = {
+    green: 'bg-emerald-400',
+    yellow: 'bg-amber-400',
+    red: 'bg-red-400',
   };
 
   return (
     <div
       className={cn(
-        'flex items-center gap-2 rounded-lg border px-4 py-2.5',
-        colorClasses[status]
+        'flex items-center gap-3 rounded-xl border px-4 py-3 backdrop-blur-sm',
+        colorClasses[status],
       )}
     >
-      <span className={cn('h-2 w-2 rounded-full', dotColorClasses[status])} />
+      {/* Animated pulse dot */}
+      <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
+        <span
+          className={cn(
+            'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',
+            pulseColorClasses[status],
+          )}
+        />
+        <span
+          className={cn(
+            'relative inline-flex h-2.5 w-2.5 rounded-full',
+            dotColorClasses[status],
+          )}
+        />
+      </span>
       <Icon className="h-4 w-4" />
       <span className="text-sm font-medium">{statusText}</span>
     </div>

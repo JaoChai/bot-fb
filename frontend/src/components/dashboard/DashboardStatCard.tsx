@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface DashboardStatCardProps {
@@ -11,7 +11,6 @@ interface DashboardStatCardProps {
     value: number;
     direction: 'up' | 'down' | 'stable';
   };
-  variant?: 'default' | 'warning' | 'danger';
   className?: string;
 }
 
@@ -21,50 +20,51 @@ export function DashboardStatCard({
   description,
   icon: Icon,
   trend,
-  variant = 'default',
   className,
 }: DashboardStatCardProps) {
   return (
-    <Card className={cn(className)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <Icon
-          className={cn(
-            'h-4 w-4',
-            variant === 'default' && 'text-muted-foreground',
-            variant === 'warning' && 'text-yellow-500',
-            variant === 'danger' && 'text-red-500'
+    <div
+      className={cn(
+        'relative overflow-hidden rounded-xl border bg-card p-5 shadow-sm transition-shadow hover:shadow-md',
+        className,
+      )}
+    >
+      <div className="flex items-start justify-between">
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-muted-foreground">{title}</p>
+          <p className="text-2xl font-bold tracking-tight">{value}</p>
+          {description && (
+            <p className="text-xs text-muted-foreground">{description}</p>
           )}
-        />
-      </CardHeader>
-      <CardContent>
-        <div
-          className={cn(
-            'text-2xl font-bold',
-            variant === 'danger' && 'text-red-600',
-            variant === 'warning' && 'text-yellow-600'
-          )}
-        >
-          {value}
         </div>
-        {description && (
-          <p className="text-xs text-muted-foreground">{description}</p>
-        )}
-        {trend && (
-          <p
-            className={cn(
-              'text-xs mt-1',
-              trend.direction === 'up' && 'text-green-600',
-              trend.direction === 'down' && 'text-red-600',
-              trend.direction === 'stable' && 'text-muted-foreground'
-            )}
-          >
-            {trend.direction === 'up' && '+'}
-            {trend.direction === 'down' && '-'}
-            {trend.value}% จากเมื่อวาน
-          </p>
-        )}
-      </CardContent>
-    </Card>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+          <Icon className="h-5 w-5 text-primary" />
+        </div>
+      </div>
+
+      {trend && (
+        <div className="mt-3 flex items-center gap-1.5">
+          {trend.direction === 'up' && (
+            <div className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+              <TrendingUp className="h-3 w-3" />
+              +{trend.value}%
+            </div>
+          )}
+          {trend.direction === 'down' && (
+            <div className="flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-400">
+              <TrendingDown className="h-3 w-3" />
+              -{trend.value}%
+            </div>
+          )}
+          {trend.direction === 'stable' && (
+            <div className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              <Minus className="h-3 w-3" />
+              0%
+            </div>
+          )}
+          <span className="text-xs text-muted-foreground">จากเมื่อวาน</span>
+        </div>
+      )}
+    </div>
   );
 }
