@@ -16,6 +16,7 @@ import {
   Sun,
   Moon,
   ShoppingCart,
+  Star,
 } from 'lucide-react';
 
 interface MobileNavProps {
@@ -32,6 +33,11 @@ const mainNavItems = [
     title: 'ออเดอร์',
     href: '/orders',
     icon: ShoppingCart,
+  },
+  {
+    title: 'ลูกค้า VIP',
+    href: '/vip-customers',
+    icon: Star,
   },
   {
     title: 'การเชื่อมต่อ',

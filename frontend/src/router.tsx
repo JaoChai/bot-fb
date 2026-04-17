@@ -79,6 +79,10 @@ export const router = createBrowserRouter([
             element: <LazyPage><OrdersPage /></LazyPage>,
           },
           {
+            path: "vip-customers",
+            element: <LazyPage><VipManagementPage /></LazyPage>,
+          },
+          {
             path: "bots",
             element: <LazyPage><BotsPage /></LazyPage>,
           },
