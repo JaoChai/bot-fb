@@ -45,6 +45,11 @@ coverage/
 .playwright-mcp/
 .playwright-cli/
 .claude/debug-active.txt
+.claude/skills/
+.claude/worktrees/
+
+# Debug screenshots (root-only)
+/*.png
 
 # Auto Claude data directory
 .auto-claude/

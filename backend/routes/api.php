@@ -156,6 +156,16 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::get('/{bot}/admins', [AdminController::class, 'index'])->name('bots.admins.index');
         Route::post('/{bot}/admins', [AdminController::class, 'store'])->name('bots.admins.store');
         Route::delete('/{bot}/admins/{user}', [AdminController::class, 'destroy'])->name('bots.admins.destroy');
+
+        // VIP management routes
+        Route::prefix('/{bot}/vip')->group(function () {
+            Route::get('/customers', [\App\Http\Controllers\Api\VipController::class, 'index'])
+                ->name('vip.customers.index');
+            Route::post('/customers/{customerProfile}/revoke', [\App\Http\Controllers\Api\VipController::class, 'revoke'])
+                ->name('vip.customers.revoke');
+            Route::post('/customers/{customerProfile}/promote', [\App\Http\Controllers\Api\VipController::class, 'promote'])
+                ->name('vip.customers.promote');
+        });
     });
 
     // Flow routes (nested under bots)

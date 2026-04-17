@@ -382,6 +382,23 @@ export interface CustomerProfile {
   updated_at: string;
 }
 
+export interface VipCustomer {
+  customer_profile_id: number;
+  display_name: string | null;
+  picture_url: string | null;
+  channel_type: string | null;
+  order_count: number;
+  total_amount: number;
+  last_order_at: string | null;
+  note_content: string;
+  note_source: 'vip_auto' | 'vip_manual';
+  bot_id: number;
+}
+
+export interface VipCustomersResponse {
+  data: VipCustomer[];
+}
+
 export interface Message {
   id: number;
   conversation_id: number;
