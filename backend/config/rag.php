@@ -416,4 +416,20 @@ return [
     'stock_guard' => [
         'enabled' => env('STOCK_GUARD_ENABLED', true),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | VIP Auto-Detection
+    |--------------------------------------------------------------------------
+    |
+    | Automatically marks customers as VIP via conversation memory_notes once
+    | they reach `threshold` completed orders within the last `window_months`.
+    | See VipDetectionService + OrderObserver for the pipeline.
+    */
+    'vip' => [
+        'enabled' => env('VIP_AUTO_ENABLED', true),
+        'threshold' => (int) env('VIP_ORDER_THRESHOLD', 3),
+        'window_months' => (int) env('VIP_WINDOW_MONTHS', 12),
+        'top_n_items' => (int) env('VIP_TOP_N_ITEMS', 5),
+    ],
 ];
