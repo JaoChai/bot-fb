@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Bot;
+use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\Order;
 use App\Services\VipDetectionService;
@@ -67,6 +68,11 @@ class VipController extends Controller
     {
         $this->authorize('update', $bot);
 
+        $belongsToBot = Conversation::where('bot_id', $bot->id)
+            ->where('customer_profile_id', $customerProfile->id)
+            ->exists();
+        abort_if(! $belongsToBot, 404, 'Customer not found for this bot.');
+
         $removed = $this->vipService->revokeAutoVip($customerProfile);
 
         return response()->json([
@@ -79,8 +85,13 @@ class VipController extends Controller
     {
         $this->authorize('update', $bot);
 
+        $belongsToBot = Conversation::where('bot_id', $bot->id)
+            ->where('customer_profile_id', $customerProfile->id)
+            ->exists();
+        abort_if(! $belongsToBot, 404, 'Customer not found for this bot.');
+
         $validated = $request->validate([
-            'content' => 'required|string|max:5000',
+            'content' => 'required|string|max:2000',
         ]);
 
         $this->vipService->manualPromote($customerProfile, $validated['content']);

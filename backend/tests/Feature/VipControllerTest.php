@@ -113,4 +113,73 @@ class VipControllerTest extends TestCase
         $this->assertEquals('vip_manual', $notes[0]['source']);
         $this->assertEquals('ลูกค้า VIP (ตั้งด้วย admin)', $notes[0]['content']);
     }
+
+    public function test_revoke_rejects_customer_from_another_bot(): void
+    {
+        $owner = User::factory()->create(['role' => 'owner']);
+        Sanctum::actingAs($owner);
+
+        $myBot = Bot::factory()->create(['user_id' => $owner->id]);
+        $otherUser = User::factory()->create(['role' => 'owner']);
+        $otherBot = Bot::factory()->create(['user_id' => $otherUser->id]);
+
+        $foreignCustomer = CustomerProfile::factory()->create();
+        Conversation::factory()->create([
+            'bot_id' => $otherBot->id,
+            'customer_profile_id' => $foreignCustomer->id,
+            'memory_notes' => [[
+                'id' => '00000000-0000-0000-0000-000000000009',
+                'content' => 'foreign vip',
+                'type' => 'memory',
+                'source' => 'vip_auto',
+                'created_by' => null,
+                'created_at' => now()->toISOString(),
+                'updated_at' => now()->toISOString(),
+            ]],
+        ]);
+
+        $response = $this->postJson("/api/bots/{$myBot->id}/vip/customers/{$foreignCustomer->id}/revoke");
+        $response->assertNotFound();
+    }
+
+    public function test_promote_rejects_customer_from_another_bot(): void
+    {
+        $owner = User::factory()->create(['role' => 'owner']);
+        Sanctum::actingAs($owner);
+
+        $myBot = Bot::factory()->create(['user_id' => $owner->id]);
+        $otherUser = User::factory()->create(['role' => 'owner']);
+        $otherBot = Bot::factory()->create(['user_id' => $otherUser->id]);
+
+        $foreignCustomer = CustomerProfile::factory()->create();
+        Conversation::factory()->create([
+            'bot_id' => $otherBot->id,
+            'customer_profile_id' => $foreignCustomer->id,
+        ]);
+
+        $response = $this->postJson("/api/bots/{$myBot->id}/vip/customers/{$foreignCustomer->id}/promote", [
+            'content' => 'hello',
+        ]);
+        $response->assertNotFound();
+    }
+
+    public function test_promote_rejects_content_longer_than_max(): void
+    {
+        $user = User::factory()->create(['role' => 'owner']);
+        Sanctum::actingAs($user);
+
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+        $customer = CustomerProfile::factory()->create();
+        Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'customer_profile_id' => $customer->id,
+        ]);
+
+        $tooLong = str_repeat('x', 2001);
+        $response = $this->postJson("/api/bots/{$bot->id}/vip/customers/{$customer->id}/promote", [
+            'content' => $tooLong,
+        ]);
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('content');
+    }
 }
