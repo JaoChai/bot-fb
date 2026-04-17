@@ -26,6 +26,7 @@ const AddConnectionPage = lazyWithRetryNamed(() => import("@/pages/AddConnection
 const EditConnectionPage = lazyWithRetryNamed(() => import("@/pages/EditConnectionPage"), "EditConnectionPage")
 const TeamPage = lazyWithRetryNamed(() => import("@/pages/TeamPage"), "TeamPage")
 const QuickRepliesPage = lazyWithRetryNamed(() => import("@/pages/settings/QuickRepliesPage"), "QuickRepliesPage")
+const VipManagementPage = lazyWithRetryNamed(() => import("@/pages/VipManagementPage"), "VipManagementPage")
 
 // Wrapper component for lazy loaded pages with error boundary
 function LazyPage({ children }: { children: React.ReactNode }) {
@@ -92,6 +93,10 @@ export const router = createBrowserRouter([
           {
             path: "bots/:botId/settings",
             element: <LazyPage><BotSettingsPage /></LazyPage>,
+          },
+          {
+            path: "bots/:botId/vip",
+            element: <LazyPage><VipManagementPage /></LazyPage>,
           },
           {
             path: "bots/:botId/edit",

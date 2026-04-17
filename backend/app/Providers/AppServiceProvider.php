@@ -5,7 +5,9 @@ namespace App\Providers;
 use App\Models\Bot;
 use App\Models\Document;
 use App\Models\KnowledgeBase;
+use App\Models\Order;
 use App\Models\QuickReply;
+use App\Observers\OrderObserver;
 use App\Policies\BotPolicy;
 use App\Policies\DocumentPolicy;
 use App\Policies\KnowledgeBasePolicy;
@@ -161,6 +163,8 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(KnowledgeBase::class, KnowledgeBasePolicy::class);
         Gate::policy(Document::class, DocumentPolicy::class);
         Gate::policy(QuickReply::class, QuickReplyPolicy::class);
+
+        Order::observe(OrderObserver::class);
 
         $this->configureRateLimiting();
         $this->configureQueryLogging();
