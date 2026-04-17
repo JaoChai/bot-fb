@@ -300,7 +300,6 @@ Payment flow, order management, and VIP promotion specialist.
 
 | Task Type | Primary Skill | Secondary |
 |-----------|--------------|-----------|
-| New feature (>30min) | `/speckit.specify` | - |
 | Bug fix | Search memory | Relevant skill |
 | UI implementation | `/frontend-dev` | `/ui-ux-pro-max` |
 | API work | `/backend-dev` | - |
