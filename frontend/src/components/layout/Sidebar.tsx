@@ -27,6 +27,7 @@ import {
   Users,
   Zap,
   ShoppingCart,
+  Star,
 } from 'lucide-react';
 
 const mainNavItems = [
@@ -39,6 +40,11 @@ const mainNavItems = [
     title: 'ออเดอร์',
     href: '/orders',
     icon: ShoppingCart,
+  },
+  {
+    title: 'ลูกค้า VIP',
+    href: '/vip-customers',
+    icon: Star,
   },
   {
     title: 'การเชื่อมต่อ',
