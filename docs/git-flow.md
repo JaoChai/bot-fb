@@ -60,13 +60,6 @@ git checkout -b feature/user-profile
 git checkout -b fix/login-timeout
 ```
 
-**Speckit Auto-create Branch:**
-```bash
-# Speckit สร้าง branch อัตโนมัติ
-/speckit.specify "Add user profile management"
-# → สร้าง branch: feature/user-profile-management
-```
-
 ---
 
 ### 2. ระหว่างทำงาน - Commit Often
@@ -564,30 +557,8 @@ git push --force-with-lease
 
 ---
 
-## Integration with Speckit
-
-### Speckit Auto-Branch
-```bash
-# Speckit creates branch automatically
-/speckit.specify "Add user notifications"
-
-# Branch created: feature/user-notifications
-# Spec file: specs/feature-user-notifications/spec.md
-```
-
-### Manual Branch (Non-Speckit Work)
-```bash
-# For small tasks not using Speckit
-git checkout -b fix/button-alignment
-# ... make changes ...
-/commit-push-pr
-```
-
----
-
 ## Resources
 
 - [Conventional Commits](https://www.conventionalcommits.org/)
 - [GitHub CLI Manual](https://cli.github.com/manual/)
 - [Git Documentation](https://git-scm.com/doc)
-- [Speckit Workflow](../CLAUDE.md#feature-development)

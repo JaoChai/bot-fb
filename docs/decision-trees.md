@@ -14,7 +14,7 @@ graph TD
     Start -->|Debug| DebugFlow
 
     FeatureFlow{ขนาดงาน?}
-    FeatureFlow -->|ใหญ่ >30min| Speckit[/speckit.specify]
+    FeatureFlow -->|ใหญ่ >30min| PlanMode[EnterPlanMode]
     FeatureFlow -->|เล็ก <30min| QuickFix[แก้ตรงๆ]
 
     BugFlow[Search Memory First] --> Fix[แก้ตาม pattern]
@@ -38,7 +38,7 @@ graph TD
 |----------|--------|
 | แก้ 1 ไฟล์ + <15 นาที | แก้ตรงๆ |
 | แก้ 2-3 ไฟล์ + <30 นาที | `/frontend-dev` หรือ `/backend-dev` |
-| แก้ >3 ไฟล์ หรือ >30 นาที | `/speckit.specify` |
+| แก้ >3 ไฟล์ หรือ >30 นาที | `EnterPlanMode` + skill ที่เหมาะสม |
 
 ---
 
@@ -106,7 +106,7 @@ Bug พบ → Search memory → มี pattern? → ใช้ pattern
 
 | Need | Action |
 |------|--------|
-| สร้าง feature ใหม่ | `/speckit.specify` |
+| สร้าง feature ใหม่ | `EnterPlanMode` + skill ที่เหมาะสม |
 | แก้ bug | Search memory → appropriate skill |
 | ปรับ UI | `/frontend-dev` |
 | แก้ API | `/backend-dev` |
@@ -131,11 +131,10 @@ Bug พบ → Search memory → มี pattern? → ใช้ pattern
 
 ### New Feature
 ```
-1. /speckit.specify "feature description"
-2. /speckit.plan
-3. /speckit.implement
-4. /code-review
-5. /commit-push-pr
+1. EnterPlanMode → วางแผน
+2. ใช้ skill ที่เหมาะสม (/frontend-dev, /backend-dev, ...)
+3. /code-review
+4. /commit-push-pr
 ```
 
 ### Bug Fix
@@ -162,5 +161,5 @@ Bug พบ → Search memory → มี pattern? → ใช้ pattern
 
 1. **Skills auto-trigger** - แค่บอกสิ่งที่ต้องการ Claude จะเลือก skill เอง
 2. **Memory first for bugs** - เคยแก้แล้วอาจมี solution
-3. **Speckit for big features** - >30 นาที = ควรใช้ Speckit
+3. **Plan mode for big features** - >30 นาที = ใช้ `EnterPlanMode` วางแผนก่อน
 4. **Multiple skills OK** - เช่น: `/backend-dev` → `/testing` → `/code-review`

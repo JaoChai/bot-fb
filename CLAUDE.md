@@ -122,7 +122,7 @@ Skills auto-triggered from context or use `/skill-name`. → [Full reference](do
 
 **ห้ามใช้ ECC skills สำหรับ stack อื่น** (Go, Spring Boot, ClickHouse, Django, Node.js backend) — project นี้ใช้ Laravel + React เท่านั้น
 
-**Planning:** งานใหญ่ (>30min) ใช้ `speckit.*` / งานกลาง ใช้ `EnterPlanMode`
+**Planning:** งานใหญ่ ใช้ `EnterPlanMode`
 
 ## Git Flow
 
