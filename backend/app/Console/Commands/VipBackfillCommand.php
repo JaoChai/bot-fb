@@ -14,6 +14,12 @@ class VipBackfillCommand extends Command
 
     public function handle(): int
     {
+        if (! config('rag.vip.enabled', true)) {
+            $this->warn('VIP auto-detection is disabled (rag.vip.enabled=false). Skipping.');
+
+            return self::SUCCESS;
+        }
+
         $threshold = (int) config('rag.vip.threshold');
         $windowMonths = (int) config('rag.vip.window_months');
         $since = now()->subMonths($windowMonths);

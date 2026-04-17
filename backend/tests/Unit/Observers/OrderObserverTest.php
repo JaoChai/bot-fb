@@ -3,7 +3,11 @@
 namespace Tests\Unit\Observers;
 
 use App\Jobs\EvaluateVipStatusJob;
+use App\Models\Bot;
+use App\Models\Conversation;
+use App\Models\CustomerProfile;
 use App\Models\Order;
+use App\Models\User;
 use App\Observers\OrderObserver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -55,6 +59,63 @@ class OrderObserverTest extends TestCase
         $order = Order::factory()->completed()->create();
 
         (new OrderObserver)->created($order);
+
+        Queue::assertNotPushed(EvaluateVipStatusJob::class);
+    }
+
+    public function test_dispatches_job_when_order_status_transitions_to_completed(): void
+    {
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+        $customer = CustomerProfile::factory()->create();
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'customer_profile_id' => $customer->id,
+        ]);
+
+        $order = Order::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conversation->id,
+            'customer_profile_id' => $customer->id,
+            'total_amount' => 500,
+            'status' => 'pending',
+            'channel_type' => 'line',
+        ]);
+
+        Queue::fake(); // fake only after seeding
+        $order->update(['status' => 'completed']);
+
+        // Eloquent sets original=pending, current=completed — observer.updated() should dispatch
+        (new OrderObserver)->updated($order);
+
+        Queue::assertPushed(EvaluateVipStatusJob::class, function ($job) use ($customer) {
+            return $job->customerProfileId === $customer->id;
+        });
+    }
+
+    public function test_updated_does_not_dispatch_when_already_completed(): void
+    {
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+        $customer = CustomerProfile::factory()->create();
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'customer_profile_id' => $customer->id,
+        ]);
+
+        $order = Order::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conversation->id,
+            'customer_profile_id' => $customer->id,
+            'total_amount' => 100,
+            'status' => 'completed',
+            'channel_type' => 'line',
+        ]);
+
+        Queue::fake();
+        // Simulate unrelated field change (notes) while status stays completed
+        $order->update(['notes' => 'updated note']);
+        (new OrderObserver)->updated($order);
 
         Queue::assertNotPushed(EvaluateVipStatusJob::class);
     }

@@ -3,6 +3,8 @@
 namespace Tests\Unit\Console;
 
 use App\Jobs\EvaluateVipStatusJob;
+use App\Models\Bot;
+use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\Order;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -59,6 +61,26 @@ class VipBackfillCommandTest extends TestCase
         Queue::fake();
 
         $this->artisan('vip:backfill', ['--dry-run' => true])->assertOk();
+
+        Queue::assertNothingPushed();
+    }
+
+    public function test_does_nothing_when_feature_disabled(): void
+    {
+        config(['rag.vip.enabled' => false]);
+
+        $bot = Bot::factory()->create();
+        $customer = CustomerProfile::factory()->create();
+        $conv = Conversation::factory()->create(['bot_id' => $bot->id, 'customer_profile_id' => $customer->id]);
+        Order::factory()->count(3)->create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conv->id,
+            'customer_profile_id' => $customer->id,
+            'status' => 'completed',
+        ]);
+
+        Queue::fake(); // fake after seed (observer would otherwise dispatch)
+        $this->artisan('vip:backfill')->assertOk();
 
         Queue::assertNothingPushed();
     }
