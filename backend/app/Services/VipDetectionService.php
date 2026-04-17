@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class VipDetectionService
@@ -41,8 +42,10 @@ class VipDetectionService
             $topItems
         );
 
-        $customer->conversations()->each(function (Conversation $conversation) use ($content) {
-            $this->upsertVipNote($conversation, $content, 'vip_auto');
+        $customer->conversations()->chunkById(100, function ($chunk) use ($content) {
+            foreach ($chunk as $conversation) {
+                $this->upsertVipNote($conversation, $content, 'vip_auto');
+            }
         });
 
         return true;
@@ -54,8 +57,12 @@ class VipDetectionService
      */
     public function manualPromote(CustomerProfile $customer, string $content): void
     {
-        $customer->conversations()->each(function (Conversation $conversation) use ($content) {
-            $this->upsertVipNote($conversation, $content, 'vip_manual');
+        $content = Str::limit($content, 2000, '');
+
+        $customer->conversations()->chunkById(100, function ($chunk) use ($content) {
+            foreach ($chunk as $conversation) {
+                $this->upsertVipNote($conversation, $content, 'vip_manual');
+            }
         });
     }
 
@@ -65,16 +72,25 @@ class VipDetectionService
     public function revokeAutoVip(CustomerProfile $customer): int
     {
         $removed = 0;
-        $customer->conversations()->each(function (Conversation $conversation) use (&$removed) {
-            $notes = $this->normalizeNotes($conversation->memory_notes ?? []);
-            $before = count($notes);
-            $notes = collect($notes)
-                ->reject(fn ($n) => ($n['source'] ?? null) === 'vip_auto')
-                ->values()
-                ->all();
-            if (count($notes) !== $before) {
-                $conversation->update(['memory_notes' => $notes]);
-                $removed++;
+        $customer->conversations()->chunkById(100, function ($chunk) use (&$removed) {
+            foreach ($chunk as $conversation) {
+                DB::transaction(function () use ($conversation, &$removed) {
+                    $fresh = Conversation::lockForUpdate()->find($conversation->id);
+                    if (! $fresh) {
+                        return;
+                    }
+
+                    $notes = $this->normalizeNotes($fresh->memory_notes ?? []);
+                    $before = count($notes);
+                    $notes = collect($notes)
+                        ->reject(fn ($n) => ($n['source'] ?? null) === 'vip_auto')
+                        ->values()
+                        ->all();
+                    if (count($notes) !== $before) {
+                        $fresh->update(['memory_notes' => $notes]);
+                        $removed++;
+                    }
+                });
             }
         });
 
@@ -107,8 +123,10 @@ class VipDetectionService
         );
 
         foreach ($topItems as $item) {
-            $variantText = $item->variant ? " ({$item->variant})" : '';
-            $lines[] = "• {$item->product_name}{$variantText} x{$item->qty}";
+            $name = Str::limit($item->product_name, 80, '');
+            $variant = $item->variant ? Str::limit($item->variant, 40, '') : null;
+            $variantText = $variant ? " ({$variant})" : '';
+            $lines[] = "• {$name}{$variantText} x{$item->qty}";
         }
 
         $lines[] = 'ล่าสุด: '.$latest->format('Y-m-d');
@@ -118,36 +136,43 @@ class VipDetectionService
 
     protected function upsertVipNote(Conversation $conversation, string $content, string $source): void
     {
-        $notes = $this->normalizeNotes($conversation->memory_notes ?? []);
-
-        $existingIdx = null;
-        foreach ($notes as $i => $note) {
-            if (($note['source'] ?? null) === $source) {
-                $existingIdx = $i;
-                break;
+        DB::transaction(function () use ($conversation, $content, $source) {
+            $fresh = Conversation::lockForUpdate()->find($conversation->id);
+            if (! $fresh) {
+                return;
             }
-        }
 
-        $now = now()->toISOString();
+            $notes = $this->normalizeNotes($fresh->memory_notes ?? []);
 
-        if ($existingIdx === null) {
-            $notes[] = [
-                'id' => (string) Str::uuid(),
-                'content' => $content,
-                'type' => 'memory',
-                'source' => $source,
-                'created_by' => null,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
-        } else {
-            $notes[$existingIdx]['content'] = $content;
-            $notes[$existingIdx]['updated_at'] = $now;
-            $notes[$existingIdx]['type'] = 'memory';
-            $notes[$existingIdx]['source'] = $source;
-        }
+            $existingIdx = null;
+            foreach ($notes as $i => $note) {
+                if (($note['source'] ?? null) === $source) {
+                    $existingIdx = $i;
+                    break;
+                }
+            }
 
-        $conversation->update(['memory_notes' => array_values($notes)]);
+            $now = now()->toISOString();
+
+            if ($existingIdx === null) {
+                $notes[] = [
+                    'id' => (string) Str::uuid(),
+                    'content' => $content,
+                    'type' => 'memory',
+                    'source' => $source,
+                    'created_by' => null,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            } else {
+                $notes[$existingIdx]['content'] = $content;
+                $notes[$existingIdx]['updated_at'] = $now;
+                $notes[$existingIdx]['type'] = 'memory';
+                $notes[$existingIdx]['source'] = $source;
+            }
+
+            $fresh->update(['memory_notes' => array_values($notes)]);
+        });
     }
 
     /**

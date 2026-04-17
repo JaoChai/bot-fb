@@ -30,14 +30,14 @@ class OrderFactory extends Factory
 
     public function completed(): static
     {
-        return $this->state(fn (array $attributes) => [
+        return $this->state(fn () => [
             'status' => 'completed',
         ]);
     }
 
     public function pending(): static
     {
-        return $this->state(fn (array $attributes) => [
+        return $this->state(fn () => [
             'status' => 'pending',
         ]);
     }

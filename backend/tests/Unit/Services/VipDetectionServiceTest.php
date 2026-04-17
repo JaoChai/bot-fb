@@ -176,4 +176,98 @@ class VipDetectionServiceTest extends TestCase
         $this->assertCount(1, $notes);
         $this->assertEquals('vip_auto', $notes[0]['source']);
     }
+
+    public function test_revoke_auto_vip_removes_only_vip_auto_notes(): void
+    {
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+        $customer = CustomerProfile::factory()->create();
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'customer_profile_id' => $customer->id,
+            'memory_notes' => [
+                [
+                    'id' => '00000000-0000-0000-0000-000000000001',
+                    'content' => 'auto vip',
+                    'type' => 'memory',
+                    'source' => 'vip_auto',
+                    'created_by' => null,
+                    'created_at' => now()->toISOString(),
+                    'updated_at' => now()->toISOString(),
+                ],
+                [
+                    'id' => '00000000-0000-0000-0000-000000000002',
+                    'content' => 'manual note',
+                    'type' => 'note',
+                    'source' => null,
+                    'created_by' => 1,
+                    'created_at' => now()->toISOString(),
+                    'updated_at' => now()->toISOString(),
+                ],
+            ],
+        ]);
+
+        $removed = $this->service->revokeAutoVip($customer);
+
+        $this->assertEquals(1, $removed);
+        $notes = $conversation->fresh()->memory_notes;
+        $this->assertCount(1, $notes);
+        $this->assertEquals('manual note', $notes[0]['content']);
+    }
+
+    public function test_manual_promote_writes_vip_manual_source_and_truncates(): void
+    {
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+        $customer = CustomerProfile::factory()->create();
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'customer_profile_id' => $customer->id,
+            'memory_notes' => [],
+        ]);
+
+        $longContent = str_repeat('ก', 3000);
+        $this->service->manualPromote($customer, $longContent);
+
+        $notes = $conversation->fresh()->memory_notes;
+        $this->assertCount(1, $notes);
+        $this->assertEquals('vip_manual', $notes[0]['source']);
+        $this->assertEquals('memory', $notes[0]['type']);
+        $this->assertLessThanOrEqual(2000, mb_strlen($notes[0]['content']));
+    }
+
+    public function test_evaluate_customer_handles_null_variant_items(): void
+    {
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+        $customer = CustomerProfile::factory()->create();
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'customer_profile_id' => $customer->id,
+        ]);
+
+        $orders = Order::factory()->count(3)->create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conversation->id,
+            'customer_profile_id' => $customer->id,
+            'status' => 'completed',
+            'total_amount' => 500,
+        ]);
+        foreach ($orders as $order) {
+            OrderItem::factory()->create([
+                'order_id' => $order->id,
+                'product_name' => 'Page',
+                'category' => 'page',
+                'variant' => null,
+                'quantity' => 1,
+            ]);
+        }
+
+        $this->service->evaluateCustomer($customer);
+
+        $note = $conversation->fresh()->memory_notes[0]['content'];
+        // When variant is null, no parenthesis should appear
+        $this->assertStringContainsString('Page x', $note);
+        $this->assertStringNotContainsString('Page ()', $note);
+    }
 }
