@@ -19,8 +19,6 @@ import {
   Calculator,
   ShieldAlert,
   ShieldCheck,
-  XCircle,
-  Timer,
   User,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -94,14 +92,6 @@ function getEventIcon(event: string, data?: Record<string, unknown>) {
     // HITL Safety events
     case 'agent_safety_stop':
       return <ShieldAlert className="h-3.5 w-3.5 text-destructive" />;
-    case 'agent_approval_required':
-      return <Timer className="h-3.5 w-3.5 text-amber-500" />;
-    case 'agent_approval_waiting':
-      return <Loader2 className="h-3.5 w-3.5 text-amber-500 animate-spin" />;
-    case 'agent_approval_response':
-      return data?.approved
-        ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-        : <XCircle className="h-3.5 w-3.5 text-destructive" />;
     // Second AI events
     case 'second_ai_start':
       return <ShieldCheck className="h-3.5 w-3.5 text-blue-500 animate-pulse" />;
@@ -179,15 +169,9 @@ function getEventLabel(event: string, data?: Record<string, unknown>): string {
       const status = data?.status as string;
       return status === 'success' ? '✅ ผลลัพธ์ Tool' : '❌ Tool ล้มเหลว';
     }
-    // HITL Safety events
+    // Safety events
     case 'agent_safety_stop':
       return '🛑 Agent หยุดทำงาน (Safety)';
-    case 'agent_approval_required':
-      return '⏳ รอการอนุมัติจาก User';
-    case 'agent_approval_waiting':
-      return '⏳ กำลังรอ...';
-    case 'agent_approval_response':
-      return data?.approved ? '✅ อนุมัติแล้ว' : '❌ ปฏิเสธ';
     // Second AI events
     case 'second_ai_start':
       return '🛡️ Second AI กำลังตรวจสอบ...';
@@ -291,15 +275,6 @@ function formatDetails(event: string, data: Record<string, unknown>): string {
       return `หยุดเนื่องจาก: ${data.type || 'unknown'}${message}`;
     }
 
-    case 'agent_approval_required':
-      return `Tool: ${data.tool_name || 'unknown'} (timeout: ${data.timeout_seconds || 60}s)`;
-
-    case 'agent_approval_waiting':
-      return `รอแล้ว ${data.elapsed_seconds || 0}/${data.timeout_seconds || 60} วินาที`;
-
-    case 'agent_approval_response':
-      return data.reason as string || (data.approved ? 'อนุมัติ' : 'ปฏิเสธ');
-
     // Second AI events
     case 'second_ai_start': {
       const checks = toSafeArray<string>(data.enabled_checks);
@@ -332,13 +307,6 @@ function getEventBgColor(event: string, data?: Record<string, unknown>): string 
     case 'done':
     case 'agent_done':
       return 'bg-emerald-500/10 border-emerald-500/20';
-    case 'agent_approval_required':
-    case 'agent_approval_waiting':
-      return 'bg-amber-500/10 border-amber-500/20';
-    case 'agent_approval_response':
-      return data?.approved
-        ? 'bg-emerald-500/10 border-emerald-500/20'
-        : 'bg-destructive/10 border-destructive/20';
     // Second AI events
     case 'second_ai_start':
       return 'bg-blue-500/10 border-blue-500/20';

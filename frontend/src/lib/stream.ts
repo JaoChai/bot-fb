@@ -24,11 +24,8 @@ export type ProcessEventType =
   | 'agent_max_iterations'
   | 'tool_call'
   | 'tool_result'
-  // HITL Safety events
+  // Safety events
   | 'agent_safety_stop'
-  | 'agent_approval_required'
-  | 'agent_approval_waiting'
-  | 'agent_approval_response'
   // Second AI events
   | 'second_ai_start'
   | 'second_ai_result'
@@ -256,11 +253,8 @@ function processSSEEvent(
       case 'agent_max_iterations':
       case 'tool_call':
       case 'tool_result':
-      // HITL Safety events - falls through
+      // Safety events - falls through
       case 'agent_safety_stop':
-      case 'agent_approval_required':
-      case 'agent_approval_waiting':
-      case 'agent_approval_response':
         // Already handled by onProcessLog above
         break;
 

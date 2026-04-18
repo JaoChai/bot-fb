@@ -13,8 +13,6 @@ import {
   FileText,
   BookOpen,
   Cpu,
-  Bot as BotIcon,
-  Shield,
   Puzzle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -27,28 +25,23 @@ import { useToast } from '@/hooks/use-toast';
 import {
   FlowsList,
   ChatEmulator,
-  type AgentApprovalData,
 } from '@/components/flows';
 import {
   PromptTab,
   KnowledgeTab,
   ModelTab,
-  AgentTab,
-  SafetyTab,
   PluginsTab,
 } from '@/components/flow-editor';
 import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
 
 type MobileTab = 'flows' | 'editor' | 'test';
-type EditorTab = 'prompt' | 'knowledge' | 'model' | 'agent' | 'safety' | 'plugins';
+type EditorTab = 'prompt' | 'knowledge' | 'model' | 'plugins';
 
 const EDITOR_TABS = [
   { value: 'prompt', label: 'Prompt', icon: FileText },
   { value: 'knowledge', label: 'Knowledge', icon: BookOpen },
   { value: 'model', label: 'Model', icon: Cpu },
-  { value: 'agent', label: 'Agent', icon: BotIcon },
-  { value: 'safety', label: 'Safety', icon: Shield },
-  { value: 'plugins', label: 'Plugins', icon: Puzzle },
+  { value: 'plugins', label: 'การแจ้งเตือน', icon: Puzzle },
 ] as const;
 
 const DEFAULT_SYSTEM_PROMPT = `คุณคือผู้ช่วย AI ที่เป็นมิตรและช่วยเหลือลูกค้าอย่างมืออาชีพ
@@ -69,16 +62,8 @@ const INITIAL_FORM_DATA: CreateFlowData = {
   system_prompt: DEFAULT_SYSTEM_PROMPT,
   temperature: 0.7,
   max_tokens: 2048,
-  agentic_mode: false,
-  max_tool_calls: 10,
-  enabled_tools: [],
   knowledge_bases: [],
-  language: 'th',
   is_default: false,
-  agent_timeout_seconds: 120,
-  agent_max_cost_per_request: null,
-  hitl_enabled: false,
-  hitl_dangerous_actions: [],
 };
 
 function mapFlowToFormData(flow: NonNullable<ReturnType<typeof useFlow>['data']>): CreateFlowData {
@@ -93,16 +78,8 @@ function mapFlowToFormData(flow: NonNullable<ReturnType<typeof useFlow>['data']>
     system_prompt: flow.system_prompt,
     temperature: flow.temperature,
     max_tokens: flow.max_tokens,
-    agentic_mode: flow.agentic_mode,
-    max_tool_calls: flow.max_tool_calls,
-    enabled_tools: flow.enabled_tools || [],
     knowledge_bases: kbData,
-    language: flow.language,
     is_default: flow.is_default,
-    agent_timeout_seconds: flow.agent_timeout_seconds ?? 120,
-    agent_max_cost_per_request: flow.agent_max_cost_per_request ?? null,
-    hitl_enabled: flow.hitl_enabled ?? false,
-    hitl_dangerous_actions: flow.hitl_dangerous_actions || [],
   };
 }
 
@@ -164,15 +141,6 @@ export function FlowEditorPage() {
   const [mobileActiveTab, setMobileActiveTab] = useState<MobileTab>('editor');
   const [chatOpen, setChatOpen] = useState(true);
 
-  const [pendingApproval, setPendingApproval] = useState<AgentApprovalData | null>(null);
-  const [agenticSecondAIEnabled, setAgenticSecondAIEnabled] = useState(false);
-  const [secondAIOptions, setSecondAIOptions] = useState({
-    factCheck: false,
-    policy: false,
-    personality: false,
-  });
-  const [externalDataSources, setExternalDataSources] = useState<string>('');
-
   const {
     messages: chatMessages,
     isStreaming,
@@ -182,9 +150,6 @@ export function FlowEditorPage() {
   } = useStreamingChat({
     botId,
     flowId: selectedFlowId,
-    onApprovalRequired: useCallback((data: AgentApprovalData) => {
-      setPendingApproval(data);
-    }, []),
   });
 
   useEffect(() => {
@@ -202,12 +167,6 @@ export function FlowEditorPage() {
   useEffect(() => {
     if (existingFlow) {
       setFormData(mapFlowToFormData(existingFlow));
-      setAgenticSecondAIEnabled(existingFlow.second_ai_enabled ?? false);
-      setSecondAIOptions({
-        factCheck: existingFlow.second_ai_options?.fact_check ?? false,
-        policy: existingFlow.second_ai_options?.policy ?? false,
-        personality: existingFlow.second_ai_options?.personality ?? false,
-      });
       setHasChanges(false);
     }
   }, [existingFlow]);
@@ -225,28 +184,9 @@ export function FlowEditorPage() {
     handleChange('knowledge_bases', kbs);
   }, [handleChange]);
 
-  const handleSecondAIToggle = useCallback((enabled: boolean) => {
-    setAgenticSecondAIEnabled(enabled);
-    setHasChanges(true);
-  }, []);
-
-  const handleSecondAIOptionsChange = useCallback((options: typeof secondAIOptions) => {
-    setSecondAIOptions(options);
-    setHasChanges(true);
-  }, []);
-
-  const handleExternalDataSourcesChange = useCallback((value: string) => {
-    setExternalDataSources(value);
-    setHasChanges(true);
-  }, []);
-
   const handleSendChatMessage = useCallback(async (message: string) => {
     await sendStreamingMessage(message);
   }, [sendStreamingMessage]);
-
-  const handleApprovalClose = useCallback(() => {
-    setPendingApproval(null);
-  }, []);
 
   const handleSave = async () => {
     if (!botId) {
@@ -261,24 +201,8 @@ export function FlowEditorPage() {
       toast({ title: 'กรุณากรอก System Prompt', variant: 'destructive' });
       return;
     }
-    if (formData.agentic_mode && (!formData.enabled_tools || formData.enabled_tools.length === 0)) {
-      toast({
-        title: 'ข้อผิดพลาด',
-        description: 'กรุณาเลือกอย่างน้อย 1 tool เพื่อใช้งาน Agentic Mode',
-        variant: 'destructive',
-      });
-      return;
-    }
 
-    const dataToSave = {
-      ...formData,
-      second_ai_enabled: agenticSecondAIEnabled,
-      second_ai_options: {
-        fact_check: secondAIOptions.factCheck,
-        policy: secondAIOptions.policy,
-        personality: secondAIOptions.personality,
-      },
-    };
+    const dataToSave = { ...formData };
 
     try {
       if (selectedFlowId) {
@@ -304,16 +228,8 @@ export function FlowEditorPage() {
   const handleDiscard = () => {
     if (existingFlow) {
       setFormData(mapFlowToFormData(existingFlow));
-      setAgenticSecondAIEnabled(existingFlow.second_ai_enabled ?? false);
-      setSecondAIOptions({
-        factCheck: existingFlow.second_ai_options?.fact_check ?? false,
-        policy: existingFlow.second_ai_options?.policy ?? false,
-        personality: existingFlow.second_ai_options?.personality ?? false,
-      });
     } else {
       setFormData(INITIAL_FORM_DATA);
-      setAgenticSecondAIEnabled(false);
-      setSecondAIOptions({ factCheck: false, policy: false, personality: false });
     }
     setHasChanges(false);
   };
@@ -342,13 +258,6 @@ export function FlowEditorPage() {
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const showEditor = selectedFlowId || isCreatingNew;
-
-  const safetySettings = {
-    agent_timeout_seconds: formData.agent_timeout_seconds ?? 120,
-    agent_max_cost_per_request: formData.agent_max_cost_per_request ?? null,
-    hitl_enabled: formData.hitl_enabled ?? false,
-    hitl_dangerous_actions: formData.hitl_dangerous_actions || [],
-  };
 
   const editorTabs = (
     <div className="grid gap-6 md:grid-cols-[200px_1fr] md:gap-8">
@@ -399,38 +308,11 @@ export function FlowEditorPage() {
           <ModelTab
             temperature={formData.temperature ?? 0.7}
             maxTokens={formData.max_tokens ?? 2048}
-            language={formData.language ?? 'th'}
             onChange={handleFieldChange}
-          />
-        )}
-        {activeEditorTab === 'agent' && (
-          <AgentTab
-            agenticMode={formData.agentic_mode ?? false}
-            enabledTools={formData.enabled_tools || []}
-            maxToolCalls={formData.max_tool_calls ?? 10}
-            maxTokens={formData.max_tokens ?? 2048}
-            isDefault={formData.is_default ?? false}
-            onChange={handleFieldChange}
-          />
-        )}
-        {activeEditorTab === 'safety' && (
-          <SafetyTab
-            safetySettings={safetySettings}
-            knowledgeBasesCount={formData.knowledge_bases?.length ?? 0}
-            secondAIEnabled={agenticSecondAIEnabled}
-            secondAIOptions={secondAIOptions}
-            onSafetyChange={handleFieldChange}
-            onSecondAIToggle={handleSecondAIToggle}
-            onSecondAIOptionsChange={handleSecondAIOptionsChange}
           />
         )}
         {activeEditorTab === 'plugins' && (
-          <PluginsTab
-            botId={botId}
-            flowId={selectedFlowId}
-            externalDataSources={externalDataSources}
-            onExternalDataSourcesChange={handleExternalDataSourcesChange}
-          />
+          <PluginsTab botId={botId} flowId={selectedFlowId} />
         )}
       </div>
     </div>
@@ -536,8 +418,6 @@ export function FlowEditorPage() {
             onSendMessage={handleSendChatMessage}
             onCancelStream={cancelStream}
             onClearMessages={clearMessages}
-            pendingApproval={pendingApproval}
-            onApprovalClose={handleApprovalClose}
             disabled={!selectedFlowId}
             disabledReason={
               isCreatingNew
@@ -666,8 +546,6 @@ export function FlowEditorPage() {
                 onSendMessage={handleSendChatMessage}
                 onCancelStream={cancelStream}
                 onClearMessages={clearMessages}
-                pendingApproval={pendingApproval}
-                onApprovalClose={handleApprovalClose}
                 disabled={!selectedFlowId}
                 disabledReason={
                   isCreatingNew
