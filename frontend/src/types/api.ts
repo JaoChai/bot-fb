@@ -243,13 +243,6 @@ export interface FlowKnowledgeBase {
   kb_similarity_threshold: number;
 }
 
-// Second AI Options
-export interface SecondAIOptions {
-  fact_check: boolean;
-  policy: boolean;
-  personality: boolean;
-}
-
 export interface Flow {
   id: number;
   bot_id: number;
@@ -260,17 +253,6 @@ export interface Flow {
   max_tokens: number;
   knowledge_bases?: FlowKnowledgeBase[];
   is_default: boolean;
-  // Deprecated — will be dropped in Phase 3 DB migration
-  agentic_mode?: boolean;
-  max_tool_calls?: number;
-  enabled_tools?: string[] | null;
-  language?: 'th' | 'en' | 'zh' | 'ja' | 'ko';
-  agent_timeout_seconds?: number;
-  agent_max_cost_per_request?: number | null;
-  hitl_enabled?: boolean;
-  hitl_dangerous_actions?: string[];
-  second_ai_enabled?: boolean;
-  second_ai_options?: SecondAIOptions;
   created_at: string;
   updated_at: string;
 }

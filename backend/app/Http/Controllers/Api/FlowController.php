@@ -669,7 +669,6 @@ PROMPT;
                 'description' => 'Helpful, empathetic support agent',
                 'system_prompt' => $this->getCustomerSupportPrompt(),
                 'temperature' => 0.7,
-                'language' => 'th',
             ],
             [
                 'id' => 'sales_assistant',
@@ -677,7 +676,6 @@ PROMPT;
                 'description' => 'Persuasive yet helpful sales representative',
                 'system_prompt' => $this->getSalesPrompt(),
                 'temperature' => 0.8,
-                'language' => 'th',
             ],
             [
                 'id' => 'faq_bot',
@@ -685,7 +683,6 @@ PROMPT;
                 'description' => 'Concise, accurate information provider',
                 'system_prompt' => $this->getFaqPrompt(),
                 'temperature' => 0.3,
-                'language' => 'th',
             ],
             [
                 'id' => 'general_assistant',
@@ -693,7 +690,6 @@ PROMPT;
                 'description' => 'Versatile helper for various tasks',
                 'system_prompt' => $this->getGeneralPrompt(),
                 'temperature' => 0.7,
-                'language' => 'th',
             ],
         ];
 
