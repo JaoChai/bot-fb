@@ -3,7 +3,8 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { SettingSection, SettingRow } from '@/components/connections';
+import { Panel } from '@/components/common';
+import { SettingRow } from '@/components/connections';
 
 interface StickerReplyTabProps {
   reply_sticker_enabled: boolean;
@@ -22,12 +23,12 @@ export function StickerReplyTab({
 }: StickerReplyTabProps) {
   return (
     <div className="space-y-6">
-      <div className="border rounded-lg p-5 space-y-5">
-        <SettingSection
-          icon={Smile}
-          title="การตอบกลับ Sticker"
-          description="บอทจะตอบกลับอัตโนมัติเมื่อได้รับสติกเกอร์"
-        >
+      <Panel
+        icon={Smile}
+        title="การตอบกลับ Sticker"
+        description="บอทจะตอบกลับอัตโนมัติเมื่อได้รับสติกเกอร์"
+      >
+        <div className="px-5 py-4 space-y-5">
           <SettingRow label="เปิดใช้งาน Reply Sticker" htmlFor="sticker-toggle">
             <Switch
               id="sticker-toggle"
@@ -35,93 +36,93 @@ export function StickerReplyTab({
               onCheckedChange={(checked) => onChange('reply_sticker_enabled', checked)}
             />
           </SettingRow>
-        </SettingSection>
 
-        {reply_sticker_enabled && (
-          <div className="space-y-5 border-t pt-5">
-            {/* Mode Selection */}
-            <div className="space-y-2">
-              <span className="text-sm font-medium text-foreground">รูปแบบการตอบกลับ</span>
-              <div className="grid grid-cols-2 gap-3 mt-2">
-                <button
-                  type="button"
-                  onClick={() => onChange('reply_sticker_mode', 'static')}
-                  className={cn(
-                    'p-4 rounded-lg border-2 text-left transition-colors duration-150',
-                    reply_sticker_mode === 'static'
-                      ? 'border-foreground bg-muted/40'
-                      : 'border-border hover:border-muted-foreground/50'
-                  )}
-                >
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <MessageSquare className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
-                    <span className="text-sm font-medium">ข้อความคงที่</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    ตอบด้วยข้อความที่กำหนดไว้ล่วงหน้า
-                  </p>
-                </button>
+          {reply_sticker_enabled && (
+            <div className="ml-4 pl-4 border-l-2 border-muted space-y-5 mt-2">
+              {/* Mode Selection */}
+              <div className="space-y-2">
+                <span className="text-sm font-medium text-foreground">รูปแบบการตอบกลับ</span>
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => onChange('reply_sticker_mode', 'static')}
+                    className={cn(
+                      'p-4 rounded-lg border-2 text-left transition-colors duration-150',
+                      reply_sticker_mode === 'static'
+                        ? 'border-foreground bg-muted/40'
+                        : 'border-border hover:border-muted-foreground/50'
+                    )}
+                  >
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <MessageSquare className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                      <span className="text-sm font-medium">ข้อความคงที่</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      ตอบด้วยข้อความที่กำหนดไว้ล่วงหน้า
+                    </p>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => onChange('reply_sticker_mode', 'ai')}
-                  className={cn(
-                    'p-4 rounded-lg border-2 text-left transition-colors duration-150',
-                    reply_sticker_mode === 'ai'
-                      ? 'border-foreground bg-muted/40'
-                      : 'border-border hover:border-muted-foreground/50'
-                  )}
-                >
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <Sparkles className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
-                    <span className="text-sm font-medium">AI วิเคราะห์</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    AI วิเคราะห์สติกเกอร์และตอบกลับอัจฉริยะ
-                  </p>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => onChange('reply_sticker_mode', 'ai')}
+                    className={cn(
+                      'p-4 rounded-lg border-2 text-left transition-colors duration-150',
+                      reply_sticker_mode === 'ai'
+                        ? 'border-foreground bg-muted/40'
+                        : 'border-border hover:border-muted-foreground/50'
+                    )}
+                  >
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Sparkles className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                      <span className="text-sm font-medium">AI วิเคราะห์</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      AI วิเคราะห์สติกเกอร์และตอบกลับอัจฉริยะ
+                    </p>
+                  </button>
+                </div>
               </div>
+
+              {/* Static Mode */}
+              {reply_sticker_mode === 'static' && (
+                <SettingRow
+                  label="ข้อความตอบกลับ"
+                  htmlFor="sticker-message"
+                  description='เว้นว่างไว้ = ใช้ข้อความเริ่มต้น "ได้รับสติกเกอร์แล้วค่ะ 🎉"'
+                  orientation="vertical"
+                >
+                  <Input
+                    id="sticker-message"
+                    placeholder="ได้รับสติกเกอร์แล้วค่ะ 🎉"
+                    value={reply_sticker_message}
+                    onChange={(e) => onChange('reply_sticker_message', e.target.value)}
+                    className="transition-colors duration-150"
+                  />
+                </SettingRow>
+              )}
+
+              {/* AI Mode */}
+              {reply_sticker_mode === 'ai' && (
+                <SettingRow
+                  label="AI Prompt (ไม่บังคับ)"
+                  htmlFor="sticker-ai-prompt"
+                  description="เว้นว่างไว้ = AI จะใช้ prompt เริ่มต้น"
+                  orientation="vertical"
+                >
+                  <Textarea
+                    id="sticker-ai-prompt"
+                    placeholder="ตอบกลับสติกเกอร์อย่างเป็นมิตร..."
+                    value={reply_sticker_ai_prompt}
+                    onChange={(e) => onChange('reply_sticker_ai_prompt', e.target.value)}
+                    rows={3}
+                    className="transition-colors duration-150"
+                  />
+                </SettingRow>
+              )}
             </div>
-
-            {/* Static Mode */}
-            {reply_sticker_mode === 'static' && (
-              <SettingRow
-                label="ข้อความตอบกลับ"
-                htmlFor="sticker-message"
-                description='เว้นว่างไว้ = ใช้ข้อความเริ่มต้น "ได้รับสติกเกอร์แล้วค่ะ 🎉"'
-                orientation="vertical"
-              >
-                <Input
-                  id="sticker-message"
-                  placeholder="ได้รับสติกเกอร์แล้วค่ะ 🎉"
-                  value={reply_sticker_message}
-                  onChange={(e) => onChange('reply_sticker_message', e.target.value)}
-                  className="transition-colors duration-150"
-                />
-              </SettingRow>
-            )}
-
-            {/* AI Mode */}
-            {reply_sticker_mode === 'ai' && (
-              <SettingRow
-                label="AI Prompt (ไม่บังคับ)"
-                htmlFor="sticker-ai-prompt"
-                description="เว้นว่างไว้ = AI จะใช้ prompt เริ่มต้น"
-                orientation="vertical"
-              >
-                <Textarea
-                  id="sticker-ai-prompt"
-                  placeholder="ตอบกลับสติกเกอร์อย่างเป็นมิตร..."
-                  value={reply_sticker_ai_prompt}
-                  onChange={(e) => onChange('reply_sticker_ai_prompt', e.target.value)}
-                  rows={3}
-                  className="transition-colors duration-150"
-                />
-              </SettingRow>
-            )}
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      </Panel>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { MessageCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { SettingSection, SettingRow } from '@/components/connections';
+import { Panel } from '@/components/common';
+import { SettingRow } from '@/components/connections';
 import type { ConnectionFormData } from '@/hooks/useConnectionForm';
 
 const PLATFORMS = [
@@ -29,7 +30,7 @@ export function BasicInfoSection({ formData, handleChange, isEditMode }: BasicIn
       : 'เช่น LINE Bot สำหรับร้านกาแฟ';
 
   return (
-    <SettingSection
+    <Panel
       icon={MessageCircle}
       title="ข้อมูลพื้นฐาน"
       description="ตั้งชื่อให้จำง่ายและสื่อความหมาย"
@@ -56,6 +57,6 @@ export function BasicInfoSection({ formData, handleChange, isEditMode }: BasicIn
           </div>
         )}
       </div>
-    </SettingSection>
+    </Panel>
   );
 }
