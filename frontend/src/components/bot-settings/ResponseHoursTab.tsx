@@ -1,6 +1,4 @@
-import { Clock, Plus, Trash2, Copy } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Clock, MessageSquareOff } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -10,9 +8,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { SettingSection, SettingRow } from '@/components/connections';
+import { SettingRow } from '@/components/connections';
+import { Panel } from '@/components/common';
+import { WeekSchedule } from './WeekSchedule';
 import {
-  DAYS,
   TIMEZONES,
   type DayKey,
   type ResponseHoursConfig,
@@ -44,151 +43,88 @@ export function ResponseHoursTab({
   onApplyToAllDays,
 }: ResponseHoursTabProps) {
   return (
-    <div className="space-y-6">
-      <div className="border rounded-lg p-5 space-y-5">
-        <SettingSection
-          icon={Clock}
-          title="Response Hours"
-          description="บอทจะตอบตามวันและเวลาที่กำหนด"
-        >
-          <SettingRow label="เปิดใช้งาน Response Hours" htmlFor="response-hours-toggle">
+    <>
+      <Panel
+        icon={Clock}
+        title="เวลาทำการ"
+        description="กำหนดช่วงเวลาที่บอทจะตอบลูกค้าโดยอัตโนมัติ"
+      >
+        <div className="space-y-4">
+          <SettingRow
+            label="เปิดใช้งานเวลาทำการ"
+            description="ถ้าปิด บอทจะตอบตลอด 24 ชั่วโมง"
+            htmlFor="response-hours-enabled"
+          >
             <Switch
-              id="response-hours-toggle"
+              id="response-hours-enabled"
               checked={response_hours_enabled}
               onCheckedChange={(checked) => onChange('response_hours_enabled', checked)}
             />
           </SettingRow>
-        </SettingSection>
 
-        {response_hours_enabled && (
-          <div className="space-y-5 border-t pt-5">
-            {/* Timezone */}
-            <SettingRow label="Timezone" htmlFor="timezone-select" orientation="vertical">
-              <Select
-                value={response_hours_timezone}
-                onValueChange={(value) => onChange('response_hours_timezone', value)}
-              >
-                <SelectTrigger id="timezone-select" className="w-full sm:w-72">
-                  <SelectValue placeholder="เลือก timezone" />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIMEZONES.map((tz) => (
-                    <SelectItem key={tz.value} value={tz.value}>
-                      {tz.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </SettingRow>
-
-            {/* Day Schedule */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-foreground">ตารางเวลา</span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={onApplyToAllDays}
-                  className="h-8 text-xs gap-1.5"
+          {response_hours_enabled && (
+            <div className="ml-4 pl-4 border-l-2 border-muted space-y-4 mt-2">
+              <SettingRow label="เขตเวลา" htmlFor="timezone-select" orientation="vertical">
+                <Select
+                  value={response_hours_timezone}
+                  onValueChange={(v) => onChange('response_hours_timezone', v)}
                 >
-                  <Copy className="h-3 w-3" />
-                  ใช้เวลาจันทร์กับทุกวัน
-                </Button>
-              </div>
-
-              <div className="rounded-lg border divide-y">
-                {DAYS.map((day) => {
-                  const schedule = response_hours[day.key];
-                  return (
-                    <div key={day.key} className="px-4 py-3 space-y-2">
-                      <div className="flex items-center gap-3 min-h-[40px]">
-                        <Switch
-                          checked={schedule.enabled}
-                          onCheckedChange={(checked) => onDayToggle(day.key, checked)}
-                        />
-                        <span
-                          className={`w-20 text-sm font-medium transition-colors duration-150 ${
-                            !schedule.enabled ? 'text-muted-foreground' : 'text-foreground'
-                          }`}
-                        >
-                          {day.label}
-                        </span>
-
-                        {schedule.enabled ? (
-                          <div className="flex-1 space-y-1.5">
-                            {schedule.slots.map((slot, slotIndex) => (
-                              <div key={slotIndex} className="flex items-center gap-2">
-                                <Input
-                                  type="time"
-                                  value={slot.start}
-                                  onChange={(e) =>
-                                    onSlotChange(day.key, slotIndex, 'start', e.target.value)
-                                  }
-                                  className="w-28 h-8 text-sm"
-                                />
-                                <span className="text-muted-foreground text-xs">—</span>
-                                <Input
-                                  type="time"
-                                  value={slot.end}
-                                  onChange={(e) =>
-                                    onSlotChange(day.key, slotIndex, 'end', e.target.value)
-                                  }
-                                  className="w-28 h-8 text-sm"
-                                />
-                                {schedule.slots.length > 1 && (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => onRemoveSlot(day.key, slotIndex)}
-                                    className="h-8 w-8 text-muted-foreground hover:text-destructive transition-colors duration-150"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                )}
-                              </div>
-                            ))}
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onAddSlot(day.key)}
-                              className="h-7 text-xs text-muted-foreground gap-1 px-2"
-                            >
-                              <Plus className="h-3 w-3" />
-                              เพิ่มช่วงเวลา
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">ปิด</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                  <SelectTrigger id="timezone-select" className="max-w-xs">
+                    <SelectValue placeholder="เลือก timezone" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIMEZONES.map((tz) => (
+                      <SelectItem key={tz.value} value={tz.value}>
+                        {tz.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </SettingRow>
             </div>
+          )}
+        </div>
+      </Panel>
 
-            {/* Offline Message */}
+      {response_hours_enabled && (
+        <>
+          <Panel
+            title="ตารางเวลาตอบกลับ"
+            description="เลือกวันและกำหนดช่วงเวลาที่บอทจะตอบ"
+          >
+            <WeekSchedule
+              schedule={response_hours}
+              onDayToggle={onDayToggle}
+              onSlotChange={onSlotChange}
+              onAddSlot={onAddSlot}
+              onRemoveSlot={onRemoveSlot}
+              onApplyToAllDays={onApplyToAllDays}
+            />
+          </Panel>
+
+          <Panel
+            icon={MessageSquareOff}
+            title="ข้อความนอกเวลาทำการ"
+            description="ส่งข้อความนี้ให้ลูกค้าเมื่อนอกเวลาทำการ"
+          >
             <SettingRow
-              label="ข้อความนอกเวลาทำการ"
+              label="ข้อความ"
+              description="เว้นว่างถ้าไม่ต้องการตอบอะไรเลยนอกเวลาทำการ"
               htmlFor="offline-message"
               orientation="vertical"
-              description="เว้นว่างไว้เพื่อไม่ตอบกลับนอกเวลาทำการ"
             >
               <Textarea
                 id="offline-message"
-                placeholder="ตัวอย่าง: ขณะนี้อยู่นอกเวลาทำการ กรุณาติดต่อใหม่ในเวลา 09:00-18:00 น. วันจันทร์-ศุกร์ครับ"
                 value={offline_message}
                 onChange={(e) => onChange('offline_message', e.target.value)}
-                rows={2}
-                className="transition-colors duration-150"
+                placeholder="ตัวอย่าง: ขณะนี้อยู่นอกเวลาทำการ กรุณาติดต่อใหม่ในเวลา 09:00-18:00 น. วันจันทร์-ศุกร์ครับ"
+                rows={3}
+                className="max-w-lg"
               />
             </SettingRow>
-          </div>
-        )}
-      </div>
-    </div>
+          </Panel>
+        </>
+      )}
+    </>
   );
 }
