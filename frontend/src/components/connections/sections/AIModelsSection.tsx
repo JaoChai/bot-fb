@@ -1,6 +1,6 @@
 import { Cpu, Key, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { SettingSection } from '@/components/connections';
+import { Panel } from '@/components/common';
 import { ModelConfiguration } from '@/components/ModelSelector';
 import type { ConnectionFormData } from '@/hooks/useConnectionForm';
 
@@ -12,22 +12,22 @@ interface AIModelsSectionProps {
 export function AIModelsSection({ formData, handleChange }: AIModelsSectionProps) {
   return (
     <>
-      <SettingSection
+      <Panel
         icon={Key}
         title="OpenRouter API"
         description="ตั้งค่า API Key สำหรับเชื่อมต่อกับ AI Models"
       >
-        <div className="text-sm text-muted-foreground bg-muted/50 rounded-lg px-4 py-3 max-w-md">
+        <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground max-w-md">
           <p className="mb-2">OpenRouter API Key ตั้งค่าที่หน้า Settings เพียงที่เดียว</p>
           <Button variant="link" className="h-auto p-0 text-sm" asChild>
             <a href="/settings">
-              ไปที่หน้า Settings <ExternalLink className="h-3 w-3 ml-1" />
+              ไปที่หน้า Settings <ExternalLink className="h-3 w-3 ml-1" strokeWidth={1.5} />
             </a>
           </Button>
         </div>
-      </SettingSection>
+      </Panel>
 
-      <SettingSection
+      <Panel
         icon={Cpu}
         title="AI Models"
         description="เลือก model สำหรับตอบคำถามและตัดสินใจ"
@@ -43,7 +43,7 @@ export function AIModelsSection({ formData, handleChange }: AIModelsSectionProps
           onFallbackDecisionChange={(value) => handleChange('fallback_decision_model', value)}
           showDecisionModels={true}
         />
-      </SettingSection>
+      </Panel>
     </>
   );
 }
