@@ -19,12 +19,6 @@ class FlowFactory extends Factory
             'system_prompt' => fake()->paragraph(),
             'temperature' => fake()->randomFloat(2, 0, 1),
             'max_tokens' => fake()->randomElement([1024, 2048, 4096]),
-            'agentic_mode' => false,
-            'max_tool_calls' => 5,
-            'enabled_tools' => null,
-            // KB relationship moved to many-to-many via flow_knowledge_base pivot table
-            // Removed: knowledge_base_id, kb_top_k, kb_similarity_threshold
-            'language' => 'th',
             'is_default' => false,
         ];
     }
@@ -33,14 +27,6 @@ class FlowFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'is_default' => true,
-        ]);
-    }
-
-    public function withAgentic(): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'agentic_mode' => true,
-            'enabled_tools' => ['search', 'calculate'],
         ]);
     }
 

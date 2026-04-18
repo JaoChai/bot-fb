@@ -172,7 +172,7 @@ class FlowApiTest extends TestCase
         $response->assertOk()
             ->assertJsonStructure([
                 'data' => [
-                    '*' => ['id', 'name', 'description', 'system_prompt', 'temperature', 'language'],
+                    '*' => ['id', 'name', 'description', 'system_prompt', 'temperature'],
                 ],
             ]);
 
