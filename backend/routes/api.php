@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\Api\AdminController;
-use App\Http\Controllers\Api\AgentApprovalController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BotController;
@@ -263,12 +262,6 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/{conversation}/unassign', [ConversationAssignmentController::class, 'unassign'])->name('conversations.unassign');
     });
 
-    // Agent approval routes (HITL - Human-in-the-Loop)
-    Route::prefix('agent-approvals')->group(function () {
-        Route::get('/{approvalId}', [AgentApprovalController::class, 'show'])->name('agent-approvals.show');
-        Route::post('/{approvalId}/approve', [AgentApprovalController::class, 'approve'])->name('agent-approvals.approve');
-        Route::post('/{approvalId}/reject', [AgentApprovalController::class, 'reject'])->name('agent-approvals.reject');
-    });
 });
 
 // Health check endpoints (no rate limiting needed)
