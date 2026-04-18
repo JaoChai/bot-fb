@@ -2,14 +2,11 @@ import { useState, useCallback } from 'react';
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { queryKeys } from '@/lib/query';
-// Note: queryClient kept for handleDeleteConfirm
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
@@ -47,6 +44,8 @@ import {
   MessageCircle,
 } from 'lucide-react';
 import { ChannelIcon } from '@/components/ui/channel-icon';
+import { PageHeader } from '@/components/connections';
+import { cn } from '@/lib/utils';
 
 export function BotsPage() {
   const queryClient = useQueryClient();
@@ -57,7 +56,6 @@ export function BotsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [botToDelete, setBotToDelete] = useState<{ id: number; name: string } | null>(null);
   const [togglingBotId, setTogglingBotId] = useState<number | null>(null);
-  // Local state for immediate UI updates - key fix for toggle not updating
   const [localStatuses, setLocalStatuses] = useState<Record<number, string>>({});
 
   const bots = botsResponse?.data || [];
@@ -66,17 +64,14 @@ export function BotsPage() {
     const currentStatus = localStatuses[bot.id] ?? bot.status;
     const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
     setTogglingBotId(bot.id);
-    // Update local state IMMEDIATELY for instant UI feedback
     setLocalStatuses(prev => ({ ...prev, [bot.id]: newStatus }));
     try {
-      // Mutation handles refetch in onSuccess
       await toggleStatusMutation.mutateAsync({ botId: bot.id, status: newStatus });
       toast({
         title: newStatus === 'active' ? 'เปิดใช้งานแล้ว' : 'ปิดใช้งานแล้ว',
         description: `"${bot.name}" ${newStatus === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}แล้ว`,
       });
     } catch (err) {
-      // Revert local state on error
       setLocalStatuses(prev => ({ ...prev, [bot.id]: currentStatus }));
       toast({
         title: 'เกิดข้อผิดพลาด',
@@ -89,32 +84,19 @@ export function BotsPage() {
   }, [toggleStatusMutation, toast, localStatuses]);
 
   const copyWebhookUrl = async (botId: number, webhookUrl: string) => {
-    // Validate URL format
     try {
       new URL(webhookUrl);
     } catch {
-      toast({
-        title: 'ข้อผิดพลาด',
-        description: 'Webhook URL ไม่ถูกต้อง',
-        variant: 'destructive',
-      });
+      toast({ title: 'ข้อผิดพลาด', description: 'Webhook URL ไม่ถูกต้อง', variant: 'destructive' });
       return;
     }
-
     try {
       await navigator.clipboard.writeText(webhookUrl);
       setCopiedId(botId);
-      toast({
-        title: 'คัดลอกแล้ว',
-        description: 'คัดลอก Webhook URL เรียบร้อยแล้ว',
-      });
+      toast({ title: 'คัดลอกแล้ว', description: 'คัดลอก Webhook URL เรียบร้อยแล้ว' });
       setTimeout(() => setCopiedId(null), 2000);
     } catch {
-      toast({
-        title: 'เกิดข้อผิดพลาด',
-        description: 'ไม่สามารถคัดลอก URL ได้',
-        variant: 'destructive',
-      });
+      toast({ title: 'เกิดข้อผิดพลาด', description: 'ไม่สามารถคัดลอก URL ได้', variant: 'destructive' });
     }
   };
 
@@ -127,10 +109,7 @@ export function BotsPage() {
     if (!botToDelete) return;
     try {
       await apiDelete(`/bots/${botToDelete.id}`);
-      toast({
-        title: 'ลบแล้ว',
-        description: `"${botToDelete.name}" ลบเรียบร้อยแล้ว`,
-      });
+      toast({ title: 'ลบแล้ว', description: `"${botToDelete.name}" ลบเรียบร้อยแล้ว` });
       await queryClient.refetchQueries({ queryKey: queryKeys.bots.lists(), type: 'active' });
     } catch (err) {
       toast({
@@ -146,14 +125,10 @@ export function BotsPage() {
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'active':
-        return 'ทำงาน';
-      case 'inactive':
-        return 'หยุดทำงาน';
-      case 'paused':
-        return 'พักการใช้งาน';
-      default:
-        return status;
+      case 'active': return 'ทำงาน';
+      case 'inactive': return 'หยุดทำงาน';
+      case 'paused': return 'พักการใช้งาน';
+      default: return status;
     }
   };
 
@@ -174,181 +149,175 @@ export function BotsPage() {
   }
 
   return (
-    <TooltipProvider>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">การเชื่อมต่อ</h1>
-            <p className="text-muted-foreground text-sm mt-1 hidden sm:block">
-              จัดการการเชื่อมต่อ Chatbot กับ Platform ต่างๆ
-            </p>
-          </div>
-          <Button asChild className="w-full sm:w-auto">
+    <div className="space-y-6">
+      <PageHeader
+        title="การเชื่อมต่อ"
+        description="จัดการการเชื่อมต่อ Chatbot กับ Platform ต่างๆ"
+        actions={
+          <Button asChild>
             <Link to="/connections/add">
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="h-4 w-4" />
               เพิ่มการเชื่อมต่อ
             </Link>
           </Button>
+        }
+      />
+
+      {bots.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 border border-dashed rounded-2xl">
+          <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border bg-background">
+            <BotIcon className="h-7 w-7 text-muted-foreground" />
+          </div>
+          <h2 className="text-lg font-semibold mb-1">เริ่มต้นใช้งาน AI Chatbot</h2>
+          <p className="text-sm text-muted-foreground text-center max-w-sm mb-6">
+            สร้างการเชื่อมต่อแรกเพื่อเชื่อม AI Chatbot กับ LINE, Facebook หรือทดสอบก่อนใช้งานจริง
+          </p>
+          <Button size="lg" asChild>
+            <Link to="/connections/add">
+              <Plus className="h-4 w-4" />
+              สร้างการเชื่อมต่อแรก
+            </Link>
+          </Button>
         </div>
+      ) : (
+        <div className="space-y-3">
+          {bots.map(bot => {
+            const currentStatus = localStatuses[bot.id] ?? bot.status;
+            const isActive = currentStatus === 'active';
+            const isToggling = togglingBotId === bot.id;
 
-        {bots.length === 0 ? (
-          /* Empty State */
-          <Card className="border-dashed border-2">
-            <CardContent className="flex flex-col items-center justify-center py-16">
-              <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                <BotIcon className="h-8 w-8 text-muted-foreground" />
-              </div>
-              <h2 className="text-xl font-semibold mb-2">เริ่มต้นใช้งาน AI Chatbot</h2>
-              <p className="text-muted-foreground text-center max-w-md mb-6">
-                สร้างการเชื่อมต่อแรกเพื่อเชื่อม AI Chatbot กับ LINE, Facebook หรือทดสอบก่อนใช้งานจริง
-              </p>
-              <Button size="lg" asChild>
-                <Link to="/connections/add">
-                  <Plus className="h-5 w-5 mr-2" />
-                  สร้างการเชื่อมต่อแรก
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          /* Bot List */
-          <div className="space-y-3">
-            {bots.map(bot => (
-              <Card
+            return (
+              <div
                 key={bot.id}
-                className="border hover:border-foreground/20 transition-colors"
+                className="relative border rounded-lg p-4 md:p-5 transition-colors duration-150 hover:border-foreground/20 hover:bg-accent/30"
               >
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-4">
-                    {/* Platform Icon */}
-                    <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-muted rounded-lg">
-                      <ChannelIcon channel={bot.channel_type} className="h-8 w-8" />
+                {/* Status switch — top-right */}
+                <div className="absolute top-4 right-4 flex items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Switch
+                        checked={isActive}
+                        onCheckedChange={() => handleToggleStatus(bot)}
+                        disabled={isToggling}
+                        className="data-[state=checked]:bg-emerald-500"
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {isActive ? 'คลิกเพื่อปิดใช้งาน' : 'คลิกเพื่อเปิดใช้งาน'}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+
+                <div className="flex items-start gap-4 pr-16">
+                  {/* Platform icon */}
+                  <div className="shrink-0 w-11 h-11 flex items-center justify-center rounded-lg border bg-background">
+                    <ChannelIcon channel={bot.channel_type} className="h-7 w-7" />
+                  </div>
+
+                  {/* Bot info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-base font-semibold truncate text-foreground">{bot.name}</h3>
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        <span
+                          className={cn(
+                            'size-2 rounded-full shrink-0',
+                            isActive ? 'bg-emerald-500' : 'bg-muted-foreground'
+                          )}
+                        />
+                        <span
+                          className={cn(
+                            'text-xs',
+                            isActive
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-muted-foreground'
+                          )}
+                        >
+                          {isToggling ? '...' : getStatusText(currentStatus)}
+                        </span>
+                      </span>
                     </div>
 
-                    {/* Bot Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-1">
-                        <h3 className="text-lg font-semibold truncate">{bot.name}</h3>
+                    {/* Webhook URL */}
+                    {bot.webhook_url && (
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <code className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded font-mono truncate min-w-0 max-w-[220px] sm:max-w-sm md:max-w-lg">
+                          {bot.webhook_url}
+                        </code>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <Switch
-                                checked={(localStatuses[bot.id] ?? bot.status) === 'active'}
-                                onCheckedChange={() => handleToggleStatus(bot)}
-                                disabled={togglingBotId === bot.id}
-                                className="data-[state=checked]:bg-emerald-500"
-                              />
-                              <span className={`text-xs ${(localStatuses[bot.id] ?? bot.status) === 'active' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
-                                {togglingBotId === bot.id ? '...' : getStatusText(localStatuses[bot.id] ?? bot.status)}
-                              </span>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {(localStatuses[bot.id] ?? bot.status) === 'active' ? 'คลิกเพื่อปิดใช้งาน' : 'คลิกเพื่อเปิดใช้งาน'}
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
-
-                      {/* Webhook URL - Compact */}
-                      {bot.webhook_url && (
-                        <div className="flex items-center gap-2 mt-2">
-                          <code className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded font-mono truncate max-w-[180px] sm:max-w-md">
-                            {bot.webhook_url}
-                          </code>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => copyWebhookUrl(bot.id, bot.webhook_url!)}
-                                className="flex-shrink-0 h-7 w-7"
-                              >
-                                {copiedId === bot.id ? (
-                                  <Check className="h-3.5 w-3.5 text-green-600" />
-                                ) : (
-                                  <Copy className="h-3.5 w-3.5" />
-                                )}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>คัดลอก Webhook URL</TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                className="flex-shrink-0 h-7 w-7"
-                                asChild
-                              >
-                                <a href={bot.webhook_url} target="_blank" rel="noopener noreferrer">
-                                  <ExternalLink className="h-3.5 w-3.5" />
-                                </a>
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>เปิดใน Tab ใหม่</TooltipContent>
-                          </Tooltip>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {/* Primary Actions */}
-                      <div className="hidden md:flex items-center gap-2">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="outline" size="sm" asChild>
-                              <Link to={`/bots/${bot.id}/settings`}>
-                                <Settings className="h-4 w-4" />
-                                <span className="ml-1.5">ตั้งค่า</span>
-                              </Link>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => copyWebhookUrl(bot.id, bot.webhook_url!)}
+                              className="shrink-0 h-7 w-7"
+                            >
+                              {copiedId === bot.id
+                                ? <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                : <Copy className="h-3.5 w-3.5" />}
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>ตั้งค่า Bot และ Prompt</TooltipContent>
+                          <TooltipContent>คัดลอก Webhook URL</TooltipContent>
                         </Tooltip>
-
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button size="sm" asChild>
-                              <Link to={`/flows/editor?botId=${bot.id}`}>
-                                <Workflow className="h-4 w-4" />
-                                <span className="ml-1.5">AI Flow</span>
-                              </Link>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="shrink-0 h-7 w-7"
+                              asChild
+                            >
+                              <a href={bot.webhook_url} target="_blank" rel="noopener noreferrer">
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>แก้ไข AI Flow และทดสอบ Chat</TooltipContent>
+                          <TooltipContent>เปิดใน Tab ใหม่</TooltipContent>
                         </Tooltip>
                       </div>
+                    )}
 
-                      {/* More Menu */}
+                    {/* Action row — always visible, icon-only on mobile, with labels on md+ */}
+                    <div className="flex items-center gap-2 mt-3">
+                      {/* Settings — icon-only on mobile */}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="outline" size="sm" asChild className="h-9 px-2.5 md:px-3">
+                            <Link to={`/bots/${bot.id}/settings`}>
+                              <Settings className="h-4 w-4" />
+                              <span className="hidden md:inline ml-1.5">ตั้งค่า</span>
+                            </Link>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent className="md:hidden">ตั้งค่า Bot และ Prompt</TooltipContent>
+                      </Tooltip>
+
+                      {/* AI Flow — icon-only on mobile */}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="sm" asChild className="h-9 px-2.5 md:px-3">
+                            <Link to={`/flows/editor?botId=${bot.id}`}>
+                              <Workflow className="h-4 w-4" />
+                              <span className="hidden md:inline ml-1.5">AI Flow</span>
+                            </Link>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent className="md:hidden">แก้ไข AI Flow และทดสอบ Chat</TooltipContent>
+                      </Tooltip>
+
+                      {/* More menu */}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
                             variant="ghost"
-                            size="icon-sm"
-                            className="h-8 w-8"
+                            size="icon"
+                            className="h-9 w-9"
                             aria-label="ตัวเลือกเพิ่มเติม"
                           >
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-48">
-                          {/* Mobile-only items */}
-                          <DropdownMenuItem asChild className="md:hidden">
-                            <Link to={`/bots/${bot.id}/settings`}>
-                              <Settings className="h-4 w-4 mr-2" />
-                              ตั้งค่า Bot
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild className="md:hidden">
-                            <Link to={`/flows/editor?botId=${bot.id}`}>
-                              <Workflow className="h-4 w-4 mr-2" />
-                              แก้ไข AI Flow
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator className="md:hidden" />
-
                           <DropdownMenuItem asChild>
                             <Link to={`/bots/${bot.id}/edit`}>
                               <MessageCircle className="h-4 w-4 mr-2" />
@@ -367,13 +336,13 @@ export function BotsPage() {
                       </DropdownMenu>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-      {/* Delete confirmation dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -393,7 +362,6 @@ export function BotsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      </div>
-    </TooltipProvider>
+    </div>
   );
 }
