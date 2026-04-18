@@ -10,11 +10,16 @@ import {
   Settings,
   ArrowLeft,
   Plus,
+  FileText,
+  BookOpen,
+  Cpu,
+  Bot as BotIcon,
+  Shield,
+  Puzzle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations } from '@/hooks/useFlows';
 import { useStreamingChat } from '@/hooks/useStreamingChat';
 import { useAllKnowledgeBases } from '@/hooks/useKnowledgeBase';
@@ -36,6 +41,15 @@ import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
 
 type MobileTab = 'flows' | 'editor' | 'test';
 type EditorTab = 'prompt' | 'knowledge' | 'model' | 'agent' | 'safety' | 'plugins';
+
+const EDITOR_TABS = [
+  { value: 'prompt', label: 'Prompt', icon: FileText },
+  { value: 'knowledge', label: 'Knowledge', icon: BookOpen },
+  { value: 'model', label: 'Model', icon: Cpu },
+  { value: 'agent', label: 'Agent', icon: BotIcon },
+  { value: 'safety', label: 'Safety', icon: Shield },
+  { value: 'plugins', label: 'Plugins', icon: Puzzle },
+] as const;
 
 const DEFAULT_SYSTEM_PROMPT = `คุณคือผู้ช่วย AI ที่เป็นมิตรและช่วยเหลือลูกค้าอย่างมืออาชีพ
 
@@ -110,7 +124,7 @@ function MobileBottomTabs({ activeTab, onTabChange }: { activeTab: MobileTab; on
               activeTab === id ? 'text-foreground bg-muted' : 'text-muted-foreground hover:text-foreground'
             )}
           >
-            <Icon className="h-5 w-5" />
+            <Icon className="h-5 w-5" strokeWidth={1.5} />
             <span className="text-xs">{label}</span>
           </button>
         ))}
@@ -337,77 +351,89 @@ export function FlowEditorPage() {
   };
 
   const editorTabs = (
-    <Tabs value={activeEditorTab} onValueChange={(v) => setActiveEditorTab(v as EditorTab)}>
-      <div className="overflow-x-auto">
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="prompt">Prompt</TabsTrigger>
-          <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
-          <TabsTrigger value="model">Model</TabsTrigger>
-          <TabsTrigger value="agent">Agent</TabsTrigger>
-          <TabsTrigger value="safety">Safety</TabsTrigger>
-          <TabsTrigger value="plugins">Plugins</TabsTrigger>
-        </TabsList>
+    <div className="grid gap-6 md:grid-cols-[200px_1fr] md:gap-8">
+      <aside className="md:border-r md:pr-6">
+        <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible -mx-1 px-1">
+          {EDITOR_TABS.map((t) => {
+            const Icon = t.icon;
+            const isActive = activeEditorTab === t.value;
+            return (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => setActiveEditorTab(t.value as EditorTab)}
+                className={cn(
+                  'relative flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors text-left shrink-0',
+                  'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-4 before:w-0.5 before:rounded-full before:bg-primary before:transition-opacity',
+                  isActive
+                    ? 'bg-accent text-foreground before:opacity-100'
+                    : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground before:opacity-0',
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+                <span>{t.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
+
+      <div className="min-w-0 space-y-6">
+        {activeEditorTab === 'prompt' && (
+          <PromptTab
+            name={formData.name}
+            systemPrompt={formData.system_prompt}
+            isDefault={formData.is_default ?? false}
+            onChange={handleFieldChange}
+          />
+        )}
+        {activeEditorTab === 'knowledge' && (
+          <KnowledgeTab
+            allKnowledgeBases={allKnowledgeBases}
+            selectedKnowledgeBases={formData.knowledge_bases || []}
+            isLoading={isLoadingKBs}
+            onChange={handleKnowledgeBasesChange}
+          />
+        )}
+        {activeEditorTab === 'model' && (
+          <ModelTab
+            temperature={formData.temperature ?? 0.7}
+            maxTokens={formData.max_tokens ?? 2048}
+            language={formData.language ?? 'th'}
+            onChange={handleFieldChange}
+          />
+        )}
+        {activeEditorTab === 'agent' && (
+          <AgentTab
+            agenticMode={formData.agentic_mode ?? false}
+            enabledTools={formData.enabled_tools || []}
+            maxToolCalls={formData.max_tool_calls ?? 10}
+            maxTokens={formData.max_tokens ?? 2048}
+            isDefault={formData.is_default ?? false}
+            onChange={handleFieldChange}
+          />
+        )}
+        {activeEditorTab === 'safety' && (
+          <SafetyTab
+            safetySettings={safetySettings}
+            knowledgeBasesCount={formData.knowledge_bases?.length ?? 0}
+            secondAIEnabled={agenticSecondAIEnabled}
+            secondAIOptions={secondAIOptions}
+            onSafetyChange={handleFieldChange}
+            onSecondAIToggle={handleSecondAIToggle}
+            onSecondAIOptionsChange={handleSecondAIOptionsChange}
+          />
+        )}
+        {activeEditorTab === 'plugins' && (
+          <PluginsTab
+            botId={botId}
+            flowId={selectedFlowId}
+            externalDataSources={externalDataSources}
+            onExternalDataSourcesChange={handleExternalDataSourcesChange}
+          />
+        )}
       </div>
-
-      <TabsContent value="prompt" className="space-y-6 mt-4">
-        <PromptTab
-          name={formData.name}
-          systemPrompt={formData.system_prompt}
-          isDefault={formData.is_default ?? false}
-          onChange={handleFieldChange}
-        />
-      </TabsContent>
-
-      <TabsContent value="knowledge" className="space-y-6 mt-4">
-        <KnowledgeTab
-          allKnowledgeBases={allKnowledgeBases}
-          selectedKnowledgeBases={formData.knowledge_bases || []}
-          isLoading={isLoadingKBs}
-          onChange={handleKnowledgeBasesChange}
-        />
-      </TabsContent>
-
-      <TabsContent value="model" className="space-y-6 mt-4">
-        <ModelTab
-          temperature={formData.temperature ?? 0.7}
-          maxTokens={formData.max_tokens ?? 2048}
-          language={formData.language ?? 'th'}
-          onChange={handleFieldChange}
-        />
-      </TabsContent>
-
-      <TabsContent value="agent" className="space-y-6 mt-4">
-        <AgentTab
-          agenticMode={formData.agentic_mode ?? false}
-          enabledTools={formData.enabled_tools || []}
-          maxToolCalls={formData.max_tool_calls ?? 10}
-          maxTokens={formData.max_tokens ?? 2048}
-          isDefault={formData.is_default ?? false}
-          onChange={handleFieldChange}
-        />
-      </TabsContent>
-
-      <TabsContent value="safety" className="space-y-6 mt-4">
-        <SafetyTab
-          safetySettings={safetySettings}
-          knowledgeBasesCount={formData.knowledge_bases?.length ?? 0}
-          secondAIEnabled={agenticSecondAIEnabled}
-          secondAIOptions={secondAIOptions}
-          onSafetyChange={handleFieldChange}
-          onSecondAIToggle={handleSecondAIToggle}
-          onSecondAIOptionsChange={handleSecondAIOptionsChange}
-        />
-      </TabsContent>
-
-      <TabsContent value="plugins" className="space-y-6 mt-4">
-        <PluginsTab
-          botId={botId}
-          flowId={selectedFlowId}
-          externalDataSources={externalDataSources}
-          onExternalDataSourcesChange={handleExternalDataSourcesChange}
-        />
-      </TabsContent>
-    </Tabs>
+    </div>
   );
 
   const stickyActionBar = (
@@ -424,9 +450,9 @@ export function FlowEditorPage() {
           )}
           <Button onClick={handleSave} disabled={isSaving || !hasChanges} className="min-w-[100px]">
             {isSaving ? (
-              <><Loader2 className="h-4 w-4 mr-2 animate-spin" />บันทึก...</>
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" strokeWidth={1.5} />บันทึก...</>
             ) : (
-              <><Save className="h-4 w-4 mr-2" />บันทึก</>
+              <><Save className="h-4 w-4 mr-2" strokeWidth={1.5} />บันทึก</>
             )}
           </Button>
         </div>
@@ -454,7 +480,7 @@ export function FlowEditorPage() {
               <div className="text-center space-y-3">
                 <p className="text-lg text-muted-foreground">เลือกหรือสร้าง Flow เพื่อเริ่มต้น</p>
                 <Button variant="outline" onClick={() => navigate(`/flows/new?botId=${botId}`)}>
-                  <Plus className="h-4 w-4 mr-2" />สร้าง Flow ใหม่
+                  <Plus className="h-4 w-4 mr-2" strokeWidth={1.5} />สร้าง Flow ใหม่
                 </Button>
               </div>
             </div>
@@ -464,7 +490,7 @@ export function FlowEditorPage() {
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">
-              <div className="mx-auto max-w-4xl w-full px-6 py-6 space-y-6">
+              <div className="w-full px-6 py-6 space-y-6">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -473,6 +499,12 @@ export function FlowEditorPage() {
                       </h1>
                       {formData.is_default && (
                         <Badge variant="secondary" className="text-[10px]">Base Flow</Badge>
+                      )}
+                      {hasChanges && (
+                        <Badge variant="outline" className="text-[10px] gap-1.5 shrink-0">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          มีการเปลี่ยนแปลง
+                        </Badge>
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">
@@ -486,7 +518,7 @@ export function FlowEditorPage() {
                     aria-label={chatOpen ? 'ซ่อนแชททดสอบ' : 'แสดงแชททดสอบ'}
                     className="h-9 w-9 shrink-0"
                   >
-                    {chatOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+                    {chatOpen ? <PanelRightClose className="h-4 w-4" strokeWidth={1.5} /> : <PanelRightOpen className="h-4 w-4" strokeWidth={1.5} />}
                   </Button>
                 </div>
 
@@ -507,7 +539,13 @@ export function FlowEditorPage() {
             pendingApproval={pendingApproval}
             onApprovalClose={handleApprovalClose}
             disabled={!selectedFlowId}
-            disabledReason={!selectedFlowId ? 'บันทึก Flow ก่อนทดสอบ' : undefined}
+            disabledReason={
+              isCreatingNew
+                ? 'สร้างและบันทึก Flow ก่อน แล้วกลับมาทดสอบ'
+                : !selectedFlowId
+                ? 'บันทึก Flow ก่อนทดสอบ'
+                : undefined
+            }
           />
         )}
       </div>
@@ -523,7 +561,7 @@ export function FlowEditorPage() {
               aria-label="กลับไปหน้าการเชื่อมต่อ"
               className="-ml-2 h-9 w-9 shrink-0"
             >
-              <ArrowLeft className="h-4 w-4" />
+              <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
             </Button>
             <span className="font-semibold truncate">
               {formData.name || 'Flow ใหม่'}
@@ -532,9 +570,24 @@ export function FlowEditorPage() {
               <Badge variant="secondary" className="text-[10px] shrink-0">Base</Badge>
             )}
           </div>
-          <Button size="sm" onClick={handleSave} disabled={isSaving || !hasChanges} className="shrink-0">
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            {hasChanges && !isSaving && (
+              <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 tabular-nums">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                ยังไม่บันทึก
+              </span>
+            )}
+            <Button size="sm" onClick={handleSave} disabled={isSaving || !hasChanges}>
+              {isSaving ? (
+                <Loader2 className="h-4 w-4" strokeWidth={1.5} />
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-1" strokeWidth={1.5} />
+                  บันทึก
+                </>
+              )}
+            </Button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-hidden">
@@ -545,7 +598,7 @@ export function FlowEditorPage() {
                 className="w-full"
                 onClick={() => navigate(`/flows/new?botId=${botId}`)}
               >
-                <Plus className="h-4 w-4 mr-2" />สร้าง Flow ใหม่
+                <Plus className="h-4 w-4 mr-2" strokeWidth={1.5} />สร้าง Flow ใหม่
               </Button>
               {isLoadingFlows ? (
                 <div className="flex justify-center py-8">
@@ -590,7 +643,7 @@ export function FlowEditorPage() {
                 <div className="flex-1 flex flex-col items-center justify-center h-full p-8">
                   <p className="text-muted-foreground text-center mb-4">เลือกหรือสร้าง Flow เพื่อเริ่มต้น</p>
                   <Button onClick={() => setMobileActiveTab('flows')}>
-                    <List className="h-4 w-4 mr-2" />ดู Flows ทั้งหมด
+                    <List className="h-4 w-4 mr-2" strokeWidth={1.5} />ดู Flows ทั้งหมด
                   </Button>
                 </div>
               ) : isLoadingFlow ? (
@@ -616,7 +669,13 @@ export function FlowEditorPage() {
                 pendingApproval={pendingApproval}
                 onApprovalClose={handleApprovalClose}
                 disabled={!selectedFlowId}
-                disabledReason={!selectedFlowId ? 'บันทึก Flow ก่อนทดสอบ' : undefined}
+                disabledReason={
+                  isCreatingNew
+                    ? 'สร้างและบันทึก Flow ก่อน แล้วกลับมาทดสอบ'
+                    : !selectedFlowId
+                    ? 'บันทึก Flow ก่อนทดสอบ'
+                    : undefined
+                }
                 className="flex-1 w-full border-0"
               />
             </div>

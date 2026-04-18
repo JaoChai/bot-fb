@@ -1,10 +1,13 @@
-import { Bot, Sparkles, Star, AlertCircle, Brain, FileText } from 'lucide-react';
+import { useState } from 'react';
+import { Bot, Sparkles, Star, AlertCircle, Brain, FileText, ChevronDown, HelpCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { SettingSection, SettingRow } from '@/components/connections';
 import { ToolCheckboxGrid } from '@/components/flows/ToolCheckboxGrid';
+import { cn } from '@/lib/utils';
 
 interface AgentTabProps {
   agenticMode: boolean;
@@ -18,6 +21,8 @@ interface AgentTabProps {
   ) => void;
 }
 
+const SMART_DEFAULTS = ['search_kb', 'escalate_to_human'];
+
 export function AgentTab({
   agenticMode,
   enabledTools,
@@ -26,10 +31,46 @@ export function AgentTab({
   isDefault,
   onChange,
 }: AgentTabProps) {
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  const handleAgenticToggle = (enabled: boolean) => {
+    onChange('agentic_mode', enabled);
+    if (enabled && (!enabledTools || enabledTools.length === 0)) {
+      onChange('enabled_tools', SMART_DEFAULTS);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Agentic Mode */}
       <div className="border rounded-lg p-5 space-y-4">
+        {/* Help Block */}
+        <Collapsible open={helpOpen} onOpenChange={setHelpOpen} className="rounded-md border bg-muted/30">
+          <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm font-medium hover:bg-muted/50 transition-colors">
+            <span className="flex items-center gap-2">
+              <HelpCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+              Agentic Mode คืออะไร?
+            </span>
+            <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', helpOpen && 'rotate-180')} strokeWidth={1.5} />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="border-t px-3 py-3 text-xs text-muted-foreground space-y-2 leading-relaxed">
+              <p>
+                <span className="font-medium text-foreground">Agentic Mode</span> ให้บอทสามารถเรียกใช้ "เครื่องมือ" (tools) เพื่อทำงานซับซ้อนได้ เช่น ค้นหาในฐานความรู้ ส่งต่อให้แอดมิน หรือเรียก API ภายนอก
+              </p>
+              <p>
+                แทนที่จะตอบจากความรู้ทั่วไปอย่างเดียว บอทจะตัดสินใจเรียก tool ที่เหมาะสม รับผลลัพธ์ แล้วนำมาประกอบคำตอบ
+              </p>
+              <p className="text-foreground font-medium">คำแนะนำเริ่มต้น:</p>
+              <ul className="list-disc list-inside space-y-0.5 pl-2">
+                <li><code className="text-[11px] bg-background px-1 py-0.5 rounded border">escalate_to_human</code> — ส่งต่อแอดมินเมื่อบอทตอบไม่ได้</li>
+                <li><code className="text-[11px] bg-background px-1 py-0.5 rounded border">search_kb</code> — ค้นหาในฐานความรู้ก่อนตอบ</li>
+              </ul>
+              <p className="text-[11px] text-muted-foreground">* ถ้าเลือกเครื่องมือที่ไม่เหมาะกับงาน บอทอาจเรียกใช้ผิดหรือเรียกซ้ำ เพิ่มค่าใช้จ่าย</p>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
         <SettingSection
           icon={Bot}
           title="Agentic Mode"
@@ -40,7 +81,7 @@ export function AgentTab({
             <Switch
               id="agentic-mode-toggle"
               checked={agenticMode}
-              onCheckedChange={(checked) => onChange('agentic_mode', checked)}
+              onCheckedChange={handleAgenticToggle}
             />
           </SettingRow>
         </SettingSection>
