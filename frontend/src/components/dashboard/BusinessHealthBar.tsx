@@ -47,33 +47,26 @@ export function BusinessHealthBar({ bots, alerts }: BusinessHealthBarProps) {
     Icon = Activity;
   }
 
-  const colorClasses = {
-    green:
-      'bg-emerald-50/80 border-emerald-200/60 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800/40 dark:text-emerald-400',
-    yellow:
-      'bg-amber-50/80 border-amber-200/60 text-amber-700 dark:bg-amber-950/30 dark:border-amber-800/40 dark:text-amber-400',
-    red: 'bg-red-50/80 border-red-200/60 text-red-700 dark:bg-red-950/30 dark:border-red-800/40 dark:text-red-400',
+  const textColorClasses = {
+    green: 'text-emerald-600 dark:text-emerald-400',
+    yellow: 'text-amber-600 dark:text-amber-400',
+    red: 'text-destructive',
   };
 
   const dotColorClasses = {
     green: 'bg-emerald-500',
     yellow: 'bg-amber-500',
-    red: 'bg-red-500',
+    red: 'bg-destructive',
   };
 
   const pulseColorClasses = {
     green: 'bg-emerald-400',
     yellow: 'bg-amber-400',
-    red: 'bg-red-400',
+    red: 'bg-destructive/70',
   };
 
   return (
-    <div
-      className={cn(
-        'flex items-center gap-3 rounded-xl border px-4 py-3 backdrop-blur-sm',
-        colorClasses[status],
-      )}
-    >
+    <div className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3">
       {/* Animated pulse dot */}
       <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
         <span
@@ -89,8 +82,8 @@ export function BusinessHealthBar({ bots, alerts }: BusinessHealthBarProps) {
           )}
         />
       </span>
-      <Icon className="h-4 w-4" />
-      <span className="text-sm font-medium">{statusText}</span>
+      <Icon className={cn('h-4 w-4', textColorClasses[status])} strokeWidth={1.5} />
+      <span className={cn('text-sm font-medium', textColorClasses[status])}>{statusText}</span>
     </div>
   );
 }

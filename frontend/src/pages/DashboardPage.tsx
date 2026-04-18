@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ShoppingCart, DollarSign, MessageSquare, Banknote } from 'lucide-react';
 import { formatTHB, formatBaht } from '@/lib/currency';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/connections';
 import { useDashboardSummary } from '@/hooks/useDashboard';
 import { useCostAnalytics } from '@/hooks/useCostAnalytics';
 import { useOrderSummary, useOrdersByProduct } from '@/hooks/useOrders';
@@ -24,22 +25,8 @@ function calcTrend(today: number, yesterday: number) {
   const pct = ((today - yesterday) / yesterday) * 100;
   return {
     value: Math.abs(Math.round(pct)),
-    direction: pct > 0 ? 'up' as const : pct < 0 ? 'down' as const : 'stable' as const,
+    direction: pct > 0 ? ('up' as const) : pct < 0 ? ('down' as const) : ('stable' as const),
   };
-}
-
-function DashboardHeader({ today }: { today: string }) {
-  return (
-    <div className="flex items-center justify-between">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">แดชบอร์ด</h1>
-        <p className="text-sm text-muted-foreground mt-1">ภาพรวมธุรกิจของคุณ</p>
-      </div>
-      <div className="rounded-lg bg-primary/5 px-3 py-1.5 text-sm font-medium text-muted-foreground border border-primary/10">
-        {today}
-      </div>
-    </div>
-  );
 }
 
 export function DashboardPage() {
@@ -59,10 +46,18 @@ export function DashboardPage() {
     [],
   );
 
+  const header = (
+    <PageHeader
+      title="แดชบอร์ด"
+      description="ภาพรวมธุรกิจของคุณ"
+      meta={today}
+    />
+  );
+
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <DashboardHeader today={today} />
+        {header}
         <DashboardSkeleton />
       </div>
     );
@@ -71,14 +66,10 @@ export function DashboardPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <DashboardHeader today={today} />
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center">
+        {header}
+        <div className="rounded-lg border bg-card p-8 text-center">
           <p className="text-destructive font-medium">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>
-          <Button
-            variant="outline"
-            className="mt-4"
-            onClick={() => window.location.reload()}
-          >
+          <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>
             ลองใหม่
           </Button>
         </div>
@@ -87,21 +78,24 @@ export function DashboardPage() {
   }
 
   const activities = data?.recent_activity ?? [];
-  const revTrend = calcTrend(orderData?.summary?.today_revenue ?? 0, orderData?.summary?.yesterday_revenue ?? 0);
-  const msgTrend = calcTrend(data?.summary.messages_today ?? 0, data?.summary.messages_yesterday ?? 0);
+  const revTrend = calcTrend(
+    orderData?.summary?.today_revenue ?? 0,
+    orderData?.summary?.yesterday_revenue ?? 0,
+  );
+  const msgTrend = calcTrend(
+    data?.summary.messages_today ?? 0,
+    data?.summary.messages_yesterday ?? 0,
+  );
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <DashboardHeader today={today} />
+      {header}
 
-      {/* Section 1: Business Health Bar */}
       <BusinessHealthBar
         bots={data?.bots ?? []}
         alerts={data?.alerts ?? { handover_conversations: [] }}
       />
 
-      {/* Section 2: Key Metrics (4 cards) */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <DashboardStatCard
           title="ยอดขายวันนี้"
@@ -109,14 +103,12 @@ export function DashboardPage() {
           description={`${orderData?.summary?.today_orders ?? 0} ออเดอร์`}
           icon={ShoppingCart}
           trend={revTrend}
-          className="border-blue-200/50 bg-gradient-to-br from-blue-50/80 to-card dark:border-blue-800/30 dark:from-blue-950/20 dark:to-card"
         />
         <DashboardStatCard
           title="ยอดขายเดือนนี้"
           value={formatBaht(orderData?.summary?.this_month_revenue ?? 0)}
           description={`${orderData?.summary?.this_month_orders ?? 0} ออเดอร์`}
           icon={DollarSign}
-          className="border-emerald-200/50 bg-gradient-to-br from-emerald-50/80 to-card dark:border-emerald-800/30 dark:from-emerald-950/20 dark:to-card"
         />
         <DashboardStatCard
           title="ข้อความวันนี้"
@@ -124,18 +116,15 @@ export function DashboardPage() {
           description={`จาก ${data?.summary.total_bots ?? 0} บอท`}
           icon={MessageSquare}
           trend={msgTrend}
-          className="border-violet-200/50 bg-gradient-to-br from-violet-50/80 to-card dark:border-violet-800/30 dark:from-violet-950/20 dark:to-card"
         />
         <DashboardStatCard
           title="ค่า API วันนี้"
           value={formatTHB(costData?.summary.today_cost ?? 0)}
           description={`เดือน ${formatTHB(costData?.summary.month_cost ?? 0)}`}
           icon={Banknote}
-          className="border-amber-200/50 bg-gradient-to-br from-amber-50/80 to-card dark:border-amber-800/30 dark:from-amber-950/20 dark:to-card"
         />
       </div>
 
-      {/* Section 3: Dual Axis Chart (Revenue + Cost) */}
       <DualAxisChart
         orderTimeSeries={orderData?.time_series ?? []}
         costTimeSeries={costData?.time_series ?? []}
@@ -143,26 +132,19 @@ export function DashboardPage() {
         vipTotalSpent={data?.summary.vip_total_spent}
       />
 
-      {/* Section 4: Bots + Products (2 columns) */}
       <div className="grid gap-4 lg:grid-cols-2">
         <BotStatusList bots={data?.bots ?? []} />
-        {productsData && productsData.length > 0 && (
-          <ProductsSummaryCard products={productsData} />
-        )}
+        {productsData && productsData.length > 0 && <ProductsSummaryCard products={productsData} />}
       </div>
 
-      {/* Section 5: Cost Breakdown + Stock/Activity (2 columns) */}
       <div className="grid gap-4 lg:grid-cols-2">
-        {costData?.summary && (
-          <CompactCostBreakdown summary={costData.summary} />
-        )}
+        {costData?.summary && <CompactCostBreakdown summary={costData.summary} />}
         <div className="space-y-4">
           {user?.role === 'owner' && <CompactStockToggle />}
           <RecentActivityTimeline activities={activities.slice(0, 3)} />
         </div>
       </div>
 
-      {/* Section 6: Recent Orders Preview */}
       <RecentOrdersPreview />
     </div>
   );
