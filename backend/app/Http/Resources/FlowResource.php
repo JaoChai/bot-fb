@@ -20,17 +20,6 @@ class FlowResource extends JsonResource
             'temperature' => (float) $this->temperature,
             'max_tokens' => $this->max_tokens,
 
-            // Agentic mode
-            'agentic_mode' => $this->agentic_mode,
-            'max_tool_calls' => $this->max_tool_calls,
-            'enabled_tools' => $this->enabled_tools ?? [],
-
-            // Agent Safety
-            'agent_timeout_seconds' => $this->agent_timeout_seconds,
-            'agent_max_cost_per_request' => $this->agent_max_cost_per_request,
-            'hitl_enabled' => $this->hitl_enabled,
-            'hitl_dangerous_actions' => $this->hitl_dangerous_actions ?? [],
-
             // Knowledge Bases (Many-to-Many)
             'knowledge_bases' => $this->whenLoaded('knowledgeBases', function () {
                 return $this->knowledgeBases->map(fn ($kb) => [
@@ -42,16 +31,7 @@ class FlowResource extends JsonResource
             }),
 
             // Settings
-            'language' => $this->language,
             'is_default' => $this->is_default,
-
-            // Second AI
-            'second_ai_enabled' => $this->second_ai_enabled ?? false,
-            'second_ai_options' => $this->second_ai_options ?? [
-                'fact_check' => false,
-                'policy' => false,
-                'personality' => false,
-            ],
 
             // Timestamps
             'created_at' => $this->created_at?->toIso8601String(),

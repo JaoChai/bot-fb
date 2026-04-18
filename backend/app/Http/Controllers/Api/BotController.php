@@ -143,10 +143,6 @@ class BotController extends Controller
             'system_prompt' => $this->getDefaultBaseFlowPrompt($bot),
             'temperature' => 0.7,
             'max_tokens' => 2048,
-            'agentic_mode' => false,
-            'max_tool_calls' => 10,
-            'enabled_tools' => [],
-            'language' => 'th',
             'is_default' => true,
         ]);
 

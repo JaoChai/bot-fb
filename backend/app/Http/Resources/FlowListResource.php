@@ -8,7 +8,7 @@ use Illuminate\Support\Str;
 
 /**
  * Slim resource for flow list endpoint.
- * Excludes large fields (system_prompt, enabled_tools) to reduce payload size.
+ * Excludes large fields (system_prompt) to reduce payload size.
  * Use FlowResource for detail/edit endpoints that need full data.
  */
 class FlowListResource extends JsonResource
@@ -21,14 +21,10 @@ class FlowListResource extends JsonResource
             'name' => $this->name,
             'description' => $this->description ? Str::limit($this->description, 100) : null,
 
-            // Agentic mode flag only (no enabled_tools array)
-            'agentic_mode' => $this->agentic_mode,
-
             // Knowledge Bases count only (no full KB data)
             'knowledge_bases_count' => $this->whenLoaded('knowledgeBases', fn () => $this->knowledgeBases->count(), 0),
 
             // Settings
-            'language' => $this->language,
             'is_default' => $this->is_default,
 
             // Timestamps

@@ -33,10 +33,6 @@ class FlowController extends Controller
         'system_prompt',
         'temperature',
         'max_tokens',
-        'enabled_tools',
-        'agentic_mode',
-        'second_ai_enabled',
-        'second_ai_options',
     ];
 
     public function __construct(
@@ -46,7 +42,7 @@ class FlowController extends Controller
 
     /**
      * List all flows for a bot.
-     * Uses FlowListResource for slim payload (no system_prompt, enabled_tools).
+     * Uses FlowListResource for slim payload (no system_prompt).
      *
      * @OA\Get(
      *     path="/api/bots/{bot}/flows",
@@ -141,10 +137,6 @@ class FlowController extends Controller
      *             @OA\Property(property="system_prompt", type="string", description="AI system prompt"),
      *             @OA\Property(property="temperature", type="number", format="float", minimum=0, maximum=2, default=0.7),
      *             @OA\Property(property="max_tokens", type="integer", minimum=100, maximum=32000, default=2048),
-     *             @OA\Property(property="agentic_mode", type="boolean", default=false),
-     *             @OA\Property(property="max_tool_calls", type="integer", minimum=1, maximum=50, default=10),
-     *             @OA\Property(property="enabled_tools", type="array", @OA\Items(type="string")),
-     *             @OA\Property(property="language", type="string", enum={"th", "en", "zh", "ja", "ko"}, default="th"),
      *             @OA\Property(property="is_default", type="boolean", default=false),
      *             @OA\Property(
      *                 property="knowledge_bases",
@@ -316,10 +308,6 @@ class FlowController extends Controller
      *             @OA\Property(property="system_prompt", type="string"),
      *             @OA\Property(property="temperature", type="number", format="float", minimum=0, maximum=2),
      *             @OA\Property(property="max_tokens", type="integer", minimum=100, maximum=32000),
-     *             @OA\Property(property="agentic_mode", type="boolean"),
-     *             @OA\Property(property="max_tool_calls", type="integer", minimum=1, maximum=50),
-     *             @OA\Property(property="enabled_tools", type="array", @OA\Items(type="string")),
-     *             @OA\Property(property="language", type="string", enum={"th", "en", "zh", "ja", "ko"}),
      *             @OA\Property(property="is_default", type="boolean"),
      *             @OA\Property(
      *                 property="knowledge_bases",
@@ -728,9 +716,6 @@ PROMPT;
      */
     protected function castBooleanFields(array $data): array
     {
-        if (array_key_exists('agentic_mode', $data)) {
-            $data['agentic_mode'] = filter_var($data['agentic_mode'], FILTER_VALIDATE_BOOLEAN);
-        }
         if (array_key_exists('is_default', $data)) {
             $data['is_default'] = filter_var($data['is_default'], FILTER_VALIDATE_BOOLEAN);
         }
