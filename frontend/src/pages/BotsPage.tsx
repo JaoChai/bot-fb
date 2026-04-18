@@ -1,14 +1,15 @@
-import { useState, useCallback } from 'react';
-import { Link } from 'react-router';
+import { useState, useCallback, useMemo } from 'react';
+import { Link, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { queryKeys } from '@/lib/query';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,86 +28,80 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useBots } from '@/hooks/useKnowledgeBase';
-import { useToggleBotStatus } from '@/hooks/useConnections';
 import { useToast } from '@/hooks/use-toast';
 import { apiDelete } from '@/lib/api';
 import {
   Loader2,
-  Settings,
   Bot as BotIcon,
   Plus,
-  Copy,
-  Check,
   Workflow,
+  Settings,
   MoreHorizontal,
-  Trash2,
-  ExternalLink,
-  MessageCircle,
 } from 'lucide-react';
-import { ChannelIcon } from '@/components/ui/channel-icon';
 import { PageHeader } from '@/components/connections';
-import { EmptyState } from '@/components/common';
-import { cn } from '@/lib/utils';
+import {
+  EmptyState,
+  Toolbar,
+  PlatformBadge,
+  StatusDot,
+} from '@/components/common';
+import type { Platform } from '@/components/common';
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+const PLATFORM_LABEL: Record<Platform, string> = {
+  line: 'LINE Official Account',
+  facebook: 'Facebook Page',
+  telegram: 'Telegram Bot',
+  testing: 'Testing',
+};
+
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'เมื่อสักครู่';
+  if (m < 60) return `${m} นาทีที่แล้ว`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} ชั่วโมงที่แล้ว`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d} วันที่แล้ว`;
+  return new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function BotsPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: botsResponse, isLoading, error } = useBots();
-  const toggleStatusMutation = useToggleBotStatus();
   const { toast } = useToast();
-  const [copiedId, setCopiedId] = useState<number | null>(null);
+
+  // Filter state
+  const [search, setSearch] = useState('');
+  const [platformFilter, setPlatformFilter] = useState<'all' | Platform>('all');
+
+  // Delete state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [botToDelete, setBotToDelete] = useState<{ id: number; name: string } | null>(null);
-  const [togglingBotId, setTogglingBotId] = useState<number | null>(null);
-  const [localStatuses, setLocalStatuses] = useState<Record<number, string>>({});
 
-  const bots = botsResponse?.data || [];
+  const bots = botsResponse?.data ?? [];
 
-  const handleToggleStatus = useCallback(async (bot: { id: number; name: string; status: string }) => {
-    const currentStatus = localStatuses[bot.id] ?? bot.status;
-    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-    setTogglingBotId(bot.id);
-    setLocalStatuses(prev => ({ ...prev, [bot.id]: newStatus }));
-    try {
-      await toggleStatusMutation.mutateAsync({ botId: bot.id, status: newStatus });
-      toast({
-        title: newStatus === 'active' ? 'เปิดใช้งานแล้ว' : 'ปิดใช้งานแล้ว',
-        description: `"${bot.name}" ${newStatus === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}แล้ว`,
-      });
-    } catch (err) {
-      setLocalStatuses(prev => ({ ...prev, [bot.id]: currentStatus }));
-      toast({
-        title: 'เกิดข้อผิดพลาด',
-        description: err instanceof Error ? err.message : 'ไม่สามารถเปลี่ยนสถานะได้',
-        variant: 'destructive',
-      });
-    } finally {
-      setTogglingBotId(null);
-    }
-  }, [toggleStatusMutation, toast, localStatuses]);
+  // Derived filtered list
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return bots.filter((b: { name: string; channel_type: string }) => {
+      if (platformFilter !== 'all' && b.channel_type !== platformFilter) return false;
+      if (q && !b.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [bots, search, platformFilter]);
 
-  const copyWebhookUrl = async (botId: number, webhookUrl: string) => {
-    try {
-      new URL(webhookUrl);
-    } catch {
-      toast({ title: 'ข้อผิดพลาด', description: 'Webhook URL ไม่ถูกต้อง', variant: 'destructive' });
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(webhookUrl);
-      setCopiedId(botId);
-      toast({ title: 'คัดลอกแล้ว', description: 'คัดลอก Webhook URL เรียบร้อยแล้ว' });
-      setTimeout(() => setCopiedId(null), 2000);
-    } catch {
-      toast({ title: 'เกิดข้อผิดพลาด', description: 'ไม่สามารถคัดลอก URL ได้', variant: 'destructive' });
-    }
-  };
-
-  const handleDeleteClick = (bot: { id: number; name: string }) => {
+  const handleDeleteClick = useCallback((bot: { id: number; name: string }) => {
     setBotToDelete(bot);
     setDeleteDialogOpen(true);
-  };
+  }, []);
 
-  const handleDeleteConfirm = async () => {
+  const handleDeleteConfirm = useCallback(async () => {
     if (!botToDelete) return;
     try {
       await apiDelete(`/bots/${botToDelete.id}`);
@@ -122,16 +117,9 @@ export function BotsPage() {
       setDeleteDialogOpen(false);
       setBotToDelete(null);
     }
-  };
+  }, [botToDelete, toast, queryClient]);
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'active': return 'ทำงาน';
-      case 'inactive': return 'หยุดทำงาน';
-      case 'paused': return 'พักการใช้งาน';
-      default: return status;
-    }
-  };
+  // ── Loading / Error ────────────────────────────────────────────────────────
 
   if (isLoading) {
     return (
@@ -149,19 +137,13 @@ export function BotsPage() {
     );
   }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="การเชื่อมต่อ"
         description="จัดการการเชื่อมต่อ Chatbot กับ Platform ต่างๆ"
-        actions={
-          <Button asChild>
-            <Link to="/connections/add">
-              <Plus className="h-4 w-4" strokeWidth={1.5} />
-              เพิ่มการเชื่อมต่อ
-            </Link>
-          </Button>
-        }
       />
 
       {bots.length === 0 ? (
@@ -172,176 +154,139 @@ export function BotsPage() {
           action={
             <Button size="lg" asChild>
               <Link to="/connections/add">
-                <Plus className="h-4 w-4" strokeWidth={1.5} />
+                <Plus className="h-4 w-4" strokeWidth={2} />
                 สร้างการเชื่อมต่อแรก
               </Link>
             </Button>
           }
         />
       ) : (
-        <div className="space-y-3">
-          {bots.map(bot => {
-            const currentStatus = localStatuses[bot.id] ?? bot.status;
-            const isActive = currentStatus === 'active';
-            const isToggling = togglingBotId === bot.id;
-
-            return (
-              <div
-                key={bot.id}
-                className="relative border rounded-lg p-4 md:p-5 transition-colors duration-150 hover:border-foreground/20 hover:bg-accent/30"
+        <>
+          {/* Toolbar: search + platform filter + create action */}
+          <Toolbar
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="ค้นหาบอท..."
+            filters={
+              <Select
+                value={platformFilter}
+                onValueChange={(v) => setPlatformFilter(v as 'all' | Platform)}
               >
-                {/* Status switch — top-right */}
-                <div className="absolute top-4 right-4 flex items-center gap-2">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Switch
-                        checked={isActive}
-                        onCheckedChange={() => handleToggleStatus(bot)}
-                        disabled={isToggling}
-                        className="data-[state=checked]:bg-emerald-500"
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {isActive ? 'คลิกเพื่อปิดใช้งาน' : 'คลิกเพื่อเปิดใช้งาน'}
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
+                <SelectTrigger className="w-36 h-9">
+                  <SelectValue placeholder="ทั้งหมด" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทั้งหมด</SelectItem>
+                  <SelectItem value="line">LINE</SelectItem>
+                  <SelectItem value="facebook">Facebook</SelectItem>
+                  <SelectItem value="telegram">Telegram</SelectItem>
+                  <SelectItem value="testing">Testing</SelectItem>
+                </SelectContent>
+              </Select>
+            }
+            actions={
+              <Button asChild>
+                <Link to="/connections/add">
+                  <Plus className="h-4 w-4" strokeWidth={2} />
+                  สร้าง Bot
+                </Link>
+              </Button>
+            }
+          />
 
-                <div className="flex items-start gap-4 pr-16">
-                  {/* Platform icon */}
-                  <div className="shrink-0 w-11 h-11 flex items-center justify-center rounded-lg border bg-background">
-                    <ChannelIcon channel={bot.channel_type} className="h-7 w-7" />
-                  </div>
+          {/* Filtered-to-zero message */}
+          {filtered.length === 0 ? (
+            <div className="rounded-lg border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
+              ไม่พบบอทที่ตรงกับคำค้น
+            </div>
+          ) : (
+            /* List rows */
+            <div className="rounded-lg border bg-card divide-y">
+              {filtered.map((bot) => {
+                const isActive = bot.status === 'active';
+                const platform = bot.channel_type as Platform;
 
-                  {/* Bot info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="text-base font-semibold truncate text-foreground">{bot.name}</h3>
-                      <span className="flex items-center gap-1.5 shrink-0">
-                        <span
-                          className={cn(
-                            'size-2 rounded-full shrink-0',
-                            isActive ? 'bg-emerald-500' : 'bg-muted-foreground'
-                          )}
+                return (
+                  <div
+                    key={bot.id}
+                    className="group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/40"
+                  >
+                    {/* Leading: platform badge */}
+                    <PlatformBadge
+                      platform={platform}
+                      size="md"
+                      showLabel={false}
+                      className="shrink-0"
+                    />
+
+                    {/* Main: name + meta */}
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/bots/${bot.id}/settings`)}
+                      className="flex-1 min-w-0 text-left focus:outline-none"
+                    >
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-medium truncate">{bot.name}</h3>
+                        <StatusDot
+                          status={isActive ? 'active' : 'inactive'}
+                          pulse={isActive}
                         />
-                        <span
-                          className={cn(
-                            'text-xs',
-                            isActive
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : 'text-muted-foreground'
-                          )}
-                        >
-                          {isToggling ? '...' : getStatusText(currentStatus)}
-                        </span>
-                      </span>
-                    </div>
-
-                    {/* Webhook URL */}
-                    {bot.webhook_url && (
-                      <div className="flex items-center gap-1.5 mt-1.5">
-                        <code className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded font-mono truncate min-w-0 max-w-[220px] sm:max-w-sm md:max-w-lg">
-                          {bot.webhook_url}
-                        </code>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => copyWebhookUrl(bot.id, bot.webhook_url!)}
-                              className="shrink-0 h-7 w-7"
-                            >
-                              {copiedId === bot.id
-                                ? <Check className="h-3.5 w-3.5 text-emerald-600" />
-                                : <Copy className="h-3.5 w-3.5" />}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>คัดลอก Webhook URL</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="shrink-0 h-7 w-7"
-                              asChild
-                            >
-                              <a href={bot.webhook_url} target="_blank" rel="noopener noreferrer">
-                                <ExternalLink className="h-3.5 w-3.5" />
-                              </a>
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>เปิดใน Tab ใหม่</TooltipContent>
-                        </Tooltip>
                       </div>
-                    )}
+                      <p className="text-xs text-muted-foreground truncate tabular-nums">
+                        {PLATFORM_LABEL[platform]} · อัพเดต {formatRelativeTime(bot.updated_at)}
+                      </p>
+                    </button>
 
-                    {/* Action row — always visible, icon-only on mobile, with labels on md+ */}
-                    <div className="flex items-center gap-2 mt-3">
-                      {/* Settings — icon-only on mobile */}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="outline" size="sm" asChild className="h-9 px-2.5 md:px-3">
-                            <Link to={`/bots/${bot.id}/settings`}>
-                              <Settings className="h-4 w-4" strokeWidth={1.5} />
-                              <span className="hidden md:inline ml-1.5">ตั้งค่า</span>
-                            </Link>
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent className="md:hidden">ตั้งค่า Bot และ Prompt</TooltipContent>
-                      </Tooltip>
-
-                      {/* AI Flow — icon-only on mobile */}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button size="sm" asChild className="h-9 px-2.5 md:px-3">
-                            <Link to={`/flows/editor?botId=${bot.id}`}>
-                              <Workflow className="h-4 w-4" strokeWidth={1.5} />
-                              <span className="hidden md:inline ml-1.5">AI Flow</span>
-                            </Link>
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent className="md:hidden">แก้ไข AI Flow และทดสอบ Chat</TooltipContent>
-                      </Tooltip>
-
-                      {/* More menu */}
+                    {/* Trailing: quick actions */}
+                    <div className="flex items-center gap-1 shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100 transition-opacity">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => navigate(`/flows/editor?botId=${bot.id}`)}
+                      >
+                        <Workflow className="h-4 w-4 mr-1" strokeWidth={1.5} />
+                        <span className="hidden sm:inline">Flow</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => navigate(`/bots/${bot.id}/settings`)}
+                      >
+                        <Settings className="h-4 w-4 mr-1" strokeWidth={1.5} />
+                        <span className="hidden sm:inline">ตั้งค่า</span>
+                      </Button>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-9 w-9"
-                            aria-label="ตัวเลือกเพิ่มเติม"
-                          >
+                          <Button variant="ghost" size="icon" aria-label="เมนูเพิ่มเติม">
                             <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuItem asChild>
-                            <Link to={`/bots/${bot.id}/edit`}>
-                              <MessageCircle className="h-4 w-4 mr-2" strokeWidth={1.5} />
-                              แก้ไข API & Models
-                            </Link>
+                          <DropdownMenuItem onClick={() => navigate(`/bots/${bot.id}/edit`)}>
+                            แก้ไขการเชื่อมต่อ
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => navigate(`/chat?botId=${bot.id}`)}>
+                            ดูการสนทนา
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() => handleDeleteClick(bot)}
                             className="text-destructive focus:text-destructive focus:bg-destructive/10"
                           >
-                            <Trash2 className="h-4 w-4 mr-2" strokeWidth={1.5} />
-                            ลบการเชื่อมต่อ
+                            ลบบอท
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
                   </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
+      {/* Delete confirmation dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

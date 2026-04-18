@@ -1,6 +1,7 @@
 import { Settings } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
-import { SettingSection, SettingRow } from '@/components/connections';
+import { Panel } from '@/components/common';
+import { SettingRow } from '@/components/connections';
 import type { ConnectionFormData } from '@/hooks/useConnectionForm';
 
 interface AdvancedOptionsSectionProps {
@@ -10,7 +11,7 @@ interface AdvancedOptionsSectionProps {
 
 export function AdvancedOptionsSection({ formData, handleChange }: AdvancedOptionsSectionProps) {
   return (
-    <SettingSection icon={Settings} title="ตัวเลือกขั้นสูง">
+    <Panel icon={Settings} title="ตัวเลือกขั้นสูง">
       <div className="space-y-4 max-w-md">
         <SettingRow
           label="Webhook Forwarder"
@@ -36,6 +37,6 @@ export function AdvancedOptionsSection({ formData, handleChange }: AdvancedOptio
           />
         </SettingRow>
       </div>
-    </SettingSection>
+    </Panel>
   );
 }

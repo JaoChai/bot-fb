@@ -2,7 +2,8 @@ import { BarChart2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
-import { SettingSection, SettingRow } from '@/components/connections';
+import { Panel } from '@/components/common';
+import { SettingRow } from '@/components/connections';
 
 interface RateLimitTabProps {
   daily_message_limit: number;
@@ -21,12 +22,12 @@ export function RateLimitTab({
 }: RateLimitTabProps) {
   return (
     <div className="space-y-6">
-      <div className="border rounded-lg p-5 space-y-6">
-        <SettingSection
-          icon={BarChart2}
-          title="จำกัดการใช้งาน"
-          description="ป้องกันสแปมและการใช้ประโยชน์มากเกินไป"
-        >
+      <Panel
+        icon={BarChart2}
+        title="จำกัดการใช้งาน"
+        description="ป้องกันสแปมและการใช้ประโยชน์มากเกินไป"
+      >
+        <div className="px-5 py-4 space-y-6">
           <div className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="daily-limit" className="text-sm font-medium">
@@ -68,44 +69,44 @@ export function RateLimitTab({
               </div>
             </div>
           </div>
-        </SettingSection>
 
-        <div className="border-t pt-5 space-y-4">
-          <p className="text-xs text-muted-foreground">
-            ข้อความเมื่อถูกจำกัด — เว้นว่างไว้เพื่อไม่ตอบกลับ
-          </p>
+          <div className="border-t pt-5 space-y-4">
+            <p className="text-xs text-muted-foreground">
+              ข้อความเมื่อถูกจำกัด — เว้นว่างไว้เพื่อไม่ตอบกลับ
+            </p>
 
-          <SettingRow
-            label="ข้อความเมื่อบอทถูกจำกัด (รวมทุกคน)"
-            htmlFor="rate-limit-bot-msg"
-            orientation="vertical"
-          >
-            <Textarea
-              id="rate-limit-bot-msg"
-              placeholder="ตัวอย่าง: ขออภัยครับ บอทได้รับข้อความจำนวนมากในวันนี้ กรุณาลองใหม่พรุ่งนี้ครับ"
-              value={rate_limit_bot_message}
-              onChange={(e) => onChange('rate_limit_bot_message', e.target.value)}
-              rows={2}
-              className="transition-colors duration-150"
-            />
-          </SettingRow>
+            <SettingRow
+              label="ข้อความเมื่อบอทถูกจำกัด (รวมทุกคน)"
+              htmlFor="rate-limit-bot-msg"
+              orientation="vertical"
+            >
+              <Textarea
+                id="rate-limit-bot-msg"
+                placeholder="ตัวอย่าง: ขออภัยครับ บอทได้รับข้อความจำนวนมากในวันนี้ กรุณาลองใหม่พรุ่งนี้ครับ"
+                value={rate_limit_bot_message}
+                onChange={(e) => onChange('rate_limit_bot_message', e.target.value)}
+                rows={2}
+                className="transition-colors duration-150"
+              />
+            </SettingRow>
 
-          <SettingRow
-            label="ข้อความเมื่อผู้ใช้ถูกจำกัด (ต่อคน)"
-            htmlFor="rate-limit-user-msg"
-            orientation="vertical"
-          >
-            <Textarea
-              id="rate-limit-user-msg"
-              placeholder="ตัวอย่าง: ขออภัยครับ คุณส่งข้อความครบจำนวนที่กำหนดต่อวันแล้ว กรุณาลองใหม่พรุ่งนี้ครับ"
-              value={rate_limit_user_message}
-              onChange={(e) => onChange('rate_limit_user_message', e.target.value)}
-              rows={2}
-              className="transition-colors duration-150"
-            />
-          </SettingRow>
+            <SettingRow
+              label="ข้อความเมื่อผู้ใช้ถูกจำกัด (ต่อคน)"
+              htmlFor="rate-limit-user-msg"
+              orientation="vertical"
+            >
+              <Textarea
+                id="rate-limit-user-msg"
+                placeholder="ตัวอย่าง: ขออภัยครับ คุณส่งข้อความครบจำนวนที่กำหนดต่อวันแล้ว กรุณาลองใหม่พรุ่งนี้ครับ"
+                value={rate_limit_user_message}
+                onChange={(e) => onChange('rate_limit_user_message', e.target.value)}
+                rows={2}
+                className="transition-colors duration-150"
+              />
+            </SettingRow>
+          </div>
         </div>
-      </div>
+      </Panel>
     </div>
   );
 }

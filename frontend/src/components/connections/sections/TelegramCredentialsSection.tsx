@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Send, Eye, EyeOff, ExternalLink, Copy, Check } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { SettingSection, SettingRow } from '@/components/connections';
+import { Panel } from '@/components/common';
+import { SettingRow } from '@/components/connections';
 import { useToast } from '@/hooks/use-toast';
 import type { ConnectionFormData } from '@/hooks/useConnectionForm';
 import type { Bot } from '@/types/api';
@@ -39,10 +40,11 @@ export function TelegramCredentialsSection({
   };
 
   return (
-    <SettingSection
+    <Panel
       icon={Send}
       title="Telegram Bot Token"
       description="ข้อมูลจาก @BotFather บน Telegram"
+      tone="secure"
     >
       <div className="space-y-4">
         <SettingRow
@@ -67,7 +69,11 @@ export function TelegramCredentialsSection({
               aria-label="Toggle visibility"
               className="h-10 w-10 shrink-0 transition-colors duration-150"
             >
-              {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showToken ? (
+                <EyeOff className="h-4 w-4" strokeWidth={1.5} />
+              ) : (
+                <Eye className="h-4 w-4" strokeWidth={1.5} />
+              )}
             </Button>
           </div>
         </SettingRow>
@@ -90,9 +96,9 @@ export function TelegramCredentialsSection({
                 className="h-10 w-10 shrink-0 transition-colors duration-150"
               >
                 {webhookCopied ? (
-                  <Check className="h-4 w-4 text-green-500" />
+                  <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" strokeWidth={1.5} />
                 ) : (
-                  <Copy className="h-4 w-4" />
+                  <Copy className="h-4 w-4" strokeWidth={1.5} />
                 )}
               </Button>
             </div>
@@ -102,7 +108,7 @@ export function TelegramCredentialsSection({
           </SettingRow>
         )}
 
-        <div className="bg-[#0088CC]/5 border border-[#0088CC]/20 rounded-lg p-4 max-w-md">
+        <div className="rounded-md border bg-muted/30 p-3 max-w-md">
           <h4 className="font-medium text-sm mb-2">วิธีสร้าง Telegram Bot</h4>
           <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
             <li>เปิด Telegram แล้วค้นหา @BotFather</li>
@@ -118,10 +124,10 @@ export function TelegramCredentialsSection({
             target="_blank"
             rel="noopener noreferrer"
           >
-            ดูวิธีการสร้าง Telegram Bot <ExternalLink className="h-3 w-3 ml-1" />
+            ดูวิธีการสร้าง Telegram Bot <ExternalLink className="h-3 w-3 ml-1" strokeWidth={1.5} />
           </a>
         </Button>
       </div>
-    </SettingSection>
+    </Panel>
   );
 }

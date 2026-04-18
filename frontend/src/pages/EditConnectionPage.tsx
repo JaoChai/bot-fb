@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -23,6 +23,7 @@ import {
 import { useConnectionForm } from '@/hooks/useConnectionForm';
 import { Loader2, Zap, Trash2, User } from 'lucide-react';
 import { PageHeader, StickyActionBar } from '@/components/connections';
+import { Panel } from '@/components/common';
 import { BasicInfoSection } from '@/components/connections/sections/BasicInfoSection';
 import { LineCredentialsSection } from '@/components/connections/sections/LineCredentialsSection';
 import { TelegramCredentialsSection } from '@/components/connections/sections/TelegramCredentialsSection';
@@ -40,6 +41,7 @@ const PLATFORMS = [
 export function EditConnectionPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const { formData, handleChange, existingBot, isLoadingBot, isEditMode, botIdNumber } =
     useConnectionForm();
@@ -50,7 +52,6 @@ export function EditConnectionPage() {
   const toggleStatusMutation = useToggleBotStatus();
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
-  const isDeleting = deleteMutation.isPending;
 
   const getPlatformBadge = () => {
     const platformData = PLATFORMS.find((p) => p.id === formData.platform);
@@ -292,46 +293,36 @@ export function EditConnectionPage() {
         <AdvancedOptionsSection formData={formData} handleChange={handleChange} />
       </div>
 
+      {/* Danger Zone */}
+      {isEditMode && (
+        <Panel
+          tone="destructive"
+          icon={Trash2}
+          title="Danger Zone"
+          description="การดำเนินการนี้ไม่สามารถย้อนกลับได้"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">ลบบอทและการเชื่อมต่อนี้</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                จะลบบอทและการสนทนาทั้งหมดของบอทนี้ — ไม่สามารถกู้คืนได้
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              onClick={() => setDeleteDialogOpen(true)}
+              disabled={deleteMutation.isPending}
+              className="shrink-0"
+            >
+              <Trash2 className="h-4 w-4 mr-2" strokeWidth={1.5} />
+              ลบบอท
+            </Button>
+          </div>
+        </Panel>
+      )}
+
       {/* Sticky action bar */}
       <StickyActionBar>
-        {isEditMode ? (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="ghost"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10 transition-colors duration-150"
-                disabled={isDeleting}
-              >
-                {isDeleting ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Trash2 className="h-4 w-4 mr-2" strokeWidth={1.5} />
-                )}
-                ลบการเชื่อมต่อ
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>ยืนยันการลบ</AlertDialogTitle>
-                <AlertDialogDescription>
-                  คุณต้องการลบการเชื่อมต่อนี้หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleDelete}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  ลบ
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        ) : (
-          <div />
-        )}
-
         <Button
           onClick={handleSave}
           disabled={isSaving}
@@ -351,6 +342,27 @@ export function EditConnectionPage() {
           )}
         </Button>
       </StickyActionBar>
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ยืนยันการลบ</AlertDialogTitle>
+            <AlertDialogDescription>
+              คุณต้องการลบการเชื่อมต่อนี้หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              ลบ
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

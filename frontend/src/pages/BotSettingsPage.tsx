@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Gauge, Clock, Bot as BotIcon, Smile } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useBotSettings, useUpdateBotSettings } from '@/hooks/useBotSettings';
 import {
@@ -18,7 +18,17 @@ import { RateLimitTab } from '@/components/bot-settings/RateLimitTab';
 import { ResponseHoursTab } from '@/components/bot-settings/ResponseHoursTab';
 import { BehaviorTab } from '@/components/bot-settings/BehaviorTab';
 import { StickerReplyTab } from '@/components/bot-settings/StickerReplyTab';
+import { cn } from '@/lib/utils';
 import type { BotSettings } from '@/types/api';
+
+const TABS = [
+  { value: 'rate-limit', label: 'ข้อจำกัด', icon: Gauge },
+  { value: 'response-hours', label: 'เวลาตอบกลับ', icon: Clock },
+  { value: 'behavior', label: 'พฤติกรรม', icon: BotIcon },
+  { value: 'sticker', label: 'สติกเกอร์', icon: Smile },
+] as const;
+
+type TabValue = (typeof TABS)[number]['value'];
 
 interface BotSettingsFormData {
   daily_message_limit: number;
@@ -92,6 +102,8 @@ export function BotSettingsPage() {
   const isSaving = updateMutation.isPending;
 
   const [formData, setFormData] = useState<BotSettingsFormData>(DEFAULT_FORM);
+  const [tab, setTab] = useState<TabValue>('rate-limit');
+  const [isDirty, setIsDirty] = useState(false);
 
   // Sync form data from server settings
   useEffect(() => {
@@ -128,6 +140,28 @@ export function BotSettingsPage() {
       offline_message: (s.offline_message as string) ?? '',
     });
   }, [serverSettings]);
+
+  // Track dirty state
+  useEffect(() => {
+    if (!serverSettings) {
+      setIsDirty(false);
+      return;
+    }
+    const s = serverSettings as unknown as Record<string, unknown>;
+    const dirty =
+      formData.daily_message_limit !== ((s.daily_message_limit as number) ?? 100) ||
+      formData.per_user_limit !== ((s.per_user_limit as number) ?? 10) ||
+      formData.rate_limit_bot_message !== ((s.rate_limit_bot_message as string) ?? '') ||
+      formData.rate_limit_user_message !== ((s.rate_limit_user_message as string) ?? '') ||
+      formData.hitl_enabled !== ((s.hitl_enabled as boolean) ?? false) ||
+      formData.response_hours_enabled !== ((s.response_hours_enabled as boolean) ?? false) ||
+      formData.response_hours_timezone !== ((s.response_hours_timezone as string) ?? 'Asia/Bangkok') ||
+      formData.offline_message !== ((s.offline_message as string) ?? '') ||
+      formData.multiple_bubbles_enabled !== ((s.multiple_bubbles_enabled as boolean) ?? false) ||
+      formData.smart_aggregation_enabled !== ((s.smart_aggregation_enabled as boolean) ?? false) ||
+      formData.reply_sticker_enabled !== ((s.reply_sticker_enabled as boolean) ?? false);
+    setIsDirty(dirty);
+  }, [formData, serverSettings]);
 
   const onFieldChange = (field: string, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }) as BotSettingsFormData);
@@ -236,6 +270,7 @@ export function BotSettingsPage() {
         reply_sticker_mode: formData.reply_sticker_mode,
         reply_sticker_ai_prompt: formData.reply_sticker_ai_prompt || null,
       });
+      setIsDirty(false);
       toast({ title: 'บันทึกสำเร็จ', description: 'ตั้งค่าบอทได้รับการบันทึกแล้ว' });
     } catch {
       toast({
@@ -255,79 +290,108 @@ export function BotSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl w-full space-y-6">
+    <div className="space-y-6">
       <PageHeader
         title="ตั้งค่าบอท"
         description="กำหนดพฤติกรรมและตัวเลือกเพิ่มเติมสำหรับบอท"
         backTo="/bots"
+        breadcrumb={[
+          { label: 'การเชื่อมต่อ', to: '/bots' },
+          { label: `Bot #${numericBotId}` },
+          { label: 'ตั้งค่า' },
+        ]}
+        actions={
+          isDirty ? (
+            <Badge variant="outline" className="text-xs gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              มีการเปลี่ยนแปลง
+            </Badge>
+          ) : null
+        }
       />
 
-      <Tabs defaultValue="rate-limit">
-        <div className="overflow-x-auto">
-          <TabsList className="w-full sm:w-auto">
-            <TabsTrigger value="rate-limit">ข้อจำกัด</TabsTrigger>
-            <TabsTrigger value="response-hours">เวลาตอบกลับ</TabsTrigger>
-            <TabsTrigger value="behavior">พฤติกรรม</TabsTrigger>
-            <TabsTrigger value="sticker">สติกเกอร์</TabsTrigger>
-          </TabsList>
+      <div className="grid gap-6 md:grid-cols-[220px_1fr] md:gap-8">
+        <aside className="md:border-r md:pr-6">
+          <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible -mx-1 px-1">
+            {TABS.map((t) => {
+              const Icon = t.icon;
+              const isActive = tab === t.value;
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setTab(t.value)}
+                  className={cn(
+                    'relative flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors text-left shrink-0',
+                    'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-4 before:w-0.5 before:rounded-full before:bg-primary before:transition-opacity',
+                    isActive
+                      ? 'bg-accent text-foreground before:opacity-100'
+                      : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground before:opacity-0',
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+                  <span>{t.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+
+        <div className="min-w-0 space-y-6">
+          {tab === 'rate-limit' && (
+            <RateLimitTab
+              daily_message_limit={formData.daily_message_limit}
+              per_user_limit={formData.per_user_limit}
+              rate_limit_bot_message={formData.rate_limit_bot_message}
+              rate_limit_user_message={formData.rate_limit_user_message}
+              onChange={onFieldChange}
+            />
+          )}
+          {tab === 'response-hours' && (
+            <ResponseHoursTab
+              response_hours_enabled={formData.response_hours_enabled}
+              response_hours={formData.response_hours}
+              response_hours_timezone={formData.response_hours_timezone}
+              offline_message={formData.offline_message}
+              onChange={onFieldChange}
+              onDayToggle={handleDayToggle}
+              onSlotChange={handleSlotChange}
+              onAddSlot={handleAddSlot}
+              onRemoveSlot={handleRemoveSlot}
+              onApplyToAllDays={handleApplyToAllDays}
+            />
+          )}
+          {tab === 'behavior' && (
+            <BehaviorTab
+              hitl_enabled={formData.hitl_enabled}
+              multiple_bubbles_enabled={formData.multiple_bubbles_enabled}
+              multiple_bubbles_min={formData.multiple_bubbles_min}
+              multiple_bubbles_max={formData.multiple_bubbles_max}
+              wait_multiple_bubbles_enabled={formData.wait_multiple_bubbles_enabled}
+              wait_multiple_bubbles_seconds={formData.wait_multiple_bubbles_seconds}
+              smart_aggregation_enabled={formData.smart_aggregation_enabled}
+              smart_min_wait_seconds={formData.smart_min_wait_seconds}
+              smart_max_wait_seconds={formData.smart_max_wait_seconds}
+              smart_early_trigger_enabled={formData.smart_early_trigger_enabled}
+              smart_per_user_learning_enabled={formData.smart_per_user_learning_enabled}
+              onChange={onFieldChange}
+            />
+          )}
+          {tab === 'sticker' && (
+            <StickerReplyTab
+              reply_sticker_enabled={formData.reply_sticker_enabled}
+              reply_sticker_mode={formData.reply_sticker_mode}
+              reply_sticker_message={formData.reply_sticker_message}
+              reply_sticker_ai_prompt={formData.reply_sticker_ai_prompt}
+              onChange={onFieldChange}
+            />
+          )}
         </div>
-
-        <TabsContent value="rate-limit" className="space-y-6 mt-4">
-          <RateLimitTab
-            daily_message_limit={formData.daily_message_limit}
-            per_user_limit={formData.per_user_limit}
-            rate_limit_bot_message={formData.rate_limit_bot_message}
-            rate_limit_user_message={formData.rate_limit_user_message}
-            onChange={onFieldChange}
-          />
-        </TabsContent>
-
-        <TabsContent value="response-hours" className="space-y-6 mt-4">
-          <ResponseHoursTab
-            response_hours_enabled={formData.response_hours_enabled}
-            response_hours={formData.response_hours}
-            response_hours_timezone={formData.response_hours_timezone}
-            offline_message={formData.offline_message}
-            onChange={onFieldChange}
-            onDayToggle={handleDayToggle}
-            onSlotChange={handleSlotChange}
-            onAddSlot={handleAddSlot}
-            onRemoveSlot={handleRemoveSlot}
-            onApplyToAllDays={handleApplyToAllDays}
-          />
-        </TabsContent>
-
-        <TabsContent value="behavior" className="space-y-6 mt-4">
-          <BehaviorTab
-            hitl_enabled={formData.hitl_enabled}
-            multiple_bubbles_enabled={formData.multiple_bubbles_enabled}
-            multiple_bubbles_min={formData.multiple_bubbles_min}
-            multiple_bubbles_max={formData.multiple_bubbles_max}
-            wait_multiple_bubbles_enabled={formData.wait_multiple_bubbles_enabled}
-            wait_multiple_bubbles_seconds={formData.wait_multiple_bubbles_seconds}
-            smart_aggregation_enabled={formData.smart_aggregation_enabled}
-            smart_min_wait_seconds={formData.smart_min_wait_seconds}
-            smart_max_wait_seconds={formData.smart_max_wait_seconds}
-            smart_early_trigger_enabled={formData.smart_early_trigger_enabled}
-            smart_per_user_learning_enabled={formData.smart_per_user_learning_enabled}
-            onChange={onFieldChange}
-          />
-        </TabsContent>
-
-        <TabsContent value="sticker" className="space-y-6 mt-4">
-          <StickerReplyTab
-            reply_sticker_enabled={formData.reply_sticker_enabled}
-            reply_sticker_mode={formData.reply_sticker_mode}
-            reply_sticker_message={formData.reply_sticker_message}
-            reply_sticker_ai_prompt={formData.reply_sticker_ai_prompt}
-            onChange={onFieldChange}
-          />
-        </TabsContent>
-      </Tabs>
+      </div>
 
       <StickyActionBar>
         <span className="text-sm text-muted-foreground hidden sm:block">
-          การเปลี่ยนแปลงจะมีผลทันทีหลังบันทึก
+          {isDirty ? 'มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก' : 'การเปลี่ยนแปลงจะมีผลทันทีหลังบันทึก'}
         </span>
         <Button onClick={handleSave} disabled={isSaving} className="min-w-[100px]">
           {isSaving ? (
