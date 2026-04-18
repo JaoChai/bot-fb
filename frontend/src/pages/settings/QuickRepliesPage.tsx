@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -32,13 +31,12 @@ import {
   Pencil,
   Trash2,
   Loader2,
-  Search,
   GripVertical,
   ChevronUp,
   ChevronDown,
-  ArrowLeft,
 } from 'lucide-react';
-import { Link } from 'react-router';
+import { PageHeader } from '@/components/connections';
+import { Panel, EmptyState, Toolbar } from '@/components/common';
 import {
   useQuickReplies,
   useCreateQuickReply,
@@ -204,27 +202,16 @@ export function QuickRepliesPage() {
   if (!isOwner) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" asChild>
-            <Link to="/settings">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Quick Replies</h1>
-            <p className="text-muted-foreground">คำตอบสำเร็จรูปสำหรับการแชท</p>
-          </div>
-        </div>
-
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Zap className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-            <h3 className="text-lg font-medium mb-2">ไม่มีสิทธิ์จัดการ</h3>
-            <p className="text-muted-foreground">
-              เฉพาะ Owner เท่านั้นที่สามารถจัดการ Quick Replies ได้
-            </p>
-          </CardContent>
-        </Card>
+        <PageHeader
+          title="Quick Replies"
+          description="คำตอบสำเร็จรูปสำหรับการแชท"
+          backTo="/settings"
+        />
+        <EmptyState
+          icon={Zap}
+          title="ไม่มีสิทธิ์จัดการ"
+          description="เฉพาะ Owner เท่านั้นที่สามารถจัดการ Quick Replies ได้"
+        />
       </div>
     );
   }
@@ -232,54 +219,31 @@ export function QuickRepliesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" asChild>
-            <Link to="/settings">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
+      <PageHeader
+        title="Quick Replies"
+        description="จัดการคำตอบสำเร็จรูปสำหรับทีม"
+        backTo="/settings"
+        actions={
+          <Button onClick={handleOpenCreate}>
+            <Plus className="h-4 w-4 mr-2" strokeWidth={2} />
+            สร้างใหม่
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Quick Replies</h1>
-            <p className="text-muted-foreground">
-              จัดการคำตอบสำเร็จรูปสำหรับทีม
-            </p>
-          </div>
-        </div>
-        <Button onClick={handleOpenCreate}>
-          <Plus className="h-4 w-4 mr-2" />
-          สร้างใหม่
-        </Button>
-      </div>
+        }
+      />
 
       {/* Search and List */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                <Zap className="h-5 w-5 text-foreground" />
-              </div>
-              <div>
-                <CardTitle>รายการ Quick Replies</CardTitle>
-                <CardDescription>
-                  {quickReplies.length} รายการ
-                </CardDescription>
-              </div>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <Panel
+        icon={Zap}
+        title="รายการ Quick Replies"
+        description={`${quickReplies.length} รายการ`}
+      >
+        <div className="space-y-4">
           {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="ค้นหา shortcut, title หรือ content..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
+          <Toolbar
+            search={searchQuery}
+            onSearchChange={setSearchQuery}
+            searchPlaceholder="ค้นหา shortcut, title หรือ content..."
+          />
 
           {/* List */}
           {isLoading ? (
@@ -287,23 +251,19 @@ export function QuickRepliesPage() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : filteredQuickReplies.length === 0 ? (
-            <div className="text-center py-12">
-              <Zap className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-medium mb-2">
-                {searchQuery ? 'ไม่พบรายการ' : 'ยังไม่มี Quick Replies'}
-              </h3>
-              <p className="text-muted-foreground mb-4">
-                {searchQuery
-                  ? 'ลองค้นหาด้วยคำอื่น'
-                  : 'สร้าง Quick Reply แรกของคุณ'}
-              </p>
-              {!searchQuery && (
-                <Button onClick={handleOpenCreate}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  สร้างใหม่
-                </Button>
-              )}
-            </div>
+            <EmptyState
+              icon={Zap}
+              title={searchQuery ? 'ไม่พบรายการ' : 'ยังไม่มี Quick Replies'}
+              description={searchQuery ? 'ลองค้นหาด้วยคำอื่น' : 'สร้าง Quick Reply แรกของคุณ'}
+              action={
+                !searchQuery ? (
+                  <Button onClick={handleOpenCreate}>
+                    <Plus className="h-4 w-4 mr-2" strokeWidth={2} />
+                    สร้างใหม่
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             <ScrollArea className="h-[400px]">
               <div className="space-y-2">
@@ -313,7 +273,7 @@ export function QuickRepliesPage() {
                     className={cn(
                       'flex items-center gap-3 p-3 rounded-lg border transition-colors',
                       qr.is_active
-                        ? 'bg-background hover:bg-accent/50'
+                        ? 'bg-background hover:bg-muted/40'
                         : 'bg-muted/50 opacity-60'
                     )}
                   >
@@ -326,9 +286,9 @@ export function QuickRepliesPage() {
                         disabled={index === 0 || reorderMutation.isPending}
                         onClick={() => handleMoveUp(index)}
                       >
-                        <ChevronUp className="h-3 w-3" />
+                        <ChevronUp className="h-3 w-3" strokeWidth={1.5} />
                       </Button>
-                      <GripVertical className="h-4 w-4 text-muted-foreground mx-auto" />
+                      <GripVertical className="h-4 w-4 text-muted-foreground mx-auto" strokeWidth={1.5} />
                       <Button
                         variant="ghost"
                         size="icon"
@@ -339,7 +299,7 @@ export function QuickRepliesPage() {
                         }
                         onClick={() => handleMoveDown(index)}
                       >
-                        <ChevronDown className="h-3 w-3" />
+                        <ChevronDown className="h-3 w-3" strokeWidth={1.5} />
                       </Button>
                     </div>
 
@@ -376,7 +336,7 @@ export function QuickRepliesPage() {
                         size="icon"
                         onClick={() => handleOpenEdit(qr)}
                       >
-                        <Pencil className="h-4 w-4" />
+                        <Pencil className="h-4 w-4" strokeWidth={1.5} />
                       </Button>
                       <Button
                         variant="ghost"
@@ -384,7 +344,7 @@ export function QuickRepliesPage() {
                         className="text-destructive hover:text-destructive"
                         onClick={() => setDeleteTarget(qr)}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-4 w-4" strokeWidth={1.5} />
                       </Button>
                     </div>
                   </div>
@@ -392,8 +352,8 @@ export function QuickRepliesPage() {
               </div>
             </ScrollArea>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
       {/* Create/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
