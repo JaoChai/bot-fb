@@ -9,8 +9,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { SettingSection, SettingRow } from '@/components/connections';
+import { cn } from '@/lib/utils';
 
 interface PromptTabProps {
   name: string;
@@ -23,6 +30,10 @@ export function PromptTab({ name, systemPrompt, isDefault, onChange }: PromptTab
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fullscreenRef = useRef<HTMLTextAreaElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'edit' | 'preview'>('edit');
+  const [fullscreenPreview, setFullscreenPreview] = useState<'edit' | 'preview'>('edit');
+
+  const tokenEstimate = Math.ceil(systemPrompt.length / 4);
 
   const handleMarkdownAction = (action: string, target: HTMLTextAreaElement | null) => {
     if (!target) return;
@@ -80,13 +91,26 @@ export function PromptTab({ name, systemPrompt, isDefault, onChange }: PromptTab
           description="ระบุชื่อที่จดจำง่ายสำหรับ Flow นี้"
         >
           <SettingRow label="ชื่อ" htmlFor="flow-name" orientation="vertical">
-            <Input
-              id="flow-name"
-              placeholder="เช่น: ตอบคำถามลูกค้าทั่วไป"
-              value={name}
-              onChange={(e) => onChange('name', e.target.value)}
-              disabled={isDefault}
-            />
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <Input
+                      id="flow-name"
+                      placeholder="เช่น: ตอบคำถามลูกค้าทั่วไป"
+                      value={name}
+                      onChange={(e) => onChange('name', e.target.value)}
+                      disabled={isDefault}
+                    />
+                  </div>
+                </TooltipTrigger>
+                {isDefault && (
+                  <TooltipContent side="bottom">
+                    Base Flow ไม่สามารถเปลี่ยนชื่อได้ — ปิด "Set as Default" ใน Agent tab ก่อน
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
           </SettingRow>
         </SettingSection>
       </div>
@@ -118,17 +142,62 @@ export function PromptTab({ name, systemPrompt, isDefault, onChange }: PromptTab
               onNumberedList={() => handleMarkdownAction('numbered', textareaRef.current)}
               onLink={() => handleMarkdownAction('link', textareaRef.current)}
               onCode={() => handleMarkdownAction('code', textareaRef.current)}
-              onPreviewToggle={() => {}}
+              onPreviewToggle={() =>
+                setPreviewMode((m) => (m === 'edit' ? 'preview' : 'edit'))
+              }
               onFullscreen={() => setIsFullscreen(true)}
-              isPreviewMode={false}
+              isPreviewMode={previewMode === 'preview'}
             />
-            <Textarea
-              ref={textareaRef}
-              placeholder="คุณคือผู้ช่วย AI ที่เป็นมิตร..."
-              className="min-h-[320px] max-h-[520px] overflow-y-auto font-mono text-sm border-0 rounded-none focus-visible:ring-0 resize-y"
-              value={systemPrompt}
-              onChange={(e) => onChange('system_prompt', e.target.value)}
-            />
+
+            {/* Edit / Preview toggle header */}
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b bg-muted/20">
+              <div className="inline-flex rounded-md border bg-background p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode('edit')}
+                  className={cn(
+                    'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                    previewMode === 'edit'
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  แก้ไข
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode('preview')}
+                  className={cn(
+                    'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                    previewMode === 'preview'
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  ดูตัวอย่าง
+                </button>
+              </div>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                ~{tokenEstimate} tokens · {systemPrompt.length} ตัวอักษร
+              </span>
+            </div>
+
+            {previewMode === 'edit' ? (
+              <Textarea
+                ref={textareaRef}
+                placeholder="คุณคือผู้ช่วย AI ที่เป็นมิตร..."
+                className="min-h-[320px] max-h-[520px] overflow-y-auto font-mono text-sm border-0 rounded-none focus-visible:ring-0 resize-y"
+                value={systemPrompt}
+                onChange={(e) => onChange('system_prompt', e.target.value)}
+              />
+            ) : (
+              <div className="min-h-[320px] max-h-[520px] overflow-y-auto p-4 text-sm whitespace-pre-wrap bg-muted/30">
+                {systemPrompt || (
+                  <span className="text-muted-foreground">(ไม่มีเนื้อหา)</span>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-4 text-xs text-muted-foreground px-4 py-2 border-t bg-muted/30">
               <span className="tabular-nums">lines: {lineCount}</span>
               <span className="tabular-nums">words: {wordCount}</span>
@@ -152,16 +221,61 @@ export function PromptTab({ name, systemPrompt, isDefault, onChange }: PromptTab
               onNumberedList={() => handleMarkdownAction('numbered', fullscreenRef.current)}
               onLink={() => handleMarkdownAction('link', fullscreenRef.current)}
               onCode={() => handleMarkdownAction('code', fullscreenRef.current)}
-              onPreviewToggle={() => {}}
+              onPreviewToggle={() =>
+                setFullscreenPreview((m) => (m === 'edit' ? 'preview' : 'edit'))
+              }
               onFullscreen={() => setIsFullscreen(false)}
-              isPreviewMode={false}
+              isPreviewMode={fullscreenPreview === 'preview'}
             />
-            <Textarea
-              ref={fullscreenRef}
-              value={systemPrompt}
-              onChange={(e) => onChange('system_prompt', e.target.value)}
-              className="flex-1 font-mono text-sm border-0 rounded-none focus-visible:ring-0 resize-none"
-            />
+
+            {/* Edit / Preview toggle header (fullscreen) */}
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b bg-muted/20">
+              <div className="inline-flex rounded-md border bg-background p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setFullscreenPreview('edit')}
+                  className={cn(
+                    'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                    fullscreenPreview === 'edit'
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  แก้ไข
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFullscreenPreview('preview')}
+                  className={cn(
+                    'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                    fullscreenPreview === 'preview'
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  ดูตัวอย่าง
+                </button>
+              </div>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                ~{tokenEstimate} tokens · {systemPrompt.length} ตัวอักษร
+              </span>
+            </div>
+
+            {fullscreenPreview === 'edit' ? (
+              <Textarea
+                ref={fullscreenRef}
+                value={systemPrompt}
+                onChange={(e) => onChange('system_prompt', e.target.value)}
+                className="flex-1 font-mono text-sm border-0 rounded-none focus-visible:ring-0 resize-none"
+              />
+            ) : (
+              <div className="flex-1 overflow-y-auto p-5 text-sm whitespace-pre-wrap bg-muted/30">
+                {systemPrompt || (
+                  <span className="text-muted-foreground">(ไม่มีเนื้อหา)</span>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-4 text-xs text-muted-foreground px-5 py-2 border-t bg-muted/30">
               <span className="tabular-nums">lines: {lineCount}</span>
               <span className="tabular-nums">words: {wordCount}</span>
