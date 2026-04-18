@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
-import { FileText, Maximize2 } from 'lucide-react';
+import { FileText, Maximize2, Star } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -23,7 +24,10 @@ interface PromptTabProps {
   name: string;
   systemPrompt: string;
   isDefault: boolean;
-  onChange: <K extends 'name' | 'system_prompt'>(field: K, value: string) => void;
+  onChange: <K extends 'name' | 'system_prompt' | 'is_default'>(
+    field: K,
+    value: K extends 'is_default' ? boolean : string,
+  ) => void;
 }
 
 export function PromptTab({ name, systemPrompt, isDefault, onChange }: PromptTabProps) {
@@ -203,6 +207,22 @@ export function PromptTab({ name, systemPrompt, isDefault, onChange }: PromptTab
               <span className="tabular-nums">words: {wordCount}</span>
             </div>
           </div>
+        </SettingSection>
+      </div>
+
+      <div className="border rounded-lg p-5">
+        <SettingSection
+          icon={Star}
+          title="Flow เริ่มต้น"
+          description="ใช้ Flow นี้เป็น Flow หลักของบอท"
+        >
+          <SettingRow label="ตั้งเป็น Flow เริ่มต้น" htmlFor="is-default-toggle">
+            <Switch
+              id="is-default-toggle"
+              checked={isDefault}
+              onCheckedChange={(checked) => onChange('is_default', checked)}
+            />
+          </SettingRow>
         </SettingSection>
       </div>
 
