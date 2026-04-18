@@ -99,9 +99,7 @@ export function AgentApprovalDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-amber-500/10">
-              <ShieldAlert className="h-5 w-5 text-amber-500" />
-            </div>
+            <ShieldAlert className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} />
             <div>
               <DialogTitle>Agent Approval Required</DialogTitle>
               <DialogDescription>
@@ -139,8 +137,8 @@ export function AgentApprovalDialog({
             </div>
             <div className="h-1.5 bg-muted rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all duration-1000 ease-linear ${
-                  remaining <= 10 ? 'bg-destructive' : 'bg-amber-500'
+                className={`h-full rounded-full transition-colors duration-1000 ease-linear ${
+                  remaining <= 10 ? 'bg-destructive' : 'bg-muted-foreground'
                 }`}
                 style={{ width: `${progressPercent}%` }}
               />
