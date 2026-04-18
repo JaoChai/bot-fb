@@ -22,7 +22,8 @@ import {
 } from '@/hooks/useConnections';
 import { useConnectionForm } from '@/hooks/useConnectionForm';
 import { Loader2, Zap, Trash2, User } from 'lucide-react';
-import { PageHeader, StickyActionBar, SettingSection } from '@/components/connections';
+import { PageHeader, StickyActionBar } from '@/components/connections';
+import { Panel } from '@/components/common';
 import { BasicInfoSection } from '@/components/connections/sections/BasicInfoSection';
 import { LineCredentialsSection } from '@/components/connections/sections/LineCredentialsSection';
 import { TelegramCredentialsSection } from '@/components/connections/sections/TelegramCredentialsSection';
@@ -294,32 +295,30 @@ export function EditConnectionPage() {
 
       {/* Danger Zone */}
       {isEditMode && (
-        <div className="mt-8">
-          <SettingSection
-            tone="destructive"
-            icon={Trash2}
-            title="Danger Zone"
-            description="การดำเนินการนี้ไม่สามารถย้อนกลับได้"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">ลบบอทและการเชื่อมต่อนี้</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  จะลบบอทและการสนทนาทั้งหมดของบอทนี้ — ไม่สามารถกู้คืนได้
-                </p>
-              </div>
-              <Button
-                variant="destructive"
-                onClick={() => setDeleteDialogOpen(true)}
-                disabled={deleteMutation.isPending}
-                className="shrink-0"
-              >
-                <Trash2 className="h-4 w-4 mr-2" strokeWidth={1.5} />
-                ลบบอท
-              </Button>
+        <Panel
+          tone="destructive"
+          icon={Trash2}
+          title="Danger Zone"
+          description="การดำเนินการนี้ไม่สามารถย้อนกลับได้"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">ลบบอทและการเชื่อมต่อนี้</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                จะลบบอทและการสนทนาทั้งหมดของบอทนี้ — ไม่สามารถกู้คืนได้
+              </p>
             </div>
-          </SettingSection>
-        </div>
+            <Button
+              variant="destructive"
+              onClick={() => setDeleteDialogOpen(true)}
+              disabled={deleteMutation.isPending}
+              className="shrink-0"
+            >
+              <Trash2 className="h-4 w-4 mr-2" strokeWidth={1.5} />
+              ลบบอท
+            </Button>
+          </div>
+        </Panel>
       )}
 
       {/* Sticky action bar */}
