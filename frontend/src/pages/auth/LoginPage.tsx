@@ -42,8 +42,8 @@ export function LoginPage() {
       {/* Form */}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         {loginError && (
-          <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-            <AlertCircle className="h-4 w-4 shrink-0" />
+          <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />
             <span>{(loginError as { message?: string })?.message || 'เข้าสู่ระบบไม่สำเร็จ'}</span>
           </div>
         )}
@@ -74,6 +74,14 @@ export function LoginPage() {
           {errors.password && (
             <p className="text-sm text-destructive">{errors.password.message}</p>
           )}
+          <div className="flex justify-end">
+            <Link
+              to="/forgot-password"
+              className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              ลืมรหัสผ่าน?
+            </Link>
+          </div>
         </div>
 
         <Button type="submit" className="w-full" disabled={isLoggingIn}>
