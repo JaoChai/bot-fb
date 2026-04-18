@@ -1,0 +1,174 @@
+import { useRef, useState } from 'react';
+import { FileText, Maximize2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { MarkdownToolbar } from '@/components/MarkdownToolbar';
+import { SettingSection, SettingRow } from '@/components/connections';
+
+interface PromptTabProps {
+  name: string;
+  systemPrompt: string;
+  isDefault: boolean;
+  onChange: <K extends 'name' | 'system_prompt'>(field: K, value: string) => void;
+}
+
+export function PromptTab({ name, systemPrompt, isDefault, onChange }: PromptTabProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fullscreenRef = useRef<HTMLTextAreaElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const handleMarkdownAction = (action: string, target: HTMLTextAreaElement | null) => {
+    if (!target) return;
+    const start = target.selectionStart;
+    const end = target.selectionEnd;
+    const text = systemPrompt;
+    const selectedText = text.substring(start, end);
+
+    let insertText = '';
+    switch (action) {
+      case 'bold':
+        insertText = selectedText ? `**${selectedText}**` : '**bold text**';
+        break;
+      case 'italic':
+        insertText = selectedText ? `*${selectedText}*` : '*italic text*';
+        break;
+      case 'strikethrough':
+        insertText = selectedText ? `~~${selectedText}~~` : '~~strikethrough text~~';
+        break;
+      case 'h1':
+        insertText = selectedText ? `# ${selectedText}` : '# Heading 1';
+        break;
+      case 'h2':
+        insertText = selectedText ? `## ${selectedText}` : '## Heading 2';
+        break;
+      case 'h3':
+        insertText = selectedText ? `### ${selectedText}` : '### Heading 3';
+        break;
+      case 'bullet':
+        insertText = selectedText ? `- ${selectedText}` : '- Bullet point';
+        break;
+      case 'numbered':
+        insertText = selectedText ? `1. ${selectedText}` : '1. Numbered item';
+        break;
+      case 'code':
+        insertText = selectedText ? `\`${selectedText}\`` : '`code`';
+        break;
+      case 'link':
+        insertText = selectedText ? `[${selectedText}](url)` : '[link text](url)';
+        break;
+    }
+
+    onChange('system_prompt', text.substring(0, start) + insertText + text.substring(end));
+  };
+
+  const lineCount = systemPrompt.split('\n').length;
+  const wordCount = systemPrompt.split(/\s+/).filter(Boolean).length;
+
+  return (
+    <div className="space-y-6">
+      <div className="border rounded-lg p-5 space-y-4">
+        <SettingSection
+          icon={FileText}
+          title="ชื่อ Flow"
+          description="ระบุชื่อที่จดจำง่ายสำหรับ Flow นี้"
+        >
+          <SettingRow label="ชื่อ" htmlFor="flow-name" orientation="vertical">
+            <Input
+              id="flow-name"
+              placeholder="เช่น: ตอบคำถามลูกค้าทั่วไป"
+              value={name}
+              onChange={(e) => onChange('name', e.target.value)}
+              disabled={isDefault}
+            />
+          </SettingRow>
+        </SettingSection>
+      </div>
+
+      <div className="border rounded-lg p-5 space-y-4">
+        <SettingSection
+          icon={FileText}
+          title="System Prompt"
+          description="คำสั่งหลักที่ควบคุมบุคลิกและพฤติกรรมของ AI"
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsFullscreen(true)}
+              className="gap-2"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+              เต็มจอ
+            </Button>
+          }
+        >
+          <div className="border rounded-md overflow-hidden bg-background">
+            <MarkdownToolbar
+              onBold={() => handleMarkdownAction('bold', textareaRef.current)}
+              onItalic={() => handleMarkdownAction('italic', textareaRef.current)}
+              onStrikethrough={() => handleMarkdownAction('strikethrough', textareaRef.current)}
+              onHeading={(level) => handleMarkdownAction(`h${level}`, textareaRef.current)}
+              onBulletList={() => handleMarkdownAction('bullet', textareaRef.current)}
+              onNumberedList={() => handleMarkdownAction('numbered', textareaRef.current)}
+              onLink={() => handleMarkdownAction('link', textareaRef.current)}
+              onCode={() => handleMarkdownAction('code', textareaRef.current)}
+              onPreviewToggle={() => {}}
+              onFullscreen={() => setIsFullscreen(true)}
+              isPreviewMode={false}
+            />
+            <Textarea
+              ref={textareaRef}
+              placeholder="คุณคือผู้ช่วย AI ที่เป็นมิตร..."
+              className="min-h-[320px] max-h-[520px] overflow-y-auto font-mono text-sm border-0 rounded-none focus-visible:ring-0 resize-y"
+              value={systemPrompt}
+              onChange={(e) => onChange('system_prompt', e.target.value)}
+            />
+            <div className="flex justify-end gap-4 text-xs text-muted-foreground px-4 py-2 border-t bg-muted/30">
+              <span className="tabular-nums">lines: {lineCount}</span>
+              <span className="tabular-nums">words: {wordCount}</span>
+            </div>
+          </div>
+        </SettingSection>
+      </div>
+
+      <Dialog open={isFullscreen} onOpenChange={setIsFullscreen}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] w-[95vw] h-[95vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-5 py-3 border-b">
+            <DialogTitle className="text-base">System Prompt</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <MarkdownToolbar
+              onBold={() => handleMarkdownAction('bold', fullscreenRef.current)}
+              onItalic={() => handleMarkdownAction('italic', fullscreenRef.current)}
+              onStrikethrough={() => handleMarkdownAction('strikethrough', fullscreenRef.current)}
+              onHeading={(level) => handleMarkdownAction(`h${level}`, fullscreenRef.current)}
+              onBulletList={() => handleMarkdownAction('bullet', fullscreenRef.current)}
+              onNumberedList={() => handleMarkdownAction('numbered', fullscreenRef.current)}
+              onLink={() => handleMarkdownAction('link', fullscreenRef.current)}
+              onCode={() => handleMarkdownAction('code', fullscreenRef.current)}
+              onPreviewToggle={() => {}}
+              onFullscreen={() => setIsFullscreen(false)}
+              isPreviewMode={false}
+            />
+            <Textarea
+              ref={fullscreenRef}
+              value={systemPrompt}
+              onChange={(e) => onChange('system_prompt', e.target.value)}
+              className="flex-1 font-mono text-sm border-0 rounded-none focus-visible:ring-0 resize-none"
+            />
+            <div className="flex justify-end gap-4 text-xs text-muted-foreground px-5 py-2 border-t bg-muted/30">
+              <span className="tabular-nums">lines: {lineCount}</span>
+              <span className="tabular-nums">words: {wordCount}</span>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
