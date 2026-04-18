@@ -17,7 +17,6 @@ export function AddConnectionPage() {
       fullName: 'LINE Official Account',
       description: 'เชื่อมต่อกับ LINE Official Account',
       icon: <LineIcon className="h-7 w-7" />,
-      bgColor: 'bg-[#06C755]/10',
       requirements: [
         'LINE Official Account (ฟรีหรือ Premium)',
         'Channel ID และ Channel Secret',
@@ -30,7 +29,6 @@ export function AddConnectionPage() {
       fullName: 'Facebook Page',
       description: 'เชื่อมต่อกับ Facebook Page',
       icon: <MessengerIcon className="h-7 w-7" />,
-      bgColor: 'bg-[#0084FF]/10',
       requirements: [
         'Facebook Page ที่เป็นเจ้าของ',
         'สิทธิ์การเข้าถึง Page Access Token',
@@ -43,7 +41,6 @@ export function AddConnectionPage() {
       fullName: 'Telegram Bot',
       description: 'เชื่อมต่อกับ Telegram Bot',
       icon: <TelegramIcon className="h-7 w-7" />,
-      bgColor: 'bg-[#0088CC]/10',
       requirements: [
         'Telegram Bot จาก @BotFather',
         'Bot Token',
@@ -55,8 +52,7 @@ export function AddConnectionPage() {
       name: 'ทดสอบ',
       fullName: 'Just Testing',
       description: 'ทดสอบก่อนเชื่อม Platform จริง',
-      icon: <MessageCircle className="h-7 w-7 text-muted-foreground" />,
-      bgColor: 'bg-muted/60',
+      icon: <MessageCircle className="h-7 w-7 text-muted-foreground" strokeWidth={1.5} />,
       requirements: [
         'ไม่ต้องมี API Key หรือ Credentials',
         'ทดสอบผ่าน Chat Simulator ในระบบ',
@@ -89,7 +85,7 @@ export function AddConnectionPage() {
             onClick={() => setSelectedPlatform(platform.id)}
             className={cn(
               'relative flex flex-col items-center gap-2.5 p-5 rounded-xl border',
-              'transition-all duration-150 cursor-pointer min-h-[10rem]',
+              'transition-colors duration-150 cursor-pointer min-h-[10rem]',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2',
               selectedPlatform === platform.id
                 ? 'ring-2 ring-foreground border-foreground bg-accent/40'
@@ -99,14 +95,12 @@ export function AddConnectionPage() {
             {/* Selected indicator */}
             {selectedPlatform === platform.id && (
               <span className="absolute top-2.5 right-2.5 w-5 h-5 bg-foreground rounded-full flex items-center justify-center">
-                <Check className="h-3 w-3 text-background" />
+                <Check className="h-3 w-3 text-background" strokeWidth={1.5} />
               </span>
             )}
 
-            {/* Icon container */}
-            <span className={cn('w-12 h-12 rounded-lg flex items-center justify-center', platform.bgColor)}>
-              {platform.icon}
-            </span>
+            {/* Icon */}
+            {platform.icon}
 
             {/* Text */}
             <span className="font-semibold text-sm leading-tight">{platform.name}</span>
@@ -120,7 +114,7 @@ export function AddConnectionPage() {
         <div className="rounded-xl border border-border bg-card p-5 animate-in fade-in slide-in-from-top-1 duration-150">
           <div className="flex items-start gap-3">
             <span className="shrink-0 w-8 h-8 rounded-md bg-muted/60 flex items-center justify-center">
-              <Info className="h-4 w-4 text-foreground" />
+              <Info className="h-4 w-4 text-foreground" strokeWidth={1.5} />
             </span>
             <div className="min-w-0">
               <p className="font-medium text-sm mb-2">
@@ -153,7 +147,7 @@ export function AddConnectionPage() {
           className="w-full sm:w-auto min-w-[160px]"
         >
           ถัดไป
-          <ArrowRight className="h-4 w-4 ml-2" />
+          <ArrowRight className="h-4 w-4 ml-2" strokeWidth={1.5} />
         </Button>
       </div>
     </div>

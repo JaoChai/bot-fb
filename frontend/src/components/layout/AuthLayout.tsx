@@ -1,5 +1,12 @@
 import { Outlet } from 'react-router';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, CheckCircle2 } from 'lucide-react';
+
+const features = [
+  'เชื่อมต่อ LINE Official & Telegram ใน 5 นาที',
+  'ฐานความรู้ RAG ที่ AI ใช้ตอบลูกค้าอย่างแม่นยำ',
+  'แดชบอร์ดยอดขาย + ต้นทุน API แบบเรียลไทม์',
+  'จัดการทีม Admin + VIP อัตโนมัติ',
+];
 
 export function AuthLayout() {
   return (
@@ -8,40 +15,52 @@ export function AuthLayout() {
       <div className="hidden lg:flex flex-col justify-between bg-foreground p-10 text-background">
         {/* Logo */}
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-background text-foreground">
-            <Sparkles className="h-5 w-5" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-background/10 border border-background/20">
+            <Sparkles className="h-4 w-4" strokeWidth={2} />
           </div>
-          <span className="text-xl font-semibold">BotJao</span>
+          <span className="text-lg font-semibold tracking-tight">BotJao</span>
         </div>
 
-        {/* Testimonial */}
-        <div className="space-y-4">
-          <blockquote className="text-lg leading-relaxed">
-            "ระบบ AI Chatbot ที่ช่วยให้ธุรกิจของเราตอบลูกค้าได้ 24 ชั่วโมง
-            ลดภาระงานของทีม และเพิ่มยอดขายได้อย่างมีประสิทธิภาพ"
-          </blockquote>
-          <div>
-            <p className="font-medium">คุณสมชาย ใจดี</p>
-            <p className="text-sm text-background/60">CEO, Example Company</p>
+        {/* Value prop */}
+        <div className="space-y-8">
+          <div className="space-y-3">
+            <h2 className="text-3xl font-semibold tracking-tight leading-tight">
+              AI Chatbot
+              <br />
+              สำหรับธุรกิจไทย
+            </h2>
+            <p className="text-base text-background/70 leading-relaxed max-w-md">
+              จัดการแชท LINE และ Telegram ด้วย AI ที่เรียนรู้จากฐานความรู้ของคุณ ตอบลูกค้าได้ 24 ชั่วโมง
+            </p>
           </div>
+
+          <ul className="space-y-3 text-sm text-background/80">
+            {features.map((f) => (
+              <li key={f} className="flex items-start gap-2">
+                <CheckCircle2
+                  className="h-4 w-4 text-background/60 mt-0.5 shrink-0"
+                  strokeWidth={1.5}
+                />
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
         </div>
 
         {/* Footer */}
-        <p className="text-sm text-background/60">
-          AI Chatbot Platform
+        <p className="text-xs text-background/50">
+          © {new Date().getFullYear()} BotJao · AI Chatbot Platform
         </p>
       </div>
 
       {/* Right side - Form */}
       <div className="flex flex-col items-center justify-center p-6 lg:p-10">
-        {/* Mobile logo (visible on mobile only) */}
+        {/* Mobile logo */}
         <div className="mb-8 text-center lg:hidden">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-foreground text-background">
-              <Sparkles className="h-5 w-5" />
-            </div>
+          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary border border-primary/20">
+            <Sparkles className="h-5 w-5" strokeWidth={2} />
           </div>
-          <h1 className="text-2xl font-bold">BotJao</h1>
+          <h1 className="text-xl font-semibold tracking-tight">BotJao</h1>
           <p className="text-sm text-muted-foreground">AI Chatbot Platform</p>
         </div>
 

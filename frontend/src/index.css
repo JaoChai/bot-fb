@@ -55,149 +55,119 @@
 }
 
 :root {
-  --radius: 0.625rem;
+  --radius: 0.5rem;
 
-  /* ===== Modern SaaS Theme — Blue-tinted Neutrals ===== */
+  /* ===== Linear-Minimal SaaS — Light ===== */
 
-  /* Background - Warm white with subtle blue tint */
-  --background: oklch(0.985 0.002 250);
-  --foreground: oklch(0.15 0.01 250);
+  --background: oklch(0.99 0.002 250);
+  --foreground: oklch(0.145 0.01 250);
 
-  /* Card - Pure white for contrast */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0.01 250);
+  --card-foreground: oklch(0.145 0.01 250);
 
-  /* Popover - White */
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.01 250);
+  --popover-foreground: oklch(0.145 0.01 250);
 
-  /* Primary - Trust Blue */
-  --primary: oklch(0.546 0.245 262);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.520 0.190 262);
+  --primary-foreground: oklch(0.99 0 0);
 
-  /* Secondary - Soft blue-gray */
-  --secondary: oklch(0.96 0.006 250);
+  --secondary: oklch(0.965 0.004 250);
   --secondary-foreground: oklch(0.25 0.01 250);
 
-  /* Muted - Light blue-gray */
-  --muted: oklch(0.955 0.006 250);
-  --muted-foreground: oklch(0.50 0.01 250);
+  --muted: oklch(0.965 0.004 250);
+  --muted-foreground: oklch(0.48 0.01 250);
 
-  /* Accent - Soft blue */
-  --accent: oklch(0.95 0.01 250);
+  --accent: oklch(0.955 0.008 250);
   --accent-foreground: oklch(0.25 0.01 250);
 
-  /* Destructive - Red */
   --destructive: oklch(0.577 0.245 27.325);
 
-  /* Border - Soft blue-gray */
-  --border: oklch(0.915 0.006 250);
-  --input: oklch(0.915 0.006 250);
+  --border: oklch(0.92 0.004 250);
+  --input: oklch(0.92 0.004 250);
+  --ring: oklch(0.520 0.190 262);
 
-  /* Ring - Blue */
-  --ring: oklch(0.546 0.245 262);
-
-  /* Chart colors - Vibrant palette */
-  --chart-1: oklch(0.546 0.245 262);
+  --chart-1: oklch(0.520 0.190 262);
   --chart-2: oklch(0.627 0.194 149);
   --chart-3: oklch(0.705 0.213 47);
   --chart-4: oklch(0.585 0.233 277);
   --chart-5: oklch(0.645 0.246 16);
 
-  /* Sidebar - White with blue accents */
-  --sidebar: oklch(0.99 0.002 250);
-  --sidebar-foreground: oklch(0.15 0.01 250);
-  --sidebar-primary: oklch(0.546 0.245 262);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.955 0.01 250);
+  --sidebar: oklch(0.985 0.002 250);
+  --sidebar-foreground: oklch(0.145 0.01 250);
+  --sidebar-primary: oklch(0.520 0.190 262);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.955 0.008 250);
   --sidebar-accent-foreground: oklch(0.25 0.01 250);
-  --sidebar-border: oklch(0.915 0.006 250);
-  --sidebar-ring: oklch(0.546 0.245 262);
+  --sidebar-border: oklch(0.92 0.004 250);
+  --sidebar-ring: oklch(0.520 0.190 262);
 
-  /* Status colors */
   --success: oklch(0.627 0.194 149);
   --success-foreground: oklch(0.985 0 0);
   --warning: oklch(0.795 0.184 86);
   --warning-foreground: oklch(0.15 0 0);
-  --info: oklch(0.546 0.245 262);
+  --info: oklch(0.520 0.190 262);
   --info-foreground: oklch(0.985 0 0);
-  --inactive: oklch(0.915 0.006 250);
-  --inactive-foreground: oklch(0.50 0.01 250);
+  --inactive: oklch(0.92 0.004 250);
+  --inactive-foreground: oklch(0.48 0.01 250);
 
-  /* Platform colors */
   --platform-line: oklch(0.723 0.219 145);
   --platform-facebook: oklch(0.511 0.262 263);
 }
 
 .dark {
-  /* ===== Dark Mode — Deep Blue-tinted ===== */
+  /* ===== Linear-Minimal SaaS — Dark ===== */
 
-  /* Background - Deep navy */
-  --background: oklch(0.145 0.014 250);
+  --background: oklch(0.135 0.010 250);
   --foreground: oklch(0.985 0.002 250);
 
-  /* Card - Slightly lighter navy */
-  --card: oklch(0.195 0.014 250);
+  --card: oklch(0.180 0.010 250);
   --card-foreground: oklch(0.985 0.002 250);
 
-  /* Popover */
-  --popover: oklch(0.195 0.014 250);
+  --popover: oklch(0.180 0.010 250);
   --popover-foreground: oklch(0.985 0.002 250);
 
-  /* Primary - Blue */
-  --primary: oklch(0.62 0.22 262);
+  --primary: oklch(0.62 0.180 262);
   --primary-foreground: oklch(0.985 0 0);
 
-  /* Secondary - Dark blue-gray */
-  --secondary: oklch(0.26 0.012 250);
+  --secondary: oklch(0.235 0.008 250);
   --secondary-foreground: oklch(0.985 0.002 250);
 
-  /* Muted - Dark blue-gray */
-  --muted: oklch(0.26 0.012 250);
-  --muted-foreground: oklch(0.65 0.01 250);
+  --muted: oklch(0.235 0.008 250);
+  --muted-foreground: oklch(0.66 0.008 250);
 
-  /* Accent */
-  --accent: oklch(0.26 0.015 250);
+  --accent: oklch(0.235 0.010 250);
   --accent-foreground: oklch(0.985 0.002 250);
 
-  /* Destructive */
   --destructive: oklch(0.704 0.191 22.216);
 
-  /* Border */
-  --border: oklch(0.28 0.012 250);
-  --input: oklch(0.28 0.012 250);
+  --border: oklch(0.235 0.010 250);
+  --input: oklch(0.235 0.010 250);
+  --ring: oklch(0.62 0.180 262);
 
-  /* Ring - Blue */
-  --ring: oklch(0.62 0.22 262);
-
-  /* Chart colors - Vibrant for dark bg */
-  --chart-1: oklch(0.65 0.22 262);
+  --chart-1: oklch(0.65 0.18 262);
   --chart-2: oklch(0.70 0.19 149);
   --chart-3: oklch(0.75 0.18 47);
   --chart-4: oklch(0.65 0.20 277);
   --chart-5: oklch(0.70 0.22 16);
 
-  /* Sidebar */
-  --sidebar: oklch(0.13 0.014 250);
+  --sidebar: oklch(0.125 0.010 250);
   --sidebar-foreground: oklch(0.985 0.002 250);
-  --sidebar-primary: oklch(0.62 0.22 262);
+  --sidebar-primary: oklch(0.62 0.180 262);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.22 0.015 250);
+  --sidebar-accent: oklch(0.210 0.012 250);
   --sidebar-accent-foreground: oklch(0.985 0.002 250);
-  --sidebar-border: oklch(0.28 0.012 250);
-  --sidebar-ring: oklch(0.62 0.22 262);
+  --sidebar-border: oklch(0.235 0.010 250);
+  --sidebar-ring: oklch(0.62 0.180 262);
 
-  /* Status colors */
   --success: oklch(0.70 0.19 149);
   --success-foreground: oklch(0.985 0 0);
   --warning: oklch(0.795 0.184 86);
   --warning-foreground: oklch(0.15 0 0);
-  --info: oklch(0.62 0.22 262);
+  --info: oklch(0.62 0.180 262);
   --info-foreground: oklch(0.985 0 0);
-  --inactive: oklch(0.28 0.012 250);
-  --inactive-foreground: oklch(0.65 0.01 250);
+  --inactive: oklch(0.235 0.010 250);
+  --inactive-foreground: oklch(0.66 0.008 250);
 
-  /* Platform colors */
   --platform-line: oklch(0.723 0.219 145);
   --platform-facebook: oklch(0.65 0.22 262);
 }
@@ -206,9 +176,18 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+  }
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', 'Noto Sans Thai', system-ui, -apple-system, sans-serif;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+  }
+  .tabular-nums,
+  table,
+  .font-mono {
+    font-variant-numeric: tabular-nums;
   }
 
   /* Safe area utilities for iOS notch/home indicator */

@@ -244,15 +244,13 @@ export function EditConnectionPage() {
 
       {/* Telegram Human Only banner */}
       {formData.platform === 'telegram' && (
-        <div className="bg-[#0088CC]/5 border border-[#0088CC]/20 rounded-lg p-4 mb-6">
+        <div className="bg-muted/30 border rounded-lg p-4 mb-6">
           <div className="flex items-center gap-3">
-            <div className="bg-[#0088CC]/10 p-2 rounded-full shrink-0">
-              <User className="h-5 w-5 text-[#0088CC]" />
-            </div>
+            <User className="h-5 w-5 text-muted-foreground shrink-0" strokeWidth={1.5} />
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-medium">Human Only</span>
-                <Badge variant="outline" className="bg-[#0088CC]/10 text-[#0088CC] border-[#0088CC]/30">
+                <Badge variant="outline">
                   Telegram
                 </Badge>
               </div>
@@ -307,7 +305,7 @@ export function EditConnectionPage() {
                 {isDeleting ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="h-4 w-4 mr-2" strokeWidth={1.5} />
                 )}
                 ลบการเชื่อมต่อ
               </Button>
@@ -347,7 +345,7 @@ export function EditConnectionPage() {
             </>
           ) : (
             <>
-              <Zap className="h-4 w-4 mr-2" />
+              <Zap className="h-4 w-4 mr-2" strokeWidth={1.5} />
               {isEditMode ? 'บันทึกการเปลี่ยนแปลง' : 'สร้างการเชื่อมต่อ'}
             </>
           )}

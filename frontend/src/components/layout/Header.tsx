@@ -15,12 +15,12 @@ export function Header() {
   const { sidebarOpen, setSidebarOpen } = useUIStore();
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 items-center border-b bg-background px-4 md:hidden">
+    <header className="sticky top-0 z-40 flex h-14 items-center border-b bg-background/80 backdrop-blur-sm supports-[backdrop-filter]:bg-background/60 px-4 md:hidden">
       {/* Mobile menu button */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetTrigger asChild>
           <Button variant="ghost" size="icon" className="h-9 w-9">
-            <Menu className="h-5 w-5" />
+            <Menu className="h-5 w-5" strokeWidth={1.5} />
             <span className="sr-only">เปิดเมนู</span>
           </Button>
         </SheetTrigger>

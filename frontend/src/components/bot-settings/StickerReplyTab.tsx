@@ -54,7 +54,7 @@ export function StickerReplyTab({
                   )}
                 >
                   <div className="flex items-center gap-2 mb-1.5">
-                    <MessageSquare className="h-4 w-4 text-blue-500" />
+                    <MessageSquare className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
                     <span className="text-sm font-medium">ข้อความคงที่</span>
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">
@@ -73,7 +73,7 @@ export function StickerReplyTab({
                   )}
                 >
                   <div className="flex items-center gap-2 mb-1.5">
-                    <Sparkles className="h-4 w-4 text-amber-500" />
+                    <Sparkles className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
                     <span className="text-sm font-medium">AI วิเคราะห์</span>
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">

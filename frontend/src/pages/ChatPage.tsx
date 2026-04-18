@@ -5,13 +5,7 @@
  */
 import { useEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import { useSearchParams } from 'react-router';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { BotPicker, EmptyState } from '@/components/common';
 import { Loader2, MessageSquare, RotateCcw } from 'lucide-react';
 import { useBots } from '@/hooks/useKnowledgeBase';
 import { useBotPreferencesStore } from '@/stores/botPreferencesStore';
@@ -177,30 +171,26 @@ export function ChatPage() {
   // No bot selected - show bot selector
   if (!botId) {
     return (
-      <div className="flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-64px)] items-center justify-center">
-        <div className="text-center space-y-4 max-w-md">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-            <MessageSquare className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <h1 className="text-2xl font-bold">Select a Bot</h1>
-          <p className="text-muted-foreground">Choose a bot to view conversations</p>
-          {isBotsLoading ? (
-            <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-          ) : (
-            <Select onValueChange={handleBotSelect}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select Bot..." />
-              </SelectTrigger>
-              <SelectContent>
-                {bots.map((bot) => (
-                  <SelectItem key={bot.id} value={bot.id.toString()}>
-                    {bot.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
+      <div className="flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-64px)] items-center justify-center p-6">
+        <EmptyState
+          icon={MessageSquare}
+          title="เลือกบอท"
+          description="เลือกบอทเพื่อดูการสนทนา"
+          size="lg"
+          action={
+            isBotsLoading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            ) : (
+              <div className="w-64">
+                <BotPicker
+                  bots={bots.map((b) => ({ id: b.id, name: b.name }))}
+                  onChange={handleBotSelect}
+                  placeholder="Select Bot..."
+                />
+              </div>
+            )
+          }
+        />
       </div>
     );
   }
@@ -214,18 +204,12 @@ export function ChatPage() {
       )}>
         {/* Bot Selector */}
         <div className="p-3 border-b bg-muted/30">
-          <Select value={botId.toString()} onValueChange={handleBotSelect}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select Bot" />
-            </SelectTrigger>
-            <SelectContent position="popper">
-              {bots.map((bot) => (
-                <SelectItem key={bot.id} value={bot.id.toString()}>
-                  {bot.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <BotPicker
+            bots={bots.map((b) => ({ id: b.id, name: b.name }))}
+            value={botId}
+            onChange={handleBotSelect}
+            showIcon={false}
+          />
 
           {/* Bulk Reset Context */}
           <AlertDialog>
@@ -239,7 +223,7 @@ export function ChatPage() {
                 {clearContextAll.isPending ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
-                  <RotateCcw className="h-4 w-4 mr-2" />
+                  <RotateCcw className="h-4 w-4 mr-2" strokeWidth={1.5} />
                 )}
                 Reset All Contexts
               </Button>
@@ -289,14 +273,14 @@ export function ChatPage() {
             onBack={handleBackToList}
           />
         ) : (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            <div className="text-center p-6 max-w-sm">
-              <div className="mx-auto w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
-                <MessageSquare className="h-8 w-8 opacity-50" />
-              </div>
-              <h3 className="font-medium text-foreground mb-2">Select a conversation</h3>
-              <p className="text-sm">Choose a conversation from the list to start chatting</p>
-            </div>
+          <div className="flex-1 flex items-center justify-center p-6">
+            <EmptyState
+              icon={MessageSquare}
+              title="เลือกการสนทนา"
+              description="เลือกการสนทนาจากรายการเพื่อเริ่มต้น"
+              size="lg"
+              className="border-0 bg-transparent"
+            />
           </div>
         )}
       </div>
