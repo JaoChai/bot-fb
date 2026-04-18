@@ -7,19 +7,13 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\User;
-use App\Services\Agent\AgentLoopConfig;
-use App\Services\Agent\AgentLoopService;
-use App\Services\Agent\SseAgentCallbacks;
-use App\Services\AgentSafetyService;
 use App\Services\CostTrackingService;
 use App\Services\HybridSearchService;
 use App\Services\IntentAnalysisService;
 use App\Services\MultipleBubblesService;
 use App\Services\OpenRouterService;
 use App\Services\RAGService;
-use App\Services\SecondAI\SecondAIService;
 use App\Services\SemanticCacheService;
-use App\Services\ToolService;
 use GuzzleHttp\Client;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -42,21 +36,13 @@ class StreamController extends Controller
 
     protected HybridSearchService $hybridSearch;
 
-    protected ToolService $toolService;
-
     protected CostTrackingService $costTracking;
-
-    protected AgentSafetyService $agentSafety;
-
-    protected SecondAIService $secondAI;
 
     protected IntentAnalysisService $intentAnalysis;
 
     protected RAGService $ragService;
 
     protected MultipleBubblesService $multipleBubbles;
-
-    protected AgentLoopService $agentLoopService;
 
     protected ?SemanticCacheService $semanticCache;
 
@@ -78,32 +64,21 @@ class StreamController extends Controller
     // Track if done event has been sent (reset at start of each request for Octane safety)
     protected bool $doneSent = false;
 
-    // KB search metadata for smart routing decisions
-    protected array $lastKbSearchMeta = [];
-
     public function __construct(
         OpenRouterService $openRouter,
         HybridSearchService $hybridSearch,
-        ToolService $toolService,
         CostTrackingService $costTracking,
-        AgentSafetyService $agentSafety,
-        SecondAIService $secondAI,
         IntentAnalysisService $intentAnalysis,
         RAGService $ragService,
         MultipleBubblesService $multipleBubbles,
-        AgentLoopService $agentLoopService,
         ?SemanticCacheService $semanticCache = null
     ) {
         $this->openRouter = $openRouter;
         $this->hybridSearch = $hybridSearch;
-        $this->toolService = $toolService;
         $this->costTracking = $costTracking;
-        $this->agentSafety = $agentSafety;
-        $this->secondAI = $secondAI;
         $this->intentAnalysis = $intentAnalysis;
         $this->ragService = $ragService;
         $this->multipleBubbles = $multipleBubbles;
-        $this->agentLoopService = $agentLoopService;
         $this->semanticCache = $semanticCache;
 
         $this->openRouterBaseUrl = config('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
@@ -175,7 +150,7 @@ class StreamController extends Controller
         }
 
         // 6. Create SSE response
-        return new StreamedResponse(function () use ($bot, $flow, $message, $conversationHistory, $apiKey, $user, $memoryNotes) {
+        return new StreamedResponse(function () use ($bot, $flow, $message, $conversationHistory, $apiKey, $memoryNotes) {
             // Disable output buffering for streaming
             while (ob_get_level()) {
                 ob_end_clean();
@@ -203,44 +178,10 @@ class StreamController extends Controller
                 $this->sendSSE('process_start', [
                     'timestamp' => now()->toISOString(),
                     'message' => $message,
-                    'agentic_mode' => $flow->agentic_mode,
                 ]);
 
-                // === STEP 1.5: Injection Detection (Security Guardrail) ===
-                if ($flow->second_ai_enabled) {
-                    $injectionResult = $this->secondAI->checkUserInput($message, $flow);
-
-                    if ($injectionResult->isBlocked()) {
-                        $this->sendSSE('injection_blocked', [
-                            'risk_score' => $injectionResult->riskScore,
-                            'patterns' => $injectionResult->getPatternNames(),
-                            'message' => $injectionResult->message,
-                        ]);
-
-                        // Send done event and exit (doneSent will be set by sendSSE)
-                        $this->sendSSE('done', [
-                            'total_time_ms' => round((microtime(true) - $this->metrics['start_time']) * 1000),
-                            'prompt_tokens' => 0,
-                            'completion_tokens' => 0,
-                            'models_used' => [],
-                            'tool_calls' => 0,
-                            'blocked' => true,
-                        ]);
-
-                        return;
-                    }
-
-                    // Log flagged but allowed inputs
-                    if ($injectionResult->isFlagged()) {
-                        $this->sendSSE('injection_flagged', [
-                            'risk_score' => $injectionResult->riskScore,
-                            'patterns' => $injectionResult->getPatternNames(),
-                        ]);
-                    }
-                }
-
                 // === SEMANTIC CACHE: Check for cached response ===
-                if (! $flow->agentic_mode && $this->semanticCache?->isEnabled()) {
+                if ($this->semanticCache?->isEnabled()) {
                     $cacheResult = rescue(function () use ($bot, $message, $apiKey) {
                         return $this->semanticCache->get($bot, $message, $apiKey);
                     }, null, report: false);
@@ -277,66 +218,22 @@ class StreamController extends Controller
                     }
                 }
 
-                // === AGENTIC MODE: KB-First + Smart Routing ===
-                if ($flow->agentic_mode && ! empty($flow->enabled_tools)) {
-                    // KB-First: Pre-search
-                    $kbContext = $this->runAgentKnowledgeBaseSearch($bot, $flow, $message);
-                    $kbMeta = $this->lastKbSearchMeta;
+                // === STANDARD MODE: Decision → KB → Chat ===
 
-                    // Smart Routing: Multi-signal via AgentLoopService
-                    $complexity = $this->ragService->detectComplexity($message);
-                    $toolIntent = $this->ragService->detectToolIntent($message, $flow->enabled_tools ?? []);
-                    $configuredThreshold = $flow->knowledgeBases->first()?->pivot->kb_similarity_threshold ?? 0.7;
+                // === STEP 2: Decision Model - Intent Analysis ===
+                $intent = $this->runDecisionModel($bot, $message, $apiKey);
 
-                    $routing = $this->agentLoopService->shouldUseAgentLoop(
-                        $complexity,
-                        $toolIntent,
-                        ! empty($kbContext) ? ($kbMeta['top_relevance'] ?? 0) : 0.0,
-                        $configuredThreshold
-                    );
+                // === STEP 3: Knowledge Base Search ===
+                $kbContext = $this->runKnowledgeBaseSearch($bot, $flow, $message, $intent);
 
-                    if (! $routing['use_agent']) {
-                        // Simple + high-quality KB → Standard Mode (fast & cheap)
-                        $this->sendSSE('agent_routing', [
-                            'action' => 'skip_agent',
-                            'reason' => $routing['reason'],
-                            'complexity_score' => $routing['complexity_score'],
-                            'kb_top_relevance' => $routing['kb_top_relevance'],
-                        ]);
-                        $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey, $memoryNotes);
-                        $this->runSecondAI($flow, $chatResponse, $message, $apiKey, $kbContext);
-                    } else {
-                        // Complex / tool needed / low KB → Agent Loop
-                        $this->sendSSE('agent_routing', [
-                            'action' => 'full_agent',
-                            'reason' => $routing['reason'],
-                            'complexity_score' => $routing['complexity_score'],
-                            'kb_top_relevance' => $routing['kb_top_relevance'],
-                            'tool_intent' => $routing['tool_intent'],
-                        ]);
-                        $this->runAgentLoop($bot, $flow, $message, $conversationHistory, $apiKey, $user, $kbContext, $memoryNotes);
-                    }
-                } else {
-                    // === STANDARD MODE: Decision → KB → Chat → Second AI ===
+                // === STEP 4: Chat Model - Generate Response ===
+                $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey, $memoryNotes);
 
-                    // === STEP 2: Decision Model - Intent Analysis ===
-                    $intent = $this->runDecisionModel($bot, $message, $apiKey);
-
-                    // === STEP 3: Knowledge Base Search ===
-                    $kbContext = $this->runKnowledgeBaseSearch($bot, $flow, $message, $intent);
-
-                    // === STEP 4: Chat Model - Generate Response ===
-                    $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey, $memoryNotes);
-
-                    // === STEP 5: Second AI - Content Verification ===
-                    $finalResponse = $this->runSecondAI($flow, $chatResponse, $message, $apiKey);
-
-                    // === SEMANTIC CACHE: Save response ===
-                    if ($this->semanticCache?->isEnabled() && ! empty($finalResponse)) {
-                        rescue(function () use ($bot, $message, $finalResponse) {
-                            $this->semanticCache->put($bot, $message, $finalResponse);
-                        }, null, report: false);
-                    }
+                // === SEMANTIC CACHE: Save response ===
+                if ($this->semanticCache?->isEnabled() && ! empty($chatResponse)) {
+                    rescue(function () use ($bot, $message, $chatResponse) {
+                        $this->semanticCache->put($bot, $message, $chatResponse);
+                    }, null, report: false);
                 }
 
                 // === STEP 6: Done (if not already sent) ===
@@ -583,100 +480,6 @@ class StreamController extends Controller
     }
 
     /**
-     * Run KB search for Agentic Mode (pre-search, no Decision Model needed).
-     * Always searches if flow has KBs attached. Returns formatted context or empty string.
-     */
-    protected function runAgentKnowledgeBaseSearch(Bot $bot, Flow $flow, string $message): string
-    {
-        $flowKBs = $flow->knowledgeBases;
-
-        if (! $flowKBs || $flowKBs->isEmpty()) {
-            return '';
-        }
-
-        $startTime = microtime(true);
-
-        $kbList = $flowKBs->map(fn ($kb) => ['id' => $kb->id, 'name' => $kb->name])->toArray();
-
-        $this->sendSSE('kb_search', [
-            'knowledge_bases' => $kbList,
-            'query' => substr($message, 0, 100).(strlen($message) > 100 ? '...' : ''),
-            'source' => 'agent_pre_search',
-        ]);
-
-        try {
-            $embeddingApiKey = $bot->user?->settings?->getOpenRouterApiKey()
-                ?? config('services.openrouter.api_key');
-
-            $kbConfigs = $flowKBs->map(fn ($kb) => [
-                'id' => $kb->id,
-                'name' => $kb->name,
-                'kb_top_k' => $kb->pivot->kb_top_k ?? 5,
-                'kb_similarity_threshold' => $kb->pivot->kb_similarity_threshold ?? 0.7,
-            ])->toArray();
-
-            $results = $this->hybridSearch->searchMultiple(
-                kbConfigs: $kbConfigs,
-                query: $message,
-                totalLimit: config('rag.max_results', 5),
-                apiKey: $embeddingApiKey
-            );
-
-            $kbResults = [];
-            foreach ($flowKBs as $kb) {
-                $kbChunks = $results->filter(fn ($r) => $r['knowledge_base_id'] === $kb->id);
-                if ($kbChunks->isNotEmpty()) {
-                    $kbResults[] = [
-                        'kb_name' => $kb->name,
-                        'chunks_found' => $kbChunks->count(),
-                        'top_relevance' => round($kbChunks->max('similarity') * 100),
-                    ];
-                }
-            }
-
-            $this->lastKbSearchMeta = [
-                'total_chunks' => $results->count(),
-                'top_relevance' => $results->isNotEmpty() ? $results->max('similarity') : 0,
-                'avg_relevance' => $results->isNotEmpty() ? round($results->avg('similarity'), 3) : 0,
-            ];
-
-            $timeMs = round((microtime(true) - $startTime) * 1000);
-
-            $this->sendSSE('kb_result', [
-                'results' => $kbResults,
-                'total_chunks' => $results->count(),
-                'search_mode' => $this->hybridSearch->isEnabled() ? 'hybrid' : 'semantic',
-                'time_ms' => $timeMs,
-                'source' => 'agent_pre_search',
-            ]);
-
-            if ($results->isEmpty()) {
-                $this->lastKbSearchMeta = ['total_chunks' => 0, 'top_relevance' => 0, 'avg_relevance' => 0];
-
-                return '';
-            }
-
-            return $this->ragService->formatKnowledgeBaseContext($results);
-
-        } catch (\Exception $e) {
-            Log::error('Agent KB pre-search failed', [
-                'bot_id' => $bot->id,
-                'flow_id' => $flow->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            $this->sendSSE('kb_result', [
-                'results' => [],
-                'total_chunks' => 0,
-                'error' => $e->getMessage(),
-                'source' => 'agent_pre_search',
-            ]);
-
-            return '';
-        }
-    }
-
-    /**
      * Step 4: Run Chat Model for Response Generation (with streaming)
      *
      * @return string The collected response content for Second AI processing
@@ -833,131 +636,6 @@ class StreamController extends Controller
         return $collectedContent;
     }
 
-    /**
-     * Step 5: Run Second AI for Content Verification
-     *
-     * Executes Second AI checks (Fact Check, Policy, Personality) if enabled.
-     * Sends SSE events for timeline display in Chat Emulator.
-     *
-     * @param  Flow  $flow  The flow with second_ai configuration
-     * @param  string  $originalResponse  The original AI response to check
-     * @param  string  $userMessage  The original user message (for context)
-     * @param  string|null  $apiKey  Optional API key override
-     * @return string The final response (modified or original)
-     */
-    protected function runSecondAI(
-        Flow $flow,
-        string $originalResponse,
-        string $userMessage,
-        ?string $apiKey,
-        string $kbContext = ''
-    ): string {
-        // Check if client disconnected before starting
-        if (connection_aborted()) {
-            Log::info('SecondAI: Client disconnected before starting');
-
-            return $originalResponse;
-        }
-
-        // Skip if Second AI is not enabled or response is empty
-        if (! $flow->second_ai_enabled || empty($originalResponse)) {
-            return $originalResponse;
-        }
-
-        $options = $flow->second_ai_options ?? [];
-        $enabledChecks = [];
-
-        if (! empty($options['fact_check'])) {
-            $enabledChecks[] = 'fact_check';
-        }
-        if (! empty($options['policy'])) {
-            $enabledChecks[] = 'policy';
-        }
-        if (! empty($options['personality'])) {
-            $enabledChecks[] = 'personality';
-        }
-
-        // Skip if no checks are enabled
-        if (empty($enabledChecks)) {
-            return $originalResponse;
-        }
-
-        $startTime = microtime(true);
-
-        // Get model from Bot settings (same logic as UnifiedCheckService)
-        $bot = $flow->bot;
-        $model = $bot?->decision_model ?: $bot?->primary_chat_model ?: 'openai/gpt-4o-mini';
-
-        // Send start event
-        $this->sendSSE('second_ai_start', [
-            'enabled_checks' => $enabledChecks,
-            'model' => $model,
-        ]);
-
-        // Set pipeline timeout for Second AI (must be < frontend heartbeat 30s)
-        $this->secondAI->setTimeout(
-            (int) config('rag.second_ai.pipeline_timeout', 25)
-        );
-
-        // Use rescue() for graceful timeout handling
-        $result = rescue(
-            function () use ($originalResponse, $flow, $userMessage, $apiKey, $kbContext) {
-                return $this->secondAI->process(
-                    $originalResponse,
-                    $flow,
-                    $userMessage,
-                    $apiKey,
-                    $kbContext
-                );
-            },
-            function (\Throwable $e) use ($originalResponse, $flow) {
-                Log::error('SecondAI: Process failed or timed out', [
-                    'flow_id' => $flow->id,
-                    'error' => $e->getMessage(),
-                    ...(! app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
-                ]);
-                // Also log to stderr for Railway visibility
-                error_log('SecondAI ERROR: '.$e->getMessage());
-
-                return [
-                    'content' => $originalResponse,
-                    'second_ai_applied' => false,
-                    'second_ai' => ['error' => 'timeout_or_error'],
-                ];
-            },
-            report: false
-        );
-
-        $timeMs = round((microtime(true) - $startTime) * 1000);
-
-        // Determine if checks passed (no modifications applied)
-        $passed = ! ($result['second_ai_applied'] ?? false);
-        $checksApplied = $result['second_ai']['checks_applied'] ?? [];
-        $modifications = $result['second_ai']['modifications'] ?? [];
-        $error = $result['second_ai']['error'] ?? null;
-
-        // Send result event (always sent, success or failure)
-        $this->sendSSE('second_ai_result', [
-            'passed' => $passed,
-            'checks_applied' => $checksApplied,
-            'modifications' => $modifications,
-            'time_ms' => $timeMs,
-            ...($error ? ['error' => $error] : []),
-        ]);
-
-        // If content was modified, send the modified content event
-        $finalContent = $result['content'] ?? $originalResponse;
-        if (! $passed && $finalContent !== $originalResponse && empty($error)) {
-            $this->sendSSE('second_ai_modified', [
-                'content' => $finalContent,
-                'original_length' => strlen($originalResponse),
-                'modified_length' => strlen($finalContent),
-            ]);
-        }
-
-        return $finalContent;
-    }
-
     // =====================
     // Helper Methods
     // =====================
@@ -1052,49 +730,6 @@ Respond in the same language as the user's message.
 If you don't know something, be honest about it.
 Keep responses concise but informative.
 PROMPT;
-    }
-
-    /**
-     * Run Agent Loop with tool calling (Agentic Mode).
-     * Delegates to AgentLoopService with SSE callbacks.
-     */
-    protected function runAgentLoop(
-        Bot $bot,
-        Flow $flow,
-        string $message,
-        array $conversationHistory,
-        string $apiKey,
-        ?User $user = null,
-        string $kbContext = '',
-        array $memoryNotes = []
-    ): void {
-        $config = new AgentLoopConfig(
-            bot: $bot,
-            flow: $flow,
-            userMessage: $message,
-            conversationHistory: $conversationHistory,
-            apiKey: $apiKey,
-            userId: $user?->id,
-            kbContext: $kbContext,
-            memoryNotes: $memoryNotes,
-        );
-
-        $callbacks = new SseAgentCallbacks(
-            fn (string $event, array $data) => $this->sendSSE($event, $data),
-            $this->metrics,
-        );
-
-        $result = $this->agentLoopService->run($config, $callbacks);
-
-        // Update metrics from result
-        $this->metrics['models_used'][] = $result->model;
-        $this->metrics['prompt_tokens'] += $result->usage['prompt_tokens'] ?? 0;
-        $this->metrics['completion_tokens'] += $result->usage['completion_tokens'] ?? 0;
-
-        // === Second AI - Content Verification for Agentic Mode ===
-        if (! empty($result->content)) {
-            $this->runSecondAI($flow, $result->content, $message, $apiKey, $kbContext);
-        }
     }
 
     /**

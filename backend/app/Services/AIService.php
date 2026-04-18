@@ -7,7 +7,6 @@ use App\Jobs\ExtractEntitiesJob;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
-use App\Services\SecondAI\SecondAIService;
 use Illuminate\Support\Facades\Log;
 
 class AIService
@@ -15,7 +14,6 @@ class AIService
     public function __construct(
         protected OpenRouterService $openRouter,
         protected RAGService $ragService,
-        protected SecondAIService $secondAIService,
         protected StockGuardService $stockGuard
     ) {}
 
@@ -38,7 +36,7 @@ class AIService
         // Get flow for RAGService (agentic mode) and Second AI check
         $flow = $conversation?->currentFlow ?? $bot->defaultFlow;
 
-        // Use RAGService to generate response (handles KB integration + agentic mode automatically)
+        // Use RAGService to generate response (handles KB integration automatically)
         $result = $this->ragService->generateResponse(
             bot: $bot,
             userMessage: $userMessage,
@@ -46,20 +44,6 @@ class AIService
             conversation: $conversation,
             flow: $flow
         );
-        if ($flow && $flow->second_ai_enabled) {
-            $secondAIResult = $this->secondAIService->process(
-                response: $result['content'],
-                flow: $flow,
-                userMessage: $userMessage,
-                apiKey: $bot->user?->openrouter_api_key
-            );
-
-            $result['content'] = $secondAIResult['content'];
-            $result['second_ai'] = [
-                'applied' => $secondAIResult['second_ai_applied'],
-                'metadata' => $secondAIResult['second_ai'] ?? [],
-            ];
-        }
 
         // Stock Guard: hard-block selling out-of-stock products
         $guardResult = $this->stockGuard->validate($result['content'], $userMessage);
@@ -129,14 +113,6 @@ class AIService
                 $messageData['metadata'] = [
                     'rag' => $result['rag'],
                 ];
-            }
-
-            // Include Second AI metadata if applied
-            if (! empty($result['second_ai']) && $result['second_ai']['applied']) {
-                $messageData['metadata'] = array_merge(
-                    $messageData['metadata'] ?? [],
-                    ['second_ai' => $result['second_ai']]
-                );
             }
 
             // Create bot response message

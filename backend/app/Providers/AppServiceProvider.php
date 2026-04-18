@@ -12,9 +12,7 @@ use App\Policies\BotPolicy;
 use App\Policies\DocumentPolicy;
 use App\Policies\KnowledgeBasePolicy;
 use App\Policies\QuickReplyPolicy;
-use App\Services\Agent\AgentLoopService;
 use App\Services\CircuitBreakerService;
-use App\Services\CostTrackingService;
 use App\Services\FlowCacheService;
 use App\Services\HybridSearchService;
 use App\Services\IntentAnalysisService;
@@ -24,13 +22,6 @@ use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
 use App\Services\QueryEnhancementService;
 use App\Services\RAGService;
-use App\Services\SecondAI\FactCheckService;
-use App\Services\SecondAI\PersonalityCheckService;
-use App\Services\SecondAI\PolicyCheckService;
-use App\Services\SecondAI\PromptInjectionDetector;
-use App\Services\SecondAI\SecondAIMetricsService;
-use App\Services\SecondAI\SecondAIService;
-use App\Services\SecondAI\UnifiedCheckService;
 use App\Services\SemanticCacheService;
 use App\Services\SemanticSearchService;
 use App\Services\StockInjectionService;
@@ -75,67 +66,8 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(FlowCacheService::class),
                 $app->make(QueryEnhancementService::class),
                 $app->make(SemanticCacheService::class),
-                null, // ToolService
                 null, // CRAGService
                 $app->make(StockInjectionService::class)
-            );
-        });
-
-        // Register CostTrackingService as scoped (request-bound) to prevent
-        // concurrent requests from corrupting each other's cost tracking state
-        $this->app->scoped(CostTrackingService::class, function ($app) {
-            return new CostTrackingService;
-        });
-
-        // Register AgentLoopService as scoped (depends on scoped CostTrackingService)
-        $this->app->scoped(AgentLoopService::class);
-
-        // Register PromptInjectionDetector
-        $this->app->singleton(PromptInjectionDetector::class, function ($app) {
-            return new PromptInjectionDetector;
-        });
-
-        // Register SecondAIMetricsService
-        $this->app->singleton(SecondAIMetricsService::class, function ($app) {
-            return new SecondAIMetricsService;
-        });
-
-        // Register SecondAIService with all check services
-        $this->app->singleton(SecondAIService::class, function ($app) {
-            return new SecondAIService(
-                $app->make(FactCheckService::class),
-                $app->make(PolicyCheckService::class),
-                $app->make(PersonalityCheckService::class),
-                $app->make(UnifiedCheckService::class),
-                $app->make(PromptInjectionDetector::class),
-                $app->make(SecondAIMetricsService::class)
-            );
-        });
-
-        // Register individual check services
-        $this->app->singleton(FactCheckService::class, function ($app) {
-            return new FactCheckService(
-                $app->make(HybridSearchService::class),
-                $app->make(OpenRouterService::class)
-            );
-        });
-
-        $this->app->singleton(PolicyCheckService::class, function ($app) {
-            return new PolicyCheckService(
-                $app->make(OpenRouterService::class)
-            );
-        });
-
-        $this->app->singleton(PersonalityCheckService::class, function ($app) {
-            return new PersonalityCheckService(
-                $app->make(OpenRouterService::class)
-            );
-        });
-
-        $this->app->singleton(UnifiedCheckService::class, function ($app) {
-            return new UnifiedCheckService(
-                $app->make(OpenRouterService::class),
-                $app->make(RAGService::class)
             );
         });
 

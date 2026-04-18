@@ -119,9 +119,6 @@ namespace App\OpenApi;
  *     @OA\Property(property="decision_model", type="string", nullable=true),
  *     @OA\Property(property="temperature", type="number", format="float", example=0.7),
  *     @OA\Property(property="max_tokens", type="integer", example=2048),
- *     @OA\Property(property="agentic_mode", type="boolean", example=false),
- *     @OA\Property(property="max_tool_calls", type="integer", example=10),
- *     @OA\Property(property="enabled_tools", type="array", @OA\Items(type="string")),
  *     @OA\Property(
  *         property="knowledge_bases",
  *         type="array",
@@ -135,16 +132,7 @@ namespace App\OpenApi;
  *             @OA\Property(property="kb_similarity_threshold", type="number", format="float")
  *         )
  *     ),
- *     @OA\Property(property="language", type="string", enum={"th", "en", "zh", "ja", "ko"}, example="th"),
  *     @OA\Property(property="is_default", type="boolean", example=false),
- *     @OA\Property(property="second_ai_enabled", type="boolean", example=false),
- *     @OA\Property(
- *         property="second_ai_options",
- *         type="object",
- *         @OA\Property(property="fact_check", type="boolean"),
- *         @OA\Property(property="policy", type="boolean"),
- *         @OA\Property(property="personality", type="boolean")
- *     ),
  *     @OA\Property(property="created_at", type="string", format="date-time"),
  *     @OA\Property(property="updated_at", type="string", format="date-time")
  * )
@@ -152,17 +140,14 @@ namespace App\OpenApi;
  * @OA\Schema(
  *     schema="FlowList",
  *     type="object",
- *     description="Slim flow resource for list endpoints (excludes system_prompt, enabled_tools)",
+ *     description="Slim flow resource for list endpoints (excludes system_prompt)",
  *     required={"id", "bot_id", "name"},
  *
  *     @OA\Property(property="id", type="integer", example=1),
  *     @OA\Property(property="bot_id", type="integer", example=1),
  *     @OA\Property(property="name", type="string", example="Customer Support Flow"),
  *     @OA\Property(property="description", type="string", nullable=true, description="Truncated to 100 chars"),
- *     @OA\Property(property="model", type="string", nullable=true),
- *     @OA\Property(property="agentic_mode", type="boolean", example=false),
  *     @OA\Property(property="knowledge_bases_count", type="integer", example=2),
- *     @OA\Property(property="language", type="string", enum={"th", "en", "zh", "ja", "ko"}),
  *     @OA\Property(property="is_default", type="boolean"),
  *     @OA\Property(property="updated_at", type="string", format="date-time")
  * )
