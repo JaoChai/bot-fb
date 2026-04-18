@@ -32,7 +32,6 @@ class RAGService
         protected FlowCacheService $flowCacheService,
         protected ?QueryEnhancementService $queryEnhancement = null,
         protected ?SemanticCacheService $semanticCache = null,
-        protected ?ToolService $toolService = null,
         protected ?CRAGService $cragService = null,
         protected StockInjectionService $stockInjectionService = new StockInjectionService
     ) {}
@@ -191,46 +190,17 @@ class RAGService
             $temperature = $baseTemp;
         }
 
-        // Step 10: Generate response — Agentic or Standard
-        $isAgentic = $resolvedFlow
-            && $resolvedFlow->agentic_mode
-            && ! empty($resolvedFlow->enabled_tools)
-            && $this->toolService;
-
-        if ($isAgentic) {
-            // Delegate to AgentLoopService (handles prompt, tools, safety)
-            $agentConfig = new \App\Services\Agent\AgentLoopConfig(
-                bot: $bot,
-                flow: $resolvedFlow,
-                userMessage: $userMessage,
-                conversationHistory: $conversationHistory,
-                apiKey: $apiKey,
-                autoRejectHitl: true,
-                kbContext: $kbContext,
-                memoryNotes: $memoryNotes,
-            );
-            $agentCallbacks = new \App\Services\Agent\SyncAgentCallbacks;
-            $agentResult = $this->getAgentLoopService()->run($agentConfig, $agentCallbacks);
-
-            $result = [
-                'content' => $agentResult->content,
-                'model' => $agentResult->model,
-                'usage' => $agentResult->usage,
-                'cost' => $agentResult->cost,
-                'agentic' => $agentResult->agentic,
-            ];
-        } else {
-            $result = $this->openRouter->generateBotResponse(
-                userMessage: $userMessage,
-                systemPrompt: $systemPrompt,
-                conversationHistory: $conversationHistory,
-                model: $chatModel,
-                fallbackModel: $fallbackChatModel,
-                temperature: $temperature,
-                maxTokens: $maxTokens,
-                apiKeyOverride: $apiKey
-            );
-        }
+        // Step 10: Generate response via standard LLM call
+        $result = $this->openRouter->generateBotResponse(
+            userMessage: $userMessage,
+            systemPrompt: $systemPrompt,
+            conversationHistory: $conversationHistory,
+            model: $chatModel,
+            fallbackModel: $fallbackChatModel,
+            temperature: $temperature,
+            maxTokens: $maxTokens,
+            apiKeyOverride: $apiKey
+        );
 
         // Add metadata to result
         $result['intent'] = $intent;
@@ -274,14 +244,6 @@ class RAGService
         }
 
         return $result;
-    }
-
-    /**
-     * Get AgentLoopService via lazy resolution to avoid circular dependency.
-     */
-    protected function getAgentLoopService(): \App\Services\Agent\AgentLoopService
-    {
-        return app(\App\Services\Agent\AgentLoopService::class);
     }
 
     /**

@@ -7,7 +7,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Shared stock injection logic used by RAGService and AgentLoopService.
+ * Shared stock injection logic used by RAGService.
  */
 class StockInjectionService
 {

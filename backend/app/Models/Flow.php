@@ -20,34 +20,12 @@ class Flow extends Model
         'system_prompt',
         'temperature',
         'max_tokens',
-        'agentic_mode',
-        'max_tool_calls',
-        // Agent Safety
-        'agent_timeout_seconds',
-        'agent_max_cost_per_request',
-        'hitl_enabled',
-        'hitl_dangerous_actions',
-        'enabled_tools',
-        'language',
         'is_default',
-        // Second AI
-        'second_ai_enabled',
-        'second_ai_options',
     ];
 
     protected $casts = [
         'temperature' => 'decimal:2',
-        'agentic_mode' => 'boolean',
         'is_default' => 'boolean',
-        'enabled_tools' => 'array',
-        // Agent Safety
-        'agent_timeout_seconds' => 'integer',
-        'agent_max_cost_per_request' => 'decimal:4',
-        'hitl_enabled' => 'boolean',
-        'hitl_dangerous_actions' => 'array',
-        // Second AI
-        'second_ai_enabled' => 'boolean',
-        'second_ai_options' => 'array',
     ];
 
     public function bot(): BelongsTo
