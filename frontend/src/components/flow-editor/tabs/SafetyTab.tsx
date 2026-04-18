@@ -8,7 +8,6 @@ import {
   DollarSign,
   AlertTriangle,
   Info,
-  HandMetal,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
