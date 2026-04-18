@@ -8,6 +8,7 @@ interface SettingSectionProps {
   children: ReactNode;
   className?: string;
   action?: ReactNode;
+  tone?: 'default' | 'destructive';
 }
 
 export function SettingSection({
@@ -17,18 +18,34 @@ export function SettingSection({
   children,
   className,
   action,
+  tone = 'default',
 }: SettingSectionProps) {
+  const isDestructive = tone === 'destructive';
   return (
     <section className={cn('space-y-4', className)}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
           {Icon && (
-            <div className="flex-shrink-0 mt-0.5 flex h-9 w-9 items-center justify-center rounded-md border bg-muted/40 text-muted-foreground">
+            <div
+              className={cn(
+                'flex-shrink-0 mt-0.5 flex h-9 w-9 items-center justify-center rounded-md border',
+                isDestructive
+                  ? 'border-destructive/30 bg-destructive/5 text-destructive'
+                  : 'bg-muted/40 text-muted-foreground',
+              )}
+            >
               <Icon className="h-4 w-4" />
             </div>
           )}
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+            <h3
+              className={cn(
+                'text-sm font-semibold',
+                isDestructive ? 'text-destructive' : 'text-foreground',
+              )}
+            >
+              {title}
+            </h3>
             {description && (
               <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
             )}

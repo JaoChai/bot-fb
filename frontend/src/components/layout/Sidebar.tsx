@@ -30,37 +30,16 @@ import {
   Star,
 } from 'lucide-react';
 
-const mainNavItems = [
-  {
-    title: 'แดชบอร์ด',
-    href: '/dashboard',
-    icon: LayoutDashboard,
-  },
-  {
-    title: 'ออเดอร์',
-    href: '/orders',
-    icon: ShoppingCart,
-  },
-  {
-    title: 'ลูกค้า VIP',
-    href: '/vip-customers',
-    icon: Star,
-  },
-  {
-    title: 'การเชื่อมต่อ',
-    href: '/bots',
-    icon: Bot,
-  },
-  {
-    title: 'ฐานความรู้',
-    href: '/knowledge-base',
-    icon: BookOpen,
-  },
-  {
-    title: 'การสนทนา',
-    href: '/chat',
-    icon: MessageSquare,
-  },
+const workspaceNavItems = [
+  { title: 'แดชบอร์ด', href: '/dashboard', icon: LayoutDashboard },
+  { title: 'ออเดอร์', href: '/orders', icon: ShoppingCart },
+  { title: 'ลูกค้า VIP', href: '/vip-customers', icon: Star },
+  { title: 'การสนทนา', href: '/chat', icon: MessageSquare },
+];
+
+const managementNavItems = [
+  { title: 'การเชื่อมต่อ', href: '/bots', icon: Bot },
+  { title: 'ฐานความรู้', href: '/knowledge-base', icon: BookOpen },
 ];
 
 export function Sidebar() {
@@ -76,6 +55,16 @@ export function Sidebar() {
     ? user.name.substring(0, 2).toUpperCase()
     : 'U';
 
+  const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+    cn(
+      'relative flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+      'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-4 before:w-0.5 before:rounded-full before:bg-primary before:transition-opacity',
+      isActive
+        ? 'bg-accent text-foreground before:opacity-100'
+        : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground before:opacity-0',
+      sidebarCollapsed && 'justify-center px-2 before:hidden',
+    );
+
   return (
     <aside
       className={cn(
@@ -87,15 +76,15 @@ export function Sidebar() {
       <div className="flex h-14 items-center justify-between border-b px-4">
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background">
-              <Sparkles className="h-4 w-4" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary border border-primary/20">
+              <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
             </div>
-            <span className="text-sm font-semibold">BotJao</span>
+            <span className="text-sm font-semibold tracking-tight">BotJao</span>
           </div>
         )}
         {sidebarCollapsed && (
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background mx-auto">
-            <Sparkles className="h-4 w-4" />
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary border border-primary/20 mx-auto">
+            <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
           </div>
         )}
         <Button
@@ -104,69 +93,63 @@ export function Sidebar() {
           onClick={toggleSidebarCollapsed}
           className={cn("h-8 w-8 text-muted-foreground hover:text-foreground", sidebarCollapsed && "hidden")}
         >
-          <ChevronLeft className="h-4 w-4" />
+          <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
         </Button>
       </div>
 
       {/* Main Navigation */}
-      <nav className="flex-1 space-y-1 p-2">
-        {mainNavItems.map((item) => (
-          <NavLink
-            key={item.href}
-            to={item.href}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-foreground text-background'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                sidebarCollapsed && 'justify-center px-2'
-              )
-            }
-          >
-            <item.icon className="h-4 w-4 shrink-0" />
-            {!sidebarCollapsed && <span>{item.title}</span>}
-          </NavLink>
-        ))}
+      <nav className="flex-1 space-y-4 p-2">
+        <div className="space-y-1">
+          {!sidebarCollapsed && (
+            <p className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+              Workspace
+            </p>
+          )}
+          {workspaceNavItems.map((item) => (
+            <NavLink
+              key={item.href}
+              to={item.href}
+              className={navLinkClass}
+            >
+              <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+              {!sidebarCollapsed && <span>{item.title}</span>}
+            </NavLink>
+          ))}
+        </div>
 
-        {/* Team - Owner only */}
-        {user?.role === 'owner' && (
-          <NavLink
-            to="/team"
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-foreground text-background'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                sidebarCollapsed && 'justify-center px-2'
-              )
-            }
-          >
-            <Users className="h-4 w-4 shrink-0" />
-            {!sidebarCollapsed && <span>จัดการทีม</span>}
-          </NavLink>
-        )}
+        <div className="space-y-1">
+          {!sidebarCollapsed && (
+            <p className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+              Management
+            </p>
+          )}
+          {managementNavItems.map((item) => (
+            <NavLink
+              key={item.href}
+              to={item.href}
+              className={navLinkClass}
+            >
+              <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+              {!sidebarCollapsed && <span>{item.title}</span>}
+            </NavLink>
+          ))}
 
-        {/* Quick Replies - Owner only */}
-        {user?.role === 'owner' && (
-          <NavLink
-            to="/settings/quick-replies"
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-foreground text-background'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                sidebarCollapsed && 'justify-center px-2'
-              )
-            }
-          >
-            <Zap className="h-4 w-4 shrink-0" />
-            {!sidebarCollapsed && <span>Quick Replies</span>}
-          </NavLink>
-        )}
+          {/* Team - Owner only */}
+          {user?.role === 'owner' && (
+            <NavLink to="/team" className={navLinkClass}>
+              <Users className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+              {!sidebarCollapsed && <span>จัดการทีม</span>}
+            </NavLink>
+          )}
 
+          {/* Quick Replies - Owner only */}
+          {user?.role === 'owner' && (
+            <NavLink to="/settings/quick-replies" className={navLinkClass}>
+              <Zap className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+              {!sidebarCollapsed && <span>Quick Replies</span>}
+            </NavLink>
+          )}
+        </div>
       </nav>
 
       {/* Bottom Section */}
@@ -174,17 +157,9 @@ export function Sidebar() {
         {/* Settings */}
         <NavLink
           to="/settings"
-          className={({ isActive }) =>
-            cn(
-              'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              isActive
-                ? 'bg-foreground text-background'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-              sidebarCollapsed && 'justify-center px-2'
-            )
-          }
+          className={navLinkClass}
         >
-          <Settings className="h-4 w-4 shrink-0" />
+          <Settings className="h-4 w-4 shrink-0" strokeWidth={1.5} />
           {!sidebarCollapsed && <span>ตั้งค่า</span>}
         </NavLink>
 
@@ -219,7 +194,7 @@ export function Sidebar() {
             <button
               className={cn(
                 'mt-2 flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                'hover:bg-accent text-foreground',
+                'hover:bg-accent/60 text-foreground',
                 sidebarCollapsed && 'justify-center px-2'
               )}
             >
@@ -234,7 +209,7 @@ export function Sidebar() {
                     <p className="truncate text-sm font-medium">{user?.name || 'User'}</p>
                     <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
                   </div>
-                  <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
+                  <ChevronsUpDown className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
                 </>
               )}
             </button>
@@ -250,7 +225,7 @@ export function Sidebar() {
               disabled={isLoggingOut}
               className="text-destructive focus:text-destructive cursor-pointer"
             >
-              <LogOut className="mr-2 h-4 w-4" />
+              <LogOut className="mr-2 h-4 w-4" strokeWidth={1.5} />
               {isLoggingOut ? 'กำลังออก...' : 'ออกจากระบบ'}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -264,7 +239,7 @@ export function Sidebar() {
             onClick={toggleSidebarCollapsed}
             className="w-full h-8 mt-2 text-muted-foreground hover:text-foreground"
           >
-            <ChevronLeft className="h-4 w-4 rotate-180" />
+            <ChevronLeft className="h-4 w-4 rotate-180" strokeWidth={1.5} />
           </Button>
         )}
       </div>

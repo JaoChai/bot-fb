@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { PageHeader } from '@/components/connections';
 import { OrdersAnalytics } from '@/components/analytics/OrdersAnalytics';
 
 export function OrdersPage() {
@@ -14,10 +15,7 @@ export function OrdersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">ออเดอร์</h1>
-        <span className="text-sm text-muted-foreground">{today}</span>
-      </div>
+      <PageHeader title="ออเดอร์" meta={today} />
       <OrdersAnalytics />
     </div>
   );

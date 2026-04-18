@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { ChannelIcon } from '@/components/ui/channel-icon';
 import { PageHeader } from '@/components/connections';
+import { EmptyState } from '@/components/common';
 import { cn } from '@/lib/utils';
 
 export function BotsPage() {
@@ -156,7 +157,7 @@ export function BotsPage() {
         actions={
           <Button asChild>
             <Link to="/connections/add">
-              <Plus className="h-4 w-4" />
+              <Plus className="h-4 w-4" strokeWidth={1.5} />
               เพิ่มการเชื่อมต่อ
             </Link>
           </Button>
@@ -164,21 +165,19 @@ export function BotsPage() {
       />
 
       {bots.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 border border-dashed rounded-2xl">
-          <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border bg-background">
-            <BotIcon className="h-7 w-7 text-muted-foreground" />
-          </div>
-          <h2 className="text-lg font-semibold mb-1">เริ่มต้นใช้งาน AI Chatbot</h2>
-          <p className="text-sm text-muted-foreground text-center max-w-sm mb-6">
-            สร้างการเชื่อมต่อแรกเพื่อเชื่อม AI Chatbot กับ LINE, Facebook หรือทดสอบก่อนใช้งานจริง
-          </p>
-          <Button size="lg" asChild>
-            <Link to="/connections/add">
-              <Plus className="h-4 w-4" />
-              สร้างการเชื่อมต่อแรก
-            </Link>
-          </Button>
-        </div>
+        <EmptyState
+          icon={BotIcon}
+          title="เริ่มต้นใช้งาน AI Chatbot"
+          description="สร้างการเชื่อมต่อแรกเพื่อเชื่อม AI Chatbot กับ LINE, Facebook หรือทดสอบก่อนใช้งานจริง"
+          action={
+            <Button size="lg" asChild>
+              <Link to="/connections/add">
+                <Plus className="h-4 w-4" strokeWidth={1.5} />
+                สร้างการเชื่อมต่อแรก
+              </Link>
+            </Button>
+          }
+        />
       ) : (
         <div className="space-y-3">
           {bots.map(bot => {
@@ -284,7 +283,7 @@ export function BotsPage() {
                         <TooltipTrigger asChild>
                           <Button variant="outline" size="sm" asChild className="h-9 px-2.5 md:px-3">
                             <Link to={`/bots/${bot.id}/settings`}>
-                              <Settings className="h-4 w-4" />
+                              <Settings className="h-4 w-4" strokeWidth={1.5} />
                               <span className="hidden md:inline ml-1.5">ตั้งค่า</span>
                             </Link>
                           </Button>
@@ -297,7 +296,7 @@ export function BotsPage() {
                         <TooltipTrigger asChild>
                           <Button size="sm" asChild className="h-9 px-2.5 md:px-3">
                             <Link to={`/flows/editor?botId=${bot.id}`}>
-                              <Workflow className="h-4 w-4" />
+                              <Workflow className="h-4 w-4" strokeWidth={1.5} />
                               <span className="hidden md:inline ml-1.5">AI Flow</span>
                             </Link>
                           </Button>
@@ -314,13 +313,13 @@ export function BotsPage() {
                             className="h-9 w-9"
                             aria-label="ตัวเลือกเพิ่มเติม"
                           >
-                            <MoreHorizontal className="h-4 w-4" />
+                            <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-48">
                           <DropdownMenuItem asChild>
                             <Link to={`/bots/${bot.id}/edit`}>
-                              <MessageCircle className="h-4 w-4 mr-2" />
+                              <MessageCircle className="h-4 w-4 mr-2" strokeWidth={1.5} />
                               แก้ไข API & Models
                             </Link>
                           </DropdownMenuItem>
@@ -329,7 +328,7 @@ export function BotsPage() {
                             onClick={() => handleDeleteClick(bot)}
                             className="text-destructive focus:text-destructive focus:bg-destructive/10"
                           >
-                            <Trash2 className="h-4 w-4 mr-2" />
+                            <Trash2 className="h-4 w-4 mr-2" strokeWidth={1.5} />
                             ลบการเชื่อมต่อ
                           </DropdownMenuItem>
                         </DropdownMenuContent>
