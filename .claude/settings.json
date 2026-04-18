@@ -29,7 +29,7 @@
   "enabledPlugins": {
     "php-lsp@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
-    "laravel-boost@claude-plugins-official": false
+    "laravel-boost@claude-plugins-official": true
   },
   "teammateMode": "auto"
 }

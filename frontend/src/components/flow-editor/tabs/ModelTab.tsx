@@ -2,14 +2,7 @@ import { Sliders } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { SettingSection, SettingRow } from '@/components/connections';
+import { SettingSection } from '@/components/connections';
 import { cn } from '@/lib/utils';
 
 const PRESETS = [
@@ -39,11 +32,10 @@ const PRESETS = [
 interface ModelTabProps {
   temperature: number;
   maxTokens: number;
-  language: string;
-  onChange: (field: 'temperature' | 'max_tokens' | 'language', value: number | string) => void;
+  onChange: (field: 'temperature' | 'max_tokens', value: number) => void;
 }
 
-export function ModelTab({ temperature, maxTokens, language, onChange }: ModelTabProps) {
+export function ModelTab({ temperature, maxTokens, onChange }: ModelTabProps) {
   const activePreset = PRESETS.find(
     (p) => Math.abs(p.temperature - temperature) < 0.05 && p.maxTokens === maxTokens,
   )?.id;
@@ -142,21 +134,6 @@ export function ModelTab({ temperature, maxTokens, language, onChange }: ModelTa
           </div>
         </div>
 
-        {/* Language */}
-        <SettingRow label="ภาษาการตอบ" htmlFor="model-language">
-          <Select
-            value={language}
-            onValueChange={(val) => onChange('language', val)}
-          >
-            <SelectTrigger id="model-language" className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="th">ไทย</SelectItem>
-              <SelectItem value="en">English</SelectItem>
-            </SelectContent>
-          </Select>
-        </SettingRow>
       </SettingSection>
     </div>
   );

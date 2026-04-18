@@ -2,7 +2,6 @@ import { memo, useCallback, useRef, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ProcessDisplay } from '@/components/ProcessDisplay';
-import { AgentApprovalDialog, type AgentApprovalData } from './AgentApprovalDialog';
 import {
   MessageCircle,
   Send,
@@ -20,8 +19,6 @@ interface ChatEmulatorProps {
   onSendMessage: (message: string) => Promise<void>;
   onCancelStream: () => void;
   onClearMessages: () => void;
-  pendingApproval?: AgentApprovalData | null;
-  onApprovalClose?: () => void;
   disabled?: boolean;
   disabledReason?: string;
   className?: string;
@@ -74,8 +71,6 @@ export const ChatEmulator = memo(function ChatEmulator({
   onSendMessage,
   onCancelStream,
   onClearMessages,
-  pendingApproval,
-  onApprovalClose,
   disabled = false,
   disabledReason,
   className,
@@ -210,17 +205,6 @@ export const ChatEmulator = memo(function ChatEmulator({
         </div>
       </div>
 
-      {/* Agent Approval Dialog (HITL) */}
-      {pendingApproval && onApprovalClose && (
-        <AgentApprovalDialog
-          open={!!pendingApproval}
-          approvalId={pendingApproval.approval_id}
-          toolName={pendingApproval.tool_name}
-          toolArgs={pendingApproval.tool_args}
-          timeoutSeconds={pendingApproval.timeout_seconds}
-          onClose={onApprovalClose}
-        />
-      )}
     </div>
   );
 });
