@@ -211,7 +211,15 @@ class ProcessLINEWebhook implements ShouldQueue
         // Check response hours before processing
         $responseHoursResult = $responseHoursService->checkResponseHours($this->bot);
         if (! $responseHoursResult['allowed']) {
-            $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken, $userId);
+            $existingConv = Conversation::where('bot_id', $this->bot->id)
+                ->where('external_customer_id', $userId)
+                ->where('channel_type', 'line')
+                ->whereIn('status', ['active', 'handover'])
+                ->first();
+
+            if (! $existingConv || ! $existingConv->is_handover) {
+                $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken, $userId);
+            }
 
             return;
         }
@@ -849,14 +857,6 @@ class ProcessLINEWebhook implements ShouldQueue
         // Check response hours AFTER saving message but BEFORE AI response
         $responseHoursResult = $responseHoursService->checkResponseHours($this->bot);
 
-        // DEBUG: Log response hours check for images
-        if ($messageType === 'image') {
-            error_log('IMAGE DEBUG: Response hours check - bot_id='.$this->bot->id.
-                ', allowed='.($responseHoursResult['allowed'] ? 'true' : 'false').
-                ', status='.($responseHoursResult['status'] ?? 'N/A').
-                ', current_time='.($responseHoursResult['current_time'] ?? 'N/A'));
-        }
-
         if (! $responseHoursResult['allowed']) {
             Log::info('Non-text message received outside response hours', [
                 'bot_id' => $this->bot->id,
@@ -865,8 +865,9 @@ class ProcessLINEWebhook implements ShouldQueue
                 'current_time' => $responseHoursResult['current_time'] ?? null,
             ]);
 
-            // Send offline message for all non-text message types (including stickers)
-            $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken, $userId);
+            if (! $conversation?->is_handover) {
+                $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken, $userId);
+            }
 
             return; // Skip AI response
         }
