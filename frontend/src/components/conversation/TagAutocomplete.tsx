@@ -109,25 +109,28 @@ export function TagAutocomplete({
             </button>
           )}
 
-          {suggestions.map((tag) => (
-            <button
-              key={tag}
-              onClick={() => handleAdd(tag)}
-              className={cn(
-                'w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center justify-between',
-                currentTags.includes(tag) && 'opacity-50'
-              )}
-              disabled={currentTags.includes(tag)}
-            >
-              <span className="flex items-center gap-2">
-                <Tag className="h-4 w-4 text-muted-foreground" />
-                {tag}
-              </span>
-              {currentTags.includes(tag) && (
-                <Check className="h-4 w-4 text-primary" />
-              )}
-            </button>
-          ))}
+          {suggestions.map((tag) => {
+            const isSelected = currentTags.includes(tag);
+            return (
+              <button
+                key={tag}
+                onClick={() => handleAdd(tag)}
+                className={cn(
+                  'w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center justify-between',
+                  isSelected && 'opacity-50'
+                )}
+                disabled={isSelected}
+              >
+                <span className="flex items-center gap-2">
+                  <Tag className="h-4 w-4 text-muted-foreground" />
+                  {tag}
+                </span>
+                {isSelected && (
+                  <Check className="h-4 w-4 text-primary" />
+                )}
+              </button>
+            );
+          })}
 
           {suggestions.length === 0 && !inputValue.trim() && (
             <div className="px-3 py-2 text-sm text-muted-foreground">

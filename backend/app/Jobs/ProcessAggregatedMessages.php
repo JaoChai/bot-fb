@@ -98,13 +98,6 @@ class ProcessAggregatedMessages implements ShouldQueue
 
         ['mergedContent' => $mergedContent, 'messageCount' => $messageCount, 'cachedMessageIds' => $cachedMessageIds] = $validationResult;
 
-        Log::info('Processing aggregated messages', [
-            'conversation_id' => $conversationId,
-            'group_id' => $this->groupId,
-            'message_count' => $messageCount,
-            'merged_length' => strlen($mergedContent),
-        ]);
-
         // Check if bot is active and not in handover mode
         if (! $this->shouldGenerate()) {
             return;
@@ -259,15 +252,15 @@ class ProcessAggregatedMessages implements ShouldQueue
         }
 
         $latestMessageId = max($cachedMessageIds);
-        $latestMessage = \App\Models\Message::find($latestMessageId);
+        $latestTimestamp = \App\Models\Message::where('id', $latestMessageId)->value('created_at');
 
-        if (! $latestMessage) {
+        if (! $latestTimestamp) {
             return false;
         }
 
         $alreadyResponded = \App\Models\Message::where('conversation_id', $conversationId)
             ->where('sender', 'bot')
-            ->where('created_at', '>=', $latestMessage->created_at)
+            ->where('created_at', '>=', $latestTimestamp)
             ->exists();
 
         if ($alreadyResponded) {

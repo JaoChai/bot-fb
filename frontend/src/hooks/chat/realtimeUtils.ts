@@ -1,17 +1,8 @@
-/**
- * Real-time utilities extracted from useRealtime hook
- * These helpers manage cache updates for messages and conversations
- */
-import { type QueryClient } from '@tanstack/react-query';
-import { type InfiniteData } from '@tanstack/react-query';
+import { type QueryClient, type InfiniteData } from '@tanstack/react-query';
 import { conversationKeys, type ConversationsResponse } from './useConversationList';
 import type { Conversation, ConversationFilters, Message } from '@/types/api';
 import type { MessageSentEvent } from '@/types/realtime';
 
-/**
- * Create a Message object from a MessageSentEvent
- * Fills in null values for fields not provided in the event
- */
 export function createMessageFromEvent(event: MessageSentEvent): Message {
   return {
     id: event.id,
@@ -35,11 +26,6 @@ export function createMessageFromEvent(event: MessageSentEvent): Message {
   };
 }
 
-/**
- * Update conversation in infinite list cache
- * Moves conversation to first page, updates last_message and metadata
- * Uses direct page iteration instead of flatMap for O(pages) lookup
- */
 export function updateConversationInList(
   queryClient: QueryClient,
   botId: number,
@@ -55,7 +41,6 @@ export function updateConversationInList(
 
       const nowNeedsResponse = event.sender === 'user';
 
-      // Find conversation directly in pages (O(pages) instead of O(n) flatMap)
       let targetPageIdx = -1;
       let targetItemIdx = -1;
       for (let p = 0; p < old.pages.length; p++) {

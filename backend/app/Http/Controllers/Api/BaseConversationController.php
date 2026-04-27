@@ -43,11 +43,6 @@ abstract class BaseConversationController extends Controller
         $this->cacheService->invalidateAll($botId);
     }
 
-    /**
-     * Load customer profile and assigned user relationships.
-     *
-     * Helper method to reduce duplication across assignment endpoints.
-     */
     protected function loadConversationRelationships(Conversation $conversation): Conversation
     {
         return $conversation->load(['customerProfile', 'assignedUser']);
