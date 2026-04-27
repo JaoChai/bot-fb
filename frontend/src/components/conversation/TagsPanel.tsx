@@ -108,86 +108,13 @@ export function TagsPanel({ botId, conversationId, currentTags }: TagsPanelProps
 
       {/* Add tag input with autocomplete */}
       {isAdding && (
-        <div className="relative">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Input
-                ref={inputRef}
-                type="text"
-                placeholder="Type to search or create tag..."
-                value={inputValue}
-                onChange={(e) => {
-                  setInputValue(e.target.value);
-                  setShowSuggestions(true);
-                }}
-                onFocus={() => setShowSuggestions(true)}
-                onKeyDown={handleKeyDown}
-                className="pr-8"
-              />
-              {addTags.isPending && (
-                <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                setIsAdding(false);
-                setInputValue('');
-                setShowSuggestions(false);
-              }}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {/* Suggestions dropdown */}
-          {showSuggestions && (suggestions.length > 0 || inputValue.trim()) && (
-            <div
-              ref={suggestionsRef}
-              className="absolute z-10 mt-1 w-full bg-popover border rounded-md shadow-lg max-h-48 overflow-y-auto"
-            >
-              {/* Create new tag option */}
-              {inputValue.trim() && !allTags?.includes(inputValue.trim()) && (
-                <button
-                  onClick={() => handleAddTag(inputValue)}
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center gap-2"
-                >
-                  <Plus className="h-4 w-4 text-primary" />
-                  Create "<span className="font-medium">{inputValue.trim()}</span>"
-                </button>
-              )}
-
-              {/* Existing tag suggestions */}
-              {suggestions.map((tag) => (
-                <button
-                  key={tag}
-                  onClick={() => handleAddTag(tag)}
-                  className={cn(
-                    'w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center justify-between',
-                    currentTags.includes(tag) && 'opacity-50'
-                  )}
-                  disabled={currentTags.includes(tag)}
-                >
-                  <span className="flex items-center gap-2">
-                    <Tag className="h-4 w-4 text-muted-foreground" />
-                    {tag}
-                  </span>
-                  {currentTags.includes(tag) && (
-                    <Check className="h-4 w-4 text-primary" />
-                  )}
-                </button>
-              ))}
-
-              {/* No matches message */}
-              {suggestions.length === 0 && !inputValue.trim() && (
-                <div className="px-3 py-2 text-sm text-muted-foreground">
-                  Start typing to search or create tags
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        <TagAutocomplete
+          allTags={allTags || []}
+          currentTags={currentTags}
+          onAddTag={handleAddTag}
+          onClose={() => setIsAdding(false)}
+          isPending={addTags.isPending}
+        />
       )}
 
       {/* Quick add popular tags */}
