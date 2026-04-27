@@ -72,7 +72,7 @@ class ConversationAssignmentController extends BaseConversationController
         );
 
         // Load relationships for broadcast and response
-        $conversation->load(['customerProfile', 'assignedUser']);
+        $this->loadConversationRelationships($conversation);
 
         // Invalidate stats cache (status changed to handover or active)
         $this->cacheService->invalidateStats($bot->id);
@@ -109,7 +109,7 @@ class ConversationAssignmentController extends BaseConversationController
         $conversation->update([
             'assigned_user_id' => $validated['user_id'],
         ]);
-        $conversation->load(['customerProfile', 'assignedUser']);
+        $this->loadConversationRelationships($conversation);
 
         // Broadcast the update
         broadcast(new ConversationUpdated($conversation))->toOthers();
@@ -140,7 +140,7 @@ class ConversationAssignmentController extends BaseConversationController
         $conversation->update([
             'assigned_user_id' => $user->id,
         ]);
-        $conversation->load(['customerProfile', 'assignedUser']);
+        $this->loadConversationRelationships($conversation);
 
         // Broadcast the update
         broadcast(new ConversationUpdated($conversation))->toOthers();
@@ -174,7 +174,7 @@ class ConversationAssignmentController extends BaseConversationController
         $conversation->update([
             'assigned_user_id' => null,
         ]);
-        $conversation->load(['customerProfile', 'assignedUser']);
+        $this->loadConversationRelationships($conversation);
 
         // Broadcast the update
         broadcast(new ConversationUpdated($conversation))->toOthers();

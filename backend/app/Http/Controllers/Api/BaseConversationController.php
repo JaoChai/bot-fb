@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Traits\ValidatesConversationOwnership;
+use App\Models\Conversation;
 use App\Services\ConversationCacheService;
 
 /**
@@ -40,5 +41,10 @@ abstract class BaseConversationController extends Controller
     protected function invalidateConversationCaches(int $botId): void
     {
         $this->cacheService->invalidateAll($botId);
+    }
+
+    protected function loadConversationRelationships(Conversation $conversation): Conversation
+    {
+        return $conversation->load(['customerProfile', 'assignedUser']);
     }
 }
