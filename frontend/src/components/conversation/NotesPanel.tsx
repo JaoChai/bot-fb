@@ -1,14 +1,6 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,10 +27,8 @@ import {
   StickyNote,
   Brain,
   Bell,
-  Save,
-  X,
 } from 'lucide-react';
-import type { ConversationNote } from '@/types/api';
+import { NoteForm } from './NoteForm';
 import { formatDistanceToNow, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 
@@ -69,56 +59,11 @@ export function NotesPanel({ botId, conversationId }: NotesPanelProps) {
   const { toast } = useToast();
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [newContent, setNewContent] = useState('');
-  const [newType, setNewType] = useState<'note' | 'memory' | 'reminder'>('note');
-  const [editContent, setEditContent] = useState('');
-  const [editType, setEditType] = useState<'note' | 'memory' | 'reminder'>('note');
 
   const { data: notes, isLoading } = useConversationNotes(botId, conversationId);
   const addNote = useAddNote(botId);
   const updateNote = useUpdateNote(botId);
   const deleteNote = useDeleteNote(botId);
-
-  const handleAddNote = async () => {
-    if (!newContent.trim()) return;
-
-    try {
-      await addNote.mutateAsync({
-        conversationId,
-        data: { content: newContent.trim(), type: newType },
-      });
-      toast({ title: 'Note added', description: 'Your note has been saved.' });
-      setNewContent('');
-      setNewType('note');
-      setIsAdding(false);
-    } catch {
-      toast({
-        title: 'Error',
-        description: 'Failed to add note.',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const handleUpdateNote = async (noteId: string) => {
-    if (!editContent.trim()) return;
-
-    try {
-      await updateNote.mutateAsync({
-        conversationId,
-        noteId,
-        data: { content: editContent.trim(), type: editType },
-      });
-      toast({ title: 'Note updated', description: 'Your changes have been saved.' });
-      setEditingId(null);
-    } catch {
-      toast({
-        title: 'Error',
-        description: 'Failed to update note.',
-        variant: 'destructive',
-      });
-    }
-  };
 
   const handleDeleteNote = async (noteId: string) => {
     try {
@@ -131,18 +76,6 @@ export function NotesPanel({ botId, conversationId }: NotesPanelProps) {
         variant: 'destructive',
       });
     }
-  };
-
-  const startEditing = (note: ConversationNote) => {
-    setEditingId(note.id);
-    setEditContent(note.content);
-    setEditType(note.type);
-  };
-
-  const cancelEditing = () => {
-    setEditingId(null);
-    setEditContent('');
-    setEditType('note');
   };
 
   if (isLoading) {
@@ -169,66 +102,27 @@ export function NotesPanel({ botId, conversationId }: NotesPanelProps) {
 
       {/* Add new note form */}
       {isAdding && (
-        <div className="space-y-3 p-3 border rounded-lg bg-muted/50">
-          <div className="flex items-center gap-2">
-            <Select
-              value={newType}
-              onValueChange={(v) => setNewType(v as typeof newType)}
-            >
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="note">
-                  <div className="flex items-center gap-2">
-                    <StickyNote className="h-4 w-4" />
-                    Note
-                  </div>
-                </SelectItem>
-                <SelectItem value="memory">
-                  <div className="flex items-center gap-2">
-                    <Brain className="h-4 w-4" />
-                    Memory
-                  </div>
-                </SelectItem>
-                <SelectItem value="reminder">
-                  <div className="flex items-center gap-2">
-                    <Bell className="h-4 w-4" />
-                    Reminder
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <Textarea
-            placeholder="Write your note here..."
-            value={newContent}
-            onChange={(e) => setNewContent(e.target.value)}
-            rows={3}
-            className="resize-none"
-          />
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
+        <div className="p-3 border rounded-lg bg-muted/50">
+          <NoteForm
+            onSave={async (content, type) => {
+              try {
+                await addNote.mutateAsync({
+                  conversationId,
+                  data: { content, type },
+                });
+                toast({ title: 'Note added', description: 'Your note has been saved.' });
                 setIsAdding(false);
-                setNewContent('');
-                setNewType('note');
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleAddNote}
-              disabled={!newContent.trim() || addNote.isPending}
-            >
-              {addNote.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              <Save className="h-4 w-4 mr-1" />
-              Save
-            </Button>
-          </div>
+              } catch {
+                toast({
+                  title: 'Error',
+                  description: 'Failed to add note.',
+                  variant: 'destructive',
+                });
+              }
+            }}
+            onCancel={() => setIsAdding(false)}
+            isPending={addNote.isPending}
+          />
         </div>
       )}
 
@@ -237,52 +131,36 @@ export function NotesPanel({ botId, conversationId }: NotesPanelProps) {
         <div className="space-y-3">
           {notes.map((note) => {
             const Icon = noteTypeIcons[note.type];
-            const isEditing = editingId === note.id;
 
             return (
               <div
                 key={note.id}
                 className="p-3 border rounded-lg hover:bg-muted/50 transition-colors"
               >
-                {isEditing ? (
-                  <div className="space-y-3">
-                    <Select
-                      value={editType}
-                      onValueChange={(v) => setEditType(v as typeof editType)}
-                    >
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="note">Note</SelectItem>
-                        <SelectItem value="memory">Memory</SelectItem>
-                        <SelectItem value="reminder">Reminder</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Textarea
-                      value={editContent}
-                      onChange={(e) => setEditContent(e.target.value)}
-                      rows={3}
-                      className="resize-none"
-                    />
-                    <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="sm" onClick={cancelEditing}>
-                        <X className="h-4 w-4 mr-1" />
-                        Cancel
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => handleUpdateNote(note.id)}
-                        disabled={!editContent.trim() || updateNote.isPending}
-                      >
-                        {updateNote.isPending && (
-                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                        )}
-                        <Save className="h-4 w-4 mr-1" />
-                        Save
-                      </Button>
-                    </div>
-                  </div>
+                {editingId === note.id ? (
+                  <NoteForm
+                    initialContent={note.content}
+                    initialType={note.type}
+                    onSave={async (content, type) => {
+                      try {
+                        await updateNote.mutateAsync({
+                          conversationId,
+                          noteId: note.id,
+                          data: { content, type },
+                        });
+                        toast({ title: 'Note updated', description: 'Your changes have been saved.' });
+                        setEditingId(null);
+                      } catch {
+                        toast({
+                          title: 'Error',
+                          description: 'Failed to update note.',
+                          variant: 'destructive',
+                        });
+                      }
+                    }}
+                    onCancel={() => setEditingId(null)}
+                    isPending={updateNote.isPending}
+                  />
                 ) : (
                   <>
                     <div className="flex items-start justify-between gap-2">
@@ -295,7 +173,7 @@ export function NotesPanel({ botId, conversationId }: NotesPanelProps) {
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7"
-                          onClick={() => startEditing(note)}
+                          onClick={() => setEditingId(note.id)}
                         >
                           <Pencil className="h-3 w-3" />
                         </Button>

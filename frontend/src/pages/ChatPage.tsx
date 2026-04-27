@@ -6,7 +6,7 @@
 import { useEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import { useSearchParams } from 'react-router';
 import { BotPicker, EmptyState } from '@/components/common';
-import { Loader2, MessageSquare, RotateCcw } from 'lucide-react';
+import { Loader2, MessageSquare } from 'lucide-react';
 import { useBots } from '@/hooks/useKnowledgeBase';
 import { useBotPreferencesStore } from '@/stores/botPreferencesStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -19,20 +19,9 @@ import { useClearContextAll } from '@/hooks/useConversations';
 import { ConversationList } from '@/components/chat/ConversationList';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { CustomerInfoPanel } from '@/components/chat/CustomerInfoPanel';
+import { BotSelectorPanel } from '@/components/chat/BotSelectorPanel';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
-import { Button } from '@/components/ui/button';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types/api';
@@ -203,48 +192,13 @@ export function ChatPage() {
         showMobileChat && 'hidden md:flex'
       )}>
         {/* Bot Selector */}
-        <div className="p-3 border-b bg-muted/30">
-          <BotPicker
-            bots={bots.map((b) => ({ id: b.id, name: b.name }))}
-            value={botId}
-            onChange={handleBotSelect}
-            showIcon={false}
-          />
-
-          {/* Bulk Reset Context */}
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full mt-2"
-                disabled={clearContextAll.isPending || !botId}
-              >
-                {clearContextAll.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <RotateCcw className="h-4 w-4 mr-2" strokeWidth={1.5} />
-                )}
-                Reset All Contexts
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Reset all contexts?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Bot will start fresh with all open conversations.
-                  Chat history will be preserved but bot will not reference previous messages.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleClearContextAll}>
-                  Reset All
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
+        <BotSelectorPanel
+          bots={bots.map((b) => ({ id: b.id, name: b.name }))}
+          botId={botId}
+          onBotSelect={handleBotSelect}
+          onClearContextAll={handleClearContextAll}
+          isClearPending={clearContextAll.isPending}
+        />
 
         {/* Conversation List */}
         <ConversationList

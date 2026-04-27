@@ -1,6 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   useBotTags,
@@ -8,14 +7,8 @@ import {
   useRemoveTag,
 } from '@/hooks/useConversations';
 import { useToast } from '@/hooks/use-toast';
-import {
-  Loader2,
-  Plus,
-  X,
-  Tag,
-  Check,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Loader2, Plus, X, Tag } from 'lucide-react';
+import { TagAutocomplete } from './TagAutocomplete';
 
 interface TagsPanelProps {
   botId: number;
@@ -26,38 +19,10 @@ interface TagsPanelProps {
 export function TagsPanel({ botId, conversationId, currentTags }: TagsPanelProps) {
   const { toast } = useToast();
   const [isAdding, setIsAdding] = useState(false);
-  const [inputValue, setInputValue] = useState('');
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   const { data: allTags } = useBotTags(botId);
   const addTags = useAddTags(botId);
   const removeTag = useRemoveTag(botId);
-
-  // Filter suggestions based on input
-  const suggestions = allTags?.filter(
-    (tag) =>
-      tag.toLowerCase().includes(inputValue.toLowerCase()) &&
-      !currentTags.includes(tag)
-  ) || [];
-
-  // Handle click outside to close suggestions
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        suggestionsRef.current &&
-        !suggestionsRef.current.contains(event.target as Node) &&
-        inputRef.current &&
-        !inputRef.current.contains(event.target as Node)
-      ) {
-        setShowSuggestions(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const handleAddTag = async (tag: string) => {
     const trimmedTag = tag.trim();
@@ -69,8 +34,6 @@ export function TagsPanel({ botId, conversationId, currentTags }: TagsPanelProps
         data: { tags: [trimmedTag] },
       });
       toast({ title: 'Tag added', description: `"${trimmedTag}" has been added.` });
-      setInputValue('');
-      setShowSuggestions(false);
     } catch {
       toast({
         title: 'Error',
@@ -93,17 +56,6 @@ export function TagsPanel({ botId, conversationId, currentTags }: TagsPanelProps
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && inputValue.trim()) {
-      e.preventDefault();
-      handleAddTag(inputValue);
-    } else if (e.key === 'Escape') {
-      setShowSuggestions(false);
-      setIsAdding(false);
-      setInputValue('');
-    }
-  };
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -114,10 +66,7 @@ export function TagsPanel({ botId, conversationId, currentTags }: TagsPanelProps
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              setIsAdding(true);
-              setTimeout(() => inputRef.current?.focus(), 100);
-            }}
+            onClick={() => setIsAdding(true)}
           >
             <Plus className="h-4 w-4 mr-1" />
             Add
@@ -159,86 +108,13 @@ export function TagsPanel({ botId, conversationId, currentTags }: TagsPanelProps
 
       {/* Add tag input with autocomplete */}
       {isAdding && (
-        <div className="relative">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Input
-                ref={inputRef}
-                type="text"
-                placeholder="Type to search or create tag..."
-                value={inputValue}
-                onChange={(e) => {
-                  setInputValue(e.target.value);
-                  setShowSuggestions(true);
-                }}
-                onFocus={() => setShowSuggestions(true)}
-                onKeyDown={handleKeyDown}
-                className="pr-8"
-              />
-              {addTags.isPending && (
-                <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                setIsAdding(false);
-                setInputValue('');
-                setShowSuggestions(false);
-              }}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {/* Suggestions dropdown */}
-          {showSuggestions && (suggestions.length > 0 || inputValue.trim()) && (
-            <div
-              ref={suggestionsRef}
-              className="absolute z-10 mt-1 w-full bg-popover border rounded-md shadow-lg max-h-48 overflow-y-auto"
-            >
-              {/* Create new tag option */}
-              {inputValue.trim() && !allTags?.includes(inputValue.trim()) && (
-                <button
-                  onClick={() => handleAddTag(inputValue)}
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center gap-2"
-                >
-                  <Plus className="h-4 w-4 text-primary" />
-                  Create "<span className="font-medium">{inputValue.trim()}</span>"
-                </button>
-              )}
-
-              {/* Existing tag suggestions */}
-              {suggestions.map((tag) => (
-                <button
-                  key={tag}
-                  onClick={() => handleAddTag(tag)}
-                  className={cn(
-                    'w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center justify-between',
-                    currentTags.includes(tag) && 'opacity-50'
-                  )}
-                  disabled={currentTags.includes(tag)}
-                >
-                  <span className="flex items-center gap-2">
-                    <Tag className="h-4 w-4 text-muted-foreground" />
-                    {tag}
-                  </span>
-                  {currentTags.includes(tag) && (
-                    <Check className="h-4 w-4 text-primary" />
-                  )}
-                </button>
-              ))}
-
-              {/* No matches message */}
-              {suggestions.length === 0 && !inputValue.trim() && (
-                <div className="px-3 py-2 text-sm text-muted-foreground">
-                  Start typing to search or create tags
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        <TagAutocomplete
+          allTags={allTags || []}
+          currentTags={currentTags}
+          onAddTag={handleAddTag}
+          onClose={() => setIsAdding(false)}
+          isPending={addTags.isPending}
+        />
       )}
 
       {/* Quick add popular tags */}

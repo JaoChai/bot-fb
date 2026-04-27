@@ -59,4 +59,5 @@ export { useBotTags, useAddTags, useRemoveTag, tagsKeys } from './useTags';
 
 // Real-time (T042, T043)
 export { useRealtime } from './useRealtime';
+export { updateConversationInList, createMessageFromEvent } from './realtimeUtils';
 export { useConnectionStatus } from '@/hooks/useConnectionStatus';
