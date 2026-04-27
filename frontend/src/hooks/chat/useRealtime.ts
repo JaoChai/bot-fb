@@ -12,7 +12,8 @@ import { useBotChannel } from '@/hooks/useEcho';
 import { messageKeys, type MessagesResponse } from './messageKeys';
 import { conversationKeys, type ConversationsResponse } from './useConversationList';
 import { conversationDetailKeys } from './useConversationDetails';
-import type { Message, Conversation, ConversationFilters } from '@/types/api';
+import { updateConversationInList, createMessageFromEvent } from './realtimeUtils';
+import type { Conversation, ConversationFilters } from '@/types/api';
 import type { MessageSentEvent, ConversationUpdatedEvent } from '@/types/realtime';
 
 interface UseRealtimeOptions {
@@ -74,26 +75,7 @@ export function useRealtime(
           const exists = old.data.some((m) => m.id === event.id);
           if (exists) return old;
 
-          const newMessage: Message = {
-            id: event.id,
-            conversation_id: event.conversation_id,
-            sender: event.sender,
-            content: event.content,
-            type: event.type,
-            media_url: event.media_url,
-            media_type: event.media_type,
-            media_metadata: null,
-            model_used: null,
-            prompt_tokens: null,
-            completion_tokens: null,
-            cost: null,
-            external_message_id: null,
-            reply_to_message_id: null,
-            sentiment: null,
-            intents: null,
-            created_at: event.created_at,
-            updated_at: event.created_at,
-          };
+          const newMessage = createMessageFromEvent(event);
 
           return {
             ...old,
@@ -285,84 +267,4 @@ export function useRealtime(
     window.addEventListener('echo:reconnected', handleReconnect);
     return () => window.removeEventListener('echo:reconnected', handleReconnect);
   }, [queryClient]);
-}
-
-// Helper to update conversation in infinite list
-// Uses direct page iteration instead of flatMap for O(pages) lookup
-function updateConversationInList(
-  queryClient: ReturnType<typeof useQueryClient>,
-  botId: number,
-  filters: ConversationFilters,
-  conversationId: number,
-  selectedConversationId: number | null | undefined,
-  event: MessageSentEvent
-) {
-  queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
-    conversationKeys.infinite(botId, filters),
-    (old) => {
-      if (!old) return old;
-
-      const nowNeedsResponse = event.sender === 'user';
-
-      // Find conversation directly in pages (O(pages) instead of O(n) flatMap)
-      let targetPageIdx = -1;
-      let targetItemIdx = -1;
-      for (let p = 0; p < old.pages.length; p++) {
-        const idx = old.pages[p].data.findIndex((c) => c.id === conversationId);
-        if (idx !== -1) {
-          targetPageIdx = p;
-          targetItemIdx = idx;
-          break;
-        }
-      }
-
-      if (targetPageIdx === -1) return old;
-
-      const existingConv = old.pages[targetPageIdx].data[targetItemIdx];
-      const updatedConv: Conversation = {
-        ...existingConv,
-        last_message_at: event.conversation?.last_message_at ?? event.created_at,
-        message_count: event.conversation?.message_count ?? existingConv.message_count + 1,
-        unread_count:
-          existingConv.id === selectedConversationId
-            ? 0
-            : (event.conversation?.unread_count ?? existingConv.unread_count + 1),
-        needs_response: nowNeedsResponse,
-        last_message: {
-          id: event.id,
-          conversation_id: event.conversation_id,
-          sender: event.sender,
-          content: event.content,
-          type: event.type,
-          media_url: event.media_url,
-          media_type: event.media_type,
-          media_metadata: null,
-          model_used: null,
-          prompt_tokens: null,
-          completion_tokens: null,
-          cost: null,
-          external_message_id: null,
-          reply_to_message_id: null,
-          sentiment: null,
-          intents: null,
-          created_at: event.created_at,
-          updated_at: event.created_at,
-        },
-      };
-
-      // Build new pages: remove from old position, prepend to first page
-      const newPages = old.pages.map((page, i) => {
-        const filteredData = i === targetPageIdx
-          ? page.data.filter((_, j) => j !== targetItemIdx)
-          : page.data;
-
-        if (i === 0) {
-          return { ...page, data: [updatedConv, ...filteredData] };
-        }
-        return { ...page, data: filteredData };
-      });
-
-      return { ...old, pages: newPages };
-    }
-  );
 }

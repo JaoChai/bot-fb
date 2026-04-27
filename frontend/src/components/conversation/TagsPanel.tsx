@@ -1,6 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   useBotTags,
@@ -8,14 +7,8 @@ import {
   useRemoveTag,
 } from '@/hooks/useConversations';
 import { useToast } from '@/hooks/use-toast';
-import {
-  Loader2,
-  Plus,
-  X,
-  Tag,
-  Check,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Loader2, Plus, X, Tag } from 'lucide-react';
+import { TagAutocomplete } from './TagAutocomplete';
 
 interface TagsPanelProps {
   botId: number;
@@ -26,38 +19,10 @@ interface TagsPanelProps {
 export function TagsPanel({ botId, conversationId, currentTags }: TagsPanelProps) {
   const { toast } = useToast();
   const [isAdding, setIsAdding] = useState(false);
-  const [inputValue, setInputValue] = useState('');
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   const { data: allTags } = useBotTags(botId);
   const addTags = useAddTags(botId);
   const removeTag = useRemoveTag(botId);
-
-  // Filter suggestions based on input
-  const suggestions = allTags?.filter(
-    (tag) =>
-      tag.toLowerCase().includes(inputValue.toLowerCase()) &&
-      !currentTags.includes(tag)
-  ) || [];
-
-  // Handle click outside to close suggestions
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        suggestionsRef.current &&
-        !suggestionsRef.current.contains(event.target as Node) &&
-        inputRef.current &&
-        !inputRef.current.contains(event.target as Node)
-      ) {
-        setShowSuggestions(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const handleAddTag = async (tag: string) => {
     const trimmedTag = tag.trim();
@@ -69,8 +34,6 @@ export function TagsPanel({ botId, conversationId, currentTags }: TagsPanelProps
         data: { tags: [trimmedTag] },
       });
       toast({ title: 'Tag added', description: `"${trimmedTag}" has been added.` });
-      setInputValue('');
-      setShowSuggestions(false);
     } catch {
       toast({
         title: 'Error',
@@ -93,17 +56,6 @@ export function TagsPanel({ botId, conversationId, currentTags }: TagsPanelProps
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && inputValue.trim()) {
-      e.preventDefault();
-      handleAddTag(inputValue);
-    } else if (e.key === 'Escape') {
-      setShowSuggestions(false);
-      setIsAdding(false);
-      setInputValue('');
-    }
-  };
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -114,10 +66,7 @@ export function TagsPanel({ botId, conversationId, currentTags }: TagsPanelProps
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              setIsAdding(true);
-              setTimeout(() => inputRef.current?.focus(), 100);
-            }}
+            onClick={() => setIsAdding(true)}
           >
             <Plus className="h-4 w-4 mr-1" />
             Add
