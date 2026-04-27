@@ -90,48 +90,13 @@ class ProcessAggregatedMessages implements ShouldQueue
     ): void {
         $conversationId = $this->conversation->id;
 
-        // DEBUG: Log all cache values at job start (use stderr for Railway visibility)
-        $cachedGroupId = $aggregationService->getCurrentGroupId($conversationId);
-        $cachedMessageIds = $aggregationService->getMessageIds($conversationId);
-        $startedAt = $aggregationService->getStartedAt($conversationId);
-
-        $cacheDriver = \Illuminate\Support\Facades\Cache::getDefaultDriver();
-        $cacheStore = config('cache.default');
-        $debugData = json_encode([
-            'conversation_id' => $conversationId,
-            'job_group_id' => $this->groupId,
-            'cached_group_id' => $cachedGroupId,
-            'group_id_match' => $cachedGroupId === $this->groupId,
-            'cached_message_ids' => $cachedMessageIds,
-            'message_count' => count($cachedMessageIds),
-            'started_at' => $startedAt,
-            'bot_id' => $this->bot->id,
-            'cache_driver' => $cacheDriver,
-            'cache_store' => $cacheStore,
-        ]);
-        error_log("[AGGREGATION_DEBUG] Job started: {$debugData}");
-
-        // Verify this group is still active (no newer messages came in)
-        if (! $aggregationService->isActiveGroup($conversationId, $this->groupId)) {
-            $reason = $cachedGroupId === null ? 'cache_expired_or_missing' : 'newer_group_exists';
-            error_log("[AGGREGATION_DEBUG] Early exit: group_id mismatch - reason: {$reason}, job_group_id: {$this->groupId}, cached_group_id: {$cachedGroupId}");
-
+        // Validate and get content (with early exit checks)
+        $validationResult = $this->validateAndGetContent($aggregationService);
+        if ($validationResult === null) {
             return;
         }
 
-        // Get merged content from all messages
-        $mergedContent = $aggregationService->getMergedContent($conversationId);
-
-        if (empty($mergedContent)) {
-            $reason = empty($cachedMessageIds) ? 'message_ids_empty' : 'messages_not_found_in_db';
-            error_log("[AGGREGATION_DEBUG] Early exit: no content - reason: {$reason}, message_ids: ".json_encode($cachedMessageIds));
-            $aggregationService->clearAggregation($conversationId);
-
-            return;
-        }
-
-        // Count messages for stats (reuse cached value from line 93)
-        $messageCount = count($cachedMessageIds);
+        ['mergedContent' => $mergedContent, 'messageCount' => $messageCount, 'cachedMessageIds' => $cachedMessageIds] = $validationResult;
 
         Log::info('Processing aggregated messages', [
             'conversation_id' => $conversationId,
@@ -140,10 +105,119 @@ class ProcessAggregatedMessages implements ShouldQueue
             'merged_length' => strlen($mergedContent),
         ]);
 
-        $botMessage = null;
+        // Check if bot is active and not in handover mode
+        if (! $this->shouldGenerate()) {
+            return;
+        }
 
-        // Transaction 1: Fast validation only (~20ms) - refresh and check state
+        // Safety check: skip if bot already responded
+        if ($this->hasAlreadyResponded($conversationId, $cachedMessageIds)) {
+            $aggregationService->clearAggregation($conversationId);
+
+            return;
+        }
+
+        // Acquire lock and attempt to generate response
+        $responseLock = $this->acquireResponseLock($aggregationService);
+        if ($responseLock === null) {
+            return;
+        }
+
+        try {
+            // Auto-clear stale context before AI generates response
+            app(ConversationContextService::class)->autoClearIfIdle($this->conversation);
+
+            // Generate and deliver bot response
+            $botMessage = $this->generateAndDeliver(
+                $mergedContent,
+                $messageCount,
+                $aiService,
+                $lineService,
+                $bubblesService
+            );
+
+            if ($botMessage) {
+                $this->updateStats($messageCount, $botMessage->id);
+            }
+        } finally {
+            $responseLock->release();
+        }
+
+        // Clear aggregation data after successful processing
+        $aggregationService->clearAggregation($conversationId);
+
+        // Broadcast events after processing
+        if (isset($botMessage) && $botMessage) {
+            $this->broadcastResponse($botMessage);
+        }
+    }
+
+    /**
+     * Validate and retrieve merged content from cached messages.
+     * Returns array with mergedContent, messageCount, cachedMessageIds or null if validation fails.
+     */
+    private function validateAndGetContent(MessageAggregationService $aggregationService): ?array
+    {
+        $conversationId = $this->conversation->id;
+
+        // Get all cache values at job start
+        $cachedGroupId = $aggregationService->getCurrentGroupId($conversationId);
+        $cachedMessageIds = $aggregationService->getMessageIds($conversationId);
+        $startedAt = $aggregationService->getStartedAt($conversationId);
+
+        Log::debug('[Aggregation] Job started', [
+            'conversation_id' => $conversationId,
+            'job_group_id' => $this->groupId,
+            'cached_group_id' => $cachedGroupId,
+            'group_id_match' => $cachedGroupId === $this->groupId,
+            'cached_message_ids' => $cachedMessageIds,
+            'message_count' => count($cachedMessageIds),
+            'started_at' => $startedAt,
+            'bot_id' => $this->bot->id,
+        ]);
+
+        // Verify this group is still active (no newer messages came in)
+        if (! $aggregationService->isActiveGroup($conversationId, $this->groupId)) {
+            $reason = $cachedGroupId === null ? 'cache_expired_or_missing' : 'newer_group_exists';
+            Log::debug('[Aggregation] Early exit: group_id mismatch', [
+                'reason' => $reason,
+                'job_group_id' => $this->groupId,
+                'cached_group_id' => $cachedGroupId,
+                'conversation_id' => $conversationId,
+            ]);
+
+            return null;
+        }
+
+        // Get merged content from all messages
+        $mergedContent = $aggregationService->getMergedContent($conversationId);
+
+        if (empty($mergedContent)) {
+            $reason = empty($cachedMessageIds) ? 'message_ids_empty' : 'messages_not_found_in_db';
+            Log::debug('[Aggregation] Early exit: no content', [
+                'reason' => $reason,
+                'message_ids' => $cachedMessageIds,
+                'conversation_id' => $conversationId,
+            ]);
+            $aggregationService->clearAggregation($conversationId);
+
+            return null;
+        }
+
+        return [
+            'mergedContent' => $mergedContent,
+            'messageCount' => count($cachedMessageIds),
+            'cachedMessageIds' => $cachedMessageIds,
+        ];
+    }
+
+    /**
+     * Check if bot is active and conversation is not in handover mode.
+     */
+    private function shouldGenerate(): bool
+    {
         $shouldGenerate = false;
+
         DB::transaction(function () use (&$shouldGenerate) {
             // Refresh conversation and bot to get latest state
             $this->conversation->refresh();
@@ -151,11 +225,10 @@ class ProcessAggregatedMessages implements ShouldQueue
 
             // Check if bot was deactivated while waiting
             if ($this->bot->status !== 'active') {
-                error_log("[AGGREGATION_DEBUG] Early exit: bot inactive - bot_id: {$this->bot->id}, status: {$this->bot->status}");
-                Log::info('Bot is inactive, skipping AI response in aggregation', [
+                Log::debug('[Aggregation] Early exit: bot inactive', [
                     'bot_id' => $this->bot->id,
-                    'conversation_id' => $this->conversation->id,
                     'status' => $this->bot->status,
+                    'conversation_id' => $this->conversation->id,
                 ]);
 
                 return;
@@ -163,7 +236,9 @@ class ProcessAggregatedMessages implements ShouldQueue
 
             // Check if handover mode was enabled while waiting
             if ($this->conversation->is_handover) {
-                error_log("[AGGREGATION_DEBUG] Early exit: handover mode enabled - conversation_id: {$this->conversation->id}");
+                Log::debug('[Aggregation] Early exit: handover mode enabled', [
+                    'conversation_id' => $this->conversation->id,
+                ]);
 
                 return;
             }
@@ -171,155 +246,186 @@ class ProcessAggregatedMessages implements ShouldQueue
             $shouldGenerate = true;
         });
 
-        // === API calls OUTSIDE transaction (no DB lock held) ===
-        // AI generate (~2-3s) + LINE push (~200ms) no longer block concurrent requests
-        if ($shouldGenerate) {
-            // Safety check: skip if bot already responded after the LATEST message in this group
-            // Uses max() to prevent false-positive skips when old "fallback" messages
-            // contaminate the group (they joined because the AI lock was held)
-            if (! empty($cachedMessageIds)) {
-                $latestMessageId = max($cachedMessageIds);
-                $latestMessage = \App\Models\Message::find($latestMessageId);
+        return $shouldGenerate;
+    }
 
-                if ($latestMessage) {
-                    $alreadyResponded = \App\Models\Message::where('conversation_id', $conversationId)
-                        ->where('sender', 'bot')
-                        ->where('created_at', '>=', $latestMessage->created_at)
-                        ->exists();
+    /**
+     * Check if bot already responded after the latest message in this group.
+     */
+    private function hasAlreadyResponded(int $conversationId, array $cachedMessageIds): bool
+    {
+        if (empty($cachedMessageIds)) {
+            return false;
+        }
 
-                    if ($alreadyResponded) {
-                        Log::info('Safety net: bot already responded after latest message, skipping aggregation response', [
-                            'conversation_id' => $conversationId,
-                            'group_id' => $this->groupId,
-                            'latest_message_id' => $latestMessageId,
-                            'skipped_message_ids' => $cachedMessageIds,
-                        ]);
-                        $aggregationService->clearAggregation($conversationId);
+        $latestMessageId = max($cachedMessageIds);
+        $latestMessage = \App\Models\Message::find($latestMessageId);
 
-                        return;
-                    }
-                }
-            }
+        if (! $latestMessage) {
+            return false;
+        }
 
-            // Acquire per-conversation response lock to prevent concurrent AI responses
-            $responseLock = Cache::lock("ai_response:{$conversationId}", 30);
+        $alreadyResponded = \App\Models\Message::where('conversation_id', $conversationId)
+            ->where('sender', 'bot')
+            ->where('created_at', '>=', $latestMessage->created_at)
+            ->exists();
 
-            if (! $responseLock->get()) {
-                // Limit re-dispatch attempts to prevent infinite loop
-                $redispatchKey = "ai_response_redispatch:{$conversationId}:{$this->groupId}";
-                $attempts = (int) Cache::get($redispatchKey, 0);
+        if ($alreadyResponded) {
+            Log::info('Safety net: bot already responded after latest message, skipping aggregation response', [
+                'conversation_id' => $conversationId,
+                'group_id' => $this->groupId,
+                'latest_message_id' => $latestMessageId,
+                'skipped_message_ids' => $cachedMessageIds,
+            ]);
 
-                if ($attempts >= 3) {
-                    Log::warning('Aggregation: max re-dispatch attempts reached', [
-                        'conversation_id' => $conversationId,
-                        'group_id' => $this->groupId,
-                        'attempts' => $attempts,
-                    ]);
-                    Cache::forget($redispatchKey);
-                    $aggregationService->clearAggregation($conversationId);
+            return true;
+        }
 
-                    return;
-                }
+        return false;
+    }
 
-                Cache::put($redispatchKey, $attempts + 1, now()->addMinutes(5));
+    /**
+     * Acquire per-conversation response lock to prevent concurrent AI responses.
+     * Returns lock on success, null if lock could not be acquired or max retries exceeded.
+     */
+    private function acquireResponseLock(MessageAggregationService $aggregationService): ?\Illuminate\Contracts\Cache\Lock
+    {
+        $conversationId = $this->conversation->id;
+        $responseLock = Cache::lock("ai_response:{$conversationId}", 30);
 
-                Log::info('Aggregation: response lock held, re-dispatching', [
+        if (! $responseLock->get()) {
+            // Limit re-dispatch attempts to prevent infinite loop
+            $redispatchKey = "ai_response_redispatch:{$conversationId}:{$this->groupId}";
+            $attempts = (int) Cache::get($redispatchKey, 0);
+
+            if ($attempts >= 3) {
+                Log::warning('Aggregation: max re-dispatch attempts reached', [
                     'conversation_id' => $conversationId,
-                    'attempt' => $attempts + 1,
+                    'group_id' => $this->groupId,
+                    'attempts' => $attempts,
                 ]);
-                // Re-dispatch with shorter delay
-                ProcessAggregatedMessages::dispatch(
-                    $this->bot, $this->conversation, $this->groupId, $this->externalUserId
-                )->onQueue('webhooks')->delay(now()->addSeconds(5));
+                Cache::forget($redispatchKey);
+                $aggregationService->clearAggregation($conversationId);
 
-                return;
+                return null;
             }
 
-            // Clean up re-dispatch counter on successful lock acquisition
-            Cache::forget("ai_response_redispatch:{$conversationId}:{$this->groupId}");
+            Cache::put($redispatchKey, $attempts + 1, now()->addMinutes(5));
 
-            // Auto-clear stale context before AI generates response
-            app(ConversationContextService::class)->autoClearIfIdle($this->conversation);
+            Log::info('Aggregation: response lock held, re-dispatching', [
+                'conversation_id' => $conversationId,
+                'attempt' => $attempts + 1,
+            ]);
+            // Re-dispatch with shorter delay
+            ProcessAggregatedMessages::dispatch(
+                $this->bot, $this->conversation, $this->groupId, $this->externalUserId
+            )->onQueue('webhooks')->delay(now()->addSeconds(5));
 
-            try {
-                error_log("[AGGREGATION_DEBUG] Generating AI response - conversation_id: {$this->conversation->id}, content_length: ".strlen($mergedContent));
-
-                // Generate AI response using merged content (no transaction lock held)
-                $result = $aiService->generateResponse(
-                    $this->bot,
-                    $mergedContent,
-                    $this->conversation
-                );
-
-                // Save bot response
-                $botMessage = $this->conversation->messages()->create([
-                    'sender' => 'bot',
-                    'content' => $result['content'],
-                    'type' => 'text',
-                    'model_used' => $result['model'],
-                    'prompt_tokens' => $result['usage']['prompt_tokens'],
-                    'completion_tokens' => $result['usage']['completion_tokens'],
-                    'cost' => $result['cost'],
-                    'metadata' => $result['rag_metadata'] ?? null,
-                ]);
-
-                // Send response to LINE using push message
-                // (reply token has likely expired after waiting)
-                if ($botMessage->content) {
-                    $paymentFlex = app(\App\Services\PaymentFlexService::class);
-                    $transformed = $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation);
-
-                    if (is_array($transformed)) {
-                        // Flex detected on full text → send as single message
-                        $retryKey = $lineService->generateRetryKey();
-                        $lineService->push($this->bot, $this->externalUserId, [$transformed], $retryKey);
-                    } elseif ($bubblesService->isEnabled($this->bot)) {
-                        // No Flex match → normal bubble flow
-                        $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
-                        $bubblesService->sendBubbles($this->bot, $this->externalUserId, null, $bubbles, $this->conversation);
-                    } else {
-                        // No Flex, no bubbles → send as plain text
-                        $retryKey = $lineService->generateRetryKey();
-                        $lineService->push($this->bot, $this->externalUserId, [$botMessage->content], $retryKey);
-                    }
-                }
-
-                // Execute flow plugins (e.g., Telegram notifications)
-                if ($botMessage) {
-                    try {
-                        app(\App\Services\FlowPluginService::class)
-                            ->executePlugins($this->bot, $this->conversation, $botMessage);
-                    } catch (\Exception $e) {
-                        Log::warning('Flow plugin execution failed in aggregation', [
-                            'conversation_id' => $this->conversation->id,
-                            'error' => $e->getMessage(),
-                        ]);
-                    }
-                }
-
-                // Update stats with atomic DB::raw operations (no transaction needed)
-                $this->updateStats($messageCount, $botMessage->id);
-            } finally {
-                $responseLock->release();
-            }
+            return null;
         }
 
-        // Clear aggregation data after successful processing
-        $aggregationService->clearAggregation($conversationId);
+        // Clean up re-dispatch counter on successful lock acquisition
+        Cache::forget("ai_response_redispatch:{$conversationId}:{$this->groupId}");
 
-        // Broadcast events after transaction
-        // Refresh conversation to get actual DB values after DB::raw updates
+        return $responseLock;
+    }
+
+    /**
+     * Generate AI response and deliver to channel.
+     */
+    private function generateAndDeliver(
+        string $mergedContent,
+        int $messageCount,
+        AIService $aiService,
+        LINEService $lineService,
+        MultipleBubblesService $bubblesService
+    ): ?\App\Models\Message {
+        Log::debug('[Aggregation] Generating AI response', [
+            'conversation_id' => $this->conversation->id,
+            'content_length' => strlen($mergedContent),
+        ]);
+
+        // Generate AI response using merged content
+        $result = $aiService->generateResponse(
+            $this->bot,
+            $mergedContent,
+            $this->conversation
+        );
+
+        // Save bot response
+        $botMessage = $this->conversation->messages()->create([
+            'sender' => 'bot',
+            'content' => $result['content'],
+            'type' => 'text',
+            'model_used' => $result['model'],
+            'prompt_tokens' => $result['usage']['prompt_tokens'],
+            'completion_tokens' => $result['usage']['completion_tokens'],
+            'cost' => $result['cost'],
+            'metadata' => $result['rag_metadata'] ?? null,
+        ]);
+
+        // Send response to channel
+        if ($botMessage->content) {
+            $this->deliverToChannel($botMessage, $lineService, $bubblesService);
+        }
+
+        // Execute flow plugins (e.g., Telegram notifications)
         if ($botMessage) {
-            $this->conversation->refresh();
-            $conversationData = [
-                'id' => $this->conversation->id,
-                'message_count' => $this->conversation->message_count,
-                'last_message_at' => $this->conversation->last_message_at?->toISOString(),
-                'unread_count' => $this->conversation->unread_count,
-            ];
-            broadcast(new MessageSent($botMessage, $conversationData))->toOthers();
-            broadcast(new ConversationUpdated($this->conversation, 'message_received'))->toOthers();
+            try {
+                app(\App\Services\FlowPluginService::class)
+                    ->executePlugins($this->bot, $this->conversation, $botMessage);
+            } catch (\Exception $e) {
+                Log::warning('Flow plugin execution failed in aggregation', [
+                    'conversation_id' => $this->conversation->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
+
+        return $botMessage;
+    }
+
+    /**
+     * Deliver bot message to the appropriate channel (Flex, Bubbles, or plain text).
+     */
+    private function deliverToChannel(
+        \App\Models\Message $botMessage,
+        LINEService $lineService,
+        MultipleBubblesService $bubblesService
+    ): void {
+        $paymentFlex = app(\App\Services\PaymentFlexService::class);
+        $transformed = $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation);
+
+        if (is_array($transformed)) {
+            // Flex detected on full text → send as single message
+            $retryKey = $lineService->generateRetryKey();
+            $lineService->push($this->bot, $this->externalUserId, [$transformed], $retryKey);
+        } elseif ($bubblesService->isEnabled($this->bot)) {
+            // No Flex match → normal bubble flow
+            $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
+            $bubblesService->sendBubbles($this->bot, $this->externalUserId, null, $bubbles, $this->conversation);
+        } else {
+            // No Flex, no bubbles → send as plain text
+            $retryKey = $lineService->generateRetryKey();
+            $lineService->push($this->bot, $this->externalUserId, [$botMessage->content], $retryKey);
+        }
+    }
+
+    /**
+     * Broadcast response events to connected clients.
+     */
+    private function broadcastResponse(\App\Models\Message $botMessage): void
+    {
+        // Refresh conversation to get actual DB values after DB::raw updates
+        $this->conversation->refresh();
+        $conversationData = [
+            'id' => $this->conversation->id,
+            'message_count' => $this->conversation->message_count,
+            'last_message_at' => $this->conversation->last_message_at?->toISOString(),
+            'unread_count' => $this->conversation->unread_count,
+        ];
+        broadcast(new MessageSent($botMessage, $conversationData))->toOthers();
+        broadcast(new ConversationUpdated($this->conversation, 'message_received'))->toOthers();
     }
 
     /**
