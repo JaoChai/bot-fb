@@ -48,6 +48,15 @@ Schedule::command('profiles:refresh-line-pictures')
 Schedule::command('cache:prune-stale-tags')->daily()->at('02:00')
     ->withoutOverlapping()->runInBackground();
 
+// Clean expired database cache rows (Neon storage optimization)
+Schedule::call(function () {
+    \Illuminate\Support\Facades\DB::table('cache')
+        ->where('expiration', '<', now()->timestamp)
+        ->delete();
+})->dailyAt('02:30')
+    ->name('cache-table-cleanup')
+    ->withoutOverlapping();
+
 // Clean old activity logs (>90 days) - weekly Sunday 03:30
 Schedule::call(function () {
     \Illuminate\Support\Facades\DB::table('activity_logs')
@@ -55,13 +64,3 @@ Schedule::call(function () {
         ->delete();
 })->weekly()->sundays()->at('03:30')
     ->name('activity-logs-cleanup')->withoutOverlapping();
-
-// Clean old second_ai_logs (>30 days) - weekly Sunday 04:00
-// Table currently 3,547 rows; all indexes unused — regular pruning keeps it lean
-Schedule::call(function () {
-    \Illuminate\Support\Facades\DB::table('second_ai_logs')
-        ->where('created_at', '<', now()->subDays(30))
-        ->delete();
-})->weekly()->sundays()->at('04:00')
-    ->name('second-ai-logs-cleanup')
-    ->withoutOverlapping();
