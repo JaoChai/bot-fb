@@ -8,6 +8,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ArrowLeft, Info, Bot, Headphones, Loader2, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useChannelInfo } from '@/hooks/useChannelInfo';
+import { VipBadge } from '@/components/conversation/VipBadge';
+import { getVipNote } from '@/lib/vip';
 import type { Conversation } from '@/types/api';
 
 export interface ChatHeaderProps {
@@ -38,6 +40,7 @@ export const ChatHeader = memo(function ChatHeader({
     ? conversation.telegram_chat_title || 'Telegram Group'
     : conversation.customer_profile?.display_name || 'Customer';
   const customerInitial = customerName.charAt(0).toUpperCase();
+  const vip = getVipNote(conversation.memory_notes);
 
   return (
     <div className="flex-shrink-0 sticky top-0 z-10 flex items-center justify-between p-2 sm:p-3 border-b bg-background">
@@ -74,6 +77,7 @@ export const ChatHeader = memo(function ChatHeader({
             <h2 className="font-semibold text-sm sm:text-base truncate max-w-[120px] sm:max-w-none">
               {customerName}
             </h2>
+            {vip && <VipBadge variant={vip.variant} tooltipContent={vip.content} />}
             {/* Unread indicator */}
             {conversation.unread_count > 0 && conversation.status !== 'closed' && (
               <span className="h-3 w-3 rounded-full bg-[#06C755] flex-shrink-0" />
