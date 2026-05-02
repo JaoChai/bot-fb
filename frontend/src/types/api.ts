@@ -304,12 +304,15 @@ export interface SearchResponse {
 
 // Conversation Types
 
+export type VipSource = 'vip_auto' | 'vip_manual';
+
 // Note/Memory types
 export interface ConversationNote {
   id: string;
   content: string;
   type: 'note' | 'memory' | 'reminder';
-  created_by: number;
+  source?: VipSource | null;
+  created_by: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -360,7 +363,7 @@ export interface VipCustomer {
   total_amount: number;
   last_order_at: string | null;
   note_content: string;
-  note_source: 'vip_auto' | 'vip_manual';
+  note_source: VipSource;
   bot_id: number;
 }
 

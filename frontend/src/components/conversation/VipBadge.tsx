@@ -21,20 +21,31 @@ export function VipBadge({
       ? 'bg-purple-100 text-purple-800 border-purple-300'
       : 'bg-amber-100 text-amber-800 border-amber-300';
 
+  const title = tooltipContent ?? (variant === 'manual' ? 'VIP (กำหนดเอง)' : 'VIP (อัตโนมัติ)');
+  const baseClass = cn(
+    'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
+    colorClasses,
+    className,
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={title}
+        className={cn(baseClass, 'cursor-pointer hover:opacity-80')}
+      >
+        <Star className="h-3 w-3 fill-current" />
+        <span>VIP</span>
+      </button>
+    );
+  }
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={tooltipContent ?? (variant === 'manual' ? 'VIP (กำหนดเอง)' : 'VIP (อัตโนมัติ)')}
-      className={cn(
-        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
-        colorClasses,
-        onClick && 'cursor-pointer hover:opacity-80',
-        className,
-      )}
-    >
+    <span title={title} className={baseClass}>
       <Star className="h-3 w-3 fill-current" />
       <span>VIP</span>
-    </button>
+    </span>
   );
 }
