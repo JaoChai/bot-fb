@@ -3,6 +3,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { MessageCircle, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useChannelInfo } from '@/hooks/useChannelInfo';
+import { VipBadge } from '@/components/conversation/VipBadge';
+import { getVipNote } from '@/lib/vip';
 import type { Conversation } from '@/types/api';
 
 // Short time format for Thai (e.g., "16n." instead of "16 minutes")
@@ -55,6 +57,7 @@ export const ConversationItem = memo(function ConversationItemInner({
     : conversation.customer_profile?.display_name || 'Customer';
 
   const customerInitial = customerName.charAt(0).toUpperCase();
+  const vip = getVipNote(conversation.memory_notes);
 
   // Format time in short form
   const lastMessageTime = conversation.last_message_at
@@ -99,9 +102,12 @@ export const ConversationItem = memo(function ConversationItemInner({
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <span className={cn('font-medium truncate', hasUnread && !isClosed && 'font-semibold')}>
-            {customerName}
-          </span>
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <span className={cn('font-medium truncate', hasUnread && !isClosed && 'font-semibold')}>
+              {customerName}
+            </span>
+            {vip && <VipBadge variant={vip.variant} tooltipContent={vip.content} className="flex-shrink-0" />}
+          </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <span className="text-xs text-muted-foreground">
               {lastMessageTime}
@@ -137,6 +143,7 @@ export const ConversationItem = memo(function ConversationItemInner({
   prev.conversation.last_message?.content === next.conversation.last_message?.content &&
   prev.conversation.customer_profile?.display_name === next.conversation.customer_profile?.display_name &&
   prev.conversation.customer_profile?.picture_url === next.conversation.customer_profile?.picture_url &&
+  prev.conversation.memory_notes === next.conversation.memory_notes &&
   prev.isSelected === next.isSelected &&
   prev.onClick === next.onClick
 );
