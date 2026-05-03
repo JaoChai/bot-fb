@@ -59,8 +59,7 @@ export function useConnectionStatus() {
     window.addEventListener('echo:connected', handleConnected);
     window.addEventListener('echo:disconnected', handleDisconnected);
     window.addEventListener('echo:reconnected', handleReconnected);
-    // Same handler as echo:reconnected: invalidate stale data.
-    // Fires when tab becomes visible (WebSocket may or may not have stayed alive).
+    // Fires when tab becomes visible; WebSocket may have stayed alive — always refetch.
     window.addEventListener('echo:resumed', handleReconnected);
 
     return () => {

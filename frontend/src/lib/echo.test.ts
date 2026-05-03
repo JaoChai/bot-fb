@@ -39,14 +39,22 @@ describe('echo visibility handler', () => {
 });
 
 describe('echo subscription_error', () => {
-  it('dispatches echo:subscription_error when Pusher emits subscription_error', async () => {
-    vi.resetModules();
-    const errSpy = vi.fn();
-    window.addEventListener('echo:subscription_error', errSpy as EventListener);
+  let errSpy: ReturnType<typeof vi.fn>;
 
+  beforeEach(() => {
+    vi.resetModules();
+    errSpy = vi.fn();
+    window.addEventListener('echo:subscription_error', errSpy as EventListener);
+  });
+
+  afterEach(() => {
+    window.removeEventListener('echo:subscription_error', errSpy as EventListener);
+  });
+
+  it('dispatches echo:subscription_error when Pusher emits subscription_error', async () => {
     const { getEcho } = await import('./echo');
     const echo = getEcho();
-    // Simulate Pusher emitting subscription_error via global_emitter
+    // global_emitter is Pusher-js internal; cast required because it's not in the public type surface.
     (echo.connector.pusher as unknown as {
       global_emitter: { emit: (name: string, data: unknown) => void };
     }).global_emitter.emit('pusher:subscription_error', { type: 'AuthError', error: 'invalid token' });
@@ -54,7 +62,5 @@ describe('echo subscription_error', () => {
     expect(errSpy).toHaveBeenCalledTimes(1);
     const event = errSpy.mock.calls[0][0] as CustomEvent;
     expect(event.detail).toMatchObject({ type: 'AuthError' });
-
-    window.removeEventListener('echo:subscription_error', errSpy as EventListener);
   });
 });
