@@ -7,14 +7,14 @@ describe('echo visibility handler', () => {
     // Reset module so the visibility listener registers fresh
     vi.resetModules();
     resumedSpy = vi.fn();
-    window.addEventListener('echo:resumed', resumedSpy);
+    window.addEventListener('echo:resumed', resumedSpy as EventListener);
 
     // Importing the module registers the visibilitychange listener
     await import('./echo');
   });
 
   afterEach(() => {
-    window.removeEventListener('echo:resumed', resumedSpy);
+    window.removeEventListener('echo:resumed', resumedSpy as EventListener);
   });
 
   it('dispatches echo:resumed when tab becomes visible', () => {
