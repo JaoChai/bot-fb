@@ -47,8 +47,9 @@ describe('echo subscription_error', () => {
     const { getEcho } = await import('./echo');
     const echo = getEcho();
     // Simulate Pusher emitting subscription_error via global_emitter
-    // @ts-expect-error - accessing internal pusher emitter for test
-    echo.connector.pusher.global_emitter.emit('pusher:subscription_error', { type: 'AuthError', error: 'invalid token' });
+    (echo.connector.pusher as unknown as {
+      global_emitter: { emit: (name: string, data: unknown) => void };
+    }).global_emitter.emit('pusher:subscription_error', { type: 'AuthError', error: 'invalid token' });
 
     expect(errSpy).toHaveBeenCalledTimes(1);
     const event = errSpy.mock.calls[0][0] as CustomEvent;
