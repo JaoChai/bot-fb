@@ -54,6 +54,9 @@ coverage/
 # Auto Claude data directory
 .auto-claude/
 
+# Superpowers brainstorm session files (visual companion mockups)
+.superpowers/
+
 # Claude-mem auto-generated CLAUDE.md files (keep only root and .claude/)
 **/CLAUDE.md
 !/CLAUDE.md
