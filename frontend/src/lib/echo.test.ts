@@ -37,3 +37,23 @@ describe('echo visibility handler', () => {
     expect(resumedSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('echo subscription_error', () => {
+  it('dispatches echo:subscription_error when Pusher emits subscription_error', async () => {
+    vi.resetModules();
+    const errSpy = vi.fn();
+    window.addEventListener('echo:subscription_error', errSpy as EventListener);
+
+    const { getEcho } = await import('./echo');
+    const echo = getEcho();
+    // Simulate Pusher emitting subscription_error via global_emitter
+    // @ts-expect-error - accessing internal pusher emitter for test
+    echo.connector.pusher.global_emitter.emit('pusher:subscription_error', { type: 'AuthError', error: 'invalid token' });
+
+    expect(errSpy).toHaveBeenCalledTimes(1);
+    const event = errSpy.mock.calls[0][0] as CustomEvent;
+    expect(event.detail).toMatchObject({ type: 'AuthError' });
+
+    window.removeEventListener('echo:subscription_error', errSpy as EventListener);
+  });
+});

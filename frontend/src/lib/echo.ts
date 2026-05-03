@@ -143,6 +143,12 @@ const createEcho = (): Echo<'reverb'> => {
     }
   });
 
+  // Log + dispatch subscription errors so silent auth failures are visible
+  echo.connector.pusher.bind('pusher:subscription_error', (data: unknown) => {
+    console.warn('[echo] subscription_error', data);
+    window.dispatchEvent(new CustomEvent('echo:subscription_error', { detail: data }));
+  });
+
   return echo;
 };
 
