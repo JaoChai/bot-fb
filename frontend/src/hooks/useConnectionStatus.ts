@@ -8,7 +8,7 @@ import { getEcho } from '@/lib/echo';
  *
  * Features:
  * - Checks current connection state on mount (handles case where Echo connected before listener attached)
- * - Listens for echo:connected, echo:disconnected, echo:reconnected events
+ * - Listens for echo:connected, echo:disconnected, echo:reconnected, echo:resumed events
  * - Auto-invalidates all queries on reconnect to fetch fresh data
  * - Updates global connection state in Zustand store for fallback polling
  *
