@@ -70,9 +70,9 @@ const createEcho = (): Echo<'reverb'> => {
     enabledTransports: ['ws', 'wss'],
     authEndpoint: `${baseUrl}/api/broadcasting/auth`,
     // Keep-alive settings to prevent premature disconnection
-    // Must be greater than server's ping_interval (25s) to ensure pings arrive before timeout
-    activityTimeout: 120000,  // 120 seconds - wait this long for server activity before reconnecting
-    pongTimeout: 30000,       // 30 seconds - wait this long for pong response after ping
+    // Reverb pings every 25s; 30s buffer detects drops in ~40s total
+    activityTimeout: 30000,   // 30s - shorter than previous 120s for faster drop detection
+    pongTimeout: 10000,       // 10s - faster pong-failure detection (was 30s)
     // Use authorizer with caching to reduce redundant auth requests
     // Cache expires after 5 minutes or when socketId changes
     authorizer: (channel: { name: string }) => ({
