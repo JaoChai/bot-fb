@@ -149,6 +149,26 @@ const createEcho = (): Echo<'reverb'> => {
 // Singleton Echo instance
 let echoInstance: Echo<'reverb'> | null = null;
 
+// Module-level visibility handler — runs once on first import.
+// On tab becoming visible: reconnect Echo if disconnected, and ALWAYS dispatch
+// echo:resumed so consumers (useConnectionStatus, useRealtime) can refetch
+// stale data even when the WebSocket itself stayed alive.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+
+    const echo = echoInstance;
+    if (echo) {
+      const state = echo.connector.pusher.connection.state;
+      if (state !== 'connected' && state !== 'connecting') {
+        echo.connector.pusher.connect();
+      }
+    }
+
+    window.dispatchEvent(new CustomEvent('echo:resumed'));
+  });
+}
+
 /**
  * Get the Echo instance (creates one if it doesn't exist)
  * Also exposes instance to window for debugging
