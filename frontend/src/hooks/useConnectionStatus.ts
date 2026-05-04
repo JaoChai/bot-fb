@@ -8,7 +8,7 @@ import { getEcho } from '@/lib/echo';
  *
  * Features:
  * - Checks current connection state on mount (handles case where Echo connected before listener attached)
- * - Listens for echo:connected, echo:disconnected, echo:reconnected events
+ * - Listens for echo:connected, echo:disconnected, echo:reconnected, echo:resumed events
  * - Auto-invalidates all queries on reconnect to fetch fresh data
  * - Updates global connection state in Zustand store for fallback polling
  *
@@ -59,11 +59,14 @@ export function useConnectionStatus() {
     window.addEventListener('echo:connected', handleConnected);
     window.addEventListener('echo:disconnected', handleDisconnected);
     window.addEventListener('echo:reconnected', handleReconnected);
+    // Fires when tab becomes visible; WebSocket may have stayed alive — always refetch.
+    window.addEventListener('echo:resumed', handleReconnected);
 
     return () => {
       window.removeEventListener('echo:connected', handleConnected);
       window.removeEventListener('echo:disconnected', handleDisconnected);
       window.removeEventListener('echo:reconnected', handleReconnected);
+      window.removeEventListener('echo:resumed', handleReconnected);
     };
   }, [queryClient, setConnected]);
 

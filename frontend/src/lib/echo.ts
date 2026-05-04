@@ -70,9 +70,9 @@ const createEcho = (): Echo<'reverb'> => {
     enabledTransports: ['ws', 'wss'],
     authEndpoint: `${baseUrl}/api/broadcasting/auth`,
     // Keep-alive settings to prevent premature disconnection
-    // Must be greater than server's ping_interval (25s) to ensure pings arrive before timeout
-    activityTimeout: 120000,  // 120 seconds - wait this long for server activity before reconnecting
-    pongTimeout: 30000,       // 30 seconds - wait this long for pong response after ping
+    // Reverb pings every 25s; 30s buffer detects drops in ~40s total
+    activityTimeout: 30000,   // 30s - shorter than previous 120s for faster drop detection
+    pongTimeout: 10000,       // 10s - faster pong-failure detection (was 30s)
     // Use authorizer with caching to reduce redundant auth requests
     // Cache expires after 5 minutes or when socketId changes
     authorizer: (channel: { name: string }) => ({
@@ -143,11 +143,37 @@ const createEcho = (): Echo<'reverb'> => {
     }
   });
 
+  // Log + dispatch subscription errors so silent auth failures are visible
+  echo.connector.pusher.bind('pusher:subscription_error', (data: unknown) => {
+    console.warn('[echo] subscription_error', data);
+    window.dispatchEvent(new CustomEvent('echo:subscription_error', { detail: data }));
+  });
+
   return echo;
 };
 
 // Singleton Echo instance
 let echoInstance: Echo<'reverb'> | null = null;
+
+// Module-level visibility handler — runs once on first import.
+// On tab becoming visible: reconnect Echo if disconnected, and ALWAYS dispatch
+// echo:resumed so consumers (useConnectionStatus, useRealtime) can refetch
+// stale data even when the WebSocket itself stayed alive.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+
+    const echo = echoInstance;
+    if (echo) {
+      const state = echo.connector.pusher.connection.state;
+      if (state !== 'connected' && state !== 'connecting') {
+        echo.connector.pusher.connect();
+      }
+    }
+
+    window.dispatchEvent(new CustomEvent('echo:resumed'));
+  });
+}
 
 /**
  * Get the Echo instance (creates one if it doesn't exist)
