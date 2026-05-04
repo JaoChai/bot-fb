@@ -6,6 +6,7 @@ use App\Http\Resources\ConversationResource;
 use App\Http\Resources\MessageResource;
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Services\Chat\IdempotencyService;
 use App\Services\Chat\MessageService;
 use App\Services\ConversationCacheService;
 use Illuminate\Http\JsonResponse;
@@ -47,6 +48,19 @@ class ConversationMessageController extends BaseConversationController
         $this->authorize('update', $bot);
         $this->validateConversationBelongsToBot($conversation, $bot);
 
+        $idempotencyKey = $request->header('Idempotency-Key');
+        if ($idempotencyKey) {
+            $idempotencyService = app(IdempotencyService::class);
+            $cached = $idempotencyService->check(
+                $idempotencyKey,
+                $request->path(),
+                $request->all()
+            );
+            if ($cached) {
+                return response()->json($cached);
+            }
+        }
+
         $validated = $request->validate([
             'content' => ['required', 'string', 'max:5000', function ($attribute, $value, $fail) {
                 // LINE API has 5000 byte limit, not character limit
@@ -61,11 +75,23 @@ class ConversationMessageController extends BaseConversationController
         try {
             $result = $this->messageService->sendAgentMessage($bot, $conversation, $validated);
 
-            return response()->json([
+            $responseData = [
                 'message' => 'Message sent successfully',
                 'data' => new MessageResource($result['message']),
                 'delivery_error' => $result['delivery_error'],
-            ], 201);
+            ];
+
+            if ($idempotencyKey) {
+                $idempotencyService = app(IdempotencyService::class);
+                $idempotencyService->store(
+                    $idempotencyKey,
+                    $request->path(),
+                    $request->all(),
+                    $responseData
+                );
+            }
+
+            return response()->json($responseData, 201);
         } catch (\InvalidArgumentException $e) {
             return response()->json([
                 'message' => $e->getMessage(),

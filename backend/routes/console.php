@@ -64,3 +64,9 @@ Schedule::call(function () {
         ->delete();
 })->weekly()->sundays()->at('03:30')
     ->name('activity-logs-cleanup')->withoutOverlapping();
+
+// Clean expired idempotency keys (>24h) - hourly
+Schedule::command('idempotency:clean')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();
