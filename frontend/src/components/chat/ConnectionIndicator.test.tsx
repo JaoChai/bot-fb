@@ -15,15 +15,18 @@ describe('ConnectionIndicator', () => {
     );
     render(<ConnectionIndicator />);
     const dot = screen.getByTestId('connection-dot');
-    expect(dot.className).toContain('bg-green');
+    expect(dot).toHaveClass('bg-green-500');
+    expect(dot).not.toHaveClass('bg-red-500');
   });
 
-  it('shows red dot when disconnected', () => {
+  it('shows red pulsing dot when disconnected', () => {
     vi.mocked(useConnectionStore).mockImplementation((selector: (s: { isConnected: boolean }) => boolean) =>
       selector({ isConnected: false })
     );
     render(<ConnectionIndicator />);
     const dot = screen.getByTestId('connection-dot');
-    expect(dot.className).toContain('bg-red');
+    expect(dot).toHaveClass('bg-red-500');
+    expect(dot).toHaveClass('animate-pulse');
+    expect(dot).not.toHaveClass('bg-green-500');
   });
 });
