@@ -23,6 +23,10 @@ interface UIState {
 
   // Loading states
   globalLoading: boolean;
+
+  // Notification settings
+  audioEnabled: boolean;
+  notificationEnabled: boolean;
 }
 
 interface UIActions {
@@ -41,6 +45,10 @@ interface UIActions {
 
   // Loading
   setGlobalLoading: (loading: boolean) => void;
+
+  // Notification settings
+  setAudioEnabled: (enabled: boolean) => void;
+  setNotificationEnabled: (enabled: boolean) => void;
 }
 
 type UIStore = UIState & UIActions;
@@ -54,6 +62,8 @@ export const useUIStore = create<UIStore>()(
       theme: 'dark',
       toasts: [],
       globalLoading: false,
+      audioEnabled: false,
+      notificationEnabled: false,
 
       // Sidebar actions
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -96,6 +106,10 @@ export const useUIStore = create<UIStore>()(
 
       // Loading actions
       setGlobalLoading: (globalLoading) => set({ globalLoading }),
+
+      // Notification settings actions
+      setAudioEnabled: (audioEnabled) => set({ audioEnabled }),
+      setNotificationEnabled: (notificationEnabled) => set({ notificationEnabled }),
     }),
     {
       name: 'ui-storage',
@@ -103,6 +117,8 @@ export const useUIStore = create<UIStore>()(
       partialize: (state) => ({
         sidebarCollapsed: state.sidebarCollapsed,
         theme: state.theme,
+        audioEnabled: state.audioEnabled,
+        notificationEnabled: state.notificationEnabled,
       }),
     }
   )

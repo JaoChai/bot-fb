@@ -15,7 +15,7 @@ import {
   DialogContent,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Bot, User, Headphones, Download, Brain, ChevronDown, ChevronRight } from 'lucide-react';
+import { Bot, User, Headphones, Download, Brain, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -106,6 +106,7 @@ export const MessageBubble = memo(function MessageBubble({
   const { adapter, channelType } = useChannel();
 
   const isUser = message.sender === 'user';
+  const isPending = message.id < 0;
   const SenderIcon = senderIcons[message.sender];
 
   // Parse dates safely
@@ -158,7 +159,8 @@ export const MessageBubble = memo(function MessageBubble({
               ? 'bg-muted text-foreground'
               : message.sender === 'agent'
               ? 'bg-accent text-foreground border border-dashed'
-              : 'bg-foreground text-background'
+              : 'bg-foreground text-background',
+            isPending && 'opacity-60'
           )}
         >
           {/* Sender label for non-user messages */}
@@ -219,6 +221,13 @@ export const MessageBubble = memo(function MessageBubble({
                   ({message.cached_tokens} cached)
                 </span>
               )}
+            </div>
+          )}
+
+          {isPending && (
+            <div className="flex items-center gap-1 text-xs opacity-60 mt-1">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>กำลังส่ง...</span>
             </div>
           )}
         </div>

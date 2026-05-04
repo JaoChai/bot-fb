@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { useChannelInfo } from '@/hooks/useChannelInfo';
 import { VipBadge } from '@/components/conversation/VipBadge';
 import { getVipNote } from '@/lib/vip';
+import { ConnectionIndicator } from './ConnectionIndicator';
 import type { Conversation } from '@/types/api';
 
 export interface ChatHeaderProps {
@@ -90,6 +91,8 @@ export const ChatHeader = memo(function ChatHeader({
       </div>
 
       <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+        <ConnectionIndicator />
+
         {/* Handover controls - only for channels that support it */}
         {showHandoverControls && supportsHandover && onToggleHandover && (
           <Button
