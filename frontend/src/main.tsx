@@ -31,10 +31,7 @@ createRoot(document.getElementById("root")!).render(
       client={queryClient}
       persistOptions={{
         persister,
-        // Buster version - increment when schema changes to clear stale cache
-        buster: 'v2', // v2: exclude real-time conversation data from persist
-        // Don't persist real-time data (conversations, messages)
-        // This ensures fresh data is always fetched from server on navigation
+        buster: 'v3',
         dehydrateOptions: {
           shouldDehydrateQuery,
         },
