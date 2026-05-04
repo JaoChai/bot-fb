@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ProductStockController;
 use App\Http\Controllers\Api\QuickReplyController;
 use App\Http\Controllers\Api\StreamController;
+use App\Http\Controllers\Api\SyncController;
 use App\Http\Controllers\Api\UserSearchController;
 use App\Http\Controllers\Api\UserSettingController;
 use Illuminate\Support\Facades\Broadcast;
@@ -227,6 +228,7 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/clear-context-all', [ConversationController::class, 'clearContextAll'])
             ->middleware('throttle:10,1') // 10 requests per minute
             ->name('conversations.clear-context-all');
+        Route::get('/sync', [SyncController::class, 'conversations'])->name('conversations.sync');
 
         // Wildcard routes (must come after static routes)
         Route::get('/{conversation}', [ConversationController::class, 'show'])->name('conversations.show');
@@ -237,6 +239,7 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
 
         // Message routes
         Route::get('/{conversation}/messages', [ConversationMessageController::class, 'index'])->name('conversations.messages');
+        Route::get('/{conversation}/messages/sync', [SyncController::class, 'messages'])->name('conversations.messages.sync');
         Route::post('/{conversation}/mark-as-read', [ConversationMessageController::class, 'markAsRead'])->name('conversations.mark-as-read');
         Route::post('/{conversation}/agent-message', [ConversationMessageController::class, 'store'])
             ->middleware('throttle:60,1') // 60 messages per minute per user
