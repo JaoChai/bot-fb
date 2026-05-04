@@ -698,7 +698,8 @@ export function useSendAgentMessage(botId: number | undefined) {
     }) => {
       const response = await api.post<AgentMessageResponse>(
         `/bots/${botId}/conversations/${conversationId}/agent-message`,
-        data
+        data,
+        { headers: { 'Idempotency-Key': crypto.randomUUID() } }
       );
       return response.data;
     },
