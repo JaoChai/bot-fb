@@ -13,6 +13,8 @@ import { messageKeys, type MessagesResponse } from './messageKeys';
 import { conversationKeys, type ConversationsResponse } from './useConversationList';
 import { conversationDetailKeys } from './useConversationDetails';
 import { updateConversationInList, createMessageFromEvent } from './realtimeUtils';
+import { showBrowserNotification, playPing, setUnreadBadge } from '@/lib/notifications';
+import { useUIStore } from '@/stores/uiStore';
 import type { Conversation, ConversationFilters } from '@/types/api';
 import type { MessageSentEvent, ConversationUpdatedEvent } from '@/types/realtime';
 
@@ -43,12 +45,21 @@ export function useRealtime(
   const filtersRef = useRef(filters);
   const selectedConversationIdRef = useRef(selectedConversationId);
 
+  // Notification state refs
+  const unreadCountRef = useRef(0);
+  const audioEnabled = useUIStore((s) => s.audioEnabled);
+  const notificationEnabled = useUIStore((s) => s.notificationEnabled);
+  const audioEnabledRef = useRef(audioEnabled);
+  const notificationEnabledRef = useRef(notificationEnabled);
+
   // Keep refs updated
   useEffect(() => {
     botIdRef.current = botId;
     filtersRef.current = filters;
     selectedConversationIdRef.current = selectedConversationId;
-  }, [botId, filters, selectedConversationId]);
+    audioEnabledRef.current = audioEnabled;
+    notificationEnabledRef.current = notificationEnabled;
+  }, [botId, filters, selectedConversationId, audioEnabled, notificationEnabled]);
 
   // T042: Stable callback that reads from refs
   const handleRealtimeMessage = useCallback(
@@ -93,6 +104,21 @@ export function useRealtime(
         selectedConversationIdRef.current,
         event
       );
+
+      // Notify when tab is hidden and message is from user (not bot/agent)
+      if (document.visibilityState === 'hidden' && event.sender === 'user') {
+        unreadCountRef.current++;
+        setUnreadBadge(unreadCountRef.current);
+
+        if (audioEnabledRef.current) {
+          playPing();
+        }
+        if (notificationEnabledRef.current) {
+          showBrowserNotification('ข้อความใหม่', {
+            body: event.content?.substring(0, 100) || 'มีข้อความใหม่เข้ามา',
+          });
+        }
+      }
     },
     [queryClient] // Only queryClient as dependency since we use refs
   );
@@ -223,6 +249,19 @@ export function useRealtime(
     },
     [queryClient]
   );
+
+  // Reset badge when tab becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        unreadCountRef.current = 0;
+        setUnreadBadge(0);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   // Subscribe to bot channel
   useBotChannel(botId, {
