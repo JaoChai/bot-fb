@@ -57,6 +57,12 @@ coverage/
 # Superpowers brainstorm session files (visual companion mockups)
 .superpowers/
 
+# Private security audits — contains specific file:line vulnerabilities,
+# CVE references, and untested code locations. Public repo = attack roadmap.
+# Generic audit notes (e.g., sentry-alerts.md) without specific findings ARE OK.
+docs/superpowers/audits/*-master-audit.md
+docs/superpowers/audits/private/
+
 # Claude-mem auto-generated CLAUDE.md files (keep only root and .claude/)
 **/CLAUDE.md
 !/CLAUDE.md
