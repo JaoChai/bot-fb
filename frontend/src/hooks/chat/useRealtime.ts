@@ -14,6 +14,7 @@ import { conversationKeys, type ConversationsResponse } from './useConversationL
 import { conversationDetailKeys } from './useConversationDetails';
 import { updateConversationInList, createMessageFromEvent } from './realtimeUtils';
 import { showBrowserNotification, playPing, setUnreadBadge } from '@/lib/notifications';
+import { syncBot } from '@/lib/syncEngine';
 import { useUIStore } from '@/stores/uiStore';
 import type { Conversation, ConversationFilters } from '@/types/api';
 import type { MessageSentEvent, ConversationUpdatedEvent } from '@/types/realtime';
@@ -270,40 +271,39 @@ export function useRealtime(
     onNewConversation: handleNewConversation,
   });
 
-  // T043: Handle reconnection with comprehensive invalidation
-  // On reconnect, we must sync ALL data regardless of current filter
+  // T043: Handle reconnection — delta sync or full invalidation
+  const useDeltaSync = import.meta.env.VITE_FEATURE_DELTA_SYNC === 'true';
+
   useEffect(() => {
     const handleReconnect = () => {
       const currentBotId = botIdRef.current;
       if (!currentBotId) return;
 
-      const currentSelectedId = selectedConversationIdRef.current;
-
-      // Invalidate ALL conversation lists for this bot (all filters)
-      // This ensures no stale data regardless of which filter was active
-      queryClient.invalidateQueries({
-        predicate: (query) => {
-          const key = query.queryKey;
-          return Array.isArray(key) &&
-            key[0] === 'conversations-infinite' &&
-            key[1] === currentBotId;
-        },
-      });
-
-      // Invalidate the currently viewed conversation's messages
-      if (currentSelectedId) {
+      if (useDeltaSync) {
+        syncBot(currentBotId, queryClient, selectedConversationIdRef.current);
+      } else {
         queryClient.invalidateQueries({
-          queryKey: messageKeys.list(currentBotId, currentSelectedId),
+          predicate: (query) => {
+            const key = query.queryKey;
+            return Array.isArray(key) &&
+              key[0] === 'conversations-infinite' &&
+              key[1] === currentBotId;
+          },
         });
 
-        // Also invalidate conversation detail for bot control sync
-        queryClient.invalidateQueries({
-          queryKey: conversationDetailKeys.detail(currentBotId, currentSelectedId),
-        });
+        const currentSelectedId = selectedConversationIdRef.current;
+        if (currentSelectedId) {
+          queryClient.invalidateQueries({
+            queryKey: messageKeys.list(currentBotId, currentSelectedId),
+          });
+          queryClient.invalidateQueries({
+            queryKey: conversationDetailKeys.detail(currentBotId, currentSelectedId),
+          });
+        }
       }
     };
 
     window.addEventListener('echo:reconnected', handleReconnect);
     return () => window.removeEventListener('echo:reconnected', handleReconnect);
-  }, [queryClient]);
+  }, [queryClient, useDeltaSync]);
 }
