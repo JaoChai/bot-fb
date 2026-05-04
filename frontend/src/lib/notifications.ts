@@ -1,4 +1,4 @@
-const BASE_TITLE = 'BotJao';
+const BASE_TITLE = typeof document !== 'undefined' ? document.title || 'BotJao' : 'BotJao';
 let audioContext: AudioContext | null = null;
 
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
@@ -23,6 +23,7 @@ export function playPing(): void {
     osc.type = 'sine';
     gain.gain.value = 0.1;
     gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.3);
+    osc.onended = () => { osc.disconnect(); gain.disconnect(); };
     osc.start(audioContext.currentTime);
     osc.stop(audioContext.currentTime + 0.3);
   } catch { /* silent */ }

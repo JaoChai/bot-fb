@@ -15,7 +15,7 @@ import {
   DialogContent,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Bot, User, Headphones, Download, Brain, ChevronDown, ChevronRight, Clock } from 'lucide-react';
+import { Bot, User, Headphones, Download, Brain, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -226,7 +226,7 @@ export const MessageBubble = memo(function MessageBubble({
 
           {isPending && (
             <div className="flex items-center gap-1 text-xs opacity-60 mt-1">
-              <Clock className="h-3 w-3 animate-spin" />
+              <Loader2 className="h-3 w-3 animate-spin" />
               <span>กำลังส่ง...</span>
             </div>
           )}
