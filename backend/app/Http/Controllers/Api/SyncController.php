@@ -15,6 +15,7 @@ class SyncController extends Controller
     {
         $this->authorize('view', $bot);
 
+        $request->validate(['since' => 'sometimes|date']);
         $since = $request->query('since');
 
         $query = $bot->conversations()
@@ -36,6 +37,7 @@ class SyncController extends Controller
     public function messages(Request $request, Bot $bot, Conversation $conversation): JsonResponse
     {
         $this->authorize('view', $bot);
+        abort_if($conversation->bot_id !== $bot->id, 403);
 
         $sinceId = $request->integer('since_id', 0);
 

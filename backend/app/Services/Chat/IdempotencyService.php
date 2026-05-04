@@ -9,7 +9,7 @@ class IdempotencyService
 {
     public function check(string $key, string $endpoint, array $body): ?array
     {
-        $bodyHash = hash('sha256', json_encode($body));
+        $bodyHash = $this->hashBody($body);
 
         $record = DB::table('idempotency_keys')
             ->where('id', $key)
@@ -30,12 +30,19 @@ class IdempotencyService
 
     public function store(string $key, string $endpoint, array $body, array $response): void
     {
-        DB::table('idempotency_keys')->insert([
+        DB::table('idempotency_keys')->insertOrIgnore([
             'id' => $key,
             'endpoint' => $endpoint,
-            'body_hash' => hash('sha256', json_encode($body)),
+            'body_hash' => $this->hashBody($body),
             'response_payload' => json_encode($response),
             'created_at' => now(),
         ]);
+    }
+
+    private function hashBody(array $body): string
+    {
+        ksort($body);
+
+        return hash('sha256', json_encode($body));
     }
 }
