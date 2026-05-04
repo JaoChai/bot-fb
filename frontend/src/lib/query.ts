@@ -1,24 +1,17 @@
 import { QueryClient } from '@tanstack/react-query';
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import { get, set, del } from 'idb-keyval';
 
-// Query keys that should NOT be persisted (real-time data)
-// Note: 'conversation-messages' removed - now unified under 'messages' via messageKeys
+// Query keys that should NOT be persisted
 const NON_PERSISTENT_KEYS = [
   'bots',
-  'bot-tags',              // ป้องกัน tags เก่าค้างใน localStorage
-  'conversations',
-  'conversations-infinite',
-  'conversation',
-  'conversation-stats',
-  'conversation-notes',
-  'messages', // Unified message cache (includes old 'conversation-messages')
+  'bot-tags',
 ];
 
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Stale time - data considered fresh for 5 minutes
-      staleTime: 5 * 60 * 1000,
+      staleTime: 30 * 1000,
       // Cache time - keep in cache for 24 hours (required for persistence)
       gcTime: 1000 * 60 * 60 * 24,
       // Retry failed requests 3 times with exponential backoff
@@ -44,9 +37,7 @@ export const queryClient = new QueryClient({
 });
 
 /**
- * Check if a query should be persisted to localStorage
- * Real-time data (conversations, messages) should NOT be persisted
- * to ensure fresh data is always fetched from server
+ * Check if a query should be persisted to IndexedDB
  */
 export function shouldDehydrateQuery(query: { queryKey: readonly unknown[] }): boolean {
   const firstKey = query.queryKey[0];
@@ -56,11 +47,20 @@ export function shouldDehydrateQuery(query: { queryKey: readonly unknown[] }): b
   return true; // Persist other queries (bots, settings, etc.)
 }
 
-// Persister for localStorage - keeps cache across page refreshes
-export const persister = createSyncStoragePersister({
-  storage: window.localStorage,
-  key: 'BOTJAO_QUERY_CACHE',
+// Persister for IndexedDB — keeps cache across page refreshes with async I/O
+export const persister = createAsyncStoragePersister({
+  storage: {
+    getItem: async (key) => await get<string>(key) ?? null,
+    setItem: async (key, value) => { await set(key, value); },
+    removeItem: async (key) => { await del(key); },
+  },
+  key: 'BOTJAO_QUERY_CACHE_v2',
 });
+
+// Clear old localStorage cache (one-time migration from v1)
+if (typeof window !== 'undefined' && window.localStorage.getItem('BOTJAO_QUERY_CACHE')) {
+  window.localStorage.removeItem('BOTJAO_QUERY_CACHE');
+}
 
 // Query Keys factory - keeps keys consistent across the app
 export const queryKeys = {
