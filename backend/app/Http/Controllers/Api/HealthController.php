@@ -50,6 +50,38 @@ class HealthController extends Controller
     }
 
     /**
+     * Realtime-focused health check (broadcasting + queue).
+     *
+     * Lightweight endpoint for monitoring real-time chat infrastructure.
+     */
+    public function realtime(): JsonResponse
+    {
+        $queueDepth = DB::table('jobs')->where('available_at', '<=', now()->timestamp)->count();
+        $failedCount = DB::table('failed_jobs')->count();
+
+        $broadcastDriver = config('broadcasting.default');
+        $broadcastOk = $broadcastDriver !== 'null';
+
+        $status = ($broadcastOk && $failedCount < 10) ? 'healthy' : 'degraded';
+
+        return response()->json([
+            'status' => $status,
+            'checks' => [
+                'broadcasting' => [
+                    'ok' => $broadcastOk,
+                    'driver' => $broadcastDriver,
+                ],
+                'queue' => [
+                    'ok' => $queueDepth < 100,
+                    'depth' => $queueDepth,
+                    'failed' => $failedCount,
+                    'connection' => config('queue.default'),
+                ],
+            ],
+        ]);
+    }
+
+    /**
      * Run all health checks.
      */
     protected function runHealthChecks(bool $detailed = false): array

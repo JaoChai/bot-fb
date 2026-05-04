@@ -272,6 +272,7 @@ Route::get('/health', [HealthController::class, 'index'])->name('health');
 Route::get('/health/detailed', [HealthController::class, 'detailed'])
     ->middleware(['auth:sanctum'])
     ->name('health.detailed');
+Route::get('/health/realtime', [HealthController::class, 'realtime'])->name('health.realtime');
 
 // Broadcasting authentication endpoint
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
