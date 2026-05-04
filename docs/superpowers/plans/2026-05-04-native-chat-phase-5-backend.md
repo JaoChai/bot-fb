@@ -108,10 +108,25 @@ Returns broadcasting driver status, queue depth, failed job count.
 Status is 'healthy' when broadcasting is enabled and failed < 10.
 ```
 
-## Task 2: Queue Migration to Redis
+## Task 2: Queue Migration to Redis — DEFERRED (data-driven decision)
+
+**Status:** Deferred 2026-05-04. Re-evaluate 2026-05-18 (after 2 weeks of `/api/health/realtime` metrics).
+
+**Why deferred:**
+- `backend/.env.example` already documents Redis as "not recommended due to quota limits"
+- Railway has no Redis service (services: reverb, backend, frontend, scheduler)
+- LLM call latency (1-5s) dominates total response time — DB queue polling overhead (0-3s) is secondary
+- No production measurement showing DB queue is a real bottleneck → migrating now = premature optimization
+- Project owner already deliberately chose `database` queue once
+
+**Re-evaluation criteria (2026-05-18):**
+- IF sustained `queue.depth > 50` OR `queue.failed >= 10` for >7 days → proceed with original migration steps below
+- IF `queue.depth < 10` consistently → close this task permanently and update `.env.example` to remove Redis section
+
+**Original migration steps (kept for re-evaluation):**
 
 - [ ] **Step 2.1:** Update `.env.example`: `QUEUE_CONNECTION=redis`
-- [ ] **Step 2.2:** On Railway: set `QUEUE_CONNECTION=redis` via `mcp__railway__set-variables`
+- [ ] **Step 2.2:** On Railway: add Redis add-on, then set `QUEUE_CONNECTION=redis` via `mcp__railway__set-variables`
 - [ ] **Step 2.3:** Restart queue worker on Railway
 - [ ] **Step 2.4:** Monitor: health endpoint shows `queue.connection: redis`
 - [ ] **Step 2.5:** Commit:
