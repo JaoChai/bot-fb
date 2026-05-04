@@ -15,7 +15,7 @@ class IdempotencyService
             ->where('id', $key)
             ->first();
 
-        if (!$record) {
+        if (! $record) {
             return null;
         }
 
