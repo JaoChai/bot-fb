@@ -1,0 +1,42 @@
+{
+  "mcpServers": {
+    "railway": {
+      "command": "npx",
+      "args": ["-y", "@railway/mcp-server"]
+    },
+    "neon": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@neondatabase/mcp-server-neon",
+        "start",
+        "<NEON_API_KEY>"
+      ]
+    },
+    "sentry": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@sentry/mcp-server@latest",
+        "--access-token",
+        "<SENTRY_ACCESS_TOKEN>"
+      ],
+      "env": {
+        "OPENAI_API_KEY": "<OPENAI_API_KEY>"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp",
+        "--api-key",
+        "<CONTEXT7_API_KEY>"
+      ]
+    },
+    "laravel-boost": {
+      "command": "php",
+      "args": ["backend/artisan", "boost:mcp"]
+    }
+  }
+}
