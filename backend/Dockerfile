@@ -129,9 +129,9 @@ SUPERVISOR
 # Expose port
 EXPOSE 80
 
-# Health check using PORT env variable
-HEALTHCHECK --interval=30s --timeout=3s \
-    CMD curl -f http://localhost:${PORT:-80}/up || exit 1
+# Health check — uses /api/health which verifies DB connectivity
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-80}/api/health || exit 1
 
 # Start command - substitute PORT in nginx config then start supervisord
 CMD ["sh", "-c", "envsubst '${PORT}' < /etc/nginx/http.d/default.conf.template > /etc/nginx/http.d/default.conf && php artisan config:cache && php artisan route:cache && php artisan migrate --force && supervisord -c /etc/supervisor/conf.d/laravel.conf"]
