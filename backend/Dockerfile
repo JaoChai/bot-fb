@@ -77,9 +77,15 @@ server {
         include fastcgi_params;
         fastcgi_buffers 16 16k;
         fastcgi_buffer_size 32k;
+        fastcgi_connect_timeout 5s;
+        fastcgi_read_timeout 35s;
+        fastcgi_send_timeout 10s;
     }
 }
 NGINX
+
+# Custom PHP-FPM pool config
+COPY docker/php-fpm/www.conf /usr/local/etc/php-fpm.d/www.conf
 
 # Create supervisord config
 COPY <<'SUPERVISOR' /etc/supervisor/conf.d/laravel.conf
@@ -106,6 +112,15 @@ stdout_logfile_maxbytes=0
 stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
 
+[program:scheduler]
+command=sh -c "while true; do php /var/www/html/artisan schedule:run --verbose --no-interaction; sleep 60; done"
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
 [program:queue-worker]
 process_name=%(program_name)s_%(process_num)02d
 command=php /var/www/html/artisan queue:work --queue=webhooks,default --sleep=3 --tries=3 --backoff=5 --max-jobs=1000 --max-time=3600
@@ -123,9 +138,9 @@ SUPERVISOR
 # Expose port
 EXPOSE 80
 
-# Health check using PORT env variable
-HEALTHCHECK --interval=30s --timeout=3s \
-    CMD curl -f http://localhost:${PORT:-80}/up || exit 1
+# Health check — uses /api/health which verifies DB connectivity
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-80}/api/health || exit 1
 
 # Start command - substitute PORT in nginx config then start supervisord
 CMD ["sh", "-c", "envsubst '${PORT}' < /etc/nginx/http.d/default.conf.template > /etc/nginx/http.d/default.conf && php artisan config:cache && php artisan route:cache && php artisan migrate --force && supervisord -c /etc/supervisor/conf.d/laravel.conf"]

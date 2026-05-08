@@ -70,3 +70,6 @@ Schedule::command('idempotency:clean')
     ->hourly()
     ->withoutOverlapping()
     ->runInBackground();
+
+// Ping database every 4 minutes to prevent Neon cold starts
+Schedule::command('db:ping')->everyFourMinutes();
