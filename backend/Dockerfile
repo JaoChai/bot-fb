@@ -81,6 +81,9 @@ server {
 }
 NGINX
 
+# Custom PHP-FPM pool config
+COPY docker/php-fpm/www.conf /usr/local/etc/php-fpm.d/www.conf
+
 # Create supervisord config
 COPY <<'SUPERVISOR' /etc/supervisor/conf.d/laravel.conf
 [supervisord]
