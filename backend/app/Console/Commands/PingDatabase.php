@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 class PingDatabase extends Command
 {
     protected $signature = 'db:ping';
+
     protected $description = 'Ping database to keep Neon compute warm';
 
     public function handle(): int
@@ -16,7 +17,8 @@ class PingDatabase extends Command
             DB::selectOne('SELECT 1');
             $this->info('Database ping OK');
         } catch (\Throwable $e) {
-            $this->error('Database ping failed: ' . $e->getMessage());
+            $this->error('Database ping failed: '.$e->getMessage());
+
             return self::FAILURE;
         }
 
