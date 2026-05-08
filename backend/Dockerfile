@@ -77,6 +77,9 @@ server {
         include fastcgi_params;
         fastcgi_buffers 16 16k;
         fastcgi_buffer_size 32k;
+        fastcgi_connect_timeout 5s;
+        fastcgi_read_timeout 35s;
+        fastcgi_send_timeout 10s;
     }
 }
 NGINX
