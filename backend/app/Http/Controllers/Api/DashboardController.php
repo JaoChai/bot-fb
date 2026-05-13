@@ -8,6 +8,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
@@ -23,11 +24,19 @@ class DashboardController extends Controller
 
         $isSqlite = DB::connection()->getDriverName() === 'sqlite';
 
-        // Get aggregated summary using CTE for efficiency
-        $summaryStats = $this->getSummaryStats($botIds, $isSqlite);
+        $botIdsHash = md5($botIds->sort()->implode(','));
 
-        // Get bots with their metrics
-        $bots = $this->getBotsWithMetrics($user->id, $isSqlite);
+        $summaryStats = Cache::remember(
+            "dashboard:summary:{$user->id}:{$botIdsHash}",
+            60,
+            fn () => $this->getSummaryStats($botIds, $isSqlite),
+        );
+
+        $bots = Cache::remember(
+            "dashboard:bots:{$user->id}",
+            60,
+            fn () => $this->getBotsWithMetrics($user->id, $isSqlite),
+        );
 
         // Get alerts
         $alerts = $this->getAlerts($user->id, $botIds);
