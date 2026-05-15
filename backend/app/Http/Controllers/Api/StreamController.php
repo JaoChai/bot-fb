@@ -7,7 +7,6 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\User;
-use App\Services\CostTrackingService;
 use App\Services\HybridSearchService;
 use App\Services\IntentAnalysisService;
 use App\Services\MultipleBubblesService;
@@ -35,8 +34,6 @@ class StreamController extends Controller
     protected OpenRouterService $openRouter;
 
     protected HybridSearchService $hybridSearch;
-
-    protected CostTrackingService $costTracking;
 
     protected IntentAnalysisService $intentAnalysis;
 
@@ -67,7 +64,6 @@ class StreamController extends Controller
     public function __construct(
         OpenRouterService $openRouter,
         HybridSearchService $hybridSearch,
-        CostTrackingService $costTracking,
         IntentAnalysisService $intentAnalysis,
         RAGService $ragService,
         MultipleBubblesService $multipleBubbles,
@@ -75,7 +71,6 @@ class StreamController extends Controller
     ) {
         $this->openRouter = $openRouter;
         $this->hybridSearch = $hybridSearch;
-        $this->costTracking = $costTracking;
         $this->intentAnalysis = $intentAnalysis;
         $this->ragService = $ragService;
         $this->multipleBubbles = $multipleBubbles;

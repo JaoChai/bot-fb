@@ -250,7 +250,7 @@ class CircuitBreakerServiceTest extends TestCase
     {
         // Create a disabled circuit breaker
         config(['circuit-breaker.enabled' => false]);
-        $disabledBreaker = new CircuitBreakerService;
+        $disabledBreaker = new CircuitBreakerService(Mockery::mock(ResilienceMetricsService::class));
 
         $result = $disabledBreaker->execute(
             'test_service',
