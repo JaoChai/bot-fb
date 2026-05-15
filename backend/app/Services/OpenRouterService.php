@@ -690,8 +690,17 @@ class OpenRouterService
             ->timeout($requestTimeout)
             ->retry(3, function (int $attempt) {
                 return $attempt * 200;
-            }, throw: false, when: function (\Exception $e, $response) {
-                return $response?->status() === 429 || $response?->status() >= 500;
+            }, throw: false, when: function (\Throwable $e, $request) {
+                if ($e instanceof \Illuminate\Http\Client\ConnectionException) {
+                    return true;
+                }
+                if ($e instanceof \Illuminate\Http\Client\RequestException) {
+                    $status = $e->response?->status();
+
+                    return $status === 429 || ($status !== null && $status >= 500);
+                }
+
+                return false;
             })
             ->acceptJson();
     }
