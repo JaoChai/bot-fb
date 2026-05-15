@@ -8,17 +8,17 @@ Source: cross-correlation of unit reports `1-detail/1-*.md` through `1-detail/7-
 
 | # | Title | Units | Impact | Conf | Effort | Risk | Score | Phase |
 |---|-------|-------|--------|------|--------|------|-------|-------|
-| 1 | Fix /api/analytics/costs + /api/dashboard/summary 50%/20% error rate (orphan AgentCostUsage refs) | 5 | 4 | 5 | 1 | 1 | 20 | 1 |
-| 2 | Restore CircuitBreaker → Sentry visibility (make ResilienceMetricsService non-nullable) | 5 | 4 | 5 | 1 | 1 | 20 | 1 |
-| 3 | Frontend code splitting via React.lazy on all routes (index.js 329KB → split per route) | 4 | 5 | 4 | 3 | 2 | 18 | 1 |
-| 4 | Add static HTML skeleton to `frontend/index.html` (FCP fires before JS parse) | 4 | 4 | 4 | 1 | 1 | 18 | 1 |
-| 5 | Remove dead CostTrackingService.php (orphaned after agent_cost_usage table drop 2026-04-18) | 3,7 | 3 | 5 | 1 | 1 | 17 | 1 |
-| 6 | Split llm queue from default + add 2nd worker process (currently 1 worker, 93.5% time on LLM) | 1,6 | 5 | 4 | 3 | 3 | 17 | 1 |
+| 1 | ✅ Fixed analytics/dashboard error rates (PR 193162e + #153, pre-Phase 1) | 5 | 4 | 5 | 1 | 1 | 20 | 1 |
+| 2 | ✅ Restored CircuitBreaker → Sentry visibility (PR #155, non-nullable DI) | 5 | 4 | 5 | 1 | 1 | 20 | 1 |
+| 3 | Frontend code splitting via React.lazy on all routes (index.js 329KB → split per route) — VERIFY: router.tsx already uses lazyWithRetryNamed; audit may be stale | 4 | 5 | 4 | 3 | 2 | 18 | 1 |
+| 4 | ✅ Added static HTML skeleton to frontend/index.html (PR #155, FCP < JS parse) | 4 | 4 | 4 | 1 | 1 | 18 | 1 |
+| 5 | ✅ Removed dead CostTrackingService.php (PR #155) | 3,7 | 3 | 5 | 1 | 1 | 17 | 1 |
+| 6 | ✅ Split llm queue + 2nd worker process (PR #156, Railway flag ON 2026-05-15 13:35 UTC) | 1,6 | 5 | 4 | 3 | 3 | 17 | 1 |
 | 7 | Drop 60 unused indexes (1.4MB + faster writes; via safe-migration skill) | 2 | 3 | 5 | 2 | 2 | 15 | 2 |
-| 8 | Remove unused `@tanstack/query-sync-storage-persister` dep + 22 unused exports | 4 | 2 | 5 | 1 | 1 | 14 | 2 |
+| 8 | ✅ Removed unused query-sync-storage-persister + dead exports (PR #157, -110 LOC) | 4 | 2 | 5 | 1 | 1 | 14 | 2 |
 | 9 | Refactor ProcessLINEWebhook.php (1432 LOC, 19 methods, 16 imports → split into 3-4 services) | 1,5,6,7 | 4 | 5 | 5 | 4 | 13 | 2 |
-| 10 | Reduce OPENROUTER_TIMEOUT 120s → 30s + add fallback model (currently 2-min freeze risk) | 1,6 | 3 | 4 | 2 | 2 | 13 | 2 |
-| 11 | Investigate cache table 62.7M reads post-Redis migration (something still writes/reads cache table) | 2 | 3 | 3 | 2 | 1 | 12 | 2 |
+| 10 | ✅ Reduced OPENROUTER_TIMEOUT 120→45s + fallback documented (PR #158, Railway env applied) | 1,6 | 3 | 4 | 2 | 2 | 13 | 2 |
+| 11 | ✅ RESOLVED 2026-05-15 — stats were lifetime/pre-migration; truncated stale rows; Redis is the active store | 2 | 3 | 3 | 2 | 1 | 12 | 2 |
 | 12 | VACUUM FULL on `bots` (52% dead), `personal_access_tokens` (36% dead), `rag_cache` (100% dead, 0 live) | 2 | 2 | 4 | 1 | 2 | 11 | 2 |
 | 13 | Switch dominant LLM model to cheaper alt with quality tests + add per-call cost cap | 3 | 4 | 3 | 3 | 4 | 11 | 2 |
 | 14 | Add covering indexes for hot queries (after EXPLAIN ANALYZE on top 5 from pg_stat_statements) | 2 | 3 | 3 | 2 | 2 | 11 | 2 |
