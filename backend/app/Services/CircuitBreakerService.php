@@ -18,13 +18,10 @@ class CircuitBreakerService
 
     protected bool $enabled;
 
-    protected ?ResilienceMetricsService $metrics;
-
-    public function __construct(?ResilienceMetricsService $metrics = null)
+    public function __construct(protected ResilienceMetricsService $metrics)
     {
         $this->cachePrefix = config('circuit-breaker.cache_prefix', 'circuit_breaker');
         $this->enabled = config('circuit-breaker.enabled', true);
-        $this->metrics = $metrics;
     }
 
     /**
@@ -246,7 +243,7 @@ class CircuitBreakerService
         $this->cacheForget("{$service}:successes");
 
         // Record metrics for monitoring
-        $this->metrics?->recordCircuitStateChange($service, $previousState, self::STATE_OPEN);
+        $this->metrics->recordCircuitStateChange($service, $previousState, self::STATE_OPEN);
     }
 
     protected function transitionToHalfOpen(string $service): void
@@ -257,7 +254,7 @@ class CircuitBreakerService
         Log::info('Circuit breaker transitioned to half-open', ['service' => $service]);
 
         // Record metrics for monitoring
-        $this->metrics?->recordCircuitStateChange($service, self::STATE_OPEN, self::STATE_HALF_OPEN);
+        $this->metrics->recordCircuitStateChange($service, self::STATE_OPEN, self::STATE_HALF_OPEN);
     }
 
     protected function transitionToClosed(string $service): void
@@ -274,7 +271,7 @@ class CircuitBreakerService
 
         // Record metrics for monitoring (only if transitioning from a different state)
         if ($previousState !== self::STATE_CLOSED) {
-            $this->metrics?->recordCircuitStateChange($service, $previousState, self::STATE_CLOSED);
+            $this->metrics->recordCircuitStateChange($service, $previousState, self::STATE_CLOSED);
         }
     }
 
