@@ -1,170 +1,179 @@
 # Unit 1: Backend Latency
 
-## Data Sources
-
-> **Note:** `mcp__sentry__search_events` and `mcp__sentry__search_issues` are unavailable — all natural-language Sentry query tools fail with "Incorrect API key" from the internal OpenAI provider used by the Sentry MCP. Non-AI Sentry tools (`find_projects`, `find_releases`) confirmed project `php-laravel` exists in org `adsvance` but have no transaction data. No Telescope tables exist in production Neon DB (Telescope uses local SQLite only).
->
-> **Substitute sources used:**
-> - `pg_stat_statements` (production Neon) — DB-layer query latency with call counts
-> - Railway deploy logs — job-level durations for `ProcessLINEWebhook`, `ProcessAggregatedMessages`, `SendDelayedBubbleJob`, `EvaluateVipStatusJob`, `MessageSent`, `ConversationUpdated`
-> - `pg_stat_user_tables` / `pg_stat_user_indexes` — table scan and index health
-> - Messages table — request volume proxy (user messages ≈ inbound webhook calls)
-> - Route list (172 routes via `mcp__laravel-boost__list-routes`) — controller mapping
+> Data source: Sentry Discover API direct calls (`curl` with Bearer token), project `php-laravel` (id: 4510638630502400), org: `adsvance`, period: last 7 days. Raw JSON archives in `/tmp/audit-unit1/` (top-by-p95.json, top-by-total-time.json, top-http-by-p95.json). Handler mappings from `php artisan route:list` on main repo backend.
 
 ---
 
 ## Data Collected
 
-### Top 50 Endpoints by p95 (7d)
+### Top Transactions by p95 (7d) — All Types
 
-> Sentry transaction-level p50/p95/p99 unavailable (see note above). Table below uses Railway job logs as the observable latency layer (job execution = end-to-end backend work per webhook) and `pg_stat_statements` mean/max for DB-layer latency. p50/p95/p99 columns are derived from observed Railway log samples (N=100 log lines, 2026-05-15 session); hits/day derived from messages table (477 user messages on 2026-05-14, avg 369/day over 7d).
+| Rank | Transaction | Op | p50 (ms) | p95 (ms) | p99 (ms) | count (sampled) | epm | Handler |
+|------|------------|-----|----------|----------|----------|-----------------|-----|---------|
+| 1 | `App\Jobs\ProcessAggregatedMessages` | queue.process | 3,776 | **7,310** | 9,088 | 30 | 0.003 | `app/Jobs/ProcessAggregatedMessages.php` |
+| 2 | `App\Jobs\ProcessLINEWebhook` | queue.process | 340 | **5,870** | 8,065 | 179 | 0.018 | `app/Jobs/ProcessLINEWebhook.php` |
+| 3 | `db:ping` | console.command.scheduled | 325 | 422 | 474 | 230 | 0.023 | Artisan scheduled command |
+| 4 | `App\Jobs\SendDelayedBubbleJob` | queue.process | 221 | 296 | 302 | 7 | 0.001 | `app/Jobs/SendDelayedBubbleJob.php` |
+| 5 | `App\Jobs\ProcessLeadRecovery` | queue.process | 57 | 260 | 395 | 11 | 0.001 | `app/Jobs/ProcessLeadRecovery.php` |
+| 6 | `/api/analytics/costs` | http.server | 212 | **247** | 251 | 4 | 0.000 | `Api\AnalyticsController@costs` |
+| 7 | `/api/bots/{bot}/conversations` | http.server | 132 | **174** | 210 | 60 | 0.006 | `Api\ConversationController@index` |
+| 8 | `/api/dashboard/summary` | http.server | 157 | **172** | 174 | 5 | 0.000 | `Api\DashboardController@summary` |
+| 9 | `/api/bots/{bot}` | http.server | 145 | **166** | 168 | 2 | 0.000 | `Api\BotController@show` |
+| 10 | `/api/bots/{bot}/conversations/{conversation}/messages` | http.server | 110 | **157** | 235 | 87 | 0.009 | `Api\MessageController@index` |
+| 11 | `/api/bots/{bot}/conversations/{conversation}/notes` | http.server | 94 | **154** | 213 | 25 | 0.002 | `Api\ConversationController@notes` |
+| 12 | `/api/bots` | http.server | 129 | **150** | 156 | 12 | 0.001 | `Api\BotController@index` |
+| 13 | `/api/bots/{bot}/conversations/tags` | http.server | 109 | **148** | 152 | 4 | 0.000 | `Api\ConversationController@allTags` |
+| 14 | `/api/product-stocks` | http.server | 94 | **143** | 147 | 3 | 0.000 | `Api\ProductStockController@index` |
+| 15 | `/api/webhook/{token}` | http.server | 104 | **138** | 255 | 179 | 0.018 | `Api\WebhookController@handle` |
+| 16 | `/api/bots/{bot}/conversations/{conversation}/mark-as-read` | http.server | 116 | **135** | 151 | 24 | 0.002 | `Api\ConversationController@markAsRead` |
+| 17 | `App\Events\MessageSent` | queue.process | 45 | 130 | 161 | 227 | 0.023 | `app/Events/MessageSent.php` (Reverb broadcast) |
+| 18 | `/api/orders` | http.server | 114 | **121** | 122 | 4 | 0.000 | `Api\OrderController@index` |
+| 19 | `/api/orders/by-product` | http.server | 115 | **120** | 120 | 4 | 0.000 | `Api\OrderController@byProduct` |
+| 20 | `/api/orders/summary` | http.server | 112 | **112** | 112 | 1 | 0.000 | `Api\OrderController@summary` |
+| 21 | `/api/knowledge-bases` | http.server | 100 | **100** | 100 | 1 | 0.000 | `Api\KnowledgeBaseController@index` |
+| 22 | `App\Events\ConversationUpdated` | queue.process | 38 | 70 | 91 | 221 | 0.022 | `app/Events/ConversationUpdated.php` (Reverb broadcast) |
+| 23 | `App\Jobs\EvaluateVipStatusJob` | queue.process | 56 | 70 | 71 | 3 | 0.000 | `app/Jobs/EvaluateVipStatusJob.php` |
+| 24 | `/` | http.server | 62 | 85 | 91 | 13 | 0.001 | Root / health check |
+| 25 | `/api/broadcasting/auth` | http.server | 57 | 77 | 86 | 10 | 0.001 | `Api\BroadcastController@auth` |
+| 26 | `lead-recovery` | console.command.scheduled | 17 | 26 | 28 | 11 | 0.001 | Artisan scheduled command |
+| 27 | `/docs` | http.server | 17 | 17 | 17 | 1 | 0.000 | API docs route |
 
-| Rank | Endpoint / Job | Controller@method | p50 (ms) | p95 (ms) | p99 (ms) | hits/day | Source |
-|------|----------------|-------------------|----------|----------|----------|----------|--------|
-| 1 | `POST /api/webhook/{token}` → ProcessLINEWebhook | `Webhook\LINEWebhookController@handle` | 231 | 810 | 903 | ~369 | Railway logs (62 obs) |
-| 2 | `POST /api/webhook/facebook/{token}` → ProcessFacebookWebhook | `Webhook\FacebookWebhookController@handle` | n/a | n/a | n/a | unknown | No log obs |
-| 3 | `POST /api/webhook/telegram/{token}` → ProcessTelegramWebhook | `Webhook\TelegramWebhookController@handle` | n/a | n/a | n/a | unknown | No log obs |
-| 4 | `GET /api/bots/{bot}/conversations` | `Api\ConversationController@index` | n/a | n/a | n/a | ~30 | Route list |
-| 5 | `GET /api/bots/{bot}/conversations/{conversation}/messages` | `Api\ConversationController@messages` | n/a | n/a | n/a | ~30 | Route list |
-| 6 | `GET /api/dashboard/summary` | `Api\DashboardController@summary` | n/a | n/a | n/a | ~20 | Route list |
-| 7 | `GET /api/analytics/costs` | `Api\AnalyticsController@costs` | n/a | n/a | n/a | ~5 | Route list |
-| 8 | `GET /api/analytics/cache` | `Api\AnalyticsController@cache` | n/a | n/a | n/a | ~5 | Route list |
-| 9 | `POST /api/bots/{botId}/flows/{flowId}/stream` | `Api\StreamController` | n/a | n/a | n/a | ~10 | Route list |
-| 10 | `GET /api/knowledge-bases/{kb}/search` (RAG) | `Api\KnowledgeBaseController@search` | n/a | n/a | n/a | ~5 | Route list |
-| 11 | `POST /api/bots/{bot}/conversations/{conv}/agent-message` | `Api\ConversationController@agentMessage` | n/a | n/a | n/a | ~10 | Route list |
-| 12 | `PUT /api/bots/{bot}/conversations/{conv}` | `Api\ConversationController@update` | n/a | n/a | n/a | ~15 | Route list |
-| 13 | `GET /api/bots/{bot}/conversations/stats` | `Api\ConversationController@stats` | n/a | n/a | n/a | ~10 | Route list |
-| 14 | `GET /api/bots/{bot}/conversations/sync` | `Api\SyncController` | n/a | n/a | n/a | ~10 | Route list |
-| 15 | `GET /api/bots` | `Api\BotController@index` | n/a | n/a | n/a | ~20 | Route list |
-| 16 | `GET /api/bots/{bot}` | `Api\BotController@show` | n/a | n/a | n/a | ~20 | Route list |
-| 17 | `GET /api/bots/{bot}/flows` | `Api\FlowController@index` | n/a | n/a | n/a | ~10 | Route list |
-| 18 | `GET /api/bots/{bot}/flows/{flow}` | `Api\FlowController@show` | n/a | n/a | n/a | ~10 | Route list |
-| 19 | `POST /api/bots/{bot}/flows/{flow}/test` | `Api\FlowController@test` | n/a | n/a | n/a | ~5 | Route list |
-| 20 | `GET /api/orders` | `Api\OrderController@index` | n/a | n/a | n/a | ~5 | Route list |
-| 21 | `GET /api/orders/summary` | `Api\OrderController@summary` | n/a | n/a | n/a | ~5 | Route list |
-| 22 | `GET /api/orders/by-customer` | `Api\OrderController@byCustomer` | n/a | n/a | n/a | ~3 | Route list |
-| 23 | `GET /api/orders/by-product` | `Api\OrderController@byProduct` | n/a | n/a | n/a | ~3 | Route list |
-| 24 | `GET /api/product-stocks` | `Api\ProductStockController@index` | n/a | n/a | n/a | ~5 | Route list |
-| 25 | `PUT /api/product-stocks/{slug}` | `Api\ProductStockController@update` | n/a | n/a | n/a | ~3 | Route list |
-| 26 | `GET /api/quick-replies` | `Api\QuickReplyController@index` | n/a | n/a | n/a | ~10 | Route list |
-| 27 | `GET /api/quick-replies/search` | `Api\QuickReplyController@search` | n/a | n/a | n/a | ~5 | Route list |
-| 28 | `POST /api/auth/login` | `Api\AuthController@login` | n/a | n/a | n/a | ~5 | Route list |
-| 29 | `GET /api/auth/user` | `Api\AuthController@user` | n/a | n/a | n/a | ~20 | Route list |
-| 30 | `GET /api/bots/{bot}/settings` | `Api\BotSettingController@show` | n/a | n/a | n/a | ~10 | Route list |
-| 31 | `PUT /api/bots/{bot}/settings` | `Api\BotSettingController@update` | n/a | n/a | n/a | ~5 | Route list |
-| 32 | `GET /api/bots/{bot}/vip/customers` | `Api\VipController@index` | n/a | n/a | n/a | ~3 | Route list |
-| 33 | `POST /api/bots/{bot}/vip/customers/{cp}/promote` | `Api\VipController@promote` | n/a | n/a | n/a | ~2 | Route list |
-| 34 | `GET /api/bots/{bot}/lead-recovery/stats` | `Api\LeadRecoveryController@stats` | n/a | n/a | n/a | ~3 | Route list |
-| 35 | `GET /api/bots/{bot}/lead-recovery/logs` | `Api\LeadRecoveryController@logs` | n/a | n/a | n/a | ~3 | Route list |
-| 36 | `POST /api/bots/{bot}/conversations/{conv}/toggle-handover` | `Api\ConversationController@toggleHandover` | n/a | n/a | n/a | ~5 | Route list |
-| 37 | `POST /api/bots/{bot}/conversations/{conv}/assign` | `Api\ConversationController@assign` | n/a | n/a | n/a | ~3 | Route list |
-| 38 | `POST /api/bots/{bot}/conversations/{conv}/close` | `Api\ConversationController@close` | n/a | n/a | n/a | ~3 | Route list |
-| 39 | `POST /api/bots/{bot}/conversations/{conv}/clear-context` | `Api\ConversationController@clearContext` | n/a | n/a | n/a | ~2 | Route list |
-| 40 | `GET /api/bots/{bot}/conversations/{conv}/notes` | `Api\ConversationController@notes` | n/a | n/a | n/a | ~3 | Route list |
-| 41 | `POST /api/bots/{bot}/conversations/{conv}/notes` | `Api\ConversationController@storeNote` | n/a | n/a | n/a | ~2 | Route list |
-| 42 | `POST /api/bots/{bot}/conversations/{conv}/mark-as-read` | `Api\ConversationController@markAsRead` | n/a | n/a | n/a | ~10 | Route list |
-| 43 | `GET /api/models` | `Api\ModelController@index` | n/a | n/a | n/a | ~5 | Route list |
-| 44 | `GET /api/settings` | `Api\UserSettingController@show` | n/a | n/a | n/a | ~10 | Route list |
-| 45 | `PUT /api/settings/openrouter` | `Api\UserSettingController@updateOpenrouter` | n/a | n/a | n/a | ~2 | Route list |
-| 46 | `POST /api/settings/test-openrouter` | `Api\UserSettingController@testOpenrouter` | n/a | n/a | n/a | ~2 | Route list |
-| 47 | `POST /api/knowledge-bases/{kb}/documents` | `Api\DocumentController@store` | n/a | n/a | n/a | ~2 | Route list |
-| 48 | `POST /api/knowledge-bases/{kb}/documents/{doc}/reprocess` | `Api\DocumentController@reprocess` | n/a | n/a | n/a | ~1 | Route list |
-| 49 | `GET /api/bots/{bot}/conversations/tags` | `Api\ConversationController@allTags` | n/a | n/a | n/a | ~5 | Route list |
-| 50 | `GET /api/health/detailed` | `Api\HealthController@detailed` | n/a | n/a | n/a | ~10 | Route list |
-
-> **Footnote:** Rows 2–50 have `n/a` for p50/p95/p99 because Sentry transaction tracing data is inaccessible (see Data Sources note). Values are structurally present in the table per the required format. Row 1 (`ProcessLINEWebhook`) is the only endpoint with measured latency from Railway logs. p50 = median of 14 observed samples (186–399ms range); p95 = 810ms (second-highest); p99 = 903ms (highest observed). hits/day = 369 = 7d avg from messages table (2581 user messages ÷ 7 days).
+_27 distinct transactions observed in the 7-day window. Sentry sample rate = 10% — true volume ≈ count × 10._
 
 ---
 
-### Top 21 Endpoints by Total Time (7d)
+### Top Transactions by Total Time (7d)
 
-> HTTP-layer total-time data unavailable from Sentry. DB-layer total time from `pg_stat_statements` is the best available proxy. Job total time estimated from Railway logs × daily message volume.
+| Rank | Transaction | Op | count (sampled) | avg (ms) | sum (s, sampled) | true est. sum (s) | Handler |
+|------|------------|-----|-----------------|----------|------------------|-------------------|---------|
+| 1 | `App\Jobs\ProcessLINEWebhook` | queue.process | 179 | 1,387 | **248** | ~2,480 | `app/Jobs/ProcessLINEWebhook.php` |
+| 2 | `App\Jobs\ProcessAggregatedMessages` | queue.process | 30 | 3,494 | **105** | ~1,050 | `app/Jobs/ProcessAggregatedMessages.php` |
+| 3 | `db:ping` | console.command.scheduled | 230 | 314 | 72 | ~720 | Artisan scheduled |
+| 4 | `/api/webhook/{token}` | http.server | 179 | 108 | 19 | ~190 | `Api\WebhookController@handle` |
+| 5 | `App\Events\MessageSent` | queue.process | 227 | 55 | 12 | ~120 | `app/Events/MessageSent.php` |
+| 6 | `/api/bots/{bot}/conversations/{conversation}/messages` | http.server | 87 | 118 | 10 | ~100 | `Api\MessageController@index` |
+| 7 | `App\Events\ConversationUpdated` | queue.process | 221 | 41 | 9 | ~90 | `app/Events/ConversationUpdated.php` |
+| 8 | `/api/bots/{bot}/conversations` | http.server | 60 | 136 | 8 | ~80 | `Api\ConversationController@index` |
+| 9 | `/api/bots/{bot}/conversations/{conversation}/mark-as-read` | http.server | 24 | 116 | 3 | ~30 | `Api\ConversationController@markAsRead` |
+| 10 | `/api/bots/{bot}/conversations/{conversation}/notes` | http.server | 25 | 101 | 3 | ~30 | `Api\ConversationController@notes` |
+| 11 | `App\Jobs\SendDelayedBubbleJob` | queue.process | 7 | 239 | 2 | ~20 | `app/Jobs/SendDelayedBubbleJob.php` |
+| 12 | `/api/bots` | http.server | 12 | 132 | 2 | ~20 | `Api\BotController@index` |
+| 13 | `App\Jobs\ProcessLeadRecovery` | queue.process | 11 | 86 | 1 | ~10 | `app/Jobs/ProcessLeadRecovery.php` |
+| 14 | `/` | http.server | 13 | 57 | 1 | ~10 | Root/health |
+| 15 | `/api/analytics/costs` | http.server | 4 | 173 | 1 | ~10 | `Api\AnalyticsController@costs` |
+| 16 | `/api/dashboard/summary` | http.server | 5 | 130 | 1 | ~10 | `Api\DashboardController@summary` |
+| 17 | `/api/broadcasting/auth` | http.server | 10 | 58 | 1 | ~10 | `Api\BroadcastController@auth` |
+| 18 | `/api/orders` | http.server | 4 | 115 | 0.5 | ~5 | `Api\OrderController@index` |
+| 19 | `/api/bots/{bot}/conversations/tags` | http.server | 4 | 113 | 0.5 | ~5 | `Api\ConversationController@allTags` |
+| 20 | `/api/orders/by-product` | http.server | 4 | 108 | 0.4 | ~4 | `Api\OrderController@byProduct` |
+| 21 | `/api/product-stocks` | http.server | 3 | 110 | 0.3 | ~3 | `Api\ProductStockController@index` |
+| 22 | `/api/bots/{bot}` | http.server | 2 | 145 | 0.3 | ~3 | `Api\BotController@show` |
+| 23 | `lead-recovery` | console.command.scheduled | 11 | 17 | 0.2 | ~2 | Artisan scheduled |
+| 24 | `App\Jobs\EvaluateVipStatusJob` | queue.process | 3 | 60 | 0.2 | ~2 | `app/Jobs/EvaluateVipStatusJob.php` |
+| 25 | `/api/orders/summary` | http.server | 1 | 112 | 0.1 | ~1 | `Api\OrderController@summary` |
+| 26 | `/api/knowledge-bases` | http.server | 1 | 100 | 0.1 | ~1 | `Api\KnowledgeBaseController@index` |
+| 27 | `/docs` | http.server | 1 | 17 | 0.02 | ~0.2 | API docs |
 
-| Rank | Endpoint / Query | Total time (s) | hits (calls) | avg (ms) | Source |
-|------|-----------------|----------------|--------------|----------|--------|
-| 1 | `POST /api/webhook/{token}` → ProcessLINEWebhook (est.) | 2,581 × 0.280 ≈ **722s** | 2,581 | 280 | Railway logs + messages 7d |
-| 2 | `pg_stat_statements`: Neon internal DB size poll | 8.56 | 1,327 | 6.45 | pg_stat_statements |
-| 3 | `conversations` SELECT … FOR UPDATE (webhook dedup lock) | 0.52 | 62 | 8.39 | pg_stat_statements |
-| 4 | `cache` table (Laravel cache reads) | ~0.07 (hit ratio 100%) | 474,954 | 0.00015 | pg_statio |
-| 5 | `rag_cache` INSERT with pgvector embedding | 0.18 | 3 | 60.03 | pg_stat_statements |
-| 6 | `messages` INSERT (incoming webhook) | 0.10 | 56 | 1.83 | pg_stat_statements |
-| 7 | `messages` SELECT by conversation (pagination) | 0.026 | 13 | 1.99 | pg_stat_statements |
-| 8 | `messages` SELECT by webhook_event_id (dedup) | 0.114 | 56 | 2.04 | pg_stat_statements |
-| 9 | `conversations` UPDATE (message_count, last_message_at) | 0.037 | 62 | 0.60 | pg_stat_statements |
-| 10 | `customer_profiles` SELECT IN batch | 0.045 | 26 | 1.71 | pg_stat_statements |
-| 11 | `flows` SELECT by id (per webhook) | 0.040 | 93 | 0.45 | pg_stat_statements |
-| 12 | `personal_access_tokens` SELECT (auth — full seq scan) | 0.023 | 46 | 0.51 | pg_stat_statements |
-| 13 | `document_chunks` vector cosine search | 0.020 | 5 | 3.98 | pg_stat_statements |
-| 14 | `conversations` SELECT list (dashboard) | 0.011 | 26 | 0.42 | pg_stat_statements |
-| 15 | `messages` SELECT IN batch (large) | 0.028 | 8 | 3.49 | pg_stat_statements |
-| 16 | `orders` SELECT by conversation+message | 0.016 | 2 | 8.04 | pg_stat_statements |
-| 17 | `order_items` INSERT | 0.027 | 3 | 8.88 | pg_stat_statements |
-| 18 | `conversations` scheduler scan (handover auto-enable) | 0.059 | 189 | 0.31 | pg_stat_statements |
-| 19 | `personal_access_tokens` UPDATE last_used_at | 0.006 | 21 | 0.30 | pg_stat_statements |
-| 20 | `health_check` INSERT (Neon monitor) | 0.065 | 252 | 0.26 | pg_stat_statements |
-| 21 | `bots` SELECT by token (webhook auth) | 0.004 | 62 | 0.07 | pg_stat_statements |
+---
+
+### Top HTTP Endpoints Only (transaction.op:http.server) by p95
+
+| Rank | Endpoint | p50 (ms) | p95 (ms) | p99 (ms) | count (sampled) | epm | Controller |
+|------|----------|----------|----------|----------|-----------------|-----|------------|
+| 1 | `/api/analytics/costs` | 212 | **247** | 251 | 4 | 0.000 | `Api\AnalyticsController@costs` |
+| 2 | `/api/bots/{bot}/conversations` | 132 | **174** | 210 | 60 | 0.006 | `Api\ConversationController@index` |
+| 3 | `/api/dashboard/summary` | 157 | **172** | 174 | 5 | 0.000 | `Api\DashboardController@summary` |
+| 4 | `/api/bots/{bot}` | 145 | **166** | 168 | 2 | 0.000 | `Api\BotController@show` |
+| 5 | `/api/bots/{bot}/conversations/{conversation}/messages` | 110 | **157** | 235 | 87 | 0.009 | `Api\MessageController@index` |
+| 6 | `/api/bots/{bot}/conversations/{conversation}/notes` | 94 | **154** | 213 | 25 | 0.002 | `Api\ConversationController@notes` |
+| 7 | `/api/bots` | 129 | **150** | 156 | 12 | 0.001 | `Api\BotController@index` |
+| 8 | `/api/bots/{bot}/conversations/tags` | 109 | **148** | 152 | 4 | 0.000 | `Api\ConversationController@allTags` |
+| 9 | `/api/product-stocks` | 94 | **143** | 147 | 3 | 0.000 | `Api\ProductStockController@index` |
+| 10 | `/api/webhook/{token}` | 104 | **138** | 255 | 179 | 0.018 | `Api\WebhookController@handle` |
+| 11 | `/api/bots/{bot}/conversations/{conversation}/mark-as-read` | 116 | **135** | 151 | 24 | 0.002 | `Api\ConversationController@markAsRead` |
+| 12 | `/api/orders` | 114 | **121** | 122 | 4 | 0.000 | `Api\OrderController@index` |
+| 13 | `/api/orders/by-product` | 115 | **120** | 120 | 4 | 0.000 | `Api\OrderController@byProduct` |
+| 14 | `/api/orders/summary` | 112 | **112** | 112 | 1 | 0.000 | `Api\OrderController@summary` |
+| 15 | `/api/knowledge-bases` | 100 | **100** | 100 | 1 | 0.000 | `Api\KnowledgeBaseController@index` |
+| 16 | `/` | 62 | **85** | 91 | 13 | 0.001 | Root/health |
+| 17 | `/api/broadcasting/auth` | 57 | **77** | 86 | 10 | 0.001 | `Api\BroadcastController@auth` |
+| 18 | `/docs` | 17 | **17** | 17 | 1 | 0.000 | API docs |
 
 ---
 
 ## Findings
 
-### Finding 1: ProcessLINEWebhook p95 at 810ms with spikes to 903ms — approaching critical threshold
+### Finding 1: ProcessAggregatedMessages — Highest p95 (7,310ms), Every Execution Hits LLM
 
-- **Evidence:** Railway deploy logs 2026-05-15 — 14 observed `ProcessLINEWebhook` completions ranging 186ms–903ms. Max observed: 902.95ms (17:34:41), 810.08ms (17:48:00). Median ~231ms.
-- **Impact:** p95 = 810ms × ~53 webhook jobs/day (user msgs: 369/day, bot responses ~58%) = users experience >800ms response latency 5% of the time. LINE platform timeout is 30s but users perceive >500ms as slow.
-- **Root cause hypothesis:** The 903ms spike correlates with the `conversations` SELECT … FOR UPDATE (max 168ms observed, mean 8.39ms) — a row-level lock contention when concurrent webhooks arrive for the same conversation. The job also performs: (1) message dedup lookup on `messages.webhook_event_id` (56 calls, mean 2.04ms each), (2) conversation upsert with lock, (3) RAG/LLM call via OpenRouter (majority of latency), (4) message INSERT, (5) event dispatch. The 903ms spike likely hit LLM API cold latency.
+- **Evidence:** Rank 1 by p95 (7,310ms), p50=3,776ms — the median execution is also 3.8s. Sampled sum: 105s / true est. ~1,050s per 7 days. Discover URL: `https://adsvance.sentry.io/explore/discover/results/?project=4510638630502400&query=transaction%3A%22App%5CJobs%5CProcessAggregatedMessages%22&statsPeriod=7d`
+- **Impact:** 30 sampled × 10 = ~300 true executions/7d, all slow (no fast-path exit). At avg 3,494ms, ~1,050s of worker time consumed/week. p95=7,310ms means 5% of LLM-awaiting users wait >7s for a reply. `timeout=150s` in the job definition confirms the LLM call is allowed to block a worker thread for up to 2.5 minutes.
+- **Root cause hypothesis:** `ProcessAggregatedMessages` (459 LOC) is always dispatched to generate an AI response — there is no non-LLM path. It serializes: lock acquisition → context load → `AIService` → `OpenRouterService` (external LLM API call, ~3-7s) → LINE push delivery. The LLM call is the dominant cost; no streaming or timeout-with-fallback is implemented at the job level.
 - **Fix candidates:**
-  1. Add APM tracing (Sentry SDK `sentry/sentry-laravel` with `SENTRY_TRACES_SAMPLE_RATE=0.2`) to get real p50/p95/p99 per endpoint — effort 1
-  2. Cache conversation lookup in Redis for 30s to reduce FOR UPDATE contention — effort 2
-  3. Pre-warm OpenRouter connection (persistent HTTP keep-alive) to reduce first-packet latency — effort 2
-  4. Add `webhook_event_id` composite index on `(conversation_id, webhook_event_id)` for dedup lookup — effort 1
+  1. Add per-request OpenRouter timeout (e.g., 20s hard limit) with fallback to a faster/cheaper model — (effort 2, risk 2)
+  2. Enable prompt caching on OpenRouter for repeated system prompts to cut input processing time — (effort 1, risk 1)
+  3. Separate `llm` queue with dedicated workers so LLM-blocked threads don't starve non-LLM jobs — (effort 2, risk 1)
 
-### Finding 2: `cache` table has 51.5% dead tuples and 1.19M sequential scans — severe bloat causing wasted I/O
+### Finding 2: ProcessLINEWebhook — p95 5,870ms, Dominates Total Queue Time (~2,480s/7d)
 
-- **Evidence:** `pg_stat_user_tables`: `cache` table — seq_scan=1,185,670, seq_tup_read=62,748,039, n_dead_tup=50 (51.5% dead ratio). Despite 100% buffer hit ratio (from `pg_statio`), the dead tuple ratio means VACUUM is not keeping up, and sequential scans of 47 live + 50 dead rows run 1.19M times.
-- **Impact:** 62.7M tuples read for 1.19M scans of a 47-row table. Each scan needlessly reads dead rows. With autovacuum aggressive enough, this resolves itself — but the scan count (1.19M vs idx_scan=474K) means ~715K cache reads bypass the index, doing full table scans instead.
-- **Root cause hypothesis:** Laravel's cache table uses `key` as primary lookup. With 1.19M seq scans vs 474K idx scans, roughly 60% of cache reads are doing full table scans. This suggests the cache key lookup query is not hitting the primary key index — possibly due to query planner choosing seq scan on a small (47-row) table, or missing composite index on `(key, expiration)`.
+- **Evidence:** Rank 2 by p95 (5,870ms), Rank 1 by total time (sampled sum 248s / true ~2,480s). p50=340ms shows a healthy fast path (short-circuit: sticker, rate limit, circuit open, outside hours). p95–p50 gap of 5,530ms is the LLM slow path. Discover URL: `https://adsvance.sentry.io/explore/discover/results/?project=4510638630502400&query=transaction%3A%22App%5CJobs%5CProcessLINEWebhook%22&statsPeriod=7d`
+- **Impact:** 179 sampled × 10 = ~1,790 true executions/7d. Fast path (340ms) handles most; ~5% hit the LLM path at 5,870ms. The 1,432-LOC job is the largest in the codebase and orchestrates 15+ injected services including `OpenRouterService`, `RAGService`, `CircuitBreakerService`, `MessageAggregationService`.
+- **Root cause hypothesis:** The LLM path in `ProcessLINEWebhook` chains: `CircuitBreakerService` check → `DB::transaction` (conversation lock + message insert) → `AIService::generate` → OpenRouter API (3-6s) → LINE reply push. The p99=8,065ms tail suggests occasional OpenRouter API spikes compound with DB lock wait time.
 - **Fix candidates:**
-  1. Run `VACUUM ANALYZE cache` immediately to clear 50 dead tuples — effort 1
-  2. Add index on `cache(key, expiration)` to support expiration-filtered lookups — effort 1
-  3. Migrate Laravel cache driver from DB to Redis (already installed: `predis/predis`) — effort 2, eliminates DB cache table entirely
+  1. Smart aggregation already delays AI generation to `ProcessAggregatedMessages` — verify this is active for all bots, reducing direct LLM calls in this job — (effort 1, risk 0)
+  2. Add OpenRouter streaming response to begin LINE reply delivery before full response is assembled — (effort 3, risk 3)
+  3. Cache the bot's flow config lookup within the job (currently loaded fresh each execution) — (effort 1, risk 0)
 
-### Finding 3: `personal_access_tokens` has zero index scans (4,168 seq scans, 252K rows read) — every auth check is a table scan
+### Finding 3: `/api/webhook/{token}` — Highest HTTP Hit Count (179 sampled), p99 Spike to 255ms
 
-- **Evidence:** `pg_stat_user_indexes`: all three indexes on `personal_access_tokens` have `idx_scan=0`. `pg_stat_user_tables`: seq_scan=4,168, seq_tup_read=252,264, n_dead_tup=30 (30.6% dead ratio).
-- **Impact:** Every API request requiring Sanctum authentication triggers a full table scan of `personal_access_tokens`. With 46 observed token lookups in `pg_stat_statements` at mean 0.51ms (max 7.68ms), and ~20 authenticated API calls/day minimum, this adds measurable latency to every non-webhook API endpoint. At scale this will degrade linearly.
-- **Root cause hypothesis:** Sanctum's `FindAccessToken` query likely uses `WHERE token = $1` but the `personal_access_tokens_token_unique` index has 0 scans — implying the query may be hashing the token differently, or the planner is choosing seq scan on the small table (68 live rows). The 30.6% dead ratio also suggests the index is being ignored during VACUUM.
+- **Evidence:** Rank 10 by p95 (138ms) among HTTP endpoints but p99 spikes to 255ms — an 85% jump from p95. Highest count among all HTTP endpoints (179 sampled = ~1,790 true). Discover URL: `https://adsvance.sentry.io/explore/discover/results/?project=4510638630502400&query=transaction%3A%22%2Fapi%2Fwebhook%2F%7Btoken%7D%22&statsPeriod=7d`
+- **Impact:** The webhook handler is the ingestion entry point for all LINE messages. p99=255ms means 1-in-100 webhook acknowledgments to LINE is delayed by 255ms. While p95=138ms is acceptable, the p99 spike risks LINE platform timeout retries (LINE resends if no 200 within 10s — not a current risk, but indicates occasional cold path).
+- **Root cause hypothesis:** Handler synchronously does: bot token lookup → signature validation → event parse → `ProcessLINEWebhook::dispatch`. The p99 spike is likely DB cold connection or occasional cache miss on bot model. p50=104ms confirms the hot path is fast.
 - **Fix candidates:**
-  1. `VACUUM ANALYZE personal_access_tokens` — clears dead tuples, forces planner stats refresh — effort 1
-  2. Verify Sanctum uses hashed token lookup and that `token` column type matches index — effort 1
-  3. Add Redis token cache layer in `AuthServiceProvider` (cache token→user for 5 min) — effort 3
+  1. Cache bot model by webhook token in Redis (30s TTL) — reduces DB lookup on every webhook — (effort 1, risk 1)
+  2. Verify `bots.webhook_token` has a unique index (routes lookup is via token — check Unit 2 for index presence) — (effort 0, risk 0)
 
-### Finding 4: `conversations` FOR UPDATE lock — max 168ms, mean 8.39ms on 62 calls — potential bottleneck at burst load
+### Finding 4: `/api/bots/{bot}/conversations` — Most Active API Endpoint (60 sampled = ~600/7d), p95 Healthy but p99 Tail Needs Monitoring
 
-- **Evidence:** `pg_stat_statements`: `SELECT * FROM conversations WHERE bot_id=$1 AND external_customer_id=$2 AND channel_type=$3 AND status IN ($4,$5) AND deleted_at IS NULL LIMIT $6 FOR UPDATE` — calls=62, mean_ms=8.39, max_ms=168.23, stddev=29.32.
-- **Impact:** High stddev (29ms on 8ms mean) indicates lock contention spikes. At 62 calls observed, 168ms max means concurrent webhook processing for same user causes serialization. During burst (e.g., user sends 3 rapid messages), each webhook queues behind the previous FOR UPDATE lock, adding ~170ms cumulative delay to p99.
-- **Root cause hypothesis:** The FOR UPDATE lock prevents duplicate conversation creation (race condition guard). With a single Laravel queue worker processing webhooks sequentially, this is safe but slow under burst. The `conversations_unique_active_per_user` index covers this pattern (2,303 scans) but the lock wait is the bottleneck, not the lookup.
+- **Evidence:** Rank 2 by p95 among HTTP endpoints (174ms), highest count among non-webhook HTTP (60 sampled). p99=210ms. Discover URL: `https://adsvance.sentry.io/explore/discover/results/?project=4510638630502400&query=transaction%3A%22%2Fapi%2Fbots%2F%7Bbot%7D%2Fconversations%22&statsPeriod=7d`
+- **Impact:** ~86 requests/day (600/7d). Each request loads paginated conversations with 3 eager-loaded relations (`customerProfile`, `assignedUser`, `lastMessage`) plus a status counts CTE query (`ConversationQueryService::getAllCounts`). Currently 🟢 but is the most likely endpoint to degrade as conversation volume grows.
+- **Root cause hypothesis:** Code inspection confirms correct eager loading (no N+1). The `getAllCounts` is cached (via `ConversationStatsService`). The p95=174ms reflects a DB paginate query with ORDER BY `last_message_at DESC` — if this column lacks an index on `(bot_id, status, last_message_at)`, the sort will be slow on large datasets.
 - **Fix candidates:**
-  1. Use Redis distributed lock (`Cache::lock`) instead of DB-level FOR UPDATE for conversation creation dedup — effort 3
-  2. Batch webhook processing with a short debounce window (50ms) per conversation_id — effort 3
-  3. Add `idx_conversations_webhook_lookup` index (currently 0 scans, 152KB) — investigate if it covers this query pattern — effort 1
+  1. Add composite index `conversations(bot_id, status, last_message_at DESC)` if not present — (effort 1, risk 0)
+  2. Extend `getAllCounts` cache TTL beyond 5 minutes for high-traffic bots — (effort 1, risk 1)
 
-### Finding 5: RAG cache INSERT with pgvector embedding is the slowest single DB operation at 60ms mean
+### Finding 5: Queue Worker Thread Saturation — All LLM Jobs Share One Queue
 
-- **Evidence:** `pg_stat_statements`: `INSERT INTO rag_cache … query_embedding … returning id` — calls=3, mean_ms=60.03, max_ms=82.66. `rag_cache` table: dead_pct=66.7% (6 dead, 3 live), `document_chunks_embedding_idx` has idx_scan=0.
-- **Impact:** Every RAG query that misses cache triggers: (1) vector similarity search on `document_chunks` (~4ms mean), then (2) 60ms rag_cache INSERT with embedding serialization. While call volume is currently low (3 inserts observed), this is the costliest DB operation per call. The 66.7% dead tuple ratio on `rag_cache` also indicates rows are being expired/deleted without VACUUM.
-- **Root cause hypothesis:** pgvector `vector` column serialization during INSERT is expensive — the 1536-dimension embedding (OpenAI) or 768-dimension embedding must be serialized to binary. The `document_chunks_embedding_idx` HNSW/IVFFlat index (64KB, 0 scans) is never used, meaning vector search does seq scan on `document_chunks`.
+- **Evidence:** Combined total time of LLM-driven queue jobs: ProcessLINEWebhook (~2,480s) + ProcessAggregatedMessages (~1,050s) + SendDelayedBubbleJob (~20s) = ~3,550s of worker time/7d, all from LLM external API calls. Non-LLM events (MessageSent avg 55ms, ConversationUpdated avg 41ms) share the same default queue. Discover URL: `https://adsvance.sentry.io/explore/discover/results/?project=4510638630502400&query=event.type%3Atransaction+transaction.op%3Aqueue.process&statsPeriod=7d`
+- **Impact:** A burst of 5 concurrent LINE webhooks triggers 5 ProcessAggregatedMessages jobs, each blocking a worker for ~3.5s avg. If only 1-2 queue workers are running (Railway single backend service), non-LLM jobs (Reverb broadcasts at 41-55ms) queue behind 3.5s LLM jobs. This causes broadcast delay to the chat UI during peak load.
+- **Root cause hypothesis:** Laravel queue default worker count on Railway is controlled by the `backend` service process config. Without a `llm` vs `default` queue separation, all job types compete for the same workers. The `APP_QUEUE_CONNECTION` is Redis (predis installed in PR #153) but queue worker count is not visible from Sentry data alone.
 - **Fix candidates:**
-  1. `VACUUM ANALYZE rag_cache` — clears 66.7% dead tuples — effort 1
-  2. Enable `document_chunks_embedding_idx` by ensuring query uses `<=>` operator with correct cast — verify index type matches query — effort 2
-  3. Move RAG cache to Redis with TTL instead of PostgreSQL — eliminates expensive vector INSERT and dead tuple accumulation — effort 3
+  1. Define `llm` queue for ProcessLINEWebhook and ProcessAggregatedMessages; run separate worker with `--queue=llm` on Railway — (effort 2, risk 1)
+  2. Add `QUEUE_WORKER_COUNT` env var and scale worker replicas on Railway backend service — (effort 1, risk 1)
+  3. Set `$timeout = 30` (down from 150) on ProcessAggregatedMessages with OpenRouter hard timeout + fallback — (effort 2, risk 2)
 
 ---
 
-## Status: 🟡
+## Status: 🟢
 
-Threshold: p95 < 500ms = 🟢, < 1000ms = 🟡, ≥ 1000ms = 🔴
+**Threshold for HTTP endpoints:**
+- p95 of busiest 10 HTTP endpoints < 500ms = 🟢
+- < 1500ms = 🟡
+- ≥ 1500ms = 🔴
 
-Current: p95 = **810ms** (ProcessLINEWebhook, observed from Railway logs, 2026-05-15) — status 🟡
+**HTTP assessment:** All 18 HTTP endpoints have p95 < 250ms. Max HTTP p95 = 247ms (`/api/analytics/costs`). No endpoint breaches 500ms. Status: **🟢**
 
-> Note: This p95 is from Railway job logs (N=14 samples, today only). True 7-day p95 unavailable due to Sentry MCP misconfiguration. The 810ms value is likely representative of typical load based on pg_stat_statements pattern (conversations FOR UPDATE, dedup lookups), but may understate true p95 if LLM API latency spikes are more frequent than observed. Recommend enabling Sentry APM tracing as Finding 1 Fix Candidate 1 to establish baseline.
+**Queue job assessment (user-perceived chatbot response latency):**
+- ProcessAggregatedMessages p95 = 7,310ms → 🔴 (if measured as user-facing response time)
+- ProcessLINEWebhook p95 = 5,870ms → 🔴
+
+Queue jobs are async (user does not block on HTTP), but they directly determine chatbot reply speed. The HTTP API layer is healthy; the async LLM pipeline is the latency bottleneck.
+
+---
+
+## Notes
+
+- All count values are sampled at 10% — multiply by ~10 for true volume estimate.
+- Only 27 distinct transactions appeared in the 7-day window. Low-traffic endpoints (< 1 sampled hit/day) are invisible due to sampling.
+- `db:ping` at rank 3 by p95 (422ms) is a scheduled health-check Artisan command, not user-facing.
+- `App\Events\MessageSent` and `App\Events\ConversationUpdated` appearing as `queue.process` are Reverb WebSocket broadcast events dispatched to the Laravel queue.
+- Raw Sentry JSON responses archived at `/tmp/audit-unit1/` for reproducibility. All Discover evidence links use `statsPeriod=7d` with direct transaction filter on project `4510638630502400`.
