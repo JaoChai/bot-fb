@@ -80,7 +80,8 @@ PROMPT;
                 temperature: 0.3,
                 maxTokens: $maxTokens,
                 useFallback: false,
-                apiKeyOverride: $apiKey
+                apiKeyOverride: $apiKey,
+                timeout: 60,
             );
 
             return [
@@ -201,7 +202,8 @@ PROMPT;
             temperature: 0.3,
             maxTokens: $maxTokensPerContext * count($chunks) + 50,
             useFallback: false,
-            apiKeyOverride: $apiKey
+            apiKeyOverride: $apiKey,
+            timeout: 60,
         );
 
         // Parse the response
@@ -306,7 +308,8 @@ PROMPT;
                 temperature: 0.3,
                 maxTokens: $maxTokens,
                 useFallback: false,
-                apiKeyOverride: $apiKey
+                apiKeyOverride: $apiKey,
+                timeout: 60,
             );
 
             return [
