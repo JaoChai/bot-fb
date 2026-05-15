@@ -10,7 +10,7 @@ Source: cross-correlation of unit reports `1-detail/1-*.md` through `1-detail/7-
 |---|-------|-------|--------|------|--------|------|-------|-------|
 | 1 | ✅ Fixed analytics/dashboard error rates (PR 193162e + #153, pre-Phase 1) | 5 | 4 | 5 | 1 | 1 | 20 | 1 |
 | 2 | ✅ Restored CircuitBreaker → Sentry visibility (PR #155, non-nullable DI) | 5 | 4 | 5 | 1 | 1 | 20 | 1 |
-| 3 | Frontend code splitting via React.lazy on all routes (index.js 329KB → split per route) — VERIFY: router.tsx already uses lazyWithRetryNamed; audit may be stale | 4 | 5 | 4 | 3 | 2 | 18 | 1 |
+| 3 | ✅ Frontend code splitting already in place — `frontend/src/router.tsx` uses `lazyWithRetryNamed` for all 15 routes with `ChunkErrorBoundary` + `Suspense` (verified 2026-05-15) | 4 | 5 | 4 | 3 | 2 | 18 | 1 |
 | 4 | ✅ Added static HTML skeleton to frontend/index.html (PR #155, FCP < JS parse) | 4 | 4 | 4 | 1 | 1 | 18 | 1 |
 | 5 | ✅ Removed dead CostTrackingService.php (PR #155) | 3,7 | 3 | 5 | 1 | 1 | 17 | 1 |
 | 6 | ✅ Split llm queue + 2nd worker process (PR #156, Railway flag ON 2026-05-15 13:35 UTC) | 1,6 | 5 | 4 | 3 | 3 | 17 | 1 |
