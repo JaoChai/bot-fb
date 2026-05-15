@@ -11,6 +11,7 @@ use App\Services\Chat\ConversationContextService;
 use App\Services\LINEService;
 use App\Services\MessageAggregationService;
 use App\Services\MultipleBubblesService;
+use App\Support\QueueRouter;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -312,7 +313,7 @@ class ProcessAggregatedMessages implements ShouldQueue
             // Re-dispatch with shorter delay
             ProcessAggregatedMessages::dispatch(
                 $this->bot, $this->conversation, $this->groupId, $this->externalUserId
-            )->onQueue('webhooks')->delay(now()->addSeconds(5));
+            )->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(5));
 
             return null;
         }

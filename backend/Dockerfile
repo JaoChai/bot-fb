@@ -121,14 +121,30 @@ stdout_logfile_maxbytes=0
 stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
 
-[program:queue-worker]
+[program:queue-worker-llm]
 process_name=%(program_name)s_%(process_num)02d
-command=php /var/www/html/artisan queue:work --queue=webhooks,default --sleep=3 --tries=3 --backoff=5 --max-jobs=1000 --max-time=3600
+command=php /var/www/html/artisan queue:work --queue=llm,webhooks,default --sleep=3 --tries=3 --backoff=5 --max-jobs=1000 --max-time=3600 --timeout=160
 autostart=true
 autorestart=true
 stopasgroup=true
 killasgroup=true
-numprocs=2
+numprocs=1
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+# queue-worker-fast: drop --timeout to 30 after QUEUE_LLM_SPLIT_ENABLED=true confirmed stable.
+# Kept at 160 during rollout because LLM jobs still land here when the flag is OFF
+# (must exceed ProcessAggregatedMessages::$timeout=150).
+[program:queue-worker-fast]
+process_name=%(program_name)s_%(process_num)02d
+command=php /var/www/html/artisan queue:work --queue=webhooks,default --sleep=3 --tries=3 --backoff=5 --max-jobs=1000 --max-time=3600 --timeout=160
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+numprocs=1
 stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
 stderr_logfile=/dev/stderr

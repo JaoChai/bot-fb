@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Webhook;
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessFacebookWebhook;
 use App\Models\Bot;
+use App\Support\QueueRouter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -98,7 +99,7 @@ class FacebookWebhookController extends Controller
 
         // Dispatch job for async processing
         ProcessFacebookWebhook::dispatch($bot, $body)
-            ->onQueue('webhooks');
+            ->onQueue(QueueRouter::llmQueue());
 
         // Return 200 OK immediately - Facebook requires fast response
         return response()->json(['status' => 'ok']);

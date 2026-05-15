@@ -106,4 +106,6 @@ return [
         'table' => 'failed_jobs',
     ],
 
+    'llm_split_enabled' => env('QUEUE_LLM_SPLIT_ENABLED', false),
+
 ];
