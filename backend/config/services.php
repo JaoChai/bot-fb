@@ -42,7 +42,7 @@ return [
         'fallback_model' => env('OPENROUTER_FALLBACK_MODEL', 'openai/gpt-4o-mini'),
         'site_url' => env('OPENROUTER_SITE_URL', env('APP_URL')),
         'site_name' => env('OPENROUTER_SITE_NAME', env('APP_NAME', 'BotFacebook')),
-        'timeout' => env('OPENROUTER_TIMEOUT', 60),
+        'timeout' => env('OPENROUTER_TIMEOUT', 45),
         'max_tokens' => env('OPENROUTER_MAX_TOKENS', 4096),
         // Provider preferences for routing optimization (OpenRouter Best Practice)
         'provider_preferences' => [
