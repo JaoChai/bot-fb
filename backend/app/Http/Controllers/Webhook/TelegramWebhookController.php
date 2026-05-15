@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\ProcessTelegramWebhook;
 use App\Models\Bot;
 use App\Services\TelegramService;
+use App\Support\QueueRouter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -56,7 +57,7 @@ class TelegramWebhookController extends Controller
 
         // Dispatch job for processing (async)
         ProcessTelegramWebhook::dispatch($bot, $update)
-            ->onQueue('webhooks');
+            ->onQueue(QueueRouter::llmQueue());
 
         // Return 200 OK immediately - Telegram requires fast response
         return response()->json(['ok' => true]);

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\ProcessLINEWebhook;
 use App\Models\Bot;
 use App\Services\LINEService;
+use App\Support\QueueRouter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -88,7 +89,7 @@ class LINEWebhookController extends Controller
         // Dispatch job for each event
         foreach ($events as $event) {
             ProcessLINEWebhook::dispatch($bot, $event)
-                ->onQueue('webhooks');
+                ->onQueue(QueueRouter::llmQueue());
 
             Log::debug('LINE webhook job dispatched', [
                 'bot_id' => $bot->id,

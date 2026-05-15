@@ -25,6 +25,7 @@ use App\Services\ResponseHoursService;
 use App\Services\SmartAggregation\SmartAggregationAnalyzer;
 use App\Services\SmartAggregation\UserTypingStats;
 use App\Services\StickerReplyService;
+use App\Support\QueueRouter;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -487,7 +488,7 @@ class ProcessLINEWebhook implements ShouldQueue
                         $conversation,
                         $fallbackResult['group_id'],
                         $userId
-                    )->onQueue('webhooks')->delay(now()->addSeconds(15));
+                    )->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(15));
                 }
 
                 // Stats will be updated by ProcessAggregatedMessages when it generates response
@@ -567,7 +568,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 $conversation,
                 $aggregationGroupId,
                 $userId
-            )->onQueue('webhooks')->delay(now()->addMilliseconds($delayMs));
+            )->onQueue(QueueRouter::llmQueue())->delay(now()->addMilliseconds($delayMs));
 
             Log::info('Dispatched aggregated message job', [
                 'conversation_id' => $conversation->id,

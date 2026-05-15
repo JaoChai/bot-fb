@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Jobs\SendDelayedBubbleJob;
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Support\QueueRouter;
 use Illuminate\Support\Facades\Log;
 
 class MultipleBubblesService
@@ -198,7 +199,7 @@ INSTRUCTION;
                         $bubbles[$i],
                         $i + 1, // 1-indexed for logging
                         $totalBubbles
-                    )->onQueue('webhooks')
+                    )->onQueue(QueueRouter::llmQueue())
                         ->delay(now()->addMilliseconds($cumulativeDelayMs));
 
                     Log::debug('Dispatched delayed bubble job', [
