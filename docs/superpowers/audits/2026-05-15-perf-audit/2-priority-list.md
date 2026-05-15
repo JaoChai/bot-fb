@@ -14,7 +14,7 @@ Source: cross-correlation of unit reports `1-detail/1-*.md` through `1-detail/7-
 | 4 | ✅ Added static HTML skeleton to frontend/index.html (PR #155, FCP < JS parse) | 4 | 4 | 4 | 1 | 1 | 18 | 1 |
 | 5 | ✅ Removed dead CostTrackingService.php (PR #155) | 3,7 | 3 | 5 | 1 | 1 | 17 | 1 |
 | 6 | ✅ Split llm queue + 2nd worker process (PR #156, Railway flag ON 2026-05-15 13:35 UTC) | 1,6 | 5 | 4 | 3 | 3 | 17 | 1 |
-| 7 | Drop 60 unused indexes (1.4MB + faster writes; via safe-migration skill) | 2 | 3 | 5 | 2 | 2 | 15 | 2 |
+| 7 | 🟡 Drop unused indexes — PR #160 dropped 5 (~80 kB) after ANALYZE fixed stale planner stats. 17 remaining secondary indexes (incl. 152 kB `idx_conversations_webhook_lookup`) deferred for 24-48h re-measurement; 38 PK/UNIQUE never droppable | 2 | 3 | 5 | 2 | 2 | 15 | 2 |
 | 8 | ✅ Removed unused query-sync-storage-persister + dead exports (PR #157, -110 LOC) | 4 | 2 | 5 | 1 | 1 | 14 | 2 |
 | 9 | Refactor ProcessLINEWebhook.php (1432 LOC, 19 methods, 16 imports → split into 3-4 services) | 1,5,6,7 | 4 | 5 | 5 | 4 | 13 | 2 |
 | 10 | ✅ Reduced OPENROUTER_TIMEOUT 120→45s + fallback documented (PR #158, Railway env applied) | 1,6 | 3 | 4 | 2 | 2 | 13 | 2 |
