@@ -21,18 +21,6 @@ interface SearchUser {
   email: string;
 }
 
-// Get admins for a bot
-export function useBotAdmins(botId: number | undefined) {
-  return useQuery({
-    queryKey: ['bot-admins', botId],
-    queryFn: async () => {
-      const { data } = await api.get<{ data: Admin[] }>(`/bots/${botId}/admins`);
-      return data.data;
-    },
-    enabled: !!botId,
-  });
-}
-
 // Get admins with conversation counts
 export function useBotAdminsWithCounts(botId: number | undefined) {
   return useQuery({
@@ -67,7 +55,6 @@ export function useAddAdmin(botId: number | undefined) {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['bot-admins', botId] });
       queryClient.invalidateQueries({ queryKey: ['bot-admins-counts', botId] });
     },
   });
@@ -83,7 +70,6 @@ export function useRemoveAdmin(botId: number | undefined) {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['bot-admins', botId] });
       queryClient.invalidateQueries({ queryKey: ['bot-admins-counts', botId] });
     },
   });
@@ -103,36 +89,6 @@ export function useUpdateAutoAssignment(botId: number | undefined) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bot', botId] });
-    },
-  });
-}
-
-// Assign conversation to admin
-export function useAssignConversation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ conversationId, userId }: { conversationId: number; userId: number }) => {
-      const { data } = await api.post(`/conversations/${conversationId}/assign`, { user_id: userId });
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    },
-  });
-}
-
-// Unassign conversation
-export function useUnassignConversation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (conversationId: number) => {
-      const { data } = await api.post(`/conversations/${conversationId}/unassign`);
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
     },
   });
 }
