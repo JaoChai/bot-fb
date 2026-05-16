@@ -115,6 +115,7 @@ class LineWebhookContextService
             $conversation = $existingConversation ?? $this->createNewConversation($ctx, $userId);
 
             $ctx->conversation = $conversation;
+            $ctx->metadata['is_new_conversation'] = $isNewConversation;
 
             // --- Primary dedup: webhookEventId ---
             if ($webhookEventId && ($existingMsg = Message::where('conversation_id', $conversation->id)
