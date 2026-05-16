@@ -45,6 +45,10 @@ class LineWebhookContextService
     public function resolve(WebhookContext $ctx): void
     {
         $userId = $ctx->userId();
+        if ($userId === null) {
+            return;
+        }
+
         $event = $ctx->event;
 
         $messageData = [

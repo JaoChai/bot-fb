@@ -345,6 +345,44 @@ class LineWebhookContextServiceTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Test 7a: userId null → resolve() is a no-op (no DB writes, no service calls)
+    // -------------------------------------------------------------------------
+
+    public function test_resolve_returns_early_when_user_id_is_null(): void
+    {
+        Queue::fake();
+
+        $bot = $this->makeBot();
+
+        // Event with no userId (source has no userId key)
+        $emptyEvent = [];
+        $ctx = new WebhookContext($bot, $emptyEvent);
+
+        $line = Mockery::mock(LINEService::class);
+        $line->shouldNotReceive('showLoadingIndicator');
+        $line->shouldNotReceive('getProfile');
+
+        $responseHours = Mockery::mock(ResponseHoursService::class);
+        $responseHours->shouldNotReceive('checkResponseHours');
+
+        $rateLimit = Mockery::mock(RateLimitService::class);
+        $rateLimit->shouldNotReceive('incrementCounters');
+
+        $svc = $this->makeService(line: $line, rateLimit: $rateLimit, responseHours: $responseHours);
+        $svc->resolve($ctx);
+
+        // No DB writes
+        $this->assertDatabaseMissing('messages', ['sender' => 'user']);
+        $this->assertDatabaseMissing('conversations', ['bot_id' => $bot->id]);
+
+        // Context untouched
+        $this->assertNull($ctx->gateDecision);
+        $this->assertNull($ctx->userMessage);
+        $this->assertNull($ctx->conversation);
+        $this->assertFalse($ctx->aggregationBuffered);
+    }
+
+    // -------------------------------------------------------------------------
     // Test 7: Conversation in handover → message saved, handover metadata
     // -------------------------------------------------------------------------
 
