@@ -13,7 +13,6 @@ use Tests\TestCase;
 
 class LineWebhookGatingServiceTest extends TestCase
 {
-
     protected function tearDown(): void
     {
         Mockery::close();
