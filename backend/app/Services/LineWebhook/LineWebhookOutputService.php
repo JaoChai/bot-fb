@@ -4,16 +4,12 @@ namespace App\Services\LineWebhook;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
-use App\Jobs\ProcessAggregatedMessages;
 use App\Models\Conversation;
 use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
-use App\Services\MessageAggregationService;
 use App\Services\MultipleBubblesService;
 use App\Services\PaymentFlexService;
-use App\Support\QueueRouter;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -21,7 +17,6 @@ class LineWebhookOutputService
 {
     public function __construct(
         private readonly LINEService $line,
-        private readonly MessageAggregationService $aggregation,
         private readonly LeadRecoveryService $leadRecovery,
         private readonly MultipleBubblesService $bubbles,
         private readonly PaymentFlexService $paymentFlex,
@@ -82,39 +77,18 @@ class LineWebhookOutputService
             return;
         }
 
-        $responseLock = Cache::lock("ai_response:{$conv->id}", 30);
-
-        if (! $responseLock->get()) {
-            // Lock held by another job — fallback aggregation (legacy lines 474-495)
-            Log::info('Response lock held, falling back to aggregation', [
-                'conversation_id' => $conv->id,
+        /** @var \App\Models\Message|null $botMessage */
+        $botMessage = $ctx->metadata['bot_message'] ?? null;
+        if ($botMessage === null) {
+            Log::error('Output stage invoked without bot_message in metadata', [
+                'bot_id' => $ctx->bot->id,
+                'message_type' => $ctx->messageType(),
             ]);
-
-            $fallbackResult = $this->aggregation->startOrContinueAggregation($conv, $userMessage, 15000);
-
-            if ($fallbackResult) {
-                ProcessAggregatedMessages::dispatch(
-                    $bot,
-                    $conv,
-                    $fallbackResult['group_id'],
-                    $ctx->userId()
-                )->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(15));
-            }
 
             return;
         }
 
         try {
-            /** @var \App\Models\Message|null $botMessage */
-            $botMessage = $ctx->metadata['bot_message'] ?? null;
-            if ($botMessage === null) {
-                Log::error('Output stage invoked without bot_message in metadata', [
-                    'bot_id' => $ctx->bot->id,
-                    'message_type' => $ctx->messageType(),
-                ]);
-
-                return;
-            }
             $content = $botMessage->content ?? '';
 
             if ($content !== '') {
@@ -157,8 +131,6 @@ class LineWebhookOutputService
             ]);
 
             throw $e;
-        } finally {
-            $responseLock->release();
         }
 
         // Broadcasts (legacy lines 581-603)

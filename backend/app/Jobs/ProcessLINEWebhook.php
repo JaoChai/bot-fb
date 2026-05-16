@@ -98,7 +98,11 @@ class ProcessLINEWebhook implements ShouldQueue
             $circuitBreaker->execute(
                 'database',
                 function () use ($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService, $gating, $contextSvc, $responseSvc, $outputSvc) {
-                    if (LineWebhookPipelineFlag::enabledFor($this->bot)) {
+                    if (
+                        LineWebhookPipelineFlag::enabledFor($this->bot)
+                        && $lineService->isMessageEvent($this->event)
+                        && $lineService->isTextMessage($this->event)
+                    ) {
                         $this->runPipeline($gating, $contextSvc, $responseSvc, $outputSvc);
 
                         return;
@@ -154,10 +158,39 @@ class ProcessLINEWebhook implements ShouldQueue
             return;
         }
 
-        // Stage 3: Response (AI generation)
-        $responseSvc->generate($ctx);
+        // For text messages: acquire response lock around Stage 3 + Stage 4 (mirror legacy order)
+        if ($ctx->messageType() === 'text' && $ctx->conversation !== null && $ctx->userMessage !== null) {
+            $lock = Cache::lock("ai_response:{$ctx->conversation->id}", 30);
+            if (! $lock->get()) {
+                Log::info('Response lock held, falling back to aggregation', [
+                    'conversation_id' => $ctx->conversation->id,
+                ]);
 
-        // Stage 4: Output (LINE push + stats + broadcasts) — always called for broadcast even when response is null
+                $aggregation = app(MessageAggregationService::class);
+                $fallback = $aggregation->startOrContinueAggregation(
+                    $ctx->conversation, $ctx->userMessage, 15000
+                );
+                if ($fallback) {
+                    ProcessAggregatedMessages::dispatch(
+                        $ctx->bot, $ctx->conversation, $fallback['group_id'], $ctx->userId()
+                    )->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(15));
+                }
+
+                return;
+            }
+
+            try {
+                $responseSvc->generate($ctx);
+                $outputSvc->dispatch($ctx);
+            } finally {
+                $lock->release();
+            }
+
+            return;
+        }
+
+        // Non-text path: no lock (sticker/image have different concurrency semantics)
+        $responseSvc->generate($ctx);
         $outputSvc->dispatch($ctx);
     }
 

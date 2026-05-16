@@ -4,7 +4,6 @@ namespace Tests\Unit\Services\LineWebhook;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
-use App\Jobs\ProcessAggregatedMessages;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -14,13 +13,11 @@ use App\Services\LINEService;
 use App\Services\LineWebhook\LineWebhookOutputService;
 use App\Services\LineWebhook\ResponseEnvelope;
 use App\Services\LineWebhook\WebhookContext;
-use App\Services\MessageAggregationService;
 use App\Services\MultipleBubblesService;
 use App\Services\PaymentFlexService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Queue;
 use Mockery;
 use Tests\TestCase;
 
@@ -136,7 +133,6 @@ class LineWebhookOutputServiceTest extends TestCase
 
     private function makeService(
         ?LINEService $line = null,
-        ?MessageAggregationService $aggregation = null,
         ?LeadRecoveryService $leadRecovery = null,
         ?MultipleBubblesService $bubbles = null,
         ?PaymentFlexService $paymentFlex = null,
@@ -144,7 +140,6 @@ class LineWebhookOutputServiceTest extends TestCase
     ): LineWebhookOutputService {
         return new LineWebhookOutputService(
             line: $line ?? Mockery::mock(LINEService::class),
-            aggregation: $aggregation ?? Mockery::mock(MessageAggregationService::class),
             leadRecovery: $leadRecovery ?? Mockery::mock(LeadRecoveryService::class),
             bubbles: $bubbles ?? Mockery::mock(MultipleBubblesService::class),
             paymentFlex: $paymentFlex ?? Mockery::mock(PaymentFlexService::class),
@@ -191,9 +186,6 @@ class LineWebhookOutputServiceTest extends TestCase
         $ctx->response = ResponseEnvelope::text('Hello!');
         $ctx->metadata['bot_message'] = $botMessage;
         $ctx->metadata['is_new_conversation'] = false;
-
-        // Provide a lock that succeeds
-        Cache::lock("ai_response:{$conv->id}", 30)->forceRelease();
 
         $svc = $this->makeService(
             line: $line,
@@ -247,8 +239,6 @@ class LineWebhookOutputServiceTest extends TestCase
         $ctx->response = ResponseEnvelope::text('Multi-bubble reply');
         $ctx->metadata['bot_message'] = $botMessage;
         $ctx->metadata['is_new_conversation'] = false;
-
-        Cache::lock("ai_response:{$conv->id}", 30)->forceRelease();
 
         $svc = $this->makeService(bubbles: $bubbles, paymentFlex: $paymentFlex, flowPlugin: $flowPlugin, leadRecovery: $leadRecovery);
         $svc->dispatch($ctx);
@@ -308,51 +298,15 @@ class LineWebhookOutputServiceTest extends TestCase
     }
 
     // =========================================================================
-    // Test 4: Text + lock held → fallback aggregation, no push
+    // Test 4 (moved to ProcessLINEWebhookPipelineTest): lock-held fallback is
+    // now runPipeline()'s responsibility, not OutputService's.
     // =========================================================================
 
-    public function test_text_falls_back_to_aggregation_when_lock_held(): void
-    {
-        Queue::fake();
-        Event::fake();
-
-        $bot = $this->makeBot();
-        $conv = $this->makeConversationMock($bot);
-        $userMessage = $this->makeMessage(9999, 'user', 'hi');
-
-        // Hold the lock so dispatch() cannot acquire it
-        $heldLock = Cache::lock("ai_response:{$conv->id}", 30);
-        $heldLock->get();
-
-        $aggregation = Mockery::mock(MessageAggregationService::class);
-        $aggregation->shouldReceive('startOrContinueAggregation')
-            ->once()
-            ->with($conv, $userMessage, 15000)
-            ->andReturn(['group_id' => 'grp_1', 'is_new_group' => true, 'message_count' => 1]);
-
-        $line = Mockery::mock(LINEService::class);
-        $line->shouldNotReceive('replyWithFallback');
-
-        $ctx = new WebhookContext($bot, $this->makeTextEvent());
-        $ctx->conversation = $conv;
-        $ctx->userMessage = $userMessage;
-        $ctx->response = ResponseEnvelope::text('Hello!');
-        $ctx->metadata['bot_message'] = $this->makeMessage(9999, 'bot', 'Hello!');
-        $ctx->metadata['is_new_conversation'] = false;
-
-        $svc = $this->makeService(line: $line, aggregation: $aggregation);
-        $svc->dispatch($ctx);
-
-        Queue::assertPushed(ProcessAggregatedMessages::class);
-
-        $heldLock->forceRelease();
-    }
-
     // =========================================================================
-    // Test 5: Text + push throws → exception re-thrown, lock released
+    // Test 5: Text + push throws → exception re-thrown
     // =========================================================================
 
-    public function test_text_exception_during_push_is_rethrown_and_lock_released(): void
+    public function test_text_exception_during_push_is_rethrown(): void
     {
         Event::fake();
 
@@ -378,23 +332,12 @@ class LineWebhookOutputServiceTest extends TestCase
         $ctx->metadata['bot_message'] = $botMessage;
         $ctx->metadata['is_new_conversation'] = false;
 
-        Cache::lock("ai_response:{$conv->id}", 30)->forceRelease();
-
         $svc = $this->makeService(line: $line, bubbles: $bubbles, paymentFlex: $paymentFlex);
 
-        $thrown = null;
-        try {
-            $svc->dispatch($ctx);
-        } catch (\Exception $e) {
-            $thrown = $e;
-        }
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('LINE API error');
 
-        $this->assertInstanceOf(\RuntimeException::class, $thrown);
-        $this->assertSame('LINE API error', $thrown->getMessage());
-
-        // Verify lock is released (no deadlock) — can acquire again
-        $this->assertTrue(Cache::lock("ai_response:{$conv->id}", 30)->get());
-        Cache::lock("ai_response:{$conv->id}")->forceRelease();
+        $svc->dispatch($ctx);
     }
 
     // =========================================================================
