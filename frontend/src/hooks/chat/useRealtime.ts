@@ -12,7 +12,7 @@ import { useBotChannel } from '@/hooks/useEcho';
 import { messageKeys, type MessagesResponse } from './messageKeys';
 import { conversationKeys, type ConversationsResponse } from './useConversationList';
 import { conversationDetailKeys } from './useConversationDetails';
-import { updateConversationInList, createMessageFromEvent } from './realtimeUtils';
+import { updateConversationInList, createMessageFromEvent, isInfiniteConversationsQuery } from './realtimeUtils';
 import { showBrowserNotification, playPing, setUnreadBadge } from '@/lib/notifications';
 import { syncBot } from '@/lib/syncEngine';
 import { useUIStore } from '@/stores/uiStore';
@@ -96,11 +96,10 @@ export function useRealtime(
         }
       );
 
-      // Update conversation in list using refs
+      // Update conversation in list — filter-agnostic, refs supply selection state
       updateConversationInList(
         queryClient,
         currentBotId,
-        filtersRef.current,
         event.conversation_id,
         selectedConversationIdRef.current,
         event
@@ -131,16 +130,8 @@ export function useRealtime(
       const currentBotId = botIdRef.current;
       if (!currentBotId) return;
 
-      // T045: Use predicate to update ALL infinite queries for this bot (regardless of filters)
       queryClient.setQueriesData<InfiniteData<ConversationsResponse>>(
-        {
-          predicate: (query) => {
-            const key = query.queryKey;
-            return Array.isArray(key) &&
-              key[0] === 'conversations-infinite' &&
-              key[1] === currentBotId;
-          },
-        },
+        { predicate: isInfiniteConversationsQuery(currentBotId) },
         (old) => {
           if (!old) return old;
 
@@ -283,12 +274,7 @@ export function useRealtime(
         syncBot(currentBotId, queryClient, selectedConversationIdRef.current);
       } else {
         queryClient.invalidateQueries({
-          predicate: (query) => {
-            const key = query.queryKey;
-            return Array.isArray(key) &&
-              key[0] === 'conversations-infinite' &&
-              key[1] === currentBotId;
-          },
+          predicate: isInfiniteConversationsQuery(currentBotId),
         });
 
         const currentSelectedId = selectedConversationIdRef.current;

@@ -2,7 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteD
 import { api } from '@/lib/api';
 import { buildConversationFilterParams } from '@/lib/params';
 import { useConnectionStore } from '@/stores/connectionStore';
-import { messageKeys, type MessagesOptions } from '@/hooks/chat';
+import { messageKeys, isInfiniteConversationsQuery, type MessagesOptions } from '@/hooks/chat';
 import { useMutationWithToast } from './useMutationWithToast';
 import type {
   AddTagsData,
@@ -309,24 +309,12 @@ export function useMarkAsRead(botId: number | undefined) {
 
       // Snapshot for rollback
       const previousData = queryClient.getQueriesData<InfiniteData<ConversationsResponse>>({
-        predicate: (query) => {
-          const key = query.queryKey;
-          return Array.isArray(key) &&
-            key[0] === 'conversations-infinite' &&
-            key[1] === botId;
-        },
+        predicate: isInfiniteConversationsQuery(botId!),
       });
 
       // Optimistically set unread_count = 0 (instant UI update)
       queryClient.setQueriesData<InfiniteData<ConversationsResponse>>(
-        {
-          predicate: (query) => {
-            const key = query.queryKey;
-            return Array.isArray(key) &&
-              key[0] === 'conversations-infinite' &&
-              key[1] === botId;
-          },
-        },
+        { predicate: isInfiniteConversationsQuery(botId!) },
         (old) => {
           if (!old) return old;
           return {
@@ -359,14 +347,7 @@ export function useMarkAsRead(botId: number | undefined) {
       // Re-apply cache update to fix race condition
       // If a refetch happened during mutation, it may have overwritten optimistic update
       queryClient.setQueriesData<InfiniteData<ConversationsResponse>>(
-        {
-          predicate: (query) => {
-            const key = query.queryKey;
-            return Array.isArray(key) &&
-              key[0] === 'conversations-infinite' &&
-              key[1] === botId;
-          },
-        },
+        { predicate: isInfiniteConversationsQuery(botId!) },
         (old) => {
           if (!old) return old;
           return {
@@ -821,18 +802,10 @@ export function useSendAgentMessage(botId: number | undefined) {
         }
       );
 
-      // Surgical update: Set needs_response = false for this conversation
-      // This is necessary because WebSocket uses toOthers() and doesn't send to the sender
-      // Use predicate function for reliable matching with infinite query keys that include filters
+      // WebSocket uses toOthers() and doesn't echo back to the sender, so we must
+      // patch needs_response = false locally for the agent who just replied.
       queryClient.setQueriesData<InfiniteData<ConversationsResponse>>(
-        {
-          predicate: (query) => {
-            const key = query.queryKey;
-            return Array.isArray(key) &&
-              key[0] === 'conversations-infinite' &&
-              key[1] === botId;
-          },
-        },
+        { predicate: isInfiniteConversationsQuery(botId!) },
         (old) => {
           if (!old) return old;
           return {
