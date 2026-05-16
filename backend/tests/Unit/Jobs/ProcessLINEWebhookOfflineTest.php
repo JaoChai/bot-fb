@@ -10,6 +10,10 @@ use App\Models\User;
 use App\Services\AIService;
 use App\Services\CircuitBreakerService;
 use App\Services\LINEService;
+use App\Services\LineWebhook\LineWebhookContextService;
+use App\Services\LineWebhook\LineWebhookGatingService;
+use App\Services\LineWebhook\LineWebhookOutputService;
+use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\MessageAggregationService;
 use App\Services\RateLimitService;
 use App\Services\ResponseHoursService;
@@ -173,7 +177,11 @@ class ProcessLINEWebhookOfflineTest extends TestCase
             $rateLimitService,
             $aggregationService,
             $responseHoursService,
-            $circuitBreaker
+            $circuitBreaker,
+            Mockery::mock(LineWebhookGatingService::class),
+            Mockery::mock(LineWebhookContextService::class),
+            Mockery::mock(LineWebhookResponseService::class),
+            Mockery::mock(LineWebhookOutputService::class),
         );
 
         $this->addToAssertionCount(1);
@@ -204,7 +212,11 @@ class ProcessLINEWebhookOfflineTest extends TestCase
             $rateLimitService,
             $aggregationService,
             $responseHoursService,
-            $circuitBreaker
+            $circuitBreaker,
+            Mockery::mock(LineWebhookGatingService::class),
+            Mockery::mock(LineWebhookContextService::class),
+            Mockery::mock(LineWebhookResponseService::class),
+            Mockery::mock(LineWebhookOutputService::class),
         );
 
         $this->addToAssertionCount(1);

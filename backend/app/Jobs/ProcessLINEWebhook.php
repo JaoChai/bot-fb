@@ -15,6 +15,12 @@ use App\Services\Chat\ConversationContextService;
 use App\Services\CircuitBreakerService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
+use App\Services\LineWebhook\LineWebhookContextService;
+use App\Services\LineWebhook\LineWebhookGatingService;
+use App\Services\LineWebhook\LineWebhookOutputService;
+use App\Services\LineWebhook\LineWebhookPipelineFlag;
+use App\Services\LineWebhook\LineWebhookResponseService;
+use App\Services\LineWebhook\WebhookContext;
 use App\Services\MessageAggregationService;
 use App\Services\ModelCapabilityService;
 use App\Services\MultipleBubblesService;
@@ -82,13 +88,27 @@ class ProcessLINEWebhook implements ShouldQueue
         RateLimitService $rateLimitService,
         MessageAggregationService $aggregationService,
         ResponseHoursService $responseHoursService,
-        CircuitBreakerService $circuitBreaker
+        CircuitBreakerService $circuitBreaker,
+        LineWebhookGatingService $gating,
+        LineWebhookContextService $contextSvc,
+        LineWebhookResponseService $responseSvc,
+        LineWebhookOutputService $outputSvc,
     ): void {
         try {
-            // Use circuit breaker to protect against DB failures
             $circuitBreaker->execute(
                 'database',
-                fn () => $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService),
+                function () use ($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService, $gating, $contextSvc, $responseSvc, $outputSvc) {
+                    if (
+                        LineWebhookPipelineFlag::enabledFor($this->bot)
+                        && $lineService->isMessageEvent($this->event)
+                        && $lineService->isTextMessage($this->event)
+                    ) {
+                        $this->runPipeline($gating, $contextSvc, $responseSvc, $outputSvc);
+
+                        return;
+                    }
+                    $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService);
+                },
                 fn () => $this->sendFallbackMessage($lineService)
             );
         } catch (CircuitOpenException $e) {
@@ -108,6 +128,70 @@ class ProcessLINEWebhook implements ShouldQueue
 
             throw $e;
         }
+    }
+
+    private function runPipeline(
+        LineWebhookGatingService $gating,
+        LineWebhookContextService $contextSvc,
+        LineWebhookResponseService $responseSvc,
+        LineWebhookOutputService $outputSvc,
+    ): void {
+        $ctx = new WebhookContext($this->bot, $this->event);
+
+        Log::debug('LINE webhook pipeline.start', [
+            'bot_id' => $this->bot->id,
+            'event_type' => $ctx->messageType(),
+        ]);
+
+        // Stage 1: Gating (rate limit only)
+        $gating->check($ctx);
+        if ($ctx->gateDecision !== null && $ctx->gateDecision->isBlocked()) {
+            return;
+        }
+
+        // Stage 2: Context (profile, conversation, msg save, aggregation, outside-hours)
+        $contextSvc->resolve($ctx);
+        if ($ctx->gateDecision !== null && $ctx->gateDecision->isBlocked()) {
+            return;
+        }
+        if ($ctx->aggregationBuffered) {
+            return;
+        }
+
+        // For text messages: acquire response lock around Stage 3 + Stage 4 (mirror legacy order)
+        if ($ctx->messageType() === 'text' && $ctx->conversation !== null && $ctx->userMessage !== null) {
+            $lock = Cache::lock("ai_response:{$ctx->conversation->id}", 30);
+            if (! $lock->get()) {
+                Log::info('Response lock held, falling back to aggregation', [
+                    'conversation_id' => $ctx->conversation->id,
+                ]);
+
+                $aggregation = app(MessageAggregationService::class);
+                $fallback = $aggregation->startOrContinueAggregation(
+                    $ctx->conversation, $ctx->userMessage, 15000
+                );
+                if ($fallback) {
+                    ProcessAggregatedMessages::dispatch(
+                        $ctx->bot, $ctx->conversation, $fallback['group_id'], $ctx->userId()
+                    )->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(15));
+                }
+
+                return;
+            }
+
+            try {
+                $responseSvc->generate($ctx);
+                $outputSvc->dispatch($ctx);
+            } finally {
+                $lock->release();
+            }
+
+            return;
+        }
+
+        // Non-text path: no lock (sticker/image have different concurrency semantics)
+        $responseSvc->generate($ctx);
+        $outputSvc->dispatch($ctx);
     }
 
     /**
