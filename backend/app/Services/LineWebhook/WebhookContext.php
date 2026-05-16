@@ -17,6 +17,8 @@ class WebhookContext
 
     public ?ResponseEnvelope $response = null;
 
+    public ?GateDecision $gateDecision = null;
+
     /** @var array<string,mixed> */
     public array $metadata = [];
 
@@ -35,5 +37,10 @@ class WebhookContext
     public function userId(): ?string
     {
         return $this->event['source']['userId'] ?? null;
+    }
+
+    public function replyToken(): ?string
+    {
+        return $this->event['replyToken'] ?? null;
     }
 }
