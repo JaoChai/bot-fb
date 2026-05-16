@@ -54,8 +54,6 @@ export function useConversationList(
     },
     enabled: !!botId,
     staleTime: 0,
-    // When connected: heartbeat refresh every 30s to catch missed events
-    // When disconnected: fast polling every 5s for quick recovery
     refetchInterval: isConnected ? HEARTBEAT_INTERVAL : FALLBACK_POLLING_INTERVAL,
   });
 }
@@ -90,9 +88,10 @@ export function useInfiniteConversationList(
       return current_page < last_page ? current_page + 1 : undefined;
     },
     enabled: !!botId,
-    // Infinite query: only poll when disconnected to avoid refetching all loaded pages
-    // When connected, WebSocket events + regular useConversationList heartbeat handle updates
-    refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
+    // Heartbeat refresh as safety net for missed WebSocket events (subscription auth re-cache,
+    // Reverb backlog, channel resubscribe race). Without this, the sidebar can stay stale
+    // indefinitely while chat detail still refreshes via useMessages heartbeat.
+    refetchInterval: isConnected ? HEARTBEAT_INTERVAL : FALLBACK_POLLING_INTERVAL,
   });
 }
 

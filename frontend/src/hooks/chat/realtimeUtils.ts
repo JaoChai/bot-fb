@@ -1,7 +1,21 @@
-import { type QueryClient, type InfiniteData } from '@tanstack/react-query';
-import { conversationKeys, type ConversationsResponse } from './useConversationList';
-import type { Conversation, ConversationFilters, Message } from '@/types/api';
+import { type Query, type QueryClient, type InfiniteData } from '@tanstack/react-query';
+import { type ConversationsResponse } from './useConversationList';
+import type { Conversation, Message } from '@/types/api';
 import type { MessageSentEvent } from '@/types/realtime';
+
+/**
+ * Matches every `useInfiniteConversationList` cache entry for a bot, regardless of
+ * filters. Use whenever filter object identity may shift between query registration
+ * and cache write (Echo handlers, mutation onSuccess callbacks).
+ */
+export const isInfiniteConversationsQuery =
+  (botId: number) =>
+  (query: Query): boolean => {
+    const key = query.queryKey;
+    return Array.isArray(key)
+      && key[0] === 'conversations-infinite'
+      && key[1] === botId;
+  };
 
 export function createMessageFromEvent(event: MessageSentEvent): Message {
   return {
@@ -29,13 +43,12 @@ export function createMessageFromEvent(event: MessageSentEvent): Message {
 export function updateConversationInList(
   queryClient: QueryClient,
   botId: number,
-  filters: ConversationFilters,
   conversationId: number,
   selectedConversationId: number | null | undefined,
   event: MessageSentEvent
 ) {
-  queryClient.setQueryData<InfiniteData<ConversationsResponse>>(
-    conversationKeys.infinite(botId, filters),
+  queryClient.setQueriesData<InfiniteData<ConversationsResponse>>(
+    { predicate: isInfiniteConversationsQuery(botId) },
     (old) => {
       if (!old) return old;
 
