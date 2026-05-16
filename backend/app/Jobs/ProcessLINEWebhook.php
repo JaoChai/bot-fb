@@ -15,6 +15,12 @@ use App\Services\Chat\ConversationContextService;
 use App\Services\CircuitBreakerService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
+use App\Services\LineWebhook\LineWebhookContextService;
+use App\Services\LineWebhook\LineWebhookGatingService;
+use App\Services\LineWebhook\LineWebhookOutputService;
+use App\Services\LineWebhook\LineWebhookPipelineFlag;
+use App\Services\LineWebhook\LineWebhookResponseService;
+use App\Services\LineWebhook\WebhookContext;
 use App\Services\MessageAggregationService;
 use App\Services\ModelCapabilityService;
 use App\Services\MultipleBubblesService;
@@ -82,13 +88,23 @@ class ProcessLINEWebhook implements ShouldQueue
         RateLimitService $rateLimitService,
         MessageAggregationService $aggregationService,
         ResponseHoursService $responseHoursService,
-        CircuitBreakerService $circuitBreaker
+        CircuitBreakerService $circuitBreaker,
+        LineWebhookGatingService $gating,
+        LineWebhookContextService $contextSvc,
+        LineWebhookResponseService $responseSvc,
+        LineWebhookOutputService $outputSvc,
     ): void {
         try {
-            // Use circuit breaker to protect against DB failures
             $circuitBreaker->execute(
                 'database',
-                fn () => $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService),
+                function () use ($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService, $gating, $contextSvc, $responseSvc, $outputSvc) {
+                    if (LineWebhookPipelineFlag::enabledFor($this->bot)) {
+                        $this->runPipeline($gating, $contextSvc, $responseSvc, $outputSvc);
+
+                        return;
+                    }
+                    $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService);
+                },
                 fn () => $this->sendFallbackMessage($lineService)
             );
         } catch (CircuitOpenException $e) {
@@ -108,6 +124,41 @@ class ProcessLINEWebhook implements ShouldQueue
 
             throw $e;
         }
+    }
+
+    private function runPipeline(
+        LineWebhookGatingService $gating,
+        LineWebhookContextService $contextSvc,
+        LineWebhookResponseService $responseSvc,
+        LineWebhookOutputService $outputSvc,
+    ): void {
+        $ctx = new WebhookContext($this->bot, $this->event);
+
+        Log::debug('LINE webhook pipeline.start', [
+            'bot_id' => $this->bot->id,
+            'event_type' => $ctx->messageType(),
+        ]);
+
+        // Stage 1: Gating (rate limit only)
+        $gating->check($ctx);
+        if ($ctx->gateDecision !== null && $ctx->gateDecision->isBlocked()) {
+            return;
+        }
+
+        // Stage 2: Context (profile, conversation, msg save, aggregation, outside-hours)
+        $contextSvc->resolve($ctx);
+        if ($ctx->gateDecision !== null && $ctx->gateDecision->isBlocked()) {
+            return;
+        }
+        if ($ctx->aggregationBuffered) {
+            return;
+        }
+
+        // Stage 3: Response (AI generation)
+        $responseSvc->generate($ctx);
+
+        // Stage 4: Output (LINE push + stats + broadcasts) — always called for broadcast even when response is null
+        $outputSvc->dispatch($ctx);
     }
 
     /**
