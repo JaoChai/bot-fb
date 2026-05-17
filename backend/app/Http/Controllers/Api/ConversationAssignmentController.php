@@ -29,8 +29,8 @@ class ConversationAssignmentController extends BaseConversationController
 
         $isHandover = ! $conversation->is_handover;
 
-        // Auto-enable timeout in minutes (default: 30)
-        $autoEnableMinutes = $request->input('auto_enable_minutes', 30);
+        // Auto-enable timeout in minutes (0 = permanent disable, no auto-enable)
+        $autoEnableMinutes = $request->input('auto_enable_minutes', 0);
 
         $updateData = [
             'is_handover' => $isHandover,

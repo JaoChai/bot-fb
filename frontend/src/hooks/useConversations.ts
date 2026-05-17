@@ -245,7 +245,7 @@ export function useToggleHandover(botId: number | undefined) {
     mutationFn: async ({
       conversationId,
       unassign = false,
-      autoEnableMinutes = 30,
+      autoEnableMinutes = 0,
     }: {
       conversationId: number;
       unassign?: boolean;

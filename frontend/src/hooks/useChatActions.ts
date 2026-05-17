@@ -104,7 +104,7 @@ export function useChatActions({ botId, conversation }: UseChatActionsOptions) {
         title: conversation.is_handover ? 'Bot enabled' : 'Handover mode',
         description: conversation.is_handover
           ? 'Bot will respond to this conversation'
-          : 'You can respond directly. Bot will auto-enable in 30 minutes',
+          : 'Bot is disabled until manually re-enabled',
       });
     } catch {
       toast({
