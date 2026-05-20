@@ -14,7 +14,7 @@ class RedisHealthGateTest extends TestCase
         Cache::store('file')->forget('redis_health:up');
         Redis::shouldReceive('connection->ping')->andReturn('PONG');
 
-        $gate = new RedisHealthGate();
+        $gate = new RedisHealthGate;
 
         $this->assertTrue($gate->isRedisUp());
     }
@@ -25,7 +25,7 @@ class RedisHealthGateTest extends TestCase
         Redis::shouldReceive('connection->ping')
             ->andThrow(new \RuntimeException('Connection timed out'));
 
-        $gate = new RedisHealthGate();
+        $gate = new RedisHealthGate;
 
         $this->assertFalse($gate->isRedisUp());
     }
@@ -35,7 +35,7 @@ class RedisHealthGateTest extends TestCase
         Cache::store('file')->forget('redis_health:up');
         Redis::shouldReceive('connection->ping')->once()->andReturn('PONG');
 
-        $gate = new RedisHealthGate();
+        $gate = new RedisHealthGate;
 
         $gate->isRedisUp();
         $gate->isRedisUp();
