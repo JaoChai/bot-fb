@@ -35,4 +35,17 @@ class RedisFallbackMiddlewareTest extends TestCase
         $this->assertSame('redis', config('cache.default'));
         $this->assertSame('redis', config('session.driver'));
     }
+
+    public function test_swaps_only_session_when_only_session_uses_redis_and_redis_down(): void
+    {
+        config(['cache.default' => 'array', 'session.driver' => 'redis']);
+
+        $gate = Mockery::mock(RedisHealthGate::class);
+        $gate->shouldReceive('isRedisUp')->andReturnFalse();
+
+        (new RedisFallbackMiddleware($gate))->handle(Request::create('/'), fn ($r) => response('ok'));
+
+        $this->assertSame('database', config('session.driver'));
+        $this->assertSame('array', config('cache.default'));
+    }
 }

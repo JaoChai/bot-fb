@@ -19,9 +19,11 @@ class RedisHealthGate
 
         $ttl = (int) config('redis-fallback.health_ttl', 10);
 
-        $up = Cache::store('file')->remember(self::CACHE_KEY, $ttl, function (): bool {
-            return $this->probe();
-        });
+        try {
+            $up = Cache::store('file')->remember(self::CACHE_KEY, $ttl, fn (): bool => $this->probe());
+        } catch (\Throwable $e) {
+            $up = $this->probe();
+        }
 
         return $this->requestMemo = $up;
     }

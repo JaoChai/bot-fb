@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\RedisFallbackMiddleware;
 use App\Services\RedisHealthGate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -14,6 +15,14 @@ class RedisOutageIntegrationTest extends TestCase
 
     public function test_health_endpoint_uses_database_and_does_not_500_when_redis_down(): void
     {
+        // Prove the middleware is wired in bootstrap/app.php (Laravel 12 style).
+        $bootstrapContents = file_get_contents(base_path('bootstrap/app.php'));
+        $this->assertStringContainsString(
+            RedisFallbackMiddleware::class,
+            $bootstrapContents,
+            'RedisFallbackMiddleware must be registered in bootstrap/app.php'
+        );
+
         $gate = Mockery::mock(RedisHealthGate::class);
         $gate->shouldReceive('isRedisUp')->andReturnFalse();
         $this->app->instance(RedisHealthGate::class, $gate);

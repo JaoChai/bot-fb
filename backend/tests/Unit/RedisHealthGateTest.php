@@ -40,4 +40,19 @@ class RedisHealthGateTest extends TestCase
         $gate->isRedisUp();
         $gate->isRedisUp();
     }
+
+    public function test_does_not_throw_and_falls_back_to_probe_when_file_cache_throws(): void
+    {
+        Cache::shouldReceive('store')
+            ->with('file')
+            ->andReturnSelf();
+        Cache::shouldReceive('remember')
+            ->andThrow(new \RuntimeException('disk full'));
+
+        Redis::shouldReceive('connection->ping')->andReturn('PONG');
+
+        $gate = new RedisHealthGate;
+
+        $this->assertTrue($gate->isRedisUp());
+    }
 }

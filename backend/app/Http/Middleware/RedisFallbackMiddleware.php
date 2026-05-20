@@ -14,11 +14,15 @@ class RedisFallbackMiddleware
 
     public function handle(Request $request, Closure $next): Response
     {
-        if (config('cache.default') === 'redis' && ! $this->gate->isRedisUp()) {
-            config([
-                'cache.default' => 'database',
-                'session.driver' => 'database',
-            ]);
+        $usesRedis = config('cache.default') === 'redis' || config('session.driver') === 'redis';
+
+        if ($usesRedis && ! $this->gate->isRedisUp()) {
+            if (config('cache.default') === 'redis') {
+                config(['cache.default' => 'database']);
+            }
+            if (config('session.driver') === 'redis') {
+                config(['session.driver' => 'database']);
+            }
 
             Log::warning('Redis unavailable — falling back to database for cache/session');
         }
