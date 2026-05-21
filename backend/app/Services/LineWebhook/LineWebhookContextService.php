@@ -300,7 +300,7 @@ class LineWebhookContextService
                 $ctx->conversation,
                 $aggregationGroupId,
                 $userId
-            )->onQueue(QueueRouter::llmQueue())->delay(now()->addMilliseconds($adaptiveWaitMs ?? $waitTimeMs));
+            )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addMilliseconds($adaptiveWaitMs ?? $waitTimeMs));
         }
     }
 

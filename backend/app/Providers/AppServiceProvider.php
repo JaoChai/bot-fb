@@ -22,6 +22,7 @@ use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
 use App\Services\QueryEnhancementService;
 use App\Services\RAGService;
+use App\Services\RedisFallbackSwitch;
 use App\Services\SemanticCacheService;
 use App\Services\SemanticSearchService;
 use App\Services\StockInjectionService;
@@ -97,6 +98,8 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(QuickReply::class, QuickReplyPolicy::class);
 
         Order::observe(OrderObserver::class);
+
+        RedisFallbackSwitch::registerWorkerHook();
 
         $this->configureRateLimiting();
         $this->configureQueryLogging();

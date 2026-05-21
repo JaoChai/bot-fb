@@ -313,7 +313,7 @@ class ProcessAggregatedMessages implements ShouldQueue
             // Re-dispatch with shorter delay
             ProcessAggregatedMessages::dispatch(
                 $this->bot, $this->conversation, $this->groupId, $this->externalUserId
-            )->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(5));
+            )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(5));
 
             return null;
         }

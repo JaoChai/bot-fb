@@ -173,7 +173,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 if ($fallback) {
                     ProcessAggregatedMessages::dispatch(
                         $ctx->bot, $ctx->conversation, $fallback['group_id'], $ctx->userId()
-                    )->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(15));
+                    )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(15));
                 }
 
                 return;
@@ -572,7 +572,7 @@ class ProcessLINEWebhook implements ShouldQueue
                         $conversation,
                         $fallbackResult['group_id'],
                         $userId
-                    )->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(15));
+                    )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(15));
                 }
 
                 // Stats will be updated by ProcessAggregatedMessages when it generates response
@@ -652,7 +652,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 $conversation,
                 $aggregationGroupId,
                 $userId
-            )->onQueue(QueueRouter::llmQueue())->delay(now()->addMilliseconds($delayMs));
+            )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addMilliseconds($delayMs));
 
             Log::info('Dispatched aggregated message job', [
                 'conversation_id' => $conversation->id,

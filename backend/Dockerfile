@@ -149,6 +149,21 @@ stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
 stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
+
+# queue-worker-db: always-on consumer of the database connection. During a Redis
+# outage, dispatches route here (QueueRouter::connection()); idle/cheap otherwise.
+[program:queue-worker-db]
+process_name=%(program_name)s_%(process_num)02d
+command=php /var/www/html/artisan queue:work database --queue=llm,webhooks,default --sleep=3 --tries=3 --backoff=5 --max-jobs=1000 --max-time=3600 --timeout=160
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+numprocs=1
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
 SUPERVISOR
 
 # Expose port

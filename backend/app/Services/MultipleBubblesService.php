@@ -199,7 +199,7 @@ INSTRUCTION;
                         $bubbles[$i],
                         $i + 1, // 1-indexed for logging
                         $totalBubbles
-                    )->onQueue(QueueRouter::llmQueue())
+                    )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())
                         ->delay(now()->addMilliseconds($cumulativeDelayMs));
 
                     Log::debug('Dispatched delayed bubble job', [
