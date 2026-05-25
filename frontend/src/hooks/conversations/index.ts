@@ -10,3 +10,10 @@ export {
   useConversationMessages,
   useConversationStats,
 } from './useConversationQueries';
+
+export {
+  useUpdateConversation,
+  useCloseConversation,
+  useReopenConversation,
+  useToggleHandover,
+} from './useConversationLifecycle';

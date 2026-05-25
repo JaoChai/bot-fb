@@ -11,7 +11,6 @@ import type {
   CreateNoteData,
   Message,
   PaginationMeta,
-  UpdateConversationData,
   UpdateNoteData,
 } from '@/types/api';
 
@@ -23,6 +22,10 @@ export {
   useConversation,
   useConversationMessages,
   useConversationStats,
+  useUpdateConversation,
+  useCloseConversation,
+  useReopenConversation,
+  useToggleHandover,
 } from './conversations';
 
 interface ConversationsResponse {
@@ -38,133 +41,6 @@ interface ConversationResponse {
 interface MessagesResponse {
   data: Message[];
   meta: PaginationMeta;
-}
-
-/**
- * Hook to update a conversation
- */
-export function useUpdateConversation(botId: number | undefined) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      conversationId,
-      data,
-    }: {
-      conversationId: number;
-      data: UpdateConversationData;
-    }) => {
-      const response = await api.put<ConversationResponse>(
-        `/bots/${botId}/conversations/${conversationId}`,
-        data
-      );
-      return response.data;
-    },
-    onSuccess: (_, { conversationId }) => {
-      queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
-      queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
-    },
-  });
-}
-
-/**
- * Hook to close a conversation
- */
-export function useCloseConversation(botId: number | undefined) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (conversationId: number) => {
-      const response = await api.post<ConversationResponse>(
-        `/bots/${botId}/conversations/${conversationId}/close`
-      );
-      return response.data;
-    },
-    onSuccess: (_, conversationId) => {
-      queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
-      queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
-    },
-  });
-}
-
-/**
- * Hook to reopen a conversation
- */
-export function useReopenConversation(botId: number | undefined) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (conversationId: number) => {
-      const response = await api.post<ConversationResponse>(
-        `/bots/${botId}/conversations/${conversationId}/reopen`
-      );
-      return response.data;
-    },
-    onSuccess: (_, conversationId) => {
-      queryClient.invalidateQueries({ queryKey: ['conversations', botId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations-infinite', botId] });
-      queryClient.invalidateQueries({ queryKey: ['conversation', botId, conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
-    },
-  });
-}
-
-/**
- * Hook to toggle handover mode with auto-enable timer
- */
-export function useToggleHandover(botId: number | undefined) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      conversationId,
-      unassign = false,
-      autoEnableMinutes = 0,
-    }: {
-      conversationId: number;
-      unassign?: boolean;
-      autoEnableMinutes?: number;
-    }) => {
-      const response = await api.post<ConversationResponse>(
-        `/bots/${botId}/conversations/${conversationId}/toggle-handover`,
-        { unassign, auto_enable_minutes: autoEnableMinutes }
-      );
-      return response.data;
-    },
-    onSuccess: (result, { conversationId }) => {
-      const updatedConversation = result.data;
-
-      // Immediately update cache with response data (fixes UI not updating)
-      queryClient.setQueriesData<InfiniteData<ConversationsResponse>>(
-        { queryKey: ['conversations-infinite', botId] },
-        (old) => {
-          if (!old) return old;
-          return {
-            ...old,
-            pages: old.pages.map((page) => ({
-              ...page,
-              data: page.data.map((conv) =>
-                conv.id === conversationId ? { ...conv, ...updatedConversation } : conv
-              ),
-            })),
-          };
-        }
-      );
-
-      // Also update single conversation query if it exists
-      queryClient.setQueryData<ConversationResponse>(
-        ['conversation', botId, conversationId],
-        (old) => old ? { ...old, data: { ...old.data, ...updatedConversation } } : old
-      );
-
-      // Invalidate stats (status changed)
-      queryClient.invalidateQueries({ queryKey: ['conversation-stats', botId] });
-    },
-  });
 }
 
 /**
