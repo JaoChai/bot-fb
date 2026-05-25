@@ -48,14 +48,20 @@ class LeadRecoveryServiceEagerLoadTest extends TestCase
     {
         $bot = Bot::factory()->create();
 
+        // Create the settings chain so bot.settings.hitlSettings resolves
+        // to non-null rows, making the eager-load assertions meaningful.
+        $botSetting = \App\Models\BotSetting::create(['bot_id' => $bot->id]);
+        \App\Models\BotHITLSettings::create(['bot_setting_id' => $botSetting->id]);
+
         // Create 3 conversations that satisfy needsRecovery():
-        //   status='active', is_handover=false, recovery_attempts=0 (DB default),
+        //   status='active', is_handover=false, recovery_attempts=0,
         //   last_message_at older than the default 24h timeout,
         //   last_recovery_at=null.
         Conversation::factory()->count(3)->create([
             'bot_id' => $bot->id,
             'last_message_at' => now()->subHours(25),
             'last_recovery_at' => null,
+            'recovery_attempts' => 0,
         ]);
 
         $results = $this->service->findEligibleConversations($bot);
@@ -75,6 +81,14 @@ class LeadRecoveryServiceEagerLoadTest extends TestCase
             $this->assertTrue(
                 $conversation->relationLoaded('bot'),
                 'bot relation must be eager-loaded on each conversation'
+            );
+            $this->assertTrue(
+                $conversation->bot?->relationLoaded('settings') ?? false,
+                'bot.settings relation must be eager-loaded'
+            );
+            $this->assertTrue(
+                $conversation->bot?->settings?->relationLoaded('hitlSettings') ?? false,
+                'bot.settings.hitlSettings relation must be eager-loaded'
             );
         }
 

@@ -40,7 +40,7 @@ class LeadRecoveryService
         return Conversation::query()
             ->forBot($bot->id)
             ->needsRecovery($timeoutHours, $maxAttempts)
-            ->with(['customerProfile', 'bot'])
+            ->with(['customerProfile', 'bot.settings.hitlSettings'])
             ->get();
     }
 
