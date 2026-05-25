@@ -36,6 +36,7 @@ Multi-sprint refactor initiative targeting **18 candidates** ranked by impact ÷
 | D6 | `LineWebhookPipelineFlag` pattern → copy per channel | Proven in PR #163; do not reinvent |
 | D7 | `types/api.ts` split → DROP from scope | Hand-written (no codegen marker) but 40+ importers; split is risky with low payoff |
 | D8 | Master roadmap + 5 sprint specs (not 1 mega-spec) | 18 items too large for single spec; per-sprint specs are reviewable units |
+| **D9** | **Sprint 1 #1 (composite index) DROPPED** after Code Quality review caught duplicate of existing `messages_webhook_event_id_idx` (UNIQUE, same columns, same partial WHERE — created in migration `2026_01_15_210000_add_line_event_tracking_to_messages.php`) | DB audit agent missed the existing UNIQUE index when reading `pg_indexes`. Independent observation: lines 279 and 797 of `ProcessLINEWebhook.php` query `webhook_event_id` WITHOUT `conversation_id` — neither the existing index nor the proposed new one helps these sites optimally. **Follow-up needed (NOT in this sprint):** investigate adding `conversation_id` filter at those call sites OR add a single-column index on `webhook_event_id`. Reverted commit: `60a6aa7` (revert: `4b6e187`) |
 
 ---
 
