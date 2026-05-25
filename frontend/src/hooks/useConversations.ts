@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { messageKeys, isInfiniteConversationsQuery, type MessagesOptions } from '@/hooks/chat';
 import { useMutationWithToast } from './useMutationWithToast';
