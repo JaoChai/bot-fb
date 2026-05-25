@@ -32,6 +32,7 @@ use App\Services\SmartAggregation\SmartAggregationAnalyzer;
 use App\Services\SmartAggregation\UserTypingStats;
 use App\Services\StickerReplyService;
 use App\Support\QueueRouter;
+use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -686,9 +687,9 @@ class ProcessLINEWebhook implements ShouldQueue
      * existing user message. Shared between the webhook_event_id and
      * external_message_id dedup branches.
      */
-    private function botAlreadyRespondedTo(int $conversationId, \Illuminate\Support\Carbon $existingMessageCreatedAt): bool
+    private function botAlreadyRespondedTo(int $conversationId, Carbon $existingMessageCreatedAt): bool
     {
-        return \App\Models\Message::where('conversation_id', $conversationId)
+        return Message::where('conversation_id', $conversationId)
             ->where('sender', 'bot')
             ->where('created_at', '>=', $existingMessageCreatedAt)
             ->exists();
