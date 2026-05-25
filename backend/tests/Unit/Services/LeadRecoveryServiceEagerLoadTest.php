@@ -72,8 +72,10 @@ class LeadRecoveryServiceEagerLoadTest extends TestCase
         });
 
         foreach ($results as $conversation) {
-            // Touch the relation — must already be loaded (no new query).
-            $_ = $conversation->bot?->id;
+            $this->assertTrue(
+                $conversation->relationLoaded('bot'),
+                'bot relation must be eager-loaded on each conversation'
+            );
         }
 
         $this->assertSame(
@@ -81,5 +83,7 @@ class LeadRecoveryServiceEagerLoadTest extends TestCase
             $queriesAfterFetch,
             "Expected zero queries when iterating eager-loaded bot relation, got $queriesAfterFetch"
         );
+
+        DB::getEventDispatcher()->forget(\Illuminate\Database\Events\QueryExecuted::class);
     }
 }
