@@ -325,6 +325,27 @@ Each sprint spec follows the same template: Goal, Acceptance Criteria, Rollback,
 
 ---
 
+### Sprint 3 Result (recorded 2026-05-25)
+
+- Task #5 (route-level code splitting): ✅ already done in prior work (`lazyWithRetryNamed` in `router.tsx`). No action taken this sprint; flagged in pre-flight.
+- Task #8 (useConversations split): ✅ COMPLETE
+  - `useConversations.ts` 834 → 25 LOC (re-export shim, target ≤30)
+  - 6 domain files in `frontend/src/hooks/conversations/`:
+    - `useConversationQueries.ts` (143 LOC) — 5 read hooks
+    - `useConversationLifecycle.ts` (113 LOC) — 4 lifecycle mutations (3 migrated to useMutationWithToast)
+    - `useConversationRead.ts` (144 LOC) — markAsRead (verbatim manual) + 2 clear-context (migrated)
+    - `useConversationNotes.ts` (109 LOC) — 4 notes hooks (verbatim, dynamic invalidation)
+    - `useConversationTags.ts` (101 LOC) — 4 tag hooks (verbatim, dynamic invalidation)
+    - `useSendAgentMessage.ts` (198 LOC) — verbatim WebSocket race-handling logic
+  - All 6 domain files ≤200 LOC target met
+  - 8 contract tests green throughout the entire split (Tasks 3-8)
+  - Full Vitest suite: 71/71 tests passing after refactor
+  - TypeScript clean (no errors)
+  - 5 hooks migrated to useMutationWithToast; 16 kept manual (correct — pattern fits the use case)
+- Decision: GO for Sprint 5 (Sprint 4 deferred per D11 reasoning — single-bot operation makes channel consolidation low-ROI).
+
+---
+
 ## 10. References
 
 - Source audit reports: 4 parallel agents on 2026-05-25 (backend, frontend, cross-cutting+perf, DB)
