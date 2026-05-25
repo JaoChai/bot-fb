@@ -23,3 +23,10 @@ export {
   useClearContext,
   useClearContextAll,
 } from './useConversationRead';
+
+export {
+  useConversationNotes,
+  useAddNote,
+  useUpdateNote,
+  useDeleteNote,
+} from './useConversationNotes';
