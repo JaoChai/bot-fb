@@ -36,6 +36,7 @@ Multi-sprint refactor initiative targeting **18 candidates** ranked by impact ÷
 | D6 | `LineWebhookPipelineFlag` pattern → copy per channel | Proven in PR #163; do not reinvent |
 | D7 | `types/api.ts` split → DROP from scope | Hand-written (no codegen marker) but 40+ importers; split is risky with low payoff |
 | D8 | Master roadmap + 5 sprint specs (not 1 mega-spec) | 18 items too large for single spec; per-sprint specs are reviewable units |
+| **D11** | **Sprint 2 CLOSED early (2026-05-25)** | User clarified only 1 active LINE bot (bot 26) serves customers; other bots not actively in use. Step 2 (bot 28 promotion) and Step 3 (full enable) have no business value with single-bot operation. Pipeline stays on bot 26 as-is. Runbook kept for future re-evaluation when a second bot becomes active. |
 | **D10** | **Sprint 2 RE-SCOPED from "implement" to "operate"** | Pre-flight drift check (Explore agent, 2026-05-25) confirmed that the code refactor proposed in Sprint 2 was already shipped as PR #163 on 2026-05-16, and the pipeline has been dark-launched on bot 26 for 9 days. PR #165 was a *post-hoc* documentation plan, not pending work. Sprint 2 is now an operations sprint covering the promotion sequence (bot 26 → bot 28 → all). Runbook: `docs/superpowers/runbooks/2026-05-25-line-pipeline-promotion.md`. Lesson: when an existing plan exists in `docs/superpowers/plans/`, treat it as historical record until verified against production state. |
 | **D9** | **Sprint 1 #1 (composite index) DROPPED** after Code Quality review caught duplicate of existing `messages_webhook_event_id_idx` (UNIQUE, same columns, same partial WHERE — created in migration `2026_01_15_210000_add_line_event_tracking_to_messages.php`) | DB audit agent missed the existing UNIQUE index when reading `pg_indexes`. Independent observation: lines 279 and 797 of `ProcessLINEWebhook.php` query `webhook_event_id` WITHOUT `conversation_id` — neither the existing index nor the proposed new one helps these sites optimally. **Follow-up needed (NOT in this sprint):** investigate adding `conversation_id` filter at those call sites OR add a single-column index on `webhook_event_id`. Reverted commit: `60a6aa7` (revert: `4b6e187`) |
 
@@ -153,26 +154,28 @@ Scope: 4 zero-risk DB/perf items.
 
 **🟡 Re-scoped on 2026-05-25 after pre-flight drift check (decision D10 below).** Code refactor for this sprint was already merged as PR #163 on 2026-05-16; the pipeline has been dark-launched on bot 26 since then. This sprint operates the rollout sequence, not the refactor.
 
-| Step | Task | Effort | Type |
-|---|------|--------|------|
-| 1 | Bot 26 dark-launch | DONE (live 9 days as of 2026-05-25) | already complete |
-| 2 | Promote bot 28 (whitelist `26,28`) | 10 min change + 24h watch | env var + monitoring |
-| 3 | Full enable (whitelist empty) | 5 min change + 48h watch | env var + monitoring |
+### ✅ Sprint 2 CLOSED (2026-05-25)
 
-**Pre-flight (this session, completed 2026-05-25):** Drift check via Explore agent confirmed code matches deployed reality. Railway log scan over last 24h showed bot 26 healthy (no 5xx, no PHP stderr errors, bot replies happening). Sentry-side verification deferred to operator (no Sentry MCP available).
+User confirmed only 1 active LINE bot (bot 26). Steps 2 and 3 have no business value. Pipeline remains on bot 26 as the steady operational state.
 
-**Acceptance:**
-- Step 2: new error issue count on `Jobs/ProcessLINEWebhook` ≤ 1 after 24h; p95 latency does not increase >20% vs pre-promo baseline; no customer complaints
-- Step 3: same threshold across 48h; all active LINE bots reply normally
+| Step | Task | Status |
+|---|------|--------|
+| 1 | Bot 26 dark-launch | ✅ DONE — live since 2026-05-16, 9+ days clean |
+| 2 | Promote bot 28 | ⏸ DEFERRED — re-evaluate when a second bot becomes active |
+| 3 | Full enable | ⏸ DEFERRED — re-evaluate when ≥2 active LINE bots exist |
 
-**Rollback:** Per-step, no deploy — remove bot ID(s) from `PROCESS_LINE_PIPELINE_BOT_IDS` env var via Railway MCP.
+**Re-open trigger:** A second LINE bot starts serving customers → run the promotion runbook at `docs/superpowers/runbooks/2026-05-25-line-pipeline-promotion.md` to add it to `PROCESS_LINE_PIPELINE_BOT_IDS`.
 
-**Runbook:** `docs/superpowers/runbooks/2026-05-25-line-pipeline-promotion.md` (created this session).
+**Operational state recorded:**
+- `PROCESS_LINE_PIPELINE_ENABLED=true`
+- `PROCESS_LINE_PIPELINE_BOT_IDS=26`
+- Railway log scan 24h (2026-05-25): no 5xx, no PHP stderr errors, bot 26 replying normally
+- Sentry-side verification deferred (no Sentry MCP) — operator can confirm later if needed
 
-**Explicitly out of scope:**
-- Non-text event coverage (sticker/image still on legacy path) — separate future work
-- Removing legacy `processEvent()` — only after Step 3 has baked 7+ days clean
-- Removing the feature flag — same gate as legacy removal
+**Explicitly out of scope (deferred future work):**
+- Non-text event coverage in pipeline (sticker/image still on legacy path)
+- Removing legacy `processEvent()`
+- Removing the feature flag
 
 ### Sprint 3 — Frontend Quick Wins (~2-3 days, risk: 🟡 medium)
 Scope: bundle/LCP win and largest hook split.
