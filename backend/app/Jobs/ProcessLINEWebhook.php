@@ -32,6 +32,7 @@ use App\Services\SmartAggregation\SmartAggregationAnalyzer;
 use App\Services\SmartAggregation\UserTypingStats;
 use App\Services\StickerReplyService;
 use App\Support\QueueRouter;
+use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -370,10 +371,7 @@ class ProcessLINEWebhook implements ShouldQueue
 
                 // Retry recovery: if user message exists but bot never responded (AI failed on previous attempt),
                 // allow retry to generate the bot response
-                $botAlreadyResponded = Message::where('conversation_id', $conversation->id)
-                    ->where('sender', 'bot')
-                    ->where('created_at', '>=', $existingMsg->created_at)
-                    ->exists();
+                $botAlreadyResponded = $this->botAlreadyRespondedTo($conversation->id, $existingMsg->created_at);
 
                 if (! $botAlreadyResponded && $this->bot->status === 'active' && ! $conversation->is_handover) {
                     Log::info('Retry recovery: generating bot response for existing user message', [
@@ -399,10 +397,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 ->first())) {
 
                 // Retry recovery: same logic as webhook_event_id dedup
-                $botAlreadyResponded = Message::where('conversation_id', $conversation->id)
-                    ->where('sender', 'bot')
-                    ->where('created_at', '>=', $existingMsg->created_at)
-                    ->exists();
+                $botAlreadyResponded = $this->botAlreadyRespondedTo($conversation->id, $existingMsg->created_at);
 
                 if (! $botAlreadyResponded && $this->bot->status === 'active' && ! $conversation->is_handover) {
                     Log::info('Retry recovery: generating bot response for existing user message (by message_id)', [
@@ -685,6 +680,19 @@ class ProcessLINEWebhook implements ShouldQueue
         if ($conversation) {
             broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
         }
+    }
+
+    /**
+     * Determine whether the bot has already produced a reply for the given
+     * existing user message. Shared between the webhook_event_id and
+     * external_message_id dedup branches.
+     */
+    private function botAlreadyRespondedTo(int $conversationId, Carbon $existingMessageCreatedAt): bool
+    {
+        return Message::where('conversation_id', $conversationId)
+            ->where('sender', 'bot')
+            ->where('created_at', '>=', $existingMessageCreatedAt)
+            ->exists();
     }
 
     /**
