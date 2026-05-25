@@ -99,7 +99,7 @@ class FacebookWebhookController extends Controller
 
         // Dispatch job for async processing
         ProcessFacebookWebhook::dispatch($bot, $body)
-            ->onQueue(QueueRouter::llmQueue());
+            ->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue());
 
         // Return 200 OK immediately - Facebook requires fast response
         return response()->json(['status' => 'ok']);

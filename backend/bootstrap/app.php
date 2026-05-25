@@ -28,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Global middleware applied to all requests
         // CacheHeaders FIRST in prepend = runs LAST on response (final word on cache headers)
         $middleware->prepend([
+            \App\Http\Middleware\RedisFallbackMiddleware::class,
             CacheHeaders::class,
             TrustProxies::class,
             HandleCors::class,
