@@ -1,0 +1,320 @@
+# Refactor Initiative Roadmap (Quick Wins First)
+
+**Date:** 2026-05-25
+**Owner:** Claude + jaochai (pair on critical gates)
+**Status:** Spec — pending user review
+**Approach:** A (Quick Wins First) — selected after agent-team analysis
+
+---
+
+## 1. Executive Summary
+
+Multi-sprint refactor initiative targeting **18 candidates** ranked by impact ÷ effort, decomposed into **5 sprints (~3-4 weeks total)**. Driven by 4 parallel agent audits (backend, frontend, cross-cutting, DB) executed on 2026-05-25.
+
+**Strategy:** start with zero-risk DB and perf quick wins (~1 day), then biggest structural win (`ProcessLINEWebhook` pipeline using existing PR #165 spec), then frontend, then channel consolidation (gated by writing tests for Facebook/Telegram first), then cleanup.
+
+**Key outcomes targeted:**
+- ProcessLINEWebhook: 1517 → ≤400 LOC (split into existing `LineWebhook/` services)
+- Facebook/Telegram webhook deduplication: -600 LOC across 3 jobs
+- RAGService: 1076 → 4 focused services
+- Frontend `useConversations.ts`: 834 → domain-grouped hooks ≤200 LOC each
+- LCP improvement target: -800ms on top 3 routes (Phase 2 #3 carried forward)
+- Test coverage: Facebook/Telegram webhook 0% → ≥60% on happy path; OpenRouter 0% → covered
+- Sentry latency p95 on webhook path: ≥5% reduction (Sprint 1 baseline)
+
+---
+
+## 2. Decision Log
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| D1 | Approach A (Quick Wins First) | User selected; high ROI, low risk early, keeps momentum |
+| D2 | 3-channel webhook → CONSOLIDATE (override agent #3 recommendation) | `wc -l` verified FB=721 / TG=554 (not 180/210 as agent #3 claimed). Duplication is real |
+| D3 | RAGService split into 4 services | Backend agent recommendation matches the 9 public methods grouping by concern |
+| D4 | useConversations: domain-grouped hooks, **reuse existing `useMutationWithToast`** | Discovery: `frontend/src/hooks/useMutationWithToast.ts` already supports `invalidateKeys` + toast — Context7 confirms idiomatic React Query v5 pattern. No new abstraction needed |
+| D5 | Phase 2 perf backlog (#11-15) NOT in scope | Has its own plan (`2026-05-15-perf-audit-design.md`); avoid scope tangle |
+| D6 | `LineWebhookPipelineFlag` pattern → copy per channel | Proven in PR #163; do not reinvent |
+| D7 | `types/api.ts` split → DROP from scope | Hand-written (no codegen marker) but 40+ importers; split is risky with low payoff |
+| D8 | Master roadmap + 5 sprint specs (not 1 mega-spec) | 18 items too large for single spec; per-sprint specs are reviewable units |
+
+---
+
+## 3. Architecture Sketches
+
+### 3.1 Webhook Consolidation (`#4`) — copy LINE pattern to FB/TG
+
+LINE already has the pattern. Extract minimum shared base, mirror per channel.
+
+```
+backend/app/Services/Webhook/                  ← NEW shared layer
+  Contracts/
+    WebhookContext.php                         ← value object (mirror LineWebhook/WebhookContext)
+    GateDecision.php
+    ResponseEnvelope.php
+  Pipeline/
+    WebhookProcessorBase.php                   ← validate → context → gate → respond → output
+    CircuitBreakerStage.php
+    PipelineFlag.php                           ← per-channel feature flag
+  Stages/                                      ← interfaces only
+    ContextResolver.php
+    Gater.php
+    Responder.php
+    Outputter.php
+
+backend/app/Services/LineWebhook/              ← EXISTING (adapt to implement interfaces)
+backend/app/Services/FacebookWebhook/          ← NEW (mirror LINE structure)
+backend/app/Services/TelegramWebhook/          ← NEW (mirror LINE structure)
+```
+
+**Job changes:**
+
+| File | Before | After | Notes |
+|------|--------|-------|-------|
+| `ProcessLINEWebhook.php` | 1517 | ~400 | Sprint 2 (using PR #165 plan) |
+| `ProcessFacebookWebhook.php` | 721 | ~250 | Sprint 4 — extends `WebhookProcessorBase` |
+| `ProcessTelegramWebhook.php` | 554 | ~200 | Sprint 4 — extends `WebhookProcessorBase` |
+
+**Critical rule:** LINE-specific logic (smart aggregation, `ORDER_CONTEXT_KEYWORDS`) stays in `LineWebhookContextService` only. Base must NOT leak channel-specific code.
+
+### 3.2 RAGService Split (`#7`) — 9 methods → 4 services
+
+```
+backend/app/Services/RAG/                      ← NEW directory
+  RAGService.php (orchestrator, ~150 LOC)
+    └── generateResponse()                     ← entry point, backward-compatible
+  RAGIntentAnalyzer.php (~200 LOC)
+    ├── detectComplexity()
+    └── detectToolIntent()
+  RAGKnowledgeBaseService.php (~300 LOC)
+    ├── getFlowKnowledgeBaseContext()
+    ├── flowHasKnowledgeBases()
+    └── searchKnowledgeBases()
+  RAGResponseFormatter.php (~200 LOC)
+    ├── formatKnowledgeBaseContext()
+    └── injectStockStatus()                    ← STOCK MANAGEMENT — regression risk; needs test
+  RAGTester.php (~80 LOC)
+    └── testRAG()                               ← admin/dev-only path
+```
+
+**Backward compat:** `RAGService::generateResponse()` keeps its public signature. External callers do not change.
+
+### 3.3 useConversations Split (`#8`) — 21 hooks → domain files, reuse `useMutationWithToast`
+
+Existing `useMutationWithToast` already provides toast + `invalidateKeys`. Migrate inline mutations to use it.
+
+```
+frontend/src/hooks/conversations/              ← NEW directory
+  index.ts                                     ← re-export everything; callers keep current imports
+  useConversationQueries.ts (~200 LOC)
+    ├── useConversations
+    ├── useInfiniteConversations
+    ├── useConversation
+    ├── useConversationMessages
+    └── useConversationStats
+  useConversationLifecycle.ts (~150 LOC)
+    ├── useUpdateConversation         } use useMutationWithToast
+    ├── useCloseConversation          }   with invalidateKeys
+    ├── useReopenConversation         }
+    └── useToggleHandover             }
+  useConversationRead.ts (~150 LOC)
+    ├── useMarkAsRead                          ← keep manual onMutate (optimistic update needs custom rollback)
+    ├── useClearContext
+    └── useClearContextAll
+  useConversationNotes.ts (~100 LOC)
+  useConversationTags.ts (~120 LOC)
+  useSendAgentMessage.ts (~50 LOC)
+```
+
+Old `frontend/src/hooks/useConversations.ts` becomes a re-export shim from `./conversations/index.ts`. Callers do not need import path changes in Sprint 3 (deprecate path next sprint).
+
+---
+
+## 4. Sprint Sequencing
+
+### Sprint 1 — Foundation Quick Wins (~1 day, risk: 🟢 low)
+Scope: 4 zero-risk DB/perf items.
+
+| # | Task | Effort | Source |
+|---|------|--------|--------|
+| 1 | Add composite index `messages(conversation_id, webhook_event_id)` via `CREATE INDEX CONCURRENTLY` | 10m | DB agent |
+| 2 | Coalesce duplicate `Message::where(conversation_id, webhook_event_id)` queries in `ProcessLINEWebhook` (lines 367, 373, 397, 402) | 30m | DB agent |
+| 11 | Add `->with('bot')` eager load in `LeadRecoveryService::findEligibleConversations()` (line 43) | 5m | DB agent |
+| 12 | `VACUUM FULL` on `bots` table (52% dead tuples) | 15m | Perf agent |
+
+**Acceptance:** ProcessLINEWebhook dedup query plan shifts Seq Scan → Index Scan (verified via `EXPLAIN`); Sentry p95 latency on LINE webhook handler drops ≥5% within 24h; `bots` table dead tuple ratio <10%; zero new error classes in 24h Sentry watch.
+
+**Rollback:** `DROP INDEX CONCURRENTLY` for index; revert eager-load and dedup PRs (all non-destructive).
+
+**Tooling:** `safe-migration` skill, `database-migration` agent.
+
+### Sprint 2 — LINE Webhook Pipeline Implementation (~3-5 days, risk: 🔴 high)
+Scope: Implement existing PR #165 plan.
+
+| # | Task | Effort |
+|---|------|--------|
+| 3 | Implement `docs/superpowers/specs/2026-05-16-process-line-webhook-refactor-design.md` and its plan | 3-5d |
+
+**Pre-sprint check:** Re-validate PR #165 plan against current code (LINE webhook may have moved since 2026-05-16). Update plan if drift detected.
+
+**Acceptance:** `ProcessLINEWebhook.php` ≤400 LOC; all 5 existing test files pass; `LineWebhookPipelineFlag` dark-launched on bot 26 only for 24h, then bot 28 for 24h before full enable; zero new error classes on `Jobs/ProcessLINEWebhook*` in Sentry over 48h.
+
+**Rollback:** Feature flag off — instant revert to legacy path without redeploy.
+
+**Tooling:** `subagent-driven-development` skill (parallel sub-tasks per pipeline stage).
+
+### Sprint 3 — Frontend Quick Wins (~2-3 days, risk: 🟡 medium)
+Scope: bundle/LCP win and largest hook split.
+
+| # | Task | Effort | Notes |
+|---|------|--------|-------|
+| 5 | Frontend code splitting for top 3 routes (Phase 2 #3 from perf audit) | 1d | `lazyWithRetryNamed` + `ChunkErrorBoundary` already implemented |
+| 8 | Split `useConversations.ts` (834 LOC) into `hooks/conversations/*` domain files; migrate to `useMutationWithToast` where applicable | 1-2d | See §3.3 |
+
+**Before split:** write 5-7 contract tests covering optimistic update path (`useMarkAsRead`), cache invalidation chain (`useCloseConversation`, `useToggleHandover`), and infinite-query pagination.
+
+**Acceptance:** Lighthouse LCP -≥800ms on ChatPage, FlowEditorPage, BotsPage (measured via Chrome DevTools MCP); main bundle chunk -≥15%; each new hook file ≤200 LOC; existing manual smoke flow (receive message, handover, mark read) passes.
+
+**Rollback:** Revert PRs (no schema/state changes).
+
+**Tooling:** `frontend-design` skill if component reshape needed, `qa-tester` agent for Vitest scaffolding.
+
+### Sprint 4 — Channel Consolidation + RAG Split (~5-7 days, risk: 🔴 high)
+**Test scaffolding is a blocker.** No refactor begins until tests are green.
+
+| # | Task | Effort | Order |
+|---|------|--------|-------|
+| 6a | Write `ProcessFacebookWebhookTest` (copy `ProcessLINEWebhookPipelineTest` structure, adapt) | 1d | **First** |
+| 6b | Write `ProcessTelegramWebhookTest` | 1d | **Second** |
+| 4 | Extract `WebhookProcessorBase` + Contracts/Stages; mirror `FacebookWebhook/` and `TelegramWebhook/` directories; port jobs to extend base | 2-3d | **After 6a+6b green** |
+| 7 | Split `RAGService` into 4 services per §3.2 | 2d | Parallel to #4 |
+
+**Acceptance:** `ProcessFacebookWebhook.php` ≤300 LOC; `ProcessTelegramWebhook.php` ≤250 LOC; RAGService split files each ≤300 LOC; no LINE-specific code in `Webhook/Pipeline/`; stock management regression test passes (`RAGResponseFormatter::injectStockStatus()`); zero new error class on `Jobs/Process{FB,TG}Webhook*` over 48h Sentry watch.
+
+**Rollback:** Per-channel feature flag (mirror `LineWebhookPipelineFlag`); RAGService split is commit-by-commit reversible.
+
+**Tooling:** `qa-tester` agent for tests; `backend-dev` agent for refactor.
+
+### Sprint 5 — Frontend Pages + Service Cleanup (~3-5 days, risk: 🟡 medium)
+Scope: remaining P1/P2 cleanups.
+
+| # | Task | Effort |
+|---|------|--------|
+| 9 | Split `FlowEditorPage.tsx` (569 LOC) into EditorForm + TabController + ChatPanel subcomponents | 1-2d |
+| 10 | Migrate `PluginSection.tsx` from direct `apiGet/Post/Put/Delete` to React Query hooks | 1d |
+| 13 | Split `PaymentFlexService` (1125 LOC) → `FlexMessageBuilder` + `PaymentMessageDetector` | 2-3h |
+| 14 | Split `OpenRouterService` (707 LOC) → `OpenRouterTransport` + `OpenRouterResponseParser` (capability detection delegated to existing `ModelCapabilityService`) | 1d |
+| 15 | Split `StreamController::streamTest()` (~350 LOC) into `StreamingResponseOrchestrator` | 1d |
+| 16 | Standardize non-auth forms on React Hook Form (audit list compiled at sprint start) | 1-2d |
+| 17 | Add reconnection backoff to `useEcho.ts` | 0.5d |
+
+**Acceptance:** Each split file ≤40% of original; React Query consistency in `PluginSection`; OpenRouter `chat()` + retry covered by test; StreamController feature test 1-2 added; no regression in Sentry over 24h.
+
+**Rollback:** Per-commit reversion (cleanup work is low-coupling).
+
+**Tooling:** `refactor` skill, `code-review` agent for batch review.
+
+---
+
+## 5. Risk Register
+
+| # | Risk | Severity | Likelihood | Sprint | Mitigation |
+|---|------|----------|------------|--------|-----------|
+| R1 | Webhook silent failure post-pipeline swap (customer messages dropped without alert) | 🔴 Critical | Medium | 2, 4 | Per-channel feature flag; Sentry alert at `Jobs/Process*Webhook` (error rate +10% pages on-call); dark-launch sequence bot 26 → bot 28 → FB → TG |
+| R2 | Test coverage gap allows regression escape (FB/TG and OpenRouter have 0 tests) | 🔴 Critical | High | 4, 5 | Tests written BEFORE refactor in Sprint 4 (blocker); Sprint 5 writes OpenRouter tests before refactor |
+| R3 | Cache invalidation regression in useConversations split (UI stops updating realtime) | 🟠 High | Medium | 3 | 5-7 contract tests before split; manual smoke of 3 critical flows |
+| R4 | DB migration lock during deploy (index, VACUUM FULL) | 🟠 High | Low | 1 | `CREATE INDEX CONCURRENTLY`; VACUUM FULL inside maintenance window (02:00-08:00 +07) |
+| R5 | Feature flag pollution (Sprint 2-4 add many flags, cleanup forgotten) | 🟡 Medium | High | 2, 4 | Decision log records expiry per flag; Sprint 5 includes flag-cleanup task |
+| R6 | Scope creep — see other code worth fixing while refactoring | 🟡 Medium | High | All | CLAUDE.md "every changed line traces to current sprint goal"; `code-reviewer` agent gate before PR |
+| R7 | RAGService split breaks Stock Management (`injectStockStatus` moves) | 🟡 Medium | Medium | 4 | Stock management already integration-tested; add 1 regression test before split |
+| R8 | PR #165 plan stale (written 2026-05-16, may not match current LINE code) | 🟡 Medium | Medium | 2 | Pre-sprint plan re-validation step |
+| R9 | Token budget overrun from agent team usage | 🟢 Low | Medium | All | Use Explore (read-only) agents for analysis; delegate execute to local-worker (Qwen3.6) per `feedback_hybrid_planner_executor` memory |
+| R10 | Redis fallback misbehaves during refactor window | 🟡 Medium | Low | 2, 4 | Existing integration tests (commit `191946d`) + monitoring middleware cover this |
+
+---
+
+## 6. Verification & Monitoring Gates
+
+### Per-sprint pre-deploy checks
+- `composer test` passes
+- `npm test` passes
+- `composer pint --test` clean
+- `npm run lint` clean
+- `npm run build` succeeds
+- Smoke test via Chrome DevTools MCP (open ChatPage, send test message)
+
+### Post-deploy Sentry watch
+
+| Sprint | Watch duration | Rollback trigger |
+|--------|---------------|------------------|
+| 1 | 24h | ≥2 new error issues on `Jobs/Process*` |
+| 2 | 48h | ProcessLINEWebhook error rate +10% OR p95 latency +20% |
+| 3 | 24h | Frontend error rate +5% OR LCP regression |
+| 4 | 48h | Any new error class in `Process{LINE,FB,TG}Webhook` or RAG paths |
+| 5 | 24h | New error class in OpenRouter / Stream / PaymentFlex |
+
+### Coverage targets (path-focused, not %-focused)
+
+| Area | Now | Target | Sprint |
+|------|-----|--------|--------|
+| ProcessLINEWebhook | 5 test files | maintained | 2 |
+| ProcessFacebookWebhook | **0** | ≥60% happy path + edge | **4 (blocker)** |
+| ProcessTelegramWebhook | **0** | ≥60% happy path + edge | **4 (blocker)** |
+| RAGService (4 new services) | partial | ≥1 unit test each | 4 |
+| OpenRouterService | **0** | `chat()` + retry covered | 5 |
+| StreamController | **0** | 1-2 feature tests | 5 |
+| Frontend `conversations/*` | partial | ≥1 test per file | 3 |
+| Frontend Pages (new subcomponents) | 0 | smoke test each | 5 |
+
+---
+
+## 7. Out of Scope (Explicit)
+
+- ❌ Runtime migration (Node → Bun)
+- ❌ State library swap (React Query → SWR, Zustand → Redux/Jotai)
+- ❌ LLM provider abstraction (OpenRouter → direct Anthropic/OpenAI)
+- ❌ Database schema redesign (only additive indexes + cleanup)
+- ❌ `ProcessAggregatedMessages.php` (460 LOC) — not in top 10
+- ❌ `FlowController` eager-load standardization — defer to Phase 2 perf
+- ❌ `HybridSearchService.py` refactor — defer (low impact)
+- ❌ `BotController` / `FlowController` controller refactors — defer
+- ❌ `types/api.ts` split — hand-written, 40+ importers, low payoff
+- ❌ Phase 2 perf backlog (#11-15: covering indexes, LLM model swap, React-hooks warnings) — tracked in `2026-05-15-perf-audit-design.md`
+
+---
+
+## 8. Pre-Sprint Confirmations Needed from User
+
+| # | Item | Why it matters | Default if unanswered |
+|---|------|----------------|----------------------|
+| C1 | Deploy maintenance window for Sprint 1 (02:00-08:00 +07 default) | VACUUM FULL + index migration timing | Use default |
+| C2 | LOC budget per sprint cap (~1500 default) | Keeps PRs reviewable | Use default |
+| C3 | Lighthouse measurement: manual via Chrome DevTools MCP (default) or set up Lighthouse CI? | Sprint 3 verification gate | Use manual default |
+| C4 | Pair-programming touchpoints — Sprint 2 (LINE pipeline) and Sprint 4 (channel + RAG)? | Risk gates | Default to async review only |
+
+---
+
+## 9. Per-Sprint Spec Files (to be written during executing-plans)
+
+After this roadmap is approved, individual sprint specs and plans get written immediately before that sprint starts (not all upfront — codebase will drift).
+
+```
+docs/superpowers/specs/2026-05-25-refactor-sprint-1-foundation-quick-wins.md
+docs/superpowers/plans/2026-05-25-refactor-sprint-1-foundation-quick-wins.md
+docs/superpowers/specs/<date>-refactor-sprint-2-line-pipeline.md       ← REUSE existing PR #165 spec
+docs/superpowers/specs/<date>-refactor-sprint-3-frontend-quick-wins.md
+docs/superpowers/specs/<date>-refactor-sprint-4-channel-consolidation.md
+docs/superpowers/specs/<date>-refactor-sprint-5-cleanup.md
+```
+
+Each sprint spec follows the same template: Goal, Acceptance Criteria, Rollback, Architecture Reference (link back here), Test Plan, Verification.
+
+---
+
+## 10. References
+
+- Source audit reports: 4 parallel agents on 2026-05-25 (backend, frontend, cross-cutting+perf, DB)
+- Related specs:
+  - `docs/superpowers/specs/2026-05-16-process-line-webhook-refactor-design.md` (Sprint 2 baseline)
+  - `docs/superpowers/specs/2026-05-15-perf-audit-design.md` (Phase 2 backlog source)
+  - `docs/superpowers/specs/2026-05-20-graceful-redis-fallback-design.md` (R10 mitigation)
+- Library guidance verified via Context7: TanStack Query v5 `useMutation` + optimistic update patterns
