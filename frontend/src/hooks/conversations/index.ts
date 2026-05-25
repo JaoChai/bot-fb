@@ -17,3 +17,9 @@ export {
   useReopenConversation,
   useToggleHandover,
 } from './useConversationLifecycle';
+
+export {
+  useMarkAsRead,
+  useClearContext,
+  useClearContextAll,
+} from './useConversationRead';
