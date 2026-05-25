@@ -37,3 +37,5 @@ export {
   useRemoveTag,
   useBulkAddTags,
 } from './useConversationTags';
+
+export { useSendAgentMessage } from './useSendAgentMessage';
