@@ -30,3 +30,10 @@ export {
   useUpdateNote,
   useDeleteNote,
 } from './useConversationNotes';
+
+export {
+  useBotTags,
+  useAddTags,
+  useRemoveTag,
+  useBulkAddTags,
+} from './useConversationTags';
