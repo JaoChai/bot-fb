@@ -214,7 +214,7 @@ describe('useToggleHandover cache write', () => {
 describe('useSendAgentMessage', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('POSTs to the agent-message endpoint with payload', async () => {
+  it('POSTs to the agent-message endpoint with payload and Idempotency-Key header', async () => {
     const qc = makeClient();
     // api.post returns axios-style { data: AgentMessageResponse }
     vi.mocked(api.post).mockResolvedValueOnce({
@@ -229,19 +229,8 @@ describe('useSendAgentMessage', () => {
     expect(api.post).toHaveBeenCalledTimes(1);
     expect(vi.mocked(api.post).mock.calls[0][0]).toMatch(/agent-message$/);
     expect(vi.mocked(api.post).mock.calls[0][1]).toMatchObject({ content: 'hello' });
-  });
-});
-
-describe('queryKey stability', () => {
-  it('uses the documented query-key tuples', () => {
-    const keys = [
-      ['conversations', 42, {}],
-      ['conversations-infinite', 42, {}],
-      ['conversation', 42, 7],
-      ['conversation-stats', 42],
-      ['conversation-notes', 42, 7],
-      ['bot-tags', 42],
-    ];
-    keys.forEach((k) => expect(Array.isArray(k)).toBe(true));
+    expect(vi.mocked(api.post).mock.calls[0][2]).toMatchObject({
+      headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
+    });
   });
 });
