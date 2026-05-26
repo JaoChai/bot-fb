@@ -40,9 +40,9 @@ class StreamingResponseOrchestrator
         private MultipleBubblesService $multipleBubbles,
         private ?SemanticCacheService $semanticCache = null,
     ) {
-        $this->openRouterBaseUrl = config('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
-        $this->openRouterSiteUrl = config('services.openrouter.site_url', config('app.url'));
-        $this->openRouterSiteName = config('services.openrouter.site_name', config('app.name'));
+        $this->openRouterBaseUrl = config('services.openrouter.base_url') ?? 'https://openrouter.ai/api/v1';
+        $this->openRouterSiteUrl = config('services.openrouter.site_url') ?? config('app.url') ?? '';
+        $this->openRouterSiteName = config('services.openrouter.site_name') ?? config('app.name') ?? '';
     }
 
     /**
