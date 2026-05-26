@@ -3,19 +3,10 @@ import { useParams, useSearchParams, useNavigate, useLocation } from 'react-rout
 import {
   Loader2,
   Save,
-  List,
-  MessageSquare,
   PanelRightClose,
   PanelRightOpen,
-  Settings,
-  ArrowLeft,
   Plus,
-  FileText,
-  BookOpen,
-  Cpu,
-  Puzzle,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useFlow, useCreateFlow, useUpdateFlow, useFlowOperations } from '@/hooks/useFlows';
@@ -26,23 +17,9 @@ import {
   FlowsList,
   ChatEmulator,
 } from '@/components/flows';
-import {
-  PromptTab,
-  KnowledgeTab,
-  ModelTab,
-  PluginsTab,
-} from '@/components/flow-editor';
+import { FlowEditorTabsPanel, type EditorTab } from '@/components/flow-editor/FlowEditorTabsPanel';
+import { FlowEditorMobileLayout, type MobileTab } from '@/components/flow-editor/FlowEditorMobileLayout';
 import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
-
-type MobileTab = 'flows' | 'editor' | 'test';
-type EditorTab = 'prompt' | 'knowledge' | 'model' | 'plugins';
-
-const EDITOR_TABS = [
-  { value: 'prompt', label: 'Prompt', icon: FileText },
-  { value: 'knowledge', label: 'Knowledge', icon: BookOpen },
-  { value: 'model', label: 'Model', icon: Cpu },
-  { value: 'plugins', label: 'การแจ้งเตือน', icon: Puzzle },
-] as const;
 
 const DEFAULT_SYSTEM_PROMPT = `คุณคือผู้ช่วย AI ที่เป็นมิตรและช่วยเหลือลูกค้าอย่างมืออาชีพ
 
@@ -81,33 +58,6 @@ function mapFlowToFormData(flow: NonNullable<ReturnType<typeof useFlow>['data']>
     knowledge_bases: kbData,
     is_default: flow.is_default,
   };
-}
-
-function MobileBottomTabs({ activeTab, onTabChange }: { activeTab: MobileTab; onTabChange: (tab: MobileTab) => void }) {
-  const items: Array<{ id: MobileTab; icon: typeof List; label: string }> = [
-    { id: 'flows', icon: List, label: 'Flows' },
-    { id: 'editor', icon: Settings, label: 'Editor' },
-    { id: 'test', icon: MessageSquare, label: 'ทดสอบ' },
-  ];
-  return (
-    <div className="fixed bottom-0 left-0 right-0 border-t bg-background md:hidden z-50 pb-safe">
-      <div className="grid grid-cols-3 h-14">
-        {items.map(({ id, icon: Icon, label }) => (
-          <button
-            key={id}
-            onClick={() => onTabChange(id)}
-            className={cn(
-              'flex flex-col items-center justify-center gap-0.5 transition-colors',
-              activeTab === id ? 'text-foreground bg-muted' : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            <Icon className="h-5 w-5" strokeWidth={1.5} />
-            <span className="text-xs">{label}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 export function FlowEditorPage() {
@@ -257,65 +207,20 @@ export function FlowEditorPage() {
   }
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
-  const showEditor = selectedFlowId || isCreatingNew;
+  const showEditor = Boolean(selectedFlowId || isCreatingNew);
 
   const editorTabs = (
-    <div className="grid gap-6 md:grid-cols-[200px_1fr] md:gap-8">
-      <aside className="md:border-r md:pr-6">
-        <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible -mx-1 px-1">
-          {EDITOR_TABS.map((t) => {
-            const Icon = t.icon;
-            const isActive = activeEditorTab === t.value;
-            return (
-              <button
-                key={t.value}
-                type="button"
-                onClick={() => setActiveEditorTab(t.value as EditorTab)}
-                className={cn(
-                  'relative flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors text-left shrink-0',
-                  'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-4 before:w-0.5 before:rounded-full before:bg-primary before:transition-opacity',
-                  isActive
-                    ? 'bg-accent text-foreground before:opacity-100'
-                    : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground before:opacity-0',
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                <span>{t.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-      </aside>
-
-      <div className="min-w-0 space-y-6">
-        {activeEditorTab === 'prompt' && (
-          <PromptTab
-            name={formData.name}
-            systemPrompt={formData.system_prompt}
-            isDefault={formData.is_default ?? false}
-            onChange={handleFieldChange}
-          />
-        )}
-        {activeEditorTab === 'knowledge' && (
-          <KnowledgeTab
-            allKnowledgeBases={allKnowledgeBases}
-            selectedKnowledgeBases={formData.knowledge_bases || []}
-            isLoading={isLoadingKBs}
-            onChange={handleKnowledgeBasesChange}
-          />
-        )}
-        {activeEditorTab === 'model' && (
-          <ModelTab
-            temperature={formData.temperature ?? 0.7}
-            maxTokens={formData.max_tokens ?? 2048}
-            onChange={handleFieldChange}
-          />
-        )}
-        {activeEditorTab === 'plugins' && (
-          <PluginsTab botId={botId} flowId={selectedFlowId} />
-        )}
-      </div>
-    </div>
+    <FlowEditorTabsPanel
+      activeTab={activeEditorTab}
+      onTabChange={setActiveEditorTab}
+      formData={formData}
+      onFieldChange={handleFieldChange}
+      onKnowledgeBasesChange={handleKnowledgeBasesChange}
+      allKnowledgeBases={allKnowledgeBases}
+      isLoadingKBs={isLoadingKBs}
+      botId={botId}
+      selectedFlowId={selectedFlowId}
+    />
   );
 
   const stickyActionBar = (
@@ -431,137 +336,28 @@ export function FlowEditorPage() {
       </div>
 
       {/* Mobile */}
-      <div className="flex flex-col flex-1 md:hidden pb-14">
-        <div className="flex items-center justify-between px-4 py-3 border-b bg-background">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate('/bots')}
-              aria-label="กลับไปหน้าการเชื่อมต่อ"
-              className="-ml-2 h-9 w-9 shrink-0"
-            >
-              <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
-            </Button>
-            <span className="font-semibold truncate">
-              {formData.name || 'Flow ใหม่'}
-            </span>
-            {formData.is_default && (
-              <Badge variant="secondary" className="text-[10px] shrink-0">Base</Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {hasChanges && !isSaving && (
-              <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 tabular-nums">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                ยังไม่บันทึก
-              </span>
-            )}
-            <Button size="sm" onClick={handleSave} disabled={isSaving || !hasChanges}>
-              {isSaving ? (
-                <Loader2 className="h-4 w-4" strokeWidth={1.5} />
-              ) : (
-                <>
-                  <Save className="h-4 w-4 mr-1" strokeWidth={1.5} />
-                  บันทึก
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-hidden">
-          {mobileActiveTab === 'flows' && (
-            <div className="h-full overflow-y-auto p-4 space-y-2">
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => navigate(`/flows/new?botId=${botId}`)}
-              >
-                <Plus className="h-4 w-4 mr-2" strokeWidth={1.5} />สร้าง Flow ใหม่
-              </Button>
-              {isLoadingFlows ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : flows.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">ยังไม่มี Flow</p>
-              ) : (
-                <div className="space-y-1">
-                  {[...flows]
-                    .sort((a, b) => (a.is_default === b.is_default ? 0 : a.is_default ? -1 : 1))
-                    .map((flow) => (
-                      <button
-                        key={flow.id}
-                        onClick={() => {
-                          navigate(`/flows/${flow.id}/edit?botId=${botId}`);
-                          setMobileActiveTab('editor');
-                        }}
-                        className={cn(
-                          'w-full text-left px-3 py-2.5 rounded-md text-sm transition-colors',
-                          selectedFlowId === flow.id
-                            ? 'bg-muted text-foreground font-medium'
-                            : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                        )}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="truncate">{flow.name}</span>
-                          {flow.is_default && (
-                            <Badge variant="secondary" className="text-[10px] ml-auto">Base</Badge>
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {mobileActiveTab === 'editor' && (
-            <div className="h-full overflow-y-auto">
-              {!showEditor ? (
-                <div className="flex-1 flex flex-col items-center justify-center h-full p-8">
-                  <p className="text-muted-foreground text-center mb-4">เลือกหรือสร้าง Flow เพื่อเริ่มต้น</p>
-                  <Button onClick={() => setMobileActiveTab('flows')}>
-                    <List className="h-4 w-4 mr-2" strokeWidth={1.5} />ดู Flows ทั้งหมด
-                  </Button>
-                </div>
-              ) : isLoadingFlow ? (
-                <div className="flex items-center justify-center h-full">
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-              ) : (
-                <div className="px-4 py-4 space-y-6">
-                  {editorTabs}
-                </div>
-              )}
-            </div>
-          )}
-
-          {mobileActiveTab === 'test' && (
-            <div className="h-full flex flex-col">
-              <ChatEmulator
-                messages={chatMessages}
-                isStreaming={isStreaming}
-                onSendMessage={handleSendChatMessage}
-                onCancelStream={cancelStream}
-                onClearMessages={clearMessages}
-                disabled={!selectedFlowId}
-                disabledReason={
-                  isCreatingNew
-                    ? 'สร้างและบันทึก Flow ก่อน แล้วกลับมาทดสอบ'
-                    : !selectedFlowId
-                    ? 'บันทึก Flow ก่อนทดสอบ'
-                    : undefined
-                }
-                className="flex-1 w-full border-0"
-              />
-            </div>
-          )}
-        </div>
-
-        <MobileBottomTabs activeTab={mobileActiveTab} onTabChange={setMobileActiveTab} />
-      </div>
+      <FlowEditorMobileLayout
+        mobileActiveTab={mobileActiveTab}
+        onMobileTabChange={setMobileActiveTab}
+        formData={formData}
+        hasChanges={hasChanges}
+        isSaving={isSaving}
+        botId={botId}
+        selectedFlowId={selectedFlowId}
+        flows={flows}
+        isLoadingFlows={isLoadingFlows}
+        isLoadingFlow={isLoadingFlow}
+        showEditor={showEditor}
+        isCreatingNew={isCreatingNew}
+        editorTabsPanel={editorTabs}
+        onSave={handleSave}
+        chatMessages={chatMessages}
+        isStreaming={isStreaming}
+        onSendChatMessage={handleSendChatMessage}
+        onCancelStream={cancelStream}
+        onClearMessages={clearMessages}
+        onNavigate={navigate}
+      />
     </div>
   );
 }
