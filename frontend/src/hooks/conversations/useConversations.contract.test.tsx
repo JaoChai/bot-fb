@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, type InfiniteData } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { toast } from 'sonner';
 import {
   useConversations,
   useInfiniteConversations,
@@ -163,7 +164,7 @@ describe('useMarkAsRead optimistic update', () => {
 describe('useCloseConversation cache invalidation', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('invalidates conversations, conversations-infinite, single conversation, and stats', async () => {
+  it('invalidates the 4 expected query keys with prefix shape (post-migration)', async () => {
     const qc = makeClient();
     const spy = vi.spyOn(qc, 'invalidateQueries');
     // Mock returns axios-style { data: ConversationResponse }
@@ -172,9 +173,18 @@ describe('useCloseConversation cache invalidation', () => {
     const { result } = renderHook(() => useCloseConversation(BOT_ID), { wrapper: wrapper(qc) });
     await act(async () => { await result.current.mutateAsync(7); });
 
-    const keys = spy.mock.calls.map((c) => c[0]?.queryKey?.[0]);
-    expect(keys).toEqual(
-      expect.arrayContaining(['conversations', 'conversations-infinite', 'conversation', 'conversation-stats'])
+    // After Sprint 3 migration to useMutationWithToast, invalidation uses 2-tuple
+    // prefix keys (not the original 3-tuple ['conversation', botId, conversationId]).
+    // This is a documented behavior change (see Sprint 3 Result in master roadmap).
+    // Pin the current shape so future refactors can't silently regress.
+    const invalidatedKeys = spy.mock.calls.map((c) => c[0]?.queryKey);
+    expect(invalidatedKeys).toEqual(
+      expect.arrayContaining([
+        ['conversations', BOT_ID],
+        ['conversations-infinite', BOT_ID],
+        ['conversation', BOT_ID],
+        ['conversation-stats', BOT_ID],
+      ])
     );
   });
 });
@@ -232,5 +242,27 @@ describe('useSendAgentMessage', () => {
     expect(vi.mocked(api.post).mock.calls[0][2]).toMatchObject({
       headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
     });
+  });
+});
+
+// =====================
+// Test 9 — useMutationWithToast error toasts (post-migration)
+// =====================
+describe('useMutationWithToast error toasts (post-migration)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('fires toast.error when a migrated lifecycle mutation fails', async () => {
+    const qc = makeClient();
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('Server exploded'));
+
+    const { result } = renderHook(() => useCloseConversation(BOT_ID), { wrapper: wrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync(7).catch(() => undefined);
+    });
+
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    // useMutationWithToast extracts message via getErrorMessage() — verify the actual error
+    // message gets through (not just 'An unexpected error occurred')
+    expect(vi.mocked(toast.error).mock.calls[0][0]).toBe('Server exploded');
   });
 });
