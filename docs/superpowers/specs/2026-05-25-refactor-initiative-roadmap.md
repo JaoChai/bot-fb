@@ -325,6 +325,43 @@ Each sprint spec follows the same template: Goal, Acceptance Criteria, Rollback,
 
 ---
 
+### Sprint 3 Result (recorded 2026-05-25)
+
+- Task #5 (route-level code splitting): ✅ already done in prior work (`lazyWithRetryNamed` in `router.tsx`). No action taken this sprint; flagged in pre-flight.
+- Task #8 (useConversations split): ✅ COMPLETE
+  - `useConversations.ts` 834 → 25 LOC (re-export shim, target ≤30)
+  - 6 domain files in `frontend/src/hooks/conversations/`:
+    - `useConversationQueries.ts` (143 LOC) — 5 read hooks
+    - `useConversationLifecycle.ts` (113 LOC) — 4 lifecycle mutations (3 migrated to useMutationWithToast)
+    - `useConversationRead.ts` (144 LOC) — markAsRead (verbatim manual) + 2 clear-context (migrated)
+    - `useConversationNotes.ts` (109 LOC) — 4 notes hooks (verbatim, dynamic invalidation)
+    - `useConversationTags.ts` (101 LOC) — 4 tag hooks (verbatim, dynamic invalidation)
+    - `useSendAgentMessage.ts` (198 LOC) — verbatim WebSocket race-handling logic
+  - All 6 domain files ≤200 LOC target met
+  - 8 contract tests green throughout the entire split (Tasks 3-8)
+  - Full Vitest suite: 71/71 tests passing after refactor
+  - TypeScript clean (no errors)
+  - 5 hooks migrated to useMutationWithToast; 16 kept manual (correct — pattern fits the use case)
+
+#### ⚠️ User-visible behavior changes (transparency)
+
+The migration to `useMutationWithToast` introduced 2 small behavior changes worth noting for staff users of the dashboard:
+
+1. **Error toasts on 5 previously-silent mutations.** `useUpdateConversation`, `useCloseConversation`, `useReopenConversation`, `useClearContext`, `useClearContextAll` were plain `useMutation` before and did not surface errors to the user. After the migration they show a toast on failure (default behavior of `useMutationWithToast`). Likely an improvement — silent failures now become visible — but it is a UX change that staff should be aware of.
+
+2. **Broader cache invalidation in 3 lifecycle hooks.** The originals invalidated the exact `['conversation', botId, conversationId]` key. The migrated versions invalidate the prefix `['conversation', botId]`, which matches ALL single-conversation detail queries for that bot. Same change applies to `useClearContext`. Correctness is preserved (the right data still refreshes), but if a user has multiple conversation detail panels open, one close/reopen action now triggers refetches for all of them. Low-impact perf regression; can be narrowed in Sprint 5 by adding `onSuccess` callbacks alongside `invalidateKeys`.
+
+#### Follow-ups for Sprint 5+
+
+- Narrow invalidation in `useUpdateConversation`, `useCloseConversation`, `useReopenConversation`, `useClearContext` back to per-conversation keys (add `onSuccess` callback alongside `invalidateKeys`)
+- Add contract tests for the 5 migrated mutations (currently only `useCloseConversation` is tested) + a test asserting `toast.error` fires on failure
+- Extract shared `ConversationResponse` / `ConversationsResponse` interfaces (declared in 4 files) to a `conversations/types.ts` to remove ~24 LOC of duplication
+- Update the "during the Sprint 3 split" comment in `useConversations.ts` (the shim is permanent, not temporary)
+
+- Decision: GO for Sprint 5 (Sprint 4 deferred per D11 reasoning — single-bot operation makes channel consolidation low-ROI).
+
+---
+
 ## 10. References
 
 - Source audit reports: 4 parallel agents on 2026-05-25 (backend, frontend, cross-cutting+perf, DB)
