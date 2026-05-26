@@ -3,10 +3,15 @@
 namespace App\Services;
 
 use App\Models\Conversation;
+use App\Services\Payment\PaymentMessageDetector;
 use Illuminate\Support\Facades\Log;
 
 class PaymentFlexService
 {
+    public function __construct(
+        private PaymentMessageDetector $detector,
+    ) {}
+
     private const BANK_ACCOUNT = '223-3-24880-3';
 
     private const BANK_NAME = 'ธนาคารกสิกรไทย (KBANK)';
@@ -143,11 +148,7 @@ class PaymentFlexService
      */
     public function isPaymentMessage(string $text): bool
     {
-        if (mb_strpos($text, self::BANK_ACCOUNT) === false) {
-            return false;
-        }
-
-        return (bool) preg_match('/รวมยอดโอน|สรุปยอด|ยอดโอน|ยอดรวม|รวมเป็นเงิน|สรุปรายการ/u', $text);
+        return $this->detector->isPaymentMessage($text);
     }
 
     /**
@@ -156,40 +157,7 @@ class PaymentFlexService
      */
     public function parsePaymentData(string $text): ?array
     {
-        // Parse total (required)
-        if (! preg_match('/(?:รวมยอดโอน|สรุปยอด(?:โอน)?|ยอดโอน|ยอดรวม|รวมเป็นเงิน)\s*:?\s*([\d,]+)\s*บาท/u', $text, $totalMatch)) {
-            return null;
-        }
-
-        $total = $totalMatch[1];
-
-        // Parse items (optional)
-        $items = [];
-        preg_match_all(
-            '/(?:^|\n)\s*(?:\d+[\.\)]\s*|[-•]\s*)(.+?)\s*(?:\(([\d,]+)\s*[x×]\s*(\d+)\)\s*=\s*)?([\d,]+)\s*บาท/u',
-            $text,
-            $itemMatches,
-            PREG_SET_ORDER
-        );
-
-        foreach ($itemMatches as $match) {
-            $item = [
-                'name' => trim($match[1]),
-                'total' => $match[4],
-            ];
-
-            if (! empty($match[2]) && ! empty($match[3])) {
-                $item['price'] = $match[2];
-                $item['qty'] = (int) $match[3];
-            }
-
-            $items[] = $item;
-        }
-
-        return [
-            'items' => $items,
-            'total' => $total,
-        ];
+        return $this->detector->parsePaymentData($text);
     }
 
     /**
@@ -420,16 +388,7 @@ class PaymentFlexService
      */
     public function isSupportDelayMessage(string $text): bool
     {
-        // Primary: tag from prompt template
-        if (mb_strpos($text, '[แจ้งเตือน Support]') !== false) {
-            return true;
-        }
-
-        // Fallback: content-based — must mention support delay + ask for "ตกลง"
-        $hasSupportDelay = (bool) preg_match('/(?:ซัพพอร์ต|Support)[\s\S]*?(?:นานกว่าปกติ|ล่าช้า|รอคิว)/iu', $text);
-        $hasAcceptKeyword = mb_strpos($text, 'ตกลง') !== false;
-
-        return $hasSupportDelay && $hasAcceptKeyword;
+        return $this->detector->isSupportDelayMessage($text);
     }
 
     /**
@@ -563,34 +522,7 @@ class PaymentFlexService
      */
     public function isConfirmMessage(string $text): bool
     {
-        // Exclude Step 4 (payment - has bank account)
-        if (mb_strpos($text, self::BANK_ACCOUNT) !== false) {
-            return false;
-        }
-        // Exclude Step 5 (verify - has เงินเข้าแล้ว)
-        if (mb_strpos($text, 'เงินเข้าแล้ว') !== false) {
-            return false;
-        }
-        // Exclude Step 5 (verify - has tag)
-        if (mb_strpos($text, '[ยืนยันชำระเงิน]') !== false) {
-            return false;
-        }
-        // Exclude Step 3 (terms)
-        if (mb_strpos($text, 'ข้อตกลง') !== false) {
-            return false;
-        }
-        // Exclude Step 3 (terms fallback keyword)
-        if (mb_strpos($text, 'เงื่อนไข') !== false) {
-            return false;
-        }
-
-        // Must have total pattern: รวม...บาท (รองรับ รวม, รวมทั้งหมด, รวมยอด, รวมเป็นเงิน)
-        if (! preg_match('/รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?\s*:?\s*[\d,]+\s*บาท/u', $text)) {
-            return false;
-        }
-
-        // Must have "ยืนยัน"
-        return mb_strpos($text, 'ยืนยัน') !== false;
+        return $this->detector->isConfirmMessage($text);
     }
 
     /**
@@ -599,40 +531,7 @@ class PaymentFlexService
      */
     public function parseConfirmData(string $text): ?array
     {
-        // Parse total (required) — รองรับ รวม, รวมทั้งหมด, รวมยอด, รวมเป็นเงิน
-        if (! preg_match('/รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?\s*:?\s*([\d,]+)\s*บาท/u', $text, $totalMatch)) {
-            return null;
-        }
-
-        $total = $totalMatch[1];
-
-        // Parse items (optional) — reuse same regex as parsePaymentData
-        $items = [];
-        preg_match_all(
-            '/(?:^|\n)\s*(?:\d+[\.\)]\s*|[-•]\s*)(.+?)\s*(?:\(([\d,]+)\s*[x×]\s*(\d+)\)\s*=\s*)?([\d,]+)\s*บาท/u',
-            $text,
-            $itemMatches,
-            PREG_SET_ORDER
-        );
-
-        foreach ($itemMatches as $match) {
-            $item = [
-                'name' => trim($match[1]),
-                'total' => $match[4],
-            ];
-
-            if (! empty($match[2]) && ! empty($match[3])) {
-                $item['price'] = $match[2];
-                $item['qty'] = (int) $match[3];
-            }
-
-            $items[] = $item;
-        }
-
-        return [
-            'items' => $items,
-            'total' => $total,
-        ];
+        return $this->detector->parseConfirmData($text);
     }
 
     /**
@@ -768,29 +667,7 @@ class PaymentFlexService
      */
     public function isTermsMessage(string $text): bool
     {
-        // Exclude Step 4 (payment) and Step 5 (verify)
-        if (mb_strpos($text, self::BANK_ACCOUNT) !== false) {
-            return false;
-        }
-        if (mb_strpos($text, 'เงินเข้าแล้ว') !== false) {
-            return false;
-        }
-        if (mb_strpos($text, '[ยืนยันชำระเงิน]') !== false) {
-            return false;
-        }
-
-        // Must have "ยอมรับ" keyword
-        if (mb_strpos($text, 'ยอมรับ') === false) {
-            return false;
-        }
-
-        // Primary: "ข้อตกลง"
-        if (mb_strpos($text, 'ข้อตกลง') !== false) {
-            return true;
-        }
-
-        // Fallback: TERMS_URL present (very reliable signal)
-        return mb_strpos($text, 'canva.site/ads-vance') !== false;
+        return $this->detector->isTermsMessage($text);
     }
 
     /**
@@ -901,7 +778,7 @@ class PaymentFlexService
      */
     public function isVerifySuccessMessage(string $text): bool
     {
-        return (bool) preg_match('/เงินเข้าแล้ว\s*[\d,.]+\s*บาท/u', $text);
+        return $this->detector->isVerifySuccessMessage($text);
     }
 
     /**
@@ -910,30 +787,7 @@ class PaymentFlexService
      */
     public function parseVerifyData(string $text): ?array
     {
-        // Parse amount (required)
-        if (! preg_match('/เงินเข้าแล้ว\s*([\d,.]+)\s*บาท/u', $text, $amountMatch)) {
-            return null;
-        }
-
-        $amount = $amountMatch[1];
-
-        // Parse items (optional): "• item" or "- item" at start of line
-        $items = [];
-        if (preg_match_all('/^[•\-]\s*(.+)/mu', $text, $itemMatches)) {
-            $items = array_map('trim', $itemMatches[1]);
-        }
-
-        // Parse delivery info (optional)
-        $delivery = null;
-        if (preg_match('/ส่งใน\s*(.+?)(?:\n|$)/u', $text, $deliveryMatch)) {
-            $delivery = trim($deliveryMatch[1]);
-        }
-
-        return [
-            'amount' => $amount,
-            'items' => $items,
-            'delivery' => $delivery,
-        ];
+        return $this->detector->parseVerifyData($text);
     }
 
     /**

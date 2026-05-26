@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services;
 
 use App\Models\Conversation;
+use App\Services\Payment\PaymentMessageDetector;
 use App\Services\PaymentFlexService;
 use Tests\TestCase;
 
@@ -13,7 +14,7 @@ class PaymentFlexServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new PaymentFlexService;
+        $this->service = new PaymentFlexService(new PaymentMessageDetector);
     }
 
     /** @test */
