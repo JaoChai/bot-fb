@@ -28,7 +28,7 @@ class OpenRouterServiceTest extends TestCase
             'services.openrouter.max_tokens' => 4096,
         ]);
 
-        $this->service = new OpenRouterService;
+        $this->service = app(OpenRouterService::class);
     }
 
     public function test_service_is_configured_when_api_key_present(): void
@@ -39,7 +39,7 @@ class OpenRouterServiceTest extends TestCase
     public function test_service_is_not_configured_when_api_key_missing(): void
     {
         config(['services.openrouter.api_key' => '']);
-        $service = new OpenRouterService;
+        $service = app(OpenRouterService::class);
 
         $this->assertFalse($service->isConfigured());
     }
@@ -325,6 +325,7 @@ class OpenRouterServiceTest extends TestCase
             ->with('openai/gpt-4o')
             ->andReturn(true);
         $this->app->instance(ModelCapabilityService::class, $mockCapability);
+        $this->service = app(OpenRouterService::class);
 
         $result = $this->service->supportsVision('openai/gpt-4o');
 
@@ -339,6 +340,7 @@ class OpenRouterServiceTest extends TestCase
             ->with('anthropic/claude-3.5-sonnet')
             ->andReturn(false);
         $this->app->instance(ModelCapabilityService::class, $mockCapability);
+        $this->service = app(OpenRouterService::class);
 
         $result = $this->service->supportsReasoning('anthropic/claude-3.5-sonnet');
 
@@ -353,6 +355,7 @@ class OpenRouterServiceTest extends TestCase
             ->with('openai/gpt-4o-mini')
             ->andReturn(true);
         $this->app->instance(ModelCapabilityService::class, $mockCapability);
+        $this->service = app(OpenRouterService::class);
 
         $result = $this->service->supportsStructuredOutput('openai/gpt-4o-mini');
 
@@ -367,6 +370,7 @@ class OpenRouterServiceTest extends TestCase
             ->with('openai/o1-preview')
             ->andReturn(true);
         $this->app->instance(ModelCapabilityService::class, $mockCapability);
+        $this->service = app(OpenRouterService::class);
 
         $result = $this->service->isMandatoryReasoning('openai/o1-preview');
 
