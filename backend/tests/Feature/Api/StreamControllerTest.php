@@ -50,24 +50,19 @@ class StreamControllerTest extends TestCase
      */
     private function bindSseRecorder(string &$body): void
     {
+        // After Sprint 5 Task C2+C3, the controller is a thin adapter and the
+        // pipeline state (incl. doneSent) lives inside StreamingResponseOrchestrator.
+        // We still intercept sendSSE on the controller because the orchestrator
+        // invokes it via the onSseEvent callback (fn($e,$d) => $this->sendSSE(...)),
+        // so the on-the-wire SSE format is still captured here.
         $mock = Mockery::mock(StreamController::class, [
-            $this->app->make(\App\Services\OpenRouterService::class),
-            $this->app->make(\App\Services\HybridSearchService::class),
-            $this->app->make(\App\Services\IntentAnalysisService::class),
-            $this->app->make(\App\Services\RAGService::class),
-            $this->app->make(\App\Services\MultipleBubblesService::class),
-            $this->app->make(\App\Services\SemanticCacheService::class),
+            $this->app->make(\App\Services\Streaming\StreamingResponseOrchestrator::class),
         ])->makePartial();
         $mock->shouldAllowMockingProtectedMethods();
         $mock->shouldReceive('sendSSE')
-            ->andReturnUsing(function (string $event, array $data) use (&$body, $mock) {
+            ->andReturnUsing(function (string $event, array $data) use (&$body) {
                 $body .= "event: {$event}\n";
                 $body .= 'data: '.json_encode($data, JSON_UNESCAPED_UNICODE)."\n\n";
-                if ($event === 'done') {
-                    // Mirror the controller's doneSent guard so duplicate-suppression works.
-                    $r = new \ReflectionProperty($mock, 'doneSent');
-                    $r->setValue($mock, true);
-                }
 
                 return true;
             });
