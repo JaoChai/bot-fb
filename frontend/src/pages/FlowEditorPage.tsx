@@ -138,7 +138,7 @@ export function FlowEditorPage() {
     await sendStreamingMessage(message);
   }, [sendStreamingMessage]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!botId) {
       toast({ title: 'ผิดพลาด', description: 'ไม่พบ Bot ID', variant: 'destructive' });
       return;
@@ -173,16 +173,16 @@ export function FlowEditorPage() {
         variant: 'destructive',
       });
     }
-  };
+  }, [botId, formData, selectedFlowId, updateMutation, createMutation, navigate, toast]);
 
-  const handleDiscard = () => {
+  const handleDiscard = useCallback(() => {
     if (existingFlow) {
       setFormData(mapFlowToFormData(existingFlow));
     } else {
       setFormData(INITIAL_FORM_DATA);
     }
     setHasChanges(false);
-  };
+  }, [existingFlow]);
 
   if (isEditorEntryMode && (isLoadingFlows || flows.length > 0)) {
     return (
