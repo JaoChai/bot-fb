@@ -3,8 +3,10 @@
 namespace Tests\Unit\Services;
 
 use App\Exceptions\OpenRouterException;
+use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
 use Illuminate\Support\Facades\Http;
+use Mockery;
 use Tests\TestCase;
 
 class OpenRouterServiceTest extends TestCase
@@ -26,7 +28,7 @@ class OpenRouterServiceTest extends TestCase
             'services.openrouter.max_tokens' => 4096,
         ]);
 
-        $this->service = new OpenRouterService;
+        $this->service = app(OpenRouterService::class);
     }
 
     public function test_service_is_configured_when_api_key_present(): void
@@ -37,7 +39,7 @@ class OpenRouterServiceTest extends TestCase
     public function test_service_is_not_configured_when_api_key_missing(): void
     {
         config(['services.openrouter.api_key' => '']);
-        $service = new OpenRouterService;
+        $service = app(OpenRouterService::class);
 
         $this->assertFalse($service->isConfigured());
     }
@@ -305,6 +307,127 @@ class OpenRouterServiceTest extends TestCase
         $model = $this->service->getModel('unknown/model');
 
         $this->assertNull($model);
+    }
+
+    // -------------------------------------------------------------------------
+    // Capability Delegation Tests
+    //
+    // Lock the delegation contract before Task B2 converts service-locator
+    // (app(MCS::class)) to constructor injection. Tests bind a mock into the
+    // container, which works for both lookup patterns.
+    // -------------------------------------------------------------------------
+
+    public function test_supports_vision_delegates_to_model_capability_service(): void
+    {
+        $mockCapability = Mockery::mock(ModelCapabilityService::class);
+        $mockCapability->shouldReceive('supportsVision')
+            ->once()
+            ->with('openai/gpt-4o')
+            ->andReturn(true);
+        $this->app->instance(ModelCapabilityService::class, $mockCapability);
+        $this->service = app(OpenRouterService::class);
+
+        $result = $this->service->supportsVision('openai/gpt-4o');
+
+        $this->assertTrue($result);
+    }
+
+    public function test_supports_reasoning_delegates_to_model_capability_service(): void
+    {
+        $mockCapability = Mockery::mock(ModelCapabilityService::class);
+        $mockCapability->shouldReceive('supportsReasoning')
+            ->once()
+            ->with('anthropic/claude-3.5-sonnet')
+            ->andReturn(false);
+        $this->app->instance(ModelCapabilityService::class, $mockCapability);
+        $this->service = app(OpenRouterService::class);
+
+        $result = $this->service->supportsReasoning('anthropic/claude-3.5-sonnet');
+
+        $this->assertFalse($result);
+    }
+
+    public function test_supports_structured_output_delegates_to_model_capability_service(): void
+    {
+        $mockCapability = Mockery::mock(ModelCapabilityService::class);
+        $mockCapability->shouldReceive('supportsStructuredOutput')
+            ->once()
+            ->with('openai/gpt-4o-mini')
+            ->andReturn(true);
+        $this->app->instance(ModelCapabilityService::class, $mockCapability);
+        $this->service = app(OpenRouterService::class);
+
+        $result = $this->service->supportsStructuredOutput('openai/gpt-4o-mini');
+
+        $this->assertTrue($result);
+    }
+
+    public function test_is_mandatory_reasoning_delegates_to_model_capability_service(): void
+    {
+        $mockCapability = Mockery::mock(ModelCapabilityService::class);
+        $mockCapability->shouldReceive('isMandatoryReasoning')
+            ->once()
+            ->with('openai/o1-preview')
+            ->andReturn(true);
+        $this->app->instance(ModelCapabilityService::class, $mockCapability);
+        $this->service = app(OpenRouterService::class);
+
+        $result = $this->service->isMandatoryReasoning('openai/o1-preview');
+
+        $this->assertTrue($result);
+    }
+
+    // -------------------------------------------------------------------------
+    // chatWithTools Tests
+    // -------------------------------------------------------------------------
+
+    public function test_chat_with_tools_builds_tools_array_in_request_body(): void
+    {
+        Http::fake([
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'gen-tools-1',
+                'model' => 'anthropic/claude-3.5-sonnet',
+                'choices' => [
+                    [
+                        'message' => ['content' => 'Using a tool'],
+                        'finish_reason' => 'stop',
+                    ],
+                ],
+                'usage' => ['prompt_tokens' => 12, 'completion_tokens' => 6, 'total_tokens' => 18],
+            ], 200),
+        ]);
+
+        $tools = [
+            [
+                'type' => 'function',
+                'function' => [
+                    'name' => 'get_weather',
+                    'description' => 'Get the current weather',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'location' => ['type' => 'string'],
+                        ],
+                        'required' => ['location'],
+                    ],
+                ],
+            ],
+        ];
+
+        $this->service->chatWithTools(
+            [['role' => 'user', 'content' => 'What is the weather?']],
+            $tools
+        );
+
+        Http::assertSent(function ($request) use ($tools) {
+            $body = $request->data();
+
+            return str_contains($request->url(), '/chat/completions') &&
+                   isset($body['tools']) &&
+                   $body['tools'] === $tools &&
+                   isset($body['tool_choice']) &&
+                   $body['tool_choice'] === 'auto';
+        });
     }
 
     // -------------------------------------------------------------------------

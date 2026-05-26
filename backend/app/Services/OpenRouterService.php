@@ -25,8 +25,9 @@ class OpenRouterService
 
     protected int $maxTokens;
 
-    public function __construct()
-    {
+    public function __construct(
+        private ModelCapabilityService $modelCapability,
+    ) {
         $this->apiKey = config_string('services.openrouter.api_key');
         $this->baseUrl = config_string('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
         $this->defaultModel = config_string('services.openrouter.default_model', 'anthropic/claude-3.5-sonnet');
@@ -515,7 +516,7 @@ class OpenRouterService
      */
     public function supportsVision(string $model): bool
     {
-        return app(ModelCapabilityService::class)->supportsVision($model);
+        return $this->modelCapability->supportsVision($model);
     }
 
     /**
@@ -524,7 +525,7 @@ class OpenRouterService
      */
     public function supportsReasoning(string $model): bool
     {
-        return app(ModelCapabilityService::class)->supportsReasoning($model);
+        return $this->modelCapability->supportsReasoning($model);
     }
 
     /**
@@ -533,7 +534,7 @@ class OpenRouterService
      */
     public function supportsStructuredOutput(string $model): bool
     {
-        return app(ModelCapabilityService::class)->supportsStructuredOutput($model);
+        return $this->modelCapability->supportsStructuredOutput($model);
     }
 
     /**
@@ -542,7 +543,7 @@ class OpenRouterService
      */
     public function isMandatoryReasoning(string $model): bool
     {
-        return app(ModelCapabilityService::class)->isMandatoryReasoning($model);
+        return $this->modelCapability->isMandatoryReasoning($model);
     }
 
     /**
