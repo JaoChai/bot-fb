@@ -270,7 +270,7 @@ export function OrdersAnalytics() {
           {(!summary || summary.total_orders === 0) && (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
-                <ShoppingCart className="h-12 w-12 text-muted-foreground mb-4" />
+                <ShoppingCart className="size-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium">ยังไม่มีออเดอร์</h3>
                 <p className="text-sm text-muted-foreground text-center max-w-sm mt-2">
                   ออเดอร์จะแสดงที่นี่เมื่อ Bot ของคุณเริ่มรับออเดอร์จากลูกค้า
@@ -319,7 +319,7 @@ export function OrdersAnalytics() {
             </Select>
 
             <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="ค้นหาสินค้า..."
                 className="pl-9"
@@ -400,7 +400,7 @@ export function OrdersAnalytics() {
                       disabled={ordersData.meta.current_page <= 1}
                       onClick={() => setFilters({ ...filters, page: (filters.page ?? 1) - 1 })}
                     >
-                      <ChevronLeft className="h-4 w-4" />
+                      <ChevronLeft className="size-4" />
                     </Button>
                     <Button
                       variant="outline"
@@ -408,7 +408,7 @@ export function OrdersAnalytics() {
                       disabled={ordersData.meta.current_page >= ordersData.meta.last_page}
                       onClick={() => setFilters({ ...filters, page: (filters.page ?? 1) + 1 })}
                     >
-                      <ChevronRight className="h-4 w-4" />
+                      <ChevronRight className="size-4" />
                     </Button>
                   </div>
                 </div>
@@ -417,7 +417,7 @@ export function OrdersAnalytics() {
           ) : (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
-                <ShoppingCart className="h-12 w-12 text-muted-foreground mb-4" />
+                <ShoppingCart className="size-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium">ไม่พบออเดอร์</h3>
                 <p className="text-sm text-muted-foreground text-center max-w-sm mt-2">
                   ลองปรับตัวกรองเพื่อดูผลลัพธ์ที่ต้องการ
@@ -508,7 +508,7 @@ export function OrdersAnalytics() {
           ) : (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
-                <ShoppingCart className="h-12 w-12 text-muted-foreground mb-4" />
+                <ShoppingCart className="size-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium">ยังไม่มีข้อมูลลูกค้า</h3>
               </CardContent>
             </Card>
@@ -536,8 +536,8 @@ export function OrdersAnalytics() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {productsData.map((product, index) => (
-                          <TableRow key={index}>
+                        {productsData.map((product) => (
+                          <TableRow key={product.product_name}>
                             <TableCell className="font-medium">
                               {product.product_name}
                             </TableCell>
@@ -582,9 +582,9 @@ export function OrdersAnalytics() {
                             }}
                             labelLine={false}
                           >
-                            {categoryData.map((_, index) => (
+                            {categoryData.map((entry, index) => (
                               <Cell
-                                key={`cell-${index}`}
+                                key={`cell-${entry.category}`}
                                 fill={COLORS[index % COLORS.length]}
                               />
                             ))}
@@ -607,7 +607,7 @@ export function OrdersAnalytics() {
           ) : (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
-                <Package className="h-12 w-12 text-muted-foreground mb-4" />
+                <Package className="size-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium">ยังไม่มีข้อมูลสินค้า</h3>
               </CardContent>
             </Card>

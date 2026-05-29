@@ -85,6 +85,7 @@ export const ConversationItem = memo(function ConversationItemInner({
 
   return (
     <button
+      type="button"
       onClick={handleClick}
       className={rowClassName}
     >
@@ -95,7 +96,7 @@ export const ConversationItem = memo(function ConversationItemInner({
       )}>
         <AvatarImage src={conversation.customer_profile?.picture_url || undefined} />
         <AvatarFallback className={isTelegram ? 'bg-[#0088CC]/10 text-[#0088CC]' : undefined}>
-          {isGroup ? <Users className="h-5 w-5" /> : customerInitial}
+          {isGroup ? <Users className="size-5" /> : customerInitial}
         </AvatarFallback>
       </Avatar>
 
@@ -114,7 +115,7 @@ export const ConversationItem = memo(function ConversationItemInner({
             </span>
             {/* LINE OA style green dot - shows when has unread messages */}
             {hasUnread && !isClosed && (
-              <span className="h-3 w-3 rounded-full bg-[#06C755]" />
+              <span className="size-3 rounded-full bg-[#06C755]" />
             )}
           </div>
         </div>

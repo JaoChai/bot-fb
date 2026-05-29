@@ -63,7 +63,7 @@ export function MessageInput({
   if (!isHandover) {
     return (
       <div className={cn('p-4 text-center text-sm text-muted-foreground', className)}>
-        <Bot className="h-4 w-4 inline-block mr-1" />
+        <Bot className="size-4 inline-block mr-1" />
         Bot is handling this conversation. Click "Take Over" to respond manually.
       </div>
     );
@@ -85,18 +85,18 @@ export function MessageInput({
             autoFocus
           />
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
-            <Headphones className="h-4 w-4 text-muted-foreground" />
+            <Headphones className="size-4 text-muted-foreground" />
           </div>
         </div>
         <Button
           type="submit"
           disabled={!value.trim() || isLoading || disabled}
-          className="h-11 w-11 p-0 flex-shrink-0"
+          className="size-11 p-0 flex-shrink-0"
         >
           {isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="size-4 animate-spin" />
           ) : (
-            <Send className="h-4 w-4" />
+            <Send className="size-4" />
           )}
         </Button>
       </div>

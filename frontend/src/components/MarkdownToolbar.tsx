@@ -50,9 +50,9 @@ export function MarkdownToolbar({
           onClick={onBold}
           title="Bold (Ctrl+B)"
           aria-label="Bold"
-          className="h-8 w-8 p-0"
+          className="size-8 p-0"
         >
-          <Bold className="h-4 w-4" />
+          <Bold className="size-4" />
         </Button>
         <Button
           variant="ghost"
@@ -60,9 +60,9 @@ export function MarkdownToolbar({
           onClick={onItalic}
           title="Italic (Ctrl+I)"
           aria-label="Italic"
-          className="h-8 w-8 p-0"
+          className="size-8 p-0"
         >
-          <Italic className="h-4 w-4" />
+          <Italic className="size-4" />
         </Button>
         <Button
           variant="ghost"
@@ -70,9 +70,9 @@ export function MarkdownToolbar({
           onClick={onStrikethrough}
           title="Strikethrough"
           aria-label="Strikethrough"
-          className="h-8 w-8 p-0"
+          className="size-8 p-0"
         >
-          <Strikethrough className="h-4 w-4" />
+          <Strikethrough className="size-4" />
         </Button>
       </div>
 
@@ -84,7 +84,7 @@ export function MarkdownToolbar({
           onClick={() => onHeading(1)}
           title="Heading 1"
           aria-label="Heading 1"
-          className="h-8 w-8 p-0 text-sm font-bold"
+          className="size-8 p-0 text-sm font-bold"
         >
           H1
         </Button>
@@ -94,7 +94,7 @@ export function MarkdownToolbar({
           onClick={() => onHeading(2)}
           title="Heading 2"
           aria-label="Heading 2"
-          className="h-8 w-8 p-0 text-sm font-bold"
+          className="size-8 p-0 text-sm font-bold"
         >
           H2
         </Button>
@@ -104,7 +104,7 @@ export function MarkdownToolbar({
           onClick={() => onHeading(3)}
           title="Heading 3"
           aria-label="Heading 3"
-          className="h-8 w-8 p-0 text-sm font-bold"
+          className="size-8 p-0 text-sm font-bold"
         >
           H3
         </Button>
@@ -118,9 +118,9 @@ export function MarkdownToolbar({
           onClick={onBulletList}
           title="Bullet List"
           aria-label="Bullet List"
-          className="h-8 w-8 p-0"
+          className="size-8 p-0"
         >
-          <List className="h-4 w-4" />
+          <List className="size-4" />
         </Button>
         <Button
           variant="ghost"
@@ -128,9 +128,9 @@ export function MarkdownToolbar({
           onClick={onNumberedList}
           title="Numbered List"
           aria-label="Numbered List"
-          className="h-8 w-8 p-0"
+          className="size-8 p-0"
         >
-          <ListOrdered className="h-4 w-4" />
+          <ListOrdered className="size-4" />
         </Button>
       </div>
 
@@ -142,9 +142,9 @@ export function MarkdownToolbar({
           onClick={onCode}
           title="Code Block"
           aria-label="Code Block"
-          className="h-8 w-8 p-0"
+          className="size-8 p-0"
         >
-          <Code2 className="h-4 w-4" />
+          <Code2 className="size-4" />
         </Button>
         <Button
           variant="ghost"
@@ -152,9 +152,9 @@ export function MarkdownToolbar({
           onClick={onLink}
           title="Link"
           aria-label="Link"
-          className="h-8 w-8 p-0"
+          className="size-8 p-0"
         >
-          <Link2 className="h-4 w-4" />
+          <Link2 className="size-4" />
         </Button>
       </div>
 
@@ -166,9 +166,9 @@ export function MarkdownToolbar({
           onClick={onPreviewToggle}
           title={isPreviewMode ? 'Edit Mode' : 'Preview Mode'}
           aria-label={isPreviewMode ? 'Edit Mode' : 'Preview Mode'}
-          className="h-8 w-8 p-0"
+          className="size-8 p-0"
         >
-          {isPreviewMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          {isPreviewMode ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
         </Button>
         <Button
           variant="ghost"
@@ -176,9 +176,9 @@ export function MarkdownToolbar({
           onClick={onFullscreen}
           title="Fullscreen"
           aria-label="Fullscreen"
-          className="h-8 w-8 p-0"
+          className="size-8 p-0"
         >
-          <Maximize2 className="h-4 w-4" />
+          <Maximize2 className="size-4" />
         </Button>
         <Button
           variant="ghost"
@@ -186,10 +186,10 @@ export function MarkdownToolbar({
           asChild
           title="Markdown Guide"
           aria-label="Markdown Guide"
-          className="h-8 w-8 p-0"
+          className="size-8 p-0"
         >
           <a href="https://www.markdownguide.org" target="_blank" rel="noopener noreferrer">
-            <BookOpen className="h-4 w-4" />
+            <BookOpen className="size-4" />
           </a>
         </Button>
       </div>

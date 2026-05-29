@@ -80,7 +80,7 @@ export function QuickReplyAutocomplete({
     >
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/50">
-        <Zap className="h-4 w-4 text-primary" />
+        <Zap className="size-4 text-primary" />
         <span className="text-sm font-medium">Quick Replies</span>
         {query && (
           <span className="text-xs text-muted-foreground">
@@ -93,7 +93,7 @@ export function QuickReplyAutocomplete({
       <div ref={listRef} className="max-h-[200px] overflow-y-auto">
         {isLoading ? (
           <div className="flex items-center justify-center py-4">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            <Loader2 className="size-4 animate-spin text-muted-foreground" />
           </div>
         ) : !quickReplies || quickReplies.length === 0 ? (
           <div className="px-3 py-4 text-sm text-muted-foreground text-center">

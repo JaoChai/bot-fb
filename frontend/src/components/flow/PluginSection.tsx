@@ -244,7 +244,7 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <Label className="font-medium flex items-center gap-2">
-              <Zap className="h-4 w-4" />
+              <Zap className="size-4" />
               Plugins
             </Label>
             <p className="text-sm text-muted-foreground mt-1">
@@ -255,11 +255,11 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
 
         {isLoading ? (
           <div className="flex justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : plugins.length === 0 ? (
           <div className="border-2 border-dashed rounded-lg p-6 text-center">
-            <Plus className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+            <Plus className="size-8 text-muted-foreground mx-auto mb-2" />
             <p className="text-sm text-muted-foreground mb-3">
               {flowId ? 'ยังไม่มี plugins' : 'บันทึก Flow ก่อนเพิ่ม plugins'}
             </p>
@@ -269,7 +269,7 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
               onClick={() => setShowTypeDialog(true)}
               disabled={!flowId}
             >
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               เพิ่มปลั๊กอิน
             </Button>
           </div>
@@ -281,7 +281,7 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
                 className="flex items-center justify-between p-3 border rounded-lg bg-muted/30"
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <Send className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                  <Send className="size-4 text-blue-500 flex-shrink-0" />
                   <div className="min-w-0">
                     <span className="text-sm font-medium block truncate">
                       {plugin.name || 'Telegram Notification'}
@@ -299,18 +299,18 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-8 p-0"
+                    className="size-8 p-0"
                     onClick={() => handleEdit(plugin)}
                   >
-                    <Pencil className="h-3.5 w-3.5" />
+                    <Pencil className="size-3.5" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-8 p-0 text-destructive hover:text-destructive/80"
+                    className="size-8 p-0 text-destructive hover:text-destructive/80"
                     onClick={() => handleDelete(plugin.id)}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="size-3.5" />
                   </Button>
                 </div>
               </div>
@@ -321,7 +321,7 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
               className="w-full mt-3"
               onClick={() => setShowTypeDialog(true)}
             >
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-4 mr-2" />
               เพิ่มปลั๊กอิน
             </Button>
           </div>
@@ -339,11 +339,12 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
           </DialogHeader>
           <div className="space-y-2">
             <button
+              type="button"
               onClick={handleSelectType}
               className="w-full flex items-start gap-3 p-4 border rounded-lg hover:bg-muted/50 transition-colors text-left"
             >
               <div className="p-2 bg-blue-500/10 rounded">
-                <Send className="h-5 w-5 text-blue-500" />
+                <Send className="size-5 text-blue-500" />
               </div>
               <div>
                 <span className="text-sm font-medium block">
@@ -505,7 +506,7 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
               ยกเลิก
             </Button>
             <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {isSaving && <Loader2 className="size-4 mr-2 animate-spin" />}
               {editingPlugin ? 'บันทึก' : 'เพิ่มปลั๊กอิน'}
             </Button>
           </DialogFooter>

@@ -188,7 +188,7 @@ export function FlowEditorPage() {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+          <Loader2 className="size-8 animate-spin mx-auto mb-4 text-muted-foreground" />
           <p className="text-muted-foreground">กำลังโหลด Flow Editor...</p>
         </div>
       </div>
@@ -237,9 +237,9 @@ export function FlowEditorPage() {
           )}
           <Button onClick={handleSave} disabled={isSaving || !hasChanges} className="min-w-[100px]">
             {isSaving ? (
-              <><Loader2 className="h-4 w-4 mr-2 animate-spin" strokeWidth={1.5} />บันทึก...</>
+              <><Loader2 className="size-4 mr-2 animate-spin" strokeWidth={1.5} />บันทึก...</>
             ) : (
-              <><Save className="h-4 w-4 mr-2" strokeWidth={1.5} />บันทึก</>
+              <><Save className="size-4 mr-2" strokeWidth={1.5} />บันทึก</>
             )}
           </Button>
         </div>
@@ -267,13 +267,13 @@ export function FlowEditorPage() {
               <div className="text-center space-y-3">
                 <p className="text-lg text-muted-foreground">เลือกหรือสร้าง Flow เพื่อเริ่มต้น</p>
                 <Button variant="outline" onClick={() => navigate(`/flows/new?botId=${botId}`)}>
-                  <Plus className="h-4 w-4 mr-2" strokeWidth={1.5} />สร้าง Flow ใหม่
+                  <Plus className="size-4 mr-2" strokeWidth={1.5} />สร้าง Flow ใหม่
                 </Button>
               </div>
             </div>
           ) : isLoadingFlow ? (
             <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <Loader2 className="size-8 animate-spin text-muted-foreground" />
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">
@@ -289,7 +289,7 @@ export function FlowEditorPage() {
                       )}
                       {hasChanges && (
                         <Badge variant="outline" className="text-[10px] gap-1.5 shrink-0">
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          <span className="size-1.5 rounded-full bg-amber-500" />
                           มีการเปลี่ยนแปลง
                         </Badge>
                       )}
@@ -303,9 +303,9 @@ export function FlowEditorPage() {
                     size="icon"
                     onClick={() => setChatOpen(!chatOpen)}
                     aria-label={chatOpen ? 'ซ่อนแชททดสอบ' : 'แสดงแชททดสอบ'}
-                    className="h-9 w-9 shrink-0"
+                    className="size-9 shrink-0"
                   >
-                    {chatOpen ? <PanelRightClose className="h-4 w-4" strokeWidth={1.5} /> : <PanelRightOpen className="h-4 w-4" strokeWidth={1.5} />}
+                    {chatOpen ? <PanelRightClose className="size-4" strokeWidth={1.5} /> : <PanelRightOpen className="size-4" strokeWidth={1.5} />}
                   </Button>
                 </div>
 

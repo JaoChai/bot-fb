@@ -52,7 +52,7 @@ const MemoizedMessageItem = memo(function MemoizedMessageItem({
         <div className="flex items-center gap-3 py-3 my-2">
           <div className="flex-1 h-px bg-border" />
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full border">
-            <RotateCcw className="h-3 w-3" />
+            <RotateCcw className="size-3" />
             <span>
               Bot context reset - {format(contextClearedAt!, 'PPp', { locale: th })}
             </span>
@@ -125,7 +125,7 @@ export function MessageList({
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center py-8">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -201,7 +201,7 @@ export function MessageList({
           className="absolute bottom-4 left-1/2 -translate-x-1/2 shadow-lg z-20"
           onClick={handleScrollToBottom}
         >
-          <ChevronDown className="h-4 w-4 mr-2" />
+          <ChevronDown className="size-4 mr-2" />
           New messages
         </Button>
       )}

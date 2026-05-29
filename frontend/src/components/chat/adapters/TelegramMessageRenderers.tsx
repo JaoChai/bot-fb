@@ -52,7 +52,7 @@ export function renderPhoto(
   if (!message.media_url) {
     return (
       <div className="bg-muted/50 rounded-lg p-4 text-center text-muted-foreground">
-        <FileIcon className="h-8 w-8 mx-auto mb-2" />
+        <FileIcon className="size-8 mx-auto mb-2" />
         <p className="text-sm">Image unavailable</p>
       </div>
     );
@@ -79,7 +79,7 @@ export function renderVideo(message: Message): ReactNode {
   if (!message.media_url) {
     return (
       <div className="bg-muted/50 rounded-lg p-4 text-center text-muted-foreground">
-        <Play className="h-8 w-8 mx-auto mb-2" />
+        <Play className="size-8 mx-auto mb-2" />
         <p className="text-sm">Video unavailable</p>
       </div>
     );
@@ -93,6 +93,7 @@ export function renderVideo(message: Message): ReactNode {
         className="rounded-lg w-full"
         preload="metadata"
       >
+        <track kind="captions" />
         Your browser does not support video.
       </video>
       {message.content && message.content !== '[Video]' && (
@@ -114,7 +115,9 @@ export function renderVoice(message: Message): ReactNode {
 
   return (
     <div className="flex items-center gap-2 min-w-[200px]">
-      <audio src={message.media_url} controls className="w-full max-w-[250px]" />
+      <audio src={message.media_url} controls aria-label="Voice message" className="w-full max-w-[250px]">
+        <track kind="captions" />
+      </audio>
     </div>
   );
 }
@@ -134,8 +137,8 @@ export function renderFile(message: Message, isUser: boolean): ReactNode {
         isUser ? 'bg-muted/50 hover:bg-muted' : 'bg-background/10 hover:bg-background/20'
       )}
     >
-      <div className="h-10 w-10 rounded-lg bg-[#0088CC]/10 flex items-center justify-center flex-shrink-0">
-        <FileIcon className="h-5 w-5 text-[#0088CC]" />
+      <div className="size-10 rounded-lg bg-[#0088CC]/10 flex items-center justify-center flex-shrink-0">
+        <FileIcon className="size-5 text-[#0088CC]" />
       </div>
       <div className="flex-1 min-w-0">
         <p className="font-medium text-sm truncate">{fileName}</p>
@@ -145,7 +148,7 @@ export function renderFile(message: Message, isUser: boolean): ReactNode {
           </p>
         )}
       </div>
-      <Download className="h-4 w-4 flex-shrink-0 opacity-60" />
+      <Download className="size-4 flex-shrink-0 opacity-60" />
     </a>
   );
 }
@@ -169,14 +172,14 @@ export function renderLocation(message: Message, isUser: boolean): ReactNode {
         isUser ? 'bg-muted/50 hover:bg-muted' : 'bg-background/10 hover:bg-background/20'
       )}
     >
-      <div className="h-10 w-10 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
-        <MapPin className="h-5 w-5 text-red-500" />
+      <div className="size-10 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
+        <MapPin className="size-5 text-red-500" />
       </div>
       <div className="flex-1 min-w-0">
         <p className="font-medium text-sm truncate">{title || 'Shared location'}</p>
         {address && <p className="text-xs text-muted-foreground truncate">{address}</p>}
       </div>
-      <ExternalLink className="h-4 w-4 flex-shrink-0 opacity-60" />
+      <ExternalLink className="size-4 flex-shrink-0 opacity-60" />
     </a>
   );
 }
@@ -197,8 +200,8 @@ export function renderContact(message: Message, isUser: boolean): ReactNode {
       )}
     >
       <div className="flex items-center gap-3">
-        <div className="h-10 w-10 rounded-full bg-[#0088CC]/10 flex items-center justify-center flex-shrink-0">
-          <User className="h-5 w-5 text-[#0088CC]" />
+        <div className="size-10 rounded-full bg-[#0088CC]/10 flex items-center justify-center flex-shrink-0">
+          <User className="size-5 text-[#0088CC]" />
         </div>
         <div>
           <p className="font-medium text-sm">{contactName}</p>
@@ -224,8 +227,8 @@ export function renderPoll(message: Message, isUser: boolean): ReactNode {
     >
       <p className="font-medium text-sm mb-2">{question || 'Poll'}</p>
       <div className="space-y-1">
-        {options.map((opt, i) => (
-          <div key={i} className="text-xs px-2 py-1 bg-background/20 rounded">
+        {options.map((opt) => (
+          <div key={opt} className="text-xs px-2 py-1 bg-background/20 rounded">
             {opt}
           </div>
         ))}

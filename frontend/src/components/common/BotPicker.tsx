@@ -40,7 +40,7 @@ export function BotPicker({
     >
       <SelectTrigger className={cn('w-full', className)}>
         {showIcon && (
-          <Bot className="h-4 w-4 text-muted-foreground mr-2" strokeWidth={1.5} />
+          <Bot className="size-4 text-muted-foreground mr-2" strokeWidth={1.5} />
         )}
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>

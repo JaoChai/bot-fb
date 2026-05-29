@@ -89,7 +89,7 @@ export function ChannelMessageArea({
         <div className="space-y-4 max-w-3xl mx-auto overflow-x-hidden">
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
           ) : messages.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
@@ -120,7 +120,7 @@ export function ChannelMessageArea({
           className="absolute bottom-4 left-1/2 -translate-x-1/2 shadow-lg z-20"
           onClick={handleScrollToBottom}
         >
-          <ChevronDown className="h-4 w-4 mr-2" />
+          <ChevronDown className="size-4 mr-2" />
           New messages
         </Button>
       )}

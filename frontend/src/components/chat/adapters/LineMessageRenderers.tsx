@@ -40,7 +40,7 @@ export function renderSticker(message: Message): ReactNode {
   }
   return (
     <div className="flex items-center gap-2 p-2">
-      <Smile className="h-8 w-8 text-[#06C755]" />
+      <Smile className="size-8 text-[#06C755]" />
       <span className="text-muted-foreground text-sm">Sticker</span>
     </div>
   );
@@ -56,7 +56,7 @@ export function renderImage(
   if (!message.media_url) {
     return (
       <div className="bg-muted/50 rounded-lg p-4 text-center text-muted-foreground">
-        <FileIcon className="h-8 w-8 mx-auto mb-2" />
+        <FileIcon className="size-8 mx-auto mb-2" />
         <p className="text-sm">Image unavailable</p>
       </div>
     );
@@ -85,7 +85,7 @@ export function renderVideo(message: Message): ReactNode {
   if (!message.media_url) {
     return (
       <div className="bg-muted/50 rounded-lg p-4 text-center text-muted-foreground">
-        <Play className="h-8 w-8 mx-auto mb-2" />
+        <Play className="size-8 mx-auto mb-2" />
         <p className="text-sm">Video unavailable</p>
       </div>
     );
@@ -99,6 +99,7 @@ export function renderVideo(message: Message): ReactNode {
         className="rounded-lg w-full"
         preload="metadata"
       >
+        <track kind="captions" />
         Your browser does not support video.
       </video>
       {message.content && !message.content.includes('[') && (
@@ -118,7 +119,9 @@ export function renderAudio(message: Message): ReactNode {
 
   return (
     <div className="flex items-center gap-2 min-w-[200px]">
-      <audio src={message.media_url} controls className="w-full max-w-[250px]" />
+      <audio src={message.media_url} controls aria-label="Audio message" className="w-full max-w-[250px]">
+        <track kind="captions" />
+      </audio>
     </div>
   );
 }
@@ -140,8 +143,8 @@ export function renderFile(message: Message, isUser: boolean): ReactNode {
         isUser ? 'bg-white/20 hover:bg-white/30' : 'bg-muted/50 hover:bg-muted'
       )}
     >
-      <div className="h-10 w-10 rounded-lg bg-[#06C755]/10 flex items-center justify-center flex-shrink-0">
-        <FileIcon className="h-5 w-5 text-[#06C755]" />
+      <div className="size-10 rounded-lg bg-[#06C755]/10 flex items-center justify-center flex-shrink-0">
+        <FileIcon className="size-5 text-[#06C755]" />
       </div>
       <div className="flex-1 min-w-0">
         <p className="font-medium text-sm truncate">{fileName}</p>
@@ -151,7 +154,7 @@ export function renderFile(message: Message, isUser: boolean): ReactNode {
           </p>
         )}
       </div>
-      <Download className="h-4 w-4 flex-shrink-0 opacity-60" />
+      <Download className="size-4 flex-shrink-0 opacity-60" />
     </a>
   );
 }
@@ -178,8 +181,8 @@ export function renderLocation(message: Message, isUser: boolean): ReactNode {
         isUser ? 'bg-white/20 hover:bg-white/30' : 'bg-muted/50 hover:bg-muted'
       )}
     >
-      <div className="h-10 w-10 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
-        <MapPin className="h-5 w-5 text-red-500" />
+      <div className="size-10 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
+        <MapPin className="size-5 text-red-500" />
       </div>
       <div className="flex-1 min-w-0">
         <p className="font-medium text-sm truncate">{address || 'Shared location'}</p>
@@ -189,7 +192,7 @@ export function renderLocation(message: Message, isUser: boolean): ReactNode {
           </p>
         )}
       </div>
-      <ExternalLink className="h-4 w-4 flex-shrink-0 opacity-60" />
+      <ExternalLink className="size-4 flex-shrink-0 opacity-60" />
     </a>
   );
 }

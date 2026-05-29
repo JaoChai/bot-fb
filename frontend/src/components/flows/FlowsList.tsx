@@ -29,6 +29,7 @@ const FlowItem = memo(function FlowItem({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
         'w-full text-left px-3 py-2 rounded-md text-sm transition-colors cursor-pointer',
@@ -39,7 +40,7 @@ const FlowItem = memo(function FlowItem({
     >
       <div className="flex items-center gap-2 min-w-0">
         {flow.is_default && (
-          <Bookmark className="h-3.5 w-3.5 shrink-0 fill-current" />
+          <Bookmark className="size-3.5 shrink-0 fill-current" />
         )}
         <span className="truncate flex-1">{flow.name}</span>
         {flow.is_default && (
@@ -91,7 +92,7 @@ export const FlowsList = memo(function FlowsList({
           onClick={handleBackToBots}
           className="gap-1.5 text-muted-foreground hover:text-foreground px-2"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="size-4" />
           <span className="text-sm">การเชื่อมต่อ</span>
         </Button>
       </div>
@@ -103,7 +104,7 @@ export const FlowsList = memo(function FlowsList({
           className="w-full"
           onClick={handleCreateNew}
         >
-          <Plus className="h-4 w-4 mr-2" />
+          <Plus className="size-4 mr-2" />
           สร้าง Flow ใหม่
         </Button>
       </div>
@@ -112,7 +113,7 @@ export const FlowsList = memo(function FlowsList({
       <div className="flex-1 overflow-y-auto px-2">
         {isLoading ? (
           <div className="flex justify-center py-4">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : sortedFlows.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">

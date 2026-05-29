@@ -1,59 +1,13 @@
-import { useEffect, useRef, useCallback } from 'react';
-import type { Channel, PresenceChannel } from 'laravel-echo';
-import { getEcho, reconnectEcho } from '@/lib/echo';
+import { useEffect, useRef } from 'react';
+import type { Channel } from 'laravel-echo';
+import { getEcho } from '@/lib/echo';
 import type {
   MessageSentEvent,
   ConversationUpdatedEvent,
-  AdminNotificationEvent,
   DocumentStatusUpdatedEvent,
   BotSettingsUpdatedEvent,
 } from '@/types/realtime';
 import { CHANNELS, EVENTS } from '@/types/realtime';
-
-/**
- * Hook to subscribe to a conversation channel for real-time messages
- * Uses refs for callbacks to prevent effect re-runs on callback changes
- */
-export function useConversationChannel(
-  conversationId: number | null,
-  callbacks: {
-    onMessage?: (event: MessageSentEvent) => void;
-    onConversationUpdate?: (event: ConversationUpdatedEvent) => void;
-  }
-) {
-  const channelRef = useRef<Channel | null>(null);
-
-  // Store callbacks in refs to prevent effect re-runs
-  const callbacksRef = useRef(callbacks);
-  callbacksRef.current = callbacks;
-
-  useEffect(() => {
-    if (!conversationId) return;
-
-    const echo = getEcho();
-    const channelName = CHANNELS.conversation(conversationId);
-
-    channelRef.current = echo.private(channelName)
-      .listen(`.${EVENTS.messageSent}`, (event: MessageSentEvent) => {
-        callbacksRef.current.onMessage?.(event);
-      })
-      .listen(`.${EVENTS.conversationUpdated}`, (event: ConversationUpdatedEvent) => {
-        callbacksRef.current.onConversationUpdate?.(event);
-      })
-      .listen(`.${EVENTS.conversationMessageReceived}`, (event: ConversationUpdatedEvent) => {
-        callbacksRef.current.onConversationUpdate?.(event);
-      });
-
-    return () => {
-      if (channelRef.current) {
-        echo.leave(channelName);
-        channelRef.current = null;
-      }
-    };
-  }, [conversationId]); // Only re-subscribe when conversationId changes
-
-  return channelRef.current;
-}
 
 /**
  * Hook to subscribe to a bot channel for all conversations
@@ -106,98 +60,6 @@ export function useBotChannel(
       }
     };
   }, [botId]); // Only re-subscribe when botId changes
-
-  return channelRef.current;
-}
-
-/**
- * Hook to subscribe to user notifications
- */
-export function useNotifications(
-  userId: number | null,
-  onNotification: (event: AdminNotificationEvent) => void
-) {
-  const channelRef = useRef<Channel | null>(null);
-  const callbackRef = useRef(onNotification);
-  callbackRef.current = onNotification;
-
-  useEffect(() => {
-    if (!userId) return;
-
-    const echo = getEcho();
-    const channelName = CHANNELS.userNotifications(userId);
-
-    channelRef.current = echo.private(channelName)
-      .listen(`.${EVENTS.notification}`, (event: AdminNotificationEvent) => {
-        callbackRef.current(event);
-      });
-
-    return () => {
-      if (channelRef.current) {
-        echo.leave(channelName);
-        channelRef.current = null;
-      }
-    };
-  }, [userId]);
-
-  return channelRef.current;
-}
-
-/**
- * Hook to manage Echo connection lifecycle
- */
-export function useEchoConnection() {
-  const reconnect = useCallback(() => {
-    reconnectEcho();
-  }, []);
-
-  const isConnected = useCallback(() => {
-    const echo = getEcho();
-    return echo.connector.pusher?.connection?.state === 'connected';
-  }, []);
-
-  return { reconnect, isConnected };
-}
-
-/**
- * Hook for presence channel (to see who else is viewing)
- */
-export function useBotPresence(
-  botId: number | null,
-  callbacks: {
-    onHere?: (members: { id: number; name: string }[]) => void;
-    onJoining?: (member: { id: number; name: string }) => void;
-    onLeaving?: (member: { id: number; name: string }) => void;
-  }
-) {
-  const channelRef = useRef<PresenceChannel | null>(null);
-  const callbacksRef = useRef(callbacks);
-  callbacksRef.current = callbacks;
-
-  useEffect(() => {
-    if (!botId) return;
-
-    const echo = getEcho();
-    const channelName = `bot.${botId}.presence`;
-
-    channelRef.current = echo.join(channelName)
-      .here((members: { id: number; name: string }[]) => {
-        callbacksRef.current.onHere?.(members);
-      })
-      .joining((member: { id: number; name: string }) => {
-        callbacksRef.current.onJoining?.(member);
-      })
-      .leaving((member: { id: number; name: string }) => {
-        callbacksRef.current.onLeaving?.(member);
-      });
-
-    return () => {
-      if (channelRef.current) {
-        echo.leave(channelName);
-        channelRef.current = null;
-      }
-    };
-  }, [botId]);
 
   return channelRef.current;
 }

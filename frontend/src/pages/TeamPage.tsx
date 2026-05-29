@@ -150,7 +150,7 @@ export function TeamPage() {
           <Panel icon={UserPlus} title="เพิ่ม Admin" description="ค้นหา User ด้วย Email เพื่อเพิ่มเป็น Admin">
             <div className="space-y-4">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" strokeWidth={1.5} />
                 <Input
                   placeholder="ค้นหาด้วย email..."
                   value={searchEmail}
@@ -161,7 +161,7 @@ export function TeamPage() {
 
               {searchLoading && deferredSearch.length >= 3 && (
                 <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                   กำลังค้นหา...
                 </div>
               )}
@@ -174,7 +174,7 @@ export function TeamPage() {
                       className="flex items-center justify-between p-3 rounded-md border bg-card transition-colors hover:bg-muted/40"
                     >
                       <div className="flex items-center gap-3">
-                        <Avatar className="h-9 w-9">
+                        <Avatar className="size-9">
                           <AvatarFallback>
                             {u.name.substring(0, 2).toUpperCase()}
                           </AvatarFallback>
@@ -190,9 +190,9 @@ export function TeamPage() {
                         disabled={addAdmin.isPending}
                       >
                         {addAdmin.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <Loader2 className="size-4 animate-spin" />
                         ) : (
-                          <UserPlus className="h-4 w-4" strokeWidth={1.5} />
+                          <UserPlus className="size-4" strokeWidth={1.5} />
                         )}
                         <span className="ml-1">เพิ่ม</span>
                       </Button>
@@ -215,7 +215,7 @@ export function TeamPage() {
           >
             {adminsLoading ? (
               <div className="flex items-center gap-2 text-muted-foreground py-4">
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="size-4 animate-spin" />
                 กำลังโหลด...
               </div>
             ) : admins && admins.length > 0 ? (
@@ -233,7 +233,7 @@ export function TeamPage() {
                       className="flex items-center justify-between p-3 rounded-md border bg-card transition-colors hover:bg-muted/30"
                     >
                       <div className="flex items-center gap-3">
-                        <Avatar className="h-9 w-9">
+                        <Avatar className="size-9">
                           <AvatarFallback>
                             {admin.user?.name?.substring(0, 2).toUpperCase() || 'AD'}
                           </AvatarFallback>
@@ -248,7 +248,7 @@ export function TeamPage() {
                       <div className="flex items-center gap-3">
                         {admin.active_conversations_count !== undefined && (
                           <Badge variant="outline" className="gap-1 tabular-nums">
-                            <MessageSquare className="h-3 w-3" strokeWidth={1.5} />
+                            <MessageSquare className="size-3" strokeWidth={1.5} />
                             {admin.active_conversations_count}
                           </Badge>
                         )}
@@ -263,7 +263,7 @@ export function TeamPage() {
                             })
                           }
                         >
-                          <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                          <Trash2 className="size-4" strokeWidth={1.5} />
                         </Button>
                       </div>
                     </div>
@@ -313,10 +313,10 @@ export function TeamPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="round_robin">
-                        Round Robin — สลับคนตามลำดับ
+                        Round Robin &mdash; สลับคนตามลำดับ
                       </SelectItem>
                       <SelectItem value="load_balanced">
-                        Load Balanced — ให้คนที่งานน้อยสุด
+                        Load Balanced &mdash; ให้คนที่งานน้อยสุด
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -342,7 +342,7 @@ export function TeamPage() {
               onClick={handleRemoveAdmin}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {removeAdmin.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {removeAdmin.isPending ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
               ลบ Admin
             </AlertDialogAction>
           </AlertDialogFooter>

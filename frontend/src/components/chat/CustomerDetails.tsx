@@ -37,11 +37,11 @@ export function CustomerDetails({ conversation }: CustomerDetailsProps) {
     <div className="space-y-6">
       {/* Customer/Chat Profile */}
       <div className="flex items-center gap-4">
-        <Avatar className="h-16 w-16">
+        <Avatar className="size-16">
           <AvatarImage src={customer?.picture_url || undefined} />
           <AvatarFallback className={`text-lg ${isTelegram ? 'bg-[#0088CC]/10 text-[#0088CC]' : ''}`}>
             {isGroup ? (
-              <Users className="h-6 w-6" />
+              <Users className="size-6" />
             ) : (
               customer?.display_name?.charAt(0).toUpperCase() || '?'
             )}
@@ -57,14 +57,14 @@ export function CustomerDetails({ conversation }: CustomerDetailsProps) {
             <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
               {isGroup ? (
                 <>
-                  <Users className="h-3.5 w-3.5" />
+                  <Users className="size-3.5" />
                   <span>
                     {conversation.telegram_chat_type === 'supergroup' ? 'Supergroup' : 'Group'}
                   </span>
                 </>
               ) : (
                 <>
-                  <User className="h-3.5 w-3.5" />
+                  <User className="size-3.5" />
                   <span>Private Chat</span>
                 </>
               )}
@@ -85,20 +85,20 @@ export function CustomerDetails({ conversation }: CustomerDetailsProps) {
 
         {customer?.email && (
           <div className="flex items-center gap-2 text-sm">
-            <Mail className="h-4 w-4 text-muted-foreground" />
+            <Mail className="size-4 text-muted-foreground" />
             <span>{customer.email}</span>
           </div>
         )}
 
         {customer?.phone && (
           <div className="flex items-center gap-2 text-sm">
-            <Phone className="h-4 w-4 text-muted-foreground" />
+            <Phone className="size-4 text-muted-foreground" />
             <span>{customer.phone}</span>
           </div>
         )}
 
         <div className="flex items-center gap-2 text-sm">
-          <Hash className="h-4 w-4 text-muted-foreground" />
+          <Hash className="size-4 text-muted-foreground" />
           <span className="font-mono text-xs truncate">{conversation.external_customer_id}</span>
         </div>
       </div>
@@ -113,7 +113,7 @@ export function CustomerDetails({ conversation }: CustomerDetailsProps) {
           <Card>
             <CardContent className="p-3">
               <div className="flex items-center gap-2">
-                <MessagesSquare className="h-4 w-4 text-muted-foreground" />
+                <MessagesSquare className="size-4 text-muted-foreground" />
                 <div>
                   <p className="text-2xl font-bold">{conversation.message_count}</p>
                   <p className="text-xs text-muted-foreground">Messages</p>
@@ -125,7 +125,7 @@ export function CustomerDetails({ conversation }: CustomerDetailsProps) {
           <Card>
             <CardContent className="p-3">
               <div className="flex items-center gap-2">
-                <Hash className="h-4 w-4 text-muted-foreground" />
+                <Hash className="size-4 text-muted-foreground" />
                 <div>
                   <p className="text-2xl font-bold">{customer?.interaction_count || 1}</p>
                   <p className="text-xs text-muted-foreground">Sessions</p>
@@ -136,7 +136,7 @@ export function CustomerDetails({ conversation }: CustomerDetailsProps) {
         </div>
 
         <div className="flex items-center gap-2 text-sm">
-          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <Calendar className="size-4 text-muted-foreground" />
           <span>
             First contact:{' '}
             {firstInteractionDate && isValid(firstInteractionDate)
@@ -149,7 +149,7 @@ export function CustomerDetails({ conversation }: CustomerDetailsProps) {
         </div>
 
         <div className="flex items-center gap-2 text-sm">
-          <Clock className="h-4 w-4 text-muted-foreground" />
+          <Clock className="size-4 text-muted-foreground" />
           <span>
             Last message:{' '}
             {lastMessageDate && isValid(lastMessageDate)

@@ -46,9 +46,9 @@ export function BotSelectorPanel({
             disabled={isClearPending || !botId}
           >
             {isClearPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="size-4 mr-2 animate-spin" />
             ) : (
-              <RotateCcw className="h-4 w-4 mr-2" strokeWidth={1.5} />
+              <RotateCcw className="size-4 mr-2" strokeWidth={1.5} />
             )}
             Reset All Contexts
           </Button>

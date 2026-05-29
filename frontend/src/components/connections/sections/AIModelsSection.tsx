@@ -21,7 +21,7 @@ export function AIModelsSection({ formData, handleChange }: AIModelsSectionProps
           <p className="mb-2">OpenRouter API Key ตั้งค่าที่หน้า Settings เพียงที่เดียว</p>
           <Button variant="link" className="h-auto p-0 text-sm" asChild>
             <a href="/settings">
-              ไปที่หน้า Settings <ExternalLink className="h-3 w-3 ml-1" strokeWidth={1.5} />
+              ไปที่หน้า Settings <ExternalLink className="size-3 ml-1" strokeWidth={1.5} />
             </a>
           </Button>
         </div>

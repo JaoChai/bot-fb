@@ -16,7 +16,7 @@ export function DashboardSkeleton() {
                 <Skeleton className="h-8 w-28" />
                 <Skeleton className="h-3 w-16" />
               </div>
-              <Skeleton className="h-10 w-10 rounded-lg" />
+              <Skeleton className="size-10 rounded-lg" />
             </div>
           </div>
         ))}
@@ -35,8 +35,8 @@ export function DashboardSkeleton() {
           <div className="space-y-2">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-2.5">
-                <Skeleton className="h-2 w-2 rounded-full" />
-                <Skeleton className="h-4 w-4 rounded" />
+                <Skeleton className="size-2 rounded-full" />
+                <Skeleton className="size-4 rounded" />
                 <Skeleton className="h-4 flex-1" />
                 <Skeleton className="h-4 w-12" />
               </div>
@@ -49,7 +49,7 @@ export function DashboardSkeleton() {
             <div className="space-y-3">
               {[...Array(5)].map((_, i) => (
                 <div key={i} className="flex items-center gap-3">
-                  <Skeleton className="h-7 w-7 rounded-full" />
+                  <Skeleton className="size-7 rounded-full" />
                   <Skeleton className="h-4 flex-1" />
                   <Skeleton className="h-4 w-16" />
                 </div>
@@ -64,7 +64,7 @@ export function DashboardSkeleton() {
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border bg-card p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
-            <Skeleton className="h-8 w-8 rounded-lg" />
+            <Skeleton className="size-8 rounded-lg" />
             <Skeleton className="h-5 w-16" />
           </div>
           <div className="grid grid-cols-3 gap-4">
@@ -81,7 +81,7 @@ export function DashboardSkeleton() {
           <div className="space-y-4">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="flex gap-3">
-                <Skeleton className="h-8 w-8 rounded-full flex-shrink-0" />
+                <Skeleton className="size-8 rounded-full flex-shrink-0" />
                 <div className="flex-1 space-y-1">
                   <Skeleton className="h-4 w-32" />
                   <Skeleton className="h-3 w-16" />

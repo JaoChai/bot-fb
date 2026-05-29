@@ -86,9 +86,9 @@ export function WeekSchedule({
                         onClick={() => onRemoveSlot(day, idx)}
                         disabled={!isEnabled}
                         aria-label="ลบช่วงเวลา"
-                        className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:opacity-50"
+                        className="ml-0.5 inline-flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:opacity-50"
                       >
-                        <X className="h-3 w-3" strokeWidth={1.75} />
+                        <X className="size-3" strokeWidth={1.75} />
                       </button>
                     )}
                   </div>
@@ -101,7 +101,7 @@ export function WeekSchedule({
                   disabled={!isEnabled}
                   className="h-7 px-2 text-xs"
                 >
-                  <Plus className="h-3 w-3 mr-1" strokeWidth={2} />
+                  <Plus className="size-3 mr-1" strokeWidth={2} />
                   ช่วงเวลา
                 </Button>
               </div>

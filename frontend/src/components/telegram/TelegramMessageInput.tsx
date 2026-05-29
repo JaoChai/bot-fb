@@ -59,12 +59,12 @@ export function TelegramMessageInput({
 
   const getFileIcon = (file: File) => {
     if (file.type.startsWith('image/')) {
-      return <ImageIcon className="h-5 w-5 text-[#0088CC]" />;
+      return <ImageIcon className="size-5 text-[#0088CC]" />;
     }
     if (file.type.startsWith('video/')) {
-      return <Film className="h-5 w-5 text-[#0088CC]" />;
+      return <Film className="size-5 text-[#0088CC]" />;
     }
-    return <FileIcon className="h-5 w-5 text-[#0088CC]" />;
+    return <FileIcon className="size-5 text-[#0088CC]" />;
   };
 
   const getFilePreview = (file: File) => {
@@ -73,12 +73,12 @@ export function TelegramMessageInput({
         <img
           src={URL.createObjectURL(file)}
           alt="Preview"
-          className="h-14 w-14 object-cover rounded"
+          className="size-14 object-cover rounded"
         />
       );
     }
     return (
-      <div className="h-14 w-14 rounded bg-muted flex items-center justify-center">
+      <div className="size-14 rounded bg-muted flex items-center justify-center">
         {getFileIcon(file)}
       </div>
     );
@@ -101,10 +101,10 @@ export function TelegramMessageInput({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 flex-shrink-0"
+              className="size-8 flex-shrink-0"
               onClick={() => onMediaSelect(null)}
             >
-              <X className="h-4 w-4" />
+              <X className="size-4" />
             </Button>
           </div>
         </div>
@@ -115,6 +115,7 @@ export function TelegramMessageInput({
         <input
           ref={fileInputRef}
           type="file"
+          aria-label="Upload attachment"
           accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
           className="hidden"
           onChange={handleFileSelect}
@@ -125,11 +126,11 @@ export function TelegramMessageInput({
           type="button"
           variant="outline"
           size="icon"
-          className="h-11 w-11 flex-shrink-0"
+          className="size-11 flex-shrink-0"
           onClick={() => fileInputRef.current?.click()}
           disabled={isLoading}
         >
-          <Paperclip className="h-5 w-5" />
+          <Paperclip className="size-5" />
         </Button>
 
         {/* Text Input */}
@@ -139,6 +140,7 @@ export function TelegramMessageInput({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
+            aria-label="Chat message"
             placeholder={selectedMedia ? 'เพิ่มคำอธิบาย...' : 'พิมพ์ข้อความ...'}
             disabled={isLoading}
             rows={1}
@@ -151,12 +153,12 @@ export function TelegramMessageInput({
         <Button
           type="submit"
           disabled={(!value.trim() && !selectedMedia) || isLoading}
-          className="h-11 w-11 p-0 bg-[#0088CC] hover:bg-[#0088CC]/90"
+          className="size-11 p-0 bg-[#0088CC] hover:bg-[#0088CC]/90"
         >
           {isLoading ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
+            <Loader2 className="size-5 animate-spin" />
           ) : (
-            <Send className="h-5 w-5" />
+            <Send className="size-5" />
           )}
         </Button>
       </div>

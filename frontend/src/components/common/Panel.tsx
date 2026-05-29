@@ -45,7 +45,7 @@ export function Panel({
                   tone === 'default' && 'bg-muted/40 text-muted-foreground',
                 )}
               >
-                <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+                <Icon className="size-3.5" strokeWidth={1.75} />
               </div>
             )}
             <div className="min-w-0">

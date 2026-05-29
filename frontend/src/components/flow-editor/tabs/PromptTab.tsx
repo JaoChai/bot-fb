@@ -110,7 +110,7 @@ export function PromptTab({ name, systemPrompt, isDefault, onChange }: PromptTab
                 </TooltipTrigger>
                 {isDefault && (
                   <TooltipContent side="bottom">
-                    Base Flow ไม่สามารถเปลี่ยนชื่อได้ — ปิด "Set as Default" ใน Agent tab ก่อน
+                    Base Flow ไม่สามารถเปลี่ยนชื่อได้ &mdash; ปิด "Set as Default" ใน Agent tab ก่อน
                   </TooltipContent>
                 )}
               </Tooltip>
@@ -131,7 +131,7 @@ export function PromptTab({ name, systemPrompt, isDefault, onChange }: PromptTab
               onClick={() => setIsFullscreen(true)}
               className="gap-2"
             >
-              <Maximize2 className="h-3.5 w-3.5" />
+              <Maximize2 className="size-3.5" />
               เต็มจอ
             </Button>
           }

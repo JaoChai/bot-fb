@@ -201,7 +201,7 @@ export function EditConnectionPage() {
   if (isEditMode && isLoadingBot) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -247,7 +247,7 @@ export function EditConnectionPage() {
       {formData.platform === 'telegram' && (
         <div className="bg-muted/30 border rounded-lg p-4 mb-6">
           <div className="flex items-center gap-3">
-            <User className="h-5 w-5 text-muted-foreground shrink-0" strokeWidth={1.5} />
+            <User className="size-5 text-muted-foreground shrink-0" strokeWidth={1.5} />
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-medium">Human Only</span>
@@ -305,7 +305,7 @@ export function EditConnectionPage() {
             <div className="min-w-0">
               <p className="text-sm font-medium">ลบบอทและการเชื่อมต่อนี้</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                จะลบบอทและการสนทนาทั้งหมดของบอทนี้ — ไม่สามารถกู้คืนได้
+                จะลบบอทและการสนทนาทั้งหมดของบอทนี้ &mdash; ไม่สามารถกู้คืนได้
               </p>
             </div>
             <Button
@@ -314,7 +314,7 @@ export function EditConnectionPage() {
               disabled={deleteMutation.isPending}
               className="shrink-0"
             >
-              <Trash2 className="h-4 w-4 mr-2" strokeWidth={1.5} />
+              <Trash2 className="size-4 mr-2" strokeWidth={1.5} />
               ลบบอท
             </Button>
           </div>
@@ -331,12 +331,12 @@ export function EditConnectionPage() {
         >
           {isSaving ? (
             <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="size-4 mr-2 animate-spin" />
               {isEditMode ? 'กำลังบันทึก...' : 'กำลังสร้าง...'}
             </>
           ) : (
             <>
-              <Zap className="h-4 w-4 mr-2" strokeWidth={1.5} />
+              <Zap className="size-4 mr-2" strokeWidth={1.5} />
               {isEditMode ? 'บันทึกการเปลี่ยนแปลง' : 'สร้างการเชื่อมต่อ'}
             </>
           )}

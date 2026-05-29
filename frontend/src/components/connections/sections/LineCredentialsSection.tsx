@@ -43,12 +43,12 @@ export function LineCredentialsSection({ formData, handleChange, isEditMode }: L
               type="button"
               onClick={() => setShowSecret(!showSecret)}
               aria-label="Toggle visibility"
-              className="h-10 w-10 shrink-0 transition-colors duration-150"
+              className="size-10 shrink-0 transition-colors duration-150"
             >
               {showSecret ? (
-                <EyeOff className="h-4 w-4" strokeWidth={1.5} />
+                <EyeOff className="size-4" strokeWidth={1.5} />
               ) : (
-                <Eye className="h-4 w-4" strokeWidth={1.5} />
+                <Eye className="size-4" strokeWidth={1.5} />
               )}
             </Button>
           </div>
@@ -71,7 +71,7 @@ export function LineCredentialsSection({ formData, handleChange, isEditMode }: L
 
         <Button variant="link" className="h-auto p-0 text-sm" asChild>
           <a href="https://developers.line.biz" target="_blank" rel="noopener noreferrer">
-            ดูวิธีการเชื่อมต่อ LINE OA <ExternalLink className="h-3 w-3 ml-1" strokeWidth={1.5} />
+            ดูวิธีการเชื่อมต่อ LINE OA <ExternalLink className="size-3 ml-1" strokeWidth={1.5} />
           </a>
         </Button>
       </div>

@@ -81,12 +81,12 @@ export function LINEMessageInput({
 
   const getFileIcon = (file: File) => {
     if (file.type.startsWith('image/')) {
-      return <ImageIcon className="h-5 w-5 text-[#06C755]" />;
+      return <ImageIcon className="size-5 text-[#06C755]" />;
     }
     if (file.type.startsWith('video/')) {
-      return <Film className="h-5 w-5 text-[#06C755]" />;
+      return <Film className="size-5 text-[#06C755]" />;
     }
-    return <FileIcon className="h-5 w-5 text-[#06C755]" />;
+    return <FileIcon className="size-5 text-[#06C755]" />;
   };
 
   const getFilePreview = (file: File) => {
@@ -95,12 +95,12 @@ export function LINEMessageInput({
         <img
           src={URL.createObjectURL(file)}
           alt="Preview"
-          className="h-14 w-14 object-cover rounded"
+          className="size-14 object-cover rounded"
         />
       );
     }
     return (
-      <div className="h-14 w-14 rounded bg-muted flex items-center justify-center">
+      <div className="size-14 rounded bg-muted flex items-center justify-center">
         {getFileIcon(file)}
       </div>
     );
@@ -123,10 +123,10 @@ export function LINEMessageInput({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 flex-shrink-0"
+              className="size-8 flex-shrink-0"
               onClick={() => onMediaSelect(null)}
             >
-              <X className="h-4 w-4" />
+              <X className="size-4" />
             </Button>
           </div>
         </div>
@@ -138,6 +138,7 @@ export function LINEMessageInput({
         <input
           ref={fileInputRef}
           type="file"
+          aria-label="Upload attachment"
           accept="image/*,video/*,audio/*"
           className="hidden"
           onChange={handleFileSelect}
@@ -148,11 +149,11 @@ export function LINEMessageInput({
           type="button"
           variant="ghost"
           size="icon"
-          className="h-10 w-10 flex-shrink-0 text-muted-foreground hover:text-foreground"
+          className="size-10 flex-shrink-0 text-muted-foreground hover:text-foreground"
           onClick={() => fileInputRef.current?.click()}
           disabled={isLoading}
         >
-          <Paperclip className="h-5 w-5" />
+          <Paperclip className="size-5" />
         </Button>
 
         {/* Quick Reply Button - LINE OA style */}
@@ -161,7 +162,7 @@ export function LINEMessageInput({
             onSelect={handleQuickReplySelect}
             disabled={isLoading}
             variant="ghost"
-            className="h-10 w-10 text-muted-foreground hover:text-foreground"
+            className="size-10 text-muted-foreground hover:text-foreground"
           />
         )}
 
@@ -181,6 +182,7 @@ export function LINEMessageInput({
             value={value}
             onChange={(e) => handleTextChange(e.target.value)}
             onKeyDown={handleKeyDown}
+            aria-label="Chat message"
             placeholder={selectedMedia ? 'เพิ่มคำอธิบาย...' : 'พิมพ์ข้อความ หรือ / เพื่อใช้ Quick Reply...'}
             disabled={isLoading}
             rows={1}
@@ -193,12 +195,12 @@ export function LINEMessageInput({
             type="submit"
             size="icon"
             disabled={(!value.trim() && !selectedMedia) || isLoading}
-            className="h-8 w-8 flex-shrink-0 rounded-full bg-[#06C755] hover:bg-[#06C755]/90 disabled:bg-muted disabled:text-muted-foreground"
+            className="size-8 flex-shrink-0 rounded-full bg-[#06C755] hover:bg-[#06C755]/90 disabled:bg-muted disabled:text-muted-foreground"
           >
             {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin" />
             ) : (
-              <Send className="h-4 w-4" />
+              <Send className="size-4" />
             )}
           </Button>
         </div>

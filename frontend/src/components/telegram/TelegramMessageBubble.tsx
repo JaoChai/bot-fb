@@ -76,7 +76,7 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
               </>
             ) : (
               <div className="bg-muted/50 rounded-lg p-4 text-center text-muted-foreground">
-                <FileIcon className="h-8 w-8 mx-auto mb-2" />
+                <FileIcon className="size-8 mx-auto mb-2" />
                 <p className="text-sm">ไม่สามารถโหลดรูปภาพได้</p>
               </div>
             )}
@@ -94,6 +94,7 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
                   className="rounded-lg w-full"
                   preload="metadata"
                 >
+                  <track kind="captions" />
                   Your browser does not support video.
                 </video>
                 {message.content && message.content !== '[Video]' && (
@@ -102,7 +103,7 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
               </>
             ) : (
               <div className="bg-muted/50 rounded-lg p-4 text-center text-muted-foreground">
-                <Play className="h-8 w-8 mx-auto mb-2" />
+                <Play className="size-8 mx-auto mb-2" />
                 <p className="text-sm">ไม่สามารถโหลดวิดีโอได้</p>
               </div>
             )}
@@ -117,8 +118,11 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
               <audio
                 src={message.media_url}
                 controls
+                aria-label="Voice message"
                 className="w-full max-w-[250px]"
-              />
+              >
+                <track kind="captions" />
+              </audio>
             ) : (
               <p className="text-muted-foreground text-sm">
                 {message.type === 'voice' ? 'เสียง' : 'ไฟล์เสียง'}
@@ -139,8 +143,8 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
               isUser ? 'bg-muted/50 hover:bg-muted' : 'bg-background/10 hover:bg-background/20'
             )}
           >
-            <div className="h-10 w-10 rounded-lg bg-[#0088CC]/10 flex items-center justify-center flex-shrink-0">
-              <FileIcon className="h-5 w-5 text-[#0088CC]" />
+            <div className="size-10 rounded-lg bg-[#0088CC]/10 flex items-center justify-center flex-shrink-0">
+              <FileIcon className="size-5 text-[#0088CC]" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm truncate">{fileName}</p>
@@ -150,7 +154,7 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
                 </p>
               )}
             </div>
-            <Download className="h-4 w-4 flex-shrink-0 opacity-60" />
+            <Download className="size-4 flex-shrink-0 opacity-60" />
           </a>
         );
       }
@@ -190,8 +194,8 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
               isUser ? 'bg-muted/50 hover:bg-muted' : 'bg-background/10 hover:bg-background/20'
             )}
           >
-            <div className="h-10 w-10 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
-              <MapPin className="h-5 w-5 text-red-500" />
+            <div className="size-10 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
+              <MapPin className="size-5 text-red-500" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm truncate">
@@ -201,7 +205,7 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
                 <p className="text-xs text-muted-foreground truncate">{address}</p>
               )}
             </div>
-            <ExternalLink className="h-4 w-4 flex-shrink-0 opacity-60" />
+            <ExternalLink className="size-4 flex-shrink-0 opacity-60" />
           </a>
         );
       }
@@ -219,8 +223,8 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
             isUser ? 'bg-muted/50' : 'bg-background/10'
           )}>
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-[#0088CC]/10 flex items-center justify-center flex-shrink-0">
-                <User className="h-5 w-5 text-[#0088CC]" />
+              <div className="size-10 rounded-full bg-[#0088CC]/10 flex items-center justify-center flex-shrink-0">
+                <User className="size-5 text-[#0088CC]" />
               </div>
               <div>
                 <p className="font-medium text-sm">{contactName}</p>
@@ -244,9 +248,9 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
           )}>
             <p className="font-medium text-sm mb-2">{question || 'Poll'}</p>
             <div className="space-y-1">
-              {options.map((opt, i) => (
+              {options.map((opt) => (
                 <div
-                  key={i}
+                  key={opt}
                   className="text-xs px-2 py-1 bg-background/20 rounded"
                 >
                   {opt}
@@ -281,9 +285,9 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
       <div className={cn('flex gap-2', isUser ? 'justify-start' : 'justify-end')}>
         {/* User avatar */}
         {isUser && (
-          <Avatar className="h-8 w-8 shrink-0 bg-[#0088CC]/10">
+          <Avatar className="size-8 shrink-0 bg-[#0088CC]/10">
             <AvatarFallback className="bg-[#0088CC]/10 text-[#0088CC]">
-              <User className="h-4 w-4" />
+              <User className="size-4" />
             </AvatarFallback>
           </Avatar>
         )}
@@ -300,7 +304,7 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
           {/* Sender label for agent messages */}
           {message.sender === 'agent' && (
             <div className="flex items-center gap-1 text-xs opacity-70 mb-1">
-              <Headphones className="h-3 w-3" />
+              <Headphones className="size-3" />
               <span>แอดมิน</span>
             </div>
           )}
@@ -311,9 +315,9 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
 
         {/* Agent avatar */}
         {!isUser && (
-          <Avatar className="h-8 w-8 shrink-0">
+          <Avatar className="size-8 shrink-0">
             <AvatarFallback className="bg-[#0088CC] text-white">
-              <Headphones className="h-4 w-4" />
+              <Headphones className="size-4" />
             </AvatarFallback>
           </Avatar>
         )}
@@ -343,7 +347,7 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <Download className="h-4 w-4 mr-2" />
+                <Download className="size-4 mr-2" />
                 ดาวน์โหลด
               </a>
             </Button>

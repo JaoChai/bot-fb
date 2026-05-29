@@ -65,13 +65,14 @@ function MobileBottomTabs({
         {items.map(({ id, icon: Icon, label }) => (
           <button
             key={id}
+            type="button"
             onClick={() => onTabChange(id)}
             className={cn(
               'flex flex-col items-center justify-center gap-0.5 transition-colors',
               activeTab === id ? 'text-foreground bg-muted' : 'text-muted-foreground hover:text-foreground'
             )}
           >
-            <Icon className="h-5 w-5" strokeWidth={1.5} />
+            <Icon className="size-5" strokeWidth={1.5} />
             <span className="text-xs">{label}</span>
           </button>
         ))}
@@ -111,9 +112,9 @@ export function FlowEditorMobileLayout({
             size="icon"
             onClick={() => onNavigate('/bots')}
             aria-label="กลับไปหน้าการเชื่อมต่อ"
-            className="-ml-2 h-9 w-9 shrink-0"
+            className="-ml-2 size-9 shrink-0"
           >
-            <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
+            <ArrowLeft className="size-4" strokeWidth={1.5} />
           </Button>
           <span className="font-semibold truncate">
             {formData.name || 'Flow ใหม่'}
@@ -125,16 +126,16 @@ export function FlowEditorMobileLayout({
         <div className="flex items-center gap-2 shrink-0">
           {hasChanges && !isSaving && (
             <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 tabular-nums">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              <span className="size-1.5 rounded-full bg-amber-500" />
               ยังไม่บันทึก
             </span>
           )}
           <Button size="sm" onClick={onSave} disabled={isSaving || !hasChanges}>
             {isSaving ? (
-              <Loader2 className="h-4 w-4" strokeWidth={1.5} />
+              <Loader2 className="size-4" strokeWidth={1.5} />
             ) : (
               <>
-                <Save className="h-4 w-4 mr-1" strokeWidth={1.5} />
+                <Save className="size-4 mr-1" strokeWidth={1.5} />
                 บันทึก
               </>
             )}
@@ -150,11 +151,11 @@ export function FlowEditorMobileLayout({
               className="w-full"
               onClick={() => onNavigate(`/flows/new?botId=${botId}`)}
             >
-              <Plus className="h-4 w-4 mr-2" strokeWidth={1.5} />สร้าง Flow ใหม่
+              <Plus className="size-4 mr-2" strokeWidth={1.5} />สร้าง Flow ใหม่
             </Button>
             {isLoadingFlows ? (
               <div className="flex justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <Loader2 className="size-6 animate-spin text-muted-foreground" />
               </div>
             ) : flows.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">ยังไม่มี Flow</p>
@@ -165,6 +166,7 @@ export function FlowEditorMobileLayout({
                   .map((flow) => (
                     <button
                       key={flow.id}
+                      type="button"
                       onClick={() => {
                         onNavigate(`/flows/${flow.id}/edit?botId=${botId}`);
                         onMobileTabChange('editor');
@@ -195,12 +197,12 @@ export function FlowEditorMobileLayout({
               <div className="flex-1 flex flex-col items-center justify-center h-full p-8">
                 <p className="text-muted-foreground text-center mb-4">เลือกหรือสร้าง Flow เพื่อเริ่มต้น</p>
                 <Button onClick={() => onMobileTabChange('flows')}>
-                  <List className="h-4 w-4 mr-2" strokeWidth={1.5} />ดู Flows ทั้งหมด
+                  <List className="size-4 mr-2" strokeWidth={1.5} />ดู Flows ทั้งหมด
                 </Button>
               </div>
             ) : isLoadingFlow ? (
               <div className="flex items-center justify-center h-full">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <Loader2 className="size-8 animate-spin text-muted-foreground" />
               </div>
             ) : (
               <div className="px-4 py-4 space-y-6">

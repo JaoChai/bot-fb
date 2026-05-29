@@ -84,7 +84,7 @@ function ContentWithLightbox({
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <Download className="h-4 w-4 mr-2" />
+                  <Download className="size-4 mr-2" />
                   Download
                 </a>
               </Button>
@@ -144,9 +144,9 @@ export const MessageBubble = memo(function MessageBubble({
       <div className={cn('flex gap-2', isUser ? 'justify-start' : 'justify-end')}>
         {/* User avatar */}
         {isUser && (
-          <Avatar className="h-8 w-8 shrink-0">
+          <Avatar className="size-8 shrink-0">
             <AvatarFallback>
-              <User className="h-4 w-4" />
+              <User className="size-4" />
             </AvatarFallback>
           </Avatar>
         )}
@@ -166,7 +166,7 @@ export const MessageBubble = memo(function MessageBubble({
           {/* Sender label for non-user messages */}
           {!isUser && (
             <div className="flex items-center gap-1 text-xs opacity-70 mb-1">
-              <SenderIcon className="h-3 w-3" />
+              <SenderIcon className="size-3" />
               <span>{senderLabels[message.sender]}</span>
             </div>
           )}
@@ -179,13 +179,13 @@ export const MessageBubble = memo(function MessageBubble({
               className="mt-2 mb-2"
             >
               <CollapsibleTrigger asChild>
-                <button className="flex items-center gap-1 text-xs opacity-70 hover:opacity-100 transition-opacity">
-                  <Brain className="h-3 w-3" />
+                <button type="button" className="flex items-center gap-1 text-xs opacity-70 hover:opacity-100 transition-opacity">
+                  <Brain className="size-3" />
                   <span>Thinking</span>
                   {reasoningOpen ? (
-                    <ChevronDown className="h-3 w-3" />
+                    <ChevronDown className="size-3" />
                   ) : (
-                    <ChevronRight className="h-3 w-3" />
+                    <ChevronRight className="size-3" />
                   )}
                   {message.reasoning_tokens && (
                     <span className="ml-1 opacity-60">({message.reasoning_tokens} tokens)</span>
@@ -226,7 +226,7 @@ export const MessageBubble = memo(function MessageBubble({
 
           {isPending && (
             <div className="flex items-center gap-1 text-xs opacity-60 mt-1">
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <Loader2 className="size-3 animate-spin" />
               <span>กำลังส่ง...</span>
             </div>
           )}
@@ -234,13 +234,13 @@ export const MessageBubble = memo(function MessageBubble({
 
         {/* Bot/Agent avatar */}
         {!isUser && (
-          <Avatar className="h-8 w-8 shrink-0">
+          <Avatar className="size-8 shrink-0">
             <AvatarFallback
               className={message.sender === 'agent' ? 'bg-muted' : 'bg-foreground'}
             >
               <SenderIcon
                 className={cn(
-                  'h-4 w-4',
+                  'size-4',
                   message.sender === 'agent' ? 'text-foreground' : 'text-background'
                 )}
               />

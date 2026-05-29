@@ -48,12 +48,12 @@ export function BotStatusList({ bots }: BotStatusListProps) {
       {bots.length === 0 ? (
         <div className="flex flex-col items-center py-8 text-center">
           <div className="mb-3 rounded-full bg-muted p-3">
-            <MessagesSquare className="h-6 w-6 text-muted-foreground" />
+            <MessagesSquare className="size-6 text-muted-foreground" />
           </div>
           <p className="text-sm text-muted-foreground mb-3">ยังไม่มีบอท</p>
           <Button size="sm" asChild>
             <Link to="/connections/add">
-              <Plus className="h-3 w-3 mr-1" />
+              <Plus className="size-3 mr-1" />
               สร้างบอทแรก
             </Link>
           </Button>
@@ -68,7 +68,7 @@ export function BotStatusList({ bots }: BotStatusListProps) {
             >
               <div className="flex items-center gap-2.5 flex-1 min-w-0">
                 {/* Status dot with pulse for active */}
-                <span className="relative flex h-2 w-2">
+                <span className="relative flex size-2">
                   {bot.status === 'active' && statusPulse[bot.status] && (
                     <span
                       className={cn(
@@ -79,21 +79,21 @@ export function BotStatusList({ bots }: BotStatusListProps) {
                   )}
                   <span
                     className={cn(
-                      'relative inline-flex h-2 w-2 rounded-full',
+                      'relative inline-flex size-2 rounded-full',
                       statusDot[bot.status] ?? 'bg-gray-400',
                     )}
                   />
                 </span>
-                <ChannelIcon channel={bot.channel_type} className="h-4 w-4 flex-shrink-0" />
+                <ChannelIcon channel={bot.channel_type} className="size-4 flex-shrink-0" />
                 <span className="text-sm font-medium truncate">{bot.name}</span>
               </div>
               <div className="flex items-center gap-3 text-xs text-muted-foreground flex-shrink-0">
                 <span className="flex items-center gap-1">
-                  <MessagesSquare className="h-3 w-3" />
+                  <MessagesSquare className="size-3" />
                   {bot.conversation_count}
                 </span>
                 <span className="flex items-center gap-1">
-                  <MessageSquare className="h-3 w-3" />
+                  <MessageSquare className="size-3" />
                   {bot.messages_today}
                 </span>
               </div>
@@ -102,14 +102,15 @@ export function BotStatusList({ bots }: BotStatusListProps) {
 
           {inactiveBots.length > 0 && (
             <button
+              type="button"
               onClick={() => setShowInactive(!showInactive)}
               aria-expanded={showInactive}
               className="flex items-center gap-1.5 w-full rounded-lg px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             >
               {showInactive ? (
-                <ChevronUp className="h-3 w-3" />
+                <ChevronUp className="size-3" />
               ) : (
-                <ChevronDown className="h-3 w-3" />
+                <ChevronDown className="size-3" />
               )}
               และอีก {inactiveBots.length} บอทที่ไม่ใช้งาน
             </button>
@@ -118,7 +119,7 @@ export function BotStatusList({ bots }: BotStatusListProps) {
           <div className="pt-2">
             <Button variant="outline" size="sm" className="w-full" asChild>
               <Link to="/connections/add">
-                <Plus className="h-3 w-3 mr-1" />
+                <Plus className="size-3 mr-1" />
                 สร้างบอทใหม่
               </Link>
             </Button>

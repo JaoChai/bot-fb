@@ -83,7 +83,7 @@ export function KnowledgeBaseSelector({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <Loader2 className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -96,7 +96,7 @@ export function KnowledgeBaseSelector({
           <Select onValueChange={(v) => handleAdd(Number(v))}>
             <SelectTrigger className="max-w-md">
               <div className="flex items-center gap-2">
-                <Plus className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                <Plus className="size-4 text-muted-foreground" strokeWidth={1.5} />
                 <SelectValue placeholder="เพิ่มฐานความรู้..." />
               </div>
             </SelectTrigger>
@@ -151,13 +151,13 @@ export function KnowledgeBaseSelector({
                   <CollapsibleTrigger className="flex flex-1 items-center gap-3 min-w-0 text-left">
                     <ChevronDown
                       className={cn(
-                        'h-4 w-4 text-muted-foreground shrink-0 transition-transform',
+                        'size-4 text-muted-foreground shrink-0 transition-transform',
                         isOpen && 'rotate-180',
                       )}
                       strokeWidth={1.5}
                     />
                     <BookOpen
-                      className="h-4 w-4 text-muted-foreground shrink-0"
+                      className="size-4 text-muted-foreground shrink-0"
                       strokeWidth={1.5}
                     />
                     <div className="min-w-0">
@@ -170,11 +170,11 @@ export function KnowledgeBaseSelector({
                     </div>
                     <div className="flex items-center gap-1.5 ml-auto mr-2 shrink-0">
                       <Badge variant="secondary" className="text-[10px] tabular-nums">
-                        <FileText className="h-3 w-3 mr-0.5" strokeWidth={1.5} />
+                        <FileText className="size-3 mr-0.5" strokeWidth={1.5} />
                         {meta.document_count}
                       </Badge>
                       <Badge variant="outline" className="text-[10px] tabular-nums">
-                        <Layers className="h-3 w-3 mr-0.5" strokeWidth={1.5} />
+                        <Layers className="size-3 mr-0.5" strokeWidth={1.5} />
                         {meta.chunk_count}
                       </Badge>
                     </div>
@@ -182,11 +182,11 @@ export function KnowledgeBaseSelector({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    className="size-7 text-muted-foreground hover:text-destructive"
                     onClick={() => handleRemove(sel.id)}
                     aria-label="ลบฐานความรู้นี้"
                   >
-                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    <Trash2 className="size-3.5" strokeWidth={1.5} />
                   </Button>
                 </div>
                 <CollapsibleContent>

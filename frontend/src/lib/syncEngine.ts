@@ -84,7 +84,7 @@ export async function syncBot(
   return pendingSync;
 }
 
-export async function syncConversation(
+async function syncConversation(
   botId: number,
   conversationId: number,
   queryClient: QueryClient

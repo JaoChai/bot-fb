@@ -50,9 +50,9 @@ export function PageHeader({
               size="icon"
               onClick={handleBack}
               aria-label={backLabel}
-              className="-ml-2 h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+              className="-ml-2 size-9 shrink-0 text-muted-foreground hover:text-foreground"
             >
-              <ArrowLeft className="h-4 w-4" />
+              <ArrowLeft className="size-4" />
             </Button>
           )}
           <div className="min-w-0 flex-1">

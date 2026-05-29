@@ -35,74 +35,74 @@ interface ProcessDisplayProps {
 function getEventIcon(event: string, data?: Record<string, unknown>) {
   switch (event) {
     case 'process_start':
-      return <Activity className="h-3.5 w-3.5 text-foreground" />;
+      return <Activity className="size-3.5 text-foreground" />;
     case 'decision_start':
     case 'decision_result':
-      return <Brain className="h-3.5 w-3.5 text-foreground" />;
+      return <Brain className="size-3.5 text-foreground" />;
     case 'decision_skip':
-      return <SkipForward className="h-3.5 w-3.5 text-muted-foreground" />;
+      return <SkipForward className="size-3.5 text-muted-foreground" />;
     case 'decision_fallback':
-      return <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />;
+      return <RefreshCw className="size-3.5 text-muted-foreground" />;
     case 'kb_search':
     case 'kb_result':
-      return <Search className="h-3.5 w-3.5 text-foreground" />;
+      return <Search className="size-3.5 text-foreground" />;
     case 'kb_skip':
-      return <SkipForward className="h-3.5 w-3.5 text-muted-foreground" />;
+      return <SkipForward className="size-3.5 text-muted-foreground" />;
     case 'chat_start':
-      return <MessageSquare className="h-3.5 w-3.5 text-foreground" />;
+      return <MessageSquare className="size-3.5 text-foreground" />;
     case 'chat_fallback':
-      return <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />;
+      return <RefreshCw className="size-3.5 text-muted-foreground" />;
     case 'error':
-      return <AlertTriangle className="h-3.5 w-3.5 text-destructive" />;
+      return <AlertTriangle className="size-3.5 text-destructive" />;
     case 'done':
-      return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />;
+      return <CheckCircle2 className="size-3.5 text-emerald-500" />;
     // Agentic Mode events
     case 'agent_start':
-      return <Bot className="h-3.5 w-3.5 text-foreground" />;
+      return <Bot className="size-3.5 text-foreground" />;
     case 'agent_thinking':
-      return <Sparkles className="h-3.5 w-3.5 text-foreground animate-pulse" />;
+      return <Sparkles className="size-3.5 text-foreground animate-pulse" />;
     case 'agent_done':
-      return <Bot className="h-3.5 w-3.5 text-emerald-500" />;
+      return <Bot className="size-3.5 text-emerald-500" />;
     case 'agent_error':
     case 'agent_max_iterations':
-      return <AlertTriangle className="h-3.5 w-3.5 text-destructive" />;
+      return <AlertTriangle className="size-3.5 text-destructive" />;
     case 'agent_fallback':
-      return <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />;
+      return <RefreshCw className="size-3.5 text-muted-foreground" />;
     case 'tool_call': {
       const toolName = data?.tool_name as string;
       if (toolName === 'search_knowledge_base') {
-        return <Search className="h-3.5 w-3.5 text-foreground" />;
+        return <Search className="size-3.5 text-foreground" />;
       }
       if (toolName === 'calculate') {
-        return <Calculator className="h-3.5 w-3.5 text-foreground" />;
+        return <Calculator className="size-3.5 text-foreground" />;
       }
       if (toolName === 'think') {
-        return <Brain className="h-3.5 w-3.5 text-purple-500" />;
+        return <Brain className="size-3.5 text-purple-500" />;
       }
       if (toolName === 'get_current_datetime') {
-        return <Clock className="h-3.5 w-3.5 text-orange-500" />;
+        return <Clock className="size-3.5 text-orange-500" />;
       }
       if (toolName === 'escalate_to_human') {
-        return <User className="h-3.5 w-3.5 text-red-500" />;
+        return <User className="size-3.5 text-red-500" />;
       }
-      return <Wrench className="h-3.5 w-3.5 text-foreground" />;
+      return <Wrench className="size-3.5 text-foreground" />;
     }
     case 'tool_result':
-      return <CheckCircle2 className="h-3.5 w-3.5 text-foreground" />;
+      return <CheckCircle2 className="size-3.5 text-foreground" />;
     // HITL Safety events
     case 'agent_safety_stop':
-      return <ShieldAlert className="h-3.5 w-3.5 text-destructive" />;
+      return <ShieldAlert className="size-3.5 text-destructive" />;
     // Second AI events
     case 'second_ai_start':
-      return <ShieldCheck className="h-3.5 w-3.5 text-blue-500 animate-pulse" />;
+      return <ShieldCheck className="size-3.5 text-blue-500 animate-pulse" />;
     case 'second_ai_result':
       return data?.passed
-        ? <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-        : <ShieldCheck className="h-3.5 w-3.5 text-amber-500" />;
+        ? <ShieldCheck className="size-3.5 text-emerald-500" />
+        : <ShieldCheck className="size-3.5 text-amber-500" />;
     case 'second_ai_modified':
-      return <RefreshCw className="h-3.5 w-3.5 text-amber-500" />;
+      return <RefreshCw className="size-3.5 text-amber-500" />;
     default:
-      return <Activity className="h-3.5 w-3.5 text-muted-foreground" />;
+      return <Activity className="size-3.5 text-muted-foreground" />;
   }
 }
 
@@ -346,7 +346,7 @@ const ProcessLogItem = memo(function ProcessLogItem({
       </div>
       {typeof log.data.time_ms === 'number' && log.event !== 'done' && (
         <div className="flex items-center gap-1 text-muted-foreground shrink-0">
-          <Clock className="h-3 w-3" />
+          <Clock className="size-3" />
           <span>{log.data.time_ms}ms</span>
         </div>
       )}
@@ -379,10 +379,10 @@ export const ProcessDisplay = memo(function ProcessDisplay({
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-1.5">
-          <Zap className="h-3 w-3 text-foreground" />
+          <Zap className="size-3 text-foreground" />
           <span>กระบวนการทำงาน</span>
           {isStreaming && (
-            <Loader2 className="h-3 w-3 animate-spin text-foreground" />
+            <Loader2 className="size-3 animate-spin text-foreground" />
           )}
           {summary && (
             <span className="text-foreground font-medium">
@@ -391,9 +391,9 @@ export const ProcessDisplay = memo(function ProcessDisplay({
           )}
         </div>
         {isExpanded ? (
-          <ChevronUp className="h-3 w-3" />
+          <ChevronUp className="size-3" />
         ) : (
-          <ChevronDown className="h-3 w-3" />
+          <ChevronDown className="size-3" />
         )}
       </Button>
 
@@ -406,7 +406,7 @@ export const ProcessDisplay = memo(function ProcessDisplay({
           {/* Streaming indicator */}
           {isStreaming && displayLogs.length === 0 && (
             <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50 text-xs">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground" />
+              <Loader2 className="size-3.5 animate-spin text-foreground" />
               <span className="text-muted-foreground">กำลังประมวลผล...</span>
             </div>
           )}
@@ -415,14 +415,14 @@ export const ProcessDisplay = memo(function ProcessDisplay({
           {summary && (
             <div className="flex items-center justify-between p-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                <CheckCircle2 className="size-3.5 text-emerald-500" />
                 <span className="text-emerald-600 dark:text-emerald-400 font-medium">
                   เสร็จสิ้น
                 </span>
               </div>
               <div className="flex items-center gap-3 text-muted-foreground">
                 <span>
-                  <Clock className="h-3 w-3 inline mr-1" />
+                  <Clock className="size-3 inline mr-1" />
                   {(summary.total_time_ms / 1000).toFixed(1)}s
                 </span>
                 <span>

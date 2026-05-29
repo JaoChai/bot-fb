@@ -47,14 +47,14 @@ function ChartTooltip({
       </p>
       {revenuePayload && (
         <div className="flex items-center gap-2 text-sm">
-          <span className="h-2 w-2 rounded-full bg-blue-500" />
+          <span className="size-2 rounded-full bg-blue-500" />
           <span className="text-muted-foreground">{revenuePayload.name}:</span>
           <span className="font-semibold">{formatBaht(revenuePayload.value)}</span>
         </div>
       )}
       {costPayload && (
         <div className="flex items-center gap-2 text-sm">
-          <span className="h-2 w-2 rounded-full bg-amber-500" />
+          <span className="size-2 rounded-full bg-amber-500" />
           <span className="text-muted-foreground">{costPayload.name}:</span>
           <span className="font-semibold">
             ฿{(costPayload.value as number).toFixed(2)}
@@ -181,7 +181,7 @@ export function DualAxisChart({
 
       {(vipCustomers ?? 0) > 0 && (
         <div className="mt-4 flex items-center gap-2 rounded-lg bg-amber-50/60 px-3 py-2 text-sm dark:bg-amber-950/20">
-          <Crown className="h-4 w-4 text-amber-500" />
+          <Crown className="size-4 text-amber-500" />
           <span className="text-muted-foreground">
             VIP: {vipCustomers} คน
             {vipTotalSpent != null && (

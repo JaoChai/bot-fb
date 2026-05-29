@@ -74,7 +74,7 @@ export function DocumentUpload({ onSubmit, isSubmitting }: DocumentUploadProps) 
               : 'bg-muted/50 text-muted-foreground hover:bg-muted'
           )}
         >
-          <FileText className="h-4 w-4" />
+          <FileText className="size-4" />
           พิมพ์ข้อความ
         </button>
         <button
@@ -82,7 +82,7 @@ export function DocumentUpload({ onSubmit, isSubmitting }: DocumentUploadProps) 
           disabled
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-muted/30 text-muted-foreground cursor-not-allowed opacity-50 whitespace-nowrap"
         >
-          <Upload className="h-4 w-4" />
+          <Upload className="size-4" />
           <span className="hidden sm:inline">อัพโหลดไฟล์</span>
           <span className="sm:hidden">อัพโหลด</span>
           <span className="text-xs">(เร็วๆ นี้)</span>
@@ -139,14 +139,14 @@ export function DocumentUpload({ onSubmit, isSubmitting }: DocumentUploadProps) 
           {/* Messages */}
           {error && (
             <div className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
-              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              <AlertCircle className="size-4 flex-shrink-0" />
               {error}
             </div>
           )}
 
           {success && (
             <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950/50 border border-green-200 dark:border-green-800 p-3 text-sm text-green-700 dark:text-green-300">
-              <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+              <CheckCircle2 className="size-4 flex-shrink-0" />
               บันทึกเอกสารสำเร็จ! กำลังประมวลผล...
             </div>
           )}
@@ -160,12 +160,12 @@ export function DocumentUpload({ onSubmit, isSubmitting }: DocumentUploadProps) 
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 size-4 animate-spin" />
                 กำลังบันทึก...
               </>
             ) : (
               <>
-                <Send className="mr-2 h-4 w-4" />
+                <Send className="mr-2 size-4" />
                 บันทึกเอกสาร
               </>
             )}

@@ -68,7 +68,7 @@ export function TagsPanel({ botId, conversationId, currentTags }: TagsPanelProps
             size="sm"
             onClick={() => setIsAdding(true)}
           >
-            <Plus className="h-4 w-4 mr-1" />
+            <Plus className="size-4 mr-1" />
             Add
           </Button>
         )}
@@ -83,18 +83,19 @@ export function TagsPanel({ botId, conversationId, currentTags }: TagsPanelProps
               variant="secondary"
               className="group flex items-center gap-1 pr-1"
             >
-              <Tag className="h-3 w-3" />
+              <Tag className="size-3" />
               {tag}
               <button
+                type="button"
                 onClick={() => handleRemoveTag(tag)}
                 disabled={removeTag.isPending}
                 className="ml-1 rounded-full p-0.5 hover:bg-destructive/20 transition-colors"
                 title="Remove tag"
               >
                 {removeTag.isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <Loader2 className="size-3 animate-spin" />
                 ) : (
-                  <X className="h-3 w-3" />
+                  <X className="size-3" />
                 )}
               </button>
             </Badge>
@@ -134,7 +135,7 @@ export function TagsPanel({ botId, conversationId, currentTags }: TagsPanelProps
                   onClick={() => handleAddTag(tag)}
                   disabled={addTags.isPending}
                 >
-                  <Plus className="h-3 w-3 mr-1" />
+                  <Plus className="size-3 mr-1" />
                   {tag}
                 </Button>
               ))}

@@ -81,7 +81,7 @@ export function NotesPanel({ botId, conversationId }: NotesPanelProps) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-4">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <Loader2 className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -94,7 +94,7 @@ export function NotesPanel({ botId, conversationId }: NotesPanelProps) {
         </h4>
         {!isAdding && (
           <Button variant="outline" size="sm" onClick={() => setIsAdding(true)}>
-            <Plus className="h-4 w-4 mr-1" />
+            <Plus className="size-4 mr-1" />
             Add
           </Button>
         )}
@@ -165,26 +165,26 @@ export function NotesPanel({ botId, conversationId }: NotesPanelProps) {
                   <>
                     <div className="flex items-start justify-between gap-2">
                       <Badge variant="secondary" className={noteTypeColors[note.type]}>
-                        <Icon className="h-3 w-3 mr-1" />
+                        <Icon className="size-3 mr-1" />
                         {noteTypeLabels[note.type]}
                       </Badge>
                       <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7"
+                          className="size-7"
                           onClick={() => setEditingId(note.id)}
                         >
-                          <Pencil className="h-3 w-3" />
+                          <Pencil className="size-3" />
                         </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              className="size-7 text-destructive hover:text-destructive"
                             >
-                              <Trash2 className="h-3 w-3" />
+                              <Trash2 className="size-3" />
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>

@@ -55,7 +55,7 @@ export function ChatInputArea({
         <div className="flex-shrink-0 border-t bg-background">
           <div className="p-4 text-center text-sm text-muted-foreground">
             {inputState.type === 'bot_active' && (
-              <Bot className="h-4 w-4 inline-block mr-1" />
+              <Bot className="size-4 inline-block mr-1" />
             )}
             {inputState.disabledMessage}
           </div>

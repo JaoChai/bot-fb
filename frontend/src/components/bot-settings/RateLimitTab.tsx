@@ -72,7 +72,7 @@ export function RateLimitTab({
 
           <div className="border-t pt-5 space-y-4">
             <p className="text-xs text-muted-foreground">
-              ข้อความเมื่อถูกจำกัด — เว้นว่างไว้เพื่อไม่ตอบกลับ
+              ข้อความเมื่อถูกจำกัด &mdash; เว้นว่างไว้เพื่อไม่ตอบกลับ
             </p>
 
             <SettingRow

@@ -51,11 +51,11 @@ export const ChatHeader = memo(function ChatHeader({
           <Button
             variant="outline"
             size="icon"
-            className="md:hidden h-10 w-10 min-h-[40px] min-w-[40px] flex-shrink-0 border-2"
+            className="md:hidden size-10 min-h-[40px] min-w-[40px] flex-shrink-0 border-2"
             onClick={onBack}
             aria-label="Back to conversation list"
           >
-            <ArrowLeft className="h-5 w-5" />
+            <ArrowLeft className="size-5" />
           </Button>
         )}
 
@@ -68,7 +68,7 @@ export const ChatHeader = memo(function ChatHeader({
         >
           <AvatarImage src={conversation.customer_profile?.picture_url || undefined} />
           <AvatarFallback className={isTelegram ? 'bg-[#0088CC]/10 text-[#0088CC]' : undefined}>
-            {isGroup ? <Users className="h-5 w-5" /> : customerInitial}
+            {isGroup ? <Users className="size-5" /> : customerInitial}
           </AvatarFallback>
         </Avatar>
 
@@ -81,7 +81,7 @@ export const ChatHeader = memo(function ChatHeader({
             {vip && <VipBadge variant={vip.variant} tooltipContent={vip.content} />}
             {/* Unread indicator */}
             {conversation.unread_count > 0 && conversation.status !== 'closed' && (
-              <span className="h-3 w-3 rounded-full bg-[#06C755] flex-shrink-0" />
+              <span className="size-3 rounded-full bg-[#06C755] flex-shrink-0" />
             )}
           </div>
           <p className="text-xs text-muted-foreground truncate">
@@ -102,15 +102,15 @@ export const ChatHeader = memo(function ChatHeader({
             disabled={isToggleLoading}
           >
             {isToggleLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin" />
             ) : conversation.is_handover ? (
               <>
-                <Bot className="h-4 w-4 mr-1" />
+                <Bot className="size-4 mr-1" />
                 Enable Bot
               </>
             ) : (
               <>
-                <Headphones className="h-4 w-4 mr-1" />
+                <Headphones className="size-4 mr-1" />
                 Take Over
               </>
             )}
@@ -128,7 +128,7 @@ export const ChatHeader = memo(function ChatHeader({
             className="xl:hidden"
             onClick={onShowInfo}
           >
-            <Info className="h-4 w-4" />
+            <Info className="size-4" />
           </Button>
         )}
       </div>

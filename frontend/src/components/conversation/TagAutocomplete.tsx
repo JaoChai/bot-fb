@@ -86,11 +86,11 @@ export function TagAutocomplete({
             className="pr-8"
           />
           {isPending && (
-            <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+            <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 size-4 animate-spin text-muted-foreground" />
           )}
         </div>
         <Button variant="ghost" size="icon" onClick={onClose}>
-          <X className="h-4 w-4" />
+          <X className="size-4" />
         </Button>
       </div>
 
@@ -101,10 +101,11 @@ export function TagAutocomplete({
         >
           {inputValue.trim() && !allTags.includes(inputValue.trim()) && (
             <button
+              type="button"
               onClick={() => handleAdd(inputValue)}
               className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center gap-2"
             >
-              <Plus className="h-4 w-4 text-primary" />
+              <Plus className="size-4 text-primary" />
               Create "<span className="font-medium">{inputValue.trim()}</span>"
             </button>
           )}
@@ -114,6 +115,7 @@ export function TagAutocomplete({
             return (
               <button
                 key={tag}
+                type="button"
                 onClick={() => handleAdd(tag)}
                 className={cn(
                   'w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center justify-between',
@@ -122,11 +124,11 @@ export function TagAutocomplete({
                 disabled={isSelected}
               >
                 <span className="flex items-center gap-2">
-                  <Tag className="h-4 w-4 text-muted-foreground" />
+                  <Tag className="size-4 text-muted-foreground" />
                   {tag}
                 </span>
                 {isSelected && (
-                  <Check className="h-4 w-4 text-primary" />
+                  <Check className="size-4 text-primary" />
                 )}
               </button>
             );

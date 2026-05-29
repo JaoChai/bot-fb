@@ -124,7 +124,7 @@ export function BotsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -154,7 +154,7 @@ export function BotsPage() {
           action={
             <Button size="lg" asChild>
               <Link to="/connections/add">
-                <Plus className="h-4 w-4" strokeWidth={2} />
+                <Plus className="size-4" strokeWidth={2} />
                 สร้างการเชื่อมต่อแรก
               </Link>
             </Button>
@@ -187,7 +187,7 @@ export function BotsPage() {
             actions={
               <Button asChild>
                 <Link to="/connections/add">
-                  <Plus className="h-4 w-4" strokeWidth={2} />
+                  <Plus className="size-4" strokeWidth={2} />
                   สร้าง Bot
                 </Link>
               </Button>
@@ -244,7 +244,7 @@ export function BotsPage() {
                         size="sm"
                         onClick={() => navigate(`/flows/editor?botId=${bot.id}`)}
                       >
-                        <Workflow className="h-4 w-4 mr-1" strokeWidth={1.5} />
+                        <Workflow className="size-4 mr-1" strokeWidth={1.5} />
                         <span className="hidden sm:inline">Flow</span>
                       </Button>
                       <Button
@@ -252,13 +252,13 @@ export function BotsPage() {
                         size="sm"
                         onClick={() => navigate(`/bots/${bot.id}/settings`)}
                       >
-                        <Settings className="h-4 w-4 mr-1" strokeWidth={1.5} />
+                        <Settings className="size-4 mr-1" strokeWidth={1.5} />
                         <span className="hidden sm:inline">ตั้งค่า</span>
                       </Button>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" aria-label="เมนูเพิ่มเติม">
-                            <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} />
+                            <MoreHorizontal className="size-4" strokeWidth={1.5} />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-48">

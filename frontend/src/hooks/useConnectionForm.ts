@@ -20,7 +20,7 @@ export interface ConnectionFormData {
   cascade_expensive_model: string;
 }
 
-export const DEFAULT_FORM_DATA: ConnectionFormData = {
+const DEFAULT_FORM_DATA: ConnectionFormData = {
   enabled: true,
   connection_name: '',
   platform: 'testing',

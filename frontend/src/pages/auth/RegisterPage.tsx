@@ -45,7 +45,7 @@ export function RegisterPage() {
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         {registerError && (
           <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+            <AlertCircle className="size-4 shrink-0" strokeWidth={1.5} />
             <span>{(registerError as { message?: string })?.message || 'สมัครสมาชิกไม่สำเร็จ'}</span>
           </div>
         )}

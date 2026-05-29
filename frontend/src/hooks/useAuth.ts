@@ -1,44 +1,16 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiPost } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { useAuthStore } from '@/stores/authStore';
 import type {
-  User,
   LoginCredentials,
   RegisterCredentials,
   AuthResponse,
 } from '@/types/api';
 
-// Fetch current user
-export function useUser() {
-  const { token, setUser, setLoading, logout } = useAuthStore();
-
-  return useQuery({
-    queryKey: queryKeys.auth.user(),
-    queryFn: async () => {
-      const response = await apiGet<User>('/auth/user');
-      return response;
-    },
-    enabled: !!token,
-    retry: false,
-    staleTime: 10 * 60 * 1000, // 10 minutes
-    select: (data) => {
-      setUser(data);
-      setLoading(false);
-      return data;
-    },
-    // Handle errors
-    meta: {
-      onError: () => {
-        logout();
-      },
-    },
-  });
-}
-
 // Login mutation
-export function useLogin() {
+function useLogin() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { login } = useAuthStore();
@@ -57,7 +29,7 @@ export function useLogin() {
 }
 
 // Register mutation
-export function useRegister() {
+function useRegister() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { login } = useAuthStore();
@@ -76,7 +48,7 @@ export function useRegister() {
 }
 
 // Logout mutation
-export function useLogout() {
+function useLogout() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { logout } = useAuthStore();

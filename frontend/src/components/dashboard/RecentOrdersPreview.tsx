@@ -46,7 +46,7 @@ export function RecentOrdersPreview() {
         <h3 className="text-base font-semibold">ออเดอร์ล่าสุด</h3>
         <div className="flex flex-col items-center justify-center gap-2 py-8">
           <div className="rounded-full bg-muted p-3">
-            <ShoppingCart className="h-6 w-6 text-muted-foreground" />
+            <ShoppingCart className="size-6 text-muted-foreground" />
           </div>
           <p className="text-sm text-muted-foreground">ยังไม่มีออเดอร์</p>
         </div>

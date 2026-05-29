@@ -41,7 +41,7 @@ export function QuickReplyButton({
           disabled={disabled}
           title="Quick Reply"
         >
-          <Zap className="h-5 w-5" />
+          <Zap className="size-5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

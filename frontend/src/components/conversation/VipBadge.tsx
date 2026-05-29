@@ -36,7 +36,7 @@ export function VipBadge({
         title={title}
         className={cn(baseClass, 'cursor-pointer hover:opacity-80')}
       >
-        <Star className="h-3 w-3 fill-current" />
+        <Star className="size-3 fill-current" />
         <span>VIP</span>
       </button>
     );

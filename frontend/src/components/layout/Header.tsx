@@ -19,8 +19,8 @@ export function Header() {
       {/* Mobile menu button */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-9 w-9">
-            <Menu className="h-5 w-5" strokeWidth={1.5} />
+          <Button variant="ghost" size="icon" className="size-9">
+            <Menu className="size-5" strokeWidth={1.5} />
             <span className="sr-only">เปิดเมนู</span>
           </Button>
         </SheetTrigger>

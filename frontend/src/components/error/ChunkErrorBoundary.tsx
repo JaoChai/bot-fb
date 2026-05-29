@@ -52,7 +52,7 @@ export class ChunkErrorBoundary extends Component<Props, State> {
         return (
           <div className="flex min-h-[400px] flex-col items-center justify-center gap-4 p-8 text-center">
             <div className="rounded-full bg-primary/10 p-4">
-              <RefreshCw className="h-8 w-8 text-primary" />
+              <RefreshCw className="size-8 text-primary" />
             </div>
             <div className="space-y-2">
               <h2 className="text-xl font-semibold">
@@ -65,7 +65,7 @@ export class ChunkErrorBoundary extends Component<Props, State> {
               </p>
             </div>
             <Button onClick={this.handleReload} className="gap-2">
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className="size-4" />
               รีโหลดหน้า
             </Button>
           </div>
@@ -82,7 +82,7 @@ export class ChunkErrorBoundary extends Component<Props, State> {
             </p>
           </div>
           <Button onClick={this.handleReload} variant="outline" className="gap-2">
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className="size-4" />
             รีโหลดหน้า
           </Button>
         </div>

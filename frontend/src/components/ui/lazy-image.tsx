@@ -76,7 +76,7 @@ export const LazyImage = memo(function LazyImage({
             placeholderClassName || 'min-h-[120px] w-full'
           )}
         >
-          <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
+          <ImageIcon className="size-8 text-muted-foreground/50" />
         </div>
       )}
 
@@ -88,7 +88,7 @@ export const LazyImage = memo(function LazyImage({
             placeholderClassName || 'min-h-[120px] w-full'
           )}
         >
-          <ImageIcon className="h-8 w-8 text-muted-foreground/50 mb-2" />
+          <ImageIcon className="size-8 text-muted-foreground/50 mb-2" />
           <span className="text-xs text-muted-foreground">ไม่สามารถโหลดรูปได้</span>
         </div>
       )}

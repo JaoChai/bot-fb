@@ -108,7 +108,7 @@ export function ModelTab({ temperature, maxTokens, onChange }: ModelTabProps) {
             <span className="font-semibold tabular-nums">{maxTokens}</span>
           </Label>
           <p className="text-xs text-muted-foreground">
-            จำกัดความยาวคำตอบของบอท — 1024 พอสำหรับตอบสั้น, 4096+ สำหรับตอบยาวมีรายละเอียด
+            จำกัดความยาวคำตอบของบอท &mdash; 1024 พอสำหรับตอบสั้น, 4096+ สำหรับตอบยาวมีรายละเอียด
           </p>
           <div className="flex items-center gap-3">
             <Slider

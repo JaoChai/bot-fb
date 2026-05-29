@@ -168,7 +168,7 @@ export function ChatPage() {
           size="lg"
           action={
             isBotsLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <Loader2 className="size-5 animate-spin text-muted-foreground" />
             ) : (
               <div className="w-64">
                 <BotPicker

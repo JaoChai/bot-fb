@@ -34,7 +34,7 @@ export function SettingSection({
                   : 'bg-muted/40 text-muted-foreground',
               )}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="size-4" />
             </div>
           )}
           <div className="min-w-0">

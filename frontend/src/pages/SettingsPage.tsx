@@ -102,11 +102,11 @@ export function SettingsPage() {
           <Badge variant={isConfigured ? 'default' : 'secondary'}>
             {isConfigured ? (
               <>
-                <CheckCircle className="h-3 w-3 mr-1" strokeWidth={1.5} /> ตั้งค่าแล้ว
+                <CheckCircle className="size-3 mr-1" strokeWidth={1.5} /> ตั้งค่าแล้ว
               </>
             ) : (
               <>
-                <AlertCircle className="h-3 w-3 mr-1" strokeWidth={1.5} /> ยังไม่ได้ตั้งค่า
+                <AlertCircle className="size-3 mr-1" strokeWidth={1.5} /> ยังไม่ได้ตั้งค่า
               </>
             )}
           </Badge>
@@ -118,10 +118,10 @@ export function SettingsPage() {
               <span className="text-sm text-muted-foreground">Key ปัจจุบัน:</span>
               <code className="font-mono text-sm">{settings.openrouter_api_key_masked}</code>
               {testStatus === 'success' && (
-                <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400 ml-auto" strokeWidth={1.5} />
+                <CheckCircle className="size-4 text-emerald-600 dark:text-emerald-400 ml-auto" strokeWidth={1.5} />
               )}
               {testStatus === 'error' && (
-                <XCircle className="h-4 w-4 text-destructive ml-auto" strokeWidth={1.5} />
+                <XCircle className="size-4 text-destructive ml-auto" strokeWidth={1.5} />
               )}
             </div>
           )}
@@ -151,21 +151,21 @@ export function SettingsPage() {
                 onClick={() => setShowApiKey(!showApiKey)}
                 aria-label={showApiKey ? 'ซ่อน API Key' : 'แสดง API Key'}
               >
-                {showApiKey ? <EyeOff className="h-4 w-4" strokeWidth={1.5} /> : <Eye className="h-4 w-4" strokeWidth={1.5} />}
+                {showApiKey ? <EyeOff className="size-4" strokeWidth={1.5} /> : <Eye className="size-4" strokeWidth={1.5} />}
               </Button>
             </div>
           </div>
 
           <Button variant="link" className="h-auto p-0 text-sm" asChild>
             <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">
-              รับ API Key ที่ OpenRouter <ExternalLink className="h-3 w-3 ml-1" strokeWidth={1.5} />
+              รับ API Key ที่ OpenRouter <ExternalLink className="size-3 ml-1" strokeWidth={1.5} />
             </a>
           </Button>
 
           <div className="flex gap-2 pt-2">
             <Button onClick={handleSaveApiKey} disabled={updateMutation.isPending || !apiKey.trim()}>
               {updateMutation.isPending ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> กำลังบันทึก...</>
+                <><Loader2 className="size-4 mr-2 animate-spin" /> กำลังบันทึก...</>
               ) : (
                 'บันทึก'
               )}
@@ -175,7 +175,7 @@ export function SettingsPage() {
               <>
                 <Button variant="outline" onClick={handleTestConnection} disabled={testMutation.isPending}>
                   {testMutation.isPending ? (
-                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> กำลังทดสอบ...</>
+                    <><Loader2 className="size-4 mr-2 animate-spin" /> กำลังทดสอบ...</>
                   ) : (
                     'ทดสอบการเชื่อมต่อ'
                   )}
@@ -187,7 +187,7 @@ export function SettingsPage() {
                   onClick={handleClearApiKey}
                   disabled={clearMutation.isPending}
                 >
-                  {clearMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'ลบ'}
+                  {clearMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : 'ลบ'}
                 </Button>
               </>
             )}
@@ -201,13 +201,13 @@ export function SettingsPage() {
           className="flex items-center justify-between rounded-lg border bg-card p-4 transition-colors hover:bg-muted/40"
         >
           <div className="flex items-center gap-3">
-            <Zap className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+            <Zap className="size-4 text-muted-foreground" strokeWidth={1.5} />
             <div>
               <p className="font-medium text-sm">Quick Replies</p>
               <p className="text-sm text-muted-foreground">จัดการคำตอบสำเร็จรูปสำหรับทีม</p>
             </div>
           </div>
-          <ChevronRight className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+          <ChevronRight className="size-4 text-muted-foreground" strokeWidth={1.5} />
         </Link>
       )}
 

@@ -225,7 +225,7 @@ export function QuickRepliesPage() {
         backTo="/settings"
         actions={
           <Button onClick={handleOpenCreate}>
-            <Plus className="h-4 w-4 mr-2" strokeWidth={2} />
+            <Plus className="size-4 mr-2" strokeWidth={2} />
             สร้างใหม่
           </Button>
         }
@@ -248,7 +248,7 @@ export function QuickRepliesPage() {
           {/* List */}
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
           ) : filteredQuickReplies.length === 0 ? (
             <EmptyState
@@ -258,7 +258,7 @@ export function QuickRepliesPage() {
               action={
                 !searchQuery ? (
                   <Button onClick={handleOpenCreate}>
-                    <Plus className="h-4 w-4 mr-2" strokeWidth={2} />
+                    <Plus className="size-4 mr-2" strokeWidth={2} />
                     สร้างใหม่
                   </Button>
                 ) : undefined
@@ -282,24 +282,24 @@ export function QuickRepliesPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-5 w-5"
+                        className="size-5"
                         disabled={index === 0 || reorderMutation.isPending}
                         onClick={() => handleMoveUp(index)}
                       >
-                        <ChevronUp className="h-3 w-3" strokeWidth={1.5} />
+                        <ChevronUp className="size-3" strokeWidth={1.5} />
                       </Button>
-                      <GripVertical className="h-4 w-4 text-muted-foreground mx-auto" strokeWidth={1.5} />
+                      <GripVertical className="size-4 text-muted-foreground mx-auto" strokeWidth={1.5} />
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-5 w-5"
+                        className="size-5"
                         disabled={
                           index === quickReplies.length - 1 ||
                           reorderMutation.isPending
                         }
                         onClick={() => handleMoveDown(index)}
                       >
-                        <ChevronDown className="h-3 w-3" strokeWidth={1.5} />
+                        <ChevronDown className="size-3" strokeWidth={1.5} />
                       </Button>
                     </div>
 
@@ -336,7 +336,7 @@ export function QuickRepliesPage() {
                         size="icon"
                         onClick={() => handleOpenEdit(qr)}
                       >
-                        <Pencil className="h-4 w-4" strokeWidth={1.5} />
+                        <Pencil className="size-4" strokeWidth={1.5} />
                       </Button>
                       <Button
                         variant="ghost"
@@ -344,7 +344,7 @@ export function QuickRepliesPage() {
                         className="text-destructive hover:text-destructive"
                         onClick={() => setDeleteTarget(qr)}
                       >
-                        <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                        <Trash2 className="size-4" strokeWidth={1.5} />
                       </Button>
                     </div>
                   </div>
@@ -462,7 +462,7 @@ export function QuickRepliesPage() {
               >
                 {createMutation.isPending || updateMutation.isPending ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    <Loader2 className="size-4 mr-2 animate-spin" />
                     กำลังบันทึก...
                   </>
                 ) : editingId ? (
@@ -497,7 +497,7 @@ export function QuickRepliesPage() {
             >
               {deleteMutation.isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="size-4 mr-2 animate-spin" />
                   กำลังลบ...
                 </>
               ) : (

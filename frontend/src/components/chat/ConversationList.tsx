@@ -57,7 +57,7 @@ export function ConversationList({
       {/* Search */}
       <div className="p-2 sm:p-3 border-b">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder={isTelegram ? "ค้นหาแชท..." : "ค้นหา..."}
             value={search}
@@ -97,7 +97,7 @@ export function ConversationList({
             {/* Loading indicator */}
             {isFetchingNextPage && (
               <div className="flex items-center justify-center py-4">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
                 <span className="ml-2 text-sm text-muted-foreground">กำลังโหลด...</span>
               </div>
             )}

@@ -44,19 +44,19 @@ export function NoteForm({
         <SelectContent>
           <SelectItem value="note">
             <div className="flex items-center gap-2">
-              <StickyNote className="h-4 w-4" />
+              <StickyNote className="size-4" />
               Note
             </div>
           </SelectItem>
           <SelectItem value="memory">
             <div className="flex items-center gap-2">
-              <Brain className="h-4 w-4" />
+              <Brain className="size-4" />
               Memory
             </div>
           </SelectItem>
           <SelectItem value="reminder">
             <div className="flex items-center gap-2">
-              <Bell className="h-4 w-4" />
+              <Bell className="size-4" />
               Reminder
             </div>
           </SelectItem>
@@ -71,7 +71,7 @@ export function NoteForm({
       />
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onCancel}>
-          <X className="h-4 w-4 mr-1" />
+          <X className="size-4 mr-1" />
           Cancel
         </Button>
         <Button
@@ -79,8 +79,8 @@ export function NoteForm({
           onClick={handleSave}
           disabled={!content.trim() || isPending}
         >
-          {isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-          <Save className="h-4 w-4 mr-1" />
+          {isPending && <Loader2 className="size-4 mr-1 animate-spin" />}
+          <Save className="size-4 mr-1" />
           Save
         </Button>
       </div>

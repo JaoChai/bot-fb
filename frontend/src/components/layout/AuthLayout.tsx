@@ -15,8 +15,8 @@ export function AuthLayout() {
       <div className="hidden lg:flex flex-col justify-between bg-foreground p-10 text-background">
         {/* Logo */}
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-background/10 border border-background/20">
-            <Sparkles className="h-4 w-4" strokeWidth={2} />
+          <div className="flex size-9 items-center justify-center rounded-md bg-background/10 border border-background/20">
+            <Sparkles className="size-4" strokeWidth={2} />
           </div>
           <span className="text-lg font-semibold tracking-tight">BotJao</span>
         </div>
@@ -38,7 +38,7 @@ export function AuthLayout() {
             {features.map((f) => (
               <li key={f} className="flex items-start gap-2">
                 <CheckCircle2
-                  className="h-4 w-4 text-background/60 mt-0.5 shrink-0"
+                  className="size-4 text-background/60 mt-0.5 shrink-0"
                   strokeWidth={1.5}
                 />
                 <span>{f}</span>
@@ -57,8 +57,8 @@ export function AuthLayout() {
       <div className="flex flex-col items-center justify-center p-6 lg:p-10">
         {/* Mobile logo */}
         <div className="mb-8 text-center lg:hidden">
-          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary border border-primary/20">
-            <Sparkles className="h-5 w-5" strokeWidth={2} />
+          <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-md bg-primary/10 text-primary border border-primary/20">
+            <Sparkles className="size-5" strokeWidth={2} />
           </div>
           <h1 className="text-xl font-semibold tracking-tight">BotJao</h1>
           <p className="text-sm text-muted-foreground">AI Chatbot Platform</p>

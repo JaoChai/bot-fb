@@ -81,7 +81,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
               </>
             ) : (
               <div className="bg-muted/50 rounded-lg p-4 text-center text-muted-foreground">
-                <FileIcon className="h-8 w-8 mx-auto mb-2" />
+                <FileIcon className="size-8 mx-auto mb-2" />
                 <p className="text-sm">ไม่สามารถโหลดรูปภาพได้</p>
               </div>
             )}
@@ -99,6 +99,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
                   className="rounded-lg w-full"
                   preload="metadata"
                 >
+                  <track kind="captions" />
                   เบราว์เซอร์ของคุณไม่รองรับวิดีโอ
                 </video>
                 {message.content && !message.content.includes('[วิดีโอ]') && (
@@ -107,7 +108,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
               </>
             ) : (
               <div className="bg-muted/50 rounded-lg p-4 text-center text-muted-foreground">
-                <Play className="h-8 w-8 mx-auto mb-2" />
+                <Play className="size-8 mx-auto mb-2" />
                 <p className="text-sm">ไม่สามารถโหลดวิดีโอได้</p>
               </div>
             )}
@@ -121,8 +122,11 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
               <audio
                 src={message.media_url}
                 controls
+                aria-label="Audio message"
                 className="w-full max-w-[250px]"
-              />
+              >
+                <track kind="captions" />
+              </audio>
             ) : (
               <p className="text-muted-foreground text-sm">ไฟล์เสียง</p>
             )}
@@ -141,8 +145,8 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
               isUser ? 'bg-muted/50 hover:bg-muted' : 'bg-background/10 hover:bg-background/20'
             )}
           >
-            <div className="h-10 w-10 rounded-lg bg-[#06C755]/10 flex items-center justify-center flex-shrink-0">
-              <FileIcon className="h-5 w-5 text-[#06C755]" />
+            <div className="size-10 rounded-lg bg-[#06C755]/10 flex items-center justify-center flex-shrink-0">
+              <FileIcon className="size-5 text-[#06C755]" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm truncate">{fileName}</p>
@@ -152,7 +156,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
                 </p>
               )}
             </div>
-            <Download className="h-4 w-4 flex-shrink-0 opacity-60" />
+            <Download className="size-4 flex-shrink-0 opacity-60" />
           </a>
         );
       }
@@ -169,7 +173,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
               />
             ) : (
               <div className="flex items-center gap-2 p-2">
-                <Smile className="h-8 w-8 text-[#06C755]" />
+                <Smile className="size-8 text-[#06C755]" />
                 <span className="text-muted-foreground text-sm">สติกเกอร์</span>
               </div>
             )}
@@ -196,8 +200,8 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
               isUser ? 'bg-muted/50 hover:bg-muted' : 'bg-background/10 hover:bg-background/20'
             )}
           >
-            <div className="h-10 w-10 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
-              <MapPin className="h-5 w-5 text-red-500" />
+            <div className="size-10 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
+              <MapPin className="size-5 text-red-500" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm truncate">
@@ -209,7 +213,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
                 </p>
               )}
             </div>
-            <ExternalLink className="h-4 w-4 flex-shrink-0 opacity-60" />
+            <ExternalLink className="size-4 flex-shrink-0 opacity-60" />
           </a>
         );
       }
@@ -244,12 +248,12 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
       >
         {/* Avatar for non-user messages */}
         {!isUser && (
-          <Avatar className="h-8 w-8 flex-shrink-0 bg-[#06C755]/10">
+          <Avatar className="size-8 flex-shrink-0 bg-[#06C755]/10">
             <AvatarFallback className="bg-[#06C755]/10 text-[#06C755]">
               {message.sender === 'bot' ? (
                 <span className="text-xs">Bot</span>
               ) : (
-                <Headphones className="h-4 w-4" />
+                <Headphones className="size-4" />
               )}
             </AvatarFallback>
           </Avatar>

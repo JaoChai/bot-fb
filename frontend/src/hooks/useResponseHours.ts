@@ -21,7 +21,7 @@ export interface ResponseHoursConfig {
   sun: DaySchedule;
 }
 
-export const DAYS: { key: DayKey; label: string }[] = [
+const DAYS: { key: DayKey; label: string }[] = [
   { key: 'mon', label: 'จันทร์' },
   { key: 'tue', label: 'อังคาร' },
   { key: 'wed', label: 'พุธ' },

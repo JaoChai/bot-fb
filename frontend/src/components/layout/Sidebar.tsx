@@ -76,24 +76,24 @@ export function Sidebar() {
       <div className="flex h-14 items-center justify-between border-b px-4">
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary border border-primary/20">
-              <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
+            <div className="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary border border-primary/20">
+              <Sparkles className="size-3.5" strokeWidth={2} />
             </div>
             <span className="text-sm font-semibold tracking-tight">BotJao</span>
           </div>
         )}
         {sidebarCollapsed && (
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary border border-primary/20 mx-auto">
-            <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
+          <div className="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary border border-primary/20 mx-auto">
+            <Sparkles className="size-3.5" strokeWidth={2} />
           </div>
         )}
         <Button
           variant="ghost"
           size="icon"
           onClick={toggleSidebarCollapsed}
-          className={cn("h-8 w-8 text-muted-foreground hover:text-foreground", sidebarCollapsed && "hidden")}
+          className={cn("size-8 text-muted-foreground hover:text-foreground", sidebarCollapsed && "hidden")}
         >
-          <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
+          <ChevronLeft className="size-4" strokeWidth={1.5} />
         </Button>
       </div>
 
@@ -111,7 +111,7 @@ export function Sidebar() {
               to={item.href}
               className={navLinkClass}
             >
-              <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+              <item.icon className="size-4 shrink-0" strokeWidth={1.5} />
               {!sidebarCollapsed && <span>{item.title}</span>}
             </NavLink>
           ))}
@@ -129,7 +129,7 @@ export function Sidebar() {
               to={item.href}
               className={navLinkClass}
             >
-              <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+              <item.icon className="size-4 shrink-0" strokeWidth={1.5} />
               {!sidebarCollapsed && <span>{item.title}</span>}
             </NavLink>
           ))}
@@ -137,7 +137,7 @@ export function Sidebar() {
           {/* Team - Owner only */}
           {user?.role === 'owner' && (
             <NavLink to="/team" className={navLinkClass}>
-              <Users className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+              <Users className="size-4 shrink-0" strokeWidth={1.5} />
               {!sidebarCollapsed && <span>จัดการทีม</span>}
             </NavLink>
           )}
@@ -145,7 +145,7 @@ export function Sidebar() {
           {/* Quick Replies - Owner only */}
           {user?.role === 'owner' && (
             <NavLink to="/settings/quick-replies" className={navLinkClass}>
-              <Zap className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+              <Zap className="size-4 shrink-0" strokeWidth={1.5} />
               {!sidebarCollapsed && <span>Quick Replies</span>}
             </NavLink>
           )}
@@ -159,12 +159,13 @@ export function Sidebar() {
           to="/settings"
           className={navLinkClass}
         >
-          <Settings className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+          <Settings className="size-4 shrink-0" strokeWidth={1.5} />
           {!sidebarCollapsed && <span>ตั้งค่า</span>}
         </NavLink>
 
         {/* Theme Toggle */}
         <button
+          type="button"
           onClick={toggleTheme}
           className={cn(
             'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors w-full',
@@ -173,13 +174,13 @@ export function Sidebar() {
           )}
           title={theme === 'dark' ? 'สลับเป็นโหมดสว่าง' : 'สลับเป็นโหมดมืด'}
         >
-          <div className="relative h-4 w-4 shrink-0">
+          <div className="relative size-4 shrink-0">
             <Sun className={cn(
-              'absolute h-4 w-4 transition-all duration-300 ease-out',
+              'absolute size-4 transition-all duration-300 ease-out',
               theme === 'dark' ? 'rotate-0 scale-100 opacity-100' : 'rotate-90 scale-0 opacity-0'
             )} />
             <Moon className={cn(
-              'absolute h-4 w-4 transition-all duration-300 ease-out',
+              'absolute size-4 transition-all duration-300 ease-out',
               theme === 'dark' ? '-rotate-90 scale-0 opacity-0' : 'rotate-0 scale-100 opacity-100'
             )} />
           </div>
@@ -192,13 +193,14 @@ export function Sidebar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
+              type="button"
               className={cn(
                 'mt-2 flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                 'hover:bg-accent/60 text-foreground',
                 sidebarCollapsed && 'justify-center px-2'
               )}
             >
-              <Avatar className="h-6 w-6">
+              <Avatar className="size-6">
                 <AvatarFallback className="text-xs bg-muted">
                   {userInitials}
                 </AvatarFallback>
@@ -209,7 +211,7 @@ export function Sidebar() {
                     <p className="truncate text-sm font-medium">{user?.name || 'User'}</p>
                     <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
                   </div>
-                  <ChevronsUpDown className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                  <ChevronsUpDown className="size-4 text-muted-foreground" strokeWidth={1.5} />
                 </>
               )}
             </button>
@@ -225,7 +227,7 @@ export function Sidebar() {
               disabled={isLoggingOut}
               className="text-destructive focus:text-destructive cursor-pointer"
             >
-              <LogOut className="mr-2 h-4 w-4" strokeWidth={1.5} />
+              <LogOut className="mr-2 size-4" strokeWidth={1.5} />
               {isLoggingOut ? 'กำลังออก...' : 'ออกจากระบบ'}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -239,7 +241,7 @@ export function Sidebar() {
             onClick={toggleSidebarCollapsed}
             className="w-full h-8 mt-2 text-muted-foreground hover:text-foreground"
           >
-            <ChevronLeft className="h-4 w-4 rotate-180" strokeWidth={1.5} />
+            <ChevronLeft className="size-4 rotate-180" strokeWidth={1.5} />
           </Button>
         )}
       </div>

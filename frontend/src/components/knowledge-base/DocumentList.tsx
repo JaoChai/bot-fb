@@ -59,9 +59,9 @@ const STATUS_CONFIG = {
 
 function getFileIcon(mimeType: string) {
   if (mimeType === 'application/pdf') {
-    return <File className="h-5 w-5 text-foreground" />;
+    return <File className="size-5 text-foreground" />;
   }
-  return <FileText className="h-5 w-5 text-foreground" />;
+  return <FileText className="size-5 text-foreground" />;
 }
 
 export function DocumentList({
@@ -96,7 +96,7 @@ export function DocumentList({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -105,8 +105,8 @@ export function DocumentList({
   if (documents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-10 text-center">
-        <div className="mb-4 w-14 h-14 rounded-full bg-muted/50 flex items-center justify-center">
-          <FileText className="h-7 w-7 text-muted-foreground" />
+        <div className="mb-4 size-14 rounded-full bg-muted/50 flex items-center justify-center">
+          <FileText className="size-7 text-muted-foreground" />
         </div>
         <p className="text-sm font-medium mb-1">ยังไม่มีเอกสาร</p>
         <p className="text-xs text-muted-foreground max-w-xs">
@@ -120,7 +120,7 @@ export function DocumentList({
     <>
       <div className="flex justify-end mb-3">
         <Button variant="ghost" size="sm" onClick={onRefresh} className="text-muted-foreground hover:text-foreground">
-          <RefreshCw className="mr-2 h-3.5 w-3.5" />
+          <RefreshCw className="mr-2 size-3.5" />
           รีเฟรช
         </Button>
       </div>
@@ -136,7 +136,7 @@ export function DocumentList({
               className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors group"
             >
               {/* File Icon */}
-              <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center">
+              <div className="flex-shrink-0 size-10 rounded-lg bg-muted/50 flex items-center justify-center">
                 {getFileIcon(doc.mime_type)}
               </div>
 
@@ -164,7 +164,7 @@ export function DocumentList({
                   <span>{doc.file_size_formatted}</span>
                   {doc.chunk_count > 0 && (
                     <span className="flex items-center gap-1">
-                      <Layers className="h-3 w-3" />
+                      <Layers className="size-3" />
                       {doc.chunk_count} chunks
                     </span>
                   )}
@@ -172,7 +172,7 @@ export function DocumentList({
 
                 {doc.error_message && (
                   <p className="mt-1.5 text-xs text-destructive flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3 flex-shrink-0" />
+                    <AlertCircle className="size-3 flex-shrink-0" />
                     <span className="truncate">{doc.error_message}</span>
                   </p>
                 )}
@@ -184,9 +184,9 @@ export function DocumentList({
                 size="icon"
                 onClick={() => handleDeleteClick(doc)}
                 disabled={isDeleting}
-                className="flex-shrink-0 h-8 w-8 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all cursor-pointer"
+                className="flex-shrink-0 size-8 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all cursor-pointer"
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="size-4" />
               </Button>
             </div>
           );
@@ -212,7 +212,7 @@ export function DocumentList({
             >
               {isDeleting ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-2 size-4 animate-spin" />
                   กำลังลบ...
                 </>
               ) : (

@@ -63,8 +63,8 @@ export function MobileNav({ onNavigate }: MobileNavProps) {
     <div className="flex h-full flex-col bg-background">
       {/* Logo */}
       <div className="flex h-14 items-center border-b px-4 gap-3">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary border border-primary/20">
-          <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
+        <div className="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary border border-primary/20">
+          <Sparkles className="size-3.5" strokeWidth={2} />
         </div>
         <span className="text-sm font-semibold tracking-tight">BotJao</span>
       </div>
@@ -83,7 +83,7 @@ export function MobileNav({ onNavigate }: MobileNavProps) {
               onClick={onNavigate}
               className={navLinkClass}
             >
-              <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+              <item.icon className="size-4 shrink-0" strokeWidth={1.5} />
               <span>{item.title}</span>
             </NavLink>
           ))}
@@ -101,19 +101,19 @@ export function MobileNav({ onNavigate }: MobileNavProps) {
               onClick={onNavigate}
               className={navLinkClass}
             >
-              <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+              <item.icon className="size-4 shrink-0" strokeWidth={1.5} />
               <span>{item.title}</span>
             </NavLink>
           ))}
           {user?.role === 'owner' && (
             <NavLink to="/team" onClick={onNavigate} className={navLinkClass}>
-              <Users className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+              <Users className="size-4 shrink-0" strokeWidth={1.5} />
               <span>จัดการทีม</span>
             </NavLink>
           )}
           {user?.role === 'owner' && (
             <NavLink to="/settings/quick-replies" onClick={onNavigate} className={navLinkClass}>
-              <Zap className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+              <Zap className="size-4 shrink-0" strokeWidth={1.5} />
               <span>Quick Replies</span>
             </NavLink>
           )}
@@ -128,25 +128,26 @@ export function MobileNav({ onNavigate }: MobileNavProps) {
           onClick={onNavigate}
           className={navLinkClass}
         >
-          <Settings className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+          <Settings className="size-4 shrink-0" strokeWidth={1.5} />
           <span>ตั้งค่า</span>
         </NavLink>
 
         {/* Theme Toggle */}
         <button
+          type="button"
           onClick={toggleTheme}
           className={cn(
             'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors w-full',
             'text-muted-foreground hover:bg-accent hover:text-foreground cursor-pointer'
           )}
         >
-          <div className="relative h-4 w-4 shrink-0">
+          <div className="relative size-4 shrink-0">
             <Sun className={cn(
-              'absolute h-4 w-4 transition-all duration-300 ease-out',
+              'absolute size-4 transition-all duration-300 ease-out',
               theme === 'dark' ? 'rotate-0 scale-100 opacity-100' : 'rotate-90 scale-0 opacity-0'
             )} strokeWidth={1.5} />
             <Moon className={cn(
-              'absolute h-4 w-4 transition-all duration-300 ease-out',
+              'absolute size-4 transition-all duration-300 ease-out',
               theme === 'dark' ? '-rotate-90 scale-0 opacity-0' : 'rotate-0 scale-100 opacity-100'
             )} strokeWidth={1.5} />
           </div>
@@ -155,7 +156,7 @@ export function MobileNav({ onNavigate }: MobileNavProps) {
 
         {/* User Profile */}
         <div className="mt-2 flex items-center gap-3 rounded-md px-3 py-2">
-          <Avatar className="h-8 w-8">
+          <Avatar className="size-8">
             <AvatarFallback className="text-xs bg-muted">
               {userInitials}
             </AvatarFallback>
@@ -173,7 +174,7 @@ export function MobileNav({ onNavigate }: MobileNavProps) {
           onClick={() => logout()}
           disabled={isLoggingOut}
         >
-          <LogOut className="h-4 w-4" strokeWidth={1.5} />
+          <LogOut className="size-4" strokeWidth={1.5} />
           {isLoggingOut ? 'กำลังออก...' : 'ออกจากระบบ'}
         </Button>
       </div>

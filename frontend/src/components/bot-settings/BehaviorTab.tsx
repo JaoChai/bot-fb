@@ -144,7 +144,7 @@ export function BehaviorTab({
               {/* Smart Aggregation */}
               <div className="rounded-lg border bg-muted/20 p-4 space-y-4">
                 <div className="flex items-center gap-2">
-                  <Zap className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                  <Zap className="size-4 text-muted-foreground" strokeWidth={1.5} />
                   <span className="text-sm font-semibold">Smart Aggregation</span>
                   <span className="text-xs text-muted-foreground">(ปรับเวลารออัตโนมัติ)</span>
                 </div>

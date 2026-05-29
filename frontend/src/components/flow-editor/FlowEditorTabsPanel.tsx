@@ -7,7 +7,7 @@ import { PluginsTab } from './tabs/PluginsTab';
 import type { KnowledgeBaseListItem } from '@/hooks/useKnowledgeBase';
 import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
 
-export const EDITOR_TABS = [
+const EDITOR_TABS = [
   { value: 'prompt', label: 'Prompt', icon: FileText },
   { value: 'knowledge', label: 'Knowledge', icon: BookOpen },
   { value: 'model', label: 'Model', icon: Cpu },
@@ -59,7 +59,7 @@ export function FlowEditorTabsPanel({
                     : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground before:opacity-0',
                 )}
               >
-                <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+                <Icon className="size-4 shrink-0" strokeWidth={1.5} />
                 <span>{t.label}</span>
               </button>
             );

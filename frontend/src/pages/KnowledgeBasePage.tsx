@@ -160,7 +160,7 @@ export function KnowledgeBasePage() {
               size="sm"
               onClick={() => setIsDeleteDialogOpen(true)}
             >
-              <Trash2 className="h-4 w-4 mr-2" strokeWidth={1.5} />
+              <Trash2 className="size-4 mr-2" strokeWidth={1.5} />
               ลบฐานความรู้
             </Button>
           }
@@ -222,9 +222,9 @@ export function KnowledgeBasePage() {
                 disabled={deleteKbMutation.isPending}
               >
                 {deleteKbMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  <Loader2 className="size-4 animate-spin mr-2" />
                 ) : (
-                  <Trash2 className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                  <Trash2 className="size-4 mr-2" strokeWidth={1.5} />
                 )}
                 ลบ
               </AlertDialogAction>
@@ -245,7 +245,7 @@ export function KnowledgeBasePage() {
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button>
-                <Plus className="h-4 w-4 mr-2" strokeWidth={2} />
+                <Plus className="size-4 mr-2" strokeWidth={2} />
                 สร้างฐานความรู้
               </Button>
             </DialogTrigger>
@@ -286,9 +286,9 @@ export function KnowledgeBasePage() {
                   disabled={!newKbName.trim() || createKbMutation.isPending}
                 >
                   {createKbMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <Loader2 className="size-4 animate-spin mr-2" />
                   ) : (
-                    <Plus className="h-4 w-4 mr-2" strokeWidth={2} />
+                    <Plus className="size-4 mr-2" strokeWidth={2} />
                   )}
                   สร้าง
                 </Button>
@@ -300,7 +300,7 @@ export function KnowledgeBasePage() {
 
       {isLoadingList && (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       )}
 
@@ -311,7 +311,7 @@ export function KnowledgeBasePage() {
           description="สร้างฐานความรู้เพื่อเก็บเอกสารและข้อมูลที่ Bot จะใช้ในการตอบคำถาม"
           action={
             <Button onClick={() => setIsCreateDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" strokeWidth={2} />
+              <Plus className="size-4 mr-2" strokeWidth={2} />
               สร้างฐานความรู้แรก
             </Button>
           }
@@ -323,11 +323,12 @@ export function KnowledgeBasePage() {
           {knowledgeBases.map((kb) => (
             <button
               key={kb.id}
+              type="button"
               onClick={() => setSelectedKbId(kb.id)}
               className="group flex flex-col rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted/40"
             >
               <div className="flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                <BookOpen className="size-4 text-muted-foreground" strokeWidth={1.5} />
                 <h3 className="font-medium">{kb.name}</h3>
               </div>
               {kb.description && (
@@ -337,11 +338,11 @@ export function KnowledgeBasePage() {
               )}
               <div className="mt-3 flex items-center gap-2">
                 <Badge variant="secondary" className="text-xs tabular-nums">
-                  <FileText className="h-3 w-3 mr-1" strokeWidth={1.5} />
+                  <FileText className="size-3 mr-1" strokeWidth={1.5} />
                   {kb.document_count}
                 </Badge>
                 <Badge variant="outline" className="text-xs tabular-nums">
-                  <Layers className="h-3 w-3 mr-1" strokeWidth={1.5} />
+                  <Layers className="size-3 mr-1" strokeWidth={1.5} />
                   {kb.chunk_count}
                 </Badge>
               </div>

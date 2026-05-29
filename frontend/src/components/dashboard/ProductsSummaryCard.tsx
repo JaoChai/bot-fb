@@ -46,7 +46,7 @@ export function ProductsSummaryCard({ products }: ProductsSummaryCardProps) {
         <div className="space-y-3">
           {topProducts.map((product, index) => (
             <div key={`${product.product_name}-${product.category}`} className="flex items-center gap-3">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+              <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
                 {index + 1}
               </div>
               <div className="min-w-0 flex-1">
@@ -85,8 +85,8 @@ export function ProductsSummaryCard({ products }: ProductsSummaryCardProps) {
                 }}
                 labelLine={false}
               >
-                {categoryData.map((_, index) => (
-                  <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                {categoryData.map((entry, index) => (
+                  <Cell key={`cell-${entry.category}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                 ))}
               </Pie>
               <Tooltip content={<PieTooltip />} />
@@ -97,7 +97,7 @@ export function ProductsSummaryCard({ products }: ProductsSummaryCardProps) {
             {categoryData.map((category, index) => (
               <div key={category.category} className="flex items-center gap-1.5">
                 <div
-                  className="h-2.5 w-2.5 rounded-full"
+                  className="size-2.5 rounded-full"
                   style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
                 />
                 <span className="text-xs text-muted-foreground">{category.category}</span>

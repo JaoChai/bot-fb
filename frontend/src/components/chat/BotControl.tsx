@@ -78,9 +78,9 @@ export function BotControl({ botId, conversation }: BotControlProps) {
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center gap-2">
           {conversation.is_handover ? (
-            <Headphones className="h-5 w-5 text-muted-foreground" />
+            <Headphones className="size-5 text-muted-foreground" />
           ) : (
-            <Bot className="h-5 w-5" />
+            <Bot className="size-5" />
           )}
           <span className="font-medium">
             {conversation.is_handover ? 'Handover Mode' : 'Bot Active'}

@@ -130,7 +130,7 @@ export function VipManagementPage() {
               </div>
             )}
             <Button onClick={() => setPromoteOpen(true)} disabled={!activeBotId} className="gap-2">
-              <UserPlus className="h-4 w-4" strokeWidth={1.5} />
+              <UserPlus className="size-4" strokeWidth={1.5} />
               เพิ่ม VIP ด้วยตนเอง
             </Button>
           </div>
@@ -225,7 +225,7 @@ export function VipManagementPage() {
                               ยกเลิก
                             </Button>
                           ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
+                            <span className="text-xs text-muted-foreground">&mdash;</span>
                           )}
                         </TableCell>
                       </TableRow>
@@ -253,7 +253,7 @@ export function VipManagementPage() {
                       disabled={currentPage === 1}
                       onClick={() => setPage((p) => Math.max(1, p - 1))}
                     >
-                      <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
+                      <ChevronLeft className="size-4" strokeWidth={1.5} />
                       ก่อนหน้า
                     </Button>
                     <Button
@@ -263,7 +263,7 @@ export function VipManagementPage() {
                       onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
                     >
                       ถัดไป
-                      <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
+                      <ChevronRight className="size-4" strokeWidth={1.5} />
                     </Button>
                   </div>
                 </div>
@@ -278,7 +278,7 @@ export function VipManagementPage() {
           <DialogHeader>
             <DialogTitle>เพิ่ม VIP ด้วยตนเอง</DialogTitle>
             <DialogDescription>
-              กำหนดให้ลูกค้าเป็น VIP แบบกำหนดเอง — จะไม่ถูกแทนที่โดยระบบอัตโนมัติ
+              กำหนดให้ลูกค้าเป็น VIP แบบกำหนดเอง &mdash; จะไม่ถูกแทนที่โดยระบบอัตโนมัติ
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -332,7 +332,7 @@ export function VipManagementPage() {
               <span className="font-medium">
                 {revokeTarget?.display_name ?? `#${revokeTarget?.customer_profile_id}`}
               </span>
-              {' '}— AI จะไม่ใช้ context VIP กับลูกค้านี้อีก (แต่ถ้าลูกค้าซื้อครบเกณฑ์อีก ระบบจะเพิ่มกลับอัตโนมัติ)
+              {' '}&mdash; AI จะไม่ใช้ context VIP กับลูกค้านี้อีก (แต่ถ้าลูกค้าซื้อครบเกณฑ์อีก ระบบจะเพิ่มกลับอัตโนมัติ)
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

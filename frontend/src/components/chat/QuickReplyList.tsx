@@ -28,14 +28,14 @@ export function QuickReplyList({ onSelect }: QuickReplyListProps) {
     <div className="flex flex-col max-h-[400px]">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b">
-        <Zap className="h-4 w-4 text-primary" />
+        <Zap className="size-4 text-primary" />
         <span className="font-medium text-sm">Quick Replies</span>
       </div>
 
       {/* Search */}
       <div className="p-2 border-b">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -50,7 +50,7 @@ export function QuickReplyList({ onSelect }: QuickReplyListProps) {
       <ScrollArea className="flex-1">
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : error ? (
           <div className="px-3 py-4 text-sm text-destructive text-center">

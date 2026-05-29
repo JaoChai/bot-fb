@@ -68,7 +68,7 @@ export function BusinessHealthBar({ bots, alerts }: BusinessHealthBarProps) {
   return (
     <div className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3">
       {/* Animated pulse dot */}
-      <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
+      <span className="relative flex size-2.5" aria-hidden="true">
         <span
           className={cn(
             'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',

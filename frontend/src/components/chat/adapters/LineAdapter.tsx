@@ -67,7 +67,7 @@ export const lineAdapter: ChannelAdapter = {
           <AvatarImage src={customer.picture_url} alt={customer.display_name || 'User'} />
         ) : null}
         <AvatarFallback className="bg-[#06C755]/10 text-[#06C755]">
-          <User className="h-4 w-4" />
+          <User className="size-4" />
         </AvatarFallback>
       </Avatar>
     );

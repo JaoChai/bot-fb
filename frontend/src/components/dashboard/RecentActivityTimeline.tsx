@@ -57,7 +57,7 @@ export function RecentActivityTimeline({
         <h3 className="mb-4 text-base font-semibold">กิจกรรมล่าสุด</h3>
         <div className="flex flex-col items-center justify-center py-8 text-center">
           <div className="mb-3 rounded-full bg-muted p-3">
-            <MessageSquare className="h-6 w-6 text-muted-foreground/50" />
+            <MessageSquare className="size-6 text-muted-foreground/50" />
           </div>
           <p className="text-sm text-muted-foreground">
             ยังไม่มีกิจกรรมล่าสุด

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiDelete, apiPost, apiPut } from '@/lib/api';
+import { apiGet, apiDelete, apiPost } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { useMutationWithToast } from './useMutationWithToast';
 import type { ApiResponse, Bot, Document, KnowledgeBase, PaginatedResponse, SearchResponse } from '@/types/api';
@@ -66,26 +66,6 @@ export function useCreateKnowledgeBase() {
     },
     successMessage: (kb) => `สร้าง Knowledge Base "${kb.name}" สำเร็จ`,
     invalidateKeys: [queryKeys.knowledgeBase.lists()],
-  });
-}
-
-// Update knowledge base mutation
-export interface UpdateKnowledgeBaseData {
-  name?: string;
-  description?: string;
-}
-
-export function useUpdateKnowledgeBase(kbId: number) {
-  return useMutationWithToast({
-    mutationFn: async (data: UpdateKnowledgeBaseData) => {
-      const response = await apiPut<ApiResponse<KnowledgeBase>>(`/knowledge-bases/${kbId}`, data);
-      return response.data;
-    },
-    successMessage: 'บันทึกการเปลี่ยนแปลงสำเร็จ',
-    invalidateKeys: [
-      queryKeys.knowledgeBase.detail(kbId),
-      queryKeys.knowledgeBase.lists(),
-    ],
   });
 }
 

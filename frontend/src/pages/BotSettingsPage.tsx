@@ -284,7 +284,7 @@ export function BotSettingsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
-        <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
+        <Loader2 className="size-7 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -303,7 +303,7 @@ export function BotSettingsPage() {
         actions={
           isDirty ? (
             <Badge variant="outline" className="text-xs gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              <span className="size-1.5 rounded-full bg-amber-500" />
               มีการเปลี่ยนแปลง
             </Badge>
           ) : null
@@ -329,7 +329,7 @@ export function BotSettingsPage() {
                       : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground before:opacity-0',
                   )}
                 >
-                  <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+                  <Icon className="size-4 shrink-0" strokeWidth={1.5} />
                   <span>{t.label}</span>
                 </button>
               );
@@ -396,7 +396,7 @@ export function BotSettingsPage() {
         <Button onClick={handleSave} disabled={isSaving} className="min-w-[100px]">
           {isSaving ? (
             <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="size-4 mr-2 animate-spin" />
               บันทึก...
             </>
           ) : (

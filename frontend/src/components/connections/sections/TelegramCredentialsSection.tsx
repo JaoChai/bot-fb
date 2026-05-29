@@ -67,12 +67,12 @@ export function TelegramCredentialsSection({
               type="button"
               onClick={() => setShowToken(!showToken)}
               aria-label="Toggle visibility"
-              className="h-10 w-10 shrink-0 transition-colors duration-150"
+              className="size-10 shrink-0 transition-colors duration-150"
             >
               {showToken ? (
-                <EyeOff className="h-4 w-4" strokeWidth={1.5} />
+                <EyeOff className="size-4" strokeWidth={1.5} />
               ) : (
-                <Eye className="h-4 w-4" strokeWidth={1.5} />
+                <Eye className="size-4" strokeWidth={1.5} />
               )}
             </Button>
           </div>
@@ -93,12 +93,12 @@ export function TelegramCredentialsSection({
                 type="button"
                 onClick={handleCopyWebhook}
                 aria-label="Copy webhook URL"
-                className="h-10 w-10 shrink-0 transition-colors duration-150"
+                className="size-10 shrink-0 transition-colors duration-150"
               >
                 {webhookCopied ? (
-                  <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" strokeWidth={1.5} />
+                  <Check className="size-4 text-emerald-600 dark:text-emerald-400" strokeWidth={1.5} />
                 ) : (
-                  <Copy className="h-4 w-4" strokeWidth={1.5} />
+                  <Copy className="size-4" strokeWidth={1.5} />
                 )}
               </Button>
             </div>
@@ -124,7 +124,7 @@ export function TelegramCredentialsSection({
             target="_blank"
             rel="noopener noreferrer"
           >
-            ดูวิธีการสร้าง Telegram Bot <ExternalLink className="h-3 w-3 ml-1" strokeWidth={1.5} />
+            ดูวิธีการสร้าง Telegram Bot <ExternalLink className="size-3 ml-1" strokeWidth={1.5} />
           </a>
         </Button>
       </div>

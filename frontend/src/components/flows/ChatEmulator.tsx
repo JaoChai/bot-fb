@@ -52,7 +52,7 @@ const ChatMessageItem = memo(function ChatMessageItem({
           {/* Show streaming cursor */}
           {message.role === 'assistant' && message.isStreaming && !message.content && (
             <span className="flex items-center gap-1 text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <Loader2 className="size-3 animate-spin" />
               <span>กำลังตอบ...</span>
             </span>
           )}
@@ -111,18 +111,18 @@ export const ChatEmulator = memo(function ChatEmulator({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 text-background bg-foreground border-b">
         <div className="flex items-center gap-2">
-          <MessageCircle className="h-5 w-5" />
+          <MessageCircle className="size-5" />
           <span className="font-semibold">แชทจำลอง</span>
         </div>
         <div className="flex items-center gap-2">
           <Button
             size="sm"
             variant="ghost"
-            className="h-9 w-9 p-0 text-white bg-white/15 hover:bg-white/25 border border-white/20"
+            className="size-9 p-0 text-white bg-white/15 hover:bg-white/25 border border-white/20"
             onClick={onClearMessages}
             title="ล้างแชท"
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="size-4" />
           </Button>
         </div>
       </div>
@@ -131,7 +131,7 @@ export const ChatEmulator = memo(function ChatEmulator({
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <MessageCircle className="h-12 w-12 text-muted-foreground/30 mb-3" />
+            <MessageCircle className="size-12 text-muted-foreground/30 mb-3" />
             <p className="text-sm text-muted-foreground">
               ทดสอบการตอบกลับของ AI
             </p>
@@ -152,6 +152,7 @@ export const ChatEmulator = memo(function ChatEmulator({
         <div className="flex gap-2">
           <input
             type="text"
+            aria-label="Chat message"
             placeholder={isStreaming ? 'กำลังประมวลผล...' : disabled ? disabledReason : 'พิมพ์ข้อความ...'}
             className="flex-1 px-4 py-2.5 rounded-full border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
             value={input}
@@ -164,10 +165,10 @@ export const ChatEmulator = memo(function ChatEmulator({
               size="icon"
               onClick={onCancelStream}
               variant="destructive"
-              className="rounded-full h-10 w-10"
+              className="rounded-full size-10"
               title="หยุดการตอบ"
             >
-              <Square className="h-4 w-4" />
+              <Square className="size-4" />
             </Button>
           ) : (
             <Button
@@ -175,9 +176,9 @@ export const ChatEmulator = memo(function ChatEmulator({
               onClick={handleSend}
               disabled={!input.trim() || disabled}
               variant="default"
-              className="rounded-full h-10 w-10"
+              className="rounded-full size-10"
             >
-              <Send className="h-4 w-4" />
+              <Send className="size-4" />
             </Button>
           )}
         </div>
@@ -189,7 +190,7 @@ export const ChatEmulator = memo(function ChatEmulator({
             title="Attach File (Coming Soon)"
             disabled
           >
-            <Paperclip className="h-4 w-4 mr-1" />
+            <Paperclip className="size-4 mr-1" />
             <span className="text-xs">ไฟล์</span>
           </Button>
           <Button
@@ -199,7 +200,7 @@ export const ChatEmulator = memo(function ChatEmulator({
             title="Attach Image (Coming Soon)"
             disabled
           >
-            <ImageIcon className="h-4 w-4 mr-1" />
+            <ImageIcon className="size-4 mr-1" />
             <span className="text-xs">รูปภาพ</span>
           </Button>
         </div>

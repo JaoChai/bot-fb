@@ -38,7 +38,7 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
             )}
             {!isLast && (
               <ChevronRight
-                className="h-3.5 w-3.5 text-muted-foreground/60"
+                className="size-3.5 text-muted-foreground/60"
                 strokeWidth={1.5}
               />
             )}
