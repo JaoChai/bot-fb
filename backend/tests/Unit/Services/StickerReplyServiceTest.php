@@ -132,7 +132,8 @@ class StickerReplyServiceTest extends TestCase
 
     public function test_garbage_output_starting_with_digit_falls_back_to_static_reply(): void
     {
-        // Real production garbage from bot 26 (message id 70886)
+        // Real garbage observed in production (LINE bot): the model echoed
+        // a flow-prompt example fragment instead of replying to the sticker
         [$bot, $conversation] = $this->makeBotWithAIStickerMode('You are a friendly assistant.');
         $this->fakeVisionResponse('0 นาทีนะครับ" / "ขอบคุณ');
 
@@ -155,6 +156,58 @@ class StickerReplyServiceTest extends TestCase
     {
         [$bot, $conversation] = $this->makeBotWithAIStickerMode('You are a friendly assistant.');
         $this->fakeVisionResponse('โอ');
+
+        $reply = app(StickerReplyService::class)->generateReply($bot, $conversation, $this->stickerData);
+
+        $this->assertEquals('ได้รับสติกเกอร์แล้วค่ะ', $reply);
+    }
+
+    public function test_valid_reply_starting_with_digit_is_not_rejected(): void
+    {
+        // A real reply can legitimately start with a number
+        [$bot, $conversation] = $this->makeBotWithAIStickerMode('You are a friendly assistant.');
+        $this->fakeVisionResponse('10 นาทีนะครับ กำลังจัดส่งให้เลยครับ');
+
+        $reply = app(StickerReplyService::class)->generateReply($bot, $conversation, $this->stickerData);
+
+        $this->assertEquals('10 นาทีนะครับ กำลังจัดส่งให้เลยครับ', $reply);
+    }
+
+    public function test_numbered_list_fragment_falls_back_to_static_reply(): void
+    {
+        // Real garbage observed in production: leaked English instruction list item
+        [$bot, $conversation] = $this->makeBotWithAIStickerMode('You are a friendly assistant.');
+        $this->fakeVisionResponse('4. Be friendly and match');
+
+        $reply = app(StickerReplyService::class)->generateReply($bot, $conversation, $this->stickerData);
+
+        $this->assertEquals('ได้รับสติกเกอร์แล้วค่ะ', $reply);
+    }
+
+    public function test_missing_content_key_falls_back_to_static_reply(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithAIStickerMode('You are a friendly assistant.');
+        Http::fake([
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'gen-1',
+                'model' => 'google/gemini-3.5-flash',
+                'choices' => [['message' => [], 'finish_reason' => 'stop']],
+            ], 200),
+        ]);
+
+        $reply = app(StickerReplyService::class)->generateReply($bot, $conversation, $this->stickerData);
+
+        $this->assertEquals('ได้รับสติกเกอร์แล้วค่ะ', $reply);
+    }
+
+    public function test_vision_api_failure_falls_back_to_static_reply(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithAIStickerMode('You are a friendly assistant.');
+        Http::fake([
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'error' => ['message' => 'Internal server error'],
+            ], 500),
+        ]);
 
         $reply = app(StickerReplyService::class)->generateReply($bot, $conversation, $this->stickerData);
 

@@ -123,15 +123,21 @@ class StickerReplyService
     }
 
     /**
-     * Check if an AI reply looks like a truncated prompt fragment
-     * instead of a real response.
+     * Check if an AI reply looks malformed or like a leaked prompt fragment
+     * rather than a genuine response: too short, a numbered-list fragment,
+     * a leading digit combined with quote/separator markers, or unbalanced quotes.
      */
     protected function looksLikeGarbage(string $content): bool
     {
         $content = trim($content);
 
+        // Quoted alternatives or " / " separators are prompt-example formatting,
+        // not natural replies (e.g. '0 นาทีนะครับ" / "ขอบคุณ')
+        $hasFragmentMarkers = str_contains($content, '"') || str_contains($content, ' / ');
+
         return mb_strlen($content) < self::MIN_REPLY_LENGTH
-            || preg_match('/^\d/u', $content) === 1
+            || preg_match('/^\d+\./u', $content) === 1
+            || (preg_match('/^\d/u', $content) === 1 && $hasFragmentMarkers)
             || substr_count($content, '"') % 2 !== 0;
     }
 
@@ -234,10 +240,10 @@ class StickerReplyService
             $basePrompt = "You are a helpful AI assistant for {$bot->name}. Be friendly and helpful.";
         }
 
-        // Sticker replies need a short personality hint only. A full sales
-        // prompt (e.g. 36K chars) causes the model to bleed example text
-        // into the reply. Cap to preserve persona (name, tone, language)
-        // without injecting sales scripts.
+        // Sticker replies need a short personality hint only. A very long
+        // sales prompt causes the model to bleed example text into the reply.
+        // Keep just the leading characters — persona/tone usually leads the
+        // prompt, while sales rules follow (positional heuristic, not content-aware).
         if (mb_strlen($basePrompt) > self::MAX_PERSONALITY_PROMPT_LENGTH) {
             $basePrompt = mb_substr($basePrompt, 0, self::MAX_PERSONALITY_PROMPT_LENGTH);
         }
