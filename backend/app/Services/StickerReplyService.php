@@ -8,6 +8,17 @@ use Illuminate\Support\Facades\Log;
 
 class StickerReplyService
 {
+    /**
+     * Max characters of the bot/flow prompt to use as personality context
+     * for sticker replies. Long sales prompts confuse the vision model.
+     */
+    protected const MAX_PERSONALITY_PROMPT_LENGTH = 500;
+
+    /**
+     * Minimum characters for a sticker reply to be considered valid.
+     */
+    protected const MIN_REPLY_LENGTH = 4;
+
     public function __construct(protected OpenRouterService $openRouterService) {}
 
     /**
@@ -81,13 +92,26 @@ class StickerReplyService
                 imageUrls: [$stickerUrl],
                 model: $model,
                 temperature: $bot->llm_temperature ?? 0.7,
-                maxTokens: 256,
+                maxTokens: 512,
                 apiKeyOverride: $apiKey,
                 useFallback: (bool) $bot->fallback_chat_model,
                 fallbackModelOverride: $bot->fallback_chat_model
             );
 
-            return $result['content'] ?: $this->getStaticReply($bot->settings);
+            $content = $result['content'] ?? '';
+
+            // Sanity guard: reject responses that look like prompt fragments
+            // (e.g. "0 นาทีนะครับ" / "ขอบคุณ" regurgitated from the flow prompt)
+            if ($this->looksLikeGarbage($content)) {
+                Log::warning('AI sticker reply failed sanity check, using static fallback', [
+                    'bot_id' => $bot->id,
+                    'raw_content' => $content,
+                ]);
+
+                return $this->getStaticReply($bot->settings);
+            }
+
+            return $content;
         } catch (\Exception $e) {
             Log::warning('AI sticker reply failed', [
                 'bot_id' => $bot->id,
@@ -96,6 +120,19 @@ class StickerReplyService
 
             return $this->getStaticReply($bot->settings);
         }
+    }
+
+    /**
+     * Check if an AI reply looks like a truncated prompt fragment
+     * instead of a real response.
+     */
+    protected function looksLikeGarbage(string $content): bool
+    {
+        $content = trim($content);
+
+        return mb_strlen($content) < self::MIN_REPLY_LENGTH
+            || preg_match('/^\d/u', $content) === 1
+            || substr_count($content, '"') % 2 !== 0;
     }
 
     /**
@@ -195,6 +232,14 @@ class StickerReplyService
 
         if (empty($basePrompt)) {
             $basePrompt = "You are a helpful AI assistant for {$bot->name}. Be friendly and helpful.";
+        }
+
+        // Sticker replies need a short personality hint only. A full sales
+        // prompt (e.g. 36K chars) causes the model to bleed example text
+        // into the reply. Cap to preserve persona (name, tone, language)
+        // without injecting sales scripts.
+        if (mb_strlen($basePrompt) > self::MAX_PERSONALITY_PROMPT_LENGTH) {
+            $basePrompt = mb_substr($basePrompt, 0, self::MAX_PERSONALITY_PROMPT_LENGTH);
         }
 
         // Add sticker-specific instruction
