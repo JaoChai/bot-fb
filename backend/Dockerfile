@@ -154,7 +154,7 @@ stderr_logfile_maxbytes=0
 # outage, dispatches route here (QueueRouter::connection()); idle/cheap otherwise.
 [program:queue-worker-db]
 process_name=%(program_name)s_%(process_num)02d
-command=php /var/www/html/artisan queue:work database --queue=llm,webhooks,default --sleep=3 --tries=3 --backoff=5 --max-jobs=1000 --max-time=3600 --timeout=160
+command=php /var/www/html/artisan queue:work database --queue=llm,webhooks,default --sleep=60 --tries=3 --backoff=5 --max-jobs=1000 --max-time=3600 --timeout=160
 autostart=true
 autorestart=true
 stopasgroup=true
