@@ -8,6 +8,7 @@ use App\Models\CustomerProfile;
 use App\Models\Order;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -48,6 +49,82 @@ class VipControllerTest extends TestCase
         $response->assertOk();
         $response->assertJsonFragment(['display_name' => 'Alice']);
         $response->assertJsonFragment(['note_source' => 'vip_auto']);
+    }
+
+    public function test_index_collapses_order_aggregate_into_single_query(): void
+    {
+        $user = User::factory()->create(['role' => 'owner']);
+        Sanctum::actingAs($user);
+
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+
+        $vipNote = fn (string $id) => [[
+            'id' => $id,
+            'content' => 'VIP',
+            'type' => 'memory',
+            'source' => 'vip_auto',
+            'created_by' => null,
+            'created_at' => now()->toISOString(),
+            'updated_at' => now()->toISOString(),
+        ]];
+
+        $alice = CustomerProfile::factory()->create(['display_name' => 'Alice']);
+        $convA = Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'customer_profile_id' => $alice->id,
+            'memory_notes' => $vipNote('00000000-0000-0000-0000-0000000000a1'),
+        ]);
+        Order::factory()->count(2)->create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $convA->id,
+            'customer_profile_id' => $alice->id,
+            'status' => 'completed',
+            'total_amount' => 500,
+        ]);
+
+        $bob = CustomerProfile::factory()->create(['display_name' => 'Bob']);
+        $convB = Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'customer_profile_id' => $bob->id,
+            'memory_notes' => $vipNote('00000000-0000-0000-0000-0000000000b1'),
+        ]);
+        Order::factory()->count(3)->create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $convB->id,
+            'customer_profile_id' => $bob->id,
+            'status' => 'completed',
+            'total_amount' => 1000,
+        ]);
+
+        $orderQueries = 0;
+        DB::listen(function ($query) use (&$orderQueries) {
+            if (str_contains($query->sql, 'from "orders"')) {
+                $orderQueries++;
+            }
+        });
+
+        $response = $this->getJson("/api/bots/{$bot->id}/vip/customers");
+
+        DB::getEventDispatcher()->forget(\Illuminate\Database\Events\QueryExecuted::class);
+
+        $response->assertOk();
+
+        // Correct per-customer totals must survive the refactor (assert per object, not loose fragments).
+        $data = collect($response->json('data'));
+        $alice = $data->firstWhere('display_name', 'Alice');
+        $bob = $data->firstWhere('display_name', 'Bob');
+
+        $this->assertNotNull($alice, 'Alice row missing from response');
+        $this->assertNotNull($bob, 'Bob row missing from response');
+        $this->assertSame(2, $alice['order_count']);
+        // total_amount is cast to float in the controller but a whole-number float serializes to
+        // JSON as 1000 and decodes back to a PHP int — assert against the true type the API returns.
+        $this->assertSame(1000, $alice['total_amount']);
+        $this->assertSame(3, $bob['order_count']);
+        $this->assertSame(3000, $bob['total_amount']);
+
+        // The loop must collapse to ONE grouped Order query, not one per VIP conversation.
+        $this->assertSame(1, $orderQueries, "Expected a single grouped orders query, got $orderQueries");
     }
 
     public function test_index_rejects_unauthorized_users(): void
