@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { User } from '@/types/api';
-import { disconnectEcho, reconnectEcho } from '@/lib/echo';
 
 interface AuthState {
   user: User | null;
@@ -53,13 +52,12 @@ export const useAuthStore = create<AuthStore>()(
           isAuthenticated: true,
           isLoading: false,
         });
-        // Reconnect Echo with fresh token for real-time features
-        reconnectEcho();
+        // Lazy-load realtime libs (laravel-echo + pusher-js) only after auth,
+        // keeping them out of the eager first-load bundle.
+        void import('@/lib/echo').then(({ reconnectEcho }) => reconnectEcho()).catch((e) => console.warn('[echo] reconnect after login failed', e));
       },
 
       logout: () => {
-        // Disconnect Echo to prevent stale token reconnection attempts
-        disconnectEcho();
         localStorage.removeItem('auth_token');
         set({
           user: null,
@@ -67,6 +65,9 @@ export const useAuthStore = create<AuthStore>()(
           isAuthenticated: false,
           isLoading: false,
         });
+        // Disconnect Echo to prevent stale token reconnection attempts.
+        // Lazy import so realtime libs stay out of the eager bundle.
+        void import('@/lib/echo').then(({ disconnectEcho }) => disconnectEcho()).catch((e) => console.warn('[echo] disconnect after logout failed', e));
       },
 
       setLoading: (isLoading) => set({ isLoading }),
