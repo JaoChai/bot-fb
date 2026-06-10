@@ -28,7 +28,8 @@ class VipController extends Controller
             ->with('customerProfile')
             ->get();
 
-        $rows = [];
+        // First pass: collect unique VIP customers (dedup by customer_profile_id).
+        $vipConvs = [];
         $seen = [];
         foreach ($conversations as $conv) {
             $note = $this->findVipNote($conv->memory_notes ?? []);
@@ -40,21 +41,31 @@ class VipController extends Controller
                 continue;
             }
             $seen[$cpId] = true;
+            $vipConvs[] = ['conv' => $conv, 'note' => $note];
+        }
 
-            // Recompute stats (same query shape as VipDetectionService)
-            $stats = Order::where('customer_profile_id', $cpId)
-                ->where('status', 'completed')
-                ->selectRaw('COUNT(*) as c, COALESCE(SUM(total_amount), 0) as total, MAX(created_at) as last')
-                ->first();
+        // Single grouped aggregate keyed by customer_profile_id — collapses the per-conversation N+1.
+        // (Same filter/aggregate shape as VipDetectionService.)
+        $statsByCustomer = Order::whereIn('customer_profile_id', array_keys($seen))
+            ->where('status', 'completed')
+            ->groupBy('customer_profile_id')
+            ->selectRaw('customer_profile_id, COUNT(*) as c, COALESCE(SUM(total_amount), 0) as total, MAX(created_at) as last')
+            ->get()
+            ->keyBy('customer_profile_id');
+
+        $rows = [];
+        foreach ($vipConvs as ['conv' => $conv, 'note' => $note]) {
+            $cpId = $conv->customer_profile_id;
+            $stats = $statsByCustomer->get($cpId);
 
             $rows[] = [
                 'customer_profile_id' => $cpId,
                 'display_name' => $conv->customerProfile?->display_name,
                 'picture_url' => $conv->customerProfile?->picture_url,
                 'channel_type' => $conv->customerProfile?->channel_type,
-                'order_count' => (int) $stats->c,
-                'total_amount' => (float) $stats->total,
-                'last_order_at' => $stats->last,
+                'order_count' => (int) ($stats->c ?? 0),
+                'total_amount' => (float) ($stats->total ?? 0),
+                'last_order_at' => $stats->last ?? null,
                 'note_content' => $note['content'],
                 'note_source' => $note['source'] ?? 'vip_auto',
                 'bot_id' => $bot->id,

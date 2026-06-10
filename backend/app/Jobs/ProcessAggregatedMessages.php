@@ -210,37 +210,32 @@ class ProcessAggregatedMessages implements ShouldQueue
      */
     private function shouldGenerate(): bool
     {
-        $shouldGenerate = false;
+        // Read-only refresh of latest bot/conversation state — no writes or locks,
+        // so no transaction needed (dropping it avoids per-job BEGIN/COMMIT round-trips).
+        $this->conversation->refresh();
+        $this->bot->refresh();
 
-        DB::transaction(function () use (&$shouldGenerate) {
-            // Refresh conversation and bot to get latest state
-            $this->conversation->refresh();
-            $this->bot->refresh();
+        // Check if bot was deactivated while waiting
+        if ($this->bot->status !== 'active') {
+            Log::debug('[Aggregation] Early exit: bot inactive', [
+                'bot_id' => $this->bot->id,
+                'status' => $this->bot->status,
+                'conversation_id' => $this->conversation->id,
+            ]);
 
-            // Check if bot was deactivated while waiting
-            if ($this->bot->status !== 'active') {
-                Log::debug('[Aggregation] Early exit: bot inactive', [
-                    'bot_id' => $this->bot->id,
-                    'status' => $this->bot->status,
-                    'conversation_id' => $this->conversation->id,
-                ]);
+            return false;
+        }
 
-                return;
-            }
+        // Check if handover mode was enabled while waiting
+        if ($this->conversation->is_handover) {
+            Log::debug('[Aggregation] Early exit: handover mode enabled', [
+                'conversation_id' => $this->conversation->id,
+            ]);
 
-            // Check if handover mode was enabled while waiting
-            if ($this->conversation->is_handover) {
-                Log::debug('[Aggregation] Early exit: handover mode enabled', [
-                    'conversation_id' => $this->conversation->id,
-                ]);
+            return false;
+        }
 
-                return;
-            }
-
-            $shouldGenerate = true;
-        });
-
-        return $shouldGenerate;
+        return true;
     }
 
     /**
