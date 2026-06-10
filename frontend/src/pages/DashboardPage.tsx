@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, Suspense } from 'react';
 import { ShoppingCart, DollarSign, MessageSquare, Banknote } from 'lucide-react';
 import { formatTHB, formatBaht } from '@/lib/currency';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/connections';
 import { useDashboardSummary } from '@/hooks/useDashboard';
 import { useCostAnalytics } from '@/hooks/useCostAnalytics';
@@ -12,13 +13,23 @@ import {
   DashboardSkeleton,
   BotStatusList,
   BusinessHealthBar,
-  DualAxisChart,
   CompactCostBreakdown,
   CompactStockToggle,
   RecentOrdersPreview,
-  ProductsSummaryCard,
 } from '@/components/dashboard';
+import { lazyWithRetryNamed } from '@/lib/lazyWithRetry';
 import { useAuthStore } from '@/stores/authStore';
+
+// Charts pull the 109 KB-gzip recharts (vendor-charts) chunk. Lazy-load them so
+// the metric cards above paint before recharts is fetched.
+const DualAxisChart = lazyWithRetryNamed(
+  () => import('@/components/dashboard/DualAxisChart'),
+  'DualAxisChart',
+);
+const ProductsSummaryCard = lazyWithRetryNamed(
+  () => import('@/components/dashboard/ProductsSummaryCard'),
+  'ProductsSummaryCard',
+);
 
 function calcTrend(today: number, yesterday: number) {
   if (yesterday <= 0) return undefined;
@@ -125,16 +136,47 @@ export function DashboardPage() {
         />
       </div>
 
-      <DualAxisChart
-        orderTimeSeries={orderData?.time_series ?? []}
-        costTimeSeries={costData?.time_series ?? []}
-        vipCustomers={data?.summary.vip_customers}
-        vipTotalSpent={data?.summary.vip_total_spent}
-      />
+      <Suspense
+        fallback={
+          <div className="rounded-xl border bg-card p-6 shadow-sm">
+            <Skeleton className="mb-4 h-5 w-48" />
+            <Skeleton className="h-[300px] w-full rounded-lg" />
+          </div>
+        }
+      >
+        <DualAxisChart
+          orderTimeSeries={orderData?.time_series ?? []}
+          costTimeSeries={costData?.time_series ?? []}
+          vipCustomers={data?.summary.vip_customers}
+          vipTotalSpent={data?.summary.vip_total_spent}
+        />
+      </Suspense>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <BotStatusList bots={data?.bots ?? []} />
-        {productsData && productsData.length > 0 && <ProductsSummaryCard products={productsData} />}
+        {productsData && productsData.length > 0 && (
+          <Suspense
+            fallback={
+              <div className="rounded-xl border bg-card p-6 shadow-sm">
+                <Skeleton className="mb-4 h-5 w-36" />
+                <div className="grid gap-6 md:grid-cols-2">
+                  <div className="space-y-3">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <Skeleton className="size-7 rounded-full" />
+                        <Skeleton className="h-4 flex-1" />
+                        <Skeleton className="h-4 w-16" />
+                      </div>
+                    ))}
+                  </div>
+                  <Skeleton className="h-[200px] w-full rounded-lg" />
+                </div>
+              </div>
+            }
+          >
+            <ProductsSummaryCard products={productsData} />
+          </Suspense>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

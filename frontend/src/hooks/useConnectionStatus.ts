@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useConnectionStore } from '@/stores/connectionStore';
-import { getEcho } from '@/lib/echo';
 
 /**
  * Hook to monitor WebSocket connection status and handle reconnection.
@@ -22,19 +21,24 @@ export function useConnectionStatus() {
   const { isConnected, setConnected } = useConnectionStore();
 
   useEffect(() => {
+    let mounted = true;
     // Check current connection state immediately on mount
     // This handles the case where Echo connected before this listener was attached
     // Pusher states: initialized, connecting, connected, unavailable, failed, disconnected
-    try {
-      const echo = getEcho();
-      const currentState = echo.connector?.pusher?.connection?.state;
-      if (currentState === 'connected') {
-        setConnected(true);
-        hasConnectedOnce.current = true;
+    // Lazy-import echo so pusher-js stays out of the eager bundle (only needed post-auth).
+    void import('@/lib/echo').then(({ getEcho }) => {
+      if (!mounted) return;
+      try {
+        const echo = getEcho();
+        const currentState = echo.connector?.pusher?.connection?.state;
+        if (currentState === 'connected') {
+          setConnected(true);
+          hasConnectedOnce.current = true;
+        }
+      } catch {
+        // Echo not initialized yet, will get connected event later
       }
-    } catch {
-      // Echo not initialized yet, will get connected event later
-    }
+    });
 
     const handleConnected = () => {
       setConnected(true);
@@ -63,6 +67,7 @@ export function useConnectionStatus() {
     window.addEventListener('echo:resumed', handleReconnected);
 
     return () => {
+      mounted = false;
       window.removeEventListener('echo:connected', handleConnected);
       window.removeEventListener('echo:disconnected', handleDisconnected);
       window.removeEventListener('echo:reconnected', handleReconnected);
