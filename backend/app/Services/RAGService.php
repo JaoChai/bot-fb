@@ -95,12 +95,27 @@ class RAGService
             }
         }
 
-        // Step 1: Analyze intent using Decision Model
-        $intent = $this->intentAnalysis->analyzeIntent($bot, $userMessage, [
-            'validIntents' => ['chat', 'knowledge', 'flow'],
-            'includeExamples' => true,
-            'apiKey' => $apiKey,
-        ]);
+        // Step 1: Analyze intent using Decision Model.
+        // Skip the decision-model round-trip for trivial greetings/acknowledgements —
+        // they never need the KB and always resolve to 'chat'. Saves one ~300-800ms LLM hop.
+        $isSimpleMessage = $this->isSimpleMessage($userMessage);
+
+        if ($isSimpleMessage) {
+            $intent = [
+                'intent' => 'chat',
+                'confidence' => 1.0,
+                'model_used' => null,
+                'method' => 'simple_message_skip',
+                'skipped' => true,
+                'usage' => null,
+            ];
+        } else {
+            $intent = $this->intentAnalysis->analyzeIntent($bot, $userMessage, [
+                'validIntents' => ['chat', 'knowledge', 'flow'],
+                'includeExamples' => true,
+                'apiKey' => $apiKey,
+            ]);
+        }
 
         // Step 2: Detect complexity for Chain-of-Thought
         $complexity = $this->detectComplexity($userMessage);
@@ -113,10 +128,10 @@ class RAGService
             'chunks_used' => [],
         ];
 
-        $isSimpleMessage = mb_strlen($userMessage) <= 30 && preg_match(self::SIMPLE_MESSAGE_PATTERN, trim($userMessage));
-
-        // Step 4: Get KB context if intent is 'knowledge' and KB enabled
-        // Also get KB context if intent was skipped and KB is enabled (backward compatibility)
+        // Step 4: Get KB context if intent is 'knowledge' and KB enabled.
+        // The isset('skipped') branch covers analyzeIntent's default-skip (no decision
+        // model configured) — NOT the simple_message_skip greeting path, which the
+        // leading ! $isSimpleMessage guard excludes from the KB entirely.
         $shouldUseKB = ! $isSimpleMessage
             && ($intent['intent'] === 'knowledge' || isset($intent['skipped']))
             && $this->shouldUseKnowledgeBase($bot);
@@ -244,6 +259,16 @@ class RAGService
         }
 
         return $result;
+    }
+
+    /**
+     * Whether a message is a trivial greeting/acknowledgement that needs neither
+     * a decision-model round-trip nor a KB lookup (always resolves to 'chat').
+     */
+    public function isSimpleMessage(string $userMessage): bool
+    {
+        return mb_strlen($userMessage) <= 30
+            && (bool) preg_match(self::SIMPLE_MESSAGE_PATTERN, trim($userMessage));
     }
 
     /**

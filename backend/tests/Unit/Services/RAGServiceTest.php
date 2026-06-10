@@ -419,20 +419,11 @@ class RAGServiceTest extends TestCase
         );
     }
 
-    public function test_greeting_currently_triggers_intent_analysis(): void
+    public function test_greeting_skips_decision_model(): void
     {
-        // CHARACTERIZATION (pre-PR3-A2): a trivial greeting currently makes a
-        // decision-model round-trip. PR3-A2 flips this to never(); keeping the
-        // baseline green here makes that behaviour change explicit in review.
+        // A trivial greeting must NOT make a decision-model round-trip.
         $intentAnalysis = $this->createMock(IntentAnalysisService::class);
-        $intentAnalysis->expects($this->once())
-            ->method('analyzeIntent')
-            ->willReturn([
-                'intent' => 'chat',
-                'confidence' => 0.95,
-                'model_used' => 'decider',
-                'method' => 'llm_decision',
-            ]);
+        $intentAnalysis->expects($this->never())->method('analyzeIntent');
 
         $openRouter = $this->createMock(OpenRouterService::class);
         $openRouter->method('generateBotResponse')->willReturn([
@@ -444,6 +435,38 @@ class RAGServiceTest extends TestCase
         $service = $this->makeServiceWith($openRouter, $intentAnalysis);
         $bot = Bot::factory()->create(['user_id' => $this->user->id, 'decision_model' => 'some/decider']);
 
-        $service->generateResponse($bot, 'สวัสดี');
+        $result = $service->generateResponse($bot, 'สวัสดี');
+
+        $this->assertSame('chat', $result['intent']['intent']);
+        $this->assertTrue($result['intent']['skipped']);
+        $this->assertSame('simple_message_skip', $result['intent']['method']);
+    }
+
+    public function test_substantive_message_invokes_decision_model(): void
+    {
+        // A real product question still makes the decision-model round-trip.
+        $intentAnalysis = $this->createMock(IntentAnalysisService::class);
+        $intentAnalysis->expects($this->once())
+            ->method('analyzeIntent')
+            ->willReturn([
+                'intent' => 'chat',
+                'confidence' => 0.9,
+                'model_used' => 'decider',
+                'method' => 'llm_decision',
+            ]);
+
+        $openRouter = $this->createMock(OpenRouterService::class);
+        $openRouter->method('generateBotResponse')->willReturn([
+            'content' => 'ได้ค่ะ เดี๋ยวแจ้งราคาให้นะคะ',
+            'model' => 'chat-model',
+            'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+        ]);
+
+        $service = $this->makeServiceWith($openRouter, $intentAnalysis);
+        $bot = Bot::factory()->create(['user_id' => $this->user->id, 'decision_model' => 'some/decider']);
+
+        $result = $service->generateResponse($bot, 'ขอราคาสินค้า Nolimit Level Up ทุกแพ็กเกจมีอะไรบ้างครับ');
+
+        $this->assertSame('llm_decision', $result['intent']['method']);
     }
 }
