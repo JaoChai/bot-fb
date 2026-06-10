@@ -8,7 +8,7 @@ use App\Services\RedisHealthGate;
  * Resolves the queue name LLM-bound jobs should be dispatched to.
  *
  * Queue names here must stay in sync with the worker --queue= lists in
- * backend/Dockerfile (supervisor blocks) and backend/Procfile.
+ * backend/Dockerfile (supervisor blocks).
  */
 class QueueRouter
 {
