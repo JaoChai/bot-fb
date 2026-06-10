@@ -351,4 +351,59 @@ class RAGServiceTest extends TestCase
         $this->assertGreaterThan(20, mb_strlen($msg));
         $this->assertFalse($this->callShouldSkipCache($msg, null, []));
     }
+
+    // =========================================================================
+    // generateResponse() characterization tests (PR3-T0 baseline)
+    // =========================================================================
+
+    /**
+     * Build a RAGService with caller-controlled OpenRouter + IntentAnalysis mocks,
+     * a real StockInjectionService, and stub mocks for the rest. Used by the
+     * generateResponse() characterization/behaviour tests.
+     */
+    private function makeServiceWith(
+        OpenRouterService $openRouter,
+        IntentAnalysisService $intentAnalysis,
+        ?FlowCacheService $flowCache = null,
+    ): RAGService {
+        return new RAGService(
+            $this->createMock(SemanticSearchService::class),
+            $this->createMock(HybridSearchService::class),
+            $openRouter,
+            $intentAnalysis,
+            $flowCache ?? $this->createMock(FlowCacheService::class),
+            null, // queryEnhancement
+            null, // semanticCache
+            null, // CRAGService
+            app(\App\Services\StockInjectionService::class),
+        );
+    }
+
+    public function test_greeting_currently_triggers_intent_analysis(): void
+    {
+        // CHARACTERIZATION (pre-PR3-A2): a trivial greeting currently makes a
+        // decision-model round-trip. PR3-A2 flips this to never(); keeping the
+        // baseline green here makes that behaviour change explicit in review.
+        $intentAnalysis = $this->createMock(IntentAnalysisService::class);
+        $intentAnalysis->expects($this->once())
+            ->method('analyzeIntent')
+            ->willReturn([
+                'intent' => 'chat',
+                'confidence' => 0.95,
+                'model_used' => 'decider',
+                'method' => 'llm_decision',
+            ]);
+
+        $openRouter = $this->createMock(OpenRouterService::class);
+        $openRouter->method('generateBotResponse')->willReturn([
+            'content' => 'สวัสดีค่ะ ยินดีให้บริการค่ะ',
+            'model' => 'chat-model',
+            'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+        ]);
+
+        $service = $this->makeServiceWith($openRouter, $intentAnalysis);
+        $bot = Bot::factory()->create(['user_id' => $this->user->id, 'decision_model' => 'some/decider']);
+
+        $service->generateResponse($bot, 'สวัสดี');
+    }
 }
