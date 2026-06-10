@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { useAuthStore } from "./authStore"
+import { disconnectEcho, reconnectEcho } from "@/lib/echo"
 
 // Mock echo module
 vi.mock("@/lib/echo", () => ({
@@ -137,6 +138,49 @@ describe("authStore", () => {
 
       useAuthStore.getState().setLoading(true)
       expect(useAuthStore.getState().isLoading).toBe(true)
+    })
+  })
+
+  describe("lazy echo loading", () => {
+    const validUser = {
+      id: 1,
+      name: "Test",
+      email: "test@example.com",
+      role: "owner" as const,
+      email_verified_at: null,
+      created_at: "2024-01-01",
+      updated_at: "2024-01-01",
+    }
+
+    it("does not call echo on store init", () => {
+      vi.clearAllMocks()
+      useAuthStore.getState()
+      expect(reconnectEcho).not.toHaveBeenCalled()
+      expect(disconnectEcho).not.toHaveBeenCalled()
+    })
+
+    it("defers echo reconnect off the synchronous login path", () => {
+      vi.clearAllMocks()
+      useAuthStore.getState().login(validUser, "tok")
+      expect(reconnectEcho).not.toHaveBeenCalled()
+    })
+
+    it("reconnects echo after login (async)", async () => {
+      vi.clearAllMocks()
+      useAuthStore.getState().login(validUser, "tok")
+      await vi.waitFor(() => expect(reconnectEcho).toHaveBeenCalledTimes(1))
+    })
+
+    it("defers echo disconnect off the synchronous logout path", () => {
+      vi.clearAllMocks()
+      useAuthStore.getState().logout()
+      expect(disconnectEcho).not.toHaveBeenCalled()
+    })
+
+    it("disconnects echo after logout (async)", async () => {
+      vi.clearAllMocks()
+      useAuthStore.getState().logout()
+      await vi.waitFor(() => expect(disconnectEcho).toHaveBeenCalledTimes(1))
     })
   })
 })

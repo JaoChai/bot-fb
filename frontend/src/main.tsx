@@ -10,6 +10,27 @@ import { router } from "./router"
 import { reportWebVitals } from "./lib/webVitals"
 import "./index.css"
 
+// Self-hosted fonts (replace render-blocking Google Fonts), subset-specific to a
+// Thai+English app: Inter Latin glyphs + Noto Sans Thai Thai/Latin glyphs.
+// Weights 400/500/600/700 (Noto 300/font-light is unused). unicode-range means
+// the browser only fetches the subsets it needs.
+import "@fontsource/inter/latin-400.css"
+import "@fontsource/inter/latin-500.css"
+import "@fontsource/inter/latin-600.css"
+import "@fontsource/inter/latin-700.css"
+import "@fontsource/inter/latin-ext-400.css"
+import "@fontsource/inter/latin-ext-500.css"
+import "@fontsource/inter/latin-ext-600.css"
+import "@fontsource/inter/latin-ext-700.css"
+import "@fontsource/noto-sans-thai/thai-400.css"
+import "@fontsource/noto-sans-thai/thai-500.css"
+import "@fontsource/noto-sans-thai/thai-600.css"
+import "@fontsource/noto-sans-thai/thai-700.css"
+import "@fontsource/noto-sans-thai/latin-400.css"
+import "@fontsource/noto-sans-thai/latin-500.css"
+import "@fontsource/noto-sans-thai/latin-600.css"
+import "@fontsource/noto-sans-thai/latin-700.css"
+
 // Initialize Sentry for error monitoring
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({

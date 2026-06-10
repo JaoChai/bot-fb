@@ -4,6 +4,7 @@ namespace Tests\Unit\Services;
 
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\ProductStock;
 use App\Models\User;
 use App\Services\FlowCacheService;
 use App\Services\HybridSearchService;
@@ -12,6 +13,7 @@ use App\Services\OpenRouterService;
 use App\Services\RAGService;
 use App\Services\SemanticSearchService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use ReflectionClass;
 use Tests\TestCase;
 
@@ -123,6 +125,44 @@ class RAGServiceTest extends TestCase
         $this->assertLessThan($kbPos, $memoryPos, 'Memory notes should be injected before KB context');
     }
 
+    public function test_static_persona_precedes_dynamic_memory(): void
+    {
+        $persona = 'You are Captain Ad, a friendly sales assistant. [PERSONA-MARKER]';
+        $memoryNotes = ['ลูกค้าชื่อสมชาย', 'ชอบกาแฟเย็น'];
+
+        $result = $this->callBuildEnhancedPrompt($persona, '', null, $memoryNotes);
+
+        $personaPos = strpos($result, '[PERSONA-MARKER]');
+        $memoryPos = strpos($result, '## Memory:');
+
+        $this->assertNotFalse($personaPos);
+        $this->assertNotFalse($memoryPos);
+        $this->assertLessThan($memoryPos, $personaPos, 'Static persona must lead (cacheable prefix)');
+    }
+
+    public function test_static_persona_precedes_stock_and_stock_still_present(): void
+    {
+        Cache::forget(ProductStock::STOCK_CACHE_KEY);
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM'],
+        ]);
+
+        $persona = 'You are Captain Ad. [PERSONA-MARKER]';
+
+        $result = $this->callBuildEnhancedPrompt($persona, '', null, []);
+
+        // Caution (spec A1): stock info must NOT be dropped by the reorder.
+        $this->assertStringContainsString('⛔⛔⛔ STOCK STATUS', $result);
+        $this->assertStringContainsString('⛔ STOCK REMINDER', $result);
+
+        // Persona leads; stock header comes after it.
+        $personaPos = strpos($result, '[PERSONA-MARKER]');
+        $stockPos = strpos($result, '⛔⛔⛔ STOCK STATUS');
+        $this->assertLessThan($stockPos, $personaPos, 'Persona must precede stock header for prefix caching');
+    }
+
     public function test_filters_only_memory_type_notes_from_conversation(): void
     {
         $conversation = Conversation::factory()->create([
@@ -208,27 +248,27 @@ class RAGServiceTest extends TestCase
         $this->assertStringContainsString('You are a helpful assistant.', $result);
         $this->assertStringContainsString('## ข้อมูลอ้างอิง:', $result);
 
-        // Memory before base prompt
+        // Static persona leads; memory injected after (cacheable-prefix ordering)
         $memoryPos = strpos($result, '## Memory:');
         $basePos = strpos($result, 'You are a helpful assistant.');
-        $this->assertLessThan($basePos, $memoryPos, 'Memory should be prepended before base prompt');
+        $this->assertLessThan($memoryPos, $basePos, 'Base persona should lead, memory injected after');
     }
 
-    public function test_memory_prepended_before_base_prompt(): void
+    public function test_base_persona_precedes_memory(): void
     {
         $basePrompt = 'You are Captain Ad sales bot.';
         $memoryNotes = ['ลูกค้า VIP เคยซื้อ Nolimit Level Up+ 2 ครั้ง'];
 
         $result = $this->callBuildEnhancedPrompt($basePrompt, '', $this->bot, $memoryNotes);
 
-        // Memory appears before base prompt
+        // Base persona appears before memory (cacheable-prefix ordering)
         $memoryPos = strpos($result, '## Memory:');
         $basePos = strpos($result, 'You are Captain Ad sales bot.');
-        $this->assertLessThan($basePos, $memoryPos, 'Memory must come before base prompt');
+        $this->assertLessThan($memoryPos, $basePos, 'Base persona must come before memory');
         $this->assertStringContainsString('- ลูกค้า VIP เคยซื้อ Nolimit Level Up+ 2 ครั้ง', $result);
     }
 
-    public function test_memory_before_base_prompt_before_kb(): void
+    public function test_base_prompt_before_memory_before_kb(): void
     {
         $basePrompt = 'System prompt here.';
         $kbContext = '## KB Context:';
@@ -236,12 +276,12 @@ class RAGServiceTest extends TestCase
 
         $result = $this->callBuildEnhancedPrompt($basePrompt, $kbContext, null, $memoryNotes);
 
-        // Order: Memory → base prompt → KB
+        // Order: base prompt → memory → KB (cacheable-prefix ordering)
         $memoryPos = strpos($result, '## Memory:');
         $basePos = strpos($result, 'System prompt here.');
         $kbPos = strpos($result, '## KB Context:');
-        $this->assertLessThan($basePos, $memoryPos);
-        $this->assertLessThan($kbPos, $basePos);
+        $this->assertLessThan($memoryPos, $basePos);
+        $this->assertLessThan($kbPos, $memoryPos);
     }
 
     // =========================================================================
@@ -350,5 +390,83 @@ class RAGServiceTest extends TestCase
         $msg = 'อยากทราบรายละเอียดสินค้าทั้งหมดของ Nolimit ครับ';
         $this->assertGreaterThan(20, mb_strlen($msg));
         $this->assertFalse($this->callShouldSkipCache($msg, null, []));
+    }
+
+    // =========================================================================
+    // generateResponse() characterization tests (PR3-T0 baseline)
+    // =========================================================================
+
+    /**
+     * Build a RAGService with caller-controlled OpenRouter + IntentAnalysis mocks,
+     * a real StockInjectionService, and stub mocks for the rest. Used by the
+     * generateResponse() characterization/behaviour tests.
+     */
+    private function makeServiceWith(
+        OpenRouterService $openRouter,
+        IntentAnalysisService $intentAnalysis,
+        ?FlowCacheService $flowCache = null,
+    ): RAGService {
+        return new RAGService(
+            $this->createMock(SemanticSearchService::class),
+            $this->createMock(HybridSearchService::class),
+            $openRouter,
+            $intentAnalysis,
+            $flowCache ?? $this->createMock(FlowCacheService::class),
+            null, // queryEnhancement
+            null, // semanticCache
+            null, // CRAGService
+            app(\App\Services\StockInjectionService::class),
+        );
+    }
+
+    public function test_greeting_skips_decision_model(): void
+    {
+        // A trivial greeting must NOT make a decision-model round-trip.
+        $intentAnalysis = $this->createMock(IntentAnalysisService::class);
+        $intentAnalysis->expects($this->never())->method('analyzeIntent');
+
+        $openRouter = $this->createMock(OpenRouterService::class);
+        $openRouter->method('generateBotResponse')->willReturn([
+            'content' => 'สวัสดีค่ะ ยินดีให้บริการค่ะ',
+            'model' => 'chat-model',
+            'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+        ]);
+
+        $service = $this->makeServiceWith($openRouter, $intentAnalysis);
+        $bot = Bot::factory()->create(['user_id' => $this->user->id, 'decision_model' => 'some/decider']);
+
+        $result = $service->generateResponse($bot, 'สวัสดี');
+
+        $this->assertSame('chat', $result['intent']['intent']);
+        $this->assertTrue($result['intent']['skipped']);
+        $this->assertSame('simple_message_skip', $result['intent']['method']);
+    }
+
+    public function test_substantive_message_invokes_decision_model(): void
+    {
+        // A real product question still makes the decision-model round-trip.
+        $intentAnalysis = $this->createMock(IntentAnalysisService::class);
+        $intentAnalysis->expects($this->once())
+            ->method('analyzeIntent')
+            ->willReturn([
+                'intent' => 'chat',
+                'confidence' => 0.9,
+                'model_used' => 'decider',
+                'method' => 'llm_decision',
+            ]);
+
+        $openRouter = $this->createMock(OpenRouterService::class);
+        $openRouter->method('generateBotResponse')->willReturn([
+            'content' => 'ได้ค่ะ เดี๋ยวแจ้งราคาให้นะคะ',
+            'model' => 'chat-model',
+            'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+        ]);
+
+        $service = $this->makeServiceWith($openRouter, $intentAnalysis);
+        $bot = Bot::factory()->create(['user_id' => $this->user->id, 'decision_model' => 'some/decider']);
+
+        $result = $service->generateResponse($bot, 'ขอราคาสินค้า Nolimit Level Up ทุกแพ็กเกจมีอะไรบ้างครับ');
+
+        $this->assertSame('llm_decision', $result['intent']['method']);
     }
 }
