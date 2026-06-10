@@ -352,14 +352,16 @@ class RAGService
         ?Bot $bot = null,
         array $memoryNotes = []
     ): string {
-        $prompt = '';
+        // Static persona leads so it forms a stable, cacheable prefix for
+        // OpenRouter/gemini prefix caching. Dynamic memory/stock/KB come AFTER.
+        $prompt = $basePrompt;
 
         if (! empty($memoryNotes)) {
-            $prompt .= "## Memory:\n";
+            $prompt .= "\n\n## Memory:\n";
             foreach ($memoryNotes as $content) {
                 $prompt .= "- {$content}\n";
             }
-            $prompt .= "---\n\n";
+            $prompt .= "---\n";
         }
 
         // Always inject stock — conditional injection caused sales of out-of-stock products
@@ -369,11 +371,9 @@ class RAGService
         if ($hasOutOfStock) {
             $stockInjection = $this->stockInjectionService->buildStockInjection($stocks);
             if (! empty($stockInjection)) {
-                $prompt .= $stockInjection."\n---\n\n";
+                $prompt .= "\n\n".$stockInjection;
             }
         }
-
-        $prompt .= $basePrompt;
 
         if (! empty($kbContext)) {
             $prompt .= "\n\n".$kbContext;
