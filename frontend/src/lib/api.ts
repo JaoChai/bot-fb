@@ -1,6 +1,5 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import type { ApiError } from '@/types/api';
-import { getEcho } from './echo';
 
 let cachedSocketId: string | null = null;
 let socketIdTimestamp = 0;
@@ -11,8 +10,11 @@ function getSocketId(): string | null {
   if (cachedSocketId && now - socketIdTimestamp < SOCKET_ID_TTL) {
     return cachedSocketId;
   }
+  // Read socket ID via window.Echo (set by echo.ts when initialized) so this
+  // module stays free of a static echo/pusher-js dependency in the eager bundle.
   try {
-    cachedSocketId = getEcho()?.socketId() ?? null;
+    const echo = (window as Window & { Echo?: { socketId?: () => string | undefined } }).Echo;
+    cachedSocketId = echo?.socketId?.() ?? null;
   } catch {
     cachedSocketId = null;
   }
