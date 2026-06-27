@@ -14,44 +14,25 @@ export default defineConfig({
   build: {
     // Chunk size warnings
     chunkSizeWarningLimit: 500,
-    // Minification
-    minify: "esbuild",
+    // Minification (Vite 8 default bundler is Rolldown; oxc replaces esbuild)
+    minify: "oxc",
     // Source maps disabled for production
     sourcemap: false,
-    // Rollup options for chunk splitting
-    rollupOptions: {
+    // Chunk splitting — Vite 8/Rolldown replaced object-form manualChunks with
+    // codeSplitting.groups. `test` matches the full module id path; groups are
+    // evaluated in order (first match wins).
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          // Core React
-          "vendor-react": ["react", "react-dom", "react-router"],
-          // UI Components (Radix)
-          "vendor-radix": [
-            "@radix-ui/react-dialog",
-            "@radix-ui/react-dropdown-menu",
-            "@radix-ui/react-tabs",
-            "@radix-ui/react-select",
-            "@radix-ui/react-avatar",
-            "@radix-ui/react-tooltip",
-            "@radix-ui/react-scroll-area",
-            "@radix-ui/react-switch",
-            "@radix-ui/react-slider",
-            "@radix-ui/react-collapsible",
-            "@radix-ui/react-alert-dialog",
-            "@radix-ui/react-visually-hidden",
-            "@radix-ui/react-separator",
-            "@radix-ui/react-label",
-            "@radix-ui/react-slot",
+        codeSplitting: {
+          groups: [
+            { name: "vendor-react", test: /[/\\]node_modules[/\\](react|react-dom|react-router)[/\\]/ },
+            { name: "vendor-radix", test: /[/\\]node_modules[/\\]@radix-ui[/\\]/ },
+            { name: "vendor-query", test: /[/\\]node_modules[/\\](@tanstack[/\\]react-query|@tanstack[/\\]react-virtual|axios)[/\\]/ },
+            { name: "vendor-charts", test: /[/\\]node_modules[/\\]recharts[/\\]/ },
+            { name: "vendor-icons", test: /[/\\]node_modules[/\\]lucide-react[/\\]/ },
+            { name: "vendor-utils", test: /[/\\]node_modules[/\\](date-fns|clsx|tailwind-merge|class-variance-authority|zod)[/\\]/ },
+            { name: "vendor-state", test: /[/\\]node_modules[/\\](zustand|react-hook-form|@hookform[/\\]resolvers)[/\\]/ },
           ],
-          // Data Fetching
-          "vendor-query": ["@tanstack/react-query", "@tanstack/react-virtual", "axios"],
-          // Charts
-          "vendor-charts": ["recharts"],
-          // Icons
-          "vendor-icons": ["lucide-react"],
-          // Utilities
-          "vendor-utils": ["date-fns", "clsx", "tailwind-merge", "class-variance-authority", "zod"],
-          // State & Forms
-          "vendor-state": ["zustand", "react-hook-form", "@hookform/resolvers"],
         },
       },
     },
