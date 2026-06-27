@@ -1,6 +1,6 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
-import { RouterProvider } from "react-router"
+import { RouterProvider } from "react-router/dom"
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client"
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools"
 import * as Sentry from "@sentry/react"
