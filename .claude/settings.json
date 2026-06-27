@@ -9,7 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/pre-commit-review.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-commit-review.sh"
           }
         ]
       }
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/post-implement.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-implement.sh"
           }
         ]
       }
@@ -31,5 +31,19 @@
     "typescript-lsp@claude-plugins-official": true,
     "laravel-boost@claude-plugins-official": true
   },
-  "teammateMode": "auto"
+  "teammateMode": "auto",
+  "permissions": {
+    "deny": [
+      "Edit(**/.env)",
+      "Edit(**/.env.*)",
+      "Edit(**/composer.lock)",
+      "Edit(**/package-lock.json)",
+      "Write(**/.env)",
+      "Write(**/.env.*)",
+      "Bash(php artisan migrate*)",
+      "Bash(php artisan db:wipe*)",
+      "Bash(php artisan db:seed*)",
+      "Bash(php artisan tinker*)"
+    ]
+  }
 }

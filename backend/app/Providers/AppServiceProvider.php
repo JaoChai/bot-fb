@@ -93,6 +93,10 @@ class AppServiceProvider extends ServiceProvider
             URL::forceScheme('https');
         }
 
+        // Hard guard against destructive DB commands (db:wipe, migrate:fresh,
+        // migrate:refresh) in production — independent of any tooling denylist.
+        DB::prohibitDestructiveCommands(app()->isProduction());
+
         Gate::policy(Bot::class, BotPolicy::class);
         Gate::policy(KnowledgeBase::class, KnowledgeBasePolicy::class);
         Gate::policy(Document::class, DocumentPolicy::class);
