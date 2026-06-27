@@ -1,8 +1,11 @@
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
 
-// Make Pusher available globally (required by Laravel Echo)
-window.Pusher = Pusher;
+// Make Pusher available globally (required by Laravel Echo).
+// pusher-js exposes the class differently across its builds: the browser build
+// (production) as the default export, the node build (used by vitest) as a named
+// `Pusher` export. Normalize so `new window.Pusher(...)` works in both.
+window.Pusher = (Pusher as unknown as { Pusher?: typeof Pusher }).Pusher ?? Pusher;
 
 // Environment configuration
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
