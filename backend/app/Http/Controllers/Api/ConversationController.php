@@ -9,6 +9,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Services\Chat\ConversationService;
 use App\Services\ConversationCacheService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -41,7 +42,7 @@ class ConversationController extends BaseConversationController
                         'status_counts' => $result['status_counts'],
                     ],
                 ]);
-        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+        } catch (AuthorizationException $e) {
             throw $e;
         } catch (\Throwable $e) {
             Log::error('ConversationController@index error', [

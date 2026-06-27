@@ -6,6 +6,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Services\Chat\TagService;
 use App\Services\ConversationCacheService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -34,7 +35,7 @@ class ConversationTagController extends BaseConversationController
             return response()->json([
                 'data' => $tags,
             ]);
-        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+        } catch (AuthorizationException $e) {
             throw $e;
         } catch (\Throwable $e) {
             Log::error('ConversationTagController@index error', [

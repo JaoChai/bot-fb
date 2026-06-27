@@ -12,6 +12,7 @@ use App\Services\ConversationCacheService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Storage;
 
 class ConversationMessageController extends BaseConversationController
 {
@@ -173,6 +174,6 @@ class ConversationMessageController extends BaseConversationController
             }
         }
 
-        return \Illuminate\Support\Facades\Storage::disk($disk)->url($path);
+        return Storage::disk($disk)->url($path);
     }
 }

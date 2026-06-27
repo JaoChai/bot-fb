@@ -25,6 +25,10 @@ use App\Http\Controllers\Api\StreamController;
 use App\Http\Controllers\Api\SyncController;
 use App\Http\Controllers\Api\UserSearchController;
 use App\Http\Controllers\Api\UserSettingController;
+use App\Http\Controllers\Api\VipController;
+use App\Http\Controllers\Webhook\FacebookWebhookController;
+use App\Http\Controllers\Webhook\LINEWebhookController;
+use App\Http\Controllers\Webhook\TelegramWebhookController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
@@ -159,11 +163,11 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
 
         // VIP management routes
         Route::prefix('/{bot}/vip')->group(function () {
-            Route::get('/customers', [\App\Http\Controllers\Api\VipController::class, 'index'])
+            Route::get('/customers', [VipController::class, 'index'])
                 ->name('vip.customers.index');
-            Route::post('/customers/{customerProfile}/revoke', [\App\Http\Controllers\Api\VipController::class, 'revoke'])
+            Route::post('/customers/{customerProfile}/revoke', [VipController::class, 'revoke'])
                 ->name('vip.customers.revoke');
-            Route::post('/customers/{customerProfile}/promote', [\App\Http\Controllers\Api\VipController::class, 'promote'])
+            Route::post('/customers/{customerProfile}/promote', [VipController::class, 'promote'])
                 ->name('vip.customers.promote');
         });
     });
@@ -290,17 +294,17 @@ Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
 Route::prefix('webhook')->middleware('throttle.webhook')->withoutMiddleware(['auth:sanctum'])->group(function () {
     // LINE webhook - POST /api/webhook/{token}
-    Route::post('/{token}', [\App\Http\Controllers\Webhook\LINEWebhookController::class, 'handle'])
+    Route::post('/{token}', [LINEWebhookController::class, 'handle'])
         ->name('webhook.line');
 
     // Telegram webhook - POST /api/webhook/telegram/{token}
-    Route::post('/telegram/{token}', [\App\Http\Controllers\Webhook\TelegramWebhookController::class, 'handle'])
+    Route::post('/telegram/{token}', [TelegramWebhookController::class, 'handle'])
         ->name('webhook.telegram');
 
     // Facebook webhook - GET for verification, POST for events
-    Route::get('/facebook/{token}', [\App\Http\Controllers\Webhook\FacebookWebhookController::class, 'verify'])
+    Route::get('/facebook/{token}', [FacebookWebhookController::class, 'verify'])
         ->name('webhook.facebook.verify');
-    Route::post('/facebook/{token}', [\App\Http\Controllers\Webhook\FacebookWebhookController::class, 'handle'])
+    Route::post('/facebook/{token}', [FacebookWebhookController::class, 'handle'])
         ->name('webhook.facebook');
 });
 

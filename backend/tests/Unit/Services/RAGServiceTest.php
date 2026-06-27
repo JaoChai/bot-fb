@@ -12,6 +12,7 @@ use App\Services\IntentAnalysisService;
 use App\Services\OpenRouterService;
 use App\Services\RAGService;
 use App\Services\SemanticSearchService;
+use App\Services\StockInjectionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use ReflectionClass;
@@ -47,7 +48,7 @@ class RAGServiceTest extends TestCase
             null, // queryEnhancement
             null, // semanticCache
             null, // CRAGService
-            app(\App\Services\StockInjectionService::class)
+            app(StockInjectionService::class)
         );
 
         $this->user = User::factory()->create();
@@ -415,7 +416,7 @@ class RAGServiceTest extends TestCase
             null, // queryEnhancement
             null, // semanticCache
             null, // CRAGService
-            app(\App\Services\StockInjectionService::class),
+            app(StockInjectionService::class),
         );
     }
 

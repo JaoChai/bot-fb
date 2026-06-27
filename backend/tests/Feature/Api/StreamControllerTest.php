@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\StreamController;
 use App\Models\Bot;
 use App\Models\Flow;
 use App\Models\User;
+use App\Services\Streaming\StreamingResponseOrchestrator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
 use Tests\TestCase;
@@ -56,7 +57,7 @@ class StreamControllerTest extends TestCase
         // invokes it via the onSseEvent callback (fn($e,$d) => $this->sendSSE(...)),
         // so the on-the-wire SSE format is still captured here.
         $mock = Mockery::mock(StreamController::class, [
-            $this->app->make(\App\Services\Streaming\StreamingResponseOrchestrator::class),
+            $this->app->make(StreamingResponseOrchestrator::class),
         ])->makePartial();
         $mock->shouldAllowMockingProtectedMethods();
         $mock->shouldReceive('sendSSE')

@@ -3,10 +3,11 @@
 namespace Database\Factories;
 
 use App\Models\Bot;
+use App\Models\Flow;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Flow>
+ * @extends Factory<Flow>
  */
 class FlowFactory extends Factory
 {

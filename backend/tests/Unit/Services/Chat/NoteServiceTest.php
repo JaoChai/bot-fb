@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\User;
 use App\Services\Chat\NoteService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 class NoteServiceTest extends TestCase
@@ -145,7 +146,7 @@ class NoteServiceTest extends TestCase
             'memory_notes' => [],
         ]);
 
-        $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+        $this->expectException(HttpException::class);
 
         $this->service->updateNote($conversation, 'non-existent-id', [
             'content' => 'Updated content',
@@ -191,7 +192,7 @@ class NoteServiceTest extends TestCase
             'memory_notes' => [],
         ]);
 
-        $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+        $this->expectException(HttpException::class);
 
         $this->service->deleteNote($conversation, 'non-existent-id');
     }

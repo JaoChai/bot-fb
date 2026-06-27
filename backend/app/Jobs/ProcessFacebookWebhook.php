@@ -16,6 +16,7 @@ use App\Services\LeadRecoveryService;
 use App\Services\ProfilePictureService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
@@ -498,7 +499,7 @@ class ProcessFacebookWebhook implements ShouldQueue
                     'last_name' => $fbProfile['last_name'] ?? null,
                 ],
             ]);
-        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+        } catch (UniqueConstraintViolationException $e) {
             // Race condition: another job created the profile, query again
             return CustomerProfile::where('external_id', $psid)
                 ->where('channel_type', 'facebook')

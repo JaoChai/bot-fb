@@ -4,6 +4,7 @@ namespace App\Http\Traits;
 
 use App\Models\Bot;
 use App\Models\Conversation;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * Trait for validating conversation ownership.
@@ -22,7 +23,7 @@ trait ValidatesConversationOwnership
      * Validate that the conversation belongs to the given bot.
      *
      *
-     * @throws \Symfony\Component\HttpKernel\Exception\NotFoundHttpException
+     * @throws NotFoundHttpException
      */
     protected function validateConversationBelongsToBot(Conversation $conversation, Bot $bot): void
     {

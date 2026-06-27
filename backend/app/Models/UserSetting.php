@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Log;
 
 class UserSetting extends Model
 {
@@ -56,8 +58,8 @@ class UserSetting extends Model
     {
         try {
             return $this->openrouter_api_key;
-        } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
-            \Illuminate\Support\Facades\Log::warning('Failed to decrypt OpenRouter API key', [
+        } catch (DecryptException $e) {
+            Log::warning('Failed to decrypt OpenRouter API key', [
                 'user_id' => $this->user_id,
                 'error' => $e->getMessage(),
             ]);

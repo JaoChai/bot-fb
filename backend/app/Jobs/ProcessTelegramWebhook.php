@@ -12,6 +12,7 @@ use App\Models\Message;
 use App\Services\AIService;
 use App\Services\AutoAssignmentService;
 use App\Services\CircuitBreakerService;
+use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\TelegramService;
 use Illuminate\Bus\Queueable;
@@ -518,7 +519,7 @@ class ProcessTelegramWebhook implements ShouldQueue
             // Execute flow plugins (e.g., Telegram notifications)
             if ($botMessage) {
                 try {
-                    app(\App\Services\FlowPluginService::class)
+                    app(FlowPluginService::class)
                         ->executePlugins($this->bot, $conversation, $botMessage);
                 } catch (\Exception $e) {
                     Log::warning('Flow plugin execution failed in Telegram webhook', [

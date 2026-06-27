@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\Order;
 use App\Models\User;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
@@ -105,7 +106,7 @@ class VipControllerTest extends TestCase
 
         $response = $this->getJson("/api/bots/{$bot->id}/vip/customers");
 
-        DB::getEventDispatcher()->forget(\Illuminate\Database\Events\QueryExecuted::class);
+        DB::getEventDispatcher()->forget(QueryExecuted::class);
 
         $response->assertOk();
 

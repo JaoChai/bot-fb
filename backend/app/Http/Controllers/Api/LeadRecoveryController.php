@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Bot;
 use App\Models\LeadRecoveryLog;
 use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -134,11 +136,11 @@ class LeadRecoveryController extends Controller
                     ],
                 ],
             ]);
-        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+        } catch (AuthorizationException $e) {
             throw $e;
         } catch (ValidationException $e) {
             throw $e;
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        } catch (ModelNotFoundException $e) {
             return response()->json(['error' => 'Bot not found'], 404);
         } catch (\Throwable $e) {
             Log::error('LeadRecoveryController::getStats error', [
@@ -261,11 +263,11 @@ class LeadRecoveryController extends Controller
                     'last_page' => $logs->lastPage(),
                 ],
             ]);
-        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+        } catch (AuthorizationException $e) {
             throw $e;
         } catch (ValidationException $e) {
             throw $e;
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        } catch (ModelNotFoundException $e) {
             return response()->json(['error' => 'Bot not found'], 404);
         } catch (\Throwable $e) {
             Log::error('LeadRecoveryController::getLogs error', [

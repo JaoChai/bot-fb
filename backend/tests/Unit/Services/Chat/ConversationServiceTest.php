@@ -4,10 +4,12 @@ namespace Tests\Unit\Services\Chat;
 
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\Message;
 use App\Models\User;
 use App\Services\Chat\ConversationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class ConversationServiceTest extends TestCase
@@ -250,7 +252,7 @@ class ConversationServiceTest extends TestCase
             'bot_id' => $this->bot->id,
             'status' => 'active',
         ]);
-        \App\Models\Message::factory()->create([
+        Message::factory()->create([
             'conversation_id' => $conv1->id,
             'sender' => 'user',
         ]);
@@ -260,7 +262,7 @@ class ConversationServiceTest extends TestCase
             'bot_id' => $this->bot->id,
             'status' => 'active',
         ]);
-        \App\Models\Message::factory()->create([
+        Message::factory()->create([
             'conversation_id' => $conv2->id,
             'sender' => 'bot',
         ]);
@@ -270,7 +272,7 @@ class ConversationServiceTest extends TestCase
             'bot_id' => $this->bot->id,
             'status' => 'active',
         ]);
-        \App\Models\Message::factory()->create([
+        Message::factory()->create([
             'conversation_id' => $conv3->id,
             'sender' => 'agent',
         ]);
@@ -316,7 +318,7 @@ class ConversationServiceTest extends TestCase
         $this->assertEquals(2, $result2['status_counts']['active']);
 
         // Clear cache and verify new count
-        \Illuminate\Support\Facades\Cache::forget("bot:{$this->bot->id}:conversation:all_counts");
+        Cache::forget("bot:{$this->bot->id}:conversation:all_counts");
         $result3 = $this->service->listConversations($this->bot, $request);
         $this->assertEquals(3, $result3['status_counts']['active']);
     }

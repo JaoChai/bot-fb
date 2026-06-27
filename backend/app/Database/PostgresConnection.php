@@ -22,7 +22,7 @@ class PostgresConnection extends BasePostgresConnection
      * Returns our custom PostgresBuilder that preserves boolean types
      * instead of converting them to integers.
      *
-     * @return \App\Database\PostgresBuilder
+     * @return PostgresBuilder
      */
     public function query(): Builder
     {

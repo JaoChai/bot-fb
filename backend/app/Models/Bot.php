@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\EncryptedWithFallback;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -63,8 +64,8 @@ class Bot extends Model
         'context_window' => 'integer',
         'webhook_forwarder_enabled' => 'boolean',
         // Channel credentials (encrypted at rest, with fallback for legacy plaintext)
-        'channel_access_token' => \App\Casts\EncryptedWithFallback::class,
-        'channel_secret' => \App\Casts\EncryptedWithFallback::class,
+        'channel_access_token' => EncryptedWithFallback::class,
+        'channel_secret' => EncryptedWithFallback::class,
         // KB settings
         'kb_enabled' => 'boolean',
         'kb_relevance_threshold' => 'float',

@@ -4,6 +4,7 @@ namespace App\Services\Chat;
 
 use App\Models\Bot;
 use App\Models\Conversation;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -47,7 +48,7 @@ class TagService
     /**
      * Remove a tag from a conversation.
      *
-     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     * @throws ModelNotFoundException
      */
     public function removeTag(Conversation $conversation, string $tag): array
     {

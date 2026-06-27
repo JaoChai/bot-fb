@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\RagCache;
 use App\Services\SemanticCacheService;
 use Illuminate\Console\Command;
 
@@ -54,7 +55,7 @@ class CleanupRagCache extends Command
 
         // Otherwise, cleanup all expired entries
         if ($dryRun) {
-            $count = \App\Models\RagCache::where('expires_at', '<', now())->count();
+            $count = RagCache::where('expires_at', '<', now())->count();
             $this->info("Found {$count} expired cache entries that would be deleted.");
 
             return Command::SUCCESS;

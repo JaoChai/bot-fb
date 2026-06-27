@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\CircuitOpenException;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -284,7 +285,7 @@ class CircuitBreakerService
         }
 
         $recoveryTimeout = $this->getConfig($service, 'recovery_timeout', 30);
-        $openedTime = \Carbon\Carbon::parse($openedAt);
+        $openedTime = Carbon::parse($openedAt);
 
         // Use absolute value since diffInSeconds can be negative when comparing past times
         return abs(now()->diffInSeconds($openedTime)) >= $recoveryTimeout;
