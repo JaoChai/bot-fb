@@ -40,10 +40,10 @@
       "Edit(**/package-lock.json)",
       "Write(**/.env)",
       "Write(**/.env.*)",
-      "Bash(php artisan migrate)",
-      "Bash(php artisan migrate --force*)",
-      "Bash(php artisan migrate:fresh*)",
-      "Bash(php artisan db:wipe*)"
+      "Bash(php artisan migrate*)",
+      "Bash(php artisan db:wipe*)",
+      "Bash(php artisan db:seed*)",
+      "Bash(php artisan tinker*)"
     ]
   }
 }
