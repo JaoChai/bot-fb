@@ -3,6 +3,7 @@
 use App\Exceptions\CircuitOpenException;
 use App\Http\Middleware\CacheHeaders;
 use App\Http\Middleware\CompressResponse;
+use App\Http\Middleware\RedisFallbackMiddleware;
 use App\Http\Middleware\SanitizeInput;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TrustProxies;
@@ -13,6 +14,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 use Sentry\Breadcrumb;
 use Sentry\Laravel\Integration;
 
@@ -28,7 +30,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Global middleware applied to all requests
         // CacheHeaders FIRST in prepend = runs LAST on response (final word on cache headers)
         $middleware->prepend([
-            \App\Http\Middleware\RedisFallbackMiddleware::class,
+            RedisFallbackMiddleware::class,
             CacheHeaders::class,
             TrustProxies::class,
             HandleCors::class,
@@ -58,14 +60,14 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Define middleware aliases for route-level usage
         $middleware->alias([
-            'throttle.auth' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':auth',
-            'throttle.api' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',
-            'throttle.webhook' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':webhook',
-            'throttle.bot-test' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':bot-test',
-            'throttle.uploads' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':uploads',
-            'throttle.qa-inspector-read' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':qa-inspector-read',
-            'throttle.qa-inspector-write' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':qa-inspector-write',
-            'throttle.qa-report-generate' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':qa-report-generate',
+            'throttle.auth' => ThrottleRequests::class.':auth',
+            'throttle.api' => ThrottleRequests::class.':api',
+            'throttle.webhook' => ThrottleRequests::class.':webhook',
+            'throttle.bot-test' => ThrottleRequests::class.':bot-test',
+            'throttle.uploads' => ThrottleRequests::class.':uploads',
+            'throttle.qa-inspector-read' => ThrottleRequests::class.':qa-inspector-read',
+            'throttle.qa-inspector-write' => ThrottleRequests::class.':qa-inspector-write',
+            'throttle.qa-report-generate' => ThrottleRequests::class.':qa-report-generate',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

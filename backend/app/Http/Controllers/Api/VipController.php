@@ -23,7 +23,7 @@ class VipController extends Controller
     {
         $this->authorize('view', $bot);
 
-        $conversations = \App\Models\Conversation::where('bot_id', $bot->id)
+        $conversations = Conversation::where('bot_id', $bot->id)
             ->whereNotNull('customer_profile_id')
             ->with('customerProfile')
             ->get();

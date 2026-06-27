@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Chat\TagService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 class TagServiceTest extends TestCase
@@ -158,7 +159,7 @@ class TagServiceTest extends TestCase
             'tags' => ['existing'],
         ]);
 
-        $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+        $this->expectException(HttpException::class);
 
         $this->service->removeTag($conversation, 'non-existent');
     }

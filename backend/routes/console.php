@@ -3,6 +3,7 @@
 use App\Jobs\ProcessLeadRecovery;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
@@ -50,7 +51,7 @@ Schedule::command('cache:prune-stale-tags')->daily()->at('02:00')
 
 // Clean expired database cache rows (Neon storage optimization)
 Schedule::call(function () {
-    \Illuminate\Support\Facades\DB::table('cache')
+    DB::table('cache')
         ->where('expiration', '<', now()->timestamp)
         ->delete();
 })->dailyAt('02:30')
@@ -59,7 +60,7 @@ Schedule::call(function () {
 
 // Clean old activity logs (>90 days) - weekly Sunday 03:30
 Schedule::call(function () {
-    \Illuminate\Support\Facades\DB::table('activity_logs')
+    DB::table('activity_logs')
         ->where('created_at', '<', now()->subDays(90))
         ->delete();
 })->weekly()->sundays()->at('03:30')

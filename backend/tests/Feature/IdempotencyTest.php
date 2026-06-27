@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Exceptions\IdempotencyConflictException;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -51,7 +52,7 @@ class IdempotencyTest extends TestCase
 
         $this->service->store($key, $endpoint, ['content' => 'hello'], ['id' => 1]);
 
-        $this->expectException(\App\Exceptions\IdempotencyConflictException::class);
+        $this->expectException(IdempotencyConflictException::class);
         $this->service->check($key, $endpoint, ['content' => 'different']);
     }
 

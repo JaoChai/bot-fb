@@ -3,6 +3,7 @@
 namespace App\Services\Chat;
 
 use App\Models\Conversation;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Str;
 
 class NoteService
@@ -52,7 +53,7 @@ class NoteService
     /**
      * Update a note in a conversation's memory.
      *
-     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     * @throws ModelNotFoundException
      */
     public function updateNote(Conversation $conversation, string $noteId, array $data): array
     {
@@ -77,7 +78,7 @@ class NoteService
     /**
      * Delete a note from a conversation's memory.
      *
-     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     * @throws ModelNotFoundException
      */
     public function deleteNote(Conversation $conversation, string $noteId): void
     {

@@ -5,6 +5,7 @@ namespace App\Services\LineWebhook;
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
 use App\Models\Conversation;
+use App\Models\Message;
 use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
@@ -77,7 +78,7 @@ class LineWebhookOutputService
             return;
         }
 
-        /** @var \App\Models\Message|null $botMessage */
+        /** @var Message|null $botMessage */
         $botMessage = $ctx->metadata['bot_message'] ?? null;
         if ($botMessage === null) {
             Log::error('Output stage invoked without bot_message in metadata', [
@@ -160,7 +161,7 @@ class LineWebhookOutputService
             return;
         }
 
-        /** @var \App\Models\Message|null $botMessage */
+        /** @var Message|null $botMessage */
         $botMessage = $ctx->metadata['bot_message'] ?? null;
         if ($botMessage === null) {
             Log::error('Output stage invoked without bot_message in metadata', [
@@ -208,7 +209,7 @@ class LineWebhookOutputService
             return;
         }
 
-        /** @var \App\Models\Message|null $botMessage */
+        /** @var Message|null $botMessage */
         $botMessage = $ctx->metadata['bot_message'] ?? null;
         if ($botMessage === null) {
             Log::error('Output stage invoked without bot_message in metadata', [

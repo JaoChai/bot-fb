@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\LineWebhook;
 
 use App\Models\Bot;
+use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
@@ -14,7 +15,9 @@ use App\Services\LineWebhook\WebhookContext;
 use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
 use App\Services\StickerReplyService;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Mockery;
 use Tests\TestCase;
 
@@ -113,7 +116,7 @@ class LineWebhookResponseServiceTest extends TestCase
      */
     private function makeConversationWithMessagesMock(Bot $bot, Message $botMessageToReturn): Conversation
     {
-        $hasMany = Mockery::mock(\Illuminate\Database\Eloquent\Relations\HasMany::class);
+        $hasMany = Mockery::mock(HasMany::class);
         $hasMany->shouldReceive('create')->andReturn($botMessageToReturn);
         // For getVisionConversationHistory (whereIn, where, latest, take, get chain)
         $hasMany->shouldReceive('whereIn')->andReturnSelf();
@@ -227,7 +230,7 @@ class LineWebhookResponseServiceTest extends TestCase
     public function test_sticker_event_calls_sticker_service_and_sets_envelope(): void
     {
         $bot = $this->makeBot();
-        $bot->setRelation('settings', new \App\Models\BotSetting([
+        $bot->setRelation('settings', new BotSetting([
             'reply_sticker_enabled' => true,
             'reply_sticker_mode' => 'static',
             'reply_sticker_message' => 'สวัสดีค่ะ',
@@ -260,7 +263,7 @@ class LineWebhookResponseServiceTest extends TestCase
     public function test_sticker_service_returns_null_leaves_response_null(): void
     {
         $bot = $this->makeBot();
-        $bot->setRelation('settings', new \App\Models\BotSetting([
+        $bot->setRelation('settings', new BotSetting([
             'reply_sticker_enabled' => true,
             'reply_sticker_mode' => 'static',
         ]));
@@ -447,7 +450,7 @@ class LineWebhookResponseServiceTest extends TestCase
         $botMessage = $this->makeMessage($this->makeConversationMock($bot), 'bot', 'เงินเข้าแล้ว ✅');
 
         // Stub messages() to return history with ORDER keyword, then return botMessage on create
-        $hasMany = Mockery::mock(\Illuminate\Database\Eloquent\Relations\HasMany::class);
+        $hasMany = Mockery::mock(HasMany::class);
         $hasMany->shouldReceive('create')->andReturn($botMessage);
         $hasMany->shouldReceive('whereIn')->andReturnSelf();
         $hasMany->shouldReceive('where')->andReturnSelf();
@@ -509,7 +512,7 @@ class LineWebhookResponseServiceTest extends TestCase
     public function test_sticker_exception_is_swallowed_and_logged(): void
     {
         $bot = $this->makeBot();
-        $bot->setRelation('settings', new \App\Models\BotSetting([
+        $bot->setRelation('settings', new BotSetting([
             'reply_sticker_enabled' => true,
             'reply_sticker_mode' => 'static',
         ]));
@@ -525,7 +528,7 @@ class LineWebhookResponseServiceTest extends TestCase
         $ctx->conversation = $conversation;
         $ctx->metadata['should_generate_response'] = true;
 
-        \Illuminate\Support\Facades\Log::spy();
+        Log::spy();
 
         $svc = $this->makeService(stickerReply: $stickerReply);
 
@@ -533,7 +536,7 @@ class LineWebhookResponseServiceTest extends TestCase
         $svc->generate($ctx);
 
         $this->assertNull($ctx->response);
-        \Illuminate\Support\Facades\Log::shouldHaveReceived('warning')
+        Log::shouldHaveReceived('warning')
             ->with('Failed to reply to sticker', Mockery::any())
             ->once();
     }

@@ -2,8 +2,11 @@
 
 namespace Tests\Unit\Jobs;
 
+use App\Jobs\ProcessAggregatedMessages;
 use App\Jobs\ProcessLINEWebhook;
 use App\Models\Bot;
+use App\Models\Conversation;
+use App\Models\Message;
 use App\Models\User;
 use App\Services\AIService;
 use App\Services\CircuitBreakerService;
@@ -277,7 +280,7 @@ class ProcessLINEWebhookPipelineTest extends TestCase
         Queue::fake();
 
         // Hold the lock so the pipeline cannot acquire it
-        $conv = \App\Models\Conversation::factory()->create([
+        $conv = Conversation::factory()->create([
             'bot_id' => $this->bot->id,
             'external_customer_id' => 'U_pipeline_test_user',
             'channel_type' => 'line',
@@ -296,7 +299,7 @@ class ProcessLINEWebhookPipelineTest extends TestCase
         $contextSvc = Mockery::mock(LineWebhookContextService::class);
         $contextSvc->shouldReceive('resolve')->once()->andReturnUsing(function (WebhookContext $ctx) use ($conv) {
             $ctx->conversation = $conv;
-            $ctx->userMessage = \App\Models\Message::factory()->make([
+            $ctx->userMessage = Message::factory()->make([
                 'conversation_id' => $conv->id,
                 'sender' => 'user',
                 'content' => 'สวัสดีครับ pipeline',
@@ -347,7 +350,7 @@ class ProcessLINEWebhookPipelineTest extends TestCase
             $outputSvc,
         );
 
-        Queue::assertPushed(\App\Jobs\ProcessAggregatedMessages::class);
+        Queue::assertPushed(ProcessAggregatedMessages::class);
 
         Cache::lock($lockKey, 30)->forceRelease();
     }

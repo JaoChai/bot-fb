@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Database\PostgresConnection;
 use App\Models\Bot;
 use App\Models\Document;
 use App\Models\KnowledgeBase;
@@ -45,7 +46,7 @@ class AppServiceProvider extends ServiceProvider
     {
         // Register custom PostgreSQL connection for proper boolean handling
         Connection::resolverFor('pgsql', function ($connection, $database, $prefix, $config) {
-            return new \App\Database\PostgresConnection($connection, $database, $prefix, $config);
+            return new PostgresConnection($connection, $database, $prefix, $config);
         });
 
         // Register HybridSearchService with JinaRerankerService dependency

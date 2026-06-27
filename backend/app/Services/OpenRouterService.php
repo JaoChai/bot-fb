@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Exceptions\OpenRouterException;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -692,10 +694,10 @@ class OpenRouterService
             ->retry(3, function (int $attempt) {
                 return $attempt * 200;
             }, throw: false, when: function (\Throwable $e, $request) {
-                if ($e instanceof \Illuminate\Http\Client\ConnectionException) {
+                if ($e instanceof ConnectionException) {
                     return true;
                 }
-                if ($e instanceof \Illuminate\Http\Client\RequestException) {
+                if ($e instanceof RequestException) {
                     $status = $e->response?->status();
 
                     return $status === 429 || ($status !== null && $status >= 500);

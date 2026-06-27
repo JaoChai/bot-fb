@@ -16,6 +16,7 @@ use App\Services\MessageAggregationService;
 use App\Services\ProfilePictureService;
 use App\Services\RateLimitService;
 use App\Services\ResponseHoursService;
+use App\Services\SmartAggregation\AggregationContext;
 use App\Services\SmartAggregation\SmartAggregationAnalyzer;
 use App\Services\SmartAggregation\UserTypingStats;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -296,7 +297,7 @@ class LineWebhookContextServiceTest extends TestCase
         $aggregation = Mockery::mock(MessageAggregationService::class);
         $aggregation->shouldReceive('isEnabled')->andReturn(true);
         $aggregation->shouldReceive('getWaitTimeMs')->andReturn(3000);
-        $fakeContext = Mockery::mock(\App\Services\SmartAggregation\AggregationContext::class)->makePartial();
+        $fakeContext = Mockery::mock(AggregationContext::class)->makePartial();
         $aggregation->shouldReceive('buildContext')->andReturn($fakeContext);
         $aggregation->shouldReceive('startOrContinueAggregation')->andReturn([
             'group_id' => 'grp_001',

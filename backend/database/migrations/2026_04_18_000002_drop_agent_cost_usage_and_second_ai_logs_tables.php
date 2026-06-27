@@ -13,6 +13,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        throw new \Exception('Cannot restore dropped tables, use DB backup');
+        throw new Exception('Cannot restore dropped tables, use DB backup');
     }
 };

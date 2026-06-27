@@ -5,6 +5,8 @@ namespace App\Services\Chat;
 use App\Models\Bot;
 use App\Models\Conversation;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Request;
 
 /**
@@ -72,7 +74,7 @@ class ConversationQueryService
     /**
      * Apply filters to the query.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\HasMany  $query
+     * @param  Builder|HasMany  $query
      */
     private function applyFilters($query, Request $request): void
     {
@@ -130,7 +132,7 @@ class ConversationQueryService
     /**
      * Apply search to the query.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\HasMany  $query
+     * @param  Builder|HasMany  $query
      */
     private function applySearch($query, Request $request): void
     {
@@ -151,7 +153,7 @@ class ConversationQueryService
     /**
      * Apply sorting to the query.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\HasMany  $query
+     * @param  Builder|HasMany  $query
      */
     private function applySorting($query, Request $request): void
     {

@@ -4,7 +4,9 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
 use Sentry\Breadcrumb;
+use Sentry\Severity;
 use Sentry\State\HubInterface;
+use Sentry\State\Scope;
 
 class ResilienceMetricsService
 {
@@ -154,8 +156,8 @@ class ResilienceMetricsService
         }
 
         try {
-            \Sentry\withScope(function (\Sentry\State\Scope $scope) use ($message, $level, $context): void {
-                $scope->setLevel(\Sentry\Severity::fromError($level === 'error' ? E_ERROR : E_WARNING));
+            \Sentry\withScope(function (Scope $scope) use ($message, $level, $context): void {
+                $scope->setLevel(Severity::fromError($level === 'error' ? E_ERROR : E_WARNING));
                 $scope->setTags(['type' => 'circuit_breaker']);
 
                 foreach ($context as $key => $value) {

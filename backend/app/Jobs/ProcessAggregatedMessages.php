@@ -6,13 +6,17 @@ use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\Message;
 use App\Services\AIService;
 use App\Services\Chat\ConversationContextService;
+use App\Services\FlowPluginService;
 use App\Services\LINEService;
 use App\Services\MessageAggregationService;
 use App\Services\MultipleBubblesService;
+use App\Services\PaymentFlexService;
 use App\Support\QueueRouter;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -248,13 +252,13 @@ class ProcessAggregatedMessages implements ShouldQueue
         }
 
         $latestMessageId = max($cachedMessageIds);
-        $latestTimestamp = \App\Models\Message::where('id', $latestMessageId)->value('created_at');
+        $latestTimestamp = Message::where('id', $latestMessageId)->value('created_at');
 
         if (! $latestTimestamp) {
             return false;
         }
 
-        $alreadyResponded = \App\Models\Message::where('conversation_id', $conversationId)
+        $alreadyResponded = Message::where('conversation_id', $conversationId)
             ->where('sender', 'bot')
             ->where('created_at', '>=', $latestTimestamp)
             ->exists();
@@ -277,7 +281,7 @@ class ProcessAggregatedMessages implements ShouldQueue
      * Acquire per-conversation response lock to prevent concurrent AI responses.
      * Returns lock on success, null if lock could not be acquired or max retries exceeded.
      */
-    private function acquireResponseLock(MessageAggregationService $aggregationService): ?\Illuminate\Contracts\Cache\Lock
+    private function acquireResponseLock(MessageAggregationService $aggregationService): ?Lock
     {
         $conversationId = $this->conversation->id;
         $responseLock = Cache::lock("ai_response:{$conversationId}", 30);
@@ -328,7 +332,7 @@ class ProcessAggregatedMessages implements ShouldQueue
         AIService $aiService,
         LINEService $lineService,
         MultipleBubblesService $bubblesService
-    ): ?\App\Models\Message {
+    ): ?Message {
         Log::debug('[Aggregation] Generating AI response', [
             'conversation_id' => $this->conversation->id,
             'content_length' => strlen($mergedContent),
@@ -361,7 +365,7 @@ class ProcessAggregatedMessages implements ShouldQueue
         // Execute flow plugins (e.g., Telegram notifications)
         if ($botMessage) {
             try {
-                app(\App\Services\FlowPluginService::class)
+                app(FlowPluginService::class)
                     ->executePlugins($this->bot, $this->conversation, $botMessage);
             } catch (\Exception $e) {
                 Log::warning('Flow plugin execution failed in aggregation', [
@@ -378,11 +382,11 @@ class ProcessAggregatedMessages implements ShouldQueue
      * Deliver bot message to the appropriate channel (Flex, Bubbles, or plain text).
      */
     private function deliverToChannel(
-        \App\Models\Message $botMessage,
+        Message $botMessage,
         LINEService $lineService,
         MultipleBubblesService $bubblesService
     ): void {
-        $paymentFlex = app(\App\Services\PaymentFlexService::class);
+        $paymentFlex = app(PaymentFlexService::class);
         $transformed = $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation);
 
         if (is_array($transformed)) {
@@ -403,7 +407,7 @@ class ProcessAggregatedMessages implements ShouldQueue
     /**
      * Broadcast response events to connected clients.
      */
-    private function broadcastResponse(\App\Models\Message $botMessage): void
+    private function broadcastResponse(Message $botMessage): void
     {
         // Refresh conversation to get actual DB values after DB::raw updates
         $this->conversation->refresh();

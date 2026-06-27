@@ -3,6 +3,8 @@
 namespace Tests\Unit\Services;
 
 use App\Models\Bot;
+use App\Models\BotHITLSettings;
+use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Services\FacebookService;
 use App\Services\LeadRecoveryService;
@@ -10,6 +12,7 @@ use App\Services\LINEService;
 use App\Services\OpenRouterService;
 use App\Services\ResponseHoursService;
 use App\Services\TelegramService;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Mockery;
@@ -50,8 +53,8 @@ class LeadRecoveryServiceEagerLoadTest extends TestCase
 
         // Create the settings chain so bot.settings.hitlSettings resolves
         // to non-null rows, making the eager-load assertions meaningful.
-        $botSetting = \App\Models\BotSetting::create(['bot_id' => $bot->id]);
-        \App\Models\BotHITLSettings::create(['bot_setting_id' => $botSetting->id]);
+        $botSetting = BotSetting::create(['bot_id' => $bot->id]);
+        BotHITLSettings::create(['bot_setting_id' => $botSetting->id]);
 
         // Create 3 conversations that satisfy needsRecovery():
         //   status='active', is_handover=false, recovery_attempts=0,
@@ -98,6 +101,6 @@ class LeadRecoveryServiceEagerLoadTest extends TestCase
             "Expected zero queries when iterating eager-loaded bot relation, got $queriesAfterFetch"
         );
 
-        DB::getEventDispatcher()->forget(\Illuminate\Database\Events\QueryExecuted::class);
+        DB::getEventDispatcher()->forget(QueryExecuted::class);
     }
 }

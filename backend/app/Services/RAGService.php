@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Flow;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -1033,12 +1034,12 @@ PROMPT;
      * Wrapped in try-catch so CRAG failures never break the KB search.
      */
     protected function applyCRAG(
-        \Illuminate\Support\Collection $results,
+        Collection $results,
         string $query,
         array $kbConfigs,
         array &$metadata,
         ?string $apiKey
-    ): \Illuminate\Support\Collection {
+    ): Collection {
         if (! $this->cragService?->isEnabled() || $results->isEmpty()) {
             return $results;
         }

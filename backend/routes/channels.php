@@ -2,6 +2,7 @@
 
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\KnowledgeBase;
 use Illuminate\Support\Facades\Broadcast;
 
 /*
@@ -83,7 +84,7 @@ Broadcast::channel('user.{userId}.notifications', function ($user, $userId) {
  * Authorized for: knowledge base owner only
  */
 Broadcast::channel('knowledge-base.{knowledgeBaseId}', function ($user, $knowledgeBaseId) {
-    $kb = \App\Models\KnowledgeBase::find($knowledgeBaseId);
+    $kb = KnowledgeBase::find($knowledgeBaseId);
 
     if (! $kb) {
         return false;

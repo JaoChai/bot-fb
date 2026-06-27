@@ -13,6 +13,7 @@ use App\Services\AIService;
 use App\Services\AutoAssignmentService;
 use App\Services\Chat\ConversationContextService;
 use App\Services\CircuitBreakerService;
+use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
 use App\Services\LineWebhook\LineWebhookContextService;
@@ -25,6 +26,7 @@ use App\Services\MessageAggregationService;
 use App\Services\ModelCapabilityService;
 use App\Services\MultipleBubblesService;
 use App\Services\OpenRouterService;
+use App\Services\PaymentFlexService;
 use App\Services\ProfilePictureService;
 use App\Services\RateLimitService;
 use App\Services\ResponseHoursService;
@@ -588,7 +590,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 // Send reply to LINE (with multiple bubbles support)
                 if ($botMessage->content) {
                     $bubblesService = app(MultipleBubblesService::class);
-                    $paymentFlex = app(\App\Services\PaymentFlexService::class);
+                    $paymentFlex = app(PaymentFlexService::class);
                     $transformed = $paymentFlex->tryConvertToFlex($botMessage->content, $conversation);
 
                     if (is_array($transformed)) {
@@ -609,7 +611,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 // Execute flow plugins (e.g., Telegram notifications)
                 if ($botMessage) {
                     try {
-                        app(\App\Services\FlowPluginService::class)
+                        app(FlowPluginService::class)
                             ->executePlugins($this->bot, $conversation, $botMessage);
                     } catch (\Exception $e2) {
                         Log::warning('Flow plugin execution failed in LINE webhook', [
@@ -1201,7 +1203,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 $bubbles = $bubblesService->parseIntoBubbles($responseContent, $this->bot);
                 $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles, $conversation);
             } else {
-                $paymentFlex = app(\App\Services\PaymentFlexService::class);
+                $paymentFlex = app(PaymentFlexService::class);
                 $transformed = $paymentFlex->tryConvertToFlex($responseContent, $conversation);
                 $retryKey = $lineService->generateRetryKey();
                 $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$transformed], $retryKey);
@@ -1221,7 +1223,7 @@ class ProcessLINEWebhook implements ShouldQueue
 
             // Execute flow plugins (e.g., Telegram notifications) after image analysis
             try {
-                app(\App\Services\FlowPluginService::class)
+                app(FlowPluginService::class)
                     ->executePlugins($this->bot, $conversation, $botMessage);
             } catch (\Exception $e2) {
                 Log::warning('Flow plugin execution failed after image analysis', [

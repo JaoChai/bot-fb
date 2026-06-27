@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services;
 
 use App\Services\CircuitBreakerService;
+use App\Services\ResilienceMetricsService;
 use Tests\TestCase;
 
 class CircuitBreakerDITest extends TestCase
@@ -30,6 +31,6 @@ class CircuitBreakerDITest extends TestCase
         $metricsProperty->setAccessible(true);
         $metrics = $metricsProperty->getValue($service);
 
-        $this->assertInstanceOf(\App\Services\ResilienceMetricsService::class, $metrics);
+        $this->assertInstanceOf(ResilienceMetricsService::class, $metrics);
     }
 }

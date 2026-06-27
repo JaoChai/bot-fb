@@ -21,12 +21,12 @@ return new class extends Migration
         });
 
         // Migrate existing relationships from flows table to pivot table
-        $flows = \DB::table('flows')
+        $flows = DB::table('flows')
             ->whereNotNull('knowledge_base_id')
             ->get(['id', 'knowledge_base_id', 'kb_top_k', 'kb_similarity_threshold']);
 
         foreach ($flows as $flow) {
-            \DB::table('flow_knowledge_base')->insert([
+            DB::table('flow_knowledge_base')->insert([
                 'flow_id' => $flow->id,
                 'knowledge_base_id' => $flow->knowledge_base_id,
                 'kb_top_k' => $flow->kb_top_k ?? 5,
@@ -53,14 +53,14 @@ return new class extends Migration
         });
 
         // Migrate data back (only first KB per flow)
-        $pivotData = \DB::table('flow_knowledge_base')
+        $pivotData = DB::table('flow_knowledge_base')
             ->orderBy('created_at')
             ->get();
 
         $migratedFlows = [];
         foreach ($pivotData as $record) {
             if (! in_array($record->flow_id, $migratedFlows)) {
-                \DB::table('flows')
+                DB::table('flows')
                     ->where('id', $record->flow_id)
                     ->update([
                         'knowledge_base_id' => $record->knowledge_base_id,
