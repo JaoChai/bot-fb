@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class LineWebhookResponseServiceTest extends TestCase
@@ -360,7 +361,7 @@ class LineWebhookResponseServiceTest extends TestCase
     // Test 6: Video/audio/file/location — response null
     // -------------------------------------------------------------------------
 
-    /** @dataProvider nonResponseMessageTypes */
+    #[DataProvider('nonResponseMessageTypes')]
     public function test_non_response_message_types_return_null(string $messageType): void
     {
         $bot = $this->makeBot();
