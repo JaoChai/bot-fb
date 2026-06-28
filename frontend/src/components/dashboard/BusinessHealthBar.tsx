@@ -17,9 +17,9 @@ export function BusinessHealthBar({ bots, alerts }: BusinessHealthBarProps) {
   const hasHandovers = handoverCount > 0;
   const hasSomeBotsInactive = activeBotCount < totalBotCount && activeBotCount > 0;
 
-  let status: 'green' | 'yellow' | 'red' = 'green';
-  let statusText = '';
-  let Icon = Activity;
+  let status: 'green' | 'yellow' | 'red';
+  let statusText: string;
+  let Icon: typeof Activity;
 
   if (isNoBots) {
     status = 'yellow';
