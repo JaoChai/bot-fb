@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Chat\TagService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
@@ -29,9 +30,7 @@ class TagServiceTest extends TestCase
         $this->bot = Bot::factory()->create(['user_id' => $this->user->id]);
     }
 
-    /**
-     * @group postgres
-     */
+    #[Group('postgres')]
     public function test_get_all_tags_returns_unique_tags(): void
     {
         // Skip on SQLite - uses PostgreSQL-specific jsonb functions
@@ -56,9 +55,7 @@ class TagServiceTest extends TestCase
         $this->assertContains('follow-up', $result);
     }
 
-    /**
-     * @group postgres
-     */
+    #[Group('postgres')]
     public function test_get_all_tags_returns_sorted_tags(): void
     {
         // Skip on SQLite - uses PostgreSQL-specific jsonb functions
@@ -76,9 +73,7 @@ class TagServiceTest extends TestCase
         $this->assertEquals(['apple', 'mango', 'zebra'], $result);
     }
 
-    /**
-     * @group postgres
-     */
+    #[Group('postgres')]
     public function test_get_all_tags_returns_empty_when_no_tags(): void
     {
         // Skip on SQLite - uses PostgreSQL-specific jsonb functions
@@ -164,9 +159,7 @@ class TagServiceTest extends TestCase
         $this->service->removeTag($conversation, 'non-existent');
     }
 
-    /**
-     * @group postgres
-     */
+    #[Group('postgres')]
     public function test_bulk_add_tags_updates_multiple_conversations(): void
     {
         if (config('database.default') === 'sqlite') {
@@ -210,9 +203,7 @@ class TagServiceTest extends TestCase
         ], ['tag']);
     }
 
-    /**
-     * @group postgres
-     */
+    #[Group('postgres')]
     public function test_bulk_add_tags_merges_with_existing_tags(): void
     {
         if (config('database.default') === 'sqlite') {
@@ -232,9 +223,7 @@ class TagServiceTest extends TestCase
         $this->assertCount(2, $conversation->tags);
     }
 
-    /**
-     * @group postgres
-     */
+    #[Group('postgres')]
     public function test_bulk_add_tags_deduplicates(): void
     {
         if (config('database.default') === 'sqlite') {
@@ -255,9 +244,7 @@ class TagServiceTest extends TestCase
         $this->assertContains('new-tag', $conversation->tags);
     }
 
-    /**
-     * @group postgres
-     */
+    #[Group('postgres')]
     public function test_bulk_add_tags_handles_null_tags(): void
     {
         if (config('database.default') === 'sqlite') {

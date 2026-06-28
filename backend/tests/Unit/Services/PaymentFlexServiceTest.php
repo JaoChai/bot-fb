@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Services\Payment\FlexMessageBuilder;
 use App\Services\Payment\PaymentMessageDetector;
 use App\Services\PaymentFlexService;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class PaymentFlexServiceTest extends TestCase
@@ -18,7 +19,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->service = new PaymentFlexService(new PaymentMessageDetector, new FlexMessageBuilder);
     }
 
-    /** @test */
+    #[Test]
     public function test_detects_payment_message(): void
     {
         $text = <<<'TEXT'
@@ -36,7 +37,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isPaymentMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_detects_payment_with_ยอดรวม_fallback(): void
     {
         $text = "ยอดรวม: 1,100 บาท\n223-3-24880-3";
@@ -44,7 +45,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isPaymentMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_detects_payment_with_รวมเป็นเงิน_fallback(): void
     {
         $text = "รวมเป็นเงิน: 2,200 บาท\n223-3-24880-3";
@@ -52,7 +53,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isPaymentMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_parses_payment_with_ยอดรวม(): void
     {
         $text = "ยอดรวม: 1,100 บาท\n223-3-24880-3";
@@ -63,7 +64,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('1,100', $data['total']);
     }
 
-    /** @test */
+    #[Test]
     public function test_does_not_detect_normal_message(): void
     {
         $this->assertFalse($this->service->isPaymentMessage('สวัสดีครับ ยินดีต้อนรับ'));
@@ -74,7 +75,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isPaymentMessage('รวมยอดโอน: 1,600 บาท'));
     }
 
-    /** @test */
+    #[Test]
     public function test_parses_single_item_order(): void
     {
         $text = <<<'TEXT'
@@ -93,7 +94,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('800', $data['total']);
     }
 
-    /** @test */
+    #[Test]
     public function test_parses_multi_item_order(): void
     {
         $text = <<<'TEXT'
@@ -123,7 +124,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('2,500', $data['total']);
     }
 
-    /** @test */
+    #[Test]
     public function test_parses_total_amount_variants(): void
     {
         // "รวมยอดโอน" variant
@@ -147,7 +148,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('500', $data4['total']);
     }
 
-    /** @test */
+    #[Test]
     public function test_builds_valid_flex_structure(): void
     {
         $data = [
@@ -168,7 +169,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertArrayHasKey('footer', $flex['contents']);
     }
 
-    /** @test */
+    #[Test]
     public function test_flex_contains_bank_info(): void
     {
         $data = [
@@ -184,7 +185,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContains('หจก. มั่งมีทรัพย์ขายของออนไลน์', $json);
     }
 
-    /** @test */
+    #[Test]
     public function test_flex_has_clipboard_button(): void
     {
         $data = [
@@ -200,7 +201,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContains('คัดลอกเลขบัญชี', $json);
     }
 
-    /** @test */
+    #[Test]
     public function test_fallback_to_text_on_parse_failure(): void
     {
         // Has bank account + keyword but no parseable total pattern
@@ -212,7 +213,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals($text, $result);
     }
 
-    /** @test */
+    #[Test]
     public function test_fallback_to_text_on_non_payment(): void
     {
         $text = 'สวัสดีครับ ยินดีต้อนรับสู่ร้าน Captain Ad';
@@ -223,7 +224,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals($text, $result);
     }
 
-    /** @test */
+    #[Test]
     public function test_try_convert_returns_flex_for_payment(): void
     {
         $text = <<<'TEXT'
@@ -249,7 +250,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('bubble', $result['contents']['type']);
     }
 
-    /** @test */
+    #[Test]
     public function test_total_only_without_items_creates_flex(): void
     {
         $text = "รวมยอดโอน: 800 บาท\nโอนเข้าบัญชี 223-3-24880-3";
@@ -270,7 +271,7 @@ class PaymentFlexServiceTest extends TestCase
     // Step 2: Confirm Message Tests
     // ────────────────────────────────────────────────────────
 
-    /** @test */
+    #[Test]
     public function test_detects_confirm_message(): void
     {
         $text = <<<'TEXT'
@@ -285,7 +286,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isConfirmMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_does_not_detect_payment_as_confirm(): void
     {
         // Step 4: has bank account → should NOT be detected as confirm
@@ -294,7 +295,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isConfirmMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_does_not_detect_verify_as_confirm(): void
     {
         // Step 5: has เงินเข้าแล้ว
@@ -308,7 +309,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isConfirmMessage($text2));
     }
 
-    /** @test */
+    #[Test]
     public function test_does_not_detect_terms_as_confirm(): void
     {
         // Step 3: has ข้อตกลง
@@ -322,7 +323,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isConfirmMessage($text2));
     }
 
-    /** @test */
+    #[Test]
     public function test_parses_confirm_data_with_items(): void
     {
         $text = <<<'TEXT'
@@ -345,7 +346,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('900', $data['items'][1]['total']);
     }
 
-    /** @test */
+    #[Test]
     public function test_parses_confirm_data_total_only(): void
     {
         $text = "รวม: 800 บาท\nกรุณาพิมพ์ ยืนยัน";
@@ -357,7 +358,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEmpty($data['items']);
     }
 
-    /** @test */
+    #[Test]
     public function test_detects_confirm_with_total_variants(): void
     {
         // รวมทั้งหมด
@@ -386,7 +387,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isConfirmMessage($text4));
     }
 
-    /** @test */
+    #[Test]
     public function test_parse_confirm_returns_null_without_total(): void
     {
         $text = "สรุปรายการ\nกรุณาพิมพ์ ยืนยัน";
@@ -396,7 +397,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertNull($data);
     }
 
-    /** @test */
+    #[Test]
     public function test_builds_confirm_flex_structure(): void
     {
         $data = [
@@ -426,7 +427,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContains('800 บาท', $json);
     }
 
-    /** @test */
+    #[Test]
     public function test_confirm_flex_has_message_button(): void
     {
         $data = [
@@ -443,7 +444,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContains('ยืนยันรายการ', $json);
     }
 
-    /** @test */
+    #[Test]
     public function test_confirm_flex_vip_has_gold_header(): void
     {
         $data = [
@@ -463,7 +464,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContains('#D4A017', $footerJson);
     }
 
-    /** @test */
+    #[Test]
     public function test_try_convert_returns_flex_for_confirm(): void
     {
         $text = <<<'TEXT'
@@ -483,7 +484,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('#FF6B00', $result['contents']['header']['backgroundColor']);
     }
 
-    /** @test */
+    #[Test]
     public function test_try_convert_returns_flex_for_confirm_vip(): void
     {
         $conversation = new Conversation;
@@ -513,7 +514,7 @@ class PaymentFlexServiceTest extends TestCase
     // Step 2.5: Support Delay Warning Tests
     // ────────────────────────────────────────────────────────
 
-    /** @test */
+    #[Test]
     public function test_detects_support_delay_message(): void
     {
         $text = "ขอแจ้งให้ทราบก่อนนะครับพี่ ช่วงนี้ทีม Support อาจใช้เวลาซัพพอร์ตนานกว่าปกติหน่อยครับ หากบัญชีมีปัญหาต้องรอคิวนิดนึง ถ้าพี่รับเงื่อนไขตรงนี้ได้ ผมจะดำเนินการจำหน่ายให้ครับผม\n[แจ้งเตือน Support]";
@@ -521,7 +522,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isSupportDelayMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_detects_support_delay_without_tag(): void
     {
         // Real LLM output: no [แจ้งเตือน Support] tag — fallback detection
@@ -530,7 +531,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isSupportDelayMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_detects_support_delay_fallback_with_rอคิว(): void
     {
         $text = 'ทีม Support อาจต้องรอคิวหน่อยครับ พิมพ์ "ตกลง" ได้เลยครับ';
@@ -538,7 +539,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isSupportDelayMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_does_not_detect_support_delay_in_normal_text(): void
     {
         $this->assertFalse($this->service->isSupportDelayMessage('สวัสดีครับ ยินดีต้อนรับ'));
@@ -550,7 +551,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isSupportDelayMessage('พิมพ์ ตกลง ได้เลยครับ'));
     }
 
-    /** @test */
+    #[Test]
     public function test_builds_support_delay_flex_normal(): void
     {
         $flex = $this->service->buildSupportDelayFlexMessage(false);
@@ -577,7 +578,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContains('"type":"message"', $footerJson);
     }
 
-    /** @test */
+    #[Test]
     public function test_builds_support_delay_flex_vip(): void
     {
         $flex = $this->service->buildSupportDelayFlexMessage(true);
@@ -600,7 +601,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringNotContains('ยังไม่ตกลง', $footerJson);
     }
 
-    /** @test */
+    #[Test]
     public function test_try_convert_returns_flex_for_support_delay(): void
     {
         $text = "ขอแจ้งให้ทราบก่อนนะครับพี่ ช่วงนี้ทีม Support อาจใช้เวลาซัพพอร์ตนานกว่าปกติ\n[แจ้งเตือน Support]";
@@ -612,7 +613,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('#FF6B00', $result['contents']['header']['backgroundColor']);
     }
 
-    /** @test */
+    #[Test]
     public function test_try_convert_returns_vip_flex_for_support_delay(): void
     {
         $conversation = new Conversation;
@@ -635,7 +636,7 @@ class PaymentFlexServiceTest extends TestCase
     // Step 3: Terms Message Tests
     // ────────────────────────────────────────────────────────
 
-    /** @test */
+    #[Test]
     public function test_detects_terms_message(): void
     {
         $text = "📋 ก่อนชำระเงิน รบกวนอ่านข้อตกลงครับ\n🔗 https://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ' หลังอ่านจบครับ";
@@ -643,7 +644,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isTermsMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_detects_terms_with_เงื่อนไข_and_url(): void
     {
         // "เงื่อนไข" alone is too broad — but with URL it triggers via URL fallback
@@ -652,7 +653,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isTermsMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_does_not_detect_terms_with_เงื่อนไข_alone(): void
     {
         // "เงื่อนไข" without URL is too broad — should NOT trigger
@@ -661,7 +662,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isTermsMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_detects_terms_with_url_fallback(): void
     {
         // LLM omits both "ข้อตกลง" and "เงื่อนไข" but includes TERMS_URL
@@ -670,7 +671,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isTermsMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_does_not_detect_terms_without_keyword(): void
     {
         // Has "ยอมรับ" but no "ข้อตกลง"/"เงื่อนไข"/URL → not a terms message
@@ -679,7 +680,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isTermsMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_does_not_detect_terms_for_payment(): void
     {
         // Has "ยอมรับ" + "ข้อตกลง" BUT also has bank account → should be Step 4
@@ -688,7 +689,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isTermsMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_does_not_detect_terms_for_verify(): void
     {
         // Has "ยอมรับ" BUT also has "เงินเข้าแล้ว" → should be Step 5
@@ -697,7 +698,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isTermsMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_does_not_detect_terms_for_verify_tag(): void
     {
         // Has "ยอมรับ" + "ข้อตกลง" BUT also has [ยืนยันชำระเงิน] tag → should be Step 5
@@ -706,7 +707,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isTermsMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_builds_terms_flex_structure(): void
     {
         $flex = $this->service->buildTermsFlexMessage();
@@ -728,7 +729,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContains('อ่านข้อตกลง', $json);
     }
 
-    /** @test */
+    #[Test]
     public function test_try_convert_returns_flex_for_terms(): void
     {
         $text = "📋 ก่อนชำระเงิน รบกวนอ่านข้อตกลงครับ\n🔗 https://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ' หลังอ่านจบครับ";
@@ -745,7 +746,7 @@ class PaymentFlexServiceTest extends TestCase
     // Step 5: Verify Success Message Tests
     // ────────────────────────────────────────────────────────
 
-    /** @test */
+    #[Test]
     public function test_detects_verify_success_message(): void
     {
         $text = "เงินเข้าแล้ว 1,600 บาท ✅\nออเดอร์:\n• Nolimit Level Up+ BM ×2\nส่งใน 5-10 นาที 📦\nขอบคุณครับ 🙏\n[ยืนยันชำระเงิน]";
@@ -757,7 +758,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isVerifySuccessMessage($textDecimal));
     }
 
-    /** @test */
+    #[Test]
     public function test_detects_verify_without_tag(): void
     {
         // LLM omits [ยืนยันชำระเงิน] tag — should still detect from content
@@ -766,7 +767,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isVerifySuccessMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_does_not_detect_verify_without_amount(): void
     {
         // Has tag but no amount pattern
@@ -775,7 +776,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isVerifySuccessMessage($text));
     }
 
-    /** @test */
+    #[Test]
     public function test_parses_verify_data(): void
     {
         $text = "เงินเข้าแล้ว 1,600 บาท ✅\nออเดอร์:\n• Nolimit Level Up+ BM ×2\n• Nolimit Personal\nส่งใน 5-10 นาที 📦\nขอบคุณครับ 🙏\n[ยืนยันชำระเงิน]";
@@ -790,7 +791,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('5-10 นาที 📦', $data['delivery']);
     }
 
-    /** @test */
+    #[Test]
     public function test_parses_verify_data_minimal(): void
     {
         $text = "เงินเข้าแล้ว 800 บาท ✅\nขอบคุณครับ 🙏\n[ยืนยันชำระเงิน]";
@@ -803,7 +804,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertNull($data['delivery']);
     }
 
-    /** @test */
+    #[Test]
     public function test_parses_verify_data_decimal_amount(): void
     {
         $text = "เงินเข้าแล้ว 50.00 บาท ✅\nออเดอร์:\n- G3D x1\nส่งใน 5-10 นาที\nขอบคุณครับ\n[ยืนยันชำระเงิน]";
@@ -816,7 +817,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('G3D x1', $data['items'][0]);
     }
 
-    /** @test */
+    #[Test]
     public function test_builds_verify_flex_structure(): void
     {
         $data = [
@@ -850,7 +851,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContains('กัปตันแอด', $json);
     }
 
-    /** @test */
+    #[Test]
     public function test_try_convert_returns_flex_for_verify_success(): void
     {
         $text = "เงินเข้าแล้ว 1,600 บาท ✅\nออเดอร์:\n• Nolimit Level Up+ BM ×2\nส่งใน 5-10 นาที 📦\nขอบคุณครับ 🙏\n[ยืนยันชำระเงิน]";
@@ -869,7 +870,7 @@ class PaymentFlexServiceTest extends TestCase
     // VIP Detection & Styling Tests
     // ────────────────────────────────────────────────────────
 
-    /** @test */
+    #[Test]
     public function test_detects_vip_from_memory_notes_string(): void
     {
         $conversation = new Conversation;
@@ -878,7 +879,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isVipConversation($conversation));
     }
 
-    /** @test */
+    #[Test]
     public function test_detects_vip_from_memory_notes_object(): void
     {
         // Production format: array of objects with 'content' key
@@ -895,7 +896,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isVipConversation($conversation));
     }
 
-    /** @test */
+    #[Test]
     public function test_detects_vip_case_insensitive(): void
     {
         $conversation = new Conversation;
@@ -904,7 +905,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertTrue($this->service->isVipConversation($conversation));
     }
 
-    /** @test */
+    #[Test]
     public function test_not_vip_without_keyword(): void
     {
         $conversation = new Conversation;
@@ -913,7 +914,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isVipConversation($conversation));
     }
 
-    /** @test */
+    #[Test]
     public function test_not_vip_object_without_keyword(): void
     {
         $conversation = new Conversation;
@@ -924,13 +925,13 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isVipConversation($conversation));
     }
 
-    /** @test */
+    #[Test]
     public function test_not_vip_with_null_conversation(): void
     {
         $this->assertFalse($this->service->isVipConversation(null));
     }
 
-    /** @test */
+    #[Test]
     public function test_not_vip_with_empty_memory_notes(): void
     {
         $conversation = new Conversation;
@@ -939,7 +940,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isVipConversation($conversation));
     }
 
-    /** @test */
+    #[Test]
     public function test_not_vip_with_non_string_memory_notes(): void
     {
         $conversation = new Conversation;
@@ -948,7 +949,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertFalse($this->service->isVipConversation($conversation));
     }
 
-    /** @test */
+    #[Test]
     public function test_payment_flex_vip_has_gold_header(): void
     {
         $data = [
@@ -964,7 +965,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContains('สรุปรายการสั่งซื้อ', $headerJson);
     }
 
-    /** @test */
+    #[Test]
     public function test_payment_flex_normal_has_green_header(): void
     {
         $data = [
@@ -980,7 +981,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringNotContains('VIP', $headerJson);
     }
 
-    /** @test */
+    #[Test]
     public function test_verify_flex_vip_has_gold_header(): void
     {
         $data = [
@@ -1001,7 +1002,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContains('VIP', $footerJson);
     }
 
-    /** @test */
+    #[Test]
     public function test_verify_flex_normal_has_green_header(): void
     {
         $data = [
@@ -1017,7 +1018,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringNotContains('VIP', $footerJson);
     }
 
-    /** @test */
+    #[Test]
     public function test_try_convert_with_vip_conversation_returns_gold_flex(): void
     {
         $conversation = new Conversation;
@@ -1041,7 +1042,7 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('#D4A017', $result['contents']['header']['backgroundColor']);
     }
 
-    /** @test */
+    #[Test]
     public function test_try_convert_without_conversation_returns_green_flex(): void
     {
         $text = <<<'TEXT'

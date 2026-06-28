@@ -10,6 +10,7 @@ use App\Services\Chat\ConversationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
 class ConversationServiceTest extends TestCase
@@ -135,9 +136,7 @@ class ConversationServiceTest extends TestCase
         $this->assertEquals(3, $count);
     }
 
-    /**
-     * @group postgres
-     */
+    #[Group('postgres')]
     public function test_get_stats_returns_correct_structure(): void
     {
         // Skip on SQLite - uses PostgreSQL-specific syntax
@@ -164,9 +163,8 @@ class ConversationServiceTest extends TestCase
     /**
      * Test that listConversations returns all count types in status_counts.
      * This verifies the optimized getAllCounts() CTE query works correctly.
-     *
-     * @group postgres
      */
+    #[Group('postgres')]
     public function test_list_conversations_returns_all_counts_structure(): void
     {
         // Skip on SQLite - uses PostgreSQL-specific syntax
@@ -199,9 +197,8 @@ class ConversationServiceTest extends TestCase
 
     /**
      * Test getAllCounts with various conversation statuses.
-     *
-     * @group postgres
      */
+    #[Group('postgres')]
     public function test_list_conversations_counts_different_statuses(): void
     {
         if (config('database.default') === 'sqlite') {
@@ -235,9 +232,8 @@ class ConversationServiceTest extends TestCase
     /**
      * Test response counts with auto_handover bot.
      * Verifies needs_response and waiting_customer are calculated correctly.
-     *
-     * @group postgres
      */
+    #[Group('postgres')]
     public function test_list_conversations_response_counts_with_auto_handover(): void
     {
         if (config('database.default') === 'sqlite') {
@@ -287,9 +283,8 @@ class ConversationServiceTest extends TestCase
 
     /**
      * Test that counts are cached and invalidated correctly.
-     *
-     * @group postgres
      */
+    #[Group('postgres')]
     public function test_list_conversations_counts_are_cached(): void
     {
         if (config('database.default') === 'sqlite') {
