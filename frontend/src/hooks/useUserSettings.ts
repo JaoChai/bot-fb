@@ -73,11 +73,7 @@ export function useUpdateEasySlipToken() {
 export function useTestEasySlipConnection() {
   return useMutation({
     mutationFn: async () => {
-      const response = await apiPost<{
-        success: boolean;
-        message: string;
-        quota?: { used: number | null; max: number | null; remaining: number | null };
-      }>('/settings/test-easyslip', {});
+      const response = await apiPost<TestConnectionResponse>('/settings/test-easyslip', {});
       return response;
     },
   });

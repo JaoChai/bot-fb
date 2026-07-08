@@ -201,17 +201,16 @@ class LineWebhookResponseService
             ]);
         }
 
+        $history = $this->getVisionConversationHistory($conversation);
+
         // Slip verification (EasySlip-first) — ผ่าน/ไม่ผ่านตอบเลย ไม่เข้า vision
-        if ($this->trySlipVerification($ctx, $imageUrl)) {
+        if ($this->trySlipVerification($ctx, $imageUrl, $history)) {
             return;
         }
 
         try {
             // Build system prompt (line 1016)
             $systemPrompt = $this->buildVisionSystemPrompt($ctx);
-
-            // Get conversation history (line 1019)
-            $history = $this->getVisionConversationHistory($conversation);
 
             // Build messages array (lines 1022-1045)
             $messages = [];
@@ -458,7 +457,7 @@ class LineWebhookResponseService
      * ตรวจสลิปกับ EasySlip ก่อนเข้า vision
      * คืน true = จัดการตอบแล้ว (ข้าม vision), false = ไป vision ต่อ (ไม่ใช่สลิป/ปิด feature/API ล่ม)
      */
-    private function trySlipVerification(WebhookContext $ctx, string $imageUrl): bool
+    private function trySlipVerification(WebhookContext $ctx, string $imageUrl, array $history): bool
     {
         $settings = $ctx->bot->settings;
         if (! $settings?->slip_verification_enabled) {
@@ -466,8 +465,6 @@ class LineWebhookResponseService
         }
 
         try {
-            $history = $this->getVisionConversationHistory($ctx->conversation);
-
             $result = $this->slipVerification->verify(
                 $ctx->bot,
                 $ctx->conversation,
@@ -504,7 +501,7 @@ class LineWebhookResponseService
                 'type' => 'text',
                 'metadata' => [
                     'slip_verification' => true,
-                    'slip_status' => $result->passed ? 'passed' : $result->failReason,
+                    'slip_status' => $result->status(),
                     'slip_trans_ref' => $result->transRef,
                     'image_url' => $imageUrl,
                 ],

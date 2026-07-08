@@ -13,4 +13,9 @@ class SlipVerificationResult
         public readonly ?float $expectedAmount = null,
         public readonly ?string $orderSummary = null,
     ) {}
+
+    public function status(): string
+    {
+        return $this->passed ? 'passed' : ($this->failReason ?? 'api_error');
+    }
 }

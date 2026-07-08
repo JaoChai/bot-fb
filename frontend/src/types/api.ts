@@ -503,6 +503,7 @@ export interface TestConnectionResponse {
   success: boolean;
   message: string;
   bot_name?: string;
+  quota?: { used: number | null; max: number | null; remaining: number | null };
 }
 
 // Cost Analytics Types

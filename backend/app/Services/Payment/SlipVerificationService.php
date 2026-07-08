@@ -61,14 +61,17 @@ class SlipVerificationService
      * @param  array<int, array{sender: string, content: string}>  $conversationHistory
      * @return array{total: float, summary: string}|null
      */
-    public function findExpectedPayment(array $conversationHistory): ?array
+    public function findExpectedPayment(array $conversationHistory, ?string $receiverAccount = null): ?array
     {
         foreach (array_reverse($conversationHistory) as $msg) {
             if (($msg['sender'] ?? '') !== 'bot') {
                 continue;
             }
             $content = $msg['content'] ?? '';
-            if (! $this->detector->isPaymentMessage($content)) {
+            $qualifies = $this->detector->isPaymentMessage($content)
+                || ($receiverAccount && str_contains($content, $receiverAccount)
+                    && preg_match('/รวมยอดโอน|สรุปยอด|ยอดโอน|ยอดรวม|รวมเป็นเงิน|สรุปรายการ/u', $content));
+            if (! $qualifies) {
                 continue;
             }
             $data = $this->detector->parsePaymentData($content);
@@ -170,7 +173,7 @@ class SlipVerificationService
         }
 
         // เช็ค 3: ต้องมีออเดอร์ค้างชำระใน history
-        $expected = $this->findExpectedPayment($conversationHistory);
+        $expected = $this->findExpectedPayment($conversationHistory, $configured);
         if ($expected === null) {
             return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
                 isSlip: true, passed: false, failReason: 'no_pending_order',
@@ -236,7 +239,7 @@ class SlipVerificationService
         $lines[] = 'กรุณาตรวจสอบในแชทด่วน';
 
         try {
-            Http::retry(2, 500)->post("https://api.telegram.org/bot{$token}/sendMessage", [
+            Http::timeout(5)->retry(2, 500)->post("https://api.telegram.org/bot{$token}/sendMessage", [
                 'chat_id' => $chatId,
                 'text' => implode("\n", $lines),
             ]);
@@ -264,7 +267,7 @@ class SlipVerificationService
                 'trans_ref' => $result->transRef,
                 'amount' => $result->amount,
                 'receiver_account' => $receiverAccount,
-                'status' => $result->passed ? 'passed' : ($result->failReason ?? 'api_error'),
+                'status' => $result->status(),
                 'raw_response' => $rawResponse,
             ]);
         } catch (\Throwable $e) {

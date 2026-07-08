@@ -63,4 +63,20 @@ class SlipVerificationLogicTest extends TestCase
 
         $this->assertNull($this->service()->findExpectedPayment($history));
     }
+
+    public function test_finds_payment_total_using_configured_receiver_account(): void
+    {
+        $history = [
+            ['sender' => 'user', 'content' => 'สนใจ BM ครับ'],
+            ['sender' => 'bot', 'content' => "สรุปรายการ\n1. Nolimit BM = 2,000 บาท\nรวมยอดโอน: 2,000 บาท\nโอนเข้าบัญชี 111-2-33333-4"],
+            ['sender' => 'user', 'content' => 'โอเค'],
+        ];
+
+        $result = $this->service()->findExpectedPayment($history, '111-2-33333-4');
+
+        $this->assertNotNull($result);
+        $this->assertSame(2000.0, $result['total']);
+
+        $this->assertNull($this->service()->findExpectedPayment($history));
+    }
 }
