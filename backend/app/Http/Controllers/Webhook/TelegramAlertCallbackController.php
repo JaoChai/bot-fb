@@ -22,8 +22,8 @@ class TelegramAlertCallbackController extends Controller
 
     public function handle(Request $request, string $token): JsonResponse
     {
-        $secret = config('services.telegram_alert.secret');
-        if ($secret && $request->header('X-Telegram-Bot-Api-Secret-Token') !== $secret) {
+        $secret = (string) config('services.telegram_alert.secret');
+        if ($secret === '' || $request->header('X-Telegram-Bot-Api-Secret-Token') !== $secret) {
             return response()->json(['ok' => false], 401);
         }
 
@@ -56,6 +56,15 @@ class TelegramAlertCallbackController extends Controller
         $conversation = Conversation::find($convId);
         if (! $conversation) {
             $this->alertBot->answerCallbackQuery($token, $cb['id'] ?? '', 'ไม่พบแชท');
+
+            return response()->json(['ok' => true]);
+        }
+
+        if ($conversation->bot_id !== $plugin->flow?->bot_id) {
+            Log::warning('Telegram alert callback: conversation/plugin bot mismatch', [
+                'conversation_id' => $conversation->id,
+                'plugin_id' => $plugin->id,
+            ]);
 
             return response()->json(['ok' => true]);
         }

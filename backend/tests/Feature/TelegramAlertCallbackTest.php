@@ -56,6 +56,39 @@ class TelegramAlertCallbackTest extends TestCase
             ->assertStatus(401);
     }
 
+    public function test_rejects_when_secret_not_configured(): void
+    {
+        [$bot, $conv] = $this->seedPlugin();
+        $this->mock(ManualPaymentConfirmService::class, fn ($m) => $m->shouldNotReceive('confirm'));
+        config(['services.telegram_alert.secret' => '']);
+
+        $this->postJson('/api/webhook/telegram-alert/TOK', [
+            'callback_query' => [
+                'id' => 'cb1', 'from' => ['first_name' => 'X'],
+                'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
+                'data' => 'pc|'.$conv->id.'|590',
+            ],
+        ])->assertStatus(401);
+    }
+
+    public function test_rejects_conversation_belonging_to_different_bot(): void
+    {
+        [$bot, $conv] = $this->seedPlugin();
+
+        $otherUser = User::factory()->owner()->create();
+        $otherBot = Bot::factory()->create(['user_id' => $otherUser->id, 'channel_type' => 'line']);
+        $otherConversation = Conversation::factory()->create(['bot_id' => $otherBot->id]);
+
+        $this->mock(ManualPaymentConfirmService::class, fn ($m) => $m->shouldNotReceive('confirm'));
+        $this->mock(TelegramAlertBotService::class);
+
+        $this->postCallback('TOK', [
+            'id' => 'cb1', 'from' => ['first_name' => 'X'],
+            'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
+            'data' => 'pc|'.$otherConversation->id.'|590',
+        ])->assertOk();
+    }
+
     public function test_wrong_chat_id_does_not_confirm(): void
     {
         [$bot, $conv] = $this->seedPlugin();
