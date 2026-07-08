@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\RateLimitService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -199,5 +200,148 @@ class PipelineImageRoutingTest extends TestCase
 
         $this->assertNotNull($botMessage, 'Expected a vision bot reply');
         $this->assertStringContainsString('รูปแมว', $botMessage->content);
+    }
+
+    /**
+     * Fix 1 — legacy parity for stats on a responded image.
+     *
+     * Legacy counted the user image (+1 message_count, +1 unread_count) inside its
+     * transaction AND the bot reply (+1 message_count) afterwards. The pipeline must net
+     * the same: +2 message_count and +1 unread_count on the conversation.
+     */
+    public function test_responded_image_increments_message_count_by_two_and_unread_by_one(): void
+    {
+        BotSetting::create([
+            'bot_id' => $this->bot->id,
+            'slip_verification_enabled' => false,
+        ]);
+
+        Http::fake([
+            'api-data.line.me/*' => Http::response('fake-image-bytes', 200),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => 'รูปแมวน่ารักครับ']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+            'api.easyslip.com/*' => Http::response([], 500),
+        ]);
+
+        $before = Conversation::find($this->conversation->id);
+        $beforeMessages = $before->message_count;
+        $beforeUnread = $before->unread_count;
+
+        $this->runJob($this->imageEvent());
+
+        $after = Conversation::find($this->conversation->id);
+        $this->assertSame($beforeMessages + 2, $after->message_count, 'responded image should net +2 message_count');
+        $this->assertSame($beforeUnread + 1, $after->unread_count, 'responded image should net +1 unread_count');
+    }
+
+    /**
+     * Fix 2 — a rate-limited customer's slip must still run.
+     *
+     * Legacy never rate-limited non-text messages. With the per-user daily limit already
+     * exceeded, the image must bypass the gate, persist, and still hit EasySlip.
+     */
+    public function test_rate_limited_customer_image_still_persists_and_runs_easyslip(): void
+    {
+        BotSetting::create([
+            'bot_id' => $this->bot->id,
+            'slip_verification_enabled' => true,
+            'slip_receiver_account' => '223-3-24880-3',
+            'per_user_limit' => 1,
+        ]);
+        $this->bot->load('settings');
+
+        // Prime the per-user counter so the customer is already over the daily limit.
+        app(RateLimitService::class)->incrementCounters($this->bot, 'U_img_user');
+
+        Http::fake([
+            'api-data.line.me/*' => Http::response('fake-image-bytes', 200),
+            'api.easyslip.com/*' => Http::response([
+                'success' => true,
+                'data' => [
+                    'isDuplicate' => false,
+                    'matchedAccount' => null,
+                    'amountInSlip' => 1500,
+                    'rawSlip' => [
+                        'transRef' => 'TR901',
+                        'amount' => ['amount' => 1500],
+                        'receiver' => ['bank' => ['id' => '004'], 'account' => ['name' => ['th' => 'ร้าน'], 'bank' => ['account' => 'xxx-x-x4880-x']]],
+                    ],
+                ],
+                'message' => 'success',
+            ]),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([], 500),
+        ]);
+
+        $this->runJob($this->imageEvent());
+
+        // Image bypassed the rate-limit gate → EasySlip still ran, slip still persisted.
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.easyslip.com'));
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $this->conversation->id,
+            'sender' => 'user',
+            'type' => 'image',
+            'external_message_id' => 'img_msg_001',
+        ]);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'passed']);
+    }
+
+    /**
+     * Fix 3 — an out-of-hours image must be persisted before the offline reply.
+     *
+     * Legacy saved the image message first, then sent the offline message and skipped the
+     * AI response. The pipeline must persist the slip (with media_url), send the offline
+     * reply, and never call EasySlip or vision.
+     */
+    public function test_out_of_hours_image_persists_and_sends_offline_without_ai(): void
+    {
+        BotSetting::create([
+            'bot_id' => $this->bot->id,
+            'slip_verification_enabled' => true,
+            'slip_receiver_account' => '223-3-24880-3',
+            'response_hours_enabled' => true,
+            'offline_message' => 'ขณะนี้ปิดทำการชั่วคราวครับ',
+            'response_hours' => [
+                'mon' => [], 'tue' => [], 'wed' => [], 'thu' => [],
+                'fri' => [], 'sat' => [], 'sun' => [],
+            ],
+        ]);
+        $this->bot->load('settings');
+
+        Http::fake([
+            'api-data.line.me/*' => Http::response('fake-image-bytes', 200),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.easyslip.com/*' => Http::response([], 500),
+            'openrouter.ai/*' => Http::response([], 500),
+        ]);
+
+        $this->runJob($this->imageEvent());
+
+        // The slip record survived, with its downloaded media.
+        $userMessage = Message::where('conversation_id', $this->conversation->id)
+            ->where('sender', 'user')
+            ->where('external_message_id', 'img_msg_001')
+            ->first();
+        $this->assertNotNull($userMessage, 'Out-of-hours image must still persist');
+        $this->assertSame('image', $userMessage->type);
+        $this->assertNotNull($userMessage->media_url, 'Persisted image must carry media_url');
+
+        // Offline reply was sent... (LINE JSON-escapes Thai to \uXXXX in the body).
+        $offlineNeedle = trim(json_encode('ปิดทำการ'), '"');
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.line.me')
+            && str_contains($req->body(), $offlineNeedle));
+
+        // ...and no AI (vision) or slip verification ran.
+        Http::assertNotSent(fn ($req) => str_contains($req->url(), 'api.easyslip.com'));
+        Http::assertNotSent(fn ($req) => str_contains($req->url(), 'openrouter.ai'));
+
+        $this->assertSame(0, Message::where('conversation_id', $this->conversation->id)
+            ->where('sender', 'bot')
+            ->whereJsonContains('metadata->slip_verification', true)
+            ->count(), 'No slip-verification bot reply out of hours');
     }
 }
