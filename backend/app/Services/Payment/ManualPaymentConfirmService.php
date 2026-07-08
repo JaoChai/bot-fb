@@ -5,6 +5,7 @@ namespace App\Services\Payment;
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
 use App\Exceptions\NoPendingPaymentException;
+use App\Exceptions\RecentManualConfirmException;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -36,9 +37,12 @@ class ManualPaymentConfirmService
      * @return array{message: Message, order_created: bool}
      *
      * @throws NoPendingPaymentException When no amount can be resolved.
+     * @throws RecentManualConfirmException When a manual confirm for this conversation happened within the idempotency window.
      */
     public function confirm(Bot $bot, Conversation $conversation, ?float $amountOverride, int $confirmedBy): array
     {
+        $this->guardAgainstDoubleConfirm($conversation);
+
         $history = $this->recentTextHistory($conversation);
         $receiverAccount = $bot->settings?->slip_receiver_account ?: null;
         $expected = $this->slipVerification->findExpectedPayment($history, $receiverAccount);
@@ -76,6 +80,25 @@ class ManualPaymentConfirmService
         $this->broadcast($conversation, $botMessage);
 
         return ['message' => $botMessage, 'order_created' => $orderCreated];
+    }
+
+    /**
+     * Reject a repeat confirmation for the same conversation inside the idempotency
+     * window (two tabs / retried request) so we never create duplicate orders and
+     * customer pushes.
+     *
+     * @throws RecentManualConfirmException
+     */
+    private function guardAgainstDoubleConfirm(Conversation $conversation, int $windowSeconds = 120): void
+    {
+        $recent = SlipVerification::where('conversation_id', $conversation->id)
+            ->where('status', 'manual_confirmed')
+            ->where('created_at', '>=', now()->subSeconds($windowSeconds))
+            ->exists();
+
+        if ($recent) {
+            throw new RecentManualConfirmException;
+        }
     }
 
     /**

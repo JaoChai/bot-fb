@@ -9,6 +9,8 @@ use App\Models\CustomerProfile;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
+use App\Models\Order;
+use App\Models\SlipVerification;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -151,6 +153,40 @@ class ManualPaymentConfirmTest extends TestCase
             ->postJson("/api/conversations/{$this->conversation->id}/confirm-payment")
             ->assertStatus(422)
             ->assertJsonPath('message', 'ไม่พบยอดออเดอร์ กรุณาระบุยอด');
+    }
+
+    public function test_double_confirm_within_window_returns_409_and_creates_one_order(): void
+    {
+        Http::fake([
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => '{"triggered": true, "variables": {"amount": "1500", "product": "Nolimit BM"}}']]],
+                'model' => 'openai/gpt-4o-mini',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+
+        $first = $this->actingAs($this->owner)
+            ->postJson("/api/conversations/{$this->conversation->id}/confirm-payment");
+        $first->assertOk();
+
+        $second = $this->actingAs($this->owner)
+            ->postJson("/api/conversations/{$this->conversation->id}/confirm-payment");
+        $second->assertStatus(409)
+            ->assertJsonPath('message', 'เพิ่งยืนยันรับเงินใน conversation นี้ไปเมื่อครู่ — ถ้าต้องการยืนยันซ้ำจริงๆ รอ 2 นาทีแล้วลองใหม่');
+
+        $this->assertSame(1, Order::where('conversation_id', $this->conversation->id)->count());
+        $this->assertSame(1, SlipVerification::where('conversation_id', $this->conversation->id)
+            ->where('status', 'manual_confirmed')
+            ->count());
+    }
+
+    public function test_zero_amount_returns_422(): void
+    {
+        $this->actingAs($this->owner)
+            ->postJson("/api/conversations/{$this->conversation->id}/confirm-payment", ['amount' => 0])
+            ->assertStatus(422);
     }
 
     public function test_non_owner_is_forbidden(): void

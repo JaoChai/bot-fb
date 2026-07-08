@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Exceptions\NoPendingPaymentException;
+use App\Exceptions\RecentManualConfirmException;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\MessageResource;
 use App\Models\Conversation;
@@ -28,7 +29,7 @@ class ManualPaymentConfirmController extends Controller
         $this->authorize('update', $bot);
 
         $validated = $request->validate([
-            'amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'amount' => ['sometimes', 'nullable', 'numeric', 'gt:0', 'max:1000000'],
         ]);
 
         $amount = isset($validated['amount']) ? (float) $validated['amount'] : null;
@@ -37,6 +38,8 @@ class ManualPaymentConfirmController extends Controller
             $result = $this->service->confirm($bot, $conversation, $amount, $request->user()->id);
         } catch (NoPendingPaymentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
+        } catch (RecentManualConfirmException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
         }
 
         return response()->json([
