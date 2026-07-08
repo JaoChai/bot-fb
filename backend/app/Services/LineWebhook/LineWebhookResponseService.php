@@ -22,9 +22,12 @@ class LineWebhookResponseService
      */
     private const ORDER_CONTEXT_KEYWORDS = ['รวมยอดโอน', 'สรุปรายการ', 'เลขบัญชี', 'รวมทั้งหมด', 'โอนเข้าบัญชี', 'ส่งสลิป'];
 
-    private const SLIP_SUCCESS_TEMPLATE = "เงินเข้าแล้ว {amount} บาท ✅\nออเดอร์: {order_summary}\nส่งใน 5-10 นาที ขอบคุณครับ\n[ยืนยันชำระเงิน]";
+    /** Shared with ManualPaymentConfirmService — keep this the single source of the success template. */
+    public const SLIP_SUCCESS_TEMPLATE = "เงินเข้าแล้ว {amount} บาท ✅\nออเดอร์: {order_summary}\nส่งใน 5-10 นาที ขอบคุณครับ\n[ยืนยันชำระเงิน]";
 
     private const SLIP_FAIL_TEMPLATE = 'ได้รับสลิปแล้วครับ ขอตรวจสอบยอดสักครู่ เดี๋ยวแอดมินยืนยันให้อีกครั้งนะครับ 🙏';
+
+    private const SLIP_PENDING_TEMPLATE = 'สลิปเพิ่งโอนมา ธนาคารกำลังประมวลผลครับ 🙏 รบกวนรอ 1-2 นาทีแล้วส่งสลิปเดิมมาอีกครั้งนะครับ ระบบจะตรวจให้อัตโนมัติ';
 
     public function __construct(
         private readonly AIService $aiService,
@@ -372,6 +375,21 @@ class LineWebhookResponseService
             $basePrompt = "You are a helpful AI assistant for {$ctx->bot->name}. Be friendly, professional, and helpful.";
         }
 
+        // Slip-verification bots only reach vision when EasySlip could NOT verify the
+        // slip — so the LLM must never self-confirm a payment here.
+        if ($ctx->bot->settings?->slip_verification_enabled) {
+            $visionInstruction = "\n\n## การวิเคราะห์รูปภาพ\n"
+                ."เมื่อได้รับรูปภาพ ให้ตรวจสอบก่อนว่าเป็นสลิปโอนเงิน/หลักฐานการชำระเงินหรือไม่\n\n"
+                ."**ถ้าเป็นสลิปโอนเงิน:**\n"
+                ."- ระบบตรวจสลิปอัตโนมัติของร้านไม่สามารถอ่านรูปนี้ได้ คุณห้ามยืนยันการรับเงินเองเด็ดขาด\n"
+                ."- ห้ามตอบว่า \"เงินเข้าแล้ว\" และห้ามใส่แท็ก [ยืนยันชำระเงิน]\n"
+                ."- ตอบเพียง: \"ได้รับสลิปแล้วครับ รอทีมงานตรวจสอบยอดเข้าสักครู่นะครับ ปกติไม่เกิน 5 นาที ขอบคุณที่รอครับ\"\n\n"
+                ."**ถ้าไม่ใช่สลิป:**\n"
+                .'- อธิบายรูปภาพและช่วยตอบคำถามตามบริบทของการสนทนา';
+
+            return $basePrompt.$visionInstruction;
+        }
+
         $visionInstruction = "\n\n## การวิเคราะห์รูปภาพ\n"
             ."เมื่อได้รับรูปภาพ ให้ตรวจสอบก่อนว่าเป็นสลิปโอนเงิน/หลักฐานการชำระเงินหรือไม่\n\n"
             ."**ถ้าเป็นสลิปโอนเงิน:**\n"
@@ -477,7 +495,8 @@ class LineWebhookResponseService
                 $history,
             );
 
-            if ($result->failReason === 'api_error') {
+            // config_error (token หาย) ปฏิบัติเหมือน api_error — แจ้งแอดมิน + ปล่อยไป vision ให้ลูกค้ายังได้รับตอบ
+            if (in_array($result->failReason, ['api_error', 'config_error'], true)) {
                 $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
 
                 return false; // fallback vision — ลูกค้าต้องได้รับตอบ
@@ -494,6 +513,9 @@ class LineWebhookResponseService
                     [number_format($result->amount ?? 0), $result->orderSummary ?? '-'],
                     $template,
                 );
+            } elseif ($result->failReason === 'pending') {
+                // ธนาคารยังประมวลผลไม่เสร็จ — ลูกค้าแก้เองได้ (รอแล้วส่งใหม่) ไม่ต้อง alert แอดมิน
+                $text = self::SLIP_PENDING_TEMPLATE;
             } else {
                 $text = $settings->slip_fail_message ?: self::SLIP_FAIL_TEMPLATE;
                 $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);

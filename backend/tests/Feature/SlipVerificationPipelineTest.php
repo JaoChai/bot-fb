@@ -199,6 +199,9 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_non_slip_image_falls_through_to_vision(): void
     {
+        // Remove the pending-order summary so a 400 is treated as a genuine non-slip → vision.
+        $this->conversation->messages()->where('sender', 'bot')->delete();
+
         Http::fake([
             'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
             'api.line.me/*' => Http::response(['ok' => true]),
@@ -214,6 +217,167 @@ class SlipVerificationPipelineTest extends TestCase
 
         $this->assertNotNull($ctx->response);
         Http::assertSent(fn ($req) => str_contains($req->url(), 'openrouter.ai'));
+    }
+
+    public function test_unreadable_slip_replies_fail_template_and_alerts(): void
+    {
+        $flow = Flow::factory()->create(['bot_id' => $this->bot->id]);
+        $this->bot->update(['default_flow_id' => $flow->id]);
+        FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'แจ้งแอดมิน',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'tg-tok', 'chat_id' => '-100999'],
+        ]);
+
+        // 400 + pending order (from setUp) → unreadable slip.
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([], 500), // ต้องไม่ถูกเรียก
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        $this->assertStringContainsString('ขอตรวจสอบยอดสักครู่', $ctx->response->payload);
+        $this->assertSame('unreadable', $ctx->metadata['bot_message']->metadata['slip_status']);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'unreadable']);
+
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+        Http::assertNotSent(fn ($req) => str_contains($req->url(), 'openrouter.ai'));
+    }
+
+    public function test_pending_slip_replies_pending_message_without_alert(): void
+    {
+        $flow = Flow::factory()->create(['bot_id' => $this->bot->id]);
+        $this->bot->update(['default_flow_id' => $flow->id]);
+        FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'แจ้งแอดมิน',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'tg-tok', 'chat_id' => '-100999'],
+        ]);
+
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'SLIP_PENDING', 'message' => 'slip pending']], 404),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([], 500), // ต้องไม่ถูกเรียก
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        $this->assertStringContainsString('ธนาคารกำลังประมวลผล', $ctx->response->payload);
+        $this->assertSame('pending', $ctx->metadata['bot_message']->metadata['slip_status']);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'pending']);
+
+        Http::assertNotSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+        Http::assertNotSent(fn ($req) => str_contains($req->url(), 'openrouter.ai'));
+    }
+
+    public function test_config_error_falls_back_to_vision_and_alerts_admin(): void
+    {
+        $this->bot->user->settings->update(['easyslip_api_token' => null]);
+
+        $flow = Flow::factory()->create(['bot_id' => $this->bot->id]);
+        $this->bot->update(['default_flow_id' => $flow->id]);
+        FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'แจ้งแอดมิน',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'tg-tok', 'chat_id' => '-100999'],
+        ]);
+
+        Http::fake([
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => 'ตอบจาก vision']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        $this->assertNotNull($ctx->response);
+        $this->assertStringContainsString('ตอบจาก vision', $ctx->response->payload);
+
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'openrouter.ai'));
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+        Http::assertNotSent(fn ($req) => str_contains($req->url(), 'easyslip.com'));
+    }
+
+    public function test_enabled_bot_vision_prompt_is_cautious_no_self_confirm(): void
+    {
+        // Remove the pending-order summary so a 400 is treated as a genuine non-slip → vision.
+        $this->conversation->messages()->where('sender', 'bot')->delete();
+
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => 'ได้รับสลิปแล้วครับ']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        Http::assertSent(function ($req) {
+            if (! str_contains($req->url(), 'openrouter.ai')) {
+                return false;
+            }
+            $systemContent = collect($req->data()['messages'] ?? [])
+                ->firstWhere('role', 'system')['content'] ?? '';
+
+            // Cautious prompt present; legacy self-confirm block gone.
+            return str_contains($systemContent, 'ห้ามยืนยันการรับเงิน')
+                && ! str_contains($systemContent, 'เงินเข้าแล้ว [จำนวนเงิน] บาท ✅');
+        });
+    }
+
+    public function test_disabled_bot_vision_prompt_keeps_legacy_confirm_instruction(): void
+    {
+        $this->bot->settings->update(['slip_verification_enabled' => false]);
+        // Remove the pending-order summary so vision uses the generic image prompt.
+        $this->conversation->messages()->where('sender', 'bot')->delete();
+
+        Http::fake([
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => 'รูปแมวน่ารักครับ']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        Http::assertSent(function ($req) {
+            if (! str_contains($req->url(), 'openrouter.ai')) {
+                return false;
+            }
+            $systemContent = collect($req->data()['messages'] ?? [])
+                ->firstWhere('role', 'system')['content'] ?? '';
+
+            return str_contains($systemContent, 'เงินเข้าแล้ว [จำนวนเงิน] บาท ✅')
+                && str_contains($systemContent, '[ยืนยันชำระเงิน]')
+                && ! str_contains($systemContent, 'ห้ามยืนยันการรับเงิน');
+        });
     }
 
     public function test_disabled_feature_never_calls_easyslip(): void

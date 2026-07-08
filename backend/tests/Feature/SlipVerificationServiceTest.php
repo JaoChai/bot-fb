@@ -135,8 +135,10 @@ class SlipVerificationServiceTest extends TestCase
         $this->assertSame('no_pending_order', $result->failReason);
     }
 
-    public function test_http_400_means_not_a_slip(): void
+    public function test_http_400_without_pending_order_means_not_a_slip(): void
     {
+        // No pending order in history → a 400 (unreadable) image is just a non-slip → vision.
+        $this->paymentHistory = [['sender' => 'user', 'content' => 'สวัสดี']];
         Http::fake(['api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400)]);
 
         $result = $this->verify();
@@ -144,6 +146,19 @@ class SlipVerificationServiceTest extends TestCase
         $this->assertFalse($result->isSlip);
         $this->assertNull($result->failReason);
         $this->assertSame(0, SlipVerification::count());
+    }
+
+    public function test_http_400_with_pending_order_is_unreadable(): void
+    {
+        // With a pending order in history, a 400 is almost certainly an unreadable slip.
+        Http::fake(['api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400)]);
+
+        $result = $this->verify();
+
+        $this->assertTrue($result->isSlip);
+        $this->assertFalse($result->passed);
+        $this->assertSame('unreadable', $result->failReason);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'unreadable']);
     }
 
     public function test_http_404_means_fake_slip(): void
@@ -189,14 +204,15 @@ class SlipVerificationServiceTest extends TestCase
         $this->assertSame('api_error', $result->failReason);
     }
 
-    public function test_missing_token_is_api_error_without_http_call(): void
+    public function test_missing_token_is_config_error_without_http_call(): void
     {
         $this->bot->user->settings->update(['easyslip_api_token' => null]);
         Http::fake();
 
         $result = $this->verify();
 
-        $this->assertSame('api_error', $result->failReason);
+        $this->assertSame('config_error', $result->failReason);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'config_error']);
         Http::assertNothingSent();
     }
 }

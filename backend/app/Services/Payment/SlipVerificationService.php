@@ -21,7 +21,9 @@ class SlipVerificationService
         'amount_mismatch' => 'ยอดไม่ตรงกับออเดอร์',
         'wrong_account' => 'โอนเข้าบัญชีอื่น (ไม่ใช่บัญชีร้าน)',
         'no_pending_order' => 'ไม่พบออเดอร์ค้างชำระในบทสนทนา',
+        'unreadable' => 'รูปสลิปอ่านไม่ได้/ไม่ชัด — ระบบตรวจอัตโนมัติไม่ได้ กรุณาตรวจมือ',
         'api_error' => 'ระบบตรวจสลิป (EasySlip) ใช้งานไม่ได้ชั่วคราว',
+        'config_error' => 'ตั้งค่าไม่ครบ — EasySlip token หายไป กรุณาใส่ที่หน้า Settings (ระบบจะไม่ตรวจสลิปจนกว่าจะแก้)',
     ];
 
     public function __construct(
@@ -103,7 +105,7 @@ class SlipVerificationService
             Log::warning('Slip verification enabled but EasySlip token missing', ['bot_id' => $bot->id]);
 
             return $this->record($bot, $conversation, $message, null, new SlipVerificationResult(
-                isSlip: false, passed: false, failReason: 'api_error',
+                isSlip: false, passed: false, failReason: 'config_error',
             ));
         }
 
@@ -120,7 +122,16 @@ class SlipVerificationService
         }
 
         if ($response->status() === 400) {
-            // รูปไม่ใช่สลิป/อ่านไม่ได้ → ไป vision flow เดิม ไม่บันทึก
+            // EasySlip อ่านรูปไม่ได้ (ไม่ใช่สลิป หรือสลิปเบลอ/มืด/ครอปเกิน)
+            // ถ้ากำลังมีออเดอร์ค้าง → รูปนี้เกือบแน่ว่าเป็นสลิปที่อ่านไม่ได้ → alert แอดมิน ไม่ปล่อยไป vision เดา
+            // ถ้าไม่มีออเดอร์ค้าง → เป็นรูปทั่วไป → พฤติกรรมเดิม (ไป vision, ไม่บันทึก)
+            $configured = (string) ($bot->settings?->slip_receiver_account ?? '');
+            if ($this->findExpectedPayment($conversationHistory, $configured) !== null) {
+                return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
+                    isSlip: true, passed: false, failReason: 'unreadable',
+                ));
+            }
+
             return new SlipVerificationResult(isSlip: false, passed: false);
         }
 
