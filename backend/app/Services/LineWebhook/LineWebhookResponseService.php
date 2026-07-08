@@ -26,6 +26,8 @@ class LineWebhookResponseService
 
     private const SLIP_FAIL_TEMPLATE = 'ได้รับสลิปแล้วครับ ขอตรวจสอบยอดสักครู่ เดี๋ยวแอดมินยืนยันให้อีกครั้งนะครับ 🙏';
 
+    private const SLIP_PENDING_TEMPLATE = 'สลิปเพิ่งโอนมา ธนาคารกำลังประมวลผลครับ 🙏 รบกวนรอ 1-2 นาทีแล้วส่งสลิปเดิมมาอีกครั้งนะครับ ระบบจะตรวจให้อัตโนมัติ';
+
     public function __construct(
         private readonly AIService $aiService,
         private readonly OpenRouterService $openRouterService,
@@ -477,7 +479,8 @@ class LineWebhookResponseService
                 $history,
             );
 
-            if ($result->failReason === 'api_error') {
+            // config_error (token หาย) ปฏิบัติเหมือน api_error — แจ้งแอดมิน + ปล่อยไป vision ให้ลูกค้ายังได้รับตอบ
+            if (in_array($result->failReason, ['api_error', 'config_error'], true)) {
                 $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
 
                 return false; // fallback vision — ลูกค้าต้องได้รับตอบ
@@ -494,6 +497,9 @@ class LineWebhookResponseService
                     [number_format($result->amount ?? 0), $result->orderSummary ?? '-'],
                     $template,
                 );
+            } elseif ($result->failReason === 'pending') {
+                // ธนาคารยังประมวลผลไม่เสร็จ — ลูกค้าแก้เองได้ (รอแล้วส่งใหม่) ไม่ต้อง alert แอดมิน
+                $text = self::SLIP_PENDING_TEMPLATE;
             } else {
                 $text = $settings->slip_fail_message ?: self::SLIP_FAIL_TEMPLATE;
                 $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
