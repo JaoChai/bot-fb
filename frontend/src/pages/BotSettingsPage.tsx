@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router';
-import { Loader2, Gauge, Clock, Bot as BotIcon, Smile } from 'lucide-react';
+import { Loader2, Gauge, Clock, Bot as BotIcon, Smile, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -18,6 +18,7 @@ import { RateLimitTab } from '@/components/bot-settings/RateLimitTab';
 import { ResponseHoursTab } from '@/components/bot-settings/ResponseHoursTab';
 import { BehaviorTab } from '@/components/bot-settings/BehaviorTab';
 import { StickerReplyTab } from '@/components/bot-settings/StickerReplyTab';
+import { SlipVerificationTab } from '@/components/bot-settings/SlipVerificationTab';
 import { cn } from '@/lib/utils';
 import type { BotSettings } from '@/types/api';
 
@@ -26,6 +27,7 @@ const TABS = [
   { value: 'response-hours', label: 'เวลาตอบกลับ', icon: Clock },
   { value: 'behavior', label: 'พฤติกรรม', icon: BotIcon },
   { value: 'sticker', label: 'สติกเกอร์', icon: Smile },
+  { value: 'slip', label: 'ตรวจสลิป', icon: Receipt },
 ] as const;
 
 type TabValue = (typeof TABS)[number]['value'];
@@ -55,6 +57,11 @@ interface BotSettingsFormData {
   reply_sticker_message: string;
   reply_sticker_mode: 'static' | 'ai';
   reply_sticker_ai_prompt: string;
+  slip_verification_enabled: boolean;
+  slip_receiver_account: string;
+  slip_amount_tolerance: number;
+  slip_success_message: string;
+  slip_fail_message: string;
   response_hours_enabled: boolean;
   response_hours: ResponseHoursConfig;
   response_hours_timezone: string;
@@ -86,6 +93,11 @@ const DEFAULT_FORM: BotSettingsFormData = {
   reply_sticker_message: '',
   reply_sticker_mode: 'static',
   reply_sticker_ai_prompt: '',
+  slip_verification_enabled: false,
+  slip_receiver_account: '',
+  slip_amount_tolerance: 0,
+  slip_success_message: '',
+  slip_fail_message: '',
   response_hours_enabled: false,
   response_hours: createDefaultResponseHours(),
   response_hours_timezone: 'Asia/Bangkok',
@@ -134,6 +146,11 @@ export function BotSettingsPage() {
       reply_sticker_message: (s.reply_sticker_message as string) ?? '',
       reply_sticker_mode: (s.reply_sticker_mode as 'static' | 'ai') ?? 'static',
       reply_sticker_ai_prompt: (s.reply_sticker_ai_prompt as string) ?? '',
+      slip_verification_enabled: (s.slip_verification_enabled as boolean) ?? false,
+      slip_receiver_account: (s.slip_receiver_account as string) ?? '',
+      slip_amount_tolerance: (s.slip_amount_tolerance as number) ?? 0,
+      slip_success_message: (s.slip_success_message as string) ?? '',
+      slip_fail_message: (s.slip_fail_message as string) ?? '',
       response_hours_enabled: (s.response_hours_enabled as boolean) ?? false,
       response_hours: parseResponseHours(s.response_hours as Record<string, TimeSlot[]> | null),
       response_hours_timezone: (s.response_hours_timezone as string) ?? 'Asia/Bangkok',
@@ -159,7 +176,12 @@ export function BotSettingsPage() {
       formData.offline_message !== ((s.offline_message as string) ?? '') ||
       formData.multiple_bubbles_enabled !== ((s.multiple_bubbles_enabled as boolean) ?? false) ||
       formData.smart_aggregation_enabled !== ((s.smart_aggregation_enabled as boolean) ?? false) ||
-      formData.reply_sticker_enabled !== ((s.reply_sticker_enabled as boolean) ?? false);
+      formData.reply_sticker_enabled !== ((s.reply_sticker_enabled as boolean) ?? false) ||
+      formData.slip_verification_enabled !== ((s.slip_verification_enabled as boolean) ?? false) ||
+      formData.slip_receiver_account !== ((s.slip_receiver_account as string) ?? '') ||
+      formData.slip_amount_tolerance !== ((s.slip_amount_tolerance as number) ?? 0) ||
+      formData.slip_success_message !== ((s.slip_success_message as string) ?? '') ||
+      formData.slip_fail_message !== ((s.slip_fail_message as string) ?? '');
     setIsDirty(dirty);
   }, [formData, serverSettings]);
 
@@ -269,6 +291,11 @@ export function BotSettingsPage() {
         reply_sticker_message: formData.reply_sticker_message || null,
         reply_sticker_mode: formData.reply_sticker_mode,
         reply_sticker_ai_prompt: formData.reply_sticker_ai_prompt || null,
+        slip_verification_enabled: formData.slip_verification_enabled,
+        slip_receiver_account: formData.slip_receiver_account || null,
+        slip_amount_tolerance: formData.slip_amount_tolerance,
+        slip_success_message: formData.slip_success_message || null,
+        slip_fail_message: formData.slip_fail_message || null,
       });
       setIsDirty(false);
       toast({ title: 'บันทึกสำเร็จ', description: 'ตั้งค่าบอทได้รับการบันทึกแล้ว' });
@@ -383,6 +410,16 @@ export function BotSettingsPage() {
               reply_sticker_mode={formData.reply_sticker_mode}
               reply_sticker_message={formData.reply_sticker_message}
               reply_sticker_ai_prompt={formData.reply_sticker_ai_prompt}
+              onChange={onFieldChange}
+            />
+          )}
+          {tab === 'slip' && (
+            <SlipVerificationTab
+              slip_verification_enabled={formData.slip_verification_enabled}
+              slip_receiver_account={formData.slip_receiver_account}
+              slip_amount_tolerance={formData.slip_amount_tolerance}
+              slip_success_message={formData.slip_success_message}
+              slip_fail_message={formData.slip_fail_message}
               onChange={onFieldChange}
             />
           )}

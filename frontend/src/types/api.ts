@@ -197,6 +197,12 @@ export interface BotSettings {
   reply_sticker_message: string | null;
   reply_sticker_mode: string;
   reply_sticker_ai_prompt: string | null;
+  // Slip verification settings
+  slip_verification_enabled: boolean;
+  slip_receiver_account: string | null;
+  slip_amount_tolerance: number;
+  slip_success_message: string | null;
+  slip_fail_message: string | null;
   // Auto-assignment settings
   auto_assignment_enabled: boolean;
   auto_assignment_mode: 'round_robin' | 'load_balanced';
