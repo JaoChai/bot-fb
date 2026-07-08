@@ -139,6 +139,19 @@ class TelegramAlertCallbackTest extends TestCase
         ])->assertOk();
     }
 
+    public function test_non_numeric_conversation_id_does_not_confirm(): void
+    {
+        [$bot, $conv] = $this->seedPlugin();
+        $this->mock(ManualPaymentConfirmService::class, fn ($m) => $m->shouldNotReceive('confirm'));
+        $this->mock(TelegramAlertBotService::class);
+
+        $this->postCallback('TOK', [
+            'id' => 'cb1', 'from' => ['first_name' => 'X'],
+            'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
+            'data' => 'pc|abc|590',
+        ])->assertOk();
+    }
+
     public function test_recent_confirm_shows_already_confirmed(): void
     {
         [$bot, $conv] = $this->seedPlugin();

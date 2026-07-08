@@ -23,7 +23,8 @@ class TelegramAlertCallbackController extends Controller
     public function handle(Request $request, string $token): JsonResponse
     {
         $secret = (string) config('services.telegram_alert.secret');
-        if ($secret === '' || $request->header('X-Telegram-Bot-Api-Secret-Token') !== $secret) {
+        $provided = (string) $request->header('X-Telegram-Bot-Api-Secret-Token');
+        if ($secret === '' || ! hash_equals($secret, $provided)) {
             return response()->json(['ok' => false], 401);
         }
 
@@ -53,7 +54,11 @@ class TelegramAlertCallbackController extends Controller
         }
         [$act, $convId, $amt] = $parts;
 
-        $conversation = Conversation::find($convId);
+        if (! is_numeric($convId)) {
+            return response()->json(['ok' => true]);
+        }
+
+        $conversation = Conversation::find((int) $convId);
         if (! $conversation) {
             $this->alertBot->answerCallbackQuery($token, $cb['id'] ?? '', 'ไม่พบแชท');
 

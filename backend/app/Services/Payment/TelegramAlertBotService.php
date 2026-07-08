@@ -54,7 +54,15 @@ class TelegramAlertBotService
     private function call(string $token, string $method, array $params): void
     {
         try {
-            Http::timeout(5)->retry(2, 500)->post(self::BASE.$token.'/'.$method, $params);
+            $res = Http::timeout(5)->retry(2, 500)->post(self::BASE.$token.'/'.$method, $params);
+
+            if (! $res->successful() || $res->json('ok') === false) {
+                Log::warning('Telegram alert API non-OK response', [
+                    'method' => $method,
+                    'status' => $res->status(),
+                    'body' => $res->body(),
+                ]);
+            }
         } catch (\Throwable $e) {
             Log::warning('Telegram alert API call failed', ['method' => $method, 'error' => $e->getMessage()]);
         }
