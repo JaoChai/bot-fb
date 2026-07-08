@@ -201,12 +201,16 @@ class LineWebhookResponseService
             ]);
         }
 
-        $history = $this->getVisionConversationHistory($conversation);
+        // Slip path needs a wider window — "รวมยอดโอน" often falls outside the last 5
+        // messages in real chats. Vision keeps 5 (prompt size), so slice from the wider set.
+        $slipHistory = $this->getVisionConversationHistory($conversation, 15);
 
         // Slip verification (EasySlip-first) — ผ่าน/ไม่ผ่านตอบเลย ไม่เข้า vision
-        if ($this->trySlipVerification($ctx, $imageUrl, $history)) {
+        if ($this->trySlipVerification($ctx, $imageUrl, $slipHistory)) {
             return;
         }
+
+        $history = array_slice($slipHistory, -5);
 
         try {
             // Build system prompt (line 1016)

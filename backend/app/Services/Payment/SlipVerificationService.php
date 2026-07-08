@@ -203,7 +203,8 @@ class SlipVerificationService
      */
     public function notifyAdmin(Bot $bot, ?Conversation $conversation, SlipVerificationResult $result): void
     {
-        $plugin = $bot->defaultFlow?->plugins()
+        $flow = $conversation?->currentFlow ?? $bot->defaultFlow;
+        $plugin = $flow?->plugins()
             ->where('type', 'telegram')
             ->where('enabled', true)
             ->first();
