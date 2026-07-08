@@ -51,6 +51,8 @@ class LineWebhookContextService
 
         $event = $ctx->event;
 
+        $isImage = $ctx->messageType() === 'image';
+
         $messageData = [
             'text' => $event['message']['text'] ?? null,
             'id' => $event['message']['id'] ?? null,
@@ -62,9 +64,13 @@ class LineWebhookContextService
         $isRedeliveryEvent = $event['deliveryContext']['isRedelivery'] ?? false;
 
         // --- Outside-hours check (Stage 1/2 boundary) ---
-        // Must run after conversation lookup because handover conversations bypass the block.
+        // Text returns here before any persistence (legacy text semantics). Images must
+        // persist the slip FIRST — legacy handleNonTextMessage saves the message, then sends
+        // the offline reply — so the image path defers this early-return until after
+        // Transaction 1 below (see the post-transaction out-of-hours block).
         $responseHoursResult = $this->responseHours->checkResponseHours($ctx->bot);
-        if (! $responseHoursResult['allowed']) {
+        $outsideHours = ! $responseHoursResult['allowed'];
+        if ($outsideHours && ! $isImage) {
             $existingConv = Conversation::where('bot_id', $ctx->bot->id)
                 ->where('external_customer_id', $userId)
                 ->where('channel_type', 'line')
@@ -80,8 +86,24 @@ class LineWebhookContextService
             return;
         }
 
+        // --- Image content download (before transaction; external API call) ---
+        // Mirrors legacy handleNonTextMessage: fetch + store the LINE image so the saved
+        // Message carries media_url/media_type. Stage 3 (generateImageResponse) reads
+        // userMessage->media_url; without this the bot goes silent on images.
+        $mediaUrl = null;
+        $mediaType = null;
+        if ($isImage && $messageData['id'] !== null) {
+            $mediaData = $this->line->downloadAndStoreFile($ctx->bot, (string) $messageData['id'], 'image');
+            if ($mediaData) {
+                $mediaUrl = $mediaData['url'];
+                $mediaType = $mediaData['mime_type'];
+            }
+        }
+
         // --- Aggregation settings (needed for loading indicator duration) ---
-        $useAggregation = $this->aggregation->isEnabled($ctx->bot);
+        // Images are never buffered into smart aggregation (legacy never did) — they must
+        // reach Stage 3 immediately for slip verification / vision.
+        $useAggregation = ! $isImage && $this->aggregation->isEnabled($ctx->bot);
         $waitTimeMs = $useAggregation ? $this->aggregation->getWaitTimeMs($ctx->bot) : 0;
 
         // --- Loading indicator (before DB transaction) ---
@@ -98,6 +120,9 @@ class LineWebhookContextService
             $ctx,
             $userId,
             $messageData,
+            $isImage,
+            $mediaUrl,
+            $mediaType,
             $webhookEventId,
             $eventTimestamp,
             $isRedeliveryEvent,
@@ -175,11 +200,13 @@ class LineWebhookContextService
                 return;
             }
 
-            // --- Save user message ---
+            // --- Save user message (image carries media_url/type, mirrors legacy handleNonTextMessage) ---
             $userMessage = $conversation->messages()->create([
                 'sender' => 'user',
-                'content' => $messageData['text'],
-                'type' => 'text',
+                'content' => $isImage ? '[รูปภาพ]' : $messageData['text'],
+                'type' => $isImage ? 'image' : 'text',
+                'media_url' => $mediaUrl,
+                'media_type' => $mediaType,
                 'external_message_id' => $messageData['id'],
                 'webhook_event_id' => $webhookEventId,
                 'is_redelivery' => $isRedeliveryEvent,
@@ -289,7 +316,21 @@ class LineWebhookContextService
                 }
             }
 
-            // Immediate response path — Stage 3 will generate the AI reply
+            // Immediate response path — Stage 3 will generate the AI reply.
+            // Images count the incoming user message here (legacy handleNonTextMessage did
+            // this inside its transaction); the bot reply is counted later in dispatchImage,
+            // netting the same +2 message_count / +1 unread_count / +1 total_conversations
+            // (when new) as legacy. Text defers all stats to updateStatsInBatch in the output
+            // stage, so it must NOT run this to avoid double-counting.
+            if ($isImage) {
+                $this->updateStatsForUserMessageOnly($ctx, $conversation, $userMessage->id);
+                if ($isNewConversation) {
+                    $ctx->bot->update([
+                        'total_conversations' => DB::raw('total_conversations + 1'),
+                    ]);
+                }
+            }
+
             $ctx->metadata['should_generate_response'] = true;
         });
 
@@ -301,6 +342,20 @@ class LineWebhookContextService
                 $aggregationGroupId,
                 $userId
             )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addMilliseconds($adaptiveWaitMs ?? $waitTimeMs));
+        }
+
+        // --- Image out-of-hours: slip persisted above; send offline reply and stop ---
+        // Mirrors legacy handleNonTextMessage, which saves the image message first and THEN
+        // sends the offline reply / skips the AI response. Setting OUTSIDE_HOURS halts the
+        // pipeline before Stage 3, so no vision / EasySlip call runs.
+        if ($isImage && $outsideHours) {
+            if (! $ctx->conversation || ! $ctx->conversation->is_handover) {
+                $this->dispatchOfflineMessage($ctx, $replyToken, $userId);
+            }
+
+            $ctx->gateDecision = GateDecision::OUTSIDE_HOURS;
+
+            return;
         }
     }
 

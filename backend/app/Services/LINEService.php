@@ -138,6 +138,15 @@ class LINEService
     }
 
     /**
+     * Check if the event is an image message.
+     */
+    public function isImageMessage(array $event): bool
+    {
+        return $this->isMessageEvent($event)
+            && ($event['message']['type'] ?? '') === 'image';
+    }
+
+    /**
      * Reply to a message using the reply token.
      *
      * @param  Bot  $bot  The bot instance

@@ -20,6 +20,14 @@ class LineWebhookGatingService
             return;
         }
 
+        // Legacy handleNonTextMessage never rate-limited non-text messages. Images
+        // (slip photos) must bypass the rate-limit gate so a rate-limited customer's
+        // slip still persists and slip verification runs. Dedup/idempotency gates run
+        // later in the context stage regardless.
+        if ($ctx->messageType() === 'image') {
+            return;
+        }
+
         $result = $this->rateLimit->checkRateLimit($ctx->bot, $userId);
         if ($result['allowed']) {
             return;
