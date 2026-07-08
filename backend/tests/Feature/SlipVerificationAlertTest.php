@@ -44,6 +44,7 @@ class SlipVerificationAlertTest extends TestCase
 
         Http::assertSent(function ($request) {
             return str_contains($request->url(), 'api.telegram.org/bottg-token/sendMessage')
+                && str_contains($request['text'], '🚨 สลิปมีปัญหา — อย่าเพิ่งส่งของ')
                 && str_contains($request['text'], 'ยอดไม่ตรง')
                 && str_contains($request['text'], '1,000')
                 && str_contains($request['text'], '1,500');
@@ -70,7 +71,7 @@ class SlipVerificationAlertTest extends TestCase
             'config' => ['access_token' => 'tg-token-2', 'chat_id' => '-100456'],
         ]);
 
-        $profile = CustomerProfile::factory()->create();
+        $profile = CustomerProfile::factory()->create(['display_name' => 'สมชาย']);
         $conversation = Conversation::factory()->create([
             'bot_id' => $bot->id,
             'customer_profile_id' => $profile->id,
@@ -86,8 +87,10 @@ class SlipVerificationAlertTest extends TestCase
 
         app(SlipVerificationService::class)->notifyAdmin($bot->fresh(), $conversation, $result);
 
-        Http::assertSent(function ($request) {
+        Http::assertSent(function ($request) use ($conversation) {
             return str_contains($request->url(), 'api.telegram.org/bottg-token-2/sendMessage')
+                && str_contains($request['text'], '⚠️ ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ')
+                && str_contains($request['text'], "ลูกค้า: สมชาย (แชท #{$conversation->id})")
                 && str_contains($request['text'], 'ไม่พบออเดอร์ค้างชำระ');
         });
     }
