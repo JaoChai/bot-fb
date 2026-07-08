@@ -67,7 +67,7 @@ class SlipVerificationService
                 continue;
             }
 
-            $itemNames = array_map(fn (array $item) => $item['name'], $data['items']);
+            $itemNames = array_map(fn (array $item) => rtrim(trim($item['name']), '= '), $data['items']);
 
             return [
                 'total' => (float) str_replace(',', '', $data['total']),

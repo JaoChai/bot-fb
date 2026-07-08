@@ -51,7 +51,7 @@ class SlipVerificationLogicTest extends TestCase
 
         $this->assertNotNull($result);
         $this->assertSame(1500.0, $result['total']);
-        $this->assertStringContainsString('Nolimit BM', $result['summary']);
+        $this->assertSame('Nolimit BM', $result['summary']);
     }
 
     public function test_no_payment_message_returns_null(): void

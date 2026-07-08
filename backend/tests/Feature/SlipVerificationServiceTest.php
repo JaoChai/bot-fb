@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -71,12 +72,7 @@ class SlipVerificationServiceTest extends TestCase
         $this->assertTrue($result->isSlip);
         $this->assertTrue($result->passed);
         $this->assertSame(1500.0, $result->amount);
-        // NOTE: assertStringContainsString (not assertSame) — matches the precedent set by
-        // Tests\Unit\SlipVerificationLogicTest::test_finds_latest_payment_total_from_history()
-        // for this exact fixture string. PaymentMessageDetector's item-name regex (pre-existing,
-        // shared with PaymentFlexService, out of Task 3 scope) captures a trailing "=" when the
-        // item line has no parenthesized qty×price segment, yielding "Nolimit BM =" not "Nolimit BM".
-        $this->assertStringContainsString('Nolimit BM', $result->orderSummary);
+        $this->assertSame('Nolimit BM', $result->orderSummary);
         $this->assertDatabaseHas('slip_verifications', ['trans_ref' => 'TR100', 'status' => 'passed']);
     }
 
@@ -164,6 +160,16 @@ class SlipVerificationServiceTest extends TestCase
         $this->assertFalse($result->isSlip);
         $this->assertSame('api_error', $result->failReason);
         $this->assertDatabaseHas('slip_verifications', ['status' => 'api_error']);
+    }
+
+    public function test_connection_exception_is_api_error(): void
+    {
+        Http::fake(fn () => throw new ConnectionException('timeout'));
+
+        $result = $this->verify();
+
+        $this->assertFalse($result->isSlip);
+        $this->assertSame('api_error', $result->failReason);
     }
 
     public function test_missing_token_is_api_error_without_http_call(): void
