@@ -14,7 +14,9 @@ class SlipVerificationService
 {
     private const VERIFY_URL = 'https://api.easyslip.com/v2/verify/bank';
 
-    private const FRAUD_REASONS = ['fake', 'duplicate', 'amount_mismatch', 'wrong_account'];
+    // เคสที่ควรเตือนแรง 🚨 + ต้องกดยืนยัน 2 ชั้น (มีแนวโน้มโกงจริง)
+    // amount_mismatch ไม่รวม — ยอดไม่ตรงมักเกิดจากบอทสรุปยอดผิด/จ่ายมัดจำ ไม่ใช่โกง จึงเตือนแบบ ⚠️ กดตรง
+    private const FRAUD_REASONS = ['fake', 'duplicate', 'wrong_account'];
 
     private const FAIL_REASON_LABELS = [
         'fake' => 'ไม่พบธุรกรรมในระบบธนาคาร (อาจเป็นสลิปปลอม)',
@@ -258,9 +260,6 @@ class SlipVerificationService
         }
         if ($result->expectedAmount !== null) {
             $lines[] = 'ยอดออเดอร์: '.self::formatBaht($result->expectedAmount).' บาท';
-        }
-        if ($result->transRef !== null) {
-            $lines[] = "เลขอ้างอิง: {$result->transRef}";
         }
         $lines[] = 'กรุณาเช็คในแชทก่อนยืนยัน';
 
