@@ -191,7 +191,15 @@ class LineWebhookResponseService
         $this->line->showLoadingIndicator($ctx->bot, $ctx->userId(), 30);
 
         // Auto-clear stale context before slip verification / vision generate a response (line 1013)
-        $this->conversationContext->autoClearIfIdle($conversation);
+        try {
+            $this->conversationContext->autoClearIfIdle($conversation);
+        } catch (\Throwable $e) {
+            Log::warning('autoClearIfIdle failed', [
+                'bot_id' => $ctx->bot->id,
+                'conversation_id' => $conversation->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         // Slip verification (EasySlip-first) — ผ่าน/ไม่ผ่านตอบเลย ไม่เข้า vision
         if ($this->trySlipVerification($ctx, $imageUrl)) {
@@ -467,6 +475,52 @@ class LineWebhookResponseService
                 $imageUrl,
                 $history,
             );
+
+            if ($result->failReason === 'api_error') {
+                $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
+
+                return false; // fallback vision — ลูกค้าต้องได้รับตอบ
+            }
+
+            if (! $result->isSlip) {
+                return false; // รูปทั่วไป → vision เดิม
+            }
+
+            if ($result->passed) {
+                $template = $settings->slip_success_message ?: self::SLIP_SUCCESS_TEMPLATE;
+                $text = str_replace(
+                    ['{amount}', '{order_summary}'],
+                    [number_format($result->amount ?? 0), $result->orderSummary ?? '-'],
+                    $template,
+                );
+            } else {
+                $text = $settings->slip_fail_message ?: self::SLIP_FAIL_TEMPLATE;
+                $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
+            }
+
+            $botMessage = $ctx->conversation->messages()->create([
+                'sender' => 'bot',
+                'content' => $text,
+                'type' => 'text',
+                'metadata' => [
+                    'slip_verification' => true,
+                    'slip_status' => $result->passed ? 'passed' : $result->failReason,
+                    'slip_trans_ref' => $result->transRef,
+                    'image_url' => $imageUrl,
+                ],
+            ]);
+
+            $ctx->metadata['bot_message'] = $botMessage;
+            $ctx->response = ResponseEnvelope::text($text);
+
+            Log::info('Slip verification handled image', [
+                'bot_id' => $ctx->bot->id,
+                'conversation_id' => $ctx->conversation->id,
+                'status' => $result->passed ? 'passed' : $result->failReason,
+                'trans_ref' => $result->transRef,
+            ]);
+
+            return true;
         } catch (\Throwable $e) {
             Log::error('Slip verification crashed, falling back to vision', [
                 'bot_id' => $ctx->bot->id,
@@ -475,51 +529,5 @@ class LineWebhookResponseService
 
             return false;
         }
-
-        if ($result->failReason === 'api_error') {
-            $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
-
-            return false; // fallback vision — ลูกค้าต้องได้รับตอบ
-        }
-
-        if (! $result->isSlip) {
-            return false; // รูปทั่วไป → vision เดิม
-        }
-
-        if ($result->passed) {
-            $template = $settings->slip_success_message ?: self::SLIP_SUCCESS_TEMPLATE;
-            $text = str_replace(
-                ['{amount}', '{order_summary}'],
-                [number_format($result->amount ?? 0), $result->orderSummary ?? '-'],
-                $template,
-            );
-        } else {
-            $text = $settings->slip_fail_message ?: self::SLIP_FAIL_TEMPLATE;
-            $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
-        }
-
-        $botMessage = $ctx->conversation->messages()->create([
-            'sender' => 'bot',
-            'content' => $text,
-            'type' => 'text',
-            'metadata' => [
-                'slip_verification' => true,
-                'slip_status' => $result->passed ? 'passed' : $result->failReason,
-                'slip_trans_ref' => $result->transRef,
-                'image_url' => $imageUrl,
-            ],
-        ]);
-
-        $ctx->metadata['bot_message'] = $botMessage;
-        $ctx->response = ResponseEnvelope::text($text);
-
-        Log::info('Slip verification handled image', [
-            'bot_id' => $ctx->bot->id,
-            'conversation_id' => $ctx->conversation->id,
-            'status' => $result->passed ? 'passed' : $result->failReason,
-            'trans_ref' => $result->transRef,
-        ]);
-
-        return true;
     }
 }

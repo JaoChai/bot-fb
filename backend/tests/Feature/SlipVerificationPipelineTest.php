@@ -6,6 +6,8 @@ use App\Models\Bot;
 use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
+use App\Models\Flow;
+use App\Models\FlowPlugin;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\LineWebhook\LineWebhookResponseService;
@@ -115,6 +117,17 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_failed_slip_replies_fail_template_and_alerts(): void
     {
+        $flow = Flow::factory()->create(['bot_id' => $this->bot->id]);
+        $this->bot->update(['default_flow_id' => $flow->id]);
+        FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'แจ้งแอดมิน',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'tg-tok', 'chat_id' => '-100999'],
+        ]);
+
         Http::fake([
             'developer.easyslip.com/*' => Http::response([
                 'status' => 200,
@@ -125,6 +138,7 @@ class SlipVerificationPipelineTest extends TestCase
                 ],
             ]),
             'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
         ]);
 
         $ctx = $this->makeContext();
@@ -133,6 +147,42 @@ class SlipVerificationPipelineTest extends TestCase
         $this->assertStringContainsString('ขอตรวจสอบยอดสักครู่', $ctx->response->payload);
         $this->assertStringNotContainsString('[ยืนยันชำระเงิน]', $ctx->response->payload);
         $this->assertSame('amount_mismatch', $ctx->metadata['bot_message']->metadata['slip_status']);
+
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+    }
+
+    public function test_easyslip_api_error_falls_back_to_vision_and_alerts_admin(): void
+    {
+        $flow = Flow::factory()->create(['bot_id' => $this->bot->id]);
+        $this->bot->update(['default_flow_id' => $flow->id]);
+        FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'แจ้งแอดมิน',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'tg-tok', 'chat_id' => '-100999'],
+        ]);
+
+        Http::fake([
+            'developer.easyslip.com/*' => Http::response(['message' => 'internal error'], 500),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => 'ตอบจาก vision']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        $this->assertNotNull($ctx->response);
+        $this->assertStringContainsString('ตอบจาก vision', $ctx->response->payload);
+
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'openrouter.ai'));
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
     }
 
     public function test_non_slip_image_falls_through_to_vision(): void
