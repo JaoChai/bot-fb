@@ -375,6 +375,21 @@ class LineWebhookResponseService
             $basePrompt = "You are a helpful AI assistant for {$ctx->bot->name}. Be friendly, professional, and helpful.";
         }
 
+        // Slip-verification bots only reach vision when EasySlip could NOT verify the
+        // slip — so the LLM must never self-confirm a payment here.
+        if ($ctx->bot->settings?->slip_verification_enabled) {
+            $visionInstruction = "\n\n## การวิเคราะห์รูปภาพ\n"
+                ."เมื่อได้รับรูปภาพ ให้ตรวจสอบก่อนว่าเป็นสลิปโอนเงิน/หลักฐานการชำระเงินหรือไม่\n\n"
+                ."**ถ้าเป็นสลิปโอนเงิน:**\n"
+                ."- ระบบตรวจสลิปอัตโนมัติของร้านไม่สามารถอ่านรูปนี้ได้ คุณห้ามยืนยันการรับเงินเองเด็ดขาด\n"
+                ."- ห้ามตอบว่า \"เงินเข้าแล้ว\" และห้ามใส่แท็ก [ยืนยันชำระเงิน]\n"
+                ."- ตอบเพียง: \"ได้รับสลิปแล้วครับ รอทีมงานตรวจสอบยอดเข้าสักครู่นะครับ ปกติไม่เกิน 5 นาที ขอบคุณที่รอครับ\"\n\n"
+                ."**ถ้าไม่ใช่สลิป:**\n"
+                .'- อธิบายรูปภาพและช่วยตอบคำถามตามบริบทของการสนทนา';
+
+            return $basePrompt.$visionInstruction;
+        }
+
         $visionInstruction = "\n\n## การวิเคราะห์รูปภาพ\n"
             ."เมื่อได้รับรูปภาพ ให้ตรวจสอบก่อนว่าเป็นสลิปโอนเงิน/หลักฐานการชำระเงินหรือไม่\n\n"
             ."**ถ้าเป็นสลิปโอนเงิน:**\n"

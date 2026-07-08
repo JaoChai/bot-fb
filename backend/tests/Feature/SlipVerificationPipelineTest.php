@@ -318,6 +318,68 @@ class SlipVerificationPipelineTest extends TestCase
         Http::assertNotSent(fn ($req) => str_contains($req->url(), 'easyslip.com'));
     }
 
+    public function test_enabled_bot_vision_prompt_is_cautious_no_self_confirm(): void
+    {
+        // Remove the pending-order summary so a 400 is treated as a genuine non-slip → vision.
+        $this->conversation->messages()->where('sender', 'bot')->delete();
+
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => 'ได้รับสลิปแล้วครับ']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        Http::assertSent(function ($req) {
+            if (! str_contains($req->url(), 'openrouter.ai')) {
+                return false;
+            }
+            $systemContent = collect($req->data()['messages'] ?? [])
+                ->firstWhere('role', 'system')['content'] ?? '';
+
+            // Cautious prompt present; legacy self-confirm block gone.
+            return str_contains($systemContent, 'ห้ามยืนยันการรับเงิน')
+                && ! str_contains($systemContent, 'เงินเข้าแล้ว [จำนวนเงิน] บาท ✅');
+        });
+    }
+
+    public function test_disabled_bot_vision_prompt_keeps_legacy_confirm_instruction(): void
+    {
+        $this->bot->settings->update(['slip_verification_enabled' => false]);
+        // Remove the pending-order summary so vision uses the generic image prompt.
+        $this->conversation->messages()->where('sender', 'bot')->delete();
+
+        Http::fake([
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => 'รูปแมวน่ารักครับ']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        Http::assertSent(function ($req) {
+            if (! str_contains($req->url(), 'openrouter.ai')) {
+                return false;
+            }
+            $systemContent = collect($req->data()['messages'] ?? [])
+                ->firstWhere('role', 'system')['content'] ?? '';
+
+            return str_contains($systemContent, 'เงินเข้าแล้ว [จำนวนเงิน] บาท ✅')
+                && str_contains($systemContent, '[ยืนยันชำระเงิน]')
+                && ! str_contains($systemContent, 'ห้ามยืนยันการรับเงิน');
+        });
+    }
+
     public function test_disabled_feature_never_calls_easyslip(): void
     {
         $this->bot->settings->update(['slip_verification_enabled' => false]);
