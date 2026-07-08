@@ -100,14 +100,16 @@ class ManualPaymentConfirmService
     /**
      * Reject a repeat confirmation for the same conversation inside the idempotency
      * window (two tabs / retried request) so we never create duplicate orders and
-     * customer pushes.
+     * customer pushes. Covers both a prior manual confirm and an EasySlip auto-pass
+     * ('passed') on the same conversation — an admin clicking confirm right after the
+     * slip auto-passed would otherwise create a second order.
      *
      * @throws RecentManualConfirmException
      */
     private function guardAgainstDoubleConfirm(Conversation $conversation, int $windowSeconds = 120): void
     {
         $recent = SlipVerification::where('conversation_id', $conversation->id)
-            ->where('status', 'manual_confirmed')
+            ->whereIn('status', ['passed', 'manual_confirmed'])
             ->where('created_at', '>=', now()->subSeconds($windowSeconds))
             ->exists();
 

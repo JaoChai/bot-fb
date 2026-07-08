@@ -182,6 +182,34 @@ class ManualPaymentConfirmTest extends TestCase
             ->count());
     }
 
+    public function test_confirm_shortly_after_auto_passed_slip_returns_409_and_creates_no_order(): void
+    {
+        // EasySlip already auto-passed this conversation moments ago.
+        SlipVerification::create([
+            'bot_id' => $this->bot->id,
+            'conversation_id' => $this->conversation->id,
+            'amount' => 1500,
+            'receiver_account' => '223-3-24880-3',
+            'status' => 'passed',
+        ]);
+
+        Http::fake([
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => '{"triggered": true, "variables": {"amount": "1500", "product": "Nolimit BM"}}']]],
+                'model' => 'openai/gpt-4o-mini',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+
+        $this->actingAs($this->owner)
+            ->postJson("/api/conversations/{$this->conversation->id}/confirm-payment")
+            ->assertStatus(409);
+
+        $this->assertSame(0, Order::where('conversation_id', $this->conversation->id)->count());
+    }
+
     /**
      * The idempotency reservation is inserted inside the confirm transaction and committed
      * BEFORE any HTTP side effect. So even when a later best-effort side effect fails (here
