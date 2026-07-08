@@ -14,10 +14,12 @@ class SlipVerificationService
 {
     private const VERIFY_URL = 'https://api.easyslip.com/v2/verify/bank';
 
+    private const FRAUD_REASONS = ['fake', 'duplicate', 'amount_mismatch', 'wrong_account'];
+
     private const FAIL_REASON_LABELS = [
         'fake' => 'ไม่พบธุรกรรมในระบบธนาคาร (อาจเป็นสลิปปลอม)',
         'pending' => 'สลิปกำลังรอธนาคารประมวลผล (โอนไม่ถึง 5 นาที) — รอสักครู่แล้วตรวจอีกครั้ง',
-        'duplicate' => 'สลิปซ้ำ (เคยใช้ยืนยันไปแล้ว)',
+        'duplicate' => 'สลิปซ้ำ (เคยใช้ยืนยันไปแล้ว) — ระวังการนำสลิปเก่ามาใช้ซ้ำ',
         'amount_mismatch' => 'ยอดไม่ตรงกับออเดอร์',
         'wrong_account' => 'โอนเข้าบัญชีอื่น (ไม่ใช่บัญชีร้าน)',
         'no_pending_order' => 'ไม่พบออเดอร์ค้างชำระในบทสนทนา',
@@ -239,20 +241,27 @@ class SlipVerificationService
         }
 
         $reason = self::FAIL_REASON_LABELS[$result->failReason] ?? ($result->failReason ?? 'unknown');
-        $lines = ["⚠️ ตรวจสลิปไม่ผ่าน — {$bot->name}", "เหตุผล: {$reason}"];
+        $header = in_array($result->failReason, self::FRAUD_REASONS, true)
+            ? "🚨 สลิปมีปัญหา — อย่าเพิ่งส่งของ ({$bot->name})"
+            : "⚠️ ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ ({$bot->name})";
+        $lines = [$header];
+        if ($conversation !== null) {
+            $displayName = $conversation->customerProfile?->display_name;
+            $lines[] = $displayName !== null
+                ? "ลูกค้า: {$displayName} (แชท #{$conversation->id})"
+                : "แชท #{$conversation->id}";
+        }
+        $lines[] = "เหตุผล: {$reason}";
         if ($result->amount !== null) {
-            $lines[] = 'ยอดในสลิป: '.number_format($result->amount, 2).' บาท';
+            $lines[] = 'ยอดในสลิป: '.self::formatBaht($result->amount).' บาท';
         }
         if ($result->expectedAmount !== null) {
-            $lines[] = 'ยอดออเดอร์: '.number_format($result->expectedAmount, 2).' บาท';
+            $lines[] = 'ยอดออเดอร์: '.self::formatBaht($result->expectedAmount).' บาท';
         }
         if ($result->transRef !== null) {
             $lines[] = "เลขอ้างอิง: {$result->transRef}";
         }
-        if ($conversation !== null) {
-            $lines[] = "Conversation: #{$conversation->id}";
-        }
-        $lines[] = 'กรุณาตรวจสอบในแชทด่วน';
+        $lines[] = 'กรุณาเช็คในแชทก่อนยืนยัน';
 
         try {
             Http::timeout(5)->retry(2, 500)->post("https://api.telegram.org/bot{$token}/sendMessage", [
@@ -262,6 +271,14 @@ class SlipVerificationService
         } catch (\Throwable $e) {
             Log::warning('Slip alert: telegram send failed', ['bot_id' => $bot->id, 'error' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * แสดงยอดเงินแบบไม่มีทศนิยมถ้าเป็นจำนวนเต็ม
+     */
+    private static function formatBaht(float $value): string
+    {
+        return number_format($value, fmod($value, 1) == 0.0 ? 0 : 2);
     }
 
     /**
