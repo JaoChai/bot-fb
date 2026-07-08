@@ -273,7 +273,7 @@ class UserSettingController extends Controller
         try {
             $response = Http::timeout(10)
                 ->withToken($settings->getEasySlipApiToken())
-                ->get('https://developer.easyslip.com/api/v1/me');
+                ->get('https://api.easyslip.com/v2/info');
 
             if (! $response->successful()) {
                 return response()->json([
@@ -282,15 +282,15 @@ class UserSettingController extends Controller
                 ]);
             }
 
-            $data = $response->json('data', []);
+            $app = $response->json('data.application.quota', []);
 
             return response()->json([
                 'success' => true,
                 'message' => 'เชื่อมต่อ EasySlip สำเร็จ',
                 'quota' => [
-                    'used' => $data['usedQuota'] ?? null,
-                    'max' => $data['maxQuota'] ?? null,
-                    'remaining' => $data['remainingQuota'] ?? null,
+                    'used' => $app['used'] ?? null,
+                    'max' => $app['max'] ?? null,
+                    'remaining' => $app['remaining'] ?? null,
                 ],
             ]);
         } catch (\Throwable $e) {

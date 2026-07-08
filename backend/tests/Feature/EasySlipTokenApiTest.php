@@ -34,9 +34,14 @@ class EasySlipTokenApiTest extends TestCase
         $user->getOrCreateSettings()->update(['easyslip_api_token' => 'es-token-1']);
 
         Http::fake([
-            'developer.easyslip.com/api/v1/me' => Http::response([
-                'status' => 200,
-                'data' => ['application' => 'bot-fb', 'usedQuota' => 16, 'maxQuota' => 250, 'remainingQuota' => 234],
+            'api.easyslip.com/v2/info' => Http::response([
+                'success' => true,
+                'data' => [
+                    'application' => ['name' => 'bot-fb', 'quota' => ['used' => 16, 'max' => 250, 'remaining' => 234, 'totalUsed' => 372]],
+                    'branch' => [],
+                    'account' => ['email' => 'owner@example.com', 'credit' => 411],
+                    'product' => ['name' => 'Start'],
+                ],
             ]),
         ]);
 
@@ -61,7 +66,7 @@ class EasySlipTokenApiTest extends TestCase
         $user->getOrCreateSettings()->update(['easyslip_api_token' => 'bad-token']);
 
         Http::fake([
-            'developer.easyslip.com/api/v1/me' => Http::response(['status' => 401, 'message' => 'unauthorized'], 401),
+            'api.easyslip.com/v2/info' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_API_KEY', 'message' => 'unauthorized']], 401),
         ]);
 
         $this->actingAs($user)->postJson('/api/settings/test-easyslip')

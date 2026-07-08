@@ -89,13 +89,19 @@ class SlipVerificationPipelineTest extends TestCase
     public function test_passed_slip_replies_confirmation_without_vision(): void
     {
         Http::fake([
-            'developer.easyslip.com/*' => Http::response([
-                'status' => 200,
+            'api.easyslip.com/*' => Http::response([
+                'success' => true,
                 'data' => [
-                    'transRef' => 'TR900',
-                    'amount' => ['amount' => 1500],
-                    'receiver' => ['bank' => ['id' => '004'], 'account' => ['name' => ['th' => 'ร้าน'], 'bank' => ['account' => 'xxx-x-x4880-x']]],
+                    'isDuplicate' => false,
+                    'matchedAccount' => null,
+                    'amountInSlip' => 1500,
+                    'rawSlip' => [
+                        'transRef' => 'TR900',
+                        'amount' => ['amount' => 1500],
+                        'receiver' => ['bank' => ['id' => '004'], 'account' => ['name' => ['th' => 'ร้าน'], 'bank' => ['account' => 'xxx-x-x4880-x']]],
+                    ],
                 ],
+                'message' => 'success',
             ]),
             'api.line.me/*' => Http::response(['ok' => true]),
             'openrouter.ai/*' => Http::response([], 500), // ต้องไม่ถูกเรียก
@@ -129,13 +135,19 @@ class SlipVerificationPipelineTest extends TestCase
         ]);
 
         Http::fake([
-            'developer.easyslip.com/*' => Http::response([
-                'status' => 200,
+            'api.easyslip.com/*' => Http::response([
+                'success' => true,
                 'data' => [
-                    'transRef' => 'TR901',
-                    'amount' => ['amount' => 900],
-                    'receiver' => ['bank' => ['id' => '004'], 'account' => ['name' => ['th' => 'ร้าน'], 'bank' => ['account' => 'xxx-x-x4880-x']]],
+                    'isDuplicate' => false,
+                    'matchedAccount' => null,
+                    'amountInSlip' => 900,
+                    'rawSlip' => [
+                        'transRef' => 'TR901',
+                        'amount' => ['amount' => 900],
+                        'receiver' => ['bank' => ['id' => '004'], 'account' => ['name' => ['th' => 'ร้าน'], 'bank' => ['account' => 'xxx-x-x4880-x']]],
+                    ],
                 ],
+                'message' => 'success',
             ]),
             'api.line.me/*' => Http::response(['ok' => true]),
             'api.telegram.org/*' => Http::response(['ok' => true]),
@@ -165,7 +177,7 @@ class SlipVerificationPipelineTest extends TestCase
         ]);
 
         Http::fake([
-            'developer.easyslip.com/*' => Http::response(['message' => 'internal error'], 500),
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INTERNAL_ERROR', 'message' => 'internal error']], 500),
             'api.line.me/*' => Http::response(['ok' => true]),
             'api.telegram.org/*' => Http::response(['ok' => true]),
             'openrouter.ai/*' => Http::response([
@@ -188,7 +200,7 @@ class SlipVerificationPipelineTest extends TestCase
     public function test_non_slip_image_falls_through_to_vision(): void
     {
         Http::fake([
-            'developer.easyslip.com/*' => Http::response(['status' => 400, 'message' => 'invalid_image'], 400),
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
             'api.line.me/*' => Http::response(['ok' => true]),
             'openrouter.ai/*' => Http::response([
                 'choices' => [['message' => ['content' => 'รูปแมวน่ารักครับ']]],

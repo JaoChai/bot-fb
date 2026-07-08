@@ -12,10 +12,11 @@ use Illuminate\Support\Facades\Log;
 
 class SlipVerificationService
 {
-    private const VERIFY_URL = 'https://developer.easyslip.com/api/v1/verify';
+    private const VERIFY_URL = 'https://api.easyslip.com/v2/verify/bank';
 
     private const FAIL_REASON_LABELS = [
         'fake' => 'ไม่พบธุรกรรมในระบบธนาคาร (อาจเป็นสลิปปลอม)',
+        'pending' => 'สลิปกำลังรอธนาคารประมวลผล (โอนไม่ถึง 5 นาที) — รอสักครู่แล้วตรวจอีกครั้ง',
         'duplicate' => 'สลิปซ้ำ (เคยใช้ยืนยันไปแล้ว)',
         'amount_mismatch' => 'ยอดไม่ตรงกับออเดอร์',
         'wrong_account' => 'โอนเข้าบัญชีอื่น (ไม่ใช่บัญชีร้าน)',
@@ -125,8 +126,11 @@ class SlipVerificationService
 
         if ($response->status() === 404) {
             // อ่าน QR ได้แต่ไม่พบธุรกรรมในระบบธนาคาร → สลิปปลอม/สลิปเก่าผิดปกติ
+            // ยกเว้น SLIP_PENDING (ธนาคารกรุงเทพยังประมวลผลไม่เสร็จ <5 นาที) → ไม่ใช่ของปลอม
+            $failReason = $response->json('error.code') === 'SLIP_PENDING' ? 'pending' : 'fake';
+
             return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
-                isSlip: true, passed: false, failReason: 'fake',
+                isSlip: true, passed: false, failReason: $failReason,
             ));
         }
 
@@ -141,15 +145,15 @@ class SlipVerificationService
         }
 
         $data = $response->json('data');
-        if (! is_array($data) || empty($data['transRef'])) {
+        if (! is_array($data) || empty($data['rawSlip']['transRef'])) {
             return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
                 isSlip: false, passed: false, failReason: 'api_error',
             ));
         }
 
-        $transRef = (string) $data['transRef'];
-        $slipAmount = (float) ($data['amount']['amount'] ?? 0);
-        $receiverAccount = (string) ($data['receiver']['account']['bank']['account'] ?? '');
+        $transRef = (string) $data['rawSlip']['transRef'];
+        $slipAmount = (float) ($data['amountInSlip'] ?? $data['rawSlip']['amount']['amount'] ?? 0);
+        $receiverAccount = (string) ($data['rawSlip']['receiver']['account']['bank']['account'] ?? '');
 
         // เช็ค 1: บัญชีปลายทางต้องเป็นบัญชีร้าน
         $configured = (string) ($bot->settings?->slip_receiver_account ?? '');

@@ -16,7 +16,7 @@
 - ห้ามแตะ `bot_hitl_settings.easy_slip_enabled` (stub เดิม — ไม่ใช้ ไม่ลบ)
 - Migration เป็น additive เท่านั้น (เพิ่มคอลัมน์/ตารางใหม่ ไม่แก้ของเดิม)
 - ทุกจุดที่ EasySlip fail (ล่ม/timeout/token ผิด) ต้อง fallback ไป vision เดิม — **ห้ามทำให้ลูกค้าไม่ได้รับตอบ**
-- EasySlip API: `POST https://developer.easyslip.com/api/v1/verify` Bearer token, JSON body `{"url": <imageUrl>, "checkDuplicate": false}`; response `{status: 200, data: {transRef, amount: {amount}, receiver: {bank: {id}, account: {name: {th}, bank: {account: "xxx-x-x4880-x"}}}, ...}}`; token test: `GET https://developer.easyslip.com/api/v1/me`
+- EasySlip API: `POST https://api.easyslip.com/v2/verify/bank` Bearer token, JSON body `{"url": <imageUrl>, "checkDuplicate": false}`; response `{success: true, data: {isDuplicate, matchedAccount, amountInSlip, rawSlip: {transRef, amount: {amount}, receiver: {bank: {id}, account: {name: {th}, bank: {account: "xxx-x-x4880-x"}}}, ...}}}`; token test: `GET https://api.easyslip.com/v2/info`
 - เราเช็คสลิปซ้ำเองใน DB (ไม่ใช้ checkDuplicate ของ EasySlip) — partial unique index บน (bot_id, trans_ref) WHERE status='passed'
 - Backend test style: PHPUnit class (`extends Tests\TestCase`, `use RefreshDatabase`) ตาม `tests/Feature/LINEWebhookTest.php`
 - Commit message ลงท้าย `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`; ห้ามใช้ `--no-verify`
