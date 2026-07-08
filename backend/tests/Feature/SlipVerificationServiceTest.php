@@ -44,15 +44,21 @@ class SlipVerificationServiceTest extends TestCase
     private function easySlipResponse(float $amount = 1500, string $transRef = 'TR100', string $account = 'xxx-x-x4880-x'): array
     {
         return [
-            'status' => 200,
+            'success' => true,
             'data' => [
-                'transRef' => $transRef,
-                'amount' => ['amount' => $amount],
-                'receiver' => [
-                    'bank' => ['id' => '004'],
-                    'account' => ['name' => ['th' => 'ร้านค้า'], 'bank' => ['account' => $account]],
+                'isDuplicate' => false,
+                'matchedAccount' => null,
+                'amountInSlip' => $amount,
+                'rawSlip' => [
+                    'transRef' => $transRef,
+                    'amount' => ['amount' => $amount],
+                    'receiver' => [
+                        'bank' => ['id' => '004'],
+                        'account' => ['name' => ['th' => 'ร้านค้า'], 'bank' => ['account' => $account]],
+                    ],
                 ],
             ],
+            'message' => 'success',
         ];
     }
 
@@ -65,7 +71,7 @@ class SlipVerificationServiceTest extends TestCase
 
     public function test_valid_slip_passes_all_checks(): void
     {
-        Http::fake(['developer.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
 
         $result = $this->verify();
 
@@ -78,7 +84,7 @@ class SlipVerificationServiceTest extends TestCase
 
     public function test_wrong_receiver_account_fails(): void
     {
-        Http::fake(['developer.easyslip.com/*' => Http::response($this->easySlipResponse(account: 'xxx-x-x9999-x'))]);
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse(account: 'xxx-x-x9999-x'))]);
 
         $result = $this->verify();
 
@@ -91,7 +97,7 @@ class SlipVerificationServiceTest extends TestCase
     public function test_duplicate_trans_ref_fails(): void
     {
         SlipVerification::create(['bot_id' => $this->bot->id, 'trans_ref' => 'TR100', 'status' => 'passed']);
-        Http::fake(['developer.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
 
         $result = $this->verify();
 
@@ -101,7 +107,7 @@ class SlipVerificationServiceTest extends TestCase
 
     public function test_amount_mismatch_fails(): void
     {
-        Http::fake(['developer.easyslip.com/*' => Http::response($this->easySlipResponse(amount: 1000))]);
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse(amount: 1000))]);
 
         $result = $this->verify();
 
@@ -113,7 +119,7 @@ class SlipVerificationServiceTest extends TestCase
     public function test_amount_within_tolerance_passes(): void
     {
         $this->bot->settings->update(['slip_amount_tolerance' => 10]);
-        Http::fake(['developer.easyslip.com/*' => Http::response($this->easySlipResponse(amount: 1495))]);
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse(amount: 1495))]);
 
         $this->assertTrue($this->verify()->passed);
     }
@@ -121,7 +127,7 @@ class SlipVerificationServiceTest extends TestCase
     public function test_no_pending_order_fails(): void
     {
         $this->paymentHistory = [['sender' => 'user', 'content' => 'สวัสดี']];
-        Http::fake(['developer.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
 
         $result = $this->verify();
 
@@ -131,7 +137,7 @@ class SlipVerificationServiceTest extends TestCase
 
     public function test_http_400_means_not_a_slip(): void
     {
-        Http::fake(['developer.easyslip.com/*' => Http::response(['status' => 400, 'message' => 'invalid_image'], 400)]);
+        Http::fake(['api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400)]);
 
         $result = $this->verify();
 
@@ -142,7 +148,7 @@ class SlipVerificationServiceTest extends TestCase
 
     public function test_http_404_means_fake_slip(): void
     {
-        Http::fake(['developer.easyslip.com/*' => Http::response(['status' => 404, 'message' => 'slip_not_found'], 404)]);
+        Http::fake(['api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'SLIP_NOT_FOUND', 'message' => 'slip not found']], 404)]);
 
         $result = $this->verify();
 
@@ -151,9 +157,20 @@ class SlipVerificationServiceTest extends TestCase
         $this->assertDatabaseHas('slip_verifications', ['status' => 'fake']);
     }
 
+    public function test_http_404_slip_pending_means_pending(): void
+    {
+        Http::fake(['api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'SLIP_PENDING', 'message' => 'slip pending']], 404)]);
+
+        $result = $this->verify();
+
+        $this->assertTrue($result->isSlip);
+        $this->assertSame('pending', $result->failReason);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'pending']);
+    }
+
     public function test_server_error_is_api_error(): void
     {
-        Http::fake(['developer.easyslip.com/*' => Http::response(['message' => 'server error'], 500)]);
+        Http::fake(['api.easyslip.com/*' => Http::response(['message' => 'server error'], 500)]);
 
         $result = $this->verify();
 
