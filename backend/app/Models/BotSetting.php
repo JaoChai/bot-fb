@@ -54,6 +54,12 @@ class BotSetting extends Model
         // Auto-assignment feature
         'auto_assignment_enabled',
         'auto_assignment_mode',
+        // Slip verification feature
+        'slip_verification_enabled',
+        'slip_receiver_account',
+        'slip_amount_tolerance',
+        'slip_success_message',
+        'slip_fail_message',
     ];
 
     protected $casts = [
@@ -75,6 +81,8 @@ class BotSetting extends Model
         'smart_per_user_learning_enabled' => 'boolean',
         'reply_sticker_enabled' => 'boolean',
         'auto_assignment_enabled' => 'boolean',
+        'slip_verification_enabled' => 'boolean',
+        'slip_amount_tolerance' => 'float',
     ];
 
     public function bot(): BelongsTo

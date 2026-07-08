@@ -53,3 +53,43 @@ export function useClearOpenRouterKey() {
     },
   });
 }
+
+// Update EasySlip API token
+export function useUpdateEasySlipToken() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: { token: string }) => {
+      const response = await apiPut<ApiResponse<UserSettings>>('/settings/easyslip', data);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.user() });
+    },
+  });
+}
+
+// Test EasySlip API connection
+export function useTestEasySlipConnection() {
+  return useMutation({
+    mutationFn: async () => {
+      const response = await apiPost<TestConnectionResponse>('/settings/test-easyslip', {});
+      return response;
+    },
+  });
+}
+
+// Clear EasySlip API token
+export function useClearEasySlipToken() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await apiDelete<{ message: string }>('/settings/easyslip');
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.user() });
+    },
+  });
+}

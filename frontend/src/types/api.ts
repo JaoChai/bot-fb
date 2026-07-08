@@ -197,6 +197,12 @@ export interface BotSettings {
   reply_sticker_message: string | null;
   reply_sticker_mode: string;
   reply_sticker_ai_prompt: string | null;
+  // Slip verification settings
+  slip_verification_enabled: boolean;
+  slip_receiver_account: string | null;
+  slip_amount_tolerance: number;
+  slip_success_message: string | null;
+  slip_fail_message: string | null;
   // Auto-assignment settings
   auto_assignment_enabled: boolean;
   auto_assignment_mode: 'round_robin' | 'load_balanced';
@@ -484,6 +490,8 @@ export interface UserSettings {
   line_configured: boolean;
   line_channel_secret_masked: string | null;
   line_channel_access_token_masked: string | null;
+  easyslip_configured: boolean;
+  easyslip_token_masked: string | null;
 }
 
 export interface UpdateOpenRouterSettings {
@@ -495,6 +503,7 @@ export interface TestConnectionResponse {
   success: boolean;
   message: string;
   bot_name?: string;
+  quota?: { used: number | null; max: number | null; remaining: number | null };
 }
 
 // Cost Analytics Types

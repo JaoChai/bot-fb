@@ -9,6 +9,7 @@ use App\Services\Chat\ConversationContextService;
 use App\Services\LINEService;
 use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
+use App\Services\Payment\SlipVerificationService;
 use App\Services\StickerReplyService;
 use Illuminate\Support\Facades\Log;
 
@@ -21,6 +22,10 @@ class LineWebhookResponseService
      */
     private const ORDER_CONTEXT_KEYWORDS = ['รวมยอดโอน', 'สรุปรายการ', 'เลขบัญชี', 'รวมทั้งหมด', 'โอนเข้าบัญชี', 'ส่งสลิป'];
 
+    private const SLIP_SUCCESS_TEMPLATE = "เงินเข้าแล้ว {amount} บาท ✅\nออเดอร์: {order_summary}\nส่งใน 5-10 นาที ขอบคุณครับ\n[ยืนยันชำระเงิน]";
+
+    private const SLIP_FAIL_TEMPLATE = 'ได้รับสลิปแล้วครับ ขอตรวจสอบยอดสักครู่ เดี๋ยวแอดมินยืนยันให้อีกครั้งนะครับ 🙏';
+
     public function __construct(
         private readonly AIService $aiService,
         private readonly OpenRouterService $openRouterService,
@@ -28,6 +33,7 @@ class LineWebhookResponseService
         private readonly ConversationContextService $conversationContext,
         private readonly ModelCapabilityService $modelCapability,
         private readonly LINEService $line,
+        private readonly SlipVerificationService $slipVerification,
     ) {}
 
     /**
@@ -184,15 +190,31 @@ class LineWebhookResponseService
         // Show loading indicator (line 1009)
         $this->line->showLoadingIndicator($ctx->bot, $ctx->userId(), 30);
 
+        // Auto-clear stale context before slip verification / vision generate a response (line 1013)
         try {
-            // Auto-clear stale context (line 1013)
             $this->conversationContext->autoClearIfIdle($conversation);
+        } catch (\Throwable $e) {
+            Log::warning('autoClearIfIdle failed', [
+                'bot_id' => $ctx->bot->id,
+                'conversation_id' => $conversation->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
+        // Slip path needs a wider window — "รวมยอดโอน" often falls outside the last 5
+        // messages in real chats. Vision keeps 5 (prompt size), so slice from the wider set.
+        $slipHistory = $this->getVisionConversationHistory($conversation, 15);
+
+        // Slip verification (EasySlip-first) — ผ่าน/ไม่ผ่านตอบเลย ไม่เข้า vision
+        if ($this->trySlipVerification($ctx, $imageUrl, $slipHistory)) {
+            return;
+        }
+
+        $history = array_slice($slipHistory, -5);
+
+        try {
             // Build system prompt (line 1016)
             $systemPrompt = $this->buildVisionSystemPrompt($ctx);
-
-            // Get conversation history (line 1019)
-            $history = $this->getVisionConversationHistory($conversation);
 
             // Build messages array (lines 1022-1045)
             $messages = [];
@@ -429,5 +451,84 @@ class LineWebhookResponseService
             ])
             ->values()
             ->toArray();
+    }
+
+    // -------------------------------------------------------------------------
+    // Slip verification (EasySlip-first, runs before vision in the image branch)
+    // -------------------------------------------------------------------------
+
+    /**
+     * ตรวจสลิปกับ EasySlip ก่อนเข้า vision
+     * คืน true = จัดการตอบแล้ว (ข้าม vision), false = ไป vision ต่อ (ไม่ใช่สลิป/ปิด feature/API ล่ม)
+     */
+    private function trySlipVerification(WebhookContext $ctx, string $imageUrl, array $history): bool
+    {
+        $settings = $ctx->bot->settings;
+        if (! $settings?->slip_verification_enabled) {
+            return false;
+        }
+
+        try {
+            $result = $this->slipVerification->verify(
+                $ctx->bot,
+                $ctx->conversation,
+                $ctx->userMessage,
+                $imageUrl,
+                $history,
+            );
+
+            if ($result->failReason === 'api_error') {
+                $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
+
+                return false; // fallback vision — ลูกค้าต้องได้รับตอบ
+            }
+
+            if (! $result->isSlip) {
+                return false; // รูปทั่วไป → vision เดิม
+            }
+
+            if ($result->passed) {
+                $template = $settings->slip_success_message ?: self::SLIP_SUCCESS_TEMPLATE;
+                $text = str_replace(
+                    ['{amount}', '{order_summary}'],
+                    [number_format($result->amount ?? 0), $result->orderSummary ?? '-'],
+                    $template,
+                );
+            } else {
+                $text = $settings->slip_fail_message ?: self::SLIP_FAIL_TEMPLATE;
+                $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
+            }
+
+            $botMessage = $ctx->conversation->messages()->create([
+                'sender' => 'bot',
+                'content' => $text,
+                'type' => 'text',
+                'metadata' => [
+                    'slip_verification' => true,
+                    'slip_status' => $result->status(),
+                    'slip_trans_ref' => $result->transRef,
+                    'image_url' => $imageUrl,
+                ],
+            ]);
+
+            $ctx->metadata['bot_message'] = $botMessage;
+            $ctx->response = ResponseEnvelope::text($text);
+
+            Log::info('Slip verification handled image', [
+                'bot_id' => $ctx->bot->id,
+                'conversation_id' => $ctx->conversation->id,
+                'status' => $result->passed ? 'passed' : $result->failReason,
+                'trans_ref' => $result->transRef,
+            ]);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::error('Slip verification crashed, falling back to vision', [
+                'bot_id' => $ctx->bot->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 }

@@ -200,6 +200,13 @@ class BotSettingController extends Controller
             // Auto-assignment settings
             'auto_assignment_enabled' => 'boolean',
             'auto_assignment_mode' => 'string|in:round_robin,load_balanced',
+
+            // Slip verification settings
+            'slip_verification_enabled' => 'boolean',
+            'slip_receiver_account' => 'nullable|string|max:50',
+            'slip_amount_tolerance' => 'numeric|min:0|max:10000',
+            'slip_success_message' => 'nullable|string|max:1000',
+            'slip_fail_message' => 'nullable|string|max:1000',
         ]);
 
         // Validate smart_max_wait_ms >= smart_min_wait_ms

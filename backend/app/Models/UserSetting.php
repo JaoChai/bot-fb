@@ -20,6 +20,7 @@ class UserSetting extends Model
         'cost_alert_threshold',
         'line_channel_secret',
         'line_channel_access_token',
+        'easyslip_api_token',
     ];
 
     /**
@@ -29,6 +30,7 @@ class UserSetting extends Model
         'openrouter_api_key' => 'encrypted',
         'line_channel_secret' => 'encrypted',
         'line_channel_access_token' => 'encrypted',
+        'easyslip_api_token' => 'encrypted',
         // Cost limits
         'max_daily_cost' => 'decimal:2',
         'max_monthly_cost' => 'decimal:2',
@@ -43,6 +45,7 @@ class UserSetting extends Model
         'openrouter_api_key',
         'line_channel_secret',
         'line_channel_access_token',
+        'easyslip_api_token',
     ];
 
     public function user(): BelongsTo
@@ -74,6 +77,32 @@ class UserSetting extends Model
     public function hasOpenRouterKey(): bool
     {
         return ! empty($this->getOpenRouterApiKey());
+    }
+
+    /**
+     * Safely get EasySlip API token, handling decryption errors.
+     * Returns null if decryption fails (e.g., APP_KEY changed).
+     */
+    public function getEasySlipApiToken(): ?string
+    {
+        try {
+            return $this->easyslip_api_token;
+        } catch (DecryptException $e) {
+            Log::warning('Failed to decrypt EasySlip API token', [
+                'user_id' => $this->user_id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Check if EasySlip is configured.
+     */
+    public function hasEasySlipToken(): bool
+    {
+        return ! empty($this->getEasySlipApiToken());
     }
 
     /**
@@ -118,5 +147,17 @@ class UserSetting extends Model
         }
 
         return '••••••••'.substr($this->line_channel_access_token, -8);
+    }
+
+    /**
+     * Get masked EasySlip token for display (show last 4 chars only).
+     */
+    public function getMaskedEasyslipTokenAttribute(): ?string
+    {
+        if (empty($this->easyslip_api_token)) {
+            return null;
+        }
+
+        return '••••••••'.substr($this->easyslip_api_token, -4);
     }
 }
