@@ -102,6 +102,9 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/test-line', [UserSettingController::class, 'testLine'])->name('settings.line.test');
         Route::delete('/openrouter', [UserSettingController::class, 'clearOpenRouter'])->name('settings.openrouter.clear');
         Route::delete('/line', [UserSettingController::class, 'clearLine'])->name('settings.line.clear');
+        Route::put('/easyslip', [UserSettingController::class, 'updateEasySlip'])->name('settings.easyslip.update');
+        Route::post('/test-easyslip', [UserSettingController::class, 'testEasySlip'])->name('settings.easyslip.test');
+        Route::delete('/easyslip', [UserSettingController::class, 'clearEasySlip'])->name('settings.easyslip.clear');
     });
 
     // Quick Replies routes

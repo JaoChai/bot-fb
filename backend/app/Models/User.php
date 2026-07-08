@@ -58,9 +58,16 @@ class User extends Authenticatable
      */
     public function getOrCreateSettings(): UserSetting
     {
-        return $this->settings ?? $this->settings()->create([
+        $settings = $this->settings ?? $this->settings()->create([
             'openrouter_model' => 'openai/gpt-4o-mini',
         ]);
+
+        // Refresh the cached relation so later `$user->settings` access on this
+        // same instance sees the newly created row instead of the stale null
+        // that was cached by the `$this->settings` lookup above.
+        $this->setRelation('settings', $settings);
+
+        return $settings;
     }
 
     public function isSubscriptionActive(): bool

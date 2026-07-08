@@ -27,6 +27,8 @@ class UserSettingController extends Controller
                 'line_configured' => $settings?->hasLineCredentials() ?? false,
                 'line_channel_secret_masked' => $settings?->masked_line_secret,
                 'line_channel_access_token_masked' => $settings?->masked_line_token,
+                'easyslip_configured' => $settings?->hasEasySlipToken() ?? false,
+                'easyslip_token_masked' => $settings?->masked_easyslip_token,
             ],
         ]);
     }
@@ -230,5 +232,86 @@ class UserSettingController extends Controller
         return response()->json([
             'message' => 'LINE credentials cleared',
         ]);
+    }
+
+    /**
+     * Update EasySlip API token.
+     */
+    public function updateEasySlip(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'token' => 'required|string|max:500',
+        ]);
+
+        $settings = $request->user()->getOrCreateSettings();
+        $settings->easyslip_api_token = $validated['token'];
+        $settings->save();
+
+        return response()->json([
+            'message' => 'EasySlip settings updated successfully',
+            'data' => [
+                'easyslip_configured' => $settings->hasEasySlipToken(),
+                'easyslip_token_masked' => $settings->masked_easyslip_token,
+            ],
+        ]);
+    }
+
+    /**
+     * Test EasySlip connection + quota.
+     */
+    public function testEasySlip(Request $request): JsonResponse
+    {
+        $settings = $request->user()->settings;
+
+        if (! $settings?->hasEasySlipToken()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'EasySlip API token not configured',
+            ], 400);
+        }
+
+        try {
+            $response = Http::timeout(10)
+                ->withToken($settings->getEasySlipApiToken())
+                ->get('https://developer.easyslip.com/api/v1/me');
+
+            if (! $response->successful()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token ไม่ถูกต้องหรือหมดอายุ (HTTP '.$response->status().')',
+                ]);
+            }
+
+            $data = $response->json('data', []);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'เชื่อมต่อ EasySlip สำเร็จ',
+                'quota' => [
+                    'used' => $data['usedQuota'] ?? null,
+                    'max' => $data['maxQuota'] ?? null,
+                    'remaining' => $data['remainingQuota'] ?? null,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'เชื่อมต่อ EasySlip ไม่ได้: '.$e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Clear EasySlip token.
+     */
+    public function clearEasySlip(Request $request): JsonResponse
+    {
+        $settings = $request->user()->settings;
+        if ($settings) {
+            $settings->easyslip_api_token = null;
+            $settings->save();
+        }
+
+        return response()->json(['message' => 'EasySlip token cleared']);
     }
 }
