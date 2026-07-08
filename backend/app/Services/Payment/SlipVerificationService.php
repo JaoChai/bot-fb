@@ -14,6 +14,15 @@ class SlipVerificationService
 {
     private const VERIFY_URL = 'https://developer.easyslip.com/api/v1/verify';
 
+    private const FAIL_REASON_LABELS = [
+        'fake' => 'ไม่พบธุรกรรมในระบบธนาคาร (อาจเป็นสลิปปลอม)',
+        'duplicate' => 'สลิปซ้ำ (เคยใช้ยืนยันไปแล้ว)',
+        'amount_mismatch' => 'ยอดไม่ตรงกับออเดอร์',
+        'wrong_account' => 'โอนเข้าบัญชีอื่น (ไม่ใช่บัญชีร้าน)',
+        'no_pending_order' => 'ไม่พบออเดอร์ค้างชำระในบทสนทนา',
+        'api_error' => 'ระบบตรวจสลิป (EasySlip) ใช้งานไม่ได้ชั่วคราว',
+    ];
+
     public function __construct(
         private readonly PaymentMessageDetector $detector,
     ) {}
@@ -184,6 +193,56 @@ class SlipVerificationService
             amount: $slipAmount, transRef: $transRef,
             expectedAmount: $expected['total'], orderSummary: $expected['summary'],
         ), $receiverAccount);
+    }
+
+    /**
+     * แจ้งแอดมินผ่าน Telegram เมื่อตรวจสลิปไม่ผ่าน (ไม่ throw — ไม่มี plugin ก็แค่ log warning)
+     */
+    public function notifyAdmin(Bot $bot, ?Conversation $conversation, SlipVerificationResult $result): void
+    {
+        $plugin = $bot->defaultFlow?->plugins()
+            ->where('type', 'telegram')
+            ->where('enabled', true)
+            ->first();
+
+        if (! $plugin) {
+            Log::warning('Slip alert: no enabled telegram plugin', ['bot_id' => $bot->id]);
+
+            return;
+        }
+
+        $token = $plugin->config['access_token'] ?? '';
+        $chatId = $plugin->config['chat_id'] ?? '';
+        if (empty($token) || empty($chatId)) {
+            Log::warning('Slip alert: telegram plugin missing config', ['plugin_id' => $plugin->id]);
+
+            return;
+        }
+
+        $reason = self::FAIL_REASON_LABELS[$result->failReason] ?? ($result->failReason ?? 'unknown');
+        $lines = ["⚠️ ตรวจสลิปไม่ผ่าน — {$bot->name}", "เหตุผล: {$reason}"];
+        if ($result->amount !== null) {
+            $lines[] = 'ยอดในสลิป: '.number_format($result->amount, 2).' บาท';
+        }
+        if ($result->expectedAmount !== null) {
+            $lines[] = 'ยอดออเดอร์: '.number_format($result->expectedAmount, 2).' บาท';
+        }
+        if ($result->transRef !== null) {
+            $lines[] = "เลขอ้างอิง: {$result->transRef}";
+        }
+        if ($conversation !== null) {
+            $lines[] = "Conversation: #{$conversation->id}";
+        }
+        $lines[] = 'กรุณาตรวจสอบในแชทด่วน';
+
+        try {
+            Http::retry(2, 500)->post("https://api.telegram.org/bot{$token}/sendMessage", [
+                'chat_id' => $chatId,
+                'text' => implode("\n", $lines),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Slip alert: telegram send failed', ['bot_id' => $bot->id, 'error' => $e->getMessage()]);
+        }
     }
 
     /**
