@@ -14,6 +14,7 @@ use App\Services\LineWebhook\ResponseEnvelope;
 use App\Services\LineWebhook\WebhookContext;
 use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
+use App\Services\Payment\SlipVerificationService;
 use App\Services\StickerReplyService;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -163,6 +164,7 @@ class LineWebhookResponseServiceTest extends TestCase
         ?ConversationContextService $contextService = null,
         ?ModelCapabilityService $modelCapability = null,
         ?LINEService $line = null,
+        ?SlipVerificationService $slipVerification = null,
     ): LineWebhookResponseService {
         $aiService ??= Mockery::mock(AIService::class);
         $openRouter ??= Mockery::mock(OpenRouterService::class);
@@ -180,6 +182,11 @@ class LineWebhookResponseServiceTest extends TestCase
             $line->shouldReceive('showLoadingIndicator')->andReturn(true)->byDefault();
         }
 
+        // None of these pre-existing tests enable slip_verification_enabled on the bot,
+        // so trySlipVerification() short-circuits before ever calling verify() — a bare
+        // mock with no expectations is enough.
+        $slipVerification ??= Mockery::mock(SlipVerificationService::class);
+
         return new LineWebhookResponseService(
             $aiService,
             $openRouter,
@@ -187,6 +194,7 @@ class LineWebhookResponseServiceTest extends TestCase
             $contextService,
             $modelCapability,
             $line,
+            $slipVerification,
         );
     }
 
