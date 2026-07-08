@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\FlowPluginController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\KnowledgeBaseController;
 use App\Http\Controllers\Api\LeadRecoveryController;
+use App\Http\Controllers\Api\ManualPaymentConfirmController;
 use App\Http\Controllers\Api\ModelController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ProductStockController;
@@ -223,6 +224,11 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/{knowledgeBase}/documents/{document}/reprocess', [DocumentController::class, 'reprocess'])->name('kb.documents.reprocess');
         Route::delete('/{knowledgeBase}/documents/{document}', [DocumentController::class, 'destroy'])->name('kb.documents.destroy');
     });
+
+    // Manual payment confirmation (admin) — conversation-scoped, resolves bot from conversation.
+    Route::post('/conversations/{conversation}/confirm-payment', [ManualPaymentConfirmController::class, 'store'])
+        ->middleware('throttle:20,1')
+        ->name('conversations.confirm-payment');
 
     // Conversation routes (nested under bots)
     Route::prefix('bots/{bot}/conversations')->group(function () {

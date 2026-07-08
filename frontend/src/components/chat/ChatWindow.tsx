@@ -6,14 +6,17 @@
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMessages, messageKeys } from '@/hooks/chat';
+import { useConfirmPayment } from '@/hooks/chat/useConfirmPayment';
 import { useChatActions } from '@/hooks/useChatActions';
 import { useChannelInfo } from '@/hooks/useChannelInfo';
+import { useBotSettings } from '@/hooks/useBotSettings';
 import type { Conversation } from '@/types/api';
 
 // Extracted components
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { ClearContextDialog } from './ClearContextDialog';
+import { ConfirmPaymentDialog } from './ConfirmPaymentDialog';
 import { ChannelMessageArea } from './ChannelMessageArea';
 import { ChatInputArea } from './ChatInputArea';
 
@@ -28,7 +31,11 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
   const [autoScroll, setAutoScroll] = useState(true);
 
   // Channel detection - using centralized hook
-  const { isTelegram, useCustomBubbles, supportsHandover } = useChannelInfo(conversation);
+  const { isTelegram, isLINE, useCustomBubbles, supportsHandover } = useChannelInfo(conversation);
+
+  // Bot settings drive slip-verification-only affordances (manual payment confirm)
+  const { data: botSettings } = useBotSettings(botId);
+  const confirmPayment = useConfirmPayment(botId);
 
   // Messages query - use useMessages for consistent query keys with WebSocket updates
   const { data: messagesResponse, isLoading: isLoadingMessages, isFetching: isFetchingMessages } = useMessages(
@@ -67,6 +74,22 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
     />
   );
 
+  // Manual payment confirm - LINE conversations of slip-verification-enabled bots only
+  const showConfirmPayment = isLINE && Boolean(botSettings?.slip_verification_enabled);
+  const headerActions = (
+    <>
+      {showConfirmPayment && (
+        <ConfirmPaymentDialog
+          onConfirm={(amount) =>
+            confirmPayment.mutateAsync({ conversationId: conversation.id, amount })
+          }
+          isPending={confirmPayment.isPending}
+        />
+      )}
+      {clearContextButton}
+    </>
+  );
+
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
       {/* Header */}
@@ -77,7 +100,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
         onToggleHandover={handleToggleHandover}
         isToggleLoading={isTogglingHandover}
         showHandoverControls={supportsHandover}
-        actions={clearContextButton}
+        actions={headerActions}
       />
 
       {/* Messages Area */}
