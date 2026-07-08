@@ -45,7 +45,7 @@ class SlipVerificationAlertTest extends TestCase
 
         Http::assertSent(function ($request) {
             return str_contains($request->url(), 'api.telegram.org/bottg-token/sendMessage')
-                && str_contains($request['text'], '🚨 สลิปมีปัญหา — อย่าเพิ่งส่งของ')
+                && str_contains($request['text'], '⚠️ ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ')
                 && str_contains($request['text'], 'ยอดไม่ตรง')
                 && str_contains($request['text'], '1,000')
                 && str_contains($request['text'], '1,500');
@@ -133,7 +133,7 @@ class SlipVerificationAlertTest extends TestCase
         $this->assertStringContainsString('ยืนยันรับเงิน', $captured[0][0]['text']);
     }
 
-    public function test_alert_shows_two_buttons_when_amounts_differ_and_fraud_prefix(): void
+    public function test_alert_shows_two_buttons_when_amounts_differ(): void
     {
         [$bot, $conversation, $plugin] = $this->makeBotWithTelegramPlugin();
 
@@ -153,8 +153,8 @@ class SlipVerificationAlertTest extends TestCase
         app(SlipVerificationService::class)->notifyAdmin($bot, $conversation, $result);
 
         $this->assertCount(2, $captured);
-        $this->assertSame('pa|'.$conversation->id.'|590', $captured[0][0]['callback_data']);
-        $this->assertSame('pa|'.$conversation->id.'|600', $captured[1][0]['callback_data']);
+        $this->assertSame('pc|'.$conversation->id.'|590', $captured[0][0]['callback_data']);
+        $this->assertSame('pc|'.$conversation->id.'|600', $captured[1][0]['callback_data']);
     }
 
     /**
