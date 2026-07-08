@@ -15,6 +15,7 @@ use App\Services\FlowPluginService;
 use App\Services\LINEService;
 use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\PaymentFlexService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -41,8 +42,6 @@ class ManualPaymentConfirmService
      */
     public function confirm(Bot $bot, Conversation $conversation, ?float $amountOverride, int $confirmedBy): array
     {
-        $this->guardAgainstDoubleConfirm($conversation);
-
         $history = $this->recentTextHistory($conversation);
         $receiverAccount = $bot->settings?->slip_receiver_account ?: null;
         $expected = $this->slipVerification->findExpectedPayment($history, $receiverAccount);
@@ -60,6 +59,22 @@ class ManualPaymentConfirmService
             $template,
         );
 
+        // Atomic idempotency reservation: take a row lock on the conversation, re-run the
+        // double-confirm guard, and insert the manual_confirmed slip row inside ONE
+        // transaction. The lock serializes concurrent confirms so the guard's exists()
+        // check and the reservation insert can't interleave (fixes the TOCTOU where two
+        // requests both passed the guard before either had inserted its slip row). The
+        // reservation is committed before any HTTP side effect below, so a concurrent
+        // second request sees it and 409s. No external calls happen inside the
+        // transaction — we never hold a DB lock across HTTP.
+        $slip = DB::transaction(function () use ($bot, $conversation, $amount, $receiverAccount) {
+            Conversation::whereKey($conversation->id)->lockForUpdate()->first();
+            $this->guardAgainstDoubleConfirm($conversation);
+
+            return $this->reserveSlipVerification($bot, $conversation, $amount, $receiverAccount);
+        });
+
+        // Side effects run AFTER commit (message linkage, LINE push, plugins, broadcast).
         $botMessage = $conversation->messages()->create([
             'sender' => 'bot',
             'content' => $text,
@@ -71,11 +86,11 @@ class ManualPaymentConfirmService
             ],
         ]);
 
+        $this->linkSlipToMessage($slip, $botMessage);
+
         $this->pushToLine($bot, $conversation, $text);
 
         $orderCreated = $this->runPlugins($bot, $conversation, $botMessage);
-
-        $this->recordSlipVerification($bot, $conversation, $botMessage, $amount, $receiverAccount);
 
         $this->broadcast($conversation, $botMessage);
 
@@ -169,27 +184,41 @@ class ManualPaymentConfirmService
         return Order::where('conversation_id', $conversation->id)->count() > $ordersBefore;
     }
 
-    private function recordSlipVerification(
+    /**
+     * Insert the idempotency reservation row. Called INSIDE the confirm transaction under
+     * the conversation row lock, so a failure here must roll back the whole confirm — do
+     * NOT swallow: the row is the concurrency guarantee, not a best-effort record. The
+     * message_id is linked afterwards (post-commit) via {@see linkSlipToMessage}.
+     */
+    private function reserveSlipVerification(
         Bot $bot,
         Conversation $conversation,
-        Message $botMessage,
         float $amount,
         ?string $receiverAccount,
-    ): void {
+    ): SlipVerification {
+        return SlipVerification::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conversation->id,
+            'message_id' => null,
+            'trans_ref' => null,
+            'amount' => $amount,
+            'receiver_account' => $receiverAccount,
+            'status' => 'manual_confirmed',
+            'raw_response' => null,
+        ]);
+    }
+
+    /**
+     * Link the committed reservation to its bot message. Best effort — the reservation is
+     * already durable, so a linkage failure must not fail the confirmation.
+     */
+    private function linkSlipToMessage(SlipVerification $slip, Message $botMessage): void
+    {
         try {
-            SlipVerification::create([
-                'bot_id' => $bot->id,
-                'conversation_id' => $conversation->id,
-                'message_id' => $botMessage->id,
-                'trans_ref' => null,
-                'amount' => $amount,
-                'receiver_account' => $receiverAccount,
-                'status' => 'manual_confirmed',
-                'raw_response' => null,
-            ]);
+            $slip->update(['message_id' => $botMessage->id]);
         } catch (\Throwable $e) {
-            Log::error('Manual payment confirm: failed to record slip verification', [
-                'conversation_id' => $conversation->id,
+            Log::error('Manual payment confirm: failed to link slip verification to message', [
+                'slip_verification_id' => $slip->id,
                 'error' => $e->getMessage(),
             ]);
         }

@@ -182,6 +182,33 @@ class ManualPaymentConfirmTest extends TestCase
             ->count());
     }
 
+    /**
+     * The idempotency reservation is inserted inside the confirm transaction and committed
+     * BEFORE any HTTP side effect. So even when a later best-effort side effect fails (here
+     * the LINE push returns 500), the confirm still succeeds and the slip row is durably
+     * recorded — which is exactly what makes a concurrent second request 409.
+     */
+    public function test_slip_reservation_persists_when_later_line_push_fails(): void
+    {
+        Http::fake([
+            'api.line.me/*' => Http::response(['message' => 'boom'], 500),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => '{"triggered": true, "variables": {"amount": "1500", "product": "Nolimit BM"}}']]],
+                'model' => 'openai/gpt-4o-mini',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+
+        $this->actingAs($this->owner)
+            ->postJson("/api/conversations/{$this->conversation->id}/confirm-payment")
+            ->assertOk();
+
+        $this->assertSame(1, SlipVerification::where('conversation_id', $this->conversation->id)
+            ->where('status', 'manual_confirmed')
+            ->count());
+    }
+
     public function test_zero_amount_returns_422(): void
     {
         $this->actingAs($this->owner)
