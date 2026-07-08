@@ -490,6 +490,8 @@ export interface UserSettings {
   line_configured: boolean;
   line_channel_secret_masked: string | null;
   line_channel_access_token_masked: string | null;
+  easyslip_configured: boolean;
+  easyslip_token_masked: string | null;
 }
 
 export interface UpdateOpenRouterSettings {

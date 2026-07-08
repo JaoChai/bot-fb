@@ -24,6 +24,9 @@ import {
   useUpdateOpenRouterSettings,
   useTestOpenRouterConnection,
   useClearOpenRouterKey,
+  useUpdateEasySlipToken,
+  useTestEasySlipConnection,
+  useClearEasySlipToken,
 } from '@/hooks/useUserSettings';
 import { toast } from 'sonner';
 
@@ -39,9 +42,21 @@ export function SettingsPage() {
   const testMutation = useTestOpenRouterConnection();
   const clearMutation = useClearOpenRouterKey();
 
+  const [easySlipToken, setEasySlipToken] = useState('');
+  const [showEasySlipToken, setShowEasySlipToken] = useState(false);
+  const [easySlipTestStatus, setEasySlipTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
+  const updateEasySlipMutation = useUpdateEasySlipToken();
+  const testEasySlipMutation = useTestEasySlipConnection();
+  const clearEasySlipMutation = useClearEasySlipToken();
+
   useEffect(() => {
     setTestStatus('idle');
   }, [settings?.openrouter_configured]);
+
+  useEffect(() => {
+    setEasySlipTestStatus('idle');
+  }, [settings?.easyslip_configured]);
 
   const handleSaveApiKey = async () => {
     if (!apiKey.trim()) {
@@ -88,7 +103,53 @@ export function SettingsPage() {
     }
   };
 
+  const handleSaveEasySlipToken = async () => {
+    if (!easySlipToken.trim()) {
+      toast.error('กรุณากรอก API Token');
+      return;
+    }
+    try {
+      await updateEasySlipMutation.mutateAsync({ token: easySlipToken.trim() });
+      setEasySlipToken('');
+      setEasySlipTestStatus('idle');
+      toast.success('บันทึก API Token สำเร็จ');
+    } catch {
+      toast.error('ไม่สามารถบันทึก API Token ได้');
+    }
+  };
+
+  const handleTestEasySlipConnection = async () => {
+    try {
+      const result = await testEasySlipMutation.mutateAsync();
+      if (result.success) {
+        setEasySlipTestStatus('success');
+        const remaining = result.quota?.remaining;
+        toast.success(
+          remaining != null ? `${result.message} — เหลือโควตา ${remaining} สลิป` : result.message || 'เชื่อมต่อสำเร็จ'
+        );
+      } else {
+        setEasySlipTestStatus('error');
+        toast.error(result.message || 'เชื่อมต่อไม่สำเร็จ');
+      }
+    } catch {
+      setEasySlipTestStatus('error');
+      toast.error('ไม่สามารถทดสอบการเชื่อมต่อได้');
+    }
+  };
+
+  const handleClearEasySlipToken = async () => {
+    if (!confirm('คุณต้องการลบ API Token หรือไม่?')) return;
+    try {
+      await clearEasySlipMutation.mutateAsync();
+      setEasySlipTestStatus('idle');
+      toast.success('ลบ API Token สำเร็จ');
+    } catch {
+      toast.error('ไม่สามารถลบ API Token ได้');
+    }
+  };
+
   const isConfigured = settings?.openrouter_configured ?? false;
+  const isEasySlipConfigured = settings?.easyslip_configured ?? false;
 
   return (
     <div className="space-y-6">
@@ -188,6 +249,107 @@ export function SettingsPage() {
                   disabled={clearMutation.isPending}
                 >
                   {clearMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : 'ลบ'}
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      </Panel>
+
+      <Panel
+        icon={Key}
+        title="EasySlip API Token"
+        description="ใช้สำหรับฟีเจอร์ตรวจสลิปอัตโนมัติ — เปิดใช้ต่อบอทได้ที่ ตั้งค่าบอท → ตรวจสลิป"
+        actions={
+          <Badge variant={isEasySlipConfigured ? 'default' : 'secondary'}>
+            {isEasySlipConfigured ? (
+              <>
+                <CheckCircle className="size-3 mr-1" strokeWidth={1.5} /> ตั้งค่าแล้ว
+              </>
+            ) : (
+              <>
+                <AlertCircle className="size-3 mr-1" strokeWidth={1.5} /> ยังไม่ได้ตั้งค่า
+              </>
+            )}
+          </Badge>
+        }
+      >
+        <div className="space-y-4">
+          {isEasySlipConfigured && settings?.easyslip_token_masked && (
+            <div className="flex items-center gap-2 p-3 rounded-md border bg-muted/30">
+              <span className="text-sm text-muted-foreground">Token ปัจจุบัน:</span>
+              <code className="font-mono text-sm">{settings.easyslip_token_masked}</code>
+              {easySlipTestStatus === 'success' && (
+                <CheckCircle className="size-4 text-emerald-600 dark:text-emerald-400 ml-auto" strokeWidth={1.5} />
+              )}
+              {easySlipTestStatus === 'error' && (
+                <XCircle className="size-4 text-destructive ml-auto" strokeWidth={1.5} />
+              )}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="easyslip-token">
+              {isEasySlipConfigured ? 'เปลี่ยน API Token' : 'API Token'}
+              {isEasySlipConfigured && (
+                <span className="text-muted-foreground font-normal ml-2 text-xs">
+                  (เว้นว่างถ้าไม่เปลี่ยน)
+                </span>
+              )}
+            </Label>
+            <div className="flex gap-2 max-w-md">
+              <Input
+                id="easyslip-token"
+                type={showEasySlipToken ? 'text' : 'password'}
+                placeholder={isEasySlipConfigured ? '••••••••' : 'EasySlip API Token'}
+                value={easySlipToken}
+                onChange={(e) => setEasySlipToken(e.target.value)}
+                className="font-mono text-sm"
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                type="button"
+                onClick={() => setShowEasySlipToken(!showEasySlipToken)}
+                aria-label={showEasySlipToken ? 'ซ่อน API Token' : 'แสดง API Token'}
+              >
+                {showEasySlipToken ? <EyeOff className="size-4" strokeWidth={1.5} /> : <Eye className="size-4" strokeWidth={1.5} />}
+              </Button>
+            </div>
+          </div>
+
+          <Button variant="link" className="h-auto p-0 text-sm" asChild>
+            <a href="https://easyslip.com/" target="_blank" rel="noopener noreferrer">
+              รับ API Token ที่ EasySlip <ExternalLink className="size-3 ml-1" strokeWidth={1.5} />
+            </a>
+          </Button>
+
+          <div className="flex gap-2 pt-2">
+            <Button onClick={handleSaveEasySlipToken} disabled={updateEasySlipMutation.isPending || !easySlipToken.trim()}>
+              {updateEasySlipMutation.isPending ? (
+                <><Loader2 className="size-4 mr-2 animate-spin" /> กำลังบันทึก...</>
+              ) : (
+                'บันทึก'
+              )}
+            </Button>
+
+            {isEasySlipConfigured && (
+              <>
+                <Button variant="outline" onClick={handleTestEasySlipConnection} disabled={testEasySlipMutation.isPending}>
+                  {testEasySlipMutation.isPending ? (
+                    <><Loader2 className="size-4 mr-2 animate-spin" /> กำลังทดสอบ...</>
+                  ) : (
+                    'ทดสอบการเชื่อมต่อ'
+                  )}
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={handleClearEasySlipToken}
+                  disabled={clearEasySlipMutation.isPending}
+                >
+                  {clearEasySlipMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : 'ลบ'}
                 </Button>
               </>
             )}
