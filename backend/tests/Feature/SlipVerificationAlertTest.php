@@ -10,6 +10,7 @@ use App\Models\FlowPlugin;
 use App\Models\User;
 use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
+use App\Services\Payment\TelegramAlertBotService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -106,5 +107,78 @@ class SlipVerificationAlertTest extends TestCase
 
         Http::assertNothingSent();
         $this->addToAssertionCount(1); // ไม่ throw = ผ่าน
+    }
+
+    public function test_alert_attaches_confirm_button_for_nonfraud(): void
+    {
+        [$bot, $conversation, $plugin] = $this->makeBotWithTelegramPlugin();
+
+        $captured = null;
+        $this->mock(TelegramAlertBotService::class, function ($m) use (&$captured) {
+            $m->shouldReceive('sendMessage')->once()
+                ->andReturnUsing(function ($token, $chatId, $text, $keyboard) use (&$captured) {
+                    $captured = $keyboard;
+                });
+        });
+
+        $result = new SlipVerificationResult(
+            isSlip: true, passed: false, failReason: 'unreadable',
+            amount: null, expectedAmount: 590.0,
+        );
+
+        app(SlipVerificationService::class)->notifyAdmin($bot, $conversation, $result);
+
+        $this->assertNotNull($captured);
+        $this->assertSame('pc|'.$conversation->id.'|590', $captured[0][0]['callback_data']);
+        $this->assertStringContainsString('ยืนยันรับเงิน', $captured[0][0]['text']);
+    }
+
+    public function test_alert_shows_two_buttons_when_amounts_differ_and_fraud_prefix(): void
+    {
+        [$bot, $conversation, $plugin] = $this->makeBotWithTelegramPlugin();
+
+        $captured = null;
+        $this->mock(TelegramAlertBotService::class, function ($m) use (&$captured) {
+            $m->shouldReceive('sendMessage')->once()
+                ->andReturnUsing(function ($t, $c, $tx, $kb) use (&$captured) {
+                    $captured = $kb;
+                });
+        });
+
+        $result = new SlipVerificationResult(
+            isSlip: true, passed: false, failReason: 'amount_mismatch',
+            amount: 600.0, expectedAmount: 590.0,
+        );
+
+        app(SlipVerificationService::class)->notifyAdmin($bot, $conversation, $result);
+
+        $this->assertCount(2, $captured);
+        $this->assertSame('pa|'.$conversation->id.'|590', $captured[0][0]['callback_data']);
+        $this->assertSame('pa|'.$conversation->id.'|600', $captured[1][0]['callback_data']);
+    }
+
+    /**
+     * เตรียม bot + flow + telegram plugin (enabled) + conversation ผูก bot ตาม pattern
+     * ที่ใช้ใน test อื่นในไฟล์นี้ (token TOK, chat_id 999).
+     *
+     * @return array{0: Bot, 1: Conversation, 2: FlowPlugin}
+     */
+    private function makeBotWithTelegramPlugin(): array
+    {
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+        $flow = Flow::factory()->create(['bot_id' => $bot->id]);
+        $bot->update(['default_flow_id' => $flow->id]);
+        $plugin = FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'แจ้งออเดอร์',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'TOK', 'chat_id' => '999'],
+        ]);
+        $conversation = Conversation::factory()->create(['bot_id' => $bot->id]);
+
+        return [$bot->fresh(), $conversation, $plugin];
     }
 }

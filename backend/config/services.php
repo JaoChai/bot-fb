@@ -75,6 +75,10 @@ return [
         'relevance_threshold' => env('EMBEDDING_RELEVANCE_THRESHOLD', 0.7),
     ],
 
+    'telegram_alert' => [
+        'secret' => env('TELEGRAM_ALERT_WEBHOOK_SECRET'),
+    ],
+
     'jina' => [
         'api_key' => env('JINA_API_KEY'),
         'base_url' => env('JINA_BASE_URL', 'https://api.jina.ai/v1'),

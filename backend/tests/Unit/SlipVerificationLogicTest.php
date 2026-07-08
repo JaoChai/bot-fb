@@ -4,13 +4,14 @@ namespace Tests\Unit;
 
 use App\Services\Payment\PaymentMessageDetector;
 use App\Services\Payment\SlipVerificationService;
+use App\Services\Payment\TelegramAlertBotService;
 use PHPUnit\Framework\TestCase;
 
 class SlipVerificationLogicTest extends TestCase
 {
     private function service(): SlipVerificationService
     {
-        return new SlipVerificationService(new PaymentMessageDetector);
+        return new SlipVerificationService(new PaymentMessageDetector, new TelegramAlertBotService);
     }
 
     // --- accountMatches: เทียบเลขบัญชีที่ EasySlip mask มา กับเลขที่ตั้งค่าไว้ ---

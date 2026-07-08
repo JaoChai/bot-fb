@@ -30,6 +30,7 @@ class SlipVerificationService
 
     public function __construct(
         private readonly PaymentMessageDetector $detector,
+        private readonly TelegramAlertBotService $alertBot,
     ) {}
 
     /**
@@ -263,14 +264,8 @@ class SlipVerificationService
         }
         $lines[] = 'กรุณาเช็คในแชทก่อนยืนยัน';
 
-        try {
-            Http::timeout(5)->retry(2, 500)->post("https://api.telegram.org/bot{$token}/sendMessage", [
-                'chat_id' => $chatId,
-                'text' => implode("\n", $lines),
-            ]);
-        } catch (\Throwable $e) {
-            Log::warning('Slip alert: telegram send failed', ['bot_id' => $bot->id, 'error' => $e->getMessage()]);
-        }
+        $keyboard = $this->buildConfirmKeyboard($conversation, $result);
+        $this->alertBot->sendMessage($token, $chatId, implode("\n", $lines), $keyboard);
     }
 
     /**
@@ -279,6 +274,41 @@ class SlipVerificationService
     private static function formatBaht(float $value): string
     {
         return number_format($value, fmod($value, 1) == 0.0 ? 0 : 2);
+    }
+
+    /**
+     * สร้าง inline_keyboard ปุ่มยืนยันตามยอดที่รู้และประเภทเคส (fraud → prefix pa).
+     * คืน null เมื่อไม่มี conversation (resolve ตอน callback ไม่ได้).
+     *
+     * @return array<int, array<int, array{text: string, callback_data: string}>>|null
+     */
+    private function buildConfirmKeyboard(?Conversation $conversation, SlipVerificationResult $result): ?array
+    {
+        if ($conversation === null) {
+            return null;
+        }
+
+        $action = in_array($result->failReason, self::FRAUD_REASONS, true) ? 'pa' : 'pc';
+        $id = $conversation->id;
+        $orderAmt = $result->expectedAmount;
+        $slipAmt = $result->amount;
+
+        $btn = fn (string $text, string $amt) => [['text' => $text, 'callback_data' => "{$action}|{$id}|{$amt}"]];
+
+        if ($orderAmt !== null && $slipAmt !== null && $orderAmt != $slipAmt) {
+            return [
+                $btn('✅ ยอดออเดอร์ '.self::formatBaht($orderAmt), (string) $orderAmt),
+                $btn('✅ ยอดในสลิป '.self::formatBaht($slipAmt), (string) $slipAmt),
+            ];
+        }
+        if ($orderAmt !== null) {
+            return [$btn('✅ ยืนยันรับเงิน '.self::formatBaht($orderAmt).' บาท', (string) $orderAmt)];
+        }
+        if ($slipAmt !== null) {
+            return [$btn('✅ ยืนยันรับเงิน '.self::formatBaht($slipAmt).' บาท', (string) $slipAmt)];
+        }
+
+        return [$btn('✅ ยืนยัน (ใช้ยอดจากแชท)', 'x')];
     }
 
     /**

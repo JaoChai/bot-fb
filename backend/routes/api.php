@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\UserSettingController;
 use App\Http\Controllers\Api\VipController;
 use App\Http\Controllers\Webhook\FacebookWebhookController;
 use App\Http\Controllers\Webhook\LINEWebhookController;
+use App\Http\Controllers\Webhook\TelegramAlertCallbackController;
 use App\Http\Controllers\Webhook\TelegramWebhookController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -309,6 +310,10 @@ Route::prefix('webhook')->middleware('throttle.webhook')->withoutMiddleware(['au
     // Telegram webhook - POST /api/webhook/telegram/{token}
     Route::post('/telegram/{token}', [TelegramWebhookController::class, 'handle'])
         ->name('webhook.telegram');
+
+    // Telegram alert callback (ปุ่มยืนยันรับเงิน) - POST /api/webhook/telegram-alert/{token}
+    Route::post('/telegram-alert/{token}', [TelegramAlertCallbackController::class, 'handle'])
+        ->name('webhook.telegram-alert');
 
     // Facebook webhook - GET for verification, POST for events
     Route::get('/facebook/{token}', [FacebookWebhookController::class, 'verify'])
