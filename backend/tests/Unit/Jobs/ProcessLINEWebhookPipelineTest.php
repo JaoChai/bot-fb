@@ -390,10 +390,12 @@ class ProcessLINEWebhookPipelineTest extends TestCase
             ],
         ]);
 
-        // Legacy path: isMessageEvent/isTextMessage called twice (once in handle() flag guard, once in processEvent())
+        // Legacy path: isMessageEvent/isTextMessage called twice (once in handle() flag guard, once in processEvent());
+        // isImageMessage is checked once in the handle() flag guard (sticker → false → legacy).
         $lineService = Mockery::mock(LINEService::class);
         $lineService->shouldReceive('isMessageEvent')->twice()->andReturn(true);
         $lineService->shouldReceive('isTextMessage')->twice()->andReturn(false);
+        $lineService->shouldReceive('isImageMessage')->once()->andReturn(false);
         $lineService->shouldReceive('extractUserId')->andReturn(null); // null userId → handleNonTextMessage returns early
         $lineService->shouldReceive('extractReplyToken')->andReturn('reply_token');
         $lineService->shouldReceive('extractMessage')->andReturn(['type' => 'sticker', 'id' => 'stk_001', 'sticker_id' => '1']);

@@ -104,7 +104,10 @@ class ProcessLINEWebhook implements ShouldQueue
                     if (
                         LineWebhookPipelineFlag::enabledFor($this->bot)
                         && $lineService->isMessageEvent($this->event)
-                        && $lineService->isTextMessage($this->event)
+                        && (
+                            $lineService->isTextMessage($this->event)
+                            || $lineService->isImageMessage($this->event)
+                        )
                     ) {
                         $this->runPipeline($gating, $contextSvc, $responseSvc, $outputSvc);
 

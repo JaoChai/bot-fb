@@ -51,6 +51,8 @@ class LineWebhookContextService
 
         $event = $ctx->event;
 
+        $isImage = $ctx->messageType() === 'image';
+
         $messageData = [
             'text' => $event['message']['text'] ?? null,
             'id' => $event['message']['id'] ?? null,
@@ -80,8 +82,24 @@ class LineWebhookContextService
             return;
         }
 
+        // --- Image content download (before transaction; external API call) ---
+        // Mirrors legacy handleNonTextMessage: fetch + store the LINE image so the saved
+        // Message carries media_url/media_type. Stage 3 (generateImageResponse) reads
+        // userMessage->media_url; without this the bot goes silent on images.
+        $mediaUrl = null;
+        $mediaType = null;
+        if ($isImage && $messageData['id'] !== null) {
+            $mediaData = $this->line->downloadAndStoreFile($ctx->bot, (string) $messageData['id'], 'image');
+            if ($mediaData) {
+                $mediaUrl = $mediaData['url'];
+                $mediaType = $mediaData['mime_type'];
+            }
+        }
+
         // --- Aggregation settings (needed for loading indicator duration) ---
-        $useAggregation = $this->aggregation->isEnabled($ctx->bot);
+        // Images are never buffered into smart aggregation (legacy never did) — they must
+        // reach Stage 3 immediately for slip verification / vision.
+        $useAggregation = ! $isImage && $this->aggregation->isEnabled($ctx->bot);
         $waitTimeMs = $useAggregation ? $this->aggregation->getWaitTimeMs($ctx->bot) : 0;
 
         // --- Loading indicator (before DB transaction) ---
@@ -98,6 +116,9 @@ class LineWebhookContextService
             $ctx,
             $userId,
             $messageData,
+            $isImage,
+            $mediaUrl,
+            $mediaType,
             $webhookEventId,
             $eventTimestamp,
             $isRedeliveryEvent,
@@ -175,11 +196,13 @@ class LineWebhookContextService
                 return;
             }
 
-            // --- Save user message ---
+            // --- Save user message (image carries media_url/type, mirrors legacy handleNonTextMessage) ---
             $userMessage = $conversation->messages()->create([
                 'sender' => 'user',
-                'content' => $messageData['text'],
-                'type' => 'text',
+                'content' => $isImage ? '[รูปภาพ]' : $messageData['text'],
+                'type' => $isImage ? 'image' : 'text',
+                'media_url' => $mediaUrl,
+                'media_type' => $mediaType,
                 'external_message_id' => $messageData['id'],
                 'webhook_event_id' => $webhookEventId,
                 'is_redelivery' => $isRedeliveryEvent,
