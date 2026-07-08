@@ -2,8 +2,18 @@
 
 namespace App\Services\Payment;
 
+use App\Models\Bot;
+use App\Models\Conversation;
+use App\Models\Message;
+use App\Models\SlipVerification;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+
 class SlipVerificationService
 {
+    private const VERIFY_URL = 'https://developer.easyslip.com/api/v1/verify';
+
     public function __construct(
         private readonly PaymentMessageDetector $detector,
     ) {}
@@ -66,5 +76,142 @@ class SlipVerificationService
         }
 
         return null;
+    }
+
+    public function verify(
+        Bot $bot,
+        ?Conversation $conversation,
+        ?Message $message,
+        string $imageUrl,
+        array $conversationHistory,
+    ): SlipVerificationResult {
+        $token = $bot->user?->settings?->getEasySlipApiToken();
+        if (! $token) {
+            Log::warning('Slip verification enabled but EasySlip token missing', ['bot_id' => $bot->id]);
+
+            return $this->record($bot, $conversation, $message, null, new SlipVerificationResult(
+                isSlip: false, passed: false, failReason: 'api_error',
+            ));
+        }
+
+        try {
+            $response = Http::timeout(15)
+                ->withToken($token)
+                ->post(self::VERIFY_URL, ['url' => $imageUrl, 'checkDuplicate' => false]);
+        } catch (ConnectionException $e) {
+            Log::warning('EasySlip connection failed', ['bot_id' => $bot->id, 'error' => $e->getMessage()]);
+
+            return $this->record($bot, $conversation, $message, null, new SlipVerificationResult(
+                isSlip: false, passed: false, failReason: 'api_error',
+            ));
+        }
+
+        if ($response->status() === 400) {
+            // รูปไม่ใช่สลิป/อ่านไม่ได้ → ไป vision flow เดิม ไม่บันทึก
+            return new SlipVerificationResult(isSlip: false, passed: false);
+        }
+
+        if ($response->status() === 404) {
+            // อ่าน QR ได้แต่ไม่พบธุรกรรมในระบบธนาคาร → สลิปปลอม/สลิปเก่าผิดปกติ
+            return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
+                isSlip: true, passed: false, failReason: 'fake',
+            ));
+        }
+
+        if (! $response->successful()) {
+            Log::warning('EasySlip API error', [
+                'bot_id' => $bot->id, 'status' => $response->status(), 'body' => mb_substr($response->body(), 0, 500),
+            ]);
+
+            return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
+                isSlip: false, passed: false, failReason: 'api_error',
+            ));
+        }
+
+        $data = $response->json('data');
+        if (! is_array($data) || empty($data['transRef'])) {
+            return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
+                isSlip: false, passed: false, failReason: 'api_error',
+            ));
+        }
+
+        $transRef = (string) $data['transRef'];
+        $slipAmount = (float) ($data['amount']['amount'] ?? 0);
+        $receiverAccount = (string) ($data['receiver']['account']['bank']['account'] ?? '');
+
+        // เช็ค 1: บัญชีปลายทางต้องเป็นบัญชีร้าน
+        $configured = (string) ($bot->settings?->slip_receiver_account ?? '');
+        if ($configured === '' || ! self::accountMatches($configured, $receiverAccount)) {
+            return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
+                isSlip: true, passed: false, failReason: 'wrong_account',
+                amount: $slipAmount, transRef: $transRef,
+            ), $receiverAccount);
+        }
+
+        // เช็ค 2: สลิปซ้ำ (เคย passed แล้วใน bot นี้)
+        $isDuplicate = SlipVerification::where('bot_id', $bot->id)
+            ->where('trans_ref', $transRef)
+            ->where('status', 'passed')
+            ->exists();
+        if ($isDuplicate) {
+            return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
+                isSlip: true, passed: false, failReason: 'duplicate',
+                amount: $slipAmount, transRef: $transRef,
+            ), $receiverAccount);
+        }
+
+        // เช็ค 3: ต้องมีออเดอร์ค้างชำระใน history
+        $expected = $this->findExpectedPayment($conversationHistory);
+        if ($expected === null) {
+            return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
+                isSlip: true, passed: false, failReason: 'no_pending_order',
+                amount: $slipAmount, transRef: $transRef,
+            ), $receiverAccount);
+        }
+
+        // เช็ค 4: ยอดต้องตรง (± tolerance)
+        $tolerance = (float) ($bot->settings?->slip_amount_tolerance ?? 0);
+        if (abs($slipAmount - $expected['total']) > $tolerance) {
+            return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
+                isSlip: true, passed: false, failReason: 'amount_mismatch',
+                amount: $slipAmount, transRef: $transRef,
+                expectedAmount: $expected['total'], orderSummary: $expected['summary'],
+            ), $receiverAccount);
+        }
+
+        return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
+            isSlip: true, passed: true,
+            amount: $slipAmount, transRef: $transRef,
+            expectedAmount: $expected['total'], orderSummary: $expected['summary'],
+        ), $receiverAccount);
+    }
+
+    /**
+     * บันทึกผลการตรวจลงตาราง slip_verifications (ไม่ throw — ประวัติพังต้องไม่ล้มการตอบ)
+     */
+    private function record(
+        Bot $bot,
+        ?Conversation $conversation,
+        ?Message $message,
+        ?array $rawResponse,
+        SlipVerificationResult $result,
+        ?string $receiverAccount = null,
+    ): SlipVerificationResult {
+        try {
+            SlipVerification::create([
+                'bot_id' => $bot->id,
+                'conversation_id' => $conversation?->id,
+                'message_id' => $message?->id,
+                'trans_ref' => $result->transRef,
+                'amount' => $result->amount,
+                'receiver_account' => $receiverAccount,
+                'status' => $result->passed ? 'passed' : ($result->failReason ?? 'api_error'),
+                'raw_response' => $rawResponse,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to record slip verification', ['bot_id' => $bot->id, 'error' => $e->getMessage()]);
+        }
+
+        return $result;
     }
 }
