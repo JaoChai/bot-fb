@@ -572,7 +572,6 @@ export interface DashboardSummary {
   active_bots: number;
   total_conversations: number;
   active_conversations: number;
-  handover_conversations: number;
   messages_today: number;
   messages_yesterday?: number;
   vip_customers: number;
@@ -591,22 +590,9 @@ export interface DashboardBotSummary {
   messages_today: number;
 }
 
-export interface DashboardHandoverAlert {
-  id: number;
-  bot_id: number;
-  bot_name: string;
-  customer_name: string;
-  waiting_since: string;
-}
-
-export interface DashboardAlerts {
-  handover_conversations: DashboardHandoverAlert[];
-}
-
 export interface DashboardData {
   summary: DashboardSummary;
   bots: DashboardBotSummary[];
-  alerts: DashboardAlerts;
 }
 
 // Product Stock

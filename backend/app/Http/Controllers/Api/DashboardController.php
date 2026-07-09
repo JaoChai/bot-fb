@@ -4,21 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Bot;
-use App\Models\Conversation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
-    /**
-     * Handovers older than this stay in the chat page but are hidden from
-     * dashboard alerts/counts — most are stale conversations, not real waits.
-     */
-    private const HANDOVER_VISIBLE_HOURS = 48;
-
     /**
      * Get dashboard summary data
      * GET /api/dashboard/summary
@@ -44,14 +36,10 @@ class DashboardController extends Controller
             fn () => $this->getBotsWithMetrics($user->id, $isSqlite),
         );
 
-        // Get alerts
-        $alerts = $this->getAlerts($user->id, $botIds);
-
         return response()->json([
             'data' => [
                 'summary' => $summaryStats,
                 'bots' => $bots,
-                'alerts' => $alerts,
             ],
         ]);
     }
@@ -67,7 +55,6 @@ class DashboardController extends Controller
                 'active_bots' => 0,
                 'total_conversations' => 0,
                 'active_conversations' => 0,
-                'handover_conversations' => 0,
                 'messages_today' => 0,
                 'messages_yesterday' => 0,
                 'vip_customers' => 0,
@@ -79,9 +66,6 @@ class DashboardController extends Controller
         $todayEnd = $isSqlite ? "date(CURRENT_DATE, '+1 day')" : "CURRENT_DATE + INTERVAL '1 day'";
         $yesterdayStart = $isSqlite ? "date(CURRENT_DATE, '-1 day')" : "CURRENT_DATE - INTERVAL '1 day'";
         $notesLike = $isSqlite ? "CAST(c.memory_notes AS TEXT) LIKE '%VIP%'" : "c.memory_notes::text ILIKE '%VIP%'";
-        // Bound as a PHP-side cutoff so both drivers compare against app-timezone
-        // timestamps (SQL NOW() runs in the DB server's timezone, not Asia/Bangkok).
-        $handoverCutoff = self::handoverCutoff()->toDateTimeString();
 
         $stats = DB::selectOne("
             WITH bot_stats AS (
@@ -94,8 +78,7 @@ class DashboardController extends Controller
             conv_stats AS (
                 SELECT
                     COUNT(*) as total_conversations,
-                    COUNT(*) FILTER (WHERE status = 'active') as active_conversations,
-                    COUNT(*) FILTER (WHERE status = 'handover' AND updated_at >= ?) as handover_conversations
+                    COUNT(*) FILTER (WHERE status = 'active') as active_conversations
                 FROM conversations
                 WHERE bot_id IN ({$botIdsStr}) AND deleted_at IS NULL
             ),
@@ -135,7 +118,6 @@ class DashboardController extends Controller
                 bs.active_bots,
                 cs.total_conversations,
                 cs.active_conversations,
-                cs.handover_conversations,
                 mt.messages_today,
                 ym.messages_yesterday,
                 vs.vip_customers,
@@ -145,14 +127,13 @@ class DashboardController extends Controller
             CROSS JOIN msg_today mt
             CROSS JOIN yesterday_msgs ym
             CROSS JOIN vip_stats vs
-        ", [$handoverCutoff]);
+        ");
 
         return [
             'total_bots' => (int) ($stats->total_bots ?? 0),
             'active_bots' => (int) ($stats->active_bots ?? 0),
             'total_conversations' => (int) ($stats->total_conversations ?? 0),
             'active_conversations' => (int) ($stats->active_conversations ?? 0),
-            'handover_conversations' => (int) ($stats->handover_conversations ?? 0),
             'messages_today' => (int) ($stats->messages_today ?? 0),
             'messages_yesterday' => (int) ($stats->messages_yesterday ?? 0),
             'vip_customers' => (int) ($stats->vip_customers ?? 0),
@@ -202,45 +183,5 @@ class DashboardController extends Controller
                 'messages_today' => (int) ($messagesTodayByBot[$bot->id] ?? 0),
             ];
         })->toArray();
-    }
-
-    /**
-     * Oldest updated_at a handover can have and still show on the dashboard.
-     */
-    private static function handoverCutoff(): Carbon
-    {
-        return now()->subHours(self::HANDOVER_VISIBLE_HOURS);
-    }
-
-    /**
-     * Get alerts (handover conversations)
-     */
-    protected function getAlerts(int $userId, $botIds): array
-    {
-        if ($botIds->isEmpty()) {
-            return [
-                'handover_conversations' => [],
-            ];
-        }
-
-        // Handover conversations — only recent ones (stale handovers stay visible in the chat page)
-        $handoverConversations = Conversation::whereIn('bot_id', $botIds)
-            ->where('status', 'handover')
-            ->where('updated_at', '>=', self::handoverCutoff())
-            ->with(['bot:id,name', 'customerProfile:id,display_name'])
-            ->orderBy('updated_at', 'asc') // Oldest waiting first
-            ->limit(5)
-            ->get()
-            ->map(fn ($c) => [
-                'id' => $c->id,
-                'bot_id' => $c->bot_id,
-                'bot_name' => $c->bot->name,
-                'customer_name' => $c->customerProfile?->display_name ?? $c->external_customer_id,
-                'waiting_since' => $c->updated_at->toISOString(),
-            ]);
-
-        return [
-            'handover_conversations' => $handoverConversations,
-        ];
     }
 }
