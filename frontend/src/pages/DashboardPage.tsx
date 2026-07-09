@@ -113,11 +113,7 @@ export function DashboardPage() {
     <div className="space-y-6">
       {header}
 
-      <AlertStrip
-        bots={data?.bots ?? []}
-        handovers={data?.alerts.handover_conversations ?? []}
-        handoverTotal={data?.summary.handover_conversations ?? 0}
-      />
+      <AlertStrip bots={data?.bots ?? []} />
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <DashboardStatCard

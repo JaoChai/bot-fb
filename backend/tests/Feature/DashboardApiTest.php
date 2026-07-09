@@ -101,55 +101,14 @@ class DashboardApiTest extends TestCase
                     'active_bots',
                     'total_conversations',
                     'active_conversations',
-                    'handover_conversations',
                     'messages_today',
                     'messages_yesterday',
                     'vip_customers',
                     'vip_total_spent',
                 ],
                 'bots',
-                'alerts',
             ],
         ]);
-    }
-
-    public function test_stale_handover_conversations_hidden_from_dashboard(): void
-    {
-        $user = User::factory()->create(['role' => 'owner']);
-        $bot = Bot::factory()->create(['user_id' => $user->id, 'status' => 'active']);
-
-        $customer = CustomerProfile::create([
-            'external_id' => 'test-handover-customer',
-            'display_name' => 'Handover Test',
-            'channel_type' => 'line',
-        ]);
-
-        $recent = Conversation::create([
-            'bot_id' => $bot->id,
-            'customer_profile_id' => $customer->id,
-            'external_customer_id' => 'test-handover-customer',
-            'channel_type' => 'line',
-            'status' => 'handover',
-        ]);
-
-        $stale = Conversation::create([
-            'bot_id' => $bot->id,
-            'customer_profile_id' => $customer->id,
-            'external_customer_id' => 'test-handover-customer',
-            'channel_type' => 'line',
-            'status' => 'handover',
-        ]);
-        // Push past the 48-hour dashboard window without touching updated_at via Eloquent
-        Conversation::where('id', $stale->id)->update(['updated_at' => now()->subDays(30)]);
-
-        $response = $this->actingAs($user)->getJson('/api/dashboard/summary');
-
-        $response->assertOk();
-        $this->assertEquals(1, $response->json('data.summary.handover_conversations'));
-
-        $alertIds = collect($response->json('data.alerts.handover_conversations'))->pluck('id');
-        $this->assertTrue($alertIds->contains($recent->id));
-        $this->assertFalse($alertIds->contains($stale->id));
     }
 
     public function test_dashboard_summary_with_no_bots(): void
