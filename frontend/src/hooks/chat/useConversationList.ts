@@ -90,7 +90,8 @@ export function useInfiniteConversationList(
     enabled: !!botId,
     // Heartbeat refresh as safety net for missed WebSocket events (subscription auth re-cache,
     // Reverb backlog, channel resubscribe race). Without this, the sidebar can stay stale
-    // indefinitely while chat detail still refreshes via useMessages heartbeat.
+    // indefinitely, while chat detail stays fresh via WebSocket events on the infinite
+    // messages cache (plus reconnect sync).
     refetchInterval: isConnected ? HEARTBEAT_INTERVAL : FALLBACK_POLLING_INTERVAL,
   });
 }

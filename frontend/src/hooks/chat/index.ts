@@ -23,9 +23,17 @@ export type {
   AgentMessageResponse,
 } from './messageKeys';
 
+// Pure cache helpers
+export {
+  messageExistsInInfinite,
+  prependMessagesToInfinite,
+  replaceMessageInInfinite,
+  removeMessageFromInfinite,
+  type InfiniteMessages,
+} from './infiniteMessageCache';
+
 // Message Queries (T039)
 export {
-  useMessages,
   useInfiniteMessages,
   flattenInfiniteMessages,
 } from './useMessageQueries';

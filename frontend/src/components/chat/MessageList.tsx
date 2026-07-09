@@ -2,7 +2,7 @@
  * T021: MessageList component
  * List of MessageBubble components with auto-scroll
  */
-import { useRef, useEffect, useCallback, useMemo, memo } from 'react';
+import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,9 @@ export interface MessageListProps {
   conversationCreatedAt?: string;
   autoScroll?: boolean;
   onAutoScrollChange?: (autoScroll: boolean) => void;
+  hasOlder?: boolean;
+  isLoadingOlder?: boolean;
+  onLoadOlder?: () => void;
 }
 
 // Memoized message item with context separator
@@ -72,9 +75,23 @@ export function MessageList({
   conversationCreatedAt,
   autoScroll: externalAutoScroll,
   onAutoScrollChange,
+  hasOlder = false,
+  isLoadingOlder = false,
+  onLoadOlder,
 }: MessageListProps) {
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const internalAutoScroll = useRef(true);
+
+  // Scroll anchoring for load-older: capture the current first message and
+  // restore via its post-prepend virtualizer offset, so growth below the
+  // viewport (realtime messages appended mid-fetch) cannot shift the view.
+  const loadOlderAnchorRef = useRef<{
+    messageId: number;
+    scrollTop: number;
+    totalSize: number; // fallback only
+    sawLoading: boolean;
+  } | null>(null);
+  const prevFirstIdRef = useRef<number | null>(null);
 
   // Use external state if provided, otherwise use internal
   const autoScroll = externalAutoScroll ?? internalAutoScroll.current;
@@ -92,6 +109,7 @@ export function MessageList({
     getScrollElement: () => scrollViewportRef.current,
     estimateSize: () => 80,
     overscan: 10,
+    getItemKey: (index) => messages[index].id,
   });
 
   // Auto scroll to bottom when messages change
@@ -101,7 +119,42 @@ export function MessageList({
     }
   }, [messages.length, autoScroll, virtualizer]);
 
-  // Handle scroll to detect when user scrolls to bottom
+  // Restore scroll position after older messages are prepended. The anchor
+  // message was index 0 (offset 0) at capture; its new virtualizer offset is
+  // exactly the estimated height inserted above, immune to items appended
+  // below (unlike a totalSize delta).
+  useLayoutEffect(() => {
+    const anchor = loadOlderAnchorRef.current;
+    if (anchor && isLoadingOlder) {
+      anchor.sawLoading = true;
+    }
+
+    const firstId = messages[0]?.id ?? null;
+    const viewport = scrollViewportRef.current;
+
+    if (anchor && viewport && prevFirstIdRef.current !== null && firstId !== prevFirstIdRef.current) {
+      const newIndex = messages.findIndex((m) => m.id === anchor.messageId);
+      const offsetForIndex =
+        newIndex > 0 ? virtualizer.getOffsetForIndex(newIndex, 'start')?.[0] : undefined;
+
+      if (offsetForIndex !== undefined) {
+        viewport.scrollTop = anchor.scrollTop + offsetForIndex;
+      } else {
+        // Anchor message no longer present — fall back to total-size delta
+        viewport.scrollTop = anchor.scrollTop + (virtualizer.getTotalSize() - anchor.totalSize);
+      }
+      loadOlderAnchorRef.current = null;
+    } else if (anchor && anchor.sawLoading && !isLoadingOlder && firstId === prevFirstIdRef.current) {
+      // Anchor released only after a loading cycle was observed to settle without
+      // a prepend (error / empty page), so a messages update landing before the
+      // loading flag flips cannot release it early.
+      loadOlderAnchorRef.current = null;
+    }
+
+    prevFirstIdRef.current = firstId;
+  }, [messages, isLoadingOlder, virtualizer]);
+
+  // Handle scroll: bottom detection for auto-scroll + top detection for load-older
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
       const target = e.currentTarget;
@@ -111,8 +164,30 @@ export function MessageList({
         internalAutoScroll.current = isAtBottom;
         onAutoScrollChange?.(isAtBottom);
       }
+
+      // Near the top and the user is actively reading history (!autoScroll
+      // guards against the initial smooth-scroll-to-bottom passing the top).
+      if (
+        target.scrollTop < 100 &&
+        !autoScroll &&
+        hasOlder &&
+        !isLoadingOlder &&
+        !loadOlderAnchorRef.current &&
+        onLoadOlder &&
+        messages.length > 0
+      ) {
+        // messages[0] is at virtualizer index 0 → offset 0; after the prepend
+        // its new offset IS the height added above the viewport.
+        loadOlderAnchorRef.current = {
+          messageId: messages[0].id,
+          scrollTop: target.scrollTop,
+          totalSize: virtualizer.getTotalSize(),
+          sawLoading: false,
+        };
+        onLoadOlder();
+      }
     },
-    [autoScroll, onAutoScrollChange]
+    [autoScroll, onAutoScrollChange, hasOlder, isLoadingOlder, onLoadOlder, virtualizer, messages]
   );
 
   // Handle scroll to bottom button click
@@ -146,8 +221,15 @@ export function MessageList({
         onScroll={handleScroll}
       >
         <div className="max-w-3xl mx-auto">
+          {/* Older-page loading indicator */}
+          {isLoadingOlder && (
+            <div className="flex items-center justify-center py-2">
+              <Loader2 className="size-4 animate-spin text-muted-foreground" />
+            </div>
+          )}
+
           {/* Conversation start indicator */}
-          {conversationCreatedAt && isValid(new Date(conversationCreatedAt)) && (
+          {!hasOlder && conversationCreatedAt && isValid(new Date(conversationCreatedAt)) && (
             <div className="text-center text-sm text-muted-foreground py-2">
               <span className="bg-muted px-3 py-1 rounded-full text-xs">
                 Started {format(new Date(conversationCreatedAt), 'PPp', { locale: th })}

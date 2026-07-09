@@ -3,7 +3,8 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { QueryClient, InfiniteData } from '@tanstack/react-query';
 import { type ConversationsResponse } from '@/hooks/chat/useConversationList';
-import { messageKeys, type MessagesResponse } from '@/hooks/chat/messageKeys';
+import { messageKeys } from '@/hooks/chat/messageKeys';
+import { prependMessagesToInfinite, type InfiniteMessages } from '@/hooks/chat/infiniteMessageCache';
 import type { Conversation, Message } from '@/types/api';
 
 interface SyncCursors {
@@ -100,15 +101,9 @@ async function syncConversation(
   const newMessages = response.data.data;
 
   if (newMessages.length > 0) {
-    const messageOptions = { order: 'asc' as const, perPage: 100 };
-    queryClient.setQueryData<MessagesResponse>(
-      messageKeys.listWithOptions(botId, conversationId, messageOptions),
-      (old) => {
-        if (!old) return old;
-        const existingIds = new Set(old.data.map((m) => m.id));
-        const unique = newMessages.filter((m) => !existingIds.has(m.id));
-        return { ...old, data: [...old.data, ...unique] };
-      }
+    queryClient.setQueryData<InfiniteMessages>(
+      messageKeys.infinite(botId, conversationId),
+      (old) => (old ? prependMessagesToInfinite(old, newMessages) : old)
     );
 
     const maxId = Math.max(...newMessages.map((m) => m.id));

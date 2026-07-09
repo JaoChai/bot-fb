@@ -3,7 +3,7 @@
  * Handles Telegram and LINE message rendering
  * Extracted from ChatWindow.tsx
  */
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { ChevronDown, Loader2 } from 'lucide-react';
@@ -18,6 +18,9 @@ interface ChannelMessageAreaProps {
   conversation: Conversation;
   isLoading: boolean;
   channelType: 'telegram' | 'line';
+  hasOlder?: boolean;
+  isLoadingOlder?: boolean;
+  onLoadOlder?: () => void;
 }
 
 export function ChannelMessageArea({
@@ -25,10 +28,28 @@ export function ChannelMessageArea({
   conversation,
   isLoading,
   channelType,
+  hasOlder = false,
+  isLoadingOlder = false,
+  onLoadOlder,
 }: ChannelMessageAreaProps) {
   const [autoScroll, setAutoScroll] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
+
+  // Scroll anchoring for load-older: captured when the fetch is triggered,
+  // applied after the older page is prepended so the view doesn't jump.
+  // Anchored to the previous first message's element (not a scrollHeight
+  // delta) because a realtime message can be appended at the bottom while
+  // the older-page fetch is in flight — that growth happens below the
+  // anchor and must not shift the restored position.
+  const loadOlderAnchorRef = useRef<{
+    messageId: number;
+    top: number; // anchor element top in content coordinates
+    scrollTop: number;
+    scrollHeight: number; // fallback only
+    sawLoading: boolean;
+  } | null>(null);
+  const prevFirstIdRef = useRef<number | null>(null);
 
   // Auto scroll to bottom when messages change
   useEffect(() => {
@@ -37,7 +58,41 @@ export function ChannelMessageArea({
     }
   }, [messages, autoScroll]);
 
-  // Handle scroll to detect when user scrolls up
+  // Restore scroll position after older messages are prepended
+  useLayoutEffect(() => {
+    const anchor = loadOlderAnchorRef.current;
+    if (anchor && isLoadingOlder) {
+      anchor.sawLoading = true;
+    }
+
+    const firstId = messages[0]?.id ?? null;
+    const viewport = scrollViewportRef.current;
+
+    if (anchor && viewport && prevFirstIdRef.current !== null && firstId !== prevFirstIdRef.current) {
+      const anchorEl = viewport.querySelector<HTMLElement>(
+        `[data-message-id="${anchor.messageId}"]`
+      );
+      if (anchorEl) {
+        const newTop =
+          anchorEl.getBoundingClientRect().top -
+          viewport.getBoundingClientRect().top +
+          viewport.scrollTop;
+        viewport.scrollTop = anchor.scrollTop + (newTop - anchor.top);
+      } else {
+        viewport.scrollTop = anchor.scrollTop + (viewport.scrollHeight - anchor.scrollHeight);
+      }
+      loadOlderAnchorRef.current = null;
+    } else if (anchor && anchor.sawLoading && !isLoadingOlder && firstId === prevFirstIdRef.current) {
+      // Anchor released only after a loading cycle was observed to settle without
+      // a prepend (error / empty page), so a messages update landing before the
+      // loading flag flips cannot release it early.
+      loadOlderAnchorRef.current = null;
+    }
+
+    prevFirstIdRef.current = firstId;
+  }, [messages, isLoadingOlder]);
+
+  // Handle scroll: bottom detection for auto-scroll + top detection for load-older
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
       const target = e.currentTarget;
@@ -46,8 +101,34 @@ export function ChannelMessageArea({
       if (isAtBottom !== autoScroll) {
         setAutoScroll(isAtBottom);
       }
+
+      // Near the top and the user is actively reading history (!autoScroll
+      // guards against the initial smooth-scroll-to-bottom passing the top).
+      if (
+        target.scrollTop < 100 &&
+        !autoScroll &&
+        hasOlder &&
+        !isLoadingOlder &&
+        !loadOlderAnchorRef.current &&
+        onLoadOlder
+      ) {
+        const firstMessageEl = target.querySelector<HTMLElement>('[data-message-id]');
+        if (firstMessageEl) {
+          loadOlderAnchorRef.current = {
+            messageId: Number(firstMessageEl.dataset.messageId),
+            top:
+              firstMessageEl.getBoundingClientRect().top -
+              target.getBoundingClientRect().top +
+              target.scrollTop,
+            scrollTop: target.scrollTop,
+            scrollHeight: target.scrollHeight,
+            sawLoading: false,
+          };
+          onLoadOlder();
+        }
+      }
     },
-    [autoScroll]
+    [autoScroll, hasOlder, isLoadingOlder, onLoadOlder]
   );
 
   // Handle scroll to bottom button click
@@ -60,22 +141,14 @@ export function ChannelMessageArea({
   const isCreatedDateValid = isValid(createdDate);
 
   const renderMessages = () => {
-    if (channelType === 'telegram') {
-      return messages.map((message, index) => (
-        <TelegramMessageBubble
-          key={message.id}
+    const Bubble = channelType === 'telegram' ? TelegramMessageBubble : LINEMessageBubble;
+    return messages.map((message, index) => (
+      <div key={message.id} data-message-id={message.id}>
+        <Bubble
           message={message}
           previousMessage={index > 0 ? messages[index - 1] : undefined}
         />
-      ));
-    }
-
-    return messages.map((message, index) => (
-      <LINEMessageBubble
-        key={message.id}
-        message={message}
-        previousMessage={index > 0 ? messages[index - 1] : undefined}
-      />
+      </div>
     ));
   };
 
@@ -97,7 +170,12 @@ export function ChannelMessageArea({
             </div>
           ) : (
             <>
-              {isCreatedDateValid && (
+              {isLoadingOlder && (
+                <div className="flex items-center justify-center py-2">
+                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                </div>
+              )}
+              {isCreatedDateValid && !hasOlder && (
                 <div className="text-center text-sm text-muted-foreground py-2">
                   <span className="bg-muted px-3 py-1 rounded-full text-xs">
                     Started {format(createdDate, 'PPp', { locale: th })}
