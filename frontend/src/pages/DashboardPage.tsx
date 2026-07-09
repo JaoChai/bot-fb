@@ -1,5 +1,5 @@
 import { useMemo, Suspense } from 'react';
-import { ShoppingCart, DollarSign, MessageSquare, Banknote } from 'lucide-react';
+import { ShoppingCart, DollarSign, MessageSquare, Banknote, Crown } from 'lucide-react';
 import { formatTHB, formatBaht } from '@/lib/currency';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -8,12 +8,10 @@ import { useDashboardSummary } from '@/hooks/useDashboard';
 import { useCostAnalytics } from '@/hooks/useCostAnalytics';
 import { useOrderSummary, useOrdersByProduct } from '@/hooks/useOrders';
 import {
+  AlertStrip,
   DashboardStatCard,
-  RecentActivityTimeline,
   DashboardSkeleton,
   BotStatusList,
-  BusinessHealthBar,
-  CompactCostBreakdown,
   CompactStockToggle,
   RecentOrdersPreview,
 } from '@/components/dashboard';
@@ -88,7 +86,6 @@ export function DashboardPage() {
     );
   }
 
-  const activities = data?.recent_activity ?? [];
   const revTrend = calcTrend(
     orderData?.summary?.today_revenue ?? 0,
     orderData?.summary?.yesterday_revenue ?? 0,
@@ -98,13 +95,28 @@ export function DashboardPage() {
     data?.summary.messages_yesterday ?? 0,
   );
 
+  const vipCustomers = data?.summary.vip_customers ?? 0;
+  const monthDescription = (
+    <span className="inline-flex items-center gap-1">
+      {orderData?.summary?.this_month_orders ?? 0} ออเดอร์
+      {vipCustomers > 0 && (
+        <>
+          {' · '}
+          <Crown className="size-3 text-amber-500" aria-hidden="true" />
+          VIP {vipCustomers} คน ({formatBaht(data?.summary.vip_total_spent ?? 0)})
+        </>
+      )}
+    </span>
+  );
+
   return (
     <div className="space-y-6">
       {header}
 
-      <BusinessHealthBar
+      <AlertStrip
         bots={data?.bots ?? []}
-        alerts={data?.alerts ?? { handover_conversations: [] }}
+        handovers={data?.alerts.handover_conversations ?? []}
+        handoverTotal={data?.summary.handover_conversations ?? 0}
       />
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
@@ -118,7 +130,7 @@ export function DashboardPage() {
         <DashboardStatCard
           title="ยอดขายเดือนนี้"
           value={formatBaht(orderData?.summary?.this_month_revenue ?? 0)}
-          description={`${orderData?.summary?.this_month_orders ?? 0} ออเดอร์`}
+          description={monthDescription}
           icon={DollarSign}
         />
         <DashboardStatCard
@@ -131,7 +143,7 @@ export function DashboardPage() {
         <DashboardStatCard
           title="ค่า API วันนี้"
           value={formatTHB(costData?.summary.today_cost ?? 0)}
-          description={`เดือน ${formatTHB(costData?.summary.month_cost ?? 0)}`}
+          description={`เดือน ${formatTHB(costData?.summary.month_cost ?? 0)} · เฉลี่ย ${formatTHB(costData?.summary.avg_cost_per_response ?? 0)}/ตอบ`}
           icon={Banknote}
         />
       </div>
@@ -147,13 +159,10 @@ export function DashboardPage() {
         <DualAxisChart
           orderTimeSeries={orderData?.time_series ?? []}
           costTimeSeries={costData?.time_series ?? []}
-          vipCustomers={data?.summary.vip_customers}
-          vipTotalSpent={data?.summary.vip_total_spent}
         />
       </Suspense>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <BotStatusList bots={data?.bots ?? []} />
         {productsData && productsData.length > 0 && (
           <Suspense
             fallback={
@@ -177,17 +186,13 @@ export function DashboardPage() {
             <ProductsSummaryCard products={productsData} />
           </Suspense>
         )}
+        <RecentOrdersPreview />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {costData?.summary && <CompactCostBreakdown summary={costData.summary} />}
-        <div className="space-y-4">
-          {user?.role === 'owner' && <CompactStockToggle />}
-          <RecentActivityTimeline activities={activities.slice(0, 3)} />
-        </div>
+        <BotStatusList bots={data?.bots ?? []} />
+        {user?.role === 'owner' && <CompactStockToggle />}
       </div>
-
-      <RecentOrdersPreview />
     </div>
   );
 }

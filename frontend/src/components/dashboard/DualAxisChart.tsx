@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ComposedChart,
   Area,
@@ -9,16 +9,17 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { Crown } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatBaht, usdToTHB } from '@/lib/currency';
 import type { OrderTimeSeries, CostTimeSeries } from '@/types/api';
 
 interface DualAxisChartProps {
   orderTimeSeries: OrderTimeSeries[];
   costTimeSeries: CostTimeSeries[];
-  vipCustomers?: number;
-  vipTotalSpent?: number;
 }
+
+const RANGE_OPTIONS = [7, 14, 30] as const;
+type RangeDays = (typeof RANGE_OPTIONS)[number];
 
 function ChartTooltip({
   active,
@@ -32,7 +33,7 @@ function ChartTooltip({
   if (!active || !payload || payload.length === 0) return null;
 
   const revenuePayload = payload.find((p) => p.name === 'ยอดขาย');
-  const costPayload = payload.find((p) => p.name === 'ค่า AI');
+  const costPayload = payload.find((p) => p.name === 'ค่า API');
 
   const date = new Date(label ?? '');
   const formattedDate = date.toLocaleDateString('th-TH', {
@@ -65,26 +66,22 @@ function ChartTooltip({
   );
 }
 
-export function DualAxisChart({
-  orderTimeSeries,
-  costTimeSeries,
-  vipCustomers,
-  vipTotalSpent,
-}: DualAxisChartProps) {
+export function DualAxisChart({ orderTimeSeries, costTimeSeries }: DualAxisChartProps) {
+  const [range, setRange] = useState<RangeDays>(14);
+
   const merged = useMemo(() => {
+    const costByPeriod = new Map(costTimeSeries.map((c) => [c.period, c.total_cost]));
     return orderTimeSeries.map((o) => ({
       date: o.date,
       revenue: o.revenue,
-      cost: usdToTHB(
-        costTimeSeries.find((c) => c.period === o.date)?.total_cost ?? 0,
-      ),
+      cost: usdToTHB(costByPeriod.get(o.date) ?? 0),
     }));
   }, [orderTimeSeries, costTimeSeries]);
 
   if (merged.length === 0) {
     return (
       <div className="rounded-xl border bg-card p-6 shadow-sm">
-        <h3 className="text-base font-semibold">ยอดขาย vs ค่า AI (30 วัน)</h3>
+        <h3 className="text-base font-semibold">ยอดขาย vs ค่า API</h3>
         <div className="mt-4 flex h-[280px] items-center justify-center text-sm text-muted-foreground">
           ยังไม่มีข้อมูล
         </div>
@@ -92,14 +89,25 @@ export function DualAxisChart({
     );
   }
 
+  const visible = merged.slice(-range);
+
   return (
     <div className="rounded-xl border bg-card p-6 shadow-sm">
-      <h3 className="mb-4 text-base font-semibold">
-        ยอดขาย vs ค่า AI (30 วัน)
-      </h3>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h3 className="text-base font-semibold">ยอดขาย vs ค่า API</h3>
+        <Tabs value={String(range)} onValueChange={(v) => setRange(Number(v) as RangeDays)}>
+          <TabsList>
+            {RANGE_OPTIONS.map((days) => (
+              <TabsTrigger key={days} value={String(days)} className="tabular-nums">
+                {days} วัน
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
       <div className="h-[300px]">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={merged} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+          <ComposedChart data={visible} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
             <defs>
               <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.2} />
@@ -157,7 +165,7 @@ export function DualAxisChart({
               yAxisId="right"
               type="monotone"
               dataKey="cost"
-              name="ค่า AI"
+              name="ค่า API"
               fill="url(#costGradient)"
               stroke="#F59E0B"
               strokeWidth={2}
@@ -178,20 +186,6 @@ export function DualAxisChart({
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-
-      {(vipCustomers ?? 0) > 0 && (
-        <div className="mt-4 flex items-center gap-2 rounded-lg bg-amber-50/60 px-3 py-2 text-sm dark:bg-amber-950/20">
-          <Crown className="size-4 text-amber-500" />
-          <span className="text-muted-foreground">
-            VIP: {vipCustomers} คน
-            {vipTotalSpent != null && (
-              <span className="ml-1 font-semibold text-foreground">
-                {formatBaht(vipTotalSpent)}
-              </span>
-            )}
-          </span>
-        </div>
-      )}
     </div>
   );
 }
