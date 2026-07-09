@@ -28,6 +28,7 @@ class SlipVerificationService
         'unreadable' => 'รูปสลิปอ่านไม่ได้/ไม่ชัด — ระบบตรวจอัตโนมัติไม่ได้ กรุณาตรวจมือ',
         'api_error' => 'ระบบตรวจสลิป (EasySlip) ใช้งานไม่ได้ชั่วคราว',
         'config_error' => 'ตั้งค่าไม่ครบ — EasySlip token หายไป กรุณาใส่ที่หน้า Settings (ระบบจะไม่ตรวจสลิปจนกว่าจะแก้)',
+        'image_download_failed' => 'โหลดรูปจากลูกค้าไม่สำเร็จ — ระบบตรวจสลิปไม่ได้ กรุณาเปิดแชทดูรูป/ยอดเอง',
     ];
 
     public function __construct(
