@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Bot;
+use App\Support\LlmJson;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -313,52 +314,7 @@ PROMPT;
      */
     protected function extractJsonObject(string $content): string
     {
-        $start = strpos($content, '{');
-        if ($start === false) {
-            return $content;
-        }
-
-        $depth = 0;
-        $length = strlen($content);
-        $inString = false;
-        $escape = false;
-
-        for ($i = $start; $i < $length; $i++) {
-            $char = $content[$i];
-
-            if ($escape) {
-                $escape = false;
-
-                continue;
-            }
-
-            if ($char === '\\') {
-                $escape = true;
-
-                continue;
-            }
-
-            if ($char === '"') {
-                $inString = ! $inString;
-
-                continue;
-            }
-
-            if ($inString) {
-                continue;
-            }
-
-            if ($char === '{') {
-                $depth++;
-            } elseif ($char === '}') {
-                $depth--;
-                if ($depth === 0) {
-                    return substr($content, $start, $i - $start + 1);
-                }
-            }
-        }
-
-        return $content;
+        return LlmJson::extractObject($content);
     }
 
     /**

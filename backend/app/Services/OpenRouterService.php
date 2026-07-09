@@ -377,7 +377,8 @@ class OpenRouterService
         ?int $maxTokens = null,
         ?string $apiKeyOverride = null,
         bool $useFallback = true,
-        ?string $fallbackModelOverride = null
+        ?string $fallbackModelOverride = null,
+        ?array $responseFormat = null
     ): array {
         if (! $model) {
             throw new \InvalidArgumentException('Vision model is required');
@@ -402,6 +403,13 @@ class OpenRouterService
                     'include' => true,
                 ],
             ];
+
+            // Add response_format for structured output (JSON mode) — same contract as chat():
+            // gate on model capability here so callers don't have to know about support
+            if ($responseFormat !== null && app(ModelCapabilityService::class)->supportsStructuredOutput($model)) {
+                $payload['response_format'] = $responseFormat;
+                Log::debug('Using structured output for vision', ['model' => $model]);
+            }
 
             // Use models array for server-side fallback
             if ($useFallback && $fallbackModel && $model !== $fallbackModel) {

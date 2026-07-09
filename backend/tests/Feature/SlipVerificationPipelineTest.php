@@ -12,6 +12,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\LineWebhook\WebhookContext;
+use App\Services\ModelCapabilityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -228,7 +229,7 @@ class SlipVerificationPipelineTest extends TestCase
             'api.line.me/*' => Http::response(['ok' => true]),
             'api.telegram.org/*' => Http::response(['ok' => true]),
             'openrouter.ai/*' => Http::response([
-                'choices' => [['message' => ['content' => 'SLIP']]],
+                'choices' => [['message' => ['content' => '{"is_slip": true, "reply": ""}']]],
                 'model' => 'google/gemini-3.5-flash',
                 'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 2, 'total_tokens' => 12],
             ]),
@@ -252,22 +253,17 @@ class SlipVerificationPipelineTest extends TestCase
         $this->enableTelegramAlert();
 
         // 400 + pending order แต่ vision บอกไม่ใช่สลิป (เช่น screenshot โปรโมทโพสต์)
-        // → ไม่ alert, ไม่บันทึก, ปล่อยเข้า vision ตอบตามบริบท
+        // → ใช้ reply จาก call เดียวกันตอบลูกค้าเลย ไม่ alert, ไม่บันทึก, ไม่เรียก vision ซ้ำ
+        // (ตอบเป็น JSON ห่อ code fence — พิสูจน์ว่า parser รองรับ model ที่ไม่รองรับ structured output)
         Http::fake([
             'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
             'api.line.me/*' => Http::response(['ok' => true]),
             'api.telegram.org/*' => Http::response(['ok' => true]),
-            'openrouter.ai/*' => Http::sequence()
-                ->push([
-                    'choices' => [['message' => ['content' => 'NOT_SLIP']]],
-                    'model' => 'google/gemini-3.5-flash',
-                    'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 2, 'total_tokens' => 12],
-                ])
-                ->push([
-                    'choices' => [['message' => ['content' => 'จากรูปเป็นหน้าจอโปรโมทโพสต์ครับ กดเริ่มการตรวจสอบยืนยันได้เลยครับ']]],
-                    'model' => 'google/gemini-3.5-flash',
-                    'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
-                ]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => "```json\n{\"is_slip\": false, \"reply\": \"จากรูปเป็นหน้าจอโปรโมทโพสต์ครับ กดเริ่มการตรวจสอบยืนยันได้เลยครับ\"}\n```"]]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 20, 'total_tokens' => 30],
+            ]),
         ]);
 
         $ctx = $this->makeContext();
@@ -279,29 +275,28 @@ class SlipVerificationPipelineTest extends TestCase
         $this->assertDatabaseMissing('slip_verifications', ['status' => 'unreadable']);
 
         Http::assertNotSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+        // ตัดสิน+ตอบจบใน LLM call เดียว — ไม่มีการเรียก vision รอบสอง
+        $openrouterCalls = Http::recorded(fn ($req) => str_contains($req->url(), 'openrouter.ai'));
+        $this->assertCount(1, $openrouterCalls);
     }
 
-    public function test_classifier_vision_disagreement_still_alerts_admin(): void
+    public function test_vision_fallback_slip_acknowledgement_still_alerts_admin(): void
     {
         $this->enableTelegramAlert();
 
-        // classifier บอก NOT_SLIP แต่ vision ขั้นตอบลูกค้ากลับมองเป็นสลิป (ตอบให้รอทีมงาน)
-        // → ต้องมี alert ไปหาแอดมิน ไม่ปล่อยให้ลูกค้ารอเงียบๆ
+        // ไม่มีออเดอร์ค้าง (ลบสรุปยอดทิ้ง) → 400 ไป vision ปกติ แต่ vision เห็นเป็นสลิป
+        // (ตอบให้รอทีมงาน) → ต้องมี alert ไปหาแอดมิน ไม่ปล่อยให้ลูกค้ารอเงียบๆ
+        $this->conversation->messages()->where('sender', 'bot')->delete();
+
         Http::fake([
             'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
             'api.line.me/*' => Http::response(['ok' => true]),
             'api.telegram.org/*' => Http::response(['ok' => true]),
-            'openrouter.ai/*' => Http::sequence()
-                ->push([
-                    'choices' => [['message' => ['content' => 'NOT_SLIP']]],
-                    'model' => 'google/gemini-3.5-flash',
-                    'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 2, 'total_tokens' => 12],
-                ])
-                ->push([
-                    'choices' => [['message' => ['content' => 'ได้รับสลิปแล้วครับ รอทีมงานตรวจสอบยอดเข้าสักครู่นะครับ ปกติไม่เกิน 5 นาที ขอบคุณที่รอครับ']]],
-                    'model' => 'google/gemini-3.5-flash',
-                    'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
-                ]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => 'ได้รับสลิปแล้วครับ รอทีมงานตรวจสอบยอดเข้าสักครู่นะครับ ปกติไม่เกิน 5 นาที ขอบคุณที่รอครับ']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
         ]);
 
         $ctx = $this->makeContext();
@@ -309,6 +304,40 @@ class SlipVerificationPipelineTest extends TestCase
 
         $this->assertStringContainsString('ได้รับสลิปแล้ว', $ctx->response->payload);
         Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+    }
+
+    public function test_structured_output_used_when_model_supports_it(): void
+    {
+        $this->partialMock(ModelCapabilityService::class, function ($mock) {
+            $mock->shouldReceive('supportsVision')->andReturn(true);
+            $mock->shouldReceive('supportsStructuredOutput')->with('google/gemini-3.5-flash')->andReturn(true);
+        });
+
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => '{"is_slip": false, "reply": "ตอบจากรูปครับ"}']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 10, 'total_tokens' => 20],
+            ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        $this->assertStringContainsString('ตอบจากรูปครับ', $ctx->response->payload);
+
+        Http::assertSent(function ($req) {
+            if (! str_contains($req->url(), 'openrouter.ai')) {
+                return false;
+            }
+            $data = $req->data();
+
+            return ($data['response_format']['type'] ?? null) === 'json_schema'
+                && ($data['response_format']['json_schema']['name'] ?? null) === 'slip_image_check'
+                && ($data['response_format']['json_schema']['strict'] ?? null) === true;
+        });
     }
 
     public function test_classifier_failure_keeps_unreadable_fail_safe(): void

@@ -12,6 +12,7 @@ use App\Services\OpenRouterService;
 use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
 use App\Services\StickerReplyService;
+use App\Support\LlmJson;
 use Illuminate\Support\Facades\Log;
 
 class LineWebhookResponseService
@@ -217,47 +218,31 @@ class LineWebhookResponseService
         $history = array_slice($slipHistory, -5);
 
         try {
-            // Build system prompt (line 1016)
-            $systemPrompt = $this->buildVisionSystemPrompt($ctx);
+            // คำตอบที่ classifySlipImage ร่างไว้แล้ว (ตัดสิน+ตอบจากการมองรูปครั้งเดียว) —
+            // ใช้เลย ไม่ต้องเรียก vision ซ้ำ ทั้งประหยัดและกันการตัดสินรอบสองที่อาจขัดกับรอบแรก
+            $draft = $ctx->metadata['slip_vision_draft'] ?? null;
 
-            // Build messages array (lines 1022-1045)
-            $messages = [];
+            if ($draft !== null) {
+                $result = $draft;
+            } else {
+                $messages = $this->buildVisionChatMessages($ctx, $history, $this->getImageAnalysisPrompt($ctx, $history));
 
-            if ($systemPrompt) {
-                $messages[] = [
-                    'role' => 'system',
-                    'content' => $systemPrompt,
-                ];
+                // Get API key (lines 1048-1050)
+                $apiKey = $ctx->bot->user?->settings?->getOpenRouterApiKey()
+                    ?? config('services.openrouter.api_key');
+
+                // Call Vision API (lines 1052-1061)
+                $result = $this->openRouterService->chatWithVision(
+                    messages: $messages,
+                    imageUrls: [$imageUrl],
+                    model: $model,
+                    temperature: $ctx->bot->llm_temperature ?? 0.7,
+                    maxTokens: $ctx->bot->llm_max_tokens ?? 1024,
+                    apiKeyOverride: $apiKey,
+                    useFallback: (bool) $ctx->bot->fallback_chat_model,
+                    fallbackModelOverride: $ctx->bot->fallback_chat_model
+                );
             }
-
-            foreach ($history as $msg) {
-                $messages[] = [
-                    'role' => $msg['sender'] === 'user' ? 'user' : 'assistant',
-                    'content' => $msg['content'],
-                ];
-            }
-
-            $imagePrompt = $this->getImageAnalysisPrompt($ctx, $history);
-            $messages[] = [
-                'role' => 'user',
-                'content' => $imagePrompt,
-            ];
-
-            // Get API key (lines 1048-1050)
-            $apiKey = $ctx->bot->user?->settings?->getOpenRouterApiKey()
-                ?? config('services.openrouter.api_key');
-
-            // Call Vision API (lines 1052-1061)
-            $result = $this->openRouterService->chatWithVision(
-                messages: $messages,
-                imageUrls: [$imageUrl],
-                model: $model,
-                temperature: $ctx->bot->llm_temperature ?? 0.7,
-                maxTokens: $ctx->bot->llm_max_tokens ?? 1024,
-                apiKeyOverride: $apiKey,
-                useFallback: (bool) $ctx->bot->fallback_chat_model,
-                fallbackModelOverride: $ctx->bot->fallback_chat_model
-            );
 
             $responseContent = $result['content'] ?? '';
 
@@ -504,7 +489,9 @@ class LineWebhookResponseService
                 $ctx->userMessage,
                 $imageUrl,
                 $history,
-                fn (): ?bool => $this->classifyImageIsSlip($ctx, $imageUrl),
+                // นอกจากคืน ?bool แล้ว classifySlipImage ยังฝากร่างคำตอบไว้ใน
+                // $ctx->metadata['slip_vision_draft'] ให้ generateImageResponse ใช้ต่อ
+                fn (): ?bool => $this->classifySlipImage($ctx, $imageUrl, $history),
             );
 
             // config_error (token หาย) ปฏิบัติเหมือน api_error — แจ้งแอดมิน + ปล่อยไป vision ให้ลูกค้ายังได้รับตอบ
@@ -568,11 +555,14 @@ class LineWebhookResponseService
     }
 
     /**
-     * ถาม vision model ว่ารูปเป็นสลิปโอนเงินจริงไหม — ใช้เป็นกรรมการตอน EasySlip อ่านรูปไม่ได้ (400)
-     * เพื่อแยก "สลิปเบลอ" ออกจาก "รูปทั่วไป" (เช่น screenshot หน้าจออื่นๆ)
+     * ตัดสิน+ร่างคำตอบในการเรียกครั้งเดียว (single-call structured output) — ใช้ตอน EasySlip
+     * อ่านรูปไม่ได้ (400) เพื่อแยก "สลิปเบลอ" ออกจาก "รูปทั่วไป" (เช่น screenshot หน้าจออื่นๆ)
+     *
+     * คำตัดสิน (is_slip) กับคำตอบลูกค้า (reply) มาจากการมองรูปครั้งเดียวกัน จึงขัดแย้งกันเองไม่ได้
+     * ถ้าไม่ใช่สลิป reply จะถูกเก็บไว้ใน metadata ให้ generateImageResponse ใช้เลยโดยไม่เรียก vision ซ้ำ
      * คืน null เมื่อตอบไม่ได้/เรียกไม่สำเร็จ → ฝั่ง verify() จะถือเป็นสลิป (fail-safe ไปทางตรวจมือ)
      */
-    private function classifyImageIsSlip(WebhookContext $ctx, string $imageUrl): ?bool
+    private function classifySlipImage(WebhookContext $ctx, string $imageUrl, array $history): ?bool
     {
         try {
             $model = $this->getVisionModel($ctx);
@@ -583,35 +573,66 @@ class LineWebhookResponseService
             $apiKey = $ctx->bot->user?->settings?->getOpenRouterApiKey()
                 ?? config('services.openrouter.api_key');
 
+            $instruction = "ลูกค้าส่งรูปมา (แนบมากับข้อความนี้) ให้ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่นนอก JSON รูปแบบ:\n"
+                ."{\"is_slip\": true/false, \"reply\": \"...\"}\n"
+                ."- is_slip: true เมื่อรูปเป็นสลิปโอนเงิน/หลักฐานการชำระเงินจากธนาคารหรือแอปการเงิน, false เมื่อเป็นรูปอื่น\n"
+                .'- reply: เมื่อ is_slip เป็น false ให้เขียนข้อความตอบลูกค้าตามบริบทบทสนทนา; เมื่อ is_slip เป็น true ให้ใส่สตริงว่าง ""';
+
+            $messages = $this->buildVisionChatMessages($ctx, array_slice($history, -5), $instruction);
+
+            // chatWithVision ใส่ json_schema ให้เฉพาะ model ที่รองรับ structured_outputs —
+            // ตัวอื่นพึ่งคำสั่ง JSON ใน prompt แล้ว parse เอง (decodeSlipCheck รองรับ JSON ห่อข้อความ/code fence)
+            $schema = [
+                'type' => 'object',
+                'properties' => [
+                    'is_slip' => [
+                        'type' => 'boolean',
+                        'description' => 'true เมื่อรูปเป็นสลิปโอนเงิน/หลักฐานการชำระเงินจากธนาคารหรือแอปการเงิน',
+                    ],
+                    'reply' => [
+                        'type' => 'string',
+                        'description' => 'ข้อความตอบลูกค้าตามบริบทบทสนทนา เมื่อ is_slip เป็น false; สตริงว่างเมื่อ is_slip เป็น true',
+                    ],
+                ],
+                'required' => ['is_slip', 'reply'],
+                'additionalProperties' => false,
+            ];
+
             $result = $this->openRouterService->chatWithVision(
-                messages: [[
-                    'role' => 'user',
-                    'content' => 'รูปนี้เป็นสลิปโอนเงิน/หลักฐานการชำระเงินจากธนาคารหรือแอปการเงินใช่หรือไม่ ตอบคำเดียวเท่านั้น: SLIP หรือ NOT_SLIP',
-                ]],
+                messages: $messages,
                 imageUrls: [$imageUrl],
                 model: $model,
-                temperature: 0.0,
-                maxTokens: 20,
+                // JSON ต้อง parse ได้เสถียร — ใช้ temperature ต่ำคงที่ ไม่ใช้ค่าแชทของบอท
+                temperature: 0.3,
+                maxTokens: $ctx->bot->llm_max_tokens ?? 1024,
                 apiKeyOverride: $apiKey,
                 useFallback: (bool) $ctx->bot->fallback_chat_model,
                 fallbackModelOverride: $ctx->bot->fallback_chat_model,
+                responseFormat: ['type' => 'json_schema', 'json_schema' => ['name' => 'slip_image_check', 'strict' => true, 'schema' => $schema]],
             );
 
-            $answer = mb_strtoupper(trim($result['content'] ?? ''));
-            $isSlip = match (true) {
-                str_contains($answer, 'NOT_SLIP') => false,
-                str_contains($answer, 'SLIP') => true,
-                default => null,
-            };
+            $decoded = $this->decodeSlipCheck($result['content'] ?? '');
 
             Log::info('Slip image classification', [
                 'bot_id' => $ctx->bot->id,
                 'conversation_id' => $ctx->conversation?->id,
-                'answer' => $answer,
-                'is_slip' => $isSlip,
+                'is_slip' => $decoded['is_slip'] ?? null,
+                'raw' => $decoded === null ? mb_substr($result['content'] ?? '', 0, 200) : null,
             ]);
 
-            return $isSlip;
+            if ($decoded === null) {
+                return null;
+            }
+
+            if ($decoded['is_slip'] === false && $decoded['reply'] !== '') {
+                $ctx->metadata['slip_vision_draft'] = [
+                    'content' => $decoded['reply'],
+                    'model' => $result['model'] ?? $model,
+                    'usage' => $result['usage'] ?? [],
+                ];
+            }
+
+            return $decoded['is_slip'];
         } catch (\Throwable $e) {
             Log::warning('Slip image classification failed, treating as slip (fail-safe)', [
                 'bot_id' => $ctx->bot->id,
@@ -620,5 +641,45 @@ class LineWebhookResponseService
 
             return null;
         }
+    }
+
+    /**
+     * แกะผล JSON ของ classifySlipImage — รองรับทั้ง JSON ล้วน (structured output)
+     * และ JSON ที่ห่อด้วยข้อความ/code fence (model ที่ไม่รองรับ) คืน null เมื่อ parse/validate ไม่ผ่าน
+     *
+     * @return array{is_slip: bool, reply: string}|null
+     */
+    private function decodeSlipCheck(string $content): ?array
+    {
+        $data = json_decode(LlmJson::extractObject($content), true);
+        if (! is_array($data) || ! is_bool($data['is_slip'] ?? null) || ! is_string($data['reply'] ?? null)) {
+            return null;
+        }
+
+        return ['is_slip' => $data['is_slip'], 'reply' => trim($data['reply'])];
+    }
+
+    /**
+     * ประกอบ messages สำหรับ vision call: system prompt (persona + กติการูปภาพ) + ประวัติ + คำสั่งท้าย
+     */
+    private function buildVisionChatMessages(WebhookContext $ctx, array $history, string $userContent): array
+    {
+        $messages = [];
+
+        $systemPrompt = $this->buildVisionSystemPrompt($ctx);
+        if ($systemPrompt) {
+            $messages[] = ['role' => 'system', 'content' => $systemPrompt];
+        }
+
+        foreach ($history as $msg) {
+            $messages[] = [
+                'role' => $msg['sender'] === 'user' ? 'user' : 'assistant',
+                'content' => $msg['content'],
+            ];
+        }
+
+        $messages[] = ['role' => 'user', 'content' => $userContent];
+
+        return $messages;
     }
 }
