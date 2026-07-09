@@ -262,6 +262,11 @@ PROMPT,
 
         // Execute based on plugin type
         if ($plugin->type === 'telegram') {
+            // Append a clear per-type product breakdown (name + quantity).
+            // Guard against non-string AI output (TypeError would skip the whole send).
+            $rawProduct = $variables['product'] ?? $variables['product_category'] ?? ($fallbackValues['product'] ?? null);
+            $message .= $this->buildProductBreakdown(is_string($rawProduct) ? $rawProduct : null);
+
             $this->sendTelegramNotification($plugin, $message);
 
             // Record order from extracted data
@@ -371,6 +376,37 @@ PROMPT,
     /**
      * Send notification via Telegram Bot API.
      */
+    /**
+     * Build a per-type product breakdown block (name + quantity) to append to
+     * the Telegram notification. Groups identical types and sums quantities.
+     * Returns '' when there is no parseable product data.
+     */
+    protected function buildProductBreakdown(?string $rawProduct): string
+    {
+        $items = OrderService::parseProductItems($rawProduct);
+        if (empty($items)) {
+            return '';
+        }
+
+        // Group by type (name + variant), summing quantities
+        $grouped = [];
+        foreach ($items as $item) {
+            $label = $item['product_name'] === 'Unknown' ? $item['raw_name'] : $item['product_name'];
+            if (! empty($item['variant'])) {
+                $label .= " ({$item['variant']})";
+            }
+            $grouped[$label] = ($grouped[$label] ?? 0) + $item['quantity'];
+        }
+
+        $lines = ['', '📦 รายการสินค้า'];
+        foreach ($grouped as $label => $qty) {
+            $safe = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
+            $lines[] = "• {$safe} ×{$qty}";
+        }
+
+        return implode("\n", $lines);
+    }
+
     protected function sendTelegramNotification(FlowPlugin $plugin, string $message): void
     {
         $token = $plugin->config['access_token'] ?? '';
