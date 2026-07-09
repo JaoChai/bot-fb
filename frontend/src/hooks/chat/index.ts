@@ -34,7 +34,6 @@ export {
 
 // Message Queries (T039)
 export {
-  useMessages,
   useInfiniteMessages,
   flattenInfiniteMessages,
 } from './useMessageQueries';

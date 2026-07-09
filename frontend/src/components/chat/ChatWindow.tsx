@@ -5,7 +5,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useMessages, messageKeys } from '@/hooks/chat';
+import { useInfiniteMessages, flattenInfiniteMessages, messageKeys } from '@/hooks/chat';
 import { useConfirmPayment } from '@/hooks/chat/useConfirmPayment';
 import { useChatActions } from '@/hooks/useChatActions';
 import { useChannelInfo } from '@/hooks/useChannelInfo';
@@ -37,20 +37,31 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
   const { data: botSettings } = useBotSettings(botId);
   const confirmPayment = useConfirmPayment(botId);
 
-  // Messages query - use useMessages for consistent query keys with WebSocket updates
-  const { data: messagesResponse, isLoading: isLoadingMessages, isFetching: isFetchingMessages } = useMessages(
-    botId,
-    conversation.id,
-    { order: 'asc', perPage: 100 }
-  );
-  const messages = messagesResponse?.data || conversation.messages || [];
+  // Messages query - newest-first infinite query; WebSocket/optimistic/sync
+  // paths all write to the same messageKeys.infinite cache
+  const {
+    data: messagesData,
+    isLoading: isLoadingMessages,
+    isFetching: isFetchingMessages,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteMessages(botId, conversation.id);
+  const messages = messagesData
+    ? flattenInfiniteMessages(messagesData)
+    : conversation.messages || [];
   const showMessagesLoading = (isLoadingMessages || isFetchingMessages) && messages.length === 0;
+  const handleLoadOlder = () => {
+    void fetchNextPage();
+  };
 
-  // Invalidate messages query when switching conversations to force refetch
+  // Reset to the newest page when switching conversations. resetQueries (not
+  // invalidateQueries) drops previously loaded older pages, so returning to a
+  // conversation refetches one page instead of every page ever scrolled to.
   const queryClient = useQueryClient();
   useEffect(() => {
-    queryClient.invalidateQueries({
-      queryKey: messageKeys.list(botId, conversation.id),
+    queryClient.resetQueries({
+      queryKey: messageKeys.infinite(botId, conversation.id),
     });
   }, [conversation.id, botId, queryClient]);
 
@@ -106,19 +117,27 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
       {/* Messages Area */}
       {useCustomBubbles ? (
         <ChannelMessageArea
+          key={conversation.id}
           messages={messages}
           conversation={conversation}
           isLoading={showMessagesLoading}
           channelType={isTelegram ? 'telegram' : 'line'}
+          hasOlder={hasNextPage}
+          isLoadingOlder={isFetchingNextPage}
+          onLoadOlder={handleLoadOlder}
         />
       ) : (
         <MessageList
+          key={conversation.id}
           messages={messages}
           isLoading={showMessagesLoading}
           contextClearedAt={conversation.context_cleared_at}
           conversationCreatedAt={conversation.created_at}
           autoScroll={autoScroll}
           onAutoScrollChange={setAutoScroll}
+          hasOlder={hasNextPage}
+          isLoadingOlder={isFetchingNextPage}
+          onLoadOlder={handleLoadOlder}
         />
       )}
 

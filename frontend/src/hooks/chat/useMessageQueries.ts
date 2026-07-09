@@ -7,58 +7,18 @@
  * Extracted from useMessages.ts for single responsibility.
  */
 import {
-  useQuery,
   useInfiniteQuery,
   type InfiniteData,
 } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { buildFilterParams } from '@/lib/params';
 import { useConnectionStore } from '@/stores/connectionStore';
 import type { Message } from '@/types/api';
 import {
   messageKeys,
   FALLBACK_POLLING_INTERVAL,
-  HEARTBEAT_INTERVAL,
   DEFAULT_PAGE_SIZE,
   type MessagesResponse,
-  type MessagesOptions,
 } from './messageKeys';
-
-/**
- * Hook to fetch messages for a conversation (simple query)
- * Use this for conversations with less than 100 messages
- */
-export function useMessages(
-  botId: number | undefined,
-  conversationId: number | undefined,
-  options: MessagesOptions = { order: 'asc', perPage: 100 }
-) {
-  const isConnected = useConnectionStore((state) => state.isConnected);
-
-  return useQuery({
-    queryKey:
-      botId && conversationId
-        ? messageKeys.listWithOptions(botId, conversationId, options)
-        : ['messages', 'disabled'],
-    queryFn: async () => {
-      const params = buildFilterParams({
-        page: options.page,
-        per_page: options.perPage,
-        order: options.order,
-      });
-
-      const response = await api.get<MessagesResponse>(
-        `/bots/${botId}/conversations/${conversationId}/messages?` + params.toString()
-      );
-      return response.data;
-    },
-    enabled: !!botId && !!conversationId,
-    staleTime: 0,
-    // When connected: heartbeat refresh every 30s to catch missed events
-    // When disconnected: fast polling every 5s for quick recovery
-    refetchInterval: isConnected ? HEARTBEAT_INTERVAL : FALLBACK_POLLING_INTERVAL,
-  });
-}
 
 /**
  * T039: Hook to fetch messages with infinite scroll for large conversations
