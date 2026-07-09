@@ -63,5 +63,4 @@ class ActivityLog extends Model
             'metadata' => $metadata,
         ]);
     }
-
 }

@@ -7,6 +7,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -206,7 +207,7 @@ class DashboardController extends Controller
     /**
      * Oldest updated_at a handover can have and still show on the dashboard.
      */
-    private static function handoverCutoff(): \Illuminate\Support\Carbon
+    private static function handoverCutoff(): Carbon
     {
         return now()->subHours(self::HANDOVER_VISIBLE_HOURS);
     }
