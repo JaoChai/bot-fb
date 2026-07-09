@@ -89,6 +89,7 @@ export function MessageList({
     messageId: number;
     scrollTop: number;
     totalSize: number; // fallback only
+    sawLoading: boolean;
   } | null>(null);
   const prevFirstIdRef = useRef<number | null>(null);
 
@@ -122,8 +123,12 @@ export function MessageList({
   // exactly the estimated height inserted above, immune to items appended
   // below (unlike a totalSize delta).
   useLayoutEffect(() => {
-    const firstId = messages[0]?.id ?? null;
     const anchor = loadOlderAnchorRef.current;
+    if (anchor && isLoadingOlder) {
+      anchor.sawLoading = true;
+    }
+
+    const firstId = messages[0]?.id ?? null;
     const viewport = scrollViewportRef.current;
 
     if (anchor && viewport && prevFirstIdRef.current !== null && firstId !== prevFirstIdRef.current) {
@@ -138,8 +143,10 @@ export function MessageList({
         viewport.scrollTop = anchor.scrollTop + (virtualizer.getTotalSize() - anchor.totalSize);
       }
       loadOlderAnchorRef.current = null;
-    } else if (anchor && !isLoadingOlder && firstId === prevFirstIdRef.current) {
-      // Fetch settled without new messages (error / empty page) — release the anchor
+    } else if (anchor && anchor.sawLoading && !isLoadingOlder && firstId === prevFirstIdRef.current) {
+      // Anchor released only after a loading cycle was observed to settle without
+      // a prepend (error / empty page), so a messages update landing before the
+      // loading flag flips cannot release it early.
       loadOlderAnchorRef.current = null;
     }
 
@@ -174,6 +181,7 @@ export function MessageList({
           messageId: messages[0].id,
           scrollTop: target.scrollTop,
           totalSize: virtualizer.getTotalSize(),
+          sawLoading: false,
         };
         onLoadOlder();
       }

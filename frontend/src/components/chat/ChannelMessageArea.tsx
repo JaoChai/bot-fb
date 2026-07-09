@@ -47,6 +47,7 @@ export function ChannelMessageArea({
     top: number; // anchor element top in content coordinates
     scrollTop: number;
     scrollHeight: number; // fallback only
+    sawLoading: boolean;
   } | null>(null);
   const prevFirstIdRef = useRef<number | null>(null);
 
@@ -59,8 +60,12 @@ export function ChannelMessageArea({
 
   // Restore scroll position after older messages are prepended
   useLayoutEffect(() => {
-    const firstId = messages[0]?.id ?? null;
     const anchor = loadOlderAnchorRef.current;
+    if (anchor && isLoadingOlder) {
+      anchor.sawLoading = true;
+    }
+
+    const firstId = messages[0]?.id ?? null;
     const viewport = scrollViewportRef.current;
 
     if (anchor && viewport && prevFirstIdRef.current !== null && firstId !== prevFirstIdRef.current) {
@@ -77,8 +82,10 @@ export function ChannelMessageArea({
         viewport.scrollTop = anchor.scrollTop + (viewport.scrollHeight - anchor.scrollHeight);
       }
       loadOlderAnchorRef.current = null;
-    } else if (anchor && !isLoadingOlder && firstId === prevFirstIdRef.current) {
-      // Fetch settled without new messages (error / empty page) — release the anchor
+    } else if (anchor && anchor.sawLoading && !isLoadingOlder && firstId === prevFirstIdRef.current) {
+      // Anchor released only after a loading cycle was observed to settle without
+      // a prepend (error / empty page), so a messages update landing before the
+      // loading flag flips cannot release it early.
       loadOlderAnchorRef.current = null;
     }
 
@@ -115,6 +122,7 @@ export function ChannelMessageArea({
               target.scrollTop,
             scrollTop: target.scrollTop,
             scrollHeight: target.scrollHeight,
+            sawLoading: false,
           };
           onLoadOlder();
         }
