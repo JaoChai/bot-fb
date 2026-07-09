@@ -73,6 +73,22 @@ class SlipControllerTest extends TestCase
         $response->assertJsonPath('meta.total', 2);
     }
 
+    public function test_summary_ignores_status_filter_but_list_is_filtered(): void
+    {
+        $owner = User::factory()->owner()->create();
+        Sanctum::actingAs($owner);
+        $bot = Bot::factory()->create(['user_id' => $owner->id]);
+
+        SlipVerification::factory()->create(['bot_id' => $bot->id, 'status' => 'passed', 'amount' => 1000]);
+        SlipVerification::factory()->create(['bot_id' => $bot->id, 'status' => 'fake', 'amount' => 500]);
+
+        $response = $this->getJson('/api/slips?status=fake');
+
+        $response->assertOk();
+        $response->assertJsonPath('meta.summary.total_amount_passed', 1000);
+        $response->assertJsonPath('meta.total', 1);
+    }
+
     public function test_includes_customer_name_from_conversation(): void
     {
         $owner = User::factory()->owner()->create();

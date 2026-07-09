@@ -39,19 +39,10 @@ class SlipController extends Controller
             'per_page' => 'sometimes|integer|min:1|max:100',
         ]);
 
-        $query = SlipVerification::whereIn('bot_id', $botIds)
-            ->with(['conversation:id,customer_profile_id', 'conversation.customerProfile:id,display_name']);
+        $query = SlipVerification::whereIn('bot_id', $botIds);
 
         if (isset($validated['bot_id'])) {
             $query->where('bot_id', $validated['bot_id']);
-        }
-
-        if (isset($validated['status'])) {
-            $statuses = array_values(array_intersect(
-                explode(',', $validated['status']),
-                self::STATUSES,
-            ));
-            $query->whereIn('status', $statuses ?: ['__none__']);
         }
 
         if (isset($validated['date_from'])) {
@@ -62,6 +53,25 @@ class SlipController extends Controller
             $query->where('created_at', '<=', $validated['date_to']);
         }
 
+        // summary จาก scope bot+date เท่านั้น (ก่อน filter status/search) ด้วย clone
+        $summaryBase = clone $query;
+        $summary = [
+            'total_amount_passed' => (float) (clone $summaryBase)->where('status', 'passed')->sum('amount'),
+            'count_total' => (clone $summaryBase)->count(),
+            'count_abnormal' => (clone $summaryBase)->whereIn('status', self::ABNORMAL)->count(),
+            'count_system_error' => (clone $summaryBase)->whereIn('status', self::SYSTEM_ERROR)->count(),
+        ];
+
+        $query->with(['conversation:id,customer_profile_id', 'conversation.customerProfile:id,display_name']);
+
+        if (isset($validated['status'])) {
+            $statuses = array_values(array_intersect(
+                explode(',', $validated['status']),
+                self::STATUSES,
+            ));
+            $query->whereIn('status', $statuses ?: ['__none__']);
+        }
+
         if (isset($validated['search'])) {
             $search = $validated['search'];
             $query->where(function ($q) use ($search) {
@@ -69,15 +79,6 @@ class SlipController extends Controller
                     ->orWhereHas('conversation.customerProfile', fn ($c) => $c->where('display_name', 'ilike', "%{$search}%"));
             });
         }
-
-        // summary จาก query ที่ filter แล้ว (ก่อน paginate) ด้วย clone
-        $summaryBase = (clone $query);
-        $summary = [
-            'total_amount_passed' => (float) (clone $summaryBase)->where('status', 'passed')->sum('amount'),
-            'count_total' => (clone $summaryBase)->count(),
-            'count_abnormal' => (clone $summaryBase)->whereIn('status', self::ABNORMAL)->count(),
-            'count_system_error' => (clone $summaryBase)->whereIn('status', self::SYSTEM_ERROR)->count(),
-        ];
 
         $paginator = $query->orderByDesc('created_at')->paginate($validated['per_page'] ?? 20);
 
