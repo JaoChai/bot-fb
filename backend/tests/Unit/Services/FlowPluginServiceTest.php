@@ -4,6 +4,7 @@ namespace Tests\Unit\Services;
 
 use App\Services\FlowPluginService;
 use App\Services\OpenRouterService;
+use App\Services\OrderService;
 use ReflectionClass;
 use Tests\TestCase;
 
@@ -156,7 +157,7 @@ class FlowPluginServiceTest extends TestCase
 
     public function test_parse_product_items_parses_quantity_and_normalizes(): void
     {
-        $items = \App\Services\OrderService::parseProductItems('G3D x2, BM ผูกบัตร');
+        $items = OrderService::parseProductItems('G3D x2, BM ผูกบัตร');
 
         $this->assertCount(2, $items);
         $this->assertSame('G3D', $items[0]['product_name']);
@@ -168,8 +169,8 @@ class FlowPluginServiceTest extends TestCase
 
     public function test_parse_product_items_empty_for_blank_input(): void
     {
-        $this->assertSame([], \App\Services\OrderService::parseProductItems(null));
-        $this->assertSame([], \App\Services\OrderService::parseProductItems(''));
-        $this->assertSame([], \App\Services\OrderService::parseProductItems('   '));
+        $this->assertSame([], OrderService::parseProductItems(null));
+        $this->assertSame([], OrderService::parseProductItems(''));
+        $this->assertSame([], OrderService::parseProductItems('   '));
     }
 }
