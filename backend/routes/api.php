@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\ModelController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ProductStockController;
 use App\Http\Controllers\Api\QuickReplyController;
+use App\Http\Controllers\Api\SlipController;
 use App\Http\Controllers\Api\StreamController;
 use App\Http\Controllers\Api\SyncController;
 use App\Http\Controllers\Api\UserSearchController;
@@ -85,6 +86,9 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::get('/{order}', [OrderController::class, 'show'])->name('orders.show');
         Route::put('/{order}', [OrderController::class, 'update'])->name('orders.update');
     });
+
+    // Slip verification records (Owner only — enforced in controller)
+    Route::get('slips', [SlipController::class, 'index'])->name('slips.index');
 
     // Product Stocks routes (Owner only)
     Route::prefix('product-stocks')->group(function () {
