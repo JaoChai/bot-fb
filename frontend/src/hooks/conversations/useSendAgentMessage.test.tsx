@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import type { Message } from '@/types/api';
+import { makeMessage } from '@/test-utils/messageFactory';
 import { messageKeys, type InfiniteMessages } from '@/hooks/chat';
 import { useSendAgentMessage } from './useSendAgentMessage';
 import { api } from '@/lib/api';
@@ -13,29 +13,6 @@ vi.mock('@/lib/api', () => ({
 
 const BOT_ID = 1;
 const CONV_ID = 10;
-
-function makeMessage(id: number, createdAt: string, sender: Message['sender'] = 'user'): Message {
-  return {
-    id,
-    conversation_id: CONV_ID,
-    sender,
-    content: `msg ${id}`,
-    type: 'text',
-    media_url: null,
-    media_type: null,
-    media_metadata: null,
-    model_used: null,
-    prompt_tokens: null,
-    completion_tokens: null,
-    cost: null,
-    external_message_id: null,
-    reply_to_message_id: null,
-    sentiment: null,
-    intents: null,
-    created_at: createdAt,
-    updated_at: createdAt,
-  };
-}
 
 const meta = { current_page: 1, from: 1, last_page: 1, per_page: 50, to: 2, total: 2 };
 
@@ -68,7 +45,7 @@ beforeEach(() => {
 
 describe('useSendAgentMessage — infinite cache', () => {
   it('prepends an optimistic message, then replaces it with the server message', async () => {
-    const serverMessage = makeMessage(6, '2026-07-09T11:00:00Z', 'agent');
+    const serverMessage = makeMessage(6, '2026-07-09T11:00:00Z', { sender: 'agent' });
     let resolvePost!: (value: unknown) => void;
     vi.mocked(api.post).mockReturnValue(
       new Promise((resolve) => {
@@ -109,7 +86,7 @@ describe('useSendAgentMessage — infinite cache', () => {
   });
 
   it('drops the optimistic message when WebSocket already delivered the real one', async () => {
-    const serverMessage = makeMessage(6, '2026-07-09T11:00:00Z', 'agent');
+    const serverMessage = makeMessage(6, '2026-07-09T11:00:00Z', { sender: 'agent' });
     let resolvePost!: (value: unknown) => void;
     vi.mocked(api.post).mockReturnValue(
       new Promise((resolve) => {

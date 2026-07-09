@@ -1,10 +1,9 @@
 /**
  * Message query hooks
  *
- * T016: Original useMessages hook
- * T039: Optimized with cursor-based pagination via useInfiniteQuery
- *
- * Extracted from useMessages.ts for single responsibility.
+ * T039: Cursor-based pagination via useInfiniteQuery (newest first).
+ * The legacy page-1-ascending useMessages hook was removed — it could never
+ * surface new messages in conversations with more than one page.
  */
 import {
   useInfiniteQuery,
@@ -58,7 +57,7 @@ export function useInfiniteMessages(
     enabled: !!botId && !!conversationId,
     staleTime: 0,
     // Infinite query: only poll when disconnected to avoid refetching all loaded pages
-    // When connected, WebSocket events + regular useMessages heartbeat handle updates
+    // When connected, WebSocket events keep the cache fresh (reconnect sync covers gaps)
     refetchInterval: isConnected ? false : FALLBACK_POLLING_INTERVAL,
   });
 }

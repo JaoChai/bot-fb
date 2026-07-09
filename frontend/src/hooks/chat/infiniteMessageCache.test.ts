@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { Message } from '@/types/api';
+import { makeMessage } from '@/test-utils/messageFactory';
 import type { MessagesResponse } from './messageKeys';
 import {
   messageExistsInInfinite,
@@ -8,29 +9,6 @@ import {
   replaceMessageInInfinite,
   removeMessageFromInfinite,
 } from './infiniteMessageCache';
-
-function makeMessage(id: number, createdAt: string): Message {
-  return {
-    id,
-    conversation_id: 10,
-    sender: 'user',
-    content: `msg ${id}`,
-    type: 'text',
-    media_url: null,
-    media_type: null,
-    media_metadata: null,
-    model_used: null,
-    prompt_tokens: null,
-    completion_tokens: null,
-    cost: null,
-    external_message_id: null,
-    reply_to_message_id: null,
-    sentiment: null,
-    intents: null,
-    created_at: createdAt,
-    updated_at: createdAt,
-  };
-}
 
 const meta = {
   current_page: 1,

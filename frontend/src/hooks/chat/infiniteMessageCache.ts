@@ -31,7 +31,8 @@ export function prependMessagesToInfinite(
 ): InfiniteMessages {
   if (data.pages.length === 0) return data;
 
-  const fresh = messages.filter((m) => !messageExistsInInfinite(data, m.id));
+  const existingIds = new Set(data.pages.flatMap((page) => page.data.map((m) => m.id)));
+  const fresh = messages.filter((m) => !existingIds.has(m.id));
   if (fresh.length === 0) return data;
 
   const freshDesc = [...fresh].sort(
@@ -60,14 +61,19 @@ export function replaceMessageInInfinite(
   const replacementExists =
     replacement.id !== matchId && messageExistsInInfinite(data, replacement.id);
 
+  // Only clone pages that actually contain matchId; untouched pages keep
+  // their reference so memoized consumers can skip re-rendering them.
   return {
     ...data,
-    pages: data.pages.map((page) => ({
-      ...page,
-      data: replacementExists
-        ? page.data.filter((m) => m.id !== matchId)
-        : page.data.map((m) => (m.id === matchId ? replacement : m)),
-    })),
+    pages: data.pages.map((page) => {
+      if (!page.data.some((m) => m.id === matchId)) return page;
+      return {
+        ...page,
+        data: replacementExists
+          ? page.data.filter((m) => m.id !== matchId)
+          : page.data.map((m) => (m.id === matchId ? replacement : m)),
+      };
+    }),
   };
 }
 
@@ -77,9 +83,10 @@ export function removeMessageFromInfinite(
 ): InfiniteMessages {
   return {
     ...data,
-    pages: data.pages.map((page) => ({
-      ...page,
-      data: page.data.filter((m) => m.id !== messageId),
-    })),
+    pages: data.pages.map((page) =>
+      page.data.some((m) => m.id === messageId)
+        ? { ...page, data: page.data.filter((m) => m.id !== messageId) }
+        : page
+    ),
   };
 }

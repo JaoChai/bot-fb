@@ -3,7 +3,7 @@
  * Container/orchestration component using extracted sub-components
  * Reduced from ~368 lines to ~100 lines
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useInfiniteMessages, flattenInfiniteMessages, messageKeys } from '@/hooks/chat';
 import { useConfirmPayment } from '@/hooks/chat/useConfirmPayment';
@@ -47,13 +47,12 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteMessages(botId, conversation.id);
-  const messages = messagesData
-    ? flattenInfiniteMessages(messagesData)
-    : conversation.messages || [];
+  const messages = useMemo(
+    () =>
+      messagesData ? flattenInfiniteMessages(messagesData) : conversation.messages || [],
+    [messagesData, conversation.messages]
+  );
   const showMessagesLoading = (isLoadingMessages || isFetchingMessages) && messages.length === 0;
-  const handleLoadOlder = () => {
-    void fetchNextPage();
-  };
 
   // Reset to the newest page when switching conversations. resetQueries (not
   // invalidateQueries) drops previously loaded older pages, so returning to a
@@ -124,7 +123,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
           channelType={isTelegram ? 'telegram' : 'line'}
           hasOlder={hasNextPage}
           isLoadingOlder={isFetchingNextPage}
-          onLoadOlder={handleLoadOlder}
+          onLoadOlder={fetchNextPage}
         />
       ) : (
         <MessageList
@@ -137,7 +136,7 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
           onAutoScrollChange={setAutoScroll}
           hasOlder={hasNextPage}
           isLoadingOlder={isFetchingNextPage}
-          onLoadOlder={handleLoadOlder}
+          onLoadOlder={fetchNextPage}
         />
       )}
 

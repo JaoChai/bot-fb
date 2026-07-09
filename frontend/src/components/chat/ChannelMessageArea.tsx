@@ -141,20 +141,10 @@ export function ChannelMessageArea({
   const isCreatedDateValid = isValid(createdDate);
 
   const renderMessages = () => {
-    if (channelType === 'telegram') {
-      return messages.map((message, index) => (
-        <div key={message.id} data-message-id={message.id}>
-          <TelegramMessageBubble
-            message={message}
-            previousMessage={index > 0 ? messages[index - 1] : undefined}
-          />
-        </div>
-      ));
-    }
-
+    const Bubble = channelType === 'telegram' ? TelegramMessageBubble : LINEMessageBubble;
     return messages.map((message, index) => (
       <div key={message.id} data-message-id={message.id}>
-        <LINEMessageBubble
+        <Bubble
           message={message}
           previousMessage={index > 0 ? messages[index - 1] : undefined}
         />

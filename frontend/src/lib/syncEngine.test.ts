@@ -3,7 +3,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { syncBot, useSyncCursors } from './syncEngine';
 import { messageKeys } from '@/hooks/chat/messageKeys';
 import type { InfiniteMessages } from '@/hooks/chat/infiniteMessageCache';
-import type { Message } from '@/types/api';
+import { makeMessage } from '@/test-utils/messageFactory';
 import { api } from '@/lib/api';
 
 vi.mock('@/lib/api', () => ({
@@ -60,29 +60,6 @@ describe('useSyncCursors', () => {
     expect(useSyncCursors.getState().lastMessageId).toEqual({});
   });
 });
-
-function makeMessage(id: number, createdAt: string): Message {
-  return {
-    id,
-    conversation_id: 10,
-    sender: 'user',
-    content: `msg ${id}`,
-    type: 'text',
-    media_url: null,
-    media_type: null,
-    media_metadata: null,
-    model_used: null,
-    prompt_tokens: null,
-    completion_tokens: null,
-    cost: null,
-    external_message_id: null,
-    reply_to_message_id: null,
-    sentiment: null,
-    intents: null,
-    created_at: createdAt,
-    updated_at: createdAt,
-  };
-}
 
 describe('syncConversation via syncBot', () => {
   beforeEach(() => {
