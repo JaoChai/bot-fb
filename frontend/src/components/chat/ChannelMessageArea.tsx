@@ -38,7 +38,16 @@ export function ChannelMessageArea({
 
   // Scroll anchoring for load-older: captured when the fetch is triggered,
   // applied after the older page is prepended so the view doesn't jump.
-  const loadOlderAnchorRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null);
+  // Anchored to the previous first message's element (not a scrollHeight
+  // delta) because a realtime message can be appended at the bottom while
+  // the older-page fetch is in flight — that growth happens below the
+  // anchor and must not shift the restored position.
+  const loadOlderAnchorRef = useRef<{
+    messageId: number;
+    top: number; // anchor element top in content coordinates
+    scrollTop: number;
+    scrollHeight: number; // fallback only
+  } | null>(null);
   const prevFirstIdRef = useRef<number | null>(null);
 
   // Auto scroll to bottom when messages change
@@ -55,7 +64,18 @@ export function ChannelMessageArea({
     const viewport = scrollViewportRef.current;
 
     if (anchor && viewport && prevFirstIdRef.current !== null && firstId !== prevFirstIdRef.current) {
-      viewport.scrollTop = anchor.scrollTop + (viewport.scrollHeight - anchor.scrollHeight);
+      const anchorEl = viewport.querySelector<HTMLElement>(
+        `[data-message-id="${anchor.messageId}"]`
+      );
+      if (anchorEl) {
+        const newTop =
+          anchorEl.getBoundingClientRect().top -
+          viewport.getBoundingClientRect().top +
+          viewport.scrollTop;
+        viewport.scrollTop = anchor.scrollTop + (newTop - anchor.top);
+      } else {
+        viewport.scrollTop = anchor.scrollTop + (viewport.scrollHeight - anchor.scrollHeight);
+      }
       loadOlderAnchorRef.current = null;
     } else if (anchor && !isLoadingOlder && firstId === prevFirstIdRef.current) {
       // Fetch settled without new messages (error / empty page) — release the anchor
@@ -85,11 +105,19 @@ export function ChannelMessageArea({
         !loadOlderAnchorRef.current &&
         onLoadOlder
       ) {
-        loadOlderAnchorRef.current = {
-          scrollTop: target.scrollTop,
-          scrollHeight: target.scrollHeight,
-        };
-        onLoadOlder();
+        const firstMessageEl = target.querySelector<HTMLElement>('[data-message-id]');
+        if (firstMessageEl) {
+          loadOlderAnchorRef.current = {
+            messageId: Number(firstMessageEl.dataset.messageId),
+            top:
+              firstMessageEl.getBoundingClientRect().top -
+              target.getBoundingClientRect().top +
+              target.scrollTop,
+            scrollTop: target.scrollTop,
+            scrollHeight: target.scrollHeight,
+          };
+          onLoadOlder();
+        }
       }
     },
     [autoScroll, hasOlder, isLoadingOlder, onLoadOlder]
@@ -107,20 +135,22 @@ export function ChannelMessageArea({
   const renderMessages = () => {
     if (channelType === 'telegram') {
       return messages.map((message, index) => (
-        <TelegramMessageBubble
-          key={message.id}
-          message={message}
-          previousMessage={index > 0 ? messages[index - 1] : undefined}
-        />
+        <div key={message.id} data-message-id={message.id}>
+          <TelegramMessageBubble
+            message={message}
+            previousMessage={index > 0 ? messages[index - 1] : undefined}
+          />
+        </div>
       ));
     }
 
     return messages.map((message, index) => (
-      <LINEMessageBubble
-        key={message.id}
-        message={message}
-        previousMessage={index > 0 ? messages[index - 1] : undefined}
-      />
+      <div key={message.id} data-message-id={message.id}>
+        <LINEMessageBubble
+          message={message}
+          previousMessage={index > 0 ? messages[index - 1] : undefined}
+        />
+      </div>
     ));
   };
 
