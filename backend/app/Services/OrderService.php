@@ -49,6 +49,44 @@ class OrderService
     }
 
     /**
+     * Parse a raw product string (comma-separated, may include "xN" quantities)
+     * into normalized line items. Returns [] when nothing is parseable.
+     *
+     * @return list<array{product_name: string, category: string, variant: string|null, quantity: int, raw_name: string}>
+     */
+    public static function parseProductItems(?string $raw): array
+    {
+        if (! is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+
+        $parts = array_filter(array_map('trim', preg_split('/,\s*/', $raw)));
+        $items = [];
+
+        foreach ($parts as $part) {
+            $quantity = 1;
+            $name = $part;
+
+            // Parse "x2" quantity pattern
+            if (preg_match('/^(.+?)\s*x(\d+)\s*$/u', $part, $pm)) {
+                $name = trim($pm[1]);
+                $quantity = (int) $pm[2];
+            }
+
+            $normalized = self::normalizeProductName($name);
+            $items[] = [
+                'product_name' => $normalized['name'],
+                'category' => $normalized['category'],
+                'variant' => $normalized['variant'],
+                'quantity' => $quantity,
+                'raw_name' => $name,
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
      * Create an order from plugin-extracted variables.
      * Returns null on failure or if no valid amount found (non-blocking).
      */
@@ -104,29 +142,8 @@ class OrderService
 
                 // Extract product info and create items (supports multi-product strings)
                 $rawProduct = $variables['product'] ?? $variables['product_category'] ?? null;
-                if ($rawProduct && is_string($rawProduct)) {
-                    $productParts = array_filter(array_map('trim', preg_split('/,\s*/', $rawProduct)));
-                    $items = [];
-
-                    foreach ($productParts as $part) {
-                        $quantity = 1;
-                        $name = $part;
-
-                        // Parse "x2" quantity pattern
-                        if (preg_match('/^(.+?)\s*x(\d+)\s*$/u', $part, $pm)) {
-                            $name = trim($pm[1]);
-                            $quantity = (int) $pm[2];
-                        }
-
-                        $normalized = self::normalizeProductName($name);
-                        $items[] = [
-                            'product_name' => $normalized['name'],
-                            'category' => $normalized['category'],
-                            'variant' => $normalized['variant'],
-                            'quantity' => $quantity,
-                        ];
-                    }
-
+                $items = self::parseProductItems($rawProduct);
+                if (! empty($items)) {
                     $isSingleItem = count($items) === 1;
 
                     foreach ($items as $item) {

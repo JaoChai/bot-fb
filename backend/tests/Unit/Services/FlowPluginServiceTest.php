@@ -122,4 +122,54 @@ class FlowPluginServiceTest extends TestCase
 
         $this->assertArrayNotHasKey('source_bank', $result);
     }
+
+    public function test_product_breakdown_shows_quantity_per_type(): void
+    {
+        $result = $this->callPrivate('buildProductBreakdown', 'G3D x2, Page');
+
+        $this->assertStringContainsString('📦 รายการสินค้า', $result);
+        $this->assertStringContainsString('• G3D ×2', $result);
+        $this->assertStringContainsString('• Page ×1', $result);
+    }
+
+    public function test_product_breakdown_groups_and_sums_same_type(): void
+    {
+        // Same type appearing twice should be summed, not duplicated
+        $result = $this->callPrivate('buildProductBreakdown', 'ไก่ x2, เฟสไก่ x1');
+
+        $this->assertStringContainsString('• G3D ×3', $result);
+        $this->assertEquals(1, substr_count($result, 'G3D'));
+    }
+
+    public function test_product_breakdown_includes_variant(): void
+    {
+        $result = $this->callPrivate('buildProductBreakdown', 'BM ผูกบัตร x1');
+
+        $this->assertStringContainsString('• Nolimit BM (ผูกบัตร) ×1', $result);
+    }
+
+    public function test_product_breakdown_empty_when_no_product(): void
+    {
+        $this->assertSame('', $this->callPrivate('buildProductBreakdown', null));
+        $this->assertSame('', $this->callPrivate('buildProductBreakdown', ''));
+    }
+
+    public function test_parse_product_items_parses_quantity_and_normalizes(): void
+    {
+        $items = \App\Services\OrderService::parseProductItems('G3D x2, BM ผูกบัตร');
+
+        $this->assertCount(2, $items);
+        $this->assertSame('G3D', $items[0]['product_name']);
+        $this->assertSame(2, $items[0]['quantity']);
+        $this->assertSame('Nolimit BM', $items[1]['product_name']);
+        $this->assertSame('ผูกบัตร', $items[1]['variant']);
+        $this->assertSame(1, $items[1]['quantity']);
+    }
+
+    public function test_parse_product_items_empty_for_blank_input(): void
+    {
+        $this->assertSame([], \App\Services\OrderService::parseProductItems(null));
+        $this->assertSame([], \App\Services\OrderService::parseProductItems(''));
+        $this->assertSame([], \App\Services\OrderService::parseProductItems('   '));
+    }
 }
