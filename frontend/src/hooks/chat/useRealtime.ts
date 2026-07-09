@@ -9,7 +9,12 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useBotChannel } from '@/hooks/useEcho';
-import { messageKeys, type MessagesResponse } from './messageKeys';
+import { messageKeys } from './messageKeys';
+import {
+  messageExistsInInfinite,
+  prependMessagesToInfinite,
+  type InfiniteMessages,
+} from './infiniteMessageCache';
 import { conversationKeys, type ConversationsResponse } from './useConversationList';
 import { conversationDetailKeys } from './useConversationDetails';
 import { updateConversationInList, createMessageFromEvent, isInfiniteConversationsQuery } from './realtimeUtils';
@@ -68,33 +73,20 @@ export function useRealtime(
       const currentBotId = botIdRef.current;
       if (!currentBotId) return;
 
-      // Check if message already exists to avoid duplicate updates
-      const messageOptions = { order: 'asc' as const, perPage: 100 };
-      const existingMessages = queryClient.getQueryData<MessagesResponse>(
-        messageKeys.listWithOptions(currentBotId, event.conversation_id, messageOptions)
-      );
+      const infiniteKey = messageKeys.infinite(currentBotId, event.conversation_id);
 
-      if (existingMessages?.data.some((m) => m.id === event.id)) {
+      // Check if message already exists to avoid duplicate updates
+      const existingMessages = queryClient.getQueryData<InfiniteMessages>(infiniteKey);
+      if (messageExistsInInfinite(existingMessages, event.id)) {
         // Message already exists, skip update
         return;
       }
 
-      // Add message to cache
-      queryClient.setQueryData<MessagesResponse>(
-        messageKeys.listWithOptions(currentBotId, event.conversation_id, messageOptions),
-        (old) => {
-          if (!old) return old;
-          const exists = old.data.some((m) => m.id === event.id);
-          if (exists) return old;
-
-          const newMessage = createMessageFromEvent(event);
-
-          return {
-            ...old,
-            data: [...old.data, newMessage],
-          };
-        }
-      );
+      // Add message to cache (newest-first: prepend to first page)
+      queryClient.setQueryData<InfiniteMessages>(infiniteKey, (old) => {
+        if (!old) return old;
+        return prependMessagesToInfinite(old, [createMessageFromEvent(event)]);
+      });
 
       // Update conversation in list — filter-agnostic, refs supply selection state
       updateConversationInList(
@@ -280,7 +272,7 @@ export function useRealtime(
         const currentSelectedId = selectedConversationIdRef.current;
         if (currentSelectedId) {
           queryClient.invalidateQueries({
-            queryKey: messageKeys.list(currentBotId, currentSelectedId),
+            queryKey: messageKeys.infinite(currentBotId, currentSelectedId),
           });
           queryClient.invalidateQueries({
             queryKey: conversationDetailKeys.detail(currentBotId, currentSelectedId),
