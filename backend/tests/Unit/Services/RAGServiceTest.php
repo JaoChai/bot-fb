@@ -93,7 +93,7 @@ class RAGServiceTest extends TestCase
 
         $result = $this->callBuildEnhancedPrompt($basePrompt, '', null, $memoryNotes);
 
-        $this->assertStringContainsString('## Memory:', $result);
+        $this->assertStringContainsString('## Memory (', $result);
         $this->assertStringContainsString('- ลูกค้าแพ้ถั่ว', $result);
         $this->assertStringContainsString('- ชอบกาแฟเย็น ไม่หวาน', $result);
     }
@@ -105,7 +105,7 @@ class RAGServiceTest extends TestCase
         $result = $this->callBuildEnhancedPrompt($basePrompt, '', null, []);
 
         // Should not contain memory section when empty
-        $this->assertStringNotContainsString('## Memory:', $result);
+        $this->assertStringNotContainsString('## Memory (', $result);
         $this->assertStringStartsWith($basePrompt, $result);
     }
 
@@ -118,7 +118,7 @@ class RAGServiceTest extends TestCase
         $result = $this->callBuildEnhancedPrompt($basePrompt, $kbContext, null, $memoryNotes);
 
         // Memory notes should appear before KB context
-        $memoryPos = strpos($result, '## Memory:');
+        $memoryPos = strpos($result, '## Memory (');
         $kbPos = strpos($result, '## ข้อมูลอ้างอิงจาก Knowledge Base:');
 
         $this->assertNotFalse($memoryPos);
@@ -134,7 +134,7 @@ class RAGServiceTest extends TestCase
         $result = $this->callBuildEnhancedPrompt($persona, '', null, $memoryNotes);
 
         $personaPos = strpos($result, '[PERSONA-MARKER]');
-        $memoryPos = strpos($result, '## Memory:');
+        $memoryPos = strpos($result, '## Memory (');
 
         $this->assertNotFalse($personaPos);
         $this->assertNotFalse($memoryPos);
@@ -243,14 +243,14 @@ class RAGServiceTest extends TestCase
         $result = $this->callBuildEnhancedPrompt($basePrompt, $kbContext, $this->bot, $memoryNotes);
 
         // All memory notes prepended before base prompt
-        $this->assertStringContainsString('## Memory:', $result);
+        $this->assertStringContainsString('## Memory (', $result);
         $this->assertStringContainsString('- ลูกค้า VIP ปิดขายให้เร็ว', $result);
         $this->assertStringContainsString('- ได้ส่วนลด 10%', $result);
         $this->assertStringContainsString('You are a helpful assistant.', $result);
         $this->assertStringContainsString('## ข้อมูลอ้างอิง:', $result);
 
         // Static persona leads; memory injected after (cacheable-prefix ordering)
-        $memoryPos = strpos($result, '## Memory:');
+        $memoryPos = strpos($result, '## Memory (');
         $basePos = strpos($result, 'You are a helpful assistant.');
         $this->assertLessThan($memoryPos, $basePos, 'Base persona should lead, memory injected after');
     }
@@ -263,7 +263,7 @@ class RAGServiceTest extends TestCase
         $result = $this->callBuildEnhancedPrompt($basePrompt, '', $this->bot, $memoryNotes);
 
         // Base persona appears before memory (cacheable-prefix ordering)
-        $memoryPos = strpos($result, '## Memory:');
+        $memoryPos = strpos($result, '## Memory (');
         $basePos = strpos($result, 'You are Captain Ad sales bot.');
         $this->assertLessThan($memoryPos, $basePos, 'Base persona must come before memory');
         $this->assertStringContainsString('- ลูกค้า VIP เคยซื้อ Nolimit Level Up+ 2 ครั้ง', $result);
@@ -278,7 +278,7 @@ class RAGServiceTest extends TestCase
         $result = $this->callBuildEnhancedPrompt($basePrompt, $kbContext, null, $memoryNotes);
 
         // Order: base prompt → memory → KB (cacheable-prefix ordering)
-        $memoryPos = strpos($result, '## Memory:');
+        $memoryPos = strpos($result, '## Memory (');
         $basePos = strpos($result, 'System prompt here.');
         $kbPos = strpos($result, '## KB Context:');
         $this->assertLessThan($memoryPos, $basePos);

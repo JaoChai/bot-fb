@@ -131,7 +131,8 @@ class ProcessAggregatedMessages implements ShouldQueue
                 $messageCount,
                 $aiService,
                 $lineService,
-                $bubblesService
+                $bubblesService,
+                $cachedMessageIds
             );
 
             if ($botMessage) {
@@ -331,7 +332,8 @@ class ProcessAggregatedMessages implements ShouldQueue
         int $messageCount,
         AIService $aiService,
         LINEService $lineService,
-        MultipleBubblesService $bubblesService
+        MultipleBubblesService $bubblesService,
+        array $currentTurnMessageIds = []
     ): ?Message {
         Log::debug('[Aggregation] Generating AI response', [
             'conversation_id' => $this->conversation->id,
@@ -339,10 +341,12 @@ class ProcessAggregatedMessages implements ShouldQueue
         ]);
 
         // Generate AI response using merged content
+        // exclude ข้อความของ turn นี้ออกจาก history — mergedContent เป็นตัวแทน turn ปัจจุบันอยู่แล้ว
         $result = $aiService->generateResponse(
             $this->bot,
             $mergedContent,
-            $this->conversation
+            $this->conversation,
+            excludeMessageIds: $currentTurnMessageIds
         );
 
         // Save bot response

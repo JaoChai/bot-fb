@@ -26,11 +26,14 @@ class AIService
     public function generateResponse(
         Bot $bot,
         string $userMessage,
-        ?Conversation $conversation = null
+        ?Conversation $conversation = null,
+        array $excludeMessageIds = []
     ): array {
         // Get conversation history if available
+        // excludeMessageIds: ข้อความ turn ปัจจุบันที่ถูก save ไปแล้ว ต้องตัดออกจาก history
+        // ไม่งั้น LLM เห็นข้อความเดิมซ้ำ 2 turn (history + current) แล้วตีความจำนวนผิด
         $history = $conversation
-            ? $this->getConversationHistory($conversation, $bot->context_window)
+            ? $this->getConversationHistory($conversation, $bot->context_window, $excludeMessageIds)
             : [];
 
         // Get flow for RAGService (agentic mode) and Second AI check
@@ -90,7 +93,8 @@ class AIService
             $result = $this->generateResponse(
                 $bot,
                 $userMessage->content,
-                $conversation
+                $conversation,
+                excludeMessageIds: [$userMessage->id]
             );
 
             // Build message data with RAG metadata
@@ -147,10 +151,14 @@ class AIService
     /**
      * Get conversation history for context.
      */
-    protected function getConversationHistory(Conversation $conversation, int $limit = 10): array
+    protected function getConversationHistory(Conversation $conversation, int $limit = 10, array $excludeMessageIds = []): array
     {
         $query = $conversation->messages()
             ->whereIn('sender', ['user', 'bot']);
+
+        if ($excludeMessageIds !== []) {
+            $query->whereNotIn('id', $excludeMessageIds);
+        }
 
         // Filter out messages before context was cleared
         if ($conversation->context_cleared_at) {

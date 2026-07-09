@@ -383,7 +383,8 @@ class RAGService
         $prompt = $basePrompt;
 
         if (! empty($memoryNotes)) {
-            $prompt .= "\n\n## Memory:\n";
+            $prompt .= "\n\n## Memory (ประวัติสะสมของลูกค้าจากออเดอร์เก่า):\n";
+            $prompt .= "ใช้เพื่อจดจำสินค้า/พฤติกรรมที่เคยซื้อเท่านั้น ตัวเลขจำนวน (x1, x2) คือยอดสะสมในอดีต ห้ามนำไปรวมหรือนับเป็นจำนวนของออเดอร์ใหม่\n";
             foreach ($memoryNotes as $content) {
                 $prompt .= "- {$content}\n";
             }
