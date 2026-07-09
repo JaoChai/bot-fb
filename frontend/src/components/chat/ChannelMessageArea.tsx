@@ -3,7 +3,7 @@
  * Handles Telegram and LINE message rendering
  * Extracted from ChatWindow.tsx
  */
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { ChevronDown, Loader2 } from 'lucide-react';
@@ -18,6 +18,9 @@ interface ChannelMessageAreaProps {
   conversation: Conversation;
   isLoading: boolean;
   channelType: 'telegram' | 'line';
+  hasOlder?: boolean;
+  isLoadingOlder?: boolean;
+  onLoadOlder?: () => void;
 }
 
 export function ChannelMessageArea({
@@ -25,10 +28,18 @@ export function ChannelMessageArea({
   conversation,
   isLoading,
   channelType,
+  hasOlder = false,
+  isLoadingOlder = false,
+  onLoadOlder,
 }: ChannelMessageAreaProps) {
   const [autoScroll, setAutoScroll] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
+
+  // Scroll anchoring for load-older: captured when the fetch is triggered,
+  // applied after the older page is prepended so the view doesn't jump.
+  const loadOlderAnchorRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null);
+  const prevFirstIdRef = useRef<number | null>(null);
 
   // Auto scroll to bottom when messages change
   useEffect(() => {
@@ -37,7 +48,24 @@ export function ChannelMessageArea({
     }
   }, [messages, autoScroll]);
 
-  // Handle scroll to detect when user scrolls up
+  // Restore scroll position after older messages are prepended
+  useLayoutEffect(() => {
+    const firstId = messages[0]?.id ?? null;
+    const anchor = loadOlderAnchorRef.current;
+    const viewport = scrollViewportRef.current;
+
+    if (anchor && viewport && prevFirstIdRef.current !== null && firstId !== prevFirstIdRef.current) {
+      viewport.scrollTop = anchor.scrollTop + (viewport.scrollHeight - anchor.scrollHeight);
+      loadOlderAnchorRef.current = null;
+    } else if (anchor && !isLoadingOlder && firstId === prevFirstIdRef.current) {
+      // Fetch settled without new messages (error / empty page) — release the anchor
+      loadOlderAnchorRef.current = null;
+    }
+
+    prevFirstIdRef.current = firstId;
+  }, [messages, isLoadingOlder]);
+
+  // Handle scroll: bottom detection for auto-scroll + top detection for load-older
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
       const target = e.currentTarget;
@@ -46,8 +74,25 @@ export function ChannelMessageArea({
       if (isAtBottom !== autoScroll) {
         setAutoScroll(isAtBottom);
       }
+
+      // Near the top and the user is actively reading history (!autoScroll
+      // guards against the initial smooth-scroll-to-bottom passing the top).
+      if (
+        target.scrollTop < 100 &&
+        !autoScroll &&
+        hasOlder &&
+        !isLoadingOlder &&
+        !loadOlderAnchorRef.current &&
+        onLoadOlder
+      ) {
+        loadOlderAnchorRef.current = {
+          scrollTop: target.scrollTop,
+          scrollHeight: target.scrollHeight,
+        };
+        onLoadOlder();
+      }
     },
-    [autoScroll]
+    [autoScroll, hasOlder, isLoadingOlder, onLoadOlder]
   );
 
   // Handle scroll to bottom button click
@@ -97,7 +142,12 @@ export function ChannelMessageArea({
             </div>
           ) : (
             <>
-              {isCreatedDateValid && (
+              {isLoadingOlder && (
+                <div className="flex items-center justify-center py-2">
+                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                </div>
+              )}
+              {isCreatedDateValid && !hasOlder && (
                 <div className="text-center text-sm text-muted-foreground py-2">
                   <span className="bg-muted px-3 py-1 rounded-full text-xs">
                     Started {format(createdDate, 'PPp', { locale: th })}
