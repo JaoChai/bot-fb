@@ -31,6 +31,9 @@ class LineWebhookResponseService
 
     private const SLIP_PENDING_TEMPLATE = 'สลิปเพิ่งโอนมา ธนาคารกำลังประมวลผลครับ 🙏 รบกวนรอ 1-2 นาทีแล้วส่งสลิปเดิมมาอีกครั้งนะครับ ระบบจะตรวจให้อัตโนมัติ';
 
+    // รูปโหลดจาก LINE ไม่สำเร็จ (media_url ว่าง) — ตอบลูกค้าให้ส่งใหม่ แทนการเงียบ
+    private const IMAGE_UNAVAILABLE_TEMPLATE = 'ขออภัยครับ ระบบโหลดรูปที่ส่งมาไม่สำเร็จ 🙏 รบกวนส่งรูปอีกครั้งนะครับ';
+
     public function __construct(
         private readonly AIService $aiService,
         private readonly OpenRouterService $openRouterService,
@@ -189,6 +192,30 @@ class LineWebhookResponseService
 
         $imageUrl = $userMessage->media_url ?? $ctx->metadata['media_url'] ?? null;
         if (! $imageUrl) {
+            // รูปโหลดจาก LINE ไม่สำเร็จ (media_url ว่าง) — เดิม return เงียบ ทำให้ลูกค้าไม่ได้รับตอบ
+            // และแอดมินไม่รู้ (เคสสลิปจะเงียบสนิท ต้องมากดยืนยันเอง). ปิดช่องเงียบ:
+            // ตอบลูกค้าให้ส่งรูปใหม่ + เตือนแอดมินถ้าเปิดตรวจสลิป (มีปุ่มยืนยันมือให้)
+            Log::warning('Image download failed (media_url null) — replying to customer + alerting admin', [
+                'bot_id' => $ctx->bot->id,
+                'conversation_id' => $conversation->id,
+                'message_id' => $userMessage->id,
+            ]);
+
+            $botMessage = $conversation->messages()->create([
+                'sender' => 'bot',
+                'content' => self::IMAGE_UNAVAILABLE_TEMPLATE,
+                'type' => 'text',
+                'metadata' => ['image_download_failed' => true],
+            ]);
+            $ctx->metadata['bot_message'] = $botMessage;
+            $ctx->response = ResponseEnvelope::text(self::IMAGE_UNAVAILABLE_TEMPLATE);
+
+            if ($ctx->bot->settings?->slip_verification_enabled) {
+                $this->slipVerification->notifyAdmin($ctx->bot, $conversation, new SlipVerificationResult(
+                    isSlip: true, passed: false, failReason: 'image_download_failed',
+                ));
+            }
+
             return;
         }
 

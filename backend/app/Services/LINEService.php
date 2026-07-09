@@ -376,9 +376,11 @@ class LINEService
      */
     public function getContent(Bot $bot, string $messageId): string
     {
+        // retry transient failures (LINE content API timeout/connection blip) —
+        // a failed download leaves media_url null and silently skips slip verification
         $response = Http::withHeaders([
             'Authorization' => 'Bearer '.$bot->channel_access_token,
-        ])->timeout(30)->get(self::DATA_API_BASE_URL."/bot/message/{$messageId}/content");
+        ])->timeout(30)->retry(2, 500)->get(self::DATA_API_BASE_URL."/bot/message/{$messageId}/content");
 
         if ($response->failed()) {
             throw new LINEException(

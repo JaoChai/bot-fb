@@ -366,6 +366,72 @@ class LineWebhookResponseServiceTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Image download failed (media_url null) — must NOT stay silent:
+    // reply to customer + alert admin when slip verification is on
+    // -------------------------------------------------------------------------
+
+    public function test_image_download_failed_replies_and_alerts_when_slip_enabled(): void
+    {
+        $bot = $this->makeBot();
+        $bot->setRelation('settings', new BotSetting(['slip_verification_enabled' => true]));
+
+        $botMessage = $this->makeMessage($this->makeConversationMock($bot), 'bot', 'ขออภัยครับ...');
+        $conversation = $this->makeConversationWithMessagesMock($bot, $botMessage);
+
+        $userMessage = $this->makeMessage($conversation, 'user', '[รูปภาพ]');
+        $userMessage->type = 'image';
+        $userMessage->media_url = null; // download failed → previously a silent return
+
+        $modelCapability = Mockery::mock(ModelCapabilityService::class);
+        $modelCapability->shouldReceive('supportsVision')->andReturn(true);
+
+        $slipVerification = Mockery::mock(SlipVerificationService::class);
+        $slipVerification->shouldReceive('notifyAdmin')->once();
+
+        $ctx = new WebhookContext($bot, $this->makeImageEvent());
+        $ctx->conversation = $conversation;
+        $ctx->userMessage = $userMessage;
+        $ctx->metadata['should_generate_response'] = true;
+
+        $svc = $this->makeService(modelCapability: $modelCapability, slipVerification: $slipVerification);
+        $svc->generate($ctx);
+
+        $this->assertInstanceOf(ResponseEnvelope::class, $ctx->response);
+        $this->assertStringContainsString('โหลดรูป', $ctx->response->payload);
+        $this->assertNotNull($ctx->metadata['bot_message']);
+    }
+
+    public function test_image_download_failed_replies_without_alert_when_slip_disabled(): void
+    {
+        $bot = $this->makeBot();
+        $bot->setRelation('settings', new BotSetting(['slip_verification_enabled' => false]));
+
+        $botMessage = $this->makeMessage($this->makeConversationMock($bot), 'bot', 'ขออภัยครับ...');
+        $conversation = $this->makeConversationWithMessagesMock($bot, $botMessage);
+
+        $userMessage = $this->makeMessage($conversation, 'user', '[รูปภาพ]');
+        $userMessage->type = 'image';
+        $userMessage->media_url = null;
+
+        $modelCapability = Mockery::mock(ModelCapabilityService::class);
+        $modelCapability->shouldReceive('supportsVision')->andReturn(true);
+
+        $slipVerification = Mockery::mock(SlipVerificationService::class);
+        $slipVerification->shouldReceive('notifyAdmin')->never();
+
+        $ctx = new WebhookContext($bot, $this->makeImageEvent());
+        $ctx->conversation = $conversation;
+        $ctx->userMessage = $userMessage;
+        $ctx->metadata['should_generate_response'] = true;
+
+        $svc = $this->makeService(modelCapability: $modelCapability, slipVerification: $slipVerification);
+        $svc->generate($ctx);
+
+        $this->assertInstanceOf(ResponseEnvelope::class, $ctx->response);
+        $this->assertStringContainsString('โหลดรูป', $ctx->response->payload);
+    }
+
+    // -------------------------------------------------------------------------
     // Test 6: Video/audio/file/location — response null
     // -------------------------------------------------------------------------
 
