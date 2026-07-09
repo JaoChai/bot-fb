@@ -603,29 +603,10 @@ export interface DashboardAlerts {
   handover_conversations: DashboardHandoverAlert[];
 }
 
-export type DashboardActivityType =
-  | 'handover_started'
-  | 'handover_resolved'
-  | 'bot_created'
-  | 'bot_updated'
-  | 'conversation_started';
-
-export interface DashboardActivity {
-  id: number;
-  type: DashboardActivityType;
-  title: string;
-  description: string | null;
-  bot_id: number | null;
-  bot_name: string | null;
-  metadata: Record<string, unknown> | null;
-  created_at: string;
-}
-
 export interface DashboardData {
   summary: DashboardSummary;
   bots: DashboardBotSummary[];
   alerts: DashboardAlerts;
-  recent_activity: DashboardActivity[];
 }
 
 // Product Stock

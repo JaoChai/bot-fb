@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -65,15 +64,4 @@ class ActivityLog extends Model
         ]);
     }
 
-    /**
-     * Get recent activities for a user
-     */
-    public static function getRecentForUser(int $userId, int $limit = 10): Collection
-    {
-        return self::where('user_id', $userId)
-            ->with('bot:id,name')
-            ->orderBy('created_at', 'desc')
-            ->limit($limit)
-            ->get();
-    }
 }
