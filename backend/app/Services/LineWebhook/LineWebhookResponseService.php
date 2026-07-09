@@ -9,6 +9,7 @@ use App\Services\Chat\ConversationContextService;
 use App\Services\LINEService;
 use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
+use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
 use App\Services\StickerReplyService;
 use Illuminate\Support\Facades\Log;
@@ -291,6 +292,16 @@ class LineWebhookResponseService
             $ctx->metadata['bot_message'] = $botMessage;
             $ctx->response = ResponseEnvelope::text($responseContent);
 
+            // Vision ตัดสินเองว่าเป็นสลิป (ตอบให้ลูกค้ารอทีมงาน) ทั้งที่ EasySlip/classifier ไม่จับ —
+            // ต้องมี alert ไปหาแอดมินด้วย ไม่งั้นลูกค้ารอเงียบๆ โดยไม่มีใครรู้ (ข้าม ถ้า alert ไปแล้วในรอบนี้)
+            if ($ctx->bot->settings?->slip_verification_enabled
+                && empty($ctx->metadata['slip_alert_sent'])
+                && str_contains($responseContent, 'ได้รับสลิป')) {
+                $this->slipVerification->notifyAdmin($ctx->bot, $conversation, new SlipVerificationResult(
+                    isSlip: true, passed: false, failReason: 'unreadable',
+                ));
+            }
+
             Log::info('Image analyzed successfully', [
                 'bot_id' => $ctx->bot->id,
                 'conversation_id' => $conversation->id,
@@ -493,11 +504,13 @@ class LineWebhookResponseService
                 $ctx->userMessage,
                 $imageUrl,
                 $history,
+                fn (): ?bool => $this->classifyImageIsSlip($ctx, $imageUrl),
             );
 
             // config_error (token หาย) ปฏิบัติเหมือน api_error — แจ้งแอดมิน + ปล่อยไป vision ให้ลูกค้ายังได้รับตอบ
             if (in_array($result->failReason, ['api_error', 'config_error'], true)) {
                 $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
+                $ctx->metadata['slip_alert_sent'] = true;
 
                 return false; // fallback vision — ลูกค้าต้องได้รับตอบ
             }
@@ -551,6 +564,61 @@ class LineWebhookResponseService
             ]);
 
             return false;
+        }
+    }
+
+    /**
+     * ถาม vision model ว่ารูปเป็นสลิปโอนเงินจริงไหม — ใช้เป็นกรรมการตอน EasySlip อ่านรูปไม่ได้ (400)
+     * เพื่อแยก "สลิปเบลอ" ออกจาก "รูปทั่วไป" (เช่น screenshot หน้าจออื่นๆ)
+     * คืน null เมื่อตอบไม่ได้/เรียกไม่สำเร็จ → ฝั่ง verify() จะถือเป็นสลิป (fail-safe ไปทางตรวจมือ)
+     */
+    private function classifyImageIsSlip(WebhookContext $ctx, string $imageUrl): ?bool
+    {
+        try {
+            $model = $this->getVisionModel($ctx);
+            if (! $model) {
+                return null;
+            }
+
+            $apiKey = $ctx->bot->user?->settings?->getOpenRouterApiKey()
+                ?? config('services.openrouter.api_key');
+
+            $result = $this->openRouterService->chatWithVision(
+                messages: [[
+                    'role' => 'user',
+                    'content' => 'รูปนี้เป็นสลิปโอนเงิน/หลักฐานการชำระเงินจากธนาคารหรือแอปการเงินใช่หรือไม่ ตอบคำเดียวเท่านั้น: SLIP หรือ NOT_SLIP',
+                ]],
+                imageUrls: [$imageUrl],
+                model: $model,
+                temperature: 0.0,
+                maxTokens: 20,
+                apiKeyOverride: $apiKey,
+                useFallback: (bool) $ctx->bot->fallback_chat_model,
+                fallbackModelOverride: $ctx->bot->fallback_chat_model,
+            );
+
+            $answer = mb_strtoupper(trim($result['content'] ?? ''));
+            $isSlip = match (true) {
+                str_contains($answer, 'NOT_SLIP') => false,
+                str_contains($answer, 'SLIP') => true,
+                default => null,
+            };
+
+            Log::info('Slip image classification', [
+                'bot_id' => $ctx->bot->id,
+                'conversation_id' => $ctx->conversation?->id,
+                'answer' => $answer,
+                'is_slip' => $isSlip,
+            ]);
+
+            return $isSlip;
+        } catch (\Throwable $e) {
+            Log::warning('Slip image classification failed, treating as slip (fail-safe)', [
+                'bot_id' => $ctx->bot->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
         }
     }
 }

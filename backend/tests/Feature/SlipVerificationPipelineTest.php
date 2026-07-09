@@ -86,6 +86,23 @@ class SlipVerificationPipelineTest extends TestCase
         return $ctx;
     }
 
+    /**
+     * เปิด Telegram alert plugin ให้ default flow ของบอท (ใช้ทดสอบ path ที่แจ้งแอดมิน)
+     */
+    private function enableTelegramAlert(): void
+    {
+        $flow = Flow::factory()->create(['bot_id' => $this->bot->id]);
+        $this->bot->update(['default_flow_id' => $flow->id]);
+        FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'แจ้งแอดมิน',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'tg-tok', 'chat_id' => '-100999'],
+        ]);
+    }
+
     public function test_passed_slip_replies_confirmation_without_vision(): void
     {
         Http::fake([
@@ -123,16 +140,7 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_failed_slip_replies_fail_template_and_alerts(): void
     {
-        $flow = Flow::factory()->create(['bot_id' => $this->bot->id]);
-        $this->bot->update(['default_flow_id' => $flow->id]);
-        FlowPlugin::create([
-            'flow_id' => $flow->id,
-            'type' => 'telegram',
-            'name' => 'แจ้งแอดมิน',
-            'enabled' => true,
-            'trigger_condition' => 'always',
-            'config' => ['access_token' => 'tg-tok', 'chat_id' => '-100999'],
-        ]);
+        $this->enableTelegramAlert();
 
         Http::fake([
             'api.easyslip.com/*' => Http::response([
@@ -165,16 +173,7 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_easyslip_api_error_falls_back_to_vision_and_alerts_admin(): void
     {
-        $flow = Flow::factory()->create(['bot_id' => $this->bot->id]);
-        $this->bot->update(['default_flow_id' => $flow->id]);
-        FlowPlugin::create([
-            'flow_id' => $flow->id,
-            'type' => 'telegram',
-            'name' => 'แจ้งแอดมิน',
-            'enabled' => true,
-            'trigger_condition' => 'always',
-            'config' => ['access_token' => 'tg-tok', 'chat_id' => '-100999'],
-        ]);
+        $this->enableTelegramAlert();
 
         Http::fake([
             'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INTERNAL_ERROR', 'message' => 'internal error']], 500),
@@ -221,23 +220,18 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_unreadable_slip_replies_fail_template_and_alerts(): void
     {
-        $flow = Flow::factory()->create(['bot_id' => $this->bot->id]);
-        $this->bot->update(['default_flow_id' => $flow->id]);
-        FlowPlugin::create([
-            'flow_id' => $flow->id,
-            'type' => 'telegram',
-            'name' => 'แจ้งแอดมิน',
-            'enabled' => true,
-            'trigger_condition' => 'always',
-            'config' => ['access_token' => 'tg-tok', 'chat_id' => '-100999'],
-        ]);
+        $this->enableTelegramAlert();
 
-        // 400 + pending order (from setUp) → unreadable slip.
+        // 400 + pending order (from setUp) + vision บอกเป็นสลิป → unreadable slip.
         Http::fake([
             'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
             'api.line.me/*' => Http::response(['ok' => true]),
             'api.telegram.org/*' => Http::response(['ok' => true]),
-            'openrouter.ai/*' => Http::response([], 500), // ต้องไม่ถูกเรียก
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => 'SLIP']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 2, 'total_tokens' => 12],
+            ]),
         ]);
 
         $ctx = $this->makeContext();
@@ -248,21 +242,101 @@ class SlipVerificationPipelineTest extends TestCase
         $this->assertDatabaseHas('slip_verifications', ['status' => 'unreadable']);
 
         Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
-        Http::assertNotSent(fn ($req) => str_contains($req->url(), 'openrouter.ai'));
+        // openrouter ถูกเรียกครั้งเดียว = classification เท่านั้น ไม่มี vision ตอบลูกค้า
+        $openrouterCalls = Http::recorded(fn ($req) => str_contains($req->url(), 'openrouter.ai'));
+        $this->assertCount(1, $openrouterCalls);
+    }
+
+    public function test_non_slip_image_with_pending_order_falls_through_to_vision(): void
+    {
+        $this->enableTelegramAlert();
+
+        // 400 + pending order แต่ vision บอกไม่ใช่สลิป (เช่น screenshot โปรโมทโพสต์)
+        // → ไม่ alert, ไม่บันทึก, ปล่อยเข้า vision ตอบตามบริบท
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::sequence()
+                ->push([
+                    'choices' => [['message' => ['content' => 'NOT_SLIP']]],
+                    'model' => 'google/gemini-3.5-flash',
+                    'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 2, 'total_tokens' => 12],
+                ])
+                ->push([
+                    'choices' => [['message' => ['content' => 'จากรูปเป็นหน้าจอโปรโมทโพสต์ครับ กดเริ่มการตรวจสอบยืนยันได้เลยครับ']]],
+                    'model' => 'google/gemini-3.5-flash',
+                    'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+                ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        $this->assertNotNull($ctx->response);
+        $this->assertStringContainsString('หน้าจอโปรโมทโพสต์', $ctx->response->payload);
+        $this->assertStringNotContainsString('ได้รับสลิปแล้ว', $ctx->response->payload);
+        $this->assertDatabaseMissing('slip_verifications', ['status' => 'unreadable']);
+
+        Http::assertNotSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+    }
+
+    public function test_classifier_vision_disagreement_still_alerts_admin(): void
+    {
+        $this->enableTelegramAlert();
+
+        // classifier บอก NOT_SLIP แต่ vision ขั้นตอบลูกค้ากลับมองเป็นสลิป (ตอบให้รอทีมงาน)
+        // → ต้องมี alert ไปหาแอดมิน ไม่ปล่อยให้ลูกค้ารอเงียบๆ
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::sequence()
+                ->push([
+                    'choices' => [['message' => ['content' => 'NOT_SLIP']]],
+                    'model' => 'google/gemini-3.5-flash',
+                    'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 2, 'total_tokens' => 12],
+                ])
+                ->push([
+                    'choices' => [['message' => ['content' => 'ได้รับสลิปแล้วครับ รอทีมงานตรวจสอบยอดเข้าสักครู่นะครับ ปกติไม่เกิน 5 นาที ขอบคุณที่รอครับ']]],
+                    'model' => 'google/gemini-3.5-flash',
+                    'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+                ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        $this->assertStringContainsString('ได้รับสลิปแล้ว', $ctx->response->payload);
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+    }
+
+    public function test_classifier_failure_keeps_unreadable_fail_safe(): void
+    {
+        $this->enableTelegramAlert();
+
+        // 400 + pending order แต่ classifier เรียกไม่ได้ (openrouter ล่ม)
+        // → fail-safe: ถือเป็นสลิปอ่านไม่ได้ → alert แอดมินตรวจมือ
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([], 500),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        $this->assertStringContainsString('ขอตรวจสอบยอดสักครู่', $ctx->response->payload);
+        $this->assertSame('unreadable', $ctx->metadata['bot_message']->metadata['slip_status']);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'unreadable']);
+
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
     }
 
     public function test_pending_slip_replies_pending_message_without_alert(): void
     {
-        $flow = Flow::factory()->create(['bot_id' => $this->bot->id]);
-        $this->bot->update(['default_flow_id' => $flow->id]);
-        FlowPlugin::create([
-            'flow_id' => $flow->id,
-            'type' => 'telegram',
-            'name' => 'แจ้งแอดมิน',
-            'enabled' => true,
-            'trigger_condition' => 'always',
-            'config' => ['access_token' => 'tg-tok', 'chat_id' => '-100999'],
-        ]);
+        $this->enableTelegramAlert();
 
         Http::fake([
             'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'SLIP_PENDING', 'message' => 'slip pending']], 404),
@@ -286,16 +360,7 @@ class SlipVerificationPipelineTest extends TestCase
     {
         $this->bot->user->settings->update(['easyslip_api_token' => null]);
 
-        $flow = Flow::factory()->create(['bot_id' => $this->bot->id]);
-        $this->bot->update(['default_flow_id' => $flow->id]);
-        FlowPlugin::create([
-            'flow_id' => $flow->id,
-            'type' => 'telegram',
-            'name' => 'แจ้งแอดมิน',
-            'enabled' => true,
-            'trigger_condition' => 'always',
-            'config' => ['access_token' => 'tg-tok', 'chat_id' => '-100999'],
-        ]);
+        $this->enableTelegramAlert();
 
         Http::fake([
             'api.line.me/*' => Http::response(['ok' => true]),

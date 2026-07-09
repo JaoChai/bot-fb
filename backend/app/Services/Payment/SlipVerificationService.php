@@ -98,12 +98,17 @@ class SlipVerificationService
         return null;
     }
 
+    /**
+     * @param  (\Closure(): ?bool)|null  $isSlipCheck  ตัวช่วยตัดสินตอน EasySlip อ่านรูปไม่ได้ (400):
+     *                                                 true/null = ถือเป็นสลิป (fail-safe), false = ไม่ใช่สลิป
+     */
     public function verify(
         Bot $bot,
         ?Conversation $conversation,
         ?Message $message,
         string $imageUrl,
         array $conversationHistory,
+        ?\Closure $isSlipCheck = null,
     ): SlipVerificationResult {
         $token = $bot->user?->settings?->getEasySlipApiToken();
         if (! $token) {
@@ -128,10 +133,13 @@ class SlipVerificationService
 
         if ($response->status() === 400) {
             // EasySlip อ่านรูปไม่ได้ (ไม่ใช่สลิป หรือสลิปเบลอ/มืด/ครอปเกิน)
-            // ถ้ากำลังมีออเดอร์ค้าง → รูปนี้เกือบแน่ว่าเป็นสลิปที่อ่านไม่ได้ → alert แอดมิน ไม่ปล่อยไป vision เดา
-            // ถ้าไม่มีออเดอร์ค้าง → เป็นรูปทั่วไป → พฤติกรรมเดิม (ไป vision, ไม่บันทึก)
+            // มีออเดอร์ค้าง → ถาม vision ก่อน ($isSlipCheck) ว่ารูปเป็นสลิปจริงไหม
+            //   false = รูปทั่วไป (เช่น screenshot อื่น) → ไป vision ตอบตามบริบท ไม่ alert
+            //   true/null (ไม่แน่ใจ/เรียกไม่ได้) = ถือเป็นสลิปอ่านไม่ได้ → alert แอดมิน (fail-safe)
+            // ไม่มีออเดอร์ค้าง → เป็นรูปทั่วไป → พฤติกรรมเดิม (ไป vision, ไม่บันทึก)
             $configured = (string) ($bot->settings?->slip_receiver_account ?? '');
-            if ($this->findExpectedPayment($conversationHistory, $configured) !== null) {
+            if ($this->findExpectedPayment($conversationHistory, $configured) !== null
+                && ($isSlipCheck === null || $isSlipCheck() !== false)) {
                 return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
                     isSlip: true, passed: false, failReason: 'unreadable',
                 ));
