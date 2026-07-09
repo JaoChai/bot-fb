@@ -109,6 +109,7 @@ export function MessageList({
     getScrollElement: () => scrollViewportRef.current,
     estimateSize: () => 80,
     overscan: 10,
+    getItemKey: (index) => messages[index].id,
   });
 
   // Auto scroll to bottom when messages change

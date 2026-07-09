@@ -69,6 +69,18 @@ export function flattenInfiniteMessages(
   data: InfiniteData<MessagesResponse> | undefined
 ): Message[] {
   if (!data) return [];
-  // Flatten all pages and reverse to show oldest first
-  return data.pages.flatMap((page) => page.data).reverse();
+  // Offset pagination drifts when new messages arrive between page loads, so
+  // an older page can repeat rows already cached on a newer page. Keep the
+  // first (newer-page) copy, then reverse to show oldest first.
+  const seen = new Set<number>();
+  const flattened: Message[] = [];
+  for (const page of data.pages) {
+    for (const message of page.data) {
+      if (!seen.has(message.id)) {
+        seen.add(message.id);
+        flattened.push(message);
+      }
+    }
+  }
+  return flattened.reverse();
 }

@@ -6,6 +6,7 @@ import { makeMessage } from '@/test-utils/messageFactory';
 import { messageKeys, type InfiniteMessages } from '@/hooks/chat';
 import { useSendAgentMessage } from './useSendAgentMessage';
 import { api } from '@/lib/api';
+import type { Message } from '@/types/api';
 
 vi.mock('@/lib/api', () => ({
   api: { post: vi.fn(), get: vi.fn() },
