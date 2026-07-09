@@ -19,6 +19,7 @@ import {
   Star,
   Users,
   Zap,
+  Receipt,
 } from 'lucide-react';
 
 interface MobileNavProps {
@@ -115,6 +116,12 @@ export function MobileNav({ onNavigate }: MobileNavProps) {
             <NavLink to="/settings/quick-replies" onClick={onNavigate} className={navLinkClass}>
               <Zap className="size-4 shrink-0" strokeWidth={1.5} />
               <span>Quick Replies</span>
+            </NavLink>
+          )}
+          {user?.role === 'owner' && (
+            <NavLink to="/slips" onClick={onNavigate} className={navLinkClass}>
+              <Receipt className="size-4 shrink-0" strokeWidth={1.5} />
+              <span>สลิป / การชำระเงิน</span>
             </NavLink>
           )}
         </div>
