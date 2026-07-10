@@ -191,7 +191,7 @@ class StreamingResponseOrchestrator
         // Skip only when the bot has no chat model configured at all
         if (! $decisionModel) {
             $onSseEvent('decision_skip', [
-                'reason' => 'ไม่ได้ตั้งค่า Decision Model',
+                'reason' => 'ไม่ได้ตั้งค่า LLM Model ใน Connection Settings',
             ]);
 
             // Default: use KB if enabled, otherwise chat
