@@ -1,0 +1,138 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\AccountDelivery;
+use App\Models\Bot;
+use App\Models\Conversation;
+use App\Models\Flow;
+use App\Models\FlowPlugin;
+use App\Models\ProductStock;
+use App\Models\SlipVerification;
+use App\Models\User;
+use App\Services\Delivery\AccountDeliveryService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Tests\Support\InteractsWithStockPool;
+use Tests\TestCase;
+
+class AccountDeliveryCreateTest extends TestCase
+{
+    use InteractsWithStockPool;
+    use RefreshDatabase;
+
+    private Bot $bot;
+
+    private Conversation $conversation;
+
+    private SlipVerification $slip;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->setUpStockPool();
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $user = User::factory()->owner()->create();
+        $this->bot = Bot::factory()->create(['user_id' => $user->id, 'channel_type' => 'line']);
+        $flow = Flow::factory()->create(['bot_id' => $this->bot->id]);
+        $this->bot->update(['default_flow_id' => $flow->id]);
+        FlowPlugin::create([
+            'flow_id' => $flow->id, 'type' => 'telegram', 'name' => 'แจ้งออเดอร์',
+            'enabled' => true, 'trigger_condition' => 'always',
+            'config' => ['access_token' => 'TOK', 'chat_id' => '999'],
+        ]);
+        $this->bot = $this->bot->fresh();
+        $this->conversation = Conversation::factory()->create(['bot_id' => $this->bot->id]);
+        $this->slip = SlipVerification::create([
+            'bot_id' => $this->bot->id, 'conversation_id' => $this->conversation->id,
+            'amount' => 1299, 'status' => 'passed',
+        ]);
+
+        config(['delivery.enabled' => true, 'delivery.bot_ids' => [$this->bot->id]]);
+
+        ProductStock::create([
+            'name' => 'Nolimit ส่วนตัว', 'slug' => 'nolimit-personal', 'aliases' => [],
+            'in_stock' => true, 'display_order' => 1,
+            'stock_code' => 'NLMP', 'delivery_method' => 'stock',
+        ]);
+        ProductStock::create([
+            'name' => 'เพจ', 'slug' => 'page', 'aliases' => [], 'in_stock' => true,
+            'display_order' => 2, 'stock_code' => null, 'delivery_method' => 'support_link',
+        ]);
+    }
+
+    private function create(array $items): ?AccountDelivery
+    {
+        return app(AccountDeliveryService::class)->createFromPayment(
+            $this->bot, $this->conversation, $this->slip->id, 1299.0, $items,
+        );
+    }
+
+    public function test_reserves_stock_and_records_items(): void
+    {
+        $this->seedAvailable(10, 'NLMP');
+        $this->seedAvailable(11, 'NLMP');
+
+        $delivery = $this->create([
+            ['name' => 'Nolimit ส่วนตัว', 'total' => '2200', 'qty' => 2],
+            ['name' => 'เพจ', 'total' => '199', 'qty' => 1],
+        ]);
+
+        $this->assertSame(AccountDelivery::STATUS_RESERVED, $delivery->status);
+        $this->assertSame(0, DB::connection('mhha_acc')->table('items_available')->count());
+        $this->assertSame(2, DB::connection('mhha_acc')->table('items_reserved')->count());
+        $this->assertSame(2, $delivery->items()->where('kind', 'stock')->where('status', 'reserved')->count());
+        $this->assertSame(1, $delivery->items()->where('kind', 'support_link')->count());
+
+        // การ์ดถูกส่งเข้า Telegram พร้อมปุ่ม dv/dx
+        Http::assertSent(function ($request) use ($delivery) {
+            return str_contains($request->url(), 'sendMessage')
+                && str_contains($request['reply_markup'] ?? '', "dv|{$delivery->id}|x")
+                && str_contains($request['reply_markup'] ?? '', "dx|{$delivery->id}|x");
+        });
+    }
+
+    public function test_shortage_and_unmapped_are_recorded_not_guessed(): void
+    {
+        $this->seedAvailable(10, 'NLMP'); // มีชิ้นเดียว แต่สั่ง 2
+
+        $delivery = $this->create([
+            ['name' => 'Nolimit ส่วนตัว', 'total' => '2200', 'qty' => 2],
+            ['name' => 'ของประหลาด', 'total' => '100'],
+        ]);
+
+        $this->assertSame(AccountDelivery::STATUS_RESERVED, $delivery->status);
+        $this->assertSame(1, $delivery->items()->where('status', 'reserved')->count());
+        $this->assertSame(1, $delivery->items()->where('status', 'shortage')->count());
+        $this->assertSame(1, $delivery->items()->where('status', 'unmapped')->count());
+    }
+
+    public function test_nothing_deliverable_marks_failed(): void
+    {
+        $delivery = $this->create([['name' => 'ของประหลาด', 'total' => '100']]);
+
+        $this->assertSame(AccountDelivery::STATUS_FAILED, $delivery->status);
+    }
+
+    public function test_duplicate_slip_verification_returns_null_without_reserving(): void
+    {
+        $this->seedAvailable(10, 'NLMP');
+        $this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1100']]);
+
+        $second = $this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1100']]);
+
+        $this->assertNull($second);
+        $this->assertSame(1, DB::connection('mhha_acc')->table('items_reserved')->count());
+    }
+
+    public function test_disabled_or_wrong_bot_returns_null(): void
+    {
+        config(['delivery.enabled' => false]);
+        $this->assertNull($this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1100']]));
+
+        config(['delivery.enabled' => true, 'delivery.bot_ids' => [999999]]);
+        $this->assertNull($this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1100']]));
+    }
+}
