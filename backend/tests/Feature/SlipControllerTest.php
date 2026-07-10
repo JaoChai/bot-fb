@@ -110,4 +110,42 @@ class SlipControllerTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('data.0.customer_name', 'Alice');
     }
+
+    public function test_manual_confirmed_counts_as_money_in_with_thai_label(): void
+    {
+        $owner = User::factory()->owner()->create();
+        Sanctum::actingAs($owner);
+        $bot = Bot::factory()->create(['user_id' => $owner->id]);
+
+        SlipVerification::factory()->create(['bot_id' => $bot->id, 'status' => 'passed', 'amount' => 1000]);
+        SlipVerification::factory()->create(['bot_id' => $bot->id, 'status' => 'manual_confirmed', 'amount' => 300]);
+
+        $response = $this->getJson('/api/slips');
+
+        $response->assertOk();
+        // เงินเข้ารวมทั้ง passed + manual_confirmed
+        $response->assertJsonPath('meta.summary.total_amount_passed', 1300);
+        // manual_confirmed ไม่ถูกนับเป็นผิดปกติ/error
+        $response->assertJsonPath('meta.summary.count_abnormal', 0);
+        $response->assertJsonPath('meta.summary.count_system_error', 0);
+        // มี label ไทย (ไม่ใช่ raw string)
+        $response->assertJsonFragment(['status' => 'manual_confirmed', 'status_label' => 'ยืนยันโดยแอดมิน']);
+    }
+
+    public function test_status_filter_money_in_group_includes_manual_confirmed(): void
+    {
+        $owner = User::factory()->owner()->create();
+        Sanctum::actingAs($owner);
+        $bot = Bot::factory()->create(['user_id' => $owner->id]);
+
+        SlipVerification::factory()->create(['bot_id' => $bot->id, 'status' => 'passed', 'amount' => 1000]);
+        SlipVerification::factory()->create(['bot_id' => $bot->id, 'status' => 'manual_confirmed', 'amount' => 300]);
+        SlipVerification::factory()->create(['bot_id' => $bot->id, 'status' => 'fake', 'amount' => 500]);
+
+        // frontend ส่งกลุ่ม "เงินเข้า" เป็น csv passed,manual_confirmed
+        $response = $this->getJson('/api/slips?status=passed,manual_confirmed');
+
+        $response->assertOk();
+        $response->assertJsonPath('meta.total', 2);
+    }
 }

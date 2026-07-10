@@ -11,15 +11,15 @@ use Illuminate\Validation\Rule;
 
 class SlipController extends Controller
 {
-    private const STATUSES = [
-        'passed', 'fake', 'wrong_account', 'duplicate', 'amount_mismatch',
-        'no_pending_order', 'unreadable', 'api_error', 'config_error',
-        'image_download_failed', 'pending',
-    ];
+    // สถานะที่ถือว่าเงินเข้าจริง: passed (EasySlip ผ่าน) + manual_confirmed (แอดมินยืนยันเอง)
+    private const MONEY_IN = ['passed', 'manual_confirmed'];
 
     private const ABNORMAL = ['fake', 'wrong_account', 'duplicate', 'amount_mismatch', 'no_pending_order'];
 
     private const SYSTEM_ERROR = ['unreadable', 'api_error', 'config_error', 'image_download_failed', 'pending'];
+
+    // รวมทุกสถานะที่รู้จัก (whitelist สำหรับ filter) — derive จาก 3 กลุ่มข้างบน กัน desync
+    private const STATUSES = [...self::MONEY_IN, ...self::ABNORMAL, ...self::SYSTEM_ERROR];
 
     public function index(Request $request): JsonResponse
     {
@@ -56,7 +56,7 @@ class SlipController extends Controller
         // summary จาก scope bot+date เท่านั้น (ก่อน filter status/search) ด้วย clone
         $summaryBase = clone $query;
         $summary = [
-            'total_amount_passed' => (float) (clone $summaryBase)->where('status', 'passed')->sum('amount'),
+            'total_amount_passed' => (float) (clone $summaryBase)->whereIn('status', self::MONEY_IN)->sum('amount'),
             'count_total' => (clone $summaryBase)->count(),
             'count_abnormal' => (clone $summaryBase)->whereIn('status', self::ABNORMAL)->count(),
             'count_system_error' => (clone $summaryBase)->whereIn('status', self::SYSTEM_ERROR)->count(),
