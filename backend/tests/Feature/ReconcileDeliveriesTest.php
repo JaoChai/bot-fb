@@ -117,4 +117,37 @@ class ReconcileDeliveriesTest extends TestCase
 
         Http::assertNothingSent();
     }
+
+    public function test_alerts_via_fallback_plugin_when_no_delivery_exists_at_all(): void
+    {
+        // ของหลุดอยู่ใน items_reserved ตั้งแต่ก่อนเคยมีงานส่งของเลยสักงาน
+        DB::connection('mhha_acc')->table('items_reserved')->insert([
+            'id' => 88, 'name' => 'NLMP', 'detail' => 'x|y', 'type' => 'x',
+            'order_ref' => '9999', 'reservedAt' => now(),
+            'createdAt' => now(), 'updatedAt' => now(),
+        ]);
+        config(['delivery.bot_ids' => [$this->bot->id]]);
+
+        // ไม่มี AccountDelivery แม้แต่แถวเดียว
+        $this->assertSame(0, AccountDelivery::count());
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage')
+            && str_contains($r['text'] ?? '', '#88'));
+    }
+
+    public function test_active_reserved_delivery_is_not_flagged_as_orphan(): void
+    {
+        $delivery = $this->makeDelivery('reserved');
+        DB::connection('mhha_acc')->table('items_reserved')->insert([
+            'id' => 99, 'name' => 'NLMP', 'detail' => 'x|y', 'type' => 'x',
+            'order_ref' => (string) $delivery->id, 'reservedAt' => now(),
+            'createdAt' => now(), 'updatedAt' => now(),
+        ]);
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertNothingSent();
+    }
 }

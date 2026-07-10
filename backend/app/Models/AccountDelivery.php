@@ -43,6 +43,6 @@ class AccountDelivery extends Model
 
     public function items(): HasMany
     {
-        return $this->hasMany(AccountDeliveryItem::class);
+        return $this->hasMany(AccountDeliveryItem::class)->orderBy('id');
     }
 }

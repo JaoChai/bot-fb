@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\AccountDelivery;
+use App\Models\Bot;
+use App\Models\FlowPlugin;
 use App\Services\Delivery\AccountDeliveryService;
 use App\Services\Delivery\StockPoolService;
 use App\Services\Payment\TelegramAlertBotService;
@@ -65,11 +67,12 @@ class ReconcileDeliveries extends Command
         return self::SUCCESS;
     }
 
-    /** ส่งเข้า Telegram ผ่าน plugin ของงานล่าสุด (ไม่มีก็แค่ log) */
+    /** ส่งเข้า Telegram ผ่าน plugin ของงานล่าสุด — ไม่มีงานเลยก็ fallback ไปหา plugin จาก config('delivery.bot_ids') */
     private function notifyTelegram(TelegramAlertBotService $alertBot, AccountDeliveryService $deliveryService, array $problems): void
     {
         $delivery = AccountDelivery::with('bot', 'conversation')->latest('id')->first();
         $plugin = $delivery ? $deliveryService->telegramPlugin($delivery) : null;
+        $plugin ??= $this->fallbackPlugin();
         if (! $plugin) {
             Log::warning('Reconcile: no telegram plugin to notify', ['problems' => $problems]);
 
@@ -81,5 +84,19 @@ class ReconcileDeliveries extends Command
             (string) ($plugin->config['chat_id'] ?? ''),
             "🧯 ตรวจพบของค้างในระบบส่งบัญชี:\n".implode("\n", $problems)."\nรบกวนเช็คใน DB/แจ้งทีม dev",
         );
+    }
+
+    /** ไม่มีงานส่งของเลย → หา plugin จาก bot ที่เปิดใช้ delivery ใน config */
+    private function fallbackPlugin(): ?FlowPlugin
+    {
+        foreach (config('delivery.bot_ids', []) as $botId) {
+            $flow = Bot::find($botId)?->defaultFlow;
+            $plugin = $flow?->plugins()->where('type', 'telegram')->where('enabled', true)->first();
+            if ($plugin) {
+                return $plugin;
+            }
+        }
+
+        return null;
     }
 }
