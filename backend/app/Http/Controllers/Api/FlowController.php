@@ -587,8 +587,12 @@ class FlowController extends Controller
         ];
 
         try {
-            // Use model from Bot Connection Settings (not from Flow)
-            $chatModel = $bot->primary_chat_model ?? config('services.openrouter.default_model');
+            // Use model from Bot Connection Settings ONLY (no config substitution)
+            $chatModel = $bot->resolvedChatModel();
+
+            if (! $chatModel) {
+                return $this->error('ยังไม่ได้ตั้งค่า LLM Model ใน Connection Settings', 422);
+            }
 
             $result = $openRouter->chat(
                 messages: $messages,

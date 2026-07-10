@@ -15,10 +15,6 @@ class OpenRouterService
 
     protected string $baseUrl;
 
-    protected string $defaultModel;
-
-    protected string $fallbackModel;
-
     protected string $siteUrl;
 
     protected string $siteName;
@@ -32,8 +28,6 @@ class OpenRouterService
     ) {
         $this->apiKey = config_string('services.openrouter.api_key');
         $this->baseUrl = config_string('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
-        $this->defaultModel = config_string('services.openrouter.default_model', 'anthropic/claude-3.5-sonnet');
-        $this->fallbackModel = config_string('services.openrouter.fallback_model', 'openai/gpt-4o-mini');
         $this->siteUrl = config_string('services.openrouter.site_url', config_string('app.url'));
         $this->siteName = config_string('services.openrouter.site_name', config_string('app.name', 'BotFacebook'));
         $this->timeout = config_int('services.openrouter.timeout', 60);
@@ -66,11 +60,18 @@ class OpenRouterService
         ?array $reasoning = null,
         ?array $responseFormat = null
     ): array {
-        $model = $model ?? $this->defaultModel;
+        // Model comes ONLY from caller (Connection Settings form) — no config substitution.
+        // OpenRouterException (not InvalidArgumentException) so webhook paths reply with a
+        // friendly error message instead of failing the job into retries.
+        if (! $model) {
+            throw new OpenRouterException('Chat model is required — set it in Connection Settings', 400);
+        }
+
         $temperature = $temperature ?? 0.7;
         $maxTokens = $maxTokens ?? $this->maxTokens;
         $apiKey = $apiKeyOverride ?? $this->apiKey;
-        $fallbackModel = $fallbackModelOverride ?? $this->fallbackModel;
+        // Fallback model comes ONLY from bot settings (Connection Settings form) — no config substitution
+        $fallbackModel = $fallbackModelOverride;
         $requestTimeout = $timeout ?? $this->timeout;
 
         try {
@@ -186,11 +187,18 @@ class OpenRouterService
         ?string $fallbackModelOverride = null,
         ?int $timeout = null
     ): array {
-        $model = $model ?? $this->defaultModel;
+        // Model comes ONLY from caller (Connection Settings form) — no config substitution.
+        // OpenRouterException (not InvalidArgumentException) so webhook paths reply with a
+        // friendly error message instead of failing the job into retries.
+        if (! $model) {
+            throw new OpenRouterException('Chat model is required — set it in Connection Settings', 400);
+        }
+
         $temperature = $temperature ?? 0.7;
         $maxTokens = $maxTokens ?? $this->maxTokens;
         $apiKey = $apiKeyOverride ?? $this->apiKey;
-        $fallbackModel = $fallbackModelOverride ?? $this->fallbackModel;
+        // Fallback model comes ONLY from bot settings (Connection Settings form) — no config substitution
+        $fallbackModel = $fallbackModelOverride;
         $requestTimeout = $timeout ?? $this->timeout;
 
         try {
@@ -347,7 +355,6 @@ class OpenRouterService
             'meta-llama/llama-3.1-70b-instruct' => ['prompt' => 0.52, 'completion' => 0.75],
         ];
 
-        $model = $model ?? $this->defaultModel;
         $modelPricing = $pricing[$model] ?? ['prompt' => 1.00, 'completion' => 2.00];
 
         $promptCost = ($promptTokens / 1_000_000) * $modelPricing['prompt'];
@@ -576,7 +583,7 @@ class OpenRouterService
         try {
             $response = $this->chat([
                 ['role' => 'user', 'content' => 'Say "OK" if you can read this.'],
-            ], null, 0, 10, false);
+            ], 'openai/gpt-4o-mini', 0, 10, false);
 
             return ! empty($response['content']);
         } catch (\Exception $e) {

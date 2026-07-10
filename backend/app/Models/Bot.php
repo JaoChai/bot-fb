@@ -132,4 +132,13 @@ class Bot extends Model
     {
         return $this->hasMany(Order::class);
     }
+
+    /**
+     * Resolve the chat model from Connection Settings (single source of truth).
+     * Primary first, fallback as stand-in; null when neither is configured.
+     */
+    public function resolvedChatModel(): ?string
+    {
+        return $this->primary_chat_model ?: $this->fallback_chat_model;
+    }
 }

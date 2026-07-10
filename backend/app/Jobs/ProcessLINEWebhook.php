@@ -1153,7 +1153,6 @@ class ProcessLINEWebhook implements ShouldQueue
                 temperature: $this->bot->llm_temperature ?? 0.7,
                 maxTokens: $this->bot->llm_max_tokens ?? 1024,
                 apiKeyOverride: $apiKey,
-                useFallback: (bool) $this->bot->fallback_chat_model,
                 fallbackModelOverride: $this->bot->fallback_chat_model
             );
 

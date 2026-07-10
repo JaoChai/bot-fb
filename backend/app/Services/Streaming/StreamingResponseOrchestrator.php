@@ -422,8 +422,8 @@ class StreamingResponseOrchestrator
             $collectedResponse = $this->streamFromOpenRouter($messages, $chatModel, $apiKey, $flow->temperature, $flow->max_tokens, $metrics, $onSseEvent);
             $metrics['models_used'][] = $chatModel;
         } catch (\Exception $e) {
-            // Try fallback model
-            if ($fallbackChatModel) {
+            // Try fallback model (skip when it resolves to the same model as primary)
+            if ($fallbackChatModel && $fallbackChatModel !== $chatModel) {
                 $onSseEvent('chat_fallback', [
                     'original_model' => $chatModel,
                     'fallback_model' => $fallbackChatModel,
@@ -538,15 +538,20 @@ class StreamingResponseOrchestrator
 
     private function getChatModel(Bot $bot): string
     {
-        return $bot->primary_chat_model
-            ?: $bot->fallback_chat_model
-            ?: config('services.openrouter.default_model', 'anthropic/claude-3.5-sonnet');
+        // Models come ONLY from Connection Settings form — no config substitution
+        $model = $bot->resolvedChatModel();
+
+        if (! $model) {
+            throw new \RuntimeException('Chat model is required — set it in Connection Settings');
+        }
+
+        return $model;
     }
 
     private function getFallbackChatModel(Bot $bot): ?string
     {
-        return $bot->fallback_chat_model
-            ?: config('services.openrouter.fallback_model');
+        // Fallback comes ONLY from Connection Settings form — empty means no fallback
+        return $bot->fallback_chat_model;
     }
 
     private function buildMessages(string $systemPrompt, array $history, string $message): array

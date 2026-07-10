@@ -94,7 +94,6 @@ class StickerReplyService
                 temperature: $bot->llm_temperature ?? 0.7,
                 maxTokens: 512,
                 apiKeyOverride: $apiKey,
-                useFallback: (bool) $bot->fallback_chat_model,
                 fallbackModelOverride: $bot->fallback_chat_model
             );
 

@@ -20,8 +20,6 @@ class OpenRouterServiceTest extends TestCase
         config([
             'services.openrouter.api_key' => 'test-api-key',
             'services.openrouter.base_url' => 'https://openrouter.ai/api/v1',
-            'services.openrouter.default_model' => 'anthropic/claude-3.5-sonnet',
-            'services.openrouter.fallback_model' => 'openai/gpt-4o-mini',
             'services.openrouter.site_url' => 'http://localhost',
             'services.openrouter.site_name' => 'TestApp',
             'services.openrouter.timeout' => 60,
@@ -64,9 +62,10 @@ class OpenRouterServiceTest extends TestCase
             ], 200),
         ]);
 
-        $result = $this->service->chat([
-            ['role' => 'user', 'content' => 'Hello'],
-        ]);
+        $result = $this->service->chat(
+            [['role' => 'user', 'content' => 'Hello']],
+            'anthropic/claude-3.5-sonnet'
+        );
 
         $this->assertEquals('Hello! How can I help you?', $result['content']);
         $this->assertEquals('anthropic/claude-3.5-sonnet', $result['model']);
@@ -89,9 +88,11 @@ class OpenRouterServiceTest extends TestCase
             ], 200),
         ]);
 
-        $result = $this->service->chat([
-            ['role' => 'user', 'content' => 'Hello'],
-        ]);
+        $result = $this->service->chat(
+            [['role' => 'user', 'content' => 'Hello']],
+            'anthropic/claude-3.5-sonnet',
+            fallbackModelOverride: 'openai/gpt-4o-mini'
+        );
 
         // Verify models array was sent (native fallback)
         Http::assertSent(function ($request) {
@@ -121,7 +122,7 @@ class OpenRouterServiceTest extends TestCase
 
         $result = $this->service->chat(
             [['role' => 'user', 'content' => 'Hello']],
-            null,
+            'anthropic/claude-3.5-sonnet',
             null,
             null,
             false // useFallback = false
@@ -150,9 +151,48 @@ class OpenRouterServiceTest extends TestCase
 
         $this->expectException(OpenRouterException::class);
 
+        $this->service->chat(
+            [['role' => 'user', 'content' => 'Hello']],
+            'anthropic/claude-3.5-sonnet'
+        );
+    }
+
+    public function test_chat_throws_when_no_model_provided(): void
+    {
+        $this->expectException(OpenRouterException::class);
+
         $this->service->chat([
             ['role' => 'user', 'content' => 'Hello'],
         ]);
+    }
+
+    public function test_chat_sends_single_model_when_no_fallback_configured(): void
+    {
+        // Fallback comes ONLY from bot settings — no config substitution
+        Http::fake([
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'gen-nofb',
+                'model' => 'anthropic/claude-3.5-sonnet',
+                'choices' => [
+                    ['message' => ['content' => 'No fallback'], 'finish_reason' => 'stop'],
+                ],
+                'usage' => ['prompt_tokens' => 5, 'completion_tokens' => 3, 'total_tokens' => 8],
+            ], 200),
+        ]);
+
+        $this->service->chat(
+            [['role' => 'user', 'content' => 'Hello']],
+            'anthropic/claude-3.5-sonnet'
+            // useFallback defaults to true, but no fallbackModelOverride given
+        );
+
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+
+            return isset($body['model']) &&
+                   $body['model'] === 'anthropic/claude-3.5-sonnet' &&
+                   ! isset($body['models']);
+        });
     }
 
     public function test_chat_simple_returns_content_string(): void
@@ -166,9 +206,10 @@ class OpenRouterServiceTest extends TestCase
             ], 200),
         ]);
 
-        $result = $this->service->chatSimple([
-            ['role' => 'user', 'content' => 'Hello'],
-        ]);
+        $result = $this->service->chatSimple(
+            [['role' => 'user', 'content' => 'Hello']],
+            'anthropic/claude-3.5-sonnet'
+        );
 
         $this->assertEquals('Simple response', $result);
     }
@@ -187,7 +228,8 @@ class OpenRouterServiceTest extends TestCase
         $result = $this->service->generateBotResponse(
             'Hello',
             'You are a helpful assistant.',
-            []
+            [],
+            'anthropic/claude-3.5-sonnet'
         );
 
         Http::assertSent(function ($request) {
@@ -222,7 +264,8 @@ class OpenRouterServiceTest extends TestCase
         $this->service->generateBotResponse(
             'How are you?',
             null,
-            $history
+            $history,
+            'anthropic/claude-3.5-sonnet'
         );
 
         Http::assertSent(function ($request) {
@@ -416,7 +459,8 @@ class OpenRouterServiceTest extends TestCase
 
         $this->service->chatWithTools(
             [['role' => 'user', 'content' => 'What is the weather?']],
-            $tools
+            $tools,
+            'anthropic/claude-3.5-sonnet'
         );
 
         Http::assertSent(function ($request) use ($tools) {
