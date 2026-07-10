@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Bot;
 use App\Models\BotSetting;
+use App\Models\Conversation;
 use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\Payment\SlipVerificationResult;
@@ -100,6 +101,26 @@ class SlipVerificationServiceTest extends TestCase
         Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
 
         $result = $this->verify();
+
+        $this->assertFalse($result->passed);
+        $this->assertSame('duplicate', $result->failReason);
+    }
+
+    public function test_easyslip_pass_blocked_when_recent_manual_confirm_same_amount(): void
+    {
+        // เจ้าของกดยืนยันเงินเองไปแล้ว (manual_confirmed) → EasySlip ต้องไม่ผ่านซ้ำ
+        // จนเกิดออเดอร์/งานส่งของซ้ำ (สมมาตรกับ guard ฝั่ง manual)
+        $conversation = Conversation::factory()->create(['bot_id' => $this->bot->id]);
+        config(['delivery.enabled' => true, 'delivery.bot_ids' => [$this->bot->id]]);
+        SlipVerification::create([
+            'bot_id' => $this->bot->id, 'conversation_id' => $conversation->id,
+            'amount' => 1500, 'status' => 'manual_confirmed',
+        ]);
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+
+        $result = app(SlipVerificationService::class)->verify(
+            $this->bot, $conversation, null, 'https://example.com/slip.jpg', $this->paymentHistory
+        );
 
         $this->assertFalse($result->passed);
         $this->assertSame('duplicate', $result->failReason);
