@@ -41,7 +41,7 @@ class SyncProductStockFromPool extends Command
 
             DB::transaction(function () use ($product, $shouldBeInStock) {
                 $product->update(['in_stock' => $shouldBeInStock]);
-                $this->clearRagCacheFor($product);
+                RagCache::purgeForProduct($product);
             });
             $changed++;
             Log::info('stock:sync-pool toggled', [
@@ -55,17 +55,5 @@ class SyncProductStockFromPool extends Command
         $this->info("changed: {$changed}");
 
         return self::SUCCESS;
-    }
-
-    private function clearRagCacheFor(ProductStock $product): void
-    {
-        // sqlite (เทสต์) ไม่มี ILIKE — LIKE ของ sqlite case-insensitive อยู่แล้ว
-        $op = DB::getDriverName() === 'pgsql' ? 'ILIKE' : 'LIKE';
-        $escapedName = '%'.addcslashes($product->name, '%_').'%';
-        $query = RagCache::where('query_text', $op, $escapedName);
-        foreach ($product->aliases ?? [] as $alias) {
-            $query->orWhere('query_text', $op, '%'.addcslashes($alias, '%_').'%');
-        }
-        $query->delete();
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Services\Delivery;
 
 use App\Models\ProductStock;
+use Illuminate\Support\Collection;
 
 /**
  * จับคู่ชื่อสินค้าที่ parse จากข้อความสรุปยอด (PaymentMessageDetector)
@@ -13,6 +14,9 @@ use App\Models\ProductStock;
  */
 class ProductMapper
 {
+    /** @var Collection<int, ProductStock>|null */
+    private $products = null;
+
     public function map(string $itemName): ?ProductStock
     {
         $needle = mb_strtolower(trim($itemName));
@@ -21,7 +25,7 @@ class ProductMapper
         }
 
         $candidates = [];
-        $products = ProductStock::where('delivery_method', '!=', 'none')->get();
+        $products = $this->products ??= ProductStock::where('delivery_method', '!=', 'none')->get();
         foreach ($products as $product) {
             $terms = array_merge([$product->name], $product->aliases ?? []);
             foreach ($terms as $term) {

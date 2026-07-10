@@ -67,37 +67,30 @@ class StockPoolService
 
     public function markSold(array $stockItemIds, string $firstName, string $username): void
     {
-        if ($stockItemIds === []) {
-            return;
-        }
-        $this->guarded(function () use ($stockItemIds, $firstName, $username) {
-            $conn = DB::connection(self::CONNECTION);
-            $conn->transaction(function () use ($conn, $stockItemIds, $firstName, $username) {
-                $rows = $conn->table('items_reserved')->whereIn('id', $stockItemIds)->get();
-                foreach ($rows as $row) {
-                    $conn->table('items_sold')->insert(
-                        array_intersect_key((array) $row, array_flip(self::COLUMNS))
-                        + ['isAgent' => false, 'first_name' => $firstName, 'username' => $username],
-                    );
-                }
-                $conn->table('items_reserved')->whereIn('id', $stockItemIds)->delete();
-            });
-        });
+        $this->moveReservedRows($stockItemIds, 'items_sold', [
+            'isAgent' => false, 'first_name' => $firstName, 'username' => $username,
+        ]);
     }
 
     public function returnToAvailable(array $stockItemIds): void
     {
+        $this->moveReservedRows($stockItemIds, 'items_available');
+    }
+
+    /** ย้ายแถวจาก items_reserved ไปตารางปลายทางใน transaction เดียว (ของหนึ่งชิ้นอยู่ได้ที่เดียวเสมอ) */
+    private function moveReservedRows(array $stockItemIds, string $destTable, array $extraColumns = []): void
+    {
         if ($stockItemIds === []) {
             return;
         }
-        $this->guarded(function () use ($stockItemIds) {
+        $this->guarded(function () use ($stockItemIds, $destTable, $extraColumns): void {
             $conn = DB::connection(self::CONNECTION);
-            $conn->transaction(function () use ($conn, $stockItemIds) {
-                $rows = $conn->table('items_reserved')->whereIn('id', $stockItemIds)->get();
-                foreach ($rows as $row) {
-                    $conn->table('items_available')->insert(
-                        array_intersect_key((array) $row, array_flip(self::COLUMNS)),
-                    );
+            $conn->transaction(function () use ($conn, $stockItemIds, $destTable, $extraColumns) {
+                $rows = $conn->table('items_reserved')->whereIn('id', $stockItemIds)->get()
+                    ->map(fn ($row) => array_intersect_key((array) $row, array_flip(self::COLUMNS)) + $extraColumns)
+                    ->all();
+                if ($rows !== []) {
+                    $conn->table($destTable)->insert($rows);
                 }
                 $conn->table('items_reserved')->whereIn('id', $stockItemIds)->delete();
             });

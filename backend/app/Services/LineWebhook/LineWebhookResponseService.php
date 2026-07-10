@@ -563,20 +563,13 @@ class LineWebhookResponseService
             if ($result->passed && $result->slipVerificationId !== null) {
                 // dispatch พังห้ามหลุดไปโดน catch ใหญ่ (จะกลายเป็น fallback vision ทั้งที่ตอบสำเร็จไปแล้ว)
                 // การจองที่พลาดมี delivery:reconcile เก็บตกทีหลัง + เจ้าของส่งเองได้
-                try {
-                    ReserveAccountStock::dispatch(
-                        $ctx->bot->id,
-                        $ctx->conversation->id,
-                        $result->slipVerificationId,
-                        $result->amount,
-                        $result->orderItems ?? [],
-                    );
-                } catch (\Throwable $e) {
-                    Log::warning('Account delivery: reserve job dispatch failed', [
-                        'conversation_id' => $ctx->conversation->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
+                ReserveAccountStock::dispatchSafely(
+                    $ctx->bot->id,
+                    $ctx->conversation->id,
+                    $result->slipVerificationId,
+                    $result->amount,
+                    $result->orderItems ?? [],
+                );
             }
 
             $ctx->response = ResponseEnvelope::text($text);

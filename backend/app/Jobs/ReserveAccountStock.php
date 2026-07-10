@@ -9,7 +9,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 
 /**
  * จองบัญชีจาก stock หลังยืนยันเงิน (EasySlip ผ่าน / เจ้าของกดยืนยัน)
@@ -19,7 +19,7 @@ use Illuminate\Queue\SerializesModels;
  */
 class ReserveAccountStock implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable;
 
     public int $tries = 1;
 
@@ -40,5 +40,21 @@ class ReserveAccountStock implements ShouldQueue
         }
 
         $service->createFromPayment($bot, $conversation, $this->slipVerificationId, $this->amount, $this->items);
+    }
+
+    /**
+     * Dispatch แบบไม่ให้พังลาม payment flow — การจองเป็น best-effort:
+     * พลาดแล้ว delivery:reconcile จะเจอ + เจ้าของส่งเองได้
+     */
+    public static function dispatchSafely(int $botId, int $conversationId, int $slipVerificationId, ?float $amount, array $items): void
+    {
+        try {
+            self::dispatch($botId, $conversationId, $slipVerificationId, $amount, $items);
+        } catch (\Throwable $e) {
+            Log::warning('Account delivery: reserve job dispatch failed', [
+                'conversation_id' => $conversationId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

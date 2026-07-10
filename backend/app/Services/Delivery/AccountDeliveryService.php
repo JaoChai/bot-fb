@@ -170,7 +170,7 @@ class AccountDeliveryService
         return implode("\n", $lines);
     }
 
-    private function telegramPlugin(AccountDelivery $delivery): ?FlowPlugin
+    public function telegramPlugin(AccountDelivery $delivery): ?FlowPlugin
     {
         $bot = $delivery->bot;
         $flow = $delivery->conversation?->currentFlow ?? $bot?->defaultFlow;
@@ -286,7 +286,7 @@ class AccountDeliveryService
             $texts[] = "✅ {$item->product_name} ({$no}/{$n})\n{$detail}";
         }
         if ($supportItems->isNotEmpty()) {
-            $texts[] = (string) config('delivery.support_link_template');
+            $texts[] = config_string('delivery.support_link_template');
         }
 
         return $texts;

@@ -17,7 +17,7 @@ class RemindPendingDeliveries extends Command
 
     public function handle(AccountDeliveryService $service): int
     {
-        $threshold = now()->subMinutes((int) config('delivery.remind_after_minutes'));
+        $threshold = now()->subMinutes(config_int('delivery.remind_after_minutes', 30));
 
         $pending = AccountDelivery::with('items', 'bot', 'conversation')
             ->where('status', AccountDelivery::STATUS_RESERVED)

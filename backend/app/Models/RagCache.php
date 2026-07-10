@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 use Pgvector\Laravel\HasNeighbors;
 use Pgvector\Laravel\Vector;
 
@@ -82,6 +83,20 @@ class RagCache extends Model
     public function isExpired(): bool
     {
         return $this->expires_at->isPast();
+    }
+
+    /**
+     * ลบ cache ที่ query text พูดถึงสินค้านี้ (name/aliases) — driver-aware:
+     * sqlite ไม่มี ILIKE (LIKE ของ sqlite case-insensitive อยู่แล้ว)
+     */
+    public static function purgeForProduct(ProductStock $product): void
+    {
+        $op = DB::getDriverName() === 'pgsql' ? 'ILIKE' : 'LIKE';
+        $query = static::where('query_text', $op, '%'.addcslashes($product->name, '%_').'%');
+        foreach ($product->aliases ?? [] as $alias) {
+            $query->orWhere('query_text', $op, '%'.addcslashes($alias, '%_').'%');
+        }
+        $query->delete();
     }
 
     /**

@@ -93,20 +93,13 @@ class ManualPaymentConfirmService
 
         $orderCreated = $this->runPlugins($bot, $conversation, $botMessage);
 
-        try {
-            ReserveAccountStock::dispatch(
-                $bot->id,
-                $conversation->id,
-                $slip->id,
-                $amount,
-                $expected['items'] ?? [],
-            );
-        } catch (\Throwable $e) {
-            Log::warning('Account delivery: reserve job dispatch failed', [
-                'conversation_id' => $conversation->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        ReserveAccountStock::dispatchSafely(
+            $bot->id,
+            $conversation->id,
+            $slip->id,
+            $amount,
+            $expected['items'] ?? [],
+        );
 
         $this->broadcast($conversation, $botMessage);
 

@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\AccountDelivery;
+use App\Services\Delivery\AccountDeliveryService;
 use App\Services\Delivery\StockPoolService;
 use App\Services\Payment\TelegramAlertBotService;
 use Illuminate\Console\Command;
@@ -20,7 +21,7 @@ class ReconcileDeliveries extends Command
 
     protected $description = 'ตรวจงานส่งบัญชี/ของจองที่ค้างผิดปกติ แล้วแจ้ง Telegram';
 
-    public function handle(StockPoolService $pool, TelegramAlertBotService $alertBot): int
+    public function handle(StockPoolService $pool, TelegramAlertBotService $alertBot, AccountDeliveryService $deliveryService): int
     {
         $problems = [];
 
@@ -59,17 +60,16 @@ class ReconcileDeliveries extends Command
         }
 
         $this->alert(implode("\n", $problems));
-        $this->notifyTelegram($alertBot, $problems);
+        $this->notifyTelegram($alertBot, $deliveryService, $problems);
 
         return self::SUCCESS;
     }
 
     /** ส่งเข้า Telegram ผ่าน plugin ของงานล่าสุด (ไม่มีก็แค่ log) */
-    private function notifyTelegram(TelegramAlertBotService $alertBot, array $problems): void
+    private function notifyTelegram(TelegramAlertBotService $alertBot, AccountDeliveryService $deliveryService, array $problems): void
     {
         $delivery = AccountDelivery::with('bot', 'conversation')->latest('id')->first();
-        $flow = $delivery?->conversation?->currentFlow ?? $delivery?->bot?->defaultFlow;
-        $plugin = $flow?->plugins()->where('type', 'telegram')->where('enabled', true)->first();
+        $plugin = $delivery ? $deliveryService->telegramPlugin($delivery) : null;
         if (! $plugin) {
             Log::warning('Reconcile: no telegram plugin to notify', ['problems' => $problems]);
 
