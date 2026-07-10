@@ -9,6 +9,7 @@ use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\SlipVerification;
 use App\Models\User;
+use App\Services\Delivery\StockPoolService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -71,6 +72,17 @@ class ReconcileDeliveriesTest extends TestCase
         return $delivery;
     }
 
+    /** ใส่แถว items_reserved (default: ค้างเกิน 10 นาที ให้ผ่าน age filter ของ reconcile) */
+    private function insertReserved(int $id, string $orderRef, ?string $name = 'NLMP', $reservedAt = null): void
+    {
+        $reservedAt ??= now()->subMinutes(20);
+        DB::connection('mhha_acc')->table('items_reserved')->insert([
+            'id' => $id, 'name' => $name, 'detail' => 'x|y', 'type' => 'x',
+            'order_ref' => $orderRef, 'reservedAt' => $reservedAt,
+            'createdAt' => $reservedAt, 'updatedAt' => $reservedAt,
+        ]);
+    }
+
     public function test_alerts_on_stuck_reserving_delivery(): void
     {
         $this->makeDelivery('reserving', ['updated_at' => now()->subMinutes(30)]);
@@ -94,12 +106,8 @@ class ReconcileDeliveriesTest extends TestCase
 
     public function test_alerts_on_orphaned_reserved_rows(): void
     {
-        // แถว reserved ที่ชี้ order_ref = 9999 ซึ่งไม่มีงาน active
-        DB::connection('mhha_acc')->table('items_reserved')->insert([
-            'id' => 77, 'name' => 'NLMP', 'detail' => 'x|y', 'type' => 'x',
-            'order_ref' => '9999', 'reservedAt' => now(),
-            'createdAt' => now(), 'updatedAt' => now(),
-        ]);
+        // แถว reserved ที่ชี้ order_ref = bfb:9999 ซึ่งไม่มีงาน active
+        $this->insertReserved(77, StockPoolService::orderRef(9999));
         // ต้องมี delivery อย่างน้อย 1 งานเพื่อ resolve telegram plugin
         $this->makeDelivery('delivered');
 
@@ -114,11 +122,7 @@ class ReconcileDeliveriesTest extends TestCase
         // markSold พังหลังส่ง → แถวค้าง items_reserved โดยงานเป็น delivered
         // reconcile ต้องแยกให้ชัดว่า "ส่งแล้ว ห้ามขายซ้ำ" ไม่ใช่ "คืน stock ได้"
         $delivery = $this->makeDelivery('delivered');
-        DB::connection('mhha_acc')->table('items_reserved')->insert([
-            'id' => 55, 'name' => 'NLMP', 'detail' => 'x|y', 'type' => 'x',
-            'order_ref' => (string) $delivery->id, 'reservedAt' => now(),
-            'createdAt' => now(), 'updatedAt' => now(),
-        ]);
+        $this->insertReserved(55, StockPoolService::orderRef($delivery->id));
 
         $this->artisan('delivery:reconcile')->assertSuccessful();
 
@@ -127,26 +131,20 @@ class ReconcileDeliveriesTest extends TestCase
             && str_contains($r['text'] ?? '', 'ห้ามขายซ้ำ'));
     }
 
-    public function test_non_numeric_external_order_ref_does_not_break_disambiguation(): void
+    public function test_external_bot_reserved_rows_are_never_touched(): void
     {
-        // แถวของบอทเบิกภายนอก (order_ref ไม่ใช่ตัวเลข) ปนอยู่ ต้องไม่ทำให้ query พัง
-        // และ alert "ห้ามขายซ้ำ" ของงาน delivered ต้องยังอยู่ครบ
+        // #9: บอทเบิกภายนอกใช้ items_reserved ร่วมกัน (order_ref ไม่มี prefix bfb:)
+        // reconcile ต้องไม่ไปยุ่ง/รายงานแถวของมันเลย — รายงานเฉพาะของ bot-fb
         $delivery = $this->makeDelivery('delivered');
-        DB::connection('mhha_acc')->table('items_reserved')->insert([
-            ['id' => 55, 'name' => 'NLMP', 'detail' => 'x|y', 'type' => 'x',
-                'order_ref' => (string) $delivery->id, 'reservedAt' => now(),
-                'createdAt' => now(), 'updatedAt' => now()],
-            ['id' => 56, 'name' => 'G3D', 'detail' => 'a|b', 'type' => 'x',
-                'order_ref' => 'tg-external-999', 'reservedAt' => now(),
-                'createdAt' => now(), 'updatedAt' => now()],
-        ]);
+        $this->insertReserved(55, StockPoolService::orderRef($delivery->id));
+        $this->insertReserved(56, 'tg-external-999', 'G3D'); // แถวบอทภายนอก
 
         $this->artisan('delivery:reconcile')->assertSuccessful();
 
         Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage')
             && str_contains($r['text'] ?? '', '#55')
             && str_contains($r['text'] ?? '', 'ห้ามขายซ้ำ')
-            && str_contains($r['text'] ?? '', '#56')); // แถวภายนอกยังถูกรายงาน ไม่ถูกกลืน
+            && ! str_contains($r['text'] ?? '', '#56')); // แถวภายนอกไม่ถูกแตะเลย
     }
 
     public function test_quiet_when_all_clean(): void
@@ -161,11 +159,7 @@ class ReconcileDeliveriesTest extends TestCase
     public function test_alerts_via_fallback_plugin_when_no_delivery_exists_at_all(): void
     {
         // ของหลุดอยู่ใน items_reserved ตั้งแต่ก่อนเคยมีงานส่งของเลยสักงาน
-        DB::connection('mhha_acc')->table('items_reserved')->insert([
-            'id' => 88, 'name' => 'NLMP', 'detail' => 'x|y', 'type' => 'x',
-            'order_ref' => '9999', 'reservedAt' => now(),
-            'createdAt' => now(), 'updatedAt' => now(),
-        ]);
+        $this->insertReserved(88, StockPoolService::orderRef(9999));
         config(['delivery.bot_ids' => [$this->bot->id]]);
 
         // ไม่มี AccountDelivery แม้แต่แถวเดียว
@@ -180,11 +174,8 @@ class ReconcileDeliveriesTest extends TestCase
     public function test_active_reserved_delivery_is_not_flagged_as_orphan(): void
     {
         $delivery = $this->makeDelivery('reserved');
-        DB::connection('mhha_acc')->table('items_reserved')->insert([
-            'id' => 99, 'name' => 'NLMP', 'detail' => 'x|y', 'type' => 'x',
-            'order_ref' => (string) $delivery->id, 'reservedAt' => now(),
-            'createdAt' => now(), 'updatedAt' => now(),
-        ]);
+        // งาน active (reserved) + ค้างเกิน 10 นาที — ต้องไม่ถูก flag เพราะ order_ref อยู่ใน activeRefs
+        $this->insertReserved(99, StockPoolService::orderRef($delivery->id));
 
         $this->artisan('delivery:reconcile')->assertSuccessful();
 
