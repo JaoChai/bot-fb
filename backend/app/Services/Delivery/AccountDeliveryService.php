@@ -77,8 +77,17 @@ class AccountDeliveryService
         }
 
         $deliverable = false;
+        // floor ที่ 1 กัน footgun: ตั้ง max_qty=0 ผิดจะทำให้ loop ไม่รัน item หายเงียบ
+        $maxQty = max(1, config_int('delivery.max_qty', 20));
         foreach ($items as $item) {
-            $qty = max(1, (int) ($item['qty'] ?? 1));
+            $rawQty = max(1, (int) ($item['qty'] ?? 1));
+            $qty = min($maxQty, $rawQty);
+            if ($qty < $rawQty) {
+                Log::warning('Delivery: qty capped', [
+                    'delivery_id' => $delivery->id, 'product' => $item['name'],
+                    'requested' => $rawQty, 'capped' => $qty,
+                ]);
+            }
             $product = $this->mapper->map($item['name']);
 
             if ($product === null) {
@@ -158,6 +167,19 @@ class AccountDeliveryService
             ->where('created_at', '>=', $window)
             ->where(fn ($q) => $amount === null ? $q->whereNull('amount') : $q->where('amount', $amount))
             ->exists();
+    }
+
+    /**
+     * ข้อความเตือน "ยังต้องส่งเอง" สำหรับ item ที่ shortage/unmapped — คืน '' ถ้าไม่มี
+     * ใช้ต่อท้ายข้อความสำเร็จตอนกดส่ง เพื่อไม่ให้คำเตือนหายตอน editMessageText แทนที่ทั้งการ์ด
+     */
+    public function pendingManualNote(AccountDelivery $delivery): string
+    {
+        $names = $delivery->items()
+            ->whereIn('status', [AccountDeliveryItem::ST_SHORTAGE, AccountDeliveryItem::ST_UNMAPPED])
+            ->pluck('product_name')->unique()->values()->all();
+
+        return $names === [] ? '' : "\n⚠️ ยังต้องส่งเอง: ".implode(', ', $names);
     }
 
     /** ส่งการ์ดสรุป + ปุ่มเข้า Telegram (ใช้ตอนสร้างงาน และตอนเตือนซ้ำ) */

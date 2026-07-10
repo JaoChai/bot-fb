@@ -94,6 +94,24 @@ class DeliveryCallbackTest extends TestCase
             && str_contains($r['text'] ?? '', 'ส่งให้ลูกค้าแล้ว'));
     }
 
+    public function test_dv_appends_pending_manual_note_for_shortage(): void
+    {
+        // มี item ที่ shortage ปนอยู่ — ข้อความสำเร็จต้องเตือน "ยังต้องส่งเอง" ไม่ให้หาย
+        $this->delivery->items()->create([
+            'product_name' => 'เฟสไก่', 'kind' => 'stock', 'qty' => 1, 'status' => 'shortage',
+        ]);
+        $this->mock(LINEService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('generateRetryKey')->andReturn('rk');
+            $mock->shouldReceive('replyWithFallback')->once()->andReturn(['method' => 'push', 'success' => true]);
+        });
+
+        $this->press("dv|{$this->delivery->id}|x")->assertOk();
+
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'editMessageText')
+            && str_contains($r['text'] ?? '', 'ยังต้องส่งเอง')
+            && str_contains($r['text'] ?? '', 'เฟสไก่'));
+    }
+
     public function test_dx_asks_second_step_without_touching_stock(): void
     {
         $this->press("dx|{$this->delivery->id}|x")->assertOk();
