@@ -94,6 +94,17 @@ class AccountDeliveryCreateTest extends TestCase
         });
     }
 
+    public function test_reserve_writes_bfb_prefixed_order_ref(): void
+    {
+        $this->seedAvailable(10, 'NLMP');
+
+        $delivery = $this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1100']]);
+
+        // order_ref ต้องมี prefix bfb: เพื่อแยกจากบอทเบิกภายนอกที่ใช้ items_reserved ร่วมกัน
+        $ref = DB::connection('mhha_acc')->table('items_reserved')->value('order_ref');
+        $this->assertSame("bfb:{$delivery->id}", $ref);
+    }
+
     public function test_shortage_and_unmapped_are_recorded_not_guessed(): void
     {
         $this->seedAvailable(10, 'NLMP'); // มีชิ้นเดียว แต่สั่ง 2

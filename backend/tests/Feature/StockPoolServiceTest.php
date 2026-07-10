@@ -94,15 +94,23 @@ class StockPoolServiceTest extends TestCase
 
     public function test_orphaned_reserved_rows(): void
     {
-        $this->seedAvailable(1, 'NLMP');
-        $this->seedAvailable(2, 'NLMP');
-        $this->pool->reserveOne('NLMP', '7');
-        $this->pool->reserveOne('NLMP', '8');
+        $old = now()->subMinutes(20);
+        $mk = fn (int $id, string $ref, $reservedAt) => [
+            'id' => $id, 'name' => 'NLMP', 'detail' => 'x', 'type' => 'x',
+            'order_ref' => $ref, 'reservedAt' => $reservedAt,
+            'createdAt' => $old, 'updatedAt' => $old,
+        ];
+        DB::connection('mhha_acc')->table('items_reserved')->insert([
+            $mk(7, StockPoolService::orderRef(7), $old),   // bfb: active (จะถูก exclude ด้วย activeRefs)
+            $mk(8, StockPoolService::orderRef(8), $old),   // bfb: orphan จริง
+            $mk(9, 'ext-telegram-1', $old),                // บอทภายนอก — ต้องไม่ถูกแตะ
+            $mk(10, StockPoolService::orderRef(99), now()), // bfb: แต่เพิ่งจอง (<10 นาที) — กัน TOCTOU
+        ]);
 
-        $orphans = $this->pool->orphanedReservedRows(['7']);
+        $orphans = $this->pool->orphanedReservedRows([StockPoolService::orderRef(7)]);
 
         $this->assertCount(1, $orphans);
-        $this->assertSame('8', $orphans[0]['order_ref']);
+        $this->assertSame(StockPoolService::orderRef(8), $orphans[0]['order_ref']);
     }
 
     public function test_query_failure_never_leaks_detail_in_exception(): void

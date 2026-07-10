@@ -13,6 +13,9 @@ class AccountDeliveryItem extends Model
 
     public const KIND_MANUAL = 'manual';
 
+    // ชั่วคราวระหว่างสร้าง item ก่อนเรียก reserveOne (anchor กัน process ตายกลางคัน)
+    public const ST_RESERVING = 'reserving';
+
     public const ST_RESERVED = 'reserved';
 
     public const ST_DELIVERED = 'delivered';
