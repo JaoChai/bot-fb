@@ -127,6 +127,28 @@ class ReconcileDeliveriesTest extends TestCase
             && str_contains($r['text'] ?? '', 'ห้ามขายซ้ำ'));
     }
 
+    public function test_non_numeric_external_order_ref_does_not_break_disambiguation(): void
+    {
+        // แถวของบอทเบิกภายนอก (order_ref ไม่ใช่ตัวเลข) ปนอยู่ ต้องไม่ทำให้ query พัง
+        // และ alert "ห้ามขายซ้ำ" ของงาน delivered ต้องยังอยู่ครบ
+        $delivery = $this->makeDelivery('delivered');
+        DB::connection('mhha_acc')->table('items_reserved')->insert([
+            ['id' => 55, 'name' => 'NLMP', 'detail' => 'x|y', 'type' => 'x',
+                'order_ref' => (string) $delivery->id, 'reservedAt' => now(),
+                'createdAt' => now(), 'updatedAt' => now()],
+            ['id' => 56, 'name' => 'G3D', 'detail' => 'a|b', 'type' => 'x',
+                'order_ref' => 'tg-external-999', 'reservedAt' => now(),
+                'createdAt' => now(), 'updatedAt' => now()],
+        ]);
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage')
+            && str_contains($r['text'] ?? '', '#55')
+            && str_contains($r['text'] ?? '', 'ห้ามขายซ้ำ')
+            && str_contains($r['text'] ?? '', '#56')); // แถวภายนอกยังถูกรายงาน ไม่ถูกกลืน
+    }
+
     public function test_quiet_when_all_clean(): void
     {
         $this->makeDelivery('reserved'); // ปกติ — ไม่ orphan ไม่ stuck

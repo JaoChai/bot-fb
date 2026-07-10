@@ -48,10 +48,17 @@ class ReconcileDeliveries extends Command
 
         try {
             $orphans = $pool->orphanedReservedRows($activeRefs);
-            $deliveries = AccountDelivery::whereIn('id', array_column($orphans, 'order_ref'))
-                ->get()->keyBy('id');
+            // order_ref ของบอทเบิกภายนอกไม่ใช่ตัวเลข (ใช้ items_reserved ร่วมกัน) — กรองก่อน
+            // เข้า whereIn('id', ...) ไม่งั้น Postgres โยน invalid bigint แล้วกลืน alert ทั้งลูป
+            $numericRefs = array_values(array_filter(
+                array_column($orphans, 'order_ref'),
+                fn ($ref) => ctype_digit((string) $ref),
+            ));
+            $deliveries = AccountDelivery::whereIn('id', $numericRefs)->get()->keyBy('id');
             foreach ($orphans as $row) {
-                $delivery = $deliveries->get((int) $row['order_ref']);
+                $delivery = ctype_digit((string) $row['order_ref'])
+                    ? $deliveries->get((int) $row['order_ref'])
+                    : null;
                 // งาน delivered ที่ยังมีของค้าง = ส่งลูกค้าแล้วแต่ markSold ไม่สำเร็จ — ห้ามคืน/ขายซ้ำ
                 $problems[] = $delivery?->status === AccountDelivery::STATUS_DELIVERED
                     ? "⚠️ ของจอง #{$row['id']} ({$row['name']}) — ส่งลูกค้าไปแล้ว (งาน #{$delivery->id}) แต่ยังไม่ย้ายเข้า sold: ต้องย้ายเข้า items_sold เอง ห้ามขายซ้ำ"
