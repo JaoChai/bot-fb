@@ -246,6 +246,35 @@ class AccountDeliveryService
         $this->recordConversationMessage($delivery, $texts);
     }
 
+    /**
+     * ยกเลิกงาน คืนของเข้า items_available (manual escape hatch — ระบบไม่คืนอัตโนมัติ)
+     * mark canceled ก่อนคืนของ: ถ้าคืนพังกลางทาง แถวค้างใน items_reserved ให้ reconcile เจอ
+     *
+     * @throws DeliveryAlreadyHandledException สถานะไม่ใช่ reserved
+     */
+    public function cancel(AccountDelivery $delivery, string $byName): void
+    {
+        $delivery = DB::transaction(function () use ($delivery, $byName) {
+            $locked = AccountDelivery::whereKey($delivery->id)->lockForUpdate()->firstOrFail();
+            if ($locked->status !== AccountDelivery::STATUS_RESERVED) {
+                throw new DeliveryAlreadyHandledException($locked->status);
+            }
+            $locked->update(['status' => AccountDelivery::STATUS_CANCELED, 'confirmed_by' => $byName]);
+
+            return $locked;
+        });
+
+        $ids = $delivery->items()
+            ->where('kind', AccountDeliveryItem::KIND_STOCK)
+            ->where('status', AccountDeliveryItem::ST_RESERVED)
+            ->pluck('stock_item_id')
+            ->all();
+        $this->pool->returnToAvailable($ids);
+        $delivery->items()
+            ->where('status', AccountDeliveryItem::ST_RESERVED)
+            ->update(['status' => AccountDeliveryItem::ST_RETURNED]);
+    }
+
     /** @return array<int, string> ข้อความที่จะส่งให้ลูกค้า (เรียงตามลำดับ) */
     private function buildCustomerMessages($stockItems, $supportItems, array $reservedRows): array
     {
