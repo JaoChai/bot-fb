@@ -68,12 +68,26 @@ class AccountDeliveryService
         }
 
         if ($delivery === null) {
-            return null; // อีก path เพิ่งสร้างงานส่งยอดเดียวกันไปแล้ว
+            // อีก path เพิ่งสร้างงานส่งยอดเดียวกันไปแล้ว — log ไว้ให้สืบย้อนได้ (บล็อกเงียบทำให้ debug ยาก)
+            Log::warning('Delivery: skipped duplicate reserve (recent active delivery)', [
+                'conversation_id' => $conversation->id, 'amount' => $amount,
+            ]);
+
+            return null;
         }
 
         $deliverable = false;
+        // floor ที่ 1 กัน footgun: ตั้ง max_qty=0 ผิดจะทำให้ loop ไม่รัน item หายเงียบ
+        $maxQty = max(1, config_int('delivery.max_qty', 20));
         foreach ($items as $item) {
-            $qty = max(1, (int) ($item['qty'] ?? 1));
+            $rawQty = max(1, (int) ($item['qty'] ?? 1));
+            $qty = min($maxQty, $rawQty);
+            if ($qty < $rawQty) {
+                Log::warning('Delivery: qty capped', [
+                    'delivery_id' => $delivery->id, 'product' => $item['name'],
+                    'requested' => $rawQty, 'capped' => $qty,
+                ]);
+            }
             $product = $this->mapper->map($item['name']);
 
             if ($product === null) {
@@ -96,8 +110,17 @@ class AccountDeliveryService
             }
 
             for ($u = 0; $u < $qty; $u++) {
+                // สร้าง item anchor ก่อนจอง: ถ้า process ตายหลัง reserveOne สำเร็จแต่ก่อน update
+                // จะเหลือ item ค้าง reserving ให้ตามได้ ไม่ใช่ stock หายเงียบไม่มีที่อ้างอิง
+                $item = $delivery->items()->create([
+                    'product_name' => $product->name,
+                    'stock_code' => $product->stock_code,
+                    'kind' => AccountDeliveryItem::KIND_STOCK,
+                    'qty' => 1,
+                    'status' => AccountDeliveryItem::ST_RESERVING,
+                ]);
                 try {
-                    $row = $this->pool->reserveOne($product->stock_code, (string) $delivery->id);
+                    $row = $this->pool->reserveOne($product->stock_code, StockPoolService::orderRef($delivery->id));
                 } catch (\Throwable $e) {
                     Log::error('Delivery: stock reserve failed', [
                         'delivery_id' => $delivery->id, 'stock_code' => $product->stock_code,
@@ -105,11 +128,7 @@ class AccountDeliveryService
                     ]);
                     $row = null;
                 }
-                $delivery->items()->create([
-                    'product_name' => $product->name,
-                    'stock_code' => $product->stock_code,
-                    'kind' => AccountDeliveryItem::KIND_STOCK,
-                    'qty' => 1,
+                $item->update([
                     'stock_item_id' => $row['id'] ?? null,
                     'status' => $row === null
                         ? AccountDeliveryItem::ST_SHORTAGE
@@ -148,6 +167,19 @@ class AccountDeliveryService
             ->where('created_at', '>=', $window)
             ->where(fn ($q) => $amount === null ? $q->whereNull('amount') : $q->where('amount', $amount))
             ->exists();
+    }
+
+    /**
+     * ข้อความเตือน "ยังต้องส่งเอง" สำหรับ item ที่ shortage/unmapped — คืน '' ถ้าไม่มี
+     * ใช้ต่อท้ายข้อความสำเร็จตอนกดส่ง เพื่อไม่ให้คำเตือนหายตอน editMessageText แทนที่ทั้งการ์ด
+     */
+    public function pendingManualNote(AccountDelivery $delivery): string
+    {
+        $names = $delivery->items()
+            ->whereIn('status', [AccountDeliveryItem::ST_SHORTAGE, AccountDeliveryItem::ST_UNMAPPED])
+            ->pluck('product_name')->unique()->values()->all();
+
+        return $names === [] ? '' : "\n⚠️ ยังต้องส่งเอง: ".implode(', ', $names);
     }
 
     /** ส่งการ์ดสรุป + ปุ่มเข้า Telegram (ใช้ตอนสร้างงาน และตอนเตือนซ้ำ) */
