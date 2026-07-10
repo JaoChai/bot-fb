@@ -9,6 +9,7 @@ class SlipResource extends JsonResource
 {
     private const LABELS = [
         'passed' => 'ผ่าน',
+        'manual_confirmed' => 'ยืนยันโดยแอดมิน',
         'fake' => 'ปลอม',
         'wrong_account' => 'บัญชีผิด',
         'duplicate' => 'สลิปซ้ำ',

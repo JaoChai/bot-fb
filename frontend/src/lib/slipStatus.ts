@@ -4,6 +4,7 @@ type BadgeVariant = 'success' | 'destructive' | 'warning' | 'secondary';
 
 const STATUS_META: Record<string, { label: string; variant: BadgeVariant }> = {
   passed: { label: 'ผ่าน', variant: 'success' },
+  manual_confirmed: { label: 'ยืนยันโดยแอดมิน', variant: 'success' },
   fake: { label: 'ปลอม', variant: 'destructive' },
   wrong_account: { label: 'บัญชีผิด', variant: 'destructive' },
   duplicate: { label: 'สลิปซ้ำ', variant: 'warning' },
@@ -23,14 +24,14 @@ export function slipStatusMeta(status: string): { label: string; variant: BadgeV
 // กลุ่ม filter (ค่าที่ส่งเป็น csv ให้ backend)
 export const STATUS_GROUPS: Record<string, string[]> = {
   all: [],
-  passed: ['passed'],
+  passed: ['passed', 'manual_confirmed'],
   abnormal: ['fake', 'wrong_account', 'duplicate', 'amount_mismatch', 'no_pending_order'],
   error: ['unreadable', 'api_error', 'config_error', 'image_download_failed', 'pending'],
 };
 
 export const STATUS_GROUP_LABELS: Record<string, string> = {
   all: 'ทั้งหมด',
-  passed: 'ผ่าน',
+  passed: 'เงินเข้า',
   abnormal: 'ผิดปกติ',
   error: 'error ระบบ',
 };
@@ -43,6 +44,6 @@ export function bangkokTodayRange(): { date_from: string; date_to: string } {
   const m = nowBkk.getUTCMonth();
   const d = nowBkk.getUTCDate();
   const startUtc = new Date(Date.UTC(y, m, d, 0, 0, 0) - OFFSET_MS);
-  const endUtc = new Date(Date.UTC(y, m, d, 23, 59, 59) - OFFSET_MS);
+  const endUtc = new Date(Date.UTC(y, m, d, 23, 59, 59, 999) - OFFSET_MS);
   return { date_from: startUtc.toISOString(), date_to: endUtc.toISOString() };
 }
