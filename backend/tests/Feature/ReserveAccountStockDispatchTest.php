@@ -6,6 +6,7 @@ use App\Jobs\ReserveAccountStock;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\User;
+use App\Services\Delivery\AccountDeliveryService;
 use App\Services\Payment\ManualPaymentConfirmService;
 use App\Services\Payment\SlipVerificationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -51,5 +52,30 @@ class ReserveAccountStockDispatchTest extends TestCase
                 && $job->slipVerificationId > 0
                 && $job->items[0]['name'] === 'Nolimit ส่วนตัว';
         });
+    }
+
+    public function test_manual_confirm_survives_reserve_job_failure(): void
+    {
+        $user = User::factory()->owner()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id, 'channel_type' => 'line']);
+        $conversation = Conversation::factory()->create(['bot_id' => $bot->id, 'channel_type' => 'line']);
+        $conversation->messages()->create([
+            'sender' => 'bot', 'type' => 'text',
+            'content' => "สรุปรายการ\n1. Nolimit ส่วนตัว = 1,100 บาท\nรวมยอดโอน: 1,100 บาท\nบัญชี 223-3-24880-3",
+        ]);
+
+        // เปิด delivery จริง (QUEUE_CONNECTION=sync → job body รันทันที) + service พังเสมอ
+        config(['delivery.enabled' => true, 'delivery.bot_ids' => [$bot->id]]);
+        $failing = $this->createMock(AccountDeliveryService::class);
+        $failing->method('createFromPayment')->willThrowException(new \RuntimeException('mhha DB down'));
+        $this->app->instance(AccountDeliveryService::class, $failing);
+
+        $result = app(ManualPaymentConfirmService::class)->confirm($bot, $conversation, null, $user->id);
+
+        // confirm ต้องสำเร็จตามปกติ — dispatch ที่พังห้ามล้มการยืนยันเงิน
+        $this->assertSame(
+            'manual_confirmed',
+            $result['message']->metadata['slip_status'] ?? null,
+        );
     }
 }
