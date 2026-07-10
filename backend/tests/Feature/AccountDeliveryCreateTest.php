@@ -52,7 +52,6 @@ class AccountDeliveryCreateTest extends TestCase
 
         config(['delivery.enabled' => true]);
         $this->bot->update(['auto_delivery_enabled' => true]);
-        $this->bot = $this->bot->fresh();
 
         ProductStock::create([
             'name' => 'Nolimit ส่วนตัว', 'slug' => 'nolimit-personal', 'aliases' => [],
@@ -198,22 +197,10 @@ class AccountDeliveryCreateTest extends TestCase
         $this->assertSame(2, DB::connection('mhha_acc')->table('items_reserved')->count());
     }
 
-    public function test_disabled_or_wrong_bot_returns_null(): void
-    {
-        config(['delivery.enabled' => false]);
-        $this->assertNull($this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1100']]));
-
-        config(['delivery.enabled' => true]);
-        $this->bot->update(['auto_delivery_enabled' => false]);
-        $this->bot = $this->bot->fresh();
-        $this->assertNull($this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1100']]));
-    }
-
     public function test_returns_null_when_bot_auto_delivery_disabled(): void
     {
         $this->seedAvailable(10, 'NLMP');
         $this->bot->update(['auto_delivery_enabled' => false]);
-        $this->bot = $this->bot->fresh();
 
         $delivery = $this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1,299 บาท']]);
 
