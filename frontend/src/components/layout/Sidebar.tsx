@@ -28,6 +28,7 @@ import {
   Zap,
   ShoppingCart,
   Star,
+  Receipt,
 } from 'lucide-react';
 
 const workspaceNavItems = [
@@ -147,6 +148,14 @@ export function Sidebar() {
             <NavLink to="/settings/quick-replies" className={navLinkClass}>
               <Zap className="size-4 shrink-0" strokeWidth={1.5} />
               {!sidebarCollapsed && <span>Quick Replies</span>}
+            </NavLink>
+          )}
+
+          {/* Slips - Owner only */}
+          {user?.role === 'owner' && (
+            <NavLink to="/slips" className={navLinkClass}>
+              <Receipt className="size-4 shrink-0" strokeWidth={1.5} />
+              {!sidebarCollapsed && <span>สลิป / การชำระเงิน</span>}
             </NavLink>
           )}
         </div>

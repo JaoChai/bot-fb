@@ -695,3 +695,43 @@ export interface OrderFilters {
   page?: number;
   per_page?: number;
 }
+
+// Slips
+export interface Slip {
+  id: number;
+  created_at: string;
+  status: string;
+  status_label: string;
+  amount: number | null;
+  trans_ref: string | null;
+  receiver_account: string | null;
+  conversation_id: number | null;
+  customer_name: string | null;
+  raw: Record<string, unknown> | null;
+}
+
+export interface SlipSummary {
+  total_amount_passed: number;
+  count_total: number;
+  count_abnormal: number;
+  count_system_error: number;
+}
+
+export interface SlipMeta extends PaginationMeta {
+  summary: SlipSummary;
+}
+
+export interface SlipsResponse {
+  data: Slip[];
+  meta: SlipMeta;
+}
+
+export interface SlipFilters {
+  bot_id?: number;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+  search?: string;
+  page?: number;
+  per_page?: number;
+}
