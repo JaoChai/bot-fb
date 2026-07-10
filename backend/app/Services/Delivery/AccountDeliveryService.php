@@ -72,7 +72,8 @@ class AccountDeliveryService
         }
 
         $deliverable = false;
-        $maxQty = config_int('delivery.max_qty', 20);
+        // floor ที่ 1 กัน footgun: ตั้ง max_qty=0 ผิดจะทำให้ loop ไม่รัน item หายเงียบ
+        $maxQty = max(1, config_int('delivery.max_qty', 20));
         foreach ($items as $item) {
             $rawQty = max(1, (int) ($item['qty'] ?? 1));
             $qty = min($maxQty, $rawQty);
