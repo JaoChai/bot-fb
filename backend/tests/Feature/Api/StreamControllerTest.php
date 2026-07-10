@@ -209,15 +209,14 @@ class StreamControllerTest extends TestCase
     public function test_happy_path_emits_process_start_and_done_events(): void
     {
         $user = User::factory()->create();
-        // No decision_model -> takes decision_skip branch (deterministic, no HTTP)
-        // No kb_enabled    -> takes kb_skip branch        (deterministic, no HTTP)
+        // Decision step now uses the chat pair: the intent LLM call to 127.0.0.1:1
+        // fails fast -> IntentAnalysisService catches -> error_fallback intent (no HTTP left open).
+        // No kb_enabled -> kb_skip branch (deterministic).
         // No fallback_chat_model -> chat model attempt fails (127.0.0.1:1), throws.
         // Outer catch emits `error`, finally emits `done`. process_start was already
         // emitted at the top of the stream callback. That's the contract we lock.
         $bot = Bot::factory()->create([
             'user_id' => $user->id,
-            'decision_model' => null,
-            'fallback_decision_model' => null,
             'primary_chat_model' => 'anthropic/claude-3.5-sonnet',
             'fallback_chat_model' => null,
             'kb_enabled' => false,
