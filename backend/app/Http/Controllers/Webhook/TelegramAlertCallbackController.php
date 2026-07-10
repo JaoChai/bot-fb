@@ -181,10 +181,18 @@ class TelegramAlertCallbackController extends Controller
             Log::error('Delivery callback action failed', [
                 'delivery_id' => $delivery->id, 'action' => $act, 'error' => $e->getMessage(),
             ]);
-            $this->alertBot->editMessageText($token, $chatId, $messageId,
-                "❌ ทำไม่สำเร็จ — กดลองใหม่ได้ (งาน #{$delivery->id})",
-                $this->deliveryService->cardKeyboard($delivery));
-            $this->alertBot->answerCallbackQuery($token, $cbId, 'เกิดข้อผิดพลาด ลองใหม่');
+            $fresh = $delivery->fresh();
+            if ($act === 'dz' && $fresh->status === AccountDelivery::STATUS_CANCELED) {
+                // cancel สำเร็จแต่คืนของเข้า stock ไม่สำเร็จ — ห้ามหลอกว่ากดใหม่ได้
+                $this->alertBot->editMessageText($token, $chatId, $messageId,
+                    "↩️ ยกเลิกงาน #{$delivery->id} แล้ว แต่คืนของเข้า stock ไม่สำเร็จ\nของยังค้างอยู่ในตารางจอง — ระบบตรวจ (delivery:reconcile) จะแจ้งเตือนซ้ำ อย่าเพิ่งขายชิ้นนี้ซ้ำ");
+                $this->alertBot->answerCallbackQuery($token, $cbId, 'ยกเลิกแล้ว แต่คืนของไม่สำเร็จ');
+            } else {
+                $this->alertBot->editMessageText($token, $chatId, $messageId,
+                    "❌ ทำไม่สำเร็จ — กดลองใหม่ได้ (งาน #{$delivery->id})",
+                    $this->deliveryService->cardKeyboard($delivery));
+                $this->alertBot->answerCallbackQuery($token, $cbId, 'เกิดข้อผิดพลาด ลองใหม่');
+            }
         }
 
         return response()->json(['ok' => true]);

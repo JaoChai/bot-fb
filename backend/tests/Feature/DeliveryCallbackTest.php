@@ -14,6 +14,7 @@ use App\Services\LINEService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 use Mockery\MockInterface;
 use Tests\Support\InteractsWithStockPool;
@@ -112,6 +113,20 @@ class DeliveryCallbackTest extends TestCase
         $this->assertSame('returned', $fresh->items()->first()->status);
         $this->assertSame(0, DB::connection('mhha_acc')->table('items_reserved')->count());
         $this->assertSame(1, DB::connection('mhha_acc')->table('items_available')->count());
+    }
+
+    public function test_dz_with_stock_return_failure_shows_truthful_card(): void
+    {
+        // ทำให้คืนของพัง: ลบตาราง items_available ก่อนกด — insert ใน returnToAvailable จะ throw
+        Schema::connection('mhha_acc')->drop('items_available');
+
+        $this->press("dz|{$this->delivery->id}|x")->assertOk();
+
+        $this->assertSame(AccountDelivery::STATUS_CANCELED, $this->delivery->fresh()->status);
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'editMessageText')
+            && str_contains($r['text'] ?? '', 'คืนของเข้า stock ไม่สำเร็จ'));
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), 'editMessageText')
+            && str_contains($r['text'] ?? '', 'กดลองใหม่ได้'));
     }
 
     public function test_dv_after_delivered_reports_already_handled(): void
