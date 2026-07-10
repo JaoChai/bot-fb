@@ -45,10 +45,10 @@ class SlipVerificationAlertTest extends TestCase
 
         Http::assertSent(function ($request) {
             return str_contains($request->url(), 'api.telegram.org/bottg-token/sendMessage')
-                && str_contains($request['text'], '⚠️ ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ')
-                && str_contains($request['text'], 'ยอดไม่ตรง')
-                && str_contains($request['text'], '1,000')
-                && str_contains($request['text'], '1,500');
+                && str_contains($request['text'], '⚠️ <b>ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ</b>')
+                && str_contains($request['text'], '<b>ยอดไม่ตรงกับออเดอร์</b>')
+                && str_contains($request['text'], '<code>1,000</code>')
+                && str_contains($request['text'], '<code>1,500</code>');
         });
     }
 
@@ -90,9 +90,9 @@ class SlipVerificationAlertTest extends TestCase
 
         Http::assertSent(function ($request) use ($conversation) {
             return str_contains($request->url(), 'api.telegram.org/bottg-token-2/sendMessage')
-                && str_contains($request['text'], '⚠️ ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ')
-                && str_contains($request['text'], "ลูกค้า: สมชาย (แชท #{$conversation->id})")
-                && str_contains($request['text'], 'ไม่พบออเดอร์ค้างชำระ');
+                && str_contains($request['text'], '⚠️ <b>ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ</b>')
+                && str_contains($request['text'], "👤 สมชาย · แชท #{$conversation->id}")
+                && str_contains($request['text'], '<b>ไม่พบออเดอร์ค้างชำระในบทสนทนา</b>');
         });
     }
 
@@ -155,6 +155,37 @@ class SlipVerificationAlertTest extends TestCase
         $this->assertCount(2, $captured);
         $this->assertSame('pc|'.$conversation->id.'|590', $captured[0][0]['callback_data']);
         $this->assertSame('pc|'.$conversation->id.'|600', $captured[1][0]['callback_data']);
+    }
+
+    public function test_notify_admin_uses_html_and_escapes_dynamic_values(): void
+    {
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id, 'name' => 'Bot<x&']);
+        $flow = Flow::factory()->create(['bot_id' => $bot->id]);
+        $bot->update(['default_flow_id' => $flow->id]);
+        FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'แจ้งออเดอร์',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'tg-token', 'chat_id' => '-100123'],
+        ]);
+
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $result = new SlipVerificationResult(
+            isSlip: true, passed: false, failReason: 'amount_mismatch',
+            amount: 1500.0, expectedAmount: 1800.0,
+        );
+
+        app(SlipVerificationService::class)->notifyAdmin($bot->fresh(), null, $result);
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'sendMessage')
+                && str_contains($request['text'], '<b>')
+                && str_contains($request['text'], '&lt;');
+        });
     }
 
     /**

@@ -288,22 +288,23 @@ class SlipVerificationService
         }
 
         $reason = self::FAIL_REASON_LABELS[$result->failReason] ?? ($result->failReason ?? 'unknown');
+        $botName = TelegramAlertBotService::esc($bot->name);
         $header = in_array($result->failReason, self::FRAUD_REASONS, true)
-            ? "🚨 สลิปมีปัญหา — อย่าเพิ่งส่งของ ({$bot->name})"
-            : "⚠️ ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ ({$bot->name})";
+            ? "🚨 <b>สลิปมีปัญหา — อย่าเพิ่งส่งของ</b> ({$botName})"
+            : "⚠️ <b>ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ</b> ({$botName})";
         $lines = [$header];
         if ($conversation !== null) {
             $displayName = $conversation->customerProfile?->display_name;
             $lines[] = $displayName !== null
-                ? "ลูกค้า: {$displayName} (แชท #{$conversation->id})"
-                : "แชท #{$conversation->id}";
+                ? '👤 '.TelegramAlertBotService::esc($displayName)." · แชท #{$conversation->id}"
+                : "👤 แชท #{$conversation->id}";
         }
-        $lines[] = "เหตุผล: {$reason}";
+        $lines[] = 'เหตุผล: <b>'.TelegramAlertBotService::esc($reason).'</b>';
         if ($result->amount !== null) {
-            $lines[] = 'ยอดในสลิป: '.self::formatBaht($result->amount).' บาท';
+            $lines[] = 'ยอดในสลิป: <code>'.self::formatBaht($result->amount).'</code> บาท';
         }
         if ($result->expectedAmount !== null) {
-            $lines[] = 'ยอดออเดอร์: '.self::formatBaht($result->expectedAmount).' บาท';
+            $lines[] = 'ยอดออเดอร์: <code>'.self::formatBaht($result->expectedAmount).'</code> บาท';
         }
         $lines[] = 'กรุณาเช็คในแชทก่อนยืนยัน';
 
