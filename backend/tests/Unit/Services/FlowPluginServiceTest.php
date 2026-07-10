@@ -52,6 +52,14 @@ class FlowPluginServiceTest extends TestCase
         $this->assertEquals('1,100', $result['amount']);
     }
 
+    public function test_normalize_amount_strips_trailing_baht(): void
+    {
+        // AI บางครั้งดึง amount ติด "บาท" มา — template มี "บาท" อยู่แล้ว (บั๊ก "1,100 บาท บาท")
+        $this->assertEquals('1,100', $this->callPrivate('normalizeAmountVariable', '1,100 บาท'));
+        $this->assertEquals('2,598.00', $this->callPrivate('normalizeAmountVariable', '2,598.00 บาท '));
+        $this->assertEquals('800', $this->callPrivate('normalizeAmountVariable', '800'));
+    }
+
     public function test_extract_fallback_product(): void
     {
         $content = "เงินเข้าแล้ว 1,100 บาท ✅\nออเดอร์:\n- Nolimit Level Up+ Personal 1 ตัว\n\nส่งใน 5-10 นาที";

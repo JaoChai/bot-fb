@@ -221,6 +221,12 @@ PROMPT,
         // Inject customer_name from DB (don't rely on AI extraction)
         $variables['customer_name'] = $variables['customer_name'] ?? $customerName;
 
+        // AI sometimes extracts amount with the "บาท" unit attached while the
+        // template already appends "บาท" — strip it to avoid "1,100 บาท บาท"
+        if (is_string($variables['amount'] ?? null)) {
+            $variables['amount'] = $this->normalizeAmountVariable($variables['amount']);
+        }
+
         Log::debug('Plugin AI-extracted variables', [
             'plugin_id' => $plugin->id,
             'variables' => $variables,
@@ -308,6 +314,11 @@ PROMPT,
         }
 
         return $extracted;
+    }
+
+    private function normalizeAmountVariable(string $amount): string
+    {
+        return trim(preg_replace('/\s*บาท\s*$/u', '', $amount));
     }
 
     private function extractAmount(string $content): ?string
