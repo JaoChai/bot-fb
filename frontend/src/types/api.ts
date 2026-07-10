@@ -66,19 +66,12 @@ export interface Bot {
   // Multi-model LLM configuration (API key now in User Settings)
   primary_chat_model: string | null;
   fallback_chat_model: string | null;
-  decision_model: string | null;
-  fallback_decision_model: string | null;
   // LLM Settings (legacy)
-  llm_model: string | null;
   llm_fallback_model: string | null;
   system_prompt: string | null;
   llm_temperature: number;
   llm_max_tokens: number;
   context_window: number;
-  // Smart Routing (Confidence Cascade)
-  use_confidence_cascade: boolean;
-  cascade_cheap_model: string | null;
-  cascade_expensive_model: string | null;
   // Knowledge Base Settings
   kb_enabled: boolean;
   kb_relevance_threshold: number;
@@ -107,16 +100,10 @@ export interface CreateConnectionData {
   channel_type: 'line' | 'facebook' | 'testing' | 'telegram';
   primary_chat_model?: string;
   fallback_chat_model?: string;
-  decision_model?: string;
-  fallback_decision_model?: string;
   channel_access_token?: string;
   channel_secret?: string;
   webhook_forwarder_enabled?: boolean;
   auto_handover?: boolean;
-  // Smart Routing (Confidence Cascade)
-  use_confidence_cascade?: boolean;
-  cascade_cheap_model?: string;
-  cascade_expensive_model?: string;
 }
 
 // Connection/Bot update data (API key now in User Settings)
@@ -126,16 +113,10 @@ export interface UpdateConnectionData {
   channel_type?: 'line' | 'facebook' | 'testing' | 'telegram';
   primary_chat_model?: string;
   fallback_chat_model?: string;
-  decision_model?: string;
-  fallback_decision_model?: string;
   channel_access_token?: string;
   channel_secret?: string;
   webhook_forwarder_enabled?: boolean;
   auto_handover?: boolean;
-  // Smart Routing (Confidence Cascade)
-  use_confidence_cascade?: boolean;
-  cascade_cheap_model?: string;
-  cascade_expensive_model?: string;
 }
 
 // Bot Settings Types

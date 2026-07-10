@@ -30,18 +30,13 @@ export function AIModelsSection({ formData, handleChange }: AIModelsSectionProps
       <Panel
         icon={Cpu}
         title="AI Models"
-        description="เลือก model สำหรับตอบคำถามและตัดสินใจ"
+        description="โมเดลเดียวใช้ทั้งตอบคำถามและตัดสินใจ (หลัก + สำรอง)"
       >
         <ModelConfiguration
           primaryModel={formData.primary_chat_model}
           fallbackModel={formData.fallback_chat_model}
-          decisionModel={formData.decision_model}
-          fallbackDecisionModel={formData.fallback_decision_model}
           onPrimaryChange={(value) => handleChange('primary_chat_model', value)}
           onFallbackChange={(value) => handleChange('fallback_chat_model', value)}
-          onDecisionChange={(value) => handleChange('decision_model', value)}
-          onFallbackDecisionChange={(value) => handleChange('fallback_decision_model', value)}
-          showDecisionModels={true}
         />
       </Panel>
     </>

@@ -129,13 +129,8 @@ export function EditConnectionPage() {
           channel_type: formData.platform,
           primary_chat_model: formData.primary_chat_model,
           fallback_chat_model: formData.fallback_chat_model,
-          decision_model: formData.decision_model,
-          fallback_decision_model: formData.fallback_decision_model,
           webhook_forwarder_enabled: formData.webhook_forwarder_enabled,
           auto_handover: formData.auto_handover,
-          use_confidence_cascade: formData.use_confidence_cascade,
-          cascade_cheap_model: formData.cascade_cheap_model,
-          cascade_expensive_model: formData.cascade_expensive_model,
           ...(formData.platform === 'line' && formData.line_channel_secret && {
             channel_secret: formData.line_channel_secret,
           }),
@@ -153,13 +148,8 @@ export function EditConnectionPage() {
           channel_type: formData.platform,
           primary_chat_model: formData.primary_chat_model,
           fallback_chat_model: formData.fallback_chat_model,
-          decision_model: formData.decision_model,
-          fallback_decision_model: formData.fallback_decision_model,
           webhook_forwarder_enabled: formData.webhook_forwarder_enabled,
           auto_handover: formData.auto_handover,
-          use_confidence_cascade: formData.use_confidence_cascade,
-          cascade_cheap_model: formData.cascade_cheap_model,
-          cascade_expensive_model: formData.cascade_expensive_model,
         };
 
         if (formData.platform === 'line') {
