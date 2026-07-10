@@ -16,7 +16,7 @@ class ProductMapperTest extends TestCase
         parent::setUp();
         ProductStock::create([
             'name' => 'Nolimit ส่วนตัว', 'slug' => 'nolimit-personal',
-            'aliases' => ['NLM ส่วนตัว', 'Nolimit Personal'], 'in_stock' => true,
+            'aliases' => ['NLM ส่วนตัว', 'Nolimit Personal', 'Nolimit'], 'in_stock' => true,
             'display_order' => 1, 'stock_code' => 'NLMP', 'delivery_method' => 'stock',
         ]);
         ProductStock::create([
