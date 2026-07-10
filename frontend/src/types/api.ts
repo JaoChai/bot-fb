@@ -66,8 +66,6 @@ export interface Bot {
   // Multi-model LLM configuration (API key now in User Settings)
   primary_chat_model: string | null;
   fallback_chat_model: string | null;
-  // LLM Settings (legacy)
-  llm_fallback_model: string | null;
   system_prompt: string | null;
   llm_temperature: number;
   llm_max_tokens: number;

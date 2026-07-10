@@ -35,7 +35,7 @@ All work reads `bots.primary_chat_model` + `bots.fallback_chat_model` under the 
 
 ### 3. Database migration
 
-Drop 6 columns from `bots`: `decision_model`, `fallback_decision_model`, `cascade_cheap_model`, `cascade_expensive_model`, `use_confidence_cascade`, `llm_fallback_model`.
+Drop 8 columns from `bots`: `decision_model`, `fallback_decision_model`, `cascade_cheap_model`, `cascade_expensive_model`, `use_confidence_cascade`, `llm_fallback_model`, plus `cascade_confidence_threshold` and `llm_model` (both discovered during planning — no code readers).
 
 - `down()` re-adds them (nullable / boolean default false).
 - Test on a Neon branch before production (safe-migration workflow).
