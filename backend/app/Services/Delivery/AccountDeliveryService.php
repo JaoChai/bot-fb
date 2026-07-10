@@ -3,6 +3,7 @@
 namespace App\Services\Delivery;
 
 use App\Exceptions\DeliveryAlreadyHandledException;
+use App\Jobs\MarkStockSold;
 use App\Models\AccountDelivery;
 use App\Models\AccountDeliveryItem;
 use App\Models\Bot;
@@ -226,12 +227,15 @@ class AccountDeliveryService
         }
 
         // ลูกค้าได้ของแล้ว — จากนี้ห้าม throw กลับไปเป็น "ยังไม่ส่ง"
+        $stockItemIds = $stockItems->pluck('stock_item_id')->all();
         try {
-            $this->pool->markSold($stockItems->pluck('stock_item_id')->all(), $confirmedByName, 'bot-fb');
+            $this->pool->markSold($stockItemIds, $confirmedByName, 'bot-fb');
         } catch (\Throwable $e) {
-            Log::error('Delivery: markSold failed AFTER customer push — reconcile will flag', [
+            // dispatch job ตามเก็บ (idempotent) แทนปล่อยของค้าง items_reserved ให้เจ้าของเดาเอง
+            Log::error('Delivery: markSold failed AFTER customer push — retry job dispatched', [
                 'delivery_id' => $delivery->id, 'error' => $e->getMessage(),
             ]);
+            MarkStockSold::dispatch($stockItemIds, $confirmedByName);
         }
 
         $delivery->update([

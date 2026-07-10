@@ -109,6 +109,24 @@ class ReconcileDeliveriesTest extends TestCase
             && str_contains($r['text'] ?? '', '#77'));
     }
 
+    public function test_delivered_orphan_says_do_not_resell(): void
+    {
+        // markSold พังหลังส่ง → แถวค้าง items_reserved โดยงานเป็น delivered
+        // reconcile ต้องแยกให้ชัดว่า "ส่งแล้ว ห้ามขายซ้ำ" ไม่ใช่ "คืน stock ได้"
+        $delivery = $this->makeDelivery('delivered');
+        DB::connection('mhha_acc')->table('items_reserved')->insert([
+            'id' => 55, 'name' => 'NLMP', 'detail' => 'x|y', 'type' => 'x',
+            'order_ref' => (string) $delivery->id, 'reservedAt' => now(),
+            'createdAt' => now(), 'updatedAt' => now(),
+        ]);
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage')
+            && str_contains($r['text'] ?? '', '#55')
+            && str_contains($r['text'] ?? '', 'ห้ามขายซ้ำ'));
+    }
+
     public function test_quiet_when_all_clean(): void
     {
         $this->makeDelivery('reserved'); // ปกติ — ไม่ orphan ไม่ stuck

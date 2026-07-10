@@ -47,8 +47,15 @@ class ReconcileDeliveries extends Command
         ])->pluck('id')->map(fn ($id) => (string) $id)->all();
 
         try {
-            foreach ($pool->orphanedReservedRows($activeRefs) as $row) {
-                $problems[] = "ของจองค้าง #{$row['id']} ({$row['name']}) order_ref={$row['order_ref']} ไม่มีงาน active";
+            $orphans = $pool->orphanedReservedRows($activeRefs);
+            $deliveries = AccountDelivery::whereIn('id', array_column($orphans, 'order_ref'))
+                ->get()->keyBy('id');
+            foreach ($orphans as $row) {
+                $delivery = $deliveries->get((int) $row['order_ref']);
+                // งาน delivered ที่ยังมีของค้าง = ส่งลูกค้าแล้วแต่ markSold ไม่สำเร็จ — ห้ามคืน/ขายซ้ำ
+                $problems[] = $delivery?->status === AccountDelivery::STATUS_DELIVERED
+                    ? "⚠️ ของจอง #{$row['id']} ({$row['name']}) — ส่งลูกค้าไปแล้ว (งาน #{$delivery->id}) แต่ยังไม่ย้ายเข้า sold: ต้องย้ายเข้า items_sold เอง ห้ามขายซ้ำ"
+                    : "ของจองค้าง #{$row['id']} ({$row['name']}) order_ref={$row['order_ref']} ไม่มีงาน active — คืน stock ได้";
             }
         } catch (\Throwable $e) {
             Log::error('Reconcile: cannot read items_reserved', ['error' => $e->getMessage()]);

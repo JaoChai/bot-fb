@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Exceptions\DeliveryAlreadyHandledException;
+use App\Jobs\MarkStockSold;
 use App\Models\AccountDelivery;
 use App\Models\Bot;
 use App\Models\Conversation;
@@ -12,6 +13,7 @@ use App\Services\Delivery\AccountDeliveryService;
 use App\Services\Delivery\StockPoolService;
 use App\Services\LINEService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Mockery\MockInterface;
@@ -152,6 +154,28 @@ class AccountDeliveryDeliverTest extends TestCase
         $this->assertSame(AccountDelivery::STATUS_DELIVERED, $this->delivery->fresh()->status);
         $this->assertSame(7, DB::connection('mhha_acc')->table('items_sold')->count());
         $this->assertSame(0, DB::connection('mhha_acc')->table('items_reserved')->count());
+    }
+
+    public function test_marksold_failure_dispatches_retry_job_but_still_delivers(): void
+    {
+        // markSold พังหลัง push สำเร็จ (ลูกค้าได้ของแล้ว) → ห้าม throw กลับ, ต้อง dispatch
+        // job ตามเก็บ ไม่ปล่อยของค้าง items_reserved เงียบๆ
+        Bus::fake([MarkStockSold::class]);
+        $this->mock(LINEService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('generateRetryKey')->andReturn('rk');
+            $mock->shouldReceive('replyWithFallback')->once()->andReturn(['method' => 'push', 'success' => true]);
+        });
+        $this->mock(StockPoolService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('getReserved')->andReturn([
+                10 => ['id' => 10, 'detail' => 'uid10|pass10|mail|2fa'],
+            ]);
+            $mock->shouldReceive('markSold')->andThrow(new \RuntimeException('mhha down'));
+        });
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        $this->assertSame(AccountDelivery::STATUS_DELIVERED, $this->delivery->fresh()->status);
+        Bus::assertDispatched(MarkStockSold::class, fn (MarkStockSold $job) => $job->stockItemIds === [10]);
     }
 
     public function test_line_failure_keeps_stock_reserved(): void
