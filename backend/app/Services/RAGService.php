@@ -179,8 +179,8 @@ class RAGService
             ]);
         }
 
-        // Step 8: Get chat models (Smart Routing if enabled)
-        $chatModel = $this->resolveSmartChatModel($bot, $intent, $complexity);
+        // Step 8: Get chat models
+        $chatModel = $this->getChatModelForBot($bot);
         $fallbackChatModel = $this->getFallbackChatModelForBot($bot);
 
         // Step 9: Resolve flow (used for agentic check + LLM params)
@@ -225,12 +225,6 @@ class RAGService
         $result['models_used'] = [
             'decision' => $intent['model_used'] ?? null,
             'chat' => $result['model'] ?? $chatModel,
-        ];
-        $result['smart_routing'] = [
-            'enabled' => (bool) $bot->use_confidence_cascade,
-            'routed_model' => $chatModel,
-            'complexity_source' => isset($intent['complexity']) ? 'enhanced_decision' : 'heuristic',
-            'complexity_result' => $intent['complexity'] ?? ($complexity['is_complex'] ? 'complex' : 'simple'),
         ];
         $result['from_cache'] = false;
 
@@ -436,66 +430,6 @@ class RAGService
     }
 
     /**
-     * Resolve the chat model using Smart Routing (confidence cascade).
-     *
-     * When Smart Routing is enabled (use_confidence_cascade = true):
-     * - Simple questions → cascade_cheap_model (fast, cheap)
-     * - Complex questions → cascade_expensive_model (smart, reasoning)
-     *
-     * Complexity source priority:
-     * 1. Enhanced decision model output ($intent['complexity']) — from reasoning models
-     * 2. Heuristic detection ($complexity['is_complex']) — from detectComplexity()
-     *
-     * When Smart Routing is disabled or models not configured:
-     * Falls back to getChatModelForBot() (existing behavior)
-     *
-     * @param  Bot  $bot  The bot
-     * @param  array  $intent  Intent analysis result (may include 'complexity' from enhanced decision)
-     * @param  array  $complexity  Heuristic complexity result from detectComplexity()
-     * @return string|null The resolved chat model
-     */
-    protected function resolveSmartChatModel(Bot $bot, array $intent, array $complexity): ?string
-    {
-        // Smart Routing disabled → use default chat model
-        if (! $bot->use_confidence_cascade) {
-            return $this->getChatModelForBot($bot);
-        }
-
-        // Determine complexity: enhanced decision takes priority over heuristic
-        $isComplex = isset($intent['complexity'])
-            ? $intent['complexity'] === 'complex'
-            : $complexity['is_complex'];
-
-        // Route to appropriate model
-        if ($isComplex && $bot->cascade_expensive_model) {
-            Log::debug('Smart Routing: using expensive model for complex query', [
-                'bot_id' => $bot->id,
-                'model' => $bot->cascade_expensive_model,
-                'complexity_source' => isset($intent['complexity']) ? 'enhanced_decision' : 'heuristic',
-            ]);
-
-            return $bot->cascade_expensive_model;
-        }
-
-        if (! $isComplex && $bot->cascade_cheap_model) {
-            Log::debug('Smart Routing: using cheap model for simple query', [
-                'bot_id' => $bot->id,
-                'model' => $bot->cascade_cheap_model,
-                'complexity_source' => isset($intent['complexity']) ? 'enhanced_decision' : 'heuristic',
-            ]);
-
-            return $bot->cascade_cheap_model;
-        }
-
-        // Cascade models not configured → fallback to default chat model
-        Log::debug('Smart Routing: cascade models not configured, using default', [
-            'bot_id' => $bot->id,
-        ]);
-
-        return $this->getChatModelForBot($bot);
-    }
-
-    /**
      * Get the primary chat model to use for a bot.
      *
      * Models come ONLY from Connection Settings UI:
@@ -515,50 +449,6 @@ class RAGService
     protected function getFallbackChatModelForBot(Bot $bot): ?string
     {
         return $bot->fallback_chat_model;
-    }
-
-    /**
-     * Get the decision model for a bot (for intent analysis).
-     *
-     * Priority:
-     * 1. Bot-specific decision_model
-     * 2. Falls back to chat model if not set
-     */
-    protected function getDecisionModelForBot(Bot $bot): ?string
-    {
-        // Priority 1: Bot-specific decision model
-        if ($bot->decision_model) {
-            return $bot->decision_model;
-        }
-
-        // Priority 2: Fall back to chat model
-        return $this->getChatModelForBot($bot);
-    }
-
-    /**
-     * Get the fallback decision model for a bot.
-     *
-     * Priority:
-     * 1. Bot-specific fallback_decision_model
-     * 2. Falls back to fallback chat model
-     */
-    protected function getFallbackDecisionModelForBot(Bot $bot): ?string
-    {
-        // Priority 1: Bot-specific fallback decision model
-        if ($bot->fallback_decision_model) {
-            return $bot->fallback_decision_model;
-        }
-
-        // Priority 2: Fall back to fallback chat model
-        return $this->getFallbackChatModelForBot($bot);
-    }
-
-    /**
-     * @deprecated Use getChatModelForBot() instead
-     */
-    protected function getModelForBot(Bot $bot): ?string
-    {
-        return $this->getChatModelForBot($bot);
     }
 
     /**
