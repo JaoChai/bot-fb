@@ -76,4 +76,4 @@ Schedule::command('idempotency:clean')
 Schedule::command('db:ping')->everyFourMinutes();
 
 // Auto Account Delivery — เตือนงานค้างกดยืนยัน
-Schedule::command('delivery:remind')->everyThirtyMinutes();
+Schedule::command('delivery:remind')->everyThirtyMinutes()->withoutOverlapping();
