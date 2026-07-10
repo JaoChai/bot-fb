@@ -263,7 +263,13 @@ class AccountDeliveryService
         return $texts;
     }
 
-    /** push เป็น text ล้วน (ห้ามผ่าน LLM/Flex) — LINE จำกัด 5 ข้อความต่อ push */
+    /**
+     * ส่งเป็น push เดียวแบบ all-or-nothing (text ล้วน ห้ามผ่าน LLM/Flex) — ห้ามแบ่งหลาย push:
+     * ถ้า push แรกสำเร็จแล้ว push ถัดไปพัง ระบบจะคิดว่ายังไม่ส่งและอาจคืน stock
+     * ทั้งที่ลูกค้าได้ credential ไปแล้ว → บัญชีเดิมถูกขายซ้ำได้
+     * LINE ให้ 5 ข้อความ/push, ข้อความละ ~5000 ตัวอักษร → pack ได้เหลือเฟือ
+     * ถ้า pack ไม่พอ (เกิน 5 ข้อความ) ให้ throw ก่อนส่งอะไรออกไป (fail-safe: ยังไม่ส่งเลย)
+     */
     private function pushTextsToLine(AccountDelivery $delivery, array $texts): void
     {
         $conversation = $delivery->conversation;
@@ -275,12 +281,38 @@ class AccountDeliveryService
             throw new \RuntimeException('nothing to deliver');
         }
 
-        foreach (array_chunk($texts, 5) as $chunk) {
-            $messages = array_map(fn (string $t) => ['type' => 'text', 'text' => $t], $chunk);
-            $this->line->replyWithFallback(
-                $delivery->bot, null, $externalId, $messages, $this->line->generateRetryKey(),
-            );
+        $messages = $this->packTexts($texts);
+        if (count($messages) > 5) {
+            throw new \RuntimeException('delivery message too large for a single LINE push');
         }
+
+        $this->line->replyWithFallback(
+            $delivery->bot, null, $externalId,
+            array_map(fn (string $t) => ['type' => 'text', 'text' => $t], $messages),
+            $this->line->generateRetryKey(),
+        );
+    }
+
+    /** รวม texts หลายชิ้นเข้าเป็นก้อนละไม่เกิน 4900 ตัวอักษร (กันชน limit 5000) คั่นด้วยบรรทัดว่าง */
+    private function packTexts(array $texts, int $maxLen = 4900): array
+    {
+        $packed = [];
+        $current = '';
+        foreach ($texts as $text) {
+            if ($current === '') {
+                $current = $text;
+            } elseif (mb_strlen($current) + mb_strlen($text) + 2 <= $maxLen) {
+                $current .= "\n\n".$text;
+            } else {
+                $packed[] = $current;
+                $current = $text;
+            }
+        }
+        if ($current !== '') {
+            $packed[] = $current;
+        }
+
+        return $packed;
     }
 
     /** บันทึกสิ่งที่ส่งเข้าประวัติแชท (บอท/หน้าเว็บเห็นว่าส่งอะไรไปแล้ว) — best effort */
