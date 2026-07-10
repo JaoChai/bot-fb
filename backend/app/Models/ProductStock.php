@@ -17,6 +17,8 @@ class ProductStock extends Model
         'aliases',
         'in_stock',
         'display_order',
+        'stock_code',
+        'delivery_method',
     ];
 
     protected $casts = [

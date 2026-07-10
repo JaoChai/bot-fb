@@ -74,3 +74,12 @@ Schedule::command('idempotency:clean')
 
 // Ping database every 4 minutes to prevent Neon cold starts
 Schedule::command('db:ping')->everyFourMinutes();
+
+// Auto Account Delivery — เตือนงานค้างกดยืนยัน
+Schedule::command('delivery:remind')->everyThirtyMinutes()->withoutOverlapping();
+
+// Auto Account Delivery — ตรวจของค้าง/limbo ระหว่าง bot-fb กับ mhha_acc_db
+Schedule::command('delivery:reconcile')->hourly()->withoutOverlapping();
+
+// Auto Account Delivery — เปิด/ปิดสวิตช์ขายตามของจริงใน stock DB
+Schedule::command('stock:sync-pool')->everyFiveMinutes()->withoutOverlapping();

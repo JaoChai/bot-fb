@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers\Webhook;
 
+use App\Exceptions\DeliveryAlreadyHandledException;
 use App\Exceptions\NoPendingPaymentException;
 use App\Exceptions\RecentManualConfirmException;
 use App\Http\Controllers\Controller;
+use App\Models\AccountDelivery;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
+use App\Services\Delivery\AccountDeliveryService;
 use App\Services\Payment\ManualPaymentConfirmService;
 use App\Services\Payment\TelegramAlertBotService;
 use Illuminate\Http\JsonResponse;
@@ -18,6 +21,7 @@ class TelegramAlertCallbackController extends Controller
     public function __construct(
         private readonly ManualPaymentConfirmService $confirmService,
         private readonly TelegramAlertBotService $alertBot,
+        private readonly AccountDeliveryService $deliveryService,
     ) {}
 
     public function handle(Request $request, string $token): JsonResponse
@@ -56,6 +60,11 @@ class TelegramAlertCallbackController extends Controller
 
         if (! is_numeric($convId)) {
             return response()->json(['ok' => true]);
+        }
+
+        // action งานส่งของ: ส่วนที่สองของ callback_data เป็น delivery id ไม่ใช่ conversation id
+        if (in_array($act, ['dv', 'dx', 'dz'], true)) {
+            return $this->handleDeliveryAction($act, (int) $convId, $plugin, $cb, $token);
         }
 
         $conversation = Conversation::find((int) $convId);
@@ -110,6 +119,80 @@ class TelegramAlertCallbackController extends Controller
         } catch (\Throwable $e) {
             Log::error('Telegram alert confirm failed', ['conversation_id' => $convId, 'error' => $e->getMessage()]);
             $this->alertBot->answerCallbackQuery($token, $cbId, 'เกิดข้อผิดพลาด ลองใหม่หรือยืนยันในเว็บ');
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    private function handleDeliveryAction(
+        string $act,
+        int $deliveryId,
+        FlowPlugin $plugin,
+        array $cb,
+        string $token,
+    ): JsonResponse {
+        $chatId = (string) ($cb['message']['chat']['id'] ?? '');
+        $messageId = (int) ($cb['message']['message_id'] ?? 0);
+        $fromName = $cb['from']['first_name'] ?? 'admin';
+        $cbId = $cb['id'] ?? '';
+
+        $delivery = AccountDelivery::find($deliveryId);
+        if (! $delivery) {
+            $this->alertBot->answerCallbackQuery($token, $cbId, 'ไม่พบงานส่งของ');
+
+            return response()->json(['ok' => true]);
+        }
+        if ($delivery->bot_id !== $plugin->flow?->bot_id) {
+            Log::warning('Delivery callback: delivery/plugin bot mismatch', [
+                'delivery_id' => $delivery->id, 'plugin_id' => $plugin->id,
+            ]);
+
+            return response()->json(['ok' => true]);
+        }
+
+        // ยกเลิกขั้นแรก: แค่เปลี่ยนปุ่มเป็นยืนยันชั้นสอง (pattern เดียวกับ pa)
+        if ($act === 'dx') {
+            $this->alertBot->editMessageText($token, $chatId, $messageId,
+                "⚠️ ยืนยันยกเลิก คืนของเข้า stock? (งาน #{$delivery->id})\nกดปุ่มด้านล่างอีกครั้งเพื่อยืนยันจริง",
+                [[['text' => '❗ กดอีกครั้งเพื่อคืนของเข้า stock', 'callback_data' => "dz|{$delivery->id}|x"]]],
+            );
+            $this->alertBot->answerCallbackQuery($token, $cbId, 'กดอีกครั้งเพื่อยืนยัน');
+
+            return response()->json(['ok' => true]);
+        }
+
+        try {
+            if ($act === 'dz') {
+                $this->deliveryService->cancel($delivery, $fromName);
+                $this->alertBot->editMessageText($token, $chatId, $messageId,
+                    "↩️ คืนของเข้า stock แล้ว โดย {$fromName} (งาน #{$delivery->id})");
+                $this->alertBot->answerCallbackQuery($token, $cbId, 'คืนของแล้ว');
+            } else { // dv
+                $this->deliveryService->deliver($delivery, $fromName);
+                $this->alertBot->editMessageText($token, $chatId, $messageId,
+                    "✅ ส่งให้ลูกค้าแล้ว โดย {$fromName} (งาน #{$delivery->id})");
+                $this->alertBot->answerCallbackQuery($token, $cbId, 'ส่งแล้ว');
+            }
+        } catch (DeliveryAlreadyHandledException $e) {
+            $this->alertBot->editMessageText($token, $chatId, $messageId,
+                "✅ งาน #{$delivery->id} ถูกจัดการไปแล้ว (สถานะ: {$delivery->fresh()->status})");
+            $this->alertBot->answerCallbackQuery($token, $cbId, 'จัดการไปแล้ว');
+        } catch (\Throwable $e) {
+            Log::error('Delivery callback action failed', [
+                'delivery_id' => $delivery->id, 'action' => $act, 'error' => $e->getMessage(),
+            ]);
+            $fresh = $delivery->fresh();
+            if ($act === 'dz' && $fresh->status === AccountDelivery::STATUS_CANCELED) {
+                // cancel สำเร็จแต่คืนของเข้า stock ไม่สำเร็จ — ห้ามหลอกว่ากดใหม่ได้
+                $this->alertBot->editMessageText($token, $chatId, $messageId,
+                    "↩️ ยกเลิกงาน #{$delivery->id} แล้ว แต่คืนของเข้า stock ไม่สำเร็จ\nของยังค้างอยู่ในตารางจอง — ระบบตรวจ (delivery:reconcile) จะแจ้งเตือนซ้ำ อย่าเพิ่งขายชิ้นนี้ซ้ำ");
+                $this->alertBot->answerCallbackQuery($token, $cbId, 'ยกเลิกแล้ว แต่คืนของไม่สำเร็จ');
+            } else {
+                $this->alertBot->editMessageText($token, $chatId, $messageId,
+                    "❌ ทำไม่สำเร็จ — กดลองใหม่ได้ (งาน #{$delivery->id})",
+                    $this->deliveryService->cardKeyboard($delivery));
+                $this->alertBot->answerCallbackQuery($token, $cbId, 'เกิดข้อผิดพลาด ลองใหม่');
+            }
         }
 
         return response()->json(['ok' => true]);

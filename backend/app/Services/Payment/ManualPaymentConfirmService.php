@@ -6,6 +6,7 @@ use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
 use App\Exceptions\NoPendingPaymentException;
 use App\Exceptions\RecentManualConfirmException;
+use App\Jobs\ReserveAccountStock;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -91,6 +92,14 @@ class ManualPaymentConfirmService
         $this->pushToLine($bot, $conversation, $text);
 
         $orderCreated = $this->runPlugins($bot, $conversation, $botMessage);
+
+        ReserveAccountStock::dispatchSafely(
+            $bot->id,
+            $conversation->id,
+            $slip->id,
+            $amount,
+            $expected['items'] ?? [],
+        );
 
         $this->broadcast($conversation, $botMessage);
 

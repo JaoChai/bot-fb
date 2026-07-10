@@ -48,13 +48,7 @@ class ProductStockController extends Controller
 
             // Clear semantic cache entries atomically with the stock update
             if ($product->wasChanged('in_stock')) {
-                $escapedName = '%'.addcslashes($product->name, '%_').'%';
-                $query = RagCache::where('query_text', 'ILIKE', $escapedName);
-                foreach ($product->aliases ?? [] as $alias) {
-                    $escapedAlias = '%'.addcslashes($alias, '%_').'%';
-                    $query->orWhere('query_text', 'ILIKE', $escapedAlias);
-                }
-                $query->delete();
+                RagCache::purgeForProduct($product);
             }
         });
 

@@ -106,6 +106,18 @@ return [
             ],
         ],
 
+        // Stock DB บัญชีโฆษณา (Neon โปรเจกต์แยก mhha_acc_db) — ใช้โดยระบบ Auto Account Delivery
+        // แตะได้แค่ items_available / items_reserved / items_sold เท่านั้น
+        'mhha_acc' => [
+            'driver' => 'pgsql',
+            'url' => env('MHHA_ACC_DATABASE_URL'),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('MHHA_ACC_DB_SSLMODE', 'require'),
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

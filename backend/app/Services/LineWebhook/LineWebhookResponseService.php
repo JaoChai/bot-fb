@@ -2,6 +2,7 @@
 
 namespace App\Services\LineWebhook;
 
+use App\Jobs\ReserveAccountStock;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
@@ -558,6 +559,19 @@ class LineWebhookResponseService
             ]);
 
             $ctx->metadata['bot_message'] = $botMessage;
+
+            if ($result->passed && $result->slipVerificationId !== null) {
+                // dispatch พังห้ามหลุดไปโดน catch ใหญ่ (จะกลายเป็น fallback vision ทั้งที่ตอบสำเร็จไปแล้ว)
+                // การจองที่พลาดมี delivery:reconcile เก็บตกทีหลัง + เจ้าของส่งเองได้
+                ReserveAccountStock::dispatchSafely(
+                    $ctx->bot->id,
+                    $ctx->conversation->id,
+                    $result->slipVerificationId,
+                    $result->amount,
+                    $result->orderItems ?? [],
+                );
+            }
+
             $ctx->response = ResponseEnvelope::text($text);
 
             Log::info('Slip verification handled image', [
