@@ -236,8 +236,10 @@ class AccountDeliveryService
             "🚚 <b>พร้อมส่งสินค้า</b> · งาน #{$delivery->id}",
             "👤 <b>{$customer}</b> · แชท #{$conv?->id}",
             "💵 ยอด <code>{$amount}</code> บาท",
-            '<blockquote>'.implode("\n", $items).'</blockquote>',
         ];
+        if ($items !== []) {
+            $lines[] = '<blockquote>'.implode("\n", $items).'</blockquote>';
+        }
         if ($delivery->status === AccountDelivery::STATUS_FAILED) {
             $lines[] = '❌ ไม่มีรายการที่ส่งอัตโนมัติได้ — รบกวนส่งเองในแชทนะครับ';
         }
