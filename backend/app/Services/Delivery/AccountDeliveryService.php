@@ -68,7 +68,12 @@ class AccountDeliveryService
         }
 
         if ($delivery === null) {
-            return null; // อีก path เพิ่งสร้างงานส่งยอดเดียวกันไปแล้ว
+            // อีก path เพิ่งสร้างงานส่งยอดเดียวกันไปแล้ว — log ไว้ให้สืบย้อนได้ (บล็อกเงียบทำให้ debug ยาก)
+            Log::warning('Delivery: skipped duplicate reserve (recent active delivery)', [
+                'conversation_id' => $conversation->id, 'amount' => $amount,
+            ]);
+
+            return null;
         }
 
         $deliverable = false;
@@ -105,8 +110,17 @@ class AccountDeliveryService
             }
 
             for ($u = 0; $u < $qty; $u++) {
+                // สร้าง item anchor ก่อนจอง: ถ้า process ตายหลัง reserveOne สำเร็จแต่ก่อน update
+                // จะเหลือ item ค้าง reserving ให้ตามได้ ไม่ใช่ stock หายเงียบไม่มีที่อ้างอิง
+                $item = $delivery->items()->create([
+                    'product_name' => $product->name,
+                    'stock_code' => $product->stock_code,
+                    'kind' => AccountDeliveryItem::KIND_STOCK,
+                    'qty' => 1,
+                    'status' => AccountDeliveryItem::ST_RESERVING,
+                ]);
                 try {
-                    $row = $this->pool->reserveOne($product->stock_code, (string) $delivery->id);
+                    $row = $this->pool->reserveOne($product->stock_code, StockPoolService::orderRef($delivery->id));
                 } catch (\Throwable $e) {
                     Log::error('Delivery: stock reserve failed', [
                         'delivery_id' => $delivery->id, 'stock_code' => $product->stock_code,
@@ -114,11 +128,7 @@ class AccountDeliveryService
                     ]);
                     $row = null;
                 }
-                $delivery->items()->create([
-                    'product_name' => $product->name,
-                    'stock_code' => $product->stock_code,
-                    'kind' => AccountDeliveryItem::KIND_STOCK,
-                    'qty' => 1,
+                $item->update([
                     'stock_item_id' => $row['id'] ?? null,
                     'status' => $row === null
                         ? AccountDeliveryItem::ST_SHORTAGE

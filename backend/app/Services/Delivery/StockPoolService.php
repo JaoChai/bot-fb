@@ -15,10 +15,31 @@ class StockPoolService
 {
     public const CONNECTION = 'mhha_acc';
 
+    // prefix order_ref ของ bot-fb — แยกจากบอทเบิก Telegram ภายนอกที่ใช้ items_reserved ร่วมกัน
+    // (ของภายนอกไม่มี prefix นี้ → reconcile/orphan จะไม่ไปยุ่ง)
+    public const ORDER_REF_PREFIX = 'bfb:';
+
     private const COLUMNS = [
         'id', 'name', 'detail', 'type', 'viaId', 'bmId', 'adsId',
         'cost', 'price', 'createdAt', 'updatedAt',
     ];
+
+    /** สร้าง order_ref ของ bot-fb จาก delivery id */
+    public static function orderRef(int|string $deliveryId): string
+    {
+        return self::ORDER_REF_PREFIX.$deliveryId;
+    }
+
+    /** ถอด delivery id จาก order_ref ของ bot-fb — คืน null ถ้าไม่ใช่ของ bot-fb (บอทภายนอก) */
+    public static function deliveryIdFromRef(string $orderRef): ?int
+    {
+        if (! str_starts_with($orderRef, self::ORDER_REF_PREFIX)) {
+            return null;
+        }
+        $id = substr($orderRef, strlen(self::ORDER_REF_PREFIX));
+
+        return ctype_digit($id) ? (int) $id : null;
+    }
 
     /**
      * หยิบของ 1 ชิ้นออกจาก items_available แบบ atomic แล้วย้ายเข้า items_reserved
@@ -109,10 +130,15 @@ class StockPoolService
             ->all());
     }
 
-    /** แถว reserved ที่ order_ref ไม่อยู่ในงานที่ยัง active — ใช้โดย delivery:reconcile */
+    /**
+     * แถว reserved ของ bot-fb (prefix bfb:) ที่ order_ref ไม่อยู่ในงาน active — ใช้โดย delivery:reconcile
+     * กรองเฉพาะของ bot-fb (ไม่แตะแถวบอทภายนอก) + เฉพาะที่ค้างเกิน 10 นาที (กัน reservation สดๆ TOCTOU)
+     */
     public function orphanedReservedRows(array $activeOrderRefs): array
     {
         return $this->guarded(fn () => DB::connection(self::CONNECTION)->table('items_reserved')
+            ->where('order_ref', 'like', self::ORDER_REF_PREFIX.'%')
+            ->where('reservedAt', '<=', now()->subMinutes(10))
             ->when($activeOrderRefs !== [],
                 fn ($q) => $q->whereNotIn('order_ref', $activeOrderRefs))
             ->get()
