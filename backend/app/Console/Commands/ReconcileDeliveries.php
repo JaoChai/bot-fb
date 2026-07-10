@@ -44,21 +44,19 @@ class ReconcileDeliveries extends Command
             AccountDelivery::STATUS_RESERVING,
             AccountDelivery::STATUS_RESERVED,
             AccountDelivery::STATUS_DELIVERING,
-        ])->pluck('id')->map(fn ($id) => (string) $id)->all();
+        ])->pluck('id')->map(fn ($id) => StockPoolService::orderRef($id))->all();
 
         try {
+            // orphanedReservedRows คืนเฉพาะแถวของ bot-fb (prefix bfb:) แล้ว — order_ref แปลงเป็น delivery id ได้เสมอ
             $orphans = $pool->orphanedReservedRows($activeRefs);
-            // order_ref ของบอทเบิกภายนอกไม่ใช่ตัวเลข (ใช้ items_reserved ร่วมกัน) — กรองก่อน
-            // เข้า whereIn('id', ...) ไม่งั้น Postgres โยน invalid bigint แล้วกลืน alert ทั้งลูป
-            $numericRefs = array_values(array_filter(
-                array_column($orphans, 'order_ref'),
-                fn ($ref) => ctype_digit((string) $ref),
-            ));
-            $deliveries = AccountDelivery::whereIn('id', $numericRefs)->get()->keyBy('id');
+            $refIds = array_values(array_filter(array_map(
+                fn ($row) => StockPoolService::deliveryIdFromRef($row['order_ref']),
+                $orphans,
+            ), fn ($id) => $id !== null));
+            $deliveries = AccountDelivery::whereIn('id', $refIds)->get()->keyBy('id');
             foreach ($orphans as $row) {
-                $delivery = ctype_digit((string) $row['order_ref'])
-                    ? $deliveries->get((int) $row['order_ref'])
-                    : null;
+                $deliveryId = StockPoolService::deliveryIdFromRef($row['order_ref']);
+                $delivery = $deliveryId !== null ? $deliveries->get($deliveryId) : null;
                 // งาน delivered ที่ยังมีของค้าง = ส่งลูกค้าแล้วแต่ markSold ไม่สำเร็จ — ห้ามคืน/ขายซ้ำ
                 $problems[] = $delivery?->status === AccountDelivery::STATUS_DELIVERED
                     ? "⚠️ ของจอง #{$row['id']} ({$row['name']}) — ส่งลูกค้าไปแล้ว (งาน #{$delivery->id}) แต่ยังไม่ย้ายเข้า sold: ต้องย้ายเข้า items_sold เอง ห้ามขายซ้ำ"

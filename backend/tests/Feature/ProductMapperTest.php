@@ -65,4 +65,31 @@ class ProductMapperTest extends TestCase
         $this->assertNull(app(ProductMapper::class)->map('ของแปลกๆ ไม่มีในระบบ'));
         $this->assertNull(app(ProductMapper::class)->map('สินค้าไม่เปิดส่งอัตโนมัติ'));
     }
+
+    public function test_short_alias_does_not_overmatch(): void
+    {
+        ProductStock::create([
+            'name' => 'สินค้าพิเศษ', 'slug' => 'special', 'aliases' => ['bm'],
+            'in_stock' => true, 'display_order' => 9,
+            'stock_code' => 'SPC', 'delivery_method' => 'stock',
+        ]);
+
+        // alias "bm" (2 ตัว) ต้องถูกข้าม ไม่ทำให้ "bmw" จับเป็น SPC
+        $this->assertNull(app(ProductMapper::class)->map('ปั๊ม bmw ราคาถูก'));
+    }
+
+    public function test_ambiguous_equal_length_match_returns_null(): void
+    {
+        ProductStock::create([
+            'name' => 'AAAA', 'slug' => 'aaaa', 'aliases' => [], 'in_stock' => true,
+            'display_order' => 10, 'stock_code' => 'A4', 'delivery_method' => 'stock',
+        ]);
+        ProductStock::create([
+            'name' => 'BBBB', 'slug' => 'bbbb', 'aliases' => [], 'in_stock' => true,
+            'display_order' => 11, 'stock_code' => 'B4', 'delivery_method' => 'stock',
+        ]);
+
+        // มีทั้ง aaaa และ bbbb (ยาวเท่ากัน) → กำกวม ไม่เดา
+        $this->assertNull(app(ProductMapper::class)->map('ชุด aaaa และ bbbb'));
+    }
 }

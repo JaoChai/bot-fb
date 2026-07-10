@@ -116,6 +116,9 @@ class AccountDeliveryDeliverTest extends TestCase
         // แต่ยัง traceable: ชื่อสินค้า + stock item id
         $this->assertStringContainsString('Nolimit ส่วนตัว', $msg->content);
         $this->assertStringContainsString('#10', $msg->content);
+        // รวม placeholder ของ support_link ด้วย (branch KIND_SUPPORT_LINK)
+        $this->assertStringContainsString('ส่งลิงก์ Support', $msg->content);
+        $this->assertStringContainsString('เพจ', $msg->content);
         $this->assertTrue((bool) ($msg->metadata['account_delivery'] ?? false));
     }
 

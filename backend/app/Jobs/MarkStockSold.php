@@ -7,6 +7,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Support\Facades\Log;
 
 /**
  * ตามเก็บย้ายของเข้า items_sold เมื่อ markSold พังหลัง push ให้ลูกค้าสำเร็จ
@@ -34,5 +35,13 @@ class MarkStockSold implements ShouldQueue
     public function handle(StockPoolService $pool): void
     {
         $pool->markSold($this->stockItemIds, $this->confirmedByName, $this->username);
+    }
+
+    /** retry หมดแล้วยังพัง — ของยังค้าง items_reserved (delivery:reconcile จะจับเป็น "ห้ามขายซ้ำ") */
+    public function failed(\Throwable $e): void
+    {
+        Log::error('MarkStockSold: exhausted retries — stock ค้าง items_reserved', [
+            'stock_item_ids' => $this->stockItemIds, 'error' => $e->getMessage(),
+        ]);
     }
 }
