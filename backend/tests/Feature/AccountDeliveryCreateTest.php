@@ -50,7 +50,9 @@ class AccountDeliveryCreateTest extends TestCase
             'amount' => 1299, 'status' => 'passed',
         ]);
 
-        config(['delivery.enabled' => true, 'delivery.bot_ids' => [$this->bot->id]]);
+        config(['delivery.enabled' => true]);
+        $this->bot->update(['auto_delivery_enabled' => true]);
+        $this->bot = $this->bot->fresh();
 
         ProductStock::create([
             'name' => 'Nolimit ส่วนตัว', 'slug' => 'nolimit-personal', 'aliases' => [],
@@ -201,7 +203,37 @@ class AccountDeliveryCreateTest extends TestCase
         config(['delivery.enabled' => false]);
         $this->assertNull($this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1100']]));
 
-        config(['delivery.enabled' => true, 'delivery.bot_ids' => [999999]]);
+        $this->bot->update(['auto_delivery_enabled' => false]);
+        $this->bot = $this->bot->fresh();
         $this->assertNull($this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1100']]));
+    }
+
+    public function test_returns_null_when_bot_auto_delivery_disabled(): void
+    {
+        $this->seedAvailable(10, 'NLMP');
+        $this->bot->update(['auto_delivery_enabled' => false]);
+        $this->bot = $this->bot->fresh();
+
+        $delivery = $this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1,299 บาท']]);
+
+        $this->assertNull($delivery);
+        $this->assertDatabaseCount('account_deliveries', 0);
+        $this->assertSame(1, $this->countAvailable('NLMP')); // ไม่แตะ stock
+    }
+
+    public function test_returns_null_when_master_env_disabled_even_if_bot_enabled(): void
+    {
+        $this->seedAvailable(10, 'NLMP');
+        config(['delivery.enabled' => false]);
+
+        $delivery = $this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1,299 บาท']]);
+
+        $this->assertNull($delivery);
+        $this->assertDatabaseCount('account_deliveries', 0);
+    }
+
+    private function countAvailable(string $code): int
+    {
+        return DB::connection('mhha_acc')->table('items_available')->where('name', $code)->count();
     }
 }
