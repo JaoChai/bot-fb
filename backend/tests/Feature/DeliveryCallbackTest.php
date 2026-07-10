@@ -67,7 +67,7 @@ class DeliveryCallbackTest extends TestCase
         ]);
     }
 
-    private function press(string $data, int $fromId = 12345): TestResponse
+    private function press(string $data, int $fromId = 12345, string $fromName = 'บูม'): TestResponse
     {
         config(['services.telegram_alert.secret' => 'SEC']);
 
@@ -75,7 +75,7 @@ class DeliveryCallbackTest extends TestCase
             ->postJson('/api/webhook/telegram-alert/TOK', ['callback_query' => [
                 'id' => 'cb1',
                 'data' => $data,
-                'from' => ['first_name' => 'บูม', 'id' => $fromId],
+                'from' => ['first_name' => $fromName, 'id' => $fromId],
                 'message' => ['message_id' => 55, 'chat' => ['id' => 999]],
             ]]);
     }
@@ -98,6 +98,20 @@ class DeliveryCallbackTest extends TestCase
         $this->assertSame(AccountDelivery::STATUS_DELIVERED, $this->delivery->fresh()->status);
         Http::assertSent(fn ($r) => str_contains($r->url(), 'editMessageText')
             && str_contains($r['text'] ?? '', 'ส่งให้ลูกค้าแล้ว'));
+    }
+
+    public function test_dv_edit_message_escapes_from_name_and_uses_bold(): void
+    {
+        $this->mock(LINEService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('generateRetryKey')->andReturn('rk');
+            $mock->shouldReceive('replyWithFallback')->once()->andReturn(['method' => 'push', 'success' => true]);
+        });
+
+        $this->press("dv|{$this->delivery->id}|x", 12345, 'Boss <1>')->assertOk();
+
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'editMessageText')
+            && str_contains($r['text'] ?? '', '<b>ส่งให้ลูกค้าแล้ว</b>')
+            && str_contains($r['text'] ?? '', 'Boss &lt;1&gt;'));
     }
 
     public function test_dv_appends_pending_manual_note_for_shortage(): void

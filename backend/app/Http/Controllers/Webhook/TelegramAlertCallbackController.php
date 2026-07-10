@@ -101,7 +101,7 @@ class TelegramAlertCallbackController extends Controller
         // เคส fraud กดครั้งแรก: แค่แก้ปุ่มให้ยืนยันชั้นสอง ยังไม่ทำงาน
         if ($act === 'pa') {
             $this->alertBot->editMessageText($token, $chatId, $messageId,
-                "⚠️ ยืนยันทั้งที่สลิปน่าสงสัย?\nกดปุ่มด้านล่างอีกครั้งเพื่อยืนยันจริง",
+                "⚠️ <b>ยืนยันทั้งที่สลิปน่าสงสัย?</b>\nกดปุ่มด้านล่างอีกครั้งเพื่อยืนยันจริง",
                 [[['text' => '❗ กดอีกครั้งเพื่อยืนยันจริง', 'callback_data' => "pc|{$convId}|{$amt}"]]],
             );
             $this->alertBot->answerCallbackQuery($token, $cbId, 'กดอีกครั้งเพื่อยืนยัน');
@@ -119,11 +119,11 @@ class TelegramAlertCallbackController extends Controller
         try {
             $this->confirmService->confirm($bot, $conversation, $amount, $bot->user_id);
             $this->alertBot->editMessageText($token, $chatId, $messageId,
-                "✅ ยืนยันรับเงินแล้ว โดย {$fromName}");
+                '✅ <b>ยืนยันรับเงินแล้ว</b> โดย '.TelegramAlertBotService::esc($fromName));
             $this->alertBot->answerCallbackQuery($token, $cbId, 'ยืนยันรับเงินแล้ว');
         } catch (RecentManualConfirmException $e) {
             $this->alertBot->editMessageText($token, $chatId, $messageId,
-                '✅ ยืนยันไปแล้ว (โดยคนอื่นหรือทางเว็บ)');
+                '✅ <b>ยืนยันไปแล้ว</b> (โดยคนอื่นหรือทางเว็บ)');
             $this->alertBot->answerCallbackQuery($token, $cbId, 'ยืนยันไปแล้ว');
         } catch (NoPendingPaymentException $e) {
             $this->alertBot->answerCallbackQuery($token, $cbId, 'หายอดออเดอร์ไม่พบ กรุณายืนยันในเว็บ');
@@ -179,7 +179,7 @@ class TelegramAlertCallbackController extends Controller
         // ยกเลิกขั้นแรก: แค่เปลี่ยนปุ่มเป็นยืนยันชั้นสอง (pattern เดียวกับ pa)
         if ($act === 'dx') {
             $this->alertBot->editMessageText($token, $chatId, $messageId,
-                "⚠️ ยืนยันยกเลิก คืนของเข้า stock? (งาน #{$delivery->id})\nกดปุ่มด้านล่างอีกครั้งเพื่อยืนยันจริง",
+                "⚠️ <b>ยืนยันยกเลิก คืนของเข้า stock?</b> · งาน #{$delivery->id}\nกดปุ่มด้านล่างอีกครั้งเพื่อยืนยันจริง",
                 [[['text' => '❗ กดอีกครั้งเพื่อคืนของเข้า stock', 'callback_data' => "dz|{$delivery->id}|x"]]],
             );
             $this->alertBot->answerCallbackQuery($token, $cbId, 'กดอีกครั้งเพื่อยืนยัน');
@@ -191,19 +191,19 @@ class TelegramAlertCallbackController extends Controller
             if ($act === 'dz') {
                 $this->deliveryService->cancel($delivery, $fromName);
                 $this->alertBot->editMessageText($token, $chatId, $messageId,
-                    "↩️ คืนของเข้า stock แล้ว โดย {$fromName} (งาน #{$delivery->id})");
+                    '↩️ <b>คืนของเข้า stock แล้ว</b> โดย '.TelegramAlertBotService::esc($fromName)." · งาน #{$delivery->id}");
                 $this->alertBot->answerCallbackQuery($token, $cbId, 'คืนของแล้ว');
             } else { // dv
                 $this->deliveryService->deliver($delivery, $fromName);
                 // ต่อท้ายคำเตือน shortage/unmapped ไม่ให้หายตอนแทนที่การ์ด (ลูกค้าจ่ายครบแต่ได้ไม่ครบ)
                 $note = $this->deliveryService->pendingManualNote($delivery);
                 $this->alertBot->editMessageText($token, $chatId, $messageId,
-                    "✅ ส่งให้ลูกค้าแล้ว โดย {$fromName} (งาน #{$delivery->id})".$note);
+                    '✅ <b>ส่งให้ลูกค้าแล้ว</b> โดย '.TelegramAlertBotService::esc($fromName)." · งาน #{$delivery->id}".$note);
                 $this->alertBot->answerCallbackQuery($token, $cbId, 'ส่งแล้ว');
             }
         } catch (DeliveryAlreadyHandledException $e) {
             $this->alertBot->editMessageText($token, $chatId, $messageId,
-                "✅ งาน #{$delivery->id} ถูกจัดการไปแล้ว (สถานะ: {$delivery->fresh()->status})");
+                "✅ งาน #{$delivery->id} ถูกจัดการไปแล้ว (สถานะ: ".TelegramAlertBotService::esc($delivery->fresh()->status).')');
             $this->alertBot->answerCallbackQuery($token, $cbId, 'จัดการไปแล้ว');
         } catch (\Throwable $e) {
             Log::error('Delivery callback action failed', [
