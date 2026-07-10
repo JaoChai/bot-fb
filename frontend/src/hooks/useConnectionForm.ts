@@ -13,6 +13,7 @@ export interface ConnectionFormData {
   telegram_bot_token: string;
   webhook_forwarder_enabled: boolean;
   auto_handover: boolean;
+  auto_delivery_enabled: boolean;
 }
 
 const DEFAULT_FORM_DATA: ConnectionFormData = {
@@ -26,6 +27,7 @@ const DEFAULT_FORM_DATA: ConnectionFormData = {
   telegram_bot_token: '',
   webhook_forwarder_enabled: false,
   auto_handover: false,
+  auto_delivery_enabled: false,
 };
 
 export function useConnectionForm() {
@@ -57,6 +59,7 @@ export function useConnectionForm() {
         telegram_bot_token: '',
         webhook_forwarder_enabled: existingBot.webhook_forwarder_enabled || false,
         auto_handover: existingBot.auto_handover || false,
+        auto_delivery_enabled: existingBot.auto_delivery_enabled || false,
       });
     }
   }, [existingBot]);

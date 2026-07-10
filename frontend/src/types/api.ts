@@ -63,6 +63,7 @@ export interface Bot {
   webhook_url: string;
   webhook_forwarder_enabled: boolean;
   auto_handover: boolean;
+  auto_delivery_enabled: boolean;
   // Multi-model LLM configuration (API key now in User Settings)
   primary_chat_model: string | null;
   fallback_chat_model: string | null;
@@ -102,6 +103,7 @@ export interface CreateConnectionData {
   channel_secret?: string;
   webhook_forwarder_enabled?: boolean;
   auto_handover?: boolean;
+  auto_delivery_enabled?: boolean;
 }
 
 // Connection/Bot update data (API key now in User Settings)
@@ -115,6 +117,7 @@ export interface UpdateConnectionData {
   channel_secret?: string;
   webhook_forwarder_enabled?: boolean;
   auto_handover?: boolean;
+  auto_delivery_enabled?: boolean;
 }
 
 // Bot Settings Types
