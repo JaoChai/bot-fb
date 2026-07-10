@@ -14,6 +14,9 @@ use Illuminate\Support\Collection;
  */
 class ProductMapper
 {
+    // term ที่สั้นกว่านี้ (เช่น "bm","nl") match substring กว้างเกิน เสี่ยงจับผิด product — ข้าม
+    private const MIN_TERM_LEN = 3;
+
     /** @var Collection<int, ProductStock>|null */
     private $products = null;
 
@@ -30,7 +33,10 @@ class ProductMapper
             $terms = array_merge([$product->name], $product->aliases ?? []);
             foreach ($terms as $term) {
                 $term = mb_strtolower(trim((string) $term));
-                if ($term !== '' && mb_strpos($needle, $term) !== false) {
+                if (mb_strlen($term) < self::MIN_TERM_LEN) {
+                    continue;
+                }
+                if (mb_strpos($needle, $term) !== false) {
                     $candidates[] = ['len' => mb_strlen($term), 'product' => $product];
                 }
             }
@@ -41,6 +47,16 @@ class ProductMapper
         }
 
         usort($candidates, fn ($a, $b) => $b['len'] <=> $a['len']);
+
+        // ถ้า match ยาวสุดเสมอกันหลาย product = กำกวม → ไม่เดา ให้ส่งเอง (unmapped)
+        $maxLen = $candidates[0]['len'];
+        $topProductIds = array_unique(array_map(
+            fn ($c) => $c['product']->id,
+            array_filter($candidates, fn ($c) => $c['len'] === $maxLen),
+        ));
+        if (count($topProductIds) > 1) {
+            return null;
+        }
 
         return $candidates[0]['product'];
     }
