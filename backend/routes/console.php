@@ -74,3 +74,6 @@ Schedule::command('idempotency:clean')
 
 // Ping database every 4 minutes to prevent Neon cold starts
 Schedule::command('db:ping')->everyFourMinutes();
+
+// Auto Account Delivery — เตือนงานค้างกดยืนยัน
+Schedule::command('delivery:remind')->everyThirtyMinutes();
