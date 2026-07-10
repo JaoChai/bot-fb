@@ -2,6 +2,7 @@
 
 namespace App\Services\Delivery;
 
+use App\Exceptions\DeliveryAlreadyHandledException;
 use App\Models\AccountDelivery;
 use App\Models\AccountDeliveryItem;
 use App\Models\Bot;
@@ -10,6 +11,7 @@ use App\Models\FlowPlugin;
 use App\Services\LINEService;
 use App\Services\Payment\TelegramAlertBotService;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -177,5 +179,129 @@ class AccountDeliveryService
             ->where('type', 'telegram')
             ->where('enabled', true)
             ->first();
+    }
+
+    /**
+     * ส่งของให้ลูกค้า (เรียกตอนเจ้าของกดปุ่ม ✅ ใน Telegram)
+     * ลำดับ: lock สถานะ → push LINE → ย้ายเข้า items_sold → บันทึกประวัติ
+     * push พังของยังอยู่ reserved กดใหม่ได้; markSold พังหลัง push = log error ให้ reconcile เจอ
+     *
+     * @throws DeliveryAlreadyHandledException สถานะไม่ใช่ reserved (กดซ้ำ/ยกเลิกแล้ว)
+     */
+    public function deliver(AccountDelivery $delivery, string $confirmedByName): void
+    {
+        // จองสิทธิ์ส่ง: reserved → delivering ใน transaction เดียว กันกดพร้อมกัน
+        $delivery = DB::transaction(function () use ($delivery) {
+            $locked = AccountDelivery::whereKey($delivery->id)->lockForUpdate()->firstOrFail();
+            if ($locked->status !== AccountDelivery::STATUS_RESERVED) {
+                throw new DeliveryAlreadyHandledException($locked->status);
+            }
+            $locked->update(['status' => AccountDelivery::STATUS_DELIVERING]);
+
+            return $locked;
+        });
+
+        try {
+            $stockItems = $delivery->items()
+                ->where('kind', AccountDeliveryItem::KIND_STOCK)
+                ->where('status', AccountDeliveryItem::ST_RESERVED)
+                ->get();
+            $supportItems = $delivery->items()
+                ->where('kind', AccountDeliveryItem::KIND_SUPPORT_LINK)
+                ->where('status', AccountDeliveryItem::ST_RESERVED)
+                ->get();
+
+            $reservedRows = $this->pool->getReserved($stockItems->pluck('stock_item_id')->all());
+            foreach ($stockItems as $item) {
+                if (! isset($reservedRows[$item->stock_item_id])) {
+                    throw new \RuntimeException("reserved row missing: #{$item->stock_item_id}");
+                }
+            }
+
+            $texts = $this->buildCustomerMessages($stockItems, $supportItems, $reservedRows);
+            $this->pushTextsToLine($delivery, $texts);
+        } catch (\Throwable $e) {
+            $delivery->update(['status' => AccountDelivery::STATUS_RESERVED]);
+            throw $e;
+        }
+
+        // ลูกค้าได้ของแล้ว — จากนี้ห้าม throw กลับไปเป็น "ยังไม่ส่ง"
+        try {
+            $this->pool->markSold($stockItems->pluck('stock_item_id')->all(), $confirmedByName, 'bot-fb');
+        } catch (\Throwable $e) {
+            Log::error('Delivery: markSold failed AFTER customer push — reconcile will flag', [
+                'delivery_id' => $delivery->id, 'error' => $e->getMessage(),
+            ]);
+        }
+
+        $delivery->update([
+            'status' => AccountDelivery::STATUS_DELIVERED,
+            'confirmed_by' => $confirmedByName,
+            'delivered_at' => now(),
+        ]);
+        $delivery->items()
+            ->where('status', AccountDeliveryItem::ST_RESERVED)
+            ->update(['status' => AccountDeliveryItem::ST_DELIVERED]);
+
+        $this->recordConversationMessage($delivery, $texts);
+    }
+
+    /** @return array<int, string> ข้อความที่จะส่งให้ลูกค้า (เรียงตามลำดับ) */
+    private function buildCustomerMessages($stockItems, $supportItems, array $reservedRows): array
+    {
+        $texts = [];
+        $n = $stockItems->count();
+        foreach ($stockItems->values() as $i => $item) {
+            $detail = $reservedRows[$item->stock_item_id]['detail'];
+            $no = $i + 1;
+            $texts[] = "✅ {$item->product_name} ({$no}/{$n})\n{$detail}";
+        }
+        if ($supportItems->isNotEmpty()) {
+            $texts[] = (string) config('delivery.support_link_template');
+        }
+
+        return $texts;
+    }
+
+    /** push เป็น text ล้วน (ห้ามผ่าน LLM/Flex) — LINE จำกัด 5 ข้อความต่อ push */
+    private function pushTextsToLine(AccountDelivery $delivery, array $texts): void
+    {
+        $conversation = $delivery->conversation;
+        $externalId = $conversation?->external_customer_id;
+        if ($conversation?->channel_type !== 'line' || ! $externalId) {
+            throw new \RuntimeException('delivery target is not a LINE conversation');
+        }
+        if ($texts === []) {
+            throw new \RuntimeException('nothing to deliver');
+        }
+
+        foreach (array_chunk($texts, 5) as $chunk) {
+            $messages = array_map(fn (string $t) => ['type' => 'text', 'text' => $t], $chunk);
+            $this->line->replyWithFallback(
+                $delivery->bot, null, $externalId, $messages, $this->line->generateRetryKey(),
+            );
+        }
+    }
+
+    /** บันทึกสิ่งที่ส่งเข้าประวัติแชท (บอท/หน้าเว็บเห็นว่าส่งอะไรไปแล้ว) — best effort */
+    private function recordConversationMessage(AccountDelivery $delivery, array $texts): void
+    {
+        try {
+            $delivery->conversation?->messages()->create([
+                'sender' => 'bot',
+                'type' => 'text',
+                'content' => implode("\n\n", $texts),
+                'metadata' => [
+                    'account_delivery' => true,
+                    'delivery_id' => $delivery->id,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            // ห้าม log $e->getMessage() ตรงนี้ — content ที่ insert มี credential ดิบ
+            // ถ้า insert พังเป็น QueryException, Laravel จะฝัง bindings (credential) ลงใน message
+            Log::error('Delivery: failed to record conversation message', [
+                'delivery_id' => $delivery->id, 'exception' => $e::class,
+            ]);
+        }
     }
 }
