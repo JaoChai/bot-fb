@@ -220,6 +220,30 @@ class AccountDeliveryCreateTest extends TestCase
         $this->assertDatabaseCount('account_deliveries', 0);
     }
 
+    public function test_card_uses_html_formatting_and_escapes_names(): void
+    {
+        $this->seedAvailable(10, 'NLMP');
+        $customer = \App\Models\CustomerProfile::factory()->create([
+            'display_name' => 'ลูกค้า <x&y>',
+        ]);
+        $this->conversation->update(['customer_profile_id' => $customer->id]);
+
+        $this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1,299 บาท']]);
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'sendMessage')) {
+                return false;
+            }
+            $text = $request['text'] ?? '';
+
+            return str_contains($text, '<b>พร้อมส่งสินค้า</b>')
+                && str_contains($text, 'ลูกค้า &lt;x&amp;y&gt;')       // escape แล้ว
+                && str_contains($text, '<code>1,299</code>')
+                && str_contains($text, '<blockquote>')
+                && str_contains($text, '</blockquote>');
+        });
+    }
+
     private function countAvailable(string $code): int
     {
         return DB::connection('mhha_acc')->table('items_available')->where('name', $code)->count();
