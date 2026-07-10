@@ -409,7 +409,7 @@ PROMPT,
             $grouped[$label] = ($grouped[$label] ?? 0) + $item['quantity'];
         }
 
-        $lines = ['', '📦 รายการสินค้า'];
+        $lines = ['', '<b>📦 รายการสินค้า</b>'];
         foreach ($grouped as $label => $qty) {
             $safe = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
             $lines[] = "• {$safe} ×{$qty}";

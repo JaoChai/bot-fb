@@ -91,10 +91,11 @@ class ReconcileDeliveries extends Command
             return;
         }
 
+        $escaped = array_map(fn ($p) => TelegramAlertBotService::esc($p), $problems);
         $alertBot->sendMessage(
             $plugin->config['access_token'] ?? '',
             (string) ($plugin->config['chat_id'] ?? ''),
-            "🧯 ตรวจพบของค้างในระบบส่งบัญชี:\n".implode("\n", $problems)."\nรบกวนเช็คใน DB/แจ้งทีม dev",
+            "🧯 <b>ตรวจพบของค้างในระบบส่งบัญชี</b>\n<blockquote>".implode("\n", $escaped)."</blockquote>\nรบกวนเช็คใน DB/แจ้งทีม dev",
         );
     }
 
