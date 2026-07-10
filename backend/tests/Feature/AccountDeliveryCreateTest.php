@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AccountDelivery;
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\CustomerProfile;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\ProductStock;
@@ -223,7 +224,7 @@ class AccountDeliveryCreateTest extends TestCase
     public function test_card_uses_html_formatting_and_escapes_names(): void
     {
         $this->seedAvailable(10, 'NLMP');
-        $customer = \App\Models\CustomerProfile::factory()->create([
+        $customer = CustomerProfile::factory()->create([
             'display_name' => 'ลูกค้า <x&y>',
         ]);
         $this->conversation->update(['customer_profile_id' => $customer->id]);
