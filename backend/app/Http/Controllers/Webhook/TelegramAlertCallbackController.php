@@ -52,6 +52,17 @@ class TelegramAlertCallbackController extends Controller
             return response()->json(['ok' => true]);
         }
 
+        // ถ้าตั้ง allowlist ไว้ เฉพาะ user id ที่อนุญาตเท่านั้นที่กดยืนยันรับเงิน/ส่งของได้
+        // (กันคนอื่นในกลุ่ม Telegram สั่ง deliver credential) — ไม่ตั้ง = อนุญาตทุกคนในแชท
+        if (! $this->isAuthorizedUser($plugin, $cb)) {
+            Log::warning('Telegram alert callback: unauthorized user', [
+                'plugin_id' => $plugin->id, 'from_id' => $cb['from']['id'] ?? null,
+            ]);
+            $this->alertBot->answerCallbackQuery($token, $cb['id'] ?? '', 'ไม่มีสิทธิ์กดยืนยัน');
+
+            return response()->json(['ok' => true]);
+        }
+
         $parts = explode('|', (string) ($cb['data'] ?? ''));
         if (count($parts) !== 3) {
             return response()->json(['ok' => true]);
@@ -122,6 +133,21 @@ class TelegramAlertCallbackController extends Controller
         }
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * user ที่กดปุ่มได้รับอนุญาตไหม — config['authorized_user_ids'] ว่าง/ไม่ตั้ง = อนุญาตทุกคน
+     * (backward-compat) ถ้าตั้งแล้วต้องเป็น Telegram from.id ที่อยู่ใน allowlist
+     */
+    private function isAuthorizedUser(FlowPlugin $plugin, array $cb): bool
+    {
+        $allow = $plugin->config['authorized_user_ids'] ?? [];
+        if (! is_array($allow) || $allow === []) {
+            return true;
+        }
+        $fromId = (string) ($cb['from']['id'] ?? '');
+
+        return $fromId !== '' && in_array($fromId, array_map('strval', $allow), true);
     }
 
     private function handleDeliveryAction(
