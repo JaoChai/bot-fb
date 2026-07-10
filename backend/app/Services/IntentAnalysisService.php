@@ -405,21 +405,11 @@ PROMPT;
 
     /**
      * Get the fallback decision model for a bot.
+     * Comes ONLY from the Connection Settings form — empty means no fallback.
      */
     protected function getFallbackDecisionModelForBot(Bot $bot): ?string
     {
-        // Priority 1: Bot-specific fallback decision model
-        if ($bot->fallback_decision_model) {
-            return $bot->fallback_decision_model;
-        }
-
-        // Priority 2: Fall back to fallback chat model
-        if ($bot->fallback_chat_model) {
-            return $bot->fallback_chat_model;
-        }
-
-        // Priority 3: Bot legacy fallback
-        return $bot->llm_fallback_model;
+        return $bot->fallback_decision_model;
     }
 
     /**

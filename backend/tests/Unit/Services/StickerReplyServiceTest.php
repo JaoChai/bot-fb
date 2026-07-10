@@ -26,8 +26,6 @@ class StickerReplyServiceTest extends TestCase
         config([
             'services.openrouter.api_key' => 'test-api-key',
             'services.openrouter.base_url' => 'https://openrouter.ai/api/v1',
-            'services.openrouter.default_model' => 'anthropic/claude-3.5-sonnet',
-            'services.openrouter.fallback_model' => 'openai/gpt-4o-mini',
             'services.openrouter.site_url' => 'http://localhost',
             'services.openrouter.site_name' => 'TestApp',
             'services.openrouter.timeout' => 60,

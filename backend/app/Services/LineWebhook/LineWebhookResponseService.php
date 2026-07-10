@@ -266,7 +266,6 @@ class LineWebhookResponseService
                     temperature: $ctx->bot->llm_temperature ?? 0.7,
                     maxTokens: $ctx->bot->llm_max_tokens ?? 1024,
                     apiKeyOverride: $apiKey,
-                    useFallback: (bool) $ctx->bot->fallback_chat_model,
                     fallbackModelOverride: $ctx->bot->fallback_chat_model
                 );
             }
@@ -633,7 +632,6 @@ class LineWebhookResponseService
                 temperature: 0.3,
                 maxTokens: $ctx->bot->llm_max_tokens ?? 1024,
                 apiKeyOverride: $apiKey,
-                useFallback: (bool) $ctx->bot->fallback_chat_model,
                 fallbackModelOverride: $ctx->bot->fallback_chat_model,
                 responseFormat: ['type' => 'json_schema', 'json_schema' => ['name' => 'slip_image_check', 'strict' => true, 'schema' => $schema]],
             );
