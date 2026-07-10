@@ -160,7 +160,7 @@ class ReconcileDeliveriesTest extends TestCase
     {
         // ของหลุดอยู่ใน items_reserved ตั้งแต่ก่อนเคยมีงานส่งของเลยสักงาน
         $this->insertReserved(88, StockPoolService::orderRef(9999));
-        config(['delivery.bot_ids' => [$this->bot->id]]);
+        $this->bot->update(['auto_delivery_enabled' => true]);
 
         // ไม่มี AccountDelivery แม้แต่แถวเดียว
         $this->assertSame(0, AccountDelivery::count());
