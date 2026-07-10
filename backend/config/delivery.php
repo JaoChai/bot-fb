@@ -4,12 +4,6 @@
 return [
     'enabled' => (bool) env('ACCOUNT_DELIVERY_ENABLED', false),
 
-    // จำกัดเฉพาะ bot ที่เปิดใช้ (คั่นด้วย comma เช่น "26")
-    'bot_ids' => array_values(array_filter(array_map(
-        'intval',
-        explode(',', (string) env('ACCOUNT_DELIVERY_BOT_IDS', '')),
-    ))),
-
     'remind_after_minutes' => (int) env('ACCOUNT_DELIVERY_REMIND_MINUTES', 30),
 
     // กันขายซ้ำข้าม dispatch path (EasySlip auto-pass vs manual confirm): บล็อกงานส่งยอดเดียวกัน

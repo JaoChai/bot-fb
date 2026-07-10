@@ -26,7 +26,6 @@ class StockPoolConnectionTest extends TestCase
     public function test_delivery_config_has_defaults(): void
     {
         $this->assertFalse(config('delivery.enabled'));
-        $this->assertIsArray(config('delivery.bot_ids'));
         $this->assertStringContainsString('lin.ee/sTD5TQL', config('delivery.support_link_template'));
     }
 }

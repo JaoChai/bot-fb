@@ -203,6 +203,7 @@ class AccountDeliveryCreateTest extends TestCase
         config(['delivery.enabled' => false]);
         $this->assertNull($this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1100']]));
 
+        config(['delivery.enabled' => true]);
         $this->bot->update(['auto_delivery_enabled' => false]);
         $this->bot = $this->bot->fresh();
         $this->assertNull($this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1100']]));
