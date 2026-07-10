@@ -33,9 +33,21 @@ class PaymentMessageDetector
             return null;
         }
 
-        $total = $totalMatch[1];
+        return [
+            'items' => $this->parseItems($text),
+            'total' => $totalMatch[1],
+        ];
+    }
 
-        // Parse items (optional)
+    /**
+     * Parse item lines from an order summary (shared by parsePaymentData/parseConfirmData).
+     *
+     * Primary: bulleted lines ("1. name (price x qty) = total บาท", "- name total บาท").
+     * Fallback: non-bulleted lines anchored on "= total บาท" — LLMs don't always follow
+     * the bullet format in the prompt (format drift when the chat model changes).
+     */
+    private function parseItems(string $text): array
+    {
         $items = [];
         preg_match_all(
             '/(?:^|\n)\s*(?:\d+[\.\)]\s*|[-•]\s*)(.+?)\s*(?:\(([\d,]+)\s*[x×]\s*(\d+)\)\s*=\s*)?([\d,]+)\s*บาท/u',
@@ -45,23 +57,50 @@ class PaymentMessageDetector
         );
 
         foreach ($itemMatches as $match) {
-            $item = [
-                'name' => trim($match[1]),
-                'total' => $match[4],
-            ];
-
-            if (! empty($match[2]) && ! empty($match[3])) {
-                $item['price'] = $match[2];
-                $item['qty'] = (int) $match[3];
-            }
-
-            $items[] = $item;
+            $this->pushItem($items, trim($match[1]), $match[4], $match[2] ?? '', $match[3] ?? '');
         }
 
-        return [
-            'items' => $items,
-            'total' => $total,
-        ];
+        if ($items !== []) {
+            return $items;
+        }
+
+        // Fallback: "name [qty ตัว x price] = total บาท" without bullets.
+        // Requires "=" so total/bank lines never match; excludes total/discount/fee lines.
+        // Known limitation: matches at most one item per line (fine — one item per line
+        // is the only shape the bot produces).
+        preg_match_all(
+            '/^(?!\s*(?:รวม|สรุป|ยอด|ส่วนลด|ค่าธรรมเนียม))\s*(.+?)\s*(?:(\d+)\s*(?:ตัว|ชิ้น|อัน)\s*[x×]\s*([\d,]+))?\s*=\s*([\d,]+)\s*บาท/mu',
+            $text,
+            $itemMatches,
+            PREG_SET_ORDER
+        );
+
+        foreach ($itemMatches as $match) {
+            // Strip a trailing numeric "(price x qty)" group the primary regex would
+            // have consumed, but keep variant parens like "(ผูกบัตร)".
+            $name = trim(preg_replace('/\s*\([\d,.\s x×]+\)$/u', '', $match[1]));
+
+            // Note: qty comes before price here ("2 ตัว x 800"), reversed from the primary format
+            $this->pushItem($items, $name, $match[4], $match[3] ?? '', $match[2] ?? '');
+        }
+
+        return $items;
+    }
+
+    private function pushItem(array &$items, string $name, string $total, string $price, string $qty): void
+    {
+        if ($name === '') {
+            return;
+        }
+
+        $item = ['name' => $name, 'total' => $total];
+
+        if ($price !== '' && $qty !== '') {
+            $item['price'] = $price;
+            $item['qty'] = (int) $qty;
+        }
+
+        $items[] = $item;
     }
 
     /**
@@ -130,34 +169,9 @@ class PaymentMessageDetector
             return null;
         }
 
-        $total = $totalMatch[1];
-
-        // Parse items (optional) — reuse same regex as parsePaymentData
-        $items = [];
-        preg_match_all(
-            '/(?:^|\n)\s*(?:\d+[\.\)]\s*|[-•]\s*)(.+?)\s*(?:\(([\d,]+)\s*[x×]\s*(\d+)\)\s*=\s*)?([\d,]+)\s*บาท/u',
-            $text,
-            $itemMatches,
-            PREG_SET_ORDER
-        );
-
-        foreach ($itemMatches as $match) {
-            $item = [
-                'name' => trim($match[1]),
-                'total' => $match[4],
-            ];
-
-            if (! empty($match[2]) && ! empty($match[3])) {
-                $item['price'] = $match[2];
-                $item['qty'] = (int) $match[3];
-            }
-
-            $items[] = $item;
-        }
-
         return [
-            'items' => $items,
-            'total' => $total,
+            'items' => $this->parseItems($text),
+            'total' => $totalMatch[1],
         ];
     }
 

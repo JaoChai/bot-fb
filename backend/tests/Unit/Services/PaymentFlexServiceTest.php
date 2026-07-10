@@ -125,6 +125,76 @@ class PaymentFlexServiceTest extends TestCase
     }
 
     #[Test]
+    public function test_parses_items_without_bullets(): void
+    {
+        // Format drift 2026-07-10: gpt-5.6-luna เขียนรายการโดยไม่มี bullet นำหน้า
+        // (ข้อความจริงจากแชท — ทำให้ order summary กลายเป็น "-")
+        $text = <<<'TEXT'
+        สรุปรายการที่พี่สั่งซื้อครับ:
+
+        Nolimit Level Up+ Personal (ผูกบัตร) 1 ตัว x 1,100 = 1,100 บาท
+        บริการเสริม Page = 0 บาท
+
+        รวมยอดโอน: 1,100 บาท ✅
+
+        รบกวนโอนเข้าบัญชี:
+        ธนาคารกสิกรไทย (KBANK)
+        223-3-24880-3
+        TEXT;
+
+        $data = $this->service->parsePaymentData($text);
+
+        $this->assertNotNull($data);
+        $this->assertEquals('1,100', $data['total']);
+        $this->assertCount(2, $data['items']);
+
+        $this->assertEquals('Nolimit Level Up+ Personal (ผูกบัตร)', $data['items'][0]['name']);
+        $this->assertEquals('1,100', $data['items'][0]['total']);
+        $this->assertEquals('1,100', $data['items'][0]['price']);
+        $this->assertEquals(1, $data['items'][0]['qty']);
+
+        $this->assertEquals('บริการเสริม Page', $data['items'][1]['name']);
+        $this->assertEquals('0', $data['items'][1]['total']);
+    }
+
+    #[Test]
+    public function test_fallback_skips_discount_and_fee_lines(): void
+    {
+        $text = <<<'TEXT'
+        Nolimit Level Up+ BM 1 ตัว x 800 = 800 บาท
+        ส่วนลด = 100 บาท
+        ค่าธรรมเนียม = 0 บาท
+
+        รวมยอดโอน: 700 บาท
+        223-3-24880-3
+        TEXT;
+
+        $data = $this->service->parsePaymentData($text);
+
+        $this->assertNotNull($data);
+        $this->assertCount(1, $data['items']);
+        $this->assertEquals('Nolimit Level Up+ BM', $data['items'][0]['name']);
+    }
+
+    #[Test]
+    public function test_bulleted_items_take_priority_over_fallback(): void
+    {
+        $text = <<<'TEXT'
+        1. Nolimit Level Up+ BM (800 x 2) = 1,600 บาท
+
+        รวมยอดโอน: 1,600 บาท
+        223-3-24880-3
+        TEXT;
+
+        $data = $this->service->parsePaymentData($text);
+
+        $this->assertNotNull($data);
+        $this->assertCount(1, $data['items']);
+        $this->assertEquals('Nolimit Level Up+ BM', $data['items'][0]['name']);
+        $this->assertEquals(2, $data['items'][0]['qty']);
+    }
+
+    #[Test]
     public function test_parses_total_amount_variants(): void
     {
         // "รวมยอดโอน" variant
@@ -344,6 +414,27 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals(2, $data['items'][0]['qty']);
         $this->assertEquals('Nolimit Level Up+ Personal', $data['items'][1]['name']);
         $this->assertEquals('900', $data['items'][1]['total']);
+    }
+
+    #[Test]
+    public function test_parses_confirm_data_items_without_bullets(): void
+    {
+        $text = <<<'TEXT'
+        สรุปรายการครับ:
+        Nolimit Level Up+ BM 2 ตัว x 800 = 1,600 บาท
+
+        รวมทั้งหมด: 1,600 บาท
+        กรุณาพิมพ์ ยืนยัน
+        TEXT;
+
+        $data = $this->service->parseConfirmData($text);
+
+        $this->assertNotNull($data);
+        $this->assertEquals('1,600', $data['total']);
+        $this->assertCount(1, $data['items']);
+        $this->assertEquals('Nolimit Level Up+ BM', $data['items'][0]['name']);
+        $this->assertEquals('800', $data['items'][0]['price']);
+        $this->assertEquals(2, $data['items'][0]['qty']);
     }
 
     #[Test]

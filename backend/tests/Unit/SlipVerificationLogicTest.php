@@ -55,6 +55,21 @@ class SlipVerificationLogicTest extends TestCase
         $this->assertSame('Nolimit BM', $result['summary']);
     }
 
+    public function test_finds_summary_when_items_have_no_bullets(): void
+    {
+        // Format drift 2026-07-10: โมเดลใหม่ไม่ใส่ bullet → summary เคยกลายเป็น "-"
+        $history = [
+            ['sender' => 'bot', 'content' => "สรุปรายการที่พี่สั่งซื้อครับ:\n\nNolimit Level Up+ Personal (ผูกบัตร) 1 ตัว x 1,100 = 1,100 บาท\nบริการเสริม Page = 0 บาท\n\nรวมยอดโอน: 1,100 บาท ✅\n\nรบกวนโอนเข้าบัญชี:\nธนาคารกสิกรไทย (KBANK)\n223-3-24880-3"],
+            ['sender' => 'user', 'content' => '[รูปภาพ]'],
+        ];
+
+        $result = $this->service()->findExpectedPayment($history);
+
+        $this->assertNotNull($result);
+        $this->assertSame(1100.0, $result['total']);
+        $this->assertSame('Nolimit Level Up+ Personal (ผูกบัตร), บริการเสริม Page', $result['summary']);
+    }
+
     public function test_no_payment_message_returns_null(): void
     {
         $history = [
