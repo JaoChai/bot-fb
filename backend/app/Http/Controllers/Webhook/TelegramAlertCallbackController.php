@@ -169,8 +169,10 @@ class TelegramAlertCallbackController extends Controller
                 $this->alertBot->answerCallbackQuery($token, $cbId, 'คืนของแล้ว');
             } else { // dv
                 $this->deliveryService->deliver($delivery, $fromName);
+                // ต่อท้ายคำเตือน shortage/unmapped ไม่ให้หายตอนแทนที่การ์ด (ลูกค้าจ่ายครบแต่ได้ไม่ครบ)
+                $note = $this->deliveryService->pendingManualNote($delivery);
                 $this->alertBot->editMessageText($token, $chatId, $messageId,
-                    "✅ ส่งให้ลูกค้าแล้ว โดย {$fromName} (งาน #{$delivery->id})");
+                    "✅ ส่งให้ลูกค้าแล้ว โดย {$fromName} (งาน #{$delivery->id})".$note);
                 $this->alertBot->answerCallbackQuery($token, $cbId, 'ส่งแล้ว');
             }
         } catch (DeliveryAlreadyHandledException $e) {

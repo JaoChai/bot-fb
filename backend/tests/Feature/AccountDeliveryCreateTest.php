@@ -109,6 +109,19 @@ class AccountDeliveryCreateTest extends TestCase
         $this->assertSame(1, $delivery->items()->where('status', 'unmapped')->count());
     }
 
+    public function test_qty_is_capped_to_max(): void
+    {
+        config(['delivery.max_qty' => 20]);
+        $this->seedAvailable(10, 'NLMP');
+        $this->seedAvailable(11, 'NLMP');
+
+        // summary เพี้ยนสั่ง 999 — ต้องจองไม่เกินเพดาน 20 (2 reserved + 18 shortage)
+        $delivery = $this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '999999', 'qty' => 999]]);
+
+        $this->assertSame(20, $delivery->items()->count());
+        $this->assertSame(2, DB::connection('mhha_acc')->table('items_reserved')->count());
+    }
+
     public function test_nothing_deliverable_marks_failed(): void
     {
         $delivery = $this->create([['name' => 'ของประหลาด', 'total' => '100']]);
