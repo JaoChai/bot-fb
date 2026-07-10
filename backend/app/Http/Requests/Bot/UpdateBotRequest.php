@@ -27,13 +27,6 @@ class UpdateBotRequest extends FormRequest
             // Multi-model LLM configuration (API key now in User Settings)
             'primary_chat_model' => ['nullable', 'string', 'max:100'],
             'fallback_chat_model' => ['nullable', 'string', 'max:100'],
-            'decision_model' => ['nullable', 'string', 'max:100'],
-            'fallback_decision_model' => ['nullable', 'string', 'max:100'],
-
-            // Smart Routing (Confidence Cascade)
-            'use_confidence_cascade' => ['sometimes', 'boolean'],
-            'cascade_cheap_model' => ['nullable', 'string', 'max:100'],
-            'cascade_expensive_model' => ['nullable', 'string', 'max:100'],
 
             // Webhook forwarder
             'webhook_forwarder_enabled' => ['sometimes', 'boolean'],
