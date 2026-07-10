@@ -41,7 +41,7 @@ class AccountDeliveryService
         ?float $amount,
         array $items,
     ): ?AccountDelivery {
-        if (! config('delivery.enabled') || ! in_array($bot->id, config('delivery.bot_ids'), true)) {
+        if (! config('delivery.enabled') || ! $bot->auto_delivery_enabled) {
             return null;
         }
 

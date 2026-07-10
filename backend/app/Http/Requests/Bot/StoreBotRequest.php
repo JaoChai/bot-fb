@@ -32,6 +32,9 @@ class StoreBotRequest extends FormRequest
             // Auto handover
             'auto_handover' => ['nullable', 'boolean'],
 
+            // Auto account delivery
+            'auto_delivery_enabled' => ['nullable', 'boolean'],
+
             // Support nested api_keys format
             'api_keys' => ['nullable', 'array'],
             'api_keys.channel_access_token' => ['nullable', 'string'],

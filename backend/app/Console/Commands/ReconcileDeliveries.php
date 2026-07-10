@@ -79,7 +79,7 @@ class ReconcileDeliveries extends Command
         return self::SUCCESS;
     }
 
-    /** ส่งเข้า Telegram ผ่าน plugin ของงานล่าสุด — ไม่มีงานเลยก็ fallback ไปหา plugin จาก config('delivery.bot_ids') */
+    /** ส่งเข้า Telegram ผ่าน plugin ของงานล่าสุด — ไม่มีงานเลยก็ fallback ไปหา plugin จากบอทที่เปิด auto_delivery_enabled */
     private function notifyTelegram(TelegramAlertBotService $alertBot, AccountDeliveryService $deliveryService, array $problems): void
     {
         $delivery = AccountDelivery::with('bot', 'conversation')->latest('id')->first();
@@ -98,11 +98,11 @@ class ReconcileDeliveries extends Command
         );
     }
 
-    /** ไม่มีงานส่งของเลย → หา plugin จาก bot ที่เปิดใช้ delivery ใน config */
+    /** ไม่มีงานส่งของเลย → หา plugin จาก bot ที่เปิดสวิตช์ส่งของ auto */
     private function fallbackPlugin(): ?FlowPlugin
     {
-        foreach (config('delivery.bot_ids', []) as $botId) {
-            $flow = Bot::find($botId)?->defaultFlow;
+        foreach (Bot::where('auto_delivery_enabled', true)->get() as $bot) {
+            $flow = $bot->defaultFlow;
             $plugin = $flow?->plugins()->where('type', 'telegram')->where('enabled', true)->first();
             if ($plugin) {
                 return $plugin;

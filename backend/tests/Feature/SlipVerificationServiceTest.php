@@ -111,7 +111,8 @@ class SlipVerificationServiceTest extends TestCase
         // เจ้าของกดยืนยันเงินเองไปแล้ว (manual_confirmed) → EasySlip ต้องไม่ผ่านซ้ำ
         // จนเกิดออเดอร์/งานส่งของซ้ำ (สมมาตรกับ guard ฝั่ง manual)
         $conversation = Conversation::factory()->create(['bot_id' => $this->bot->id]);
-        config(['delivery.enabled' => true, 'delivery.bot_ids' => [$this->bot->id]]);
+        config(['delivery.enabled' => true]);
+        $this->bot->update(['auto_delivery_enabled' => true]);
         SlipVerification::create([
             'bot_id' => $this->bot->id, 'conversation_id' => $conversation->id,
             'amount' => 1500, 'status' => 'manual_confirmed',

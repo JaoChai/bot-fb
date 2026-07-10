@@ -249,7 +249,7 @@ class SlipVerificationService
      */
     private function recentManualConfirmExists(Conversation $conversation, Bot $bot, float $amount): bool
     {
-        if (! config('delivery.enabled') || ! in_array($bot->id, config('delivery.bot_ids', []), true)) {
+        if (! config('delivery.enabled') || ! $bot->auto_delivery_enabled) {
             return false;
         }
 

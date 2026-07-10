@@ -36,6 +36,18 @@ export function AdvancedOptionsSection({ formData, handleChange }: AdvancedOptio
             onCheckedChange={(checked) => handleChange('auto_handover', checked)}
           />
         </SettingRow>
+
+        <SettingRow
+          label="ส่งของอัตโนมัติ"
+          description="เปิด: จ่ายเงินผ่านแล้วบอทจองของ+ส่งการ์ดให้กดส่งใน Telegram · ปิด: แจ้งเตือนรับเงินปกติ แล้วส่งของเอง"
+          htmlFor="auto-delivery"
+        >
+          <Switch
+            id="auto-delivery"
+            checked={formData.auto_delivery_enabled}
+            onCheckedChange={(checked) => handleChange('auto_delivery_enabled', checked)}
+          />
+        </SettingRow>
       </div>
     </Panel>
   );

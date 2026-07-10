@@ -40,6 +40,7 @@ class Bot extends Model
         'kb_max_results',
         // Auto handover setting
         'auto_handover',
+        'auto_delivery_enabled',
         // Semantic Router settings
         'use_semantic_router',
         'semantic_router_threshold',
@@ -65,6 +66,7 @@ class Bot extends Model
         'kb_max_results' => 'integer',
         // Auto handover setting
         'auto_handover' => 'boolean',
+        'auto_delivery_enabled' => 'boolean',
         // Semantic Router settings
         'use_semantic_router' => 'boolean',
         'semantic_router_threshold' => 'float',

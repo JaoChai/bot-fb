@@ -65,7 +65,8 @@ class ReserveAccountStockDispatchTest extends TestCase
         ]);
 
         // เปิด delivery จริง (QUEUE_CONNECTION=sync → job body รันทันที) + service พังเสมอ
-        config(['delivery.enabled' => true, 'delivery.bot_ids' => [$bot->id]]);
+        config(['delivery.enabled' => true]);
+        $bot->update(['auto_delivery_enabled' => true]);
         $failing = $this->createMock(AccountDeliveryService::class);
         $failing->method('createFromPayment')->willThrowException(new \RuntimeException('mhha DB down'));
         $this->app->instance(AccountDeliveryService::class, $failing);
