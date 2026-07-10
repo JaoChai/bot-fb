@@ -13,9 +13,15 @@ class TelegramAlertBotService
 {
     private const BASE = 'https://api.telegram.org/bot';
 
+    /** escape ค่า dynamic ก่อนประกอบเข้า HTML message — ค่าที่ไม่ escape ทำให้ Telegram ปฏิเสธทั้งข้อความ */
+    public static function esc(?string $value): string
+    {
+        return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
+    }
+
     public function sendMessage(string $token, string $chatId, string $text, ?array $inlineKeyboard = null): void
     {
-        $params = ['chat_id' => $chatId, 'text' => $text];
+        $params = ['chat_id' => $chatId, 'text' => $text, 'parse_mode' => 'HTML'];
         if ($inlineKeyboard !== null) {
             $params['reply_markup'] = json_encode(['inline_keyboard' => $inlineKeyboard]);
         }
@@ -24,7 +30,7 @@ class TelegramAlertBotService
 
     public function editMessageText(string $token, string $chatId, int $messageId, string $text, ?array $inlineKeyboard = null): void
     {
-        $params = ['chat_id' => $chatId, 'message_id' => $messageId, 'text' => $text];
+        $params = ['chat_id' => $chatId, 'message_id' => $messageId, 'text' => $text, 'parse_mode' => 'HTML'];
         $params['reply_markup'] = json_encode(['inline_keyboard' => $inlineKeyboard ?? []]);
         $this->call($token, 'editMessageText', $params);
     }
