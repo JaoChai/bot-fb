@@ -97,6 +97,26 @@ class AccountDeliveryDeliverTest extends TestCase
         $this->assertTrue((bool) ($msg->metadata['account_delivery'] ?? false));
     }
 
+    public function test_recorded_chat_message_never_contains_raw_credential(): void
+    {
+        // credential ต้องไปถึง LINE เท่านั้น — ห้ามถูกเก็บใน messages.content
+        // (content ถูกดึงกลับเข้า LLM context + surface บนหน้าเว็บ)
+        $this->mock(LINEService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('generateRetryKey')->andReturn('rk');
+            $mock->shouldReceive('replyWithFallback')->once()->andReturn(['method' => 'push', 'success' => true]);
+        });
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        $msg = $this->conversation->messages()->latest('id')->first();
+        // ไม่มี credential ดิบใน content
+        $this->assertStringNotContainsString('uid10|pass10|mail|2fa', $msg->content);
+        // แต่ยัง traceable: ชื่อสินค้า + stock item id
+        $this->assertStringContainsString('Nolimit ส่วนตัว', $msg->content);
+        $this->assertStringContainsString('#10', $msg->content);
+        $this->assertTrue((bool) ($msg->metadata['account_delivery'] ?? false));
+    }
+
     public function test_deliver_twice_throws_already_handled(): void
     {
         $this->mock(LINEService::class, function (MockInterface $mock) {

@@ -243,7 +243,7 @@ class AccountDeliveryService
             ->where('status', AccountDeliveryItem::ST_RESERVED)
             ->update(['status' => AccountDeliveryItem::ST_DELIVERED]);
 
-        $this->recordConversationMessage($delivery, $texts);
+        $this->recordConversationMessage($delivery);
     }
 
     /**
@@ -344,22 +344,34 @@ class AccountDeliveryService
         return $packed;
     }
 
-    /** บันทึกสิ่งที่ส่งเข้าประวัติแชท (บอท/หน้าเว็บเห็นว่าส่งอะไรไปแล้ว) — best effort */
-    private function recordConversationMessage(AccountDelivery $delivery, array $texts): void
+    /**
+     * บันทึกสิ่งที่ส่งเข้าประวัติแชท (บอท/หน้าเว็บเห็นว่าส่งอะไรไปแล้ว) — best effort
+     * เก็บแค่ placeholder (ชื่อสินค้า + #stock_item_id) ห้ามเก็บ credential ดิบเด็ดขาด:
+     * content ถูกดึงกลับเข้า LLM context (ส่งขึ้น OpenRouter) + surface บนหน้าเว็บแชท
+     */
+    private function recordConversationMessage(AccountDelivery $delivery): void
     {
+        $lines = [];
+        foreach ($delivery->items()->where('status', AccountDeliveryItem::ST_DELIVERED)->get() as $item) {
+            $lines[] = $item->kind === AccountDeliveryItem::KIND_SUPPORT_LINK
+                ? "✅ ส่งลิงก์ Support {$item->product_name} แล้ว"
+                : "✅ ส่งบัญชี {$item->product_name} แล้ว (#{$item->stock_item_id})";
+        }
+        if ($lines === []) {
+            return;
+        }
+
         try {
             $delivery->conversation?->messages()->create([
                 'sender' => 'bot',
                 'type' => 'text',
-                'content' => implode("\n\n", $texts),
+                'content' => implode("\n", $lines),
                 'metadata' => [
                     'account_delivery' => true,
                     'delivery_id' => $delivery->id,
                 ],
             ]);
         } catch (\Throwable $e) {
-            // ห้าม log $e->getMessage() ตรงนี้ — content ที่ insert มี credential ดิบ
-            // ถ้า insert พังเป็น QueryException, Laravel จะฝัง bindings (credential) ลงใน message
             Log::error('Delivery: failed to record conversation message', [
                 'delivery_id' => $delivery->id, 'exception' => $e::class,
             ]);
