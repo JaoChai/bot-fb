@@ -2,6 +2,7 @@
 
 namespace App\Services\LineWebhook;
 
+use App\Jobs\ReserveAccountStock;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
@@ -558,6 +559,17 @@ class LineWebhookResponseService
             ]);
 
             $ctx->metadata['bot_message'] = $botMessage;
+
+            if ($result->passed && $result->slipVerificationId !== null) {
+                ReserveAccountStock::dispatch(
+                    $ctx->bot->id,
+                    $ctx->conversation->id,
+                    $result->slipVerificationId,
+                    $result->amount,
+                    $result->orderItems ?? [],
+                );
+            }
+
             $ctx->response = ResponseEnvelope::text($text);
 
             Log::info('Slip verification handled image', [

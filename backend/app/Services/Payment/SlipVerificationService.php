@@ -68,7 +68,7 @@ class SlipVerificationService
      * หาข้อความสรุปยอดโอนล่าสุดของบอทใน history แล้วคืนยอด + สรุปรายการ
      *
      * @param  array<int, array{sender: string, content: string}>  $conversationHistory
-     * @return array{total: float, summary: string}|null
+     * @return array{total: float, summary: string, items: array}|null
      */
     public function findExpectedPayment(array $conversationHistory, ?string $receiverAccount = null): ?array
     {
@@ -88,11 +88,17 @@ class SlipVerificationService
                 continue;
             }
 
-            $itemNames = array_map(fn (array $item) => rtrim(trim($item['name']), '= '), $data['items']);
+            $items = array_map(function (array $item) {
+                $item['name'] = rtrim(trim($item['name']), '= ');
+
+                return $item;
+            }, $data['items']);
+            $itemNames = array_column($items, 'name');
 
             return [
                 'total' => (float) str_replace(',', '', $data['total']),
                 'summary' => $itemNames === [] ? '-' : implode(', ', $itemNames),
+                'items' => $items,
             ];
         }
 
@@ -224,6 +230,7 @@ class SlipVerificationService
             isSlip: true, passed: true,
             amount: $slipAmount, transRef: $transRef,
             expectedAmount: $expected['total'], orderSummary: $expected['summary'],
+            orderItems: $expected['items'],
         ), $receiverAccount);
     }
 
@@ -331,7 +338,7 @@ class SlipVerificationService
         ?string $receiverAccount = null,
     ): SlipVerificationResult {
         try {
-            SlipVerification::create([
+            $created = SlipVerification::create([
                 'bot_id' => $bot->id,
                 'conversation_id' => $conversation?->id,
                 'message_id' => $message?->id,
@@ -341,6 +348,7 @@ class SlipVerificationService
                 'status' => $result->status(),
                 'raw_response' => $rawResponse,
             ]);
+            $result->slipVerificationId = $created->id;
         } catch (\Throwable $e) {
             Log::error('Failed to record slip verification', ['bot_id' => $bot->id, 'error' => $e->getMessage()]);
         }
