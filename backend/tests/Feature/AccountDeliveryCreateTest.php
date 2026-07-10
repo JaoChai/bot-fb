@@ -127,6 +127,51 @@ class AccountDeliveryCreateTest extends TestCase
         $this->assertSame(1, DB::connection('mhha_acc')->table('items_reserved')->count());
     }
 
+    public function test_second_delivery_for_same_conversation_and_amount_is_blocked(): void
+    {
+        $this->seedAvailable(10, 'NLMP');
+        $this->seedAvailable(11, 'NLMP');
+
+        // path แรก (เช่น manual confirm) — slip ใบที่ 1
+        $first = $this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1299']]);
+        $this->assertNotNull($first);
+
+        // path ที่สอง (เช่น EasySlip) — slip คนละใบ ยอดเดียวกัน conversation เดิม
+        $slip2 = SlipVerification::create([
+            'bot_id' => $this->bot->id, 'conversation_id' => $this->conversation->id,
+            'trans_ref' => 'TXN999', 'amount' => 1299, 'status' => 'passed',
+        ]);
+        $second = app(AccountDeliveryService::class)->createFromPayment(
+            $this->bot, $this->conversation, $slip2->id, 1299.0,
+            [['name' => 'Nolimit ส่วนตัว', 'total' => '1299']],
+        );
+
+        $this->assertNull($second); // กันขายซ้ำข้าม dispatch path
+        $this->assertSame(1, DB::connection('mhha_acc')->table('items_reserved')->count());
+    }
+
+    public function test_second_delivery_with_different_amount_is_allowed(): void
+    {
+        $this->seedAvailable(10, 'NLMP');
+        $this->seedAvailable(11, 'NLMP');
+
+        $first = $this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1299']]);
+        $this->assertNotNull($first);
+
+        // ซื้อรอบใหม่ ยอดต่างกัน — ต้องไม่โดนบล็อก (ไม่ใช่ duplicate)
+        $slip2 = SlipVerification::create([
+            'bot_id' => $this->bot->id, 'conversation_id' => $this->conversation->id,
+            'trans_ref' => 'TXN888', 'amount' => 550, 'status' => 'passed',
+        ]);
+        $second = app(AccountDeliveryService::class)->createFromPayment(
+            $this->bot, $this->conversation, $slip2->id, 550.0,
+            [['name' => 'Nolimit ส่วนตัว', 'total' => '550']],
+        );
+
+        $this->assertNotNull($second);
+        $this->assertSame(2, DB::connection('mhha_acc')->table('items_reserved')->count());
+    }
+
     public function test_disabled_or_wrong_bot_returns_null(): void
     {
         config(['delivery.enabled' => false]);

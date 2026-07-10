@@ -44,16 +44,30 @@ class AccountDeliveryService
             return null;
         }
 
+        // สร้างงานใน transaction ที่ lock conversation: กัน 2 dispatch path (EasySlip vs manual)
+        // ที่ใช้ slip คนละใบ สร้างงานส่งยอดเดียวกันพร้อมกัน → ขายซ้ำ (unique(slip) กันข้าม path ไม่ได้)
         try {
-            $delivery = AccountDelivery::create([
-                'bot_id' => $bot->id,
-                'conversation_id' => $conversation->id,
-                'slip_verification_id' => $slipVerificationId,
-                'status' => AccountDelivery::STATUS_RESERVING,
-                'amount' => $amount,
-            ]);
+            $delivery = DB::transaction(function () use ($bot, $conversation, $slipVerificationId, $amount) {
+                Conversation::whereKey($conversation->id)->lockForUpdate()->first();
+
+                if ($this->hasRecentActiveDelivery($conversation->id, $amount)) {
+                    return null;
+                }
+
+                return AccountDelivery::create([
+                    'bot_id' => $bot->id,
+                    'conversation_id' => $conversation->id,
+                    'slip_verification_id' => $slipVerificationId,
+                    'status' => AccountDelivery::STATUS_RESERVING,
+                    'amount' => $amount,
+                ]);
+            });
         } catch (UniqueConstraintViolationException) {
-            return null; // webhook ซ้ำ/job รันซ้ำ — งานนี้มีคนทำแล้ว
+            return null; // webhook ซ้ำ/job รันซ้ำ (slip เดียวกัน)
+        }
+
+        if ($delivery === null) {
+            return null; // อีก path เพิ่งสร้างงานส่งยอดเดียวกันไปแล้ว
         }
 
         $deliverable = false;
@@ -113,6 +127,26 @@ class AccountDeliveryService
         $this->sendCard($delivery->fresh('items'));
 
         return $delivery;
+    }
+
+    /**
+     * มีงานส่งยอดเดียวกันบน conversation นี้ที่ยัง active/ส่งแล้ว ในหน้าต่างกันซ้ำไหม
+     * (กันขายซ้ำเมื่อ EasySlip auto-pass กับ manual confirm ยิงคนละ slip แต่เป็นการจ่ายก้อนเดียวกัน)
+     */
+    private function hasRecentActiveDelivery(int $conversationId, ?float $amount): bool
+    {
+        $window = now()->subMinutes(config_int('delivery.dedup_window_minutes', 30));
+
+        return AccountDelivery::where('conversation_id', $conversationId)
+            ->whereIn('status', [
+                AccountDelivery::STATUS_RESERVING,
+                AccountDelivery::STATUS_RESERVED,
+                AccountDelivery::STATUS_DELIVERING,
+                AccountDelivery::STATUS_DELIVERED,
+            ])
+            ->where('created_at', '>=', $window)
+            ->where(fn ($q) => $amount === null ? $q->whereNull('amount') : $q->where('amount', $amount))
+            ->exists();
     }
 
     /** ส่งการ์ดสรุป + ปุ่มเข้า Telegram (ใช้ตอนสร้างงาน และตอนเตือนซ้ำ) */
