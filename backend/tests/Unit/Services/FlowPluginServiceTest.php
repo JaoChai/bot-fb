@@ -136,7 +136,7 @@ class FlowPluginServiceTest extends TestCase
     {
         $result = $this->callPrivate('buildProductBreakdown', 'G3D x2, Page');
 
-        $this->assertStringContainsString('📦 รายการสินค้า', $result);
+        $this->assertStringContainsString('<b>📦 รายการสินค้า</b>', $result);
         $this->assertStringContainsString('• G3D ×2', $result);
         $this->assertStringContainsString('• Page ×1', $result);
     }

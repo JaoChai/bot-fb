@@ -168,7 +168,9 @@ class ReconcileDeliveriesTest extends TestCase
         $this->artisan('delivery:reconcile')->assertSuccessful();
 
         Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage')
-            && str_contains($r['text'] ?? '', '#88'));
+            && str_contains($r['text'] ?? '', '#88')
+            && str_contains($r['text'] ?? '', '<blockquote>')
+            && str_contains($r['text'] ?? '', '<b>ตรวจพบของค้างในระบบส่งบัญชี</b>'));
     }
 
     public function test_active_reserved_delivery_is_not_flagged_as_orphan(): void

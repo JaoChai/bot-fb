@@ -28,7 +28,7 @@ class RemindPendingDeliveries extends Command
 
         foreach ($pending as $delivery) {
             $ageMinutes = (int) $delivery->created_at->diffInMinutes(now());
-            $service->sendCard($delivery, "⏰ เตือน: งานส่งของค้างมา {$ageMinutes} นาทีแล้ว ยังไม่ได้กดส่ง\n\n");
+            $service->sendCard($delivery, "⏰ <b>เตือน:</b> งานส่งของค้างมา <code>{$ageMinutes}</code> นาทีแล้ว ยังไม่ได้กดส่ง\n\n");
             $delivery->update(['last_reminded_at' => now()]);
         }
 

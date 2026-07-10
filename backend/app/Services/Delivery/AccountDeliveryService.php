@@ -179,7 +179,7 @@ class AccountDeliveryService
             ->whereIn('status', [AccountDeliveryItem::ST_SHORTAGE, AccountDeliveryItem::ST_UNMAPPED])
             ->pluck('product_name')->unique()->values()->all();
 
-        return $names === [] ? '' : "\n⚠️ ยังต้องส่งเอง: ".implode(', ', $names);
+        return $names === [] ? '' : "\n⚠️ ยังต้องส่งเอง: ".TelegramAlertBotService::esc(implode(', ', $names));
     }
 
     /** ส่งการ์ดสรุป + ปุ่มเข้า Telegram (ใช้ตอนสร้างงาน และตอนเตือนซ้ำ) */
@@ -216,19 +216,29 @@ class AccountDeliveryService
     private function cardText(AccountDelivery $delivery): string
     {
         $conv = $delivery->conversation;
-        $customer = $conv?->customerProfile?->display_name ?? "แชท #{$conv?->id}";
+        $customer = TelegramAlertBotService::esc($conv?->customerProfile?->display_name ?? "แชท #{$conv?->id}");
         $amount = $delivery->amount !== null ? number_format($delivery->amount) : '-';
 
-        $lines = ["🚚 พร้อมส่งสินค้า — {$customer} (แชท #{$conv?->id}, ยอด {$amount} บาท, งาน #{$delivery->id})"];
+        $items = [];
         foreach ($delivery->items as $item) {
-            $lines[] = match ($item->status) {
+            $name = TelegramAlertBotService::esc($item->product_name);
+            $items[] = match ($item->status) {
                 AccountDeliveryItem::ST_RESERVED => $item->kind === AccountDeliveryItem::KIND_SUPPORT_LINK
-                    ? "📦 {$item->product_name} ×{$item->qty} — จะส่งลิงก์ Support ให้ลูกค้า"
-                    : "📦 {$item->product_name} — จองแล้ว (#{$item->stock_item_id})",
-                AccountDeliveryItem::ST_SHORTAGE => "⚠️ {$item->product_name} — ของหมด ต้องส่งเอง",
-                AccountDeliveryItem::ST_UNMAPPED => "⚠️ {$item->product_name} — ไม่รู้จักสินค้า ต้องส่งเอง",
-                default => "• {$item->product_name} — {$item->status}",
+                    ? "📦 {$name} ×{$item->qty} — ส่งลิงก์ Support ให้ลูกค้า"
+                    : "📦 {$name} — จองแล้ว (#{$item->stock_item_id})",
+                AccountDeliveryItem::ST_SHORTAGE => "⚠️ {$name} — ของหมด ต้องส่งเอง",
+                AccountDeliveryItem::ST_UNMAPPED => "⚠️ {$name} — ไม่รู้จักสินค้า ต้องส่งเอง",
+                default => "• {$name} — ".TelegramAlertBotService::esc($item->status),
             };
+        }
+
+        $lines = [
+            "🚚 <b>พร้อมส่งสินค้า</b> · งาน #{$delivery->id}",
+            "👤 <b>{$customer}</b> · แชท #{$conv?->id}",
+            "💵 ยอด <code>{$amount}</code> บาท",
+        ];
+        if ($items !== []) {
+            $lines[] = '<blockquote>'.implode("\n", $items).'</blockquote>';
         }
         if ($delivery->status === AccountDelivery::STATUS_FAILED) {
             $lines[] = '❌ ไม่มีรายการที่ส่งอัตโนมัติได้ — รบกวนส่งเองในแชทนะครับ';
