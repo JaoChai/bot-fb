@@ -162,6 +162,8 @@ class TelegramAlertCallbackController extends Controller
         $fromName = $cb['from']['first_name'] ?? 'admin';
         $cbId = $cb['id'] ?? '';
 
+        $escapedFrom = TelegramAlertBotService::esc($fromName);
+
         $delivery = AccountDelivery::find($deliveryId);
         if (! $delivery) {
             $this->alertBot->answerCallbackQuery($token, $cbId, 'ไม่พบงานส่งของ');
@@ -191,14 +193,14 @@ class TelegramAlertCallbackController extends Controller
             if ($act === 'dz') {
                 $this->deliveryService->cancel($delivery, $fromName);
                 $this->alertBot->editMessageText($token, $chatId, $messageId,
-                    '↩️ <b>คืนของเข้า stock แล้ว</b> โดย '.TelegramAlertBotService::esc($fromName)." · งาน #{$delivery->id}");
+                    "↩️ <b>คืนของเข้า stock แล้ว</b> โดย {$escapedFrom} · งาน #{$delivery->id}");
                 $this->alertBot->answerCallbackQuery($token, $cbId, 'คืนของแล้ว');
             } else { // dv
                 $this->deliveryService->deliver($delivery, $fromName);
                 // ต่อท้ายคำเตือน shortage/unmapped ไม่ให้หายตอนแทนที่การ์ด (ลูกค้าจ่ายครบแต่ได้ไม่ครบ)
                 $note = $this->deliveryService->pendingManualNote($delivery);
                 $this->alertBot->editMessageText($token, $chatId, $messageId,
-                    '✅ <b>ส่งให้ลูกค้าแล้ว</b> โดย '.TelegramAlertBotService::esc($fromName)." · งาน #{$delivery->id}".$note);
+                    "✅ <b>ส่งให้ลูกค้าแล้ว</b> โดย {$escapedFrom} · งาน #{$delivery->id}".$note);
                 $this->alertBot->answerCallbackQuery($token, $cbId, 'ส่งแล้ว');
             }
         } catch (DeliveryAlreadyHandledException $e) {
