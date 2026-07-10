@@ -2288,7 +2288,7 @@ git commit -m "feat(delivery): delivery:remind command every 30 minutes"
 
 **Interfaces:**
 - Consumes: `StockPoolService::orphanedReservedRows()`, `AccountDeliveryService` (ใช้แค่ Telegram plugin resolve ผ่าน `sendCard`? — ไม่ใช่: command ส่งข้อความเตือนเองผ่าน `TelegramAlertBotService` โดยหา plugin จาก delivery แรกที่เจอ หรือ log อย่างเดียวถ้าไม่มี)
-- Produces: artisan command `delivery:reconcile` (schedule รายชั่วโมง) — แจ้งเตือน 2 กรณี: (1) delivery ค้าง `reserving` เกิน 10 นาที (job ตายกลางคัน) (2) แถว `items_reserved` ที่ order_ref ไม่ตรงกับงานสถานะ `reserved`/`delivering` ใดๆ (ของค้างใน limbo)
+- Produces: artisan command `delivery:reconcile` (schedule รายชั่วโมง) — แจ้งเตือน 3 กรณี: (1) delivery ค้าง `reserving` เกิน 10 นาที (job ตายกลางคัน) (2) delivery ค้าง `delivering` เกิน 10 นาที (process ตายระหว่างส่ง — ห้ามคืน stock อัตโนมัติ ให้เจ้าของเช็คแชทว่าลูกค้าได้ของหรือยัง) (3) แถว `items_reserved` ที่ order_ref ไม่ตรงกับงานสถานะ `reserved`/`delivering` ใดๆ (ของค้างใน limbo)
 
 - [ ] **Step 1: เขียนเทสต์ที่ fail**
 
@@ -2422,11 +2422,17 @@ class ReconcileDeliveries extends Command
     {
         $problems = [];
 
-        $stuck = AccountDelivery::where('status', AccountDelivery::STATUS_RESERVING)
-            ->where('created_at', '<=', now()->subMinutes(10))
+        $stuck = AccountDelivery::whereIn('status', [
+            AccountDelivery::STATUS_RESERVING,
+            AccountDelivery::STATUS_DELIVERING,
+        ])
+            ->where('updated_at', '<=', now()->subMinutes(10))
             ->get();
         foreach ($stuck as $d) {
-            $problems[] = "งาน #{$d->id} ค้างสถานะ reserving ตั้งแต่ {$d->created_at} (job อาจตายกลางคัน)";
+            $hint = $d->status === AccountDelivery::STATUS_DELIVERING
+                ? 'process อาจตายระหว่างส่ง — เช็คแชทก่อนว่าลูกค้าได้ของหรือยัง ห้ามรีบคืน stock'
+                : 'job อาจตายกลางคัน';
+            $problems[] = "งาน #{$d->id} ค้างสถานะ {$d->status} ตั้งแต่ {$d->updated_at} ({$hint})";
         }
 
         $activeRefs = AccountDelivery::whereIn('status', [
