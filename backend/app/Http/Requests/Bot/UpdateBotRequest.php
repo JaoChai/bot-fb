@@ -34,6 +34,9 @@ class UpdateBotRequest extends FormRequest
             // Auto handover
             'auto_handover' => ['sometimes', 'boolean'],
 
+            // Auto account delivery
+            'auto_delivery_enabled' => ['sometimes', 'boolean'],
+
             // LLM Settings
             'system_prompt' => ['nullable', 'string', 'max:50000'],
             'llm_temperature' => ['sometimes', 'numeric', 'min:0', 'max:2'],

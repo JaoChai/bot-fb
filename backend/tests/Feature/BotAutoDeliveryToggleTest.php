@@ -28,4 +28,17 @@ class BotAutoDeliveryToggleTest extends TestCase
 
         $this->assertTrue($bot->fresh()->auto_delivery_enabled);
     }
+
+    public function test_owner_can_toggle_auto_delivery_via_api(): void
+    {
+        $user = User::factory()->owner()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user)->putJson("/api/bots/{$bot->id}", [
+            'auto_delivery_enabled' => true,
+        ]);
+
+        $response->assertOk()->assertJsonPath('data.bot.auto_delivery_enabled', true);
+        $this->assertTrue($bot->fresh()->auto_delivery_enabled);
+    }
 }

@@ -46,6 +46,9 @@ class BotResource extends JsonResource
             // Auto handover setting
             'auto_handover' => $this->auto_handover ?? false,
 
+            // Auto account delivery setting
+            'auto_delivery_enabled' => $this->auto_delivery_enabled ?? false,
+
             // Stats
             'total_conversations' => $this->total_conversations ?? 0,
             'total_messages' => $this->total_messages ?? 0,
