@@ -311,7 +311,14 @@ class AccountDeliveryService
             Log::error('Delivery: markSold failed AFTER customer push — retry job dispatched', [
                 'delivery_id' => $delivery->id, 'error' => $e->getMessage(),
             ]);
-            MarkStockSold::dispatch($stockItemIds, $confirmedByName);
+            try {
+                MarkStockSold::dispatch($stockItemIds, $confirmedByName);
+            } catch (\Throwable $dispatchError) {
+                // ลูกค้าได้ของแล้ว — dispatch พังก็ต้องจบ DELIVERED ให้ได้ (ของค้าง items_reserved ให้ reconcile จับ)
+                Log::error('Delivery: MarkStockSold dispatch failed — ของค้างรอ reconcile', [
+                    'delivery_id' => $delivery->id, 'error' => $dispatchError->getMessage(),
+                ]);
+            }
         }
 
         $delivery->update([

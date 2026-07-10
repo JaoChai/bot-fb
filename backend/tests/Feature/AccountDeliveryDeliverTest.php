@@ -201,6 +201,27 @@ class AccountDeliveryDeliverTest extends TestCase
         Bus::assertDispatched(MarkStockSold::class, fn (MarkStockSold $job) => $job->stockItemIds === [10]);
     }
 
+    public function test_marksold_dispatch_failure_still_marks_delivered(): void
+    {
+        // queue backend ล่มตอน dispatch job ตามเก็บ (ลูกค้าได้ของไปแล้ว) — deliver ต้องจบ
+        // DELIVERED เสมอ ไม่ค้าง DELIVERING จน callback โชว์ปุ่ม "กดลองใหม่" ที่หลอกให้ส่งซ้ำ
+        Bus::shouldReceive('dispatch')->andThrow(new \RuntimeException('queue down'));
+        $this->mock(LINEService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('generateRetryKey')->andReturn('rk');
+            $mock->shouldReceive('replyWithFallback')->once()->andReturn(['method' => 'push', 'success' => true]);
+        });
+        $this->mock(StockPoolService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('getReserved')->andReturn([
+                10 => ['id' => 10, 'detail' => 'uid10|pass10|mail|2fa'],
+            ]);
+            $mock->shouldReceive('markSold')->andThrow(new \RuntimeException('mhha down'));
+        });
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        $this->assertSame(AccountDelivery::STATUS_DELIVERED, $this->delivery->fresh()->status);
+    }
+
     public function test_line_failure_keeps_stock_reserved(): void
     {
         $this->mock(LINEService::class, function (MockInterface $mock) {
