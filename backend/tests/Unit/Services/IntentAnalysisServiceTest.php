@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\IntentAnalysisService;
 use App\Services\OpenRouterService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Mockery;
 use Tests\TestCase;
 
@@ -41,21 +42,21 @@ class IntentAnalysisServiceTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_analyze_intent_returns_default_when_no_decision_model()
+    public function test_analyze_intent_returns_default_when_no_model_configured()
     {
         $user = User::factory()->create();
         $bot = Bot::factory()->create([
             'user_id' => $user->id,
-            'decision_model' => null,
+            'primary_chat_model' => null,
+            'fallback_chat_model' => null,
             'kb_enabled' => false,
         ]);
 
-        $result = $this->service->analyzeIntent($bot, 'hello');
+        $result = $this->service->analyzeIntent($bot, 'สวัสดีครับ');
 
-        $this->assertEquals('chat', $result['intent']);
-        $this->assertEquals(1.0, $result['confidence']);
-        $this->assertEquals('default', $result['method']);
+        $this->assertSame('chat', $result['intent']);
         $this->assertTrue($result['skipped']);
+        $this->assertSame('default', $result['method']);
     }
 
     public function test_analyze_intent_uses_llm_and_returns_knowledge_when_kb_enabled()
@@ -63,7 +64,7 @@ class IntentAnalysisServiceTest extends TestCase
         $user = User::factory()->create();
         $bot = Bot::factory()->create([
             'user_id' => $user->id,
-            'decision_model' => 'anthropic/claude-3-haiku',
+            'primary_chat_model' => 'anthropic/claude-3-haiku',
             'kb_enabled' => true,
         ]);
 
@@ -97,12 +98,12 @@ class IntentAnalysisServiceTest extends TestCase
         $this->assertEquals('llm_decision', $result['method']);
     }
 
-    public function test_analyze_intent_calls_llm_when_decision_model_set()
+    public function test_analyze_intent_calls_llm_when_chat_model_set()
     {
         $user = User::factory()->create();
         $bot = Bot::factory()->create([
             'user_id' => $user->id,
-            'decision_model' => 'anthropic/claude-3-haiku',
+            'primary_chat_model' => 'anthropic/claude-3-haiku',
             'kb_enabled' => false,
         ]);
 
@@ -125,12 +126,41 @@ class IntentAnalysisServiceTest extends TestCase
         $this->assertEquals('anthropic/claude-3-haiku', $result['model_used']);
     }
 
+    public function test_analyze_intent_uses_primary_chat_model_as_decision_model()
+    {
+        Http::fake([
+            'openrouter.ai/*' => Http::response([
+                'model' => 'openai/gpt-5.6-luna',
+                'choices' => [['message' => ['content' => '{"intent":"chat","confidence":0.9}'], 'finish_reason' => 'stop']],
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ], 200),
+        ]);
+
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create([
+            'user_id' => $user->id,
+            'primary_chat_model' => 'openai/gpt-5.6-luna',
+            'fallback_chat_model' => 'google/gemini-3.5-flash',
+        ]);
+
+        $service = new IntentAnalysisService(app(OpenRouterService::class));
+        $result = $service->analyzeIntent($bot, 'BM ราคาเท่าไหร่');
+
+        $this->assertSame('llm_decision', $result['method']);
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+            $model = $body['model'] ?? ($body['models'][0] ?? null);
+
+            return $model === 'openai/gpt-5.6-luna';
+        });
+    }
+
     public function test_analyze_intent_with_knowledge_intent()
     {
         $user = User::factory()->create();
         $bot = Bot::factory()->create([
             'user_id' => $user->id,
-            'decision_model' => 'anthropic/claude-3-haiku',
+            'primary_chat_model' => 'anthropic/claude-3-haiku',
             'kb_enabled' => true,
         ]);
 
@@ -152,7 +182,7 @@ class IntentAnalysisServiceTest extends TestCase
         $user = User::factory()->create();
         $bot = Bot::factory()->create([
             'user_id' => $user->id,
-            'decision_model' => 'anthropic/claude-3-haiku',
+            'primary_chat_model' => 'anthropic/claude-3-haiku',
         ]);
 
         $this->mockOpenRouter->shouldReceive('chat')
@@ -173,7 +203,7 @@ class IntentAnalysisServiceTest extends TestCase
         $user = User::factory()->create();
         $bot = Bot::factory()->create([
             'user_id' => $user->id,
-            'decision_model' => 'anthropic/claude-3-haiku',
+            'primary_chat_model' => 'anthropic/claude-3-haiku',
         ]);
 
         $this->mockOpenRouter->shouldReceive('chat')
@@ -197,7 +227,7 @@ class IntentAnalysisServiceTest extends TestCase
         $user = User::factory()->create();
         $bot = Bot::factory()->create([
             'user_id' => $user->id,
-            'decision_model' => 'anthropic/claude-3-haiku',
+            'primary_chat_model' => 'anthropic/claude-3-haiku',
             'kb_enabled' => false,
         ]);
 
@@ -218,7 +248,7 @@ class IntentAnalysisServiceTest extends TestCase
         $user = User::factory()->create();
         $bot = Bot::factory()->create([
             'user_id' => $user->id,
-            'decision_model' => 'anthropic/claude-3-haiku',
+            'primary_chat_model' => 'anthropic/claude-3-haiku',
         ]);
 
         $this->mockOpenRouter->shouldReceive('chat')
@@ -239,7 +269,7 @@ class IntentAnalysisServiceTest extends TestCase
         $user = User::factory()->create();
         $bot = Bot::factory()->create([
             'user_id' => $user->id,
-            'decision_model' => 'anthropic/claude-3-haiku',
+            'primary_chat_model' => 'anthropic/claude-3-haiku',
         ]);
 
         $this->mockOpenRouter->shouldReceive('chat')
@@ -260,7 +290,7 @@ class IntentAnalysisServiceTest extends TestCase
         $user = User::factory()->create();
         $bot = Bot::factory()->create([
             'user_id' => $user->id,
-            'decision_model' => 'anthropic/claude-3-haiku',
+            'primary_chat_model' => 'anthropic/claude-3-haiku',
         ]);
 
         $this->mockOpenRouter->shouldReceive('chat')

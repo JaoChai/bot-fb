@@ -42,12 +42,12 @@ class IntentAnalysisService
         $useFallback = $options['useFallback'] ?? true;
         $apiKey = $options['apiKey'] ?? $this->getApiKeyForBot($bot);
 
-        // Get Decision Model configuration
-        $decisionModel = $this->getDecisionModelForBot($bot);
-        $fallbackDecisionModel = $this->getFallbackDecisionModelForBot($bot);
+        // Decision uses the same chat pair from Connection Settings (single model pair)
+        $decisionModel = $bot->resolvedChatModel();
+        $fallbackDecisionModel = $bot->fallback_chat_model;
 
-        // Skip decision model if not configured (use default behavior)
-        if (! $decisionModel && ! $bot->decision_model) {
+        // Skip only when the bot has no chat model configured at all
+        if (! $decisionModel) {
             return [
                 'intent' => $this->shouldUseKnowledgeBase($bot) ? 'knowledge' : 'chat',
                 'confidence' => 1.0,
@@ -382,34 +382,6 @@ PROMPT;
         }
 
         return false;
-    }
-
-    /**
-     * Get the decision model for a bot.
-     */
-    protected function getDecisionModelForBot(Bot $bot): ?string
-    {
-        // Priority 1: Bot's decision model (from Connection Settings UI)
-        if ($bot->decision_model) {
-            return $bot->decision_model;
-        }
-
-        // Priority 2: Fall back to primary chat model
-        if ($bot->primary_chat_model) {
-            return $bot->primary_chat_model;
-        }
-
-        // Priority 3: Fall back to fallback chat model
-        return $bot->fallback_chat_model;
-    }
-
-    /**
-     * Get the fallback decision model for a bot.
-     * Comes ONLY from the Connection Settings form — empty means no fallback.
-     */
-    protected function getFallbackDecisionModelForBot(Bot $bot): ?string
-    {
-        return $bot->fallback_decision_model;
     }
 
     /**
