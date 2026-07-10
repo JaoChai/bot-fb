@@ -146,8 +146,6 @@ class StickerReplyService
      * Checks supportsVision() for each model in priority order:
      * 1. primary_chat_model
      * 2. fallback_chat_model
-     * 3. decision_model
-     * 4. fallback_decision_model
      */
     protected function getVisionModel(Bot $bot): ?string
     {
@@ -156,8 +154,6 @@ class StickerReplyService
         $candidates = [
             $bot->primary_chat_model,
             $bot->fallback_chat_model,
-            $bot->decision_model,
-            $bot->fallback_decision_model,
         ];
 
         // Level 1+2: Check supportsVision (API + config + heuristic)
