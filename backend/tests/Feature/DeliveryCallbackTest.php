@@ -67,7 +67,7 @@ class DeliveryCallbackTest extends TestCase
         ]);
     }
 
-    private function press(string $data): TestResponse
+    private function press(string $data, int $fromId = 12345): TestResponse
     {
         config(['services.telegram_alert.secret' => 'SEC']);
 
@@ -75,9 +75,15 @@ class DeliveryCallbackTest extends TestCase
             ->postJson('/api/webhook/telegram-alert/TOK', ['callback_query' => [
                 'id' => 'cb1',
                 'data' => $data,
-                'from' => ['first_name' => 'บูม'],
+                'from' => ['first_name' => 'บูม', 'id' => $fromId],
                 'message' => ['message_id' => 55, 'chat' => ['id' => 999]],
             ]]);
+    }
+
+    private function setAuthorizedUsers(array $ids): void
+    {
+        $plugin = FlowPlugin::where('type', 'telegram')->firstOrFail();
+        $plugin->update(['config' => array_merge($plugin->config, ['authorized_user_ids' => $ids])]);
     }
 
     public function test_dv_delivers(): void
@@ -161,6 +167,31 @@ class DeliveryCallbackTest extends TestCase
         Http::assertSent(fn ($r) => str_contains($r->url(), 'editMessageText')
             && str_contains($r['text'] ?? '', 'จัดการไปแล้ว'));
         $this->assertSame(1, DB::connection('mhha_acc')->table('items_sold')->count());
+    }
+
+    public function test_unauthorized_user_cannot_deliver(): void
+    {
+        $this->setAuthorizedUsers([777]); // 12345 (ผู้กด) ไม่อยู่ใน allowlist
+
+        $this->press("dv|{$this->delivery->id}|x")->assertOk();
+
+        // ไม่ถูกส่ง — งานยัง reserved
+        $this->assertSame(AccountDelivery::STATUS_RESERVED, $this->delivery->fresh()->status);
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), 'editMessageText')
+            && str_contains($r['text'] ?? '', 'ส่งให้ลูกค้าแล้ว'));
+    }
+
+    public function test_authorized_user_can_deliver(): void
+    {
+        $this->setAuthorizedUsers([12345]); // ผู้กดอยู่ใน allowlist
+        $this->mock(LINEService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('generateRetryKey')->andReturn('rk');
+            $mock->shouldReceive('replyWithFallback')->once()->andReturn(['method' => 'push', 'success' => true]);
+        });
+
+        $this->press("dv|{$this->delivery->id}|x", 12345)->assertOk();
+
+        $this->assertSame(AccountDelivery::STATUS_DELIVERED, $this->delivery->fresh()->status);
     }
 
     public function test_delivery_of_other_bot_is_rejected(): void
