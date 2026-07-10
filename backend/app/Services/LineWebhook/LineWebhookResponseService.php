@@ -337,7 +337,7 @@ class LineWebhookResponseService
 
     /**
      * Get the vision-capable model from bot connection settings.
-     * Priority: primary_chat_model → fallback_chat_model → decision_model → fallback_decision_model.
+     * Priority: primary_chat_model → fallback_chat_model.
      * Last resort: primary_chat_model even without vision confirmation.
      * Port of ProcessLINEWebhook::getVisionModel (:1168).
      */
@@ -346,8 +346,6 @@ class LineWebhookResponseService
         $candidates = [
             $ctx->bot->primary_chat_model,
             $ctx->bot->fallback_chat_model,
-            $ctx->bot->decision_model,
-            $ctx->bot->fallback_decision_model,
         ];
 
         foreach ($candidates as $model) {

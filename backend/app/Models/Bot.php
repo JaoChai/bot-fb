@@ -30,8 +30,6 @@ class Bot extends Model
         // LLM Models (from Connection Settings UI)
         'primary_chat_model',
         'fallback_chat_model',
-        'decision_model',
-        'fallback_decision_model',
         'system_prompt',
         'llm_temperature',
         'llm_max_tokens',
@@ -46,11 +44,6 @@ class Bot extends Model
         'use_semantic_router',
         'semantic_router_threshold',
         'semantic_router_fallback',
-        // Confidence Cascade settings
-        'use_confidence_cascade',
-        'cascade_confidence_threshold',
-        'cascade_cheap_model',
-        'cascade_expensive_model',
         // Stats
         'total_conversations',
         'total_messages',
@@ -75,9 +68,6 @@ class Bot extends Model
         // Semantic Router settings
         'use_semantic_router' => 'boolean',
         'semantic_router_threshold' => 'float',
-        // Confidence Cascade settings
-        'use_confidence_cascade' => 'boolean',
-        'cascade_confidence_threshold' => 'float',
     ];
 
     protected $hidden = [

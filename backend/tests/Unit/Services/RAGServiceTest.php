@@ -420,9 +420,9 @@ class RAGServiceTest extends TestCase
         );
     }
 
-    public function test_greeting_skips_decision_model(): void
+    public function test_greeting_skips_intent_analysis(): void
     {
-        // A trivial greeting must NOT make a decision-model round-trip.
+        // A trivial greeting must NOT make an intent-analysis round-trip.
         $intentAnalysis = $this->createMock(IntentAnalysisService::class);
         $intentAnalysis->expects($this->never())->method('analyzeIntent');
 
@@ -434,7 +434,7 @@ class RAGServiceTest extends TestCase
         ]);
 
         $service = $this->makeServiceWith($openRouter, $intentAnalysis);
-        $bot = Bot::factory()->create(['user_id' => $this->user->id, 'decision_model' => 'some/decider']);
+        $bot = Bot::factory()->create(['user_id' => $this->user->id, 'primary_chat_model' => 'some/decider']);
 
         $result = $service->generateResponse($bot, 'สวัสดี');
 
@@ -443,9 +443,9 @@ class RAGServiceTest extends TestCase
         $this->assertSame('simple_message_skip', $result['intent']['method']);
     }
 
-    public function test_substantive_message_invokes_decision_model(): void
+    public function test_substantive_message_invokes_intent_analysis(): void
     {
-        // A real product question still makes the decision-model round-trip.
+        // A real product question still makes the intent-analysis round-trip.
         $intentAnalysis = $this->createMock(IntentAnalysisService::class);
         $intentAnalysis->expects($this->once())
             ->method('analyzeIntent')
@@ -464,7 +464,7 @@ class RAGServiceTest extends TestCase
         ]);
 
         $service = $this->makeServiceWith($openRouter, $intentAnalysis);
-        $bot = Bot::factory()->create(['user_id' => $this->user->id, 'decision_model' => 'some/decider']);
+        $bot = Bot::factory()->create(['user_id' => $this->user->id, 'primary_chat_model' => 'some/decider']);
 
         $result = $service->generateResponse($bot, 'ขอราคาสินค้า Nolimit Level Up ทุกแพ็กเกจมีอะไรบ้างครับ');
 

@@ -1258,8 +1258,6 @@ class ProcessLINEWebhook implements ShouldQueue
      * Checks supportsVision() for each model in priority order:
      * 1. primary_chat_model
      * 2. fallback_chat_model
-     * 3. decision_model
-     * 4. fallback_decision_model
      */
     protected function getVisionModel(): ?string
     {
@@ -1268,8 +1266,6 @@ class ProcessLINEWebhook implements ShouldQueue
         $candidates = [
             $this->bot->primary_chat_model,
             $this->bot->fallback_chat_model,
-            $this->bot->decision_model,
-            $this->bot->fallback_decision_model,
         ];
 
         // Level 1+2: Check supportsVision (API + config + heuristic)

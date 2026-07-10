@@ -86,8 +86,6 @@ class LineWebhookResponseServiceTest extends TestCase
             'status' => 'active',
             'primary_chat_model' => 'openai/gpt-4o',
             'fallback_chat_model' => null,
-            'decision_model' => null,
-            'fallback_decision_model' => null,
             'llm_temperature' => 0.7,
             'llm_max_tokens' => 1024,
             'system_prompt' => 'You are a helpful assistant.',
@@ -342,8 +340,6 @@ class LineWebhookResponseServiceTest extends TestCase
         $bot = $this->makeBot([
             'primary_chat_model' => null,
             'fallback_chat_model' => null,
-            'decision_model' => null,
-            'fallback_decision_model' => null,
         ]);
 
         $conversation = $this->makeConversationMock($bot);

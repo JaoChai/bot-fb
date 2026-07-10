@@ -185,12 +185,13 @@ class StreamingResponseOrchestrator
      */
     private function runDecisionModel(Bot $bot, string $message, ?string $apiKey, array &$metrics, callable $onSseEvent): array
     {
-        $decisionModel = $bot->decision_model;
+        // Decision uses the same chat pair from Connection Settings (single model pair)
+        $decisionModel = $bot->resolvedChatModel();
 
-        // Skip if no decision model configured
-        if (empty($decisionModel)) {
+        // Skip only when the bot has no chat model configured at all
+        if (! $decisionModel) {
             $onSseEvent('decision_skip', [
-                'reason' => 'ไม่ได้ตั้งค่า Decision Model',
+                'reason' => 'ไม่ได้ตั้งค่า LLM Model ใน Connection Settings',
             ]);
 
             // Default: use KB if enabled, otherwise chat
@@ -234,7 +235,7 @@ class StreamingResponseOrchestrator
         if (! empty($result['error'])) {
             $onSseEvent('decision_fallback', [
                 'original_model' => $decisionModel,
-                'fallback_model' => $bot->fallback_decision_model,
+                'fallback_model' => $bot->fallback_chat_model,
                 'error' => $result['error'],
             ]);
         }

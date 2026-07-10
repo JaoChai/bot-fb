@@ -22,61 +22,32 @@ function ModelSelector({ label, value, onChange, placeholder }: ModelSelectorPro
   );
 }
 
-// Convenience component for 4-model configuration
+// Convenience component for the single primary+fallback model pair
 interface ModelConfigurationProps {
   primaryModel: string;
   fallbackModel: string;
-  decisionModel: string;
-  fallbackDecisionModel: string;
   onPrimaryChange: (value: string) => void;
   onFallbackChange: (value: string) => void;
-  onDecisionChange: (value: string) => void;
-  onFallbackDecisionChange: (value: string) => void;
-  showDecisionModels?: boolean;
 }
 
 export function ModelConfiguration({
   primaryModel,
   fallbackModel,
-  decisionModel,
-  fallbackDecisionModel,
   onPrimaryChange,
   onFallbackChange,
-  onDecisionChange,
-  onFallbackDecisionChange,
-  showDecisionModels = false,
 }: ModelConfigurationProps) {
   return (
-    <div className="space-y-4">
-      {/* Chat Models Row */}
-      <div className="grid grid-cols-2 gap-4">
-        <ModelSelector
-          label="LLM Model สำหรับสนทนา"
-          value={primaryModel}
-          onChange={onPrimaryChange}
-        />
-        <ModelSelector
-          label="โมเดลสำรอง (fallback)"
-          value={fallbackModel}
-          onChange={onFallbackChange}
-        />
-      </div>
-
-      {/* Decision Models Row - Only show when enabled */}
-      {showDecisionModels && (
-        <div className="grid grid-cols-2 gap-4">
-          <ModelSelector
-            label="LLM Model สำหรับตัดสินใจ"
-            value={decisionModel}
-            onChange={onDecisionChange}
-          />
-          <ModelSelector
-            label="โมเดลตัดสินใจสำรอง (fallback)"
-            value={fallbackDecisionModel}
-            onChange={onFallbackDecisionChange}
-          />
-        </div>
-      )}
+    <div className="grid grid-cols-2 gap-4">
+      <ModelSelector
+        label="LLM Model หลัก"
+        value={primaryModel}
+        onChange={onPrimaryChange}
+      />
+      <ModelSelector
+        label="โมเดลสำรอง (fallback)"
+        value={fallbackModel}
+        onChange={onFallbackChange}
+      />
     </div>
   );
 }

@@ -90,7 +90,6 @@ namespace App\OpenApi;
  *     @OA\Property(property="credentials_visible", type="boolean", description="True if current user is owner"),
  *     @OA\Property(property="primary_chat_model", type="string", nullable=true, example="openai/gpt-4o"),
  *     @OA\Property(property="fallback_chat_model", type="string", nullable=true),
- *     @OA\Property(property="decision_model", type="string", nullable=true),
  *     @OA\Property(property="kb_enabled", type="boolean", example=false),
  *     @OA\Property(property="kb_relevance_threshold", type="number", format="float", example=0.7),
  *     @OA\Property(property="kb_max_results", type="integer", example=3),
@@ -116,7 +115,6 @@ namespace App\OpenApi;
  *     @OA\Property(property="system_prompt", type="string", nullable=true, description="AI system prompt"),
  *     @OA\Property(property="model", type="string", nullable=true, example="openai/gpt-4o"),
  *     @OA\Property(property="fallback_model", type="string", nullable=true),
- *     @OA\Property(property="decision_model", type="string", nullable=true),
  *     @OA\Property(property="temperature", type="number", format="float", example=0.7),
  *     @OA\Property(property="max_tokens", type="integer", example=2048),
  *     @OA\Property(

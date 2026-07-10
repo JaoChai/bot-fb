@@ -8,16 +8,11 @@ export interface ConnectionFormData {
   platform: 'line' | 'facebook' | 'testing' | 'telegram';
   primary_chat_model: string;
   fallback_chat_model: string;
-  decision_model: string;
-  fallback_decision_model: string;
   line_channel_secret: string;
   line_channel_access_token: string;
   telegram_bot_token: string;
   webhook_forwarder_enabled: boolean;
   auto_handover: boolean;
-  use_confidence_cascade: boolean;
-  cascade_cheap_model: string;
-  cascade_expensive_model: string;
 }
 
 const DEFAULT_FORM_DATA: ConnectionFormData = {
@@ -26,16 +21,11 @@ const DEFAULT_FORM_DATA: ConnectionFormData = {
   platform: 'testing',
   primary_chat_model: 'google/gemini-2.5-flash-preview',
   fallback_chat_model: 'google/gemini-2.0-flash-001',
-  decision_model: 'openai/gpt-4o-mini',
-  fallback_decision_model: 'openai/gpt-4o',
   line_channel_secret: '',
   line_channel_access_token: '',
   telegram_bot_token: '',
   webhook_forwarder_enabled: false,
   auto_handover: false,
-  use_confidence_cascade: false,
-  cascade_cheap_model: 'openai/gpt-4o-mini',
-  cascade_expensive_model: 'openai/gpt-5-mini',
 };
 
 export function useConnectionForm() {
@@ -62,16 +52,11 @@ export function useConnectionForm() {
         platform: existingBot.channel_type,
         primary_chat_model: existingBot.primary_chat_model || DEFAULT_FORM_DATA.primary_chat_model,
         fallback_chat_model: existingBot.fallback_chat_model || DEFAULT_FORM_DATA.fallback_chat_model,
-        decision_model: existingBot.decision_model || DEFAULT_FORM_DATA.decision_model,
-        fallback_decision_model: existingBot.fallback_decision_model || DEFAULT_FORM_DATA.fallback_decision_model,
         line_channel_secret: '',
         line_channel_access_token: '',
         telegram_bot_token: '',
         webhook_forwarder_enabled: existingBot.webhook_forwarder_enabled || false,
         auto_handover: existingBot.auto_handover || false,
-        use_confidence_cascade: existingBot.use_confidence_cascade || false,
-        cascade_cheap_model: existingBot.cascade_cheap_model || DEFAULT_FORM_DATA.cascade_cheap_model,
-        cascade_expensive_model: existingBot.cascade_expensive_model || DEFAULT_FORM_DATA.cascade_expensive_model,
       });
     }
   }, [existingBot]);
