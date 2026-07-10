@@ -2486,7 +2486,7 @@ class ReconcileDeliveries extends Command
 - [ ] **Step 4: เพิ่ม schedule ใน `routes/console.php`**
 
 ```php
-Schedule::command('delivery:reconcile')->hourly();
+Schedule::command('delivery:reconcile')->hourly()->withoutOverlapping();
 ```
 
 - [ ] **Step 5: รันเทสต์ให้ผ่าน**
@@ -2665,7 +2665,7 @@ class SyncProductStockFromPool extends Command
 - [ ] **Step 4: เพิ่ม schedule ใน `routes/console.php`**
 
 ```php
-Schedule::command('stock:sync-pool')->everyFiveMinutes();
+Schedule::command('stock:sync-pool')->everyFiveMinutes()->withoutOverlapping();
 ```
 
 - [ ] **Step 5: รันเทสต์ให้ผ่าน + รัน suite เต็มก่อนปิดงาน dev**
