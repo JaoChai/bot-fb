@@ -3,6 +3,7 @@
 namespace App\Services\Delivery;
 
 use App\Exceptions\DeliveryAlreadyHandledException;
+use App\Jobs\MarkStockSold;
 use App\Models\AccountDelivery;
 use App\Models\AccountDeliveryItem;
 use App\Models\Bot;
@@ -260,12 +261,15 @@ class AccountDeliveryService
         }
 
         // ลูกค้าได้ของแล้ว — จากนี้ห้าม throw กลับไปเป็น "ยังไม่ส่ง"
+        $stockItemIds = $stockItems->pluck('stock_item_id')->all();
         try {
-            $this->pool->markSold($stockItems->pluck('stock_item_id')->all(), $confirmedByName, 'bot-fb');
+            $this->pool->markSold($stockItemIds, $confirmedByName, 'bot-fb');
         } catch (\Throwable $e) {
-            Log::error('Delivery: markSold failed AFTER customer push — reconcile will flag', [
+            // dispatch job ตามเก็บ (idempotent) แทนปล่อยของค้าง items_reserved ให้เจ้าของเดาเอง
+            Log::error('Delivery: markSold failed AFTER customer push — retry job dispatched', [
                 'delivery_id' => $delivery->id, 'error' => $e->getMessage(),
             ]);
+            MarkStockSold::dispatch($stockItemIds, $confirmedByName);
         }
 
         $delivery->update([
@@ -277,7 +281,7 @@ class AccountDeliveryService
             ->where('status', AccountDeliveryItem::ST_RESERVED)
             ->update(['status' => AccountDeliveryItem::ST_DELIVERED]);
 
-        $this->recordConversationMessage($delivery, $texts);
+        $this->recordConversationMessage($delivery);
     }
 
     /**
@@ -378,22 +382,34 @@ class AccountDeliveryService
         return $packed;
     }
 
-    /** บันทึกสิ่งที่ส่งเข้าประวัติแชท (บอท/หน้าเว็บเห็นว่าส่งอะไรไปแล้ว) — best effort */
-    private function recordConversationMessage(AccountDelivery $delivery, array $texts): void
+    /**
+     * บันทึกสิ่งที่ส่งเข้าประวัติแชท (บอท/หน้าเว็บเห็นว่าส่งอะไรไปแล้ว) — best effort
+     * เก็บแค่ placeholder (ชื่อสินค้า + #stock_item_id) ห้ามเก็บ credential ดิบเด็ดขาด:
+     * content ถูกดึงกลับเข้า LLM context (ส่งขึ้น OpenRouter) + surface บนหน้าเว็บแชท
+     */
+    private function recordConversationMessage(AccountDelivery $delivery): void
     {
+        $lines = [];
+        foreach ($delivery->items()->where('status', AccountDeliveryItem::ST_DELIVERED)->get() as $item) {
+            $lines[] = $item->kind === AccountDeliveryItem::KIND_SUPPORT_LINK
+                ? "✅ ส่งลิงก์ Support {$item->product_name} แล้ว"
+                : "✅ ส่งบัญชี {$item->product_name} แล้ว (#{$item->stock_item_id})";
+        }
+        if ($lines === []) {
+            return;
+        }
+
         try {
             $delivery->conversation?->messages()->create([
                 'sender' => 'bot',
                 'type' => 'text',
-                'content' => implode("\n\n", $texts),
+                'content' => implode("\n", $lines),
                 'metadata' => [
                     'account_delivery' => true,
                     'delivery_id' => $delivery->id,
                 ],
             ]);
         } catch (\Throwable $e) {
-            // ห้าม log $e->getMessage() ตรงนี้ — content ที่ insert มี credential ดิบ
-            // ถ้า insert พังเป็น QueryException, Laravel จะฝัง bindings (credential) ลงใน message
             Log::error('Delivery: failed to record conversation message', [
                 'delivery_id' => $delivery->id, 'exception' => $e::class,
             ]);
