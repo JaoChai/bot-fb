@@ -104,4 +104,19 @@ class StockPoolServiceTest extends TestCase
         $this->assertCount(1, $orphans);
         $this->assertSame('8', $orphans[0]['order_ref']);
     }
+
+    public function test_query_failure_never_leaks_detail_in_exception(): void
+    {
+        $this->seedAvailable(10, 'NLMP', 'uid10|pass10');
+        // ทำให้ insert ลง items_reserved พัง — QueryException ดิบจะมี detail ใน bindings
+        DB::connection('mhha_acc')->statement('DROP TABLE items_reserved');
+
+        try {
+            $this->pool->reserveOne('NLMP', '99');
+            $this->fail('Expected RuntimeException was not thrown');
+        } catch (\RuntimeException $e) {
+            $this->assertStringNotContainsString('uid10|pass10', $e->getMessage());
+            $this->assertStringContainsString('stock pool operation failed', $e->getMessage());
+        }
+    }
 }
