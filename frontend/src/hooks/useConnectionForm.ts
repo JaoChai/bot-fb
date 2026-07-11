@@ -8,6 +8,7 @@ export interface ConnectionFormData {
   platform: 'line' | 'facebook' | 'testing' | 'telegram';
   primary_chat_model: string;
   fallback_chat_model: string;
+  utility_model: string;
   line_channel_secret: string;
   line_channel_access_token: string;
   telegram_bot_token: string;
@@ -22,6 +23,7 @@ const DEFAULT_FORM_DATA: ConnectionFormData = {
   platform: 'testing',
   primary_chat_model: 'google/gemini-2.5-flash-preview',
   fallback_chat_model: 'google/gemini-2.0-flash-001',
+  utility_model: '',
   line_channel_secret: '',
   line_channel_access_token: '',
   telegram_bot_token: '',
@@ -54,6 +56,7 @@ export function useConnectionForm() {
         platform: existingBot.channel_type,
         primary_chat_model: existingBot.primary_chat_model || DEFAULT_FORM_DATA.primary_chat_model,
         fallback_chat_model: existingBot.fallback_chat_model || DEFAULT_FORM_DATA.fallback_chat_model,
+        utility_model: existingBot.utility_model || '',
         line_channel_secret: '',
         line_channel_access_token: '',
         telegram_bot_token: '',

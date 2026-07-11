@@ -2,14 +2,22 @@
 
 namespace Tests\Unit\Services;
 
+use App\Models\Bot;
+use App\Models\Conversation;
+use App\Models\FlowPlugin;
+use App\Models\Message;
+use App\Models\User;
 use App\Services\FlowPluginService;
 use App\Services\OpenRouterService;
 use App\Services\OrderService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use ReflectionClass;
 use Tests\TestCase;
 
 class FlowPluginServiceTest extends TestCase
 {
+    use RefreshDatabase;
+
     private FlowPluginService $service;
 
     protected function setUp(): void
@@ -180,5 +188,80 @@ class FlowPluginServiceTest extends TestCase
         $this->assertSame([], OrderService::parseProductItems(null));
         $this->assertSame([], OrderService::parseProductItems(''));
         $this->assertSame([], OrderService::parseProductItems('   '));
+    }
+
+    // =========================================================================
+    // Test: resolvedUtilityModel() call site (evaluateAndExecute)
+    // =========================================================================
+
+    public function test_evaluate_and_execute_uses_bot_utility_model_when_configured(): void
+    {
+        config(['services.openrouter.api_key' => 'test-key']);
+
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create([
+            'user_id' => $user->id,
+            'primary_chat_model' => 'openai/gpt-4o-mini',
+            'utility_model' => 'anthropic/claude-3-haiku',
+        ]);
+
+        $conversation = Conversation::factory()->create(['bot_id' => $bot->id]);
+        $botMessage = Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'bot',
+            'content' => 'มีลูกค้าสอบถามครับ',
+        ]);
+        $plugin = new FlowPlugin([
+            'type' => 'telegram',
+            'trigger_condition' => 'ลูกค้าถามราคา',
+            'config' => ['message_template' => 'test message'],
+        ]);
+
+        $openRouter = $this->createMock(OpenRouterService::class);
+        $openRouter->expects($this->once())
+            ->method('chat')
+            ->with($this->anything(), 'anthropic/claude-3-haiku', $this->anything(), $this->anything(), $this->anything(), $this->anything())
+            ->willReturn(['content' => '{"triggered": false}']);
+
+        $service = new FlowPluginService($openRouter);
+
+        $reflection = new ReflectionClass($service);
+        $method = $reflection->getMethod('evaluateAndExecute');
+        $method->setAccessible(true);
+
+        $method->invoke($service, $plugin, $bot, $conversation, $botMessage);
+    }
+
+    public function test_evaluate_and_execute_skips_llm_call_and_returns_false_when_bot_has_no_model_configured(): void
+    {
+        config(['services.openrouter.api_key' => 'test-key']);
+
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+
+        $conversation = Conversation::factory()->create(['bot_id' => $bot->id]);
+        $botMessage = Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'bot',
+            'content' => 'มีลูกค้าสอบถามครับ',
+        ]);
+        $plugin = new FlowPlugin([
+            'type' => 'telegram',
+            'trigger_condition' => 'ลูกค้าถามราคา',
+            'config' => ['message_template' => 'test message'],
+        ]);
+
+        $openRouter = $this->createMock(OpenRouterService::class);
+        $openRouter->expects($this->never())->method('chat');
+
+        $service = new FlowPluginService($openRouter);
+
+        $reflection = new ReflectionClass($service);
+        $method = $reflection->getMethod('evaluateAndExecute');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($service, $plugin, $bot, $conversation, $botMessage);
+
+        $this->assertFalse($result);
     }
 }
