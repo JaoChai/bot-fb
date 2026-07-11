@@ -35,8 +35,10 @@ export function AIModelsSection({ formData, handleChange }: AIModelsSectionProps
         <ModelConfiguration
           primaryModel={formData.primary_chat_model}
           fallbackModel={formData.fallback_chat_model}
+          utilityModel={formData.utility_model}
           onPrimaryChange={(value) => handleChange('primary_chat_model', value)}
           onFallbackChange={(value) => handleChange('fallback_chat_model', value)}
+          onUtilityChange={(value) => handleChange('utility_model', value)}
         />
       </Panel>
     </>
