@@ -175,12 +175,15 @@ class AccountDeliveryDeliverTest extends TestCase
         app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
 
         $all = $pushedText();
-        $this->assertStringContainsString("uid20|pass20|mail|2fa\nBM ID: 1324077876319909\nAds ID: 1129452608578581", $all);
-        $this->assertStringContainsString("uid21|pass21|mail|2fa\nAds ID: 2071472379953388", $all);
+        $this->assertStringContainsString("uid20|pass20|mail|2fa\n\nBM ID: 1324077876319909\nAds ID: 1129452608578581", $all);
+        $this->assertStringContainsString("uid21|pass21|mail|2fa\n\nAds ID: 2071472379953388", $all);
         // แถว setUp (id 10) ไม่มีทั้งคู่ → detail เดิมล้วน ไม่มีบรรทัด id งอกมา
         $this->assertStringContainsString('uid10|pass10|mail|2fa', $all);
         $this->assertSame(1, substr_count($all, 'BM ID:'));
         $this->assertSame(2, substr_count($all, 'Ads ID:'));
+        // pin layout ใหม่: บรรทัดว่างคั่นชื่อสินค้า/ข้อมูลบัญชี และคั่นก่อนบล็อก id
+        $this->assertStringContainsString("Nolimit Share BM (2/3)\n\nuid20|pass20|mail|2fa", $all);
+        $this->assertStringContainsString("Nolimit ส่วนตัว (3/3)\n\nuid21|pass21|mail|2fa", $all);
     }
 
     public function test_recorded_chat_message_never_contains_raw_credential(): void

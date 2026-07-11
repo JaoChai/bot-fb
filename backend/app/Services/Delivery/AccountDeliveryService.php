@@ -375,13 +375,17 @@ class AccountDeliveryService
         foreach ($stockItems->values() as $i => $item) {
             $row = $reservedRows[$item->stock_item_id];
             $no = $i + 1;
-            $text = "✅ {$item->product_name} ({$no}/{$n})\n{$row['detail']}";
+            $text = "✅ {$item->product_name} ({$no}/{$n})\n\n{$row['detail']}";
             // แจ้ง id ตามข้อมูลจริงของแถวนั้น: BM มี bmId+adsId, ส่วนตัวมีแค่ adsId, G3D ไม่มี
+            $idLines = [];
             foreach (['BM ID' => 'bmId', 'Ads ID' => 'adsId'] as $label => $column) {
                 $value = trim((string) ($row[$column] ?? ''));
                 if ($value !== '') {
-                    $text .= "\n{$label}: {$value}";
+                    $idLines[] = "{$label}: {$value}";
                 }
+            }
+            if ($idLines !== []) {
+                $text .= "\n\n".implode("\n", $idLines);
             }
             $accounts[] = $text;
         }
