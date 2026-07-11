@@ -38,6 +38,7 @@ class ManualPaymentConfirmTest extends TestCase
             'user_id' => $this->owner->id,
             'status' => 'active',
             'channel_access_token' => 'line-token',
+            'primary_chat_model' => 'openai/gpt-4o-mini',
         ]);
         BotSetting::create([
             'bot_id' => $this->bot->id,
