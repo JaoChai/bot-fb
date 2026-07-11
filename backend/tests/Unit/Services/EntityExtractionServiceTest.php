@@ -31,7 +31,10 @@ class EntityExtractionServiceTest extends TestCase
         $this->service = new EntityExtractionService($this->openRouter);
 
         $this->user = User::factory()->create();
-        $this->bot = Bot::factory()->create(['user_id' => $this->user->id]);
+        $this->bot = Bot::factory()->create([
+            'user_id' => $this->user->id,
+            'primary_chat_model' => 'openai/gpt-4o-mini',
+        ]);
     }
 
     public function test_extract_returns_empty_when_no_messages(): void
@@ -180,5 +183,52 @@ class EntityExtractionServiceTest extends TestCase
 
         // Only "name" should be saved (invalid_type filtered, empty phone filtered)
         $this->assertEquals(1, $result['saved_count']);
+    }
+
+    public function test_extract_uses_bot_utility_model_when_configured(): void
+    {
+        $this->bot->update([
+            'primary_chat_model' => 'openai/gpt-4o-mini',
+            'utility_model' => 'anthropic/claude-3-haiku',
+        ]);
+
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->bot->id,
+        ]);
+
+        Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'user',
+            'content' => 'ทดสอบ',
+        ]);
+
+        $this->openRouter->expects($this->once())
+            ->method('chat')
+            ->with($this->anything(), 'anthropic/claude-3-haiku', $this->anything(), $this->anything(), $this->anything(), $this->anything())
+            ->willReturn(['content' => '{"entities": []}']);
+
+        $this->service->extractAndSave($conversation);
+    }
+
+    public function test_extract_skips_llm_call_when_bot_has_no_model_configured(): void
+    {
+        $bot = Bot::factory()->create(['user_id' => $this->user->id]);
+
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $bot->id,
+        ]);
+
+        Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'user',
+            'content' => 'ทดสอบ',
+        ]);
+
+        $this->openRouter->expects($this->never())->method('chat');
+
+        $result = $this->service->extractAndSave($conversation);
+
+        $this->assertEmpty($result['extracted']);
+        $this->assertEquals(0, $result['saved_count']);
     }
 }

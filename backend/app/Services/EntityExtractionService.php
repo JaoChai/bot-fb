@@ -24,13 +24,9 @@ class EntityExtractionService
         'preference' => 'ความต้องการ',
     ];
 
-    protected string $model;
-
     public function __construct(
         protected OpenRouterService $openRouter
-    ) {
-        $this->model = config('rag.query_enhancement.model', 'openai/gpt-4o-mini');
-    }
+    ) {}
 
     /**
      * Extract entities from recent messages and save to memory_notes.
@@ -142,8 +138,15 @@ PROMPT;
 
             $userPrompt = "{$existingContext}\n\nบทสนทนาล่าสุด:\n{$messageText}\n\nExtract new entities:";
 
-            // Utility model from Connection Settings; config model as legacy fallback
-            $model = $conversation->bot?->resolvedUtilityModel() ?? $this->model;
+            // Utility model from Connection Settings (no model configured → skip extraction)
+            $model = $conversation->bot?->resolvedUtilityModel();
+            if ($model === null) {
+                Log::debug('EntityExtraction: no model configured, skipping', [
+                    'conversation_id' => $conversation->id,
+                ]);
+
+                return [];
+            }
 
             $response = $this->openRouter->chat(
                 messages: [
