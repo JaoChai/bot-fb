@@ -7,7 +7,9 @@ use App\Models\BotHITLSettings;
 use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
+use App\Models\Flow;
 use App\Models\LeadRecoveryLog;
+use App\Models\Message;
 use App\Models\User;
 use App\Services\FacebookService;
 use App\Services\LeadRecoveryService;
@@ -29,6 +31,8 @@ class LeadRecoveryServiceTest extends TestCase
 
     private Bot $bot;
 
+    private OpenRouterService $openRouterService;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -39,6 +43,7 @@ class LeadRecoveryServiceTest extends TestCase
         $facebookService = Mockery::mock(FacebookService::class);
         $responseHoursService = Mockery::mock(ResponseHoursService::class);
         $openRouterService = Mockery::mock(OpenRouterService::class);
+        $this->openRouterService = $openRouterService;
 
         $this->service = new LeadRecoveryService(
             $lineService,
@@ -489,5 +494,62 @@ class LeadRecoveryServiceTest extends TestCase
         $this->assertCount(1, $result);
         $this->assertTrue($result->first()->relationLoaded('customerProfile'));
         $this->assertEquals($customerProfile->id, $result->first()->customerProfile->id);
+    }
+
+    // =========================================================================
+    // Test: generateAIFollowUp() — resolvedUtilityModel() call site
+    // =========================================================================
+
+    public function test_generate_ai_follow_up_uses_bot_utility_model_when_configured(): void
+    {
+        $flow = Flow::factory()->create([
+            'bot_id' => $this->bot->id,
+            'system_prompt' => 'คุณเป็นผู้ช่วยขายที่เป็นมิตร',
+        ]);
+        $this->bot->update([
+            'default_flow_id' => $flow->id,
+            'primary_chat_model' => 'openai/gpt-4o-mini',
+            'utility_model' => 'anthropic/claude-3-haiku',
+        ]);
+
+        $conversation = Conversation::factory()->create(['bot_id' => $this->bot->id]);
+        Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'user',
+            'content' => 'สนใจสินค้าตัว A ครับ',
+        ]);
+
+        $this->openRouterService->shouldReceive('chat')
+            ->once()
+            ->withArgs(function ($messages, $model) {
+                return $model === 'anthropic/claude-3-haiku';
+            })
+            ->andReturn(['content' => 'สวัสดีค่ะ ยังสนใจสินค้าตัว A อยู่ไหมคะ?']);
+
+        $result = $this->service->generateAIFollowUp($conversation);
+
+        $this->assertEquals('สวัสดีค่ะ ยังสนใจสินค้าตัว A อยู่ไหมคะ?', $result);
+    }
+
+    public function test_generate_ai_follow_up_returns_null_when_bot_has_no_model_configured(): void
+    {
+        $flow = Flow::factory()->create([
+            'bot_id' => $this->bot->id,
+            'system_prompt' => 'คุณเป็นผู้ช่วยขายที่เป็นมิตร',
+        ]);
+        $this->bot->update(['default_flow_id' => $flow->id]);
+
+        $conversation = Conversation::factory()->create(['bot_id' => $this->bot->id]);
+        Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'user',
+            'content' => 'สนใจสินค้าตัว A ครับ',
+        ]);
+
+        $this->openRouterService->shouldNotReceive('chat');
+
+        $result = $this->service->generateAIFollowUp($conversation);
+
+        $this->assertNull($result);
     }
 }
