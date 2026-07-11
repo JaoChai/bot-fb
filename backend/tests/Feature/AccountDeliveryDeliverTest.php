@@ -154,6 +154,35 @@ class AccountDeliveryDeliverTest extends TestCase
         $this->assertStringNotContainsString('เพิ่มเพจให้ได้เลย', $all);
     }
 
+    public function test_bm_and_ads_ids_are_appended_per_row_data(): void
+    {
+        // BM (มี bmId+adsId) → 2 บรรทัด, ส่วนตัว (มีแค่ adsId) → 1 บรรทัด — ตามข้อมูลจริงของแถว
+        $pool = app(StockPoolService::class);
+        $this->seedAvailable(20, 'NLMBM', 'uid20|pass20|mail|2fa', 'x', '1324077876319909', '1129452608578581');
+        $pool->reserveOne('NLMBM', '1');
+        $this->delivery->items()->create([
+            'product_name' => 'Nolimit Share BM', 'stock_code' => 'NLMBM', 'kind' => 'stock',
+            'qty' => 1, 'stock_item_id' => 20, 'status' => 'reserved',
+        ]);
+        $this->seedAvailable(21, 'NLMP', 'uid21|pass21|mail|2fa', 'x', null, '2071472379953388');
+        $pool->reserveOne('NLMP', '1');
+        $this->delivery->items()->create([
+            'product_name' => 'Nolimit ส่วนตัว', 'stock_code' => 'NLMP', 'kind' => 'stock',
+            'qty' => 1, 'stock_item_id' => 21, 'status' => 'reserved',
+        ]);
+        $pushedText = $this->captureLinePush();
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        $all = $pushedText();
+        $this->assertStringContainsString("uid20|pass20|mail|2fa\nBM ID: 1324077876319909\nAds ID: 1129452608578581", $all);
+        $this->assertStringContainsString("uid21|pass21|mail|2fa\nAds ID: 2071472379953388", $all);
+        // แถว setUp (id 10) ไม่มีทั้งคู่ → detail เดิมล้วน ไม่มีบรรทัด id งอกมา
+        $this->assertStringContainsString('uid10|pass10|mail|2fa', $all);
+        $this->assertSame(1, substr_count($all, 'BM ID:'));
+        $this->assertSame(2, substr_count($all, 'Ads ID:'));
+    }
+
     public function test_recorded_chat_message_never_contains_raw_credential(): void
     {
         // credential ต้องไปถึง LINE เท่านั้น — ห้ามถูกเก็บใน messages.content

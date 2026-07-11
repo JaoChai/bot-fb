@@ -373,9 +373,17 @@ class AccountDeliveryService
         $texts = [];
         $n = $stockItems->count();
         foreach ($stockItems->values() as $i => $item) {
-            $detail = $reservedRows[$item->stock_item_id]['detail'];
+            $row = $reservedRows[$item->stock_item_id];
             $no = $i + 1;
-            $texts[] = "✅ {$item->product_name} ({$no}/{$n})\n{$detail}";
+            $text = "✅ {$item->product_name} ({$no}/{$n})\n{$row['detail']}";
+            // แจ้ง id ตามข้อมูลจริงของแถวนั้น: BM มี bmId+adsId, ส่วนตัวมีแค่ adsId, G3D ไม่มี
+            foreach (['BM ID' => 'bmId', 'Ads ID' => 'adsId'] as $label => $column) {
+                $value = trim((string) ($row[$column] ?? ''));
+                if ($value !== '') {
+                    $text .= "\n{$label}: {$value}";
+                }
+            }
+            $texts[] = $text;
         }
         if ($supportItems->isNotEmpty()) {
             $texts[] = $this->supportLinkText($delivery);
