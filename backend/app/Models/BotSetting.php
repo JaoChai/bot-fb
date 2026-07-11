@@ -90,19 +90,9 @@ class BotSetting extends Model
         return $this->belongsTo(Bot::class);
     }
 
-    public function limits(): HasOne
-    {
-        return $this->hasOne(BotLimits::class);
-    }
-
     public function hitlSettings(): HasOne
     {
         return $this->hasOne(BotHITLSettings::class);
-    }
-
-    public function aggregationSettings(): HasOne
-    {
-        return $this->hasOne(BotAggregationSettings::class);
     }
 
     public function responseHours(): HasOne
