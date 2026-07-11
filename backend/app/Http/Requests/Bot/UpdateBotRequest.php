@@ -27,6 +27,7 @@ class UpdateBotRequest extends FormRequest
             // Multi-model LLM configuration (API key now in User Settings)
             'primary_chat_model' => ['nullable', 'string', 'max:100'],
             'fallback_chat_model' => ['nullable', 'string', 'max:100'],
+            'utility_model' => ['nullable', 'string', 'max:100'],
 
             // Webhook forwarder
             'webhook_forwarder_enabled' => ['sometimes', 'boolean'],

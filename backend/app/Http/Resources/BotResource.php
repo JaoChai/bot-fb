@@ -34,6 +34,7 @@ class BotResource extends JsonResource
             // LLM Models (from Connection Settings UI)
             'primary_chat_model' => $this->primary_chat_model,
             'fallback_chat_model' => $this->fallback_chat_model,
+            'utility_model' => $this->utility_model,
 
             // Webhook forwarder
             'webhook_forwarder_enabled' => $this->webhook_forwarder_enabled ?? false,

@@ -67,6 +67,7 @@ export interface Bot {
   // Multi-model LLM configuration (API key now in User Settings)
   primary_chat_model: string | null;
   fallback_chat_model: string | null;
+  utility_model: string | null;
   system_prompt: string | null;
   llm_temperature: number;
   llm_max_tokens: number;
@@ -99,6 +100,7 @@ export interface CreateConnectionData {
   channel_type: 'line' | 'facebook' | 'testing' | 'telegram';
   primary_chat_model?: string;
   fallback_chat_model?: string;
+  utility_model?: string;
   channel_access_token?: string;
   channel_secret?: string;
   webhook_forwarder_enabled?: boolean;
@@ -113,6 +115,7 @@ export interface UpdateConnectionData {
   channel_type?: 'line' | 'facebook' | 'testing' | 'telegram';
   primary_chat_model?: string;
   fallback_chat_model?: string;
+  utility_model?: string;
   channel_access_token?: string;
   channel_secret?: string;
   webhook_forwarder_enabled?: boolean;

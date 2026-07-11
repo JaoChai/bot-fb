@@ -313,9 +313,15 @@ class LeadRecoveryService
                 ['role' => 'user', 'content' => $prompt],
             ];
 
+            // Utility model from Connection Settings (no model configured → skip AI, use static fallback)
+            $model = $bot->resolvedUtilityModel();
+            if ($model === null) {
+                return null;
+            }
+
             $result = $this->openRouterService->chat(
                 messages: $messages,
-                model: 'openai/gpt-4o-mini',
+                model: $model,
                 temperature: 0.7,
                 maxTokens: 150,
                 useFallback: true

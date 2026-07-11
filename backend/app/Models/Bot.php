@@ -30,6 +30,7 @@ class Bot extends Model
         // LLM Models (from Connection Settings UI)
         'primary_chat_model',
         'fallback_chat_model',
+        'utility_model',
         'system_prompt',
         'llm_temperature',
         'llm_max_tokens',
@@ -132,5 +133,15 @@ class Bot extends Model
     public function resolvedChatModel(): ?string
     {
         return $this->primary_chat_model ?: $this->fallback_chat_model;
+    }
+
+    /**
+     * Resolve the model for lightweight background tasks (entity extraction,
+     * plugin trigger evaluation, lead recovery). Explicit utility_model first,
+     * then fallback → primary; null when no model is configured at all.
+     */
+    public function resolvedUtilityModel(): ?string
+    {
+        return $this->utility_model ?: ($this->fallback_chat_model ?: $this->primary_chat_model);
     }
 }

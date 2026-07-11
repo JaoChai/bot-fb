@@ -142,12 +142,15 @@ PROMPT;
 
             $userPrompt = "{$existingContext}\n\nบทสนทนาล่าสุด:\n{$messageText}\n\nExtract new entities:";
 
+            // Utility model from Connection Settings; config model as legacy fallback
+            $model = $conversation->bot?->resolvedUtilityModel() ?? $this->model;
+
             $response = $this->openRouter->chat(
                 messages: [
                     ['role' => 'system', 'content' => $systemPrompt],
                     ['role' => 'user', 'content' => $userPrompt],
                 ],
-                model: $this->model,
+                model: $model,
                 temperature: 0.1,
                 maxTokens: 200,
                 useFallback: false,

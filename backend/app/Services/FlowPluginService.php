@@ -171,10 +171,17 @@ PROMPT,
             return false;
         }
 
-        // Use lightweight model for evaluation
+        // Use utility model from Connection Settings for evaluation
+        $model = $bot->resolvedUtilityModel();
+        if ($model === null) {
+            Log::warning('No model configured for plugin evaluation', ['plugin_id' => $plugin->id]);
+
+            return false;
+        }
+
         $result = $this->openRouter->chat(
             messages: $messages,
-            model: 'openai/gpt-4o-mini',
+            model: $model,
             temperature: 0.1,
             maxTokens: 256,
             useFallback: false,
