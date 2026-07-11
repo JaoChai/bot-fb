@@ -108,7 +108,7 @@ class StockPoolService
             $conn = DB::connection(self::CONNECTION);
             $conn->transaction(function () use ($conn, $stockItemIds, $destTable, $extraColumns) {
                 $rows = $conn->table('items_reserved')->whereIn('id', $stockItemIds)->get()
-                    ->map(fn ($row) => array_intersect_key((array) $row, array_flip(self::COLUMNS)) + $extraColumns)
+                    ->map(fn ($row) => $this->buildDestRow((array) $row, $extraColumns))
                     ->all();
                 if ($rows !== []) {
                     $conn->table($destTable)->insert($rows);
@@ -116,6 +116,18 @@ class StockPoolService
                 $conn->table('items_reserved')->whereIn('id', $stockItemIds)->delete();
             });
         });
+    }
+
+    /**
+     * สร้าง payload สำหรับ insert ปลายทาง (items_sold / items_available) — ตาราง IDENTITY เหล่านี้
+     * ต้องไม่ระบุ id เอง (ให้ Postgres auto-generate) ต่างจาก items_reserved ที่เป็น id ธรรมดา
+     */
+    private function buildDestRow(array $row, array $extraColumns): array
+    {
+        $payload = array_intersect_key($row, array_flip(self::COLUMNS)) + $extraColumns;
+        unset($payload['id']);
+
+        return $payload;
     }
 
     /** @return array<string, int> จำนวนของคงเหลือต่อ stock code */
