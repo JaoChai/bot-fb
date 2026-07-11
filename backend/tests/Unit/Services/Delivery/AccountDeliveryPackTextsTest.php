@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\Delivery;
 
 use App\Services\Delivery\AccountDeliveryService;
+use ReflectionClass;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -29,15 +30,17 @@ class AccountDeliveryPackTextsTest extends TestCase
 
     public function test_five_accounts_group_into_four_but_support_stays_separate(): void
     {
+        $div = (new ReflectionClass(AccountDeliveryService::class))->getConstant('ACCOUNT_DIVIDER');
         $out = $this->pack(['A1', 'A2', 'A3', 'A4', 'A5'], 'SUP');
-        $this->assertSame(["A1\n\nA2", 'A3', 'A4', 'A5', 'SUP'], $out);
+        $this->assertSame(["A1{$div}A2", 'A3', 'A4', 'A5', 'SUP'], $out);
         $this->assertStringNotContainsString('SUP', implode('', array_slice($out, 0, 4)));
     }
 
     public function test_eight_accounts_group_evenly_into_four_bubbles(): void
     {
+        $div = (new ReflectionClass(AccountDeliveryService::class))->getConstant('ACCOUNT_DIVIDER');
         $out = $this->pack(['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8'], 'SUP');
-        $this->assertSame(["A1\n\nA2", "A3\n\nA4", "A5\n\nA6", "A7\n\nA8", 'SUP'], $out);
+        $this->assertSame(["A1{$div}A2", "A3{$div}A4", "A5{$div}A6", "A7{$div}A8", 'SUP'], $out);
     }
 
     public function test_support_only_order_is_single_bubble(): void

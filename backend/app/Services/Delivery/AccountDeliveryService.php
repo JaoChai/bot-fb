@@ -21,6 +21,9 @@ use Illuminate\Support\Facades\Log;
  */
 class AccountDeliveryService
 {
+    /** เส้นคั่นระหว่างบัญชีที่อยู่ bubble เดียวกัน (เคสยำ ≥5 บัญชี) — ให้เห็นขอบเขตชัด */
+    private const ACCOUNT_DIVIDER = "\n\n━━━━━━━━━━━━━━\n\n";
+
     public function __construct(
         private readonly StockPoolService $pool,
         private readonly ProductMapper $mapper,
@@ -481,7 +484,7 @@ class AccountDeliveryService
         $offset = 0;
         for ($g = 0; $g < $max; $g++) {
             $size = $base + ($g < $rem ? 1 : 0);
-            $bubbles[] = implode("\n\n", array_slice($accounts, $offset, $size));
+            $bubbles[] = implode(self::ACCOUNT_DIVIDER, array_slice($accounts, $offset, $size));
             $offset += $size;
         }
 
