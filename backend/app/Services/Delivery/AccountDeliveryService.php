@@ -444,10 +444,10 @@ class AccountDeliveryService
      * @param  array<int, string>  $accounts
      * @return array<int, string>
      */
-    private function packTexts(array $accounts, ?string $support, int $maxLen = 4900): array
+    private function packTexts(array $accounts, ?string $support): array
     {
         $budget = $support !== null ? 4 : 5;
-        $bubbles = $this->groupAccounts($accounts, $budget, $maxLen);
+        $bubbles = $this->groupAccounts($accounts, $budget);
         if ($support !== null) {
             $bubbles[] = $support;
         }
@@ -463,7 +463,7 @@ class AccountDeliveryService
      * @param  array<int, string>  $accounts
      * @return array<int, string>
      */
-    private function groupAccounts(array $accounts, int $max, int $maxLen): array
+    private function groupAccounts(array $accounts, int $max): array
     {
         $accounts = array_values($accounts);
         $count = count($accounts);

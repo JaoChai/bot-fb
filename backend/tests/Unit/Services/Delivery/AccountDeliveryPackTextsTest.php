@@ -14,7 +14,7 @@ class AccountDeliveryPackTextsTest extends TestCase
         $m = new ReflectionMethod(AccountDeliveryService::class, 'packTexts');
         $m->setAccessible(true);
 
-        return $m->invoke(app(AccountDeliveryService::class), $accounts, $support, 4900);
+        return $m->invoke(app(AccountDeliveryService::class), $accounts, $support);
     }
 
     public function test_each_account_is_its_own_bubble_with_support_last(): void
