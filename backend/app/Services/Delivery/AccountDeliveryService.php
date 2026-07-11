@@ -21,6 +21,9 @@ use Illuminate\Support\Facades\Log;
  */
 class AccountDeliveryService
 {
+    /** เส้นคั่นระหว่างบัญชีที่อยู่ bubble เดียวกัน (เคสยำ ≥5 บัญชี) — ให้เห็นขอบเขตชัด */
+    private const ACCOUNT_DIVIDER = "\n\n━━━━━━━━━━━━━━\n\n";
+
     public function __construct(
         private readonly StockPoolService $pool,
         private readonly ProductMapper $mapper,
@@ -375,13 +378,17 @@ class AccountDeliveryService
         foreach ($stockItems->values() as $i => $item) {
             $row = $reservedRows[$item->stock_item_id];
             $no = $i + 1;
-            $text = "✅ {$item->product_name} ({$no}/{$n})\n{$row['detail']}";
+            $text = "✅ {$item->product_name} ({$no}/{$n})\n\n{$row['detail']}";
             // แจ้ง id ตามข้อมูลจริงของแถวนั้น: BM มี bmId+adsId, ส่วนตัวมีแค่ adsId, G3D ไม่มี
+            $idLines = [];
             foreach (['BM ID' => 'bmId', 'Ads ID' => 'adsId'] as $label => $column) {
                 $value = trim((string) ($row[$column] ?? ''));
                 if ($value !== '') {
-                    $text .= "\n{$label}: {$value}";
+                    $idLines[] = "{$label}: {$value}";
                 }
+            }
+            if ($idLines !== []) {
+                $text .= "\n\n".implode("\n", $idLines);
             }
             $accounts[] = $text;
         }
@@ -458,7 +465,7 @@ class AccountDeliveryService
     /**
      * แจกข้อความบัญชีลง bubble ให้แยกมากที่สุดแต่ไม่เกิน $max ก้อน:
      * ≤$max → ตัวละ bubble; เกิน → กระจายลงครบ $max ก้อนให้สมดุล (ก้อนแรกๆ ได้ +1 ถ้าหารไม่ลงตัว)
-     * คั่นแต่ละบัญชีในก้อนเดียวกันด้วยบรรทัดว่าง
+     * คั่นแต่ละบัญชีในก้อนเดียวกันด้วยเส้นคั่น (ACCOUNT_DIVIDER) ให้เห็นขอบเขตชัด
      *
      * @param  array<int, string>  $accounts
      * @return array<int, string>
@@ -477,7 +484,7 @@ class AccountDeliveryService
         $offset = 0;
         for ($g = 0; $g < $max; $g++) {
             $size = $base + ($g < $rem ? 1 : 0);
-            $bubbles[] = implode("\n\n", array_slice($accounts, $offset, $size));
+            $bubbles[] = implode(self::ACCOUNT_DIVIDER, array_slice($accounts, $offset, $size));
             $offset += $size;
         }
 
