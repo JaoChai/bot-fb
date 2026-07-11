@@ -295,7 +295,7 @@ class AccountDeliveryService
                 }
             }
 
-            $texts = $this->buildCustomerMessages($stockItems, $supportItems, $reservedRows);
+            $texts = $this->buildCustomerMessages($delivery, $stockItems, $supportItems, $reservedRows);
             $this->pushTextsToLine($delivery, $texts);
         } catch (\Throwable $e) {
             $delivery->update(['status' => AccountDelivery::STATUS_RESERVED]);
@@ -362,8 +362,13 @@ class AccountDeliveryService
             ->update(['status' => AccountDeliveryItem::ST_RETURNED]);
     }
 
-    /** @return array<int, string> ข้อความที่จะส่งให้ลูกค้า (เรียงตามลำดับ) */
-    private function buildCustomerMessages($stockItems, $supportItems, array $reservedRows): array
+    /**
+     * @return array<int, string> ข้อความที่จะส่งให้ลูกค้า (เรียงตามลำดับ)
+     *
+     * ปิดท้ายด้วยข้อความ Support เสมอ: มีเพจ (อย่างเดียวหรือปนบัญชี) → ข้อความเพจ,
+     * บัญชีล้วน → ข้อความ Support เรื่องบัญชี/ตั้งค่า
+     */
+    private function buildCustomerMessages(AccountDelivery $delivery, $stockItems, $supportItems, array $reservedRows): array
     {
         $texts = [];
         $n = $stockItems->count();
@@ -373,10 +378,23 @@ class AccountDeliveryService
             $texts[] = "✅ {$item->product_name} ({$no}/{$n})\n{$detail}";
         }
         if ($supportItems->isNotEmpty()) {
-            $texts[] = config_string('delivery.support_link_template');
+            $texts[] = $this->supportLinkText($delivery);
+        } elseif ($stockItems->isNotEmpty()) {
+            $texts[] = config_string('delivery.account_support_template');
         }
 
         return $texts;
+    }
+
+    /** ข้อความเพจ: แทน {customer} ด้วยชื่อลูกค้า — ไม่มีชื่อก็ตัด placeholder ทิ้งให้ประโยคยังอ่านลื่น */
+    private function supportLinkText(AccountDelivery $delivery): string
+    {
+        $template = config_string('delivery.support_link_template');
+        $name = trim((string) $delivery->conversation?->customerProfile?->display_name);
+
+        return $name === ''
+            ? (string) preg_replace('/\h*\{customer\}/u', '', $template)
+            : str_replace('{customer}', $name, $template);
     }
 
     /**

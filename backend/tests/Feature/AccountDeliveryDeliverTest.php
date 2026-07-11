@@ -7,6 +7,7 @@ use App\Jobs\MarkStockSold;
 use App\Models\AccountDelivery;
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\CustomerProfile;
 use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\Delivery\AccountDeliveryService;
@@ -80,10 +81,15 @@ class AccountDeliveryDeliverTest extends TestCase
 
         app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
 
-        // credential ดิบ + ลิงก์ support อยู่ในข้อความ
+        // credential ดิบ + ข้อความเพจอยู่ในข้อความ (บัญชี+เพจ → ใช้ข้อความเพจ ไม่ใช่ข้อความบัญชี)
         $all = implode("\n", array_column($pushed, 'text'));
         $this->assertStringContainsString('uid10|pass10|mail|2fa', $all);
         $this->assertStringContainsString('lin.ee/sTD5TQL', $all);
+        $this->assertStringContainsString('เพิ่มเพจให้ได้เลย', $all);
+        $this->assertStringNotContainsString('ปัญหา ทางด้านบัญชี', $all);
+        // ไม่มีชื่อลูกค้าในโปรไฟล์ → placeholder ต้องถูกตัดทิ้ง ไม่หลุดไปหาลูกค้า
+        $this->assertStringNotContainsString('{customer}', $all);
+        $this->assertStringContainsString('รบกวนพี่ แจ้งทีมงาน Support', $all);
 
         // ของย้ายเข้า items_sold
         $this->assertSame(0, DB::connection('mhha_acc')->table('items_reserved')->count());
@@ -97,6 +103,55 @@ class AccountDeliveryDeliverTest extends TestCase
         $this->assertSame(2, $fresh->items()->where('status', 'delivered')->count());
         $msg = $this->conversation->messages()->latest('id')->first();
         $this->assertTrue((bool) ($msg->metadata['account_delivery'] ?? false));
+    }
+
+    /** mock LINE push สำเร็จ 1 ครั้ง แล้วคืนข้อความทั้งหมดที่ส่งเป็น string เดียว (ผ่าน closure ที่ได้กลับไป) */
+    private function captureLinePush(): \Closure
+    {
+        $pushed = [];
+        $this->mock(LINEService::class, function (MockInterface $mock) use (&$pushed) {
+            $mock->shouldReceive('generateRetryKey')->andReturn('rk');
+            $mock->shouldReceive('replyWithFallback')->once()
+                ->andReturnUsing(function ($bot, $token, $userId, $messages) use (&$pushed) {
+                    $pushed = $messages;
+
+                    return ['method' => 'push', 'success' => true];
+                });
+        });
+
+        // ต้อง use by-reference: อ่านค่าหลัง mock ถูกเรียก ไม่ใช่ snapshot ตอนสร้าง closure
+        return function () use (&$pushed): string {
+            return implode("\n", array_column($pushed, 'text'));
+        };
+    }
+
+    public function test_page_message_uses_customer_display_name(): void
+    {
+        $profile = CustomerProfile::factory()->create(['display_name' => 'ไอซ์ มาวิน']);
+        $this->conversation->update(['customer_profile_id' => $profile->id]);
+        $pushedText = $this->captureLinePush();
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        $all = $pushedText();
+        $this->assertStringContainsString('รบกวนพี่ ไอซ์ มาวิน แจ้งทีมงาน Support', $all);
+        $this->assertStringNotContainsString('{customer}', $all);
+    }
+
+    public function test_account_only_order_appends_account_support_message(): void
+    {
+        // ตัดรายการเพจออก → เหลือบัญชีล้วน ต้องปิดท้ายด้วยข้อความ Support เรื่องบัญชี
+        $this->delivery->items()->where('kind', 'support_link')->delete();
+        $pushedText = $this->captureLinePush();
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        $all = $pushedText();
+        $this->assertStringContainsString('uid10|pass10|mail|2fa', $all);
+        $this->assertStringContainsString('ปัญหา ทางด้านบัญชี', $all);
+        $this->assertStringContainsString('lin.ee/sTD5TQL', $all);
+        // ไม่มีเพจ → ต้องไม่ส่งข้อความเพจ
+        $this->assertStringNotContainsString('เพิ่มเพจให้ได้เลย', $all);
     }
 
     public function test_recorded_chat_message_never_contains_raw_credential(): void
