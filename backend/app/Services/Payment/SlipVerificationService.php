@@ -34,6 +34,7 @@ class SlipVerificationService
     public function __construct(
         private readonly PaymentMessageDetector $detector,
         private readonly TelegramAlertBotService $alertBot,
+        private readonly ?LLMOrderItemExtractor $itemExtractor = null,
     ) {}
 
     /**
@@ -70,7 +71,7 @@ class SlipVerificationService
      * @param  array<int, array{sender: string, content: string}>  $conversationHistory
      * @return array{total: float, summary: string, items: array}|null
      */
-    public function findExpectedPayment(array $conversationHistory, ?string $receiverAccount = null): ?array
+    public function findExpectedPayment(array $conversationHistory, ?string $receiverAccount = null, ?Bot $bot = null): ?array
     {
         foreach (array_reverse($conversationHistory) as $msg) {
             if (($msg['sender'] ?? '') !== 'bot') {
@@ -93,6 +94,17 @@ class SlipVerificationService
 
                 return $item;
             }, $data['items']);
+
+            // ชั้น 2 fallback: regex ได้ total แต่ดึง items ไม่ได้ (prose ล้วน / หลายสินค้าบรรทัดเดียว)
+            // เรียกเฉพาะตอน items ว่างเท่านั้น (cost guard) — ไม่เรียกทุกครั้ง
+            if ($items === [] && $bot !== null && $this->itemExtractor !== null
+                && config('delivery.llm_item_fallback_enabled', true)) {
+                $llmItems = $this->itemExtractor->extract($content, $bot);
+                if ($llmItems !== []) {
+                    $items = $llmItems;
+                }
+            }
+
             $itemNames = array_column($items, 'name');
 
             return [
@@ -217,7 +229,7 @@ class SlipVerificationService
         }
 
         // เช็ค 3: ต้องมีออเดอร์ค้างชำระใน history
-        $expected = $this->findExpectedPayment($conversationHistory, $configured);
+        $expected = $this->findExpectedPayment($conversationHistory, $configured, $bot);
         if ($expected === null) {
             return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
                 isSlip: true, passed: false, failReason: 'no_pending_order',
