@@ -465,7 +465,7 @@ class AccountDeliveryService
     /**
      * แจกข้อความบัญชีลง bubble ให้แยกมากที่สุดแต่ไม่เกิน $max ก้อน:
      * ≤$max → ตัวละ bubble; เกิน → กระจายลงครบ $max ก้อนให้สมดุล (ก้อนแรกๆ ได้ +1 ถ้าหารไม่ลงตัว)
-     * คั่นแต่ละบัญชีในก้อนเดียวกันด้วยบรรทัดว่าง
+     * คั่นแต่ละบัญชีในก้อนเดียวกันด้วยเส้นคั่น (ACCOUNT_DIVIDER) ให้เห็นขอบเขตชัด
      *
      * @param  array<int, string>  $accounts
      * @return array<int, string>
