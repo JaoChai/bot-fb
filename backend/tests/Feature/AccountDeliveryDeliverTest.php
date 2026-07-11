@@ -306,6 +306,33 @@ class AccountDeliveryDeliverTest extends TestCase
         $this->assertSame(AccountDelivery::STATUS_DELIVERED, $this->delivery->fresh()->status);
     }
 
+    public function test_account_and_support_are_separate_bubbles(): void
+    {
+        $pushed = [];
+        $this->mock(LINEService::class, function (MockInterface $mock) use (&$pushed) {
+            $mock->shouldReceive('generateRetryKey')->andReturn('k');
+            $mock->shouldReceive('replyWithFallback')->once()
+                ->withArgs(function ($bot, $token, $userId, $messages) use (&$pushed) {
+                    $pushed = $messages;
+
+                    return true;
+                });
+        });
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        $texts = array_column($pushed, 'text');
+        // มีอย่างน้อย 1 bubble ที่เป็น "บัญชี" (มี credential) และ 1 bubble ที่เป็น support ล้วน
+        $accountBubbles = array_filter($texts, fn ($t) => str_contains($t, 'uid10|pass10'));
+        $supportBubbles = array_filter($texts, fn ($t) => str_contains($t, 'lin.ee/sTD5TQL'));
+        $this->assertNotEmpty($accountBubbles);
+        $this->assertNotEmpty($supportBubbles);
+        // support ต้องไม่ปนอยู่ bubble เดียวกับ credential
+        foreach ($accountBubbles as $b) {
+            $this->assertStringNotContainsString('lin.ee/sTD5TQL', $b);
+        }
+    }
+
     public function test_line_failure_keeps_stock_reserved(): void
     {
         $this->mock(LINEService::class, function (MockInterface $mock) {

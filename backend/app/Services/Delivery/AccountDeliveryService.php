@@ -295,8 +295,8 @@ class AccountDeliveryService
                 }
             }
 
-            $texts = $this->buildCustomerMessages($delivery, $stockItems, $supportItems, $reservedRows);
-            $this->pushTextsToLine($delivery, $texts);
+            $messages = $this->buildCustomerMessages($delivery, $stockItems, $supportItems, $reservedRows);
+            $this->pushTextsToLine($delivery, $messages['accounts'], $messages['support']);
         } catch (\Throwable $e) {
             $delivery->update(['status' => AccountDelivery::STATUS_RESERVED]);
             throw $e;
@@ -363,14 +363,14 @@ class AccountDeliveryService
     }
 
     /**
-     * @return array<int, string> ข้อความที่จะส่งให้ลูกค้า (เรียงตามลำดับ)
+     * @return array{accounts: array<int, string>, support: ?string}
      *
-     * ปิดท้ายด้วยข้อความ Support เสมอ: มีเพจ (อย่างเดียวหรือปนบัญชี) → ข้อความเพจ,
-     * บัญชีล้วน → ข้อความ Support เรื่องบัญชี/ตั้งค่า
+     * แต่ละบัญชี = 1 ข้อความ; support แยกออกมาต่างหาก (null ถ้าไม่มี):
+     * มีเพจ → ข้อความเพจ, บัญชีล้วน → ข้อความ Support เรื่องบัญชี/ตั้งค่า
      */
     private function buildCustomerMessages(AccountDelivery $delivery, $stockItems, $supportItems, array $reservedRows): array
     {
-        $texts = [];
+        $accounts = [];
         $n = $stockItems->count();
         foreach ($stockItems->values() as $i => $item) {
             $row = $reservedRows[$item->stock_item_id];
@@ -383,15 +383,17 @@ class AccountDeliveryService
                     $text .= "\n{$label}: {$value}";
                 }
             }
-            $texts[] = $text;
-        }
-        if ($supportItems->isNotEmpty()) {
-            $texts[] = $this->supportLinkText($delivery);
-        } elseif ($stockItems->isNotEmpty()) {
-            $texts[] = config_string('delivery.account_support_template');
+            $accounts[] = $text;
         }
 
-        return $texts;
+        $support = null;
+        if ($supportItems->isNotEmpty()) {
+            $support = $this->supportLinkText($delivery);
+        } elseif ($stockItems->isNotEmpty()) {
+            $support = config_string('delivery.account_support_template');
+        }
+
+        return ['accounts' => $accounts, 'support' => $support];
     }
 
     /** ข้อความเพจ: แทน {customer} ด้วยชื่อลูกค้า — ไม่มีชื่อก็ตัด placeholder ทิ้งให้ประโยคยังอ่านลื่น */
@@ -409,22 +411,22 @@ class AccountDeliveryService
      * ส่งเป็น push เดียวแบบ all-or-nothing (text ล้วน ห้ามผ่าน LLM/Flex) — ห้ามแบ่งหลาย push:
      * ถ้า push แรกสำเร็จแล้ว push ถัดไปพัง ระบบจะคิดว่ายังไม่ส่งและอาจคืน stock
      * ทั้งที่ลูกค้าได้ credential ไปแล้ว → บัญชีเดิมถูกขายซ้ำได้
-     * LINE ให้ 5 ข้อความ/push, ข้อความละ ~5000 ตัวอักษร → pack ได้เหลือเฟือ
-     * ถ้า pack ไม่พอ (เกิน 5 ข้อความ) ให้ throw ก่อนส่งอะไรออกไป (fail-safe: ยังไม่ส่งเลย)
+     * LINE ให้ 5 ข้อความ/push, ข้อความละ ~5000 ตัวอักษร
+     * ถ้าจัดแล้วเกิน 5 bubble หรือ bubble ไหนยาวเกิน 5000 ให้ throw ก่อนส่ง (fail-safe: ยังไม่ส่งเลย)
      */
-    private function pushTextsToLine(AccountDelivery $delivery, array $texts): void
+    private function pushTextsToLine(AccountDelivery $delivery, array $accounts, ?string $support): void
     {
         $conversation = $delivery->conversation;
         $externalId = $conversation?->external_customer_id;
         if ($conversation?->channel_type !== 'line' || ! $externalId) {
             throw new \RuntimeException('delivery target is not a LINE conversation');
         }
-        if ($texts === []) {
+        if ($accounts === [] && $support === null) {
             throw new \RuntimeException('nothing to deliver');
         }
 
-        $messages = $this->packTexts($texts);
-        if (count($messages) > 5) {
+        $messages = $this->packTexts($accounts, $support);
+        if (count($messages) > 5 || $this->anyBubbleTooLong($messages)) {
             throw new \RuntimeException('delivery message too large for a single LINE push');
         }
 
@@ -435,26 +437,63 @@ class AccountDeliveryService
         );
     }
 
-    /** รวม texts หลายชิ้นเข้าเป็นก้อนละไม่เกิน 4900 ตัวอักษร (กันชน limit 5000) คั่นด้วยบรรทัดว่าง */
-    private function packTexts(array $texts, int $maxLen = 4900): array
+    /**
+     * จัด bubble สำหรับ push เดียว (≤5 ตาม LINE limit) โดยกัน 1 bubble ให้ support เสมอ:
+     * บัญชี ≤ งบ → ตัวละ bubble; เกินงบ → กระจายลงครบงบให้สมดุล; support ต่อท้ายเป็น bubble ของตัวเอง
+     *
+     * @param  array<int, string>  $accounts
+     * @return array<int, string>
+     */
+    private function packTexts(array $accounts, ?string $support, int $maxLen = 4900): array
     {
-        $packed = [];
-        $current = '';
-        foreach ($texts as $text) {
-            if ($current === '') {
-                $current = $text;
-            } elseif (mb_strlen($current) + mb_strlen($text) + 2 <= $maxLen) {
-                $current .= "\n\n".$text;
-            } else {
-                $packed[] = $current;
-                $current = $text;
-            }
-        }
-        if ($current !== '') {
-            $packed[] = $current;
+        $budget = $support !== null ? 4 : 5;
+        $bubbles = $this->groupAccounts($accounts, $budget, $maxLen);
+        if ($support !== null) {
+            $bubbles[] = $support;
         }
 
-        return $packed;
+        return $bubbles;
+    }
+
+    /**
+     * แจกข้อความบัญชีลง bubble ให้แยกมากที่สุดแต่ไม่เกิน $max ก้อน:
+     * ≤$max → ตัวละ bubble; เกิน → กระจายลงครบ $max ก้อนให้สมดุล (ก้อนแรกๆ ได้ +1 ถ้าหารไม่ลงตัว)
+     * คั่นแต่ละบัญชีในก้อนเดียวกันด้วยบรรทัดว่าง
+     *
+     * @param  array<int, string>  $accounts
+     * @return array<int, string>
+     */
+    private function groupAccounts(array $accounts, int $max, int $maxLen): array
+    {
+        $accounts = array_values($accounts);
+        $count = count($accounts);
+        if ($count <= $max) {
+            return $accounts;
+        }
+
+        $base = intdiv($count, $max);
+        $rem = $count % $max;
+        $bubbles = [];
+        $offset = 0;
+        for ($g = 0; $g < $max; $g++) {
+            $size = $base + ($g < $rem ? 1 : 0);
+            $bubbles[] = implode("\n\n", array_slice($accounts, $offset, $size));
+            $offset += $size;
+        }
+
+        return $bubbles;
+    }
+
+    /** มี bubble ไหนยาวเกิน limit ของ LINE ไหม (ใช้ตัดสิน throw ก่อนส่ง) */
+    private function anyBubbleTooLong(array $messages, int $limit = 5000): bool
+    {
+        foreach ($messages as $message) {
+            if (mb_strlen($message) > $limit) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
