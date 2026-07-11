@@ -13,6 +13,10 @@ return [
     // เพดานจำนวนต่อรายการ กัน summary เพี้ยน (qty สูงผิดปกติ) จองรัวจน stock หมดในงานเดียว
     'max_qty' => (int) env('ACCOUNT_DELIVERY_MAX_QTY', 20),
 
+    // ชั้น 2 fallback: เมื่อ regex ดึง total ได้แต่ items ว่าง เรียก utility_model ช่วยดึงรายการสินค้า
+    // (ยัง gated ด้วย utility_model ต้องตั้งค่าไว้ก่อนถึงจะยิงจริง)
+    'llm_item_fallback_enabled' => (bool) env('DELIVERY_LLM_ITEM_FALLBACK', true),
+
     // ข้อความที่ส่งให้ลูกค้าแทน credential เมื่อสินค้าเป็นเพจ (PAGE)
     // {customer} = ชื่อลูกค้าจากโปรไฟล์ LINE (ไม่มีชื่อจะตัด placeholder ทิ้ง)
     'support_link_template' => env('ACCOUNT_DELIVERY_SUPPORT_TEMPLATE') ?: "รบกวนคุณพี่อ่าน แล้วทำความเข้าใจตามขั้นตอนด้านล่างด้วยนะครับ\n\nรบกวนพี่ {customer} แจ้งทีมงาน Support เพิ่มเพจให้ได้เลยพร้อมกับจำนวนที่พี่ซื้อเพจไปนะครับ\n\nLINK LINE -> https://lin.ee/sTD5TQL\n\nID LINE SUPPORT -> @743ddeqy\n\nและ ท่านพี่มีคำถามเพิ่มเติมแจ้งทีมงาน Support ได้เลยครับ",

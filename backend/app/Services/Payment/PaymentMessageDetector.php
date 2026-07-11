@@ -23,13 +23,21 @@ class PaymentMessageDetector
     }
 
     /**
+     * Total keyword variants shared by parsePaymentData/parseConfirmData's total regex,
+     * and by parseItems' fallback lookahead (so a total line is never also read as an item).
+     */
+    private const TOTAL_KEYWORDS = 'รวมยอดโอน|รวมทั้งสิ้น|สรุปยอด(?:โอน)?|ยอดโอน|ยอดรวม|รวมเป็นเงิน|ยอดสุทธิ|ยอดที่ต้องโอน|ยอดชำระ|ยอดที่ต้องชำระ';
+
+    /**
      * Parse payment data from text.
      * Returns null if total cannot be parsed (required field).
      */
     public function parsePaymentData(string $text): ?array
     {
+        $text = $this->normalize($text);
+
         // Parse total (required)
-        if (! preg_match('/(?:รวมยอดโอน|สรุปยอด(?:โอน)?|ยอดโอน|ยอดรวม|รวมเป็นเงิน)\s*:?\s*([\d,]+)\s*บาท/u', $text, $totalMatch)) {
+        if (! preg_match('/(?:'.self::TOTAL_KEYWORDS.')\s*:?\s*฿?\s*([\d,]+(?:\.\d+)?)\s*(?:บาท|฿)/u', $text, $totalMatch)) {
             return null;
         }
 
@@ -40,17 +48,30 @@ class PaymentMessageDetector
     }
 
     /**
+     * Normalize format drift that isn't specific to items or totals:
+     * some chat model outputs join lines with "|||" instead of a newline.
+     */
+    private function normalize(string $text): string
+    {
+        return str_replace('|||', "\n", $text);
+    }
+
+    /**
      * Parse item lines from an order summary (shared by parsePaymentData/parseConfirmData).
      *
      * Primary: bulleted lines ("1. name (price x qty) = total บาท", "- name total บาท").
-     * Fallback: non-bulleted lines anchored on "= total บาท" — LLMs don't always follow
+     * Fallback: non-bulleted lines anchored on "<sep> total บาท" — LLMs don't always follow
      * the bullet format in the prompt (format drift when the chat model changes).
      */
     private function parseItems(string $text): array
     {
+        // Strip a leading order-summary intro ("สรุปรายการ...:", "รายการ...:", "สั่งซื้อ...:")
+        // from the start of a line so it never pollutes the item name that follows it.
+        $text = preg_replace('/^(?:สรุปรายการ|รายการ|สั่งซื้อ)[^\n:：]*[:：]\s*/mu', '', $text);
+
         $items = [];
         preg_match_all(
-            '/(?:^|\n)\s*(?:\d+[\.\)]\s*|[-•]\s*)(.+?)\s*(?:\(([\d,]+)\s*[x×]\s*(\d+)\)\s*=\s*)?([\d,]+)\s*บาท/u',
+            '/(?:^|\n)\s*(?:\d+[\.\)]\s*|[-•]\s*)(.+?)\s*(?:\(([\d,]+(?:\.\d+)?)\s*[x×]\s*(\d+)\)\s*=\s*)?(?:[:=\-]\s*)?([\d,]+(?:\.\d+)?)\s*บาท/u',
             $text,
             $itemMatches,
             PREG_SET_ORDER
@@ -64,24 +85,29 @@ class PaymentMessageDetector
             return $items;
         }
 
-        // Fallback: "name [qty ตัว x price] = total บาท" without bullets.
-        // Requires "=" so total/bank lines never match; excludes total/discount/fee lines.
+        // Fallback: "name [qty] <sep> total บาท" without bullets.
+        // Requires "<number> บาท" at the end so account/bank-name lines never match;
+        // excludes total/discount/fee lines via the lookahead (narrowed to the exact
+        // total phrasings so a product name like "ยอดนิยม Pack" isn't eaten too).
         // Known limitation: matches at most one item per line (fine — one item per line
         // is the only shape the bot produces).
         preg_match_all(
-            '/^(?!\s*(?:รวม|สรุป|ยอด|ส่วนลด|ค่าธรรมเนียม))\s*(.+?)\s*(?:(\d+)\s*(?:ตัว|ชิ้น|อัน)\s*[x×]\s*([\d,]+))?\s*=\s*([\d,]+)\s*บาท/mu',
+            '/^(?!\s*(?:รวม|สรุป|'.self::TOTAL_KEYWORDS.'|ส่วนลด|ค่าธรรมเนียม))\s*(.+?)\s*(?:(\d+)\s*(?:ตัว|เพจ|ใบ|ชิ้น|อัน)(?:\s*[x×]\s*([\d,]+))?|[x×]\s*(\d+))?\s*[:=\-]\s*([\d,]+(?:\.\d+)?)\s*บาท/mu',
             $text,
             $itemMatches,
             PREG_SET_ORDER
         );
 
         foreach ($itemMatches as $match) {
-            // Strip a trailing numeric "(price x qty)" group the primary regex would
-            // have consumed, but keep variant parens like "(ผูกบัตร)".
-            $name = trim(preg_replace('/\s*\([\d,.\s x×]+\)$/u', '', $match[1]));
+            // Strip a leading emoji/symbol some chat models prepend to item lines
+            // (e.g. "🔹 Nolimit ..."), keeping any Thai/Latin letters or digits.
+            $name = preg_replace('/^[^\p{L}\p{N}]+/u', '', trim($match[1]));
 
-            // Note: qty comes before price here ("2 ตัว x 800"), reversed from the primary format
-            $this->pushItem($items, $name, $match[4], $match[3] ?? '', $match[2] ?? '');
+            // qty: unit-word form ("N ตัว/เพจ/ใบ/ชิ้น/อัน") or "xN" form — mutually exclusive.
+            $qty = ($match[2] ?? '') !== '' ? $match[2] : ($match[4] ?? '');
+            $price = $match[3] ?? '';
+
+            $this->pushItem($items, $name, $match[5], $price, $qty);
         }
 
         return $items;
@@ -95,8 +121,11 @@ class PaymentMessageDetector
 
         $item = ['name' => $name, 'total' => $total];
 
-        if ($price !== '' && $qty !== '') {
+        if ($price !== '') {
             $item['price'] = $price;
+        }
+
+        if ($qty !== '') {
             $item['qty'] = (int) $qty;
         }
 

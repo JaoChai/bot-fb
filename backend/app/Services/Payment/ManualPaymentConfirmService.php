@@ -45,7 +45,7 @@ class ManualPaymentConfirmService
     {
         $history = $this->recentTextHistory($conversation);
         $receiverAccount = $bot->settings?->slip_receiver_account ?: null;
-        $expected = $this->slipVerification->findExpectedPayment($history, $receiverAccount);
+        $expected = $this->slipVerification->findExpectedPayment($history, $receiverAccount, $bot);
 
         $amount = $amountOverride ?? ($expected['total'] ?? null);
         if ($amount === null) {
