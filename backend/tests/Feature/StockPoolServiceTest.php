@@ -65,7 +65,9 @@ class StockPoolServiceTest extends TestCase
 
         $this->assertSame(0, DB::connection('mhha_acc')->table('items_reserved')->count());
         $sold = DB::connection('mhha_acc')->table('items_sold')->first();
-        $this->assertSame(10, (int) $sold->id);
+        // id ไม่ใช่ 10 ที่ย้ายมาโดยตั้งใจ — items_sold.id เป็น IDENTITY บน Postgres จริง
+        // ต้องปล่อยให้ auto-generate ใหม่เสมอ (ห้าม insert id เดิม)
+        $this->assertSame('NLMP', $sold->name);
         $this->assertSame('บูม', $sold->first_name);
         $this->assertSame('bot-fb', $sold->username);
     }
@@ -79,7 +81,8 @@ class StockPoolServiceTest extends TestCase
 
         $this->assertSame(0, DB::connection('mhha_acc')->table('items_reserved')->count());
         $avail = DB::connection('mhha_acc')->table('items_available')->first();
-        $this->assertSame(10, (int) $avail->id);
+        // id ไม่ใช่ 10 ที่ย้ายมาโดยตั้งใจ — items_available.id เป็น IDENTITY บน Postgres จริง
+        // ต้องปล่อยให้ auto-generate ใหม่เสมอ (ห้าม insert id เดิม)
         $this->assertSame('uid10|pass10', $avail->detail);
     }
 
@@ -111,6 +114,41 @@ class StockPoolServiceTest extends TestCase
 
         $this->assertCount(1, $orphans);
         $this->assertSame(StockPoolService::orderRef(8), $orphans[0]['order_ref']);
+    }
+
+    /**
+     * items_sold / items_available เป็น Postgres IDENTITY column (id) — INSERT ที่มี id
+     * แบบ explicit จะพัง "cannot insert a non-DEFAULT value into column id" บน Postgres จริง
+     * แต่ sqlite (ที่เทสต์รันด้วย) ไม่บังคับกฎนี้ จึงต้องเทสต์ payload ตรงๆ ผ่าน reflection
+     * แทนที่จะเทสต์ผ่าน insert จริงซึ่งจะผ่านทั้งก่อน/หลังแก้บน sqlite
+     */
+    public function test_build_dest_row_excludes_id_but_keeps_other_columns_and_extras(): void
+    {
+        $method = new \ReflectionMethod(StockPoolService::class, 'buildDestRow');
+
+        $row = [
+            'id' => 10, 'name' => 'NLMP', 'detail' => 'uid10|pass10', 'type' => 'account',
+            'viaId' => 'v1', 'bmId' => 'bm1', 'adsId' => 'ads1',
+            'cost' => 100, 'price' => 200, 'createdAt' => '2026-01-01', 'updatedAt' => '2026-01-01',
+        ];
+        $extraColumns = ['isAgent' => false, 'first_name' => 'บูม', 'username' => 'bot-fb'];
+
+        $result = $method->invoke($this->pool, $row, $extraColumns);
+
+        $this->assertArrayNotHasKey('id', $result);
+        $this->assertSame('NLMP', $result['name']);
+        $this->assertSame('uid10|pass10', $result['detail']);
+        $this->assertSame('account', $result['type']);
+        $this->assertSame('v1', $result['viaId']);
+        $this->assertSame('bm1', $result['bmId']);
+        $this->assertSame('ads1', $result['adsId']);
+        $this->assertSame(100, $result['cost']);
+        $this->assertSame(200, $result['price']);
+        $this->assertSame('2026-01-01', $result['createdAt']);
+        $this->assertSame('2026-01-01', $result['updatedAt']);
+        $this->assertFalse($result['isAgent']);
+        $this->assertSame('บูม', $result['first_name']);
+        $this->assertSame('bot-fb', $result['username']);
     }
 
     public function test_query_failure_never_leaks_detail_in_exception(): void
