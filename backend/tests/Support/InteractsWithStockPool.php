@@ -52,10 +52,11 @@ trait InteractsWithStockPool
         });
     }
 
-    protected function seedAvailable(int $id, string $code, string $detail = 'uid|pass|mail|2fa', string $type = 'x'): void
+    protected function seedAvailable(int $id, string $code, string $detail = 'uid|pass|mail|2fa', string $type = 'x', ?string $bmId = null, ?string $adsId = null): void
     {
         DB::connection('mhha_acc')->table('items_available')->insert([
             'id' => $id, 'name' => $code, 'detail' => $detail, 'type' => $type,
+            'bmId' => $bmId, 'adsId' => $adsId,
             'cost' => 0, 'price' => 0, 'createdAt' => now(), 'updatedAt' => now(),
         ]);
     }
