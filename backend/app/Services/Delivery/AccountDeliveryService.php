@@ -83,6 +83,17 @@ class AccountDeliveryService
         // floor ที่ 1 กัน footgun: ตั้ง max_qty=0 ผิดจะทำให้ loop ไม่รัน item หายเงียบ
         $maxQty = max(1, config_int('delivery.max_qty', 20));
         foreach ($items as $item) {
+            // บรรทัดราคา 0 (เช่น "บริการเสริม Page = 0 บาท") เป็นของแถม/ประดับในสรุปยอด ไม่ใช่การสั่งซื้อ —
+            // ข้ามก่อนแมพ กัน parser จับ "Page" ไปสร้าง support_link (ส่งข้อความแจ้งรับเพจผิด) ทั้งที่ลูกค้าซื้อแค่บัญชี.
+            // สินค้าจริงมีราคาเสมอ; parse ราคาไม่ได้ = fail-open (ปล่อยผ่านตามเดิม ปลอดภัยกว่าข้ามเงียบ)
+            $totalStr = str_replace(',', '', (string) ($item['total'] ?? ''));
+            if (is_numeric($totalStr) && (float) $totalStr <= 0) {
+                Log::info('Delivery: skip zero-price summary line', [
+                    'delivery_id' => $delivery->id, 'product' => $item['name'] ?? '',
+                ]);
+
+                continue;
+            }
             $rawQty = max(1, (int) ($item['qty'] ?? 1));
             $qty = min($maxQty, $rawQty);
             if ($qty < $rawQty) {
