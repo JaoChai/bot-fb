@@ -60,7 +60,7 @@ class AccountDeliveryCreateTest extends TestCase
             'stock_code' => 'NLMP', 'delivery_method' => 'stock',
         ]);
         ProductStock::create([
-            'name' => 'เพจ', 'slug' => 'page', 'aliases' => [], 'in_stock' => true,
+            'name' => 'เพจ', 'slug' => 'page', 'aliases' => ['page'], 'in_stock' => true,
             'display_order' => 2, 'stock_code' => null, 'delivery_method' => 'support_link',
         ]);
     }
@@ -94,6 +94,41 @@ class AccountDeliveryCreateTest extends TestCase
                 && str_contains($request['reply_markup'] ?? '', "dv|{$delivery->id}|x")
                 && str_contains($request['reply_markup'] ?? '', "dx|{$delivery->id}|x");
         });
+    }
+
+    public function test_zero_price_page_decoration_line_is_skipped_not_delivered(): void
+    {
+        $this->seedAvailable(10, 'NLMP');
+
+        // สรุปยอดแทบทุกออเดอร์มีบรรทัด "บริการเสริม Page = 0 บาท" — parser จับเป็น item ที่ mapper
+        // แมพ "page" เป็นสินค้าเพจ (support_link) แล้วส่งข้อความแจ้งรับเพจผิด ทั้งที่ลูกค้าซื้อแค่บัญชี.
+        // ราคา 0 = ของประดับในสรุปยอด ไม่ใช่การซื้อ — ต้องถูกข้ามก่อนแมพ.
+        $delivery = $this->create([
+            ['name' => 'Nolimit ส่วนตัว', 'total' => '1100', 'qty' => 1],
+            ['name' => 'บริการเสริม Page', 'total' => '0', 'qty' => 1],
+        ]);
+
+        $this->assertSame(AccountDelivery::STATUS_RESERVED, $delivery->status);
+        // ห้ามสร้าง support_link สำหรับบรรทัดราคา 0
+        $this->assertSame(0, $delivery->items()->where('kind', 'support_link')->count());
+        // บัญชี stock ยังถูกจองปกติ ไม่ถูกชักนำไปด้วย
+        $this->assertSame(1, $delivery->items()->where('kind', 'stock')->where('status', 'reserved')->count());
+        $this->assertSame(1, DB::connection('mhha_acc')->table('items_reserved')->count());
+    }
+
+    public function test_priced_page_line_is_still_delivered_as_support_link(): void
+    {
+        $this->seedAvailable(10, 'NLMP');
+
+        // ชื่อเดียวกับ test บน แต่ราคา 199 = ซื้อเพจจริง — guard ต้องข้ามเฉพาะราคา 0 ห้ามกินของจริง (กันแก้เกิน)
+        $delivery = $this->create([
+            ['name' => 'Nolimit ส่วนตัว', 'total' => '1100', 'qty' => 1],
+            ['name' => 'บริการเสริม Page', 'total' => '199', 'qty' => 1],
+        ]);
+
+        $this->assertSame(AccountDelivery::STATUS_RESERVED, $delivery->status);
+        $this->assertSame(1, $delivery->items()->where('kind', 'support_link')->count());
+        $this->assertSame(1, $delivery->items()->where('kind', 'stock')->where('status', 'reserved')->count());
     }
 
     public function test_reserve_writes_bfb_prefixed_order_ref(): void
