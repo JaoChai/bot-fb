@@ -105,7 +105,10 @@ class SlipVerificationService
                 }
             }
 
-            $itemNames = array_column($items, 'name');
+            // ตัดของแถมราคา 0 ออกจาก summary กันชื่อหลุดไปข้อความยืนยัน/Telegram/order_items —
+            // แต่คืน 'items' เต็มชุดให้ delivery กรอง+log เองอีกชั้น
+            $visibleItems = array_filter($items, fn (array $item) => ! PaymentMessageDetector::isZeroPriceItem($item));
+            $itemNames = array_column($visibleItems, 'name');
 
             return [
                 'total' => (float) str_replace(',', '', $data['total']),

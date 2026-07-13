@@ -78,6 +78,23 @@ class LLMOrderItemFallbackTest extends TestCase
         $this->assertSame('Nolimit Level Up+ Personal, Page', $result['summary']);
     }
 
+    public function test_keeps_item_in_summary_when_llm_omits_total_fail_open(): void
+    {
+        // LLM คืน item จริงแต่ไม่ใส่ total → default '' (ไม่ใช่ '0') → ตัวกรองราคา 0
+        // ต้อง fail-open เก็บชื่อไว้ใน summary (ไม่แน่ใจว่าของแถม = ไม่ตัด)
+        $bot = $this->makeBotWithUtilityModel();
+
+        $openRouter = $this->createMock(OpenRouterService::class);
+        $openRouter->method('chat')->willReturn([
+            'content' => '{"items":[{"name":"Nolimit Level Up+ Personal","qty":1,"total":"1000"},{"name":"Page","qty":1}]}',
+        ]);
+
+        $result = $this->service($openRouter)->findExpectedPayment($this->history(self::PROSE_SUMMARY), null, $bot);
+
+        $this->assertNotNull($result);
+        $this->assertSame('Nolimit Level Up+ Personal, Page', $result['summary']);
+    }
+
     public function test_does_not_call_llm_when_regex_already_found_items(): void
     {
         $bot = $this->makeBotWithUtilityModel();

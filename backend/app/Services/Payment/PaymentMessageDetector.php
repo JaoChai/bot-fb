@@ -113,6 +113,17 @@ class PaymentMessageDetector
         return $items;
     }
 
+    /**
+     * บรรทัดราคา 0 (เช่น "บริการเสริม Page = 0 บาท") เป็นของแถม/ประดับในสรุปยอด ไม่ใช่การสั่งซื้อ.
+     * กติกากลางใช้ร่วมกันทุก consumer (summary + delivery) กัน drift; parse ราคาไม่ได้ = false (fail-open เก็บ item ไว้).
+     */
+    public static function isZeroPriceItem(array $item): bool
+    {
+        $total = str_replace(',', '', (string) ($item['total'] ?? ''));
+
+        return is_numeric($total) && (float) $total <= 0;
+    }
+
     private function pushItem(array &$items, string $name, string $total, string $price, string $qty): void
     {
         if ($name === '') {

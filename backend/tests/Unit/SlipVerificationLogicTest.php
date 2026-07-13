@@ -67,6 +67,38 @@ class SlipVerificationLogicTest extends TestCase
 
         $this->assertNotNull($result);
         $this->assertSame(1100.0, $result['total']);
+        // Page = 0 บาท เป็นของแถม → ตัดออกจาก summary เหลือแค่สินค้าจริง
+        $this->assertSame('Nolimit Level Up+ Personal (ผูกบัตร)', $result['summary']);
+    }
+
+    public function test_filters_zero_price_freebie_from_summary_real_prod_format(): void
+    {
+        // ข้อความจริงจาก prod 2026-07-13 (msg 80713) ที่ทำให้ "Page ×1" ปลอมหลุดไป
+        // Telegram alert + order_items ทั้งที่ลูกค้าสั่งแค่ BM ตัวเดียว
+        $history = [
+            ['sender' => 'bot', 'content' => "สรุปรายการที่พี่สั่งซื้อครับ:\n\n1. Nolimit Level Up+ BM (ผูกบัตร) (1,100 x 1) = 1,100 บาท\n\n2. บริการเสริม Page = 0 บาท\n\nรวมยอดโอน: 1,100 บาท ✅\n\n------------------------------\n\nรบกวนโอนเข้าบัญชี:\nธนาคารกสิกรไทย (KBANK)\n223-3-24880-3\nชื่อบัญชี: หจก. มั่งมีทรัพย์ขายของออนไลน์"],
+            ['sender' => 'user', 'content' => '[รูปภาพ]'],
+        ];
+
+        $result = $this->service()->findExpectedPayment($history);
+
+        $this->assertNotNull($result);
+        $this->assertSame(1100.0, $result['total']);
+        $this->assertSame('Nolimit Level Up+ BM (ผูกบัตร)', $result['summary']);
+    }
+
+    public function test_keeps_page_in_summary_when_it_has_real_price(): void
+    {
+        // Page ที่มีราคาจริง (199) = ซื้อจริง → ห้ามกรอง, เฉพาะราคา 0 ถึงตัด
+        $history = [
+            ['sender' => 'bot', 'content' => "สรุปรายการที่พี่สั่งซื้อครับ:\n\nNolimit Level Up+ Personal (ผูกบัตร) 1 ตัว x 1,100 = 1,100 บาท\nบริการเสริม Page = 199 บาท\n\nรวมยอดโอน: 1,299 บาท ✅\n\nรบกวนโอนเข้าบัญชี:\nธนาคารกสิกรไทย (KBANK)\n223-3-24880-3"],
+            ['sender' => 'user', 'content' => '[รูปภาพ]'],
+        ];
+
+        $result = $this->service()->findExpectedPayment($history);
+
+        $this->assertNotNull($result);
+        $this->assertSame(1299.0, $result['total']);
         $this->assertSame('Nolimit Level Up+ Personal (ผูกบัตร), บริการเสริม Page', $result['summary']);
     }
 
