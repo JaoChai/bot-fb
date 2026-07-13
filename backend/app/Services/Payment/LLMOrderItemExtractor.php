@@ -104,7 +104,9 @@ PROMPT;
             $items[] = [
                 'name' => trim($item['name']),
                 'qty' => isset($item['qty']) ? (int) $item['qty'] : 1,
-                'total' => isset($item['total']) ? (string) $item['total'] : '0',
+                // default ต้องเป็น '' ไม่ใช่ '0' — is_numeric('') = false ทำให้ตัวกรองราคา 0
+                // (ทั้งใน delivery และ summary) ปล่อยผ่านแบบ fail-open ไม่ตัด item จริงที่ LLM ไม่คืนราคา
+                'total' => isset($item['total']) ? (string) $item['total'] : '',
             ];
         }
 
