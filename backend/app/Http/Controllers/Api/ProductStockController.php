@@ -44,7 +44,11 @@ class ProductStockController extends Controller
         ]);
 
         DB::transaction(function () use ($product, $validated) {
-            $product->update($validated);
+            // ปิดมือ = ปักหมุดปิด (stock:sync-pool จะไม่เปิดกลับ); เปิดมือ = คืนสิทธิ์ให้ auto-sync
+            $product->update([
+                'in_stock' => $validated['in_stock'],
+                'manual_off' => ! $validated['in_stock'],
+            ]);
 
             // Clear semantic cache entries atomically with the stock update
             if ($product->wasChanged('in_stock')) {

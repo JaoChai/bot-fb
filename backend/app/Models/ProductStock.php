@@ -16,6 +16,7 @@ class ProductStock extends Model
         'slug',
         'aliases',
         'in_stock',
+        'manual_off',
         'display_order',
         'stock_code',
         'delivery_method',
@@ -24,5 +25,6 @@ class ProductStock extends Model
     protected $casts = [
         'aliases' => 'array',
         'in_stock' => 'boolean',
+        'manual_off' => 'boolean',
     ];
 }

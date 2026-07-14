@@ -59,4 +59,28 @@ class SyncProductStockFromPoolTest extends TestCase
 
         $this->assertSame('keep', Cache::get(ProductStock::STOCK_CACHE_KEY));
     }
+
+    public function test_manual_off_stays_off_even_when_pool_has_stock(): void
+    {
+        // เจ้าของสั่งปิดค้าง ทั้งที่ pool ยังมีของ — cron ต้องไม่เปิดกลับ
+        $this->seedAvailable(5, 'NLMP');
+        ProductStock::where('slug', 'nolimit-personal')
+            ->update(['in_stock' => false, 'manual_off' => true]);
+
+        $this->artisan('stock:sync-pool')->assertSuccessful();
+
+        $this->assertFalse(ProductStock::where('slug', 'nolimit-personal')->first()->in_stock);
+    }
+
+    public function test_releasing_manual_off_lets_auto_sync_turn_back_on(): void
+    {
+        // กดเปิดมือ (manual_off=false) → auto-sync กลับมาทำงานตาม pool
+        $this->seedAvailable(5, 'NLMP');
+        ProductStock::where('slug', 'nolimit-personal')
+            ->update(['in_stock' => false, 'manual_off' => false]);
+
+        $this->artisan('stock:sync-pool')->assertSuccessful();
+
+        $this->assertTrue(ProductStock::where('slug', 'nolimit-personal')->first()->in_stock);
+    }
 }
