@@ -34,7 +34,8 @@ class SyncProductStockFromPool extends Command
         $changed = 0;
         $products = ProductStock::where('delivery_method', 'stock')->whereNotNull('stock_code')->get();
         foreach ($products as $product) {
-            $shouldBeInStock = ($counts[$product->stock_code] ?? 0) > 0;
+            // ปิดค้างที่เจ้าของสั่งเองต้องชนะ pool (แต่ pool ว่างยังบังคับปิด กัน oversell)
+            $shouldBeInStock = (($counts[$product->stock_code] ?? 0) > 0) && ! $product->manual_off;
             if ($product->in_stock === $shouldBeInStock) {
                 continue;
             }
