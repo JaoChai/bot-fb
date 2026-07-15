@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
+import { useToast } from '@/hooks/use-toast';
 import type { ProductStock } from '@/types/api';
 
 interface ProductStocksResponse {
@@ -26,6 +27,7 @@ export function useProductStocks() {
  */
 export function useUpdateProductStock() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   return useMutation({
     mutationFn: async ({ slug, in_stock }: { slug: string; in_stock: boolean }) => {
@@ -52,10 +54,24 @@ export function useUpdateProductStock() {
 
       return { previous };
     },
+    onSuccess: (data) => {
+      // description สื่อพฤติกรรม manual_off: ปิด = ปิดค้าง / เปิด = คืนให้ auto-sync
+      toast({
+        title: data.in_stock ? `เปิดขาย ${data.name} แล้ว` : `ปิด ${data.name} แล้ว`,
+        description: data.in_stock
+          ? 'ระบบจะปรับตามสต็อกจริงอัตโนมัติ'
+          : 'ปิดค้าง — ระบบจะไม่เปิดกลับเอง',
+      });
+    },
     onError: (_err, _vars, context) => {
       if (context?.previous) {
         queryClient.setQueryData(queryKeys.productStocks.list(), context.previous);
       }
+      toast({
+        variant: 'destructive',
+        title: 'บันทึกไม่สำเร็จ',
+        description: 'ลองใหม่อีกครั้ง',
+      });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.productStocks.list() });
