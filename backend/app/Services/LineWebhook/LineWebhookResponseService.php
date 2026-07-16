@@ -31,7 +31,7 @@ class LineWebhookResponseService
 
     public const SLIP_FAIL_TEMPLATE = 'ได้รับสลิปแล้วครับ ขอตรวจสอบยอดสักครู่ เดี๋ยวแอดมินยืนยันให้อีกครั้งนะครับ 🙏';
 
-    private const SLIP_PENDING_TEMPLATE = 'สลิปเพิ่งโอน ธนาคารกำลังประมวลผลครับ 🙏 ระบบจะตรวจให้อัตโนมัติใน 1-2 นาที รอสักครู่นะครับ';
+    private const SLIP_PENDING_TEMPLATE = 'สลิปเพิ่งโอน ธนาคารกำลังประมวลผลครับ 🙏 ระบบจะตรวจให้อัตโนมัติใน 1-2 นาที รอสักครู่นะครับ (ถ้าเกิน 10 นาทีแล้วยังไม่มีอัพเดต รบกวนส่งสลิปซ้ำอีกครั้งได้เลยครับ)';
 
     // รูปโหลดจาก LINE ไม่สำเร็จ (media_url ว่าง) — ตอบลูกค้าให้ส่งใหม่ แทนการเงียบ
     private const IMAGE_UNAVAILABLE_TEMPLATE = 'ขออภัยครับ ระบบโหลดรูปที่ส่งมาไม่สำเร็จ 🙏 รบกวนส่งรูปอีกครั้งนะครับ';
@@ -543,7 +543,7 @@ class LineWebhookResponseService
                 // ธนาคารยังประมวลผลไม่เสร็จ — ตั้ง auto-retry ตรวจ R2 URL เดิมซ้ำ (ลูกค้าไม่ต้องส่งใหม่)
                 // ครบทุกรอบยัง pending ค่อยแจ้งแอดมิน (backstop ใน SlipRetryService)
                 $text = self::SLIP_PENDING_TEMPLATE;
-                if (config('delivery.pending_retry.enabled')) {
+                if (config('delivery.pending_retry.enabled') && $ctx->bot->auto_delivery_enabled) {
                     $delays = (array) config('delivery.pending_retry.delays', [90, 180, 300]);
                     RetrySlipVerification::dispatch(
                         $ctx->bot->id, $ctx->conversation->id, $ctx->userMessage->id, $imageUrl, 1

@@ -393,6 +393,7 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_pending_slip_dispatches_retry_job_and_tells_customer_to_wait(): void
     {
+        $this->bot->update(['auto_delivery_enabled' => true]);
         Bus::fake([RetrySlipVerification::class]);
         Http::fake([
             'api.easyslip.com/*' => Http::response(
@@ -404,7 +405,7 @@ class SlipVerificationPipelineTest extends TestCase
         $ctx = $this->makeContext();
         app(LineWebhookResponseService::class)->generate($ctx);
 
-        // ข้อความใหม่: ไม่ขอให้ส่งสลิปซ้ำ
+        // ข้อความใหม่: ไม่ขอให้ส่งสลิปซ้ำแบบเดิม (แต่มี fallback hint ให้ส่งซ้ำถ้าเกิน 10 นาที)
         $this->assertStringNotContainsString('ส่งสลิปเดิมมาอีกครั้ง', $ctx->response->payload);
         $this->assertStringContainsString('ตรวจให้อัตโนมัติ', $ctx->response->payload);
 
@@ -415,8 +416,28 @@ class SlipVerificationPipelineTest extends TestCase
         });
     }
 
+    public function test_pending_slip_does_not_dispatch_retry_for_non_delivery_bot(): void
+    {
+        // auto_delivery_enabled default = false → ไม่ dispatch retry job แม้ feature flag เปิด
+        // (กันแข่งกับ manual-confirm/ลูกค้าส่งสลิปใหม่บนบอทที่ไม่มี auto-delivery dedup คุ้มกัน)
+        Bus::fake([RetrySlipVerification::class]);
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(
+                ['success' => false, 'error' => ['code' => 'SLIP_PENDING', 'message' => 'pending']], 404
+            ),
+            'api.line.me/*' => Http::response(['ok' => true]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        Bus::assertNotDispatched(RetrySlipVerification::class);
+        $this->assertStringContainsString('ตรวจให้อัตโนมัติ', $ctx->response->payload);
+    }
+
     public function test_pending_retry_disabled_keeps_legacy_behaviour(): void
     {
+        $this->bot->update(['auto_delivery_enabled' => true]);
         config(['delivery.pending_retry.enabled' => false]);
         Bus::fake([RetrySlipVerification::class]);
         Http::fake([
