@@ -156,4 +156,34 @@ class SlipRetryServiceTest extends TestCase
                 ->contains(fn ($m) => ($m->metadata['slip_status'] ?? null) === 'passed')
         );
     }
+
+    public function test_retry_hard_fail_pushes_fail_message_and_alerts(): void
+    {
+        Bus::fake([ReserveAccountStock::class, RetrySlipVerification::class]);
+        Http::fake([
+            'api.easyslip.com/*' => Http::response([
+                'success' => true,
+                'data' => [
+                    'amountInSlip' => 5, // ยอดไม่ตรงกับ 1,100
+                    'rawSlip' => [
+                        'transRef' => 'TR-FAIL-1',
+                        'amount' => ['amount' => 5],
+                        'receiver' => ['bank' => ['id' => '004'], 'account' => ['bank' => ['account' => 'xxx-x-x4880-x']]],
+                    ],
+                ],
+                'message' => 'success',
+            ]),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+        ]);
+
+        app(SlipRetryService::class)->retry(
+            $this->bot, $this->conversation, $this->slipMessage, $this->slipMessage->media_url, 1
+        );
+
+        Bus::assertNotDispatched(ReserveAccountStock::class);
+        Bus::assertNotDispatched(RetrySlipVerification::class);
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.line.me'));
+    }
 }

@@ -55,7 +55,15 @@ class SlipRetryService
             return;
         }
 
-        // Task 3 เติม fail อื่น (fake/amount_mismatch/...) — ชั่วคราวแจ้งแอดมิน
+        // fail อื่น (fake/amount_mismatch/wrong_account/duplicate/no_pending_order):
+        // ตอบลูกค้าด้วย fail template + แจ้งแอดมิน (mirror webhook fail path)
+        $failText = $bot->settings?->slip_fail_message
+            ?: LineWebhookResponseService::SLIP_FAIL_TEMPLATE;
+        $conversation->messages()->create([
+            'sender' => 'bot', 'type' => 'text', 'content' => $failText,
+            'metadata' => ['slip_verification' => true, 'slip_status' => $result->status(), 'slip_retry' => true],
+        ]);
+        $this->pushToLine($bot, $conversation, $failText);
         $this->slipVerification->notifyAdmin($bot, $conversation, $result);
     }
 
