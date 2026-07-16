@@ -67,10 +67,18 @@ class SlipRetryService
 
         if ($attempt < $maxAttempts) {
             $nextDelay = (int) $delays[$attempt]; // delays[attempt] = ระยะก่อนรอบ attempt+1
-            RetrySlipVerification::dispatch($bot->id, $conversation->id, $message->id, $imageUrl, $attempt + 1)
-                ->delay(now()->addSeconds($nextDelay));
 
-            return;
+            try {
+                RetrySlipVerification::dispatch($bot->id, $conversation->id, $message->id, $imageUrl, $attempt + 1)
+                    ->delay(now()->addSeconds($nextDelay));
+
+                return;
+            } catch (\Throwable $e) {
+                Log::warning('Slip retry: re-dispatch failed', [
+                    'conversation_id' => $conversation->id, 'error' => $e->getMessage(),
+                ]);
+                // fall through to notifyAdmin backstop below
+            }
         }
 
         // ครบทุกรอบยัง pending/ตรวจไม่ได้ → แจ้งแอดมินให้ตรวจมือ (backstop)
