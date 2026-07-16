@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ReserveAccountStock;
 use App\Jobs\RetrySlipVerification;
 use App\Models\Bot;
 use App\Models\BotSetting;
@@ -38,6 +39,7 @@ class SlipRetryServiceTest extends TestCase
             'user_id' => $user->id,
             'status' => 'active',
             'channel_type' => 'line',
+            'channel_access_token' => 'line-token',
         ]);
         BotSetting::create([
             'bot_id' => $this->bot->id,
@@ -115,5 +117,43 @@ class SlipRetryServiceTest extends TestCase
 
         Bus::assertNotDispatched(RetrySlipVerification::class);
         Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+    }
+
+    public function test_passed_retry_reserves_stock_and_pushes_success(): void
+    {
+        Bus::fake([ReserveAccountStock::class]);
+        Http::fake([
+            'api.easyslip.com/*' => Http::response([
+                'success' => true,
+                'data' => [
+                    'amountInSlip' => 1100,
+                    'rawSlip' => [
+                        'transRef' => 'TR-RETRY-1',
+                        'amount' => ['amount' => 1100],
+                        'receiver' => ['bank' => ['id' => '004'], 'account' => ['bank' => ['account' => 'xxx-x-x4880-x']]],
+                    ],
+                ],
+                'message' => 'success',
+            ]),
+            'api.line.me/*' => Http::response(['ok' => true]),
+        ]);
+
+        app(SlipRetryService::class)->retry(
+            $this->bot, $this->conversation, $this->slipMessage, $this->slipMessage->media_url, 1
+        );
+
+        // จองของ
+        Bus::assertDispatched(ReserveAccountStock::class, function ($job) {
+            return $job->conversationId === $this->conversation->id && (float) $job->amount === 1100.0;
+        });
+        // push ข้อความ "เงินเข้าแล้ว" ไป LINE
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.line.me'));
+        // bot message ถูกสร้าง สถานะ passed
+        $this->assertTrue(
+            $this->conversation->messages()
+                ->where('sender', 'bot')
+                ->get()
+                ->contains(fn ($m) => ($m->metadata['slip_status'] ?? null) === 'passed')
+        );
     }
 }

@@ -2,11 +2,18 @@
 
 namespace App\Services\Payment;
 
+use App\Events\ConversationUpdated;
+use App\Events\MessageSent;
+use App\Jobs\ReserveAccountStock;
 use App\Jobs\RetrySlipVerification;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\SlipVerification;
+use App\Services\FlowPluginService;
+use App\Services\LINEService;
+use App\Services\LineWebhook\LineWebhookResponseService;
+use App\Services\PaymentFlexService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -18,6 +25,9 @@ class SlipRetryService
 {
     public function __construct(
         private readonly SlipVerificationService $slipVerification,
+        private readonly PaymentFlexService $paymentFlex,
+        private readonly LINEService $line,
+        private readonly FlowPluginService $flowPlugin,
     ) {}
 
     /**
@@ -34,7 +44,8 @@ class SlipRetryService
         $result = $this->slipVerification->verify($bot, $conversation, $message, $imageUrl, $history);
 
         if ($result->passed) {
-            // Task 2 เติม emitSuccess() — ชั่วคราวยังไม่ทำอะไร
+            $this->emitSuccess($bot, $conversation, $result);
+
             return;
         }
 
@@ -46,6 +57,92 @@ class SlipRetryService
 
         // Task 3 เติม fail อื่น (fake/amount_mismatch/...) — ชั่วคราวแจ้งแอดมิน
         $this->slipVerification->notifyAdmin($bot, $conversation, $result);
+    }
+
+    /**
+     * ปล่อย success side-effects แบบ push (นอก webhook ไม่มี reply token) —
+     * mirror ManualPaymentConfirmService post-commit path แต่ใช้ผล EasySlip 'passed'
+     * ที่ verify() บันทึกไว้แล้ว (มี slipVerificationId + trans_ref)
+     */
+    private function emitSuccess(Bot $bot, Conversation $conversation, SlipVerificationResult $result): void
+    {
+        $template = $bot->settings?->slip_success_message
+            ?: LineWebhookResponseService::SLIP_SUCCESS_TEMPLATE;
+        $text = str_replace(
+            ['{amount}', '{order_summary}'],
+            [number_format($result->amount ?? 0), $result->orderSummary ?? '-'],
+            $template,
+        );
+
+        $botMessage = $conversation->messages()->create([
+            'sender' => 'bot',
+            'content' => $text,
+            'type' => 'text',
+            'metadata' => [
+                'slip_verification' => true,
+                'slip_status' => 'passed',
+                'slip_trans_ref' => $result->transRef,
+                'slip_retry' => true,
+            ],
+        ]);
+
+        $this->pushToLine($bot, $conversation, $text);
+        $this->runPlugins($bot, $conversation, $botMessage);
+
+        if ($result->slipVerificationId !== null) {
+            ReserveAccountStock::dispatchSafely(
+                $bot->id,
+                $conversation->id,
+                $result->slipVerificationId,
+                $result->amount,
+                $result->orderItems ?? [],
+            );
+        }
+
+        $this->broadcast($conversation, $botMessage);
+    }
+
+    private function pushToLine(Bot $bot, Conversation $conversation, string $text): void
+    {
+        $externalId = $conversation->external_customer_id;
+        if ($conversation->channel_type !== 'line' || ! $externalId) {
+            return;
+        }
+
+        try {
+            $transformed = $this->paymentFlex->tryConvertToFlex($text, $conversation);
+            $this->line->replyWithFallback($bot, null, $externalId, [$transformed], $this->line->generateRetryKey());
+        } catch (\Throwable $e) {
+            Log::error('Slip retry: LINE push failed', ['conversation_id' => $conversation->id, 'error' => $e->getMessage()]);
+        }
+    }
+
+    private function runPlugins(Bot $bot, Conversation $conversation, Message $botMessage): void
+    {
+        try {
+            $this->flowPlugin->executePlugins($bot, $conversation, $botMessage);
+        } catch (\Throwable $e) {
+            Log::warning('Slip retry: plugin execution failed', ['conversation_id' => $conversation->id, 'error' => $e->getMessage()]);
+        }
+    }
+
+    private function broadcast(Conversation $conversation, Message $botMessage): void
+    {
+        $conversation->update(['last_message_at' => now(), 'last_message_id' => $botMessage->id]);
+        $conversation->increment('message_count');
+        $conversation->refresh();
+
+        try {
+            broadcast(new MessageSent($botMessage, [
+                'id' => $conversation->id,
+                'message_count' => $conversation->message_count,
+                'last_message_at' => $conversation->last_message_at?->toISOString(),
+                'unread_count' => $conversation->unread_count,
+            ]))->toOthers();
+            broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
+        } catch (\Throwable $e) {
+            Log::error('Slip retry: broadcast failed', ['conversation_id' => $conversation->id, 'error' => $e->getMessage()]);
+        }
     }
 
     /**
