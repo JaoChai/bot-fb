@@ -23,4 +23,13 @@ return [
 
     // ข้อความปิดท้ายเมื่อออเดอร์มีแต่บัญชี (ไม่มีเพจ) — ชี้ช่องทาง Support เรื่องบัญชี/ตั้งค่า
     'account_support_template' => env('ACCOUNT_DELIVERY_ACCOUNT_SUPPORT_TEMPLATE') ?: "เรียนท่านพี่ ที่มีปัญหา ทางด้านบัญชี หรือ ต้องการให้ทีมงานช่วยตั้งค่า และสอบถามรายละเอียดต่างๆ รบกวนพี่แจ้งทีมงาน Support ได้เลยครับ\n\nLINK LINE -> https://lin.ee/sTD5TQL\n\nID LINE SUPPORT -> @743ddeqy\n\nท่านพี่มีคำถามเพิ่มเติมแจ้งทีมงาน Support ได้เลยครับ",
+
+    // Auto-retry ตรวจสลิปซ้ำเมื่อ EasySlip คืน SLIP_PENDING (ธนาคารยังไม่ขึ้นธุรกรรม)
+    // รูปสลิปเก็บถาวรบน R2 → re-verify URL เดิมได้โดยลูกค้าไม่ต้องส่งซ้ำ
+    'pending_retry' => [
+        'enabled' => (bool) env('SLIP_PENDING_RETRY_ENABLED', true),
+        // วินาที: ระยะรอก่อน verify แต่ละรอบ (incremental). จำนวน element = จำนวนรอบ
+        // ตรวจครบทุกรอบยัง pending → แจ้งแอดมิน. verify ที่ ~t+1.5น, +4.5น, +9.5น
+        'delays' => [90, 180, 300],
+    ],
 ];
