@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\RetrySlipVerification;
 use App\Models\Bot;
 use App\Models\BotSetting;
 use App\Models\Conversation;
@@ -14,6 +15,7 @@ use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\LineWebhook\WebhookContext;
 use App\Services\ModelCapabilityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -366,6 +368,10 @@ class SlipVerificationPipelineTest extends TestCase
     public function test_pending_slip_replies_pending_message_without_alert(): void
     {
         $this->enableTelegramAlert();
+        // Bus::fake: กัน RetrySlipVerification รันจริงใน queue sync (test env) — จะ recurse ผ่านทุก
+        // attempt ในคำขอเดียวแล้วจบที่ notifyAdmin (exhausted), ทำให้ทดสอบ "ครั้งแรกไม่ alert" ผิดไป
+        // การ retry เองตรวจแยกใน SlipRetryServiceTest + test ใหม่ด้านล่างแล้ว
+        Bus::fake([RetrySlipVerification::class]);
 
         Http::fake([
             'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'SLIP_PENDING', 'message' => 'slip pending']], 404),
@@ -383,6 +389,47 @@ class SlipVerificationPipelineTest extends TestCase
 
         Http::assertNotSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
         Http::assertNotSent(fn ($req) => str_contains($req->url(), 'openrouter.ai'));
+    }
+
+    public function test_pending_slip_dispatches_retry_job_and_tells_customer_to_wait(): void
+    {
+        Bus::fake([RetrySlipVerification::class]);
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(
+                ['success' => false, 'error' => ['code' => 'SLIP_PENDING', 'message' => 'pending']], 404
+            ),
+            'api.line.me/*' => Http::response(['ok' => true]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        // ข้อความใหม่: ไม่ขอให้ส่งสลิปซ้ำ
+        $this->assertStringNotContainsString('ส่งสลิปเดิมมาอีกครั้ง', $ctx->response->payload);
+        $this->assertStringContainsString('ตรวจให้อัตโนมัติ', $ctx->response->payload);
+
+        Bus::assertDispatched(RetrySlipVerification::class, function ($job) {
+            return $job->attempt === 1
+                && $job->conversationId === $this->conversation->id
+                && $job->imageUrl === 'https://cdn.example.com/slip.jpg';
+        });
+    }
+
+    public function test_pending_retry_disabled_keeps_legacy_behaviour(): void
+    {
+        config(['delivery.pending_retry.enabled' => false]);
+        Bus::fake([RetrySlipVerification::class]);
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(
+                ['success' => false, 'error' => ['code' => 'SLIP_PENDING', 'message' => 'pending']], 404
+            ),
+            'api.line.me/*' => Http::response(['ok' => true]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        Bus::assertNotDispatched(RetrySlipVerification::class);
     }
 
     public function test_config_error_falls_back_to_vision_and_alerts_admin(): void

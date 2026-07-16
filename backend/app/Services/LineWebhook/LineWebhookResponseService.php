@@ -3,6 +3,7 @@
 namespace App\Services\LineWebhook;
 
 use App\Jobs\ReserveAccountStock;
+use App\Jobs\RetrySlipVerification;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
@@ -30,7 +31,7 @@ class LineWebhookResponseService
 
     public const SLIP_FAIL_TEMPLATE = 'ได้รับสลิปแล้วครับ ขอตรวจสอบยอดสักครู่ เดี๋ยวแอดมินยืนยันให้อีกครั้งนะครับ 🙏';
 
-    private const SLIP_PENDING_TEMPLATE = 'สลิปเพิ่งโอนมา ธนาคารกำลังประมวลผลครับ 🙏 รบกวนรอ 1-2 นาทีแล้วส่งสลิปเดิมมาอีกครั้งนะครับ ระบบจะตรวจให้อัตโนมัติ';
+    private const SLIP_PENDING_TEMPLATE = 'สลิปเพิ่งโอน ธนาคารกำลังประมวลผลครับ 🙏 ระบบจะตรวจให้อัตโนมัติใน 1-2 นาที รอสักครู่นะครับ';
 
     // รูปโหลดจาก LINE ไม่สำเร็จ (media_url ว่าง) — ตอบลูกค้าให้ส่งใหม่ แทนการเงียบ
     private const IMAGE_UNAVAILABLE_TEMPLATE = 'ขออภัยครับ ระบบโหลดรูปที่ส่งมาไม่สำเร็จ 🙏 รบกวนส่งรูปอีกครั้งนะครับ';
@@ -539,8 +540,15 @@ class LineWebhookResponseService
                     $template,
                 );
             } elseif ($result->failReason === 'pending') {
-                // ธนาคารยังประมวลผลไม่เสร็จ — ลูกค้าแก้เองได้ (รอแล้วส่งใหม่) ไม่ต้อง alert แอดมิน
+                // ธนาคารยังประมวลผลไม่เสร็จ — ตั้ง auto-retry ตรวจ R2 URL เดิมซ้ำ (ลูกค้าไม่ต้องส่งใหม่)
+                // ครบทุกรอบยัง pending ค่อยแจ้งแอดมิน (backstop ใน SlipRetryService)
                 $text = self::SLIP_PENDING_TEMPLATE;
+                if (config('delivery.pending_retry.enabled')) {
+                    $delays = (array) config('delivery.pending_retry.delays', [90, 180, 300]);
+                    RetrySlipVerification::dispatch(
+                        $ctx->bot->id, $ctx->conversation->id, $ctx->userMessage->id, $imageUrl, 1
+                    )->delay(now()->addSeconds((int) ($delays[0] ?? 90)));
+                }
             } else {
                 $text = $settings->slip_fail_message ?: self::SLIP_FAIL_TEMPLATE;
                 $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
