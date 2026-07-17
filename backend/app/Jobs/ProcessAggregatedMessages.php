@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
+use App\Exceptions\OpenRouterException;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -37,10 +38,10 @@ class ProcessAggregatedMessages implements ShouldQueue
 
     /**
      * The number of seconds the job can run before timing out.
-     * Set to 150s to allow for slow LLM models like gpt-5-mini.
-     * Requires DB_QUEUE_RETRY_AFTER >= 180 in production.
+     * Set to 200s to cover reasoning effort=high (primary 90s + fallback + intent).
+     * Requires REDIS_QUEUE_RETRY_AFTER >= 210 in production (prod uses the Redis queue).
      */
-    public int $timeout = 150;
+    public int $timeout = 200;
 
     /**
      * Create a new job instance.
@@ -342,12 +343,31 @@ class ProcessAggregatedMessages implements ShouldQueue
 
         // Generate AI response using merged content
         // exclude ข้อความของ turn นี้ออกจาก history — mergedContent เป็นตัวแทน turn ปัจจุบันอยู่แล้ว
-        $result = $aiService->generateResponse(
-            $this->bot,
-            $mergedContent,
-            $this->conversation,
-            excludeMessageIds: $currentTurnMessageIds
-        );
+        try {
+            $result = $aiService->generateResponse(
+                $this->bot,
+                $mergedContent,
+                $this->conversation,
+                excludeMessageIds: $currentTurnMessageIds
+            );
+        } catch (OpenRouterException $e) {
+            // Unlike the synchronous webhook path, this job calls generateResponse() (which
+            // does not catch) with tries=1 — so a failure here would send the customer NOTHING.
+            // Send the same friendly Thai fallback instead of silence.
+            Log::error('[Aggregation] AI generation failed — sending friendly fallback', [
+                'conversation_id' => $this->conversation->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            $botMessage = $this->conversation->messages()->create([
+                'sender' => 'bot',
+                'content' => $aiService->getErrorMessage($e),
+                'type' => 'text',
+            ]);
+            $this->deliverToChannel($botMessage, $lineService, $bubblesService);
+
+            return $botMessage;
+        }
 
         // Save bot response
         $botMessage = $this->conversation->messages()->create([

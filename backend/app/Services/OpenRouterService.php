@@ -97,8 +97,8 @@ class OpenRouterService
             // Use ModelCapabilityService for dynamic capability checks
             $capService = app(ModelCapabilityService::class);
 
-            // Add reasoning config for supported models (o1, o1-mini, deepseek-r1, gpt-5-mini)
-            if ($reasoning || $capService->supportsReasoning($model)) {
+            // ส่ง reasoning เฉพาะโมเดลที่รองรับ; effort จาก caller (bot setting) เมื่อมี ไม่งั้น default ของโมเดล
+            if ($capService->supportsReasoning($model)) {
                 $payload['reasoning'] = $reasoning ?? [
                     'effort' => $capService->getDefaultReasoningEffort($model) ?? 'medium',
                 ];
@@ -137,6 +137,31 @@ class OpenRouterService
         } catch (OpenRouterException $e) {
             throw $e;
         } catch (\Exception $e) {
+            // A read-timeout on the primary model raises ConnectionException and aborts the
+            // request client-side — before OpenRouter's server-side `models` fallback can
+            // engage (that only triggers on provider errors, not slow generation). So try the
+            // fallback model directly here. useFallback:false + no fallbackOverride means the
+            // fallback attempt has no fallback of its own and cannot recurse.
+            if ($e instanceof ConnectionException && $fallbackModel && $model !== $fallbackModel) {
+                Log::warning('Primary model timed out — falling back client-side', [
+                    'primary' => $model,
+                    'fallback' => $fallbackModel,
+                ]);
+
+                return $this->chat(
+                    $messages,
+                    $fallbackModel,
+                    $temperature,
+                    $maxTokens,
+                    useFallback: false,
+                    apiKeyOverride: $apiKey,
+                    fallbackModelOverride: null,
+                    timeout: config('services.openrouter.timeout', 45), // fast escape — ไม่ inherit high 90s
+                    reasoning: null, // fallback ใช้ default effort ของตัวเอง ไม่รับ high มา (กัน worst-case + กัน gemini-2.5 ได้ high)
+                    responseFormat: $responseFormat,
+                );
+            }
+
             Log::error('OpenRouter request failed', [
                 'model' => $model,
                 'error' => $e->getMessage(),
@@ -282,7 +307,9 @@ class OpenRouterService
         ?string $fallbackModel = null,
         ?float $temperature = null,
         ?int $maxTokens = null,
-        ?string $apiKeyOverride = null
+        ?string $apiKeyOverride = null,
+        ?array $reasoning = null,
+        ?int $timeout = null
     ): array {
         $messages = [];
 
@@ -308,7 +335,7 @@ class OpenRouterService
             'content' => $userMessage,
         ];
 
-        return $this->chat($messages, $model, $temperature, $maxTokens, true, $apiKeyOverride, $fallbackModel);
+        return $this->chat($messages, $model, $temperature, $maxTokens, true, $apiKeyOverride, $fallbackModel, $timeout, $reasoning);
     }
 
     /**
@@ -709,9 +736,10 @@ class OpenRouterService
             ->retry(3, function (int $attempt) {
                 return $attempt * 200;
             }, throw: false, when: function (\Throwable $e, $request) {
-                if ($e instanceof ConnectionException) {
-                    return true;
-                }
+                // Deliberately NOT retrying ConnectionException (read-timeout): a slow model
+                // just times out again, burning another full timeout window before the
+                // client-side fallback in chat() can switch to a faster model. Only retry
+                // fast, transient provider errors (rate-limit / 5xx).
                 if ($e instanceof RequestException) {
                     $status = $e->response?->status();
 

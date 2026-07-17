@@ -5,6 +5,7 @@ namespace Tests\Unit\Services;
 use App\Exceptions\OpenRouterException;
 use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Mockery;
 use Tests\TestCase;
@@ -155,6 +156,87 @@ class OpenRouterServiceTest extends TestCase
             [['role' => 'user', 'content' => 'Hello']],
             'anthropic/claude-3.5-sonnet'
         );
+    }
+
+    public function test_chat_falls_back_client_side_when_primary_times_out(): void
+    {
+        // A read-timeout on the primary raises ConnectionException and aborts before
+        // OpenRouter's server-side fallback can engage — chat() must retry the fallback
+        // model directly, client-side, so the caller still gets an answer.
+        Http::fake([
+            'openrouter.ai/api/v1/models' => Http::response(['data' => []], 200),
+            'openrouter.ai/api/v1/chat/completions' => function ($request) {
+                // Fallback attempt sends a single `model` (no `models` array) → succeed.
+                if (($request->data()['model'] ?? null) === 'google/gemini-flash') {
+                    return Http::response([
+                        'id' => 'gen-fb',
+                        'model' => 'google/gemini-flash',
+                        'choices' => [
+                            ['message' => ['content' => 'Answer from fallback'], 'finish_reason' => 'stop'],
+                        ],
+                        'usage' => ['prompt_tokens' => 5, 'completion_tokens' => 3, 'total_tokens' => 8],
+                    ], 200);
+                }
+
+                // Primary attempt (models array) → simulate the 45s read-timeout.
+                throw new ConnectionException('Operation timed out after 45000 milliseconds');
+            },
+        ]);
+
+        $result = $this->service->chat(
+            [['role' => 'user', 'content' => 'Hello']],
+            'openai/gpt-4o',
+            fallbackModelOverride: 'google/gemini-flash'
+        );
+
+        $this->assertEquals('Answer from fallback', $result['content']);
+        $this->assertEquals('google/gemini-flash', $result['model']);
+
+        // The fallback was requested as a single model, not via the server-side models array.
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+
+            return ($body['model'] ?? null) === 'google/gemini-flash' && ! isset($body['models']);
+        });
+    }
+
+    public function test_client_side_fallback_does_not_inherit_high_reasoning(): void
+    {
+        // Primary reasoning model gets 'high'; it times out; the fallback is ALSO a
+        // reasoning model but must fall back to ITS OWN default effort (medium), never 'high'.
+        Http::fake([
+            'openrouter.ai/api/v1/models' => Http::response(['data' => [
+                ['id' => 'openai/o1', 'supported_parameters' => ['reasoning']],
+                ['id' => 'openai/o1-mini', 'supported_parameters' => ['reasoning']],
+            ]], 200),
+            'openrouter.ai/api/v1/chat/completions' => function ($request) {
+                if (($request->data()['model'] ?? null) === 'openai/o1-mini') {
+                    return Http::response([
+                        'id' => 'fb', 'model' => 'openai/o1-mini',
+                        'choices' => [['message' => ['content' => 'ok'], 'finish_reason' => 'stop']],
+                        'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+                    ], 200);
+                }
+                throw new ConnectionException('Operation timed out');
+            },
+        ]);
+
+        $this->service->chat(
+            [['role' => 'user', 'content' => 'hi']],
+            'openai/o1',
+            fallbackModelOverride: 'openai/o1-mini',
+            reasoning: ['effort' => 'high'],
+        );
+
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+            if (($body['model'] ?? null) !== 'openai/o1-mini') {
+                return false;
+            }
+
+            // fallback must NOT carry the caller's 'high'; it uses o1-mini's own default (medium)
+            return ($body['reasoning']['effort'] ?? null) === 'medium';
+        });
     }
 
     public function test_chat_throws_when_no_model_provided(): void
@@ -579,5 +661,62 @@ class OpenRouterServiceTest extends TestCase
 
         // No user messages to attach images to, return unchanged
         $this->assertEquals($messages, $result);
+    }
+
+    public function test_generate_bot_response_sends_effort_only_for_reasoning_models(): void
+    {
+        // reasoning model → effort ถูกส่ง
+        Http::fake([
+            'openrouter.ai/api/v1/models' => Http::response(['data' => [
+                ['id' => 'openai/o1', 'supported_parameters' => ['reasoning']],
+            ]], 200),
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'g', 'model' => 'openai/o1',
+                'choices' => [['message' => ['content' => 'ok'], 'finish_reason' => 'stop']],
+                'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+            ], 200),
+        ]);
+
+        $this->service->generateBotResponse(
+            userMessage: 'hi',
+            model: 'openai/o1',
+            reasoning: ['effort' => 'high'],
+        );
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'chat/completions')) {
+                return false;
+            }
+
+            return ($request->data()['reasoning']['effort'] ?? null) === 'high';
+        });
+    }
+
+    public function test_generate_bot_response_omits_reasoning_for_non_reasoning_model(): void
+    {
+        Http::fake([
+            'openrouter.ai/api/v1/models' => Http::response(['data' => [
+                ['id' => 'google/gemini-2.0-flash-001', 'supported_parameters' => []],
+            ]], 200),
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'g', 'model' => 'google/gemini-2.0-flash-001',
+                'choices' => [['message' => ['content' => 'ok'], 'finish_reason' => 'stop']],
+                'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+            ], 200),
+        ]);
+
+        $this->service->generateBotResponse(
+            userMessage: 'hi',
+            model: 'google/gemini-2.0-flash-001',
+            reasoning: ['effort' => 'high'],
+        );
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'chat/completions')) {
+                return false;
+            }
+
+            return ! isset($request->data()['reasoning']);
+        });
     }
 }

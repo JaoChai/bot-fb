@@ -38,6 +38,12 @@ class ProcessTelegramWebhook implements ShouldQueue
     public int $backoff = 5;
 
     /**
+     * รองรับ reasoning effort=high (primary 90s + fallback 45s + intent 45s ≈ 180s).
+     * ต้อง < queue retry_after (ดู deploy gate) กัน re-dispatch ซ้อน.
+     */
+    public int $timeout = 200;
+
+    /**
      * Create a new job instance.
      */
     public function __construct(

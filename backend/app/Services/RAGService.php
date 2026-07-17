@@ -206,6 +206,16 @@ class RAGService
             $temperature = $baseTemp;
         }
 
+        // Step 9d: Reasoning effort (ต่อบอท, adaptive) → request timeout + token headroom
+        $botEffort = $bot->reasoning_effort ?: 'medium';
+        $effort = $this->resolveReasoningEffort($botEffort, $complexity['is_complex']);
+        $effortTimeouts = config('services.openrouter.effort_timeouts', []);
+        $requestTimeout = $effortTimeouts[$effort] ?? config('services.openrouter.timeout', 45);
+        // token headroom เฉพาะ high + โมเดล reasoning จริง (กัน API 400 / override ค่าที่เจ้าของตั้งต่ำ)
+        if ($effort === 'high' && $chatModel && $this->openRouter->supportsReasoning($chatModel)) {
+            $maxTokens = max($maxTokens, config('services.openrouter.high_effort_max_tokens', 8000));
+        }
+
         // Step 10: Generate response via standard LLM call
         $result = $this->openRouter->generateBotResponse(
             userMessage: $userMessage,
@@ -215,7 +225,9 @@ class RAGService
             fallbackModel: $fallbackChatModel,
             temperature: $temperature,
             maxTokens: $maxTokens,
-            apiKeyOverride: $apiKey
+            apiKeyOverride: $apiKey,
+            reasoning: ['effort' => $effort],
+            timeout: $requestTimeout,
         );
 
         // Add metadata to result
@@ -449,6 +461,19 @@ class RAGService
     protected function getFallbackChatModelForBot(Bot $bot): ?string
     {
         return $bot->fallback_chat_model;
+    }
+
+    /**
+     * ค่าบอทเป็นเพดาน: complex ใช้เต็ม, ไม่ complex cap ที่ medium (ประหยัด latency/cost ข้อความง่าย)
+     */
+    protected function resolveReasoningEffort(string $botEffort, bool $isComplex): string
+    {
+        if ($isComplex) {
+            return $botEffort;
+        }
+        $rank = ['low' => 0, 'medium' => 1, 'high' => 2];
+
+        return ($rank[$botEffort] ?? 1) > 1 ? 'medium' : $botEffort;
     }
 
     /**

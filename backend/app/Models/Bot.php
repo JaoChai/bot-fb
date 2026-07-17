@@ -31,6 +31,7 @@ class Bot extends Model
         'primary_chat_model',
         'fallback_chat_model',
         'utility_model',
+        'reasoning_effort',
         'system_prompt',
         'llm_temperature',
         'llm_max_tokens',

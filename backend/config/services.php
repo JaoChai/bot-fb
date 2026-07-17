@@ -41,6 +41,14 @@ return [
         'site_url' => env('OPENROUTER_SITE_URL', env('APP_URL')),
         'site_name' => env('OPENROUTER_SITE_NAME', env('APP_NAME', 'BotFacebook')),
         'timeout' => env('OPENROUTER_TIMEOUT', 45),
+        // medium=60 ให้ reasoning models (เช่น luna) มี headroom ใต้เพดาน LINE loading 60s; high=90 (LINE loading ตันที่ 60s อยู่แล้ว)
+        'effort_timeouts' => [
+            'low' => (int) env('OPENROUTER_TIMEOUT_LOW', 45),
+            'medium' => (int) env('OPENROUTER_TIMEOUT_MEDIUM', 60),
+            'high' => (int) env('OPENROUTER_TIMEOUT_HIGH', 90),
+        ],
+        'high_effort_max_tokens' => (int) env('OPENROUTER_HIGH_EFFORT_MAX_TOKENS', 8000),
+        'intent_timeout' => (int) env('OPENROUTER_INTENT_TIMEOUT', 20),
         'max_tokens' => env('OPENROUTER_MAX_TOKENS', 4096),
         // Provider preferences for routing optimization (OpenRouter Best Practice)
         'provider_preferences' => [

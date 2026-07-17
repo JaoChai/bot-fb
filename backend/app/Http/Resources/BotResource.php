@@ -35,6 +35,7 @@ class BotResource extends JsonResource
             'primary_chat_model' => $this->primary_chat_model,
             'fallback_chat_model' => $this->fallback_chat_model,
             'utility_model' => $this->utility_model,
+            'reasoning_effort' => $this->reasoning_effort,
 
             // Webhook forwarder
             'webhook_forwarder_enabled' => $this->webhook_forwarder_enabled ?? false,
