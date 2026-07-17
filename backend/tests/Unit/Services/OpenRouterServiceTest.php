@@ -5,6 +5,7 @@ namespace Tests\Unit\Services;
 use App\Exceptions\OpenRouterException;
 use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Mockery;
 use Tests\TestCase;
@@ -155,6 +156,48 @@ class OpenRouterServiceTest extends TestCase
             [['role' => 'user', 'content' => 'Hello']],
             'anthropic/claude-3.5-sonnet'
         );
+    }
+
+    public function test_chat_falls_back_client_side_when_primary_times_out(): void
+    {
+        // A read-timeout on the primary raises ConnectionException and aborts before
+        // OpenRouter's server-side fallback can engage — chat() must retry the fallback
+        // model directly, client-side, so the caller still gets an answer.
+        Http::fake([
+            'openrouter.ai/api/v1/models' => Http::response(['data' => []], 200),
+            'openrouter.ai/api/v1/chat/completions' => function ($request) {
+                // Fallback attempt sends a single `model` (no `models` array) → succeed.
+                if (($request->data()['model'] ?? null) === 'google/gemini-flash') {
+                    return Http::response([
+                        'id' => 'gen-fb',
+                        'model' => 'google/gemini-flash',
+                        'choices' => [
+                            ['message' => ['content' => 'Answer from fallback'], 'finish_reason' => 'stop'],
+                        ],
+                        'usage' => ['prompt_tokens' => 5, 'completion_tokens' => 3, 'total_tokens' => 8],
+                    ], 200);
+                }
+
+                // Primary attempt (models array) → simulate the 45s read-timeout.
+                throw new ConnectionException('Operation timed out after 45000 milliseconds');
+            },
+        ]);
+
+        $result = $this->service->chat(
+            [['role' => 'user', 'content' => 'Hello']],
+            'openai/gpt-4o',
+            fallbackModelOverride: 'google/gemini-flash'
+        );
+
+        $this->assertEquals('Answer from fallback', $result['content']);
+        $this->assertEquals('google/gemini-flash', $result['model']);
+
+        // The fallback was requested as a single model, not via the server-side models array.
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+
+            return ($body['model'] ?? null) === 'google/gemini-flash' && ! isset($body['models']);
+        });
     }
 
     public function test_chat_throws_when_no_model_provided(): void

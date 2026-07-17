@@ -192,19 +192,22 @@ PROMPT;
     }
 
     /**
-     * Get user-friendly error message.
+     * Get user-friendly error message (Thai — customers are Thai-speaking).
+     *
+     * Public so webhook jobs that call generateResponse() directly can reuse the same
+     * copy instead of sending silence (or a raw English error) on failure.
      */
-    protected function getErrorMessage(OpenRouterException $e): string
+    public function getErrorMessage(OpenRouterException $e): string
     {
         if ($e->isRateLimited()) {
-            return 'I\'m receiving too many messages right now. Please try again in a moment.';
+            return 'ตอนนี้มีข้อความเข้ามาเยอะมากครับ 🙏 รบกวนพี่รอสักครู่แล้วส่งใหม่อีกครั้งนะครับ';
         }
 
         if ($e->isAuthError()) {
-            return 'I\'m having trouble connecting. Please contact support.';
+            return 'ระบบขัดข้องชั่วคราวครับ 🙏 เดี๋ยวแอดมินรีบตรวจสอบให้นะครับ';
         }
 
-        return 'I apologize, but I\'m having trouble processing your request. Please try again.';
+        return 'ขอโทษครับ ระบบใช้เวลาประมวลผลนานกว่าปกติ 🙏 รบกวนพี่พิมพ์เข้ามาอีกครั้งนะครับ เดี๋ยวตอบให้เลยครับ';
     }
 
     /**
