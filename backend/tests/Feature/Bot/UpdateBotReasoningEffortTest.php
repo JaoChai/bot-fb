@@ -17,7 +17,7 @@ class UpdateBotReasoningEffortTest extends TestCase
         $bot = Bot::factory()->for($user)->create();
 
         $this->actingAs($user)
-            ->patchJson("/api/bots/{$bot->id}", ['reasoning_effort' => 'high'])
+            ->putJson("/api/bots/{$bot->id}", ['reasoning_effort' => 'high'])
             ->assertOk()
             ->assertJsonPath('data.bot.reasoning_effort', 'high');
 
@@ -30,7 +30,7 @@ class UpdateBotReasoningEffortTest extends TestCase
         $bot = Bot::factory()->for($user)->create();
 
         $this->actingAs($user)
-            ->patchJson("/api/bots/{$bot->id}", ['reasoning_effort' => 'ultra'])
+            ->putJson("/api/bots/{$bot->id}", ['reasoning_effort' => 'ultra'])
             ->assertStatus(422)
             ->assertJsonValidationErrorFor('reasoning_effort');
     }
