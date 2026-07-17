@@ -233,6 +233,7 @@ class OpenRouterServiceTest extends TestCase
             if (($body['model'] ?? null) !== 'openai/o1-mini') {
                 return false;
             }
+
             // fallback must NOT carry the caller's 'high'; it uses o1-mini's own default (medium)
             return ($body['reasoning']['effort'] ?? null) === 'medium';
         });

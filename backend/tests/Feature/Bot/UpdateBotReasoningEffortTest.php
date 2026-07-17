@@ -1,11 +1,13 @@
 <?php
+
 // backend/tests/Feature/Bot/UpdateBotReasoningEffortTest.php
+
 namespace Tests\Feature\Bot;
 
 use App\Models\Bot;
 use App\Models\User;
-use Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
 
 class UpdateBotReasoningEffortTest extends TestCase
 {

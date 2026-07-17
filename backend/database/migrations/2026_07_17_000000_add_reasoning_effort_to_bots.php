@@ -1,4 +1,5 @@
 <?php
+
 // backend/database/migrations/2026_07_17_000000_add_reasoning_effort_to_bots.php
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
