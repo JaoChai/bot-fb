@@ -41,6 +41,13 @@ return [
         'site_url' => env('OPENROUTER_SITE_URL', env('APP_URL')),
         'site_name' => env('OPENROUTER_SITE_NAME', env('APP_NAME', 'BotFacebook')),
         'timeout' => env('OPENROUTER_TIMEOUT', 45),
+        // medium=45 = no-regress (บอทเดิมทุกตัว default medium ต้องได้ 45s เท่าเดิม); high=90 (LINE loading ตันที่ 60s อยู่แล้ว)
+        'effort_timeouts' => [
+            'low' => (int) env('OPENROUTER_TIMEOUT_LOW', 45),
+            'medium' => (int) env('OPENROUTER_TIMEOUT_MEDIUM', 45),
+            'high' => (int) env('OPENROUTER_TIMEOUT_HIGH', 90),
+        ],
+        'high_effort_max_tokens' => (int) env('OPENROUTER_HIGH_EFFORT_MAX_TOKENS', 8000),
         'max_tokens' => env('OPENROUTER_MAX_TOKENS', 4096),
         // Provider preferences for routing optimization (OpenRouter Best Practice)
         'provider_preferences' => [

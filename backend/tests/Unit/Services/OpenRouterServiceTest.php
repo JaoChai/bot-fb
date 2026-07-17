@@ -623,4 +623,61 @@ class OpenRouterServiceTest extends TestCase
         // No user messages to attach images to, return unchanged
         $this->assertEquals($messages, $result);
     }
+
+    public function test_generate_bot_response_sends_effort_only_for_reasoning_models(): void
+    {
+        // reasoning model → effort ถูกส่ง
+        Http::fake([
+            'openrouter.ai/api/v1/models' => Http::response(['data' => [
+                ['id' => 'openai/o1', 'supported_parameters' => ['reasoning']],
+            ]], 200),
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'g', 'model' => 'openai/o1',
+                'choices' => [['message' => ['content' => 'ok'], 'finish_reason' => 'stop']],
+                'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+            ], 200),
+        ]);
+
+        $this->service->generateBotResponse(
+            userMessage: 'hi',
+            model: 'openai/o1',
+            reasoning: ['effort' => 'high'],
+        );
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'chat/completions')) {
+                return false;
+            }
+
+            return ($request->data()['reasoning']['effort'] ?? null) === 'high';
+        });
+    }
+
+    public function test_generate_bot_response_omits_reasoning_for_non_reasoning_model(): void
+    {
+        Http::fake([
+            'openrouter.ai/api/v1/models' => Http::response(['data' => [
+                ['id' => 'google/gemini-2.0-flash-001', 'supported_parameters' => []],
+            ]], 200),
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'g', 'model' => 'google/gemini-2.0-flash-001',
+                'choices' => [['message' => ['content' => 'ok'], 'finish_reason' => 'stop']],
+                'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+            ], 200),
+        ]);
+
+        $this->service->generateBotResponse(
+            userMessage: 'hi',
+            model: 'google/gemini-2.0-flash-001',
+            reasoning: ['effort' => 'high'],
+        );
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'chat/completions')) {
+                return false;
+            }
+
+            return ! isset($request->data()['reasoning']);
+        });
+    }
 }

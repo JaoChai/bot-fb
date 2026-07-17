@@ -97,8 +97,8 @@ class OpenRouterService
             // Use ModelCapabilityService for dynamic capability checks
             $capService = app(ModelCapabilityService::class);
 
-            // Add reasoning config for supported models (o1, o1-mini, deepseek-r1, gpt-5-mini)
-            if ($reasoning || $capService->supportsReasoning($model)) {
+            // ส่ง reasoning เฉพาะโมเดลที่รองรับ; effort จาก caller (bot setting) เมื่อมี ไม่งั้น default ของโมเดล
+            if ($capService->supportsReasoning($model)) {
                 $payload['reasoning'] = $reasoning ?? [
                     'effort' => $capService->getDefaultReasoningEffort($model) ?? 'medium',
                 ];
@@ -156,8 +156,8 @@ class OpenRouterService
                     useFallback: false,
                     apiKeyOverride: $apiKey,
                     fallbackModelOverride: null,
-                    timeout: $requestTimeout,
-                    reasoning: $reasoning,
+                    timeout: config('services.openrouter.timeout', 45), // fast escape — ไม่ inherit high 90s
+                    reasoning: null, // fallback ใช้ default effort ของตัวเอง ไม่รับ high มา (กัน worst-case + กัน gemini-2.5 ได้ high)
                     responseFormat: $responseFormat,
                 );
             }
@@ -307,7 +307,9 @@ class OpenRouterService
         ?string $fallbackModel = null,
         ?float $temperature = null,
         ?int $maxTokens = null,
-        ?string $apiKeyOverride = null
+        ?string $apiKeyOverride = null,
+        ?array $reasoning = null,
+        ?int $timeout = null
     ): array {
         $messages = [];
 
@@ -333,7 +335,7 @@ class OpenRouterService
             'content' => $userMessage,
         ];
 
-        return $this->chat($messages, $model, $temperature, $maxTokens, true, $apiKeyOverride, $fallbackModel);
+        return $this->chat($messages, $model, $temperature, $maxTokens, true, $apiKeyOverride, $fallbackModel, $timeout, $reasoning);
     }
 
     /**
