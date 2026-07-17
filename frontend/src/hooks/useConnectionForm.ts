@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { useConnection } from '@/hooks/useConnections';
+import type { ReasoningEffort } from '@/types/api';
 
 export interface ConnectionFormData {
   enabled: boolean;
@@ -9,7 +10,7 @@ export interface ConnectionFormData {
   primary_chat_model: string;
   fallback_chat_model: string;
   utility_model: string;
-  reasoning_effort: 'low' | 'medium' | 'high';
+  reasoning_effort: ReasoningEffort;
   line_channel_secret: string;
   line_channel_access_token: string;
   telegram_bot_token: string;

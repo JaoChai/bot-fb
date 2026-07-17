@@ -1,14 +1,13 @@
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-
-type Effort = 'low' | 'medium' | 'high';
+import type { ReasoningEffort } from '@/types/api';
 
 interface ReasoningEffortSelectorProps {
-  value: Effort;
-  onChange: (value: Effort) => void;
+  value: ReasoningEffort;
+  onChange: (value: ReasoningEffort) => void;
 }
 
-const OPTIONS: { value: Effort; title: string; hint: string }[] = [
+const OPTIONS: { value: ReasoningEffort; title: string; hint: string }[] = [
   { value: 'low', title: 'Low', hint: 'เร็วสุด · ประหยัด' },
   { value: 'medium', title: 'Medium', hint: 'สมดุล (แนะนำ)' },
   { value: 'high', title: 'High', hint: 'ฉลาดสุด · ช้ากว่า · แพงกว่า' },
@@ -34,6 +33,7 @@ export function ReasoningEffortSelector({ value, onChange }: ReasoningEffortSele
             )}
           >
             <span className="font-medium">{opt.title}</span>
+            <span className="sr-only"> — </span>
             <span className="text-xs text-muted-foreground">{opt.hint}</span>
           </button>
         ))}

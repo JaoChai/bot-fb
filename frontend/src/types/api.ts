@@ -54,6 +54,8 @@ export interface AuthResponse {
 }
 
 // Bot Types
+export type ReasoningEffort = 'low' | 'medium' | 'high';
+
 export interface Bot {
   id: number;
   name: string;
@@ -68,7 +70,7 @@ export interface Bot {
   primary_chat_model: string | null;
   fallback_chat_model: string | null;
   utility_model: string | null;
-  reasoning_effort: 'low' | 'medium' | 'high' | null;
+  reasoning_effort: ReasoningEffort | null;
   system_prompt: string | null;
   llm_temperature: number;
   llm_max_tokens: number;
@@ -102,7 +104,7 @@ export interface CreateConnectionData {
   primary_chat_model?: string;
   fallback_chat_model?: string;
   utility_model?: string;
-  reasoning_effort?: 'low' | 'medium' | 'high';
+  reasoning_effort?: ReasoningEffort;
   channel_access_token?: string;
   channel_secret?: string;
   webhook_forwarder_enabled?: boolean;
@@ -118,7 +120,7 @@ export interface UpdateConnectionData {
   primary_chat_model?: string;
   fallback_chat_model?: string;
   utility_model?: string;
-  reasoning_effort?: 'low' | 'medium' | 'high';
+  reasoning_effort?: ReasoningEffort;
   channel_access_token?: string;
   channel_secret?: string;
   webhook_forwarder_enabled?: boolean;
