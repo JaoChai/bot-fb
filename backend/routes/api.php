@@ -131,6 +131,7 @@ Route::middleware(['auth:sanctum', 'throttle.api'])->group(function () {
         Route::post('/', [BotController::class, 'store'])->name('bots.store');
         Route::get('/{bot}', [BotController::class, 'show'])->name('bots.show');
         Route::put('/{bot}', [BotController::class, 'update'])->name('bots.update');
+        Route::patch('/{bot}', [BotController::class, 'update'])->name('bots.update.patch');
         Route::delete('/{bot}', [BotController::class, 'destroy'])->name('bots.destroy');
         Route::get('/{bot}/webhook-url', [BotController::class, 'webhookUrl'])->name('bots.webhook-url');
         Route::post('/{bot}/regenerate-webhook', [BotController::class, 'regenerateWebhook'])->name('bots.regenerate-webhook');

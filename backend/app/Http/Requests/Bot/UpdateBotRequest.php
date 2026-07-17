@@ -28,6 +28,7 @@ class UpdateBotRequest extends FormRequest
             'primary_chat_model' => ['nullable', 'string', 'max:100'],
             'fallback_chat_model' => ['nullable', 'string', 'max:100'],
             'utility_model' => ['nullable', 'string', 'max:100'],
+            'reasoning_effort' => ['nullable', 'in:low,medium,high'],
 
             // Webhook forwarder
             'webhook_forwarder_enabled' => ['sometimes', 'boolean'],
