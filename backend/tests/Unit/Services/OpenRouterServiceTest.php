@@ -200,6 +200,44 @@ class OpenRouterServiceTest extends TestCase
         });
     }
 
+    public function test_client_side_fallback_does_not_inherit_high_reasoning(): void
+    {
+        // Primary reasoning model gets 'high'; it times out; the fallback is ALSO a
+        // reasoning model but must fall back to ITS OWN default effort (medium), never 'high'.
+        Http::fake([
+            'openrouter.ai/api/v1/models' => Http::response(['data' => [
+                ['id' => 'openai/o1', 'supported_parameters' => ['reasoning']],
+                ['id' => 'openai/o1-mini', 'supported_parameters' => ['reasoning']],
+            ]], 200),
+            'openrouter.ai/api/v1/chat/completions' => function ($request) {
+                if (($request->data()['model'] ?? null) === 'openai/o1-mini') {
+                    return Http::response([
+                        'id' => 'fb', 'model' => 'openai/o1-mini',
+                        'choices' => [['message' => ['content' => 'ok'], 'finish_reason' => 'stop']],
+                        'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+                    ], 200);
+                }
+                throw new ConnectionException('Operation timed out');
+            },
+        ]);
+
+        $this->service->chat(
+            [['role' => 'user', 'content' => 'hi']],
+            'openai/o1',
+            fallbackModelOverride: 'openai/o1-mini',
+            reasoning: ['effort' => 'high'],
+        );
+
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+            if (($body['model'] ?? null) !== 'openai/o1-mini') {
+                return false;
+            }
+            // fallback must NOT carry the caller's 'high'; it uses o1-mini's own default (medium)
+            return ($body['reasoning']['effort'] ?? null) === 'medium';
+        });
+    }
+
     public function test_chat_throws_when_no_model_provided(): void
     {
         $this->expectException(OpenRouterException::class);

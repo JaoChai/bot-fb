@@ -75,6 +75,7 @@ class IntentAnalysisService
             'useFallback' => true,
             'apiKeyOverride' => $apiKey,
             'fallbackModelOverride' => $fallbackDecisionModel,
+            'timeout' => (int) config('services.openrouter.intent_timeout', 20),
         ];
 
         // Use structured output (JSON mode) for models that support it
