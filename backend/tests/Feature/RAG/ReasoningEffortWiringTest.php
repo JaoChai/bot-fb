@@ -1,12 +1,14 @@
 <?php
+
 // backend/tests/Feature/RAG/ReasoningEffortWiringTest.php
+
 namespace Tests\Feature\RAG;
 
 use App\Models\Bot;
 use App\Services\RAGService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class ReasoningEffortWiringTest extends TestCase
 {
@@ -38,6 +40,7 @@ class ReasoningEffortWiringTest extends TestCase
             if (! str_contains($request->url(), 'chat/completions')) {
                 return false;
             }
+
             return ($request->data()['reasoning']['effort'] ?? null) === 'medium';
         });
     }

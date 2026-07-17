@@ -1,5 +1,7 @@
 <?php
+
 // backend/tests/Unit/Services/ResolveReasoningEffortTest.php
+
 namespace Tests\Unit\Services;
 
 use App\Services\RAGService;
@@ -20,6 +22,7 @@ class ResolveReasoningEffortTest extends TestCase
     {
         $this->assertSame('high', $this->resolve('high', true));
         $this->assertSame('low', $this->resolve('low', true));
+        $this->assertSame('medium', $this->resolve('medium', true));
     }
 
     public function test_simple_message_caps_high_at_medium(): void

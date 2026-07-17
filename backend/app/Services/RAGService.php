@@ -212,7 +212,7 @@ class RAGService
         $effortTimeouts = config('services.openrouter.effort_timeouts', []);
         $requestTimeout = $effortTimeouts[$effort] ?? config('services.openrouter.timeout', 45);
         // token headroom เฉพาะ high + โมเดล reasoning จริง (กัน API 400 / override ค่าที่เจ้าของตั้งต่ำ)
-        if ($effort === 'high' && $this->openRouter->supportsReasoning($chatModel)) {
+        if ($effort === 'high' && $chatModel && $this->openRouter->supportsReasoning($chatModel)) {
             $maxTokens = max($maxTokens, config('services.openrouter.high_effort_max_tokens', 8000));
         }
 
