@@ -83,14 +83,6 @@ return [
             'pricing_completion' => 2.0,
             'description' => 'Compact GPT-5 with mandatory reasoning for complex tasks',
         ],
-        // Override ONLY the reasoning effort. Everything else (vision, context, pricing)
-        // still resolves from the live OpenRouter API and merges over this.
-        // Default effort for reasoning models is 'medium' (OpenRouterService::chat), whose
-        // hidden reasoning latency made non-streaming chat calls straddle the 45s timeout.
-        // 'low' keeps reasoning on for flow complexity while cutting time-to-first-token.
-        'openai/gpt-5.6-luna' => [
-            'default_reasoning_effort' => 'low',
-        ],
         'openai/o1' => [
             'name' => 'OpenAI o1',
             'provider' => 'openai',

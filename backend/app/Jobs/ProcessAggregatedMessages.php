@@ -41,7 +41,7 @@ class ProcessAggregatedMessages implements ShouldQueue
      * Set to 150s to allow for slow LLM models like gpt-5-mini.
      * Requires DB_QUEUE_RETRY_AFTER >= 180 in production.
      */
-    public int $timeout = 150;
+    public int $timeout = 200;
 
     /**
      * Create a new job instance.

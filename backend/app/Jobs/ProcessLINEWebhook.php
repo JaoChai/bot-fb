@@ -66,6 +66,12 @@ class ProcessLINEWebhook implements ShouldQueue
     public array $backoff = [5, 15, 45];
 
     /**
+     * รองรับ reasoning effort=high (primary 90s + fallback 45s + intent 45s ≈ 180s).
+     * ต้อง < queue retry_after (ดู deploy gate) กัน re-dispatch ซ้อน.
+     */
+    public int $timeout = 200;
+
+    /**
      * Smart aggregation state (used to pass data outside transaction).
      */
     protected ?string $aggregationGroupId = null;
