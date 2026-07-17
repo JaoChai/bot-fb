@@ -2,6 +2,7 @@ import { Cpu, Key, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/common';
 import { ModelConfiguration } from '@/components/ModelSelector';
+import { ReasoningEffortSelector } from '@/components/connections/ReasoningEffortSelector';
 import type { ConnectionFormData } from '@/hooks/useConnectionForm';
 
 interface AIModelsSectionProps {
@@ -40,6 +41,12 @@ export function AIModelsSection({ formData, handleChange }: AIModelsSectionProps
           onFallbackChange={(value) => handleChange('fallback_chat_model', value)}
           onUtilityChange={(value) => handleChange('utility_model', value)}
         />
+        <div className="mt-4">
+          <ReasoningEffortSelector
+            value={formData.reasoning_effort}
+            onChange={(value) => handleChange('reasoning_effort', value)}
+          />
+        </div>
       </Panel>
     </>
   );
