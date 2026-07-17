@@ -38,8 +38,8 @@ class ProcessAggregatedMessages implements ShouldQueue
 
     /**
      * The number of seconds the job can run before timing out.
-     * Set to 150s to allow for slow LLM models like gpt-5-mini.
-     * Requires DB_QUEUE_RETRY_AFTER >= 180 in production.
+     * Set to 200s to cover reasoning effort=high (primary 90s + fallback + intent).
+     * Requires REDIS_QUEUE_RETRY_AFTER >= 210 in production (prod uses the Redis queue).
      */
     public int $timeout = 200;
 
