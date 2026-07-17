@@ -1,7 +1,26 @@
 # Per-Bot Reasoning Effort (ตั้งจาก UI) — Design
 
 วันที่: 2026-07-17
-สถานะ: รอ review
+สถานะ: revised after adversarial review (Rev 2 ด้านล่าง supersede ตัวเลข/ข้อความที่ขัดกัน)
+
+## Revision 2 — ผล adversarial review (Fable 5) + decisions
+
+Review รอบสองเจอ blocker 3 ตัวที่รอบแรกพลาด → ปรับ design ดังนี้ (แผน implementation อัปเดตตามแล้ว):
+
+**Blockers (แก้แล้วในแผน):**
+- **B1** — job ที่ generate LLM ทั้งหมด (`ProcessLINEWebhook/Facebook/Telegram` + `ProcessAggregatedMessages`) ต้องตั้ง `$timeout=200` ไม่ใช่แค่ตัว aggregation (FB/TG generate inline, LINE ก็ตรงๆ เมื่อปิด multi-bubble)
+- **B2** — deploy gate ตัวจริง = queue **`retry_after`** (Redis default **90s**) ต้อง ≥ 210 ไม่ใช่ worker `--timeout` (job `$timeout` override worker อยู่แล้ว). ค่า 90 เดิมละเมิดกับ timeout=150 เดิมอยู่แล้ว
+- **B3** — B1 client-side fallback (จาก #239) เดิมส่ง `reasoning`+`timeout` ต่อให้ fallback → high รั่วไป fallback + worst-case 120+120. แก้: recursion ส่ง `reasoning: null` + `timeout: 45` (fast escape)
+
+**Decisions (จากเจ้าของ):**
+- timeout map = **low 45 · medium 45 (no-regress; prod เดิม 45) · high 90** (LINE loading indicator ตันที่ 60s — `LINEService:340`)
+- **adaptive effort:** ค่าบอทเป็น **เพดาน** — ข้อความ `is_complex` ใช้เต็ม, ไม่ complex cap ที่ medium (ประหยัด ~80% ข้อความง่าย) via `RAGService::resolveReasoningEffort()`
+- column `nullable` (B4); token headroom gate ด้วย `supportsReasoning` (B7); frontend submit ต้องแก้ `EditConnectionPage.tsx` 2 จุด (B6)
+
+**Design verdict:** shape (per-bot column → RAGService → chat gate) ถูกต้อง เป็น best fit สำหรับโจทย์ "UI knob ต่อบอท"; streaming เลื่อนถูกแล้ว (LINE/FB ไม่ใช่ live stream). Caveat ที่เหลือ: high ยังเป็น UX cost (แม้ 90s) — ควรใช้เท่าที่จำเป็น
+
+---
+
 
 ## ปัญหา / เป้าหมาย
 

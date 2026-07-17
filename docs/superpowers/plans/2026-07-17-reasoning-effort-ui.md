@@ -121,7 +121,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('bots', function (Blueprint $table) {
-            $table->string('reasoning_effort', 10)->default('medium')->after('utility_model');
+            // nullable: validation อนุญาต null ได้ → กัน NOT NULL violation (500); RAGService `?: 'medium'` รับ null อยู่แล้ว
+            $table->string('reasoning_effort', 10)->nullable()->default('medium')->after('utility_model');
         });
     }
 
@@ -225,10 +226,11 @@ Expected: FAIL — `generateBotResponse` ยังไม่มี param `reasoni
 `backend/config/services.php` — ใน `'openrouter' => [ ... ]` เพิ่มหลัง `'timeout'`:
 ```php
         'timeout' => env('OPENROUTER_TIMEOUT', 45),
+        // medium=45 = no-regress (บอทเดิมทุกตัว default medium ต้องได้ 45s เท่าเดิม); high=90 (LINE loading ตันที่ 60s อยู่แล้ว)
         'effort_timeouts' => [
             'low' => (int) env('OPENROUTER_TIMEOUT_LOW', 45),
-            'medium' => (int) env('OPENROUTER_TIMEOUT_MEDIUM', 60),
-            'high' => (int) env('OPENROUTER_TIMEOUT_HIGH', 120),
+            'medium' => (int) env('OPENROUTER_TIMEOUT_MEDIUM', 45),
+            'high' => (int) env('OPENROUTER_TIMEOUT_HIGH', 90),
         ],
         'high_effort_max_tokens' => (int) env('OPENROUTER_HIGH_EFFORT_MAX_TOKENS', 8000),
 ```
@@ -260,31 +262,172 @@ Expected: FAIL — `generateBotResponse` ยังไม่มี param `reasoni
             }
 ```
 
-- [ ] **Step 6: Run tests**
+- [ ] **Step 6: แก้ B1 recursion — fallback ต้องไม่รับ high effort/timeout**
+
+`OpenRouterService.php` — ในบล็อก `catch (\Exception $e)` ที่เป็น client-side fallback (จาก #239) เปลี่ยน 2 บรรทัดในการเรียก recursive `chat()`:
+```php
+                return $this->chat(
+                    $messages,
+                    $fallbackModel,
+                    $temperature,
+                    $maxTokens,
+                    useFallback: false,
+                    apiKeyOverride: $apiKey,
+                    fallbackModelOverride: null,
+                    timeout: config('services.openrouter.timeout', 45), // fast escape — ไม่ inherit high 90s
+                    reasoning: null, // fallback ใช้ default effort ของตัวเอง ไม่รับ high มา (กัน worst-case + กัน gemini-2.5 ได้ high)
+                );
+```
+
+- [ ] **Step 7: Negative test — non-reasoning model ต้องไม่ได้ reasoning payload**
+
+```php
+// เพิ่มใน OpenRouterServiceTest.php
+    public function test_generate_bot_response_omits_reasoning_for_non_reasoning_model(): void
+    {
+        Http::fake([
+            'openrouter.ai/api/v1/models' => Http::response(['data' => [
+                ['id' => 'google/gemini-2.0-flash-001', 'supported_parameters' => []],
+            ]], 200),
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'g', 'model' => 'google/gemini-2.0-flash-001',
+                'choices' => [['message' => ['content' => 'ok'], 'finish_reason' => 'stop']],
+                'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+            ], 200),
+        ]);
+
+        $this->service->generateBotResponse(
+            userMessage: 'hi',
+            model: 'google/gemini-2.0-flash-001',
+            reasoning: ['effort' => 'high'],
+        );
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'chat/completions')) {
+                return false;
+            }
+            return ! isset($request->data()['reasoning']);
+        });
+    }
+```
+
+- [ ] **Step 8: Run tests**
 
 Run: `cd backend && php artisan test tests/Unit/Services/OpenRouterServiceTest.php`
-Expected: PASS (28 tests รวมของเดิม + ใหม่)
+Expected: PASS (29 tests = 27 เดิม + 2 ใหม่)
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add backend/config/services.php backend/app/Services/OpenRouterService.php backend/tests/Unit/Services/OpenRouterServiceTest.php
-git commit -m "feat(llm): generateBotResponse รับ effort/timeout + ส่ง reasoning เฉพาะโมเดลที่รองรับ"
+git commit -m "feat(llm): generateBotResponse รับ effort/timeout + ส่ง reasoning เฉพาะโมเดลที่รองรับ + fallback ไม่ inherit high"
 ```
 
 ---
 
-### Task 3: RAGService — เดินสาย effort → reasoning + timeout + max_tokens
+### Task 3: RAGService — adaptive effort → reasoning + timeout + max_tokens
 
 **Files:**
-- Modify: `backend/app/Services/RAGService.php` (max_tokens ~line 190-194, generateBotResponse call ~line 210-219)
-- Test: `backend/tests/Feature/RAG/ReasoningEffortWiringTest.php`
+- Modify: `backend/app/Services/RAGService.php` (เพิ่ม method `resolveReasoningEffort`, max_tokens ~line 190-194, generateBotResponse call ~line 210-219)
+- Test: `backend/tests/Unit/Services/ResolveReasoningEffortTest.php`, `backend/tests/Feature/RAG/ReasoningEffortWiringTest.php`
 
 **Interfaces:**
-- Consumes: `Bot->reasoning_effort` (Task 1); `generateBotResponse(reasoning:, timeout:)` (Task 2); `config('services.openrouter.effort_timeouts'/'high_effort_max_tokens')`
-- Produces: LLM call ที่ carry effort ของบอท + timeout ที่ map แล้ว
+- Consumes: `Bot->reasoning_effort` (Task 1); `generateBotResponse(reasoning:, timeout:)` (Task 2); `config('services.openrouter.effort_timeouts'/'high_effort_max_tokens')`; `$complexity['is_complex']` (มีอยู่แล้วใน generateResponse); `$this->openRouter->supportsReasoning($model)` (มีอยู่แล้ว)
+- Produces: `RAGService::resolveReasoningEffort(string $botEffort, bool $isComplex): string`; LLM call ที่ carry effort (แบบ adaptive) + timeout ที่ map แล้ว
 
-- [ ] **Step 1: Write the failing test**
+**Adaptive rule:** ค่าบอทเป็น **เพดาน** — ข้อความ complex ใช้ค่าเต็ม, ข้อความไม่ complex cap ที่ medium (กัน high latency/cost บนข้อความง่าย ~80%)
+
+- [ ] **Step 1: Write the failing unit test (resolveReasoningEffort — deterministic)**
+
+```php
+<?php
+// backend/tests/Unit/Services/ResolveReasoningEffortTest.php
+namespace Tests\Unit\Services;
+
+use App\Services\RAGService;
+use Tests\TestCase;
+
+class ResolveReasoningEffortTest extends TestCase
+{
+    private function resolve(string $botEffort, bool $isComplex): string
+    {
+        $svc = app(RAGService::class);
+        $m = new \ReflectionMethod($svc, 'resolveReasoningEffort');
+        $m->setAccessible(true);
+
+        return $m->invoke($svc, $botEffort, $isComplex);
+    }
+
+    public function test_complex_message_uses_full_bot_effort(): void
+    {
+        $this->assertSame('high', $this->resolve('high', true));
+        $this->assertSame('low', $this->resolve('low', true));
+    }
+
+    public function test_simple_message_caps_high_at_medium(): void
+    {
+        $this->assertSame('medium', $this->resolve('high', false));
+    }
+
+    public function test_simple_message_keeps_low_and_medium(): void
+    {
+        $this->assertSame('low', $this->resolve('low', false));
+        $this->assertSame('medium', $this->resolve('medium', false));
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd backend && php artisan test tests/Unit/Services/ResolveReasoningEffortTest.php`
+Expected: FAIL — method `resolveReasoningEffort` ยังไม่มี (ReflectionException)
+
+- [ ] **Step 3: เพิ่ม method resolveReasoningEffort ใน RAGService**
+
+`RAGService.php` — เพิ่ม method (วางใกล้ helper อื่น เช่นหลัง `getFallbackChatModelForBot`):
+```php
+    /**
+     * ค่าบอทเป็นเพดาน: complex ใช้เต็ม, ไม่ complex cap ที่ medium (ประหยัด latency/cost ข้อความง่าย)
+     */
+    protected function resolveReasoningEffort(string $botEffort, bool $isComplex): string
+    {
+        if ($isComplex) {
+            return $botEffort;
+        }
+        $rank = ['low' => 0, 'medium' => 1, 'high' => 2];
+
+        return ($rank[$botEffort] ?? 1) > 1 ? 'medium' : $botEffort;
+    }
+```
+
+- [ ] **Step 4: Run unit test**
+
+Run: `cd backend && php artisan test tests/Unit/Services/ResolveReasoningEffortTest.php`
+Expected: PASS (3 tests)
+
+- [ ] **Step 5: Wire ใน generateResponse — effort + timeout + token headroom (gate B7)**
+
+`RAGService.php` — ก่อนบล็อก Step 10 (ก่อน `$result = $this->openRouter->generateBotResponse(`) แทรก:
+```php
+        // Step 9d: Reasoning effort (ต่อบอท, adaptive) → request timeout + token headroom
+        $botEffort = $bot->reasoning_effort ?: 'medium';
+        $effort = $this->resolveReasoningEffort($botEffort, $complexity['is_complex']);
+        $effortTimeouts = config('services.openrouter.effort_timeouts', []);
+        $requestTimeout = $effortTimeouts[$effort] ?? config('services.openrouter.timeout', 45);
+        // token headroom เฉพาะ high + โมเดล reasoning จริง (กัน API 400 / override ค่าที่เจ้าของตั้งต่ำ)
+        if ($effort === 'high' && $this->openRouter->supportsReasoning($chatModel)) {
+            $maxTokens = max($maxTokens, config('services.openrouter.high_effort_max_tokens', 8000));
+        }
+```
+และแก้ call generateBotResponse เพิ่ม 2 named arg ท้าย:
+```php
+            apiKeyOverride: $apiKey,
+            reasoning: ['effort' => $effort],
+            timeout: $requestTimeout,
+        );
+```
+
+- [ ] **Step 6: Write integration test (bot=medium → effort=medium ถึง LLM; deterministic ทุกความซับซ้อน)**
 
 ```php
 <?php
@@ -301,8 +444,9 @@ class ReasoningEffortWiringTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_bot_high_effort_sends_effort_high_to_llm(): void
+    public function test_bot_effort_reaches_llm_payload(): void
     {
+        // bot=medium → adaptive คงเป็น medium ไม่ว่าข้อความ complex หรือไม่ → assertion deterministic
         config(['services.openrouter.api_key' => 'k']);
         Http::fake([
             'openrouter.ai/api/v1/models' => Http::response(['data' => [
@@ -317,7 +461,7 @@ class ReasoningEffortWiringTest extends TestCase
 
         $bot = Bot::factory()->create([
             'primary_chat_model' => 'openai/o1',
-            'reasoning_effort' => 'high',
+            'reasoning_effort' => 'medium',
         ]);
 
         app(RAGService::class)->generateResponse(bot: $bot, userMessage: 'สวัสดี');
@@ -326,76 +470,56 @@ class ReasoningEffortWiringTest extends TestCase
             if (! str_contains($request->url(), 'chat/completions')) {
                 return false;
             }
-            return ($request->data()['reasoning']['effort'] ?? null) === 'high';
+            return ($request->data()['reasoning']['effort'] ?? null) === 'medium';
         });
     }
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 7: Run integration test + RAG regression**
 
-Run: `cd backend && php artisan test tests/Feature/RAG/ReasoningEffortWiringTest.php`
-Expected: FAIL — reasoning ยังไม่ถูกส่ง (effort ไม่ตรง)
-
-- [ ] **Step 3: อ่าน effort + map timeout + max_tokens headroom, แล้วส่งเข้า generateBotResponse**
-
-`RAGService.php` — ก่อนบล็อก Step 10 (ก่อน `$result = $this->openRouter->generateBotResponse(`) แทรก:
-```php
-        // Step 9d: Reasoning effort (ต่อบอท) → request timeout + token headroom
-        $effort = $bot->reasoning_effort ?: 'medium';
-        $effortTimeouts = config('services.openrouter.effort_timeouts', []);
-        $requestTimeout = $effortTimeouts[$effort] ?? config('services.openrouter.timeout', 45);
-        if ($effort === 'high') {
-            // reasoning tokens นับรวมใน max_tokens (o-series) — เพิ่ม headroom กันคำตอบถูกตัด
-            $maxTokens = max($maxTokens, config('services.openrouter.high_effort_max_tokens', 8000));
-        }
-```
-และแก้ call generateBotResponse เพิ่ม 2 named arg ท้าย:
-```php
-            apiKeyOverride: $apiKey,
-            reasoning: ['effort' => $effort],
-            timeout: $requestTimeout,
-        );
-```
-
-- [ ] **Step 4: Run test**
-
-Run: `cd backend && php artisan test tests/Feature/RAG/ReasoningEffortWiringTest.php`
-Expected: PASS
-
-- [ ] **Step 5: Run RAG regression**
-
-Run: `cd backend && php artisan test --filter=RAG`
+Run: `cd backend && php artisan test tests/Feature/RAG/ReasoningEffortWiringTest.php && php artisan test --filter=RAG`
 Expected: PASS (ไม่ regress)
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add backend/app/Services/RAGService.php backend/tests/Feature/RAG/ReasoningEffortWiringTest.php
-git commit -m "feat(rag): เดินสาย reasoning_effort ต่อบอท → LLM (effort+timeout+token headroom)"
+git add backend/app/Services/RAGService.php backend/tests/Unit/Services/ResolveReasoningEffortTest.php backend/tests/Feature/RAG/ReasoningEffortWiringTest.php
+git commit -m "feat(rag): adaptive reasoning_effort (bot เป็นเพดาน, ข้อความง่าย→medium) → LLM effort+timeout+headroom"
 ```
 
 ---
 
-### Task 4: Safeguard job timeout + revert A1
+### Task 4: Safeguard — job timeouts (ทุก path) + retry_after + revert A1
 
 **Files:**
 - Modify: `backend/app/Jobs/ProcessAggregatedMessages.php` (`$timeout` line 44)
+- Modify: `backend/app/Jobs/ProcessLINEWebhook.php`, `ProcessFacebookWebhook.php`, `ProcessTelegramWebhook.php` (เพิ่ม `$timeout`)
 - Modify: `backend/config/llm-models.php` (ลบ entry `openai/gpt-5.6-luna`)
 
 **Interfaces:**
-- Produces: job timeout ที่รองรับ effort=high (120s) + fallback
+- Produces: ทุก job ที่ generate LLM มี `$timeout = 200` รองรับ high (90s primary + 45s fallback + 45s intent ≈ 180 < 200)
 
-- [ ] **Step 1: ขยาย job timeout**
+> **B1 (blocker):** FB/TG generate LLM ใน job ตรงๆ (ไม่มี aggregation), LINE ก็ตรงๆ เมื่อปิด multi-bubble — แต่ 3 job นี้ **ไม่มี `$timeout`** → high จะเกิน worker timeout → job ถูกฆ่า → retry 3× → ตอบซ้ำ. ต้องตั้ง `$timeout` ทั้งหมด ไม่ใช่แค่ ProcessAggregatedMessages
 
-`ProcessAggregatedMessages.php` line 44:
+- [ ] **Step 1: ตั้ง $timeout ให้ job ที่ generate LLM ทั้ง 4 ตัว**
+
+`ProcessAggregatedMessages.php` line 44 เปลี่ยนเป็น:
 ```php
+    public int $timeout = 200;
+```
+`ProcessLINEWebhook.php`, `ProcessFacebookWebhook.php`, `ProcessTelegramWebhook.php` — เพิ่ม property ในคลาส (ใกล้ `$tries`):
+```php
+    /**
+     * รองรับ reasoning effort=high (primary 90s + fallback 45s + intent 45s ≈ 180s).
+     * ต้อง < queue retry_after (ดู deploy gate) กัน re-dispatch ซ้อน.
+     */
     public int $timeout = 200;
 ```
 
 - [ ] **Step 2: Revert A1 (ลบ luna config)**
 
-`config/llm-models.php` — ลบทั้งบล็อก (รวม comment 5 บรรทัด):
+`config/llm-models.php` — ลบทั้งบล็อก (รวม comment):
 ```php
         // Override ONLY the reasoning effort. ...
         'openai/gpt-5.6-luna' => [
@@ -403,27 +527,28 @@ git commit -m "feat(rag): เดินสาย reasoning_effort ต่อบอ
         ],
 ```
 
-- [ ] **Step 3: Verify config loads**
+- [ ] **Step 3: Verify config + jobs load**
 
-Run: `cd backend && php -l config/llm-models.php && php artisan config:clear`
-Expected: No syntax errors
+Run: `cd backend && php -l config/llm-models.php && for j in ProcessAggregatedMessages ProcessLINEWebhook ProcessFacebookWebhook ProcessTelegramWebhook; do php -l app/Jobs/$j.php; done && php artisan config:clear`
+Expected: No syntax errors ทุกไฟล์
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add backend/app/Jobs/ProcessAggregatedMessages.php backend/config/llm-models.php
-git commit -m "chore(llm): job timeout 200s รองรับ effort=high + revert luna effort override (แทนด้วยค่าต่อบอท)"
+git add backend/app/Jobs/ProcessAggregatedMessages.php backend/app/Jobs/ProcessLINEWebhook.php backend/app/Jobs/ProcessFacebookWebhook.php backend/app/Jobs/ProcessTelegramWebhook.php backend/config/llm-models.php
+git commit -m "fix(queue): ตั้ง job timeout 200s ทุก LLM path รองรับ effort=high + revert luna override"
 ```
 
-> ⚠️ **Deploy gate (นอกโค้ด):** queue worker `--timeout` (Railway start command / Procfile) ต้อง ≥ 200 มิฉะนั้น worker ฆ่า job ก่อน high เสร็จ — ยืนยัน/ตั้งตอน deploy
+> ⚠️ **Deploy gate (blocker B2 — นอกโค้ด, สำคัญสุด):** ตัวที่คุมจริงคือ **queue `retry_after`** ไม่ใช่ worker `--timeout` (job `$timeout` property override worker --timeout อยู่แล้ว). prod ใช้ Redis → `config/queue.php:51` `REDIS_QUEUE_RETRY_AFTER` **default 90s** → job 200s จะถูก re-dispatch ตอน 90s → **ประมวลผล/ตอบซ้ำ**. **ต้องตั้ง `REDIS_QUEUE_RETRY_AFTER ≥ 210` บน Railway ก่อน/พร้อม deploy** (ค่าเดิม 90 ละเมิดกับ timeout=150 เดิมอยู่แล้ว — แก้ทีเดียว). ยืนยันค่าจริงใน Railway env.
 
 ---
 
-### Task 5: Frontend — types + form wiring
+### Task 5: Frontend — types + form wiring + submit payload
 
 **Files:**
-- Modify: `frontend/src/types/api.ts` (Bot interface ~line 57-70)
+- Modify: `frontend/src/types/api.ts` (Bot interface ~line 57-70; `CreateConnectionData` ~line 97; `UpdateConnectionData` ~line 112)
 - Modify: `frontend/src/hooks/useConnectionForm.ts` (interface ~line 5, defaults ~line 21, load mapping ~line 57)
+- Modify: `frontend/src/pages/EditConnectionPage.tsx` (submit payload — update ~line 132, create ~line 153)
 
 **Interfaces:**
 - Consumes: BotResource `reasoning_effort` (Task 1)
@@ -460,9 +585,21 @@ git commit -m "chore(llm): job timeout 200s รองรับ effort=high + rev
         reasoning_effort: existingBot.reasoning_effort || 'medium',
 ```
 
-- [ ] **Step 3: ตรวจว่า payload บันทึกส่ง reasoning_effort**
+- [ ] **Step 3: เพิ่ม reasoning_effort ใน submit payload (2 จุด)**
 
-เปิดไฟล์ที่ submit form (ค้นด้วย `grep -rn "useConnectionForm\|primary_chat_model" src/pages src/components/connections | grep -i save`) — ยืนยันว่า payload ส่ง `formData` ทั้งก้อน หรือ spread `...formData`. ถ้า list field ทีละตัว ให้เพิ่ม `reasoning_effort: formData.reasoning_effort` ในจุดเดียวกับ `primary_chat_model`.
+`frontend/src/pages/EditConnectionPage.tsx` สร้าง payload ทีละ field (ไม่ spread) — ต้องเพิ่มทั้ง update และ create path:
+
+- update (`updateMutation.mutateAsync({...})`, หลัง `utility_model: formData.utility_model,` ~line 132):
+```tsx
+          utility_model: formData.utility_model,
+          reasoning_effort: formData.reasoning_effort,
+```
+- create (`createData` object, หลัง `utility_model: formData.utility_model,` ~line 153):
+```tsx
+          utility_model: formData.utility_model,
+          reasoning_effort: formData.reasoning_effort,
+```
+(type ของ payload มาจาก api.ts ที่แก้ใน Step 1 แล้ว จึงผ่าน tsc)
 
 - [ ] **Step 4: Typecheck**
 
@@ -472,8 +609,8 @@ Expected: ไม่มี error ใหม่
 - [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/types/api.ts frontend/src/hooks/useConnectionForm.ts
-git commit -m "feat(ui): wire reasoning_effort เข้า connection form (types+state)"
+git add frontend/src/types/api.ts frontend/src/hooks/useConnectionForm.ts frontend/src/pages/EditConnectionPage.tsx
+git commit -m "feat(ui): wire reasoning_effort เข้า connection form (types+state+submit)"
 ```
 
 ---
@@ -503,9 +640,9 @@ interface ReasoningEffortSelectorProps {
 }
 
 const OPTIONS: { value: Effort; title: string; hint: string }[] = [
-  { value: 'low', title: 'Low', hint: 'เร็วสุด · ~45s' },
-  { value: 'medium', title: 'Medium', hint: 'สมดุล · ~60s (แนะนำ)' },
-  { value: 'high', title: 'High', hint: 'ฉลาดสุด · ~120s · แพงกว่า' },
+  { value: 'low', title: 'Low', hint: 'เร็วสุด · ประหยัด' },
+  { value: 'medium', title: 'Medium', hint: 'สมดุล (แนะนำ)' },
+  { value: 'high', title: 'High', hint: 'ฉลาดสุด · ช้ากว่า · แพงกว่า' },
 ];
 
 export function ReasoningEffortSelector({ value, onChange }: ReasoningEffortSelectorProps) {
@@ -533,7 +670,8 @@ export function ReasoningEffortSelector({ value, onChange }: ReasoningEffortSele
         ))}
       </div>
       <p className="text-xs text-muted-foreground">
-        มีผลเฉพาะโมเดลที่รองรับ reasoning (เช่น o1, gpt-5) — โมเดลอื่นระบบจะข้ามให้อัตโนมัติ
+        มีผลเฉพาะโมเดลที่รองรับ reasoning (เช่น o1, gpt-5) — โมเดลอื่นระบบข้ามให้อัตโนมัติ
+        และข้อความง่ายระบบจะลดระดับให้เองเพื่อความเร็ว
       </p>
     </div>
   );
@@ -629,9 +767,14 @@ git commit -m "test(ui): ReasoningEffortSelector — checked state + onChange"
 
 - [ ] `cd backend && php artisan test` — ทั้งชุดผ่าน
 - [ ] `cd frontend && npx tsc --noEmit && npx vitest run` — ผ่าน
-- [ ] Manual (owner): เปิดหน้า Connection บอทที่ใช้ reasoning model → เลือก High → บันทึก → ส่งข้อความ → ตอบได้ ไม่ error, ตรวจ DB `bots.reasoning_effort = high`
-- [ ] Deploy: ตั้ง queue worker `--timeout` ≥ 200 บน Railway; `php artisan migrate`
+- [ ] Manual (owner): เปิดหน้า Connection บอทที่ใช้ reasoning model → เลือก High → บันทึก → ส่งข้อความ **ซับซ้อน** (เช่นให้คำนวณ) → ตอบได้ ไม่ error, ตรวจ DB `bots.reasoning_effort = high`; ส่งข้อความง่าย ("สวัสดี") → ตอบเร็ว (adaptive ลดเป็น medium)
+- [ ] **Deploy gate (blocker):** ตั้ง `REDIS_QUEUE_RETRY_AFTER ≥ 210` บน Railway (ปัจจุบัน 90) **ก่อน** deploy; `php artisan migrate`
 
 ## Global Constraints (ย้ำ)
 
-low/medium/high เท่านั้น · default medium · timeout 45/60/120 · non-reasoning model ต้องไม่ได้ reasoning payload · copy ไทย
+- effort = low/medium/high เท่านั้น · column default medium (nullable)
+- timeout map: **low=45 · medium=45 (no-regress) · high=90** (LINE loading cap 60s)
+- **adaptive:** ค่าบอทเป็นเพดาน — ข้อความไม่ complex cap ที่ medium
+- non-reasoning model **ต้องไม่ได้** reasoning payload; fallback (B1 recursion) **ไม่รับ** high effort/timeout
+- ทุก job ที่ generate LLM มี `$timeout=200`; deploy gate = `retry_after ≥ 210` (ไม่ใช่ worker --timeout)
+- copy ไทย
