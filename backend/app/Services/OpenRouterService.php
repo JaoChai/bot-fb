@@ -98,6 +98,8 @@ class OpenRouterService
             $capService = app(ModelCapabilityService::class);
 
             // ส่ง reasoning เฉพาะโมเดลที่รองรับ; effort จาก caller (bot setting) เมื่อมี ไม่งั้น default ของโมเดล
+            // ข้อจำกัด: payload เดียวใช้ร่วมทั้ง models[] — native fallback จึงได้ reasoning เดียวกับ primary
+            // (OpenRouter ignore param ที่โมเดลไม่รองรับ; ส่วน client-side fallback ด้านล่างส่ง reasoning:null แยกแล้ว)
             if ($capService->supportsReasoning($model)) {
                 $payload['reasoning'] = $reasoning ?? [
                     'effort' => $capService->getDefaultReasoningEffort($model) ?? 'medium',
@@ -298,6 +300,8 @@ class OpenRouterService
      * @param  float|null  $temperature  Sampling temperature
      * @param  int|null  $maxTokens  Maximum tokens in response
      * @param  string|null  $apiKeyOverride  Override API key
+     * @param  array|null  $reasoning  Reasoning config: ['effort' => 'low'|'medium'|'high'] (null = model default)
+     * @param  int|null  $timeout  Request timeout in seconds (null uses default)
      */
     public function generateBotResponse(
         string $userMessage,
