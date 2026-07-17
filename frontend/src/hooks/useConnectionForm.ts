@@ -9,6 +9,7 @@ export interface ConnectionFormData {
   primary_chat_model: string;
   fallback_chat_model: string;
   utility_model: string;
+  reasoning_effort: 'low' | 'medium' | 'high';
   line_channel_secret: string;
   line_channel_access_token: string;
   telegram_bot_token: string;
@@ -24,6 +25,7 @@ const DEFAULT_FORM_DATA: ConnectionFormData = {
   primary_chat_model: 'google/gemini-2.5-flash-preview',
   fallback_chat_model: 'google/gemini-2.0-flash-001',
   utility_model: '',
+  reasoning_effort: 'medium',
   line_channel_secret: '',
   line_channel_access_token: '',
   telegram_bot_token: '',
@@ -57,6 +59,7 @@ export function useConnectionForm() {
         primary_chat_model: existingBot.primary_chat_model || DEFAULT_FORM_DATA.primary_chat_model,
         fallback_chat_model: existingBot.fallback_chat_model || DEFAULT_FORM_DATA.fallback_chat_model,
         utility_model: existingBot.utility_model || '',
+        reasoning_effort: existingBot.reasoning_effort || 'medium',
         line_channel_secret: '',
         line_channel_access_token: '',
         telegram_bot_token: '',
