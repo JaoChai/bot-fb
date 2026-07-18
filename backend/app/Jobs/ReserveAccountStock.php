@@ -49,7 +49,9 @@ class ReserveAccountStock implements ShouldQueue
     public static function dispatchSafely(int $botId, int $conversationId, int $slipVerificationId, ?float $amount, array $items): void
     {
         try {
-            self::dispatch($botId, $conversationId, $slipVerificationId, $amount, $items);
+            // หน่วงให้ข้อความ "ออเดอร์ใหม่!" จาก plugin ไปก่อน การ์ดปุ่มจะได้อยู่ล่างสุดของแชท
+            self::dispatch($botId, $conversationId, $slipVerificationId, $amount, $items)
+                ->delay(config('delivery.card_delay_seconds', 15));
         } catch (\Throwable $e) {
             Log::warning('Account delivery: reserve job dispatch failed', [
                 'conversation_id' => $conversationId,
