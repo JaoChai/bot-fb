@@ -79,4 +79,18 @@ class ReserveAccountStockDispatchTest extends TestCase
             $result['message']->metadata['slip_status'] ?? null,
         );
     }
+
+    public function test_dispatch_safely_delays_job_per_config(): void
+    {
+        // หน่วง job เพื่อให้ข้อความ "ออเดอร์ใหม่!" จาก plugin ไปถึง Telegram ก่อนการ์ดปุ่ม
+        Bus::fake([ReserveAccountStock::class]);
+        config(['delivery.card_delay_seconds' => 20]);
+
+        ReserveAccountStock::dispatchSafely(1, 2, 3, 100.0, []);
+
+        Bus::assertDispatched(
+            ReserveAccountStock::class,
+            fn (ReserveAccountStock $job) => $job->delay === 20,
+        );
+    }
 }

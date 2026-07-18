@@ -13,6 +13,10 @@ return [
     // เพดานจำนวนต่อรายการ กัน summary เพี้ยน (qty สูงผิดปกติ) จองรัวจน stock หมดในงานเดียว
     'max_qty' => (int) env('ACCOUNT_DELIVERY_MAX_QTY', 20),
 
+    // หน่วง job จองสต๊อก+ส่งการ์ดปุ่ม เพื่อให้ข้อความ "ออเดอร์ใหม่!" จาก Telegram plugin
+    // (ส่งใน executePlugins หลังตอบลูกค้า) ไปถึงก่อนการ์ดเสมอ — ปุ่มจะได้อยู่ล่างสุดของแชท
+    'card_delay_seconds' => (int) env('ACCOUNT_DELIVERY_CARD_DELAY_SECONDS', 15),
+
     // ชั้น 2 fallback: เมื่อ regex ดึง total ได้แต่ items ว่าง เรียก utility_model ช่วยดึงรายการสินค้า
     // (ยัง gated ด้วย utility_model ต้องตั้งค่าไว้ก่อนถึงจะยิงจริง)
     'llm_item_fallback_enabled' => (bool) env('DELIVERY_LLM_ITEM_FALLBACK', true),
