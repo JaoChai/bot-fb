@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ReserveAccountStock;
 use App\Models\Bot;
 use App\Models\BotSetting;
 use App\Models\Conversation;
@@ -13,6 +14,7 @@ use App\Models\Order;
 use App\Models\SlipVerification;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -252,5 +254,70 @@ class ManualPaymentConfirmTest extends TestCase
         $this->actingAs($other)
             ->postJson("/api/conversations/{$this->conversation->id}/confirm-payment", ['amount' => 100])
             ->assertStatus(403);
+    }
+
+    /** Fake ช่องทางออกทั้งหมด (LINE/Telegram/OpenRouter plugin ไม่ trigger) สำหรับเทสต์ fallback */
+    private function fakeOutputChannels(): void
+    {
+        Http::fake([
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => '{"triggered": false}']]],
+                'model' => 'openai/gpt-4o-mini',
+                'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+            ]),
+        ]);
+    }
+
+    public function test_confirm_falls_back_to_step2_confirm_message_when_no_payment_summary(): void
+    {
+        // เคส delivery #38: ลูกค้าโอนข้ามขั้นตอน — ไม่มีข้อความสรุปยอด+เลขบัญชีใน history
+        // เหลือแต่ข้อความยืนยันขั้น 2 → ต้องดึงรายการจากข้อความนั้นแทน
+        Bus::fake([ReserveAccountStock::class]);
+        $this->conversation->messages()->where('sender', 'bot')->delete();
+        Message::factory()->create([
+            'conversation_id' => $this->conversation->id,
+            'sender' => 'bot',
+            'type' => 'text',
+            'content' => "สรุปตะกร้าครับ\nNolimit BM x2 = 2,200 บาท\nรวมทั้งหมด 2,200 บาท ถูกต้องไหมครับ? พิมพ์ ยืนยัน ได้เลยครับ",
+        ]);
+        $this->fakeOutputChannels();
+
+        $response = $this->actingAs($this->owner)
+            ->postJson("/api/conversations/{$this->conversation->id}/confirm-payment", ['amount' => 2200]);
+
+        $response->assertOk();
+
+        $botMessage = Message::where('conversation_id', $this->conversation->id)
+            ->where('sender', 'bot')
+            ->latest('id')
+            ->first();
+        $this->assertStringContainsString('Nolimit BM', $botMessage->content);
+        $this->assertStringNotContainsString('ออเดอร์: -', $botMessage->content);
+
+        Bus::assertDispatched(ReserveAccountStock::class, function (ReserveAccountStock $job) {
+            return $job->items !== []
+                && $job->items[0]['name'] === 'Nolimit BM'
+                && $job->items[0]['qty'] === 2;
+        });
+    }
+
+    public function test_confirm_without_any_order_context_keeps_current_behavior(): void
+    {
+        // ไม่มีทั้งสรุปยอดและข้อความยืนยันขั้น 2 → fallback คืน null → พฤติกรรมเดิม (items ว่าง)
+        Bus::fake([ReserveAccountStock::class]);
+        $this->conversation->messages()->where('sender', 'bot')->delete();
+        $this->fakeOutputChannels();
+
+        $response = $this->actingAs($this->owner)
+            ->postJson("/api/conversations/{$this->conversation->id}/confirm-payment", ['amount' => 2000]);
+
+        $response->assertOk();
+
+        Bus::assertDispatched(
+            ReserveAccountStock::class,
+            fn (ReserveAccountStock $job) => $job->items === [],
+        );
     }
 }

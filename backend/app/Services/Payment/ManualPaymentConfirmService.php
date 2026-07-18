@@ -52,6 +52,12 @@ class ManualPaymentConfirmService
             throw new NoPendingPaymentException;
         }
 
+        // Fallback ชั้น 3 (ลูกค้าโอนข้ามขั้นตอน): ไม่มีข้อความสรุปยอด+เลขบัญชีใน window
+        // → อ่านออเดอร์จากข้อความยืนยันขั้น 2 โดยยอดต้องตรงกับยอดที่กดยืนยัน
+        if ($expected === null) {
+            $expected = $this->slipVerification->findExpectedFromConfirmMessage($history, $bot, (float) $amount);
+        }
+
         $summary = $expected['summary'] ?? '-';
         $template = $bot->settings?->slip_success_message ?: LineWebhookResponseService::SLIP_SUCCESS_TEMPLATE;
         $text = str_replace(
