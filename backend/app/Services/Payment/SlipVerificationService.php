@@ -89,32 +89,97 @@ class SlipVerificationService
                 continue;
             }
 
-            $items = array_map(function (array $item) {
-                $item['name'] = rtrim(trim($item['name']), '= ');
+            return $this->buildExpected($data, $content, $bot);
+        }
 
-                return $item;
-            }, $data['items']);
+        return null;
+    }
 
-            // ชั้น 2 fallback: regex ได้ total แต่ดึง items ไม่ได้ (prose ล้วน / หลายสินค้าบรรทัดเดียว)
-            // เรียกเฉพาะตอน items ว่างเท่านั้น (cost guard) — ไม่เรียกทุกครั้ง
-            if ($items === [] && $bot !== null && $this->itemExtractor !== null
-                && config('delivery.llm_item_fallback_enabled', true)) {
-                $llmItems = $this->itemExtractor->extract($content, $bot);
-                if ($llmItems !== []) {
-                    $items = $llmItems;
-                }
+    /**
+     * แปลงผล parse (จาก parsePaymentData/parseConfirmData) เป็น expected shape:
+     * normalize ชื่อ → LLM fallback ชั้น 2 (ใต้ flag) → ตัดของแถมราคา 0 ออกจาก summary.
+     * $requireItems: confirm-path ต้องได้ items จริงเท่านั้น (คืน null ถ้าว่าง) —
+     * ต่างจาก payment-summary ที่ยอมคืน summary '-' เพื่อให้ยอดยังใช้ยืนยันเงินได้
+     *
+     * @return array{total: float, summary: string, items: array}|null
+     */
+    private function buildExpected(array $data, string $content, ?Bot $bot, bool $requireItems = false): ?array
+    {
+        $items = array_map(function (array $item) {
+            $item['name'] = rtrim(trim($item['name']), '= ');
+
+            return $item;
+        }, $data['items']);
+
+        // ชั้น 2 fallback: regex ได้ total แต่ดึง items ไม่ได้ (prose ล้วน / หลายสินค้าบรรทัดเดียว)
+        // เรียกเฉพาะตอน items ว่างเท่านั้น (cost guard) — ไม่เรียกทุกครั้ง
+        if ($items === [] && $bot !== null && $this->itemExtractor !== null
+            && config('delivery.llm_item_fallback_enabled', true)) {
+            $items = $this->itemExtractor->extract($content, $bot);
+        }
+
+        if ($items === [] && $requireItems) {
+            return null;
+        }
+
+        // ตัดของแถมราคา 0 ออกจาก summary กันชื่อหลุดไปข้อความยืนยัน/Telegram/order_items —
+        // แต่คืน 'items' เต็มชุดให้ delivery กรอง+log เองอีกชั้น
+        $visibleItems = array_filter($items, fn (array $item) => ! PaymentMessageDetector::isZeroPriceItem($item));
+        $itemNames = array_column($visibleItems, 'name');
+
+        return [
+            'total' => (float) str_replace(',', '', $data['total']),
+            'summary' => $itemNames === [] ? '-' : implode(', ', $itemNames),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * Fallback ชั้น 3 (เฉพาะ manual confirm): อ่านออเดอร์จากข้อความยืนยันขั้น 2 ของบอท
+     * ("...รวม X บาท ถูกต้องไหมครับ? พิมพ์ยืนยัน") เมื่อไม่มีข้อความสรุปยอด+เลขบัญชีใน history
+     * — เคสลูกค้าโอนข้ามขั้นตอน. ห้ามใช้ตัดสิน EasySlip auto-pass: หลักฐานอ่อนกว่าสรุปยอด
+     * จึงต้องมีคนกดยืนยันก่อนเสมอ แล้วยอดที่กด ($confirmedAmount) เป็นตัว guard
+     * (ต้องตรงยอดในข้อความ ± slip_amount_tolerance) กันคว้าข้อความเก่าคนละออเดอร์.
+     *
+     * @param  array<int, array{sender: string, content: string}>  $conversationHistory
+     * @return array{total: float, summary: string, items: array}|null
+     */
+    public function findExpectedFromConfirmMessage(array $conversationHistory, ?Bot $bot, float $confirmedAmount): ?array
+    {
+        $tolerance = (float) ($bot?->settings?->slip_amount_tolerance ?? 0);
+
+        foreach (array_reverse($conversationHistory) as $msg) {
+            if (($msg['sender'] ?? '') !== 'bot') {
+                continue;
+            }
+            $content = $msg['content'] ?? '';
+            if (! $this->detector->isConfirmMessage($content)) {
+                continue;
+            }
+            $data = $this->detector->parseConfirmData($content);
+            if ($data === null) {
+                continue;
             }
 
-            // ตัดของแถมราคา 0 ออกจาก summary กันชื่อหลุดไปข้อความยืนยัน/Telegram/order_items —
-            // แต่คืน 'items' เต็มชุดให้ delivery กรอง+log เองอีกชั้น
-            $visibleItems = array_filter($items, fn (array $item) => ! PaymentMessageDetector::isZeroPriceItem($item));
-            $itemNames = array_column($visibleItems, 'name');
+            $total = (float) str_replace(',', '', $data['total']);
+            if (abs($total - $confirmedAmount) > $tolerance) {
+                Log::info('Confirm fallback: amount mismatch, skipping message', [
+                    'confirmed' => $confirmedAmount, 'found' => $total,
+                ]);
 
-            return [
-                'total' => (float) str_replace(',', '', $data['total']),
-                'summary' => $itemNames === [] ? '-' : implode(', ', $itemNames),
-                'items' => $items,
-            ];
+                continue;
+            }
+
+            $expected = $this->buildExpected($data, $content, $bot, requireItems: true);
+            if ($expected === null) {
+                return null;
+            }
+
+            Log::info('Confirm fallback: items extracted from step-2 confirm message', [
+                'count' => count($expected['items']),
+            ]);
+
+            return $expected;
         }
 
         return null;
