@@ -29,7 +29,7 @@ export function Metric({ label, value, hint, icon: Icon, trend, className }: Met
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
         {Icon && <Icon className="size-4 text-muted-foreground" strokeWidth={1.5} />}
       </div>
-      <p className="mt-2 text-2xl font-semibold tabular-nums leading-none">{value}</p>
+      <p className="mt-2 text-xl sm:text-2xl font-semibold tabular-nums leading-none">{value}</p>
       {(trend || hint) && (
         <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
           {trend && (
@@ -38,7 +38,7 @@ export function Metric({ label, value, hint, icon: Icon, trend, className }: Met
               {trend.value}%
             </span>
           )}
-          {hint && <span className="truncate">{hint}</span>}
+          {hint && <span className="min-w-0">{hint}</span>}
         </div>
       )}
     </div>
