@@ -188,4 +188,47 @@ class PaymentMessageDetectorHardeningTest extends TestCase
         $this->assertStringNotContainsString('2 ตัว', $data['items'][0]['name']);
         $this->assertEquals(2, $data['items'][0]['qty']);
     }
+
+    #[Test]
+    public function test_c2_bulleted_x_n_qty_not_swallowed_into_name(): void
+    {
+        // เคสจริง 2026-07-17 (delivery #35): "1. G3D x20" — regex หลักจับ "G3D x20"
+        // เป็นชื่อสินค้าทั้งก้อน qty หาย → ระบบส่งบัญชีให้ลูกค้าแค่ 1 จาก 20
+        $text = "สรุปรายการที่พี่สั่งซื้อครับ:\n\n1. G3D x20 = 1,000 บาท\n\nรวมยอดโอน: 1,000 บาท ✅";
+
+        $data = $this->detector->parsePaymentData($text);
+
+        $this->assertNotNull($data);
+        $this->assertCount(1, $data['items']);
+        $this->assertEquals('G3D', $data['items'][0]['name']);
+        $this->assertEquals(20, $data['items'][0]['qty']);
+        $this->assertEquals('1,000', $data['items'][0]['total']);
+    }
+
+    #[Test]
+    public function test_c3_bulleted_unit_word_qty_not_swallowed_into_name(): void
+    {
+        $text = "1. G3D 20 ตัว = 1,000 บาท\nรวมยอดโอน: 1,000 บาท";
+
+        $data = $this->detector->parsePaymentData($text);
+
+        $this->assertNotNull($data);
+        $this->assertCount(1, $data['items']);
+        $this->assertEquals('G3D', $data['items'][0]['name']);
+        $this->assertEquals(20, $data['items'][0]['qty']);
+    }
+
+    #[Test]
+    public function test_c4_paren_price_qty_form_wins_over_trailing_strip(): void
+    {
+        $text = "1. G3D (50 x 20) = 1,000 บาท\nรวมยอดโอน: 1,000 บาท";
+
+        $data = $this->detector->parsePaymentData($text);
+
+        $this->assertNotNull($data);
+        $this->assertCount(1, $data['items']);
+        $this->assertEquals('G3D', $data['items'][0]['name']);
+        $this->assertEquals(20, $data['items'][0]['qty']);
+        $this->assertEquals('50', $data['items'][0]['price']);
+    }
 }

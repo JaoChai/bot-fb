@@ -28,6 +28,9 @@ class PaymentMessageDetector
      */
     private const TOTAL_KEYWORDS = 'รวมยอดโอน|รวมทั้งสิ้น|สรุปยอด(?:โอน)?|ยอดโอน|ยอดรวม|รวมเป็นเงิน|ยอดสุทธิ|ยอดที่ต้องโอน|ยอดชำระ|ยอดที่ต้องชำระ';
 
+    /** คำหน่วยจำนวนสินค้า ("N ตัว") — ใช้ร่วมกันทั้ง primary post-process และ fallback regex กัน drift */
+    private const UNIT_WORDS = 'ตัว|เพจ|ใบ|ชิ้น|อัน';
+
     /**
      * Parse payment data from text.
      * Returns null if total cannot be parsed (required field).
@@ -78,7 +81,17 @@ class PaymentMessageDetector
         );
 
         foreach ($itemMatches as $match) {
-            $this->pushItem($items, trim($match[1]), $match[4], $match[2] ?? '', $match[3] ?? '');
+            $name = trim($match[1]);
+            $qty = $match[3] ?? '';
+
+            // LLM มัก drift เขียน qty ต่อท้ายชื่อ ("G3D x20", "G3D 20 ตัว") แทนรูป "(ราคา x จำนวน)"
+            // ถ้าไม่ดึงออก qty จะหายเงียบ → ระบบส่งของให้ลูกค้าแค่ 1 ชิ้น (เคสจริง delivery #35)
+            if ($qty === '' && preg_match('/^(.+?)\s*(?:[x×]\s*(\d+)|(\d+)\s*(?:'.self::UNIT_WORDS.'))$/u', $name, $qtyMatch)) {
+                $name = trim($qtyMatch[1]);
+                $qty = ($qtyMatch[2] ?? '') !== '' ? $qtyMatch[2] : $qtyMatch[3];
+            }
+
+            $this->pushItem($items, $name, $match[4], $match[2] ?? '', $qty);
         }
 
         if ($items !== []) {
@@ -92,7 +105,7 @@ class PaymentMessageDetector
         // Known limitation: matches at most one item per line (fine — one item per line
         // is the only shape the bot produces).
         preg_match_all(
-            '/^(?!\s*(?:รวม|สรุป|'.self::TOTAL_KEYWORDS.'|ส่วนลด|ค่าธรรมเนียม))\s*(.+?)\s*(?:(\d+)\s*(?:ตัว|เพจ|ใบ|ชิ้น|อัน)(?:\s*[x×]\s*([\d,]+))?|[x×]\s*(\d+))?\s*[:=\-]\s*([\d,]+(?:\.\d+)?)\s*บาท/mu',
+            '/^(?!\s*(?:รวม|สรุป|'.self::TOTAL_KEYWORDS.'|ส่วนลด|ค่าธรรมเนียม))\s*(.+?)\s*(?:(\d+)\s*(?:'.self::UNIT_WORDS.')(?:\s*[x×]\s*([\d,]+))?|[x×]\s*(\d+))?\s*[:=\-]\s*([\d,]+(?:\.\d+)?)\s*บาท/mu',
             $text,
             $itemMatches,
             PREG_SET_ORDER
