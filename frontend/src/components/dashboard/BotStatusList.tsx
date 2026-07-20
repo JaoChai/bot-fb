@@ -37,7 +37,7 @@ export function BotStatusList({ bots }: BotStatusListProps) {
   const visibleBots = showInactive ? [...activeBots, ...inactiveBots] : activeBots;
 
   return (
-    <div className="rounded-xl border bg-card p-6 shadow-sm">
+    <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
       <h3 className="mb-4 text-base font-semibold">
         บอทที่ใช้งาน
         <span className="ml-2 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">

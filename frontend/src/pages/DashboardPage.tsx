@@ -146,7 +146,7 @@ export function DashboardPage() {
 
       <Suspense
         fallback={
-          <div className="rounded-xl border bg-card p-6 shadow-sm">
+          <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
             <Skeleton className="mb-4 h-5 w-48" />
             <Skeleton className="h-[300px] w-full rounded-lg" />
           </div>
@@ -162,7 +162,7 @@ export function DashboardPage() {
         {productsData && productsData.length > 0 && (
           <Suspense
             fallback={
-              <div className="rounded-xl border bg-card p-6 shadow-sm">
+              <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
                 <Skeleton className="mb-4 h-5 w-36" />
                 <div className="grid gap-6 md:grid-cols-2">
                   <div className="space-y-3">

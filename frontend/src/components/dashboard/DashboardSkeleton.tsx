@@ -20,14 +20,14 @@ export function DashboardSkeleton() {
       </div>
 
       {/* Dual Axis Chart */}
-      <div className="rounded-xl border bg-card p-6 shadow-sm">
+      <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
         <Skeleton className="h-5 w-48 mb-4" />
         <Skeleton className="h-[300px] w-full rounded-lg" />
       </div>
 
       {/* Products + Recent Orders (2 columns) */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border bg-card p-6 shadow-sm">
+        <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
           <Skeleton className="h-5 w-36 mb-4" />
           <div className="grid gap-6 md:grid-cols-2">
             <div className="space-y-3">
@@ -42,7 +42,7 @@ export function DashboardSkeleton() {
             <Skeleton className="h-[200px] w-full rounded-lg" />
           </div>
         </div>
-        <div className="rounded-xl border bg-card p-6 shadow-sm">
+        <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
           <Skeleton className="h-5 w-28 mb-4" />
           <div className="space-y-3">
             {[...Array(5)].map((_, i) => (
@@ -60,7 +60,7 @@ export function DashboardSkeleton() {
       {/* Bots + Stock (2 columns) */}
       <div className="grid gap-4 lg:grid-cols-2">
         {[...Array(2)].map((_, col) => (
-          <div key={col} className="rounded-xl border bg-card p-6 shadow-sm">
+          <div key={col} className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
             <Skeleton className="h-5 w-32 mb-4" />
             <div className="space-y-2">
               {[...Array(3)].map((_, i) => (

@@ -29,7 +29,7 @@ export function ProductsSummaryCard({ products }: ProductsSummaryCardProps) {
 
   if (products.length === 0) {
     return (
-      <div className="rounded-xl border bg-card p-6 shadow-sm">
+      <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
         <h3 className="text-base font-semibold">สินค้าและหมวดหมู่</h3>
         <div className="flex h-48 items-center justify-center text-muted-foreground">
           ยังไม่มีข้อมูลสินค้า
@@ -39,7 +39,7 @@ export function ProductsSummaryCard({ products }: ProductsSummaryCardProps) {
   }
 
   return (
-    <div className="rounded-xl border bg-card p-6 shadow-sm">
+    <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
       <h3 className="mb-4 text-base font-semibold">สินค้าและหมวดหมู่</h3>
       <div className="grid gap-6 md:grid-cols-2">
         {/* Left: Top 5 Products */}
