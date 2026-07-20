@@ -80,7 +80,7 @@ export function DualAxisChart({ orderTimeSeries, costTimeSeries }: DualAxisChart
 
   if (merged.length === 0) {
     return (
-      <div className="rounded-xl border bg-card p-6 shadow-sm">
+      <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
         <h3 className="text-base font-semibold">ยอดขาย vs ค่า API</h3>
         <div className="mt-4 flex h-[280px] items-center justify-center text-sm text-muted-foreground">
           ยังไม่มีข้อมูล
@@ -92,8 +92,8 @@ export function DualAxisChart({ orderTimeSeries, costTimeSeries }: DualAxisChart
   const visible = merged.slice(-range);
 
   return (
-    <div className="rounded-xl border bg-card p-6 shadow-sm">
-      <div className="mb-4 flex items-center justify-between gap-2">
+    <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-base font-semibold">ยอดขาย vs ค่า API</h3>
         <Tabs value={String(range)} onValueChange={(v) => setRange(Number(v) as RangeDays)}>
           <TabsList>
@@ -139,7 +139,7 @@ export function DualAxisChart({ orderTimeSeries, costTimeSeries }: DualAxisChart
               tickFormatter={(v) => `฿${(Number(v) / 1000).toFixed(0)}k`}
               tick={{ fontSize: 11 }}
               className="text-muted-foreground"
-              width={50}
+              width={40}
               axisLine={false}
               tickLine={false}
             />
@@ -149,7 +149,7 @@ export function DualAxisChart({ orderTimeSeries, costTimeSeries }: DualAxisChart
               tickFormatter={(v) => `฿${Number(v).toFixed(0)}`}
               tick={{ fontSize: 11 }}
               className="text-muted-foreground"
-              width={50}
+              width={40}
               axisLine={false}
               tickLine={false}
             />
