@@ -26,12 +26,22 @@ const STATUS_LABELS: Record<string, string> = {
   refunded: 'คืนเงิน',
 };
 
+function formatOrderDate(dateString: string) {
+  return new Date(dateString).toLocaleDateString('th-TH', { day: '2-digit', month: 'short' });
+}
+
+function formatOrderItems(items: Order['items']) {
+  return items.length > 0
+    ? items.map((item) => `${item.product_name} x${item.quantity}`).join(', ')
+    : '-';
+}
+
 export function RecentOrdersPreview() {
   const { data, isLoading } = useOrders({ per_page: 5 });
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border bg-card p-6 shadow-sm">
+      <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
         <h3 className="text-base font-semibold">ออเดอร์ล่าสุด</h3>
         <p className="mt-4 text-sm text-muted-foreground">กำลังโหลด...</p>
       </div>
@@ -42,7 +52,7 @@ export function RecentOrdersPreview() {
 
   if (!orders.length) {
     return (
-      <div className="rounded-xl border bg-card p-6 shadow-sm">
+      <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
         <h3 className="text-base font-semibold">ออเดอร์ล่าสุด</h3>
         <div className="flex flex-col items-center justify-center gap-2 py-8">
           <div className="rounded-full bg-muted p-3">
@@ -55,9 +65,34 @@ export function RecentOrdersPreview() {
   }
 
   return (
-    <div className="rounded-xl border bg-card p-6 shadow-sm">
+    <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
       <h3 className="mb-4 text-base font-semibold">ออเดอร์ล่าสุด</h3>
-      <div className="overflow-x-auto rounded-lg border">
+      {/* Mobile: card list */}
+      <div className="space-y-2 md:hidden">
+        {orders.map((order: Order) => (
+          <div key={order.id} className="rounded-lg border p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-sm font-medium">
+                {order.customer_profile?.display_name ?? '-'}
+              </span>
+              <span className="shrink-0 text-sm font-semibold">
+                {formatBaht(order.total_amount)}
+              </span>
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-xs text-muted-foreground">
+                {formatOrderDate(order.created_at)}
+                {' · '}
+                {formatOrderItems(order.items)}
+              </span>
+              <Badge variant={STATUS_VARIANTS[order.status] || 'secondary'}>
+                {STATUS_LABELS[order.status] || order.status}
+              </Badge>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto rounded-lg border md:block">
         <Table className="text-sm">
           <TableHeader>
             <TableRow className="bg-accent/30 hover:bg-accent/30">
@@ -72,18 +107,13 @@ export function RecentOrdersPreview() {
             {orders.map((order: Order) => (
               <TableRow key={order.id} className="transition-colors hover:bg-accent/20">
                 <TableCell className="whitespace-nowrap">
-                  {new Date(order.created_at).toLocaleDateString('th-TH', {
-                    day: '2-digit',
-                    month: 'short',
-                  })}
+                  {formatOrderDate(order.created_at)}
                 </TableCell>
                 <TableCell className="whitespace-nowrap font-medium">
                   {order.customer_profile?.display_name ?? '-'}
                 </TableCell>
                 <TableCell className="max-w-xs truncate text-muted-foreground">
-                  {order.items.length > 0
-                    ? order.items.map((item) => `${item.product_name} x${item.quantity}`).join(', ')
-                    : '-'}
+                  {formatOrderItems(order.items)}
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-right font-semibold">
                   {formatBaht(order.total_amount)}
