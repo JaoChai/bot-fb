@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\AccountDelivery;
 use App\Models\Bot;
 use App\Models\FlowPlugin;
+use App\Models\UserSetting;
 use App\Services\Delivery\AccountDeliveryService;
 use App\Services\Delivery\StockPoolService;
 use App\Services\Payment\TelegramAlertBotService;
@@ -87,6 +88,12 @@ class ReconcileDeliveries extends Command
         $plugin ??= $this->fallbackPlugin();
         if (! $plugin) {
             Log::warning('Reconcile: no telegram plugin to notify', ['problems' => $problems]);
+
+            return;
+        }
+
+        if (UserSetting::quietNow($plugin->flow?->bot?->user?->settings)) {
+            Log::info('Reconcile: quiet hours, skipped telegram alert', ['problems' => count($problems)]);
 
             return;
         }

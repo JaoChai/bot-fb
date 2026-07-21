@@ -11,6 +11,7 @@ use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\Delivery\StockPoolService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\InteractsWithStockPool;
@@ -24,6 +25,7 @@ class ReconcileDeliveriesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Carbon::setTestNow(Carbon::today()->setTime(12, 0));
         $this->setUpStockPool();
         Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
 
@@ -178,6 +180,16 @@ class ReconcileDeliveriesTest extends TestCase
         $delivery = $this->makeDelivery('reserved');
         // งาน active (reserved) + ค้างเกิน 10 นาที — ต้องไม่ถูก flag เพราะ order_ref อยู่ใน activeRefs
         $this->insertReserved(99, StockPoolService::orderRef($delivery->id));
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertNothingSent();
+    }
+
+    public function test_skips_telegram_alert_during_quiet_hours(): void
+    {
+        Carbon::setTestNow(Carbon::today()->setTime(2, 0));
+        $this->makeDelivery('reserving', ['updated_at' => now()->subMinutes(30)]);
 
         $this->artisan('delivery:reconcile')->assertSuccessful();
 

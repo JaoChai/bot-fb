@@ -10,12 +10,19 @@ use App\Models\FlowPlugin;
 use App\Models\SlipVerification;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class RemindPendingDeliveriesTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Carbon::setTestNow(Carbon::today()->setTime(12, 0));
+    }
 
     private function makeDelivery(array $attrs = []): AccountDelivery
     {
@@ -70,5 +77,29 @@ class RemindPendingDeliveriesTest extends TestCase
         $this->artisan('delivery:remind')->assertSuccessful();
 
         Http::assertNothingSent();
+    }
+
+    public function test_skips_reminder_during_quiet_hours(): void
+    {
+        Carbon::setTestNow(Carbon::today()->setTime(2, 0));
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+        $delivery = $this->makeDelivery(['created_at' => now()->subHour()]);
+
+        $this->artisan('delivery:remind')->assertSuccessful();
+
+        Http::assertNothingSent();
+        $this->assertNull($delivery->fresh()->last_reminded_at); // รอบเช้าต้องเตือนต่อได้
+    }
+
+    public function test_reminds_at_night_when_quiet_hours_disabled(): void
+    {
+        Carbon::setTestNow(Carbon::today()->setTime(2, 0));
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+        $delivery = $this->makeDelivery(['created_at' => now()->subHour()]);
+        $delivery->bot->user->getOrCreateSettings()->update(['quiet_hours_enabled' => false]);
+
+        $this->artisan('delivery:remind')->assertSuccessful();
+
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage'));
     }
 }
