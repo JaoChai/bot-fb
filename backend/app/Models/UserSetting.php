@@ -21,6 +21,9 @@ class UserSetting extends Model
         'line_channel_secret',
         'line_channel_access_token',
         'easyslip_api_token',
+        'quiet_hours_enabled',
+        'quiet_hours_start',
+        'quiet_hours_end',
     ];
 
     /**
@@ -36,6 +39,7 @@ class UserSetting extends Model
         'max_monthly_cost' => 'decimal:2',
         'cost_alert_enabled' => 'boolean',
         'cost_alert_threshold' => 'integer',
+        'quiet_hours_enabled' => 'boolean',
     ];
 
     /**
@@ -51,6 +55,29 @@ class UserSetting extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * ตอนนี้อยู่ในช่วงเวลาเงียบแจ้งเตือนซ้ำหรือไม่ — ไม่มี settings row ใช้ default เงียบ 23:00–08:00
+     * รองรับช่วงข้ามเที่ยงคืน (start > end) และเทียบแบบ H:i (Postgres คืน HH:MM:SS)
+     */
+    public static function quietNow(?self $settings): bool
+    {
+        if (! ($settings?->quiet_hours_enabled ?? true)) {
+            return false;
+        }
+
+        $start = substr($settings?->quiet_hours_start ?? '23:00', 0, 5);
+        $end = substr($settings?->quiet_hours_end ?? '08:00', 0, 5);
+        if ($start === $end) {
+            return false;
+        }
+
+        $now = now()->format('H:i');
+
+        return $start < $end
+            ? ($now >= $start && $now < $end)
+            : ($now >= $start || $now < $end);
     }
 
     /**
