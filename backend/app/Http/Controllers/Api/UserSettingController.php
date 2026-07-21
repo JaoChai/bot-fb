@@ -29,6 +29,9 @@ class UserSettingController extends Controller
                 'line_channel_access_token_masked' => $settings?->masked_line_token,
                 'easyslip_configured' => $settings?->hasEasySlipToken() ?? false,
                 'easyslip_token_masked' => $settings?->masked_easyslip_token,
+                'quiet_hours_enabled' => $settings?->quiet_hours_enabled ?? true,
+                'quiet_hours_start' => substr($settings?->quiet_hours_start ?? '23:00', 0, 5),
+                'quiet_hours_end' => substr($settings?->quiet_hours_end ?? '08:00', 0, 5),
             ],
         ]);
     }
@@ -252,6 +255,33 @@ class UserSettingController extends Controller
             'data' => [
                 'easyslip_configured' => $settings->hasEasySlipToken(),
                 'easyslip_token_masked' => $settings->masked_easyslip_token,
+            ],
+        ]);
+    }
+
+    /**
+     * Update quiet hours — ช่วงเวลาเงียบแจ้งเตือนซ้ำ (delivery remind/reconcile).
+     */
+    public function updateQuietHours(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'enabled' => 'required|boolean',
+            'start' => 'required|date_format:H:i',
+            'end' => 'required|date_format:H:i|different:start',
+        ]);
+
+        $settings = $request->user()->getOrCreateSettings();
+        $settings->quiet_hours_enabled = $validated['enabled'];
+        $settings->quiet_hours_start = $validated['start'];
+        $settings->quiet_hours_end = $validated['end'];
+        $settings->save();
+
+        return response()->json([
+            'message' => 'บันทึกช่วงเวลาเงียบแล้ว',
+            'data' => [
+                'quiet_hours_enabled' => $settings->quiet_hours_enabled,
+                'quiet_hours_start' => substr($settings->quiet_hours_start, 0, 5),
+                'quiet_hours_end' => substr($settings->quiet_hours_end, 0, 5),
             ],
         ]);
     }
