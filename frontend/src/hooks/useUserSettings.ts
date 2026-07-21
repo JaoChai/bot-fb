@@ -93,3 +93,18 @@ export function useClearEasySlipToken() {
     },
   });
 }
+
+// Update quiet hours (ช่วงเวลาเงียบแจ้งเตือนซ้ำ)
+export function useUpdateQuietHours() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: { enabled: boolean; start: string; end: string }) => {
+      const response = await apiPut<ApiResponse<UserSettings>>('/settings/quiet-hours', data);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.user() });
+    },
+  });
+}

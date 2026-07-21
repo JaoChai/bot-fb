@@ -482,6 +482,9 @@ export interface UserSettings {
   line_channel_access_token_masked: string | null;
   easyslip_configured: boolean;
   easyslip_token_masked: string | null;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string; // 'HH:MM'
+  quiet_hours_end: string; // 'HH:MM'
 }
 
 export interface UpdateOpenRouterSettings {

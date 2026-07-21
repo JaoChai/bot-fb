@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/connections';
 import { Panel } from '@/components/common';
 import {
@@ -17,6 +18,7 @@ import {
   AlertCircle,
   Zap,
   ChevronRight,
+  Moon,
 } from 'lucide-react';
 import { Link } from 'react-router';
 import {
@@ -27,6 +29,7 @@ import {
   useUpdateEasySlipToken,
   useTestEasySlipConnection,
   useClearEasySlipToken,
+  useUpdateQuietHours,
 } from '@/hooks/useUserSettings';
 import { toast } from 'sonner';
 
@@ -49,6 +52,34 @@ export function SettingsPage() {
   const updateEasySlipMutation = useUpdateEasySlipToken();
   const testEasySlipMutation = useTestEasySlipConnection();
   const clearEasySlipMutation = useClearEasySlipToken();
+
+  const [quietEnabled, setQuietEnabled] = useState(true);
+  const [quietStart, setQuietStart] = useState('23:00');
+  const [quietEnd, setQuietEnd] = useState('08:00');
+  const updateQuietHoursMutation = useUpdateQuietHours();
+
+  useEffect(() => {
+    if (settings) {
+      setQuietEnabled(settings.quiet_hours_enabled);
+      setQuietStart(settings.quiet_hours_start);
+      setQuietEnd(settings.quiet_hours_end);
+    }
+  }, [settings]);
+
+  const handleSaveQuietHours = async () => {
+    if (quietStart === quietEnd) {
+      toast.error('เวลาเริ่มและสิ้นสุดต้องไม่เท่ากัน');
+      return;
+    }
+    try {
+      await updateQuietHoursMutation.mutateAsync({
+        enabled: quietEnabled, start: quietStart, end: quietEnd,
+      });
+      toast.success('บันทึกช่วงเวลาเงียบแล้ว');
+    } catch {
+      toast.error('บันทึกช่วงเวลาเงียบไม่สำเร็จ');
+    }
+  };
 
   useEffect(() => {
     setTestStatus('idle');
@@ -354,6 +385,51 @@ export function SettingsPage() {
               </>
             )}
           </div>
+        </div>
+      </Panel>
+
+      <Panel
+        icon={Moon}
+        title="ช่วงเวลาเงียบแจ้งเตือน"
+        description="ช่วงเวลานี้จะเงียบเฉพาะแจ้งเตือนซ้ำ (งานค้างกดยืนยัน/ของค้างสต๊อก) — ออเดอร์ใหม่ยังแจ้งเตือนปกติ"
+        actions={
+          <Switch checked={quietEnabled} onCheckedChange={setQuietEnabled} />
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="quiet-start">เริ่มเงียบ</Label>
+              <Input
+                id="quiet-start"
+                type="time"
+                value={quietStart}
+                onChange={(e) => setQuietStart(e.target.value)}
+                disabled={!quietEnabled}
+                className="w-32"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quiet-end">สิ้นสุด</Label>
+              <Input
+                id="quiet-end"
+                type="time"
+                value={quietEnd}
+                onChange={(e) => setQuietEnd(e.target.value)}
+                disabled={!quietEnabled}
+                className="w-32"
+              />
+            </div>
+            <Button
+              onClick={handleSaveQuietHours}
+              disabled={updateQuietHoursMutation.isPending}
+            >
+              {updateQuietHoursMutation.isPending ? 'กำลังบันทึก...' : 'บันทึก'}
+            </Button>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            ค่าเริ่มต้น 23:00–08:00 ตามเวลาไทย — พ้นช่วงเงียบแล้วงานที่ค้างจะถูกเตือนทันทีในรอบถัดไป
+          </p>
         </div>
       </Panel>
 
