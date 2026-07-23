@@ -17,6 +17,7 @@ class ProductStock extends Model
         'aliases',
         'in_stock',
         'manual_off',
+        'available_count',
         'display_order',
         'stock_code',
         'delivery_method',
@@ -26,5 +27,6 @@ class ProductStock extends Model
         'aliases' => 'array',
         'in_stock' => 'boolean',
         'manual_off' => 'boolean',
+        'available_count' => 'integer',
     ];
 }

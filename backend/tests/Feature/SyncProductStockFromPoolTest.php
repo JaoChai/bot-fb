@@ -72,6 +72,14 @@ class SyncProductStockFromPoolTest extends TestCase
         $this->assertFalse(ProductStock::where('slug', 'nolimit-personal')->first()->in_stock);
     }
 
+    public function test_available_count_column_persists(): void
+    {
+        $p = ProductStock::where('slug', 'nolimit-personal')->first();
+        $p->update(['available_count' => 5]);
+
+        $this->assertSame(5, $p->fresh()->available_count);
+    }
+
     public function test_releasing_manual_off_lets_auto_sync_turn_back_on(): void
     {
         // กดเปิดมือ (manual_off=false) → auto-sync กลับมาทำงานตาม pool
