@@ -53,11 +53,39 @@ class SyncProductStockFromPoolTest extends TestCase
     public function test_no_change_no_cache_bust(): void
     {
         $this->seedAvailable(1, 'NLMP'); // มีของ + in_stock=true อยู่แล้ว
+        ProductStock::where('slug', 'nolimit-personal')->update(['available_count' => 1]);
         Cache::put(ProductStock::STOCK_CACHE_KEY, 'keep', 300);
 
         $this->artisan('stock:sync-pool')->assertSuccessful();
 
         $this->assertSame('keep', Cache::get(ProductStock::STOCK_CACHE_KEY));
+    }
+
+    public function test_records_available_count_for_stock_products(): void
+    {
+        foreach (range(1, 5) as $id) {
+            $this->seedAvailable($id, 'NLMP');
+        }
+
+        $this->artisan('stock:sync-pool')->assertSuccessful();
+
+        $this->assertSame(5, ProductStock::where('slug', 'nolimit-personal')->first()->available_count);
+        // support_link ไม่เกี่ยวกับ pool — ต้องเป็น null เสมอ
+        $this->assertNull(ProductStock::where('slug', 'page')->first()->available_count);
+    }
+
+    public function test_count_change_busts_cache_even_without_toggle(): void
+    {
+        // in_stock true อยู่แล้วและยังมีของ (ไม่ toggle) แต่จำนวนเปลี่ยน 1 → 2 → ต้องล้าง cache
+        $this->seedAvailable(1, 'NLMP');
+        $this->seedAvailable(2, 'NLMP');
+        ProductStock::where('slug', 'nolimit-personal')->update(['available_count' => 1]);
+        Cache::put(ProductStock::STOCK_CACHE_KEY, 'stale', 300);
+
+        $this->artisan('stock:sync-pool')->assertSuccessful();
+
+        $this->assertSame(2, ProductStock::where('slug', 'nolimit-personal')->first()->available_count);
+        $this->assertNull(Cache::get(ProductStock::STOCK_CACHE_KEY));
     }
 
     public function test_manual_off_stays_off_even_when_pool_has_stock(): void

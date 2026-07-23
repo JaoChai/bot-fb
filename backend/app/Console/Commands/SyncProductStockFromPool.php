@@ -34,20 +34,28 @@ class SyncProductStockFromPool extends Command
         $changed = 0;
         $products = ProductStock::where('delivery_method', 'stock')->whereNotNull('stock_code')->get();
         foreach ($products as $product) {
+            $count = (int) ($counts[$product->stock_code] ?? 0);
             // ปิดค้างที่เจ้าของสั่งเองต้องชนะ pool (แต่ pool ว่างยังบังคับปิด กัน oversell)
-            $shouldBeInStock = (($counts[$product->stock_code] ?? 0) > 0) && ! $product->manual_off;
-            if ($product->in_stock === $shouldBeInStock) {
+            $shouldBeInStock = $count > 0 && ! $product->manual_off;
+            $toggled = $product->in_stock !== $shouldBeInStock;
+            if (! $toggled && $product->available_count === $count) {
                 continue;
             }
 
-            DB::transaction(function () use ($product, $shouldBeInStock) {
-                $product->update(['in_stock' => $shouldBeInStock]);
-                RagCache::purgeForProduct($product);
+            DB::transaction(function () use ($product, $shouldBeInStock, $count, $toggled) {
+                $product->update(['in_stock' => $shouldBeInStock, 'available_count' => $count]);
+                // RagCache ล้างเฉพาะตอนสวิตช์เปลี่ยน — จำนวนเปลี่ยนอย่างเดียวไม่กระทบคำตอบใน RAG cache
+                if ($toggled) {
+                    RagCache::purgeForProduct($product);
+                }
             });
             $changed++;
-            Log::info('stock:sync-pool toggled', [
-                'slug' => $product->slug, 'in_stock' => $shouldBeInStock,
-            ]);
+            // log เฉพาะตอนสวิตช์เปลี่ยน — จำนวนขยับทุกรอบ cron ถ้า log หมดจะบวมเปล่า
+            if ($toggled) {
+                Log::info('stock:sync-pool toggled', [
+                    'slug' => $product->slug, 'in_stock' => $shouldBeInStock, 'available_count' => $count,
+                ]);
+            }
         }
 
         if ($changed > 0) {
