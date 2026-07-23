@@ -400,8 +400,10 @@ class RAGService
         // Always inject stock — conditional injection caused sales of out-of-stock products
         $stocks = $this->stockInjectionService->getStockStatus();
         $hasOutOfStock = $stocks->where('in_stock', false)->isNotEmpty();
+        // มีจำนวนคงเหลือให้คุมโควตาการขาย แม้ของจะยังไม่หมดก็ต้องฉีด (กันรับออเดอร์เกิน stock)
+        $hasQty = $this->stockInjectionService->hasQtyToEnforce($stocks);
 
-        if ($hasOutOfStock) {
+        if ($hasOutOfStock || $hasQty) {
             $stockInjection = $this->stockInjectionService->buildStockInjection($stocks);
             if (! empty($stockInjection)) {
                 $prompt .= "\n\n".$stockInjection;
@@ -421,7 +423,7 @@ class RAGService
         }
 
         // Stock reminder at END of prompt — closest to user message = highest LLM attention
-        if ($hasOutOfStock) {
+        if ($hasOutOfStock || $hasQty) {
             $stockReminder = $this->stockInjectionService->buildStockReminder($stocks);
             if (! empty($stockReminder)) {
                 $prompt .= "\n\n".$stockReminder;

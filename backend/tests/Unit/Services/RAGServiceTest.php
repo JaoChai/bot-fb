@@ -470,4 +470,35 @@ class RAGServiceTest extends TestCase
 
         $this->assertSame('llm_decision', $result['intent']['method']);
     }
+
+    public function test_build_enhanced_prompt_injects_qty_when_all_in_stock(): void
+    {
+        // ไม่มีสินค้าหมดเลย แต่มีจำนวนคงเหลือ → ต้องฉีดทั้งหัวและท้าย
+        ProductStock::create([
+            'name' => 'BM แดง', 'slug' => 'bm-red', 'aliases' => [], 'in_stock' => true,
+            'available_count' => 5, 'display_order' => 1,
+            'stock_code' => 'BMRED', 'delivery_method' => 'stock',
+        ]);
+        Cache::forget(ProductStock::STOCK_CACHE_KEY);
+
+        $result = $this->callBuildEnhancedPrompt('Base prompt.', '');
+
+        $this->assertStringContainsString('[จำนวนพร้อมส่ง]: BM แดง = 5 ชิ้น', $result);
+        $this->assertStringContainsString('QTY REMINDER', $result);
+    }
+
+    public function test_build_enhanced_prompt_no_stock_section_without_counts_or_outage(): void
+    {
+        // ของครบทุกตัวและไม่มีจำนวน (เช่น support_link) → พฤติกรรมเดิม: ไม่ฉีดอะไร
+        ProductStock::create([
+            'name' => 'เพจ', 'slug' => 'page', 'aliases' => [], 'in_stock' => true,
+            'display_order' => 1, 'stock_code' => null, 'delivery_method' => 'support_link',
+        ]);
+        Cache::forget(ProductStock::STOCK_CACHE_KEY);
+
+        $result = $this->callBuildEnhancedPrompt('Base prompt.', '');
+
+        $this->assertStringNotContainsString('STOCK STATUS', $result);
+        $this->assertStringNotContainsString('QTY REMINDER', $result);
+    }
 }

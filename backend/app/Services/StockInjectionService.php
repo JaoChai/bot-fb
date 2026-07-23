@@ -25,6 +25,12 @@ class StockInjectionService
         return $this->getStockStatus()->where('in_stock', false);
     }
 
+    /** มีสินค้า in-stock ที่ต้องคุมโควตาจำนวนไหม — ใช้โดย RAGService ตัดสินใจฉีด stock block */
+    public function hasQtyToEnforce(Collection $stocks): bool
+    {
+        return $this->inStockWithQty($stocks)->isNotEmpty();
+    }
+
     /** สินค้า in-stock ที่มีจำนวนคงเหลือจาก pool (available_count null = ไม่ใช่สินค้า stock pool) */
     private function inStockWithQty(Collection $stocks): Collection
     {
