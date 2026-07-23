@@ -25,6 +25,12 @@ class StockInjectionService
         return $this->getStockStatus()->where('in_stock', false);
     }
 
+    /** สินค้า in-stock ที่มีจำนวนคงเหลือจาก pool (available_count null = ไม่ใช่สินค้า stock pool) */
+    private function inStockWithQty(Collection $stocks): Collection
+    {
+        return $stocks->where('in_stock', true)->filter(fn ($p) => $p->available_count !== null);
+    }
+
     private function buildOutOfStockReason(string $names): string
     {
         return self::STOCK_OUT_REASON_PREFIX." {$names} ชั่วคราว";
@@ -54,6 +60,16 @@ class StockInjectionService
             $lines[] = '[สินค้าที่มีพร้อมส่ง]: '.$inStock->pluck('name')->implode(', ');
         }
 
+        $withQty = $this->inStockWithQty($stocks);
+        if ($withQty->isNotEmpty()) {
+            $lines[] = '[จำนวนพร้อมส่ง]: '
+                .$withQty->map(fn ($p) => "{$p->name} = {$p->available_count} ชิ้น")->implode(', ');
+            $lines[] = 'ห้ามรับออเดอร์/เพิ่มตะกร้า/สรุปยอดเกินจำนวนพร้อมส่งเด็ดขาด!';
+            $lines[] = '- ลูกค้าสั่งไม่เกินจำนวนพร้อมส่ง → ขายปกติ ห้ามพูดถึงจำนวนคงเหลือ';
+            $lines[] = '- ลูกค้าสั่งเกิน → เสนอขายเท่าที่มี บอกจำนวนที่พร้อมส่งตอนนี้'
+                .' และแจ้งว่าส่วนที่เหลือของเข้าแล้วจะรีบแจ้ง (สรุปยอด/ราคาตามจำนวนที่ขายจริงเท่านั้น)';
+        }
+
         $lines[] = 'ห้ามขาย/เพิ่มตะกร้า/สร้างออเดอร์สินค้าที่หมด stock เด็ดขาด! (ตอบราคาและรายละเอียดได้ถ้าลูกค้าถาม แต่ต้องแจ้งว่าหมดชั่วคราว)';
 
         if ($outOfStock->isNotEmpty()) {
@@ -70,23 +86,32 @@ class StockInjectionService
 
     public function buildStockReminder(Collection $stocks): string
     {
+        $parts = [];
+
         $outOfStock = $stocks->where('in_stock', false);
+        if ($outOfStock->isNotEmpty()) {
+            $names = $outOfStock->pluck('name')->implode(', ');
+            $inStock = $stocks->where('in_stock', true);
 
-        if ($outOfStock->isEmpty()) {
-            return '';
+            $reminder = "⛔ STOCK REMINDER: สินค้าหมด stock → {$names} — ห้ามขาย/เพิ่มตะกร้า/สร้างออเดอร์เด็ดขาด! ตอบราคา/รายละเอียดได้ถ้าลูกค้าถาม + ต้องแจ้งว่าหมดชั่วคราว พร้อมบอกสาเหตุ (".$this->buildOutOfStockReason($names).')';
+
+            if ($inStock->isNotEmpty()) {
+                $inStockNames = $inStock->pluck('name')->implode(', ');
+                $reminder .= " + แนะนำใช้ {$inStockNames} แทนก่อน";
+            }
+            $parts[] = $reminder;
         }
 
-        $names = $outOfStock->pluck('name')->implode(', ');
-        $inStock = $stocks->where('in_stock', true);
-
-        $reminder = "⛔ STOCK REMINDER: สินค้าหมด stock → {$names} — ห้ามขาย/เพิ่มตะกร้า/สร้างออเดอร์เด็ดขาด! ตอบราคา/รายละเอียดได้ถ้าลูกค้าถาม + ต้องแจ้งว่าหมดชั่วคราว พร้อมบอกสาเหตุ (".$this->buildOutOfStockReason($names).')';
-
-        if ($inStock->isNotEmpty()) {
-            $inStockNames = $inStock->pluck('name')->implode(', ');
-            $reminder .= " + แนะนำใช้ {$inStockNames} แทนก่อน";
+        // double-injection กติกาจำนวน — LLM มักลืมกติกาที่อยู่ต้น prompt
+        $withQty = $this->inStockWithQty($stocks);
+        if ($withQty->isNotEmpty()) {
+            $qtyList = $withQty->map(fn ($p) => "{$p->name} = {$p->available_count}")->implode(', ');
+            $parts[] = "⛔ QTY REMINDER: จำนวนพร้อมส่ง → {$qtyList} — ห้ามรับออเดอร์เกินจำนวนนี้!"
+                .' ลูกค้าสั่งเกิน → เสนอขายเท่าที่มี + แจ้งว่าส่วนที่เหลือของเข้าแล้วจะรีบแจ้ง'
+                .' (สั่งไม่เกิน → ขายปกติ ห้ามพูดถึงจำนวนคงเหลือ)';
         }
 
-        return $reminder;
+        return implode("\n", $parts);
     }
 
     /**
