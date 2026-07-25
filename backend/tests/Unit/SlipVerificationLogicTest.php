@@ -102,6 +102,22 @@ class SlipVerificationLogicTest extends TestCase
         $this->assertSame('Nolimit Level Up+ Personal (ผูกบัตร), บริการเสริม Page', $result['summary']);
     }
 
+    public function test_summary_keeps_quantity_when_more_than_one(): void
+    {
+        // ข้อความจริงจาก prod 2026-07-25 (ออเดอร์ #1672): ลูกค้าสั่งอย่างละ 2 ชุด
+        // summary ที่ทิ้ง qty ทำให้ข้อความยืนยัน/การ์ด Telegram/order_items บันทึกเหลือ 1
+        $history = [
+            ['sender' => 'bot', 'content' => "สรุปรายการที่พี่สั่งซื้อครับ:\n\n1. Nolimit Level Up+ BM (1,000 x 2) = 2,000 บาท\n2. บริการเสริม Page (199 x 2) = 398 บาท\n\nรวมยอดโอน: 2,398 บาท ✅\n\nรบกวนโอนเข้าบัญชี:\nธนาคารกสิกรไทย (KBANK)\n223-3-24880-3"],
+            ['sender' => 'user', 'content' => '[รูปภาพ]'],
+        ];
+
+        $result = $this->service()->findExpectedPayment($history);
+
+        $this->assertNotNull($result);
+        $this->assertSame(2398.0, $result['total']);
+        $this->assertSame('Nolimit Level Up+ BM x2, บริการเสริม Page x2', $result['summary']);
+    }
+
     public function test_no_payment_message_returns_null(): void
     {
         $history = [

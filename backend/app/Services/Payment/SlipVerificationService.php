@@ -125,7 +125,13 @@ class SlipVerificationService
         // ตัดของแถมราคา 0 ออกจาก summary กันชื่อหลุดไปข้อความยืนยัน/Telegram/order_items —
         // แต่คืน 'items' เต็มชุดให้ delivery กรอง+log เองอีกชั้น
         $visibleItems = array_filter($items, fn (array $item) => ! PaymentMessageDetector::isZeroPriceItem($item));
-        $itemNames = array_column($visibleItems, 'name');
+        // ติด "xN" ท้ายชื่อเมื่อสั่งเกิน 1 — summary เป็นต้นทางเดียวของจำนวนที่ไหลไปข้อความยืนยัน,
+        // การ์ด Telegram และ order_items (parseProductItems อ่านรูป "ชื่อ xN"); ทิ้ง qty ที่นี่
+        // = ออเดอร์ 2 ชุดถูกบันทึกเป็น 1 เงียบๆ
+        $itemNames = array_map(
+            fn (array $item) => (int) ($item['qty'] ?? 1) > 1 ? "{$item['name']} x{$item['qty']}" : $item['name'],
+            $visibleItems,
+        );
 
         return [
             'total' => (float) str_replace(',', '', $data['total']),

@@ -73,7 +73,8 @@ class ConfirmMessageFallbackTest extends TestCase
         $this->assertSame(2200.0, $result['total']);
         $this->assertSame('Nolimit BM', $result['items'][0]['name']);
         $this->assertSame(2, $result['items'][0]['qty']);
-        $this->assertSame('Nolimit BM', $result['summary']);
+        // summary ต้องพา qty ไปด้วย — ปลายทาง (ข้อความยืนยัน/การ์ด Telegram/order_items) อ่านจำนวนจากตรงนี้
+        $this->assertSame('Nolimit BM x2', $result['summary']);
     }
 
     public function test_returns_null_when_amount_mismatch(): void
@@ -97,7 +98,7 @@ class ConfirmMessageFallbackTest extends TestCase
             ->findExpectedFromConfirmMessage($this->history(self::CONFIRM_PARSEABLE), $bot, 2204.0);
 
         $this->assertNotNull($result);
-        $this->assertSame('Nolimit BM', $result['summary']);
+        $this->assertSame('Nolimit BM x2', $result['summary']);
     }
 
     public function test_prose_confirm_uses_llm_extractor(): void
@@ -117,7 +118,7 @@ class ConfirmMessageFallbackTest extends TestCase
             [['name' => 'Nolimit Level Up+ Personal', 'qty' => 2, 'total' => '2200']],
             $result['items'],
         );
-        $this->assertSame('Nolimit Level Up+ Personal', $result['summary']);
+        $this->assertSame('Nolimit Level Up+ Personal x2', $result['summary']);
     }
 
     public function test_returns_null_when_llm_cannot_extract(): void

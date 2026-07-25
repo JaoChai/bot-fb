@@ -183,6 +183,17 @@ class FlowPluginServiceTest extends TestCase
         $this->assertSame(1, $items[1]['quantity']);
     }
 
+    public function test_parse_product_items_reads_quantity_from_real_summary_format(): void
+    {
+        // รูปแบบที่ summary ผลิตจริง (ชื่อมี + และภาษาไทย) — ต้องอ่าน qty ครบทั้งการ์ด Telegram
+        // และ order_items ที่ใช้ parser ตัวนี้ร่วมกัน
+        $items = OrderService::parseProductItems('Nolimit Level Up+ BM x2, บริการเสริม Page x2');
+
+        $this->assertCount(2, $items);
+        $this->assertSame(2, $items[0]['quantity']);
+        $this->assertSame(2, $items[1]['quantity']);
+    }
+
     public function test_parse_product_items_empty_for_blank_input(): void
     {
         $this->assertSame([], OrderService::parseProductItems(null));
