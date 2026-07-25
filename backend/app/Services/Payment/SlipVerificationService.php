@@ -293,15 +293,6 @@ class SlipVerificationService
             ), $receiverAccount);
         }
 
-        // เช็ค 2.5: เจ้าของเพิ่งกดยืนยันเงินเอง (manual_confirmed) ยอดเดียวกันบน conversation นี้
-        // = การจ่ายก้อนเดียวกัน — ห้ามผ่านซ้ำจนเกิดออเดอร์/งานส่งของซ้ำ (เฉพาะบอทที่เปิด delivery)
-        if ($conversation !== null && $this->recentManualConfirmExists($conversation, $bot, $slipAmount)) {
-            return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
-                isSlip: true, passed: false, failReason: 'duplicate',
-                amount: $slipAmount, transRef: $transRef,
-            ), $receiverAccount);
-        }
-
         // เช็ค 3: ต้องมีออเดอร์ค้างชำระใน history
         $expected = $this->findExpectedPayment($conversationHistory, $configured, $bot);
         if ($expected === null) {
@@ -327,25 +318,6 @@ class SlipVerificationService
             expectedAmount: $expected['total'], orderSummary: $expected['summary'],
             orderItems: $expected['items'],
         ), $receiverAccount);
-    }
-
-    /**
-     * เพิ่งมี manual_confirmed ยอดเดียวกันบน conversation นี้ในหน้าต่างกันซ้ำไหม
-     * (กันขายซ้ำเมื่อ EasySlip ผ่านหลังเจ้าของยืนยันมือ — เฉพาะบอทที่เปิด Auto Account Delivery)
-     */
-    private function recentManualConfirmExists(Conversation $conversation, Bot $bot, float $amount): bool
-    {
-        if (! config('delivery.enabled') || ! $bot->auto_delivery_enabled) {
-            return false;
-        }
-
-        $window = now()->subMinutes((int) config('delivery.dedup_window_minutes', 30));
-
-        return SlipVerification::where('conversation_id', $conversation->id)
-            ->where('status', 'manual_confirmed')
-            ->where('amount', $amount)
-            ->where('created_at', '>=', $window)
-            ->exists();
     }
 
     /**

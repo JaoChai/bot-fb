@@ -106,10 +106,11 @@ class SlipVerificationServiceTest extends TestCase
         $this->assertSame('duplicate', $result->failReason);
     }
 
-    public function test_easyslip_pass_blocked_when_recent_manual_confirm_same_amount(): void
+    public function test_easyslip_passes_after_manual_confirm_and_lets_owner_decide(): void
     {
-        // เจ้าของกดยืนยันเงินเองไปแล้ว (manual_confirmed) → EasySlip ต้องไม่ผ่านซ้ำ
-        // จนเกิดออเดอร์/งานส่งของซ้ำ (สมมาตรกับ guard ฝั่ง manual)
+        // เจ้าของกดยืนยันเงินเองไปแล้ว แล้วสลิปเข้ามาทีหลัง — ระบบแยกไม่ออกว่าเป็นเงินก้อนเดิม
+        // หรือลูกค้าซื้อซ้ำ. ห้ามปฏิเสธสลิปต่อหน้าลูกค้า: ปล่อยผ่านแล้วให้การ์ดงานส่งของ
+        // เตือนเจ้าของว่ายอดซ้ำ (ดู AccountDeliveryService::duplicateWarning)
         $conversation = Conversation::factory()->create(['bot_id' => $this->bot->id]);
         config(['delivery.enabled' => true]);
         $this->bot->update(['auto_delivery_enabled' => true]);
@@ -123,8 +124,7 @@ class SlipVerificationServiceTest extends TestCase
             $this->bot, $conversation, null, 'https://example.com/slip.jpg', $this->paymentHistory
         );
 
-        $this->assertFalse($result->passed);
-        $this->assertSame('duplicate', $result->failReason);
+        $this->assertTrue($result->passed);
     }
 
     public function test_amount_mismatch_fails(): void
