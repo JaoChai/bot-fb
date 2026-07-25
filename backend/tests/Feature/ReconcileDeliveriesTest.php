@@ -186,6 +186,84 @@ class ReconcileDeliveriesTest extends TestCase
         Http::assertNothingSent();
     }
 
+    /** สลิปที่ผ่านแล้วแต่ไม่มีงานส่งของผูกอยู่ — ตาข่ายสุดท้ายกันออเดอร์หายเงียบ (ออเดอร์ #1672) */
+    private function makeOrphanSlip(int $minutesAgo, string $status = 'passed'): SlipVerification
+    {
+        $slip = SlipVerification::create([
+            'bot_id' => $this->bot->id, 'conversation_id' => $this->conv->id,
+            'amount' => 2398, 'status' => $status,
+        ]);
+        $slip->timestamps = false;
+        $slip->forceFill(['created_at' => now()->subMinutes($minutesAgo)])->save();
+
+        return $slip;
+    }
+
+    public function test_alerts_on_paid_slip_without_delivery(): void
+    {
+        // เคสจริง 2026-07-25: dedup บล็อกเงียบ ไม่มีแถวงานส่งของให้ตาข่ายเดิมจับได้เลย
+        $this->bot->update(['auto_delivery_enabled' => true]);
+        $slip = $this->makeOrphanSlip(20);
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage')
+            && str_contains($r['text'] ?? '', "สลิป #{$slip->id}")
+            && str_contains($r['text'] ?? '', '2,398'));
+    }
+
+    public function test_alerts_on_manual_confirmed_slip_without_delivery(): void
+    {
+        $this->bot->update(['auto_delivery_enabled' => true]);
+        $this->makeOrphanSlip(20, 'manual_confirmed');
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertSent(fn ($r) => str_contains($r['text'] ?? '', 'ยังไม่มีงานส่งของ'));
+    }
+
+    public function test_recent_paid_slip_within_grace_is_not_alerted(): void
+    {
+        // job หน่วงส่งการ์ด 15 วิ + เวลาจอง — ยังไม่ถึงเวลาสรุปว่าพลาด
+        $this->bot->update(['auto_delivery_enabled' => true]);
+        $this->makeOrphanSlip(5);
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertNothingSent();
+    }
+
+    public function test_old_paid_slip_beyond_window_is_not_alerted(): void
+    {
+        // เลยหน้าต่างแล้ว — เตือนไปหลายรอบพอแล้ว ห้ามค้างเตือนทุกชั่วโมงตลอดไป
+        $this->bot->update(['auto_delivery_enabled' => true]);
+        $this->makeOrphanSlip(60 * 5);
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertNothingSent();
+    }
+
+    public function test_paid_slip_with_delivery_is_not_alerted(): void
+    {
+        $this->bot->update(['auto_delivery_enabled' => true]);
+        $this->makeDelivery('delivered'); // makeDelivery สร้าง slip + งานผูกกันอยู่แล้ว
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertNothingSent();
+    }
+
+    public function test_paid_slip_on_bot_without_auto_delivery_is_not_alerted(): void
+    {
+        // บอทที่ไม่ได้ใช้ระบบส่งของอัตโนมัติ ไม่มีงานส่งของเป็นเรื่องปกติ ห้ามเตือนรัว
+        $this->makeOrphanSlip(20);
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertNothingSent();
+    }
+
     public function test_skips_telegram_alert_during_quiet_hours(): void
     {
         Carbon::setTestNow(Carbon::today()->setTime(2, 0));

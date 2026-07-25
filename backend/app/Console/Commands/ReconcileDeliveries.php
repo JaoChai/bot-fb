@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\AccountDelivery;
 use App\Models\Bot;
 use App\Models\FlowPlugin;
+use App\Models\SlipVerification;
 use App\Models\UserSetting;
 use App\Services\Delivery\AccountDeliveryService;
 use App\Services\Delivery\StockPoolService;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\Log;
  * 1. งานค้าง 'reserving' > 10 นาที = job ตายกลางคัน
  * 2. งานค้าง 'delivering' > 10 นาที = process ตายระหว่างส่ง — ห้ามคืน stock อัตโนมัติ ให้เจ้าของเช็คแชทก่อน
  * 3. แถว items_reserved ที่ไม่มีงาน active (reserved/delivering) ชี้อยู่ = ของหลุดอยู่ใน limbo
+ * 4. สลิปที่ผ่านแล้วแต่ไม่มีงานส่งของผูกอยู่เลย = เงินเข้าแต่ของไม่ออก
  */
 class ReconcileDeliveries extends Command
 {
@@ -68,6 +70,8 @@ class ReconcileDeliveries extends Command
             $problems[] = 'อ่าน items_reserved ไม่ได้ — เช็ค mhha_acc_db';
         }
 
+        $problems = array_merge($problems, $this->paidSlipsWithoutDelivery());
+
         if ($problems === []) {
             $this->info('clean');
 
@@ -78,6 +82,38 @@ class ReconcileDeliveries extends Command
         $this->notifyTelegram($alertBot, $deliveryService, $problems);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * เงินเข้าแล้วแต่ไม่มีงานส่งของผูกอยู่เลย — ตาข่ายสุดท้ายกันออเดอร์หายเงียบ:
+     * เช็คอื่นในคำสั่งนี้เริ่มจากแถวงานส่งของ จึงมองไม่เห็นเคสที่งานไม่เคยถูกสร้าง
+     * (กันซ้ำบล็อก / สวิตช์ปิด / ยิงการ์ดไม่ผ่าน) ซึ่งเงียบจนกว่าลูกค้าจะทวง
+     *
+     * grace 10 นาที เผื่อ job หน่วงการ์ด + เวลาจอง; มองย้อนแค่ 3 ชั่วโมงเพื่อไม่ให้
+     * สลิปเก่าค้างเตือนทุกชั่วโมงตลอดไป (คำสั่งนี้รัน hourly → เตือนราว 3 รอบแล้วหยุด)
+     *
+     * @return array<int, string>
+     */
+    private function paidSlipsWithoutDelivery(): array
+    {
+        $autoDeliveryBotIds = Bot::where('auto_delivery_enabled', true)->pluck('id');
+        if ($autoDeliveryBotIds->isEmpty()) {
+            return [];
+        }
+
+        $handledSlipIds = AccountDelivery::whereNotNull('slip_verification_id')
+            ->where('created_at', '>=', now()->subHours(4))
+            ->pluck('slip_verification_id');
+
+        return SlipVerification::whereIn('bot_id', $autoDeliveryBotIds)
+            ->whereIn('status', ['passed', 'manual_confirmed'])
+            ->whereBetween('created_at', [now()->subHours(3), now()->subMinutes(10)])
+            ->whereNotIn('id', $handledSlipIds)
+            ->get()
+            ->map(fn (SlipVerification $slip) => "⚠️ สลิป #{$slip->id} (แชท #{$slip->conversation_id}, "
+                .number_format((float) $slip->amount).' บาท) เงินเข้าแล้วแต่ยังไม่มีงานส่งของ'
+                .' — เช็คว่าลูกค้าได้ของหรือยัง')
+            ->all();
     }
 
     /** ส่งเข้า Telegram ผ่าน plugin ของงานล่าสุด — ไม่มีงานเลยก็ fallback ไปหา plugin จากบอทที่เปิด auto_delivery_enabled */
