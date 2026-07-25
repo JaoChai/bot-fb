@@ -9,6 +9,7 @@ use App\Models\AccountDeliveryItem;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
+use App\Models\SlipVerification;
 use App\Services\LINEService;
 use App\Services\Payment\PaymentMessageDetector;
 use App\Services\Payment\TelegramAlertBotService;
@@ -55,7 +56,7 @@ class AccountDeliveryService
             $delivery = DB::transaction(function () use ($bot, $conversation, $slipVerificationId, $amount) {
                 Conversation::whereKey($conversation->id)->lockForUpdate()->first();
 
-                if ($this->hasRecentActiveDelivery($conversation->id, $amount)) {
+                if ($this->hasRecentActiveDelivery($conversation->id, $amount, $slipVerificationId)) {
                     return null;
                 }
 
@@ -166,11 +167,11 @@ class AccountDeliveryService
      * มีงานส่งยอดเดียวกันบน conversation นี้ที่ยัง active/ส่งแล้ว ในหน้าต่างกันซ้ำไหม
      * (กันขายซ้ำเมื่อ EasySlip auto-pass กับ manual confirm ยิงคนละ slip แต่เป็นการจ่ายก้อนเดียวกัน)
      */
-    private function hasRecentActiveDelivery(int $conversationId, ?float $amount): bool
+    private function hasRecentActiveDelivery(int $conversationId, ?float $amount, int $slipVerificationId): bool
     {
         $window = now()->subMinutes(config_int('delivery.dedup_window_minutes', 30));
 
-        return AccountDelivery::where('conversation_id', $conversationId)
+        $query = AccountDelivery::where('conversation_id', $conversationId)
             ->whereIn('status', [
                 AccountDelivery::STATUS_RESERVING,
                 AccountDelivery::STATUS_RESERVED,
@@ -178,8 +179,21 @@ class AccountDeliveryService
                 AccountDelivery::STATUS_DELIVERED,
             ])
             ->where('created_at', '>=', $window)
-            ->where(fn ($q) => $amount === null ? $q->whereNull('amount') : $q->where('amount', $amount))
-            ->exists();
+            ->where(fn ($q) => $amount === null ? $q->whereNull('amount') : $q->where('amount', $amount));
+
+        // ลูกค้าสั่งชุดเดิมซ้ำในหน้าต่างนี้ = โอนจริงคนละครั้ง ไม่ใช่การจ่ายก้อนเดิมเข้า 2 path —
+        // trans_ref คนละค่ายืนยันได้ จึงไม่นับงานพวกนั้นเป็น duplicate (ไม่งั้นออเดอร์จริงหายเงียบ)
+        // trans_ref ว่าง = manual confirm ที่ไม่มีสลิป เทียบไม่ได้ → คงกติกา แชท+ยอด+เวลา ไว้ตามเดิม
+        $transRef = SlipVerification::whereKey($slipVerificationId)->value('trans_ref');
+        if ($transRef !== null && $transRef !== '') {
+            $otherTransfers = SlipVerification::where('conversation_id', $conversationId)
+                ->whereNotNull('trans_ref')
+                ->where('trans_ref', '!=', $transRef)
+                ->pluck('id');
+            $query->whereNotIn('slip_verification_id', $otherTransfers);
+        }
+
+        return $query->exists();
     }
 
     /**

@@ -233,6 +233,37 @@ class AccountDeliveryCreateTest extends TestCase
         $this->assertSame(2, DB::connection('mhha_acc')->table('items_reserved')->count());
     }
 
+    public function test_repeat_purchase_with_different_trans_ref_is_allowed(): void
+    {
+        $this->seedAvailable(10, 'NLMP');
+        $this->seedAvailable(11, 'NLMP');
+
+        // ลูกค้าโอนจริงรอบแรก
+        $slip1 = SlipVerification::create([
+            'bot_id' => $this->bot->id, 'conversation_id' => $this->conversation->id,
+            'trans_ref' => 'TXNAAA', 'amount' => 1299, 'status' => 'passed',
+        ]);
+        $first = app(AccountDeliveryService::class)->createFromPayment(
+            $this->bot, $this->conversation, $slip1->id, 1299.0,
+            [['name' => 'Nolimit ส่วนตัว', 'total' => '1299']],
+        );
+        $this->assertNotNull($first);
+
+        // ลูกค้าสั่งชุดเดิมซ้ำในหน้าต่างกันซ้ำ (ยอดเท่ากัน แชทเดิม) แต่โอนจริงคนละครั้ง
+        // — trans_ref คนละค่ายืนยันว่าเป็นคนละการโอน ห้ามถูกมองเป็น duplicate
+        $slip2 = SlipVerification::create([
+            'bot_id' => $this->bot->id, 'conversation_id' => $this->conversation->id,
+            'trans_ref' => 'TXNBBB', 'amount' => 1299, 'status' => 'passed',
+        ]);
+        $second = app(AccountDeliveryService::class)->createFromPayment(
+            $this->bot, $this->conversation, $slip2->id, 1299.0,
+            [['name' => 'Nolimit ส่วนตัว', 'total' => '1299']],
+        );
+
+        $this->assertNotNull($second);
+        $this->assertSame(2, DB::connection('mhha_acc')->table('items_reserved')->count());
+    }
+
     public function test_returns_null_when_bot_auto_delivery_disabled(): void
     {
         $this->seedAvailable(10, 'NLMP');
