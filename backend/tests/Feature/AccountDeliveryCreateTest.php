@@ -188,27 +188,45 @@ class AccountDeliveryCreateTest extends TestCase
         $this->assertSame(1, DB::connection('mhha_acc')->table('items_reserved')->count());
     }
 
-    public function test_second_delivery_for_same_conversation_and_amount_is_blocked(): void
+    public function test_duplicate_amount_creates_job_with_warning_instead_of_blocking(): void
     {
         $this->seedAvailable(10, 'NLMP');
         $this->seedAvailable(11, 'NLMP');
 
-        // path แรก (เช่น manual confirm) — slip ใบที่ 1
+        // path แรก (เช่น manual confirm) — slip ใบที่ 1 ไม่มี trans_ref
         $first = $this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1299']]);
         $this->assertNotNull($first);
 
-        // path ที่สอง (เช่น EasySlip) — slip คนละใบ ยอดเดียวกัน conversation เดิม
+        // path ที่สอง — slip คนละใบ ยอดเดียวกัน conversation เดิม, เทียบ trans_ref ไม่ได้
+        // ระบบไม่รู้ว่าเป็นเงินก้อนเดิมหรือลูกค้าซื้อซ้ำ → ต้องสร้างงานแล้วให้เจ้าของตัดสิน
         $slip2 = SlipVerification::create([
             'bot_id' => $this->bot->id, 'conversation_id' => $this->conversation->id,
-            'trans_ref' => 'TXN999', 'amount' => 1299, 'status' => 'passed',
+            'amount' => 1299, 'status' => 'manual_confirmed',
         ]);
         $second = app(AccountDeliveryService::class)->createFromPayment(
             $this->bot, $this->conversation, $slip2->id, 1299.0,
             [['name' => 'Nolimit ส่วนตัว', 'total' => '1299']],
         );
 
-        $this->assertNull($second); // กันขายซ้ำข้าม dispatch path
-        $this->assertSame(1, DB::connection('mhha_acc')->table('items_reserved')->count());
+        $this->assertNotNull($second);
+        $this->assertSame(AccountDelivery::STATUS_RESERVED, $second->status);
+        $this->assertSame(2, DB::connection('mhha_acc')->table('items_reserved')->count());
+
+        // การ์ดของงานที่ 2 ต้องบอกว่าซ้ำกับงานไหน + มีปุ่มให้ยกเลิกตามเดิม
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'sendMessage')
+            && str_contains($request['text'] ?? '', "ซ้ำกับงาน #{$first->id}")
+            && str_contains($request['reply_markup'] ?? '', "dx|{$second->id}|x"));
+    }
+
+    public function test_first_delivery_card_has_no_duplicate_warning(): void
+    {
+        $this->seedAvailable(10, 'NLMP');
+
+        $delivery = $this->create([['name' => 'Nolimit ส่วนตัว', 'total' => '1299']]);
+
+        $this->assertNotNull($delivery);
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'sendMessage')
+            && ! str_contains($request['text'] ?? '', 'ซ้ำกับงาน'));
     }
 
     public function test_second_delivery_with_different_amount_is_allowed(): void

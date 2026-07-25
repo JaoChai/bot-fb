@@ -50,35 +50,31 @@ class AccountDeliveryService
             return null;
         }
 
-        // สร้างงานใน transaction ที่ lock conversation: กัน 2 dispatch path (EasySlip vs manual)
-        // ที่ใช้ slip คนละใบ สร้างงานส่งยอดเดียวกันพร้อมกัน → ขายซ้ำ (unique(slip) กันข้าม path ไม่ได้)
+        // lock conversation ระหว่างเช็คคู่ซ้ำ+สร้างงาน: กัน 2 dispatch path (EasySlip vs manual)
+        // ยิงพร้อมกันแล้วต่างฝ่ายต่างมองไม่เห็นกัน จนได้การ์ด 2 ใบที่ไม่มีคำเตือนสักใบ
         try {
-            $delivery = DB::transaction(function () use ($bot, $conversation, $slipVerificationId, $amount) {
+            [$delivery, $duplicateOf] = DB::transaction(function () use ($bot, $conversation, $slipVerificationId, $amount) {
                 Conversation::whereKey($conversation->id)->lockForUpdate()->first();
 
-                if ($this->hasRecentActiveDelivery($conversation->id, $amount, $slipVerificationId)) {
-                    return null;
-                }
+                $duplicateOf = $this->recentDuplicateDelivery($conversation->id, $amount, $slipVerificationId);
 
-                return AccountDelivery::create([
+                return [AccountDelivery::create([
                     'bot_id' => $bot->id,
                     'conversation_id' => $conversation->id,
                     'slip_verification_id' => $slipVerificationId,
                     'status' => AccountDelivery::STATUS_RESERVING,
                     'amount' => $amount,
-                ]);
+                ]), $duplicateOf];
             });
         } catch (UniqueConstraintViolationException) {
-            return null; // webhook ซ้ำ/job รันซ้ำ (slip เดียวกัน)
+            return null; // webhook ซ้ำ/job รันซ้ำ (slip เดียวกัน) — unique(slip) กันไว้แล้ว
         }
 
-        if ($delivery === null) {
-            // อีก path เพิ่งสร้างงานส่งยอดเดียวกันไปแล้ว — log ไว้ให้สืบย้อนได้ (บล็อกเงียบทำให้ debug ยาก)
-            Log::warning('Delivery: skipped duplicate reserve (recent active delivery)', [
+        if ($duplicateOf !== null) {
+            Log::info('Delivery: created despite recent same-amount delivery — card carries a warning', [
                 'conversation_id' => $conversation->id, 'amount' => $amount,
+                'duplicate_of' => $duplicateOf->id,
             ]);
-
-            return null;
         }
 
         $deliverable = false;
@@ -158,16 +154,18 @@ class AccountDeliveryService
             'status' => $deliverable ? AccountDelivery::STATUS_RESERVED : AccountDelivery::STATUS_FAILED,
         ]);
 
-        $this->sendCard($delivery->fresh('items'));
+        $this->sendCard($delivery->fresh('items'), $this->duplicateWarning($duplicateOf));
 
         return $delivery;
     }
 
     /**
-     * มีงานส่งยอดเดียวกันบน conversation นี้ที่ยัง active/ส่งแล้ว ในหน้าต่างกันซ้ำไหม
-     * (กันขายซ้ำเมื่อ EasySlip auto-pass กับ manual confirm ยิงคนละ slip แต่เป็นการจ่ายก้อนเดียวกัน)
+     * งานส่งยอดเดียวกันบน conversation นี้ที่ยัง active/ส่งแล้ว ในหน้าต่างเวลา — คืน null ถ้าไม่มี
+     *
+     * ระบบแยกไม่ออกว่า "จ่ายก้อนเดิมเข้า 2 path" หรือ "ลูกค้าซื้อชุดเดิมซ้ำ" จึงไม่บล็อก
+     * แต่เอางานที่ซ้ำไปติดคำเตือนบนการ์ดให้เจ้าของตัดสิน (บล็อกเองทำให้ออเดอร์จริงหายเงียบ)
      */
-    private function hasRecentActiveDelivery(int $conversationId, ?float $amount, int $slipVerificationId): bool
+    private function recentDuplicateDelivery(int $conversationId, ?float $amount, int $slipVerificationId): ?AccountDelivery
     {
         $window = now()->subMinutes(config_int('delivery.dedup_window_minutes', 30));
 
@@ -181,9 +179,8 @@ class AccountDeliveryService
             ->where('created_at', '>=', $window)
             ->where(fn ($q) => $amount === null ? $q->whereNull('amount') : $q->where('amount', $amount));
 
-        // ลูกค้าสั่งชุดเดิมซ้ำในหน้าต่างนี้ = โอนจริงคนละครั้ง ไม่ใช่การจ่ายก้อนเดิมเข้า 2 path —
-        // trans_ref คนละค่ายืนยันได้ จึงไม่นับงานพวกนั้นเป็น duplicate (ไม่งั้นออเดอร์จริงหายเงียบ)
-        // trans_ref ว่าง = manual confirm ที่ไม่มีสลิป เทียบไม่ได้ → คงกติกา แชท+ยอด+เวลา ไว้ตามเดิม
+        // trans_ref คนละค่า = ยืนยันได้ว่าคนละการโอน ไม่ใช่เรื่องน่าสงสัย → ไม่ต้องเตือนให้รำคาญ
+        // trans_ref ว่าง = manual confirm ที่ไม่มีสลิป เทียบไม่ได้ → ยังนับเป็นคู่ที่ต้องเตือน
         $transRef = SlipVerification::whereKey($slipVerificationId)->value('trans_ref');
         if ($transRef !== null && $transRef !== '') {
             $otherTransfers = SlipVerification::where('conversation_id', $conversationId)
@@ -193,7 +190,20 @@ class AccountDeliveryService
             $query->whereNotIn('slip_verification_id', $otherTransfers);
         }
 
-        return $query->exists();
+        return $query->latest('id')->first();
+    }
+
+    /** คำเตือนหัวการ์ดเมื่อมีงานยอดเดียวกันเพิ่งเกิดไป — คืน '' ถ้าไม่มีคู่ซ้ำ */
+    private function duplicateWarning(?AccountDelivery $duplicateOf): string
+    {
+        if ($duplicateOf === null) {
+            return '';
+        }
+
+        $minutes = (int) $duplicateOf->created_at->diffInMinutes(now());
+
+        return "⚠️ <b>ยอดนี้ซ้ำกับงาน #{$duplicateOf->id}</b> เมื่อ {$minutes} นาทีที่แล้ว\n"
+            ."ถ้าเป็นเงินก้อนเดิม กด \"ยกเลิก คืนเข้า stock\"\n\n";
     }
 
     /**
