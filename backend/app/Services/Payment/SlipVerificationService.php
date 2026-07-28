@@ -287,7 +287,10 @@ class SlipVerificationService
         }
 
         // เช็ค 3: ต้องมีออเดอร์ค้างชำระใน history
-        $expected = $this->findExpectedPayment($conversationHistory, $configured, $bot);
+        // fallback: ลูกค้าขาประจำที่รู้เลขบัญชีอยู่แล้วมักโอนทันทีหลังข้อความตะกร้า ไม่รอข้อความ
+        // สรุปยอด+เลขบัญชี — อ่านยอดจากข้อความ "ตะกร้า/ยืนยัน" ที่บอทพิมพ์เองแทน (ยอดต้องตรง)
+        $expected = $this->findExpectedPayment($conversationHistory, $configured, $bot)
+            ?? $this->findExpectedFromConfirmMessage($conversationHistory, $bot, $slipAmount);
         if ($expected === null) {
             return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
                 isSlip: true, passed: false, failReason: 'no_pending_order',

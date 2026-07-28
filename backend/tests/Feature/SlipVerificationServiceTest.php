@@ -284,4 +284,54 @@ class SlipVerificationServiceTest extends TestCase
         $this->assertSame(0, SlipVerification::count());
         Http::assertNothingSent();
     }
+
+    public function test_slip_passes_against_cart_confirm_message_when_no_payment_summary(): void
+    {
+        // เคสจริง slip_verifications id=67 (แชท #1072): ลูกค้าขาประจำโอนทันทีหลังบอทพิมพ์
+        // ข้อความตะกร้า โดยไม่รอข้อความสรุปยอด+เลขบัญชี → เดิมได้ no_pending_order + กวนเจ้าของ
+        $this->paymentHistory = [
+            ['sender' => 'user', 'content' => 'เอา Nolimit Personal 1 เฟสครับ'],
+            ['sender' => 'bot', 'content' => "เพิ่มลงตะกร้าแล้วครับ\n1. Nolimit BM = 1,500 บาท\nรวม: 1,500 บาท\nถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลย"],
+            ['sender' => 'user', 'content' => 'ยืนยัน'],
+        ];
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+
+        $result = $this->verify();
+
+        $this->assertTrue($result->passed);
+        $this->assertSame(1500.0, $result->amount);
+        $this->assertSame('Nolimit BM', $result->orderSummary);
+        $this->assertDatabaseHas('slip_verifications', ['trans_ref' => 'TR100', 'status' => 'passed']);
+    }
+
+    public function test_cart_confirm_with_different_amount_still_no_pending_order(): void
+    {
+        // ตะกร้า 900 แต่สลิป 1,500 → ห้ามผ่าน ต้องให้เจ้าของตัดสิน
+        $this->paymentHistory = [
+            ['sender' => 'bot', 'content' => "เพิ่มลงตะกร้าแล้วครับ\n1. Nolimit BM = 900 บาท\nรวม: 900 บาท\nถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลย"],
+        ];
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+
+        $result = $this->verify();
+
+        $this->assertFalse($result->passed);
+        $this->assertSame('no_pending_order', $result->failReason);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'no_pending_order']);
+    }
+
+    public function test_payment_summary_still_wins_over_cart_message(): void
+    {
+        // มีทั้งข้อความตะกร้า (900) และข้อความสรุปยอด+เลขบัญชี (1,500)
+        // → ต้องใช้ข้อความสรุปยอดเป็นหลัก fallback ห้ามแย่งงาน
+        $this->paymentHistory = [
+            ['sender' => 'bot', 'content' => "เพิ่มลงตะกร้าแล้วครับ\n1. Nolimit Personal = 900 บาท\nรวม: 900 บาท\nถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลย"],
+            ['sender' => 'bot', 'content' => "สรุปรายการ\n1. Nolimit BM = 1,500 บาท\nรวมยอดโอน: 1,500 บาท\nโอนเข้าบัญชี 223-3-24880-3"],
+        ];
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+
+        $result = $this->verify();
+
+        $this->assertTrue($result->passed);
+        $this->assertSame('Nolimit BM', $result->orderSummary);
+    }
 }
