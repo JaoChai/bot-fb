@@ -192,7 +192,8 @@ class SlipVerificationService
     }
 
     /**
-     * @param  (\Closure(): ?bool)|null  $isSlipCheck  ตัวช่วยตัดสินตอน EasySlip อ่านรูปไม่ได้ (400):
+     * @param  (\Closure(): ?bool)|null  $isSlipCheck  ตัวช่วยตัดสินทุกครั้งที่ EasySlip บอกอะไรเราไม่ได้
+     *                                                 (อ่านรูปไม่ออก 400 / token หาย / API ล่ม / ตอบเพี้ยน):
      *                                                 true/null = ถือเป็นสลิป (fail-safe), false = ไม่ใช่สลิป
      */
     public function verify(
@@ -207,9 +208,7 @@ class SlipVerificationService
         if (! $token) {
             Log::warning('Slip verification enabled but EasySlip token missing', ['bot_id' => $bot->id]);
 
-            return $this->record($bot, $conversation, $message, null, new SlipVerificationResult(
-                isSlip: false, passed: false, failReason: 'config_error',
-            ));
+            return $this->apiUnavailable($bot, $conversation, $message, null, 'config_error', $isSlipCheck);
         }
 
         try {
@@ -219,9 +218,7 @@ class SlipVerificationService
         } catch (ConnectionException $e) {
             Log::warning('EasySlip connection failed', ['bot_id' => $bot->id, 'error' => $e->getMessage()]);
 
-            return $this->record($bot, $conversation, $message, null, new SlipVerificationResult(
-                isSlip: false, passed: false, failReason: 'api_error',
-            ));
+            return $this->apiUnavailable($bot, $conversation, $message, null, 'api_error', $isSlipCheck);
         }
 
         if ($response->status() === 400) {
@@ -232,7 +229,7 @@ class SlipVerificationService
             // ไม่มีออเดอร์ค้าง → เป็นรูปทั่วไป → พฤติกรรมเดิม (ไป vision, ไม่บันทึก)
             $configured = (string) ($bot->settings?->slip_receiver_account ?? '');
             if ($this->findExpectedPayment($conversationHistory, $configured) !== null
-                && ($isSlipCheck === null || $isSlipCheck() !== false)) {
+                && ! $this->visionSaysNotSlip($isSlipCheck)) {
                 return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
                     isSlip: true, passed: false, failReason: 'unreadable',
                 ));
@@ -256,16 +253,12 @@ class SlipVerificationService
                 'bot_id' => $bot->id, 'status' => $response->status(), 'body' => mb_substr($response->body(), 0, 500),
             ]);
 
-            return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
-                isSlip: false, passed: false, failReason: 'api_error',
-            ));
+            return $this->apiUnavailable($bot, $conversation, $message, $response->json(), 'api_error', $isSlipCheck);
         }
 
         $data = $response->json('data');
         if (! is_array($data) || empty($data['rawSlip']['transRef'])) {
-            return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
-                isSlip: false, passed: false, failReason: 'api_error',
-            ));
+            return $this->apiUnavailable($bot, $conversation, $message, $response->json(), 'api_error', $isSlipCheck);
         }
 
         $transRef = (string) $data['rawSlip']['transRef'];
@@ -318,6 +311,41 @@ class SlipVerificationService
             expectedAmount: $expected['total'], orderSummary: $expected['summary'],
             orderItems: $expected['items'],
         ), $receiverAccount);
+    }
+
+    /**
+     * นโยบาย fail-safe กลางของทุก branch ที่ EasySlip บอกอะไรเราไม่ได้ — เขียนที่เดียว
+     * เพราะทั้ง branch 400 และ apiUnavailable ต้องตัดสินเรื่องเดียวกันเสมอ
+     * true = สายตายืนยันว่าไม่ใช่สลิป (เงียบได้) เท่านั้น; ไม่แน่ใจ/ถามไม่ได้ = เข้าข้างเงิน
+     *
+     * @param  (\Closure(): ?bool)|null  $isSlipCheck
+     */
+    private function visionSaysNotSlip(?\Closure $isSlipCheck): bool
+    {
+        return $isSlipCheck !== null && $isSlipCheck() === false;
+    }
+
+    /**
+     * EasySlip ให้คำตอบเรื่องรูปนี้ไม่ได้เลย (token หาย / API ล่ม / ตอบเพี้ยน)
+     * → ระบบไม่รู้ด้วยซ้ำว่ารูปเป็นสลิปไหม จึงถามสายตา ($isSlipCheck) ก่อนกวนเจ้าของ
+     *   false ชัดเจน = รูปทั่วไป (เช่น screenshot หน้าเพจ) → เงียบ ไม่ record ไม่ alert ปล่อยไป vision
+     *   true / ไม่แน่ใจ / ถามไม่ได้ = ถือเป็นสลิป → record + ให้ปลายทาง alert (fail-safe เข้าข้างเงิน)
+     */
+    private function apiUnavailable(
+        Bot $bot,
+        ?Conversation $conversation,
+        ?Message $message,
+        ?array $rawResponse,
+        string $failReason,
+        ?\Closure $isSlipCheck,
+    ): SlipVerificationResult {
+        if ($this->visionSaysNotSlip($isSlipCheck)) {
+            return new SlipVerificationResult(isSlip: false, passed: false);
+        }
+
+        return $this->record($bot, $conversation, $message, $rawResponse, new SlipVerificationResult(
+            isSlip: false, passed: false, failReason: $failReason,
+        ));
     }
 
     /**

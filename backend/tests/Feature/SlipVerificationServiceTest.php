@@ -63,10 +63,10 @@ class SlipVerificationServiceTest extends TestCase
         ];
     }
 
-    private function verify(): SlipVerificationResult
+    private function verify(?\Closure $isSlipCheck = null): SlipVerificationResult
     {
         return app(SlipVerificationService::class)->verify(
-            $this->bot, null, null, 'https://example.com/slip.jpg', $this->paymentHistory
+            $this->bot, null, null, 'https://example.com/slip.jpg', $this->paymentHistory, $isSlipCheck
         );
     }
 
@@ -235,6 +235,53 @@ class SlipVerificationServiceTest extends TestCase
 
         $this->assertSame('config_error', $result->failReason);
         $this->assertDatabaseHas('slip_verifications', ['status' => 'config_error']);
+        Http::assertNothingSent();
+    }
+
+    public function test_api_error_stays_silent_when_vision_says_not_a_slip(): void
+    {
+        // เคสจริง prod 27 ก.ค. (แชท #361, slip_verifications id=116): ลูกค้าส่ง screenshot
+        // หน้าเพจ FB ตอน EasySlip timeout → เดิมเด้งการ์ด "ยืนยันยอด" หาเจ้าของทั้งที่ไม่ใช่สลิป
+        Http::fake(fn () => throw new ConnectionException('timeout'));
+
+        $result = $this->verify(fn (): ?bool => false);
+
+        $this->assertFalse($result->isSlip);
+        $this->assertNull($result->failReason);
+        $this->assertSame(0, SlipVerification::count());
+    }
+
+    public function test_api_error_still_records_when_vision_says_slip(): void
+    {
+        Http::fake(fn () => throw new ConnectionException('timeout'));
+
+        $result = $this->verify(fn (): ?bool => true);
+
+        $this->assertSame('api_error', $result->failReason);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'api_error']);
+    }
+
+    public function test_api_error_records_when_vision_is_unsure(): void
+    {
+        // fail-safe: vision parse ไม่ได้/เรียกไม่ได้ (null) ต้องเข้าข้างเงิน = alert ไว้ก่อน
+        Http::fake(fn () => throw new ConnectionException('timeout'));
+
+        $result = $this->verify(fn (): ?bool => null);
+
+        $this->assertSame('api_error', $result->failReason);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'api_error']);
+    }
+
+    public function test_missing_token_stays_silent_when_vision_says_not_a_slip(): void
+    {
+        // token หาย + รูปทั่วไป → ไม่ควรเด้ง config_error ทุกรูปที่ลูกค้าส่งมา
+        $this->bot->user->settings->update(['easyslip_api_token' => null]);
+        Http::fake();
+
+        $result = $this->verify(fn (): ?bool => false);
+
+        $this->assertFalse($result->isSlip);
+        $this->assertSame(0, SlipVerification::count());
         Http::assertNothingSent();
     }
 }

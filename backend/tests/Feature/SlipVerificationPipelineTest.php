@@ -199,6 +199,62 @@ class SlipVerificationPipelineTest extends TestCase
         Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
     }
 
+    public function test_api_error_with_non_slip_image_does_not_alert_admin(): void
+    {
+        // เคสจริง prod 27 ก.ค. แชท #361: screenshot หน้าเพจ FB + EasySlip ล่ม
+        // → ต้องตอบลูกค้าตามบริบท และห้ามเด้งการ์ดหาเจ้าของ
+        // (reply ต้องไม่มีคำว่า "ได้รับสลิป" ไม่งั้นจะไปโดน safety net อีกชั้นที่ generateImageResponse)
+        $this->enableTelegramAlert();
+        $this->conversation->messages()->where('sender', 'bot')->delete();
+
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['message' => 'server error'], 500),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => '{"is_slip": false, "reply": "เรื่องนี้ต้องให้ทีม Support ดูครับ"}']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        $this->assertStringContainsString('ทีม Support', $ctx->response->payload);
+        $this->assertDatabaseCount('slip_verifications', 0);
+        Http::assertNotSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+        // ตัดสิน+ตอบจบใน LLM call เดียว (draft ถูกใช้ต่อ) — ต้นทุน vision เท่าเดิมกับก่อนแก้
+        $this->assertCount(1, Http::recorded(fn ($req) => str_contains($req->url(), 'openrouter.ai')));
+    }
+
+    public function test_api_error_with_slip_image_costs_two_vision_calls(): void
+    {
+        // ต้นทุนที่ยอมรับไว้ (วัดแล้ว: เดิม 1 → ใหม่ 2): classifySlipImage เก็บ draft ไว้ใช้ต่อ
+        // เฉพาะตอน is_slip=false เท่านั้น (LineWebhookResponseService::classifySlipImage)
+        // พอตอบว่าเป็นสลิป generateImageResponse จึงต้องยิง vision ซ้ำเพื่อตอบลูกค้า
+        // แลกกับการที่รูปทั่วไปไม่เด้งการ์ดหาเจ้าของอีกต่อไป และเกิดเฉพาะตอน EasySlip ล่ม
+        $this->enableTelegramAlert();
+
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['message' => 'server error'], 500),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => '{"is_slip": true, "reply": ""}']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        $this->assertCount(2, Http::recorded(fn ($req) => str_contains($req->url(), 'openrouter.ai')));
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'api_error']);
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+    }
+
     public function test_non_slip_image_falls_through_to_vision(): void
     {
         // Remove the pending-order summary so a 400 is treated as a genuine non-slip → vision.
