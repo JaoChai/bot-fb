@@ -115,6 +115,16 @@ export function ChatPage() {
     }
   }, [conversations, selectedConversationId, selectConversation, markAsRead]);
 
+  // ห้องแชทที่เลือกอาจหลุดจากรายการ (realtime อัพเดตแล้วตกนอกหน้าที่โหลดไว้)
+  // บนมือถือสถานะนั้นคือจอเปล่าที่ไม่มีทั้ง header ของแอปและปุ่มย้อนกลับ = ออกไปไหนไม่ได้
+  // จึงพากลับหน้ารายการเอง แทนที่จะปล่อยให้ค้าง
+  useEffect(() => {
+    if (!showMobileChat) return;
+    if (isConversationsLoading) return;
+    if (selectedConversation) return;
+    setShowMobileChat(false);
+  }, [showMobileChat, isConversationsLoading, selectedConversation, setShowMobileChat]);
+
   // Handle bot selection
   const handleBotSelect = useCallback((value: string) => {
     const newBotId = parseInt(value, 10);
