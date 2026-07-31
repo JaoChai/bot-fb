@@ -13,9 +13,12 @@ use App\Models\FlowPlugin;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\Payment\SlipRetryService;
+use App\Services\Payment\SlipVerificationResult;
+use App\Services\Payment\SlipVerificationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
+use Mockery;
 use Tests\TestCase;
 
 class SlipRetryServiceTest extends TestCase
@@ -185,5 +188,40 @@ class SlipRetryServiceTest extends TestCase
         Bus::assertNotDispatched(RetrySlipVerification::class);
         Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
         Http::assertSent(fn ($req) => str_contains($req->url(), 'api.line.me'));
+    }
+
+    public function test_passed_retry_via_llm_reconstruction_alerts_admin(): void
+    {
+        // auto-retry สลิป pending แล้วผ่านด้วยด่านสรุปออเดอร์เอง (orderSource llm)
+        // ต้องส่งการ์ดเงียบเหมือนเส้นทาง webhook ปกติ — เจ้าของต้องรู้ว่าระบบส่งของเองแล้ว
+        // (ก่อนหน้านี้เส้นทาง retry ส่งของเงียบเลยโดยไม่แจ้งอะไรเลย)
+        Bus::fake([ReserveAccountStock::class]);
+        Http::fake([
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+        ]);
+
+        $result = new SlipVerificationResult(
+            isSlip: true,
+            passed: true,
+            amount: 1100.0,
+            transRef: 'TR-LLM-1',
+            expectedAmount: 1100.0,
+            orderSummary: 'Nolimit Level Up+ Personal',
+            orderSource: 'llm',
+        );
+
+        // จำลอง verify() ให้คืนผ่านด้วยด่าน llm ส่วน notifyIfAutoReconstructed ดักการเรียกโดยตรง
+        // (กฎ "เมื่อไหร่แจ้งเงียบ" ถูกย้ายเข้า SlipVerificationService::notifyIfAutoReconstructed แล้ว
+        //  จึง assert ที่เมธอดนี้แทน notifyAdmin — intent เดิม: llm reconstruction ต้องแจ้งเจ้าของ 1 ครั้ง
+        //  runPlugins ก็ส่ง telegram เองอยู่แล้ว จึงไม่ใช่การ assert ผ่าน HTTP)
+        $mock = Mockery::mock(SlipVerificationService::class);
+        $mock->shouldReceive('verify')->andReturn($result);
+        $mock->shouldReceive('notifyIfAutoReconstructed')->once();
+        $this->app->instance(SlipVerificationService::class, $mock);
+
+        app(SlipRetryService::class)->retry(
+            $this->bot, $this->conversation, $this->slipMessage, $this->slipMessage->media_url, 1
+        );
     }
 }

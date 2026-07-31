@@ -16,6 +16,10 @@ class SlipVerificationResult
         public readonly ?float $expectedAmount = null,
         public readonly ?string $orderSummary = null,
         public readonly ?array $orderItems = null,
+        /** ด่านที่หาออเดอร์เจอ: summary | confirm | llm | null */
+        public readonly ?string $orderSource = null,
+        /** ออเดอร์ที่ระบบสรุปเอง — มีค่าเฉพาะตอน orderSource = 'llm' */
+        public readonly ?OrderReconstruction $reconstruction = null,
     ) {}
 
     public function status(): string

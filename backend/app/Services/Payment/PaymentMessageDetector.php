@@ -28,6 +28,15 @@ class PaymentMessageDetector
      */
     private const TOTAL_KEYWORDS = 'รวมยอดโอน|รวมทั้งสิ้น|สรุปยอด(?:โอน)?|ยอดโอน|ยอดรวม|รวมเป็นเงิน|ยอดสุทธิ|ยอดที่ต้องโอน|ยอดชำระ|ยอดที่ต้องชำระ';
 
+    /** ยอดในข้อความยืนยันขั้น 2 — ใช้ร่วมกัน isConfirmMessage/parseConfirmData กัน drift */
+    private const CONFIRM_TOTAL_PATTERN = '/(?:รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?|ราคา)\s*:?\s*([\d,]+)\s*บาท/u';
+
+    /** รูปแบบเจตนายืนยันขั้น 2 จริง (3 รูป) — เหตุผล/รายละเอียดที่ hasConfirmIntent() */
+    private const CONFIRM_INTENT_PATTERN = '/(?:พิมพ์|กด)[\s"\'\x{201C}\x{201D}\x{2018}\x{2019}]+ยืนยัน|ถูกต้องไหม|ใช่ไหม/u';
+
+    /** เฉพาะรูป "รวม..." — ต้องลองก่อน "ราคา" เสมอ เพราะยอดรวมชนะราคาต่อชิ้น */
+    private const CONFIRM_SUM_PATTERN = '/รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?\s*:?\s*([\d,]+)\s*บาท/u';
+
     /** คำหน่วยจำนวนสินค้า ("N ตัว") — ใช้ร่วมกันทั้ง primary post-process และ fallback regex กัน drift */
     private const UNIT_WORDS = 'ตัว|เพจ|ใบ|ชิ้น|อัน';
 
@@ -137,6 +146,24 @@ class PaymentMessageDetector
         return is_numeric($total) && (float) $total <= 0;
     }
 
+    /**
+     * รูปแบบ summary รายการสินค้าตัวเดียวของระบบ — ทุกที่ที่ summary ไหลออก
+     * (ข้อความยืนยันรับเงิน, การ์ด Telegram, order_items) ใช้รูปนี้เท่านั้น:
+     * สั่งเกิน 1 ติด "xN" ต่อท้ายชื่อ ไม่งั้นใช้ชื่อล้วน คั่นแต่ละรายการด้วย ", ".
+     * ห้ามกรองรายการในเมธอดนี้ — ผู้เรียกบางรายกรองของแถมราคา 0 มาก่อนแล้ว กรองซ้ำจะเปลี่ยนพฤติกรรม.
+     *
+     * @param  array<int, array{name: string, qty?: int}>  $items
+     */
+    public static function formatItemSummary(array $items): string
+    {
+        return implode(', ', array_map(
+            fn (array $item) => ((int) ($item['qty'] ?? 1)) > 1
+                ? "{$item['name']} x{$item['qty']}"
+                : $item['name'],
+            $items,
+        ));
+    }
+
     private function pushItem(array &$items, string $name, string $total, string $price, string $qty): void
     {
         if ($name === '') {
@@ -177,7 +204,11 @@ class PaymentMessageDetector
 
     /**
      * Detect if text is a confirm message (Step 2).
-     * Must contain "รวม...บาท" + "ยืนยัน", but NOT bank account, verify tag, or terms keywords.
+     * Must contain "รวม...บาท"/"ราคา...บาท" + "ยืนยัน", but NOT bank account, verify tag, or terms keywords.
+     *
+     * เกณฑ์นี้หลวมโดยตั้งใจ — มีไว้แปลงข้อความบอทเป็นการ์ด Flex ให้ลูกค้าเห็น (PaymentFlexService)
+     * ซึ่งตัดสินผิดก็แค่แสดงผลไม่สวย ไม่มีผลทางการเงิน. ส่วนเส้นทางที่เอาข้อความไปตัดสินเรื่องเงิน
+     * (SlipVerificationService) ต้องเช็ค hasConfirmIntent() เป็นด่านเสริม — ดูเหตุผลที่เมธอดนั้น.
      */
     public function isConfirmMessage(string $text): bool
     {
@@ -203,22 +234,47 @@ class PaymentMessageDetector
         }
 
         // Must have total pattern: รวม...บาท (รองรับ รวม, รวมทั้งหมด, รวมยอด, รวมเป็นเงิน)
-        if (! preg_match('/รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?\s*:?\s*[\d,]+\s*บาท/u', $text)) {
+        // "ราคา ... บาท" ก็นับด้วย — LLM มัก drift เขียนข้อความยืนยันขั้น 2 แบบ
+        // "เพิ่ม X 1 ตัว ราคา 1,100 บาท ... พิมพ์ยืนยัน" (เคสจริงแชท #92 31 ก.ค.)
+        if (! preg_match(self::CONFIRM_TOTAL_PATTERN, $text)) {
             return false;
         }
 
-        // Must have "ยืนยัน"
         return mb_strpos($text, 'ยืนยัน') !== false;
     }
 
     /**
+     * เจตนายืนยันขั้น 2 จริง — ไม่ใช่แค่มีคำว่า "ยืนยัน" โผล่ในประโยค.
+     *
+     * ใช้เฉพาะเส้นทางที่เอาข้อความไปตัดสินเรื่องเงิน/ส่งของอัตโนมัติ
+     * (SlipVerificationService::findExpectedFromConfirmMessage) — ไม่ใช่ตอนแปลงข้อความเป็น Flex
+     * การ์ด ซึ่งใช้ isConfirmMessage() ที่หลวมกว่าเพราะไม่มีผลทางการเงิน.
+     *
+     * ข้อความขายมักพูดว่า "ไม่ต้องยืนยันตัวตนเพิ่ม" ซึ่งเดิมผ่านด่าน mb_strpos(text,'ยืนยัน')
+     * ทำให้สลิปผ่านเองแล้วส่งของทั้งที่ลูกค้ายังไม่ได้สั่ง จึงต้องจับเฉพาะที่บอท
+     * "ขอให้ลูกค้ายืนยัน" จริง 3 รูปเท่านั้น:
+     *   (ก) พิมพ์/กด ตามด้วยช่องว่างหรือเครื่องหมายคำพูด แล้วตามด้วย "ยืนยัน"
+     *       (ครอบคลุม ASCII quote และ curly quote ไทย เช่น พิมพ์ "ยืนยัน", พิมพ์ ยืนยัน)
+     *   (ข) ถูกต้องไหม
+     *   (ค) ใช่ไหม
+     */
+    public function hasConfirmIntent(string $text): bool
+    {
+        return (bool) preg_match(self::CONFIRM_INTENT_PATTERN, $text);
+    }
+
+    /**
      * Parse confirm data from text.
+     * ลองรูป "รวม X บาท" ก่อนเสมอ — ข้อความที่มีทั้งราคาต่อชิ้น (upsell "Page ราคา 199 บาท")
+     * และยอดรวม ต้องได้ยอดรวม ไม่ใช่ราคาชิ้นแรกที่เจอ
      * Returns null if total cannot be parsed (required field).
      */
     public function parseConfirmData(string $text): ?array
     {
-        // Parse total (required) — รองรับ รวม, รวมทั้งหมด, รวมยอด, รวมเป็นเงิน
-        if (! preg_match('/รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?\s*:?\s*([\d,]+)\s*บาท/u', $text, $totalMatch)) {
+        $text = $this->normalize($text);
+
+        if (! preg_match(self::CONFIRM_SUM_PATTERN, $text, $totalMatch)
+            && ! preg_match(self::CONFIRM_TOTAL_PATTERN, $text, $totalMatch)) {
             return null;
         }
 

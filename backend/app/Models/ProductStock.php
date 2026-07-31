@@ -21,6 +21,7 @@ class ProductStock extends Model
         'display_order',
         'stock_code',
         'delivery_method',
+        'price',
     ];
 
     protected $casts = [
@@ -28,5 +29,6 @@ class ProductStock extends Model
         'in_stock' => 'boolean',
         'manual_off' => 'boolean',
         'available_count' => 'integer',
+        'price' => 'decimal:2',
     ];
 }

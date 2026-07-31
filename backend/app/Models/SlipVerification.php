@@ -19,10 +19,13 @@ class SlipVerification extends Model
         'receiver_account',
         'status',
         'raw_response',
+        'order_source',
+        'reconstructed',
     ];
 
     protected $casts = [
         'raw_response' => 'array',
+        'reconstructed' => 'array',
         'amount' => 'float',
     ];
 

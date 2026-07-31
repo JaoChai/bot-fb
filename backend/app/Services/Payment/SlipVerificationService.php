@@ -25,16 +25,22 @@ class SlipVerificationService
         'amount_mismatch' => 'ยอดไม่ตรงกับออเดอร์',
         'wrong_account' => 'โอนเข้าบัญชีอื่น (ไม่ใช่บัญชีร้าน)',
         'no_pending_order' => 'ไม่พบออเดอร์ค้างชำระในบทสนทนา',
+        'needs_choice' => 'ลูกค้าโอนข้ามขั้นตอน — ระบบสรุปได้หลายแบบ กรุณาเลือกรายการที่ถูกต้อง',
         'unreadable' => 'รูปสลิปอ่านไม่ได้/ไม่ชัด — ระบบตรวจอัตโนมัติไม่ได้ กรุณาตรวจมือ',
         'api_error' => 'ระบบตรวจสลิป (EasySlip) ใช้งานไม่ได้ชั่วคราว',
         'config_error' => 'ตั้งค่าไม่ครบ — EasySlip token หายไป กรุณาใส่ที่หน้า Settings (ระบบจะไม่ตรวจสลิปจนกว่าจะแก้)',
         'image_download_failed' => 'โหลดรูปจากลูกค้าไม่สำเร็จ — ระบบตรวจสลิปไม่ได้ กรุณาเปิดแชทดูรูป/ยอดเอง',
     ];
 
+    // ห้ามประกาศ dependency พวกนี้เป็น optional (`?Type $x = null`) — Laravel เจอ parameter
+    // ที่มีค่า default จะใช้ default ทันทีโดยไม่ resolve ให้ ผลคือ $itemExtractor เป็น null
+    // บน production มาตั้งแต่ 11 ก.ค. (LLM fallback ไม่เคยทำงานเลย) เทสต์มองไม่เห็นเพราะ
+    // สร้าง service เองด้วย new พร้อมส่ง dependency เข้าไป
     public function __construct(
         private readonly PaymentMessageDetector $detector,
         private readonly TelegramAlertBotService $alertBot,
-        private readonly ?LLMOrderItemExtractor $itemExtractor = null,
+        private readonly LLMOrderItemExtractor $itemExtractor,
+        private readonly OrderReconstructor $reconstructor,
     ) {}
 
     /**
@@ -113,7 +119,7 @@ class SlipVerificationService
 
         // ชั้น 2 fallback: regex ได้ total แต่ดึง items ไม่ได้ (prose ล้วน / หลายสินค้าบรรทัดเดียว)
         // เรียกเฉพาะตอน items ว่างเท่านั้น (cost guard) — ไม่เรียกทุกครั้ง
-        if ($items === [] && $bot !== null && $this->itemExtractor !== null
+        if ($items === [] && $bot !== null
             && config('delivery.llm_item_fallback_enabled', true)) {
             $items = $this->itemExtractor->extract($content, $bot);
         }
@@ -125,17 +131,13 @@ class SlipVerificationService
         // ตัดของแถมราคา 0 ออกจาก summary กันชื่อหลุดไปข้อความยืนยัน/Telegram/order_items —
         // แต่คืน 'items' เต็มชุดให้ delivery กรอง+log เองอีกชั้น
         $visibleItems = array_filter($items, fn (array $item) => ! PaymentMessageDetector::isZeroPriceItem($item));
-        // ติด "xN" ท้ายชื่อเมื่อสั่งเกิน 1 — summary เป็นต้นทางเดียวของจำนวนที่ไหลไปข้อความยืนยัน,
-        // การ์ด Telegram และ order_items (parseProductItems อ่านรูป "ชื่อ xN"); ทิ้ง qty ที่นี่
+        // summary เป็นต้นทางเดียวของจำนวนที่ไหลไปข้อความยืนยัน การ์ด Telegram และ order_items
+        // (parseProductItems อ่านรูป "ชื่อ xN") รูปแบบรวมศูนย์ที่ formatItemSummary — ทิ้ง qty ที่นี่
         // = ออเดอร์ 2 ชุดถูกบันทึกเป็น 1 เงียบๆ
-        $itemNames = array_map(
-            fn (array $item) => (int) ($item['qty'] ?? 1) > 1 ? "{$item['name']} x{$item['qty']}" : $item['name'],
-            $visibleItems,
-        );
 
         return [
             'total' => (float) str_replace(',', '', $data['total']),
-            'summary' => $itemNames === [] ? '-' : implode(', ', $itemNames),
+            'summary' => $visibleItems === [] ? '-' : PaymentMessageDetector::formatItemSummary($visibleItems),
             'items' => $items,
         ];
     }
@@ -159,7 +161,12 @@ class SlipVerificationService
                 continue;
             }
             $content = $msg['content'] ?? '';
-            if (! $this->detector->isConfirmMessage($content)) {
+            // เส้นทางนี้ใช้ข้อความเป็นหลักฐานออเดอร์เพื่อส่งของอัตโนมัติ ตัดสินผิด = ส่งของฟรี
+            // เลยต้องเข้มกว่า isConfirmMessage ที่ใช้ตอนแปลง Flex: ข้อความต้องเป็นการ
+            // "ขอให้ลูกค้ายืนยัน" จริงด้วย (hasConfirmIntent) — ข้อความเสนอราคา "ไม่ต้องยืนยัน
+            // ตัวตน" เคยหลุดผ่านตรงนี้จนระบบส่งของทั้งที่ลูกค้ายังไม่ได้สั่ง)
+            if (! $this->detector->isConfirmMessage($content)
+                || ! $this->detector->hasConfirmIntent($content)) {
                 continue;
             }
             $data = $this->detector->parseConfirmData($content);
@@ -178,7 +185,9 @@ class SlipVerificationService
 
             $expected = $this->buildExpected($data, $content, $bot, requireItems: true);
             if ($expected === null) {
-                return null;
+                // ยอดตรงแต่ดึงรายการไม่ได้ (prose ล้วน) — ไล่ดูข้อความยืนยันก่อนหน้าต่อ
+                // ห้ามหยุดทั้งลูป ไม่งั้นข้อความตะกร้าที่มีรายการครบจะไม่ถูกอ่าน (เคสจริงแชท #1072)
+                continue;
             }
 
             Log::info('Confirm fallback: items extracted from step-2 confirm message', [
@@ -287,14 +296,43 @@ class SlipVerificationService
         }
 
         // เช็ค 3: ต้องมีออเดอร์ค้างชำระใน history
-        // fallback: ลูกค้าขาประจำที่รู้เลขบัญชีอยู่แล้วมักโอนทันทีหลังข้อความตะกร้า ไม่รอข้อความ
-        // สรุปยอด+เลขบัญชี — อ่านยอดจากข้อความ "ตะกร้า/ยืนยัน" ที่บอทพิมพ์เองแทน (ยอดต้องตรง)
-        $expected = $this->findExpectedPayment($conversationHistory, $configured, $bot)
-            ?? $this->findExpectedFromConfirmMessage($conversationHistory, $bot, $slipAmount);
+        // ด่าน 1 ข้อความสรุปยอด+เลขบัญชี → ด่าน 2 ข้อความยืนยันขั้น 2 (ยอดต้องตรง)
+        // → ด่าน 3 ให้ระบบสรุปออเดอร์เองจากบทสนทนา (เรียก LLM เฉพาะตอนสองด่านแรกพลาด)
+        $orderSource = 'summary';
+        $expected = $this->findExpectedPayment($conversationHistory, $configured, $bot);
+        if ($expected === null) {
+            $orderSource = 'confirm';
+            $expected = $this->findExpectedFromConfirmMessage($conversationHistory, $bot, $slipAmount);
+        }
+
+        $reconstruction = null;
+        if ($expected === null) {
+            $reconstruction = $this->reconstructor->reconstruct($bot, $conversationHistory, $slipAmount);
+            if ($reconstruction !== null) {
+                $orderSource = 'llm';
+                $expected = [
+                    'total' => $reconstruction->total,
+                    'summary' => $reconstruction->summary,
+                    'items' => $reconstruction->items,
+                ];
+            }
+        }
+
         if ($expected === null) {
             return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
                 isSlip: true, passed: false, failReason: 'no_pending_order',
                 amount: $slipAmount, transRef: $transRef,
+            ), $receiverAccount);
+        }
+
+        // ระบบสรุปได้แต่ประกอบยอดได้หลายแบบ (เช่น 1,100 ตรงทั้ง Personal และ BM)
+        // → ห้ามส่งของเอง ต้องให้เจ้าของกดเลือกจากการ์ด Telegram
+        if ($reconstruction?->ambiguous) {
+            return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
+                isSlip: true, passed: false, failReason: 'needs_choice',
+                amount: $slipAmount, transRef: $transRef,
+                expectedAmount: $reconstruction->total, orderSummary: $reconstruction->summary,
+                orderSource: $orderSource, reconstruction: $reconstruction,
             ), $receiverAccount);
         }
 
@@ -305,6 +343,7 @@ class SlipVerificationService
                 isSlip: true, passed: false, failReason: 'amount_mismatch',
                 amount: $slipAmount, transRef: $transRef,
                 expectedAmount: $expected['total'], orderSummary: $expected['summary'],
+                orderSource: $orderSource, reconstruction: $reconstruction,
             ), $receiverAccount);
         }
 
@@ -313,6 +352,7 @@ class SlipVerificationService
             amount: $slipAmount, transRef: $transRef,
             expectedAmount: $expected['total'], orderSummary: $expected['summary'],
             orderItems: $expected['items'],
+            orderSource: $orderSource, reconstruction: $reconstruction,
         ), $receiverAccount);
     }
 
@@ -378,9 +418,22 @@ class SlipVerificationService
 
         $reason = self::FAIL_REASON_LABELS[$result->failReason] ?? ($result->failReason ?? 'unknown');
         $botName = TelegramAlertBotService::esc($bot->name);
-        $header = in_array($result->failReason, self::FRAUD_REASONS, true)
-            ? "🚨 <b>สลิปมีปัญหา — อย่าเพิ่งส่งของ</b> ({$botName})"
-            : "⚠️ <b>ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ</b> ({$botName})";
+
+        $header = match (true) {
+            $result->passed => "🤖 <b>ลูกค้าโอนข้ามขั้นตอน — ระบบสรุปออเดอร์เองแล้ว</b> ({$botName})",
+            $result->failReason === 'needs_choice' => "🤔 <b>ลูกค้าโอนข้ามขั้นตอน — เลือกรายการที่ถูกต้อง</b> ({$botName})",
+            in_array($result->failReason, self::FRAUD_REASONS, true) => "🚨 <b>สลิปมีปัญหา — อย่าเพิ่งส่งของ</b> ({$botName})",
+            default => "⚠️ <b>ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ</b> ({$botName})",
+        };
+
+        // ดึง alternatives จาก reconstruction ใน result ตรง ๆ — ไม่ต้อง query DB ซ้ำ
+        // (ผู้เรียกทุกรายส่ง result ตัวเดียวกับที่ verify() คืนมาในรอบเดียวกัน ไม่มีการ serialize ข้าม request)
+        // มีค่าเฉพาะ needs_choice ที่เกิดจากออเดอร์กำกวมจาก LLM; เก็บเงื่อนไข slipVerificationId ไว้
+        // เพราะ buildConfirmKeyboard ผูก callback_data กับ slip id — ถ้า record() พังไม่มี id ก็ต้องไม่โชว์ปุ่ม po
+        $alternatives = ($result->failReason === 'needs_choice' && $result->slipVerificationId !== null)
+            ? ($result->reconstruction?->alternatives ?? [])
+            : [];
+
         $lines = [$header];
         if ($conversation !== null) {
             $displayName = $conversation->customerProfile?->display_name;
@@ -388,17 +441,77 @@ class SlipVerificationService
                 ? '👤 '.TelegramAlertBotService::esc($displayName)." · แชท #{$conversation->id}"
                 : "👤 แชท #{$conversation->id}";
         }
-        $lines[] = 'เหตุผล: <b>'.TelegramAlertBotService::esc($reason).'</b>';
+        if (! $result->passed) {
+            $lines[] = 'เหตุผล: <b>'.TelegramAlertBotService::esc($reason).'</b>';
+        }
         if ($result->amount !== null) {
             $lines[] = 'ยอดในสลิป: <code>'.self::formatBaht($result->amount).'</code> บาท';
         }
-        if ($result->expectedAmount !== null) {
+        if ($result->expectedAmount !== null && ! $result->passed) {
             $lines[] = 'ยอดออเดอร์: <code>'.self::formatBaht($result->expectedAmount).'</code> บาท';
         }
-        $lines[] = 'กรุณาเช็คในแชทก่อนยืนยัน';
+        if ($result->orderSummary !== null && $result->orderSummary !== '-') {
+            $lines[] = 'ออเดอร์: <b>'.TelegramAlertBotService::esc($result->orderSummary).'</b>';
+        }
+        // ระบบหาออเดอร์ไม่เจอเลย → แนบบทสนทนาล่าสุดมาให้ตัดสินได้จากในการ์ด ไม่ต้องเปิดแอป
+        if ($result->failReason === 'no_pending_order' && $conversation !== null) {
+            foreach ($this->recentChatQuotes($conversation) as $quote) {
+                $lines[] = $quote;
+            }
+        }
+        // needs_choice แต่มีปุ่มเดียว = กำกวมแบบหลายรายการ ระบบไม่กล้าเดาว่าประกอบยอดแบบไหน
+        // เตือนให้เจ้าของเปิดแชทตรวจก่อนกด (ต่างจากเคสหลายปุ่มที่กดเลือกได้เลย)
+        if ($result->failReason === 'needs_choice' && count($alternatives) <= 1) {
+            $lines[] = '⚠️ ระบบไม่แน่ใจว่าประกอบยอดแบบไหน รบกวนเปิดแชทตรวจก่อนกดยืนยัน';
+        }
+        $lines[] = $result->passed
+            ? 'ส่งของให้แล้ว ไม่ต้องทำอะไรครับ — ถ้าไม่ถูกต้องรบกวนเปิดแชทแก้'
+            : 'กรุณาเช็คในแชทก่อนยืนยัน';
 
-        $keyboard = $this->buildConfirmKeyboard($conversation, $result);
+        $keyboard = $result->passed ? null : $this->buildConfirmKeyboard($conversation, $result, $alternatives);
         $this->alertBot->sendMessage($token, $chatId, implode("\n", $lines), $keyboard);
+    }
+
+    /**
+     * กฎ "เมื่อไหร่ต้องแจ้งเจ้าของแบบเงียบ" อยู่ที่นี่ที่เดียว — ผู้เรียกไม่ต้องจำเงื่อนไขเอง
+     * แจ้งเงียบ (การ์ดไม่มีปุ่ม) เฉพาะตอนระบบสรุปออเดอร์เองจากบทสนทนา (orderSource = llm)
+     * แล้วผ่านส่งของเอง เพื่อให้เจ้าของรู้ว่าเกิดอะไรขึ้น. ถ้ามีผู้เรียกรายที่สามในอนาคต
+     * จะได้ไม่ลืมแจ้ง (เดิมเงื่อนไขนี้ก๊อปไว้ที่ผู้เรียก ทำให้ลืมได้).
+     */
+    public function notifyIfAutoReconstructed(Bot $bot, ?Conversation $conversation, SlipVerificationResult $result): void
+    {
+        if ($result->orderSource === 'llm') {
+            $this->notifyAdmin($bot, $conversation, $result);
+        }
+    }
+
+    /**
+     * สามข้อความล่าสุดในแชท (ตัดให้สั้น) สำหรับแปะในการ์ดตอนระบบหาออเดอร์ไม่เจอ
+     *
+     * @return array<int, string>
+     */
+    private function recentChatQuotes(Conversation $conversation, int $limit = 3): array
+    {
+        $messages = $conversation->messages()
+            ->whereIn('sender', ['user', 'bot'])
+            ->where('type', 'text')
+            ->latest('id')
+            ->take($limit)
+            ->get()
+            ->reverse();
+
+        if ($messages->isEmpty()) {
+            return [];
+        }
+
+        $quotes = ['💬 <i>ข้อความล่าสุดในแชท</i>'];
+        foreach ($messages as $message) {
+            $who = $message->sender === 'user' ? 'ลูกค้า' : 'บอท';
+            $text = mb_substr(str_replace('|||', ' ', (string) $message->content), 0, 120);
+            $quotes[] = "· {$who}: ".TelegramAlertBotService::esc($text);
+        }
+
+        return $quotes;
     }
 
     /**
@@ -413,12 +526,25 @@ class SlipVerificationService
      * สร้าง inline_keyboard ปุ่มยืนยันตามยอดที่รู้และประเภทเคส (fraud → prefix pa).
      * คืน null เมื่อไม่มี conversation (resolve ตอน callback ไม่ได้).
      *
+     * @param  array<int, array<int, array{name: string, total: string, qty: int}>>  $alternatives
      * @return array<int, array<int, array{text: string, callback_data: string}>>|null
      */
-    private function buildConfirmKeyboard(?Conversation $conversation, SlipVerificationResult $result): ?array
+    private function buildConfirmKeyboard(?Conversation $conversation, SlipVerificationResult $result, array $alternatives = []): ?array
     {
         if ($conversation === null) {
             return null;
+        }
+
+        // กำกวม: หนึ่งปุ่มต่อหนึ่งตัวเลือกที่ประกอบยอดได้ — เจ้าของกดปุ่มเดียวจบ
+        if ($result->failReason === 'needs_choice' && $result->slipVerificationId !== null) {
+            $rows = [];
+            foreach ($alternatives as $index => $set) {
+                $label = PaymentMessageDetector::formatItemSummary($set);
+                $rows[] = [['text' => "✅ {$label}", 'callback_data' => "po|{$result->slipVerificationId}|{$index}"]];
+            }
+            if ($rows !== []) {
+                return $rows;
+            }
         }
 
         $action = in_array($result->failReason, self::FRAUD_REASONS, true) ? 'pa' : 'pc';
@@ -465,6 +591,11 @@ class SlipVerificationService
                 'receiver_account' => $receiverAccount,
                 'status' => $result->status(),
                 'raw_response' => $rawResponse,
+                'order_source' => $result->orderSource,
+                'reconstructed' => $result->reconstruction === null ? null : [
+                    'items' => $result->reconstruction->items,
+                    'alternatives' => $result->reconstruction->alternatives,
+                ],
             ]);
             $result->slipVerificationId = $created->id;
         } catch (\Throwable $e) {

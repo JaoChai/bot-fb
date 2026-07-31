@@ -15,6 +15,7 @@ class SlipResource extends JsonResource
         'duplicate' => 'สลิปซ้ำ',
         'amount_mismatch' => 'ยอดไม่ตรง',
         'no_pending_order' => 'ไม่มีออเดอร์ค้าง',
+        'needs_choice' => 'รอเลือกรายการ',
         'unreadable' => 'อ่านสลิปไม่ได้',
         'api_error' => 'API ผิดพลาด',
         'config_error' => 'ตั้งค่าไม่ครบ',

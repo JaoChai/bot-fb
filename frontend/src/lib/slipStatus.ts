@@ -10,6 +10,7 @@ const STATUS_META: Record<string, { label: string; variant: BadgeVariant }> = {
   duplicate: { label: 'สลิปซ้ำ', variant: 'warning' },
   amount_mismatch: { label: 'ยอดไม่ตรง', variant: 'warning' },
   no_pending_order: { label: 'ไม่มีออเดอร์ค้าง', variant: 'warning' },
+  needs_choice: { label: 'รอเลือกรายการ', variant: 'warning' },
   unreadable: { label: 'อ่านสลิปไม่ได้', variant: 'secondary' },
   api_error: { label: 'API ผิดพลาด', variant: 'secondary' },
   config_error: { label: 'ตั้งค่าไม่ครบ', variant: 'secondary' },
@@ -25,7 +26,7 @@ export function slipStatusMeta(status: string): { label: string; variant: BadgeV
 export const STATUS_GROUPS: Record<string, string[]> = {
   all: [],
   passed: ['passed', 'manual_confirmed'],
-  abnormal: ['fake', 'wrong_account', 'duplicate', 'amount_mismatch', 'no_pending_order'],
+  abnormal: ['fake', 'wrong_account', 'duplicate', 'amount_mismatch', 'no_pending_order', 'needs_choice'],
   error: ['unreadable', 'api_error', 'config_error', 'image_download_failed', 'pending'],
 };
 

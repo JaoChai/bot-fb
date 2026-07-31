@@ -14,7 +14,7 @@ class SlipController extends Controller
     // สถานะที่ถือว่าเงินเข้าจริง: passed (EasySlip ผ่าน) + manual_confirmed (แอดมินยืนยันเอง)
     private const MONEY_IN = ['passed', 'manual_confirmed'];
 
-    private const ABNORMAL = ['fake', 'wrong_account', 'duplicate', 'amount_mismatch', 'no_pending_order'];
+    private const ABNORMAL = ['fake', 'wrong_account', 'duplicate', 'amount_mismatch', 'no_pending_order', 'needs_choice'];
 
     private const SYSTEM_ERROR = ['unreadable', 'api_error', 'config_error', 'image_download_failed', 'pending'];
 

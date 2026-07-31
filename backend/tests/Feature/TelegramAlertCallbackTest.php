@@ -8,10 +8,13 @@ use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
+use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\Payment\ManualPaymentConfirmService;
 use App\Services\Payment\TelegramAlertBotService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
@@ -166,5 +169,143 @@ class TelegramAlertCallbackTest extends TestCase
             'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
             'data' => 'pc|'.$conv->id.'|590',
         ])->assertOk();
+    }
+
+    public function test_picking_an_option_confirms_the_payment_with_the_chosen_items(): void
+    {
+        [$bot, $conv] = $this->seedPlugin();
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $slip = SlipVerification::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conv->id,
+            'amount' => 1100,
+            'status' => 'needs_choice',
+            'order_source' => 'llm',
+            'reconstructed' => [
+                'items' => [['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1]],
+                'alternatives' => [
+                    [['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1]],
+                    [['name' => 'Nolimit Level Up+ BM', 'total' => '1100', 'qty' => 1]],
+                ],
+            ],
+        ]);
+
+        $this->postCallback('TOK', [
+            'id' => 'cb1',
+            'from' => ['id' => 111, 'first_name' => 'owner'],
+            'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
+            'data' => "po|{$slip->id}|1",
+        ])->assertOk();
+
+        $this->assertDatabaseHas('slip_verifications', [
+            'conversation_id' => $conv->id,
+            'status' => 'manual_confirmed',
+        ]);
+    }
+
+    public function test_picking_an_option_keeps_quantity_in_the_confirmation_message(): void
+    {
+        [$bot, $conv] = $this->seedPlugin();
+
+        // แยกจากการทดสอบ confirm() จริง: mock ให้ confirm สำเร็จ แล้วดัก editMessageText
+        // ที่ handlePickOption เป็นคนสร้าง (ที่นี่เองที่เคยทำ qty หาย)
+        $this->mock(ManualPaymentConfirmService::class, function ($m) {
+            $m->shouldReceive('confirm')->once()->andReturn(['message' => new Message, 'order_created' => true]);
+        });
+
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $slip = SlipVerification::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conv->id,
+            'amount' => 2200,
+            'status' => 'needs_choice',
+            'order_source' => 'llm',
+            'reconstructed' => [
+                'items' => [['name' => 'Nolimit Level Up+ Personal', 'total' => '2200', 'qty' => 2]],
+                'alternatives' => [
+                    [['name' => 'Nolimit Level Up+ Personal', 'total' => '2200', 'qty' => 2]],
+                ],
+            ],
+        ]);
+
+        $this->postCallback('TOK', [
+            'id' => 'cb1',
+            'from' => ['id' => 111, 'first_name' => 'owner'],
+            'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
+            'data' => "po|{$slip->id}|0",
+        ])->assertOk();
+
+        // บั๊ก qty: เดิม handlePickOption ใช้ array_column($items, 'name') ทำจำนวนหาย
+        // → เจ้าของสั่ง 2 ตัวแต่ข้อความยืนยันขึ้นเหมือนสั่งตัวเดียว. ข้อความต้องมี "x2" ติดมาด้วย
+        Http::assertSent(function (Request $request) {
+            return str_contains($request->url(), 'editMessageText')
+                && str_contains($request->data()['text'] ?? '', 'x2');
+        });
+    }
+
+    public function test_picking_an_option_that_does_not_exist_is_ignored(): void
+    {
+        [$bot, $conv] = $this->seedPlugin();
+        $this->mock(ManualPaymentConfirmService::class, fn ($m) => $m->shouldNotReceive('confirm'));
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $slip = SlipVerification::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conv->id,
+            'amount' => 1100,
+            'status' => 'needs_choice',
+            'reconstructed' => ['items' => [], 'alternatives' => []],
+        ]);
+
+        $this->postCallback('TOK', [
+            'id' => 'cb2',
+            'from' => ['id' => 111, 'first_name' => 'owner'],
+            'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
+            'data' => "po|{$slip->id}|3",
+        ])->assertOk();
+    }
+
+    // กันคนในกลุ่ม Telegram ของร้านหนึ่งกดเลือกรายการยืนยันเงินของอีกร้านผ่านปุ่ม po
+    // (slip ผูกกับ conversation ของบอทอื่น → ด่านกันข้ามบอทใน handlePickOption ต้องตอบ "ไม่พบรายการนี้")
+    public function test_picking_an_option_from_another_bot_is_rejected(): void
+    {
+        [$bot, $conv] = $this->seedPlugin();
+        $this->mock(ManualPaymentConfirmService::class, fn ($m) => $m->shouldNotReceive('confirm'));
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        // บอทที่สอง (ร้านอื่น) มี conversation + slip needs_choice ของตัวเอง ไม่มี plugin telegram ของตน
+        $otherUser = User::factory()->owner()->create();
+        $otherBot = Bot::factory()->create(['user_id' => $otherUser->id, 'channel_type' => 'line']);
+        $otherConversation = Conversation::factory()->create(['bot_id' => $otherBot->id]);
+
+        $slip = SlipVerification::create([
+            'bot_id' => $otherBot->id,
+            'conversation_id' => $otherConversation->id,
+            'amount' => 1100,
+            'status' => 'needs_choice',
+            'order_source' => 'llm',
+            'reconstructed' => [
+                'items' => [],
+                'alternatives' => [
+                    [['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1]],
+                ],
+            ],
+        ]);
+
+        // ยิง po ผ่าน plugin ของบอทแรก ชี้ไปที่ slip id ของบอทที่สอง index 0
+        $this->postCallback('TOK', [
+            'id' => 'cb1',
+            'from' => ['id' => 111, 'first_name' => 'owner'],
+            'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
+            'data' => "po|{$slip->id}|0",
+        ])->assertOk();
+
+        // ห้ามยืนยันรับเงิน slip ของอีกร้านได้
+        $this->assertDatabaseMissing('slip_verifications', [
+            'conversation_id' => $otherConversation->id,
+            'status' => 'manual_confirmed',
+        ]);
     }
 }
