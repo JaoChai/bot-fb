@@ -100,6 +100,16 @@ describe('useKeyboardInset', () => {
     expect(result.current).toBe(0);
   });
 
+  it('คืนค่าถูกตั้งแต่ mount เมื่อคีย์บอร์ดเปิดค้างอยู่ก่อนแล้ว', () => {
+    // เข้าหน้าแชทตอนคีย์บอร์ดเปิดอยู่ — ไม่มี event ให้ฟัง
+    // ต้องพึ่ง update() รอบแรกตอน mount เท่านั้น
+    stubVisualViewport(508);
+
+    const { result } = renderHook(() => useKeyboardInset());
+
+    expect(result.current).toBe(336);
+  });
+
   it('คืน 0 เมื่อเบราว์เซอร์ไม่มี visualViewport', () => {
     const { result } = renderHook(() => useKeyboardInset());
 
