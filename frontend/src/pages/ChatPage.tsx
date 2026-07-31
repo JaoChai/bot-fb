@@ -23,12 +23,16 @@ import { BotSelectorPanel } from '@/components/chat/BotSelectorPanel';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { useToast } from '@/hooks/use-toast';
+import { useKeyboardInset } from '@/hooks/useKeyboardInset';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types/api';
 
 export function ChatPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
+
+  // คีย์บอร์ดจอสัมผัสกินพื้นที่จากขอบล่าง — หักออกจากความสูงหน้าแชท
+  const keyboardInset = useKeyboardInset();
 
   // Get botId from URL
   const botIdParam = searchParams.get('botId');
@@ -160,7 +164,7 @@ export function ChatPage() {
   // No bot selected - show bot selector
   if (!botId) {
     return (
-      <div className="flex h-[calc(100dvh-3.5rem)] md:h-[calc(100dvh-64px)] items-center justify-center p-6">
+      <div className="flex h-full items-center justify-center p-6">
         <EmptyState
           icon={MessageSquare}
           title="เลือกบอท"
@@ -185,7 +189,10 @@ export function ChatPage() {
   }
 
   return (
-    <div className="-mx-4 -mb-4 -mt-14 md:-m-6 flex h-[calc(100%+4.5rem)] md:h-[calc(100%+3rem)] overflow-hidden bg-background">
+    <div
+      className="flex h-full overflow-hidden bg-background pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)]"
+      style={keyboardInset > 0 ? { height: `calc(100% - ${keyboardInset}px)` } : undefined}
+    >
       {/* Left Panel: Conversation List */}
       <div className={cn(
         'w-full md:w-80 flex-shrink-0 border-r flex flex-col',
