@@ -8,7 +8,7 @@ export function RootLayout() {
   useConnectionStatus();
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-dvh bg-background">
       {/* Sidebar - hidden on mobile */}
       <Sidebar />
 

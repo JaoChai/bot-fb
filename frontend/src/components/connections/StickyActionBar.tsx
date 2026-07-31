@@ -10,7 +10,7 @@ export function StickyActionBar({ children, className }: StickyActionBarProps) {
   return (
     <div
       className={cn(
-        'sticky bottom-0 -mx-4 md:-mx-6 mt-6 border-t bg-background/95 px-4 md:px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 pb-safe z-10',
+        'sticky bottom-0 -mx-4 md:-mx-6 mt-6 border-t bg-background/95 px-4 md:px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] backdrop-blur supports-[backdrop-filter]:bg-background/80 z-10',
         className
       )}
     >

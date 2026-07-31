@@ -83,7 +83,7 @@ export const FlowsList = memo(function FlowsList({
   }, [navigate]);
 
   return (
-    <div className="w-60 border-r bg-background flex flex-col h-screen">
+    <div className="w-60 border-r bg-background flex flex-col h-dvh">
       {/* Header */}
       <div className="h-14 flex items-center px-2 border-b shrink-0">
         <Button

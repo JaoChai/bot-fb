@@ -17,6 +17,7 @@ import {
   FlowsList,
   ChatEmulator,
 } from '@/components/flows';
+import { StickyActionBar } from '@/components/connections';
 import { FlowEditorTabsPanel, type EditorTab } from '@/components/flow-editor/FlowEditorTabsPanel';
 import { FlowEditorMobileLayout, type MobileTab } from '@/components/flow-editor/FlowEditorMobileLayout';
 import type { CreateFlowData, CreateFlowKnowledgeBaseData } from '@/types/api';
@@ -186,7 +187,7 @@ export function FlowEditorPage() {
 
   if (isEditorEntryMode && (isLoadingFlows || flows.length > 0)) {
     return (
-      <div className="flex items-center justify-center h-screen bg-background">
+      <div className="flex items-center justify-center h-dvh bg-background">
         <div className="text-center">
           <Loader2 className="size-8 animate-spin mx-auto mb-4 text-muted-foreground" />
           <p className="text-muted-foreground">กำลังโหลด Flow Editor...</p>
@@ -197,7 +198,7 @@ export function FlowEditorPage() {
 
   if (!botId) {
     return (
-      <div className="flex items-center justify-center h-screen bg-background">
+      <div className="flex items-center justify-center h-dvh bg-background">
         <div className="text-center">
           <p className="text-destructive mb-4">ไม่ได้เลือก Bot กรุณาเลือก Bot ก่อน</p>
           <Button onClick={() => navigate('/bots')}>ไปหน้า Bot</Button>
@@ -224,31 +225,29 @@ export function FlowEditorPage() {
   );
 
   const stickyActionBar = (
-    <div className="sticky bottom-0 -mx-4 md:-mx-6 mt-6 border-t bg-background/95 px-4 md:px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 pb-safe z-10">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm text-muted-foreground hidden sm:block">
-          {hasChanges ? 'มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก' : 'การเปลี่ยนแปลงจะมีผลทันที'}
-        </span>
-        <div className="flex items-center gap-2 ml-auto">
-          {hasChanges && (
-            <Button variant="ghost" size="sm" onClick={handleDiscard}>
-              ยกเลิก
-            </Button>
-          )}
-          <Button onClick={handleSave} disabled={isSaving || !hasChanges} className="min-w-[100px]">
-            {isSaving ? (
-              <><Loader2 className="size-4 mr-2 animate-spin" strokeWidth={1.5} />บันทึก...</>
-            ) : (
-              <><Save className="size-4 mr-2" strokeWidth={1.5} />บันทึก</>
-            )}
+    <StickyActionBar>
+      <span className="text-sm text-muted-foreground hidden sm:block">
+        {hasChanges ? 'มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก' : 'การเปลี่ยนแปลงจะมีผลทันที'}
+      </span>
+      <div className="flex items-center gap-2 ml-auto">
+        {hasChanges && (
+          <Button variant="ghost" size="sm" onClick={handleDiscard}>
+            ยกเลิก
           </Button>
-        </div>
+        )}
+        <Button onClick={handleSave} disabled={isSaving || !hasChanges} className="min-w-[100px]">
+          {isSaving ? (
+            <><Loader2 className="size-4 mr-2 animate-spin" strokeWidth={1.5} />บันทึก...</>
+          ) : (
+            <><Save className="size-4 mr-2" strokeWidth={1.5} />บันทึก</>
+          )}
+        </Button>
       </div>
-    </div>
+    </StickyActionBar>
   );
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex h-dvh bg-background overflow-hidden">
       {/* Desktop Sidebar */}
       <div className="hidden md:block">
         <FlowsList

@@ -190,7 +190,12 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Safe area utilities for iOS notch/home indicator */
+}
+
+/* Safe area utilities for iOS notch/home indicator.
+   Must live in @layer utilities — in @layer base they lose to Tailwind's
+   own padding utilities (e.g. py-3), silently doing nothing. */
+@layer utilities {
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }

@@ -10,7 +10,7 @@ const features = [
 
 export function AuthLayout() {
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-2">
+    <div className="min-h-dvh lg:grid lg:grid-cols-2">
       {/* Left side - Branding (hidden on mobile) */}
       <div className="hidden lg:flex flex-col justify-between bg-foreground p-10 text-background">
         {/* Logo */}

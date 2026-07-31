@@ -46,7 +46,7 @@ export function BasicInfoSection({ formData, handleChange, isEditMode }: BasicIn
             placeholder={placeholder}
             value={formData.connection_name}
             onChange={(e) => handleChange('connection_name', e.target.value)}
-            className="max-w-md transition-colors duration-150"
+            className="h-11 max-w-md transition-colors duration-150 sm:h-10"
           />
         </SettingRow>
 

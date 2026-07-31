@@ -26,7 +26,7 @@ export function ReasoningEffortSelector({ value, onChange }: ReasoningEffortSele
             aria-checked={value === opt.value}
             onClick={() => onChange(opt.value)}
             className={cn(
-              'flex items-center justify-between rounded-md border px-3 py-2 text-sm text-left transition-colors',
+              'flex min-h-11 flex-col justify-center gap-0.5 rounded-md border px-3 py-2 text-sm text-left transition-colors sm:flex-row sm:items-center sm:justify-between sm:gap-2',
               value === opt.value
                 ? 'border-primary bg-primary/5 ring-1 ring-primary'
                 : 'border-input hover:bg-muted/50',

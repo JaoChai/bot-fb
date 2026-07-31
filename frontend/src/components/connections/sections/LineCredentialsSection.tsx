@@ -35,7 +35,7 @@ export function LineCredentialsSection({ formData, handleChange, isEditMode }: L
               placeholder={isEditMode ? '••••••••' : 'Channel Secret'}
               value={formData.line_channel_secret}
               onChange={(e) => handleChange('line_channel_secret', e.target.value)}
-              className="font-mono text-sm transition-colors duration-150"
+              className="h-11 font-mono text-sm transition-colors duration-150 sm:h-10"
             />
             <Button
               variant="ghost"
@@ -43,7 +43,7 @@ export function LineCredentialsSection({ formData, handleChange, isEditMode }: L
               type="button"
               onClick={() => setShowSecret(!showSecret)}
               aria-label="Toggle visibility"
-              className="size-10 shrink-0 transition-colors duration-150"
+              className="size-11 shrink-0 transition-colors duration-150 sm:size-10"
             >
               {showSecret ? (
                 <EyeOff className="size-4" strokeWidth={1.5} />
@@ -65,7 +65,7 @@ export function LineCredentialsSection({ formData, handleChange, isEditMode }: L
             placeholder={isEditMode ? '••••••••' : 'Channel Access Token'}
             value={formData.line_channel_access_token}
             onChange={(e) => handleChange('line_channel_access_token', e.target.value)}
-            className="font-mono text-sm max-w-md transition-colors duration-150"
+            className="h-11 font-mono text-sm max-w-md transition-colors duration-150 sm:h-10"
           />
         </SettingRow>
 

@@ -59,7 +59,7 @@ export function TelegramCredentialsSection({
               placeholder={isEditMode ? '••••••••' : '123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ'}
               value={formData.telegram_bot_token}
               onChange={(e) => handleChange('telegram_bot_token', e.target.value)}
-              className="font-mono text-sm transition-colors duration-150"
+              className="h-11 font-mono text-sm transition-colors duration-150 sm:h-10"
             />
             <Button
               variant="ghost"
@@ -85,7 +85,7 @@ export function TelegramCredentialsSection({
                 id="webhook-url"
                 readOnly
                 value={webhookUrl}
-                className="font-mono text-xs bg-muted transition-colors duration-150"
+                className="h-11 font-mono text-xs bg-muted transition-colors duration-150 sm:h-10"
               />
               <Button
                 variant="ghost"
@@ -93,7 +93,7 @@ export function TelegramCredentialsSection({
                 type="button"
                 onClick={handleCopyWebhook}
                 aria-label="Copy webhook URL"
-                className="size-10 shrink-0 transition-colors duration-150"
+                className="size-11 shrink-0 transition-colors duration-150 sm:size-10"
               >
                 {webhookCopied ? (
                   <Check className="size-4 text-emerald-600 dark:text-emerald-400" strokeWidth={1.5} />

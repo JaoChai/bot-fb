@@ -7,7 +7,7 @@ export function GuestRoute() {
   // Show loading while checking auth state
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-dvh items-center justify-center">
         <div className="text-muted-foreground">Loading...</div>
       </div>
     );

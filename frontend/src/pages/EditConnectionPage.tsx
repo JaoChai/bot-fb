@@ -323,7 +323,7 @@ export function EditConnectionPage() {
           onClick={handleSave}
           disabled={isSaving}
           size="lg"
-          className="min-w-[180px] transition-colors duration-150"
+          className="w-full sm:w-auto sm:min-w-[180px] transition-colors duration-150"
         >
           {isSaving ? (
             <>

@@ -16,7 +16,7 @@ function ModelSelector({ label, value, onChange, placeholder }: ModelSelectorPro
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || 'provider/model-name (เช่น openai/gpt-4o-mini)'}
-        className="font-mono text-sm"
+        className="h-11 font-mono text-sm sm:h-10"
       />
     </div>
   );
@@ -42,7 +42,7 @@ export function ModelConfiguration({
 }: ModelConfigurationProps) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <ModelSelector
           label="LLM Model หลัก"
           value={primaryModel}
