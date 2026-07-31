@@ -52,7 +52,7 @@ export function ChatInputArea({
     case 'closed':
     case 'bot_active':
       return (
-        <div className="flex-shrink-0 border-t bg-background">
+        <div className="flex-shrink-0 border-t bg-background pb-[env(safe-area-inset-bottom,0px)]">
           <div className="p-4 text-center text-sm text-muted-foreground">
             {inputState.type === 'bot_active' && (
               <Bot className="size-4 inline-block mr-1" />
@@ -64,7 +64,7 @@ export function ChatInputArea({
 
     case 'telegram':
       return (
-        <div className="flex-shrink-0 border-t bg-background">
+        <div className="flex-shrink-0 border-t bg-background pb-[env(safe-area-inset-bottom,0px)]">
           <TelegramMessageInput
             value={messageInput}
             onChange={setMessageInput}
@@ -78,7 +78,7 @@ export function ChatInputArea({
 
     case 'line_handover':
       return (
-        <div className="flex-shrink-0 border-t bg-background">
+        <div className="flex-shrink-0 border-t bg-background pb-[env(safe-area-inset-bottom,0px)]">
           <LINEMessageInput
             value={messageInput}
             onChange={setMessageInput}
@@ -94,7 +94,7 @@ export function ChatInputArea({
 
     case 'handover':
       return (
-        <div className="flex-shrink-0 border-t bg-background">
+        <div className="flex-shrink-0 border-t bg-background pb-[env(safe-area-inset-bottom,0px)]">
           <MessageInput
             onSend={onSendMessage}
             isLoading={isSending}
