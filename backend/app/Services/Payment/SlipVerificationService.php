@@ -178,7 +178,9 @@ class SlipVerificationService
 
             $expected = $this->buildExpected($data, $content, $bot, requireItems: true);
             if ($expected === null) {
-                return null;
+                // ยอดตรงแต่ดึงรายการไม่ได้ (prose ล้วน) — ไล่ดูข้อความยืนยันก่อนหน้าต่อ
+                // ห้ามหยุดทั้งลูป ไม่งั้นข้อความตะกร้าที่มีรายการครบจะไม่ถูกอ่าน (เคสจริงแชท #1072)
+                continue;
             }
 
             Log::info('Confirm fallback: items extracted from step-2 confirm message', [

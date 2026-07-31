@@ -7,8 +7,12 @@ use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Models\SlipVerification;
 use App\Models\User;
+use App\Services\OpenRouterService;
+use App\Services\Payment\LLMOrderItemExtractor;
+use App\Services\Payment\PaymentMessageDetector;
 use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
+use App\Services\Payment\TelegramAlertBotService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -333,5 +337,88 @@ class SlipVerificationServiceTest extends TestCase
 
         $this->assertTrue($result->passed);
         $this->assertSame('Nolimit BM', $result->orderSummary);
+    }
+
+    public function test_slip_passes_against_confirm_message_using_word_ratcha(): void
+    {
+        // เคสจริง slip_verifications id=124 (แชท #92, 31 ก.ค. 16:02): บอทเขียน "ราคา 1,100 บาท"
+        // แทน "รวม 1,100 บาท" → isConfirmMessage เดิมมองไม่เห็น กลายเป็น no_pending_order
+        $this->paymentHistory = [
+            ['sender' => 'user', 'content' => 'Nolimit Level Up+ Personal'],
+            ['sender' => 'user', 'content' => 'ผูกบัตร'],
+            ['sender' => 'bot', 'content' => 'เรียบร้อยครับพี่ เพิ่ม Nolimit Level Up+ Personal (ผูกบัตร) 1 ตัว ราคา 1,500 บาทครับ|||ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'],
+        ];
+
+        // prod จริง (bot 26) ตั้ง utility_model + openrouter key ไว้ เลยเข้า LLM fallback ได้
+        $this->bot->update(['utility_model' => 'openai/gpt-4o-mini']);
+        $this->bot->user->getOrCreateSettings()->update(['openrouter_api_key' => 'sk-test']);
+
+        // ข้อความยืนยันเป็น prose ล้วน (ไม่มี bullet/ตัวคั่นให้ regex ดึงรายการ) จึงต้องพึ่อ LLM
+        // fallback ซึ่งบน prod มี utility_model ตั้งไว้จริง → จำลอง chat() ให้คืนรายการตรงยอด 1,500
+        $this->mock(OpenRouterService::class, function ($mock) {
+            $mock->shouldReceive('chat')
+                ->once()
+                ->andReturn(['content' => '{"items":[{"name":"Nolimit Level Up+ Personal","qty":1,"total":"1500"}]}']);
+        });
+
+        // LLMOrderItemExtractor เป็น optional param ของ SlipVerificationService → Laravel ไม่ auto-inject
+        // ตอน resolve ผ่าน app() (verify() ใช้ app()) ต้อง bind service เองถึงจะเข้า LLM fallback ได้
+        $this->app->bind(SlipVerificationService::class, function ($app) {
+            return new SlipVerificationService(
+                $app->make(PaymentMessageDetector::class),
+                $app->make(TelegramAlertBotService::class),
+                new LLMOrderItemExtractor($app->make(OpenRouterService::class)),
+            );
+        });
+
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+
+        $result = $this->verify();
+
+        $this->assertTrue($result->passed);
+        $this->assertSame(1500.0, $result->amount);
+        $this->assertStringContainsString('Nolimit Level Up+ Personal', (string) $result->orderSummary);
+    }
+
+    public function test_confirm_fallback_keeps_looking_when_items_cannot_be_parsed(): void
+    {
+        // ข้อความยืนยันล่าสุดยอดตรงแต่เป็น prose ล้วน ดึงรายการไม่ได้ → ต้องไล่ดูข้อความก่อนหน้าต่อ
+        // ไม่ใช่ยอมแพ้ทั้งลูป (เคสจริงแชท #1072)
+        config(['delivery.llm_item_fallback_enabled' => false]);
+        $this->paymentHistory = [
+            ['sender' => 'bot', 'content' => "เพิ่มลงตะกร้าแล้วครับ\n1. Nolimit Personal = 1,500 บาท\nรวม: 1,500 บาท\nถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลย"],
+            ['sender' => 'bot', 'content' => 'สรุปอีกครั้งนะครับ รวม 1,500 บาท พิมพ์ “ยืนยัน” ได้เลยครับ'],
+        ];
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+
+        $result = $this->verify();
+
+        $this->assertTrue($result->passed);
+        $this->assertSame('Nolimit Personal', $result->orderSummary);
+    }
+
+    public function test_price_line_of_a_single_upsell_item_does_not_hijack_the_total(): void
+    {
+        // ข้อความมีทั้ง "Page ราคา 199 บาท" และยอดรวมจริง 1,500 → ต้องยึดยอดรวม ไม่ใช่ 199
+        $this->paymentHistory = [
+            ['sender' => 'bot', 'content' => "รับ Page เพิ่มไหมครับ ราคา 199 บาท\n1. Nolimit Personal = 1,500 บาท\nรวม 1,500 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน”"],
+        ];
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+
+        $result = $this->verify();
+
+        $this->assertTrue($result->passed);
+        $this->assertSame(1500.0, $result->expectedAmount);
+    }
+
+    public function test_confirm_message_with_price_wording_is_detected_even_without_item_extraction(): void
+    {
+        // pin เฉพาะด่านตรวจข้อความ (PaymentMessageDetector) โดยไม่พึ่ง LLM/EasySlip:
+        // ข้อความยืนยันรูป "ราคา N บาท" (ไม่ใช่ "รวม") ต้องถูกจดจำเป็นข้อความยืนยันขั้น 2 + ดึงยอดถูก
+        $detector = app(PaymentMessageDetector::class);
+        $prose = 'เรียบร้อยครับพี่ เพิ่ม Nolimit Level Up+ Personal (ผูกบัตร) 1 ตัว ราคา 1,500 บาทครับ|||ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ';
+
+        $this->assertTrue($detector->isConfirmMessage($prose));
+        $this->assertSame('1,500', $detector->parseConfirmData($prose)['total']);
     }
 }

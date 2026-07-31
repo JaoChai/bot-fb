@@ -28,6 +28,12 @@ class PaymentMessageDetector
      */
     private const TOTAL_KEYWORDS = 'รวมยอดโอน|รวมทั้งสิ้น|สรุปยอด(?:โอน)?|ยอดโอน|ยอดรวม|รวมเป็นเงิน|ยอดสุทธิ|ยอดที่ต้องโอน|ยอดชำระ|ยอดที่ต้องชำระ';
 
+    /** ยอดในข้อความยืนยันขั้น 2 — ใช้ร่วมกัน isConfirmMessage/parseConfirmData กัน drift */
+    private const CONFIRM_TOTAL_PATTERN = '/(?:รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?|ราคา)\s*:?\s*([\d,]+)\s*บาท/u';
+
+    /** เฉพาะรูป "รวม..." — ต้องลองก่อน "ราคา" เสมอ เพราะยอดรวมชนะราคาต่อชิ้น */
+    private const CONFIRM_SUM_PATTERN = '/รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?\s*:?\s*([\d,]+)\s*บาท/u';
+
     /** คำหน่วยจำนวนสินค้า ("N ตัว") — ใช้ร่วมกันทั้ง primary post-process และ fallback regex กัน drift */
     private const UNIT_WORDS = 'ตัว|เพจ|ใบ|ชิ้น|อัน';
 
@@ -203,7 +209,10 @@ class PaymentMessageDetector
         }
 
         // Must have total pattern: รวม...บาท (รองรับ รวม, รวมทั้งหมด, รวมยอด, รวมเป็นเงิน)
-        if (! preg_match('/รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?\s*:?\s*[\d,]+\s*บาท/u', $text)) {
+        // "ราคา ... บาท" ก็นับด้วย — LLM มัก drift เขียนข้อความยืนยันขั้น 2 แบบ
+        // "เพิ่ม X 1 ตัว ราคา 1,100 บาท ... พิมพ์ยืนยัน" (เคสจริงแชท #92 31 ก.ค.)
+        // คำว่า "ยืนยัน" ที่บังคับด้านล่างเป็นตัวกันข้อความเสนอราคาทั่วไปไม่ให้หลุดเข้ามา
+        if (! preg_match(self::CONFIRM_TOTAL_PATTERN, $text)) {
             return false;
         }
 
@@ -213,12 +222,16 @@ class PaymentMessageDetector
 
     /**
      * Parse confirm data from text.
+     * ลองรูป "รวม X บาท" ก่อนเสมอ — ข้อความที่มีทั้งราคาต่อชิ้น (upsell "Page ราคา 199 บาท")
+     * และยอดรวม ต้องได้ยอดรวม ไม่ใช่ราคาชิ้นแรกที่เจอ
      * Returns null if total cannot be parsed (required field).
      */
     public function parseConfirmData(string $text): ?array
     {
-        // Parse total (required) — รองรับ รวม, รวมทั้งหมด, รวมยอด, รวมเป็นเงิน
-        if (! preg_match('/รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?\s*:?\s*([\d,]+)\s*บาท/u', $text, $totalMatch)) {
+        $text = $this->normalize($text);
+
+        if (! preg_match(self::CONFIRM_SUM_PATTERN, $text, $totalMatch)
+            && ! preg_match(self::CONFIRM_TOTAL_PATTERN, $text, $totalMatch)) {
             return null;
         }
 
