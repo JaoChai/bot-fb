@@ -137,9 +137,27 @@ class OrderReconstructorTest extends TestCase
         $this->assertNull($result);
     }
 
+    public function test_accepts_short_alias_two_chars_like_kai(): void
+    {
+        // alias 'ไก่' (G3D) คือคำจริงที่ลูกค้าใช้เรียก — ต้องไม่ถูกด่าน mentioned บล็อก (50 × 20 = 1,000)
+        $this->fakeLLM('{"items":[{"slug":"g3d","qty":20}],"confidence":"high"}');
+
+        $result = app(OrderReconstructor::class)->reconstruct($this->bot, [
+            ['sender' => 'user', 'content' => 'เอาไก่ 20 ตัวครับ'],
+        ], 1000.0);
+
+        $this->assertNotNull($result);
+        $this->assertSame('G3D', $result->items[0]['name']);
+    }
+
     public function test_returns_null_and_never_calls_llm_without_a_utility_model(): void
     {
-        $this->bot->update(['utility_model' => null]);
+        // ถึงมีโมเดลแชทตั้งไว้ก็ต้องไม่ยิง LLM เมื่อ utility_model เป็น null
+        $this->bot->update([
+            'utility_model' => null,
+            'primary_chat_model' => 'openai/gpt-5.1',
+            'fallback_chat_model' => 'google/gemini-3.6-flash',
+        ]);
         $this->expectNoLLMCall();
 
         $result = app(OrderReconstructor::class)->reconstruct($this->bot, [

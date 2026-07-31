@@ -25,14 +25,14 @@ class OrderReconstructor
 
     private const SYSTEM_PROMPT = <<<'PROMPT'
 คุณคือผู้ช่วยร้านค้า อ่านบทสนทนาแล้วสรุปว่าลูกค้าสั่งซื้ออะไร ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่น:
-{"items":[{"slug":"...","qty":1}],"confidence":"high|low"}
+{"items":[{"slug":"...","qty":1}]}
 
 กติกา:
 - slug ต้องเลือกจากรายการสินค้าที่ให้ไว้เท่านั้น ห้ามคิดขึ้นเอง
 - qty คือจำนวนชิ้น
 - ผลรวม (ราคา × qty) ต้องเท่ากับยอดที่ลูกค้าโอนมาพอดี
 - ยึดสิ่งที่ลูกค้าพูดล่าสุดเป็นหลัก ถ้าลูกค้าเปลี่ยนใจระหว่างคุย ให้ใช้ตัวหลังสุด
-- ถ้าสรุปไม่ได้หรือรวมยอดไม่ลงตัว ตอบ {"items":[],"confidence":"low"}
+- ถ้าสรุปไม่ได้หรือรวมยอดไม่ลงตัว ตอบ {"items":[]}
 PROMPT;
 
     public function __construct(
@@ -44,7 +44,7 @@ PROMPT;
      */
     public function reconstruct(Bot $bot, array $history, float $slipAmount): ?OrderReconstruction
     {
-        $products = ProductStock::where('in_stock', true)->whereNotNull('price')->get();
+        $products = ProductStock::where('in_stock', true)->whereNotNull('price')->orderBy('display_order')->get();
         if ($products->isEmpty()) {
             return null;
         }
@@ -96,7 +96,11 @@ PROMPT;
      */
     private function ask(Bot $bot, Collection $products, string $transcript, float $slipAmount): array
     {
-        $model = $bot->resolvedUtilityModel();
+        // ใช้ utility_model ตรง ๆ ไม่ใช้ resolvedUtilityModel() เพราะเมธอดนั้นจะถอยไปใช้
+        // fallback_chat_model หรือ primary_chat_model เมื่อไม่ได้ตั้ง utility model ซึ่งเป็นโมเดล
+        // สนทนาราคาแพง (เช่น bot 28 ตั้ง gpt-5.1 ไว้) การสรุปออเดอร์เป็นงานเบื้องหลัง ต้องใช้โมเดล
+        // งานเบื้องหลังเท่านั้น ไม่ได้ตั้ง utility_model = ไม่ทำงาน ดีกว่ายิงโมเดลแพงโดยไม่ตั้งใจ
+        $model = $bot->utility_model;
         $apiKey = $bot->user?->settings?->getOpenRouterApiKey();
         if ($model === null || empty($apiKey)) {
             Log::debug('OrderReconstructor: no utility model or API key, skipping', ['bot_id' => $bot->id]);
@@ -209,13 +213,20 @@ PROMPT;
         return $items;
     }
 
-    /** ชื่อหรือ alias ของสินค้าถูกพูดถึงในบทสนทนาไหม (ตัดคำสั้นกว่า 3 ตัวอักษรทิ้ง กัน match กว้างเกิน) */
+    /**
+     * ชื่อหรือ alias ของสินค้าถูกพูดถึงในบทสนทนาไหม
+     *
+     * ยอมรับคำตั้งแต่ 2 ตัวอักษรขึ้นไป เพราะ alias จริงในระบบมีคำสั้น 2 ตัวที่ลูกค้าใช้เรียกสินค้าจริง
+     * เช่น 'ไก่' (G3D) และ 'BM' — ถ้าตั้งเกณฑ์ 3 จะบล็อกคำพวกนี้จนด่านนี้ปฏิเสธออเดอร์จริง
+     * ด่านนี้เป็นแค่ตัวกัน LLM แต่งสินค้าที่ไม่มีใครพูดถึง ตัวตัดสินจริงคือ checksum ยอดข้างบน
+     * จึงยอมให้กว้างขึ้นได้
+     */
     private function mentioned(ProductStock $product, string $transcript): bool
     {
         $haystack = mb_strtolower($transcript);
         foreach (array_merge([$product->name], $product->aliases ?? []) as $term) {
             $term = mb_strtolower(trim((string) $term));
-            if (mb_strlen($term) >= 3 && mb_strpos($haystack, $term) !== false) {
+            if (mb_strlen($term) >= 2 && mb_strpos($haystack, $term) !== false) {
                 return true;
             }
         }

@@ -1027,16 +1027,42 @@ return new class extends Migration
 
 - [ ] **Step 5: ต่อด่าน 3 เข้า `verify()`**
 
-ใน `SlipVerificationService.php` เพิ่ม dependency ใน constructor:
+ใน `SlipVerificationService.php` แก้ constructor — **สำคัญมาก อย่าใส่ `= null`**:
 
 ```php
+    // ห้ามประกาศ dependency พวกนี้เป็น optional (`?Type $x = null`) — Laravel เจอ parameter
+    // ที่มีค่า default จะใช้ default ทันทีโดยไม่ resolve ให้ ผลคือ $itemExtractor เป็น null
+    // บน production มาตั้งแต่ 11 ก.ค. (LLM fallback ไม่เคยทำงานเลย) เทสต์มองไม่เห็นเพราะ
+    // สร้าง service เองด้วย new พร้อมส่ง dependency เข้าไป
     public function __construct(
         private readonly PaymentMessageDetector $detector,
         private readonly TelegramAlertBotService $alertBot,
-        private readonly ?LLMOrderItemExtractor $itemExtractor = null,
-        private readonly ?OrderReconstructor $reconstructor = null,
+        private readonly LLMOrderItemExtractor $itemExtractor,
+        private readonly OrderReconstructor $reconstructor,
     ) {}
 ```
+
+จากนั้นแก้ที่ใช้ `$this->itemExtractor !== null` / `$this->reconstructor !== null` ให้ตัดเช็ค null ทิ้ง
+(ใน `buildExpected()` เหลือแค่เงื่อนไข `$items === [] && $bot !== null && config(...)`)
+
+และแก้จุดที่สร้าง service ด้วย `new` ในเทสต์ให้ครบทุกไฟล์ ไม่งั้นจะ fatal error:
+- `tests/Unit/SlipVerificationLogicTest.php:14`
+- `tests/Feature/SlipVerificationServiceTest.php:367`
+- `tests/Feature/Payment/LLMOrderItemFallbackTest.php:52`
+- `tests/Feature/Payment/ConfirmMessageFallbackTest.php:56`
+
+ทุกจุดส่ง dependency ครบสี่ตัว เช่น:
+
+```php
+        return new SlipVerificationService(
+            new PaymentMessageDetector,
+            new TelegramAlertBotService,
+            new LLMOrderItemExtractor($openRouter),
+            new OrderReconstructor($openRouter),
+        );
+```
+
+(ไฟล์ไหนไม่มี `$openRouter` อยู่แล้วให้ใช้ `app(OpenRouterService::class)`)
 
 แทนที่บล็อกเช็ค 3 (บรรทัด 289-299) ด้วย:
 
@@ -1052,7 +1078,7 @@ return new class extends Migration
         }
 
         $reconstruction = null;
-        if ($expected === null && $this->reconstructor !== null) {
+        if ($expected === null) {
             $reconstruction = $this->reconstructor->reconstruct($bot, $conversationHistory, $slipAmount);
             if ($reconstruction !== null) {
                 $orderSource = 'llm';
@@ -1107,6 +1133,27 @@ return new class extends Migration
 
 ใน `app/Http/Resources/SlipResource.php:17` เพิ่ม `'needs_choice' => 'รอเลือกรายการ',`
 ใน `app/Http/Controllers/Api/SlipController.php:17` เพิ่ม `'needs_choice'` เข้า `ABNORMAL`
+
+- [ ] **Step 7.5: เขียนเทสต์กันบั๊ก dependency หายเงียบ (ห้ามข้าม)**
+
+บั๊กที่เพิ่งเจอ (LLM fallback ไม่ทำงานบน prod 3 สัปดาห์) เทสต์เดิมมองไม่เห็นเพราะทุกเทสต์สร้าง service เอง
+เทสต์นี้ตรวจ **ตัว container จริง** เพิ่มลง `tests/Feature/SlipVerificationServiceTest.php`:
+
+```php
+    public function test_container_injects_every_dependency_the_service_needs(): void
+    {
+        // กันบั๊กเงียบ: ถ้ามีใครเปลี่ยน dependency กลับไปเป็น optional (?Type $x = null)
+        // Laravel จะใช้ค่า default ทันที → ด่าน LLM ตายเงียบบน production โดยเทสต์อื่นยังเขียวหมด
+        $service = app(SlipVerificationService::class);
+        $reflection = new \ReflectionClass($service);
+
+        foreach (['itemExtractor', 'reconstructor'] as $property) {
+            $prop = $reflection->getProperty($property);
+            $prop->setAccessible(true);
+            $this->assertNotNull($prop->getValue($service), "container ไม่ได้ inject {$property}");
+        }
+    }
+```
 
 - [ ] **Step 8: รันเทสต์ให้ผ่าน**
 
