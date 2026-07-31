@@ -6,6 +6,7 @@ use App\Models\Bot;
 use App\Models\User;
 use App\Services\OpenRouterService;
 use App\Services\Payment\LLMOrderItemExtractor;
+use App\Services\Payment\OrderReconstructor;
 use App\Services\Payment\PaymentMessageDetector;
 use App\Services\Payment\SlipVerificationService;
 use App\Services\Payment\TelegramAlertBotService;
@@ -53,6 +54,7 @@ class LLMOrderItemFallbackTest extends TestCase
             new PaymentMessageDetector,
             new TelegramAlertBotService,
             new LLMOrderItemExtractor($openRouter),
+            new OrderReconstructor($openRouter),
         );
     }
 

@@ -9,6 +9,7 @@ use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\OpenRouterService;
 use App\Services\Payment\LLMOrderItemExtractor;
+use App\Services\Payment\OrderReconstructor;
 use App\Services\Payment\PaymentMessageDetector;
 use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
@@ -16,6 +17,7 @@ use App\Services\Payment\TelegramAlertBotService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Mockery;
 use Tests\TestCase;
 
 class SlipVerificationServiceTest extends TestCase
@@ -72,6 +74,19 @@ class SlipVerificationServiceTest extends TestCase
         return app(SlipVerificationService::class)->verify(
             $this->bot, null, null, 'https://example.com/slip.jpg', $this->paymentHistory, $isSlipCheck
         );
+    }
+
+    private function fakeReconstructorLLM(string $json): void
+    {
+        $mock = Mockery::mock(\App\Services\OpenRouterService::class);
+        $mock->shouldReceive('chat')->andReturn(['content' => $json]);
+        $this->app->instance(\App\Services\OpenRouterService::class, $mock);
+    }
+
+    private function seedProducts(): void
+    {
+        \App\Models\ProductStock::create(['name' => 'Nolimit Level Up+ Personal', 'slug' => 'personal', 'aliases' => ['Personal'], 'in_stock' => true, 'display_order' => 1, 'delivery_method' => 'stock', 'price' => 1500]);
+        \App\Models\ProductStock::create(['name' => 'Nolimit Level Up+ BM', 'slug' => 'bm', 'aliases' => ['BM'], 'in_stock' => true, 'display_order' => 2, 'delivery_method' => 'stock', 'price' => 1500]);
     }
 
     public function test_valid_slip_passes_all_checks(): void
@@ -368,6 +383,7 @@ class SlipVerificationServiceTest extends TestCase
                 $app->make(PaymentMessageDetector::class),
                 $app->make(TelegramAlertBotService::class),
                 new LLMOrderItemExtractor($app->make(OpenRouterService::class)),
+                new OrderReconstructor($app->make(OpenRouterService::class)),
             );
         });
 
@@ -420,5 +436,93 @@ class SlipVerificationServiceTest extends TestCase
 
         $this->assertTrue($detector->isConfirmMessage($prose));
         $this->assertSame('1,500', $detector->parseConfirmData($prose)['total']);
+    }
+
+    public function test_reconstructs_order_from_chat_when_both_regex_stages_fail(): void
+    {
+        // เคสจริงแชท #169: บอทตอบ error ไม่เคยพิมพ์ยอดเลย ลูกค้าโอนมาเฉยๆ
+        $this->seedProducts();
+        $this->bot->update(['utility_model' => 'openai/gpt-4o-mini']);
+        $this->bot->user->getOrCreateSettings()->update(['openrouter_api_key' => 'sk-test']);
+        $this->fakeReconstructorLLM('{"items":[{"slug":"personal","qty":1}],"confidence":"high"}');
+        $this->paymentHistory = [
+            ['sender' => 'user', 'content' => 'ซื้อ Nolimit Level Up+ Personal 1 ครับ'],
+            ['sender' => 'bot', 'content' => 'I apologize, but I am having trouble processing your request.'],
+        ];
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+
+        $result = $this->verify();
+
+        $this->assertTrue($result->passed);
+        $this->assertSame('Nolimit Level Up+ Personal', $result->orderSummary);
+        $this->assertSame('llm', $result->orderSource);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'passed', 'order_source' => 'llm']);
+    }
+
+    public function test_ambiguous_reconstruction_does_not_deliver_and_asks_the_owner(): void
+    {
+        // ในแชทพูดถึงทั้ง BM และ Personal ราคาเท่ากัน → ห้ามส่งของ ต้องให้เจ้าของเลือก
+        $this->seedProducts();
+        $this->bot->update(['utility_model' => 'openai/gpt-4o-mini']);
+        $this->bot->user->getOrCreateSettings()->update(['openrouter_api_key' => 'sk-test']);
+        $this->fakeReconstructorLLM('{"items":[{"slug":"personal","qty":1}],"confidence":"high"}');
+        $this->paymentHistory = [
+            ['sender' => 'bot', 'content' => 'รอบนี้จัด Nolimit Level Up+ BM เซ็ตเดิมเลยไหมครับ?'],
+            ['sender' => 'user', 'content' => 'เอา Nolimit Level Up+ Personal ครับ'],
+        ];
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+
+        $result = $this->verify();
+
+        $this->assertFalse($result->passed);
+        $this->assertSame('needs_choice', $result->failReason);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'needs_choice']);
+        $slip = \App\Models\SlipVerification::latest('id')->first();
+        $this->assertCount(2, $slip->reconstructed['alternatives']);
+    }
+
+    public function test_regex_stages_win_and_never_call_the_llm(): void
+    {
+        // ด่าน 1 เจอออเดอร์อยู่แล้ว → ห้ามเสียเงินเรียก LLM (paymentHistory ตั้งไว้ใน setUp)
+        $this->seedProducts();
+        $this->bot->update(['utility_model' => 'openai/gpt-4o-mini']);
+        $mock = Mockery::mock(\App\Services\OpenRouterService::class);
+        $mock->shouldNotReceive('chat');
+        $this->app->instance(\App\Services\OpenRouterService::class, $mock);
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+
+        $result = $this->verify();
+
+        $this->assertTrue($result->passed);
+        $this->assertSame('summary', $result->orderSource);
+    }
+
+    public function test_reconstruction_failure_falls_back_to_no_pending_order(): void
+    {
+        $this->seedProducts();
+        $this->bot->update(['utility_model' => 'openai/gpt-4o-mini']);
+        $this->bot->user->getOrCreateSettings()->update(['openrouter_api_key' => 'sk-test']);
+        $this->fakeReconstructorLLM('{"items":[],"confidence":"low"}');
+        $this->paymentHistory = [['sender' => 'user', 'content' => 'สวัสดีครับ']];
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+
+        $result = $this->verify();
+
+        $this->assertFalse($result->passed);
+        $this->assertSame('no_pending_order', $result->failReason);
+    }
+
+    public function test_container_injects_every_dependency_the_service_needs(): void
+    {
+        // กันบั๊กเงียบ: ถ้ามีใครเปลี่ยน dependency กลับไปเป็น optional (?Type $x = null)
+        // Laravel จะใช้ค่า default ทันที → ด่าน LLM ตายเงียบบน production โดยเทสต์อื่นยังเขียวหมด
+        $service = app(SlipVerificationService::class);
+        $reflection = new \ReflectionClass($service);
+
+        foreach (['itemExtractor', 'reconstructor'] as $property) {
+            $prop = $reflection->getProperty($property);
+            $prop->setAccessible(true);
+            $this->assertNotNull($prop->getValue($service), "container ไม่ได้ inject {$property}");
+        }
     }
 }

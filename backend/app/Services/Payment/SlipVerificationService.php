@@ -25,16 +25,22 @@ class SlipVerificationService
         'amount_mismatch' => 'ยอดไม่ตรงกับออเดอร์',
         'wrong_account' => 'โอนเข้าบัญชีอื่น (ไม่ใช่บัญชีร้าน)',
         'no_pending_order' => 'ไม่พบออเดอร์ค้างชำระในบทสนทนา',
+        'needs_choice' => 'ลูกค้าโอนข้ามขั้นตอน — ระบบสรุปได้หลายแบบ กรุณาเลือกรายการที่ถูกต้อง',
         'unreadable' => 'รูปสลิปอ่านไม่ได้/ไม่ชัด — ระบบตรวจอัตโนมัติไม่ได้ กรุณาตรวจมือ',
         'api_error' => 'ระบบตรวจสลิป (EasySlip) ใช้งานไม่ได้ชั่วคราว',
         'config_error' => 'ตั้งค่าไม่ครบ — EasySlip token หายไป กรุณาใส่ที่หน้า Settings (ระบบจะไม่ตรวจสลิปจนกว่าจะแก้)',
         'image_download_failed' => 'โหลดรูปจากลูกค้าไม่สำเร็จ — ระบบตรวจสลิปไม่ได้ กรุณาเปิดแชทดูรูป/ยอดเอง',
     ];
 
+    // ห้ามประกาศ dependency พวกนี้เป็น optional (`?Type $x = null`) — Laravel เจอ parameter
+    // ที่มีค่า default จะใช้ default ทันทีโดยไม่ resolve ให้ ผลคือ $itemExtractor เป็น null
+    // บน production มาตั้งแต่ 11 ก.ค. (LLM fallback ไม่เคยทำงานเลย) เทสต์มองไม่เห็นเพราะ
+    // สร้าง service เองด้วย new พร้อมส่ง dependency เข้าไป
     public function __construct(
         private readonly PaymentMessageDetector $detector,
         private readonly TelegramAlertBotService $alertBot,
-        private readonly ?LLMOrderItemExtractor $itemExtractor = null,
+        private readonly LLMOrderItemExtractor $itemExtractor,
+        private readonly OrderReconstructor $reconstructor,
     ) {}
 
     /**
@@ -113,7 +119,7 @@ class SlipVerificationService
 
         // ชั้น 2 fallback: regex ได้ total แต่ดึง items ไม่ได้ (prose ล้วน / หลายสินค้าบรรทัดเดียว)
         // เรียกเฉพาะตอน items ว่างเท่านั้น (cost guard) — ไม่เรียกทุกครั้ง
-        if ($items === [] && $bot !== null && $this->itemExtractor !== null
+        if ($items === [] && $bot !== null
             && config('delivery.llm_item_fallback_enabled', true)) {
             $items = $this->itemExtractor->extract($content, $bot);
         }
@@ -289,14 +295,43 @@ class SlipVerificationService
         }
 
         // เช็ค 3: ต้องมีออเดอร์ค้างชำระใน history
-        // fallback: ลูกค้าขาประจำที่รู้เลขบัญชีอยู่แล้วมักโอนทันทีหลังข้อความตะกร้า ไม่รอข้อความ
-        // สรุปยอด+เลขบัญชี — อ่านยอดจากข้อความ "ตะกร้า/ยืนยัน" ที่บอทพิมพ์เองแทน (ยอดต้องตรง)
-        $expected = $this->findExpectedPayment($conversationHistory, $configured, $bot)
-            ?? $this->findExpectedFromConfirmMessage($conversationHistory, $bot, $slipAmount);
+        // ด่าน 1 ข้อความสรุปยอด+เลขบัญชี → ด่าน 2 ข้อความยืนยันขั้น 2 (ยอดต้องตรง)
+        // → ด่าน 3 ให้ระบบสรุปออเดอร์เองจากบทสนทนา (เรียก LLM เฉพาะตอนสองด่านแรกพลาด)
+        $orderSource = 'summary';
+        $expected = $this->findExpectedPayment($conversationHistory, $configured, $bot);
+        if ($expected === null) {
+            $orderSource = 'confirm';
+            $expected = $this->findExpectedFromConfirmMessage($conversationHistory, $bot, $slipAmount);
+        }
+
+        $reconstruction = null;
+        if ($expected === null) {
+            $reconstruction = $this->reconstructor->reconstruct($bot, $conversationHistory, $slipAmount);
+            if ($reconstruction !== null) {
+                $orderSource = 'llm';
+                $expected = [
+                    'total' => $reconstruction->total,
+                    'summary' => $reconstruction->summary,
+                    'items' => $reconstruction->items,
+                ];
+            }
+        }
+
         if ($expected === null) {
             return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
                 isSlip: true, passed: false, failReason: 'no_pending_order',
                 amount: $slipAmount, transRef: $transRef,
+            ), $receiverAccount);
+        }
+
+        // ระบบสรุปได้แต่ประกอบยอดได้หลายแบบ (เช่น 1,100 ตรงทั้ง Personal และ BM)
+        // → ห้ามส่งของเอง ต้องให้เจ้าของกดเลือกจากการ์ด Telegram
+        if ($reconstruction?->ambiguous) {
+            return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
+                isSlip: true, passed: false, failReason: 'needs_choice',
+                amount: $slipAmount, transRef: $transRef,
+                expectedAmount: $reconstruction->total, orderSummary: $reconstruction->summary,
+                orderSource: 'llm', reconstruction: $reconstruction,
             ), $receiverAccount);
         }
 
@@ -307,6 +342,7 @@ class SlipVerificationService
                 isSlip: true, passed: false, failReason: 'amount_mismatch',
                 amount: $slipAmount, transRef: $transRef,
                 expectedAmount: $expected['total'], orderSummary: $expected['summary'],
+                orderSource: $orderSource, reconstruction: $reconstruction,
             ), $receiverAccount);
         }
 
@@ -315,6 +351,7 @@ class SlipVerificationService
             amount: $slipAmount, transRef: $transRef,
             expectedAmount: $expected['total'], orderSummary: $expected['summary'],
             orderItems: $expected['items'],
+            orderSource: $orderSource, reconstruction: $reconstruction,
         ), $receiverAccount);
     }
 
@@ -467,6 +504,11 @@ class SlipVerificationService
                 'receiver_account' => $receiverAccount,
                 'status' => $result->status(),
                 'raw_response' => $rawResponse,
+                'order_source' => $result->orderSource,
+                'reconstructed' => $result->reconstruction === null ? null : [
+                    'items' => $result->reconstruction->items,
+                    'alternatives' => $result->reconstruction->alternatives,
+                ],
             ]);
             $result->slipVerificationId = $created->id;
         } catch (\Throwable $e) {
