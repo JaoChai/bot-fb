@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AccountDelivery;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
+use App\Models\SlipVerification;
 use App\Services\Delivery\AccountDeliveryService;
 use App\Services\Payment\ManualPaymentConfirmService;
 use App\Services\Payment\TelegramAlertBotService;
@@ -76,6 +77,11 @@ class TelegramAlertCallbackController extends Controller
         // action งานส่งของ: ส่วนที่สองของ callback_data เป็น delivery id ไม่ใช่ conversation id
         if (in_array($act, ['dv', 'dx', 'dz'], true)) {
             return $this->handleDeliveryAction($act, (int) $convId, $plugin, $cb, $token);
+        }
+
+        // action เลือกรายการ: ส่วนที่สองเป็น slip_verifications id ไม่ใช่ conversation id
+        if ($act === 'po') {
+            return $this->handlePickOption((int) $convId, (int) $amt, $plugin, $cb, $token, $chatId);
         }
 
         $conversation = Conversation::find((int) $convId);
@@ -223,6 +229,55 @@ class TelegramAlertCallbackController extends Controller
                     $this->deliveryService->cardKeyboard($delivery));
                 $this->alertBot->answerCallbackQuery($token, $cbId, 'เกิดข้อผิดพลาด ลองใหม่');
             }
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * เจ้าของเลือกรายการที่ถูกต้องจากการ์ด "โอนข้ามขั้นตอน" → ยืนยันรับเงินด้วยรายการนั้น
+     */
+    private function handlePickOption(
+        int $slipId,
+        int $index,
+        FlowPlugin $plugin,
+        array $cb,
+        string $token,
+        string $chatId,
+    ): JsonResponse {
+        $messageId = (int) ($cb['message']['message_id'] ?? 0);
+        $cbId = $cb['id'] ?? '';
+        $fromName = $cb['from']['first_name'] ?? 'admin';
+
+        $slip = SlipVerification::find($slipId);
+        $conversation = $slip?->conversation_id ? Conversation::find($slip->conversation_id) : null;
+        if ($slip === null || $conversation === null || $conversation->bot_id !== $plugin->flow?->bot_id) {
+            $this->alertBot->answerCallbackQuery($token, $cbId, 'ไม่พบรายการนี้');
+
+            return response()->json(['ok' => true]);
+        }
+
+        $items = $slip->reconstructed['alternatives'][$index] ?? null;
+        if ($items === null) {
+            $this->alertBot->answerCallbackQuery($token, $cbId, 'ตัวเลือกไม่ถูกต้อง');
+
+            return response()->json(['ok' => true]);
+        }
+
+        $bot = $conversation->bot;
+
+        try {
+            $this->confirmService->confirm($bot, $conversation, (float) $slip->amount, $bot->user_id, $items);
+            $summary = implode(', ', array_column($items, 'name'));
+            $this->alertBot->editMessageText($token, $chatId, $messageId,
+                '✅ <b>ยืนยันแล้ว: '.TelegramAlertBotService::esc($summary).'</b> โดย '.TelegramAlertBotService::esc($fromName));
+            $this->alertBot->answerCallbackQuery($token, $cbId, 'ยืนยันแล้ว');
+        } catch (RecentManualConfirmException) {
+            $this->alertBot->editMessageText($token, $chatId, $messageId, '✅ <b>ยืนยันไปแล้ว</b> (โดยคนอื่นหรือทางเว็บ)');
+            $this->alertBot->answerCallbackQuery($token, $cbId, 'ยืนยันไปแล้ว');
+        } catch (\Throwable $e) {
+            Log::error('Telegram alert pick option failed', ['slip_id' => $slipId, 'error' => $e->getMessage()]);
+            $this->alertBot->answerCallbackQuery($token, $cbId, 'เกิดข้อผิดพลาด ลองใหม่หรือยืนยันในเว็บ');
         }
 
         return response()->json(['ok' => true]);

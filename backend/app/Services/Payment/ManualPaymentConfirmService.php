@@ -41,11 +41,31 @@ class ManualPaymentConfirmService
      * @throws NoPendingPaymentException When no amount can be resolved.
      * @throws RecentManualConfirmException When a manual confirm for this conversation happened within the idempotency window.
      */
-    public function confirm(Bot $bot, Conversation $conversation, ?float $amountOverride, int $confirmedBy): array
-    {
+    public function confirm(
+        Bot $bot,
+        Conversation $conversation,
+        ?float $amountOverride,
+        int $confirmedBy,
+        ?array $itemsOverride = null,
+    ): array {
         $history = $this->recentTextHistory($conversation);
         $receiverAccount = $bot->settings?->slip_receiver_account ?: null;
-        $expected = $this->slipVerification->findExpectedPayment($history, $receiverAccount, $bot);
+
+        // เจ้าของกดเลือกรายการจากการ์ดแล้ว → ใช้ตามนั้น ไม่ต้องเดาจากข้อความอีก
+        if ($itemsOverride !== null && $itemsOverride !== []) {
+            $expected = [
+                'total' => $amountOverride,
+                'summary' => implode(', ', array_map(
+                    fn (array $item) => ((int) ($item['qty'] ?? 1)) > 1
+                        ? "{$item['name']} x{$item['qty']}"
+                        : $item['name'],
+                    $itemsOverride,
+                )),
+                'items' => $itemsOverride,
+            ];
+        } else {
+            $expected = $this->slipVerification->findExpectedPayment($history, $receiverAccount, $bot);
+        }
 
         $amount = $amountOverride ?? ($expected['total'] ?? null);
         if ($amount === null) {

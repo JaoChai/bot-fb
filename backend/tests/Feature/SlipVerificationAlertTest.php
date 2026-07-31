@@ -157,6 +157,63 @@ class SlipVerificationAlertTest extends TestCase
         $this->assertSame('pc|'.$conversation->id.'|600', $captured[1][0]['callback_data']);
     }
 
+    public function test_successful_reconstruction_sends_a_silent_alert_without_buttons(): void
+    {
+        [$bot, $conversation] = $this->seedBotWithTelegramPlugin();
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $result = new SlipVerificationResult(
+            isSlip: true, passed: true, amount: 1100.0, transRef: 'TR1',
+            expectedAmount: 1100.0, orderSummary: 'Nolimit Level Up+ Personal',
+            orderSource: 'llm',
+        );
+
+        app(SlipVerificationService::class)->notifyAdmin($bot, $conversation, $result);
+
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+            return str_contains($body['text'], 'ระบบสรุปออเดอร์เองแล้ว')
+                && str_contains($body['text'], 'Nolimit Level Up+ Personal')
+                && ! isset($body['reply_markup']);
+        });
+    }
+
+    public function test_ambiguous_result_offers_one_button_per_option(): void
+    {
+        [$bot, $conversation] = $this->seedBotWithTelegramPlugin();
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $slip = \App\Models\SlipVerification::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conversation->id,
+            'amount' => 1100,
+            'status' => 'needs_choice',
+            'order_source' => 'llm',
+            'reconstructed' => [
+                'items' => [['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1]],
+                'alternatives' => [
+                    [['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1]],
+                    [['name' => 'Nolimit Level Up+ BM', 'total' => '1100', 'qty' => 1]],
+                ],
+            ],
+        ]);
+
+        $result = new SlipVerificationResult(
+            isSlip: true, passed: false, failReason: 'needs_choice',
+            amount: 1100.0, transRef: 'TR2', orderSource: 'llm',
+        );
+        $result->slipVerificationId = $slip->id;
+
+        app(SlipVerificationService::class)->notifyAdmin($bot, $conversation, $result);
+
+        Http::assertSent(function ($request) use ($slip) {
+            $keyboard = json_decode($request->data()['reply_markup'] ?? '[]', true);
+            return count($keyboard['inline_keyboard'] ?? []) === 2
+                && $keyboard['inline_keyboard'][0][0]['callback_data'] === "po|{$slip->id}|0"
+                && str_contains($keyboard['inline_keyboard'][1][0]['text'], 'BM');
+        });
+    }
+
     public function test_notify_admin_uses_html_and_escapes_dynamic_values(): void
     {
         $user = User::factory()->create();
@@ -211,5 +268,30 @@ class SlipVerificationAlertTest extends TestCase
         $conversation = Conversation::factory()->create(['bot_id' => $bot->id]);
 
         return [$bot->fresh(), $conversation, $plugin];
+    }
+
+    /**
+     * เตรียม bot + flow + telegram plugin (enabled) + conversation สำหรับเทสต์
+     * การ์ดสรุปออเดอร์เอง/กำกวม (token tg-token, chat_id -100123).
+     *
+     * @return array{0: Bot, 1: Conversation}
+     */
+    private function seedBotWithTelegramPlugin(): array
+    {
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+        $flow = Flow::factory()->create(['bot_id' => $bot->id]);
+        $bot->update(['default_flow_id' => $flow->id]);
+        FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'แจ้งออเดอร์',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'tg-token', 'chat_id' => '-100123'],
+        ]);
+        $conversation = Conversation::factory()->create(['bot_id' => $bot->id]);
+
+        return [$bot->fresh(), $conversation];
     }
 }

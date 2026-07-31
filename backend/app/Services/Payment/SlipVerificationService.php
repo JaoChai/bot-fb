@@ -417,9 +417,14 @@ class SlipVerificationService
 
         $reason = self::FAIL_REASON_LABELS[$result->failReason] ?? ($result->failReason ?? 'unknown');
         $botName = TelegramAlertBotService::esc($bot->name);
-        $header = in_array($result->failReason, self::FRAUD_REASONS, true)
-            ? "🚨 <b>สลิปมีปัญหา — อย่าเพิ่งส่งของ</b> ({$botName})"
-            : "⚠️ <b>ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ</b> ({$botName})";
+
+        $header = match (true) {
+            $result->passed => "🤖 <b>ลูกค้าโอนข้ามขั้นตอน — ระบบสรุปออเดอร์เองแล้ว</b> ({$botName})",
+            $result->failReason === 'needs_choice' => "🤔 <b>ลูกค้าโอนข้ามขั้นตอน — เลือกรายการที่ถูกต้อง</b> ({$botName})",
+            in_array($result->failReason, self::FRAUD_REASONS, true) => "🚨 <b>สลิปมีปัญหา — อย่าเพิ่งส่งของ</b> ({$botName})",
+            default => "⚠️ <b>ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ</b> ({$botName})",
+        };
+
         $lines = [$header];
         if ($conversation !== null) {
             $displayName = $conversation->customerProfile?->display_name;
@@ -427,16 +432,23 @@ class SlipVerificationService
                 ? '👤 '.TelegramAlertBotService::esc($displayName)." · แชท #{$conversation->id}"
                 : "👤 แชท #{$conversation->id}";
         }
-        $lines[] = 'เหตุผล: <b>'.TelegramAlertBotService::esc($reason).'</b>';
+        if (! $result->passed) {
+            $lines[] = 'เหตุผล: <b>'.TelegramAlertBotService::esc($reason).'</b>';
+        }
         if ($result->amount !== null) {
             $lines[] = 'ยอดในสลิป: <code>'.self::formatBaht($result->amount).'</code> บาท';
         }
-        if ($result->expectedAmount !== null) {
+        if ($result->expectedAmount !== null && ! $result->passed) {
             $lines[] = 'ยอดออเดอร์: <code>'.self::formatBaht($result->expectedAmount).'</code> บาท';
         }
-        $lines[] = 'กรุณาเช็คในแชทก่อนยืนยัน';
+        if ($result->orderSummary !== null && $result->orderSummary !== '-') {
+            $lines[] = 'ออเดอร์: <b>'.TelegramAlertBotService::esc($result->orderSummary).'</b>';
+        }
+        $lines[] = $result->passed
+            ? 'ส่งของให้แล้ว ไม่ต้องทำอะไรครับ — ถ้าไม่ถูกต้องรบกวนเปิดแชทแก้'
+            : 'กรุณาเช็คในแชทก่อนยืนยัน';
 
-        $keyboard = $this->buildConfirmKeyboard($conversation, $result);
+        $keyboard = $result->passed ? null : $this->buildConfirmKeyboard($conversation, $result);
         $this->alertBot->sendMessage($token, $chatId, implode("\n", $lines), $keyboard);
     }
 
@@ -458,6 +470,25 @@ class SlipVerificationService
     {
         if ($conversation === null) {
             return null;
+        }
+
+        // กำกวม: หนึ่งปุ่มต่อหนึ่งตัวเลือกที่ประกอบยอดได้ — เจ้าของกดปุ่มเดียวจบ
+        if ($result->failReason === 'needs_choice' && $result->slipVerificationId !== null) {
+            $slip = SlipVerification::find($result->slipVerificationId);
+            $alternatives = $slip?->reconstructed['alternatives'] ?? [];
+            $rows = [];
+            foreach ($alternatives as $index => $set) {
+                $label = implode(', ', array_map(
+                    fn (array $item) => ((int) ($item['qty'] ?? 1)) > 1
+                        ? "{$item['name']} x{$item['qty']}"
+                        : $item['name'],
+                    $set,
+                ));
+                $rows[] = [['text' => "✅ {$label}", 'callback_data' => "po|{$result->slipVerificationId}|{$index}"]];
+            }
+            if ($rows !== []) {
+                return $rows;
+            }
         }
 
         $action = in_array($result->failReason, self::FRAUD_REASONS, true) ? 'pa' : 'pc';

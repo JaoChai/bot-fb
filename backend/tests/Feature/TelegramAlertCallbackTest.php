@@ -167,4 +167,59 @@ class TelegramAlertCallbackTest extends TestCase
             'data' => 'pc|'.$conv->id.'|590',
         ])->assertOk();
     }
+
+    public function test_picking_an_option_confirms_the_payment_with_the_chosen_items(): void
+    {
+        [$bot, $conv] = $this->seedPlugin();
+        \Illuminate\Support\Facades\Http::fake(['api.telegram.org/*' => \Illuminate\Support\Facades\Http::response(['ok' => true])]);
+
+        $slip = \App\Models\SlipVerification::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conv->id,
+            'amount' => 1100,
+            'status' => 'needs_choice',
+            'order_source' => 'llm',
+            'reconstructed' => [
+                'items' => [['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1]],
+                'alternatives' => [
+                    [['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1]],
+                    [['name' => 'Nolimit Level Up+ BM', 'total' => '1100', 'qty' => 1]],
+                ],
+            ],
+        ]);
+
+        $this->postCallback('TOK', [
+            'id' => 'cb1',
+            'from' => ['id' => 111, 'first_name' => 'owner'],
+            'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
+            'data' => "po|{$slip->id}|1",
+        ])->assertOk();
+
+        $this->assertDatabaseHas('slip_verifications', [
+            'conversation_id' => $conv->id,
+            'status' => 'manual_confirmed',
+        ]);
+    }
+
+    public function test_picking_an_option_that_does_not_exist_is_ignored(): void
+    {
+        [$bot, $conv] = $this->seedPlugin();
+        $this->mock(ManualPaymentConfirmService::class, fn ($m) => $m->shouldNotReceive('confirm'));
+        \Illuminate\Support\Facades\Http::fake(['api.telegram.org/*' => \Illuminate\Support\Facades\Http::response(['ok' => true])]);
+
+        $slip = \App\Models\SlipVerification::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conv->id,
+            'amount' => 1100,
+            'status' => 'needs_choice',
+            'reconstructed' => ['items' => [], 'alternatives' => []],
+        ]);
+
+        $this->postCallback('TOK', [
+            'id' => 'cb2',
+            'from' => ['id' => 111, 'first_name' => 'owner'],
+            'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
+            'data' => "po|{$slip->id}|3",
+        ])->assertOk();
+    }
 }

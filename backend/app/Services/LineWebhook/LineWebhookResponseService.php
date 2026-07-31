@@ -539,6 +539,10 @@ class LineWebhookResponseService
                     [number_format($result->amount ?? 0), $result->orderSummary ?? '-'],
                     $template,
                 );
+                // ระบบสรุปออเดอร์เองจากบทสนทนา → แจ้งเจ้าของแบบเงียบ (ไม่มีปุ่ม) ให้รู้ว่าเกิดอะไรขึ้น
+                if ($result->orderSource === 'llm') {
+                    $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
+                }
             } elseif ($result->failReason === 'pending') {
                 // ธนาคารยังประมวลผลไม่เสร็จ — ตั้ง auto-retry ตรวจ R2 URL เดิมซ้ำ (ลูกค้าไม่ต้องส่งใหม่)
                 // ครบทุกรอบยัง pending ค่อยแจ้งแอดมิน (backstop ใน SlipRetryService)
