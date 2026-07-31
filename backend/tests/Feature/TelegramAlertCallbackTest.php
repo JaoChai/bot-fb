@@ -222,4 +222,46 @@ class TelegramAlertCallbackTest extends TestCase
             'data' => "po|{$slip->id}|3",
         ])->assertOk();
     }
+
+    // กันคนในกลุ่ม Telegram ของร้านหนึ่งกดเลือกรายการยืนยันเงินของอีกร้านผ่านปุ่ม po
+    // (slip ผูกกับ conversation ของบอทอื่น → ด่านกันข้ามบอทใน handlePickOption ต้องตอบ "ไม่พบรายการนี้")
+    public function test_picking_an_option_from_another_bot_is_rejected(): void
+    {
+        [$bot, $conv] = $this->seedPlugin();
+        $this->mock(ManualPaymentConfirmService::class, fn ($m) => $m->shouldNotReceive('confirm'));
+        \Illuminate\Support\Facades\Http::fake(['api.telegram.org/*' => \Illuminate\Support\Facades\Http::response(['ok' => true])]);
+
+        // บอทที่สอง (ร้านอื่น) มี conversation + slip needs_choice ของตัวเอง ไม่มี plugin telegram ของตน
+        $otherUser = User::factory()->owner()->create();
+        $otherBot = Bot::factory()->create(['user_id' => $otherUser->id, 'channel_type' => 'line']);
+        $otherConversation = Conversation::factory()->create(['bot_id' => $otherBot->id]);
+
+        $slip = \App\Models\SlipVerification::create([
+            'bot_id' => $otherBot->id,
+            'conversation_id' => $otherConversation->id,
+            'amount' => 1100,
+            'status' => 'needs_choice',
+            'order_source' => 'llm',
+            'reconstructed' => [
+                'items' => [],
+                'alternatives' => [
+                    [['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1]],
+                ],
+            ],
+        ]);
+
+        // ยิง po ผ่าน plugin ของบอทแรก ชี้ไปที่ slip id ของบอทที่สอง index 0
+        $this->postCallback('TOK', [
+            'id' => 'cb1',
+            'from' => ['id' => 111, 'first_name' => 'owner'],
+            'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
+            'data' => "po|{$slip->id}|0",
+        ])->assertOk();
+
+        // ห้ามยืนยันรับเงิน slip ของอีกร้านได้
+        $this->assertDatabaseMissing('slip_verifications', [
+            'conversation_id' => $otherConversation->id,
+            'status' => 'manual_confirmed',
+        ]);
+    }
 }
