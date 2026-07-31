@@ -430,6 +430,13 @@ class SlipVerificationService
             default => "⚠️ <b>ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ</b> ({$botName})",
         };
 
+        // ดึง alternatives ของ reconstruction ครั้งเดียว — ใช้ทั้งคำเตือนและปุ่ม (กัน query ซ้ำซ้อน)
+        // มีค่าเฉพาะ needs_choice ที่เกิดจากออเดอร์กำกวมจาก LLM
+        $alternatives = [];
+        if ($result->failReason === 'needs_choice' && $result->slipVerificationId !== null) {
+            $alternatives = SlipVerification::find($result->slipVerificationId)?->reconstructed['alternatives'] ?? [];
+        }
+
         $lines = [$header];
         if ($conversation !== null) {
             $displayName = $conversation->customerProfile?->display_name;
@@ -455,11 +462,16 @@ class SlipVerificationService
                 $lines[] = $quote;
             }
         }
+        // needs_choice แต่มีปุ่มเดียว = กำกวมแบบหลายรายการ ระบบไม่กล้าเดาว่าประกอบยอดแบบไหน
+        // เตือนให้เจ้าของเปิดแชทตรวจก่อนกด (ต่างจากเคสหลายปุ่มที่กดเลือกได้เลย)
+        if ($result->failReason === 'needs_choice' && count($alternatives) <= 1) {
+            $lines[] = '⚠️ ระบบไม่แน่ใจว่าประกอบยอดแบบไหน รบกวนเปิดแชทตรวจก่อนกดยืนยัน';
+        }
         $lines[] = $result->passed
             ? 'ส่งของให้แล้ว ไม่ต้องทำอะไรครับ — ถ้าไม่ถูกต้องรบกวนเปิดแชทแก้'
             : 'กรุณาเช็คในแชทก่อนยืนยัน';
 
-        $keyboard = $result->passed ? null : $this->buildConfirmKeyboard($conversation, $result);
+        $keyboard = $result->passed ? null : $this->buildConfirmKeyboard($conversation, $result, $alternatives);
         $this->alertBot->sendMessage($token, $chatId, implode("\n", $lines), $keyboard);
     }
 
@@ -504,9 +516,10 @@ class SlipVerificationService
      * สร้าง inline_keyboard ปุ่มยืนยันตามยอดที่รู้และประเภทเคส (fraud → prefix pa).
      * คืน null เมื่อไม่มี conversation (resolve ตอน callback ไม่ได้).
      *
+     * @param  array<int, array<int, array{name: string, total: string, qty: int}>>  $alternatives
      * @return array<int, array<int, array{text: string, callback_data: string}>>|null
      */
-    private function buildConfirmKeyboard(?Conversation $conversation, SlipVerificationResult $result): ?array
+    private function buildConfirmKeyboard(?Conversation $conversation, SlipVerificationResult $result, array $alternatives = []): ?array
     {
         if ($conversation === null) {
             return null;
@@ -514,8 +527,6 @@ class SlipVerificationService
 
         // กำกวม: หนึ่งปุ่มต่อหนึ่งตัวเลือกที่ประกอบยอดได้ — เจ้าของกดปุ่มเดียวจบ
         if ($result->failReason === 'needs_choice' && $result->slipVerificationId !== null) {
-            $slip = SlipVerification::find($result->slipVerificationId);
-            $alternatives = $slip?->reconstructed['alternatives'] ?? [];
             $rows = [];
             foreach ($alternatives as $index => $set) {
                 $label = implode(', ', array_map(

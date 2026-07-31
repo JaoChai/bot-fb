@@ -64,14 +64,17 @@ PROMPT;
             return null;
         }
 
+        // แยก "มีกี่ชุดให้เลือก" (alternatives) ออกจาก "กำกวมไหม" (ambiguous) ออกจากกันชัด
+        // เคสหลายรายการกำกวมแต่มีชุดเดียว จะได้ไม่ต้องคืนชุดซ้ำเพียงเพื่อให้ count > 1
         $alternatives = $this->alternatives($items, $products, $transcript);
+        $ambiguous = $this->isAmbiguous($items, $products, $transcript);
 
         return new OrderReconstruction(
             items: $items,
             total: $slipAmount,
             summary: $this->summarize($items),
-            ambiguous: count($alternatives) > 1,
-            alternatives: count($alternatives) > 1 ? $alternatives : [],
+            ambiguous: $ambiguous,
+            alternatives: $ambiguous ? $alternatives : [],
         );
     }
 
@@ -269,8 +272,7 @@ PROMPT;
     }
 
     /**
-     * ชุดที่ประกอบยอดได้เท่ากันโดยสลับเป็นสินค้าราคาเดียวกันที่ถูกพูดถึงในแชทด้วย
-     * เช่น 1,100 = Personal ×1 หรือ BM ×1 → ต้องให้เจ้าของเลือก ห้ามเดาเอง
+     * ชุดตัวเลือกปุ่มจริงที่จะให้เจ้าของกดเลือก — คืนเฉพาะเคสที่สร้างปุ่มสลับได้จริง
      * ชุดที่ LLM เลือกอยู่ตำแหน่งแรกเสมอ
      *
      * @param  array<int, array{name: string, total: string, qty: int}>  $items
@@ -279,19 +281,10 @@ PROMPT;
      */
     private function alternatives(array $items, Collection $products, string $transcript): array
     {
+        // เคสหลายรายการ: ไม่สร้างปุ่มสลับ (ความเป็นไปได้บานปลาย สร้างครบทุกแบบไม่ไหวและสับสน)
+        // การตัดสินว่ากำกวมไหมอยู่ใน isAmbiguous() — ที่นี่คืนชุดเดียวคือ items ที่ LLM สรุป
+        // เพื่อให้การ์ดยังมีปุ่มให้กดยืนยันออเดอร์ชุดนี้ได้ (หลังเจ้าของเปิดแชทตรวจแล้ว)
         if (count($items) !== 1) {
-            // ออเดอร์หลายรายการ: เจตนาไม่ใช่สร้างชุดสลับครบทุกแบบ (ความเป็นไปได้บานปลาย)
-            // แค่ตรวจว่ามีบรรทัดไหนสลับเป็น "สินค้าตัวอื่นที่ราคา × จำนวนเท่ากันและถูกพูดถึง" ได้ไหม
-            // ถ้ามีแม้บรรทัดเดียว แปลว่ายอดรวมประกอบได้หลายแบบ → กำกวม
-            // เช่น personal 1 + bm 1 (2,200) ตอนแชทพูดถึงทั้งคู่ที่ราคาเท่ากัน 1,100
-            // → อาจเป็น personal 2 หรือ bm 2 ก็ได้ จึงต้องหยุดส่งของเองแล้วให้เจ้าของกดเลือก
-            // คืนสองสมาชิก (ชุดเดียวกันสองรอบ) เพียงเพื่อให้ตัวเรียก count > 1 ตีเป็นกำกวม
-            foreach ($items as $line) {
-                if ($this->hasSamePriceSibling($line, $products, $transcript)) {
-                    return [$items, $items];
-                }
-            }
-
             return [$items];
         }
 
@@ -313,6 +306,32 @@ PROMPT;
         }
 
         return $sets;
+    }
+
+    /**
+     * ยอดรวมประกอบได้หลายแบบไหม → ห้ามส่งของเอง ต้องหยุดให้เจ้าของดูก่อน
+     *
+     * ทำไมสองเคสนี้ "กำกวมเหมือนกัน" แต่ alternatives() ทำต่างกัน:
+     *  - รายการเดียว: สลับตัวเลือกได้ชัด เช่น 1,100 = Personal ×1 หรือ BM ×1
+     *    → alternatives() สร้างชุดสลับจริงให้เจ้าของกดปุ่มเลือกได้เลย (2 ชุด, 2 ปุ่ม)
+     *  - หลายรายการ: ความเป็นไปได้บานปลาย เช่น personal 1 + bm 1 (2,200) อาจเป็น
+     *    personal 2 หรือ bm 2 ก็ได้ → แค่ตีเป็นกำกวม (หยุดส่งของเอง) ไม่สร้างปุ่มสลับ
+     *    เพราะสร้างครบทุกแบบทั้งยาวและอ่านสับสน จึงเตือนให้เปิดแชทตรวจแทน
+     * ทั้งสองเคสใช้ hasSamePriceSibling ตัดสินเหมือนกัน — มีบรรทัดไหนสลับเป็นสินค้าตัวอื่น
+     * (ราคา × จำนวนเท่ากัน) ที่ถูกพูดถึงได้ แปลว่ายอดประกอบได้หลายแบบ
+     *
+     * @param  array<int, array{name: string, total: string, qty: int}>  $items
+     * @param  Collection<int, ProductStock>  $products
+     */
+    private function isAmbiguous(array $items, Collection $products, string $transcript): bool
+    {
+        foreach ($items as $line) {
+            if ($this->hasSamePriceSibling($line, $products, $transcript)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

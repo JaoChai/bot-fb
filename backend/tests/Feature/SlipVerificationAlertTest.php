@@ -214,6 +214,54 @@ class SlipVerificationAlertTest extends TestCase
         });
     }
 
+    public function test_single_option_needs_choice_card_warns_to_open_chat(): void
+    {
+        [$bot, $conversation] = $this->seedBotWithTelegramPlugin();
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        // เคสหลายรายการกำกวม (personal 1 + bm 1 = 2,200): reconstruction คืน alternatives
+        // ชุดเดียว (ไม่มีปุ่มสลับจริง) เพราะความเป็นไปได้บานปลาย → ต้องเตือนให้เปิดแชทตรวจ
+        $slip = \App\Models\SlipVerification::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conversation->id,
+            'amount' => 2200,
+            'status' => 'needs_choice',
+            'order_source' => 'llm',
+            'reconstructed' => [
+                'items' => [
+                    ['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1],
+                    ['name' => 'Nolimit Level Up+ BM', 'total' => '1100', 'qty' => 1],
+                ],
+                'alternatives' => [
+                    [
+                        ['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1],
+                        ['name' => 'Nolimit Level Up+ BM', 'total' => '1100', 'qty' => 1],
+                    ],
+                ],
+            ],
+        ]);
+
+        $result = new SlipVerificationResult(
+            isSlip: true, passed: false, failReason: 'needs_choice',
+            amount: 2200.0, transRef: 'TR4', orderSource: 'llm',
+            expectedAmount: 2200.0,
+        );
+        $result->slipVerificationId = $slip->id;
+
+        app(SlipVerificationService::class)->notifyAdmin($bot, $conversation, $result);
+
+        Http::assertSent(function ($request) {
+            $data = $request->data();
+            $text = $data['text'];
+            $keyboard = json_decode($data['reply_markup'] ?? '[]', true);
+
+            // เตือนให้เปิดแชทตรวจก่อนกดยืนยัน + มีปุ่มเดียว (ไม่ใช่สองปุ่มซ้ำข้อความเหมือนกัน)
+            return str_contains($text, 'ระบบไม่แน่ใจ')
+                && str_contains($text, 'เปิดแชท')
+                && count($keyboard['inline_keyboard'] ?? []) === 1;
+        });
+    }
+
     public function test_notify_admin_uses_html_and_escapes_dynamic_values(): void
     {
         $user = User::factory()->create();

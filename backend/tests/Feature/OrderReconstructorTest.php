@@ -221,6 +221,9 @@ class OrderReconstructorTest extends TestCase
 
         $this->assertNotNull($result);
         $this->assertTrue($result->ambiguous);
+        // หลายรายการกำกวม: มีชุดเดียว (ไม่ใช่ซ้ำสองรอบ) แต่ยังตีเป็นกำกวมเหมือนเดิม
+        // — ไม่สร้างปุ่มสลับเพราะความเป็นไปได้บานปลาย ให้เปิดแชทตรวจแทน
+        $this->assertCount(1, $result->alternatives);
     }
 
     public function test_multi_item_order_stays_confident_when_no_sibling_shares_the_price(): void
