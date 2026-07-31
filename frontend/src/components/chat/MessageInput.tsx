@@ -4,6 +4,7 @@
  * Shift+Enter for newline, disabled when not in handover
  */
 import { useState, useRef, useCallback, type KeyboardEvent, type FormEvent } from 'react';
+import { useDesktopAutoFocus } from '@/hooks/useDesktopAutoFocus';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Send, Headphones, Bot } from 'lucide-react';
@@ -28,6 +29,7 @@ export function MessageInput({
 }: MessageInputProps) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useDesktopAutoFocus(textareaRef);
 
   // Handle form submit
   const handleSubmit = useCallback(
@@ -82,7 +84,6 @@ export function MessageInput({
             disabled={isLoading || disabled}
             className="min-h-[44px] max-h-32 resize-none pr-12 text-base sm:text-sm"
             rows={1}
-            autoFocus
           />
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
             <Headphones className="size-4 text-muted-foreground" />

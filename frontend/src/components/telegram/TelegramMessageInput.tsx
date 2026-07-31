@@ -1,4 +1,5 @@
 import { useRef, useEffect } from 'react';
+import { useDesktopAutoFocus } from '@/hooks/useDesktopAutoFocus';
 import { Button } from '@/components/ui/button';
 import {
   Paperclip,
@@ -29,6 +30,7 @@ export function TelegramMessageInput({
 }: TelegramMessageInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useDesktopAutoFocus(textareaRef);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -145,7 +147,6 @@ export function TelegramMessageInput({
             disabled={isLoading}
             rows={1}
             className="w-full min-h-[44px] max-h-[120px] py-2.5 px-4 text-base sm:text-sm resize-none rounded-full border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
-            autoFocus
           />
         </div>
 

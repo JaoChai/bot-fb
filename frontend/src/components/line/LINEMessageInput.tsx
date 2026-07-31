@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { useDesktopAutoFocus } from '@/hooks/useDesktopAutoFocus';
 import { Button } from '@/components/ui/button';
 import {
   Paperclip,
@@ -38,6 +39,7 @@ export function LINEMessageInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
+  useDesktopAutoFocus(textareaRef);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -187,7 +189,6 @@ export function LINEMessageInput({
             disabled={isLoading}
             rows={1}
             className="flex-1 min-h-[24px] max-h-[120px] py-0 text-base sm:text-sm resize-none bg-transparent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 placeholder:text-muted-foreground"
-            autoFocus
           />
 
           {/* Send Button inside input - LINE Green */}
