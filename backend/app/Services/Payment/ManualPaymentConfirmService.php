@@ -55,12 +55,7 @@ class ManualPaymentConfirmService
         if ($itemsOverride !== null && $itemsOverride !== []) {
             $expected = [
                 'total' => $amountOverride,
-                'summary' => implode(', ', array_map(
-                    fn (array $item) => ((int) ($item['qty'] ?? 1)) > 1
-                        ? "{$item['name']} x{$item['qty']}"
-                        : $item['name'],
-                    $itemsOverride,
-                )),
+                'summary' => PaymentMessageDetector::formatItemSummary($itemsOverride),
                 'items' => $itemsOverride,
             ];
         } else {

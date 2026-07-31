@@ -201,6 +201,47 @@ class TelegramAlertCallbackTest extends TestCase
         ]);
     }
 
+    public function test_picking_an_option_keeps_quantity_in_the_confirmation_message(): void
+    {
+        [$bot, $conv] = $this->seedPlugin();
+
+        // แยกจากการทดสอบ confirm() จริง: mock ให้ confirm สำเร็จ แล้วดัก editMessageText
+        // ที่ handlePickOption เป็นคนสร้าง (ที่นี่เองที่เคยทำ qty หาย)
+        $this->mock(ManualPaymentConfirmService::class, function ($m) {
+            $m->shouldReceive('confirm')->once()->andReturn(['message' => new Message, 'order_created' => true]);
+        });
+
+        \Illuminate\Support\Facades\Http::fake(['api.telegram.org/*' => \Illuminate\Support\Facades\Http::response(['ok' => true])]);
+
+        $slip = \App\Models\SlipVerification::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conv->id,
+            'amount' => 2200,
+            'status' => 'needs_choice',
+            'order_source' => 'llm',
+            'reconstructed' => [
+                'items' => [['name' => 'Nolimit Level Up+ Personal', 'total' => '2200', 'qty' => 2]],
+                'alternatives' => [
+                    [['name' => 'Nolimit Level Up+ Personal', 'total' => '2200', 'qty' => 2]],
+                ],
+            ],
+        ]);
+
+        $this->postCallback('TOK', [
+            'id' => 'cb1',
+            'from' => ['id' => 111, 'first_name' => 'owner'],
+            'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
+            'data' => "po|{$slip->id}|0",
+        ])->assertOk();
+
+        // บั๊ก qty: เดิม handlePickOption ใช้ array_column($items, 'name') ทำจำนวนหาย
+        // → เจ้าของสั่ง 2 ตัวแต่ข้อความยืนยันขึ้นเหมือนสั่งตัวเดียว. ข้อความต้องมี "x2" ติดมาด้วย
+        \Illuminate\Support\Facades\Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+            return str_contains($request->url(), 'editMessageText')
+                && str_contains($request->data()['text'] ?? '', 'x2');
+        });
+    }
+
     public function test_picking_an_option_that_does_not_exist_is_ignored(): void
     {
         [$bot, $conv] = $this->seedPlugin();

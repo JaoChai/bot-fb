@@ -12,6 +12,7 @@ use App\Models\FlowPlugin;
 use App\Models\SlipVerification;
 use App\Services\Delivery\AccountDeliveryService;
 use App\Services\Payment\ManualPaymentConfirmService;
+use App\Services\Payment\PaymentMessageDetector;
 use App\Services\Payment\TelegramAlertBotService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -268,7 +269,7 @@ class TelegramAlertCallbackController extends Controller
 
         try {
             $this->confirmService->confirm($bot, $conversation, (float) $slip->amount, $bot->user_id, $items);
-            $summary = implode(', ', array_column($items, 'name'));
+            $summary = PaymentMessageDetector::formatItemSummary($items);
             $this->alertBot->editMessageText($token, $chatId, $messageId,
                 '✅ <b>ยืนยันแล้ว: '.TelegramAlertBotService::esc($summary).'</b> โดย '.TelegramAlertBotService::esc($fromName));
             $this->alertBot->answerCallbackQuery($token, $cbId, 'ยืนยันแล้ว');

@@ -54,27 +54,31 @@ PROMPT;
             return null;
         }
 
+        // mentioned()/analyzeAmbiguity() เทียบชื่อสินค้าเป็นตัวพิมพ์เล็กเสมอ — lowercase ครั้งเดียวตรงนี้
+        // แล้วส่ง $haystack ลงไปแทนการ mb_strtolower ใหม่ทุกครั้ง (เดิมอาจถึงสิบกว่าครั้งต่อรอบ)
+        // $transcript ตัวเต็มยังใช้ตอนส่งให้ LLM ใน ask() เหมือนเดิม ไม่ใช่ตัว lowercase
+        $haystack = mb_strtolower($transcript);
+
         $raw = $this->ask($bot, $products, $transcript, $slipAmount);
         if ($raw === []) {
             return null;
         }
 
-        $items = $this->validate($raw, $products, $transcript, $slipAmount, $bot);
+        $items = $this->validate($raw, $products, $haystack, $slipAmount, $bot);
         if ($items === null) {
             return null;
         }
 
-        // แยก "มีกี่ชุดให้เลือก" (alternatives) ออกจาก "กำกวมไหม" (ambiguous) ออกจากกันชัด
-        // เคสหลายรายการกำกวมแต่มีชุดเดียว จะได้ไม่ต้องคืนชุดซ้ำเพียงเพื่อให้ count > 1
-        $alternatives = $this->alternatives($items, $products, $transcript);
-        $ambiguous = $this->isAmbiguous($items, $products, $transcript);
+        // หา "ชุดตัวเลือกปุ่ม" (sets) กับ "กำกวมไหม" (ambiguous) ในการวน products รอบเดียว
+        // (เดิม alternatives() กับ isAmbiguous() วน products ซ้ำกันสองรอบในเคสรายการเดียว)
+        $analysis = $this->analyzeAmbiguity($items, $products, $haystack);
 
         return new OrderReconstruction(
             items: $items,
             total: $slipAmount,
-            summary: $this->summarize($items),
-            ambiguous: $ambiguous,
-            alternatives: $ambiguous ? $alternatives : [],
+            summary: PaymentMessageDetector::formatItemSummary($items),
+            ambiguous: $analysis['ambiguous'],
+            alternatives: $analysis['ambiguous'] ? $analysis['sets'] : [],
         );
     }
 
@@ -205,7 +209,7 @@ PROMPT;
      * @param  Collection<int, ProductStock>  $products
      * @return array<int, array{name: string, total: string, qty: int}>|null
      */
-    private function validate(array $raw, Collection $products, string $transcript, float $slipAmount, Bot $bot): ?array
+    private function validate(array $raw, Collection $products, string $haystack, float $slipAmount, Bot $bot): ?array
     {
         if ($raw === []) {
             return null;
@@ -225,7 +229,7 @@ PROMPT;
 
                 return null;
             }
-            if (! $this->mentioned($product, $transcript)) {
+            if (! $this->mentioned($product, $haystack)) {
                 Log::info('OrderReconstructor: product never mentioned in chat', ['slug' => $product->slug]);
 
                 return null;
@@ -253,14 +257,15 @@ PROMPT;
     /**
      * ชื่อหรือ alias ของสินค้าถูกพูดถึงในบทสนทนาไหม
      *
+     * $haystack คือบทสนทนาที่ lowercase แล้ว (ทำครั้งเดียวใน reconstruct) — เทียบเป็นตัวพิมพ์เล็กเสมอ
+     *
      * ยอมรับคำตั้งแต่ 2 ตัวอักษรขึ้นไป เพราะ alias จริงในระบบมีคำสั้น 2 ตัวที่ลูกค้าใช้เรียกสินค้าจริง
      * เช่น 'ไก่' (G3D) และ 'BM' — ถ้าตั้งเกณฑ์ 3 จะบล็อกคำพวกนี้จนด่านนี้ปฏิเสธออเดอร์จริง
      * ด่านนี้เป็นแค่ตัวกัน LLM แต่งสินค้าที่ไม่มีใครพูดถึง ตัวตัดสินจริงคือ checksum ยอดข้างบน
      * จึงยอมให้กว้างขึ้นได้
      */
-    private function mentioned(ProductStock $product, string $transcript): bool
+    private function mentioned(ProductStock $product, string $haystack): bool
     {
-        $haystack = mb_strtolower($transcript);
         foreach (array_merge([$product->name], $product->aliases ?? []) as $term) {
             $term = mb_strtolower(trim((string) $term));
             if (mb_strlen($term) >= 2 && mb_strpos($haystack, $term) !== false) {
@@ -272,25 +277,41 @@ PROMPT;
     }
 
     /**
-     * ชุดตัวเลือกปุ่มจริงที่จะให้เจ้าของกดเลือก — คืนเฉพาะเคสที่สร้างปุ่มสลับได้จริง
-     * ชุดที่ LLM เลือกอยู่ตำแหน่งแรกเสมอ
+     * หา "ชุดตัวเลือกปุ่ม" (sets) และ "กำกวมไหม" (ambiguous) ในการวน products รอบเดียว —
+     * เดิม alternatives() กับ isAmbiguous() วนซ้ำกันสองรอบในเคสรายการเดียว
+     *
+     * ทำไมสองเคสนี้ "กำกวมเหมือนกัน" แต่ sets ทำต่างกัน:
+     *  - รายการเดียว: สลับตัวเลือกได้ชัด เช่น 1,100 = Personal ×1 หรือ BM ×1
+     *    → sets สร้างชุดสลับจริงให้เจ้าของกดปุ่มเลือกได้เลย (หลายชุด/หลายปุ่ม)
+     *    และ ambiguous ตั้งตาม count(sets) > 1 (สองด่านเงื่อนไขเดียวกันจึงรวมรอบเดียวได้)
+     *  - หลายรายการ: ความเป็นไปได้บานปลาย เช่น personal 1 + bm 1 (2,200) อาจเป็น
+     *    personal 2 หรือ bm 2 ก็ได้ → ตีเป็นกำกวม (หยุดส่งของเอง) แต่ sets ชุดเดียว
+     *    ไม่สร้างปุ่มสลับเพราะสร้างครบทุกแบบทั้งยาวและอ่านสับสน จึงเตือนให้เปิดแชทตรวจแทน
+     * ทั้งสองเคสใช้ hasSamePriceSibling ตัดสินเหมือนกัน — มีบรรทัดไหนสลับเป็นสินค้าตัวอื่น
+     * (ราคา × จำนวนเท่ากัน) ที่ถูกพูดถึงได้ แปลว่ายอดประกอบได้หลายแบบ
      *
      * @param  array<int, array{name: string, total: string, qty: int}>  $items
      * @param  Collection<int, ProductStock>  $products
-     * @return array<int, array<int, array{name: string, total: string, qty: int}>>
+     * @return array{sets: array<int, array<int, array{name: string, total: string, qty: int}>>, ambiguous: bool}
      */
-    private function alternatives(array $items, Collection $products, string $transcript): array
+    private function analyzeAmbiguity(array $items, Collection $products, string $haystack): array
     {
-        // เคสหลายรายการ: ไม่สร้างปุ่มสลับ (ความเป็นไปได้บานปลาย สร้างครบทุกแบบไม่ไหวและสับสน)
-        // การตัดสินว่ากำกวมไหมอยู่ใน isAmbiguous() — ที่นี่คืนชุดเดียวคือ items ที่ LLM สรุป
-        // เพื่อให้การ์ดยังมีปุ่มให้กดยืนยันออเดอร์ชุดนี้ได้ (หลังเจ้าของเปิดแชทตรวจแล้ว)
+        // หลายรายการ: ไม่สร้างปุ่มสลับ (ความเป็นไปได้บานปลาย) — คืนชุดเดียวคือ items ที่ LLM สรุป
+        // เพื่อให้การ์ดยังมีปุ่มกดยืนยันออเดอร์ชุดนี้ได้ (หลังเจ้าของเปิดแชทตรวจแล้ว)
+        // ตัดสินกำกวมทีละบรรทัดด้วย hasSamePriceSibling
         if (count($items) !== 1) {
-            return [$items];
+            foreach ($items as $line) {
+                if ($this->hasSamePriceSibling($line, $products, $haystack)) {
+                    return ['sets' => [$items], 'ambiguous' => true];
+                }
+            }
+
+            return ['sets' => [$items], 'ambiguous' => false];
         }
 
+        // รายการเดียว: หาชุดสลับทีละตัว — ชุดที่ LLM เลือกอยู่ตำแหน่งแรกเสมอ
         $chosen = $items[0];
         $sets = [$items];
-
         foreach ($products as $product) {
             if ($product->name === $chosen['name']) {
                 continue;
@@ -299,39 +320,13 @@ PROMPT;
             if (abs($lineTotal - (float) $chosen['total']) > 0.001) {
                 continue;
             }
-            if (! $this->mentioned($product, $transcript)) {
+            if (! $this->mentioned($product, $haystack)) {
                 continue;
             }
             $sets[] = [['name' => $product->name, 'total' => $chosen['total'], 'qty' => $chosen['qty']]];
         }
 
-        return $sets;
-    }
-
-    /**
-     * ยอดรวมประกอบได้หลายแบบไหม → ห้ามส่งของเอง ต้องหยุดให้เจ้าของดูก่อน
-     *
-     * ทำไมสองเคสนี้ "กำกวมเหมือนกัน" แต่ alternatives() ทำต่างกัน:
-     *  - รายการเดียว: สลับตัวเลือกได้ชัด เช่น 1,100 = Personal ×1 หรือ BM ×1
-     *    → alternatives() สร้างชุดสลับจริงให้เจ้าของกดปุ่มเลือกได้เลย (2 ชุด, 2 ปุ่ม)
-     *  - หลายรายการ: ความเป็นไปได้บานปลาย เช่น personal 1 + bm 1 (2,200) อาจเป็น
-     *    personal 2 หรือ bm 2 ก็ได้ → แค่ตีเป็นกำกวม (หยุดส่งของเอง) ไม่สร้างปุ่มสลับ
-     *    เพราะสร้างครบทุกแบบทั้งยาวและอ่านสับสน จึงเตือนให้เปิดแชทตรวจแทน
-     * ทั้งสองเคสใช้ hasSamePriceSibling ตัดสินเหมือนกัน — มีบรรทัดไหนสลับเป็นสินค้าตัวอื่น
-     * (ราคา × จำนวนเท่ากัน) ที่ถูกพูดถึงได้ แปลว่ายอดประกอบได้หลายแบบ
-     *
-     * @param  array<int, array{name: string, total: string, qty: int}>  $items
-     * @param  Collection<int, ProductStock>  $products
-     */
-    private function isAmbiguous(array $items, Collection $products, string $transcript): bool
-    {
-        foreach ($items as $line) {
-            if ($this->hasSamePriceSibling($line, $products, $transcript)) {
-                return true;
-            }
-        }
-
-        return false;
+        return ['sets' => $sets, 'ambiguous' => count($sets) > 1];
     }
 
     /**
@@ -341,7 +336,7 @@ PROMPT;
      * @param  array{name: string, total: string, qty: int}  $line
      * @param  Collection<int, ProductStock>  $products
      */
-    private function hasSamePriceSibling(array $line, Collection $products, string $transcript): bool
+    private function hasSamePriceSibling(array $line, Collection $products, string $haystack): bool
     {
         foreach ($products as $product) {
             if ($product->name === $line['name']) {
@@ -351,20 +346,11 @@ PROMPT;
             if (abs($lineTotal - (float) $line['total']) > 0.001) {
                 continue;
             }
-            if ($this->mentioned($product, $transcript)) {
+            if ($this->mentioned($product, $haystack)) {
                 return true;
             }
         }
 
         return false;
-    }
-
-    /** @param  array<int, array{name: string, total: string, qty: int}>  $items */
-    private function summarize(array $items): string
-    {
-        return implode(', ', array_map(
-            fn (array $item) => $item['qty'] > 1 ? "{$item['name']} x{$item['qty']}" : $item['name'],
-            $items,
-        ));
     }
 }

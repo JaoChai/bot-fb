@@ -8,6 +8,7 @@ use App\Models\CustomerProfile;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\User;
+use App\Services\Payment\OrderReconstruction;
 use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
 use App\Services\Payment\TelegramAlertBotService;
@@ -198,9 +199,22 @@ class SlipVerificationAlertTest extends TestCase
             ],
         ]);
 
+        // notifyAdmin อ่าน alternatives จาก result.reconstruction ในหน่วยความจำ (ไม่ query DB ซ้ำแล้ว)
+        // เลยต้องใส่ reconstruction เข้ามา mirror สิ่งที่ verify() สร้างจริง — เดิม result ไม่มี
+        // reconstruction แล้วพึ่ง SlipVerification::find()->reconstructed (DB) ซึ่งโหลดเกินจำเป็น
         $result = new SlipVerificationResult(
             isSlip: true, passed: false, failReason: 'needs_choice',
             amount: 1100.0, transRef: 'TR2', orderSource: 'llm',
+            reconstruction: new OrderReconstruction(
+                items: [['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1]],
+                total: 1100.0,
+                summary: 'Nolimit Level Up+ Personal',
+                ambiguous: true,
+                alternatives: [
+                    [['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1]],
+                    [['name' => 'Nolimit Level Up+ BM', 'total' => '1100', 'qty' => 1]],
+                ],
+            ),
         );
         $result->slipVerificationId = $slip->id;
 
@@ -241,10 +255,26 @@ class SlipVerificationAlertTest extends TestCase
             ],
         ]);
 
+        // mirror verify(): reconstruction อยู่ใน result ตั้งแต่ต้น — notifyAdmin อ่านจากนี่ไม่ใช่ DB
         $result = new SlipVerificationResult(
             isSlip: true, passed: false, failReason: 'needs_choice',
             amount: 2200.0, transRef: 'TR4', orderSource: 'llm',
             expectedAmount: 2200.0,
+            reconstruction: new OrderReconstruction(
+                items: [
+                    ['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1],
+                    ['name' => 'Nolimit Level Up+ BM', 'total' => '1100', 'qty' => 1],
+                ],
+                total: 2200.0,
+                summary: 'Nolimit Level Up+ Personal, Nolimit Level Up+ BM',
+                ambiguous: true,
+                alternatives: [
+                    [
+                        ['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1],
+                        ['name' => 'Nolimit Level Up+ BM', 'total' => '1100', 'qty' => 1],
+                    ],
+                ],
+            ),
         );
         $result->slipVerificationId = $slip->id;
 

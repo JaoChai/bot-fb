@@ -131,17 +131,13 @@ class SlipVerificationService
         // ตัดของแถมราคา 0 ออกจาก summary กันชื่อหลุดไปข้อความยืนยัน/Telegram/order_items —
         // แต่คืน 'items' เต็มชุดให้ delivery กรอง+log เองอีกชั้น
         $visibleItems = array_filter($items, fn (array $item) => ! PaymentMessageDetector::isZeroPriceItem($item));
-        // ติด "xN" ท้ายชื่อเมื่อสั่งเกิน 1 — summary เป็นต้นทางเดียวของจำนวนที่ไหลไปข้อความยืนยัน,
-        // การ์ด Telegram และ order_items (parseProductItems อ่านรูป "ชื่อ xN"); ทิ้ง qty ที่นี่
+        // summary เป็นต้นทางเดียวของจำนวนที่ไหลไปข้อความยืนยัน การ์ด Telegram และ order_items
+        // (parseProductItems อ่านรูป "ชื่อ xN") รูปแบบรวมศูนย์ที่ formatItemSummary — ทิ้ง qty ที่นี่
         // = ออเดอร์ 2 ชุดถูกบันทึกเป็น 1 เงียบๆ
-        $itemNames = array_map(
-            fn (array $item) => (int) ($item['qty'] ?? 1) > 1 ? "{$item['name']} x{$item['qty']}" : $item['name'],
-            $visibleItems,
-        );
 
         return [
             'total' => (float) str_replace(',', '', $data['total']),
-            'summary' => $itemNames === [] ? '-' : implode(', ', $itemNames),
+            'summary' => $visibleItems === [] ? '-' : PaymentMessageDetector::formatItemSummary($visibleItems),
             'items' => $items,
         ];
     }
@@ -336,7 +332,7 @@ class SlipVerificationService
                 isSlip: true, passed: false, failReason: 'needs_choice',
                 amount: $slipAmount, transRef: $transRef,
                 expectedAmount: $reconstruction->total, orderSummary: $reconstruction->summary,
-                orderSource: 'llm', reconstruction: $reconstruction,
+                orderSource: $orderSource, reconstruction: $reconstruction,
             ), $receiverAccount);
         }
 
@@ -430,12 +426,13 @@ class SlipVerificationService
             default => "⚠️ <b>ระบบตรวจสลิปไม่ได้ — รบกวนตรวจมือ</b> ({$botName})",
         };
 
-        // ดึง alternatives ของ reconstruction ครั้งเดียว — ใช้ทั้งคำเตือนและปุ่ม (กัน query ซ้ำซ้อน)
-        // มีค่าเฉพาะ needs_choice ที่เกิดจากออเดอร์กำกวมจาก LLM
-        $alternatives = [];
-        if ($result->failReason === 'needs_choice' && $result->slipVerificationId !== null) {
-            $alternatives = SlipVerification::find($result->slipVerificationId)?->reconstructed['alternatives'] ?? [];
-        }
+        // ดึง alternatives จาก reconstruction ใน result ตรง ๆ — ไม่ต้อง query DB ซ้ำ
+        // (ผู้เรียกทุกรายส่ง result ตัวเดียวกับที่ verify() คืนมาในรอบเดียวกัน ไม่มีการ serialize ข้าม request)
+        // มีค่าเฉพาะ needs_choice ที่เกิดจากออเดอร์กำกวมจาก LLM; เก็บเงื่อนไข slipVerificationId ไว้
+        // เพราะ buildConfirmKeyboard ผูก callback_data กับ slip id — ถ้า record() พังไม่มี id ก็ต้องไม่โชว์ปุ่ม po
+        $alternatives = ($result->failReason === 'needs_choice' && $result->slipVerificationId !== null)
+            ? ($result->reconstruction?->alternatives ?? [])
+            : [];
 
         $lines = [$header];
         if ($conversation !== null) {
@@ -473,6 +470,19 @@ class SlipVerificationService
 
         $keyboard = $result->passed ? null : $this->buildConfirmKeyboard($conversation, $result, $alternatives);
         $this->alertBot->sendMessage($token, $chatId, implode("\n", $lines), $keyboard);
+    }
+
+    /**
+     * กฎ "เมื่อไหร่ต้องแจ้งเจ้าของแบบเงียบ" อยู่ที่นี่ที่เดียว — ผู้เรียกไม่ต้องจำเงื่อนไขเอง
+     * แจ้งเงียบ (การ์ดไม่มีปุ่ม) เฉพาะตอนระบบสรุปออเดอร์เองจากบทสนทนา (orderSource = llm)
+     * แล้วผ่านส่งของเอง เพื่อให้เจ้าของรู้ว่าเกิดอะไรขึ้น. ถ้ามีผู้เรียกรายที่สามในอนาคต
+     * จะได้ไม่ลืมแจ้ง (เดิมเงื่อนไขนี้ก๊อปไว้ที่ผู้เรียก ทำให้ลืมได้).
+     */
+    public function notifyIfAutoReconstructed(Bot $bot, ?Conversation $conversation, SlipVerificationResult $result): void
+    {
+        if ($result->orderSource === 'llm') {
+            $this->notifyAdmin($bot, $conversation, $result);
+        }
     }
 
     /**
@@ -529,12 +539,7 @@ class SlipVerificationService
         if ($result->failReason === 'needs_choice' && $result->slipVerificationId !== null) {
             $rows = [];
             foreach ($alternatives as $index => $set) {
-                $label = implode(', ', array_map(
-                    fn (array $item) => ((int) ($item['qty'] ?? 1)) > 1
-                        ? "{$item['name']} x{$item['qty']}"
-                        : $item['name'],
-                    $set,
-                ));
+                $label = PaymentMessageDetector::formatItemSummary($set);
                 $rows[] = [['text' => "✅ {$label}", 'callback_data' => "po|{$result->slipVerificationId}|{$index}"]];
             }
             if ($rows !== []) {

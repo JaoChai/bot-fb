@@ -146,6 +146,24 @@ class PaymentMessageDetector
         return is_numeric($total) && (float) $total <= 0;
     }
 
+    /**
+     * รูปแบบ summary รายการสินค้าตัวเดียวของระบบ — ทุกที่ที่ summary ไหลออก
+     * (ข้อความยืนยันรับเงิน, การ์ด Telegram, order_items) ใช้รูปนี้เท่านั้น:
+     * สั่งเกิน 1 ติด "xN" ต่อท้ายชื่อ ไม่งั้นใช้ชื่อล้วน คั่นแต่ละรายการด้วย ", ".
+     * ห้ามกรองรายการในเมธอดนี้ — ผู้เรียกบางรายกรองของแถมราคา 0 มาก่อนแล้ว กรองซ้ำจะเปลี่ยนพฤติกรรม.
+     *
+     * @param  array<int, array{name: string, qty?: int}>  $items
+     */
+    public static function formatItemSummary(array $items): string
+    {
+        return implode(', ', array_map(
+            fn (array $item) => ((int) ($item['qty'] ?? 1)) > 1
+                ? "{$item['name']} x{$item['qty']}"
+                : $item['name'],
+            $items,
+        ));
+    }
+
     private function pushItem(array &$items, string $name, string $total, string $price, string $qty): void
     {
         if ($name === '') {

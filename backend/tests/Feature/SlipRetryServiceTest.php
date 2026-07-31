@@ -211,11 +211,13 @@ class SlipRetryServiceTest extends TestCase
             orderSource: 'llm',
         );
 
-        // จำลอง verify() ให้คืนผ่านด้วยด่าน llm ส่วน notifyAdmin ดักการเรียกโดยตรง
-        // (runPlugins ก็ส่ง telegram เองอยู่แล้ว จึง assert ที่การเรียก notifyAdmin ไม่ใช่ HTTP)
+        // จำลอง verify() ให้คืนผ่านด้วยด่าน llm ส่วน notifyIfAutoReconstructed ดักการเรียกโดยตรง
+        // (กฎ "เมื่อไหร่แจ้งเงียบ" ถูกย้ายเข้า SlipVerificationService::notifyIfAutoReconstructed แล้ว
+        //  จึง assert ที่เมธอดนี้แทน notifyAdmin — intent เดิม: llm reconstruction ต้องแจ้งเจ้าของ 1 ครั้ง
+        //  runPlugins ก็ส่ง telegram เองอยู่แล้ว จึงไม่ใช่การ assert ผ่าน HTTP)
         $mock = Mockery::mock(SlipVerificationService::class);
         $mock->shouldReceive('verify')->andReturn($result);
-        $mock->shouldReceive('notifyAdmin')->once();
+        $mock->shouldReceive('notifyIfAutoReconstructed')->once();
         $this->app->instance(SlipVerificationService::class, $mock);
 
         app(SlipRetryService::class)->retry(
