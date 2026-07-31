@@ -94,11 +94,13 @@ export const ChatHeader = memo(function ChatHeader({
         <ConnectionIndicator />
 
         {/* Handover controls - only for channels that support it */}
+        {/* max-sm: แตะเฉพาะต่ำกว่า 640px เพื่อให้ได้ touch target 44px — ตั้งแต่
+            640px ขึ้นไปปล่อยให้ size="sm" ของ shadcn (h-8 px-3) ทำงานเดิมทุกพิกเซล */}
         {showHandoverControls && supportsHandover && onToggleHandover && (
           <Button
             variant={conversation.is_handover ? 'default' : 'outline'}
             size="sm"
-            className="size-11 p-0 sm:size-auto sm:px-3 sm:py-2"
+            className="max-sm:size-11 max-sm:p-0"
             onClick={onToggleHandover}
             disabled={isToggleLoading}
             aria-label={conversation.is_handover ? 'Enable Bot' : 'Take Over'}
