@@ -13,7 +13,8 @@ export function RootLayout() {
   const showMobileChat = useChatStore((s) => s.showMobileChat);
 
   // หน้าแชทจัดการพื้นที่ทั้งหมดเอง (สกรอลล์แยกซ้าย/ขวา) จึงไม่รับ padding จาก main
-  const isChatRoute = pathname.startsWith('/chat');
+  // เทียบแบบเจาะจง ไม่ใช่ startsWith เพราะ /chat-archived ในอนาคตจะพลอยโดนด้วย
+  const isChatRoute = pathname === '/chat' || pathname.startsWith('/chat/');
   // อยู่ในห้องแชทบนมือถือ = เต็มจอแบบ LINE ให้ ChatHeader ทำหน้าที่ nav แทน
   const hideMobileHeader = isChatRoute && showMobileChat;
 

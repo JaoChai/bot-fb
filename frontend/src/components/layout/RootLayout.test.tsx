@@ -21,6 +21,7 @@ function renderAt(path: string) {
           <Route element={<RootLayout />}>
             <Route path="/chat" element={<div>chat page</div>} />
             <Route path="/dashboard" element={<div>dashboard page</div>} />
+          <Route path="/chat-archived" element={<div>chat archived page</div>} />
           </Route>
         </Routes>
       </MemoryRouter>
@@ -61,6 +62,14 @@ describe('RootLayout', () => {
     expect(main).toHaveClass('overflow-hidden');
     expect(main).not.toHaveClass('p-4');
     expect(main).not.toHaveClass('md:p-6');
+  });
+
+  it('route ที่ขึ้นต้นด้วย /chat แต่ไม่ใช่หน้าแชท ต้องไม่โดนโหมดเต็มพื้นที่', () => {
+    useChatStore.setState({ showMobileChat: true });
+    const { container } = renderAt('/chat-archived');
+
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(container.querySelector('main')).toHaveClass('p-4');
   });
 
   it('ยังใส่ padding ให้ main ในหน้าอื่นเหมือนเดิม', () => {
