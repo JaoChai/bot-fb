@@ -108,6 +108,13 @@ class SlipRetryService
         }
 
         $this->broadcast($conversation, $botMessage);
+
+        // ระบบสรุปออเดอร์เองจากบทสนทนา → แจ้งเจ้าของแบบเงียบ (ไม่มีปุ่ม) ให้รู้ว่าเกิดอะไรขึ้น
+        // mirror เส้นทาง webhook ปกติ (LineWebhookResponseService) ตอน passed + orderSource llm
+        // ไม่งั้นเส้นทาง auto-retry นี้จะส่งของเงียบเลยโดยเจ้าของไม่ได้รับการ์ดแจ้งเลย
+        if ($result->orderSource === 'llm') {
+            $this->slipVerification->notifyAdmin($bot, $conversation, $result);
+        }
     }
 
     private function pushToLine(Bot $bot, Conversation $conversation, string $text): void

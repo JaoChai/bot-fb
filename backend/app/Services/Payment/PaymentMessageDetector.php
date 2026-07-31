@@ -31,6 +31,9 @@ class PaymentMessageDetector
     /** ยอดในข้อความยืนยันขั้น 2 — ใช้ร่วมกัน isConfirmMessage/parseConfirmData กัน drift */
     private const CONFIRM_TOTAL_PATTERN = '/(?:รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?|ราคา)\s*:?\s*([\d,]+)\s*บาท/u';
 
+    /** รูปแบบเจตนายืนยันขั้น 2 จริง (3 รูป) — เหตุผล/รายละเอียดที่ hasConfirmIntent() */
+    private const CONFIRM_INTENT_PATTERN = '/(?:พิมพ์|กด)[\s"\'\x{201C}\x{201D}\x{2018}\x{2019}]+ยืนยัน|ถูกต้องไหม|ใช่ไหม/u';
+
     /** เฉพาะรูป "รวม..." — ต้องลองก่อน "ราคา" เสมอ เพราะยอดรวมชนะราคาต่อชิ้น */
     private const CONFIRM_SUM_PATTERN = '/รวม(?:ทั้งหมด|ยอด|เป็นเงิน)?\s*:?\s*([\d,]+)\s*บาท/u';
 
@@ -183,7 +186,11 @@ class PaymentMessageDetector
 
     /**
      * Detect if text is a confirm message (Step 2).
-     * Must contain "รวม...บาท" + "ยืนยัน", but NOT bank account, verify tag, or terms keywords.
+     * Must contain "รวม...บาท"/"ราคา...บาท" + "ยืนยัน", but NOT bank account, verify tag, or terms keywords.
+     *
+     * เกณฑ์นี้หลวมโดยตั้งใจ — มีไว้แปลงข้อความบอทเป็นการ์ด Flex ให้ลูกค้าเห็น (PaymentFlexService)
+     * ซึ่งตัดสินผิดก็แค่แสดงผลไม่สวย ไม่มีผลทางการเงิน. ส่วนเส้นทางที่เอาข้อความไปตัดสินเรื่องเงิน
+     * (SlipVerificationService) ต้องเช็ค hasConfirmIntent() เป็นด่านเสริม — ดูเหตุผลที่เมธอดนั้น.
      */
     public function isConfirmMessage(string $text): bool
     {
@@ -211,13 +218,31 @@ class PaymentMessageDetector
         // Must have total pattern: รวม...บาท (รองรับ รวม, รวมทั้งหมด, รวมยอด, รวมเป็นเงิน)
         // "ราคา ... บาท" ก็นับด้วย — LLM มัก drift เขียนข้อความยืนยันขั้น 2 แบบ
         // "เพิ่ม X 1 ตัว ราคา 1,100 บาท ... พิมพ์ยืนยัน" (เคสจริงแชท #92 31 ก.ค.)
-        // คำว่า "ยืนยัน" ที่บังคับด้านล่างเป็นตัวกันข้อความเสนอราคาทั่วไปไม่ให้หลุดเข้ามา
         if (! preg_match(self::CONFIRM_TOTAL_PATTERN, $text)) {
             return false;
         }
 
-        // Must have "ยืนยัน"
         return mb_strpos($text, 'ยืนยัน') !== false;
+    }
+
+    /**
+     * เจตนายืนยันขั้น 2 จริง — ไม่ใช่แค่มีคำว่า "ยืนยัน" โผล่ในประโยค.
+     *
+     * ใช้เฉพาะเส้นทางที่เอาข้อความไปตัดสินเรื่องเงิน/ส่งของอัตโนมัติ
+     * (SlipVerificationService::findExpectedFromConfirmMessage) — ไม่ใช่ตอนแปลงข้อความเป็น Flex
+     * การ์ด ซึ่งใช้ isConfirmMessage() ที่หลวมกว่าเพราะไม่มีผลทางการเงิน.
+     *
+     * ข้อความขายมักพูดว่า "ไม่ต้องยืนยันตัวตนเพิ่ม" ซึ่งเดิมผ่านด่าน mb_strpos(text,'ยืนยัน')
+     * ทำให้สลิปผ่านเองแล้วส่งของทั้งที่ลูกค้ายังไม่ได้สั่ง จึงต้องจับเฉพาะที่บอท
+     * "ขอให้ลูกค้ายืนยัน" จริง 3 รูปเท่านั้น:
+     *   (ก) พิมพ์/กด ตามด้วยช่องว่างหรือเครื่องหมายคำพูด แล้วตามด้วย "ยืนยัน"
+     *       (ครอบคลุม ASCII quote และ curly quote ไทย เช่น พิมพ์ "ยืนยัน", พิมพ์ ยืนยัน)
+     *   (ข) ถูกต้องไหม
+     *   (ค) ใช่ไหม
+     */
+    public function hasConfirmIntent(string $text): bool
+    {
+        return (bool) preg_match(self::CONFIRM_INTENT_PATTERN, $text);
     }
 
     /**

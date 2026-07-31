@@ -438,6 +438,41 @@ class SlipVerificationServiceTest extends TestCase
         $this->assertSame('1,500', $detector->parseConfirmData($prose)['total']);
     }
 
+    public function test_sales_pitch_mentioning_identity_verification_is_not_a_confirm_message(): void
+    {
+        // เคสจริง: บอทเสนอราคาไป "ไม่ต้องยืนยันตัวตนเพิ่ม" ลูกค้ายังไม่ได้สั่ง แค่ถามดู BM
+        // เดิม isConfirmMessage มองเห็นคำว่า "ยืนยัน" ใน "ยืนยันตัวตน" → ถือว่ามีออเดอร์ค้าง
+        // → สลิปผ่านเองแล้วส่งของทั้งที่ลูกค้ายังไม่ได้ยืนยันคำสั่งซื้อ ต้องจับเฉพาะเจตนายืนยันจริง
+        $this->bot->update(['utility_model' => 'openai/gpt-4o-mini']);
+        $this->bot->user->getOrCreateSettings()->update(['openrouter_api_key' => 'sk-test']);
+        $this->paymentHistory = [
+            ['sender' => 'bot', 'content' => 'Nolimit Level Up+ Personal ราคา 1,500 บาทครับ ผูกบัตรมาแล้ว ไม่ต้องยืนยันตัวตนเพิ่มครับ|||สนใจตัวไหนบอกได้เลยครับ'],
+            ['sender' => 'user', 'content' => 'ขอดู BM ด้วยครับ'],
+        ];
+
+        // จำลอง LLMOrderItemExtractor ให้คืน Personal 1 (1,500) เหมือนที่เคยดึงได้จากข้อความยืนยัน
+        // ถ้าด่าน isConfirmMessage ปล่อยข้อความเสนอราคานี้ผ่าน สลิปจะ passed ทันที (นี่คือบั๊กเดิม)
+        $this->mock(OpenRouterService::class, function ($mock) {
+            $mock->shouldReceive('chat')
+                ->andReturn(['content' => '{"items":[{"name":"Nolimit Level Up+ Personal","qty":1,"total":"1500"}]}']);
+        });
+        $this->app->bind(SlipVerificationService::class, function ($app) {
+            return new SlipVerificationService(
+                $app->make(PaymentMessageDetector::class),
+                $app->make(TelegramAlertBotService::class),
+                new LLMOrderItemExtractor($app->make(OpenRouterService::class)),
+                new OrderReconstructor($app->make(OpenRouterService::class)),
+            );
+        });
+
+        Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
+
+        $result = $this->verify();
+
+        $this->assertFalse($result->passed);
+        $this->assertSame('no_pending_order', $result->failReason);
+    }
+
     public function test_reconstructs_order_from_chat_when_both_regex_stages_fail(): void
     {
         // เคสจริงแชท #169: บอทตอบ error ไม่เคยพิมพ์ยอดเลย ลูกค้าโอนมาเฉยๆ

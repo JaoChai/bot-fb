@@ -165,7 +165,12 @@ class SlipVerificationService
                 continue;
             }
             $content = $msg['content'] ?? '';
-            if (! $this->detector->isConfirmMessage($content)) {
+            // เส้นทางนี้ใช้ข้อความเป็นหลักฐานออเดอร์เพื่อส่งของอัตโนมัติ ตัดสินผิด = ส่งของฟรี
+            // เลยต้องเข้มกว่า isConfirmMessage ที่ใช้ตอนแปลง Flex: ข้อความต้องเป็นการ
+            // "ขอให้ลูกค้ายืนยัน" จริงด้วย (hasConfirmIntent) — ข้อความเสนอราคา "ไม่ต้องยืนยัน
+            // ตัวตน" เคยหลุดผ่านตรงนี้จนระบบส่งของทั้งที่ลูกค้ายังไม่ได้สั่ง)
+            if (! $this->detector->isConfirmMessage($content)
+                || ! $this->detector->hasConfirmIntent($content)) {
                 continue;
             }
             $data = $this->detector->parseConfirmData($content);

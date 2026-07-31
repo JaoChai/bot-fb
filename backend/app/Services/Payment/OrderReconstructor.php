@@ -132,7 +132,15 @@ PROMPT;
             return [];
         }
 
-        return $this->decode($response['content'] ?? '');
+        // ครอบ decode ด้วย try/catch กันทุกกรณีที่คิดไม่ถึง — ถ้า parse พังต้องไม่ทะลุออกไป
+        // จน record() ไม่ถูกเรียก (สลิปหายทั้งใบเงียบๆ)
+        try {
+            return $this->decode($response['content'] ?? '');
+        } catch (\Throwable $e) {
+            Log::warning('OrderReconstructor: decode failed', ['bot_id' => $bot->id, 'error' => $e->getMessage()]);
+
+            return [];
+        }
     }
 
     /** @return array<int, array{slug: string, qty: int}> */
@@ -155,10 +163,36 @@ PROMPT;
             if (! is_array($item) || empty($item['slug']) || ! is_string($item['slug'])) {
                 continue;
             }
-            $items[] = ['slug' => trim($item['slug']), 'qty' => max(1, (int) ($item['qty'] ?? 1))];
+            // ข้าม item ที่ qty ไม่ใช่จำนวนเต็มในช่วงปลอดภัย — ค่าหลุดโลกอย่าง 1e20
+            // (float ที่ (int) ไม่รับได้ แล้ว throw) ต้องไม่ทำให้ทั้งใบสลิปพัง
+            $qty = $this->safeQty($item['qty'] ?? 1);
+            if ($qty === null) {
+                continue;
+            }
+            $items[] = ['slug' => trim($item['slug']), 'qty' => $qty];
         }
 
         return $items;
+    }
+
+    /**
+     * แปลง qty เป็นจำนวนเต็มอย่างปลอดภัย — คืน null เมื่อไม่ใช่จำนวนเต็มในช่วง 1..MAX_QTY
+     *
+     * ต้องเช็คช่วงเป็น float ก่อน cast เพราะ (int) ของ float ที่ใหญ่เกิน (เช่น 1e20 ที่ LLM ตอป้าย)
+     * จะโยน "The float ... is not representable as an int" ทะลุออกไปจน record() ไม่ถูกเรียก
+     */
+    private function safeQty(mixed $value): ?int
+    {
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        $asFloat = (float) $value;
+        if ($asFloat < 1 || $asFloat > self::MAX_QTY) {
+            return null;
+        }
+
+        return (int) $asFloat;
     }
 
     /**
@@ -246,7 +280,19 @@ PROMPT;
     private function alternatives(array $items, Collection $products, string $transcript): array
     {
         if (count($items) !== 1) {
-            return [$items]; // ออเดอร์หลายรายการ: ไม่สลับให้ ความเสี่ยงจับคู่ผิดสูงเกิน
+            // ออเดอร์หลายรายการ: เจตนาไม่ใช่สร้างชุดสลับครบทุกแบบ (ความเป็นไปได้บานปลาย)
+            // แค่ตรวจว่ามีบรรทัดไหนสลับเป็น "สินค้าตัวอื่นที่ราคา × จำนวนเท่ากันและถูกพูดถึง" ได้ไหม
+            // ถ้ามีแม้บรรทัดเดียว แปลว่ายอดรวมประกอบได้หลายแบบ → กำกวม
+            // เช่น personal 1 + bm 1 (2,200) ตอนแชทพูดถึงทั้งคู่ที่ราคาเท่ากัน 1,100
+            // → อาจเป็น personal 2 หรือ bm 2 ก็ได้ จึงต้องหยุดส่งของเองแล้วให้เจ้าของกดเลือก
+            // คืนสองสมาชิก (ชุดเดียวกันสองรอบ) เพียงเพื่อให้ตัวเรียก count > 1 ตีเป็นกำกวม
+            foreach ($items as $line) {
+                if ($this->hasSamePriceSibling($line, $products, $transcript)) {
+                    return [$items, $items];
+                }
+            }
+
+            return [$items];
         }
 
         $chosen = $items[0];
@@ -267,6 +313,31 @@ PROMPT;
         }
 
         return $sets;
+    }
+
+    /**
+     * บรรทัดนี้สลับเป็นสินค้าตัวอื่น (ราคา × จำนวนของบรรทัดเท่ากัน) ที่ถูกพูดถึงในแชทได้ไหม
+     * ใช้ตัดสินความกำกวมของออเดอร์หลายรายการ
+     *
+     * @param  array{name: string, total: string, qty: int}  $line
+     * @param  Collection<int, ProductStock>  $products
+     */
+    private function hasSamePriceSibling(array $line, Collection $products, string $transcript): bool
+    {
+        foreach ($products as $product) {
+            if ($product->name === $line['name']) {
+                continue;
+            }
+            $lineTotal = (float) $product->price * $line['qty'];
+            if (abs($lineTotal - (float) $line['total']) > 0.001) {
+                continue;
+            }
+            if ($this->mentioned($product, $transcript)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @param  array<int, array{name: string, total: string, qty: int}>  $items */

@@ -207,4 +207,46 @@ class OrderReconstructorTest extends TestCase
 
         $this->assertNull($result);
     }
+
+    public function test_multi_item_order_is_ambiguous_when_a_line_has_a_same_price_sibling(): void
+    {
+        // แชทพูดถึงทั้ง BM และ Personal (ราคาเท่ากัน 1,100) LLM สรุป personal 1 + bm 1 = 2,200
+        // → 2,200 อาจเป็น personal 2 หรือ bm 2 หรือ personal 1 + bm 1 ก็ได้ → กำกวม ห้ามส่งของเอง
+        $this->fakeLLM('{"items":[{"slug":"personal","qty":1},{"slug":"bm","qty":1}],"confidence":"high"}');
+
+        $result = app(OrderReconstructor::class)->reconstruct($this->bot, [
+            ['sender' => 'bot', 'content' => 'รอบนี้จัด Nolimit Level Up+ BM เซ็ตเดิมเลยไหมครับ?'],
+            ['sender' => 'user', 'content' => 'เอา Nolimit Level Up+ Personal กับ BM อย่างละตัวครับ'],
+        ], 2200.0);
+
+        $this->assertNotNull($result);
+        $this->assertTrue($result->ambiguous);
+    }
+
+    public function test_multi_item_order_stays_confident_when_no_sibling_shares_the_price(): void
+    {
+        // Personal 1 (1,100) + G3D 2 (50×2=100) = 1,200 แชทไม่เคยพูดถึง BM
+        // → แต่ละบรรทัดหาสินค้าราคาเท่ากันที่ถูกพูดถึงไม่ได้ → ไม่กำกวม ส่งของได้
+        $this->fakeLLM('{"items":[{"slug":"personal","qty":1},{"slug":"g3d","qty":2}],"confidence":"high"}');
+
+        $result = app(OrderReconstructor::class)->reconstruct($this->bot, [
+            ['sender' => 'user', 'content' => 'เอา Personal 1 ตัว กับ ไก่ 2 ตัวครับ'],
+        ], 1200.0);
+
+        $this->assertNotNull($result);
+        $this->assertFalse($result->ambiguous);
+    }
+
+    public function test_survives_absurd_quantity_from_llm(): void
+    {
+        // LLM ตอบ qty 1e20 (float ที่ (int) ไม่รับได้) เดิม throw ออกจาก decode()
+        // จน record() ไม่ถูกเรียก สลิปหายทั้งใบเงียบๆ ต้องได้ null ไม่ throw
+        $this->fakeLLM('{"items":[{"slug":"personal","qty":1e20}]}');
+
+        $result = app(OrderReconstructor::class)->reconstruct($this->bot, [
+            ['sender' => 'user', 'content' => 'เอา Personal ครับ'],
+        ], 1100.0);
+
+        $this->assertNull($result);
+    }
 }
