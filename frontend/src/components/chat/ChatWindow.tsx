@@ -14,9 +14,8 @@ import type { Conversation } from '@/types/api';
 
 // Extracted components
 import { ChatHeader } from './ChatHeader';
+import { ChatHeaderActions } from './ChatHeaderActions';
 import { MessageList } from './MessageList';
-import { ClearContextDialog } from './ClearContextDialog';
-import { ConfirmPaymentDialog } from './ConfirmPaymentDialog';
 import { ChannelMessageArea } from './ChannelMessageArea';
 import { ChatInputArea } from './ChatInputArea';
 
@@ -76,28 +75,21 @@ export function ChatWindow({ botId, conversation, onShowInfo, onBack }: ChatWind
     isClearingContext,
   } = useChatActions({ botId, conversation });
 
-  // Clear context button (rendered in header actions) - Telegram doesn't support context clearing
-  const clearContextButton = isTelegram ? null : (
-    <ClearContextDialog
-      onClearContext={handleClearContext}
-      isPending={isClearingContext}
-    />
-  );
-
   // Manual payment confirm - LINE conversations of slip-verification-enabled bots only
   const showConfirmPayment = isLINE && Boolean(botSettings?.slip_verification_enabled);
   const headerActions = (
-    <>
-      {showConfirmPayment && (
-        <ConfirmPaymentDialog
-          onConfirm={(amount) =>
-            confirmPayment.mutateAsync({ conversationId: conversation.id, amount })
-          }
-          isPending={confirmPayment.isPending}
-        />
-      )}
-      {clearContextButton}
-    </>
+    <ChatHeaderActions
+      showConfirmPayment={showConfirmPayment}
+      onConfirmPayment={(amount) =>
+        confirmPayment.mutateAsync({ conversationId: conversation.id, amount })
+      }
+      isConfirmPaymentPending={confirmPayment.isPending}
+      // Telegram ไม่รองรับการล้าง context
+      showClearContext={!isTelegram}
+      onClearContext={handleClearContext}
+      isClearingContext={isClearingContext}
+      onShowInfo={onShowInfo}
+    />
   );
 
   return (

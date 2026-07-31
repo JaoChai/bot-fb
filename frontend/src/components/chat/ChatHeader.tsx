@@ -51,7 +51,7 @@ export const ChatHeader = memo(function ChatHeader({
           <Button
             variant="outline"
             size="icon"
-            className="md:hidden size-10 min-h-[40px] min-w-[40px] flex-shrink-0 border-2"
+            className="md:hidden size-11 min-h-[44px] min-w-[44px] flex-shrink-0 border-2"
             onClick={onBack}
             aria-label="Back to conversation list"
           >
@@ -75,7 +75,7 @@ export const ChatHeader = memo(function ChatHeader({
         {/* Customer info */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h2 className="font-semibold text-sm sm:text-base truncate max-w-[120px] sm:max-w-none">
+            <h2 className="font-semibold text-sm sm:text-base truncate">
               {customerName}
             </h2>
             {vip && <VipBadge variant={vip.variant} tooltipContent={vip.content} />}
@@ -90,7 +90,7 @@ export const ChatHeader = memo(function ChatHeader({
         </div>
       </div>
 
-      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+      <div className="flex items-center gap-2 flex-shrink-0">
         <ConnectionIndicator />
 
         {/* Handover controls - only for channels that support it */}
@@ -98,20 +98,22 @@ export const ChatHeader = memo(function ChatHeader({
           <Button
             variant={conversation.is_handover ? 'default' : 'outline'}
             size="sm"
+            className="size-11 p-0 sm:size-auto sm:px-3 sm:py-2"
             onClick={onToggleHandover}
             disabled={isToggleLoading}
+            aria-label={conversation.is_handover ? 'Enable Bot' : 'Take Over'}
           >
             {isToggleLoading ? (
               <Loader2 className="size-4 animate-spin" />
             ) : conversation.is_handover ? (
               <>
-                <Bot className="size-4 mr-1" />
-                Enable Bot
+                <Bot className="size-4 sm:mr-1" />
+                <span className="hidden sm:inline">Enable Bot</span>
               </>
             ) : (
               <>
-                <Headphones className="size-4 mr-1" />
-                Take Over
+                <Headphones className="size-4 sm:mr-1" />
+                <span className="hidden sm:inline">Take Over</span>
               </>
             )}
           </Button>
@@ -125,8 +127,9 @@ export const ChatHeader = memo(function ChatHeader({
           <Button
             variant="outline"
             size="icon"
-            className="xl:hidden"
+            className="hidden sm:inline-flex xl:hidden"
             onClick={onShowInfo}
+            aria-label="ข้อมูลลูกค้า"
           >
             <Info className="size-4" />
           </Button>
