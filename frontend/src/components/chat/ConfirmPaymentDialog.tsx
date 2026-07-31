@@ -30,11 +30,25 @@ import type { ConfirmPaymentResponse } from '@/hooks/chat/useConfirmPayment';
 interface ConfirmPaymentDialogProps {
   onConfirm: (amount?: number) => Promise<ConfirmPaymentResponse>;
   isPending: boolean;
+  /** คุม open จากข้างนอก — ไม่ส่งจะใช้ state ในตัวเอง */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** ส่ง false เมื่อจะเปิด dialog จากเมนูข้างนอกแทนปุ่มในตัว */
+  showTrigger?: boolean;
 }
 
-export function ConfirmPaymentDialog({ onConfirm, isPending }: ConfirmPaymentDialogProps) {
+export function ConfirmPaymentDialog({
+  onConfirm,
+  isPending,
+  open: controlledOpen,
+  onOpenChange,
+  showTrigger = true,
+}: ConfirmPaymentDialogProps) {
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled ? (onOpenChange ?? (() => {})) : setInternalOpen;
   const [amount, setAmount] = useState('');
 
   const handleConfirm = async () => {
@@ -74,16 +88,18 @@ export function ConfirmPaymentDialog({ onConfirm, isPending }: ConfirmPaymentDia
 
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button variant="outline" size="sm" disabled={isPending}>
-          {isPending ? (
-            <Loader2 className="size-4 animate-spin sm:mr-1" />
-          ) : (
-            <BadgeCheck className="size-4 sm:mr-1" />
-          )}
-          <span className="hidden sm:inline">ยืนยันรับเงิน ✅</span>
-        </Button>
-      </AlertDialogTrigger>
+      {showTrigger && (
+        <AlertDialogTrigger asChild>
+          <Button variant="outline" size="sm" disabled={isPending}>
+            {isPending ? (
+              <Loader2 className="size-4 animate-spin sm:mr-1" />
+            ) : (
+              <BadgeCheck className="size-4 sm:mr-1" />
+            )}
+            <span className="hidden sm:inline">ยืนยันรับเงิน ✅</span>
+          </Button>
+        </AlertDialogTrigger>
+      )}
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>ยืนยันรับเงินด้วยตนเอง?</AlertDialogTitle>
