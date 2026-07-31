@@ -150,6 +150,23 @@ class OrderReconstructorTest extends TestCase
         $this->assertSame('G3D', $result->items[0]['name']);
     }
 
+    public function test_accepts_two_code_point_alias_bm(): void
+    {
+        // Regression guard ของเกณฑ์ความยาวคำในด่าน mentioned: 'BM' นับได้ 2 code point
+        // (เทียบกับ 'ไก่' ที่ 3 code point จึงไม่ได้พิสูจน์อะไร) — 'BM' เป็น alias จริงที่เคยถูก
+        // ด่านนี้บล็อกเมื่อตั้งเกณฑ์ความยาวไว้สูง. บทสนทนามีแค่คำว่า BM ห้ามมีชื่อเต็ม.
+        $this->fakeLLM('{"items":[{"slug":"bm","qty":1}],"confidence":"high"}');
+
+        $result = app(OrderReconstructor::class)->reconstruct($this->bot, [
+            ['sender' => 'user', 'content' => 'เอา BM 1 ตัวครับ'],
+        ], 1100.0);
+
+        $this->assertNotNull($result);
+        // ไม่กำกวม: แชทพูดถึงแค่ BM (Personal ไม่ถูก mention) → ไม่มี alternative สลับราคาเดียวกัน
+        // จึง assert ที่ items[0] ตรงๆ ไม่ใช่ alternatives (brief: assert ที่ alternatives เฉพาะตอน ambiguous)
+        $this->assertSame('Nolimit Level Up+ BM', $result->items[0]['name']);
+    }
+
     public function test_returns_null_and_never_calls_llm_without_a_utility_model(): void
     {
         // ถึงมีโมเดลแชทตั้งไว้ก็ต้องไม่ยิง LLM เมื่อ utility_model เป็น null

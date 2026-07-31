@@ -444,12 +444,47 @@ class SlipVerificationService
         if ($result->orderSummary !== null && $result->orderSummary !== '-') {
             $lines[] = 'ออเดอร์: <b>'.TelegramAlertBotService::esc($result->orderSummary).'</b>';
         }
+        // ระบบหาออเดอร์ไม่เจอเลย → แนบบทสนทนาล่าสุดมาให้ตัดสินได้จากในการ์ด ไม่ต้องเปิดแอป
+        if ($result->failReason === 'no_pending_order' && $conversation !== null) {
+            foreach ($this->recentChatQuotes($conversation) as $quote) {
+                $lines[] = $quote;
+            }
+        }
         $lines[] = $result->passed
             ? 'ส่งของให้แล้ว ไม่ต้องทำอะไรครับ — ถ้าไม่ถูกต้องรบกวนเปิดแชทแก้'
             : 'กรุณาเช็คในแชทก่อนยืนยัน';
 
         $keyboard = $result->passed ? null : $this->buildConfirmKeyboard($conversation, $result);
         $this->alertBot->sendMessage($token, $chatId, implode("\n", $lines), $keyboard);
+    }
+
+    /**
+     * สามข้อความล่าสุดในแชท (ตัดให้สั้น) สำหรับแปะในการ์ดตอนระบบหาออเดอร์ไม่เจอ
+     *
+     * @return array<int, string>
+     */
+    private function recentChatQuotes(Conversation $conversation, int $limit = 3): array
+    {
+        $messages = $conversation->messages()
+            ->whereIn('sender', ['user', 'bot'])
+            ->where('type', 'text')
+            ->latest('id')
+            ->take($limit)
+            ->get()
+            ->reverse();
+
+        if ($messages->isEmpty()) {
+            return [];
+        }
+
+        $quotes = ['💬 <i>ข้อความล่าสุดในแชท</i>'];
+        foreach ($messages as $message) {
+            $who = $message->sender === 'user' ? 'ลูกค้า' : 'บอท';
+            $text = mb_substr(str_replace('|||', ' ', (string) $message->content), 0, 120);
+            $quotes[] = "· {$who}: ".TelegramAlertBotService::esc($text);
+        }
+
+        return $quotes;
     }
 
     /**

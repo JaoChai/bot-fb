@@ -245,6 +245,28 @@ class SlipVerificationAlertTest extends TestCase
         });
     }
 
+    public function test_no_pending_order_alert_quotes_the_last_chat_messages(): void
+    {
+        [$bot, $conversation] = $this->seedBotWithTelegramPlugin();
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $conversation->messages()->create(['sender' => 'user', 'content' => 'เอาเฟส 1 ตัวครับ', 'type' => 'text']);
+        $conversation->messages()->create(['sender' => 'bot', 'content' => 'รับแบบผูกบัตรหรือเติมเงินครับ?', 'type' => 'text']);
+
+        $result = new SlipVerificationResult(
+            isSlip: true, passed: false, failReason: 'no_pending_order',
+            amount: 1100.0, transRef: 'TR3',
+        );
+
+        app(SlipVerificationService::class)->notifyAdmin($bot, $conversation, $result);
+
+        Http::assertSent(function ($request) {
+            $text = $request->data()['text'];
+            return str_contains($text, 'เอาเฟส 1 ตัวครับ')
+                && str_contains($text, 'รับแบบผูกบัตรหรือเติมเงินครับ?');
+        });
+    }
+
     /**
      * เตรียม bot + flow + telegram plugin (enabled) + conversation ผูก bot ตาม pattern
      * ที่ใช้ใน test อื่นในไฟล์นี้ (token TOK, chat_id 999).
