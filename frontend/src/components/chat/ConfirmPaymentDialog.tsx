@@ -7,7 +7,7 @@
  *
  * Shown only for LINE conversations whose bot has slip verification enabled.
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,6 +50,9 @@ export function ConfirmPaymentDialog({
   const open = isControlled ? controlledOpen : internalOpen;
   const setOpen = isControlled ? (onOpenChange ?? (() => {})) : setInternalOpen;
   const [amount, setAmount] = useState('');
+  // หัวแชทบนมือถือ render dialog นี้ 2 instance (ปุ่มตรง + ตัวที่เมนู ⋮ สั่งเปิด)
+  // id ตายตัวจึงชนกันได้ — useId ให้ id ที่ไม่ซ้ำต่อ instance
+  const amountId = useId();
 
   const handleConfirm = async () => {
     const trimmed = amount.trim();
@@ -111,9 +114,9 @@ export function ConfirmPaymentDialog({
         </AlertDialogHeader>
 
         <div className="space-y-2">
-          <Label htmlFor="confirm-payment-amount">ยอดเงิน (บาท)</Label>
+          <Label htmlFor={amountId}>ยอดเงิน (บาท)</Label>
           <Input
-            id="confirm-payment-amount"
+            id={amountId}
             inputMode="decimal"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}

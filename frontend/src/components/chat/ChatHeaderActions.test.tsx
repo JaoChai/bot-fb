@@ -74,6 +74,16 @@ describe('ChatHeaderActions', () => {
     expect(await screen.findByText('Reset bot context?')).toBeInTheDocument();
   });
 
+  // money path — เหตุผลทั้งหมดของการยุบปุ่มเข้าเมนูคือให้ทางนี้ยังกดได้บนมือถือ
+  it('เลือกยืนยันรับเงินจากเมนูแล้ว dialog เปิดขึ้นจริง', async () => {
+    render(<ChatHeaderActions {...baseProps} />);
+
+    openMenu();
+    fireEvent.click(await screen.findByRole('menuitem', { name: /ยืนยันรับเงิน/ }));
+
+    expect(await screen.findByText('ยืนยันรับเงินด้วยตนเอง?')).toBeInTheDocument();
+  });
+
   it('เลือกข้อมูลลูกค้าแล้วเรียก onShowInfo', () => {
     const onShowInfo = vi.fn();
     render(<ChatHeaderActions {...baseProps} onShowInfo={onShowInfo} />);
