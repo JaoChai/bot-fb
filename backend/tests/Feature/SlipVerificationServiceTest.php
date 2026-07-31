@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Bot;
 use App\Models\BotSetting;
 use App\Models\Conversation;
+use App\Models\ProductStock;
 use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\OpenRouterService;
@@ -78,15 +79,15 @@ class SlipVerificationServiceTest extends TestCase
 
     private function fakeReconstructorLLM(string $json): void
     {
-        $mock = Mockery::mock(\App\Services\OpenRouterService::class);
+        $mock = Mockery::mock(OpenRouterService::class);
         $mock->shouldReceive('chat')->andReturn(['content' => $json]);
-        $this->app->instance(\App\Services\OpenRouterService::class, $mock);
+        $this->app->instance(OpenRouterService::class, $mock);
     }
 
     private function seedProducts(): void
     {
-        \App\Models\ProductStock::create(['name' => 'Nolimit Level Up+ Personal', 'slug' => 'personal', 'aliases' => ['Personal'], 'in_stock' => true, 'display_order' => 1, 'delivery_method' => 'stock', 'price' => 1500]);
-        \App\Models\ProductStock::create(['name' => 'Nolimit Level Up+ BM', 'slug' => 'bm', 'aliases' => ['BM'], 'in_stock' => true, 'display_order' => 2, 'delivery_method' => 'stock', 'price' => 1500]);
+        ProductStock::create(['name' => 'Nolimit Level Up+ Personal', 'slug' => 'personal', 'aliases' => ['Personal'], 'in_stock' => true, 'display_order' => 1, 'delivery_method' => 'stock', 'price' => 1500]);
+        ProductStock::create(['name' => 'Nolimit Level Up+ BM', 'slug' => 'bm', 'aliases' => ['BM'], 'in_stock' => true, 'display_order' => 2, 'delivery_method' => 'stock', 'price' => 1500]);
     }
 
     public function test_valid_slip_passes_all_checks(): void
@@ -512,7 +513,7 @@ class SlipVerificationServiceTest extends TestCase
         $this->assertFalse($result->passed);
         $this->assertSame('needs_choice', $result->failReason);
         $this->assertDatabaseHas('slip_verifications', ['status' => 'needs_choice']);
-        $slip = \App\Models\SlipVerification::latest('id')->first();
+        $slip = SlipVerification::latest('id')->first();
         $this->assertCount(2, $slip->reconstructed['alternatives']);
     }
 
@@ -521,9 +522,9 @@ class SlipVerificationServiceTest extends TestCase
         // ด่าน 1 เจอออเดอร์อยู่แล้ว → ห้ามเสียเงินเรียก LLM (paymentHistory ตั้งไว้ใน setUp)
         $this->seedProducts();
         $this->bot->update(['utility_model' => 'openai/gpt-4o-mini']);
-        $mock = Mockery::mock(\App\Services\OpenRouterService::class);
+        $mock = Mockery::mock(OpenRouterService::class);
         $mock->shouldNotReceive('chat');
-        $this->app->instance(\App\Services\OpenRouterService::class, $mock);
+        $this->app->instance(OpenRouterService::class, $mock);
         Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);
 
         $result = $this->verify();

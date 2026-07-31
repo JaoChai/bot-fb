@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
+use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\Payment\OrderReconstruction;
 use App\Services\Payment\SlipVerificationResult;
@@ -173,6 +174,7 @@ class SlipVerificationAlertTest extends TestCase
 
         Http::assertSent(function ($request) {
             $body = $request->data();
+
             return str_contains($body['text'], 'ระบบสรุปออเดอร์เองแล้ว')
                 && str_contains($body['text'], 'Nolimit Level Up+ Personal')
                 && ! isset($body['reply_markup']);
@@ -184,7 +186,7 @@ class SlipVerificationAlertTest extends TestCase
         [$bot, $conversation] = $this->seedBotWithTelegramPlugin();
         Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
 
-        $slip = \App\Models\SlipVerification::create([
+        $slip = SlipVerification::create([
             'bot_id' => $bot->id,
             'conversation_id' => $conversation->id,
             'amount' => 1100,
@@ -222,6 +224,7 @@ class SlipVerificationAlertTest extends TestCase
 
         Http::assertSent(function ($request) use ($slip) {
             $keyboard = json_decode($request->data()['reply_markup'] ?? '[]', true);
+
             return count($keyboard['inline_keyboard'] ?? []) === 2
                 && $keyboard['inline_keyboard'][0][0]['callback_data'] === "po|{$slip->id}|0"
                 && str_contains($keyboard['inline_keyboard'][1][0]['text'], 'BM');
@@ -235,7 +238,7 @@ class SlipVerificationAlertTest extends TestCase
 
         // เคสหลายรายการกำกวม (personal 1 + bm 1 = 2,200): reconstruction คืน alternatives
         // ชุดเดียว (ไม่มีปุ่มสลับจริง) เพราะความเป็นไปได้บานปลาย → ต้องเตือนให้เปิดแชทตรวจ
-        $slip = \App\Models\SlipVerification::create([
+        $slip = SlipVerification::create([
             'bot_id' => $bot->id,
             'conversation_id' => $conversation->id,
             'amount' => 2200,
@@ -340,6 +343,7 @@ class SlipVerificationAlertTest extends TestCase
 
         Http::assertSent(function ($request) {
             $text = $request->data()['text'];
+
             return str_contains($text, 'เอาเฟส 1 ตัวครับ')
                 && str_contains($text, 'รับแบบผูกบัตรหรือเติมเงินครับ?');
         });

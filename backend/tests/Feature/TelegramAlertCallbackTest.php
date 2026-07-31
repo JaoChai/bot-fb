@@ -8,10 +8,13 @@ use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
+use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\Payment\ManualPaymentConfirmService;
 use App\Services\Payment\TelegramAlertBotService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
@@ -171,9 +174,9 @@ class TelegramAlertCallbackTest extends TestCase
     public function test_picking_an_option_confirms_the_payment_with_the_chosen_items(): void
     {
         [$bot, $conv] = $this->seedPlugin();
-        \Illuminate\Support\Facades\Http::fake(['api.telegram.org/*' => \Illuminate\Support\Facades\Http::response(['ok' => true])]);
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
 
-        $slip = \App\Models\SlipVerification::create([
+        $slip = SlipVerification::create([
             'bot_id' => $bot->id,
             'conversation_id' => $conv->id,
             'amount' => 1100,
@@ -211,9 +214,9 @@ class TelegramAlertCallbackTest extends TestCase
             $m->shouldReceive('confirm')->once()->andReturn(['message' => new Message, 'order_created' => true]);
         });
 
-        \Illuminate\Support\Facades\Http::fake(['api.telegram.org/*' => \Illuminate\Support\Facades\Http::response(['ok' => true])]);
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
 
-        $slip = \App\Models\SlipVerification::create([
+        $slip = SlipVerification::create([
             'bot_id' => $bot->id,
             'conversation_id' => $conv->id,
             'amount' => 2200,
@@ -236,7 +239,7 @@ class TelegramAlertCallbackTest extends TestCase
 
         // บั๊ก qty: เดิม handlePickOption ใช้ array_column($items, 'name') ทำจำนวนหาย
         // → เจ้าของสั่ง 2 ตัวแต่ข้อความยืนยันขึ้นเหมือนสั่งตัวเดียว. ข้อความต้องมี "x2" ติดมาด้วย
-        \Illuminate\Support\Facades\Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        Http::assertSent(function (Request $request) {
             return str_contains($request->url(), 'editMessageText')
                 && str_contains($request->data()['text'] ?? '', 'x2');
         });
@@ -246,9 +249,9 @@ class TelegramAlertCallbackTest extends TestCase
     {
         [$bot, $conv] = $this->seedPlugin();
         $this->mock(ManualPaymentConfirmService::class, fn ($m) => $m->shouldNotReceive('confirm'));
-        \Illuminate\Support\Facades\Http::fake(['api.telegram.org/*' => \Illuminate\Support\Facades\Http::response(['ok' => true])]);
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
 
-        $slip = \App\Models\SlipVerification::create([
+        $slip = SlipVerification::create([
             'bot_id' => $bot->id,
             'conversation_id' => $conv->id,
             'amount' => 1100,
@@ -270,14 +273,14 @@ class TelegramAlertCallbackTest extends TestCase
     {
         [$bot, $conv] = $this->seedPlugin();
         $this->mock(ManualPaymentConfirmService::class, fn ($m) => $m->shouldNotReceive('confirm'));
-        \Illuminate\Support\Facades\Http::fake(['api.telegram.org/*' => \Illuminate\Support\Facades\Http::response(['ok' => true])]);
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
 
         // บอทที่สอง (ร้านอื่น) มี conversation + slip needs_choice ของตัวเอง ไม่มี plugin telegram ของตน
         $otherUser = User::factory()->owner()->create();
         $otherBot = Bot::factory()->create(['user_id' => $otherUser->id, 'channel_type' => 'line']);
         $otherConversation = Conversation::factory()->create(['bot_id' => $otherBot->id]);
 
-        $slip = \App\Models\SlipVerification::create([
+        $slip = SlipVerification::create([
             'bot_id' => $otherBot->id,
             'conversation_id' => $otherConversation->id,
             'amount' => 1100,
