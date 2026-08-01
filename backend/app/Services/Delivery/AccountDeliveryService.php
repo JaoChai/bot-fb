@@ -219,21 +219,25 @@ class AccountDeliveryService
         return $names === [] ? '' : "\n⚠️ ยังต้องส่งเอง: ".TelegramAlertBotService::esc(implode(', ', $names));
     }
 
-    /** ส่งการ์ดสรุป + ปุ่มเข้า Telegram (ใช้ตอนสร้างงาน และตอนเตือนซ้ำ) */
-    public function sendCard(AccountDelivery $delivery, string $prefix = ''): void
+    /**
+     * ส่งการ์ดสรุป + ปุ่มเข้า Telegram (ใช้ตอนสร้างงาน และตอนเตือนซ้ำ)
+     *
+     * @return bool false = การ์ดไม่ได้ออก ผู้เรียกต้องจัดการต่อ (ยิงซ้ำ / บันทึกไว้ตาม)
+     */
+    public function sendCard(AccountDelivery $delivery, string $prefix = ''): bool
     {
         $plugin = $this->telegramPlugin($delivery);
         if (! $plugin) {
             Log::warning('Delivery: no telegram plugin for card', ['delivery_id' => $delivery->id]);
 
-            return;
+            return false;
         }
 
         $keyboard = $delivery->status === AccountDelivery::STATUS_RESERVED
             ? $this->cardKeyboard($delivery)
             : null;
 
-        $this->alertBot->sendMessage(
+        return $this->alertBot->sendMessage(
             $plugin->config['access_token'] ?? '',
             (string) ($plugin->config['chat_id'] ?? ''),
             $prefix.$this->cardText($delivery),
