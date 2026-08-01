@@ -4,6 +4,7 @@ namespace App\Services\Delivery;
 
 use App\Exceptions\DeliveryAlreadyHandledException;
 use App\Jobs\MarkStockSold;
+use App\Jobs\SendDeliveryCard;
 use App\Models\AccountDelivery;
 use App\Models\AccountDeliveryItem;
 use App\Models\Bot;
@@ -154,7 +155,10 @@ class AccountDeliveryService
             'status' => $deliverable ? AccountDelivery::STATUS_RESERVED : AccountDelivery::STATUS_FAILED,
         ]);
 
-        $this->sendCard($delivery->fresh('items'), $this->duplicateWarning($duplicateOf));
+        // ส่งผ่าน job เพื่อให้ยิงซ้ำได้เอง — ห้ามเรียก sendCard ตรงๆ ที่นี่
+        // เมธอดนี้ถูกเรียกจาก ReserveAccountStock ที่ตั้ง tries=1 ไว้ (กันจองสต๊อกซ้ำ)
+        // การ์ดที่ยิงพลาดตรงนี้จึงไม่มีทางได้ไปต่อ ถ้าไม่แยกออกเป็น job ของตัวเอง
+        SendDeliveryCard::dispatchSafely($delivery->id, $this->duplicateWarning($duplicateOf));
 
         return $delivery;
     }
