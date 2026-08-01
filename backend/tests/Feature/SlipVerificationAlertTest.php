@@ -120,6 +120,8 @@ class SlipVerificationAlertTest extends TestCase
             $m->shouldReceive('sendMessage')->once()
                 ->andReturnUsing(function ($token, $chatId, $text, $keyboard) use (&$captured) {
                     $captured = $keyboard;
+
+                    return true;
                 });
         });
 
@@ -144,6 +146,8 @@ class SlipVerificationAlertTest extends TestCase
             $m->shouldReceive('sendMessage')->once()
                 ->andReturnUsing(function ($t, $c, $tx, $kb) use (&$captured) {
                     $captured = $kb;
+
+                    return true;
                 });
         });
 

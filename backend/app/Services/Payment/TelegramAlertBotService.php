@@ -7,11 +7,23 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Wrapper Telegram Bot API สำหรับ "bot แจ้งเตือน" (ใช้ raw token จาก flow telegram plugin,
- * ไม่ใช่ Bot model). ทุก method นอกจาก setWebhook เป็น best-effort — ล้มแล้วแค่ log.
+ * ไม่ใช่ Bot model). ไม่มี method ไหนโยน exception — ล้มแล้ว log เสมอ
+ * แต่ตัวที่คืน bool (sendMessage, setWebhook) บอกผู้เรียกได้ว่าสำเร็จไหม
+ * ผู้เรียกที่ส่งของสำคัญต้องเช็คค่านั้น อย่าถือว่าเรียกแล้วคือถึงปลายทาง
  */
 class TelegramAlertBotService
 {
     private const BASE = 'https://api.telegram.org/bot';
+
+    /**
+     * เวลารอ Telegram ตอบ ต้องไม่สั้นกว่าตัวส่งข้อความอีกทางคือ FlowPluginService
+     * ซึ่งใช้ค่าปริยายของ Laravel (30 วิ)
+     *
+     * เหตุการณ์ 1 ส.ค. 2026: ค่านี้เคยเป็น 5 วิ พอ api.telegram.org ค้าง ~30 วิ
+     * การ์ดปุ่มส่งของตายทั้ง 2 ครั้งใน 10 วินาที ส่วนข้อความ "ออเดอร์ใหม่!" รอด
+     * ผลคือเจ้าของเห็นว่ามีออเดอร์ แต่ไม่มีปุ่มให้กดส่ง ออเดอร์ค้างเงียบ
+     */
+    private const TIMEOUT_SECONDS = 30;
 
     /** escape ค่า dynamic ก่อนประกอบเข้า HTML message — ค่าที่ไม่ escape ทำให้ Telegram ปฏิเสธทั้งข้อความ */
     public static function esc(?string $value): string
@@ -19,13 +31,14 @@ class TelegramAlertBotService
         return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
     }
 
-    public function sendMessage(string $token, string $chatId, string $text, ?array $inlineKeyboard = null): void
+    public function sendMessage(string $token, string $chatId, string $text, ?array $inlineKeyboard = null): bool
     {
         $params = ['chat_id' => $chatId, 'text' => $text, 'parse_mode' => 'HTML'];
         if ($inlineKeyboard !== null) {
             $params['reply_markup'] = json_encode(['inline_keyboard' => $inlineKeyboard]);
         }
-        $this->call($token, 'sendMessage', $params);
+
+        return $this->call($token, 'sendMessage', $params);
     }
 
     public function editMessageText(string $token, string $chatId, int $messageId, string $text, ?array $inlineKeyboard = null): void
@@ -57,10 +70,11 @@ class TelegramAlertBotService
         }
     }
 
-    private function call(string $token, string $method, array $params): void
+    /** @return bool true เมื่อ Telegram รับข้อความแล้วจริง — ผู้เรียกที่แคร์ต้องเช็คค่านี้ */
+    private function call(string $token, string $method, array $params): bool
     {
         try {
-            $res = Http::timeout(5)->retry(2, 500)->post(self::BASE.$token.'/'.$method, $params);
+            $res = Http::timeout(self::TIMEOUT_SECONDS)->retry(2, 500)->post(self::BASE.$token.'/'.$method, $params);
 
             if (! $res->successful() || $res->json('ok') === false) {
                 Log::warning('Telegram alert API non-OK response', [
@@ -68,9 +82,15 @@ class TelegramAlertBotService
                     'status' => $res->status(),
                     'body' => $res->body(),
                 ]);
+
+                return false;
             }
+
+            return true;
         } catch (\Throwable $e) {
             Log::warning('Telegram alert API call failed', ['method' => $method, 'error' => $e->getMessage()]);
+
+            return false;
         }
     }
 }
