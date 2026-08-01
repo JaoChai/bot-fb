@@ -29,6 +29,7 @@ class RemindPendingDeliveries extends Command
             ->get();
 
         $skipped = 0;
+        $sent = 0;
         foreach ($pending as $delivery) {
             // เตือนรอบแรกเสมอ แม้อยู่ในช่วงเงียบ — งานที่ยังไม่เคยเตือนแปลว่าการ์ดตอนสร้างงาน
             // อาจไม่เคยไปถึงเลย ปล่อยเงียบ = ลูกค้าที่จ่ายเงินแล้วรอข้ามคืน (เคส #49 ค้าง 9 ชม.)
@@ -41,15 +42,27 @@ class RemindPendingDeliveries extends Command
             }
 
             $ageMinutes = (int) $delivery->created_at->diffInMinutes(now());
-            $service->sendCard($delivery, "⏰ <b>เตือน:</b> งานส่งของค้างมา <code>{$ageMinutes}</code> นาทีแล้ว ยังไม่ได้กดส่ง\n\n");
+            if (! $service->sendCard($delivery, "⏰ <b>เตือน:</b> งานส่งของค้างมา <code>{$ageMinutes}</code> นาทีแล้ว ยังไม่ได้กดส่ง\n\n")) {
+                // ห้ามประทับเวลาเตือนเมื่อการ์ดไม่ออก ไม่งั้นงานจะเสียสิทธิ์ทะลุช่วงเงียบครั้งเดียว
+                // ไปฟรีๆ แล้วเงียบยาวถึง 08:00 แบบเคส #49 — ตาข่ายสุดท้ายดับตอนที่ต้องใช้พอดี
+                // ยอมให้พยายามซ้ำทุกรอบดีกว่าปล่อยออเดอร์ที่ลูกค้าจ่ายเงินแล้วค้างข้ามคืน
+                Log::error('Delivery: reminder card never reached Telegram', [
+                    'delivery_id' => $delivery->id,
+                ]);
+
+                continue;
+            }
+
             $delivery->update(['last_reminded_at' => now()]);
+            $sent++;
         }
 
         if ($skipped > 0) {
             Log::info("Delivery remind: quiet hours, skipped {$skipped}");
         }
 
-        $this->info('reminded: '.($pending->count() - $skipped).", quiet-skipped: {$skipped}");
+        // นับเฉพาะใบที่การ์ดออกจริง — เดิมนับ "ที่พยายาม" ซึ่งกลบเคสส่งไม่สำเร็จไปทั้งหมด
+        $this->info("reminded: {$sent}, quiet-skipped: {$skipped}");
 
         return self::SUCCESS;
     }

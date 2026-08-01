@@ -76,7 +76,10 @@ Schedule::command('idempotency:clean')
 Schedule::command('db:ping')->everyFourMinutes();
 
 // Auto Account Delivery — เตือนงานค้างกดยืนยัน
-Schedule::command('delivery:remind')->everyThirtyMinutes()->withoutOverlapping();
+// withoutOverlapping(10) ไม่ใช่ค่าปริยาย 1440: ถ้า process โดนฆ่ากลางรัน (redeploy ระหว่าง
+// Telegram ล่ม) mutex ค่าปริยายจะค้าง 24 ชม. = ตาข่ายสุดท้ายดับตอนที่ต้องใช้พอดี
+// runInBackground กัน schedule ก้อนนี้ถูกบล็อกเมื่อการ์ดหลายใบต้องรอ Telegram ทีละ ~60 วิ
+Schedule::command('delivery:remind')->everyThirtyMinutes()->withoutOverlapping(10)->runInBackground();
 
 // Auto Account Delivery — ตรวจของค้าง/limbo ระหว่าง bot-fb กับ mhha_acc_db
 Schedule::command('delivery:reconcile')->hourly()->withoutOverlapping();

@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Delivery\AccountDeliveryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Queue\Attributes\Backoff;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -72,6 +73,21 @@ class SendDeliveryCardTest extends TestCase
         (new SendDeliveryCard(999999))->handle(app(AccountDeliveryService::class));
 
         Http::assertNothingSent();
+    }
+
+    public function test_backoff_window_outlasts_the_outage_that_caused_the_incident(): void
+    {
+        // ค่านี้คือข้ออ้างหลักของทั้งแผน ถ้า attribute เพี้ยนหรือถูกลบ Laravel จะตกไปใช้
+        // --backoff ของ worker (5 วิ) เงียบๆ ซึ่งสั้นกว่าหน้าต่างที่ Telegram ค้างจริง 30 วิ
+        // แล้วบั๊กเดิมกลับมาโดยไม่มีเทสต์ตัวไหนแดงเลย
+        $attributes = (new \ReflectionClass(SendDeliveryCard::class))->getAttributes(Backoff::class);
+
+        $this->assertCount(1, $attributes, 'SendDeliveryCard ต้องมี #[Backoff] กำกับไว้เสมอ');
+
+        $delays = $attributes[0]->newInstance()->backoff;
+
+        $this->assertIsArray($delays);
+        $this->assertGreaterThan(30, array_sum($delays));
     }
 
     public function test_job_retries_at_least_three_times(): void

@@ -10,6 +10,7 @@ use App\Models\FlowPlugin;
 use App\Models\SlipVerification;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -107,6 +108,21 @@ class RemindPendingDeliveriesTest extends TestCase
         $this->artisan('delivery:remind')->assertSuccessful();
 
         Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage'));
+    }
+
+    public function test_does_not_stamp_reminder_when_the_card_never_reached_telegram(): void
+    {
+        // ประทับเวลาเตือนทั้งที่การ์ดไม่ออก = เผาสิทธิ์ทะลุช่วงเงียบครั้งเดียวทิ้งฟรีๆ
+        // รอบถัดไปงานจะเข้าเงื่อนไข "เคยเตือนแล้ว" แล้วเงียบยาวถึง 08:00 แบบเคส #49 เป๊ะ
+        // คือตาข่ายสุดท้ายดับตอนที่ต้องใช้พอดี
+        Carbon::setTestNow(Carbon::today()->setTime(2, 0));
+        Http::fake(fn () => throw new ConnectionException('timed out'));
+
+        $delivery = $this->makeDelivery(['created_at' => now()->subHours(3)]);
+
+        $this->artisan('delivery:remind')->assertSuccessful();
+
+        $this->assertNull($delivery->fresh()->last_reminded_at);
     }
 
     public function test_first_reminder_fires_even_during_quiet_hours(): void
