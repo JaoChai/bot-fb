@@ -30,7 +30,11 @@ class RemindPendingDeliveries extends Command
 
         $skipped = 0;
         foreach ($pending as $delivery) {
-            if (UserSetting::quietNow($delivery->bot?->user?->settings)) {
+            // เตือนรอบแรกเสมอ แม้อยู่ในช่วงเงียบ — งานที่ยังไม่เคยเตือนแปลว่าการ์ดตอนสร้างงาน
+            // อาจไม่เคยไปถึงเลย ปล่อยเงียบ = ลูกค้าที่จ่ายเงินแล้วรอข้ามคืน (เคส #49 ค้าง 9 ชม.)
+            // ส่วนการเตือนซ้ำยังเคารพช่วงเงียบเหมือนเดิม
+            if ($delivery->last_reminded_at !== null
+                && UserSetting::quietNow($delivery->bot?->user?->settings)) {
                 $skipped++;
 
                 continue;

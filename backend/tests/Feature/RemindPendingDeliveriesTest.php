@@ -79,16 +79,22 @@ class RemindPendingDeliveriesTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_skips_reminder_during_quiet_hours(): void
+    public function test_skips_repeat_reminder_during_quiet_hours(): void
     {
+        // ช่วงเงียบยังกันการเตือนซ้ำเหมือนเดิม — เปลี่ยนเฉพาะการเตือนรอบแรก
         Carbon::setTestNow(Carbon::today()->setTime(2, 0));
         Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
-        $delivery = $this->makeDelivery(['created_at' => now()->subHour()]);
+        $remindedAt = now()->subHours(2);
+        $delivery = $this->makeDelivery([
+            'created_at' => now()->subHours(3),
+            'last_reminded_at' => $remindedAt,
+        ]);
 
         $this->artisan('delivery:remind')->assertSuccessful();
 
         Http::assertNothingSent();
-        $this->assertNull($delivery->fresh()->last_reminded_at); // รอบเช้าต้องเตือนต่อได้
+        // ไม่ถูกแตะ = รอบเช้าเตือนต่อได้
+        $this->assertSame($remindedAt->toDateTimeString(), $delivery->fresh()->last_reminded_at->toDateTimeString());
     }
 
     public function test_reminds_at_night_when_quiet_hours_disabled(): void
@@ -101,5 +107,20 @@ class RemindPendingDeliveriesTest extends TestCase
         $this->artisan('delivery:remind')->assertSuccessful();
 
         Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage'));
+    }
+
+    public function test_first_reminder_fires_even_during_quiet_hours(): void
+    {
+        // เคส #49 (20 ก.ค. 2026): การ์ดหายตอน 22:49 แล้วช่วงเงียบกลืนการเตือนไป 9 ชั่วโมง
+        // ลูกค้าจ่ายเงินแล้วรอข้ามคืนเพราะไม่มีใครรู้ว่าการ์ดไม่เคยไปถึง
+        Carbon::setTestNow(Carbon::today()->setTime(2, 0));
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $delivery = $this->makeDelivery(['created_at' => now()->subHours(3)]);
+
+        $this->artisan('delivery:remind')->assertSuccessful();
+
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage'));
+        $this->assertNotNull($delivery->fresh()->last_reminded_at);
     }
 }
