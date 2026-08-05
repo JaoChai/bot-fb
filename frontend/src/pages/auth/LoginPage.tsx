@@ -74,14 +74,6 @@ export function LoginPage() {
           {errors.password && (
             <p className="text-sm text-destructive">{errors.password.message}</p>
           )}
-          <div className="flex justify-end">
-            <Link
-              to="/forgot-password"
-              className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              ลืมรหัสผ่าน?
-            </Link>
-          </div>
         </div>
 
         <Button type="submit" className="w-full" disabled={isLoggingIn}>
