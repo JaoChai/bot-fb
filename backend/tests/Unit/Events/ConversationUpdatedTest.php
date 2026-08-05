@@ -23,12 +23,10 @@ class ConversationUpdatedTest extends TestCase
         $event = new ConversationUpdated($conversation, 'updated');
         $channels = $event->broadcastOn();
 
-        $this->assertCount(2, $channels);
+        $this->assertCount(1, $channels);
         $this->assertInstanceOf(PrivateChannel::class, $channels[0]);
-        $this->assertInstanceOf(PrivateChannel::class, $channels[1]);
 
         $channelNames = array_map(fn ($c) => $c->name, $channels);
-        $this->assertContains('private-conversation.'.$conversation->id, $channelNames);
         $this->assertContains('private-bot.'.$bot->id, $channelNames);
     }
 

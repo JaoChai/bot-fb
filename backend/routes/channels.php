@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\Bot;
-use App\Models\Conversation;
 use App\Models\KnowledgeBase;
 use Illuminate\Support\Facades\Broadcast;
 
@@ -15,30 +14,6 @@ use Illuminate\Support\Facades\Broadcast;
 | used to check if an authenticated user can listen to the channel.
 |
 */
-
-/**
- * Private channel for a specific conversation
- * Authorized for: bot owner OR assigned agent
- */
-Broadcast::channel('conversation.{conversationId}', function ($user, $conversationId) {
-    $conversation = Conversation::with('bot')->find($conversationId);
-
-    if (! $conversation) {
-        return false;
-    }
-
-    // Allow if user owns the bot
-    if ($conversation->bot->user_id === $user->id) {
-        return true;
-    }
-
-    // Allow if user is assigned to this conversation (handover mode)
-    if ($conversation->assigned_user_id === $user->id) {
-        return true;
-    }
-
-    return false;
-});
 
 /**
  * Private channel for all conversations of a bot

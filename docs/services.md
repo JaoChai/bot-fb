@@ -57,7 +57,6 @@ Handles Telegram bot interactions:
 | Service | Purpose | Location |
 |---------|---------|----------|
 | `CircuitBreakerService` | API resilience | `app/Services/CircuitBreakerService.php` |
-| `CostTrackingService` | Token usage analytics | `app/Services/CostTrackingService.php` |
 
 ### CircuitBreakerService
 Prevents cascading failures:
@@ -65,13 +64,6 @@ Prevents cascading failures:
 - Opens circuit after threshold
 - Half-open state for recovery
 - Per-service configuration
-
-### CostTrackingService
-Tracks AI API costs:
-- Token counting per request
-- Model pricing lookup
-- Usage aggregation
-- Budget alerts
 
 ---
 

@@ -66,7 +66,6 @@ export interface BotSettingsUpdatedEvent {
 export const CHANNELS = {
   // Note: echo.private() and echo.join() automatically add 'private-' and 'presence-' prefixes
   // So we only need the base channel name here
-  conversation: (id: number) => `conversation.${id}`,
   bot: (id: number) => `bot.${id}`,
   botPresence: (id: number) => `bot.${id}.presence`,
   userNotifications: (id: number) => `user.${id}.notifications`,

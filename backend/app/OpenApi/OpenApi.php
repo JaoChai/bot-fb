@@ -170,7 +170,6 @@ namespace App\OpenApi;
  *     @OA\Property(property="fallback_message", type="string", nullable=true),
  *     @OA\Property(property="typing_indicator", type="boolean"),
  *     @OA\Property(property="typing_delay_ms", type="integer", example=1000),
- *     @OA\Property(property="content_filter_enabled", type="boolean"),
  *     @OA\Property(property="blocked_keywords", type="array", @OA\Items(type="string"), nullable=true),
  *     @OA\Property(property="analytics_enabled", type="boolean"),
  *     @OA\Property(property="save_conversations", type="boolean"),

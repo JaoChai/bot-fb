@@ -14,18 +14,6 @@ export function AdvancedOptionsSection({ formData, handleChange }: AdvancedOptio
     <Panel icon={Settings} title="ตัวเลือกขั้นสูง">
       <div className="space-y-4 max-w-md">
         <SettingRow
-          label="Webhook Forwarder"
-          description="ส่ง webhook ไปยัง URL อื่นด้วย"
-          htmlFor="webhook-forwarder"
-        >
-          <Switch
-            id="webhook-forwarder"
-            checked={formData.webhook_forwarder_enabled}
-            onCheckedChange={(checked) => handleChange('webhook_forwarder_enabled', checked)}
-          />
-        </SettingRow>
-
-        <SettingRow
           label="Auto Handover"
           description="ปิดบอทตอบอัตโนมัติ ให้ Admin ตอบเอง"
           htmlFor="auto-handover"
