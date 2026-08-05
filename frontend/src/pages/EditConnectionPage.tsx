@@ -131,7 +131,6 @@ export function EditConnectionPage() {
           fallback_chat_model: formData.fallback_chat_model,
           utility_model: formData.utility_model,
           reasoning_effort: formData.reasoning_effort,
-          webhook_forwarder_enabled: formData.webhook_forwarder_enabled,
           auto_handover: formData.auto_handover,
           auto_delivery_enabled: formData.auto_delivery_enabled,
           ...(formData.platform === 'line' && formData.line_channel_secret && {
@@ -153,7 +152,6 @@ export function EditConnectionPage() {
           fallback_chat_model: formData.fallback_chat_model,
           utility_model: formData.utility_model,
           reasoning_effort: formData.reasoning_effort,
-          webhook_forwarder_enabled: formData.webhook_forwarder_enabled,
           auto_handover: formData.auto_handover,
           auto_delivery_enabled: formData.auto_delivery_enabled,
         };

@@ -96,7 +96,6 @@ class BotSettingController extends Controller
      *             @OA\Property(property="fallback_message", type="string", maxLength=1000),
      *             @OA\Property(property="typing_indicator", type="boolean"),
      *             @OA\Property(property="typing_delay_ms", type="integer", minimum=0, maximum=5000),
-     *             @OA\Property(property="content_filter_enabled", type="boolean"),
      *             @OA\Property(property="blocked_keywords", type="array", @OA\Items(type="string")),
      *             @OA\Property(property="analytics_enabled", type="boolean"),
      *             @OA\Property(property="save_conversations", type="boolean"),
@@ -161,7 +160,6 @@ class BotSettingController extends Controller
             'typing_delay_ms' => 'integer|min:0|max:5000',
 
             // Content moderation
-            'content_filter_enabled' => 'boolean',
             'blocked_keywords' => 'nullable|array',
             'blocked_keywords.*' => 'string|max:100',
 
@@ -248,7 +246,6 @@ class BotSettingController extends Controller
             'response_hours_enabled' => false,
             'typing_indicator' => true,
             'typing_delay_ms' => 1000,
-            'content_filter_enabled' => true,
             'analytics_enabled' => true,
             'save_conversations' => true,
             'language' => 'th',

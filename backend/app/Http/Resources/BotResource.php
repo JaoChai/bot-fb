@@ -37,9 +37,6 @@ class BotResource extends JsonResource
             'utility_model' => $this->utility_model,
             'reasoning_effort' => $this->reasoning_effort,
 
-            // Webhook forwarder
-            'webhook_forwarder_enabled' => $this->webhook_forwarder_enabled ?? false,
-
             // Knowledge Base (RAG) Settings
             'kb_enabled' => $this->kb_enabled ?? false,
             'kb_relevance_threshold' => $this->kb_relevance_threshold ?? 0.7,

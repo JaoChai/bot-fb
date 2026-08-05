@@ -37,7 +37,6 @@ class ConversationUpdated implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('conversation.'.$this->conversation->id),
             new PrivateChannel('bot.'.$this->conversation->bot_id),
         ];
     }

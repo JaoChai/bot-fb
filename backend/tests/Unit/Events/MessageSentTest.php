@@ -29,13 +29,11 @@ class MessageSentTest extends TestCase
         $event = new MessageSent($message);
         $channels = $event->broadcastOn();
 
-        $this->assertCount(2, $channels);
+        $this->assertCount(1, $channels);
         $this->assertInstanceOf(PrivateChannel::class, $channels[0]);
-        $this->assertInstanceOf(PrivateChannel::class, $channels[1]);
 
         // Check channel names
         $channelNames = array_map(fn ($c) => $c->name, $channels);
-        $this->assertContains('private-conversation.'.$conversation->id, $channelNames);
         $this->assertContains('private-bot.'.$bot->id, $channelNames);
     }
 

@@ -63,7 +63,6 @@ export interface Bot {
   status: 'active' | 'inactive' | 'paused';
   channel_type: 'line' | 'facebook' | 'testing' | 'telegram';
   webhook_url: string;
-  webhook_forwarder_enabled: boolean;
   auto_handover: boolean;
   auto_delivery_enabled: boolean;
   // Multi-model LLM configuration (API key now in User Settings)
@@ -107,7 +106,6 @@ export interface CreateConnectionData {
   reasoning_effort?: ReasoningEffort;
   channel_access_token?: string;
   channel_secret?: string;
-  webhook_forwarder_enabled?: boolean;
   auto_handover?: boolean;
   auto_delivery_enabled?: boolean;
 }
@@ -123,7 +121,6 @@ export interface UpdateConnectionData {
   reasoning_effort?: ReasoningEffort;
   channel_access_token?: string;
   channel_secret?: string;
-  webhook_forwarder_enabled?: boolean;
   auto_handover?: boolean;
   auto_delivery_enabled?: boolean;
 }
@@ -159,7 +156,6 @@ export interface BotSettings {
   typing_indicator: boolean;
   typing_delay_ms: number;
   // Content moderation
-  content_filter_enabled: boolean;
   blocked_keywords: string[] | null;
   // Analytics
   analytics_enabled: boolean;

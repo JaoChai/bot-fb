@@ -12,4 +12,4 @@ echo "=== Caching config ===" >&2
 php artisan config:cache
 
 echo "=== Starting reverb:start ===" >&2
-exec php artisan reverb:start --host=0.0.0.0 --port="${PORT:-8080}" --debug
+exec php artisan reverb:start --host=0.0.0.0 --port="${PORT:-8080}"

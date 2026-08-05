@@ -24,7 +24,6 @@ class Bot extends Model
         'channel_access_token',
         'channel_secret',
         'webhook_url',
-        'webhook_forwarder_enabled',
         'page_id',
         'default_flow_id',
         // LLM Models (from Connection Settings UI)
@@ -43,10 +42,6 @@ class Bot extends Model
         // Auto handover setting
         'auto_handover',
         'auto_delivery_enabled',
-        // Semantic Router settings
-        'use_semantic_router',
-        'semantic_router_threshold',
-        'semantic_router_fallback',
         // Stats
         'total_conversations',
         'total_messages',
@@ -58,7 +53,6 @@ class Bot extends Model
         'llm_temperature' => 'float',
         'llm_max_tokens' => 'integer',
         'context_window' => 'integer',
-        'webhook_forwarder_enabled' => 'boolean',
         // Channel credentials (encrypted at rest, with fallback for legacy plaintext)
         'channel_access_token' => EncryptedWithFallback::class,
         'channel_secret' => EncryptedWithFallback::class,
@@ -69,9 +63,6 @@ class Bot extends Model
         // Auto handover setting
         'auto_handover' => 'boolean',
         'auto_delivery_enabled' => 'boolean',
-        // Semantic Router settings
-        'use_semantic_router' => 'boolean',
-        'semantic_router_threshold' => 'float',
     ];
 
     protected $hidden = [

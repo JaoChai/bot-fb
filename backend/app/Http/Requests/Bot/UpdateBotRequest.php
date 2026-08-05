@@ -30,9 +30,6 @@ class UpdateBotRequest extends FormRequest
             'utility_model' => ['nullable', 'string', 'max:100'],
             'reasoning_effort' => ['nullable', 'in:low,medium,high'],
 
-            // Webhook forwarder
-            'webhook_forwarder_enabled' => ['sometimes', 'boolean'],
-
             // Auto handover
             'auto_handover' => ['sometimes', 'boolean'],
 
