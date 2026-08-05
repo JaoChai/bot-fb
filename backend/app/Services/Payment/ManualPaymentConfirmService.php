@@ -48,6 +48,12 @@ class ManualPaymentConfirmService
         int $confirmedBy,
         ?array $itemsOverride = null,
     ): array {
+        // เช็คยืนยันซ้ำก่อน resolve ยอด: หลังยืนยันสำเร็จ ข้อความ "เงินเข้าแล้ว" จะบัง
+        // summary เก่าใน history (ตั้งใจ — จ่ายแล้ว) ทำให้ resolve ยอดไม่ได้ ถ้าไม่เช็คตรงนี้
+        // การกดซ้ำจะกลายเป็น NoPendingPayment (422) แทน RecentManualConfirm (409)
+        // เช็คจริงแบบ atomic ยังอยู่ใน transaction ด้านล่างเหมือนเดิม
+        $this->guardAgainstDoubleConfirm($conversation);
+
         $history = $this->recentTextHistory($conversation);
         $receiverAccount = $bot->settings?->slip_receiver_account ?: null;
 
@@ -59,7 +65,14 @@ class ManualPaymentConfirmService
                 'items' => $itemsOverride,
             ];
         } else {
-            $expected = $this->slipVerification->findExpectedPayment($history, $receiverAccount, $bot);
+            // ยอดที่กดยืนยันต้องชี้ใบสรุปที่ยอดตรงเท่านั้น — ห้ามคว้าใบล่าสุดมาแปะยอดอื่น
+            // (เคสจริง #1253: กด "ยอดในสลิป 1,100" แต่ใบล่าสุดคือ Page 199 → เคยได้ออเดอร์
+            // Page ราคา 1,100 ผิดตัว) ไม่เจอใบที่ตรง → fallback ข้อความยืนยันขั้น 2 ด้านล่าง
+            // ซึ่ง match ด้วยยอดอยู่แล้ว → ยังไม่เจออีก = summary '-' ไม่มี items ปลอดภัยกว่าเดาผิด
+            $tolerance = (float) ($bot->settings?->slip_amount_tolerance ?? 0);
+            $expected = $this->slipVerification->findExpectedPayment(
+                $history, $receiverAccount, $bot, $amountOverride, $tolerance,
+            );
         }
 
         $amount = $amountOverride ?? ($expected['total'] ?? null);

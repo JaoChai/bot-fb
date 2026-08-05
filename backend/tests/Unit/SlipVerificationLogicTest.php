@@ -138,6 +138,53 @@ class SlipVerificationLogicTest extends TestCase
         $this->assertNull($this->service()->findExpectedPayment($history));
     }
 
+    // --- matchAmount: หลายใบสรุปค้างพร้อมกัน (เคสจริง #1253 2026-08-05) ---
+
+    public function test_match_amount_picks_older_summary_over_latest(): void
+    {
+        // ใบ Page 199 ออกทับใบ BM 1,100 — สลิป 1,100 ต้องเจอใบ BM ไม่ใช่ mismatch กับใบ 199
+        $history = [
+            ['sender' => 'bot', 'content' => "สรุปรายการที่พี่สั่งซื้อครับ:\n\n1. Nolimit Level Up+ BM (เติมเงิน) (1,100 x 1) = 1,100 บาท\n\nรวมยอดโอน: 1,100 บาท ✅\n\nรบกวนโอนเข้าบัญชี:\nธนาคารกสิกรไทย (KBANK)\n223-3-24880-3"],
+            ['sender' => 'user', 'content' => 'เพจด้วยค่ะ'],
+            ['sender' => 'bot', 'content' => "สรุปรายการที่พี่สั่งซื้อครับ:\n\n1. Page (199 x 1) = 199 บาท\n\nรวมยอดโอน: 199 บาท ✅\n\nรบกวนโอนเข้าบัญชี:\nธนาคารกสิกรไทย (KBANK)\n223-3-24880-3"],
+            ['sender' => 'user', 'content' => '[รูปภาพ]'],
+        ];
+
+        $result = $this->service()->findExpectedPayment($history, matchAmount: 1100.0);
+
+        $this->assertNotNull($result);
+        $this->assertSame(1100.0, $result['total']);
+        $this->assertSame('Nolimit Level Up+ BM (เติมเงิน)', $result['summary']);
+
+        // สลิป 199 ยังต้องเจอใบ Page ตามปกติ
+        $result = $this->service()->findExpectedPayment($history, matchAmount: 199.0);
+        $this->assertSame(199.0, $result['total']);
+    }
+
+    public function test_match_amount_with_no_matching_summary_returns_null(): void
+    {
+        $history = [
+            ['sender' => 'bot', 'content' => "สรุปรายการ\n1. Nolimit BM = 1,100 บาท\nรวมยอดโอน: 1,100 บาท\nโอนเข้าบัญชี 223-3-24880-3"],
+        ];
+
+        $this->assertNull($this->service()->findExpectedPayment($history, matchAmount: 500.0));
+    }
+
+    public function test_summary_before_verify_success_is_consumed(): void
+    {
+        // ใบสรุปที่อยู่ก่อน "เงินเข้าแล้ว" = จ่ายไปแล้ว — เงินโอนใหม่ยอดเท่ากัน
+        // ต้องไม่ auto-match ออเดอร์เก่า (ไม่งั้นโอนซ้ำโดยบังเอิญ = ส่งของซ้ำ)
+        $history = [
+            ['sender' => 'bot', 'content' => "สรุปรายการ\n1. Nolimit BM = 1,100 บาท\nรวมยอดโอน: 1,100 บาท\nโอนเข้าบัญชี 223-3-24880-3"],
+            ['sender' => 'user', 'content' => '[รูปภาพ]'],
+            ['sender' => 'bot', 'content' => "เงินเข้าแล้ว 1,100 บาท ✅\nออเดอร์: Nolimit BM\nส่งใน 5-10 นาที ขอบคุณครับ\n[ยืนยันชำระเงิน]"],
+            ['sender' => 'user', 'content' => '[รูปภาพ]'],
+        ];
+
+        $this->assertNull($this->service()->findExpectedPayment($history, matchAmount: 1100.0));
+        $this->assertNull($this->service()->findExpectedPayment($history));
+    }
+
     public function test_finds_payment_total_using_configured_receiver_account(): void
     {
         $history = [

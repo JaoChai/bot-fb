@@ -72,18 +72,33 @@ class SlipVerificationService
     }
 
     /**
-     * หาข้อความสรุปยอดโอนล่าสุดของบอทใน history แล้วคืนยอด + สรุปรายการ
+     * หาข้อความสรุปยอดโอนของบอทใน history แล้วคืนยอด + สรุปรายการ
+     *
+     * $matchAmount: ถ้าระบุ จะคืนเฉพาะใบสรุปที่ยอดตรง (± $tolerance) โดยไล่จากใหม่ไปเก่า
+     * — รองรับหลายใบสรุปค้างพร้อมกัน (เคสจริง #1253: ใบ Page 199 ออกทับใบ BM 1,100
+     * แล้วสลิป 1,100 ตก mismatch ทั้งที่ใบ 1,100 ยังไม่จ่าย) ถ้าไม่ระบุ = ใบล่าสุด (เดิม)
+     *
+     * ทั้งสองโหมดหยุดสแกนที่ข้อความ "เงินเข้าแล้ว" ล่าสุด — ใบสรุปที่เก่ากว่านั้นถูกจ่าย
+     * ไปแล้ว ห้ามเอามา match เงินโอนใหม่ (ไม่งั้นโอนซ้ำโดยบังเอิญ = ระบบส่งของซ้ำเอง)
      *
      * @param  array<int, array{sender: string, content: string}>  $conversationHistory
      * @return array{total: float, summary: string, items: array}|null
      */
-    public function findExpectedPayment(array $conversationHistory, ?string $receiverAccount = null, ?Bot $bot = null): ?array
-    {
+    public function findExpectedPayment(
+        array $conversationHistory,
+        ?string $receiverAccount = null,
+        ?Bot $bot = null,
+        ?float $matchAmount = null,
+        float $tolerance = 0,
+    ): ?array {
         foreach (array_reverse($conversationHistory) as $msg) {
             if (($msg['sender'] ?? '') !== 'bot') {
                 continue;
             }
             $content = $msg['content'] ?? '';
+            if ($this->detector->isVerifySuccessMessage($content)) {
+                break;
+            }
             $qualifies = $this->detector->isPaymentMessage($content)
                 || ($receiverAccount && str_contains($content, $receiverAccount)
                     && preg_match('/รวมยอดโอน|สรุปยอด|ยอดโอน|ยอดรวม|รวมเป็นเงิน|สรุปรายการ/u', $content));
@@ -92,6 +107,10 @@ class SlipVerificationService
             }
             $data = $this->detector->parsePaymentData($content);
             if ($data === null) {
+                continue;
+            }
+            if ($matchAmount !== null
+                && abs((float) str_replace(',', '', $data['total']) - $matchAmount) > $tolerance) {
                 continue;
             }
 
@@ -296,10 +315,13 @@ class SlipVerificationService
         }
 
         // เช็ค 3: ต้องมีออเดอร์ค้างชำระใน history
-        // ด่าน 1 ข้อความสรุปยอด+เลขบัญชี → ด่าน 2 ข้อความยืนยันขั้น 2 (ยอดต้องตรง)
-        // → ด่าน 3 ให้ระบบสรุปออเดอร์เองจากบทสนทนา (เรียก LLM เฉพาะตอนสองด่านแรกพลาด)
+        // ด่าน 1 ข้อความสรุปยอด+เลขบัญชี (ใบที่ยอดตรงสลิปก่อน → ไม่เจอค่อยใบล่าสุด
+        // เพื่อให้ mismatch ยังรายงานยอดออเดอร์ล่าสุดได้) → ด่าน 2 ข้อความยืนยันขั้น 2
+        // (ยอดต้องตรง) → ด่าน 3 ให้ระบบสรุปออเดอร์เองจากบทสนทนา (เรียก LLM เฉพาะตอนสองด่านแรกพลาด)
         $orderSource = 'summary';
-        $expected = $this->findExpectedPayment($conversationHistory, $configured, $bot);
+        $tolerance = (float) ($bot->settings?->slip_amount_tolerance ?? 0);
+        $expected = $this->findExpectedPayment($conversationHistory, $configured, $bot, $slipAmount, $tolerance)
+            ?? $this->findExpectedPayment($conversationHistory, $configured, $bot);
         if ($expected === null) {
             $orderSource = 'confirm';
             $expected = $this->findExpectedFromConfirmMessage($conversationHistory, $bot, $slipAmount);
@@ -337,7 +359,6 @@ class SlipVerificationService
         }
 
         // เช็ค 4: ยอดต้องตรง (± tolerance)
-        $tolerance = (float) ($bot->settings?->slip_amount_tolerance ?? 0);
         if (abs($slipAmount - $expected['total']) > $tolerance) {
             return $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
                 isSlip: true, passed: false, failReason: 'amount_mismatch',
