@@ -7,6 +7,7 @@ import { ProtectedRoute, GuestRoute } from "@/components/auth"
 import { PageLoadingFallback } from "@/components/ui/loading-spinner"
 import { lazyWithRetryNamed } from "@/lib/lazyWithRetry"
 import { ChunkErrorBoundary } from "@/components/error/ChunkErrorBoundary"
+import { NotFound } from "@/components/error/NotFound"
 
 // Lazy load auth pages with retry support
 const LoginPage = lazyWithRetryNamed(() => import("@/pages/auth/LoginPage"), "LoginPage")
@@ -135,6 +136,12 @@ export const router = createBrowserRouter([
           {
             path: "team",
             element: <LazyPage><TeamPage /></LazyPage>,
+          },
+          // Any unknown URL under the app shell — keeps sidebar so it reads as
+          // "page not found", not "app crashed"
+          {
+            path: "*",
+            element: <NotFound />,
           },
         ],
       },

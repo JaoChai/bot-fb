@@ -21,7 +21,7 @@ export function AlertStrip({ bots }: AlertStripProps) {
         บอทหยุดทำงาน: {inactiveBots.map((b) => b.name).join(', ')}
       </p>
       <Link
-        to="/connections"
+        to="/bots"
         className="ml-auto inline-flex shrink-0 items-center gap-1 text-xs font-medium text-destructive hover:underline"
       >
         ไปดู <ArrowRight className="size-3" />
