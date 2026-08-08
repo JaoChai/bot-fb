@@ -38,8 +38,6 @@
       "Edit(**/.env.*)",
       "Edit(**/composer.lock)",
       "Edit(**/package-lock.json)",
-      "Write(**/.env)",
-      "Write(**/.env.*)",
       "Bash(php artisan migrate*)",
       "Bash(php artisan db:wipe*)",
       "Bash(php artisan db:seed*)",
