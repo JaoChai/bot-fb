@@ -378,7 +378,10 @@ class ProcessAggregatedMessages implements ShouldQueue
             'prompt_tokens' => $result['usage']['prompt_tokens'],
             'completion_tokens' => $result['usage']['completion_tokens'],
             'cost' => $result['cost'],
-            'metadata' => $result['rag_metadata'] ?? null,
+            'metadata' => array_filter([
+                ...($result['rag_metadata'] ?? []),
+                'order_payload' => $result['order_payload'] ?? null,
+            ]) ?: null,
         ]);
 
         // Send response to channel

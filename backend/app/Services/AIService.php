@@ -7,6 +7,7 @@ use App\Jobs\ExtractEntitiesJob;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Services\Payment\OrderPayloadExtractor;
 use Illuminate\Support\Facades\Log;
 
 class AIService
@@ -14,7 +15,8 @@ class AIService
     public function __construct(
         protected OpenRouterService $openRouter,
         protected RAGService $ragService,
-        protected StockGuardService $stockGuard
+        protected StockGuardService $stockGuard,
+        private readonly OrderPayloadExtractor $orderPayload
     ) {}
 
     /**
@@ -56,6 +58,16 @@ class AIService
                 'blocked' => true,
                 'blocked_products' => $guardResult['blocked_products'],
             ];
+        }
+
+        // ตัดบล็อกออเดอร์ออกจากข้อความก่อนใครได้เห็น — ทำที่นี่จุดเดียวเพราะทั้ง webhook
+        // pipeline และ ProcessAggregatedMessages ผ่านเมธอดนี้เสมอ (ทางออกอื่นทั้งหมด
+        // — LINE push, Flex, bubbles, หน้าเว็บ — อ่านจาก content ที่ผ่านตรงนี้แล้ว)
+        $result['order_payload'] = null;
+        if (config('delivery.order_payload_enabled', false)) {
+            $extracted = $this->orderPayload->extract($result['content'] ?? '');
+            $result['content'] = $extracted['clean'];
+            $result['order_payload'] = $extracted['payload'];
         }
 
         // Ensure usage key exists with defaults (some models may not return usage data)
@@ -112,11 +124,16 @@ class AIService
                 'reasoning_content' => $result['reasoning'] ?? null,
             ];
 
-            // Include RAG metadata if KB was used
+            $metadata = [];
             if (! empty($result['rag']) && $result['rag']['enabled']) {
-                $messageData['metadata'] = [
-                    'rag' => $result['rag'],
-                ];
+                $metadata['rag'] = $result['rag'];
+            }
+            // แหล่งความจริงของจำนวนสินค้า — เส้นทางเงินอ่านจากตรงนี้ก่อน regex (Task 10)
+            if (! empty($result['order_payload'])) {
+                $metadata['order_payload'] = $result['order_payload'];
+            }
+            if ($metadata !== []) {
+                $messageData['metadata'] = $metadata;
             }
 
             // Create bot response message
