@@ -99,6 +99,22 @@ class SlipVerificationService
             if ($this->detector->isVerifySuccessMessage($content)) {
                 break;
             }
+            // ชั้น 0: ออเดอร์ที่บอทปล่อยมาเป็นโครงสร้าง — ตรงจากตัวเลขชุดที่บอทใช้คิดจริง
+            // ไม่ผ่านการอ่านประโยคเลย จึงไม่มีทาง desync กับข้อความที่ลูกค้าเห็น
+            $payload = $msg['metadata']['order_payload'] ?? null;
+            if (is_array($payload) && ($payload['items'] ?? []) !== []) {
+                if ($matchAmount !== null && abs((float) $payload['total'] - $matchAmount) > $tolerance) {
+                    continue;
+                }
+                $visible = array_filter($payload['items'], fn (array $i) => ! PaymentMessageDetector::isZeroPriceItem($i));
+
+                return [
+                    'total' => (float) $payload['total'],
+                    'summary' => $visible === [] ? '-' : PaymentMessageDetector::formatItemSummary($visible),
+                    'items' => $payload['items'],
+                    'items_unreliable' => false,
+                ];
+            }
             $qualifies = $this->detector->isPaymentMessage($content)
                 || ($receiverAccount && str_contains($content, $receiverAccount)
                     && preg_match('/รวมยอดโอน|สรุปยอด|ยอดโอน|ยอดรวม|รวมเป็นเงิน|สรุปรายการ/u', $content));
