@@ -231,4 +231,76 @@ class PaymentMessageDetectorHardeningTest extends TestCase
         $this->assertEquals(20, $data['items'][0]['qty']);
         $this->assertEquals('50', $data['items'][0]['price']);
     }
+
+    // ────────────────────────────────────────────────────────
+    // Group D — ฟอร์แมตวงเล็บที่มีหน่วยปน (เคสจริง 2026-08-10)
+    // ────────────────────────────────────────────────────────
+
+    #[Test]
+    public function test_d1_paren_with_baht_unit_keeps_qty(): void
+    {
+        // เคสจริง conversation #46 (10 ส.ค. 2026): "(50 บาท x 20)" ทำให้ชื่อกลายเป็น
+        // "G3D (" ราคา 50 และ qty หาย → ระบบส่งบัญชีให้ลูกค้า 1 ตัวจาก 20 ที่จ่ายมา
+        $text = "สรุปรายการที่พี่สั่งซื้อครับ:\n\n1. G3D (50 บาท x 20) = 1,000 บาท\n\nรวมยอดโอน: 1,000 บาท ✅";
+
+        $data = $this->detector->parsePaymentData($text);
+
+        $this->assertNotNull($data);
+        $this->assertCount(1, $data['items']);
+        $this->assertEquals('G3D', $data['items'][0]['name']);
+        $this->assertEquals(20, $data['items'][0]['qty']);
+        $this->assertEquals('50', $data['items'][0]['price']);
+        $this->assertEquals('1,000', $data['items'][0]['total']);
+    }
+
+    #[Test]
+    public function test_d2_paren_with_baht_symbol_keeps_qty(): void
+    {
+        $text = "1. G3D (50฿ x 20) = 1,000 บาท\nรวมยอดโอน: 1,000 บาท";
+
+        $data = $this->detector->parsePaymentData($text);
+
+        $this->assertNotNull($data);
+        $this->assertEquals('G3D', $data['items'][0]['name']);
+        $this->assertEquals(20, $data['items'][0]['qty']);
+    }
+
+    #[Test]
+    public function test_d3_paren_with_unit_word_after_qty_keeps_qty(): void
+    {
+        $text = "1. G3D (50 x 20 ตัว) = 1,000 บาท\nรวมยอดโอน: 1,000 บาท";
+
+        $data = $this->detector->parsePaymentData($text);
+
+        $this->assertNotNull($data);
+        $this->assertEquals('G3D', $data['items'][0]['name']);
+        $this->assertEquals(20, $data['items'][0]['qty']);
+    }
+
+    #[Test]
+    public function test_d4_paren_with_comma_price_and_baht_keeps_qty(): void
+    {
+        $text = "1. Nolimit Level Up+ BM (ผูกบัตร) (1,100 บาท x 2) = 2,200 บาท\nรวมยอดโอน: 2,200 บาท";
+
+        $data = $this->detector->parsePaymentData($text);
+
+        $this->assertNotNull($data);
+        $this->assertEquals('Nolimit Level Up+ BM (ผูกบัตร)', $data['items'][0]['name']);
+        $this->assertEquals(2, $data['items'][0]['qty']);
+        $this->assertEquals('1,100', $data['items'][0]['price']);
+    }
+
+    #[Test]
+    public function test_d5_item_name_never_ends_with_open_paren(): void
+    {
+        // ตาข่ายกันตระกูลบั๊กนี้ทั้งหมด: ชื่อสินค้าที่มีวงเล็บเปิดค้าง = สัญญาณว่า regex
+        // หยุดผิดที่ ต้องไม่มีทางเกิดได้ ไม่ว่าโมเดลจะแต่งประโยคยังไง
+        $text = "1. G3D (50 บาท x 20) = 1,000 บาท\nรวมยอดโอน: 1,000 บาท";
+
+        $data = $this->detector->parsePaymentData($text);
+
+        foreach ($data['items'] as $item) {
+            $this->assertStringNotContainsString('(', rtrim($item['name'], ')'));
+        }
+    }
 }
