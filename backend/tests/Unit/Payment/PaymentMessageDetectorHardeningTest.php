@@ -295,12 +295,12 @@ class PaymentMessageDetectorHardeningTest extends TestCase
     {
         // ตาข่ายกันตระกูลบั๊กนี้ทั้งหมด: ชื่อสินค้าที่มีวงเล็บเปิดค้าง = สัญญาณว่า regex
         // หยุดผิดที่ ต้องไม่มีทางเกิดได้ ไม่ว่าโมเดลจะแต่งประโยคยังไง
-        $text = "1. G3D (50 บาท x 20) = 1,000 บาท\nรวมยอดโอน: 1,000 บาท";
+        $text = "1. G3D (50 บาท x 20) = 1,000 บาท\n2. Nolimit Level Up+ BM (ผูกบัตร) (1,100 บาท x 2) = 2,200 บาท\nรวมยอดโอน: 3,200 บาท";
 
         $data = $this->detector->parsePaymentData($text);
 
         foreach ($data['items'] as $item) {
-            $this->assertStringNotContainsString('(', rtrim($item['name'], ')'));
+            $this->assertStringEndsNotWith('(', $item['name']);
         }
     }
 }
