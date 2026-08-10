@@ -97,15 +97,7 @@ class SlipRetryService
         $this->pushToLine($bot, $conversation, $text);
         $this->runPlugins($bot, $conversation, $botMessage);
 
-        if ($result->slipVerificationId !== null) {
-            ReserveAccountStock::dispatchSafely(
-                $bot->id,
-                $conversation->id,
-                $result->slipVerificationId,
-                $result->amount,
-                $result->orderItems ?? [],
-            );
-        }
+        ReserveAccountStock::dispatchIfItemsTrusted($bot->id, $conversation->id, $result);
 
         $this->broadcast($conversation, $botMessage);
 

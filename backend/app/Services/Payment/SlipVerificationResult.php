@@ -20,6 +20,8 @@ class SlipVerificationResult
         public readonly ?string $orderSource = null,
         /** ออเดอร์ที่ระบบสรุปเอง — มีค่าเฉพาะตอน orderSource = 'llm' */
         public readonly ?OrderReconstruction $reconstruction = null,
+        /** true = ผลรวมรายการขัดกับยอดโอน — รับเงินได้ แต่ห้ามส่งของอัตโนมัติ */
+        public readonly bool $itemsUnreliable = false,
     ) {}
 
     public function status(): string

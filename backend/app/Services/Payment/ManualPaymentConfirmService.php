@@ -127,13 +127,25 @@ class ManualPaymentConfirmService
 
         $orderCreated = $this->runPlugins($bot, $conversation, $botMessage);
 
-        ReserveAccountStock::dispatchSafely(
-            $bot->id,
-            $conversation->id,
-            $slip->id,
-            $amount,
-            $expected['items'] ?? [],
-        );
+        // เจ้าของกดเลือกรายการเอง (itemsOverride) = เชื่อได้เสมอ; ถ้าเดาจากข้อความแล้วผลรวม
+        // ขัดกับยอด ต้องไม่จองเอง — ให้เจ้าของกดเลือกจากการ์ดแทน (กติกาเดียวกับเส้นทาง EasySlip)
+        $trusted = ($itemsOverride !== null && $itemsOverride !== [])
+            || ! ($expected['items_unreliable'] ?? false);
+
+        if ($trusted) {
+            ReserveAccountStock::dispatchSafely(
+                $bot->id,
+                $conversation->id,
+                $slip->id,
+                $amount,
+                $expected['items'] ?? [],
+            );
+        } else {
+            Log::warning('Manual confirm: skipped auto-reserve — order items failed checksum', [
+                'conversation_id' => $conversation->id,
+                'amount' => $amount,
+            ]);
+        }
 
         $this->broadcast($conversation, $botMessage);
 

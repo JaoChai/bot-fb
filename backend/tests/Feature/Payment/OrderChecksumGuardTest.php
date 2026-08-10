@@ -142,4 +142,82 @@ class OrderChecksumGuardTest extends TestCase
         $this->assertSame(1000.0, $result['total'], 'ยอดโอนต้องยังใช้ยืนยันเงินได้');
         $this->assertTrue($result['items_unreliable'], 'หลักฐานว่าอ่านพังต้องไม่ถูก null ลบทิ้ง');
     }
+
+    public function test_result_carries_items_unreliable_flag(): void
+    {
+        $result = new \App\Services\Payment\SlipVerificationResult(
+            isSlip: true,
+            passed: true,
+            amount: 1000.0,
+            orderSummary: '-',
+            orderItems: [['name' => 'G3D (', 'total' => '50']],
+            itemsUnreliable: true,
+        );
+
+        $this->assertTrue($result->itemsUnreliable);
+    }
+
+    public function test_result_defaults_items_unreliable_to_false(): void
+    {
+        $result = new \App\Services\Payment\SlipVerificationResult(isSlip: true, passed: true);
+
+        $this->assertFalse($result->itemsUnreliable);
+    }
+
+    public function test_reserve_job_not_dispatched_when_items_unreliable(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+
+        $bot = $this->makeBot();
+        $bot->update(['auto_delivery_enabled' => true]);
+        $conversation = \App\Models\Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'channel_type' => 'line',
+        ]);
+        $slip = \App\Models\SlipVerification::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conversation->id,
+            'amount' => 1000,
+            'status' => 'passed',
+        ]);
+
+        $result = new \App\Services\Payment\SlipVerificationResult(
+            isSlip: true, passed: true, amount: 1000.0,
+            orderSummary: '-', orderItems: [['name' => 'G3D (', 'total' => '50']],
+            itemsUnreliable: true,
+        );
+        $result->slipVerificationId = $slip->id;
+
+        \App\Jobs\ReserveAccountStock::dispatchIfItemsTrusted($bot->id, $conversation->id, $result);
+
+        \Illuminate\Support\Facades\Queue::assertNothingPushed();
+    }
+
+    public function test_reserve_job_dispatched_when_items_trusted(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+
+        $bot = $this->makeBot();
+        $bot->update(['auto_delivery_enabled' => true]);
+        $conversation = \App\Models\Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'channel_type' => 'line',
+        ]);
+        $slip = \App\Models\SlipVerification::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conversation->id,
+            'amount' => 1000,
+            'status' => 'passed',
+        ]);
+
+        $result = new \App\Services\Payment\SlipVerificationResult(
+            isSlip: true, passed: true, amount: 1000.0,
+            orderSummary: 'G3D x20', orderItems: [['name' => 'G3D', 'total' => '1000', 'qty' => 20]],
+        );
+        $result->slipVerificationId = $slip->id;
+
+        \App\Jobs\ReserveAccountStock::dispatchIfItemsTrusted($bot->id, $conversation->id, $result);
+
+        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\ReserveAccountStock::class);
+    }
 }

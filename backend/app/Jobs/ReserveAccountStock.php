@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Services\Delivery\AccountDeliveryService;
+use App\Services\Payment\SlipVerificationResult;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -58,5 +59,29 @@ class ReserveAccountStock implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * ประตูเดียวของทั้ง 3 เส้นทางที่ยืนยันเงินแล้วจะจองสต๊อก (EasySlip auto / auto-retry /
+     * เจ้าของกดยืนยัน) — กติกา "รายการเชื่อไม่ได้ = ห้ามส่งของเอง" เขียนที่นี่ที่เดียว
+     * ไม่งั้นเพิ่มเส้นทางที่สี่วันหลังแล้วลืมเช็ค = กลับไปส่งของผิดจำนวนเงียบอีก
+     */
+    public static function dispatchIfItemsTrusted(int $botId, int $conversationId, SlipVerificationResult $result): void
+    {
+        if ($result->slipVerificationId === null) {
+            return;
+        }
+
+        if ($result->itemsUnreliable) {
+            Log::warning('Delivery: skipped auto-reserve — order items failed checksum', [
+                'conversation_id' => $conversationId,
+                'slip_verification_id' => $result->slipVerificationId,
+                'amount' => $result->amount,
+            ]);
+
+            return;
+        }
+
+        self::dispatchSafely($botId, $conversationId, $result->slipVerificationId, $result->amount, $result->orderItems ?? []);
     }
 }

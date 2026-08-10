@@ -394,6 +394,9 @@ class SlipVerificationService
             expectedAmount: $expected['total'], orderSummary: $expected['summary'],
             orderItems: $expected['items'],
             orderSource: $orderSource, reconstruction: $reconstruction,
+            // ยอดตรง = เงินเข้าจริง (ลูกค้าได้ข้อความยืนยันตามปกติ) แต่ "จะส่งอะไรกี่ชิ้น"
+            // ยังไม่รู้ → ปลายทางต้องไม่จองสต๊อกเอง ให้เจ้าของกดจากการ์ดแทน
+            itemsUnreliable: $expected['items_unreliable'] ?? false,
         ), $receiverAccount);
     }
 
@@ -505,6 +508,9 @@ class SlipVerificationService
         if ($result->failReason === 'needs_choice' && count($alternatives) <= 1) {
             $lines[] = '⚠️ ระบบไม่แน่ใจว่าประกอบยอดแบบไหน รบกวนเปิดแชทตรวจก่อนกดยืนยัน';
         }
+        if ($result->itemsUnreliable) {
+            $lines[] = '⚠️ <b>ระบบอ่านจำนวนสินค้าไม่ชัด — ยังไม่ได้ส่งของ</b> รบกวนเปิดแชทเช็คจำนวนแล้วส่งเอง';
+        }
         $lines[] = $result->passed
             ? 'ส่งของให้แล้ว ไม่ต้องทำอะไรครับ — ถ้าไม่ถูกต้องรบกวนเปิดแชทแก้'
             : 'กรุณาเช็คในแชทก่อนยืนยัน';
@@ -521,7 +527,9 @@ class SlipVerificationService
      */
     public function notifyIfAutoReconstructed(Bot $bot, ?Conversation $conversation, SlipVerificationResult $result): void
     {
-        if ($result->orderSource === 'llm') {
+        // รายการเชื่อไม่ได้ = ระบบไม่ได้ส่งของให้ ต้องแจ้งเสมอ ไม่งั้นออเดอร์ค้างเงียบ
+        // (log ไม่ช่วย — LOG_LEVEL บน prod กลืน warning ทิ้ง)
+        if ($result->orderSource === 'llm' || $result->itemsUnreliable) {
             $this->notifyAdmin($bot, $conversation, $result);
         }
     }

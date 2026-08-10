@@ -571,16 +571,10 @@ class LineWebhookResponseService
 
             $ctx->metadata['bot_message'] = $botMessage;
 
-            if ($result->passed && $result->slipVerificationId !== null) {
+            if ($result->passed) {
                 // dispatch พังห้ามหลุดไปโดน catch ใหญ่ (จะกลายเป็น fallback vision ทั้งที่ตอบสำเร็จไปแล้ว)
                 // การจองที่พลาดมี delivery:reconcile เก็บตกทีหลัง + เจ้าของส่งเองได้
-                ReserveAccountStock::dispatchSafely(
-                    $ctx->bot->id,
-                    $ctx->conversation->id,
-                    $result->slipVerificationId,
-                    $result->amount,
-                    $result->orderItems ?? [],
-                );
+                ReserveAccountStock::dispatchIfItemsTrusted($ctx->bot->id, $ctx->conversation->id, $result);
             }
 
             $ctx->response = ResponseEnvelope::text($text);
