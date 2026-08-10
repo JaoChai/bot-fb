@@ -145,6 +145,16 @@ class ManualPaymentConfirmService
                 'conversation_id' => $conversation->id,
                 'amount' => $amount,
             ]);
+
+            // LOG_LEVEL บน prod กลืน warning ทิ้ง → ต้องแจ้งผ่านการ์ด Telegram ไม่งั้นเจ้าของเพิ่งกด
+            // ยืนยันรับเงินแล้วรอการ์ดส่งของ พอไม่มีอะไรมาเลย = ออเดอร์ค้างเงียบ (กติกาเดียวกับอีก 2 เส้นทาง)
+            $this->slipVerification->notifyAdmin($bot, $conversation, new SlipVerificationResult(
+                isSlip: true,
+                passed: true,
+                amount: $amount,
+                orderSummary: $summary,
+                itemsUnreliable: true,
+            ));
         }
 
         $this->broadcast($conversation, $botMessage);

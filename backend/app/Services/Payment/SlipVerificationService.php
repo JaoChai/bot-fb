@@ -464,6 +464,7 @@ class SlipVerificationService
         $botName = TelegramAlertBotService::esc($bot->name);
 
         $header = match (true) {
+            $result->itemsUnreliable => "⚠️ <b>อ่านจำนวนสินค้าไม่ชัด — ยังไม่ได้ส่งของ</b> ({$botName})",
             $result->passed => "🤖 <b>ลูกค้าโอนข้ามขั้นตอน — ระบบสรุปออเดอร์เองแล้ว</b> ({$botName})",
             $result->failReason === 'needs_choice' => "🤔 <b>ลูกค้าโอนข้ามขั้นตอน — เลือกรายการที่ถูกต้อง</b> ({$botName})",
             in_array($result->failReason, self::FRAUD_REASONS, true) => "🚨 <b>สลิปมีปัญหา — อย่าเพิ่งส่งของ</b> ({$botName})",
@@ -511,9 +512,11 @@ class SlipVerificationService
         if ($result->itemsUnreliable) {
             $lines[] = '⚠️ <b>ระบบอ่านจำนวนสินค้าไม่ชัด — ยังไม่ได้ส่งของ</b> รบกวนเปิดแชทเช็คจำนวนแล้วส่งเอง';
         }
-        $lines[] = $result->passed
-            ? 'ส่งของให้แล้ว ไม่ต้องทำอะไรครับ — ถ้าไม่ถูกต้องรบกวนเปิดแชทแก้'
-            : 'กรุณาเช็คในแชทก่อนยืนยัน';
+        $lines[] = match (true) {
+            $result->itemsUnreliable => 'ยอดเงินเข้าแล้ว แต่ระบบยังไม่ได้ส่งของ — รบกวนเช็คจำนวนในแชทแล้วส่งเอง',
+            $result->passed => 'ส่งของให้แล้ว ไม่ต้องทำอะไรครับ — ถ้าไม่ถูกต้องรบกวนเปิดแชทแก้',
+            default => 'กรุณาเช็คในแชทก่อนยืนยัน',
+        };
 
         $keyboard = $result->passed ? null : $this->buildConfirmKeyboard($conversation, $result, $alternatives);
         $this->alertBot->sendMessage($token, $chatId, implode("\n", $lines), $keyboard);

@@ -2,15 +2,25 @@
 
 namespace Tests\Feature\Payment;
 
+use App\Jobs\ReserveAccountStock;
 use App\Models\Bot;
+use App\Models\BotSetting;
+use App\Models\Conversation;
+use App\Models\Flow;
+use App\Models\FlowPlugin;
+use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\OpenRouterService;
 use App\Services\Payment\LLMOrderItemExtractor;
+use App\Services\Payment\ManualPaymentConfirmService;
 use App\Services\Payment\OrderReconstructor;
 use App\Services\Payment\PaymentMessageDetector;
+use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
 use App\Services\Payment\TelegramAlertBotService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 /**
@@ -145,7 +155,7 @@ class OrderChecksumGuardTest extends TestCase
 
     public function test_result_carries_items_unreliable_flag(): void
     {
-        $result = new \App\Services\Payment\SlipVerificationResult(
+        $result = new SlipVerificationResult(
             isSlip: true,
             passed: true,
             amount: 1000.0,
@@ -159,65 +169,149 @@ class OrderChecksumGuardTest extends TestCase
 
     public function test_result_defaults_items_unreliable_to_false(): void
     {
-        $result = new \App\Services\Payment\SlipVerificationResult(isSlip: true, passed: true);
+        $result = new SlipVerificationResult(isSlip: true, passed: true);
 
         $this->assertFalse($result->itemsUnreliable);
     }
 
     public function test_reserve_job_not_dispatched_when_items_unreliable(): void
     {
-        \Illuminate\Support\Facades\Queue::fake();
+        Queue::fake();
 
         $bot = $this->makeBot();
         $bot->update(['auto_delivery_enabled' => true]);
-        $conversation = \App\Models\Conversation::factory()->create([
+        $conversation = Conversation::factory()->create([
             'bot_id' => $bot->id,
             'channel_type' => 'line',
         ]);
-        $slip = \App\Models\SlipVerification::create([
+        $slip = SlipVerification::create([
             'bot_id' => $bot->id,
             'conversation_id' => $conversation->id,
             'amount' => 1000,
             'status' => 'passed',
         ]);
 
-        $result = new \App\Services\Payment\SlipVerificationResult(
+        $result = new SlipVerificationResult(
             isSlip: true, passed: true, amount: 1000.0,
             orderSummary: '-', orderItems: [['name' => 'G3D (', 'total' => '50']],
             itemsUnreliable: true,
         );
         $result->slipVerificationId = $slip->id;
 
-        \App\Jobs\ReserveAccountStock::dispatchIfItemsTrusted($bot->id, $conversation->id, $result);
+        ReserveAccountStock::dispatchIfItemsTrusted($bot->id, $conversation->id, $result);
 
-        \Illuminate\Support\Facades\Queue::assertNothingPushed();
+        Queue::assertNothingPushed();
     }
 
     public function test_reserve_job_dispatched_when_items_trusted(): void
     {
-        \Illuminate\Support\Facades\Queue::fake();
+        Queue::fake();
 
         $bot = $this->makeBot();
         $bot->update(['auto_delivery_enabled' => true]);
-        $conversation = \App\Models\Conversation::factory()->create([
+        $conversation = Conversation::factory()->create([
             'bot_id' => $bot->id,
             'channel_type' => 'line',
         ]);
-        $slip = \App\Models\SlipVerification::create([
+        $slip = SlipVerification::create([
             'bot_id' => $bot->id,
             'conversation_id' => $conversation->id,
             'amount' => 1000,
             'status' => 'passed',
         ]);
 
-        $result = new \App\Services\Payment\SlipVerificationResult(
+        $result = new SlipVerificationResult(
             isSlip: true, passed: true, amount: 1000.0,
             orderSummary: 'G3D x20', orderItems: [['name' => 'G3D', 'total' => '1000', 'qty' => 20]],
         );
         $result->slipVerificationId = $slip->id;
 
-        \App\Jobs\ReserveAccountStock::dispatchIfItemsTrusted($bot->id, $conversation->id, $result);
+        ReserveAccountStock::dispatchIfItemsTrusted($bot->id, $conversation->id, $result);
 
-        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\ReserveAccountStock::class);
+        Queue::assertPushed(ReserveAccountStock::class);
+    }
+
+    public function test_card_gives_one_instruction_when_items_unreliable(): void
+    {
+        $bot = $this->makeBot();
+        $flow = Flow::factory()->create(['bot_id' => $bot->id]);
+        $bot->update(['default_flow_id' => $flow->id]);
+        FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'แจ้งออเดอร์',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'tg-token', 'chat_id' => '-100123'],
+        ]);
+        $conversation = Conversation::factory()->create(['bot_id' => $bot->id]);
+
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $result = new SlipVerificationResult(
+            isSlip: true, passed: true, amount: 1000.0,
+            orderSummary: 'G3D', itemsUnreliable: true,
+        );
+
+        app(SlipVerificationService::class)->notifyAdmin($bot->fresh(), $conversation, $result);
+
+        Http::assertSent(function ($request) {
+            $text = $request->data()['text'];
+
+            return ! str_contains($text, 'ไม่ต้องทำอะไร')
+                && str_contains($text, 'ยังไม่ได้ส่งของ');
+        });
+    }
+
+    public function test_manual_confirm_alerts_owner_when_items_unreliable(): void
+    {
+        Queue::fake([ReserveAccountStock::class]);
+        Http::fake([
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => '{"triggered": false}']]],
+                'model' => 'openai/gpt-4o-mini',
+                'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+            ]),
+        ]);
+
+        $bot = $this->makeBot();
+        $bot->update(['auto_delivery_enabled' => true]);
+        BotSetting::create([
+            'bot_id' => $bot->id,
+            'slip_receiver_account' => '223-3-24880-3',
+        ]);
+        $flow = Flow::factory()->create(['bot_id' => $bot->id]);
+        $bot->update(['default_flow_id' => $flow->id]);
+        FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'แจ้งออเดอร์',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'tg-token', 'chat_id' => '-100123'],
+        ]);
+
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'channel_type' => 'line',
+            'external_customer_id' => 'U123',
+        ]);
+        // ใบสรุปที่ regex อ่านเพี้ยน: item 50 ขณะยอดโอน 1,000 → checksum fail → items_unreliable
+        $conversation->messages()->create([
+            'sender' => 'bot',
+            'type' => 'text',
+            'content' => self::BROKEN_SUMMARY,
+        ]);
+
+        app(ManualPaymentConfirmService::class)
+            ->confirm($bot->fresh(), $conversation, 1000.0, $bot->user_id);
+
+        // กติกา: รายการเชื่อไม่ได้ = ห้ามส่งของเอง → ห้ามจองสต๊อก
+        Queue::assertNothingPushed();
+        // เจ้าของต้องรู้ว่าต้องส่งเอง (LOG_LEVEL prod กลืน Log::warning → ต้องแจ้งผ่าน Telegram)
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'api.telegram.org')
+            && str_contains($request->data()['text'], 'ยังไม่ได้ส่งของ'));
     }
 }
