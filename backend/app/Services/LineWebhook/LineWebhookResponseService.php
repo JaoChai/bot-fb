@@ -488,6 +488,9 @@ class LineWebhookResponseService
             ->map(fn (Message $msg) => [
                 'sender' => $msg->sender,
                 'content' => $msg->content,
+                // พก metadata ไปด้วยเพื่อให้เส้นทางตรวจสลิปอ่าน order_payload ได้
+                // (vision ใช้แค่ sender/content เหมือนเดิม — คีย์เกินไม่กระทบ)
+                'metadata' => $msg->metadata,
             ])
             ->values()
             ->toArray();

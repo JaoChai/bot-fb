@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\AIService;
+use App\Services\Payment\ManualPaymentConfirmService;
 use App\Services\RAGService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -78,5 +79,25 @@ class OrderPayloadEndToEndTest extends TestCase
 
         $this->assertSame('สวัสดีครับ', $botMessage->content);
         $this->assertArrayNotHasKey('order_payload', $botMessage->metadata ?? []);
+    }
+
+    public function test_history_carries_metadata_for_payment_lookup(): void
+    {
+        [$bot, $conversation] = $this->makeConversation();
+
+        Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'bot',
+            'type' => 'text',
+            'content' => 'รวมยอดโอน: 1,000 บาท',
+            'metadata' => ['order_payload' => ['items' => [['name' => 'G3D', 'qty' => 20, 'total' => '1000']], 'total' => 1000.0]],
+        ]);
+
+        $service = app(ManualPaymentConfirmService::class);
+        $method = new \ReflectionMethod($service, 'recentTextHistory');
+        $history = $method->invoke($service, $conversation);
+
+        $this->assertArrayHasKey('metadata', $history[0]);
+        $this->assertSame(20, $history[0]['metadata']['order_payload']['items'][0]['qty']);
     }
 }

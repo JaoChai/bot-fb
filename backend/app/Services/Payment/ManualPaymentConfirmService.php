@@ -187,7 +187,7 @@ class ManualPaymentConfirmService
      * Recent text messages (user + bot) after the last context clear — mirrors the
      * slip pipeline window so findExpectedPayment sees the same order summary.
      *
-     * @return array<int, array{sender: string, content: string}>
+     * @return array<int, array{sender: string, content: string, metadata: ?array}>
      */
     private function recentTextHistory(Conversation $conversation, int $limit = 15): array
     {
@@ -203,7 +203,11 @@ class ManualPaymentConfirmService
             ->take($limit)
             ->get()
             ->reverse()
-            ->map(fn (Message $msg) => ['sender' => $msg->sender, 'content' => $msg->content])
+            ->map(fn (Message $msg) => [
+                'sender' => $msg->sender,
+                'content' => $msg->content,
+                'metadata' => $msg->metadata,
+            ])
             ->values()
             ->toArray();
     }
