@@ -15,22 +15,34 @@ use Illuminate\Support\Facades\Log;
  */
 class OrderPayloadExtractor
 {
-    /** ตัวคั่นที่เลือกให้ไม่ชนกับ "|||" (ตัวแบ่ง bubble) และไม่โผล่ในภาษาไทยปกติ */
+    /** ใช้ดึงข้อมูล — ต้องปิดครบคู่เท่านั้น บล็อกที่ขาดกลาง = ข้อมูลไม่ครบ ห้าม decode */
     private const PATTERN = '/\[\[ORDER\]\](.*?)\[\[\/ORDER\]\]/su';
+
+    /**
+     * ใช้ตัดทิ้ง — ครอบบล็อกที่ไม่ปิดด้วย (โมเดลถูกตัดกลางเพราะชนเพดาน token)
+     * ตัดถึงท้ายข้อความเมื่อไม่เจอตัวปิด: ข้อมูลไม่ครบก็จริง แต่ห้ามให้ลูกค้าเห็น JSON ดิบ
+     */
+    private const STRIP_PATTERN = '/\[\[ORDER\]\].*?(?:\[\[\/ORDER\]\]|$)/su';
 
     /**
      * @return array{clean: string, payload: ?array{items: array<int, array{name: string, qty: int, total: string}>, total: float}}
      */
     public function extract(string $content): array
     {
-        if (! preg_match(self::PATTERN, $content, $match)) {
+        // เช็คด้วย STRIP_PATTERN (ไม่ใช่ PATTERN) — ไม่งั้นเคสไม่ปิดจะหลุดผ่านตั้งแต่บรรทัดนี้
+        if (! preg_match(self::STRIP_PATTERN, $content)) {
             return ['clean' => $content, 'payload' => null];
         }
 
-        // ตัดก่อนเสมอ ไม่ว่าจะ decode ได้หรือไม่ — JSON เสียห้ามหลุดถึงลูกค้า
-        $clean = trim((string) preg_replace(self::PATTERN, '', $content));
+        // ตัดก่อนเสมอ ไม่ว่าจะ decode ได้หรือไม่ — JSON เสีย/ขาดกลาง ห้ามหลุดถึงลูกค้า
+        $clean = trim((string) preg_replace(self::STRIP_PATTERN, '', $content));
 
-        return ['clean' => $clean, 'payload' => $this->decode($match[1])];
+        // decode เฉพาะบล็อกที่ปิดครบคู่ — บล็อกที่ขาดกลาง = ข้อมูลไม่ครบ เชื่อไม่ได้ ถอยไปใช้ regex
+        $payload = preg_match(self::PATTERN, $content, $match)
+            ? $this->decode($match[1])
+            : null;
+
+        return ['clean' => $clean, 'payload' => $payload];
     }
 
     /**
@@ -46,6 +58,13 @@ class OrderPayloadExtractor
         }
 
         $total = (float) ($decoded['total'] ?? 0);
+        // ยอดโอนจริงไม่มีทางเป็น 0 หรือติดลบ — payload แบบนี้เชื่อไม่ได้ ถอยไปใช้ regex
+        // (เช่น ไม่มี price → item total เป็น 0 → ผลรวม 0 = total 0 → checksum หลอกผ่าน)
+        if ($total <= 0) {
+            Log::info('OrderPayload: rejected — total is not positive');
+
+            return null;
+        }
         $items = [];
         foreach ($decoded['items'] as $item) {
             if (! is_array($item) || empty($item['name']) || ! is_string($item['name'])) {
