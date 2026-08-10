@@ -303,4 +303,51 @@ class PaymentMessageDetectorHardeningTest extends TestCase
             $this->assertStringEndsNotWith('(', $item['name']);
         }
     }
+
+    #[Test]
+    public function test_d6_items_match_total_detects_broken_parse(): void
+    {
+        // เคสจริง 10 ส.ค.: parse ได้ item เดียวราคา 50 ขณะที่ยอดโอน 1,000 → ต่างกัน 20 เท่า
+        $items = [['name' => 'G3D (', 'total' => '50']];
+
+        $this->assertFalse(PaymentMessageDetector::itemsMatchTotal($items, 1000.0));
+    }
+
+    #[Test]
+    public function test_d7_items_match_total_accepts_correct_sum(): void
+    {
+        $items = [
+            ['name' => 'Nolimit Level Up+ BM', 'total' => '1,100', 'qty' => 1],
+            ['name' => 'Page', 'total' => '199', 'qty' => 1],
+        ];
+
+        $this->assertTrue(PaymentMessageDetector::itemsMatchTotal($items, 1299.0));
+    }
+
+    #[Test]
+    public function test_d8_items_match_total_counts_zero_price_freebies(): void
+    {
+        $items = [
+            ['name' => 'Nolimit Level Up+ Personal', 'total' => '1,100', 'qty' => 1],
+            ['name' => 'บริการเสริม Page', 'total' => '0'],
+        ];
+
+        $this->assertTrue(PaymentMessageDetector::itemsMatchTotal($items, 1100.0));
+    }
+
+    #[Test]
+    public function test_d9_items_match_total_returns_null_when_price_missing(): void
+    {
+        // LLM คืน item โดยไม่ใส่ total → ตรวจไม่ได้ ต้องคืน null ให้ผู้เรียก fail-open
+        // (ห้ามเดาว่าผิด ไม่งั้นออเดอร์ปกติจะโดนหยุดเพราะข้อมูลไม่ครบ)
+        $items = [['name' => 'Page', 'total' => '']];
+
+        $this->assertNull(PaymentMessageDetector::itemsMatchTotal($items, 199.0));
+    }
+
+    #[Test]
+    public function test_d10_items_match_total_returns_null_for_empty_items(): void
+    {
+        $this->assertNull(PaymentMessageDetector::itemsMatchTotal([], 1000.0));
+    }
 }

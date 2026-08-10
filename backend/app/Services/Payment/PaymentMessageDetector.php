@@ -163,6 +163,35 @@ class PaymentMessageDetector
     }
 
     /**
+     * ผลรวมราคารายการ = ยอดโอนไหม — ตาข่ายจับ "parse เพี้ยน" แบบไม่ต้องรู้จักฟอร์แมตล่วงหน้า
+     *
+     * เกิดขึ้นจริงเมื่อ regex หยุดผิดที่แล้วได้ item ขยะ (10 ส.ค. 2026: item เดียวราคา 50
+     * ขณะยอดโอน 1,000) ซึ่งด่านอื่นมองไม่เห็นเลยเพราะ "ยอดโอนตรงกับสลิป" อยู่แล้ว
+     *
+     * คืน null = ตรวจไม่ได้ (ไม่มีรายการ / ราคาบางตัวไม่ใช่ตัวเลข) — ผู้เรียกต้อง fail-open
+     * ห้ามตีเป็น "ไม่ตรง" เด็ดขาด ไม่อย่างนั้นออเดอร์ปกติที่ LLM ไม่คืนราคาจะถูกหยุดทิ้ง
+     *
+     * @param  array<int, array{name: string, total?: string, qty?: int}>  $items
+     */
+    public static function itemsMatchTotal(array $items, float $total, float $tolerance = 0.5): ?bool
+    {
+        if ($items === []) {
+            return null;
+        }
+
+        $sum = 0.0;
+        foreach ($items as $item) {
+            $value = str_replace(',', '', (string) ($item['total'] ?? ''));
+            if (! is_numeric($value)) {
+                return null;
+            }
+            $sum += (float) $value;
+        }
+
+        return abs($sum - $total) <= $tolerance;
+    }
+
+    /**
      * รูปแบบ summary รายการสินค้าตัวเดียวของระบบ — ทุกที่ที่ summary ไหลออก
      * (ข้อความยืนยันรับเงิน, การ์ด Telegram, order_items) ใช้รูปนี้เท่านั้น:
      * สั่งเกิน 1 ติด "xN" ต่อท้ายชื่อ ไม่งั้นใช้ชื่อล้วน คั่นแต่ละรายการด้วย ", ".
