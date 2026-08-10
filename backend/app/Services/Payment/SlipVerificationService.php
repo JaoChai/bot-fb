@@ -99,8 +99,19 @@ class SlipVerificationService
             if ($this->detector->isVerifySuccessMessage($content)) {
                 break;
             }
+            // ใบสรุปยอด+เลขบัญชีเท่านั้นที่เป็นหลักฐานแข็งพอให้ส่งของอัตโนมัติได้ — ข้อความยืนยันขั้น 2
+            // (ไม่มีเลขบัญชี) เป็นหลักฐานอ่อนกว่า ต้องมีคนกดยืนยันก่อน (ดู findExpectedFromConfirmMessage)
+            // เกณฑ์นี้ใช้ร่วมกันทั้งเส้นทาง payload และ regex จะได้ไม่มีสองชุดให้ drift จากกัน
+            $qualifies = $this->detector->isPaymentMessage($content)
+                || ($receiverAccount && str_contains($content, $receiverAccount)
+                    && preg_match('/รวมยอดโอน|สรุปยอด|ยอดโอน|ยอดรวม|รวมเป็นเงิน|สรุปรายการ/u', $content));
+            if (! $qualifies) {
+                continue;
+            }
             // ชั้น 0: ออเดอร์ที่บอทปล่อยมาเป็นโครงสร้าง — ตรงจากตัวเลขชุดที่บอทใช้คิดจริง
             // ไม่ผ่านการอ่านประโยคเลย จึงไม่มีทาง desync กับข้อความที่ลูกค้าเห็น
+            // (อยู่ใต้ $qualifies เพราะ payload ต้องมาจากใบสรุปยอดเท่านั้น — ระดับหลักฐานต้องเท่าเดิม
+            // ไม่ใช่ว่าติดบล็อกมาแล้วข้อความไหนก็ใช้ตัดสินส่งของได้)
             $payload = $msg['metadata']['order_payload'] ?? null;
             if (is_array($payload) && ($payload['items'] ?? []) !== []) {
                 if ($matchAmount !== null && abs((float) $payload['total'] - $matchAmount) > $tolerance) {
@@ -114,12 +125,6 @@ class SlipVerificationService
                     'items' => $payload['items'],
                     'items_unreliable' => false,
                 ];
-            }
-            $qualifies = $this->detector->isPaymentMessage($content)
-                || ($receiverAccount && str_contains($content, $receiverAccount)
-                    && preg_match('/รวมยอดโอน|สรุปยอด|ยอดโอน|ยอดรวม|รวมเป็นเงิน|สรุปรายการ/u', $content));
-            if (! $qualifies) {
-                continue;
             }
             $data = $this->detector->parsePaymentData($content);
             if ($data === null) {

@@ -8,6 +8,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Services\AIService;
 use App\Services\Payment\ManualPaymentConfirmService;
+use App\Services\Payment\SlipVerificationService;
 use App\Services\RAGService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -116,7 +117,7 @@ class OrderPayloadEndToEndTest extends TestCase
             ]],
         ]];
 
-        $expected = app(\App\Services\Payment\SlipVerificationService::class)
+        $expected = app(SlipVerificationService::class)
             ->findExpectedPayment($history, null, $bot);
 
         $this->assertNotNull($expected);
@@ -136,7 +137,7 @@ class OrderPayloadEndToEndTest extends TestCase
             'metadata' => null,
         ]];
 
-        $expected = app(\App\Services\Payment\SlipVerificationService::class)
+        $expected = app(SlipVerificationService::class)
             ->findExpectedPayment($history, null, $bot);
 
         $this->assertNotNull($expected);
@@ -157,8 +158,37 @@ class OrderPayloadEndToEndTest extends TestCase
             ]],
         ]];
 
-        $expected = app(\App\Services\Payment\SlipVerificationService::class)
+        $expected = app(SlipVerificationService::class)
             ->findExpectedPayment($history, null, $bot, 1000.0, 0.0);
+
+        $this->assertNull($expected);
+    }
+
+    public function test_payload_on_non_summary_message_is_ignored(): void
+    {
+        // ข้อความยืนยันขั้น 2 ไม่มีเลขบัญชี = หลักฐานอ่อนกว่าใบสรุปยอด ต้องมีคนกดยืนยันก่อน
+        // ถ้าบอท drift ปล่อย order_payload มากับข้อความนี้ ต้องไม่ถูกหยิบมาตัดสินส่งของอัตโนมัติ
+        // (ระดับหลักฐานต้องเท่าเดิม — payload มาจากใบสรุปยอด+เลขบัญชีเท่านั้น)
+        $bot = Bot::factory()->create(['user_id' => User::factory()->create()->id]);
+
+        $history = [
+            [
+                'sender' => 'bot',
+                'content' => 'สวัสดีครับ สนใจสินค้าตัวไหนดีคะ',
+                'metadata' => null,
+            ],
+            [
+                'sender' => 'bot',
+                'content' => 'รับ G3D 20 ตัว รวม 1,000 บาท ถูกต้องไหมครับ? พิมพ์ยืนยัน',
+                'metadata' => ['order_payload' => [
+                    'items' => [['name' => 'G3D', 'qty' => 20, 'total' => '1000']],
+                    'total' => 1000.0,
+                ]],
+            ],
+        ];
+
+        $expected = app(SlipVerificationService::class)
+            ->findExpectedPayment($history, null, $bot);
 
         $this->assertNull($expected);
     }
