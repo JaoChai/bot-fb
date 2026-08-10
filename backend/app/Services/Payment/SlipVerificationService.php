@@ -136,11 +136,25 @@ class SlipVerificationService
             return $item;
         }, $data['items']);
 
-        // ชั้น 2 fallback: regex ได้ total แต่ดึง items ไม่ได้ (prose ล้วน / หลายสินค้าบรรทัดเดียว)
-        // เรียกเฉพาะตอน items ว่างเท่านั้น (cost guard) — ไม่เรียกทุกครั้ง
-        if ($items === [] && $bot !== null
-            && config('delivery.llm_item_fallback_enabled', true)) {
-            $items = $this->itemExtractor->extract($content, $bot);
+        $total = (float) str_replace(',', '', $data['total']);
+        $llmEnabled = $bot !== null && config('delivery.llm_item_fallback_enabled', true);
+
+        // ชั้น 2 fallback เรียกเมื่อ regex ให้ผลที่ "เชื่อไม่ได้" 2 แบบ:
+        //   (ก) ไม่ได้ items เลย (prose ล้วน / หลายสินค้าบรรทัดเดียว)
+        //   (ข) ได้ items แต่ผลรวมไม่เท่ายอดโอน = regex หยุดผิดที่ (เคส 10 ส.ค. 2026:
+        //       ได้ item เดียวราคา 50 ขณะยอดโอน 1,000 → qty หาย ส่งของ 1 จาก 20)
+        // เดิมเช็คแค่ (ก) เคส (ข) จึงผ่านฉลุยทั้งที่ข้อมูลพัง
+        $checksum = PaymentMessageDetector::itemsMatchTotal($items, $total);
+        if ($llmEnabled && ($items === [] || $checksum === false)) {
+            $llmItems = $this->itemExtractor->extract($content, $bot);
+            if ($llmItems !== []) {
+                $llmChecksum = PaymentMessageDetector::itemsMatchTotal($llmItems, $total);
+                // ยอมรับผล LLM เมื่อดีขึ้นเท่านั้น — ตรงยอด หรือ ตรวจไม่ได้ทั้งที่ของเดิมผิดชัด
+                if ($llmChecksum !== false) {
+                    $items = $llmItems;
+                    $checksum = $llmChecksum;
+                }
+            }
         }
 
         if ($items === [] && $requireItems) {
@@ -155,9 +169,11 @@ class SlipVerificationService
         // = ออเดอร์ 2 ชุดถูกบันทึกเป็น 1 เงียบๆ
 
         return [
-            'total' => (float) str_replace(',', '', $data['total']),
+            'total' => $total,
             'summary' => $visibleItems === [] ? '-' : PaymentMessageDetector::formatItemSummary($visibleItems),
             'items' => $items,
+            // true = ผลรวมรายการขัดกับยอดโอนแม้ให้ LLM อ่านซ้ำแล้ว → ห้ามส่งของอัตโนมัติ (Task 4)
+            'items_unreliable' => $checksum === false,
         ];
     }
 
