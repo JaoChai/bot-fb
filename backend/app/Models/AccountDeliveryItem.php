@@ -28,7 +28,7 @@ class AccountDeliveryItem extends Model
 
     protected $fillable = [
         'account_delivery_id', 'product_name', 'stock_code', 'kind',
-        'qty', 'stock_item_id', 'status',
+        'qty', 'requested_qty', 'stock_item_id', 'status',
     ];
 
     public function delivery(): BelongsTo

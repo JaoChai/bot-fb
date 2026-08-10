@@ -93,18 +93,16 @@ class AccountDeliveryService
             }
             $rawQty = max(1, (int) ($item['qty'] ?? 1));
             $qty = min($maxQty, $rawQty);
-            if ($qty < $rawQty) {
-                Log::warning('Delivery: qty capped', [
-                    'delivery_id' => $delivery->id, 'product' => $item['name'],
-                    'requested' => $rawQty, 'capped' => $qty,
-                ]);
-            }
+            // เกินเพดานแล้ว "จองให้น้อยกว่าที่สั่ง" — เดิมบอกแค่ผ่าน Log::warning ซึ่ง
+            // LOG_LEVEL บน prod กลืนทิ้ง เจ้าของจึงไม่มีทางรู้ว่าลูกค้ายังขาดของ
+            // จากนี้ผูกไว้กับ item เพื่อให้ขึ้นหน้าการ์ด Telegram (cardText)
+            $requestedQty = $qty < $rawQty ? $rawQty : null;
             $product = $this->mapper->map($item['name']);
 
             if ($product === null) {
                 $delivery->items()->create([
                     'product_name' => $item['name'], 'kind' => AccountDeliveryItem::KIND_MANUAL,
-                    'qty' => $qty, 'status' => AccountDeliveryItem::ST_UNMAPPED,
+                    'qty' => $qty, 'requested_qty' => $requestedQty, 'status' => AccountDeliveryItem::ST_UNMAPPED,
                 ]);
 
                 continue;
@@ -113,7 +111,7 @@ class AccountDeliveryService
             if ($product->delivery_method === 'support_link') {
                 $delivery->items()->create([
                     'product_name' => $product->name, 'kind' => AccountDeliveryItem::KIND_SUPPORT_LINK,
-                    'qty' => $qty, 'status' => AccountDeliveryItem::ST_RESERVED,
+                    'qty' => $qty, 'requested_qty' => $requestedQty, 'status' => AccountDeliveryItem::ST_RESERVED,
                 ]);
                 $deliverable = true;
 
@@ -128,6 +126,7 @@ class AccountDeliveryService
                     'stock_code' => $product->stock_code,
                     'kind' => AccountDeliveryItem::KIND_STOCK,
                     'qty' => 1,
+                    'requested_qty' => $u === 0 ? $requestedQty : null,
                     'status' => AccountDeliveryItem::ST_RESERVING,
                 ]);
                 try {
@@ -282,6 +281,12 @@ class AccountDeliveryService
             "👤 <b>{$customer}</b> · แชท #{$conv?->id}",
             "💵 ยอด <code>{$amount}</code> บาท",
         ];
+        $capped = $delivery->items->whereNotNull('requested_qty');
+        foreach ($capped as $item) {
+            $name = TelegramAlertBotService::esc($item->product_name);
+            $reserved = $delivery->items->where('product_name', $item->product_name)->count();
+            $lines[] = "⚠️ <b>{$name}: ลูกค้าสั่ง {$item->requested_qty} แต่จองได้ {$reserved}</b> (เกินเพดานระบบ) — ส่วนที่เหลือต้องส่งเอง";
+        }
         if ($items !== []) {
             $lines[] = '<blockquote>'.implode("\n", $items).'</blockquote>';
         }
@@ -290,6 +295,12 @@ class AccountDeliveryService
         }
 
         return implode("\n", $lines);
+    }
+
+    /** ทางเข้าสำหรับเทสต์เท่านั้น — cardText เป็น private โดยตั้งใจ (ห้ามผู้เรียกอื่นประกอบการ์ดเอง) */
+    public function cardTextForTesting(AccountDelivery $delivery): string
+    {
+        return $this->cardText($delivery);
     }
 
     public function telegramPlugin(AccountDelivery $delivery): ?FlowPlugin
