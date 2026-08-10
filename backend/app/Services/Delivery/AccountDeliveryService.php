@@ -284,7 +284,12 @@ class AccountDeliveryService
         $capped = $delivery->items->whereNotNull('requested_qty');
         foreach ($capped as $item) {
             $name = TelegramAlertBotService::esc($item->product_name);
-            $reserved = $delivery->items->where('product_name', $item->product_name)->count();
+            // นับเป็น "ชิ้นที่จองได้จริง" ไม่ใช่จำนวนแถว: stock = 1 แถว/ชิ้น, support_link = 1 แถว qty=N
+            // และตัด shortage/unmapped ออก (ของหมดไม่ใช่จองได้); รวม delivered เผื่อเตือนซ้ำหลังส่งแล้ว
+            $reserved = $delivery->items
+                ->where('product_name', $item->product_name)
+                ->whereIn('status', [AccountDeliveryItem::ST_RESERVED, AccountDeliveryItem::ST_DELIVERED])
+                ->sum('qty');
             $lines[] = "⚠️ <b>{$name}: ลูกค้าสั่ง {$item->requested_qty} แต่จองได้ {$reserved}</b> (เกินเพดานระบบ) — ส่วนที่เหลือต้องส่งเอง";
         }
         if ($items !== []) {
