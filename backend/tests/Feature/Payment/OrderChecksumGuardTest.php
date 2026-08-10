@@ -24,6 +24,9 @@ class OrderChecksumGuardTest extends TestCase
     /** ใบสรุปที่ regex อ่านเพี้ยน: ได้ item ราคา 50 ขณะยอดโอน 1,000 (สร้างจากฟอร์แมตสมมติที่ยังไม่รองรับ) */
     private const BROKEN_SUMMARY = "สรุปรายการที่พี่สั่งซื้อครับ:\n\n1. G3D ราคา 50 บาท ต่อชิ้น รวม 20 ชิ้น\n\nรวมยอดโอน: 1,000 บาท ✅\nโอนเข้าบัญชี 223-3-24880-3";
 
+    /** prose ล้วน: regex ดึง items ไม่ได้เลย (เส้นทาง items ว่าง) แม้มี total ชัดเจน */
+    private const PROSE_SUMMARY = "สรุปออเดอร์ของพี่ครับ ได้แก่ Nolimit Level Up+ Personal และ Page รวมทั้งหมด 1,600 บาท ครับ\nรวมยอดโอน: 1,600 บาท\nโอนเข้าบัญชี 223-3-24880-3";
+
     private function history(string $summary): array
     {
         return [
@@ -102,18 +105,41 @@ class OrderChecksumGuardTest extends TestCase
         $this->assertFalse($result['items_unreliable']);
     }
 
-    public function test_fail_open_when_checksum_cannot_be_computed(): void
+    public function test_fail_open_when_llm_items_have_no_price(): void
     {
-        // ราคาต่อรายการอ่านไม่ได้ (itemsMatchTotal คืน null) → ต้องไม่เรียก LLM และไม่ตีว่าเชื่อไม่ได้
+        // regex ดึง items ไม่ได้เลย (prose ล้วน → เส้นทาง items ว่าง) แล้ว LLM คืนรายการ
+        // ที่ไม่มี total → itemsMatchTotal คืน null (ตรวจไม่ได้ ไม่ใช่ "ผิด") ต้อง fail-open:
+        // เก็บชื่อไว้ใน summary และไม่ตีว่าเชื่อไม่ได้ (ออเดอร์ปกติที่ LLM ไม่คืนราคาต้องไม่ถูกหยุดทิ้ง)
         $bot = $this->makeBot();
-        $noPrices = "สรุปรายการที่พี่สั่งซื้อครับ:\n\n1. G3D = 1,000 บาท\n\nรวมยอดโอน: 1,000 บาท\nโอนเข้าบัญชี 223-3-24880-3";
 
         $openRouter = $this->createMock(OpenRouterService::class);
-        $openRouter->expects($this->never())->method('chat');
+        $openRouter->expects($this->once())
+            ->method('chat')
+            ->willReturn(['content' => '{"items":[{"name":"Nolimit Level Up+ Personal","qty":1}]}']);
 
-        $result = $this->service($openRouter)->findExpectedPayment($this->history($noPrices), null, $bot);
+        $result = $this->service($openRouter)->findExpectedPayment($this->history(self::PROSE_SUMMARY), null, $bot);
 
         $this->assertNotNull($result);
-        $this->assertFalse($result['items_unreliable']);
+        $this->assertFalse($result['items_unreliable'], 'ตรวจไม่ได้ ≠ ผิด → ห้ามตีเป็นเชื่อไม่ได้');
+        $this->assertNotSame('-', $result['summary'], 'fail-open เก็บชื่อที่ LLM ดึงได้ไว้ใน summary');
+    }
+
+    public function test_keeps_unreliable_when_llm_cannot_confirm_amount(): void
+    {
+        // regex อ่านใบสรุปนี้พังชัด (checksum=false: ได้ 50 ขณะยอดโอน 1,000) แล้ว LLM คืนรายการ
+        // ที่ไม่มี total → ยืนยันยอดไม่ได้ (null) ทั้งที่ของเดิมผิดชัด ต้องคงสถานะ "เชื่อไม่ได้" ไว้
+        // ไม่ใช่ปล่อย null มาลบหลักฐาน false → ระบบจะได้ไม่ส่งของไปโดยไม่มีใครตรวจจำนวน
+        $bot = $this->makeBot();
+
+        $openRouter = $this->createMock(OpenRouterService::class);
+        $openRouter->expects($this->once())
+            ->method('chat')
+            ->willReturn(['content' => '{"items":[{"name":"G3D","qty":20}]}']);
+
+        $result = $this->service($openRouter)->findExpectedPayment($this->history(self::BROKEN_SUMMARY), null, $bot);
+
+        $this->assertNotNull($result);
+        $this->assertSame(1000.0, $result['total'], 'ยอดโอนต้องยังใช้ยืนยันเงินได้');
+        $this->assertTrue($result['items_unreliable'], 'หลักฐานว่าอ่านพังต้องไม่ถูก null ลบทิ้ง');
     }
 }

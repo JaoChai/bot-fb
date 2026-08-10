@@ -82,7 +82,7 @@ class SlipVerificationService
      * ไปแล้ว ห้ามเอามา match เงินโอนใหม่ (ไม่งั้นโอนซ้ำโดยบังเอิญ = ระบบส่งของซ้ำเอง)
      *
      * @param  array<int, array{sender: string, content: string}>  $conversationHistory
-     * @return array{total: float, summary: string, items: array}|null
+     * @return array{total: float, summary: string, items: array, items_unreliable: bool}|null
      */
     public function findExpectedPayment(
         array $conversationHistory,
@@ -126,7 +126,7 @@ class SlipVerificationService
      * $requireItems: confirm-path ต้องได้ items จริงเท่านั้น (คืน null ถ้าว่าง) —
      * ต่างจาก payment-summary ที่ยอมคืน summary '-' เพื่อให้ยอดยังใช้ยืนยันเงินได้
      *
-     * @return array{total: float, summary: string, items: array}|null
+     * @return array{total: float, summary: string, items: array, items_unreliable: bool}|null
      */
     private function buildExpected(array $data, string $content, ?Bot $bot, bool $requireItems = false): ?array
     {
@@ -145,14 +145,18 @@ class SlipVerificationService
         //       ได้ item เดียวราคา 50 ขณะยอดโอน 1,000 → qty หาย ส่งของ 1 จาก 20)
         // เดิมเช็คแค่ (ก) เคส (ข) จึงผ่านฉลุยทั้งที่ข้อมูลพัง
         $checksum = PaymentMessageDetector::itemsMatchTotal($items, $total);
-        if ($llmEnabled && ($items === [] || $checksum === false)) {
+        // มีหลักฐานเชิงบวกว่าการอ่านใบสรุปนี้พัง (ต่างจาก "ไม่มีรายการให้ตรวจ")
+        $regexFailedChecksum = $checksum === false;
+
+        if ($llmEnabled && ($items === [] || $regexFailedChecksum)) {
             $llmItems = $this->itemExtractor->extract($content, $bot);
             if ($llmItems !== []) {
                 $llmChecksum = PaymentMessageDetector::itemsMatchTotal($llmItems, $total);
-                // ยอมรับผล LLM เมื่อดีขึ้นเท่านั้น — ตรงยอด หรือ ตรวจไม่ได้ทั้งที่ของเดิมผิดชัด
                 if ($llmChecksum !== false) {
                     $items = $llmItems;
-                    $checksum = $llmChecksum;
+                    // LLM ยืนยันยอดไม่ได้ (null) ทั้งที่ของเดิมผิดชัด → ยังไม่มีอะไรมาลบหลักฐานนั้น
+                    // คงสถานะ "เชื่อไม่ได้" ไว้ ให้เจ้าของกดเอง ดีกว่าส่งของไปโดยไม่มีใครตรวจ
+                    $checksum = ($llmChecksum === null && $regexFailedChecksum) ? false : $llmChecksum;
                 }
             }
         }
@@ -185,7 +189,7 @@ class SlipVerificationService
      * (ต้องตรงยอดในข้อความ ± slip_amount_tolerance) กันคว้าข้อความเก่าคนละออเดอร์.
      *
      * @param  array<int, array{sender: string, content: string}>  $conversationHistory
-     * @return array{total: float, summary: string, items: array}|null
+     * @return array{total: float, summary: string, items: array, items_unreliable: bool}|null
      */
     public function findExpectedFromConfirmMessage(array $conversationHistory, ?Bot $bot, float $confirmedAmount): ?array
     {
