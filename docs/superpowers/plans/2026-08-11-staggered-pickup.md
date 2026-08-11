@@ -149,11 +149,14 @@ Expected: `len_after` อยู่ระหว่าง 30500-31200 · `p_open` 
 
 ```sql
 SELECT position('เก็บไว้เบิกภายหลัง' in system_prompt) AS bad1,
-       position('ฝากของไว้' in system_prompt) AS bad2
+       (length(system_prompt) - length(replace(system_prompt, 'ฝากของไว้', ''))) / 9 AS occ_total,
+       (length(system_prompt) - length(replace(system_prompt, 'ไม่มีระบบฝากของไว้', ''))) / 18 AS occ_negated
 FROM flows WHERE id = 24;
 ```
 
-Expected: `bad1` = 0 · `bad2` = 0 (คำว่า "ระบบฝากของ" ในบล็อกใหม่เขียนติดกันว่า "ไม่มีระบบฝากของ" จึงไม่ match `ฝากของไว้`)
+Expected: `bad1` = 0 · `occ_total` = `occ_negated` = 1
+
+เหตุผลที่ต้องเทียบสองค่า ไม่ใช่เช็ค `position('ฝากของไว้') = 0` เฉยๆ: สคริปต์ B มีประโยค "ทางร้าน**ไม่มีระบบฝากของไว้**เบิกทีหลังนะครับ" ซึ่งเป็นการ**ปฏิเสธ** แต่มีสตริงย่อย `ฝากของไว้` อยู่ด้วย — เกณฑ์ที่ถูกคือทุกครั้งที่เจอต้องอยู่ในรูปปฏิเสธเท่านั้น
 
 ---
 
