@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\DocumentChunk;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -45,27 +46,7 @@ class KeywordSearchService
         }
 
         try {
-            // Use plainto_tsquery for simple word matching (handles Thai + English)
-            // ts_rank_cd uses cover density ranking for better relevance
-            $results = DocumentChunk::query()
-                ->select([
-                    'document_chunks.id',
-                    'document_chunks.document_id',
-                    'document_chunks.content',
-                    'document_chunks.chunk_index',
-                    'document_chunks.metadata',
-                    'documents.original_filename',
-                    'documents.knowledge_base_id',
-                    DB::raw("ts_rank_cd(to_tsvector('simple', document_chunks.content), plainto_tsquery('simple', ?)) as rank_score"),
-                ])
-                ->join('documents', 'documents.id', '=', 'document_chunks.document_id')
-                ->where('documents.knowledge_base_id', $knowledgeBaseId)
-                ->where('documents.status', 'completed')
-                ->whereRaw("to_tsvector('simple', document_chunks.content) @@ plainto_tsquery('simple', ?)", [$sanitizedQuery])
-                ->orderByDesc('rank_score')
-                ->limit($limit)
-                ->setBindings([$sanitizedQuery, $sanitizedQuery])
-                ->get();
+            $results = $this->buildSearchQuery($knowledgeBaseId, $sanitizedQuery, $limit)->get();
 
             return $results->map(function ($chunk) {
                 // Normalize rank_score to 0-1 range (ts_rank_cd typically returns 0-1)
@@ -90,6 +71,35 @@ class KeywordSearchService
 
             return collect([]);
         }
+    }
+
+    /**
+     * Build the full-text search query.
+     *
+     * Uses plainto_tsquery for simple word matching (handles Thai + English)
+     * and ts_rank_cd (cover density ranking) for relevance.
+     */
+    protected function buildSearchQuery(int $knowledgeBaseId, string $sanitizedQuery, int $limit): Builder
+    {
+        return DocumentChunk::query()
+            ->select([
+                'document_chunks.id',
+                'document_chunks.document_id',
+                'document_chunks.content',
+                'document_chunks.chunk_index',
+                'document_chunks.metadata',
+                'documents.original_filename',
+                'documents.knowledge_base_id',
+            ])
+            // selectRaw ผูก binding เข้ากลุ่ม 'select' ให้เอง — ถ้าใช้ DB::raw กับ setBindings()
+            // แทน binding ของ where จะถูกทับจนจำนวนไม่ตรงกับ ? แล้ว PDO โยน HY093
+            ->selectRaw("ts_rank_cd(to_tsvector('simple', document_chunks.content), plainto_tsquery('simple', ?)) as rank_score", [$sanitizedQuery])
+            ->join('documents', 'documents.id', '=', 'document_chunks.document_id')
+            ->where('documents.knowledge_base_id', $knowledgeBaseId)
+            ->where('documents.status', 'completed')
+            ->whereRaw("to_tsvector('simple', document_chunks.content) @@ plainto_tsquery('simple', ?)", [$sanitizedQuery])
+            ->orderByDesc('rank_score')
+            ->limit($limit);
     }
 
     /**
