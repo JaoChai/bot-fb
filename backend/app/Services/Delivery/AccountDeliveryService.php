@@ -284,9 +284,8 @@ class AccountDeliveryService
             return false;
         }
 
-        $conv = $delivery->conversation;
-        $customer = TelegramAlertBotService::esc($conv?->customerProfile?->display_name ?? "แชท #{$conv?->id}");
-        $amount = $delivery->amount !== null ? number_format($delivery->amount) : '-';
+        $customer = $this->customerLabel($delivery->conversation);
+        $amount = $this->amountLabel($delivery);
 
         $text = "⏰ <b>เตือน:</b> งาน #{$delivery->id} ค้างมา <code>{$ageMinutes}</code> นาทีแล้ว ยังไม่ได้กดส่ง\n"
             ."👤 <b>{$customer}</b> · 💵 <code>{$amount}</code> บาท\n"
@@ -310,11 +309,23 @@ class AccountDeliveryService
         ];
     }
 
+    /** ชื่อลูกค้าที่ขึ้นบนการ์ดและใบเตือน — escape แล้ว · ไม่มีชื่อใช้ "แชท #id" แทน */
+    private function customerLabel(?Conversation $conv): string
+    {
+        return TelegramAlertBotService::esc($conv?->customerProfile?->display_name ?? "แชท #{$conv?->id}");
+    }
+
+    /** ยอดเงินที่ขึ้นบนการ์ดและใบเตือน — ไม่มียอดใช้ '-' */
+    private function amountLabel(AccountDelivery $delivery): string
+    {
+        return $delivery->amount !== null ? number_format($delivery->amount) : '-';
+    }
+
     private function cardText(AccountDelivery $delivery): string
     {
-        $conv = $delivery->conversation;
-        $customer = TelegramAlertBotService::esc($conv?->customerProfile?->display_name ?? "แชท #{$conv?->id}");
-        $amount = $delivery->amount !== null ? number_format($delivery->amount) : '-';
+        $conv = $delivery->conversation;   // ยังใช้ต่อในบรรทัด "แชท #{$conv?->id}" ด้านล่าง — ห้ามลบ
+        $customer = $this->customerLabel($conv);
+        $amount = $this->amountLabel($delivery);
 
         $items = [];
         foreach ($delivery->items as $item) {

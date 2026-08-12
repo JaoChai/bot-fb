@@ -9,6 +9,7 @@ use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\SlipVerification;
 use App\Models\User;
+use App\Services\Delivery\AccountDeliveryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
@@ -184,5 +185,42 @@ class RemindPendingDeliveriesTest extends TestCase
         });
         // การ์ดใบนี้กลายเป็นใบที่ถือปุ่ม — รอบถัดไปต้อง reply มาที่ใบนี้ ไม่ส่งปุ่มซ้ำอีก
         $this->assertSame(777, $delivery->fresh()->card_message_id);
+    }
+
+    public function test_does_not_stamp_reminder_when_the_reply_message_never_reached_telegram(): void
+    {
+        // reply path คือทางเดินหลักหลัง deploy — กฎ "ส่งไม่ออก = ห้ามประทับเวลา" ต้องคุมที่นี่ด้วย
+        // ไม่ใช่แค่ fallback path ไม่งั้นตาข่ายเคส #49 ดับบนเส้นทางที่ใช้จริง
+        Carbon::setTestNow(Carbon::today()->setTime(2, 0));
+        Http::fake(fn () => throw new ConnectionException('timed out'));
+
+        $delivery = $this->makeDelivery([
+            'created_at' => now()->subHours(3),
+            'card_message_id' => 4321,
+        ]);
+
+        $this->artisan('delivery:remind')->assertSuccessful();
+
+        $this->assertNull($delivery->fresh()->last_reminded_at);
+    }
+
+    public function test_reminder_shows_the_same_customer_label_as_the_card(): void
+    {
+        // ชื่อ/ยอดบนใบเตือนต้องมาจากทางเดียวกับการ์ด — คนละค่า = เจ้าของสับสนตอนกดยืนยัน
+        Http::fake(['api.telegram.org/*' => Http::response([
+            'ok' => true, 'result' => ['message_id' => 999],
+        ])]);
+        $delivery = $this->makeDelivery([
+            'created_at' => now()->subHour(),
+            'card_message_id' => 4321,
+        ]);
+        $expected = app(AccountDeliveryService::class)->cardTextForTesting($delivery);
+
+        $this->artisan('delivery:remind')->assertSuccessful();
+
+        Http::assertSent(function ($r) use ($expected) {
+            // ยอด 1,100 ที่ format แล้ว ปรากฏทั้งบนการ์ดและบนใบเตือน
+            return str_contains($expected, '1,100') && str_contains($r['text'] ?? '', '1,100');
+        });
     }
 }
