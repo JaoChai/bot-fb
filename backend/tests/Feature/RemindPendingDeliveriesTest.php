@@ -60,8 +60,10 @@ class RemindPendingDeliveriesTest extends TestCase
 
     public function test_reminds_stale_reserved_delivery(): void
     {
-        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
-        $delivery = $this->makeDelivery(['created_at' => now()->subHour()]);
+        Http::fake(['api.telegram.org/*' => Http::response([
+            'ok' => true, 'result' => ['message_id' => 111],
+        ])]);
+        $delivery = $this->makeDelivery(['created_at' => now()->subHour(), 'card_message_id' => 42]);
 
         $this->artisan('delivery:remind')->assertSuccessful();
 
@@ -138,5 +140,49 @@ class RemindPendingDeliveriesTest extends TestCase
 
         Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage'));
         $this->assertNotNull($delivery->fresh()->last_reminded_at);
+    }
+
+    public function test_reminder_carries_no_buttons_and_quotes_the_original_card(): void
+    {
+        // ต้นเหตุที่เจ้าของกดส่งซ้ำ: ใบเตือนเคยเป็นการ์ดเต็มที่แนบปุ่มชุดใหม่ทุกรอบ
+        // เตือนกี่รอบ = ปุ่มค้างในกลุ่มเพิ่มอีกกี่ชุด
+        Http::fake(['api.telegram.org/*' => Http::response([
+            'ok' => true, 'result' => ['message_id' => 12345],
+        ])]);
+        $delivery = $this->makeDelivery([
+            'created_at' => now()->subHour(),
+            'card_message_id' => 4321,
+        ]);
+
+        $this->artisan('delivery:remind')->assertSuccessful();
+
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage')
+            && ! isset($r['reply_markup'])
+            && ($r['reply_to_message_id'] ?? null) === 4321
+            && str_contains($r['text'] ?? '', '⏰')
+            && str_contains($r['text'] ?? '', "#{$delivery->id}"));
+        $this->assertNotNull($delivery->fresh()->last_reminded_at);
+    }
+
+    public function test_reminder_falls_back_to_a_full_card_when_the_first_one_never_arrived(): void
+    {
+        // เคส 1 ส.ค. 2026: การ์ดใบแรกไม่เคยไปถึง Telegram → card_message_id ว่าง
+        // รอบเตือนต้องส่งการ์ดพร้อมปุ่มแทน ไม่งั้นงานนี้จะไม่มีปุ่มให้กดเลยตลอดกาล
+        Http::fake(['api.telegram.org/*' => Http::response([
+            'ok' => true, 'result' => ['message_id' => 777],
+        ])]);
+        $delivery = $this->makeDelivery(['created_at' => now()->subHour()]);
+
+        $this->artisan('delivery:remind')->assertSuccessful();
+
+        Http::assertSent(function ($r) {
+            $markup = json_decode($r['reply_markup'] ?? '[]', true);
+
+            return str_contains($r->url(), 'sendMessage')
+                && str_contains(json_encode($markup), 'dv|')
+                && str_contains(json_encode($markup), 'dx|');
+        });
+        // การ์ดใบนี้กลายเป็นใบที่ถือปุ่ม — รอบถัดไปต้อง reply มาที่ใบนี้ ไม่ส่งปุ่มซ้ำอีก
+        $this->assertSame(777, $delivery->fresh()->card_message_id);
     }
 }

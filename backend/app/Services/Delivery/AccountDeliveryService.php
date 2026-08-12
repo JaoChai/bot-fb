@@ -260,6 +260,47 @@ class AccountDeliveryService
         return true;
     }
 
+    /**
+     * เตือนงานที่ค้างกดยืนยัน — ข้อความสั้นไม่มีปุ่ม ที่ reply กลับไปที่การ์ดใบแรก
+     *
+     * เจตนา: 1 งานต้องมีปุ่มกดอยู่ชุดเดียวเสมอ เดิมรอบเตือนส่งการ์ดเต็มพร้อมปุ่มชุดใหม่
+     * ทุกรอบ พอกดส่งจากใบหนึ่ง ปุ่มบนใบอื่นยังค้าง เจ้าของเผลอกดซ้ำได้
+     * (กดซ้ำไม่ทำให้ส่งของซ้ำ — deliver() กันไว้ — แต่ทำให้สับสนว่าตกลงส่งไปหรือยัง)
+     *
+     * @return bool false = ใบเตือนไม่ออก ผู้เรียกต้องไม่ประทับ last_reminded_at
+     */
+    public function sendReminder(AccountDelivery $delivery, int $ageMinutes): bool
+    {
+        // การ์ดใบแรกไม่เคยไปถึง Telegram (เหตุการณ์ 1 ส.ค. 2026) — งานนี้ยังไม่มีปุ่มให้กดเลย
+        // ต้องส่งการ์ดเต็มพร้อมปุ่ม ไม่ใช่ข้อความชี้ไปที่การ์ดที่ไม่มีอยู่จริง
+        if ($delivery->card_message_id === null) {
+            return $this->sendCard($delivery, "⏰ <b>เตือน:</b> งานส่งของค้างมา <code>{$ageMinutes}</code> นาทีแล้ว ยังไม่ได้กดส่ง\n\n");
+        }
+
+        $plugin = $this->telegramPlugin($delivery);
+        if (! $plugin) {
+            Log::warning('Delivery: no telegram plugin for reminder', ['delivery_id' => $delivery->id]);
+
+            return false;
+        }
+
+        $conv = $delivery->conversation;
+        $customer = TelegramAlertBotService::esc($conv?->customerProfile?->display_name ?? "แชท #{$conv?->id}");
+        $amount = $delivery->amount !== null ? number_format($delivery->amount) : '-';
+
+        $text = "⏰ <b>เตือน:</b> งาน #{$delivery->id} ค้างมา <code>{$ageMinutes}</code> นาทีแล้ว ยังไม่ได้กดส่ง\n"
+            ."👤 <b>{$customer}</b> · 💵 <code>{$amount}</code> บาท\n"
+            .'👆 กดปุ่มบนการ์ดที่ quote ไว้';
+
+        return $this->alertBot->sendMessage(
+            $plugin->config['access_token'] ?? '',
+            (string) ($plugin->config['chat_id'] ?? ''),
+            $text,
+            null,
+            $delivery->card_message_id,
+        ) !== null;
+    }
+
     /** @return array<int, array<int, array{text: string, callback_data: string}>> */
     public function cardKeyboard(AccountDelivery $delivery): array
     {

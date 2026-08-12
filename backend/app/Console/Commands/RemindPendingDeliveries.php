@@ -42,11 +42,11 @@ class RemindPendingDeliveries extends Command
             }
 
             $ageMinutes = (int) $delivery->created_at->diffInMinutes(now());
-            if (! $service->sendCard($delivery, "⏰ <b>เตือน:</b> งานส่งของค้างมา <code>{$ageMinutes}</code> นาทีแล้ว ยังไม่ได้กดส่ง\n\n")) {
-                // ห้ามประทับเวลาเตือนเมื่อการ์ดไม่ออก ไม่งั้นงานจะเสียสิทธิ์ทะลุช่วงเงียบครั้งเดียว
+            if (! $service->sendReminder($delivery, $ageMinutes)) {
+                // ห้ามประทับเวลาเตือนเมื่อใบเตือนไม่ออก ไม่งั้นงานจะเสียสิทธิ์ทะลุช่วงเงียบครั้งเดียว
                 // ไปฟรีๆ แล้วเงียบยาวถึง 08:00 แบบเคส #49 — ตาข่ายสุดท้ายดับตอนที่ต้องใช้พอดี
                 // ยอมให้พยายามซ้ำทุกรอบดีกว่าปล่อยออเดอร์ที่ลูกค้าจ่ายเงินแล้วค้างข้ามคืน
-                Log::error('Delivery: reminder card never reached Telegram', [
+                Log::error('Delivery: reminder never reached Telegram', [
                     'delivery_id' => $delivery->id,
                 ]);
 
