@@ -579,6 +579,151 @@ Expected: ไม่มี output (ไฟล์นี้ต้องไม่ถ�
 
 ---
 
+### Task 5: ปิดช่องที่รีวิวเจอ — dedupe format ชื่อ/ยอด + เทสต์กฎทองบน reply path
+
+เพิ่มหลังรีวิว Task 3 (เจ้าของตัดสิน 2026-08-12): reviewer ชี้ว่า `sendReminder()` คัดลอกโค้ด
+format ชื่อลูกค้า/ยอด มาจาก `cardText()` แบบ verbatim — ถ้าวันหน้าเปลี่ยนวิธี resolve ชื่อหรือ
+format ยอด ต้องแก้ 2 ที่ ลืมที่หนึ่ง = ใบเตือนกับการ์ดแสดงคนละชื่อ/คนละยอด
+และ Claude พบเพิ่มว่ากฎ "ส่งไม่ออก = ห้ามประทับ `last_reminded_at`" ยังไม่มีเทสต์บน reply path
+ซึ่งจะเป็นทางเดินของเกือบทุกงานหลัง deploy
+
+**ไม่อยู่ในขอบเขต:** guard plugin-null 5 บรรทัดที่ซ้ำกับ `sendCard()` — เจ้าของตัดสินให้ปล่อยไว้
+(ต่างกันแค่ข้อความ log · extract แล้วต้องส่ง context string เข้าไปซึ่งอ่านยากกว่าเดิม)
+
+**Files:**
+- Modify: `backend/app/Services/Delivery/AccountDeliveryService.php` (`cardText()` และ `sendReminder()`)
+- Test: `backend/tests/Feature/RemindPendingDeliveriesTest.php`
+
+**Interfaces:**
+- Consumes: `AccountDeliveryService::sendReminder(AccountDelivery, int): bool` (Task 3)
+- Produces: helper ใหม่ 2 ตัว **ทั้งคู่เป็น `private`** ไม่มีผู้เรียกนอกคลาส:
+  - `customerLabel(?Conversation $conv): string`
+  - `amountLabel(AccountDelivery $delivery): string`
+
+- [ ] **Step 1: เขียนเทสต์ที่ยังไม่ผ่าน**
+
+เพิ่มท้ายคลาสใน `backend/tests/Feature/RemindPendingDeliveriesTest.php`:
+
+```php
+    public function test_does_not_stamp_reminder_when_the_reply_message_never_reached_telegram(): void
+    {
+        // reply path คือทางเดินหลักหลัง deploy — กฎ "ส่งไม่ออก = ห้ามประทับเวลา" ต้องคุมที่นี่ด้วย
+        // ไม่ใช่แค่ fallback path ไม่งั้นตาข่ายเคส #49 ดับบนเส้นทางที่ใช้จริง
+        Carbon::setTestNow(Carbon::today()->setTime(2, 0));
+        Http::fake(fn () => throw new ConnectionException('timed out'));
+
+        $delivery = $this->makeDelivery([
+            'created_at' => now()->subHours(3),
+            'card_message_id' => 4321,
+        ]);
+
+        $this->artisan('delivery:remind')->assertSuccessful();
+
+        $this->assertNull($delivery->fresh()->last_reminded_at);
+    }
+
+    public function test_reminder_shows_the_same_customer_label_as_the_card(): void
+    {
+        // ชื่อ/ยอดบนใบเตือนต้องมาจากทางเดียวกับการ์ด — คนละค่า = เจ้าของสับสนตอนกดยืนยัน
+        Http::fake(['api.telegram.org/*' => Http::response([
+            'ok' => true, 'result' => ['message_id' => 999],
+        ])]);
+        $delivery = $this->makeDelivery([
+            'created_at' => now()->subHour(),
+            'card_message_id' => 4321,
+        ]);
+        $expected = app(AccountDeliveryService::class)->cardTextForTesting($delivery);
+
+        $this->artisan('delivery:remind')->assertSuccessful();
+
+        Http::assertSent(function ($r) use ($expected) {
+            // ยอด 1,100 ที่ format แล้ว ปรากฏทั้งบนการ์ดและบนใบเตือน
+            return str_contains($expected, '1,100') && str_contains($r['text'] ?? '', '1,100');
+        });
+    }
+```
+
+เพิ่ม import ที่หัวไฟล์ (ถ้ายังไม่มี): `use App\Services\Delivery\AccountDeliveryService;`
+
+- [ ] **Step 2: รันเทสต์ให้เห็นว่าพัง**
+
+```bash
+cd backend && php artisan test --filter=RemindPendingDeliveriesTest
+```
+Expected: `test_does_not_stamp_reminder_when_the_reply_message_never_reached_telegram` FAIL
+(เดิมยังไม่มีเทสต์นี้ · ถ้ามันผ่านตั้งแต่รอบแรกให้รายงานว่าผ่าน แล้วอธิบายว่าทำไม —
+logic อาจถูกอยู่แล้วและเทสต์นี้เป็นการล็อกพฤติกรรมไว้ ไม่ใช่การแก้บั๊ก)
+
+- [ ] **Step 3: extract helper แล้วเรียกใช้ทั้ง 2 ที่**
+
+ใน `backend/app/Services/Delivery/AccountDeliveryService.php` แทรก 2 เมธอดนี้ **ก่อน** `cardText()`:
+
+```php
+    /** ชื่อลูกค้าที่ขึ้นบนการ์ดและใบเตือน — escape แล้ว · ไม่มีชื่อใช้ "แชท #id" แทน */
+    private function customerLabel(?Conversation $conv): string
+    {
+        return TelegramAlertBotService::esc($conv?->customerProfile?->display_name ?? "แชท #{$conv?->id}");
+    }
+
+    /** ยอดเงินที่ขึ้นบนการ์ดและใบเตือน — ไม่มียอดใช้ '-' */
+    private function amountLabel(AccountDelivery $delivery): string
+    {
+        return $delivery->amount !== null ? number_format($delivery->amount) : '-';
+    }
+```
+
+ใน `sendReminder()` แทนที่ 3 บรรทัดนี้:
+
+```php
+        $conv = $delivery->conversation;
+        $customer = TelegramAlertBotService::esc($conv?->customerProfile?->display_name ?? "แชท #{$conv?->id}");
+        $amount = $delivery->amount !== null ? number_format($delivery->amount) : '-';
+```
+ด้วย:
+```php
+        $customer = $this->customerLabel($delivery->conversation);
+        $amount = $this->amountLabel($delivery);
+```
+
+ใน `cardText()` แทนที่ 3 บรรทัดแรกของเมธอด:
+
+```php
+        $conv = $delivery->conversation;
+        $customer = TelegramAlertBotService::esc($conv?->customerProfile?->display_name ?? "แชท #{$conv?->id}");
+        $amount = $delivery->amount !== null ? number_format($delivery->amount) : '-';
+```
+ด้วย:
+```php
+        $conv = $delivery->conversation;   // ยังใช้ต่อในบรรทัด "แชท #{$conv?->id}" ด้านล่าง — ห้ามลบ
+        $customer = $this->customerLabel($conv);
+        $amount = $this->amountLabel($delivery);
+```
+
+**ห้ามแตะส่วนอื่นของ `cardText()`** — ข้อความบนการ์ดต้องเหมือนเดิมทุกตัวอักษร
+
+- [ ] **Step 4: รันเทสต์ให้ผ่าน**
+
+```bash
+cd backend && php artisan test --filter=RemindPendingDeliveriesTest
+```
+Expected: PASS 10 เคส
+
+- [ ] **Step 5: รันชุดกว้าง — การ์ดต้องไม่เปลี่ยนแม้แต่ตัวอักษรเดียว**
+
+```bash
+cd backend && php artisan test --filter='Delivery|Telegram|Slip|ManualPaymentConfirm|OrderChecksum'
+```
+Expected: PASS ทั้งหมด (เทสต์ที่ assert เนื้อการ์ดจะจับได้ทันทีถ้า extract ทำข้อความเพี้ยน)
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd backend && git add app/Services/Delivery/AccountDeliveryService.php tests/Feature/RemindPendingDeliveriesTest.php
+git commit -m "refactor(delivery): ดึง format ชื่อ/ยอด มาใช้ทางเดียวกันทั้งการ์ดและใบเตือน"
+```
+
+---
+
 ## หลัง merge — สิ่งที่ต้องทำบน prod
 
 1. deploy แล้ว **รัน migration บน prod** (`railway ssh` → `php artisan migrate --force`) — ดู `docs/` เรื่อง Railway SSH
