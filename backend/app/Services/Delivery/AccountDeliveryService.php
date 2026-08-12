@@ -240,12 +240,24 @@ class AccountDeliveryService
             ? $this->cardKeyboard($delivery)
             : null;
 
-        return $this->alertBot->sendMessage(
+        $result = $this->alertBot->sendMessage(
             $plugin->config['access_token'] ?? '',
             (string) ($plugin->config['chat_id'] ?? ''),
             $prefix.$this->cardText($delivery),
             $keyboard,
-        ) !== null;
+        );
+
+        if ($result === null) {
+            return false;
+        }
+
+        // จดใบที่ถือปุ่มไว้ ให้รอบเตือนซ้ำ reply มาที่ใบนี้แทนการสร้างปุ่มชุดใหม่
+        // เทียบ !== null ไม่ใช่ truthiness: result ที่ว่าง ([]) ยังแปลว่าส่งสำเร็จ
+        if (isset($result['message_id'])) {
+            $delivery->update(['card_message_id' => (int) $result['message_id']]);
+        }
+
+        return true;
     }
 
     /** @return array<int, array<int, array{text: string, callback_data: string}>> */

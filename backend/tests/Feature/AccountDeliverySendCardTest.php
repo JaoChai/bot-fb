@@ -73,4 +73,28 @@ class AccountDeliverySendCardTest extends TestCase
         $this->assertFalse($sent);
         Http::assertNothingSent();
     }
+
+    public function test_send_card_records_the_telegram_message_id(): void
+    {
+        Http::fake(['api.telegram.org/*' => Http::response([
+            'ok' => true, 'result' => ['message_id' => 8899],
+        ])]);
+        $delivery = $this->makeDelivery();
+
+        $sent = app(AccountDeliveryService::class)->sendCard($delivery);
+
+        $this->assertTrue($sent);
+        $this->assertSame(8899, $delivery->fresh()->card_message_id);
+    }
+
+    public function test_send_card_leaves_message_id_null_when_telegram_is_unreachable(): void
+    {
+        Http::fake(fn () => throw new ConnectionException('timed out'));
+        $delivery = $this->makeDelivery();
+
+        $sent = app(AccountDeliveryService::class)->sendCard($delivery);
+
+        $this->assertFalse($sent);
+        $this->assertNull($delivery->fresh()->card_message_id);
+    }
 }

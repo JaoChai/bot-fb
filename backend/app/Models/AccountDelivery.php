@@ -22,7 +22,7 @@ class AccountDelivery extends Model
 
     protected $fillable = [
         'bot_id', 'conversation_id', 'slip_verification_id', 'status',
-        'amount', 'confirmed_by', 'delivered_at', 'last_reminded_at',
+        'amount', 'confirmed_by', 'delivered_at', 'last_reminded_at', 'card_message_id',
     ];
 
     protected $casts = [
