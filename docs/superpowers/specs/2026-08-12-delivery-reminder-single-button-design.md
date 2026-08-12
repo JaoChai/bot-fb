@@ -46,9 +46,12 @@
 ### 1. เก็บเลขข้อความของการ์ดใบแรก
 
 - migration: `account_deliveries.card_message_id` — `bigInteger`, nullable
-- `TelegramAlertBotService::sendMessage()` เปลี่ยน return จาก `bool` → `?int`
-  (message_id ที่ Telegram คืน; `null` = ส่งไม่สำเร็จ)
-  - private `call()` เปลี่ยน return จาก `bool` → `?array` (ค่า `result` จาก response; `null` = ล้มเหลว)
+- `TelegramAlertBotService::sendMessage()` เปลี่ยน return จาก `bool` → `?array`
+  (ค่า `result` จาก Telegram ซึ่งมี `message_id`; `null` = ส่งไม่สำเร็จ)
+  - **ทำไมไม่ใช่ `?int`**: จะแยกไม่ออกระหว่าง "ส่งไม่สำเร็จ" กับ "ส่งสำเร็จแต่ response ไม่มี
+    message_id" — เทสต์ทั้งระบบ 15 ไฟล์ fake ด้วย `['ok' => true]` เปล่าๆ จะกลายเป็นล้มเหลวหมด
+  - private `call()` เปลี่ยน return จาก `bool` → `?array` (`result` จาก response, `[]` ถ้าไม่มี;
+    `null` = ล้มเหลว) · ผู้เรียกต้องเทียบด้วย `!== null` ห้ามใช้ truthiness เพราะ `[]` เป็น falsy
   - `editMessageText` / `answerCallbackQuery` ไม่สนใจค่าคืน — ไม่ต้องแก้ signature
   - `setWebhook` ไม่ได้ใช้ `call()` (มี `Http::` ของตัวเอง) — ไม่กระทบ
   - ผู้เรียก `sendMessage` อีก 2 จุด (`SlipVerificationService.php:543`, `ReconcileDeliveries.php:138`)
