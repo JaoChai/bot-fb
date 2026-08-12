@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Wrapper Telegram Bot API สำหรับ "bot แจ้งเตือน" (ใช้ raw token จาก flow telegram plugin,
  * ไม่ใช่ Bot model). ไม่มี method ไหนโยน exception — ล้มแล้ว log เสมอ
- * แต่ตัวที่คืน bool (sendMessage, setWebhook) บอกผู้เรียกได้ว่าสำเร็จไหม
+ * แต่ตัวที่คืนค่า (sendMessage คืน ?array, setWebhook คืน bool) บอกผู้เรียกได้ว่าสำเร็จไหม
  * ผู้เรียกที่ส่งของสำคัญต้องเช็คค่านั้น อย่าถือว่าเรียกแล้วคือถึงปลายทาง
  */
 class TelegramAlertBotService
@@ -31,11 +31,27 @@ class TelegramAlertBotService
         return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
     }
 
-    public function sendMessage(string $token, string $chatId, string $text, ?array $inlineKeyboard = null): bool
-    {
+    /**
+     * @return array<string, mixed>|null null = ส่งไม่สำเร็จ; array = result จาก Telegram
+     *                                   (มี message_id เมื่อ Telegram ส่งมา) — เทียบด้วย !== null
+     *
+     * $replyToMessageId: ผูกข้อความนี้เป็น reply ของข้อความเดิม พร้อม allow_sending_without_reply
+     * เพื่อให้ยังส่งออกแม้ข้อความต้นทางถูกลบไปแล้ว
+     */
+    public function sendMessage(
+        string $token,
+        string $chatId,
+        string $text,
+        ?array $inlineKeyboard = null,
+        ?int $replyToMessageId = null,
+    ): ?array {
         $params = ['chat_id' => $chatId, 'text' => $text, 'parse_mode' => 'HTML'];
         if ($inlineKeyboard !== null) {
             $params['reply_markup'] = json_encode(['inline_keyboard' => $inlineKeyboard]);
+        }
+        if ($replyToMessageId !== null) {
+            $params['reply_to_message_id'] = $replyToMessageId;
+            $params['allow_sending_without_reply'] = true;
         }
 
         return $this->call($token, 'sendMessage', $params);
@@ -70,8 +86,13 @@ class TelegramAlertBotService
         }
     }
 
-    /** @return bool true เมื่อ Telegram รับข้อความแล้วจริง — ผู้เรียกที่แคร์ต้องเช็คค่านี้ */
-    private function call(string $token, string $method, array $params): bool
+    /**
+     * @return array<string, mixed>|null null = ยิงไม่สำเร็จ; array = Telegram รับแล้ว
+     *
+     * "สำเร็จ" ผูกกับ HTTP ok เท่านั้น — response ที่ไม่มี result คืน [] ไม่ใช่ null
+     * ผู้เรียกต้องเทียบด้วย !== null ([] เป็น falsy จะทำให้ if (! $x) อ่านผิดเป็นล้มเหลว)
+     */
+    private function call(string $token, string $method, array $params): ?array
     {
         try {
             $res = Http::timeout(self::TIMEOUT_SECONDS)->retry(2, 500)->post(self::BASE.$token.'/'.$method, $params);
@@ -83,14 +104,16 @@ class TelegramAlertBotService
                     'body' => $res->body(),
                 ]);
 
-                return false;
+                return null;
             }
 
-            return true;
+            $result = $res->json('result');
+
+            return is_array($result) ? $result : [];
         } catch (\Throwable $e) {
             Log::warning('Telegram alert API call failed', ['method' => $method, 'error' => $e->getMessage()]);
 
-            return false;
+            return null;
         }
     }
 }

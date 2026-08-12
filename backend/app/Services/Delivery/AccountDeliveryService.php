@@ -245,7 +245,7 @@ class AccountDeliveryService
             (string) ($plugin->config['chat_id'] ?? ''),
             $prefix.$this->cardText($delivery),
             $keyboard,
-        );
+        ) !== null;
     }
 
     /** @return array<int, array<int, array{text: string, callback_data: string}>> */

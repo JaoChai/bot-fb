@@ -121,7 +121,7 @@ class SlipVerificationAlertTest extends TestCase
                 ->andReturnUsing(function ($token, $chatId, $text, $keyboard) use (&$captured) {
                     $captured = $keyboard;
 
-                    return true;
+                    return [];
                 });
         });
 
@@ -147,7 +147,7 @@ class SlipVerificationAlertTest extends TestCase
                 ->andReturnUsing(function ($t, $c, $tx, $kb) use (&$captured) {
                     $captured = $kb;
 
-                    return true;
+                    return [];
                 });
         });
 
