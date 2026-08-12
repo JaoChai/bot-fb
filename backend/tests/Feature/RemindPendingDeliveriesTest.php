@@ -5,11 +5,13 @@ namespace Tests\Feature;
 use App\Models\AccountDelivery;
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\CustomerProfile;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\Delivery\AccountDeliveryService;
+use App\Services\Payment\TelegramAlertBotService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
@@ -204,9 +206,10 @@ class RemindPendingDeliveriesTest extends TestCase
         $this->assertNull($delivery->fresh()->last_reminded_at);
     }
 
-    public function test_reminder_shows_the_same_customer_label_as_the_card(): void
+    public function test_reminder_shows_the_same_customer_label_and_amount_as_the_card(): void
     {
         // ชื่อ/ยอดบนใบเตือนต้องมาจากทางเดียวกับการ์ด — คนละค่า = เจ้าของสับสนตอนกดยืนยัน
+        // ชื่อจงใจมี <> เพื่อยืนยันว่าทั้งสองทางผ่าน esc() เหมือนกัน ไม่ใช่ทางใดทางหนึ่ง
         Http::fake(['api.telegram.org/*' => Http::response([
             'ok' => true, 'result' => ['message_id' => 999],
         ])]);
@@ -214,13 +217,18 @@ class RemindPendingDeliveriesTest extends TestCase
             'created_at' => now()->subHour(),
             'card_message_id' => 4321,
         ]);
-        $expected = app(AccountDeliveryService::class)->cardTextForTesting($delivery);
+        $profile = CustomerProfile::factory()->create(['display_name' => 'สมชาย <VIP>']);
+        $delivery->conversation->forceFill(['customer_profile_id' => $profile->id])->save();
+        $delivery->refresh();
+
+        $label = TelegramAlertBotService::esc('สมชาย <VIP>');
+        $cardText = app(AccountDeliveryService::class)->cardTextForTesting($delivery);
+        $this->assertStringContainsString($label, $cardText);
+        $this->assertStringContainsString('1,100', $cardText);
 
         $this->artisan('delivery:remind')->assertSuccessful();
 
-        Http::assertSent(function ($r) use ($expected) {
-            // ยอด 1,100 ที่ format แล้ว ปรากฏทั้งบนการ์ดและบนใบเตือน
-            return str_contains($expected, '1,100') && str_contains($r['text'] ?? '', '1,100');
-        });
+        Http::assertSent(fn ($r) => str_contains($r['text'] ?? '', $label)
+            && str_contains($r['text'] ?? '', '1,100'));
     }
 }
