@@ -44,7 +44,7 @@ export function BotPicker({
         )}
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent position="popper">
         {bots.map((bot) => (
           <SelectItem key={bot.id} value={String(bot.id)}>
             {bot.name}
