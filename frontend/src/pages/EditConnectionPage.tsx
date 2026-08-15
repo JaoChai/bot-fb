@@ -290,6 +290,7 @@ export function EditConnectionPage() {
       {/* Danger Zone */}
       {isEditMode && (
         <Panel
+          className="mb-24"
           tone="destructive"
           icon={Trash2}
           title="Danger Zone"
