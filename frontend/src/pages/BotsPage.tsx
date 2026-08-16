@@ -194,7 +194,7 @@ export function BotsPage() {
             }
           />
 
-          <p className="text-sm text-muted-foreground">ทั้งหมด {filtered.length} บอท</p>
+          <p className="text-sm text-muted-foreground">ทั้งหมด {bots.length} บอท</p>
 
           {/* Filtered-to-zero message */}
           {filtered.length === 0 ? (

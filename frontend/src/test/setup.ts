@@ -34,6 +34,13 @@ const localStorageMock = (() => {
 
 Object.defineProperty(window, "localStorage", { value: localStorageMock })
 
+// jsdom has no ResizeObserver — Radix components (e.g. Slider) read it on mount
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
 // Mock import.meta.env
 Object.defineProperty(import.meta, "env", {
   value: {

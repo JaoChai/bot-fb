@@ -22,9 +22,6 @@ vi.mock('@/hooks/useBotSettings', () => ({
   useUpdateBotSettings: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
-// Radix Slider วน setState ไม่หยุดใน jsdom (Maximum update depth) — แทนที่ตัวเดียวที่ default tab render
-vi.mock('@/components/ui/slider', () => ({ Slider: () => null }));
-
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={['/bots/28/settings']}>
