@@ -194,6 +194,8 @@ export function BotsPage() {
             }
           />
 
+          <p className="text-sm text-muted-foreground">ทั้งหมด {filtered.length} บอท</p>
+
           {/* Filtered-to-zero message */}
           {filtered.length === 0 ? (
             <div className="rounded-lg border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
@@ -225,15 +227,19 @@ export function BotsPage() {
                       onClick={() => navigate(`/bots/${bot.id}/settings`)}
                       className="flex-1 min-w-0 text-left focus:outline-none"
                     >
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium truncate">{bot.name}</h3>
+                      <div className="flex items-start gap-2">
+                        <h3 className="font-medium line-clamp-2 break-words">{bot.name}</h3>
                         <StatusDot
                           status={isActive ? 'active' : 'inactive'}
                           pulse={isActive}
+                          className="mt-1 shrink-0"
                         />
                       </div>
-                      <p className="text-xs text-muted-foreground truncate tabular-nums">
-                        {PLATFORM_LABEL[platform]} · อัพเดต {formatRelativeTime(bot.updated_at)}
+                      <p className="text-xs text-muted-foreground truncate">
+                        {PLATFORM_LABEL[platform]}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        อัพเดต {formatRelativeTime(bot.updated_at)}
                       </p>
                     </button>
 
@@ -242,6 +248,7 @@ export function BotsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        aria-label={`เปิด Flow ของ ${bot.name}`}
                         onClick={() => navigate(`/flows/editor?botId=${bot.id}`)}
                       >
                         <Workflow className="size-4 mr-1" strokeWidth={1.5} />
@@ -250,6 +257,7 @@ export function BotsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        aria-label={`ตั้งค่า ${bot.name}`}
                         onClick={() => navigate(`/bots/${bot.id}/settings`)}
                       >
                         <Settings className="size-4 mr-1" strokeWidth={1.5} />
