@@ -12,7 +12,7 @@ interface AdvancedOptionsSectionProps {
 export function AdvancedOptionsSection({ formData, handleChange }: AdvancedOptionsSectionProps) {
   return (
     <Panel icon={Settings} title="ตัวเลือกขั้นสูง">
-      <div className="space-y-4 max-w-md">
+      <div className="space-y-4">
         <SettingRow
           label="Auto Handover"
           description="ปิดบอทตอบอัตโนมัติ ให้ Admin ตอบเอง"
