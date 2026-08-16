@@ -366,7 +366,7 @@ export function BotSettingsPage() {
             <div
               data-testid="tab-scroll-fade"
               aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent md:hidden"
+              className="pointer-events-none absolute inset-y-0 -right-1 w-8 bg-gradient-to-l from-background to-transparent md:hidden"
             />
           </div>
         </aside>
