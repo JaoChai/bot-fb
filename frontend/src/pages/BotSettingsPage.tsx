@@ -338,30 +338,37 @@ export function BotSettingsPage() {
       />
 
       <div className="grid gap-6 md:grid-cols-[220px_1fr] md:gap-8">
-        <aside className="md:border-r md:pr-6">
-          <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible -mx-1 px-1">
-            {TABS.map((t) => {
-              const Icon = t.icon;
-              const isActive = tab === t.value;
-              return (
-                <button
-                  key={t.value}
-                  type="button"
-                  onClick={() => setTab(t.value)}
-                  className={cn(
-                    'relative flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors text-left shrink-0',
-                    'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-4 before:w-0.5 before:rounded-full before:bg-primary before:transition-opacity',
-                    isActive
-                      ? 'bg-accent text-foreground before:opacity-100'
-                      : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground before:opacity-0',
-                  )}
-                >
-                  <Icon className="size-4 shrink-0" strokeWidth={1.5} />
-                  <span>{t.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+        <aside className="min-w-0 md:border-r md:pr-6">
+          <div className="relative">
+            <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible -mx-1 px-1">
+              {TABS.map((t) => {
+                const Icon = t.icon;
+                const isActive = tab === t.value;
+                return (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => setTab(t.value)}
+                    className={cn(
+                      'relative flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors text-left shrink-0',
+                      'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-4 before:w-0.5 before:rounded-full before:bg-primary before:transition-opacity',
+                      isActive
+                        ? 'bg-accent text-foreground before:opacity-100'
+                        : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground before:opacity-0',
+                    )}
+                  >
+                    <Icon className="size-4 shrink-0" strokeWidth={1.5} />
+                    <span>{t.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+            <div
+              data-testid="tab-scroll-fade"
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent md:hidden"
+            />
+          </div>
         </aside>
 
         <div className="min-w-0 space-y-6">
