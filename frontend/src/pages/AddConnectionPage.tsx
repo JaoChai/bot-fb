@@ -120,15 +120,20 @@ export function AddConnectionPage() {
       ) : (
         <>
           {/* Step 2 indicator + change platform */}
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span className="inline-flex size-6 items-center justify-center rounded-full border text-xs font-semibold text-muted-foreground">✓</span>
-              <span>{selectedPlatformData?.name}</span>
-              <div className="h-px flex-1 bg-border max-w-[80px]" />
-              <span className="inline-flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold">2</span>
-              <span className="font-medium text-foreground">ตั้งค่าการเชื่อมต่อ</span>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+              <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold text-muted-foreground">✓</span>
+              <span className="truncate">{selectedPlatformData?.name}</span>
+              <div className="h-px flex-1 max-w-[40px] bg-border sm:max-w-[80px]" />
+              <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold">2</span>
+              <span className="shrink-0 font-medium text-foreground">ตั้งค่าการเชื่อมต่อ</span>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setSelectedPlatform(null)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="shrink-0 self-start sm:self-auto"
+              onClick={() => setSelectedPlatform(null)}
+            >
               <ArrowLeft className="size-4 mr-1" strokeWidth={1.5} />
               เปลี่ยนแพลตฟอร์ม
             </Button>
