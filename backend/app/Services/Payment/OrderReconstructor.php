@@ -32,14 +32,9 @@ class OrderReconstructor
 - ถ้าสรุปไม่ได้หรือรวมยอดไม่ลงตัว ตอบ {"items":[]}
 PROMPT;
 
-    /** จำนวนต่อรายการที่ยอมรับ — เกินนี้ถือว่า LLM เพี้ยน ใช้ค่าเดียวกับ delivery.max_qty เสมอ กันสองจุดหลุดไม่ตรงกัน */
-    private readonly int $maxQty;
-
     public function __construct(
         private readonly OpenRouterService $openRouter,
-    ) {
-        $this->maxQty = max(1, config_int('delivery.max_qty', 20));
-    }
+    ) {}
 
     /**
      * @param  array<int, array{sender: string, content: string}>  $history
@@ -185,7 +180,7 @@ PROMPT;
     }
 
     /**
-     * แปลง qty เป็นจำนวนเต็มอย่างปลอดภัย — คืน null เมื่อไม่ใช่จำนวนเต็มในช่วง 1..maxQty
+     * แปลง qty เป็นจำนวนเต็มอย่างปลอดภัย — คืน null เมื่อไม่ใช่จำนวนเต็มในช่วง 1..maxQty()
      *
      * ต้องเช็คช่วงเป็น float ก่อน cast เพราะ (int) ของ float ที่ใหญ่เกิน (เช่น 1e20 ที่ LLM ตอป้าย)
      * จะโยน "The float ... is not representable as an int" ทะลุออกไปจน record() ไม่ถูกเรียก
@@ -197,11 +192,23 @@ PROMPT;
         }
 
         $asFloat = (float) $value;
-        if ($asFloat < 1 || $asFloat > $this->maxQty) {
+        if ($asFloat < 1 || $asFloat > $this->maxQty()) {
             return null;
         }
 
         return (int) $asFloat;
+    }
+
+    /**
+     * จำนวนต่อรายการที่ยอมรับ — เกินนี้ถือว่า LLM เพี้ยน ใช้ค่าเดียวกับ delivery.max_qty เสมอ กันสองจุดหลุดไม่ตรงกัน
+     *
+     * อ่านแบบ lazy (ไม่ใช่ property ที่คำนวณใน constructor) เพราะ tests/Unit/SlipVerificationLogicTest
+     * สร้างคลาสนี้ตรงๆ ผ่าน PHPUnit\Framework\TestCase ธรรมดา ไม่มี Laravel container — เรียก config()
+     * ใน constructor จะพังด้วย BindingResolutionException ทั้งที่เทสต์พวกนั้นไม่เคยเรียก reconstruct() เลย
+     */
+    private function maxQty(): int
+    {
+        return max(1, config_int('delivery.max_qty', 20));
     }
 
     /**
@@ -226,7 +233,7 @@ PROMPT;
 
                 return null;
             }
-            if ($entry['qty'] > $this->maxQty) {
+            if ($entry['qty'] > $this->maxQty()) {
                 Log::info('OrderReconstructor: qty out of range', ['qty' => $entry['qty']]);
 
                 return null;
