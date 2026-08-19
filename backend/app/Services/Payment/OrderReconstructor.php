@@ -20,9 +20,6 @@ use Illuminate\Support\Facades\Log;
  */
 class OrderReconstructor
 {
-    /** จำนวนต่อรายการที่ยอมรับ — เกินนี้ถือว่า LLM เพี้ยน (สอดคล้อง delivery.max_qty) */
-    private const MAX_QTY = 20;
-
     private const SYSTEM_PROMPT = <<<'PROMPT'
 คุณคือผู้ช่วยร้านค้า อ่านบทสนทนาแล้วสรุปว่าลูกค้าสั่งซื้ออะไร ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่น:
 {"items":[{"slug":"...","qty":1}]}
@@ -35,9 +32,14 @@ class OrderReconstructor
 - ถ้าสรุปไม่ได้หรือรวมยอดไม่ลงตัว ตอบ {"items":[]}
 PROMPT;
 
+    /** จำนวนต่อรายการที่ยอมรับ — เกินนี้ถือว่า LLM เพี้ยน ใช้ค่าเดียวกับ delivery.max_qty เสมอ กันสองจุดหลุดไม่ตรงกัน */
+    private readonly int $maxQty;
+
     public function __construct(
         private readonly OpenRouterService $openRouter,
-    ) {}
+    ) {
+        $this->maxQty = max(1, config_int('delivery.max_qty', 20));
+    }
 
     /**
      * @param  array<int, array{sender: string, content: string}>  $history
@@ -183,7 +185,7 @@ PROMPT;
     }
 
     /**
-     * แปลง qty เป็นจำนวนเต็มอย่างปลอดภัย — คืน null เมื่อไม่ใช่จำนวนเต็มในช่วง 1..MAX_QTY
+     * แปลง qty เป็นจำนวนเต็มอย่างปลอดภัย — คืน null เมื่อไม่ใช่จำนวนเต็มในช่วง 1..maxQty
      *
      * ต้องเช็คช่วงเป็น float ก่อน cast เพราะ (int) ของ float ที่ใหญ่เกิน (เช่น 1e20 ที่ LLM ตอป้าย)
      * จะโยน "The float ... is not representable as an int" ทะลุออกไปจน record() ไม่ถูกเรียก
@@ -195,7 +197,7 @@ PROMPT;
         }
 
         $asFloat = (float) $value;
-        if ($asFloat < 1 || $asFloat > self::MAX_QTY) {
+        if ($asFloat < 1 || $asFloat > $this->maxQty) {
             return null;
         }
 
@@ -224,7 +226,7 @@ PROMPT;
 
                 return null;
             }
-            if ($entry['qty'] > self::MAX_QTY) {
+            if ($entry['qty'] > $this->maxQty) {
                 Log::info('OrderReconstructor: qty out of range', ['qty' => $entry['qty']]);
 
                 return null;
