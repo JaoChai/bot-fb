@@ -17,7 +17,7 @@ class GuardrailOutputSanitizer
         'markdown_bold' => '/\*\*[^*]+\*\*/',
         'markdown_heading' => '/(?:^|\n)#{1,6}\s/',
         'ai_admission_th' => '/ในฐานะ\s*(?:ที่เป็น\s*)?AI|ผมเป็น\s*(?:ระบบ\s*)?AI|ฉันเป็น\s*AI/u',
-        'ai_admission_en' => '/\bas an AI\b|\bI(?:\'m| am) an AI\b|\bI cannot\b|\bI can\'t\b/i',
+        'ai_admission_en' => '/\bas an AI\b|\bI(?:\'m| am) an AI\b/i',
     ];
 
     /**

@@ -79,4 +79,15 @@ class GuardrailOutputSanitizerTest extends TestCase
 
         $this->assertFalse($result['flagged']);
     }
+
+    #[Test]
+    public function test_does_not_flag_bare_english_refusal_without_ai_admission(): void
+    {
+        // ตรวจสอบ narrowing: generic refusals "I cannot" / "I can't" เองไม่ได้ flag
+        // ต้องมี "as an AI" / "I'm an AI" / "I am an AI" ถึงจะ flag
+        $result = $this->sanitizer->check("Sorry, I cannot ship to a PO box. I can't process this without an order number.");
+
+        $this->assertFalse($result['flagged']);
+        $this->assertNull($result['reason']);
+    }
 }
