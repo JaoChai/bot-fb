@@ -7,6 +7,9 @@ use App\Jobs\ExtractEntitiesJob;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Services\Guardrail\GuardrailOutputSanitizer;
+use App\Services\Guardrail\OffTopicCircuitBreaker;
+use App\Services\Guardrail\OffTopicSignalExtractor;
 use App\Services\Payment\OrderPayloadExtractor;
 use Illuminate\Support\Facades\Log;
 
@@ -16,7 +19,10 @@ class AIService
         protected OpenRouterService $openRouter,
         protected RAGService $ragService,
         protected StockGuardService $stockGuard,
-        private readonly OrderPayloadExtractor $orderPayload
+        private readonly OrderPayloadExtractor $orderPayload,
+        private readonly OffTopicSignalExtractor $offTopicSignal,
+        private readonly OffTopicCircuitBreaker $offTopicCircuitBreaker,
+        private readonly GuardrailOutputSanitizer $outputSanitizer,
     ) {}
 
     /**
@@ -31,6 +37,19 @@ class AIService
         ?Conversation $conversation = null,
         array $excludeMessageIds = []
     ): array {
+        // Off-topic circuit breaker — ตัดวงจรก่อนเรียก LLM เลยถ้าลูกค้าคนนี้โดน guardrail
+        // ซ้ำเกิน threshold ในบทสนทนาเดียวกันแล้ว (กัน token cost จากการใช้ฟรีซ้ำๆ)
+        if ($conversation !== null && $this->offTopicCircuitBreaker->isTripped($bot, $conversation)) {
+            return [
+                'content' => OffTopicCircuitBreaker::CANNED_MESSAGE,
+                'model' => 'circuit_breaker',
+                'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0],
+                'cost' => 0.0,
+                'order_payload' => null,
+                'off_topic_triggered' => false,
+            ];
+        }
+
         // Get conversation history if available
         // excludeMessageIds: ข้อความ turn ปัจจุบันที่ถูก save ไปแล้ว ต้องตัดออกจาก history
         // ไม่งั้น LLM เห็นข้อความเดิมซ้ำ 2 turn (history + current) แล้วตีความจำนวนผิด
@@ -68,6 +87,26 @@ class AIService
             $extracted = $this->orderPayload->extract($result['content'] ?? '');
             $result['content'] = $extracted['clean'];
             $result['order_payload'] = $extracted['payload'];
+        }
+
+        // Off-topic signal marker — เหมือน [[ORDER]] ด้านบน ตัดออกก่อนใครได้เห็น
+        $offTopicExtracted = $this->offTopicSignal->extract($result['content'] ?? '');
+        $result['content'] = $offTopicExtracted['clean'];
+        $result['off_topic_triggered'] = $offTopicExtracted['triggered'];
+        if ($conversation !== null && $offTopicExtracted['triggered']) {
+            $this->offTopicCircuitBreaker->recordTrigger($bot, $conversation);
+        }
+
+        // Output sanitizer — ตาข่ายสุดท้ายกันคำตอบหลุด (code block/markdown จริง/อ้างว่าเป็น AI)
+        // ใช้กับทุกคำตอบ ไม่ใช่แค่ที่ถูกตีว่า off-topic
+        $sanitizerResult = $this->outputSanitizer->check($result['content'] ?? '');
+        if ($sanitizerResult['flagged']) {
+            Log::warning('Guardrail output sanitizer triggered', [
+                'bot_id' => $bot->id,
+                'conversation_id' => $conversation?->id,
+                'reason' => $sanitizerResult['reason'],
+            ]);
+            $result['content'] = OffTopicCircuitBreaker::CANNED_MESSAGE;
         }
 
         // Ensure usage key exists with defaults (some models may not return usage data)

@@ -1,0 +1,145 @@
+<?php
+
+namespace Tests\Unit\Services;
+
+use App\Models\Bot;
+use App\Models\Conversation;
+use App\Models\User;
+use App\Services\AIService;
+use App\Services\Guardrail\OffTopicCircuitBreaker;
+use App\Services\RAGService;
+use App\Services\StockGuardService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use PHPUnit\Framework\Attributes\Test;
+use Tests\TestCase;
+
+class AIServiceGuardrailTest extends TestCase
+{
+    use RefreshDatabase;
+
+    #[Test]
+    public function test_circuit_breaker_skips_llm_call_when_already_tripped(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        Cache::put(OffTopicCircuitBreaker::cacheKey($bot->id, $conversation->id), OffTopicCircuitBreaker::THRESHOLD, 86400);
+
+        $this->mock(RAGService::class, function ($m) {
+            $m->shouldReceive('generateResponse')->never();
+        });
+
+        $this->mock(StockGuardService::class, function ($m) {
+            $m->shouldReceive('validate')->never();
+        });
+
+        $result = app(AIService::class)->generateResponse($bot, 'เขียนโค้ดให้หน่อย', $conversation);
+
+        $this->assertSame(OffTopicCircuitBreaker::CANNED_MESSAGE, $result['content']);
+        $this->assertSame(0, $result['usage']['total_tokens']);
+    }
+
+    #[Test]
+    public function test_off_topic_marker_is_stripped_from_content_and_increments_counter(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+
+        $this->mock(RAGService::class, function ($m) {
+            $m->shouldReceive('generateResponse')->once()->andReturn([
+                'content' => "ขอโทษครับพี่ อันนี้ผมช่วยไม่ได้ตรงนี้ครับ สนใจสินค้าตัวไหนดีครับ?\n[[OFFTOPIC]]",
+                'model' => 'test',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]);
+        });
+
+        $this->mock(StockGuardService::class, function ($m) {
+            $m->shouldReceive('validate')->andReturn(['blocked' => false]);
+        });
+
+        $result = app(AIService::class)->generateResponse($bot, 'แปลภาษาให้หน่อย', $conversation);
+
+        $this->assertStringNotContainsString('[[OFFTOPIC]]', $result['content']);
+        $this->assertTrue($result['off_topic_triggered']);
+        $this->assertSame(1, Cache::get(OffTopicCircuitBreaker::cacheKey($bot->id, $conversation->id)));
+    }
+
+    #[Test]
+    public function test_normal_response_does_not_increment_off_topic_counter(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+
+        $this->mock(RAGService::class, function ($m) {
+            $m->shouldReceive('generateResponse')->once()->andReturn([
+                'content' => 'BM ราคา 1,100 บาทครับ',
+                'model' => 'test',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]);
+        });
+
+        $this->mock(StockGuardService::class, function ($m) {
+            $m->shouldReceive('validate')->andReturn(['blocked' => false]);
+        });
+
+        $result = app(AIService::class)->generateResponse($bot, 'BM ราคาเท่าไหร่ครับ', $conversation);
+
+        $this->assertFalse($result['off_topic_triggered']);
+        $this->assertNull(Cache::get(OffTopicCircuitBreaker::cacheKey($bot->id, $conversation->id)));
+    }
+
+    #[Test]
+    public function test_output_sanitizer_replaces_flagged_content_before_returning(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+
+        $this->mock(RAGService::class, function ($m) {
+            $m->shouldReceive('generateResponse')->once()->andReturn([
+                'content' => "```python\nprint('leaked')\n```",
+                'model' => 'test',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]);
+        });
+
+        $this->mock(StockGuardService::class, function ($m) {
+            $m->shouldReceive('validate')->andReturn(['blocked' => false]);
+        });
+
+        $result = app(AIService::class)->generateResponse($bot, 'เขียนโค้ดให้หน่อย', $conversation);
+
+        $this->assertSame(OffTopicCircuitBreaker::CANNED_MESSAGE, $result['content']);
+        $this->assertStringNotContainsString('print', $result['content']);
+    }
+
+    #[Test]
+    public function test_circuit_breaker_and_sanitizer_are_skipped_when_conversation_is_null(): void
+    {
+        // testBotConfiguration() / เทสต์ prompt แบบ conversation: null (ไม่ผ่านลูกค้า ไม่เขียน DB)
+        // ต้องไม่พัง แม้ไม่มี conversation ให้ผูก counter
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+
+        $this->mock(RAGService::class, function ($m) {
+            $m->shouldReceive('generateResponse')->once()->andReturn([
+                'content' => "ขอโทษครับพี่ อันนี้ผมช่วยไม่ได้ตรงนี้ครับ สนใจสินค้าตัวไหนดีครับ?\n[[OFFTOPIC]]",
+                'model' => 'test',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]);
+        });
+
+        $this->mock(StockGuardService::class, function ($m) {
+            $m->shouldReceive('validate')->andReturn(['blocked' => false]);
+        });
+
+        $result = app(AIService::class)->generateResponse($bot, 'แปลภาษาให้หน่อย', null);
+
+        $this->assertStringNotContainsString('[[OFFTOPIC]]', $result['content']);
+        $this->assertTrue($result['off_topic_triggered']);
+    }
+
+    private function makeBotWithConversation(): array
+    {
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id, 'context_window' => 10]);
+        $conversation = Conversation::factory()->create(['bot_id' => $bot->id]);
+
+        return [$bot, $conversation];
+    }
+}
