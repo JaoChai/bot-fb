@@ -67,22 +67,19 @@ class OffTopicCircuitBreakerTest extends TestCase
     }
 
     #[Test]
-    public function test_ttl_is_not_extended_by_subsequent_triggers(): void
+    public function test_subsequent_triggers_use_increment_not_put_to_preserve_ttl(): void
     {
         [$bot, $conversation] = $this->makeBotWithConversation();
         $key = OffTopicCircuitBreaker::cacheKey($bot->id, $conversation->id);
 
-        $this->breaker->recordTrigger($bot, $conversation);
-        // Manually shrink the TTL to simulate time passing, the way Cache::put would have set it originally
-        Cache::put($key, (int) Cache::get($key), 5); // re-put with a short TTL, keeping the same count
-
+        Cache::shouldReceive('has')->once()->with($key)->andReturn(false);
+        Cache::shouldReceive('put')->once()->with($key, 1, 86400)->andReturn(true);
         $this->breaker->recordTrigger($bot, $conversation);
 
-        // If recordTrigger's second call had called Cache::put again (wrong — extends TTL),
-        // the key would now have a fresh 86400s TTL. If it correctly used Cache::increment
-        // (right — TTL untouched), the short TTL we set survives. Assert the count incremented
-        // correctly, which only happens if the increment path was taken (not a fresh put back to 1).
-        $this->assertSame(2, Cache::get($key));
+        Cache::shouldReceive('has')->once()->with($key)->andReturn(true);
+        Cache::shouldReceive('increment')->once()->with($key)->andReturn(2);
+        Cache::shouldReceive('put')->never();
+        $this->breaker->recordTrigger($bot, $conversation);
     }
 
     private function makeBotWithConversation(): array
