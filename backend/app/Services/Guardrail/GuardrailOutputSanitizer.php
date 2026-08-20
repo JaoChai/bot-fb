@@ -14,7 +14,6 @@ class GuardrailOutputSanitizer
     /** @var array<string, string> reason => regex pattern, เช็คตามลำดับ คืนตัวแรกที่ match */
     private const PATTERNS = [
         'code_fence' => '/```/',
-        'markdown_bold' => '/\*\*[^*]+\*\*/',
         'markdown_heading' => '/(?:^|\n)#{1,6}\s/',
         'ai_admission_th' => '/ในฐานะ\s*(?:ที่เป็น\s*)?AI|ผมเป็น\s*(?:ระบบ\s*)?AI|ฉันเป็น\s*AI/u',
         'ai_admission_en' => '/\bas an AI\b|\bI(?:\'m| am) an AI\b/i',

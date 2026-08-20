@@ -40,13 +40,18 @@ class AIService
         // Off-topic circuit breaker — ตัดวงจรก่อนเรียก LLM เลยถ้าลูกค้าคนนี้โดน guardrail
         // ซ้ำเกิน threshold ในบทสนทนาเดียวกันแล้ว (กัน token cost จากการใช้ฟรีซ้ำๆ)
         if ($conversation !== null && $this->offTopicCircuitBreaker->isTripped($bot, $conversation)) {
+            Log::warning('Off-topic circuit breaker tripped', [
+                'bot_id' => $bot->id,
+                'conversation_id' => $conversation->id,
+            ]);
+
             return [
                 'content' => OffTopicCircuitBreaker::CANNED_MESSAGE,
                 'model' => 'circuit_breaker',
                 'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0],
                 'cost' => 0.0,
                 'order_payload' => null,
-                'off_topic_triggered' => false,
+                'off_topic_triggered' => true,
             ];
         }
 
@@ -93,6 +98,11 @@ class AIService
         $offTopicExtracted = $this->offTopicSignal->extract($result['content'] ?? '');
         $result['content'] = $offTopicExtracted['clean'];
         $result['off_topic_triggered'] = $offTopicExtracted['triggered'];
+        if ($offTopicExtracted['triggered'] && $result['content'] === '') {
+            // LLM ปล่อยแค่ marker ไม่มีข้อความอื่นเลย — ถ้าปล่อยเป็นสตริงว่าง
+            // ProcessAggregatedMessages จะไม่ส่งอะไรถึงลูกค้าเลย (if ($botMessage->content))
+            $result['content'] = OffTopicCircuitBreaker::CANNED_MESSAGE;
+        }
         if ($conversation !== null && $offTopicExtracted['triggered']) {
             $this->offTopicCircuitBreaker->recordTrigger($bot, $conversation);
         }
@@ -107,6 +117,7 @@ class AIService
                 'reason' => $sanitizerResult['reason'],
             ]);
             $result['content'] = OffTopicCircuitBreaker::CANNED_MESSAGE;
+            $result['order_payload'] = null;
         }
 
         // Ensure usage key exists with defaults (some models may not return usage data)

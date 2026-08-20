@@ -26,15 +26,6 @@ class GuardrailOutputSanitizerTest extends TestCase
     }
 
     #[Test]
-    public function test_flags_markdown_bold(): void
-    {
-        $result = $this->sanitizer->check('สินค้า **ยอดนิยม** ตัวนี้ครับ');
-
-        $this->assertTrue($result['flagged']);
-        $this->assertSame('markdown_bold', $result['reason']);
-    }
-
-    #[Test]
     public function test_flags_markdown_heading(): void
     {
         $result = $this->sanitizer->check("# หัวข้อ\nเนื้อหาต่อจากนี้");
@@ -89,5 +80,15 @@ class GuardrailOutputSanitizerTest extends TestCase
 
         $this->assertFalse($result['flagged']);
         $this->assertNull($result['reason']);
+    }
+
+    #[Test]
+    public function test_does_not_flag_order_summary_with_bold_amount(): void
+    {
+        // ** เป็นเรื่องปกติที่ LINEService/PaymentFlexService strip ทิ้งเองอยู่แล้ว
+        // (ดู dc3b873) — sanitizer ห้ามทับด้วยข้อความปฏิเสธทั้งที่เป็นใบสรุปออเดอร์จริง
+        $result = $this->sanitizer->check("สรุปรายการที่พี่สั่งซื้อครับ:\n\n1. Nolimit Personal (1,100 x 1) = 1,100 บาท\n\n**รวมยอดโอน: 1,100 บาท** ✅");
+
+        $this->assertFalse($result['flagged']);
     }
 }

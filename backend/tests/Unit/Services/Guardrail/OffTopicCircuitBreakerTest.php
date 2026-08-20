@@ -67,18 +67,17 @@ class OffTopicCircuitBreakerTest extends TestCase
     }
 
     #[Test]
-    public function test_subsequent_triggers_use_increment_not_put_to_preserve_ttl(): void
+    public function test_subsequent_triggers_use_increment_not_add_to_preserve_ttl(): void
     {
         [$bot, $conversation] = $this->makeBotWithConversation();
         $key = OffTopicCircuitBreaker::cacheKey($bot->id, $conversation->id);
 
-        Cache::shouldReceive('has')->once()->with($key)->andReturn(false);
-        Cache::shouldReceive('put')->once()->with($key, 1, 86400)->andReturn(true);
+        Cache::shouldReceive('add')->once()->with($key, 1, 86400)->andReturn(true);
         $this->breaker->recordTrigger($bot, $conversation);
 
-        Cache::shouldReceive('has')->once()->with($key)->andReturn(true);
+        // key มีอยู่แล้ว — add() ต้องคืน false (ไม่ทับ TTL เดิม) แล้วไปใช้ increment() แทน
+        Cache::shouldReceive('add')->once()->with($key, 1, 86400)->andReturn(false);
         Cache::shouldReceive('increment')->once()->with($key)->andReturn(2);
-        Cache::shouldReceive('put')->never();
         $this->breaker->recordTrigger($bot, $conversation);
     }
 

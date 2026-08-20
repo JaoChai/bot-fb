@@ -11,6 +11,7 @@ use App\Services\RAGService;
 use App\Services\StockGuardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -36,6 +37,31 @@ class AIServiceGuardrailTest extends TestCase
 
         $this->assertSame(OffTopicCircuitBreaker::CANNED_MESSAGE, $result['content']);
         $this->assertSame(0, $result['usage']['total_tokens']);
+        $this->assertTrue($result['off_topic_triggered']);
+    }
+
+    #[Test]
+    public function test_circuit_breaker_trip_logs_a_warning(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        Cache::put(OffTopicCircuitBreaker::cacheKey($bot->id, $conversation->id), OffTopicCircuitBreaker::THRESHOLD, 86400);
+
+        $this->mock(RAGService::class, function ($m) {
+            $m->shouldReceive('generateResponse')->never();
+        });
+
+        $this->mock(StockGuardService::class, function ($m) {
+            $m->shouldReceive('validate')->never();
+        });
+
+        Log::shouldReceive('warning')
+            ->once()
+            ->with('Off-topic circuit breaker tripped', [
+                'bot_id' => $bot->id,
+                'conversation_id' => $conversation->id,
+            ]);
+
+        app(AIService::class)->generateResponse($bot, 'เขียนโค้ดให้หน่อย', $conversation);
     }
 
     #[Test]
@@ -106,6 +132,55 @@ class AIServiceGuardrailTest extends TestCase
 
         $this->assertSame(OffTopicCircuitBreaker::CANNED_MESSAGE, $result['content']);
         $this->assertStringNotContainsString('print', $result['content']);
+    }
+
+    #[Test]
+    public function test_sanitizer_nulls_order_payload_when_flagging_content(): void
+    {
+        // order_payload ถูกดึงออกมาก่อนที่ sanitizer จะรัน — ถ้าไม่ null ทิ้งด้วย
+        // ลูกค้าจะเห็นข้อความปฏิเสธ แต่ระบบบันทึกออเดอร์ไว้เงียบๆ ที่ลูกค้าไม่เคยเห็น/ยืนยัน
+        config(['delivery.order_payload_enabled' => true]);
+        [$bot, $conversation] = $this->makeBotWithConversation();
+
+        $this->mock(RAGService::class, function ($m) {
+            $m->shouldReceive('generateResponse')->once()->andReturn([
+                'content' => "```python\nprint('leaked')\n```\n[[ORDER]]{\"items\":[{\"name\":\"BM\",\"qty\":1,\"price\":1100}],\"total\":1100}[[/ORDER]]",
+                'model' => 'test',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]);
+        });
+
+        $this->mock(StockGuardService::class, function ($m) {
+            $m->shouldReceive('validate')->andReturn(['blocked' => false]);
+        });
+
+        $result = app(AIService::class)->generateResponse($bot, 'เขียนโค้ดให้หน่อย', $conversation);
+
+        $this->assertSame(OffTopicCircuitBreaker::CANNED_MESSAGE, $result['content']);
+        $this->assertNull($result['order_payload']);
+    }
+
+    #[Test]
+    public function test_marker_only_content_returns_canned_message_not_empty_string(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+
+        $this->mock(RAGService::class, function ($m) {
+            $m->shouldReceive('generateResponse')->once()->andReturn([
+                'content' => '[[OFFTOPIC]]',
+                'model' => 'test',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]);
+        });
+
+        $this->mock(StockGuardService::class, function ($m) {
+            $m->shouldReceive('validate')->andReturn(['blocked' => false]);
+        });
+
+        $result = app(AIService::class)->generateResponse($bot, 'แปลภาษาให้หน่อย', $conversation);
+
+        $this->assertSame(OffTopicCircuitBreaker::CANNED_MESSAGE, $result['content']);
+        $this->assertTrue($result['off_topic_triggered']);
     }
 
     #[Test]

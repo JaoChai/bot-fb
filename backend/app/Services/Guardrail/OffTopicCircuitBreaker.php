@@ -31,9 +31,10 @@ class OffTopicCircuitBreaker
     {
         $key = self::cacheKey($bot->id, $conversation->id);
 
-        if (! Cache::has($key)) {
-            Cache::put($key, 1, self::TTL_SECONDS);
-
+        // Cache::add() ตั้งค่า+TTL แบบ atomic เฉพาะตอน key ไม่มีอยู่ — กัน race ที่ key
+        // หมดอายุระหว่าง has()/increment() แล้ว increment() ไปสร้าง key ใหม่แบบไม่มี TTL
+        // (นับไม่มีวันหมดอายุ = ล็อกลูกค้าถาวรแทนที่จะรีเซ็ตทุก 24 ชม.)
+        if (Cache::add($key, 1, self::TTL_SECONDS)) {
             return;
         }
 
