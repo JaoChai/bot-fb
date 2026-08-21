@@ -779,4 +779,45 @@ class PromptEvalRunnerTest extends TestCase
 
         $this->assertTrue($result->passed, implode(', ', $result->failures));
     }
+
+    #[Test]
+    public function test_pixel_premade_config_case_passes_for_correct_response_with_leading_negation(): void
+    {
+        // audit fix wave 4: ไล่ตรวจ must_not_contain ทั้งไฟล์หาแบบเดียวกับ staggered_pickup —
+        // 'ยืนยันสเปก' เฉยๆ (ไม่มี lookbehind ตอนนั้น) อาจซ้อนอยู่ในคำตอบที่ถูกต้องได้ เช่น
+        // "ไม่ต้องยืนยันสเปกอะไรครับ" — ยังไม่เคยเจอจริงบน prod (ต่างจากเทสต์อื่นที่ล็อกคำตอบจริง)
+        // เทสต์นี้เป็น preventive lock จากการ audit เท่านั้น
+        $correctResponse = 'ไม่มีบัญชีที่สร้างพิกเซลมาแล้วครับ แต่สร้างพิกเซลเองได้เลยครับ '
+            .'ไม่ต้องยืนยันสเปกอะไรครับ ทีมงาน Support มีวิดีโอสอนให้ครับ';
+
+        $runner = $this->runnerWithAiResponse(['content' => $correctResponse]);
+
+        $result = $runner->run($this->bot(), $this->configCase('pixel_premade'));
+
+        $this->assertTrue($result->passed, implode(', ', $result->failures));
+    }
+
+    #[Test]
+    public function test_price_compliment_config_case_passes_for_correct_response_with_leading_negation(): void
+    {
+        // audit fix wave 4: เหตุผลเดียวกับ pixel_premade — 'ราคาพิเศษสุด' เฉยๆ อาจซ้อนอยู่ใน
+        // คำตอบที่ถูกต้องได้ เช่น "ไม่ใช่ราคาพิเศษสุดหรอกครับ" preventive lock เช่นกัน
+        $correctResponse = 'ขอบคุณครับพี่ 😊 ไม่ใช่ราคาพิเศษสุดหรอกครับ ราคาปกติของเราอยู่ที่ '
+            .'1,100 บาท/ตัวเลยครับ';
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => $correctResponse,
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), $this->configCase('price_compliment'));
+
+        $this->assertTrue($result->passed, implode(', ', $result->failures));
+    }
 }
