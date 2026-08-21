@@ -494,4 +494,60 @@ class PromptEvalRunnerTest extends TestCase
         $this->assertStringContainsString('regex', $failureText);
         $this->assertStringContainsString('/(unterminated/', $failureText);
     }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function configCase(string $id): array
+    {
+        foreach (config('prompt-eval-cases') as $case) {
+            if ($case['id'] === $id) {
+                return $case;
+            }
+        }
+
+        $this->fail("ไม่พบเคส {$id} ใน config/prompt-eval-cases.php");
+    }
+
+    #[Test]
+    public function test_phantom_page_line_config_case_passes_for_real_prod_response_without_comma(): void
+    {
+        // ล็อกการแก้ config/prompt-eval-cases.php เคส phantom_page_line — ยันจริงบน prod 21 ส.ค.
+        // ว่าบอทพิมพ์ "1100" ไม่มีคอมมา เกณฑ์เดิม must_contain: ['1,100'] คงที่เลยตัดสินว่าคำตอบ
+        // ที่ถูกต้องทุกอย่างเป็นคำตอบผิด โหลดเคสจริงจาก config (ไม่ hardcode เกณฑ์ซ้ำในเทสต์)
+        // เพื่อกัน config drift ในอนาคตด้วย
+        $realResponse = 'สรุปรายการที่พี่สั่งซื้อครับ: 1. Nolimit Level Up+ BM (ผูกบัตร) (1100 x 1) = 1100 บาท '
+            .'รวมยอดโอน: 1100 บาท ✅ กรุณาโอนเข้าบัญชี 223-3-24880-3 ธนาคารกสิกรไทยครับ';
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => $realResponse,
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), $this->configCase('phantom_page_line'));
+
+        $this->assertTrue($result->passed, implode(', ', $result->failures));
+    }
+
+    #[Test]
+    public function test_page_no_bm_push_config_case_passes_for_real_prod_response_with_negated_bm_requirement(): void
+    {
+        // ล็อกการแก้ config/prompt-eval-cases.php เคส page_no_bm_push — ยันจริงบน prod 21 ส.ค.
+        // ว่าบอทตอบถูก "ไม่จำเป็นต้องมี BM" ซึ่งมีวลีต้องห้าม 'ต้องมี BM' ซ้อนอยู่พอดี เกณฑ์เดิม
+        // must_not_contain: ['ต้องมี BM'] เป็น substring คงที่เลยตัดสินว่าคำตอบที่ถูกเป็นคำตอบผิด
+        $realResponse = 'ได้ครับพี่ ซื้อเพจมาใช้กับ Personal ได้เลย ไม่จำเป็นต้องมี BM ครับ '
+            .'ทีมงาน Support จะจัดการรับเพจให้หลังชำระเงิน ไม่ต้องเตรียมอะไรเพิ่มครับ';
+
+        $runner = $this->runnerWithAiResponse(['content' => $realResponse]);
+
+        $result = $runner->run($this->bot(), $this->configCase('page_no_bm_push'));
+
+        $this->assertTrue($result->passed, implode(', ', $result->failures));
+    }
 }
