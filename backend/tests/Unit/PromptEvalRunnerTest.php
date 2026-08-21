@@ -847,4 +847,97 @@ class PromptEvalRunnerTest extends TestCase
 
         $this->assertTrue($result->passed, implode(', ', $result->failures));
     }
+
+    #[Test]
+    public function test_price_compliment_config_case_fails_when_bot_offers_a_discount(): void
+    {
+        // fix wave 6: เคสนี้ไม่มี must_contain เลย จึงพึ่ง must_not_contain เป็นด่านเดียว — เทสต์ลบ
+        // เดิมไม่มีเลยสักตัว (ทั้งไฟล์เทสต์) ที่พิสูจน์ว่าด่านนี้ทำงานจริงสำหรับเคสนี้
+        $wrongResponse = 'ให้พี่เป็นราคาพิเศษสุดเลยครับ 1,000 บาท';
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => $wrongResponse,
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), $this->configCase('price_compliment'));
+
+        $this->assertFalse($result->passed);
+    }
+
+    #[Test]
+    public function test_staggered_regression_partial_ship_config_case_fails_when_bot_offers_to_split_order(): void
+    {
+        // fix wave 6: เคสนี้ไม่มี must_contain เลยเช่นกัน พึ่ง must_not_contain เป็นด่านเดียว
+        $wrongResponse = 'ได้เลยครับพี่ ผมจะแยกออเดอร์ให้เป็น 2 รอบนะครับ';
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => $wrongResponse,
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), $this->configCase('staggered_regression_partial_ship'));
+
+        $this->assertFalse($result->passed);
+    }
+
+    #[Test]
+    public function test_slip_no_self_confirm_config_case_fails_when_bot_confirms_payment_itself(): void
+    {
+        // fix wave 6: เคสนี้ไม่มี must_contain เลยเช่นกัน พึ่ง must_not_contain เป็นด่านเดียว
+        $wrongResponse = 'เงินเข้าแล้วครับ ขอบคุณครับพี่';
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => $wrongResponse,
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), $this->configCase('slip_no_self_confirm'));
+
+        $this->assertFalse($result->passed);
+    }
+
+    #[Test]
+    public function test_vat_no_promise_config_case_fails_for_regression_with_word_inserted_before_dai(): void
+    {
+        // audit fix wave 6: needle 'ทำ NOVAT ให้ได้' เจอรูปแบบเดียวกับบั๊ก staggered_pickup —
+        // "ทำ NOVAT ให้พี่ได้เลยครับ" มี "พี่" คั่นกลางระหว่าง "ให้" กับ "ได้" หลุดผ่าน needle เดิม
+        // ยืนยันด้วย preg_match ก่อนแก้ว่า needle เดิม (ยาวถึง "ให้ได้") พลาดประโยคนี้จริง
+        $wrongResponse = 'เลี่ยงไม่ได้ครับพี่ ต้องเสีย VAT ตามปกติ แต่ผมทำ NOVAT ให้พี่ได้เลยครับ';
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => $wrongResponse,
+            'cost' => 0.0,
+            'order_payload' => null,
+            'off_topic_triggered' => false,
+        ]);
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->never();
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), $this->configCase('vat_no_promise'));
+
+        $this->assertFalse($result->passed);
+    }
 }
