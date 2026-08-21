@@ -658,8 +658,8 @@ class PromptEvalRunnerTest extends TestCase
     #[Test]
     public function test_staggered_pickup_config_case_fails_for_wrong_response_promising_pickup_later(): void
     {
-        // ล็อกทิศทางลบ: เกณฑ์ที่เขียนใหม่ทั้งหมด (ทิ้ง lookbehind ใช้วลีคำสัญญาเชิงบวกแทน) ยังต้อง
-        // จับคำตอบที่ผิดจริงได้ — คำตอบนี้ไม่มีวลีบวกที่ must_contain ต้องการเลยสักกลุ่ม
+        // ล็อกทิศทางลบ: เกณฑ์ที่เขียนใหม่ทั้งหมดยังต้องจับคำตอบที่ผิดจริงได้ — คำตอบนี้ไม่มีวลีบวก
+        // ที่ must_contain ต้องการเลยสักกลุ่ม (fail ผ่าน must_contain ไม่ใช่ must_not_contain)
         $wrongResponse = 'ได้เลยครับพี่ เก็บไว้เบิกภายหลังได้ครับ ไม่ต้องรีบเลย';
 
         $ai = Mockery::mock(AIService::class);
@@ -689,5 +689,66 @@ class PromptEvalRunnerTest extends TestCase
         $result = $runner->run($this->bot(), $this->configCase('bm_with_unit'));
 
         $this->assertFalse($result->passed);
+    }
+
+    #[Test]
+    public function test_staggered_pickup_config_case_passes_for_correct_response_with_leading_negation(): void
+    {
+        // ปิดช่องที่ทำให้บั๊กวลีคำสัญญาเชิงบวกอย่างเดียว (ไม่กันการปฏิเสธนำหน้า) รอดมาได้ —
+        // "ไม่สามารถฝากไว้ให้ได้ครับ" คือคำตอบที่ถูกต้อง (ปฏิเสธนำหน้าวลี) ต้องผ่าน ไม่ใช่ตกเพราะ
+        // must_not_contain ไปจับ "ฝากไว้ให้ได้" ที่ซ้อนอยู่ในประโยคปฏิเสธ
+        $correctResponse = 'ต้องขออภัยครับ ทางร้านไม่สามารถฝากไว้ให้ได้ครับ พอเงินเข้าระบบจะตัดสต็อกและ'
+            .'ส่งของครบตามจำนวนทันที แนะนำจ่ายเฉพาะจำนวนที่จะใช้ก่อนครับ ราคาเท่าเดิมทุกตัว';
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => $correctResponse,
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), $this->configCase('staggered_pickup'));
+
+        $this->assertTrue($result->passed, implode(', ', $result->failures));
+    }
+
+    #[Test]
+    public function test_staggered_pickup_config_case_passes_for_real_prod_response(): void
+    {
+        $realResponse = 'ต้องขออภัยจริงๆ ครับพี่ ทางร้านไม่มีระบบฝากของไว้เบิกทีหลังนะครับ พอเงินเข้าปุ๊บ '
+            .'ระบบจะตัดสต็อกและส่งของครบตามจำนวนทันทีเลยครับ ถ้าพี่ยังไม่อยากรับครบตอนนี้ แนะนำจ่ายเฉพาะ'
+            .'จำนวนที่จะใช้ก่อนครับ ราคาเท่าเดิมทุกตัว สั่งเพิ่มทีหลังได้ตลอดครับ';
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => $realResponse,
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), $this->configCase('staggered_pickup'));
+
+        $this->assertTrue($result->passed, implode(', ', $result->failures));
+    }
+
+    #[Test]
+    public function test_bm_with_unit_config_case_passes_for_real_prod_response(): void
+    {
+        $realResponse = 'รับทราบครับพี่ BM 5 ตัวครับ ขอแจ้งก่อนนะครับ Limit เริ่มต้นที่ 1,600 บาท '
+            .'ถ้าผูกบัตร Limit จะปรับขึ้นเร็วกว่าเติมเงินครับ พี่จะใช้แบบผูกบัตรหรือเติมเงินดีครับ?';
+
+        $runner = $this->runnerWithAiResponse(['content' => $realResponse]);
+
+        $result = $runner->run($this->bot(), $this->configCase('bm_with_unit'));
+
+        $this->assertTrue($result->passed, implode(', ', $result->failures));
     }
 }
