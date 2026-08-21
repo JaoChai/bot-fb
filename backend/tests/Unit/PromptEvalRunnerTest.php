@@ -717,11 +717,39 @@ class PromptEvalRunnerTest extends TestCase
     }
 
     #[Test]
-    public function test_staggered_pickup_config_case_passes_for_real_prod_response(): void
+    public function test_staggered_pickup_config_case_passes_for_real_prod_response_script_b(): void
     {
+        // script B ของ <staggered_pickup> ("ปิดประตูฝากของ")
         $realResponse = 'ต้องขออภัยจริงๆ ครับพี่ ทางร้านไม่มีระบบฝากของไว้เบิกทีหลังนะครับ พอเงินเข้าปุ๊บ '
             .'ระบบจะตัดสต็อกและส่งของครบตามจำนวนทันทีเลยครับ ถ้าพี่ยังไม่อยากรับครบตอนนี้ แนะนำจ่ายเฉพาะ'
             .'จำนวนที่จะใช้ก่อนครับ ราคาเท่าเดิมทุกตัว สั่งเพิ่มทีหลังได้ตลอดครับ';
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => $realResponse,
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), $this->configCase('staggered_pickup'));
+
+        $this->assertTrue($result->passed, implode(', ', $result->failures));
+    }
+
+    #[Test]
+    public function test_staggered_pickup_config_case_passes_for_real_prod_response_script_a(): void
+    {
+        // script A ของ <staggered_pickup> ("เสนอแยกออเดอร์") — ถูกต้องเท่ากับ script B เมื่อ
+        // ลูกค้ายังไม่จ่าย (history ของเคสนี้) ยันจริงบน prod 21 ส.ค. ว่าบอทสลับใช้ทั้ง 2 แบบ —
+        // เทสต์นี้กันไม่ให้ใครเผลอเพิ่มเกณฑ์ที่บังคับ script ใด script หนึ่งอีกในอนาคต
+        $realResponse = 'อ๋อ ได้ครับพี่ 👍 แต่บอกไว้ก่อนนะครับ ของเราซื้อกี่ตัวราคาก็เท่ากันครับ ตัวละ '
+            .'1,100 บาท พี่ไม่ต้องจ่ายก้อนใหญ่ค้างไว้เลยครับ แนะนำจ่ายเท่าที่จะรับตอนนี้ก่อนครับ — '
+            .'รอบนี้ 1 ตัว 1,100 บาท พอจะเอาเพิ่มเมื่อไหร่ ทักมาสั่งได้เลยครับ ส่งให้ใน 5-10 นาทีเหมือนเดิม '
+            .'เอาแบบนี้ไหมครับ? หรือจะรับครบ 3 ตัว 3,300 บาทเลยก็ได้ครับ';
 
         $ai = Mockery::mock(AIService::class);
         $ai->shouldReceive('generateResponse')->never();
