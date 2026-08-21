@@ -4,6 +4,7 @@ namespace App\Services\PromptEval;
 
 use App\Models\Bot;
 use App\Services\AIService;
+use App\Services\Guardrail\OffTopicSignalExtractor;
 use App\Services\RAGService;
 use Throwable;
 
@@ -30,26 +31,27 @@ class PromptEvalRunner
         $failures = [];
 
         try {
-            $history = $case['history'] ?? [];
-
-            if ($history === []) {
-                $result = $this->ai->generateResponse($bot, $case['message'], null);
-            } else {
-                $result = $this->rag->generateResponse(
-                    bot: $bot,
-                    userMessage: $case['message'],
-                    conversationHistory: $history,
-                    conversation: null,
-                    flow: $bot->defaultFlow,
-                );
-            }
-
-            $response = (string) ($result['content'] ?? '');
-            $cost = (float) ($result['cost'] ?? 0.0);
-
-            $failures = $this->evaluate($case, $result, $response);
+            $rawResult = $this->callLlm($bot, $case);
         } catch (Throwable $e) {
             $failures[] = "เรียก LLM ล้มเหลว: {$e->getMessage()}";
+            $rawResult = null;
+        }
+
+        if ($rawResult !== null) {
+            $rawContent = (string) ($rawResult['content'] ?? '');
+            $cost = (float) ($rawResult['cost'] ?? 0.0);
+
+            // RAGService (ต่างจาก AIService::generateResponse) ไม่ตัด marker [[OFFTOPIC]]/
+            // [[ORDER]]...[[/ORDER]] ออกให้เอง — เทียบด้วยคีย์ที่มี/ไม่มีใน $rawResult ว่าเดินทางไหน
+            // แล้วตัดเองก่อนเอาไปเทียบ must_contain/must_not_contain ให้ตรงกับ "ข้อความที่ลูกค้า
+            // เห็นจริง" เหมือน AIService ทำกับทุกคำตอบ
+            [$response, $offTopicTriggered] = $this->resolveDisplayResponse($rawResult, $rawContent);
+
+            if (! array_key_exists('order_payload', $rawResult)) {
+                $response = $this->stripOrderBlock($response);
+            }
+
+            $failures = $this->evaluate($case, $rawResult, $rawContent, $response, $offTopicTriggered);
         }
 
         return new CaseResult(
@@ -65,10 +67,51 @@ class PromptEvalRunner
 
     /**
      * @param  array<string, mixed>  $case
+     * @return array<string, mixed>
+     */
+    private function callLlm(Bot $bot, array $case): array
+    {
+        $history = $case['history'] ?? [];
+
+        if ($history === []) {
+            return $this->ai->generateResponse($bot, $case['message'], null);
+        }
+
+        return $this->rag->generateResponse(
+            bot: $bot,
+            userMessage: $case['message'],
+            conversationHistory: $history,
+            conversation: null,
+            flow: $bot->defaultFlow,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $rawResult
+     * @return array{0: string, 1: bool}
+     */
+    private function resolveDisplayResponse(array $rawResult, string $rawContent): array
+    {
+        if (array_key_exists('off_topic_triggered', $rawResult)) {
+            return [$rawContent, ! empty($rawResult['off_topic_triggered'])];
+        }
+
+        $extracted = (new OffTopicSignalExtractor)->extract($rawContent);
+
+        return [$extracted['clean'], $extracted['triggered']];
+    }
+
+    private function stripOrderBlock(string $content): string
+    {
+        return trim((string) preg_replace('/\[\[ORDER\]\].*?\[\[\/ORDER\]\]/su', '', $content));
+    }
+
+    /**
+     * @param  array<string, mixed>  $case
      * @param  array<string, mixed>  $result
      * @return array<int, string>
      */
-    private function evaluate(array $case, array $result, string $response): array
+    private function evaluate(array $case, array $result, string $rawContent, string $response, bool $offTopicTriggered): array
     {
         $failures = [];
         $normalized = $this->normalize($response);
@@ -94,9 +137,7 @@ class PromptEvalRunner
         }
 
         if (array_key_exists('expect_off_topic', $case)) {
-            $triggered = ! empty($result['off_topic_triggered']);
-
-            if ($case['expect_off_topic'] !== $triggered) {
+            if ($case['expect_off_topic'] !== $offTopicTriggered) {
                 $failures[] = $case['expect_off_topic']
                     ? 'ต้อง trigger off-topic แต่ไม่ trigger'
                     : 'ไม่ควร trigger off-topic แต่ trigger';
@@ -104,7 +145,7 @@ class PromptEvalRunner
         }
 
         if (isset($case['expect_order'])) {
-            $failures = array_merge($failures, $this->evaluateExpectOrder($case['expect_order'], $result, $response));
+            $failures = array_merge($failures, $this->evaluateExpectOrder($case['expect_order'], $result, $rawContent));
         }
 
         return $failures;
@@ -115,11 +156,11 @@ class PromptEvalRunner
      * @param  array<string, mixed>  $result
      * @return array<int, string>
      */
-    private function evaluateExpectOrder(array $expectOrder, array $result, string $response): array
+    private function evaluateExpectOrder(array $expectOrder, array $result, string $rawContent): array
     {
         $payload = array_key_exists('order_payload', $result)
             ? $result['order_payload']
-            : $this->extractOrderPayload($response);
+            : $this->extractOrderPayload($rawContent);
 
         if ($payload === null) {
             return ['ต้องมี order_payload แต่ไม่มี'];

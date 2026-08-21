@@ -27,6 +27,7 @@ class PromptEvalRunnerTest extends TestCase
             'content' => '',
             'cost' => 0.0,
             'order_payload' => null,
+            'off_topic_triggered' => false,
         ], $overrides));
 
         $rag = Mockery::mock(RAGService::class);
@@ -252,7 +253,7 @@ class PromptEvalRunnerTest extends TestCase
     public function test_expect_order_extracts_order_block_from_content_when_rag_result_has_no_order_payload_key(): void
     {
         // RAGService ไม่ตัดบล็อก [[ORDER]] ออกและไม่คืนคีย์ order_payload มาด้วย — runner ต้อง
-        // แยกเองจาก content
+        // แยกเองจาก content ดิบ (ก่อนตัด) แล้วค่อยตัดบล็อกออกจาก response ที่ใช้เทียบข้อความ
         $ai = Mockery::mock(AIService::class);
         $ai->shouldReceive('generateResponse')->never();
 
@@ -275,6 +276,38 @@ class PromptEvalRunnerTest extends TestCase
         ]);
 
         $this->assertTrue($result->passed);
+        $this->assertStringNotContainsString('[[ORDER]]', $result->response);
+        $this->assertSame('สรุปออเดอร์ครับ', $result->response);
+    }
+
+    #[Test]
+    public function test_rag_path_offtopic_marker_sets_triggered_and_is_stripped_from_response(): void
+    {
+        // RAGService ไม่ตัด [[OFFTOPIC]] ออกเหมือน AIService::generateResponse — runner ต้อง
+        // ตรวจ+ตัดเอง ไม่งั้น expect_off_topic:true จะไม่มีวันผ่านสำหรับเคสที่มี history เลย
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => "ขอโทษครับพี่ อันนี้ผมช่วยไม่ได้ตรงนี้ครับ\n[[OFFTOPIC]]",
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), [
+            'id' => 'case_13',
+            'label' => 'เคส 13',
+            'message' => 'เขียนโค้ดให้หน่อย',
+            'history' => [
+                ['sender' => 'user', 'content' => 'สวัสดีครับ'],
+            ],
+            'expect_off_topic' => true,
+        ]);
+
+        $this->assertTrue($result->passed);
+        $this->assertStringNotContainsString('[[OFFTOPIC]]', $result->response);
     }
 
     #[Test]
