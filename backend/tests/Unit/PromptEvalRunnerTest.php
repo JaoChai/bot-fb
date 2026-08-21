@@ -550,4 +550,144 @@ class PromptEvalRunnerTest extends TestCase
 
         $this->assertTrue($result->passed, implode(', ', $result->failures));
     }
+
+    #[Test]
+    public function test_unclosed_order_block_is_stripped_from_response_used_for_comparison(): void
+    {
+        // pattern ต้องตรงกับ production OrderPayloadExtractor::STRIP_PATTERN — ต้องตัดถึงท้าย
+        // ข้อความเมื่อไม่เจอตัวปิด [[/ORDER]] (LLM ตัดกลางคันเพราะชนเพดาน token เกิดจริง ~8%)
+        // ไม่งั้น response ที่เอาไปเทียบ must_not_contain จะมี JSON ดิบค้างอยู่ทั้งที่ลูกค้าจริง
+        // ไม่มีวันเห็น (production ตัดให้เสมอ)
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => 'สรุปออเดอร์ครับ [[ORDER]]{"items":[{"name":"BM","qty":5,"price":11',
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), [
+            'id' => 'case_22',
+            'label' => 'เคส 22',
+            'message' => 'ยืนยันครับ',
+            'history' => [
+                ['sender' => 'user', 'content' => 'ยืนยันครับ'],
+            ],
+            'must_not_contain' => ['"price"'],
+        ]);
+
+        $this->assertTrue($result->passed, implode(', ', $result->failures));
+        $this->assertSame('สรุปออเดอร์ครับ', $result->response);
+    }
+
+    #[Test]
+    public function test_expect_order_failure_message_when_no_order_block_at_all(): void
+    {
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => 'สวัสดีครับพี่ ไม่มีการสรุปออเดอร์',
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), [
+            'id' => 'case_23a',
+            'label' => 'เคส 23a',
+            'message' => 'ยืนยันครับ',
+            'history' => [
+                ['sender' => 'user', 'content' => 'ยืนยันครับ'],
+            ],
+            'expect_order' => ['total' => 2200],
+        ]);
+
+        $this->assertFalse($result->passed);
+        $this->assertStringContainsString('ไม่มีบล็อก [[ORDER]] เลย', implode(' ', $result->failures));
+    }
+
+    #[Test]
+    public function test_expect_order_failure_message_when_order_block_unclosed_flags_as_flaky(): void
+    {
+        // ข้อความต้องบอกว่าเป็นอาการสุ่มที่ production รับมือได้แล้ว ไม่ใช่ตัดสินทันทีว่า
+        // เป็น regression — กันคนอ่านผลตื่นตกใจผิดจุดตอนเจอเคสนี้ตกเดี่ยวๆ
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => 'สรุปออเดอร์ครับ [[ORDER]]{"total":2200',
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), [
+            'id' => 'case_23b',
+            'label' => 'เคส 23b',
+            'message' => 'ยืนยันครับ',
+            'history' => [
+                ['sender' => 'user', 'content' => 'ยืนยันครับ'],
+            ],
+            'expect_order' => ['total' => 2200],
+        ]);
+
+        $this->assertFalse($result->passed);
+        $failureText = implode(' ', $result->failures);
+        $this->assertStringContainsString('ไม่ปิด', $failureText);
+        $this->assertStringContainsString('~8%', $failureText);
+    }
+
+    #[Test]
+    public function test_page_no_bm_push_config_case_fails_for_wrong_response_requiring_bm(): void
+    {
+        // ล็อกทิศทางลบ: เกณฑ์ที่เพิ่งคลายลง (negative lookbehind) ยังต้องจับคำตอบที่ผิดจริงได้
+        $wrongResponse = 'ต้องมี BM ก่อนครับถึงจะใช้กับ Personal ได้ครับ';
+        $runner = $this->runnerWithAiResponse(['content' => $wrongResponse]);
+
+        $result = $runner->run($this->bot(), $this->configCase('page_no_bm_push'));
+
+        $this->assertFalse($result->passed);
+    }
+
+    #[Test]
+    public function test_staggered_pickup_config_case_fails_for_wrong_response_promising_pickup_later(): void
+    {
+        // ล็อกทิศทางลบ: เกณฑ์ที่เขียนใหม่ทั้งหมด (ทิ้ง lookbehind ใช้วลีคำสัญญาเชิงบวกแทน) ยังต้อง
+        // จับคำตอบที่ผิดจริงได้ — คำตอบนี้ไม่มีวลีบวกที่ must_contain ต้องการเลยสักกลุ่ม
+        $wrongResponse = 'ได้เลยครับพี่ เก็บไว้เบิกภายหลังได้ครับ ไม่ต้องรีบเลย';
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => $wrongResponse,
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), $this->configCase('staggered_pickup'));
+
+        $this->assertFalse($result->passed);
+    }
+
+    #[Test]
+    public function test_bm_with_unit_config_case_fails_for_wrong_response_re_asking_meaning(): void
+    {
+        // ล็อกทิศทางลบ: เกณฑ์ที่เพิ่งคลายลง (ไม่บังคับยอดรวมเทิร์นเดียวกันอีกต่อไป) ยังต้องจับ
+        // ได้ถ้าบอทถอยไปถามความหมายซ้ำแทนที่จะรับเป็นออเดอร์ (ต้องพูดคำว่า "บัญชีโฆษณา" เสมอ)
+        $wrongResponse = 'พี่หมายถึง BM ที่มีบัญชีโฆษณา 5 ตัวอยู่ในตัวเดียวใช่ไหมครับ หรือหมายถึงจำนวน 5 ตัวครับ';
+        $runner = $this->runnerWithAiResponse(['content' => $wrongResponse]);
+
+        $result = $runner->run($this->bot(), $this->configCase('bm_with_unit'));
+
+        $this->assertFalse($result->passed);
+    }
 }

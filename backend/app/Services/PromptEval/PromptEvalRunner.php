@@ -161,9 +161,16 @@ class PromptEvalRunner
         return [$extracted['clean'], $extracted['triggered']];
     }
 
+    /**
+     * pattern เดียวกับ production (App\Services\Payment\OrderPayloadExtractor::STRIP_PATTERN)
+     * — ต้องตัดถึงท้ายข้อความด้วยเมื่อไม่เจอตัวปิด `[[/ORDER]]` (LLM ตัดกลางคันเพราะชนเพดาน
+     * token, เกิดจริง ~8%) ไม่งั้น response ที่ eval เอาไปเทียบ must_contain/must_not_contain
+     * จะมี JSON ดิบค้างอยู่ทั้งที่ลูกค้าจริงไม่มีวันเห็น (production ตัดให้เสมอ) ทำให้เคสตกด้วย
+     * เหตุผลลวง (เช่น must_not_contain ไปจับตัวเลขที่หลุดมาจากใน JSON)
+     */
     private function stripOrderBlock(string $content): string
     {
-        return trim((string) preg_replace('/\[\[ORDER\]\].*?\[\[\/ORDER\]\]/su', '', $content));
+        return trim((string) preg_replace('/\[\[ORDER\]\].*?(?:\[\[\/ORDER\]\]|$)/su', '', $content));
     }
 
     /**
@@ -238,12 +245,18 @@ class PromptEvalRunner
      */
     private function evaluateExpectOrder(array $expectOrder, array $result, string $rawContent): array
     {
-        $payload = array_key_exists('order_payload', $result)
-            ? $result['order_payload']
-            : $this->extractOrderPayload($rawContent);
-
-        if ($payload === null) {
-            return ['ต้องมี order_payload แต่ไม่มี'];
+        if (array_key_exists('order_payload', $result)) {
+            // AIService path — order_payload มาจาก production OrderPayloadExtractor ตรงๆ
+            // (extract จาก content ก่อน runner จะเห็นด้วยซ้ำ) ไม่มีบล็อกดิบให้ตรวจแยกกรณีอีก
+            $payload = $result['order_payload'];
+            if ($payload === null) {
+                return ['ต้องมี order_payload แต่ไม่มี'];
+            }
+        } else {
+            $payload = $this->extractOrderPayload($rawContent);
+            if ($payload === null) {
+                return [$this->describeMissingOrderBlock($rawContent)];
+            }
         }
 
         $failures = [];
@@ -255,6 +268,24 @@ class PromptEvalRunner
         }
 
         return $failures;
+    }
+
+    /**
+     * แยกเหตุผลที่ดึง order_payload จาก content ดิบไม่ได้ — เคสที่บล็อกไม่ปิดเกิดจริง ~8%
+     * (production มี OrderPayloadExtractor รับมือแล้วด้วย STRIP_PATTERN แบบเดียวกับ
+     * stripOrderBlock() ด้านบน) ไม่ควรให้คนอ่านผลเข้าใจผิดว่าเป็น regression จริงทันที
+     */
+    private function describeMissingOrderBlock(string $rawContent): string
+    {
+        if (! str_contains($rawContent, '[[ORDER]]')) {
+            return 'ไม่มีบล็อก [[ORDER]] เลย (อาจเป็น regression จริง — เช็ค ORDER_PAYLOAD_ENABLED)';
+        }
+
+        if (! str_contains($rawContent, '[[/ORDER]]')) {
+            return 'บล็อก [[ORDER]] ไม่ปิด — LLM ตัดกลางคัน (อาการสุ่ม ~8% ระบบ production รับมือได้แล้ว ให้รันเคสนี้ซ้ำก่อนสรุป)';
+        }
+
+        return 'พบบล็อก [[ORDER]] ครบคู่ แต่ decode JSON ไม่สำเร็จ';
     }
 
     /**
