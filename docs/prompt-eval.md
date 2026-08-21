@@ -12,7 +12,9 @@
 
 คำสั่งจะยิงข้อความลูกค้าจำลอง (ตามแต่ละเคส) เข้าไปหาบอทจริงผ่าน AI จริง แล้วเอาคำตอบที่ได้มา
 เทียบกับเงื่อนไขที่ตั้งไว้ต่อเคส เช่น "คำตอบต้องมีคำว่า X" หรือ "ห้ามมีคำว่า Y" — **ไม่มีการเขียน
-อะไรลงฐานข้อมูลเลย** (ไม่สร้าง conversation ไม่บันทึกข้อความ) ปลอดภัยรันได้เรื่อย ๆ
+อะไรลงฐานข้อมูลเลย** (ไม่สร้าง conversation ไม่บันทึกข้อความ) **และปิดแคชคำตอบ (semantic cache)
+ระหว่างรันด้วย** จึงไม่มีทางที่คำตอบจากการรันเทสต์จะไปโผล่ตอบลูกค้าจริง หรือคำตอบเก่าจากการรันเทสต์
+ครั้งก่อนจะมาปนกับผลรันครั้งนี้ ปลอดภัยรันได้เรื่อย ๆ
 
 ชุดเคสตอนนี้มี 20 เคส และทุกเคสมาจากเหตุการณ์จริงที่เคยเกิดบน prod (มีคอมเมนต์กำกับที่มาไว้เหนือ
 แต่ละเคสในไฟล์ `config/prompt-eval-cases.php` เช่น หมายเลขบทสนทนา/วันที่/PR)
@@ -72,13 +74,13 @@ railway ssh -- php /var/www/html/artisan prompt:eval
 2. เพิ่ม element ใหม่ในอาร์เรย์ พร้อมคอมเมนต์บอกที่มา (เลขบทสนทนา/วันที่/PR) ไว้เหนือเคส
 3. รันเฉพาะเคสนั้นยืนยันก่อน commit: `php artisan prompt:eval --filter=<id ที่ตั้งไว้>`
 
-ตัวอย่างเคส:
+ตัวอย่างเคส (สมมติ — ไม่ใช่เหตุการณ์จริง ใช้เพื่อสาธิตรูปแบบเท่านั้น):
 
 ```php
-// ลูกค้าถามราคาแบบสั้น ๆ ห้ามโดน guardrail กันคำถามที่ไม่เกี่ยวสินค้าบล็อก (conv #1600, 21 ส.ค.)
+// [ตัวอย่าง] ลูกค้าถามราคาแบบสั้น ๆ ห้ามโดน guardrail กันคำถามที่ไม่เกี่ยวสินค้าบล็อก
 [
     'id' => 'price_short_question',
-    'label' => 'ลูกค้าถามราคาแบบสั้น ๆ ห้ามโดน guardrail บล็อก (conv #1600, 21 ส.ค.)',
+    'label' => '[ตัวอย่าง] ลูกค้าถามราคาแบบสั้น ๆ ห้ามโดน guardrail บล็อก',
     'message' => 'ราคา?',
     'expect_off_topic' => false,
     'must_contain' => [
@@ -87,6 +89,10 @@ railway ssh -- php /var/www/html/artisan prompt:eval
     'must_not_contain' => ['ไม่เข้าใจคำถาม'],
 ],
 ```
+
+เคสจริงที่เพิ่มเข้าไฟล์ต้องใส่เลขบทสนทนา/วันที่/PR ที่มาจริงเสมอ (ดูตัวอย่างเคสจริงในไฟล์
+`config/prompt-eval-cases.php` เช่น `pixel_premade`) — ห้ามใส่เลขอ้างอิงที่แต่งขึ้นเองแบบเคสตัวอย่าง
+ด้านบน
 
 field ที่ใช้ได้ในแต่ละเคส (ทุก field เป็น optional ยกเว้น `id`/`label`/`message`):
 
@@ -126,7 +132,15 @@ field ที่ใช้ได้ในแต่ละเคส (ทุก field
   `tests/Feature/Console/PromptEvalCommandTest.php` (command wiring)
 - เคสที่ไม่มี `history` เดินทางผ่าน `AIService::generateResponse()`, เคสที่มี `history` เดินทางผ่าน
   `RAGService::generateResponse()` (ใช้ flow เริ่มต้นของบอทที่ระบุด้วย `--bot`) — ทั้งสองเรียกด้วย
-  `conversation: null` เสมอ จึงไม่มีอะไรเขียนลง DB
+  `conversation: null` เสมอ จึงไม่มีการบันทึก conversation/messages ลง DB
+- `PromptEvalRunner::run()` ปิด `SemanticCacheService->enabled` ของ instance จริงที่ `RAGService`
+  ถืออยู่ผ่าน `ReflectionProperty` ก่อนเรียก LLM แล้วคืนค่าเดิมด้วย `finally` เสมอ — กันไม่ให้เขียน
+  ทับ `rag_cache` (semantic cache ที่เสิร์ฟลูกค้าจริง, similarity 0.92, TTL 60 นาที) และกันไม่ให้
+  เคสได้ cache hit จากผลรันครั้งก่อนแทนที่จะยิง LLM ใหม่จริง **กลไกนี้ทำงานได้เพราะ
+  `PromptEvalRunner` ถูก resolve ผ่าน service container เท่านั้น** (method injection ใน
+  `PromptEval::handle()`) จึงได้ `RAGService`/`SemanticCacheService` singleton ตัวเดียวกับที่
+  `AIService` ใช้จริง — ถ้าใครแก้โค้ดให้สร้าง `new PromptEvalRunner(...)` เองแทน การปิดแคชนี้จะ
+  ไม่มีผลใด ๆ (ได้ instance คนละตัว)
 - needle ใน `must_contain`/`must_not_contain` ที่ขึ้นต้นและลงท้ายด้วย `/` จะถูกตีความเป็น regex
   (เช่น `/1,?100/`) นอกนั้นเทียบแบบ substring แบบไม่สนตัวพิมพ์เล็ก-ใหญ่
   ก่อนเทียบ runner จะ normalize คำตอบ: ตัดตัวคั่นข้อความ (bubble separator) `|||` ออก แล้วยุบ
