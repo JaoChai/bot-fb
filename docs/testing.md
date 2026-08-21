@@ -587,6 +587,14 @@ $this->assertLessThan(5, $queries, 'Too many queries (N+1?)');
 
 ---
 
+## Prompt Eval (System Prompt Regression Test)
+
+เทสต์แยกต่างหากสำหรับ system prompt ของบอท (ไม่ใช่ PHPUnit) — ยิงเคสจริงที่เคยพังบน prod เข้า AI
+จริงแล้วเทียบคำตอบ ต้องรันก่อน/หลังแก้ `flows.system_prompt` หรือ KB ทุกครั้ง ดูรายละเอียดที่
+[`docs/prompt-eval.md`](./prompt-eval.md)
+
+---
+
 ## Resources
 
 - [Laravel Testing Docs](https://laravel.com/docs/testing)
