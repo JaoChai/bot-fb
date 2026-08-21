@@ -679,6 +679,33 @@ class PromptEvalRunnerTest extends TestCase
     }
 
     #[Test]
+    public function test_staggered_pickup_config_case_fails_when_response_satisfies_must_contain_but_promises_to_hold_stock(): void
+    {
+        // fix wave 5: เทสต์ลบตัวเดิม (ด้านบน) ตกเพราะ must_contain ไม่ผ่าน จึงไม่เคยล็อกว่า
+        // must_not_contain ทำงานจริง — เคสนี้ตั้งใจให้ผ่าน must_contain (มี "จ่ายเท่าที่จะรับ")
+        // แล้วให้ must_not_contain เป็นตัวจับแทน ยืนยันด้วย preg_match ก่อนใส่โค้ดว่า:
+        // needle ชุดเดิมที่มีคำว่า "ได้" บังคับติดกับวลี (เช่น 'เก็บไว้เบิกได้') จะ "ไม่จับ" ประโยคนี้
+        // เลย (คำว่า "ภายหลัง" คั่นกลาง) แต่ needle ชุดใหม่ (bounded lookahead, ตัด "ได้" ออก) จับได้
+        $wrongResponse = 'ได้ครับพี่ จ่ายเท่าที่จะรับก่อนได้เลย ที่เหลือผมเก็บไว้เบิกภายหลังได้ครับ';
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag = Mockery::mock(RAGService::class);
+        $rag->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => $wrongResponse,
+            'cost' => 0.0,
+        ]);
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), $this->configCase('staggered_pickup'));
+
+        $this->assertFalse($result->passed);
+        $this->assertStringContainsString('เก็บไว้เบิก', implode(' ', $result->failures));
+    }
+
+    #[Test]
     public function test_bm_with_unit_config_case_fails_for_wrong_response_re_asking_meaning(): void
     {
         // ล็อกทิศทางลบ: เกณฑ์ที่เพิ่งคลายลง (ไม่บังคับยอดรวมเทิร์นเดียวกันอีกต่อไป) ยังต้องจับ
