@@ -4,10 +4,13 @@ namespace Tests\Unit;
 
 use App\Models\Bot;
 use App\Services\AIService;
+use App\Services\EmbeddingService;
 use App\Services\PromptEval\PromptEvalRunner;
 use App\Services\RAGService;
+use App\Services\SemanticCacheService;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
+use ReflectionProperty;
 use Tests\TestCase;
 
 class PromptEvalRunnerTest extends TestCase
@@ -15,6 +18,28 @@ class PromptEvalRunnerTest extends TestCase
     private function bot(): Bot
     {
         return (new Bot)->forceFill(['id' => 1]);
+    }
+
+    /**
+     * mock RAGService ธรรมดา (constructor ไม่ถูกเรียก) มี property semanticCache ที่ยัง
+     * ไม่ initialize — ใช้ตรวจว่า runner ไม่พังเวลาไม่มี cache ให้ปิด (กรณีเทสต์ทั่วไป)
+     * แต่เทสต์ที่ต้องยืนยันพฤติกรรมปิด/คืนค่า cache จริงๆ ต้อง inject SemanticCacheService
+     * ตัวจริง (constructor รันจริง มี property $enabled จริงให้ override) เข้าไปแทน — ทำผ่าน
+     * reflection เพราะ Mockery::mock() ไม่รัน constructor ของ RAGService ให้
+     *
+     * @return array{0: RAGService, 1: SemanticCacheService}
+     */
+    private function mockRagWithRealSemanticCache(): array
+    {
+        $embedding = Mockery::mock(EmbeddingService::class);
+        $semanticCache = new SemanticCacheService($embedding);
+
+        $rag = Mockery::mock(RAGService::class);
+        $property = new ReflectionProperty(RAGService::class, 'semanticCache');
+        $property->setAccessible(true);
+        $property->setValue($rag, $semanticCache);
+
+        return [$rag, $semanticCache];
     }
 
     /**
@@ -331,5 +356,60 @@ class PromptEvalRunnerTest extends TestCase
         $this->assertFalse($result->passed);
         $this->assertNotEmpty($result->failures);
         $this->assertStringContainsString('timeout', $result->failures[0]);
+    }
+
+    #[Test]
+    public function test_semantic_cache_is_disabled_during_rag_call_and_restored_after(): void
+    {
+        // เคสจริงที่พบ: RAGService::shouldSkipCache() ไม่ได้ข้าม cache ให้เองแค่เพราะมี
+        // history (skip_if_has_history default = false) — semantic cache (rag_cache table)
+        // เป็นตัวเดียวกับที่เสิร์ฟลูกค้าจริง ต้องปิดเองระหว่างรัน eval เท่านั้น แล้วคืนค่าเดิม
+        [$rag, $semanticCache] = $this->mockRagWithRealSemanticCache();
+        $this->assertTrue($semanticCache->isEnabled(), 'baseline ต้อง enabled เหมือน production ปกติ');
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+
+        $rag->shouldReceive('generateResponse')
+            ->once()
+            ->andReturnUsing(function () use ($semanticCache) {
+                $this->assertFalse($semanticCache->isEnabled(), 'ต้องถูกปิดระหว่างเรียก LLM จริง');
+
+                return ['content' => 'สวัสดีครับพี่', 'cost' => 0.0];
+            });
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $runner->run($this->bot(), [
+            'id' => 'case_16',
+            'label' => 'เคส 16',
+            'message' => 'มีอะไรแนะนำไหม',
+            'history' => [
+                ['sender' => 'user', 'content' => 'สวัสดีครับ'],
+            ],
+        ]);
+
+        $this->assertTrue($semanticCache->isEnabled(), 'ต้องคืนค่าเดิมหลัง run() จบ');
+    }
+
+    #[Test]
+    public function test_semantic_cache_is_restored_after_llm_exception(): void
+    {
+        [$rag, $semanticCache] = $this->mockRagWithRealSemanticCache();
+        $rag->shouldReceive('generateResponse')->never();
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->andThrow(new \RuntimeException('boom'));
+
+        $runner = new PromptEvalRunner($ai, $rag);
+
+        $result = $runner->run($this->bot(), [
+            'id' => 'case_17',
+            'label' => 'เคส 17',
+            'message' => 'ขอหน่อย',
+        ]);
+
+        $this->assertFalse($result->passed);
+        $this->assertTrue($semanticCache->isEnabled(), 'ต้องคืนค่าเดิมแม้ LLM call จะ throw');
     }
 }

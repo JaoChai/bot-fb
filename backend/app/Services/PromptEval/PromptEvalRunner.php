@@ -6,6 +6,8 @@ use App\Models\Bot;
 use App\Services\AIService;
 use App\Services\Guardrail\OffTopicSignalExtractor;
 use App\Services\RAGService;
+use App\Services\SemanticCacheService;
+use ReflectionProperty;
 use Throwable;
 
 /**
@@ -31,7 +33,7 @@ class PromptEvalRunner
         $failures = [];
 
         try {
-            $rawResult = $this->callLlm($bot, $case);
+            $rawResult = $this->withSemanticCacheDisabled(fn () => $this->callLlm($bot, $case));
         } catch (Throwable $e) {
             $failures[] = "เรียก LLM ล้มเหลว: {$e->getMessage()}";
             $rawResult = null;
@@ -63,6 +65,58 @@ class PromptEvalRunner
             durationMs: (int) round((microtime(true) - $start) * 1000),
             cost: $cost,
         );
+    }
+
+    /**
+     * ปิด semantic cache เฉพาะระหว่างเรียก LLM จริง — eval รันซ้ำๆ ต้องไม่ไปยุ่งกับ
+     * rag_cache เพราะเป็น cache เดียวกับที่เสิร์ฟลูกค้าจริง (similarity 0.92, TTL 60 นาที)
+     * คำตอบจาก eval รอบนึงอาจไปเสิร์ฟลูกค้าจริง หรือ eval รอบถัดไป (เช่น "หลังแก้ prompt")
+     * อาจได้ cache hit ของรอบก่อนแทนที่จะยิง LLM ใหม่จริง ทำให้ผลเทสต์หลอก
+     *
+     * config(['rag.semantic_cache.enabled' => false]) เฉยๆ ไม่พอ — ยืนยันด้วยการรันจริง
+     * ผ่าน container แล้วว่า SemanticCacheService อ่าน config ครั้งเดียวตอน constructor
+     * แล้วเก็บไว้ใน property ของตัวเอง ไม่อ่านซ้ำอีก และ RAGService/SemanticCacheService
+     * ถูก bind เป็น singleton ใน AppServiceProvider (สร้างครั้งเดียว ใช้ซ้ำทั้ง process
+     * รวมถึงใน AIService ที่ resolve RAGService singleton ตัวเดียวกัน) — instance ที่
+     * PromptEvalRunner ถืออยู่จึงถูกสร้างไปแล้วก่อน run() ถูกเรียกเสมอ เปลี่ยน config
+     * ทีหลังไม่มีผลกับ instance เดิม ต้อง override property ของ instance จริงตรงๆ แทน
+     *
+     * @return array<string, mixed>
+     */
+    private function withSemanticCacheDisabled(callable $call): array
+    {
+        $cache = $this->resolveSemanticCache();
+
+        if ($cache === null) {
+            return $call();
+        }
+
+        $property = new ReflectionProperty($cache, 'enabled');
+        $property->setAccessible(true);
+        $original = $property->getValue($cache);
+        $property->setValue($cache, false);
+
+        try {
+            return $call();
+        } finally {
+            $property->setValue($cache, $original);
+        }
+    }
+
+    /**
+     * คืน instance จริงที่ RAGService ($this->rag) ถืออยู่ — คืน null เงียบๆ ถ้าอ่านไม่ได้
+     * (เช่น mock ในเทสต์ที่ไม่ได้รัน constructor จริง จึง property ยังไม่ initialize)
+     */
+    private function resolveSemanticCache(): ?SemanticCacheService
+    {
+        $property = new ReflectionProperty(RAGService::class, 'semanticCache');
+        $property->setAccessible(true);
+
+        if (! $property->isInitialized($this->rag)) {
+            return null;
+        }
+
+        return $property->getValue($this->rag);
     }
 
     /**
