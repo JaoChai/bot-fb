@@ -1,0 +1,337 @@
+<?php
+
+namespace App\Services\PromptEval;
+
+use App\Models\Bot;
+use App\Services\AIService;
+use App\Services\Guardrail\OffTopicSignalExtractor;
+use App\Services\RAGService;
+use App\Services\SemanticCacheService;
+use ReflectionProperty;
+use Throwable;
+
+/**
+ * รัน regression test case เดียวกับ system prompt จริงผ่าน AIService/RAGService แล้วเทียบ
+ * เนื้อหาที่ตอบกลับกับเงื่อนไขที่ case กำหนด (ดู task-1-brief.md สำหรับ case schema เต็ม)
+ * ไม่เขียนอะไรลง DB — เรียกด้วย conversation: null เสมอ
+ */
+class PromptEvalRunner
+{
+    public function __construct(
+        private readonly AIService $ai,
+        private readonly RAGService $rag,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $case
+     */
+    public function run(Bot $bot, array $case): CaseResult
+    {
+        $start = microtime(true);
+        $response = '';
+        $cost = 0.0;
+        $failures = [];
+
+        try {
+            $rawResult = $this->withSemanticCacheDisabled(fn () => $this->callLlm($bot, $case));
+        } catch (Throwable $e) {
+            $failures[] = "เรียก LLM ล้มเหลว: {$e->getMessage()}";
+            $rawResult = null;
+        }
+
+        if ($rawResult !== null) {
+            $rawContent = (string) ($rawResult['content'] ?? '');
+            $cost = (float) ($rawResult['cost'] ?? 0.0);
+
+            // RAGService (ต่างจาก AIService::generateResponse) ไม่ตัด marker [[OFFTOPIC]]/
+            // [[ORDER]]...[[/ORDER]] ออกให้เอง — เทียบด้วยคีย์ที่มี/ไม่มีใน $rawResult ว่าเดินทางไหน
+            // แล้วตัดเองก่อนเอาไปเทียบ must_contain/must_not_contain ให้ตรงกับ "ข้อความที่ลูกค้า
+            // เห็นจริง" เหมือน AIService ทำกับทุกคำตอบ
+            [$response, $offTopicTriggered] = $this->resolveDisplayResponse($rawResult, $rawContent);
+
+            if (! array_key_exists('order_payload', $rawResult)) {
+                $response = $this->stripOrderBlock($response);
+            }
+
+            $failures = $this->evaluate($case, $rawResult, $rawContent, $response, $offTopicTriggered);
+        }
+
+        return new CaseResult(
+            id: $case['id'],
+            label: $case['label'],
+            passed: $failures === [],
+            response: $response,
+            failures: $failures,
+            durationMs: (int) round((microtime(true) - $start) * 1000),
+            cost: $cost,
+        );
+    }
+
+    /**
+     * ปิด semantic cache เฉพาะระหว่างเรียก LLM จริง — eval รันซ้ำๆ ต้องไม่ไปยุ่งกับ
+     * rag_cache เพราะเป็น cache เดียวกับที่เสิร์ฟลูกค้าจริง (similarity 0.92, TTL 60 นาที)
+     * คำตอบจาก eval รอบนึงอาจไปเสิร์ฟลูกค้าจริง หรือ eval รอบถัดไป (เช่น "หลังแก้ prompt")
+     * อาจได้ cache hit ของรอบก่อนแทนที่จะยิง LLM ใหม่จริง ทำให้ผลเทสต์หลอก
+     *
+     * config(['rag.semantic_cache.enabled' => false]) เฉยๆ ไม่พอ — ยืนยันด้วยการรันจริง
+     * ผ่าน container แล้วว่า SemanticCacheService อ่าน config ครั้งเดียวตอน constructor
+     * แล้วเก็บไว้ใน property ของตัวเอง ไม่อ่านซ้ำอีก มีแค่ RAGService เท่านั้นที่ถูก bind
+     * เป็น singleton จริงใน AppServiceProvider (AppServiceProvider.php:62) — SemanticCacheService
+     * ไม่ได้ถูก bind เอง แค่ถูกสร้างขึ้นครั้งเดียวข้างใน closure ของ RAGService singleton นั้น
+     * (เรียก $app->make(SemanticCacheService::class) ครั้งเดียวตอน RAGService ถูก resolve
+     * ครั้งแรก) ผลคือ instance เดียวกับที่ RAGService ถืออยู่จริง แต่ห้ามเข้าใจว่า
+     * app(SemanticCacheService::class) จะได้ instance เดียวกันนี้ — เพราะไม่ได้ bind เป็น
+     * singleton เอง เรียกตรงๆ จะได้ instance ใหม่ทุกครั้งที่ enabled กลับไปเป็นค่า config
+     * ปกติ ปิดแคชไม่จริง — ต้องดึง instance จริงผ่าน $this->rag (resolveSemanticCache()
+     * ด้านล่าง) เท่านั้น instance ที่ PromptEvalRunner ถืออยู่จึงถูกสร้างไปแล้วก่อน run()
+     * ถูกเรียกเสมอ เปลี่ยน config ทีหลังไม่มีผลกับ instance เดิม ต้อง override property ของ
+     * instance จริงตรงๆ แทน
+     *
+     * @return array<string, mixed>
+     */
+    private function withSemanticCacheDisabled(callable $call): array
+    {
+        $cache = $this->resolveSemanticCache();
+
+        if ($cache === null) {
+            return $call();
+        }
+
+        $property = new ReflectionProperty($cache, 'enabled');
+        $property->setAccessible(true);
+        $original = $property->getValue($cache);
+        $property->setValue($cache, false);
+
+        try {
+            return $call();
+        } finally {
+            $property->setValue($cache, $original);
+        }
+    }
+
+    /**
+     * คืน instance จริงที่ RAGService ($this->rag) ถืออยู่ — คืน null เงียบๆ ถ้าอ่านไม่ได้
+     * (เช่น mock ในเทสต์ที่ไม่ได้รัน constructor จริง จึง property ยังไม่ initialize)
+     */
+    private function resolveSemanticCache(): ?SemanticCacheService
+    {
+        $property = new ReflectionProperty(RAGService::class, 'semanticCache');
+        $property->setAccessible(true);
+
+        if (! $property->isInitialized($this->rag)) {
+            return null;
+        }
+
+        return $property->getValue($this->rag);
+    }
+
+    /**
+     * @param  array<string, mixed>  $case
+     * @return array<string, mixed>
+     */
+    private function callLlm(Bot $bot, array $case): array
+    {
+        $history = $case['history'] ?? [];
+
+        if ($history === []) {
+            return $this->ai->generateResponse($bot, $case['message'], null);
+        }
+
+        return $this->rag->generateResponse(
+            bot: $bot,
+            userMessage: $case['message'],
+            conversationHistory: $history,
+            conversation: null,
+            flow: $bot->defaultFlow,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $rawResult
+     * @return array{0: string, 1: bool}
+     */
+    private function resolveDisplayResponse(array $rawResult, string $rawContent): array
+    {
+        if (array_key_exists('off_topic_triggered', $rawResult)) {
+            return [$rawContent, ! empty($rawResult['off_topic_triggered'])];
+        }
+
+        $extracted = (new OffTopicSignalExtractor)->extract($rawContent);
+
+        return [$extracted['clean'], $extracted['triggered']];
+    }
+
+    /**
+     * pattern เดียวกับ production (App\Services\Payment\OrderPayloadExtractor::STRIP_PATTERN)
+     * — ต้องตัดถึงท้ายข้อความด้วยเมื่อไม่เจอตัวปิด `[[/ORDER]]` (LLM ตัดกลางคันเพราะชนเพดาน
+     * token, เกิดจริง ~8%) ไม่งั้น response ที่ eval เอาไปเทียบ must_contain/must_not_contain
+     * จะมี JSON ดิบค้างอยู่ทั้งที่ลูกค้าจริงไม่มีวันเห็น (production ตัดให้เสมอ) ทำให้เคสตกด้วย
+     * เหตุผลลวง (เช่น must_not_contain ไปจับตัวเลขที่หลุดมาจากใน JSON)
+     */
+    private function stripOrderBlock(string $content): string
+    {
+        return trim((string) preg_replace('/\[\[ORDER\]\].*?(?:\[\[\/ORDER\]\]|$)/su', '', $content));
+    }
+
+    /**
+     * @param  array<string, mixed>  $case
+     * @param  array<string, mixed>  $result
+     * @return array<int, string>
+     */
+    private function evaluate(array $case, array $result, string $rawContent, string $response, bool $offTopicTriggered): array
+    {
+        $failures = [];
+        $normalized = $this->normalize($response);
+
+        // คำตอบว่างเปล่า (เช่น reasoning model หมด token กลางทาง) ต้องตกเสมอ — เคสที่มีแค่
+        // must_not_contain (ไม่มีอะไรให้เจอ) จะผ่านฟรีถ้าไม่เช็คตรงนี้ ทั้งที่บอทไม่ได้ตอบอะไรเลย
+        if (trim($normalized) === '') {
+            $failures[] = 'ได้คำตอบว่างเปล่าจาก LLM';
+        }
+
+        foreach ($case['must_contain'] ?? [] as $group) {
+            $found = false;
+            foreach ($group as $needle) {
+                $match = $this->matchNeedle($normalized, $needle);
+                if ($match['error'] !== null) {
+                    $failures[] = $match['error'];
+
+                    continue;
+                }
+
+                if ($match['matched']) {
+                    $found = true;
+                    break;
+                }
+            }
+
+            if (! $found) {
+                $failures[] = 'ต้องมี "'.implode('" หรือ "', $group).'" แต่ไม่พบ';
+            }
+        }
+
+        foreach ($case['must_not_contain'] ?? [] as $needle) {
+            $match = $this->matchNeedle($normalized, $needle);
+            if ($match['error'] !== null) {
+                $failures[] = $match['error'];
+
+                continue;
+            }
+
+            if ($match['matched']) {
+                $failures[] = "ต้องไม่มี \"{$needle}\" แต่พบ";
+            }
+        }
+
+        if (array_key_exists('expect_off_topic', $case)) {
+            if ($case['expect_off_topic'] !== $offTopicTriggered) {
+                $failures[] = $case['expect_off_topic']
+                    ? 'ต้อง trigger off-topic แต่ไม่ trigger'
+                    : 'ไม่ควร trigger off-topic แต่ trigger';
+            }
+        }
+
+        if (isset($case['expect_order'])) {
+            $failures = array_merge($failures, $this->evaluateExpectOrder($case['expect_order'], $result, $rawContent));
+        }
+
+        return $failures;
+    }
+
+    /**
+     * @param  array<string, mixed>  $expectOrder
+     * @param  array<string, mixed>  $result
+     * @return array<int, string>
+     */
+    private function evaluateExpectOrder(array $expectOrder, array $result, string $rawContent): array
+    {
+        if (array_key_exists('order_payload', $result)) {
+            // AIService path — order_payload มาจาก production OrderPayloadExtractor ตรงๆ
+            // (extract จาก content ก่อน runner จะเห็นด้วยซ้ำ) ไม่มีบล็อกดิบให้ตรวจแยกกรณีอีก
+            $payload = $result['order_payload'];
+            if ($payload === null) {
+                return ['ต้องมี order_payload แต่ไม่มี'];
+            }
+        } else {
+            $payload = $this->extractOrderPayload($rawContent);
+            if ($payload === null) {
+                return [$this->describeMissingOrderBlock($rawContent)];
+            }
+        }
+
+        $failures = [];
+        foreach ($expectOrder as $key => $expected) {
+            $actual = $payload[$key] ?? null;
+            if ($actual != $expected) {
+                $failures[] = "expect_order[{$key}] ต้องเป็น ".var_export($expected, true).' แต่ได้ '.var_export($actual, true);
+            }
+        }
+
+        return $failures;
+    }
+
+    /**
+     * แยกเหตุผลที่ดึง order_payload จาก content ดิบไม่ได้ — เคสที่บล็อกไม่ปิดเกิดจริง ~8%
+     * (production มี OrderPayloadExtractor รับมือแล้วด้วย STRIP_PATTERN แบบเดียวกับ
+     * stripOrderBlock() ด้านบน) ไม่ควรให้คนอ่านผลเข้าใจผิดว่าเป็น regression จริงทันที
+     */
+    private function describeMissingOrderBlock(string $rawContent): string
+    {
+        if (! str_contains($rawContent, '[[ORDER]]')) {
+            return 'ไม่มีบล็อก [[ORDER]] เลย (อาจเป็น regression จริง — เช็ค ORDER_PAYLOAD_ENABLED)';
+        }
+
+        if (! str_contains($rawContent, '[[/ORDER]]')) {
+            return 'บล็อก [[ORDER]] ไม่ปิด — LLM ตัดกลางคัน (อาการสุ่ม ~8% ระบบ production รับมือได้แล้ว ให้รันเคสนี้ซ้ำก่อนสรุป)';
+        }
+
+        return 'พบบล็อก [[ORDER]] ครบคู่ แต่ decode JSON ไม่สำเร็จ';
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function extractOrderPayload(string $content): ?array
+    {
+        if (preg_match('/\[\[ORDER\]\](.*?)\[\[\/ORDER\]\]/s', $content, $matches) !== 1) {
+            return null;
+        }
+
+        $decoded = json_decode($matches[1], true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * ขึ้นต้นด้วย "/" = ตีความเป็น regex เสมอ (รองรับ modifier ท้าย เช่น /.../u, /.../i) —
+     * ก่อนหน้านี้เช็คทั้งขึ้นต้น**และ**ลงท้ายด้วย "/" ทำให้ pattern ที่มี modifier เช่น
+     * /1,?100/u ถูกตีความเป็นการหา substring ของสตริง "/1,?100/u" เอง (ไม่มีทางเจอ) แล้ว
+     * เคสตก/ผ่านผิดแบบเงียบๆ โดยไม่มี error ให้เห็นเลย
+     *
+     * pattern ที่ compile ไม่ผ่าน (@preg_match คืน false) ต้องไม่ตีกลับไปเป็น substring
+     * เงียบๆ เหมือนกัน — ต้องทำให้เคสตกพร้อมบอกชัดว่า pattern ไหนพัง
+     *
+     * @return array{matched: bool, error: ?string}
+     */
+    private function matchNeedle(string $haystack, string $needle): array
+    {
+        if (! str_starts_with($needle, '/')) {
+            return ['matched' => mb_stripos($haystack, $needle) !== false, 'error' => null];
+        }
+
+        $result = @preg_match($needle, $haystack);
+
+        if ($result === false) {
+            return ['matched' => false, 'error' => "needle \"{$needle}\" เป็น regex ที่ไม่ถูกต้อง (compile ไม่ผ่าน)"];
+        }
+
+        return ['matched' => $result === 1, 'error' => null];
+    }
+
+    private function normalize(string $text): string
+    {
+        $text = str_replace('|||', '', $text);
+
+        return trim(preg_replace('/\s+/u', ' ', $text));
+    }
+}
