@@ -75,11 +75,17 @@ class PromptEvalRunner
      *
      * config(['rag.semantic_cache.enabled' => false]) เฉยๆ ไม่พอ — ยืนยันด้วยการรันจริง
      * ผ่าน container แล้วว่า SemanticCacheService อ่าน config ครั้งเดียวตอน constructor
-     * แล้วเก็บไว้ใน property ของตัวเอง ไม่อ่านซ้ำอีก และ RAGService/SemanticCacheService
-     * ถูก bind เป็น singleton ใน AppServiceProvider (สร้างครั้งเดียว ใช้ซ้ำทั้ง process
-     * รวมถึงใน AIService ที่ resolve RAGService singleton ตัวเดียวกัน) — instance ที่
-     * PromptEvalRunner ถืออยู่จึงถูกสร้างไปแล้วก่อน run() ถูกเรียกเสมอ เปลี่ยน config
-     * ทีหลังไม่มีผลกับ instance เดิม ต้อง override property ของ instance จริงตรงๆ แทน
+     * แล้วเก็บไว้ใน property ของตัวเอง ไม่อ่านซ้ำอีก มีแค่ RAGService เท่านั้นที่ถูก bind
+     * เป็น singleton จริงใน AppServiceProvider (AppServiceProvider.php:62) — SemanticCacheService
+     * ไม่ได้ถูก bind เอง แค่ถูกสร้างขึ้นครั้งเดียวข้างใน closure ของ RAGService singleton นั้น
+     * (เรียก $app->make(SemanticCacheService::class) ครั้งเดียวตอน RAGService ถูก resolve
+     * ครั้งแรก) ผลคือ instance เดียวกับที่ RAGService ถืออยู่จริง แต่ห้ามเข้าใจว่า
+     * app(SemanticCacheService::class) จะได้ instance เดียวกันนี้ — เพราะไม่ได้ bind เป็น
+     * singleton เอง เรียกตรงๆ จะได้ instance ใหม่ทุกครั้งที่ enabled กลับไปเป็นค่า config
+     * ปกติ ปิดแคชไม่จริง — ต้องดึง instance จริงผ่าน $this->rag (resolveSemanticCache()
+     * ด้านล่าง) เท่านั้น instance ที่ PromptEvalRunner ถืออยู่จึงถูกสร้างไปแล้วก่อน run()
+     * ถูกเรียกเสมอ เปลี่ยน config ทีหลังไม่มีผลกับ instance เดิม ต้อง override property ของ
+     * instance จริงตรงๆ แทน
      *
      * @return array<string, mixed>
      */
@@ -170,10 +176,23 @@ class PromptEvalRunner
         $failures = [];
         $normalized = $this->normalize($response);
 
+        // คำตอบว่างเปล่า (เช่น reasoning model หมด token กลางทาง) ต้องตกเสมอ — เคสที่มีแค่
+        // must_not_contain (ไม่มีอะไรให้เจอ) จะผ่านฟรีถ้าไม่เช็คตรงนี้ ทั้งที่บอทไม่ได้ตอบอะไรเลย
+        if (trim($normalized) === '') {
+            $failures[] = 'ได้คำตอบว่างเปล่าจาก LLM';
+        }
+
         foreach ($case['must_contain'] ?? [] as $group) {
             $found = false;
             foreach ($group as $needle) {
-                if ($this->containsNeedle($normalized, $needle)) {
+                $match = $this->matchNeedle($normalized, $needle);
+                if ($match['error'] !== null) {
+                    $failures[] = $match['error'];
+
+                    continue;
+                }
+
+                if ($match['matched']) {
                     $found = true;
                     break;
                 }
@@ -185,7 +204,14 @@ class PromptEvalRunner
         }
 
         foreach ($case['must_not_contain'] ?? [] as $needle) {
-            if ($this->containsNeedle($normalized, $needle)) {
+            $match = $this->matchNeedle($normalized, $needle);
+            if ($match['error'] !== null) {
+                $failures[] = $match['error'];
+
+                continue;
+            }
+
+            if ($match['matched']) {
                 $failures[] = "ต้องไม่มี \"{$needle}\" แต่พบ";
             }
         }
@@ -245,13 +271,30 @@ class PromptEvalRunner
         return is_array($decoded) ? $decoded : null;
     }
 
-    private function containsNeedle(string $haystack, string $needle): bool
+    /**
+     * ขึ้นต้นด้วย "/" = ตีความเป็น regex เสมอ (รองรับ modifier ท้าย เช่น /.../u, /.../i) —
+     * ก่อนหน้านี้เช็คทั้งขึ้นต้น**และ**ลงท้ายด้วย "/" ทำให้ pattern ที่มี modifier เช่น
+     * /1,?100/u ถูกตีความเป็นการหา substring ของสตริง "/1,?100/u" เอง (ไม่มีทางเจอ) แล้ว
+     * เคสตก/ผ่านผิดแบบเงียบๆ โดยไม่มี error ให้เห็นเลย
+     *
+     * pattern ที่ compile ไม่ผ่าน (@preg_match คืน false) ต้องไม่ตีกลับไปเป็น substring
+     * เงียบๆ เหมือนกัน — ต้องทำให้เคสตกพร้อมบอกชัดว่า pattern ไหนพัง
+     *
+     * @return array{matched: bool, error: ?string}
+     */
+    private function matchNeedle(string $haystack, string $needle): array
     {
-        if (mb_strlen($needle) >= 2 && str_starts_with($needle, '/') && str_ends_with($needle, '/')) {
-            return preg_match($needle, $haystack) === 1;
+        if (! str_starts_with($needle, '/')) {
+            return ['matched' => mb_stripos($haystack, $needle) !== false, 'error' => null];
         }
 
-        return mb_stripos($haystack, $needle) !== false;
+        $result = @preg_match($needle, $haystack);
+
+        if ($result === false) {
+            return ['matched' => false, 'error' => "needle \"{$needle}\" เป็น regex ที่ไม่ถูกต้อง (compile ไม่ผ่าน)"];
+        }
+
+        return ['matched' => $result === 1, 'error' => null];
     }
 
     private function normalize(string $text): string

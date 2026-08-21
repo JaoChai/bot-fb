@@ -412,4 +412,86 @@ class PromptEvalRunnerTest extends TestCase
         $this->assertFalse($result->passed);
         $this->assertTrue($semanticCache->isEnabled(), 'ต้องคืนค่าเดิมแม้ LLM call จะ throw');
     }
+
+    #[Test]
+    public function test_negative_lookbehind_regex_matches_dai_but_not_mai_dai(): void
+    {
+        // ยืนยัน pattern /(?<!ไม่)ได้/ ที่ใช้แก้เคส page_no_bm_push ใน
+        // config/prompt-eval-cases.php — เดิม must_contain: [['ได้']] ผ่านเสมอเพราะ substring
+        // "ได้" เจอใน "ไม่ได้" ด้วย ต้องเช็คทั้ง 2 ทิศทางว่า negative lookbehind แก้ได้จริง
+        $passRunner = $this->runnerWithAiResponse(['content' => 'ใช้กับ Personal ได้ครับ']);
+        $passResult = $passRunner->run($this->bot(), [
+            'id' => 'case_18a',
+            'label' => 'เคส 18a',
+            'message' => 'ขอหน่อย',
+            'must_contain' => [['/(?<!ไม่)ได้/']],
+        ]);
+        $this->assertTrue($passResult->passed, implode(', ', $passResult->failures));
+
+        $failRunner = $this->runnerWithAiResponse(['content' => 'ใช้ไม่ได้ครับ']);
+        $failResult = $failRunner->run($this->bot(), [
+            'id' => 'case_18b',
+            'label' => 'เคส 18b',
+            'message' => 'ขอหน่อย',
+            'must_contain' => [['/(?<!ไม่)ได้/']],
+        ]);
+        $this->assertFalse($failResult->passed);
+    }
+
+    #[Test]
+    public function test_empty_response_fails_even_with_only_must_not_contain(): void
+    {
+        // เคสที่มีแค่ must_not_contain ผ่านฟรีถ้าคำตอบว่างเปล่า (ไม่มีอะไรให้เจอ) — ต้องตกเสมอ
+        // แทน เพราะคำตอบว่างเปล่าคือสัญญาณว่า LLM มีปัญหา (เช่น token หมดกลางทาง)
+        $runner = $this->runnerWithAiResponse(['content' => '']);
+
+        $result = $runner->run($this->bot(), [
+            'id' => 'case_19',
+            'label' => 'เคส 19',
+            'message' => 'ขอหน่อย',
+            'must_not_contain' => ['ไม่สามารถยืนยัน'],
+        ]);
+
+        $this->assertFalse($result->passed);
+        $this->assertStringContainsString('ว่างเปล่า', implode(' ', $result->failures));
+    }
+
+    #[Test]
+    public function test_regex_needle_with_trailing_modifier_still_matches(): void
+    {
+        // เดิมเช็คทั้งขึ้นต้น**และ**ลงท้ายด้วย "/" — needle ที่มี modifier ต่อท้าย เช่น
+        // /1,?100/u ไม่เข้าเงื่อนไข (ลงท้ายด้วย "u" ไม่ใช่ "/") เลยถูกตีความเป็นการหา substring
+        // ของสตริง "/1,?100/u" เอง (ไม่มีทางเจอ) แล้วเคสตกแบบเงียบๆ
+        $runner = $this->runnerWithAiResponse(['content' => 'ยอดรวม 1,100 บาทครับ']);
+
+        $result = $runner->run($this->bot(), [
+            'id' => 'case_20',
+            'label' => 'เคส 20',
+            'message' => 'ขอหน่อย',
+            'must_contain' => [['/1,?100/u']],
+        ]);
+
+        $this->assertTrue($result->passed, implode(', ', $result->failures));
+    }
+
+    #[Test]
+    public function test_broken_regex_needle_fails_with_explicit_error_message(): void
+    {
+        // pattern ที่ compile ไม่ผ่านต้องไม่ตีกลับไปเทียบแบบ substring เงียบๆ (จะกลายเป็นหา
+        // substring ของ "/(unterminated/" เองซึ่งไม่มีทางเจอ แล้วเคสตกแบบไม่รู้สาเหตุ) — ต้องตก
+        // พร้อมข้อความบอกชัดว่า pattern ไหนพัง
+        $runner = $this->runnerWithAiResponse(['content' => 'ตอบอะไรก็ได้ครับ']);
+
+        $result = $runner->run($this->bot(), [
+            'id' => 'case_21',
+            'label' => 'เคส 21',
+            'message' => 'ขอหน่อย',
+            'must_contain' => [['/(unterminated/']],
+        ]);
+
+        $this->assertFalse($result->passed);
+        $failureText = implode(' ', $result->failures);
+        $this->assertStringContainsString('regex', $failureText);
+        $this->assertStringContainsString('/(unterminated/', $failureText);
+    }
 }
