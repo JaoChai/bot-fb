@@ -11,7 +11,9 @@ use Throwable;
 
 /**
  * รัน regression test ชุดเคส system prompt (config/prompt-eval-cases.php) กับบอทจริงผ่าน
- * PromptEvalRunner — ไม่เขียนอะไรลง DB (conversation: null เสมอ), ไม่แก้ prompt/KB
+ * PromptEvalRunner — ไม่เขียนอะไรลง DB: runner ปิด semantic cache (SemanticCacheService)
+ * ระหว่างรันจึงไม่มีการเขียน rag_cache, conversation: null จึงไม่มีการบันทึก conversation/messages,
+ * ไม่แก้ prompt/KB
  * ต้องรันซ้ำทุกครั้งที่แก้ prompt เพื่อจับ regression ก่อนขึ้น prod
  */
 class PromptEval extends Command
