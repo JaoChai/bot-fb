@@ -64,13 +64,14 @@ class RAGServiceTest extends TestCase
     private function callShouldSkipCache(
         string $userMessage,
         ?Conversation $conversation = null,
-        array $conversationHistory = []
+        array $conversationHistory = [],
+        bool $hasPurchaseHistory = false
     ): bool {
         $reflection = new ReflectionClass($this->service);
         $method = $reflection->getMethod('shouldSkipCache');
         $method->setAccessible(true);
 
-        return $method->invoke($this->service, $userMessage, $conversation, $conversationHistory);
+        return $method->invoke($this->service, $userMessage, $conversation, $conversationHistory, $hasPurchaseHistory);
     }
 
     /**
@@ -80,13 +81,14 @@ class RAGServiceTest extends TestCase
         string $basePrompt,
         string $kbContext,
         ?Bot $bot = null,
-        array $memoryNotes = []
+        array $memoryNotes = [],
+        string $purchaseHistoryBlock = ''
     ): string {
         $reflection = new ReflectionClass($this->service);
         $method = $reflection->getMethod('buildEnhancedPrompt');
         $method->setAccessible(true);
 
-        return $method->invoke($this->service, $basePrompt, $kbContext, $bot, $memoryNotes);
+        return $method->invoke($this->service, $basePrompt, $kbContext, $bot, $memoryNotes, $purchaseHistoryBlock);
     }
 
     public function test_build_enhanced_prompt_injects_memory_notes(): void
@@ -605,5 +607,47 @@ class RAGServiceTest extends TestCase
         ]);
 
         $this->assertSame('', $this->callBuildPurchaseHistoryBlock($conversation));
+    }
+
+    public function test_enhanced_prompt_places_purchase_history_before_stock_block(): void
+    {
+        // ฟิลด์ตามของจริงใน ProductStock (name/slug/in_stock/...) — ดูตัวอย่างเทสต์เดิมบรรทัด ~477
+        ProductStock::create([
+            'name' => 'Nolimit Level Up+ BM', 'slug' => 'bm', 'aliases' => [], 'in_stock' => false,
+            'display_order' => 1, 'stock_code' => 'BM', 'delivery_method' => 'stock',
+        ]);
+        Cache::forget(ProductStock::STOCK_CACHE_KEY);
+
+        $block = "## ประวัติการซื้อล่าสุดของลูกค้ารายนี้ (ข้อมูลจากระบบออเดอร์จริง)\n"
+            ."- Nolimit Level Up+ BM x1 — 15 ส.ค. 2026\n---\n";
+
+        $result = $this->callBuildEnhancedPrompt('BASE', '', $this->bot, [], $block);
+
+        $historyPos = mb_strpos($result, 'ประวัติการซื้อล่าสุดของลูกค้ารายนี้');
+        $this->assertNotFalse($historyPos, 'บล็อกประวัติต้องอยู่ใน prompt');
+
+        // กฎสต็อกต้องอยู่หลังบล็อกประวัติ เพื่อให้ LLM ให้น้ำหนักสต็อกมากกว่า
+        // ข้อความจริงใน prompt คือ 'STOCK STATUS' และ 'STOCK REMINDER' (ไม่ใช่คำไทยว่า "สต็อก")
+        $stockPos = mb_strpos($result, 'STOCK STATUS', $historyPos);
+        $this->assertNotFalse($stockPos, 'บล็อก STOCK STATUS ต้องอยู่หลังบล็อกประวัติ');
+
+        // STOCK REMINDER ถูกวางท้าย prompt เสมอ — ยืนยันว่าประวัติไม่ได้ไปแทรกหลังมัน
+        $this->assertGreaterThan($historyPos, mb_strpos($result, 'STOCK REMINDER'));
+    }
+
+    public function test_enhanced_prompt_omits_history_section_when_block_is_empty(): void
+    {
+        $result = $this->callBuildEnhancedPrompt('BASE', '', null, [], '');
+
+        $this->assertStringNotContainsString('ประวัติการซื้อล่าสุด', $result);
+    }
+
+    public function test_cache_is_skipped_when_customer_has_purchase_history(): void
+    {
+        // ข้อความยาวเกิน 20 ตัวอักษร ไม่มี history ไม่ใช่ชื่อสินค้า → ปกติจะ "ไม่ skip"
+        $message = 'อยากทราบว่าตอนนี้ยังพอมีของเหลือให้สั่งเพิ่มอีกไหมครับผม';
+
+        $this->assertFalse($this->callShouldSkipCache($message, null, [], false));
+        $this->assertTrue($this->callShouldSkipCache($message, null, [], true));
     }
 }

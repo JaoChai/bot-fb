@@ -66,9 +66,19 @@ class RAGService
 
         $bot->loadMissing(['defaultFlow.knowledgeBases']);
 
+        // ดึงประวัติการซื้อครั้งเดียวต่อการตอบ 1 ครั้ง แล้วส่งต่อทั้ง Step 0 และ Step 6
+        // ⚠️ ห้ามเก็บไว้ใน property ของ service — RAGService เป็น singleton (AppServiceProvider:62)
+        //    queue worker รันหลาย job ต่อ process ข้อมูลลูกค้าจะรั่วข้ามกัน
+        $purchaseHistoryBlock = $this->buildPurchaseHistoryBlock($conversation);
+
         // Step 0: Check Semantic Cache first (fastest path)
         // Skip cache for context-dependent messages to prevent cross-conversation contamination
-        $skipCache = $this->shouldSkipCache($userMessage, $conversation, $conversationHistory);
+        $skipCache = $this->shouldSkipCache(
+            $userMessage,
+            $conversation,
+            $conversationHistory,
+            $purchaseHistoryBlock !== ''
+        );
 
         if (! $skipCache && $this->semanticCache?->isEnabled()) {
             $cachedResponse = $this->semanticCache->get($bot, $userMessage, $apiKey);
@@ -165,7 +175,8 @@ class RAGService
             $this->getSystemPromptForBot($bot),
             $kbContext,
             $bot,
-            $memoryNotes
+            $memoryNotes,
+            $purchaseHistoryBlock
         );
 
         // Step 7: Add Chain-of-Thought instruction if question is complex
@@ -384,7 +395,8 @@ class RAGService
         string $basePrompt,
         string $kbContext,
         ?Bot $bot = null,
-        array $memoryNotes = []
+        array $memoryNotes = [],
+        string $purchaseHistoryBlock = ''
     ): string {
         // Static persona leads so it forms a stable, cacheable prefix for
         // OpenRouter/gemini prefix caching. Dynamic memory/stock/KB come AFTER.
@@ -397,6 +409,12 @@ class RAGService
                 $prompt .= "- {$content}\n";
             }
             $prompt .= "---\n";
+        }
+
+        // ประวัติการซื้อจากตาราง orders จริง — วางก่อน stock เสมอ เพราะ stock reminder อยู่ท้าย
+        // prompt (ใกล้ข้อความลูกค้าที่สุด = LLM ให้น้ำหนักสูงสุด) กฎสต็อกจึงทับประวัติได้ตามตำแหน่ง
+        if ($purchaseHistoryBlock !== '') {
+            $prompt .= "\n\n".$purchaseHistoryBlock;
         }
 
         // Always inject stock — conditional injection caused sales of out-of-stock products
@@ -724,9 +742,19 @@ PROMPT;
      * must NOT be cached because the same text means different things in different contexts.
      * e.g., "ยืนยัน" from Customer A confirms order X, but Customer B has order Y.
      */
-    protected function shouldSkipCache(string $userMessage, ?Conversation $conversation, array $conversationHistory): bool
-    {
+    protected function shouldSkipCache(
+        string $userMessage,
+        ?Conversation $conversation,
+        array $conversationHistory,
+        bool $hasPurchaseHistory = false
+    ): bool {
         // Checks ordered cheapest → most expensive for early return optimization
+
+        // 0. ลูกค้ามีประวัติการซื้อ → คำตอบถูกปรุงเฉพาะตัว ห้ามเสิร์ฟให้คนอื่น
+        //    (rag_cache แชร์ทั้งบอทผ่าน RagCache::forBot() ไม่ได้แยกตามลูกค้า)
+        if ($hasPurchaseHistory) {
+            return true;
+        }
 
         // 1. Conversation history is non-empty (ongoing conversation) — ~0.1μs
         if (config('rag.semantic_cache.skip_if_has_history', true) && ! empty($conversationHistory)) {
