@@ -70,7 +70,7 @@ class EntityExtractionServiceTest extends TestCase
 
         $this->openRouter->method('chat')
             ->willReturn([
-                'content' => '{"entities": [{"type": "name", "value": "สมชาย"}, {"type": "product_interest", "value": "สินค้า A"}]}',
+                'content' => '{"entities": [{"type": "name", "value": "สมชาย"}, {"type": "phone", "value": "0812345678"}]}',
             ]);
 
         $result = $this->service->extractAndSave($conversation);
@@ -106,12 +106,12 @@ class EntityExtractionServiceTest extends TestCase
 
         $this->openRouter->method('chat')
             ->willReturn([
-                'content' => '{"entities": [{"type": "name", "value": "สมชาย"}, {"type": "product_interest", "value": "สินค้า B"}]}',
+                'content' => '{"entities": [{"type": "name", "value": "สมชาย"}, {"type": "phone", "value": "0812345678"}]}',
             ]);
 
         $result = $this->service->extractAndSave($conversation);
 
-        // Name should be skipped (duplicate), only product_interest saved
+        // Name should be skipped (duplicate), only phone saved
         $this->assertEquals(1, $result['saved_count']);
 
         $conversation->refresh();
@@ -183,6 +183,51 @@ class EntityExtractionServiceTest extends TestCase
 
         // Only "name" should be saved (invalid_type filtered, empty phone filtered)
         $this->assertEquals(1, $result['saved_count']);
+    }
+
+    public function test_extract_filters_out_removed_product_interest_and_preference_types(): void
+    {
+        // Regression test: product_interest and preference were removed
+        // 2026-08-21 (see comment on ENTITY_TYPES). If the LLM still returns
+        // them, they must be filtered out rather than saved.
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->bot->id,
+            'memory_notes' => [],
+        ]);
+
+        Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'user',
+            'content' => 'ทดสอบ',
+        ]);
+
+        $this->openRouter->method('chat')
+            ->willReturn([
+                'content' => '{"entities": [{"type": "name", "value": "สมชาย"}, {"type": "product_interest", "value": "fviainboxes.com"}, {"type": "preference", "value": "งบ 500"}]}',
+            ]);
+
+        $result = $this->service->extractAndSave($conversation);
+
+        // Only "name" should be saved; product_interest and preference are no longer valid types
+        $this->assertEquals(1, $result['saved_count']);
+        $this->assertCount(1, $result['extracted']);
+        $this->assertEquals('name', $result['extracted'][0]['type']);
+    }
+
+    public function test_entity_types_are_limited_to_name_and_phone(): void
+    {
+        // Locks the deliberate reduction to just name+phone so nobody
+        // re-adds product_interest/preference without knowing why they
+        // were removed (see comment on ENTITY_TYPES).
+        $this->assertEquals(['name', 'phone'], EntityExtractionService::ENTITY_TYPES);
+    }
+
+    public function test_entity_labels_match_entity_types_exactly(): void
+    {
+        $this->assertEqualsCanonicalizing(
+            EntityExtractionService::ENTITY_TYPES,
+            array_keys(EntityExtractionService::ENTITY_LABELS)
+        );
     }
 
     public function test_extract_uses_bot_utility_model_when_configured(): void

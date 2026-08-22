@@ -8,20 +8,29 @@ use Illuminate\Support\Facades\Log;
 /**
  * Entity Extraction Service
  *
- * Extracts customer entities (name, phone, product interest, preferences)
- * from conversation messages using LLM and stores them in memory_notes.
+ * Extracts customer entities (name, phone) from conversation messages
+ * using LLM and stores them in memory_notes.
  *
  * Runs asynchronously via ExtractEntitiesJob to avoid blocking responses.
  */
 class EntityExtractionService
 {
-    public const ENTITY_TYPES = ['name', 'phone', 'product_interest', 'preference'];
+    /**
+     * Only "name" and "phone" are extracted. "product_interest" and
+     * "preference" were removed 2026-08-21 after owner review of 3 real
+     * conversations found the LLM writing low-value/wrong notes that get
+     * injected into the bot's system prompt forever: conv 1530 produced
+     * "product_interest: บัญชียิงแอด" (too generic to be useful — the shop
+     * only sells that), and conv 1539 produced
+     * "product_interest: fviainboxes.com" (a website domain, not a product
+     * the shop sells). "name" and "phone" are hard to misextract this way
+     * and carry real value, so those are what stay.
+     */
+    public const ENTITY_TYPES = ['name', 'phone'];
 
     public const ENTITY_LABELS = [
         'name' => 'ชื่อลูกค้า',
         'phone' => 'เบอร์โทร',
-        'product_interest' => 'สนใจสินค้า',
-        'preference' => 'ความต้องการ',
     ];
 
     public function __construct(
@@ -122,16 +131,15 @@ class EntityExtractionService
 You extract customer information from chat messages. Return ONLY valid JSON.
 
 Extract these entity types:
-- "name": Customer's name (Thai or English)
+- "name": Customer's real name (Thai or English)
 - "phone": Phone number
-- "product_interest": Products/services the customer is interested in
-- "preference": Customer preferences (size, color, budget, etc.)
 
 Rules:
-1. Only extract information explicitly stated by the CUSTOMER (not the bot)
-2. Skip entities that are already known (listed in existing memory)
-3. If no new entities found, return {"entities": []}
-4. Each entity: {"type": "{$entityList}", "value": "..."}
+1. Only extract information explicitly stated by the CUSTOMER themselves (not the bot, not inferred, not guessed)
+2. Never guess a name from a chat profile display name, a nickname the bot used to address the customer, or a name mentioned about someone else — only extract a name the customer typed for themselves
+3. Skip entities that are already known (listed in existing memory)
+4. If no new entities found, return {"entities": []}
+5. Each entity: {"type": "{$entityList}", "value": "..."}
 
 Return format: {"entities": [{"type": "...", "value": "..."}, ...]}
 PROMPT;
