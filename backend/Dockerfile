@@ -137,9 +137,12 @@ stderr_logfile_maxbytes=0
 # queue-worker-fast: drop --timeout to 30 after QUEUE_LLM_SPLIT_ENABLED=true confirmed stable.
 # Kept at 160 during rollout because LLM jobs still land here when the flag is OFF
 # (must exceed ProcessAggregatedMessages::$timeout=150).
+# `low` appended at the end (ExtractEntitiesJob::onQueue('low')): queue:work drains
+# queues left-to-right by priority, so low only gets picked up once webhooks/default
+# are empty — it never steals capacity from customer-facing work on this worker.
 [program:queue-worker-fast]
 process_name=%(program_name)s_%(process_num)02d
-command=php /var/www/html/artisan queue:work --queue=webhooks,default --sleep=3 --tries=3 --backoff=5 --max-jobs=1000 --max-time=3600 --timeout=160
+command=php /var/www/html/artisan queue:work --queue=webhooks,default,low --sleep=3 --tries=3 --backoff=5 --max-jobs=1000 --max-time=3600 --timeout=160
 autostart=true
 autorestart=true
 stopasgroup=true
