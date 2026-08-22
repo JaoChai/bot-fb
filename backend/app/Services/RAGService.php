@@ -5,8 +5,10 @@ namespace App\Services;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Flow;
+use App\Models\Order;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * RAG (Retrieval Augmented Generation) Service
@@ -431,6 +433,75 @@ class RAGService
         }
 
         return $prompt;
+    }
+
+    /**
+     * บล็อกประวัติการซื้อล่าสุดของลูกค้า ดึงจากตาราง orders จริง (ไม่พึ่ง LLM จด)
+     *
+     * คืน '' เมื่อไม่มีข้อมูลหรือ query ล้มเหลว — ความจำเป็นของเสริม ห้ามทำให้บอทตอบลูกค้าไม่ได้
+     */
+    protected function buildPurchaseHistoryBlock(?Conversation $conversation): string
+    {
+        $profileId = $conversation?->customer_profile_id;
+
+        if (! $profileId) {
+            return '';
+        }
+
+        try {
+            $order = Order::query()
+                ->where('customer_profile_id', $profileId)
+                ->where('status', 'completed')
+                ->where('created_at', '>=', now()->subDays(90))
+                // id เป็น tiebreaker กันกรณีลูกค้าซื้อหลายใบใน timestamp เดียวกัน
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->with('items')
+                ->first();
+
+            if (! $order || $order->items->isEmpty()) {
+                return '';
+            }
+
+            $lines = $order->items
+                ->map(function ($item) {
+                    $variant = $item->variant ? " ({$item->variant})" : '';
+
+                    return "- {$item->product_name}{$variant} x{$item->quantity}";
+                })
+                ->implode("\n");
+
+            $date = $this->formatThaiDate($order->created_at);
+
+            return "## ประวัติการซื้อล่าสุดของลูกค้ารายนี้ (ข้อมูลจากระบบออเดอร์จริง)\n"
+                ."{$lines} — {$date}\n\n"
+                ."วิธีใช้: ใช้เพื่อเข้าใจบริบทคำถามที่ต่อเนื่องจากของที่ลูกค้าถืออยู่เท่านั้น\n"
+                ."⛔ ห้ามเอ่ยถึงประวัตินี้ก่อนที่ลูกค้าจะพูดถึงเอง ห้ามทักทายด้วยประวัติ\n"
+                ."⛔ ตัวเลขจำนวนนี้เป็นของออเดอร์เก่า ห้ามนำไปรวมกับออเดอร์ใหม่\n"
+                ."⛔ ถ้าสินค้าที่เคยซื้อหมดสต็อก ให้ทำตามกฎสต็อกและเสนอตัวแทน ห้ามยึดประวัติ\n"
+                ."---\n";
+        } catch (Throwable $e) {
+            Log::warning('RAGService: buildPurchaseHistoryBlock failed', [
+                'conversation_id' => $conversation?->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return '';
+        }
+    }
+
+    /**
+     * แปลงวันที่เป็นไทยย่อ เช่น "15 ส.ค. 2026" — map เองไม่พึ่ง locale package
+     * เพื่อให้ผลลัพธ์เหมือนกันทุกเครื่องและเทสต์ได้แน่นอน
+     */
+    private function formatThaiDate(\DateTimeInterface $date): string
+    {
+        $months = [
+            1 => 'ม.ค.', 2 => 'ก.พ.', 3 => 'มี.ค.', 4 => 'เม.ย.', 5 => 'พ.ค.', 6 => 'มิ.ย.',
+            7 => 'ก.ค.', 8 => 'ส.ค.', 9 => 'ก.ย.', 10 => 'ต.ค.', 11 => 'พ.ย.', 12 => 'ธ.ค.',
+        ];
+
+        return (int) $date->format('j').' '.$months[(int) $date->format('n')].' '.$date->format('Y');
     }
 
     /**

@@ -4,6 +4,9 @@ namespace Tests\Unit\Services;
 
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\CustomerProfile;
+use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\ProductStock;
 use App\Models\User;
 use App\Services\FlowCacheService;
@@ -500,5 +503,107 @@ class RAGServiceTest extends TestCase
 
         $this->assertStringNotContainsString('STOCK STATUS', $result);
         $this->assertStringNotContainsString('QTY REMINDER', $result);
+    }
+
+    /**
+     * Helper to call protected buildPurchaseHistoryBlock method.
+     */
+    private function callBuildPurchaseHistoryBlock(?Conversation $conversation): string
+    {
+        $reflection = new ReflectionClass($this->service);
+        $method = $reflection->getMethod('buildPurchaseHistoryBlock');
+        $method->setAccessible(true);
+
+        return $method->invoke($this->service, $conversation);
+    }
+
+    public function test_purchase_history_block_uses_latest_order_within_90_days(): void
+    {
+        $customer = CustomerProfile::factory()->create();
+        $conversation = Conversation::factory()->create([
+            'customer_profile_id' => $customer->id,
+        ]);
+
+        $older = Order::factory()->create([
+            'customer_profile_id' => $customer->id,
+            'status' => 'completed',
+            'created_at' => now()->subDays(40),
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $older->id,
+            'product_name' => 'Facebook ไก่ G3D',
+            'variant' => null,
+            'quantity' => 10,
+        ]);
+
+        $latest = Order::factory()->create([
+            'customer_profile_id' => $customer->id,
+            'status' => 'completed',
+            'created_at' => now()->subDays(7),
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $latest->id,
+            'product_name' => 'Nolimit Level Up+ Personal',
+            'variant' => 'ผูกบัตร',
+            'quantity' => 3,
+        ]);
+
+        $block = $this->callBuildPurchaseHistoryBlock($conversation);
+
+        $this->assertStringContainsString('Nolimit Level Up+ Personal', $block);
+        $this->assertStringContainsString('(ผูกบัตร)', $block);
+        $this->assertStringContainsString('x3', $block);
+        // ต้องเป็นออเดอร์ล่าสุดใบเดียว ห้ามมีของใบเก่าปน
+        $this->assertStringNotContainsString('G3D', $block);
+        // คำสั่งกำกับพฤติกรรมต้องติดไปกับบล็อกเสมอ
+        $this->assertStringContainsString('ห้ามเอ่ยถึงประวัตินี้ก่อน', $block);
+        $this->assertStringContainsString('หมดสต็อก', $block);
+    }
+
+    public function test_purchase_history_block_ignores_orders_older_than_90_days(): void
+    {
+        $customer = CustomerProfile::factory()->create();
+        $conversation = Conversation::factory()->create([
+            'customer_profile_id' => $customer->id,
+        ]);
+
+        $stale = Order::factory()->create([
+            'customer_profile_id' => $customer->id,
+            'status' => 'completed',
+            'created_at' => now()->subDays(91),
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $stale->id,
+            'product_name' => 'Nolimit Level Up+ BM',
+            'quantity' => 1,
+        ]);
+
+        $this->assertSame('', $this->callBuildPurchaseHistoryBlock($conversation));
+    }
+
+    public function test_purchase_history_block_is_empty_without_customer_profile(): void
+    {
+        $conversation = Conversation::factory()->create([
+            'customer_profile_id' => null,
+        ]);
+
+        $this->assertSame('', $this->callBuildPurchaseHistoryBlock($conversation));
+        $this->assertSame('', $this->callBuildPurchaseHistoryBlock(null));
+    }
+
+    public function test_purchase_history_block_is_empty_when_order_has_no_items(): void
+    {
+        $customer = CustomerProfile::factory()->create();
+        $conversation = Conversation::factory()->create([
+            'customer_profile_id' => $customer->id,
+        ]);
+
+        Order::factory()->create([
+            'customer_profile_id' => $customer->id,
+            'status' => 'completed',
+            'created_at' => now()->subDays(3),
+        ]);
+
+        $this->assertSame('', $this->callBuildPurchaseHistoryBlock($conversation));
     }
 }
