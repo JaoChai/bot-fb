@@ -15,6 +15,11 @@ use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\TelegramService;
 use App\Services\Webhook\Channels\Telegram\TelegramEventMapper;
+use App\Services\Webhook\Steps\GenerateResponseStep;
+use App\Services\Webhook\Steps\ResolveConversationStep;
+use App\Services\Webhook\Steps\SendResponseStep;
+use App\Services\Webhook\WebhookPipeline;
+use App\Services\Webhook\WebhookPipelineV2Flag;
 use App\Services\Webhook\WebhookContext;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -133,6 +138,14 @@ class ProcessTelegramWebhook implements ShouldQueue
             Log::debug('Ignoring non-message update', [
                 'update_id' => $this->update['update_id'] ?? null,
             ]);
+
+            return;
+        }
+
+        // Opt-in v2 shared pipeline (Task 9) — default OFF; the legacy path
+        // below remains the default when the flag is not enabled for the bot.
+        if (WebhookPipelineV2Flag::enabledFor($this->bot)) {
+            $this->runSharedPipeline($context, $telegramService, $aiService);
 
             return;
         }
@@ -269,6 +282,22 @@ class ProcessTelegramWebhook implements ShouldQueue
             $updateType = $isNewConversation ? 'created' : 'message_received';
             broadcast(new ConversationUpdated($conversation, $updateType))->toOthers();
         }
+    }
+
+    /**
+     * Shared v2 pipeline path (Task 9). Composes the Telegram step list
+     * (resolve → response → send) and runs it on the shared WebhookPipeline.
+     * Only reached when WebhookPipelineV2Flag is enabled for this bot
+     * (default OFF) — the legacy transaction path remains the default.
+     */
+    protected function runSharedPipeline(WebhookContext $context, TelegramService $telegramService, AIService $aiService): void
+    {
+        $pipeline = app(WebhookPipeline::class);
+        $pipeline->run($context, [
+            new ResolveConversationStep(null, $telegramService),
+            new GenerateResponseStep($aiService),
+            new SendResponseStep(app(\App\Services\Channel\ChannelAdapterFactory::class)),
+        ]);
     }
 
     /**

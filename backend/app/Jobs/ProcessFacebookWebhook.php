@@ -14,6 +14,11 @@ use App\Services\AutoAssignmentService;
 use App\Services\LeadRecoveryService;
 use App\Services\ProfilePictureService;
 use App\Services\Webhook\Channels\Facebook\FacebookEventMapper;
+use App\Services\Webhook\Steps\GenerateResponseStep;
+use App\Services\Webhook\Steps\ResolveConversationStep;
+use App\Services\Webhook\Steps\SendResponseStep;
+use App\Services\Webhook\WebhookPipeline;
+use App\Services\Webhook\WebhookPipelineV2Flag;
 use App\Services\Webhook\WebhookContext;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -139,6 +144,7 @@ class ProcessFacebookWebhook implements ShouldQueue
 
         // Process each entry in the webhook
         $mapper = app(FacebookEventMapper::class);
+        $useSharedPipeline = WebhookPipelineV2Flag::enabledFor($this->bot);
         foreach ($this->payload['entry'] ?? [] as $entry) {
             // Process messaging events
             foreach ($entry['messaging'] ?? [] as $event) {
@@ -147,9 +153,31 @@ class ProcessFacebookWebhook implements ShouldQueue
                     continue;
                 }
 
+                if ($useSharedPipeline) {
+                    $this->runSharedPipeline($context, $aiService);
+
+                    continue;
+                }
+
                 $this->processMessagingEvent($context, $aiService);
             }
         }
+    }
+
+    /**
+     * Shared v2 pipeline path (Task 9). Composes the Facebook step list
+     * (resolve → response → send) and runs it on the shared WebhookPipeline.
+     * Only reached when WebhookPipelineV2Flag is enabled for this bot
+     * (default OFF) — the legacy processMessagingEvent path remains the default.
+     */
+    protected function runSharedPipeline(WebhookContext $context, AIService $aiService): void
+    {
+        $pipeline = app(WebhookPipeline::class);
+        $pipeline->run($context, [
+            new ResolveConversationStep(),
+            new GenerateResponseStep($aiService),
+            new SendResponseStep(app(\App\Services\Channel\ChannelAdapterFactory::class)),
+        ]);
     }
 
     /**

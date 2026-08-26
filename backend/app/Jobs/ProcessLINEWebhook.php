@@ -33,6 +33,12 @@ use App\Services\SmartAggregation\UserTypingStats;
 use App\Services\StickerReplyService;
 use App\Services\Webhook\Channels\LINE\NonTextHandler;
 use App\Services\Webhook\Channels\LINE\StickerHandler;
+use App\Services\Webhook\Steps\GenerateResponseStep;
+use App\Services\Webhook\Steps\ResolveConversationStep;
+use App\Services\Webhook\Steps\SendResponseStep;
+use App\Services\Webhook\WebhookPipeline;
+use App\Services\Webhook\WebhookPipelineV2Flag;
+use App\Services\Webhook\WebhookContext as SharedWebhookContext;
 use App\Support\QueueRouter;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -106,6 +112,12 @@ class ProcessLINEWebhook implements ShouldQueue
         LineWebhookOutputService $outputSvc,
     ): void {
         try {
+            if (WebhookPipelineV2Flag::enabledFor($this->bot)) {
+                $this->runSharedPipeline();
+
+                return;
+            }
+
             if (
                 LineWebhookPipelineFlag::enabledFor($this->bot)
                 && $lineService->isMessageEvent($this->event)
@@ -193,6 +205,32 @@ class ProcessLINEWebhook implements ShouldQueue
         // Non-text path: no lock (sticker/image have different concurrency semantics)
         $responseSvc->generate($ctx);
         $outputSvc->dispatch($ctx);
+    }
+
+    /**
+     * Shared v2 pipeline path (Task 9). Runs the event through the channel
+     * step list (resolve → response → send) on the shared WebhookPipeline.
+     * Only reached when WebhookPipelineV2Flag is enabled for this bot
+     * (default OFF) — the legacy paths above remain the default.
+     *
+     * The steps are the shared extraction. Full sequence parity (transaction
+     * scoping, post-transaction broadcast/dispatch) is rolled out per-channel
+     * in a later task; this method is the opt-in entry point that composes
+     * the channel's step list and hands the context to the pipeline.
+     */
+    protected function runSharedPipeline(): void
+    {
+        $lineService = app(LINEService::class);
+
+        $context = new SharedWebhookContext($this->bot, $this->event, 'line');
+        $context->metadata['user_id'] = $lineService->extractUserId($this->event);
+
+        $pipeline = app(WebhookPipeline::class);
+        $pipeline->run($context, [
+            new ResolveConversationStep($lineService),
+            new GenerateResponseStep(app(AIService::class)),
+            new SendResponseStep(app(\App\Services\Channel\ChannelAdapterFactory::class)),
+        ]);
     }
 
     /**
