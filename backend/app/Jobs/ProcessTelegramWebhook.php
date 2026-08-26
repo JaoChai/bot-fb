@@ -15,9 +15,6 @@ use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\TelegramService;
 use App\Services\Webhook\Channels\Telegram\TelegramEventMapper;
-use App\Services\Webhook\Steps\GenerateResponseStep;
-use App\Services\Webhook\Steps\ResolveConversationStep;
-use App\Services\Webhook\Steps\SendResponseStep;
 use App\Services\Webhook\WebhookPipeline;
 use App\Services\Webhook\WebhookPipelineV2Flag;
 use App\Services\Webhook\WebhookContext;
@@ -206,7 +203,7 @@ class ProcessTelegramWebhook implements ShouldQueue
             $userMessage = $conversation->messages()->create([
                 'sender' => 'user',
                 'content' => $content,
-                'type' => $this->mapMessageType($context->messageType()),
+                'type' => $context->messageType(),
                 'media_url' => $mediaData['url'] ?? null,
                 'media_type' => $mediaData['mime_type'] ?? null,
                 'media_metadata' => $mediaData['metadata'] ?? null,
@@ -293,11 +290,7 @@ class ProcessTelegramWebhook implements ShouldQueue
     protected function runSharedPipeline(WebhookContext $context, TelegramService $telegramService, AIService $aiService): void
     {
         $pipeline = app(WebhookPipeline::class);
-        $pipeline->run($context, [
-            new ResolveConversationStep(null, $telegramService),
-            new GenerateResponseStep($aiService),
-            new SendResponseStep(app(\App\Services\Channel\ChannelAdapterFactory::class)),
-        ]);
+        $pipeline->run($context, WebhookPipeline::telegram($telegramService, $aiService));
     }
 
     /**
@@ -388,25 +381,6 @@ class ProcessTelegramWebhook implements ShouldQueue
                 ]
             ),
         ];
-    }
-
-    /**
-     * Map Telegram message type to our message type.
-     */
-    protected function mapMessageType(string $telegramType): string
-    {
-        return match ($telegramType) {
-            'photo' => 'image',
-            'video', 'video_note', 'animation' => 'video',
-            'voice' => 'voice',
-            'audio' => 'audio',
-            'file' => 'file',
-            'sticker' => 'sticker',
-            'location' => 'location',
-            'contact' => 'contact',
-            'poll' => 'poll',
-            default => 'text',
-        };
     }
 
     /**

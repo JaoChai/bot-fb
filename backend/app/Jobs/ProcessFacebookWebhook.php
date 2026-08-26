@@ -14,9 +14,6 @@ use App\Services\AutoAssignmentService;
 use App\Services\LeadRecoveryService;
 use App\Services\ProfilePictureService;
 use App\Services\Webhook\Channels\Facebook\FacebookEventMapper;
-use App\Services\Webhook\Steps\GenerateResponseStep;
-use App\Services\Webhook\Steps\ResolveConversationStep;
-use App\Services\Webhook\Steps\SendResponseStep;
 use App\Services\Webhook\WebhookPipeline;
 use App\Services\Webhook\WebhookPipelineV2Flag;
 use App\Services\Webhook\WebhookContext;
@@ -173,11 +170,7 @@ class ProcessFacebookWebhook implements ShouldQueue
     protected function runSharedPipeline(WebhookContext $context, AIService $aiService): void
     {
         $pipeline = app(WebhookPipeline::class);
-        $pipeline->run($context, [
-            new ResolveConversationStep(),
-            new GenerateResponseStep($aiService),
-            new SendResponseStep(app(\App\Services\Channel\ChannelAdapterFactory::class)),
-        ]);
+        $pipeline->run($context, WebhookPipeline::facebook($aiService));
     }
 
     /**

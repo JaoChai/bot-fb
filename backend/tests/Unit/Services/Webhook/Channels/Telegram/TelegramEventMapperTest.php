@@ -22,16 +22,6 @@ class TelegramEventMapperTest extends TestCase
         $this->bot = Bot::factory()->make();
     }
 
-    public function test_supports_message_update(): void
-    {
-        $this->assertTrue($this->mapper->supports(include base_path('tests/fixtures/telegram-text-message.php')));
-    }
-
-    public function test_does_not_support_my_chat_member_update(): void
-    {
-        $this->assertFalse($this->mapper->supports(include base_path('tests/fixtures/telegram-my-chat-member.php')));
-    }
-
     public function test_map_text_message(): void
     {
         $update = include base_path('tests/fixtures/telegram-text-message.php');

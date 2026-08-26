@@ -54,6 +54,7 @@ class NonTextHandler
         private readonly LeadRecoveryService $leadRecoveryService,
         $createNewConversation,
         $updateStatsForUserMessageOnly,
+        private readonly StickerHandler $stickerHandler,
     ) {
         $this->createNewConversation = $createNewConversation;
         $this->updateStatsForUserMessageOnly = $updateStatsForUserMessageOnly;
@@ -258,7 +259,7 @@ class NonTextHandler
 
         // Reply to stickers if enabled (and not in handover mode, and bot is active)
         if ($messageType === 'sticker' && $replyToken && $conversation && ! $conversation->is_handover && $this->bot->status === 'active') {
-            app(StickerHandler::class)->reply($lineService, $conversation, $messageData, $userId, $replyToken, $conversationData ?? null);
+            $this->stickerHandler->reply($lineService, $conversation, $messageData, $userId, $replyToken, $conversationData ?? null);
         }
 
         // Non-text messages (except stickers with reply enabled) are stored silently

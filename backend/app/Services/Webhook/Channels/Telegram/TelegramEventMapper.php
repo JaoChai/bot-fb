@@ -19,7 +19,7 @@ use App\Services\Webhook\WebhookContext;
  * (processUpdate / mapMessageType / generateMediaPlaceholder).
  *
  * map() accepts the FULL raw update (same array the job receives as
- * $this->update). supports() is a cheap pre-filter for message-like updates.
+ * $this->update).
  *
  * Metadata keys set on the returned context (consumed by Task 7/8):
  *   update_id  -> update['update_id']
@@ -41,16 +41,6 @@ use App\Services\Webhook\WebhookContext;
  */
 class TelegramEventMapper
 {
-    /**
-     * Whether the mapper should handle this payload.
-     *
-     * @param array<string, mixed> $payload
-     */
-    public function supports(array $payload): bool
-    {
-        return isset($payload['message']) || isset($payload['edited_message']) || isset($payload['channel_post']);
-    }
-
     /**
      * Map a raw Telegram update into a WebhookContext.
      *

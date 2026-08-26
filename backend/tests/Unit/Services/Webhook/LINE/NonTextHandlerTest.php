@@ -80,6 +80,7 @@ class NonTextHandlerTest extends TestCase
             app(\App\Services\LeadRecoveryService::class),
             fn (string $uid, LINEService $ls) => $this->createConversation($bot, $uid, $ls),
             fn (Conversation $conv, int $lastMessageId) => $this->updateStats($conv, $lastMessageId),
+            new StickerHandler($bot, app(StickerReplyService::class)),
         );
 
         return [
@@ -224,11 +225,22 @@ class NonTextHandlerTest extends TestCase
             'reply_sticker_message' => 'ได้รับสติกเกอร์แล้วค่ะ',
         ]);
 
-        // Bind the StickerHandler so app(StickerHandler::class) resolves it
+        // Build the handler with the stubbed StickerHandler so the sticker
+        // branch (nonTextHandler->stickerHandler) uses the mocked service.
         $stickerService = Mockery::mock(StickerReplyService::class);
         $stickerService->shouldReceive('generateReply')->once()->andReturn('ได้รับสติกเกอร์แล้วค่ะ');
         $stickerHandler = new StickerHandler($bot, $stickerService);
-        $this->app->instance(StickerHandler::class, $stickerHandler);
+
+        // Rebuild the scenario handler with the stubbed StickerHandler so the
+        // sticker branch uses the mocked service.
+        $handler = new NonTextHandler(
+            $bot,
+            app(ResponseHoursService::class),
+            app(\App\Services\LeadRecoveryService::class),
+            fn (string $uid, LINEService $ls) => $this->createConversation($bot, $uid, $ls),
+            fn (Conversation $conv, int $lastMessageId) => $this->updateStats($conv, $lastMessageId),
+            $stickerHandler,
+        );
 
         $lineService = $this->lineServiceMock($event, $messageData, [
             'replyWithFallback' => fn (LINEService $m) => $m->shouldReceive('replyWithFallback')
@@ -237,7 +249,7 @@ class NonTextHandlerTest extends TestCase
                 ->andReturn(['method' => 'reply', 'success' => true]),
         ]);
 
-        $scenario['handler']->handle($lineService, $event);
+        $handler->handle($lineService, $event);
 
         // User row: content placeholder + LINE CDN sticker URL as media
         $userMsg = $scenario['conversation']->messages()->where('sender', 'user')->first();
@@ -399,6 +411,7 @@ class NonTextHandlerTest extends TestCase
             app(\App\Services\LeadRecoveryService::class),
             fn (string $uid, LINEService $ls) => $this->createConversation($bot, $uid, $ls),
             fn (Conversation $conv, int $lastMessageId) => $this->updateStats($conv, $lastMessageId),
+            new StickerHandler($bot, app(StickerReplyService::class)),
         );
 
         $lineService = $this->lineServiceMock($event, $messageData, [

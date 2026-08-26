@@ -2,6 +2,13 @@
 
 namespace App\Services\Webhook;
 
+use App\Services\AIService;
+use App\Services\Channel\ChannelAdapterFactory;
+use App\Services\LINEService;
+use App\Services\TelegramService;
+use App\Services\Webhook\Steps\GenerateResponseStep;
+use App\Services\Webhook\Steps\ResolveConversationStep;
+use App\Services\Webhook\Steps\SendResponseStep;
 use Closure;
 
 /**
@@ -27,5 +34,50 @@ class WebhookPipeline
             $core
         );
         $chain($ctx);
+    }
+
+    /**
+     * Compose the LINE step list (resolve → response → send) for the
+     * shared v2 pipeline (Task 9).
+     *
+     * @return array<int, ResolveConversationStep|GenerateResponseStep|SendResponseStep>
+     */
+    public static function line(LINEService $lineService, AIService $aiService): array
+    {
+        return [
+            new ResolveConversationStep($lineService),
+            new GenerateResponseStep($aiService),
+            new SendResponseStep(app(ChannelAdapterFactory::class)),
+        ];
+    }
+
+    /**
+     * Compose the Facebook step list (resolve → response → send) for the
+     * shared v2 pipeline (Task 9).
+     *
+     * @return array<int, ResolveConversationStep|GenerateResponseStep|SendResponseStep>
+     */
+    public static function facebook(AIService $aiService): array
+    {
+        return [
+            new ResolveConversationStep(),
+            new GenerateResponseStep($aiService),
+            new SendResponseStep(app(ChannelAdapterFactory::class)),
+        ];
+    }
+
+    /**
+     * Compose the Telegram step list (resolve → response → send) for the
+     * shared v2 pipeline (Task 9).
+     *
+     * @return array<int, ResolveConversationStep|GenerateResponseStep|SendResponseStep>
+     */
+    public static function telegram(TelegramService $telegramService, AIService $aiService): array
+    {
+        return [
+            new ResolveConversationStep(null, $telegramService),
+            new GenerateResponseStep($aiService),
+            new SendResponseStep(app(ChannelAdapterFactory::class)),
+        ];
     }
 }

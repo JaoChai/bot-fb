@@ -33,9 +33,6 @@ use App\Services\SmartAggregation\UserTypingStats;
 use App\Services\StickerReplyService;
 use App\Services\Webhook\Channels\LINE\NonTextHandler;
 use App\Services\Webhook\Channels\LINE\StickerHandler;
-use App\Services\Webhook\Steps\GenerateResponseStep;
-use App\Services\Webhook\Steps\ResolveConversationStep;
-use App\Services\Webhook\Steps\SendResponseStep;
 use App\Services\Webhook\WebhookPipeline;
 use App\Services\Webhook\WebhookPipelineV2Flag;
 use App\Services\Webhook\WebhookContext as SharedWebhookContext;
@@ -226,11 +223,7 @@ class ProcessLINEWebhook implements ShouldQueue
         $context->metadata['user_id'] = $lineService->extractUserId($this->event);
 
         $pipeline = app(WebhookPipeline::class);
-        $pipeline->run($context, [
-            new ResolveConversationStep($lineService),
-            new GenerateResponseStep(app(AIService::class)),
-            new SendResponseStep(app(\App\Services\Channel\ChannelAdapterFactory::class)),
-        ]);
+        $pipeline->run($context, WebhookPipeline::line($lineService, app(AIService::class)));
     }
 
     /**
@@ -280,22 +273,6 @@ class ProcessLINEWebhook implements ShouldQueue
         MessageAggregationService $aggregationService,
         ResponseHoursService $responseHoursService
     ): void {
-        // Bind the job-scoped handlers so app(Handler::class) lookups inside
-        // the legacy non-text path resolve the right Bot instance and the
-        // job's shared helpers (createNewConversation /
-        // updateStatsForUserMessageOnly) by closure.
-        app()->bind(NonTextHandler::class, fn () => new NonTextHandler(
-            $this->bot,
-            app(ResponseHoursService::class),
-            app(LeadRecoveryService::class),
-            fn (string $userId, LINEService $lineService) => $this->createNewConversation($userId, $lineService),
-            fn (Conversation $conversation, int $lastMessageId) => $this->updateStatsForUserMessageOnly($conversation, $lastMessageId),
-        ));
-        app()->bind(StickerHandler::class, fn () => new StickerHandler(
-            $this->bot,
-            app(StickerReplyService::class),
-        ));
-
         // Only process message events
         if (! $lineService->isMessageEvent($this->event)) {
             Log::debug('Ignoring non-message event', [
@@ -307,7 +284,15 @@ class ProcessLINEWebhook implements ShouldQueue
 
         // Only process text messages for now
         if (! $lineService->isTextMessage($this->event)) {
-            app(NonTextHandler::class)->handle($lineService, $this->event);
+            $nonTextHandler = new NonTextHandler(
+                $this->bot,
+                app(ResponseHoursService::class),
+                app(LeadRecoveryService::class),
+                fn (string $userId, LINEService $lineService) => $this->createNewConversation($userId, $lineService),
+                fn (Conversation $conversation, int $lastMessageId) => $this->updateStatsForUserMessageOnly($conversation, $lastMessageId),
+                new StickerHandler($this->bot, app(StickerReplyService::class)),
+            );
+            $nonTextHandler->handle($lineService, $this->event);
 
             return;
         }

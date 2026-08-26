@@ -27,18 +27,6 @@ class FacebookEventMapperTest extends TestCase
         return $payload['entry'][0]['messaging'][0];
     }
 
-    public function test_supports_page_payload(): void
-    {
-        $this->assertTrue($this->mapper->supports(include base_path('tests/fixtures/facebook-text-message.php')));
-    }
-
-    public function test_does_not_support_non_page_payload(): void
-    {
-        $payload = include base_path('tests/fixtures/facebook-text-message.php');
-        $payload['object'] = 'user';
-        $this->assertFalse($this->mapper->supports($payload));
-    }
-
     public function test_map_text_message(): void
     {
         $payload = include base_path('tests/fixtures/facebook-text-message.php');

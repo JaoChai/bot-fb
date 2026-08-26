@@ -15,8 +15,7 @@ use App\Services\Webhook\WebhookContext;
  *
  * map() accepts a SINGLE messaging event (one entry of
  * $payload['entry'][N]['messaging']) — the exact array the job passes to
- * processMessagingEvent(). supports() accepts the full webhook body
- * (object === 'page') as a cheap pre-filter.
+ * processMessagingEvent().
  *
  * Metadata keys set on the returned context (consumed by Task 7/8):
  *   sender_id       -> event['sender']['id']       (the PSID)
@@ -29,16 +28,6 @@ use App\Services\Webhook\WebhookContext;
  */
 class FacebookEventMapper
 {
-    /**
-     * Whether the mapper should handle this payload.
-     *
-     * @param array<string, mixed> $payload
-     */
-    public function supports(array $payload): bool
-    {
-        return ($payload['object'] ?? null) === 'page';
-    }
-
     /**
      * Map a single messaging event into a WebhookContext.
      *
