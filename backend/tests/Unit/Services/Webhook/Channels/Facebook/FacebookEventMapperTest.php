@@ -11,6 +11,7 @@ use Tests\TestCase;
 class FacebookEventMapperTest extends TestCase
 {
     use RefreshDatabase;
+
     private FacebookEventMapper $mapper;
 
     private Bot $bot;
@@ -18,7 +19,7 @@ class FacebookEventMapperTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->mapper = new FacebookEventMapper();
+        $this->mapper = new FacebookEventMapper;
         $this->bot = Bot::factory()->make();
     }
 

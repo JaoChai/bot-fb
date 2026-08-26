@@ -44,7 +44,8 @@ class WebhookPipelineTest extends TestCase
         $reached = false;
 
         $pipeline->run($ctx, [
-            function (WebhookContext $c, \Closure $next) { /* no $next call */ },
+            function (WebhookContext $c, \Closure $next) { /* no $next call */
+            },
             function (WebhookContext $c, \Closure $next) use (&$reached) {
                 $reached = true;
                 $next($c);

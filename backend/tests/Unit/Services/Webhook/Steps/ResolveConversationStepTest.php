@@ -13,6 +13,8 @@ use App\Services\TelegramService;
 use App\Services\Webhook\Steps\ResolveConversationStep;
 use App\Services\Webhook\WebhookContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Mockery;
 use Tests\TestCase;
 
@@ -53,8 +55,8 @@ class ResolveConversationStepTest extends TestCase
      */
     private function mockHttpNoProfileFetch(): void
     {
-        \Illuminate\Support\Facades\Http::fake([
-            'graph.facebook.com/*' => \Illuminate\Support\Facades\Http::response([], 404),
+        Http::fake([
+            'graph.facebook.com/*' => Http::response([], 404),
         ]);
     }
 
@@ -158,7 +160,7 @@ class ResolveConversationStepTest extends TestCase
         ], 'facebook');
         $ctx->metadata['sender_id'] = 'psid_1';
 
-        $step = new ResolveConversationStep();
+        $step = new ResolveConversationStep;
         $step->handle($ctx, fn () => null);
 
         $this->assertNotNull($ctx->conversation);
@@ -193,7 +195,7 @@ class ResolveConversationStepTest extends TestCase
         // customer_profiles does), so a telegram conversation row is insertable
         // directly — this lets the step's telegram-branch lookup match and
         // reuse it without hitting the customer_profiles constraint.
-        \Illuminate\Support\Facades\DB::table('conversations')->insert([
+        DB::table('conversations')->insert([
             'bot_id' => $bot->id,
             'customer_profile_id' => null,
             'external_customer_id' => 'chat_9',

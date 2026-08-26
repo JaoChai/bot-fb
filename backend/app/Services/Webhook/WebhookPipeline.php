@@ -23,7 +23,7 @@ use Closure;
 class WebhookPipeline
 {
     /**
-     * @param array<int, callable> $steps Each step: fn(WebhookContext, Closure $next): void
+     * @param  array<int, callable>  $steps  Each step: fn(WebhookContext, Closure $next): void
      */
     public function run(WebhookContext $ctx, array $steps): void
     {
@@ -60,7 +60,7 @@ class WebhookPipeline
     public static function facebook(AIService $aiService): array
     {
         return [
-            new ResolveConversationStep(),
+            new ResolveConversationStep,
             new GenerateResponseStep($aiService),
             new SendResponseStep(app(ChannelAdapterFactory::class)),
         ];

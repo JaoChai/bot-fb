@@ -11,6 +11,7 @@ use Tests\TestCase;
 class TelegramEventMapperTest extends TestCase
 {
     use RefreshDatabase;
+
     private TelegramEventMapper $mapper;
 
     private Bot $bot;
@@ -18,7 +19,7 @@ class TelegramEventMapperTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->mapper = new TelegramEventMapper();
+        $this->mapper = new TelegramEventMapper;
         $this->bot = Bot::factory()->make();
     }
 

@@ -4,6 +4,7 @@ namespace Tests\Unit\Jobs;
 
 use App\Jobs\ProcessTelegramWebhook;
 use App\Models\Bot;
+use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\User;
 use App\Services\AIService;
@@ -68,9 +69,9 @@ class ProcessTelegramWebhookMapperTest extends TestCase
         $aiService->shouldNotReceive('generateAndSaveResponse');
 
         $job = new ProcessTelegramWebhook($this->bot, $update);
-        $job->handle(new TelegramService(), $aiService);
+        $job->handle(new TelegramService, $aiService);
 
-        $this->assertSame(0, \App\Models\Conversation::count(), 'Ignored updates must not create conversations');
+        $this->assertSame(0, Conversation::count(), 'Ignored updates must not create conversations');
         $this->assertSame(0, CustomerProfile::count(), 'Ignored updates must not create customer profiles');
     }
 
@@ -87,9 +88,9 @@ class ProcessTelegramWebhookMapperTest extends TestCase
         $aiService->shouldNotReceive('generateAndSaveResponse');
 
         $job = new ProcessTelegramWebhook($this->bot, $update);
-        $job->handle(new TelegramService(), $aiService);
+        $job->handle(new TelegramService, $aiService);
 
-        $this->assertSame(0, \App\Models\Conversation::count(), 'Ignored updates must not create conversations');
+        $this->assertSame(0, Conversation::count(), 'Ignored updates must not create conversations');
         $this->assertSame(0, CustomerProfile::count(), 'Ignored updates must not create customer profiles');
     }
 

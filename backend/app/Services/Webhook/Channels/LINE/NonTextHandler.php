@@ -6,14 +6,10 @@ use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
 use App\Models\Bot;
 use App\Models\Conversation;
-use App\Models\CustomerProfile;
 use App\Models\Message;
-use App\Services\AutoAssignmentService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
-use App\Services\ProfilePictureService;
 use App\Services\ResponseHoursService;
-use App\Services\StickerReplyService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -45,8 +41,8 @@ class NonTextHandler
     private $updateStatsForUserMessageOnly;
 
     /**
-     * @param \Closure(string, LINEService): Conversation     $createNewConversation
-     * @param \Closure(Conversation, int): void              $updateStatsForUserMessageOnly
+     * @param  \Closure(string, LINEService): Conversation  $createNewConversation
+     * @param  \Closure(Conversation, int): void  $updateStatsForUserMessageOnly
      */
     public function __construct(
         private readonly Bot $bot,

@@ -48,11 +48,11 @@ class TelegramEventMapper
      * inline_query, etc.) or updates without a chat id — matching the job's
      * `type === 'unknown' || ! chat_id` early-return.
      *
-     * @param array<string, mixed> $update the raw update
+     * @param  array<string, mixed>  $update  the raw update
      */
     public function map(array $update, Bot $bot): ?WebhookContext
     {
-        $telegramService = new TelegramService();
+        $telegramService = new TelegramService;
         $parsed = $telegramService->parseUpdate($update);
 
         // Only process message updates (mirrors processUpdate early-return)
@@ -132,7 +132,7 @@ class TelegramEventMapper
      * Generate placeholder content for non-text messages.
      * Copied verbatim from ProcessTelegramWebhook::generateMediaPlaceholder().
      *
-     * @param array<string, mixed> $mediaData
+     * @param  array<string, mixed>  $mediaData
      */
     protected function generateMediaPlaceholder(string $type, array $mediaData): string
     {

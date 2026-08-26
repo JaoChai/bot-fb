@@ -55,7 +55,7 @@ class GenerateResponseStepTest extends TestCase
         $ctx->conversation = $conversation;
         $ctx->userMessage = $userMessage;
 
-        $step = new GenerateResponseStep();
+        $step = new GenerateResponseStep;
         $step->handle($ctx, fn () => null);
 
         $this->assertSame($expectedBotMessage->id, $ctx->metadata['bot_message_id']);
@@ -74,7 +74,7 @@ class GenerateResponseStepTest extends TestCase
         $ctx->conversation = $conversation;
         $ctx->userMessage = null;
 
-        $step = new GenerateResponseStep();
+        $step = new GenerateResponseStep;
         $step->handle($ctx, fn () => null);
 
         $this->assertArrayNotHasKey('bot_message_id', $ctx->metadata);

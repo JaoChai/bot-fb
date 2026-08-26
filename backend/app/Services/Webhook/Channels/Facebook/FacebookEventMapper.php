@@ -36,7 +36,7 @@ class FacebookEventMapper
      * referrals, reactions, opt-ins) — matching the job's early-return
      * conditions.
      *
-     * @param array<string, mixed> $event a messaging event
+     * @param  array<string, mixed>  $event  a messaging event
      */
     public function map(array $event, Bot $bot): ?WebhookContext
     {
@@ -66,9 +66,7 @@ class FacebookEventMapper
     /**
      * Map a message event.
      *
-     * @param array<string, mixed> $message
-     *
-     * @return WebhookContext
+     * @param  array<string, mixed>  $message
      */
     protected function mapMessage(array $message, Bot $bot, string $senderId, string $recipientId): WebhookContext
     {
@@ -125,9 +123,7 @@ class FacebookEventMapper
     /**
      * Map a postback event.
      *
-     * @param array<string, mixed> $postback
-     *
-     * @return WebhookContext
+     * @param  array<string, mixed>  $postback
      */
     protected function mapPostback(array $postback, Bot $bot, string $senderId, string $recipientId): WebhookContext
     {
@@ -178,7 +174,7 @@ class FacebookEventMapper
      * Generate placeholder content for attachment messages.
      * Copied verbatim from ProcessFacebookWebhook::generateAttachmentPlaceholder().
      *
-     * @param array<string, mixed>|null $metadata
+     * @param  array<string, mixed>|null  $metadata
      */
     protected function generateAttachmentPlaceholder(string $type, ?array $metadata): string
     {

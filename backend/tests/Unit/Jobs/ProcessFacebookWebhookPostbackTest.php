@@ -4,9 +4,9 @@ namespace Tests\Unit\Jobs;
 
 use App\Jobs\ProcessFacebookWebhook;
 use App\Models\Bot;
-use App\Models\Conversation;
 use App\Models\User;
 use App\Services\AIService;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -63,7 +63,7 @@ class ProcessFacebookWebhookPostbackTest extends TestCase
 
         $job = new ProcessFacebookWebhook($this->bot, $this->payload);
 
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
         $job->handle($aiService);
     }
 
@@ -84,7 +84,7 @@ class ProcessFacebookWebhookPostbackTest extends TestCase
 
         $job = new ProcessFacebookWebhook($this->bot, $this->payload);
 
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
         $job->handle($aiService);
     }
 }

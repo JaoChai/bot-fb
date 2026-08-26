@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Jobs;
 
+use App\Exceptions\CircuitOpenException;
 use App\Jobs\Middleware\CircuitBreakerJobMiddleware;
 use App\Services\CircuitBreakerService;
 use Illuminate\Support\Facades\Log;
@@ -38,7 +39,7 @@ class CircuitBreakerJobMiddlewareTest extends TestCase
         );
 
         $cb = Mockery::mock(CircuitBreakerService::class);
-        $cb->shouldReceive('execute')->once()->andThrow(new \App\Exceptions\CircuitOpenException('database'));
+        $cb->shouldReceive('execute')->once()->andThrow(new CircuitOpenException('database'));
 
         $job = new FakeWebhookJob;
         $middleware = new CircuitBreakerJobMiddleware($cb);
@@ -55,7 +56,9 @@ class CircuitBreakerJobMiddlewareTest extends TestCase
 class FakeWebhookJob
 {
     public $bot;
+
     public bool $ran = false;
+
     public bool $fallbackCalled = false;
 
     public function __construct()

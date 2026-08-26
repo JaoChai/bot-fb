@@ -33,9 +33,9 @@ use App\Services\SmartAggregation\UserTypingStats;
 use App\Services\StickerReplyService;
 use App\Services\Webhook\Channels\LINE\NonTextHandler;
 use App\Services\Webhook\Channels\LINE\StickerHandler;
+use App\Services\Webhook\WebhookContext as SharedWebhookContext;
 use App\Services\Webhook\WebhookPipeline;
 use App\Services\Webhook\WebhookPipelineV2Flag;
-use App\Services\Webhook\WebhookContext as SharedWebhookContext;
 use App\Support\QueueRouter;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -817,7 +817,6 @@ class ProcessLINEWebhook implements ShouldQueue
 
         $this->bot->update($botUpdate);
     }
-
 
     /**
      * Handle rate limit exceeded.

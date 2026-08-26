@@ -8,9 +8,11 @@ use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\LINEService;
 use App\Services\OpenRouterService;
 use App\Services\Webhook\Channels\LINE\VisionHandler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Mockery;
 use Tests\TestCase;
 
@@ -234,7 +236,7 @@ class VisionHandlerTest extends TestCase
             'channel_access_token' => 'test_access_token',
             'channel_secret' => 'test_secret',
         ])->save();
-        \Illuminate\Support\Facades\Http::fake(['api.line.me/*' => \Illuminate\Support\Facades\Http::response(['ok' => true])]);
+        Http::fake(['api.line.me/*' => Http::response(['ok' => true])]);
 
         // The handler resolves $this->bot->user?->settings?->getOpenRouterApiKey()
         // before falling back to config. Create the user's settings row so the
@@ -246,7 +248,7 @@ class VisionHandlerTest extends TestCase
         $userMessage = Message::where('conversation_id', $scenario['conversation']->id)->latest('id')->first();
 
         $result = $handler->analyze(
-            lineService: app(\App\Services\LINEService::class),
+            lineService: app(LINEService::class),
             conversation: $scenario['conversation'],
             userMessage: $userMessage,
             imageUrl: 'https://storage.example.com/images/img_msg_001.jpg',
@@ -268,7 +270,7 @@ class VisionHandlerTest extends TestCase
         $handler = $this->makeHandler($scenario['bot'], $openRouter);
 
         $result = $handler->analyze(
-            lineService: app(\App\Services\LINEService::class),
+            lineService: app(LINEService::class),
             conversation: $scenario['conversation'],
             userMessage: null,
             imageUrl: 'https://storage.example.com/images/img_msg_001.jpg',

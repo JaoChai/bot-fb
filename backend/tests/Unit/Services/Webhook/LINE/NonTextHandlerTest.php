@@ -8,12 +8,15 @@ use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
 use App\Services\ResponseHoursService;
 use App\Services\StickerReplyService;
 use App\Services\Webhook\Channels\LINE\NonTextHandler;
 use App\Services\Webhook\Channels\LINE\StickerHandler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Mockery;
 use Tests\TestCase;
 
@@ -77,7 +80,7 @@ class NonTextHandlerTest extends TestCase
         $handler = new NonTextHandler(
             $bot,
             app(ResponseHoursService::class),
-            app(\App\Services\LeadRecoveryService::class),
+            app(LeadRecoveryService::class),
             fn (string $uid, LINEService $ls) => $this->createConversation($bot, $uid, $ls),
             fn (Conversation $conv, int $lastMessageId) => $this->updateStats($conv, $lastMessageId),
             new StickerHandler($bot, app(StickerReplyService::class)),
@@ -117,8 +120,8 @@ class NonTextHandlerTest extends TestCase
     private function updateStats(Conversation $conversation, int $lastMessageId): void
     {
         $conversation->update([
-            'unread_count' => \Illuminate\Support\Facades\DB::raw('unread_count + 1'),
-            'message_count' => \Illuminate\Support\Facades\DB::raw('message_count + 1'),
+            'unread_count' => DB::raw('unread_count + 1'),
+            'message_count' => DB::raw('message_count + 1'),
             'last_message_at' => now(),
             'last_message_id' => $lastMessageId,
         ]);
@@ -138,7 +141,7 @@ class NonTextHandlerTest extends TestCase
         $mock->shouldReceive('extractEventTimestamp')->andReturn(isset($event['timestamp']) ? (int) $event['timestamp'] : null);
         $mock->shouldReceive('isRedelivery')->andReturn($event['deliveryContext']['isRedelivery'] ?? false);
         $mock->shouldReceive('showLoadingIndicator')->zeroOrMoreTimes()->andReturn(true);
-        $mock->shouldReceive('generateRetryKey')->andReturnUsing(fn () => (string) \Illuminate\Support\Str::uuid());
+        $mock->shouldReceive('generateRetryKey')->andReturnUsing(fn () => (string) Str::uuid());
 
         foreach ($overrides as $method => $expectation) {
             $expectation($mock);
@@ -236,7 +239,7 @@ class NonTextHandlerTest extends TestCase
         $handler = new NonTextHandler(
             $bot,
             app(ResponseHoursService::class),
-            app(\App\Services\LeadRecoveryService::class),
+            app(LeadRecoveryService::class),
             fn (string $uid, LINEService $ls) => $this->createConversation($bot, $uid, $ls),
             fn (Conversation $conv, int $lastMessageId) => $this->updateStats($conv, $lastMessageId),
             $stickerHandler,
@@ -408,7 +411,7 @@ class NonTextHandlerTest extends TestCase
         $handler = new NonTextHandler(
             $bot,
             $responseHours,
-            app(\App\Services\LeadRecoveryService::class),
+            app(LeadRecoveryService::class),
             fn (string $uid, LINEService $ls) => $this->createConversation($bot, $uid, $ls),
             fn (Conversation $conv, int $lastMessageId) => $this->updateStats($conv, $lastMessageId),
             new StickerHandler($bot, app(StickerReplyService::class)),

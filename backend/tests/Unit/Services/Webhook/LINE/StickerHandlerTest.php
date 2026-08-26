@@ -11,6 +11,7 @@ use App\Services\LINEService;
 use App\Services\StickerReplyService;
 use App\Services\Webhook\Channels\LINE\StickerHandler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Mockery;
 use Tests\TestCase;
 
@@ -109,7 +110,7 @@ class StickerHandlerTest extends TestCase
     {
         $mock = Mockery::mock(LINEService::class);
         $mock->shouldReceive('showLoadingIndicator')->zeroOrMoreTimes()->andReturn(true);
-        $mock->shouldReceive('generateRetryKey')->andReturnUsing(fn () => (string) \Illuminate\Support\Str::uuid());
+        $mock->shouldReceive('generateRetryKey')->andReturnUsing(fn () => (string) Str::uuid());
 
         foreach ($overrides as $method => $expectation) {
             $expectation($mock);
