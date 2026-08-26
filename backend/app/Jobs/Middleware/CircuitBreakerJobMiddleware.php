@@ -24,6 +24,7 @@ class CircuitBreakerJobMiddleware
             $this->circuitBreaker->execute('database', fn () => $next($job), null);
         } catch (CircuitOpenException $e) {
             Log::warning('Webhook circuit breaker open', [
+                'bot_id' => $job->bot->id ?? null,
                 'service' => $e->getService(),
             ]);
             $job->circuitFallback();

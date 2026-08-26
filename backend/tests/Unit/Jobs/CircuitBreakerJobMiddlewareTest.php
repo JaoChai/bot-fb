@@ -34,7 +34,7 @@ class CircuitBreakerJobMiddlewareTest extends TestCase
     {
         Log::shouldReceive('warning')->once()->with(
             'Webhook circuit breaker open',
-            Mockery::on(fn ($ctx) => isset($ctx['service']))
+            Mockery::on(fn ($ctx) => isset($ctx['service']) && $ctx['bot_id'] === 1)
         );
 
         $cb = Mockery::mock(CircuitBreakerService::class);

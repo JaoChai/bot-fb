@@ -11,7 +11,6 @@ use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\AutoAssignmentService;
-use App\Services\CircuitBreakerService;
 use App\Services\LeadRecoveryService;
 use App\Services\ProfilePictureService;
 use Illuminate\Bus\Queueable;
@@ -63,7 +62,7 @@ class ProcessFacebookWebhook implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(AIService $aiService, CircuitBreakerService $circuitBreaker): void
+    public function handle(AIService $aiService): void
     {
         try {
             $this->processPayload($aiService);

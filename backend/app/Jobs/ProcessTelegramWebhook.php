@@ -11,7 +11,6 @@ use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\AutoAssignmentService;
-use App\Services\CircuitBreakerService;
 use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\TelegramService;
@@ -64,8 +63,7 @@ class ProcessTelegramWebhook implements ShouldQueue
      */
     public function handle(
         TelegramService $telegramService,
-        AIService $aiService,
-        CircuitBreakerService $circuitBreaker
+        AIService $aiService
     ): void {
         try {
             $this->processUpdate($telegramService, $aiService);
