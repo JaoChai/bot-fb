@@ -31,7 +31,8 @@ use App\Services\ResponseHoursService;
 use App\Services\SmartAggregation\SmartAggregationAnalyzer;
 use App\Services\SmartAggregation\UserTypingStats;
 use App\Services\StickerReplyService;
-use App\Services\Webhook\Channels\LINE\VisionHandler;
+use App\Services\Webhook\Channels\LINE\NonTextHandler;
+use App\Services\Webhook\Channels\LINE\StickerHandler;
 use App\Support\QueueRouter;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -241,6 +242,22 @@ class ProcessLINEWebhook implements ShouldQueue
         MessageAggregationService $aggregationService,
         ResponseHoursService $responseHoursService
     ): void {
+        // Bind the job-scoped handlers so app(Handler::class) lookups inside
+        // the legacy non-text path resolve the right Bot instance and the
+        // job's shared helpers (createNewConversation /
+        // updateStatsForUserMessageOnly) by closure.
+        app()->bind(NonTextHandler::class, fn () => new NonTextHandler(
+            $this->bot,
+            app(ResponseHoursService::class),
+            app(LeadRecoveryService::class),
+            fn (string $userId, LINEService $lineService) => $this->createNewConversation($userId, $lineService),
+            fn (Conversation $conversation, int $lastMessageId) => $this->updateStatsForUserMessageOnly($conversation, $lastMessageId),
+        ));
+        app()->bind(StickerHandler::class, fn () => new StickerHandler(
+            $this->bot,
+            app(StickerReplyService::class),
+        ));
+
         // Only process message events
         if (! $lineService->isMessageEvent($this->event)) {
             Log::debug('Ignoring non-message event', [
@@ -252,7 +269,7 @@ class ProcessLINEWebhook implements ShouldQueue
 
         // Only process text messages for now
         if (! $lineService->isTextMessage($this->event)) {
-            $this->handleNonTextMessage($lineService, $responseHoursService);
+            app(NonTextHandler::class)->handle($lineService, $this->event);
 
             return;
         }
@@ -778,290 +795,6 @@ class ProcessLINEWebhook implements ShouldQueue
         $this->bot->update($botUpdate);
     }
 
-    /**
-     * Handle non-text messages (images, videos, audio, files, stickers, locations).
-     * Downloads media and saves to database for display in chat.
-     * For images: analyzes with AI vision if bot is active and model supports vision.
-     */
-    protected function handleNonTextMessage(
-        LINEService $lineService,
-        ResponseHoursService $responseHoursService
-    ): void {
-        $userId = $lineService->extractUserId($this->event);
-        $replyToken = $lineService->extractReplyToken($this->event);
-        $messageData = $lineService->extractMessage($this->event);
-        $messageType = $messageData['type'];
-
-        // Extract LINE webhook event metadata (best practice)
-        $webhookEventId = $lineService->extractWebhookEventId($this->event);
-        $eventTimestamp = $lineService->extractEventTimestamp($this->event);
-        $isRedeliveryEvent = $lineService->isRedelivery($this->event);
-
-        if (! $userId) {
-            return;
-        }
-
-        // Check if this is a redelivered event that we've already processed
-        if ($isRedeliveryEvent && $webhookEventId) {
-            if (Message::where('webhook_event_id', $webhookEventId)->exists()) {
-                Log::info('Redelivered non-text webhook already processed, skipping', [
-                    'webhook_event_id' => $webhookEventId,
-                    'message_type' => $messageType,
-                ]);
-
-                return;
-            }
-        }
-
-        // Download media BEFORE transaction (external API call shouldn't be in transaction)
-        $mediaUrl = null;
-        $mediaType = null;
-        $content = null;
-
-        if (in_array($messageType, ['image', 'video', 'audio', 'file'])) {
-            $mediaData = $lineService->downloadAndStoreFile($this->bot, $messageData['id'], $messageType);
-            if ($mediaData) {
-                $mediaUrl = $mediaData['url'];
-                $mediaType = $mediaData['mime_type'];
-            }
-            $content = match ($messageType) {
-                'image' => '[รูปภาพ]',
-                'video' => '[วิดีโอ]',
-                'audio' => '[เสียง]',
-                'file' => '[ไฟล์]',
-                default => '[สื่อ]',
-            };
-        } elseif ($messageType === 'sticker') {
-            $content = '[สติกเกอร์]';
-            // Construct sticker URL from LINE CDN
-            $stickerId = $messageData['sticker_id'] ?? null;
-            if ($stickerId) {
-                $mediaUrl = "https://stickershop.line-scdn.net/stickershop/v1/sticker/{$stickerId}/android/sticker.png";
-                $mediaType = 'image/png';
-            }
-        } elseif ($messageType === 'location') {
-            $lat = $messageData['latitude'] ?? '';
-            $lng = $messageData['longitude'] ?? '';
-            $addr = $messageData['address'] ?? '';
-            $content = "[ตำแหน่ง] {$addr} ({$lat}, {$lng})";
-        } else {
-            $content = '[ข้อความที่ไม่รองรับ]';
-        }
-
-        // Variables for broadcasting after transaction
-        $userMessage = null;
-        $conversation = null;
-        $isNewConversation = false;
-
-        // Process in transaction to prevent race conditions and ensure atomic updates
-        DB::transaction(function () use (
-            $lineService,
-            $userId,
-            $messageData,
-            $messageType,
-            $mediaUrl,
-            $mediaType,
-            $content,
-            $webhookEventId,
-            $eventTimestamp,
-            $isRedeliveryEvent,
-            &$userMessage,
-            &$conversation,
-            &$isNewConversation
-        ) {
-            // Find or create conversation (include handover status for auto_handover bots)
-            // Use lockForUpdate() to prevent race condition when multiple webhooks arrive simultaneously
-            $existingConversation = Conversation::where('bot_id', $this->bot->id)
-                ->where('external_customer_id', $userId)
-                ->where('channel_type', 'line')
-                ->whereIn('status', ['active', 'handover'])
-                ->lockForUpdate()
-                ->first();
-
-            $isNewConversation = ! $existingConversation;
-            $conversation = $existingConversation ?? $this->createNewConversation($userId, $lineService);
-
-            // Primary deduplication: webhookEventId (LINE best practice)
-            if ($webhookEventId && Message::where('conversation_id', $conversation->id)
-                ->where('webhook_event_id', $webhookEventId)
-                ->exists()) {
-                Log::info('Duplicate non-text webhook ignored (by webhook_event_id)', [
-                    'conversation_id' => $conversation->id,
-                    'webhook_event_id' => $webhookEventId,
-                ]);
-
-                return;
-            }
-
-            // Fallback deduplication: external_message_id (backward compatibility)
-            if ($messageData['id'] && Message::where('conversation_id', $conversation->id)
-                ->where('external_message_id', $messageData['id'])
-                ->exists()) {
-                Log::info('Duplicate non-text webhook ignored (by external_message_id)', [
-                    'conversation_id' => $conversation->id,
-                    'message_id' => $messageData['id'],
-                ]);
-
-                return;
-            }
-
-            // Save message to database with LINE event metadata
-            $userMessage = $conversation->messages()->create([
-                'sender' => 'user',
-                'content' => $content,
-                'type' => $messageType,
-                'media_url' => $mediaUrl,
-                'media_type' => $mediaType,
-                'external_message_id' => $messageData['id'],
-                'webhook_event_id' => $webhookEventId,
-                'is_redelivery' => $isRedeliveryEvent,
-                'event_timestamp' => $eventTimestamp,
-            ]);
-
-            // Update stats atomically with message creation
-            $this->updateStatsForUserMessageOnly($conversation, $userMessage->id);
-            if ($isNewConversation) {
-                $this->bot->update([
-                    'total_conversations' => DB::raw('total_conversations + 1'),
-                ]);
-            }
-        });
-
-        // Broadcasts AFTER transaction commits (non-blocking)
-        // Refresh conversation to get actual DB values after DB::raw updates
-        if ($conversation) {
-            $conversation->refresh();
-            $conversationData = [
-                'id' => $conversation->id,
-                'message_count' => $conversation->message_count,
-                'last_message_at' => $conversation->last_message_at?->toISOString(),
-                'unread_count' => $conversation->unread_count,
-            ];
-
-            // Mark lead recovery as responded when customer sends a message
-            app(LeadRecoveryService::class)->markCustomerResponded($conversation);
-        }
-        if ($userMessage) {
-            broadcast(new MessageSent($userMessage, $conversationData ?? null))->toOthers();
-        }
-        if ($conversation) {
-            broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
-        }
-
-        // Check response hours AFTER saving message but BEFORE AI response
-        $responseHoursResult = $responseHoursService->checkResponseHours($this->bot);
-
-        if (! $responseHoursResult['allowed']) {
-            Log::info('Non-text message received outside response hours', [
-                'bot_id' => $this->bot->id,
-                'message_type' => $messageType,
-                'status' => $responseHoursResult['status'],
-                'current_time' => $responseHoursResult['current_time'] ?? null,
-            ]);
-
-            if (! $conversation?->is_handover) {
-                $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken, $userId);
-            }
-
-            return; // Skip AI response
-        }
-
-        // Handle image analysis with AI Vision
-        if ($messageType === 'image' && $mediaUrl && $conversation && $replyToken) {
-            app(VisionHandler::class)->analyze($lineService, $conversation, $userMessage, $mediaUrl, $userId, $replyToken, $conversationData ?? null);
-
-            return; // Skip sticker reply handling for images
-        }
-
-        // Reply to stickers if enabled (and not in handover mode, and bot is active)
-        if ($messageType === 'sticker' && $replyToken && $conversation && ! $conversation->is_handover && $this->bot->status === 'active') {
-            $this->handleStickerReply($lineService, $conversation, $messageData, $userId, $replyToken, $conversationData ?? null);
-        }
-
-        // Non-text messages (except stickers with reply enabled) are stored silently
-    }
-
-    /**
-     * Handle sticker reply with support for static and AI modes.
-     */
-    protected function handleStickerReply(
-        LINEService $lineService,
-        Conversation $conversation,
-        array $messageData,
-        string $userId,
-        string $replyToken,
-        ?array $conversationData
-    ): void {
-        $settings = $this->bot->settings;
-        if (! $settings?->reply_sticker_enabled) {
-            return;
-        }
-
-        $mode = $settings->reply_sticker_mode ?? 'static';
-
-        // Show loading indicator for AI mode
-        if ($mode === 'ai') {
-            $lineService->showLoadingIndicator($this->bot, $userId, 15);
-        }
-
-        try {
-            $stickerService = app(StickerReplyService::class);
-            $responseMessage = $stickerService->generateReply($this->bot, $conversation, $messageData);
-
-            if (! $responseMessage) {
-                return;
-            }
-
-            // Send reply with fallback to push if token expired
-            $retryKey = $lineService->generateRetryKey();
-            $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$responseMessage], $retryKey);
-
-            // Save bot response
-            $botMessage = $conversation->messages()->create([
-                'sender' => 'bot',
-                'content' => $responseMessage,
-                'type' => 'text',
-                'metadata' => [
-                    'sticker_reply' => true,
-                    'sticker_mode' => $mode,
-                    'sticker_id' => $messageData['sticker_id'] ?? null,
-                ],
-            ]);
-
-            // Update stats
-            $conversation->update([
-                'message_count' => DB::raw('message_count + 1'),
-                'last_message_at' => now(),
-                'last_message_id' => $botMessage->id,
-            ]);
-            $this->bot->update([
-                'total_messages' => DB::raw('total_messages + 1'),
-                'last_active_at' => now(),
-            ]);
-
-            // Broadcast
-            $conversation->refresh();
-            broadcast(new MessageSent($botMessage, [
-                'id' => $conversation->id,
-                'message_count' => $conversation->message_count,
-                'last_message_at' => $conversation->last_message_at?->toISOString(),
-                'unread_count' => $conversation->unread_count,
-            ]))->toOthers();
-
-            Log::info('Replied to sticker', [
-                'bot_id' => $this->bot->id,
-                'conversation_id' => $conversation->id,
-                'mode' => $mode,
-            ]);
-
-        } catch (\Exception $e) {
-            Log::warning('Failed to reply to sticker', [
-                'bot_id' => $this->bot->id,
-                'mode' => $mode,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
 
     /**
      * Handle rate limit exceeded.
