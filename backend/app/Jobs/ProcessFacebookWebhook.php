@@ -13,6 +13,8 @@ use App\Services\AIService;
 use App\Services\AutoAssignmentService;
 use App\Services\LeadRecoveryService;
 use App\Services\ProfilePictureService;
+use App\Services\Webhook\Channels\Facebook\FacebookEventMapper;
+use App\Services\Webhook\WebhookContext;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -136,35 +138,26 @@ class ProcessFacebookWebhook implements ShouldQueue
         }
 
         // Process each entry in the webhook
+        $mapper = app(FacebookEventMapper::class);
         foreach ($this->payload['entry'] ?? [] as $entry) {
             // Process messaging events
             foreach ($entry['messaging'] ?? [] as $event) {
-                $this->processMessagingEvent($event, $aiService);
+                $context = $mapper->map($event, $this->bot);
+                if ($context === null) {
+                    continue;
+                }
+
+                $this->processMessagingEvent($context, $aiService);
             }
         }
     }
 
     /**
-     * Process a single messaging event.
+     * Process a single messaging event (already mapped to a WebhookContext).
      */
-    protected function processMessagingEvent(array $event, AIService $aiService): void
+    protected function processMessagingEvent(WebhookContext $context, AIService $aiService): void
     {
-        $senderId = $event['sender']['id'] ?? null;
-        $recipientId = $event['recipient']['id'] ?? null;
-        $timestamp = $event['timestamp'] ?? null;
-
-        if (! $senderId) {
-            Log::warning('Facebook messaging event missing sender ID');
-
-            return;
-        }
-
-        // Ignore echo messages (messages sent by the page itself)
-        if (isset($event['message']['is_echo']) && $event['message']['is_echo']) {
-            Log::debug('Ignoring echo message from page');
-
-            return;
-        }
+        $senderId = $context->metadata['sender_id'];
 
         // Variables for broadcasting after transaction
         $userMessage = null;
@@ -175,9 +168,9 @@ class ProcessFacebookWebhook implements ShouldQueue
 
         // Process in transaction
         DB::transaction(function () use (
+            $context,
             $aiService,
             $senderId,
-            $event,
             &$userMessage,
             &$botMessage,
             &$conversation,
@@ -196,18 +189,18 @@ class ProcessFacebookWebhook implements ShouldQueue
             $isHandover = $conversation->is_handover;
 
             // Handle different event types
-            if (isset($event['message'])) {
+            if ($context->eventType() === 'message') {
                 [$userMessage, $botMessage] = $this->handleMessage(
-                    $event['message'],
+                    $context,
                     $conversation,
                     $aiService,
                     $senderId,
                     $isHandover,
                     $isNewConversation
                 );
-            } elseif (isset($event['postback'])) {
+            } elseif ($context->eventType() === 'postback') {
                 [$userMessage, $botMessage] = $this->handlePostback(
-                    $event['postback'],
+                    $context,
                     $conversation,
                     $aiService,
                     $senderId,
@@ -248,14 +241,14 @@ class ProcessFacebookWebhook implements ShouldQueue
      * @return array{0: Message|null, 1: Message|null}
      */
     protected function handleMessage(
-        array $message,
+        WebhookContext $context,
         Conversation $conversation,
         AIService $aiService,
         string $senderId,
         bool $isHandover,
         bool $isNewConversation
     ): array {
-        $messageId = $message['mid'] ?? null;
+        $messageId = $context->metadata['mid'];
 
         // Check for duplicate message
         if ($messageId && Message::where('conversation_id', $conversation->id)
@@ -270,32 +263,11 @@ class ProcessFacebookWebhook implements ShouldQueue
         }
 
         // Extract message content and type
-        $text = $message['text'] ?? null;
-        $attachments = $message['attachments'] ?? [];
-        $messageType = 'text';
-        $mediaUrl = null;
+        $text = $context->text();
+        $messageType = $context->messageType();
+        $mediaUrl = $context->metadata['media_url'];
         $mediaType = null;
-        $mediaMetadata = null;
-
-        // Process attachments if present
-        if (! empty($attachments)) {
-            $attachment = $attachments[0]; // Process first attachment
-            $attachmentType = $attachment['type'] ?? 'unknown';
-            $payload = $attachment['payload'] ?? [];
-
-            $messageType = $this->mapAttachmentType($attachmentType);
-            $mediaUrl = $payload['url'] ?? null;
-            $mediaMetadata = [
-                'attachment_type' => $attachmentType,
-                'sticker_id' => $payload['sticker_id'] ?? null,
-                'coordinates' => $payload['coordinates'] ?? null,
-            ];
-
-            // Generate placeholder text for non-text messages
-            if (! $text) {
-                $text = $this->generateAttachmentPlaceholder($attachmentType, $mediaMetadata);
-            }
-        }
+        $mediaMetadata = $context->metadata['media_metadata'];
 
         // Save user message
         $userMessage = $conversation->messages()->create([
@@ -358,15 +330,15 @@ class ProcessFacebookWebhook implements ShouldQueue
      * @return array{0: Message|null, 1: Message|null}
      */
     protected function handlePostback(
-        array $postback,
+        WebhookContext $context,
         Conversation $conversation,
         AIService $aiService,
         string $senderId,
         bool $isHandover,
         bool $isNewConversation
     ): array {
-        $payload = $postback['payload'] ?? '';
-        $title = $postback['title'] ?? '';
+        $payload = $context->metadata['postback_payload'];
+        $title = $context->metadata['postback_title'];
 
         // Use title as message content, fall back to payload
         $content = $title ?: $payload;
@@ -671,43 +643,6 @@ class ProcessFacebookWebhook implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
         }
-    }
-
-    /**
-     * Map Facebook attachment type to our message type.
-     */
-    protected function mapAttachmentType(string $attachmentType): string
-    {
-        return match ($attachmentType) {
-            'image' => 'image',
-            'video' => 'video',
-            'audio' => 'audio',
-            'file' => 'file',
-            'location' => 'location',
-            'fallback' => 'text', // URL previews, shared posts, etc.
-            default => 'attachment',
-        };
-    }
-
-    /**
-     * Generate placeholder content for attachment messages.
-     */
-    protected function generateAttachmentPlaceholder(string $type, ?array $metadata): string
-    {
-        return match ($type) {
-            'image' => '[Image]',
-            'video' => '[Video]',
-            'audio' => '[Audio]',
-            'file' => '[File]',
-            'location' => isset($metadata['coordinates'])
-                ? "[Location: {$metadata['coordinates']['lat']}, {$metadata['coordinates']['long']}]"
-                : '[Location shared]',
-            'sticker' => isset($metadata['sticker_id'])
-                ? "[Sticker #{$metadata['sticker_id']}]"
-                : '[Sticker]',
-            'fallback' => '[Shared content]',
-            default => '[Attachment]',
-        };
     }
 
     /**
