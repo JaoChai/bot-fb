@@ -4,7 +4,7 @@ namespace App\Jobs;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
-use App\Exceptions\CircuitOpenException;
+use App\Jobs\Middleware\CircuitBreakerJobMiddleware;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
@@ -23,9 +23,7 @@ use App\Services\LineWebhook\LineWebhookPipelineFlag;
 use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\LineWebhook\WebhookContext;
 use App\Services\MessageAggregationService;
-use App\Services\ModelCapabilityService;
 use App\Services\MultipleBubblesService;
-use App\Services\OpenRouterService;
 use App\Services\PaymentFlexService;
 use App\Services\ProfilePictureService;
 use App\Services\RateLimitService;
@@ -33,6 +31,11 @@ use App\Services\ResponseHoursService;
 use App\Services\SmartAggregation\SmartAggregationAnalyzer;
 use App\Services\SmartAggregation\UserTypingStats;
 use App\Services\StickerReplyService;
+use App\Services\Webhook\Channels\LINE\NonTextHandler;
+use App\Services\Webhook\Channels\LINE\StickerHandler;
+use App\Services\Webhook\WebhookContext as SharedWebhookContext;
+use App\Services\Webhook\WebhookPipeline;
+use App\Services\Webhook\WebhookPipelineV2Flag;
 use App\Support\QueueRouter;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -47,12 +50,6 @@ use Illuminate\Support\Facades\Log;
 class ProcessLINEWebhook implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
-    /**
-     * Keywords indicating a pending order in conversation history.
-     * Used by vision analysis to detect when a slip image is expected.
-     */
-    private const ORDER_CONTEXT_KEYWORDS = ['รวมยอดโอน', 'สรุปรายการ', 'เลขบัญชี', 'รวมทั้งหมด', 'โอนเข้าบัญชี', 'ส่งสลิป'];
 
     /**
      * The number of times the job may be attempted.
@@ -89,6 +86,14 @@ class ProcessLINEWebhook implements ShouldQueue
     ) {}
 
     /**
+     * The middleware to run when the job is dispatched (queued).
+     */
+    public function middleware(): array
+    {
+        return [app(CircuitBreakerJobMiddleware::class)];
+    }
+
+    /**
      * Execute the job.
      */
     public function handle(
@@ -104,32 +109,25 @@ class ProcessLINEWebhook implements ShouldQueue
         LineWebhookOutputService $outputSvc,
     ): void {
         try {
-            $circuitBreaker->execute(
-                'database',
-                function () use ($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService, $gating, $contextSvc, $responseSvc, $outputSvc) {
-                    if (
-                        LineWebhookPipelineFlag::enabledFor($this->bot)
-                        && $lineService->isMessageEvent($this->event)
-                        && (
-                            $lineService->isTextMessage($this->event)
-                            || $lineService->isImageMessage($this->event)
-                        )
-                    ) {
-                        $this->runPipeline($gating, $contextSvc, $responseSvc, $outputSvc);
+            if (WebhookPipelineV2Flag::enabledFor($this->bot)) {
+                $this->runSharedPipeline();
 
-                        return;
-                    }
-                    $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService);
-                },
-                fn () => $this->sendFallbackMessage($lineService)
-            );
-        } catch (CircuitOpenException $e) {
-            // Circuit is open - send fallback and don't retry
-            Log::warning('Circuit breaker open for LINE webhook', [
-                'bot_id' => $this->bot->id,
-                'service' => $e->getService(),
-            ]);
-            $this->sendFallbackMessage($lineService);
+                return;
+            }
+
+            if (
+                LineWebhookPipelineFlag::enabledFor($this->bot)
+                && $lineService->isMessageEvent($this->event)
+                && (
+                    $lineService->isTextMessage($this->event)
+                    || $lineService->isImageMessage($this->event)
+                )
+            ) {
+                $this->runPipeline($gating, $contextSvc, $responseSvc, $outputSvc);
+
+                return;
+            }
+            $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService);
         } catch (\Exception $e) {
             Log::error('LINE webhook processing failed', [
                 'bot_id' => $this->bot->id,
@@ -207,11 +205,35 @@ class ProcessLINEWebhook implements ShouldQueue
     }
 
     /**
+     * Shared v2 pipeline path (Task 9). Runs the event through the channel
+     * step list (resolve → response → send) on the shared WebhookPipeline.
+     * Only reached when WebhookPipelineV2Flag is enabled for this bot
+     * (default OFF) — the legacy paths above remain the default.
+     *
+     * The steps are the shared extraction. Full sequence parity (transaction
+     * scoping, post-transaction broadcast/dispatch) is rolled out per-channel
+     * in a later task; this method is the opt-in entry point that composes
+     * the channel's step list and hands the context to the pipeline.
+     */
+    protected function runSharedPipeline(): void
+    {
+        $lineService = app(LINEService::class);
+
+        $context = new SharedWebhookContext($this->bot, $this->event, 'line');
+        $context->metadata['user_id'] = $lineService->extractUserId($this->event);
+
+        $pipeline = app(WebhookPipeline::class);
+        $pipeline->run($context, WebhookPipeline::line($lineService, app(AIService::class)));
+    }
+
+    /**
      * Send fallback message when system is unavailable.
      * This method doesn't depend on database operations.
      */
-    protected function sendFallbackMessage(LINEService $lineService): void
+    public function circuitFallback(): void
     {
+        $lineService = app(LINEService::class);
+
         if (! config('bot.send_fallback_on_circuit_open', true)) {
             return;
         }
@@ -262,7 +284,15 @@ class ProcessLINEWebhook implements ShouldQueue
 
         // Only process text messages for now
         if (! $lineService->isTextMessage($this->event)) {
-            $this->handleNonTextMessage($lineService, $responseHoursService);
+            $nonTextHandler = new NonTextHandler(
+                $this->bot,
+                app(ResponseHoursService::class),
+                app(LeadRecoveryService::class),
+                fn (string $userId, LINEService $lineService) => $this->createNewConversation($userId, $lineService),
+                fn (Conversation $conversation, int $lastMessageId) => $this->updateStatsForUserMessageOnly($conversation, $lastMessageId),
+                new StickerHandler($this->bot, app(StickerReplyService::class)),
+            );
+            $nonTextHandler->handle($lineService, $this->event);
 
             return;
         }
@@ -786,626 +816,6 @@ class ProcessLINEWebhook implements ShouldQueue
         }
 
         $this->bot->update($botUpdate);
-    }
-
-    /**
-     * Handle non-text messages (images, videos, audio, files, stickers, locations).
-     * Downloads media and saves to database for display in chat.
-     * For images: analyzes with AI vision if bot is active and model supports vision.
-     */
-    protected function handleNonTextMessage(
-        LINEService $lineService,
-        ResponseHoursService $responseHoursService
-    ): void {
-        $userId = $lineService->extractUserId($this->event);
-        $replyToken = $lineService->extractReplyToken($this->event);
-        $messageData = $lineService->extractMessage($this->event);
-        $messageType = $messageData['type'];
-
-        // Extract LINE webhook event metadata (best practice)
-        $webhookEventId = $lineService->extractWebhookEventId($this->event);
-        $eventTimestamp = $lineService->extractEventTimestamp($this->event);
-        $isRedeliveryEvent = $lineService->isRedelivery($this->event);
-
-        if (! $userId) {
-            return;
-        }
-
-        // Check if this is a redelivered event that we've already processed
-        if ($isRedeliveryEvent && $webhookEventId) {
-            if (Message::where('webhook_event_id', $webhookEventId)->exists()) {
-                Log::info('Redelivered non-text webhook already processed, skipping', [
-                    'webhook_event_id' => $webhookEventId,
-                    'message_type' => $messageType,
-                ]);
-
-                return;
-            }
-        }
-
-        // Download media BEFORE transaction (external API call shouldn't be in transaction)
-        $mediaUrl = null;
-        $mediaType = null;
-        $content = null;
-
-        if (in_array($messageType, ['image', 'video', 'audio', 'file'])) {
-            $mediaData = $lineService->downloadAndStoreFile($this->bot, $messageData['id'], $messageType);
-            if ($mediaData) {
-                $mediaUrl = $mediaData['url'];
-                $mediaType = $mediaData['mime_type'];
-            }
-            $content = match ($messageType) {
-                'image' => '[รูปภาพ]',
-                'video' => '[วิดีโอ]',
-                'audio' => '[เสียง]',
-                'file' => '[ไฟล์]',
-                default => '[สื่อ]',
-            };
-        } elseif ($messageType === 'sticker') {
-            $content = '[สติกเกอร์]';
-            // Construct sticker URL from LINE CDN
-            $stickerId = $messageData['sticker_id'] ?? null;
-            if ($stickerId) {
-                $mediaUrl = "https://stickershop.line-scdn.net/stickershop/v1/sticker/{$stickerId}/android/sticker.png";
-                $mediaType = 'image/png';
-            }
-        } elseif ($messageType === 'location') {
-            $lat = $messageData['latitude'] ?? '';
-            $lng = $messageData['longitude'] ?? '';
-            $addr = $messageData['address'] ?? '';
-            $content = "[ตำแหน่ง] {$addr} ({$lat}, {$lng})";
-        } else {
-            $content = '[ข้อความที่ไม่รองรับ]';
-        }
-
-        // Variables for broadcasting after transaction
-        $userMessage = null;
-        $conversation = null;
-        $isNewConversation = false;
-
-        // Process in transaction to prevent race conditions and ensure atomic updates
-        DB::transaction(function () use (
-            $lineService,
-            $userId,
-            $messageData,
-            $messageType,
-            $mediaUrl,
-            $mediaType,
-            $content,
-            $webhookEventId,
-            $eventTimestamp,
-            $isRedeliveryEvent,
-            &$userMessage,
-            &$conversation,
-            &$isNewConversation
-        ) {
-            // Find or create conversation (include handover status for auto_handover bots)
-            // Use lockForUpdate() to prevent race condition when multiple webhooks arrive simultaneously
-            $existingConversation = Conversation::where('bot_id', $this->bot->id)
-                ->where('external_customer_id', $userId)
-                ->where('channel_type', 'line')
-                ->whereIn('status', ['active', 'handover'])
-                ->lockForUpdate()
-                ->first();
-
-            $isNewConversation = ! $existingConversation;
-            $conversation = $existingConversation ?? $this->createNewConversation($userId, $lineService);
-
-            // Primary deduplication: webhookEventId (LINE best practice)
-            if ($webhookEventId && Message::where('conversation_id', $conversation->id)
-                ->where('webhook_event_id', $webhookEventId)
-                ->exists()) {
-                Log::info('Duplicate non-text webhook ignored (by webhook_event_id)', [
-                    'conversation_id' => $conversation->id,
-                    'webhook_event_id' => $webhookEventId,
-                ]);
-
-                return;
-            }
-
-            // Fallback deduplication: external_message_id (backward compatibility)
-            if ($messageData['id'] && Message::where('conversation_id', $conversation->id)
-                ->where('external_message_id', $messageData['id'])
-                ->exists()) {
-                Log::info('Duplicate non-text webhook ignored (by external_message_id)', [
-                    'conversation_id' => $conversation->id,
-                    'message_id' => $messageData['id'],
-                ]);
-
-                return;
-            }
-
-            // Save message to database with LINE event metadata
-            $userMessage = $conversation->messages()->create([
-                'sender' => 'user',
-                'content' => $content,
-                'type' => $messageType,
-                'media_url' => $mediaUrl,
-                'media_type' => $mediaType,
-                'external_message_id' => $messageData['id'],
-                'webhook_event_id' => $webhookEventId,
-                'is_redelivery' => $isRedeliveryEvent,
-                'event_timestamp' => $eventTimestamp,
-            ]);
-
-            // Update stats atomically with message creation
-            $this->updateStatsForUserMessageOnly($conversation, $userMessage->id);
-            if ($isNewConversation) {
-                $this->bot->update([
-                    'total_conversations' => DB::raw('total_conversations + 1'),
-                ]);
-            }
-        });
-
-        // Broadcasts AFTER transaction commits (non-blocking)
-        // Refresh conversation to get actual DB values after DB::raw updates
-        if ($conversation) {
-            $conversation->refresh();
-            $conversationData = [
-                'id' => $conversation->id,
-                'message_count' => $conversation->message_count,
-                'last_message_at' => $conversation->last_message_at?->toISOString(),
-                'unread_count' => $conversation->unread_count,
-            ];
-
-            // Mark lead recovery as responded when customer sends a message
-            app(LeadRecoveryService::class)->markCustomerResponded($conversation);
-        }
-        if ($userMessage) {
-            broadcast(new MessageSent($userMessage, $conversationData ?? null))->toOthers();
-        }
-        if ($conversation) {
-            broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
-        }
-
-        // Check response hours AFTER saving message but BEFORE AI response
-        $responseHoursResult = $responseHoursService->checkResponseHours($this->bot);
-
-        if (! $responseHoursResult['allowed']) {
-            Log::info('Non-text message received outside response hours', [
-                'bot_id' => $this->bot->id,
-                'message_type' => $messageType,
-                'status' => $responseHoursResult['status'],
-                'current_time' => $responseHoursResult['current_time'] ?? null,
-            ]);
-
-            if (! $conversation?->is_handover) {
-                $this->handleOutsideResponseHours($lineService, $responseHoursService, $replyToken, $userId);
-            }
-
-            return; // Skip AI response
-        }
-
-        // Handle image analysis with AI Vision
-        if ($messageType === 'image' && $mediaUrl && $conversation && $replyToken) {
-            $this->handleImageAnalysis($lineService, $conversation, $userMessage, $mediaUrl, $userId, $replyToken, $conversationData ?? null);
-
-            return; // Skip sticker reply handling for images
-        }
-
-        // Reply to stickers if enabled (and not in handover mode, and bot is active)
-        if ($messageType === 'sticker' && $replyToken && $conversation && ! $conversation->is_handover && $this->bot->status === 'active') {
-            $this->handleStickerReply($lineService, $conversation, $messageData, $userId, $replyToken, $conversationData ?? null);
-        }
-
-        // Non-text messages (except stickers with reply enabled) are stored silently
-    }
-
-    /**
-     * Handle sticker reply with support for static and AI modes.
-     */
-    protected function handleStickerReply(
-        LINEService $lineService,
-        Conversation $conversation,
-        array $messageData,
-        string $userId,
-        string $replyToken,
-        ?array $conversationData
-    ): void {
-        $settings = $this->bot->settings;
-        if (! $settings?->reply_sticker_enabled) {
-            return;
-        }
-
-        $mode = $settings->reply_sticker_mode ?? 'static';
-
-        // Show loading indicator for AI mode
-        if ($mode === 'ai') {
-            $lineService->showLoadingIndicator($this->bot, $userId, 15);
-        }
-
-        try {
-            $stickerService = app(StickerReplyService::class);
-            $responseMessage = $stickerService->generateReply($this->bot, $conversation, $messageData);
-
-            if (! $responseMessage) {
-                return;
-            }
-
-            // Send reply with fallback to push if token expired
-            $retryKey = $lineService->generateRetryKey();
-            $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$responseMessage], $retryKey);
-
-            // Save bot response
-            $botMessage = $conversation->messages()->create([
-                'sender' => 'bot',
-                'content' => $responseMessage,
-                'type' => 'text',
-                'metadata' => [
-                    'sticker_reply' => true,
-                    'sticker_mode' => $mode,
-                    'sticker_id' => $messageData['sticker_id'] ?? null,
-                ],
-            ]);
-
-            // Update stats
-            $conversation->update([
-                'message_count' => DB::raw('message_count + 1'),
-                'last_message_at' => now(),
-                'last_message_id' => $botMessage->id,
-            ]);
-            $this->bot->update([
-                'total_messages' => DB::raw('total_messages + 1'),
-                'last_active_at' => now(),
-            ]);
-
-            // Broadcast
-            $conversation->refresh();
-            broadcast(new MessageSent($botMessage, [
-                'id' => $conversation->id,
-                'message_count' => $conversation->message_count,
-                'last_message_at' => $conversation->last_message_at?->toISOString(),
-                'unread_count' => $conversation->unread_count,
-            ]))->toOthers();
-
-            Log::info('Replied to sticker', [
-                'bot_id' => $this->bot->id,
-                'conversation_id' => $conversation->id,
-                'mode' => $mode,
-            ]);
-
-        } catch (\Exception $e) {
-            Log::warning('Failed to reply to sticker', [
-                'bot_id' => $this->bot->id,
-                'mode' => $mode,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    /**
-     * Handle image analysis using AI Vision.
-     *
-     * Conditions for AI analysis:
-     * - Bot is active
-     * - Conversation is not in handover mode
-     * - Bot's model supports vision
-     */
-    protected function handleImageAnalysis(
-        LINEService $lineService,
-        Conversation $conversation,
-        Message $userMessage,
-        string $imageUrl,
-        string $userId,
-        string $replyToken,
-        ?array $conversationData
-    ): void {
-        // Check if bot is active
-        if ($this->bot->status !== 'active') {
-            return;
-        }
-
-        // Check if conversation is in handover mode
-        if ($conversation->is_handover) {
-            return;
-        }
-
-        // Get vision-capable model from bot settings
-        $openRouterService = app(OpenRouterService::class);
-        $model = $this->getVisionModel();
-
-        if (! $model) {
-            return;
-        }
-
-        // Show loading indicator
-        $lineService->showLoadingIndicator($this->bot, $userId, 30);
-
-        try {
-            // Auto-clear stale context before image analysis
-            app(ConversationContextService::class)->autoClearIfIdle($conversation);
-
-            // Build system prompt for image analysis
-            $systemPrompt = $this->buildVisionSystemPrompt();
-
-            // Get conversation history for context
-            $history = $this->getVisionConversationHistory($conversation);
-
-            // Build messages array
-            $messages = [];
-
-            // Add system prompt
-            if ($systemPrompt) {
-                $messages[] = [
-                    'role' => 'system',
-                    'content' => $systemPrompt,
-                ];
-            }
-
-            // Add conversation history
-            foreach ($history as $msg) {
-                $messages[] = [
-                    'role' => $msg['sender'] === 'user' ? 'user' : 'assistant',
-                    'content' => $msg['content'],
-                ];
-            }
-
-            // Add current image message with prompt (context-aware: detects pending orders)
-            $imagePrompt = $this->getImageAnalysisPrompt($history);
-            $messages[] = [
-                'role' => 'user',
-                'content' => $imagePrompt,
-            ];
-
-            // Get API key
-            $apiKey = $this->bot->user?->settings?->getOpenRouterApiKey()
-                ?? config('services.openrouter.api_key');
-
-            // Call Vision API
-            $result = $openRouterService->chatWithVision(
-                messages: $messages,
-                imageUrls: [$imageUrl],
-                model: $model,
-                temperature: $this->bot->llm_temperature ?? 0.7,
-                maxTokens: $this->bot->llm_max_tokens ?? 1024,
-                apiKeyOverride: $apiKey,
-                fallbackModelOverride: $this->bot->fallback_chat_model
-            );
-
-            $responseContent = $result['content'] ?? '';
-
-            if (empty($responseContent)) {
-                Log::warning('Empty response from Vision API', [
-                    'bot_id' => $this->bot->id,
-                    'conversation_id' => $conversation->id,
-                ]);
-
-                return;
-            }
-
-            // Save bot response
-            $botMessage = $conversation->messages()->create([
-                'sender' => 'bot',
-                'content' => $responseContent,
-                'type' => 'text',
-                'model_used' => $result['model'] ?? $model,
-                'prompt_tokens' => $result['usage']['prompt_tokens'] ?? 0,
-                'completion_tokens' => $result['usage']['completion_tokens'] ?? 0,
-                'cost' => $openRouterService->estimateCost(
-                    $result['usage']['prompt_tokens'] ?? 0,
-                    $result['usage']['completion_tokens'] ?? 0,
-                    $result['model'] ?? $model
-                ),
-                'metadata' => [
-                    'vision_analysis' => true,
-                    'image_url' => $imageUrl,
-                ],
-            ]);
-
-            // Update conversation stats
-            $conversation->update([
-                'message_count' => DB::raw('message_count + 1'),
-                'last_message_at' => now(),
-                'last_message_id' => $botMessage->id,
-            ]);
-
-            // Update bot stats
-            $this->bot->update([
-                'total_messages' => DB::raw('total_messages + 1'),
-                'last_active_at' => now(),
-            ]);
-
-            // Send reply to LINE with fallback to push if token expired
-            $bubblesService = app(MultipleBubblesService::class);
-            if ($bubblesService->isEnabled($this->bot)) {
-                $bubbles = $bubblesService->parseIntoBubbles($responseContent, $this->bot);
-                $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles, $conversation);
-            } else {
-                $paymentFlex = app(PaymentFlexService::class);
-                $transformed = $paymentFlex->tryConvertToFlex($responseContent, $conversation);
-                $retryKey = $lineService->generateRetryKey();
-                $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$transformed], $retryKey);
-            }
-
-            // Refresh and broadcast
-            $conversation->refresh();
-            $updatedConversationData = [
-                'id' => $conversation->id,
-                'message_count' => $conversation->message_count,
-                'last_message_at' => $conversation->last_message_at?->toISOString(),
-                'unread_count' => $conversation->unread_count,
-            ];
-
-            broadcast(new MessageSent($botMessage, $updatedConversationData))->toOthers();
-            broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
-
-            // Execute flow plugins (e.g., Telegram notifications) after image analysis
-            try {
-                app(FlowPluginService::class)
-                    ->executePlugins($this->bot, $conversation, $botMessage);
-            } catch (\Exception $e2) {
-                Log::warning('Flow plugin execution failed after image analysis', [
-                    'conversation_id' => $conversation->id,
-                    'error' => $e2->getMessage(),
-                ]);
-            }
-
-            Log::info('Image analyzed successfully', [
-                'bot_id' => $this->bot->id,
-                'conversation_id' => $conversation->id,
-                'model' => $result['model'] ?? $model,
-                'tokens_used' => $result['usage']['total_tokens'] ?? 0,
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Image analysis failed', [
-                'bot_id' => $this->bot->id,
-                'conversation_id' => $conversation->id,
-                'error' => $e->getMessage(),
-                ...(! app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
-            ]);
-            // Fail silently - image is already saved, just no AI response
-        }
-    }
-
-    /**
-     * Get the vision-capable model from bot connection settings.
-     *
-     * Checks supportsVision() for each model in priority order:
-     * 1. primary_chat_model
-     * 2. fallback_chat_model
-     */
-    protected function getVisionModel(): ?string
-    {
-        $capabilityService = app(ModelCapabilityService::class);
-
-        $candidates = [
-            $this->bot->primary_chat_model,
-            $this->bot->fallback_chat_model,
-        ];
-
-        // Level 1+2: Check supportsVision (API + config + heuristic)
-        foreach ($candidates as $model) {
-            if ($model && $capabilityService->supportsVision($model)) {
-                return $model;
-            }
-        }
-
-        // Level 3: Last resort — use primary_chat_model directly
-        // Better to try and let OpenRouter error than fail silently
-        $primaryModel = $this->bot->primary_chat_model;
-        if ($primaryModel) {
-            Log::warning('Vision model detection failed, using primary model as last resort', [
-                'bot_id' => $this->bot->id,
-                'primary_model' => $primaryModel,
-                'models_checked' => array_values(array_filter($candidates)),
-            ]);
-
-            return $primaryModel;
-        }
-
-        Log::warning('No vision-capable model found in bot settings', [
-            'bot_id' => $this->bot->id,
-            'models_checked' => array_values(array_filter($candidates)),
-        ]);
-
-        return null;
-    }
-
-    /**
-     * Build system prompt for vision/image analysis.
-     * Uses bot's system prompt with vision-specific additions.
-     * Includes payment slip detection instructions.
-     */
-    protected function buildVisionSystemPrompt(): string
-    {
-        // Get base system prompt from bot or flow
-        $basePrompt = '';
-
-        if (! empty($this->bot->system_prompt)) {
-            $basePrompt = $this->bot->system_prompt;
-        } elseif ($this->bot->default_flow_id) {
-            $flow = $this->bot->defaultFlow;
-            if ($flow && ! empty($flow->system_prompt)) {
-                $basePrompt = $flow->system_prompt;
-            }
-        }
-
-        if (empty($basePrompt)) {
-            $basePrompt = "You are a helpful AI assistant for {$this->bot->name}. Be friendly, professional, and helpful.";
-        }
-
-        // Add vision-specific instruction with payment slip detection
-        $visionInstruction = "\n\n## การวิเคราะห์รูปภาพ\n"
-            ."เมื่อได้รับรูปภาพ ให้ตรวจสอบก่อนว่าเป็นสลิปโอนเงิน/หลักฐานการชำระเงินหรือไม่\n\n"
-            ."**ถ้าเป็นสลิปโอนเงิน:**\n"
-            ."- อ่านยอดเงินที่โอนจากสลิป\n"
-            ."- ดู conversation history เพื่อหาออเดอร์ที่รอชำระเงิน\n"
-            ."- ตอบในรูปแบบนี้เท่านั้น:\n"
-            ."  เงินเข้าแล้ว [จำนวนเงิน] บาท ✅\n"
-            ."  ออเดอร์: [สรุปรายการจาก conversation history]\n"
-            ."  ส่งใน 5-10 นาที ขอบคุณครับ\n"
-            ."  [ยืนยันชำระเงิน]\n\n"
-            ."**ถ้าไม่ใช่สลิป:**\n"
-            .'- อธิบายรูปภาพและช่วยตอบคำถามตามบริบทของการสนทนา';
-
-        return $basePrompt.$visionInstruction;
-    }
-
-    /**
-     * Get the prompt to use when analyzing an image.
-     * Context-aware: detects pending orders and instructs slip verification.
-     */
-    protected function getImageAnalysisPrompt(array $conversationHistory = []): string
-    {
-        // Check bot settings for custom image prompt
-        $settings = $this->bot->settings;
-        if ($settings && ! empty($settings->image_analysis_prompt)) {
-            return $settings->image_analysis_prompt;
-        }
-
-        // Check if conversation has a pending order (payment context)
-        $hasPendingOrder = $this->detectPendingOrder($conversationHistory);
-
-        if ($hasPendingOrder) {
-            return 'ลูกค้าส่งรูปมา — ตรวจสอบว่าเป็นสลิปโอนเงินหรือไม่ ถ้าเป็นสลิปให้ยืนยันยอดตาม conversation history';
-        }
-
-        return 'กรุณาอธิบายรูปภาพนี้ และช่วยตอบคำถามหากมี';
-    }
-
-    /**
-     * Detect if conversation history indicates a pending order awaiting payment.
-     */
-    protected function detectPendingOrder(array $conversationHistory): bool
-    {
-        foreach ($conversationHistory as $msg) {
-            $content = $msg['content'] ?? '';
-            foreach (self::ORDER_CONTEXT_KEYWORDS as $keyword) {
-                if (mb_strpos($content, $keyword) !== false) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Get conversation history for vision context.
-     * Limited to recent messages to keep context manageable.
-     */
-    protected function getVisionConversationHistory(Conversation $conversation, int $limit = 5): array
-    {
-        $query = $conversation->messages()
-            ->whereIn('sender', ['user', 'bot'])
-            ->where('type', 'text'); // Only include text messages in history
-
-        // Filter out messages before context was cleared
-        if ($conversation->context_cleared_at) {
-            $query->where('created_at', '>', $conversation->context_cleared_at);
-        }
-
-        return $query->latest()
-            ->take($limit)
-            ->get()
-            ->reverse()
-            ->map(fn (Message $msg) => [
-                'sender' => $msg->sender,
-                'content' => $msg->content,
-            ])
-            ->values()
-            ->toArray();
     }
 
     /**

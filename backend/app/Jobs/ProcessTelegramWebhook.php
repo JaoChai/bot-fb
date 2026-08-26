@@ -4,17 +4,20 @@ namespace App\Jobs;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
-use App\Exceptions\CircuitOpenException;
+use App\Jobs\Middleware\CircuitBreakerJobMiddleware;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\AutoAssignmentService;
-use App\Services\CircuitBreakerService;
 use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\TelegramService;
+use App\Services\Webhook\Channels\Telegram\TelegramEventMapper;
+use App\Services\Webhook\WebhookContext;
+use App\Services\Webhook\WebhookPipeline;
+use App\Services\Webhook\WebhookPipelineV2Flag;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -52,27 +55,22 @@ class ProcessTelegramWebhook implements ShouldQueue
     ) {}
 
     /**
+     * The middleware to run when the job is dispatched (queued).
+     */
+    public function middleware(): array
+    {
+        return [app(CircuitBreakerJobMiddleware::class)];
+    }
+
+    /**
      * Execute the job.
      */
     public function handle(
         TelegramService $telegramService,
-        AIService $aiService,
-        CircuitBreakerService $circuitBreaker
+        AIService $aiService
     ): void {
         try {
-            // Use circuit breaker to protect against DB failures
-            $circuitBreaker->execute(
-                'database',
-                fn () => $this->processUpdate($telegramService, $aiService),
-                fn () => $this->sendFallbackMessage($telegramService)
-            );
-        } catch (CircuitOpenException $e) {
-            // Circuit is open - send fallback and don't retry
-            Log::warning('Circuit breaker open for Telegram webhook', [
-                'bot_id' => $this->bot->id,
-                'service' => $e->getService(),
-            ]);
-            $this->sendFallbackMessage($telegramService);
+            $this->processUpdate($telegramService, $aiService);
         } catch (\Exception $e) {
             Log::error('Telegram webhook processing failed', [
                 'bot_id' => $this->bot->id,
@@ -89,8 +87,10 @@ class ProcessTelegramWebhook implements ShouldQueue
      * Send fallback message when system is unavailable.
      * This method doesn't depend on database operations.
      */
-    protected function sendFallbackMessage(TelegramService $telegramService): void
+    public function circuitFallback(): void
     {
+        $telegramService = app(TelegramService::class);
+
         if (! config('bot.send_fallback_on_circuit_open', true)) {
             return;
         }
@@ -127,15 +127,22 @@ class ProcessTelegramWebhook implements ShouldQueue
      */
     protected function processUpdate(TelegramService $telegramService, AIService $aiService): void
     {
-        // Parse the update
-        $parsed = $telegramService->parseUpdate($this->update);
+        // Map the raw update into a channel-agnostic WebhookContext
+        $context = app(TelegramEventMapper::class)->map($this->update, $this->bot);
 
         // Only process message updates
-        if ($parsed['type'] === 'unknown' || ! $parsed['chat_id']) {
+        if ($context === null) {
             Log::debug('Ignoring non-message update', [
-                'update_id' => $parsed['update_id'],
-                'type' => $parsed['type'],
+                'update_id' => $this->update['update_id'] ?? null,
             ]);
+
+            return;
+        }
+
+        // Opt-in v2 shared pipeline (Task 9) — default OFF; the legacy path
+        // below remains the default when the flag is not enabled for the bot.
+        if (WebhookPipelineV2Flag::enabledFor($this->bot)) {
+            $this->runSharedPipeline($context, $telegramService, $aiService);
 
             return;
         }
@@ -151,7 +158,7 @@ class ProcessTelegramWebhook implements ShouldQueue
         DB::transaction(function () use (
             $telegramService,
             $aiService,
-            $parsed,
+            $context,
             &$userMessage,
             &$botMessage,
             &$conversation,
@@ -160,17 +167,17 @@ class ProcessTelegramWebhook implements ShouldQueue
         ) {
             // Find or create conversation (include handover status for auto_handover bots)
             $existingConversation = Conversation::where('bot_id', $this->bot->id)
-                ->where('external_customer_id', $parsed['chat_id'])
+                ->where('external_customer_id', $context->metadata['chat_id'])
                 ->where('channel_type', 'telegram')
                 ->whereIn('status', ['active', 'handover'])
                 ->first();
 
             $isNewConversation = ! $existingConversation;
-            $conversation = $existingConversation ?? $this->createNewConversation($parsed, $telegramService);
+            $conversation = $existingConversation ?? $this->createNewConversation($context, $telegramService);
             $isHandover = $conversation->is_handover;
 
             // Check for duplicate message
-            $messageId = (string) $parsed['message_id'];
+            $messageId = $context->metadata['message_id'];
             if ($messageId && Message::where('conversation_id', $conversation->id)
                 ->where('external_message_id', $messageId)
                 ->exists()) {
@@ -183,25 +190,25 @@ class ProcessTelegramWebhook implements ShouldQueue
             }
 
             // Process media if present
-            $mediaData = $this->processMedia($telegramService, $parsed);
+            $mediaData = $this->processMedia($telegramService, $context);
 
             // Determine message content
-            $content = $parsed['text'];
-            if (! $content && $parsed['type'] !== 'text') {
+            $content = $context->text();
+            if (! $content && $context->messageType() !== 'text') {
                 // Generate placeholder for non-text messages
-                $content = $this->generateMediaPlaceholder($parsed['type'], $mediaData);
+                $content = $this->generateMediaPlaceholder($context->messageType(), $mediaData);
             }
 
             // Save user message
             $userMessage = $conversation->messages()->create([
                 'sender' => 'user',
                 'content' => $content,
-                'type' => $this->mapMessageType($parsed['type']),
+                'type' => $context->messageType(),
                 'media_url' => $mediaData['url'] ?? null,
                 'media_type' => $mediaData['mime_type'] ?? null,
                 'media_metadata' => $mediaData['metadata'] ?? null,
                 'external_message_id' => $messageId,
-                'reply_to_message_id' => $parsed['reply_to_message_id'],
+                'reply_to_message_id' => $context->metadata['reply_to_message_id'],
             ]);
 
             // Update conversation stats
@@ -225,13 +232,13 @@ class ProcessTelegramWebhook implements ShouldQueue
             $this->bot->update($botUpdate);
 
             // Generate AI response if not in handover mode, bot is active, and is a text message
-            if (! $isHandover && $this->bot->status === 'active' && $parsed['type'] === 'text' && $userMessage) {
+            if (! $isHandover && $this->bot->status === 'active' && $context->messageType() === 'text' && $userMessage) {
                 $botMessage = $this->generateAIResponse(
                     $conversation,
                     $userMessage,
                     $aiService,
                     $telegramService,
-                    $parsed['chat_id']
+                    $context->metadata['chat_id']
                 );
 
                 // Update stats for bot message
@@ -275,12 +282,24 @@ class ProcessTelegramWebhook implements ShouldQueue
     }
 
     /**
+     * Shared v2 pipeline path (Task 9). Composes the Telegram step list
+     * (resolve → response → send) and runs it on the shared WebhookPipeline.
+     * Only reached when WebhookPipelineV2Flag is enabled for this bot
+     * (default OFF) — the legacy transaction path remains the default.
+     */
+    protected function runSharedPipeline(WebhookContext $context, TelegramService $telegramService, AIService $aiService): void
+    {
+        $pipeline = app(WebhookPipeline::class);
+        $pipeline->run($context, WebhookPipeline::telegram($telegramService, $aiService));
+    }
+
+    /**
      * Create a new conversation.
      */
-    protected function createNewConversation(array $parsed, TelegramService $telegramService): Conversation
+    protected function createNewConversation(WebhookContext $context, TelegramService $telegramService): Conversation
     {
         // Create or update customer profile
-        $customerProfile = $this->findOrCreateCustomerProfile($parsed, $telegramService);
+        $customerProfile = $this->findOrCreateCustomerProfile($context, $telegramService);
 
         // Check if bot has auto_handover enabled
         $autoHandover = $this->bot->auto_handover ?? false;
@@ -289,12 +308,12 @@ class ProcessTelegramWebhook implements ShouldQueue
         $conversation = Conversation::create([
             'bot_id' => $this->bot->id,
             'customer_profile_id' => $customerProfile?->id,
-            'external_customer_id' => $parsed['chat_id'],
+            'external_customer_id' => $context->metadata['chat_id'],
             'channel_type' => 'telegram',
             'status' => $autoHandover ? 'handover' : 'active',
             'is_handover' => $autoHandover,
-            'telegram_chat_type' => $parsed['chat_type'],
-            'telegram_chat_title' => $parsed['chat_title'],
+            'telegram_chat_type' => $context->metadata['chat_type'],
+            'telegram_chat_title' => $context->metadata['chat_title'],
             'message_count' => 0,
         ]);
 
@@ -308,8 +327,8 @@ class ProcessTelegramWebhook implements ShouldQueue
 
         Log::info('New Telegram conversation created', [
             'conversation_id' => $conversation->id,
-            'chat_id' => $parsed['chat_id'],
-            'chat_type' => $parsed['chat_type'],
+            'chat_id' => $context->metadata['chat_id'],
+            'chat_type' => $context->metadata['chat_type'],
         ]);
 
         return $conversation;
@@ -318,20 +337,17 @@ class ProcessTelegramWebhook implements ShouldQueue
     /**
      * Process media from the message.
      */
-    protected function processMedia(TelegramService $telegramService, array $parsed): array
+    protected function processMedia(TelegramService $telegramService, WebhookContext $context): array
     {
-        if ($parsed['type'] === 'text') {
+        if ($context->messageType() === 'text') {
             return [];
         }
 
-        $rawMessage = $parsed['raw_message'] ?? [];
-
-        // Get file_id
-        $fileId = $telegramService->extractFileId($rawMessage);
+        $fileId = $context->metadata['file_id'];
         if (! $fileId) {
             // For location, contact, poll - extract metadata only
             return [
-                'metadata' => $telegramService->extractMediaMetadata($rawMessage),
+                'metadata' => $context->metadata['media_metadata'],
             ];
         }
 
@@ -342,12 +358,12 @@ class ProcessTelegramWebhook implements ShouldQueue
             Log::warning('Failed to download Telegram media', [
                 'bot_id' => $this->bot->id,
                 'file_id' => $fileId,
-                'type' => $parsed['type'],
+                'type' => $context->messageType(),
             ]);
 
             return [
                 'metadata' => array_merge(
-                    $telegramService->extractMediaMetadata($rawMessage),
+                    $context->metadata['media_metadata'],
                     ['file_id' => $fileId, 'download_failed' => true]
                 ),
             ];
@@ -357,7 +373,7 @@ class ProcessTelegramWebhook implements ShouldQueue
             'url' => $fileData['url'],
             'mime_type' => $fileData['mime_type'],
             'metadata' => array_merge(
-                $telegramService->extractMediaMetadata($rawMessage),
+                $context->metadata['media_metadata'],
                 [
                     'file_id' => $fileId,
                     'file_size' => $fileData['file_size'],
@@ -365,25 +381,6 @@ class ProcessTelegramWebhook implements ShouldQueue
                 ]
             ),
         ];
-    }
-
-    /**
-     * Map Telegram message type to our message type.
-     */
-    protected function mapMessageType(string $telegramType): string
-    {
-        return match ($telegramType) {
-            'photo' => 'image',
-            'video', 'video_note', 'animation' => 'video',
-            'voice' => 'voice',
-            'audio' => 'audio',
-            'file' => 'file',
-            'sticker' => 'sticker',
-            'location' => 'location',
-            'contact' => 'contact',
-            'poll' => 'poll',
-            default => 'text',
-        };
     }
 
     /**
@@ -422,12 +419,12 @@ class ProcessTelegramWebhook implements ShouldQueue
     /**
      * Find or create customer profile.
      */
-    protected function findOrCreateCustomerProfile(array $parsed, TelegramService $telegramService): ?CustomerProfile
+    protected function findOrCreateCustomerProfile(WebhookContext $context, TelegramService $telegramService): ?CustomerProfile
     {
         // For group chats, use chat_id; for private chats, use user_id
-        $externalId = $parsed['chat_type'] === 'private'
-            ? $parsed['user_id']
-            : $parsed['chat_id'];
+        $externalId = $context->metadata['chat_type'] === 'private'
+            ? $context->metadata['user_id']
+            : $context->metadata['chat_id'];
 
         // Try to find existing profile
         $profile = CustomerProfile::where('external_id', $externalId)
@@ -445,12 +442,12 @@ class ProcessTelegramWebhook implements ShouldQueue
         }
 
         // Determine display name
-        $displayName = $parsed['chat_type'] === 'private'
-            ? trim(($parsed['first_name'] ?? '').' '.($parsed['last_name'] ?? ''))
-            : $parsed['chat_title'];
+        $displayName = $context->metadata['chat_type'] === 'private'
+            ? trim(($context->metadata['first_name'] ?? '').' '.($context->metadata['last_name'] ?? ''))
+            : $context->metadata['chat_title'];
 
         if (! $displayName) {
-            $displayName = $parsed['username'] ?? null;
+            $displayName = $context->metadata['username'] ?? null;
         }
 
         // Create new profile
@@ -458,15 +455,15 @@ class ProcessTelegramWebhook implements ShouldQueue
             'external_id' => $externalId,
             'channel_type' => 'telegram',
             'display_name' => $displayName ?: 'Telegram User',
-            'picture_url' => $this->fetchUserProfilePhoto($parsed, $telegramService),
+            'picture_url' => $this->fetchUserProfilePhoto($context, $telegramService),
             'first_interaction_at' => now(),
             'last_interaction_at' => now(),
             'interaction_count' => 1,
             'metadata' => [
-                'username' => $parsed['username'],
-                'user_id' => $parsed['user_id'],
-                'chat_type' => $parsed['chat_type'],
-                'chat_title' => $parsed['chat_title'],
+                'username' => $context->metadata['username'],
+                'user_id' => $context->metadata['user_id'],
+                'chat_type' => $context->metadata['chat_type'],
+                'chat_title' => $context->metadata['chat_title'],
             ],
         ]);
     }
@@ -475,14 +472,14 @@ class ProcessTelegramWebhook implements ShouldQueue
      * Fetch user profile photo from Telegram API.
      * Only fetches for private chats (individual users).
      */
-    protected function fetchUserProfilePhoto(array $parsed, TelegramService $telegramService): ?string
+    protected function fetchUserProfilePhoto(WebhookContext $context, TelegramService $telegramService): ?string
     {
         // Only fetch for private chats (individual users)
-        if ($parsed['chat_type'] !== 'private') {
+        if ($context->metadata['chat_type'] !== 'private') {
             return null;
         }
 
-        $userId = $parsed['user_id'] ?? null;
+        $userId = $context->metadata['user_id'] ?? null;
         if (! $userId) {
             return null;
         }
