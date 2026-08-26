@@ -4,7 +4,7 @@ namespace App\Jobs;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
-use App\Exceptions\CircuitOpenException;
+use App\Jobs\Middleware\CircuitBreakerJobMiddleware;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
@@ -53,24 +53,20 @@ class ProcessFacebookWebhook implements ShouldQueue
     ) {}
 
     /**
+     * The middleware to run when the job is dispatched (queued).
+     */
+    public function middleware(): array
+    {
+        return [app(CircuitBreakerJobMiddleware::class)];
+    }
+
+    /**
      * Execute the job.
      */
     public function handle(AIService $aiService, CircuitBreakerService $circuitBreaker): void
     {
         try {
-            // Use circuit breaker to protect against DB failures
-            $circuitBreaker->execute(
-                'database',
-                fn () => $this->processPayload($aiService),
-                fn () => $this->sendFallbackMessage()
-            );
-        } catch (CircuitOpenException $e) {
-            // Circuit is open - send fallback and don't retry
-            Log::warning('Circuit breaker open for Facebook webhook', [
-                'bot_id' => $this->bot->id,
-                'service' => $e->getService(),
-            ]);
-            $this->sendFallbackMessage();
+            $this->processPayload($aiService);
         } catch (\Exception $e) {
             Log::error('Facebook webhook processing failed', [
                 'bot_id' => $this->bot->id,
@@ -86,7 +82,7 @@ class ProcessFacebookWebhook implements ShouldQueue
      * Send fallback message when system is unavailable.
      * This method doesn't depend on database operations.
      */
-    protected function sendFallbackMessage(): void
+    public function circuitFallback(): void
     {
         if (! config('bot.send_fallback_on_circuit_open', true)) {
             return;

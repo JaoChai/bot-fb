@@ -4,7 +4,7 @@ namespace App\Jobs;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
-use App\Exceptions\CircuitOpenException;
+use App\Jobs\Middleware\CircuitBreakerJobMiddleware;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
@@ -89,6 +89,14 @@ class ProcessLINEWebhook implements ShouldQueue
     ) {}
 
     /**
+     * The middleware to run when the job is dispatched (queued).
+     */
+    public function middleware(): array
+    {
+        return [app(CircuitBreakerJobMiddleware::class)];
+    }
+
+    /**
      * Execute the job.
      */
     public function handle(
@@ -104,32 +112,19 @@ class ProcessLINEWebhook implements ShouldQueue
         LineWebhookOutputService $outputSvc,
     ): void {
         try {
-            $circuitBreaker->execute(
-                'database',
-                function () use ($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService, $gating, $contextSvc, $responseSvc, $outputSvc) {
-                    if (
-                        LineWebhookPipelineFlag::enabledFor($this->bot)
-                        && $lineService->isMessageEvent($this->event)
-                        && (
-                            $lineService->isTextMessage($this->event)
-                            || $lineService->isImageMessage($this->event)
-                        )
-                    ) {
-                        $this->runPipeline($gating, $contextSvc, $responseSvc, $outputSvc);
+            if (
+                LineWebhookPipelineFlag::enabledFor($this->bot)
+                && $lineService->isMessageEvent($this->event)
+                && (
+                    $lineService->isTextMessage($this->event)
+                    || $lineService->isImageMessage($this->event)
+                )
+            ) {
+                $this->runPipeline($gating, $contextSvc, $responseSvc, $outputSvc);
 
-                        return;
-                    }
-                    $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService);
-                },
-                fn () => $this->sendFallbackMessage($lineService)
-            );
-        } catch (CircuitOpenException $e) {
-            // Circuit is open - send fallback and don't retry
-            Log::warning('Circuit breaker open for LINE webhook', [
-                'bot_id' => $this->bot->id,
-                'service' => $e->getService(),
-            ]);
-            $this->sendFallbackMessage($lineService);
+                return;
+            }
+            $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService);
         } catch (\Exception $e) {
             Log::error('LINE webhook processing failed', [
                 'bot_id' => $this->bot->id,
@@ -210,8 +205,10 @@ class ProcessLINEWebhook implements ShouldQueue
      * Send fallback message when system is unavailable.
      * This method doesn't depend on database operations.
      */
-    protected function sendFallbackMessage(LINEService $lineService): void
+    public function circuitFallback(): void
     {
+        $lineService = app(LINEService::class);
+
         if (! config('bot.send_fallback_on_circuit_open', true)) {
             return;
         }

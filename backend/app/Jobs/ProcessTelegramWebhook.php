@@ -4,7 +4,7 @@ namespace App\Jobs;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
-use App\Exceptions\CircuitOpenException;
+use App\Jobs\Middleware\CircuitBreakerJobMiddleware;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
@@ -52,6 +52,14 @@ class ProcessTelegramWebhook implements ShouldQueue
     ) {}
 
     /**
+     * The middleware to run when the job is dispatched (queued).
+     */
+    public function middleware(): array
+    {
+        return [app(CircuitBreakerJobMiddleware::class)];
+    }
+
+    /**
      * Execute the job.
      */
     public function handle(
@@ -60,19 +68,7 @@ class ProcessTelegramWebhook implements ShouldQueue
         CircuitBreakerService $circuitBreaker
     ): void {
         try {
-            // Use circuit breaker to protect against DB failures
-            $circuitBreaker->execute(
-                'database',
-                fn () => $this->processUpdate($telegramService, $aiService),
-                fn () => $this->sendFallbackMessage($telegramService)
-            );
-        } catch (CircuitOpenException $e) {
-            // Circuit is open - send fallback and don't retry
-            Log::warning('Circuit breaker open for Telegram webhook', [
-                'bot_id' => $this->bot->id,
-                'service' => $e->getService(),
-            ]);
-            $this->sendFallbackMessage($telegramService);
+            $this->processUpdate($telegramService, $aiService);
         } catch (\Exception $e) {
             Log::error('Telegram webhook processing failed', [
                 'bot_id' => $this->bot->id,
@@ -89,8 +85,10 @@ class ProcessTelegramWebhook implements ShouldQueue
      * Send fallback message when system is unavailable.
      * This method doesn't depend on database operations.
      */
-    protected function sendFallbackMessage(TelegramService $telegramService): void
+    public function circuitFallback(): void
     {
+        $telegramService = app(TelegramService::class);
+
         if (! config('bot.send_fallback_on_circuit_open', true)) {
             return;
         }
