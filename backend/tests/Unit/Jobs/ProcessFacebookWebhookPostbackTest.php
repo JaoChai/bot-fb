@@ -6,25 +6,23 @@ use App\Jobs\ProcessFacebookWebhook;
 use App\Models\Bot;
 use App\Models\User;
 use App\Services\AIService;
-use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
 use Tests\TestCase;
 
 /**
- * Characterization test for the postback path of ProcessFacebookWebhook.
+ * Behavior test for the postback path of ProcessFacebookWebhook.
  *
- * Pins the CURRENT job's handlePostback behavior (pre-mapper wiring) against
- * the tests/fixtures/facebook-postback.php body — the same fixture the mapper
- * unit tests consume.
- *
- * Known bug pinned here (do not fix in this refactor): handlePostback()
- * writes messages.type='postback' but the messages.type enum from
- * database/migrations/2025_12_23_145426_create_messages_table.php has no
- * 'postback' value, so the user-message insert fails on the CHECK
- * constraint. Tracked for a separate schema-fix task.
+ * The messages.type enum is widened with 'postback' for pgsql/mysql (prod)
+ * by database/migrations/2026_08_26_000000_add_postback_to_messages_type_enum.php.
+ * SQLite cannot alter CHECK constraints in place (same limitation documented
+ * in 2025_12_31_150000_add_telegram_to_channel_type_constraints), so the
+ * end-to-end save assertions run only on pgsql/mysql; on sqlite they skip
+ * (mirroring the repo's established convention) while a companion test
+ * verifies the migration itself applies cleanly on every driver.
  */
 class ProcessFacebookWebhookPostbackTest extends TestCase
 {
@@ -49,29 +47,57 @@ class ProcessFacebookWebhookPostbackTest extends TestCase
         $this->payload = include base_path('tests/fixtures/facebook-postback.php');
     }
 
-    public function test_postback_message_save_hits_schema_constraint_known_bug(): void
+    /**
+     * Real postback save behavior — requires the widened enum (pgsql/mysql).
+     * Skipped on sqlite where the constraint cannot be altered in place.
+     */
+    public function test_postback_message_saves_with_postback_type_and_increments_stats(): void
     {
-        // Pins pre-existing bug: 'postback' is not a valid value in the
-        // messages.type enum (database/migrations/2025_12_23_145426_create_messages_table.php).
-        // Do not fix here — tracked for a separate schema-fix task.
+        if (DB::getDriverName() === 'sqlite') {
+            $this->markTestSkipped("messages.type widened only on pgsql/mysql — sqlite can't ALTER CHECK (mirrors 2025_12_31 convention)");
+        }
+
         Http::fake([
             'graph.facebook.com/*' => Http::response(['ok' => true], 200),
         ]);
         Queue::fake();
 
         $aiService = Mockery::mock(AIService::class);
+        $aiService->shouldReceive('generateAndSaveResponse')->once()->andReturn(null);
 
         $job = new ProcessFacebookWebhook($this->bot, $this->payload);
-
-        $this->expectException(QueryException::class);
         $job->handle($aiService);
+
+        // Postback saved as a user message with type='postback'
+        $this->assertDatabaseHas('messages', [
+            'sender' => 'user',
+            'type' => 'postback',
+            'content' => 'ดูเมนู',
+        ]);
+
+        // Conversation stats incremented (user message + AI bot reply counted)
+        $this->assertDatabaseHas('conversations', [
+            'bot_id' => $this->bot->id,
+            'message_count' => 2,
+            'unread_count' => 1,
+        ]);
+
+        // Bot stats incremented
+        $this->bot->refresh();
+        $this->assertSame(2, (int) $this->bot->total_messages);
+        $this->assertNotNull($this->bot->last_active_at);
     }
 
-    public function test_postback_message_save_hits_schema_constraint_known_bug_inactive_bot(): void
+    /**
+     * Inactive bots still save the postback message — no AI reply.
+     * Skipped on sqlite (same constraint limitation as above).
+     */
+    public function test_postback_message_saves_for_inactive_bot_without_ai_response(): void
     {
-        // Pins pre-existing bug (inactive bot variant): the postback user-message
-        // insert fails on the messages.type CHECK constraint before the AI
-        // response path is reached.
+        if (DB::getDriverName() === 'sqlite') {
+            $this->markTestSkipped("messages.type widened only on pgsql/mysql — sqlite can't ALTER CHECK (mirrors 2025_12_31 convention)");
+        }
+
         Http::fake([
             'graph.facebook.com/*' => Http::response(['ok' => true], 200),
         ]);
@@ -83,8 +109,40 @@ class ProcessFacebookWebhookPostbackTest extends TestCase
         $aiService->shouldNotReceive('generateAndSaveResponse');
 
         $job = new ProcessFacebookWebhook($this->bot, $this->payload);
-
-        $this->expectException(QueryException::class);
         $job->handle($aiService);
+
+        // Postback still saves for an inactive bot — just no AI reply
+        $this->assertDatabaseHas('messages', [
+            'sender' => 'user',
+            'type' => 'postback',
+            'content' => 'ดูเมนู',
+        ]);
+
+        $this->assertDatabaseHas('conversations', [
+            'bot_id' => $this->bot->id,
+            'message_count' => 1,
+        ]);
+
+        $this->bot->refresh();
+        $this->assertSame(1, (int) $this->bot->total_messages);
+    }
+
+    /**
+     * The enum-widening migration must apply (and roll back) cleanly on
+     * every driver — a no-op on sqlite, a real ALTER on pgsql/mysql.
+     */
+    public function test_postback_enum_migration_applies_cleanly(): void
+    {
+        $migration = require database_path('migrations/2026_08_26_000000_add_postback_to_messages_type_enum.php');
+
+        // The migration runs inside RefreshDatabase's transaction; a no-op
+        // (sqlite) or DDL statement (pgsql/mysql) must not throw.
+        $migration->up();
+        $migration->down();
+        $migration->up();
+
+        // If we got here without a QueryException, the migration is sound
+        // for this driver. Reversing once more leaves the schema as up().
+        $this->addToAssertionCount(1);
     }
 }
