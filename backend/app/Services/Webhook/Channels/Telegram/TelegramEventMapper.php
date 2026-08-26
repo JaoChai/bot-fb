@@ -28,6 +28,10 @@ use App\Services\Webhook\WebhookContext;
  *   user_id    -> (string) parsed sender id ('' when absent)
  *   chat_type  -> parsed chat type ('private' default)
  *   chat_title -> parsed chat title (null for private)
+ *   username   -> parsed username (null when absent)
+ *   first_name -> parsed sender first name (null when absent)
+ *   last_name  -> parsed sender last name (null when absent)
+ *   reply_to_message_id -> parsed reply target (null when absent)
  *   file_id    -> extracted media file id (null for text)
  *   caption    -> parsed text/caption (null when absent)
  *   placeholder-> generateMediaPlaceholder() result (null for text)
@@ -99,6 +103,10 @@ class TelegramEventMapper
             'user_id' => $parsed['user_id'] ?? null,
             'chat_type' => $parsed['chat_type'] ?? null,
             'chat_title' => $parsed['chat_title'] ?? null,
+            'username' => $parsed['username'] ?? null,
+            'first_name' => $parsed['first_name'] ?? null,
+            'last_name' => $parsed['last_name'] ?? null,
+            'reply_to_message_id' => $parsed['reply_to_message_id'] ?? null,
             'file_id' => $fileId,
             'caption' => $parsed['text'],
             'placeholder' => $placeholder,
