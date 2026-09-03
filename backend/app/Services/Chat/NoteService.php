@@ -53,9 +53,11 @@ class NoteService
     /**
      * Update a note in a conversation's memory.
      *
+     * Passing $userId marks the note as human-owned (drops any auto 'source').
+     *
      * @throws ModelNotFoundException
      */
-    public function updateNote(Conversation $conversation, string $noteId, array $data): array
+    public function updateNote(Conversation $conversation, string $noteId, array $data, ?int $userId = null): array
     {
         $notes = $conversation->memory_notes ?? [];
         $noteIndex = collect($notes)->search(fn ($note) => $note['id'] === $noteId);
@@ -69,6 +71,13 @@ class NoteService
             $notes[$noteIndex]['type'] = $data['type'];
         }
         $notes[$noteIndex]['updated_at'] = now()->toISOString();
+
+        // โน้ตที่คนแก้เองต้องหลุดจากการดูแลของ VipDetectionService ไม่งั้นรอบ sync
+        // ถัดไปจะเขียนทับข้อความที่เจ้าของร้านพิมพ์ไว้ (เช่น ราคาพิเศษของลูกค้ารายนั้น)
+        unset($notes[$noteIndex]['source']);
+        if ($userId !== null) {
+            $notes[$noteIndex]['created_by'] = $userId;
+        }
 
         $conversation->update(['memory_notes' => array_values($notes)]);
 

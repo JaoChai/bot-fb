@@ -139,6 +139,33 @@ class NoteServiceTest extends TestCase
         $this->assertEquals('memory', $result['type']);
     }
 
+    public function test_update_note_detaches_auto_source_when_human_edits(): void
+    {
+        $noteId = 'vip-auto-note';
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->bot->id,
+            'memory_notes' => [
+                [
+                    'id' => $noteId,
+                    'content' => 'ลูกค้า VIP — ซื้อยืนยันแล้ว 3 ครั้ง',
+                    'type' => 'memory',
+                    'source' => 'vip_auto',
+                    'created_by' => null,
+                    'created_at' => now()->toISOString(),
+                    'updated_at' => now()->toISOString(),
+                ],
+            ],
+        ]);
+
+        $result = $this->service->updateNote($conversation, $noteId, [
+            'content' => 'ราคาพิเศษ: BM/Personal = 1,000 บาท',
+        ], $this->user->id);
+
+        $this->assertArrayNotHasKey('source', $result, 'Human-edited note must lose its auto source');
+        $this->assertEquals($this->user->id, $result['created_by']);
+        $this->assertEquals('ราคาพิเศษ: BM/Personal = 1,000 บาท', $conversation->fresh()->memory_notes[0]['content']);
+    }
+
     public function test_update_note_throws_exception_when_not_found(): void
     {
         $conversation = Conversation::factory()->create([

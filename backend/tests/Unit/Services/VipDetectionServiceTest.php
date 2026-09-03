@@ -8,6 +8,7 @@ use App\Models\CustomerProfile;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
+use App\Services\Chat\NoteService;
 use App\Services\VipDetectionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -148,6 +149,47 @@ class VipDetectionServiceTest extends TestCase
         $notes = $conversation->fresh()->memory_notes;
         $this->assertCount(1, $notes, 'Expected single vip_auto note after re-evaluation');
         $this->assertStringContainsString('ซื้อยืนยันแล้ว 4 ครั้ง', $notes[0]['content']);
+    }
+
+    public function test_evaluation_does_not_overwrite_note_edited_by_human(): void
+    {
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+        $customer = CustomerProfile::factory()->create();
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'customer_profile_id' => $customer->id,
+        ]);
+
+        Order::factory()->count(3)->create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conversation->id,
+            'customer_profile_id' => $customer->id,
+            'status' => 'completed',
+        ]);
+
+        $this->service->evaluateCustomer($customer);
+
+        // เจ้าของร้านแก้ข้อความในโน้ต VIP ก้อนเดิม เพื่อจดราคาพิเศษของลูกค้ารายนี้
+        $noteId = $conversation->fresh()->memory_notes[0]['id'];
+        app(NoteService::class)->updateNote($conversation->fresh(), $noteId, [
+            'content' => 'ราคาพิเศษ: BM/Personal = 1,000 บาท',
+        ], $user->id);
+
+        // ลูกค้าซื้ออีกครั้ง → sync รอบใหม่ต้องไม่กลืนข้อความที่คนเขียน
+        Order::factory()->create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conversation->id,
+            'customer_profile_id' => $customer->id,
+            'status' => 'completed',
+        ]);
+        $this->service->evaluateCustomer($customer);
+
+        $notes = $conversation->fresh()->memory_notes;
+        $contents = array_column($notes, 'content');
+
+        $this->assertContains('ราคาพิเศษ: BM/Personal = 1,000 บาท', $contents, 'Human-edited note must survive VIP sync');
+        $this->assertCount(2, $notes, 'Expected the human note plus a fresh vip_auto note');
     }
 
     public function test_handles_legacy_object_format_memory_notes(): void

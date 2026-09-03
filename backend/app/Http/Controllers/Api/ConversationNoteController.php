@@ -67,7 +67,7 @@ class ConversationNoteController extends BaseConversationController
             'type' => 'sometimes|string|in:note,memory,reminder',
         ]);
 
-        $updatedNote = $this->noteService->updateNote($conversation, $noteId, $validated);
+        $updatedNote = $this->noteService->updateNote($conversation, $noteId, $validated, $request->user()->id);
 
         return response()->json([
             'message' => 'Note updated successfully',
