@@ -89,6 +89,34 @@ class AIServiceGuardrailTest extends TestCase
     }
 
     #[Test]
+    public function test_guard_content_is_applied_even_when_not_blocked(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+
+        $this->mock(RAGService::class, function ($m) {
+            $m->shouldReceive('generateResponse')->once()->andReturn([
+                'content' => 'BM ราคา 1,100 บาทครับ',
+                'model' => 'test',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]);
+        });
+
+        $this->mock(StockGuardService::class, function ($m) {
+            $m->shouldReceive('validate')->andReturn([
+                'content' => "BM ราคา 1,100 บาทครับ\n\nตอนนี้ BM หมดสต็อกชั่วคราวครับ",
+                'blocked' => false,
+                'blocked_products' => [],
+            ]);
+        });
+
+        $result = app(AIService::class)->generateResponse($bot, 'BM ราคาเท่าไหร่ครับ', $conversation);
+
+        $this->assertStringContainsString('หมดสต็อกชั่วคราว', $result['content']);
+        $this->assertFalse($result['stock_guard']['blocked']);
+        $this->assertSame('BM ราคา 1,100 บาทครับ', $result['stock_guard']['original_preview']);
+    }
+
+    #[Test]
     public function test_normal_response_does_not_increment_off_topic_counter(): void
     {
         [$bot, $conversation] = $this->makeBotWithConversation();

@@ -11,8 +11,6 @@ use Illuminate\Support\Facades\Cache;
  */
 class StockInjectionService
 {
-    private const STOCK_OUT_REASON_PREFIX = 'ระบบ Facebook สแกนหนักมาก ทางเราเลยงดผลิต';
-
     public function getStockStatus(): Collection
     {
         return Cache::remember(ProductStock::STOCK_CACHE_KEY, 300, function () {
@@ -35,11 +33,6 @@ class StockInjectionService
     private function inStockWithQty(Collection $stocks): Collection
     {
         return $stocks->where('in_stock', true)->filter(fn ($p) => $p->available_count !== null);
-    }
-
-    private function buildOutOfStockReason(string $names): string
-    {
-        return self::STOCK_OUT_REASON_PREFIX." {$names} ชั่วคราว";
     }
 
     public function buildStockInjection(Collection $stocks): string
@@ -78,15 +71,8 @@ class StockInjectionService
 
         $lines[] = 'ห้ามขาย/เพิ่มตะกร้า/สร้างออเดอร์สินค้าที่หมด stock เด็ดขาด! (ตอบราคาและรายละเอียดได้ถ้าลูกค้าถาม แต่ต้องแจ้งว่าหมดชั่วคราว)';
 
-        if ($outOfStock->isNotEmpty()) {
-            $outOfStockNames = $outOfStock->pluck('name')->implode(', ');
-            $lines[] = 'สาเหตุที่หมด stock: '.$this->buildOutOfStockReason($outOfStockNames).' — ให้แจ้งสาเหตุนี้กับลูกค้าด้วยเวลาแจ้งว่าหมด';
-            if ($inStock->isNotEmpty()) {
-                $inStockNames = $inStock->pluck('name')->implode(', ');
-                $lines[] = "แนะนำให้ลูกค้าใช้สินค้าที่มีพร้อมส่งก่อน: {$inStockNames}";
-            }
-        }
-
+        // ไม่ใส่เหตุผลที่หมด/สินค้าทดแทน — สคริปต์การพูดเป็นของ prompt ที่เจ้าของร้านคุมเอง
+        // (เหตุผลที่เคยฉีดไว้ตั้งแต่ เม.ย. 2026 ขัดกับ prompt ที่แก้ 21 ส.ค. ซึ่งสั่งห้ามพูด)
         return implode("\n", $lines);
     }
 
@@ -97,15 +83,8 @@ class StockInjectionService
         $outOfStock = $stocks->where('in_stock', false);
         if ($outOfStock->isNotEmpty()) {
             $names = $outOfStock->pluck('name')->implode(', ');
-            $inStock = $stocks->where('in_stock', true);
 
-            $reminder = "⛔ STOCK REMINDER: สินค้าหมด stock → {$names} — ห้ามขาย/เพิ่มตะกร้า/สร้างออเดอร์เด็ดขาด! ตอบราคา/รายละเอียดได้ถ้าลูกค้าถาม + ต้องแจ้งว่าหมดชั่วคราว พร้อมบอกสาเหตุ (".$this->buildOutOfStockReason($names).')';
-
-            if ($inStock->isNotEmpty()) {
-                $inStockNames = $inStock->pluck('name')->implode(', ');
-                $reminder .= " + แนะนำใช้ {$inStockNames} แทนก่อน";
-            }
-            $parts[] = $reminder;
+            $parts[] = "⛔ STOCK REMINDER: สินค้าหมด stock → {$names} — ห้ามขาย/เพิ่มตะกร้า/สร้างออเดอร์เด็ดขาด! ตอบราคา/รายละเอียดได้ถ้าลูกค้าถาม + ต้องแจ้งว่าหมดชั่วคราว";
         }
 
         // double-injection กติกาจำนวน — LLM มักลืมกติกาที่อยู่ต้น prompt

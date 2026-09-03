@@ -75,13 +75,16 @@ class AIService
         );
 
         // Stock Guard: hard-block selling out-of-stock products
+        // (guard แก้ข้อความได้ 3 แบบ: ทับทั้งก้อน, ตัดท่อน upsell, ต่อท้ายว่าหมด —
+        //  ต้องรับ content กลับมาทุกแบบ ไม่ใช่เฉพาะตอน blocked)
         $guardResult = $this->stockGuard->validate($result['content'], $userMessage);
-        if ($guardResult['blocked']) {
-            $result['content'] = $guardResult['content'];
+        if (($guardResult['content'] ?? $result['content']) !== $result['content']) {
             $result['stock_guard'] = [
-                'blocked' => true,
-                'blocked_products' => $guardResult['blocked_products'],
+                'blocked' => $guardResult['blocked'],
+                'blocked_products' => $guardResult['blocked_products'] ?? [],
+                'original_preview' => mb_substr($result['content'], 0, 300),
             ];
+            $result['content'] = $guardResult['content'];
         }
 
         // ตัดบล็อกออเดอร์ออกจากข้อความก่อนใครได้เห็น — ทำที่นี่จุดเดียวเพราะทั้ง webhook

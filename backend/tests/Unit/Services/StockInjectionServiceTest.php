@@ -71,6 +71,38 @@ class StockInjectionServiceTest extends TestCase
         $this->assertStringContainsString('QTY REMINDER', $result);   // จำนวนใหม่
     }
 
+    public function test_injection_states_facts_without_scripting_the_answer(): void
+    {
+        $result = $this->service->buildStockInjection(collect([
+            $this->stockProduct('BM', null, false),
+            $this->stockProduct('G3D', 60),
+        ]));
+
+        // ข้อเท็จจริงต้องอยู่ครบ
+        $this->assertStringContainsString('[สินค้าที่หมดชั่วคราว]: BM', $result);
+        $this->assertStringContainsString('[สินค้าที่มีพร้อมส่ง]: G3D', $result);
+        $this->assertStringContainsString('ห้ามขาย/เพิ่มตะกร้า/สร้างออเดอร์สินค้าที่หมด stock', $result);
+
+        // แต่ห้ามสั่งบอทว่าต้องพูดอะไร — เหตุผลกับสินค้าทดแทนเป็นหน้าที่ของ prompt
+        $this->assertStringNotContainsString('สาเหตุที่หมด stock', $result);
+        $this->assertStringNotContainsString('สแกนหนัก', $result);
+        $this->assertStringNotContainsString('แนะนำ', $result);
+    }
+
+    public function test_reminder_states_facts_without_scripting_the_answer(): void
+    {
+        $result = $this->service->buildStockReminder(collect([
+            $this->stockProduct('BM', null, false),
+            $this->stockProduct('G3D', 60),
+        ]));
+
+        $this->assertStringContainsString('STOCK REMINDER', $result);
+        $this->assertStringContainsString('BM', $result);
+        $this->assertStringNotContainsString('สแกนหนัก', $result);
+        $this->assertStringNotContainsString('แนะนำใช้', $result);
+        $this->assertStringNotContainsString('สาเหตุ', $result);
+    }
+
     public function test_reminder_empty_when_nothing_to_say(): void
     {
         $result = $this->service->buildStockReminder(collect([

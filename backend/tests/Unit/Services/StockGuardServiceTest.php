@@ -77,7 +77,7 @@ class StockGuardServiceTest extends TestCase
         $this->assertStringNotContainsString('เพจ', $result['content']);
     }
 
-    public function test_replacement_response_includes_available_products(): void
+    public function test_replacement_does_not_push_unrelated_in_stock_products(): void
     {
         ProductStock::factory()->outOfStock()->create([
             'name' => 'Nolimit Level Up+ BM',
@@ -85,16 +85,19 @@ class StockGuardServiceTest extends TestCase
             'aliases' => ['BM'],
         ]);
         ProductStock::factory()->create([
-            'name' => 'Nolimit Level Up+ Personal',
-            'slug' => 'personal',
+            'name' => 'G3D',
+            'slug' => 'g3d',
             'in_stock' => true,
+            'aliases' => ['ไก่'],
         ]);
 
-        $response = 'Nolimit Level Up+ BM ราคา 1,100 บาทครับ';
+        // สินค้าทดแทนเป็นหน้าที่ของ prompt ที่รู้ว่าสินค้าตัวไหนใช้แทนกันได้ —
+        // guard ห้ามเดาเอง (G3D ยิงแอดไม่ได้ ห้ามเสนอให้คนที่จะยิงแอด)
+        $response = 'เพิ่ม Nolimit Level Up+ BM ลงตะกร้าแล้วครับ รวม 1,100 บาท';
         $result = $this->guard->validate($response);
 
         $this->assertTrue($result['blocked']);
-        $this->assertStringContainsString('Nolimit Level Up+ Personal', $result['content']);
+        $this->assertStringNotContainsString('G3D', $result['content']);
     }
 
     public function test_passes_when_config_disabled(): void
@@ -121,7 +124,7 @@ class StockGuardServiceTest extends TestCase
             'aliases' => ['BM', 'บีเอ็ม', 'พอร์ตโฟลิโอ'],
         ]);
 
-        $response = 'พอร์ตโฟลิโอ ราคา 1,100 บาทครับ';
+        $response = 'เพิ่มพอร์ตโฟลิโอ ลงตะกร้าให้แล้วครับ รวม 1,100 บาท';
         $result = $this->guard->validate($response);
 
         $this->assertTrue($result['blocked']);
@@ -321,7 +324,7 @@ class StockGuardServiceTest extends TestCase
         $this->assertFalse($result['blocked']);
     }
 
-    public function test_blocks_price_only_response_without_thai_currency(): void
+    public function test_annotates_price_only_response_without_thai_currency(): void
     {
         ProductStock::factory()->outOfStock()->create([
             'name' => 'Nolimit Level Up+ BM',
@@ -333,7 +336,47 @@ class StockGuardServiceTest extends TestCase
         $response = 'Nolimit Level Up+ BM ราคา 1100';
         $result = $this->guard->validate($response);
 
-        $this->assertTrue($result['blocked']);
+        $this->assertFalse($result['blocked']);
+        $this->assertStringContainsString('Nolimit Level Up+ BM ราคา 1100', $result['content']);
+        $this->assertStringContainsString('หมดสต็อกชั่วคราว', $result['content']);
+    }
+
+    public function test_does_not_block_when_price_belongs_to_in_stock_product(): void
+    {
+        // เคสจริงจากแชท 2 ก.ย. (msg 92664): ลูกค้าถาม "G3D คืออะไร" แล้วคำตอบโดนลบทั้งก้อน
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM', 'บีเอ็ม'],
+        ]);
+        ProductStock::factory()->create([
+            'name' => 'G3D',
+            'slug' => 'g3d',
+            'in_stock' => true,
+            'aliases' => ['ไก่', 'เฟสผี'],
+        ]);
+
+        $response = 'G3D คือเฟสไก่ครับ ราคา 50 บาท ใช้คอมเมนต์/ไลก์/แชร์ ไม่ใช่บัญชียิงแอดแบบ BM ครับ';
+        $result = $this->guard->validate($response, 'g3d คืออะไรครับ');
+
+        $this->assertFalse($result['blocked']);
+        $this->assertEquals($response, $result['content']);
+    }
+
+    public function test_annotates_price_mention_without_replacing_answer(): void
+    {
+        ProductStock::factory()->outOfStock()->create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM'],
+        ]);
+
+        $response = 'Nolimit Level Up+ BM ราคา 1,100 บาทครับ';
+        $result = $this->guard->validate($response, 'BM ราคาเท่าไหร่');
+
+        $this->assertFalse($result['blocked']);
+        $this->assertStringContainsString($response, $result['content']);
+        $this->assertStringContainsString('หมดสต็อกชั่วคราว', $result['content']);
     }
 
     public function test_strips_upsell_from_cart_response_keeping_main_product(): void

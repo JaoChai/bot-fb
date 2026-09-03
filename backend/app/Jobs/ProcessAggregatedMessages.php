@@ -381,6 +381,8 @@ class ProcessAggregatedMessages implements ShouldQueue
             'metadata' => array_filter([
                 ...($result['rag_metadata'] ?? []),
                 'order_payload' => $result['order_payload'] ?? null,
+                // เก็บไว้ตรวจย้อนหลังว่า guard ไปแก้คำตอบอะไรของบอทบ้าง
+                'stock_guard' => $result['stock_guard'] ?? null,
             ]) ?: null,
         ]);
 

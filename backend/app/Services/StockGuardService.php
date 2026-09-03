@@ -14,6 +14,9 @@ use Illuminate\Support\Facades\Log;
  */
 class StockGuardService
 {
+    /** ราคาที่ห่างจากชื่อสินค้าไม่เกินนี้ (ตัวอักษร) ถือว่าพูดถึงคู่กัน */
+    private const PRICE_PROXIMITY = 60;
+
     public function __construct(
         protected StockInjectionService $stockInjection
     ) {}
@@ -38,44 +41,61 @@ class StockGuardService
         // Selling keywords (price, cart, payment) always appear in the first portion.
         $responseToCheck = mb_substr($response, 0, 2000);
 
+        // map: ชื่อสินค้า => ปิดการขายจริงไหม (true = ตะกร้า/สรุปยอด/โอนเงิน)
         $violations = $this->detectViolations($responseToCheck, $outOfStock);
 
         if (empty($violations)) {
             return ['content' => $response, 'blocked' => false, 'blocked_products' => []];
         }
 
+        $products = array_keys($violations);
+
         // Check if ALL violations are upsell-only (not main product being sold)
-        $allUpsell = $this->areAllViolationsUpsell($responseToCheck, $violations, $outOfStock);
+        $allUpsell = $this->areAllViolationsUpsell($responseToCheck, $products, $outOfStock);
 
         if ($allUpsell) {
             Log::info('StockGuard: stripped upsell for out-of-stock products', [
-                'violations' => $violations,
+                'violations' => $products,
                 'user_message' => mb_substr(str_replace(["\n", "\r"], ' ', $userMessage), 0, 200),
             ]);
 
-            $stripped = $this->stripUpsellBlock($response, $violations, $outOfStock);
+            $stripped = $this->stripUpsellBlock($response, $products, $outOfStock);
 
             return ['content' => $stripped, 'blocked' => false, 'blocked_products' => []];
         }
 
+        // เอ่ยชื่อ/ราคาเฉยๆ ไม่ได้ปิดการขาย → ห้ามทิ้งคำตอบของลูกค้า แค่ต่อท้ายว่าหมด
+        // (prompt อนุญาตให้ตอบราคา/รายละเอียดได้ ขอแค่แจ้งว่าหมดชั่วคราวด้วย)
+        if (! in_array(true, $violations, true)) {
+            Log::info('StockGuard: appended out-of-stock notice', [
+                'violations' => $products,
+                'user_message' => mb_substr(str_replace(["\n", "\r"], ' ', $userMessage), 0, 200),
+            ]);
+
+            return [
+                'content' => $this->appendStockNotice($response, $products),
+                'blocked' => false,
+                'blocked_products' => [],
+            ];
+        }
+
         Log::warning('StockGuard: blocked out-of-stock sale', [
-            'violations' => $violations,
+            'violations' => $products,
             'original_response_preview' => mb_substr($response, 0, 300),
             'user_message' => mb_substr(str_replace(["\n", "\r"], ' ', $userMessage), 0, 200),
         ]);
 
-        $allStocks = $this->stockInjection->getStockStatus();
-        $replacement = $this->buildReplacementResponse($violations, $allStocks);
-
         return [
-            'content' => $replacement,
+            'content' => $this->buildReplacementResponse($products),
             'blocked' => true,
-            'blocked_products' => $violations,
+            'blocked_products' => $products,
         ];
     }
 
     /**
      * Detect if response is SELLING (not just mentioning) out-of-stock products.
+     *
+     * @return array<string, bool> ชื่อสินค้า => ปิดการขายจริงไหม (false = แค่เอ่ยชื่อ/ราคา)
      */
     protected function detectViolations(string $response, Collection $outOfStock): array
     {
@@ -99,7 +119,7 @@ class StockGuardService
 
                 // Product name found — check both refusal and selling contexts
                 $isRefused = $this->isRefusingContext($response, $name);
-                $isSelling = $this->isSellingContext($response, $name);
+                $isSelling = $this->isSellingContext($response, $name, $product->name);
 
                 // In payment instructions, product names as line items are not violations
                 if ($isSelling && $isPayment && $this->isOrderLineItem($response, $name)) {
@@ -111,7 +131,7 @@ class StockGuardService
                 // UNLESS there are active selling keywords (cart/order/recommendation)
                 if ($isSelling && $isRefused) {
                     if ($this->isActivelySelling($response, $name)) {
-                        $violations[] = $product->name;
+                        $violations[$product->name] = true;
                         break;
                     }
 
@@ -120,7 +140,7 @@ class StockGuardService
 
                 // Selling without refusal → violation
                 if ($isSelling) {
-                    $violations[] = $product->name;
+                    $violations[$product->name] = $this->isActivelySelling($response, $name);
                     break;
                 }
 
@@ -131,7 +151,7 @@ class StockGuardService
             }
         }
 
-        return array_unique($violations);
+        return $violations;
     }
 
     /**
@@ -168,14 +188,17 @@ class StockGuardService
      *
      * Selling = product name appears WITH price/payment/cart/recommendation keywords.
      */
-    protected function isSellingContext(string $response, string $productName): bool
+    protected function isSellingContext(string $response, string $productName, string $ownerName): bool
     {
         $quotedName = preg_quote($productName, '/');
 
+        // ราคาที่อยู่ใกล้ชื่อ ต้องเป็นราคาของสินค้าตัวนี้จริง ไม่ใช่ราคาของตัวอื่นที่บังเอิญ
+        // อยู่ในประโยคเดียวกัน (เช่น "G3D ราคา 50 บาท ... ไม่ใช่บัญชียิงแอดแบบ BM")
+        if ($this->hasOwnPriceNearby($response, $productName, $ownerName)) {
+            return true;
+        }
+
         $sellingPatterns = [
-            // Price near product name
-            "/{$quotedName}.{0,60}(\\d{3,}|บาท|฿)/iu",
-            "/(\\d{3,}|บาท|฿).{0,60}{$quotedName}/iu",
             // Cart/order keywords
             '/(เพิ่ม|ลง).{0,20}(ตะกร้า|cart)/iu',
             "/{$quotedName}.{0,40}(x\\d|จำนวน)/iu",
@@ -201,6 +224,98 @@ class StockGuardService
     }
 
     /**
+     * ราคาที่อยู่ใกล้ชื่อสินค้า นับเป็น "กำลังขาย" ต่อเมื่อราคานั้นเป็นของสินค้าตัวนี้จริง —
+     * ถ้ามีชื่อสินค้าตัวอื่นอยู่ใกล้ราคานั้นมากกว่า แปลว่าราคาเป็นของตัวอื่น
+     */
+    protected function hasOwnPriceNearby(string $response, string $name, string $ownerName): bool
+    {
+        $namePositions = $this->positionsOf($response, $name);
+        if (empty($namePositions)) {
+            return false;
+        }
+
+        $nameLength = mb_strlen($name);
+
+        foreach ($this->pricePositions($response) as $pricePos) {
+            foreach ($namePositions as $namePos) {
+                if ($this->gap($namePos, $nameLength, $pricePos) > self::PRICE_PROXIMITY) {
+                    continue;
+                }
+
+                if ($this->nearestProductAt($response, $pricePos) === $ownerName) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /** ตำแหน่ง (นับเป็นตัวอักษร) ของทุกครั้งที่เจอ $needle */
+    protected function positionsOf(string $haystack, string $needle): array
+    {
+        $positions = [];
+        $offset = 0;
+
+        while (($pos = mb_stripos($haystack, $needle, $offset)) !== false) {
+            $positions[] = $pos;
+            $offset = $pos + 1;
+        }
+
+        return $positions;
+    }
+
+    /** ตำแหน่งของราคาทุกจุดในข้อความ (ตัวเลข 3 หลักขึ้นไป หรือหน่วยเงิน) */
+    protected function pricePositions(string $response): array
+    {
+        if (! preg_match_all('/\d{3,}|บาท|฿/u', $response, $matches, PREG_OFFSET_CAPTURE)) {
+            return [];
+        }
+
+        return array_map(
+            fn ($hit) => mb_strlen(substr($response, 0, $hit[1])),
+            $matches[0]
+        );
+    }
+
+    /** ระยะห่างระหว่างชื่อสินค้ากับราคา (0 = ราคาอยู่ในชื่อ) */
+    protected function gap(int $namePos, int $nameLength, int $pricePos): int
+    {
+        if ($pricePos >= $namePos && $pricePos <= $namePos + $nameLength) {
+            return 0;
+        }
+
+        return $pricePos > $namePos
+            ? $pricePos - ($namePos + $nameLength)
+            : $namePos - $pricePos;
+    }
+
+    /** สินค้าที่ชื่อ/alias อยู่ใกล้ตำแหน่งนี้ที่สุด (ดูสินค้าทุกตัว ไม่ใช่แค่ตัวที่หมด) */
+    protected function nearestProductAt(string $response, int $position): ?string
+    {
+        $nearest = null;
+        $shortest = PHP_INT_MAX;
+
+        foreach ($this->stockInjection->getStockStatus() as $product) {
+            foreach (array_merge([$product->name], $product->aliases ?? []) as $name) {
+                if (mb_strlen($name) < 2) {
+                    continue;
+                }
+
+                foreach ($this->positionsOf($response, $name) as $namePos) {
+                    $distance = $this->gap($namePos, mb_strlen($name), $position);
+                    if ($distance < $shortest) {
+                        $shortest = $distance;
+                        $nearest = $product->name;
+                    }
+                }
+            }
+        }
+
+        return $nearest;
+    }
+
+    /**
      * Check if the response has ACTIVE selling intent (cart/order/recommendation),
      * not just a price mention. Used when both selling and refusal contexts are detected
      * to distinguish informational responses from actual selling attempts.
@@ -216,7 +331,8 @@ class StockGuardService
             // Payment processing near product
             "/(โอน|ชำระ|จ่าย|เลขบัญชี|QR|พร้อมเพย์).{0,60}{$quotedName}/iu",
             "/{$quotedName}.{0,60}(โอน|ชำระ|จ่าย|เลขบัญชี|QR|พร้อมเพย์)/iu",
-            // Active recommendation/upsell
+            // Active recommendation/upsell — เชียร์ของที่ไม่มีขาย = ต้องบล็อก ไม่ใช่แค่เตือน
+            "/(แนะนำ|เสนอ).{0,30}{$quotedName}/iu",
             "/รับ.{0,10}{$quotedName}.{0,10}(ไหม|มั้ย|ด้วย)/iu",
             "/{$quotedName}.{0,30}(ด้วยไหม|ดีไหม|สนใจไหม|เพิ่มไหม)/iu",
             // Order summary
@@ -368,23 +484,23 @@ class StockGuardService
         return $stripped;
     }
 
+    /** ต่อท้ายว่าสินค้าหมด โดยไม่ทิ้งคำตอบเดิมที่ลูกค้าถามมา */
+    protected function appendStockNotice(string $response, array $products): string
+    {
+        return rtrim($response)."\n\nตอนนี้ ".implode(', ', $products).' หมดสต็อกชั่วคราวครับ';
+    }
+
     /**
      * Build a replacement response when violation is detected.
+     *
+     * ไม่เสนอสินค้าทดแทนเอง — สินค้าตัวไหนใช้แทนกันได้เป็นเรื่องที่ prompt รู้ ไม่ใช่ guard
+     * (เคยเสนอ "ทุกตัวที่มีของ" แล้วไปเชียร์ G3D ให้ลูกค้าที่จะยิงแอด ซึ่ง G3D ยิงแอดไม่ได้)
      */
-    protected function buildReplacementResponse(array $violations, Collection $allStocks): string
+    protected function buildReplacementResponse(array $violations): string
     {
-        $inStock = $allStocks->where('in_stock', true);
         $violationList = implode(', ', $violations);
 
-        $response = "ขออภัยครับ ขณะนี้ {$violationList} หมด stock ชั่วคราว ไม่สามารถสั่งซื้อได้ครับ";
-
-        if ($inStock->isNotEmpty()) {
-            $availableList = $inStock->pluck('name')->implode(', ');
-            $response .= "\n\nสินค้าที่พร้อมให้บริการตอนนี้: {$availableList} ครับ";
-        }
-
-        $response .= "\n\nหากสนใจสินค้าอื่น หรือต้องการให้แจ้งเมื่อสินค้ากลับมา สามารถบอกได้เลยครับ";
-
-        return $response;
+        return "ขออภัยครับ ขณะนี้ {$violationList} หมด stock ชั่วคราว ไม่สามารถสั่งซื้อได้ครับ"
+            ."\n\nหากสนใจสินค้าอื่น หรือต้องการให้แจ้งเมื่อสินค้ากลับมา สามารถบอกได้เลยครับ";
     }
 }
