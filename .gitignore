@@ -67,3 +67,4 @@ docs/superpowers/audits/private/
 **/CLAUDE.md
 !/CLAUDE.md
 !/.claude/CLAUDE.md
+.claude/scheduled_tasks.lock
