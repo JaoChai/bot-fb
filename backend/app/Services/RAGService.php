@@ -5,27 +5,28 @@ namespace App\Services;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Flow;
-use App\Models\Order;
-use Illuminate\Support\Collection;
+use App\Services\RAG\RAGIntentDetector;
+use App\Services\RAG\RAGKnowledgeBase;
+use App\Services\RAG\RAGPromptBuilder;
 use Illuminate\Support\Facades\Log;
-use Throwable;
 
 /**
- * RAG (Retrieval Augmented Generation) Service
+ * RAG (Retrieval Augmented Generation) orchestrator.
  *
- * Integrates Knowledge Base search into bot responses using hybrid search
- * (semantic + keyword) with Reciprocal Rank Fusion for optimal retrieval.
- *
- * When a user sends a message, the service:
- * 1. Analyzes intent using Decision Model
- * 2. Searches the bot's KB using hybrid search (vector + full-text)
- * 3. Builds context from matching chunks
- * 4. Enhances the system prompt with KB context
- * 5. Generates an informed response via the LLM
+ * Owns generateResponse()/testRAG() and the model/effort/cache decisions;
+ * delegates to App\Services\RAG\RAGIntentDetector (message classification),
+ * RAGKnowledgeBase (KB retrieval, formatting, CRAG) and RAGPromptBuilder
+ * (system-prompt assembly). Public wrappers below keep the pre-split call
+ * surface for AIService, StreamingResponseOrchestrator, FlowController and
+ * PromptEvalRunner.
  */
 class RAGService
 {
-    private const SIMPLE_MESSAGE_PATTERN = '/^(สวัสดี|หวัดดี|ดี(ครับ|ค่ะ)?|ขอบคุณ|ขอบใจ|บาย|ลาก่อน|ok|oke|โอเค|hi|hello|hey|thanks|thank you|bye|good\s?(morning|evening|night))$/iu';
+    private RAGIntentDetector $intentDetector;
+
+    private RAGPromptBuilder $promptBuilder;
+
+    private RAGKnowledgeBase $knowledgeBase;
 
     public function __construct(
         protected SemanticSearchService $semanticSearchService,
@@ -37,7 +38,13 @@ class RAGService
         protected ?SemanticCacheService $semanticCache = null,
         protected ?CRAGService $cragService = null,
         protected StockInjectionService $stockInjectionService = new StockInjectionService
-    ) {}
+    ) {
+        // Collaborators snapshot these deps at construction — swapping a protected
+        // property via reflection afterwards will not reach them.
+        $this->intentDetector = new RAGIntentDetector;
+        $this->promptBuilder = new RAGPromptBuilder($this->stockInjectionService);
+        $this->knowledgeBase = new RAGKnowledgeBase($this->hybridSearchService, $this->flowCacheService, $this->cragService);
+    }
 
     /**
      * Generate a response using multi-model architecture.
@@ -147,13 +154,13 @@ class RAGService
         // leading ! $isSimpleMessage guard excludes from the KB entirely.
         $shouldUseKB = ! $isSimpleMessage
             && ($intent['intent'] === 'knowledge' || isset($intent['skipped']))
-            && $this->shouldUseKnowledgeBase($bot);
+            && $this->knowledgeBase->shouldUseKnowledgeBase($bot);
 
         if ($shouldUseKB) {
             // Use enhanced search_query from reasoning model if available (more accurate KB search)
             $searchQuery = $intent['search_query'] ?? $userMessage;
 
-            $kbContext = $this->getKnowledgeBaseContext(
+            $kbContext = $this->knowledgeBase->getKnowledgeBaseContext(
                 $bot,
                 $searchQuery,
                 $kbMetadata
@@ -172,7 +179,7 @@ class RAGService
         // Step 6: Build enhanced system prompt with memory notes, KB context, and multiple bubbles
         // Priority: Bot system_prompt > Flow system_prompt > Default
         $systemPrompt = $this->buildEnhancedPrompt(
-            $this->getSystemPromptForBot($bot),
+            $this->promptBuilder->getSystemPromptForBot($bot),
             $kbContext,
             $bot,
             $memoryNotes,
@@ -181,8 +188,8 @@ class RAGService
 
         // Step 7: Add Chain-of-Thought instruction if question is complex
         if ($complexity['is_complex'] && config('rag.chain_of_thought.enabled', true)) {
-            $language = $this->detectLanguage($userMessage);
-            $systemPrompt .= $this->buildChainOfThoughtInstruction($language);
+            $language = $this->intentDetector->detectLanguage($userMessage);
+            $systemPrompt .= $this->promptBuilder->buildChainOfThoughtInstruction($language);
 
             Log::debug('Chain-of-Thought activated', [
                 'bot_id' => $bot->id,
@@ -281,255 +288,28 @@ class RAGService
         return $result;
     }
 
-    /**
-     * Whether a message is a trivial greeting/acknowledgement that needs neither
-     * a decision-model round-trip nor a KB lookup (always resolves to 'chat').
-     */
+    /** Whether a message is a trivial greeting/acknowledgement. @see RAGIntentDetector::isSimpleMessage() */
     public function isSimpleMessage(string $userMessage): bool
     {
-        return mb_strlen($userMessage) <= 30
-            && (bool) preg_match(self::SIMPLE_MESSAGE_PATTERN, trim($userMessage));
+        return $this->intentDetector->isSimpleMessage($userMessage);
     }
 
-    /**
-     * Check if the bot should use its Knowledge Base.
-     *
-     * Uses Flow-level KB attachment as source of truth (consistent with StreamController).
-     * If the default flow has KBs attached, they will be used regardless of bot.kb_enabled.
-     */
-    protected function shouldUseKnowledgeBase(Bot $bot): bool
+    /** @see RAGPromptBuilder::buildEnhancedPrompt() */
+    protected function buildEnhancedPrompt(string $basePrompt, string $kbContext, ?Bot $bot = null, array $memoryNotes = [], string $purchaseHistoryBlock = ''): string
     {
-        $defaultFlow = $this->flowCacheService->getDefaultFlow($bot->id);
-
-        if (! $defaultFlow || ! $defaultFlow->knowledgeBases()->exists()) {
-            return false;
-        }
-
-        return true;
+        return $this->promptBuilder->buildEnhancedPrompt($basePrompt, $kbContext, $bot, $memoryNotes, $purchaseHistoryBlock);
     }
 
-    /**
-     * Get context from Knowledge Base for the given query.
-     *
-     * Delegates to getFlowKnowledgeBaseContext since KBs are now accessed via Flow.
-     */
-    protected function getKnowledgeBaseContext(
-        Bot $bot,
-        string $query,
-        array &$metadata
-    ): string {
-        // Get default flow and delegate to flow-based context retrieval
-        $defaultFlow = $this->flowCacheService->getDefaultFlow($bot->id);
-        if (! $defaultFlow) {
-            return '';
-        }
-
-        return $this->getFlowKnowledgeBaseContext($defaultFlow, $query, $metadata);
-    }
-
-    /**
-     * Format KB search results into context for the prompt.
-     * Public method to allow delegation from controllers.
-     */
-    public function formatKnowledgeBaseContext($results): string
-    {
-        if ($results->isEmpty()) {
-            return '';
-        }
-
-        $template = config('rag.context_template', 'thai');
-
-        if ($template === 'thai') {
-            return $this->formatThaiContext($results);
-        }
-
-        return $this->formatEnglishContext($results);
-    }
-
-    /**
-     * Format context in Thai.
-     */
-    protected function formatThaiContext($results): string
-    {
-        $context = "## ข้อมูลอ้างอิงจาก Knowledge Base:\n\n";
-
-        foreach ($results as $i => $result) {
-            $relevance = round($result['similarity'] * 100);
-            $context .= '### แหล่งที่ '.($i + 1)." (ความเกี่ยวข้อง {$relevance}%)\n";
-            $context .= "📄 {$result['document_name']}\n\n";
-            $context .= $result['content']."\n\n";
-        }
-
-        $context .= "---\n";
-        $context .= '📌 **คำแนะนำ**: ใช้ข้อมูลด้านบนในการตอบคำถาม ';
-        $context .= "หากข้อมูลไม่เกี่ยวข้องหรือไม่เพียงพอ ให้ตอบตามความรู้ทั่วไปและแจ้งผู้ใช้ว่าไม่พบข้อมูลในระบบ\n";
-
-        return $context;
-    }
-
-    /**
-     * Format context in English.
-     */
-    protected function formatEnglishContext($results): string
-    {
-        $context = "## Reference Information from Knowledge Base:\n\n";
-
-        foreach ($results as $i => $result) {
-            $relevance = round($result['similarity'] * 100);
-            $context .= '### Source '.($i + 1)." (Relevance: {$relevance}%)\n";
-            $context .= "Document: {$result['document_name']}\n\n";
-            $context .= $result['content']."\n\n";
-        }
-
-        $context .= "---\n";
-        $context .= "**Instructions**: Use the information above to answer the user's question. ";
-        $context .= "If the information is not relevant or insufficient, respond using general knowledge and inform the user.\n";
-
-        return $context;
-    }
-
-    /**
-     * Build enhanced system prompt with memory notes, KB context, and multiple bubbles instruction.
-     */
-    protected function buildEnhancedPrompt(
-        string $basePrompt,
-        string $kbContext,
-        ?Bot $bot = null,
-        array $memoryNotes = [],
-        string $purchaseHistoryBlock = ''
-    ): string {
-        // Static persona leads so it forms a stable, cacheable prefix for
-        // OpenRouter/gemini prefix caching. Dynamic memory/stock/KB come AFTER.
-        $prompt = $basePrompt;
-
-        if (! empty($memoryNotes)) {
-            $prompt .= "\n\n## Memory (ประวัติสะสมของลูกค้าจากออเดอร์เก่า):\n";
-            $prompt .= "ใช้เพื่อจดจำสินค้า/พฤติกรรมที่เคยซื้อเท่านั้น ตัวเลขจำนวน (x1, x2) คือยอดสะสมในอดีต ห้ามนำไปรวมหรือนับเป็นจำนวนของออเดอร์ใหม่\n";
-            foreach ($memoryNotes as $content) {
-                $prompt .= "- {$content}\n";
-            }
-            $prompt .= "---\n";
-        }
-
-        // ประวัติการซื้อจากตาราง orders จริง — วางก่อน stock เสมอ เพราะ stock reminder อยู่ท้าย
-        // prompt (ใกล้ข้อความลูกค้าที่สุด = LLM ให้น้ำหนักสูงสุด) กฎสต็อกจึงทับประวัติได้ตามตำแหน่ง
-        if ($purchaseHistoryBlock !== '') {
-            $prompt .= "\n\n".$purchaseHistoryBlock;
-        }
-
-        // Always inject stock — conditional injection caused sales of out-of-stock products
-        $stocks = $this->stockInjectionService->getStockStatus();
-        $hasOutOfStock = $stocks->where('in_stock', false)->isNotEmpty();
-        // มีจำนวนคงเหลือให้คุมโควตาการขาย แม้ของจะยังไม่หมดก็ต้องฉีด (กันรับออเดอร์เกิน stock)
-        $hasQty = $this->stockInjectionService->hasQtyToEnforce($stocks);
-
-        if ($hasOutOfStock || $hasQty) {
-            $stockInjection = $this->stockInjectionService->buildStockInjection($stocks);
-            if (! empty($stockInjection)) {
-                $prompt .= "\n\n".$stockInjection;
-            }
-        }
-
-        if (! empty($kbContext)) {
-            $prompt .= "\n\n".$kbContext;
-        }
-
-        if ($bot) {
-            $bubblesService = app(MultipleBubblesService::class);
-            $instruction = $bubblesService->buildPromptInstruction($bot);
-            if (! empty($instruction)) {
-                $prompt .= "\n".$instruction;
-            }
-        }
-
-        // Stock reminder at END of prompt — closest to user message = highest LLM attention
-        if ($hasOutOfStock || $hasQty) {
-            $stockReminder = $this->stockInjectionService->buildStockReminder($stocks);
-            if (! empty($stockReminder)) {
-                $prompt .= "\n\n".$stockReminder;
-            }
-        }
-
-        return $prompt;
-    }
-
-    /**
-     * บล็อกประวัติการซื้อล่าสุดของลูกค้า ดึงจากตาราง orders จริง (ไม่พึ่ง LLM จด)
-     *
-     * คืน '' เมื่อไม่มีข้อมูลหรือ query ล้มเหลว — ความจำเป็นของเสริม ห้ามทำให้บอทตอบลูกค้าไม่ได้
-     */
+    /** @see RAGPromptBuilder::buildPurchaseHistoryBlock() */
     protected function buildPurchaseHistoryBlock(?Conversation $conversation): string
     {
-        $profileId = $conversation?->customer_profile_id;
-
-        if (! $profileId) {
-            return '';
-        }
-
-        try {
-            $order = Order::query()
-                ->where('customer_profile_id', $profileId)
-                ->where('status', 'completed')
-                ->where('created_at', '>=', now()->subDays(90))
-                // id เป็น tiebreaker กันกรณีลูกค้าซื้อหลายใบใน timestamp เดียวกัน
-                ->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->with('items')
-                ->first();
-
-            if (! $order || $order->items->isEmpty()) {
-                return '';
-            }
-
-            $lines = $order->items
-                ->map(function ($item) {
-                    $variant = $item->variant ? " ({$item->variant})" : '';
-
-                    return "- {$item->product_name}{$variant} x{$item->quantity}";
-                })
-                ->implode("\n");
-
-            $date = $this->formatThaiDate($order->created_at);
-
-            return "## ประวัติการซื้อล่าสุดของลูกค้ารายนี้ (ข้อมูลจากระบบออเดอร์จริง)\n"
-                ."{$lines} — {$date}\n\n"
-                ."วิธีใช้: ใช้เพื่อเข้าใจบริบทคำถามที่ต่อเนื่องจากของที่ลูกค้าถืออยู่เท่านั้น\n"
-                ."⛔ ห้ามเอ่ยถึงประวัตินี้ก่อนที่ลูกค้าจะพูดถึงเอง ห้ามทักทายด้วยประวัติ\n"
-                ."⛔ ตัวเลขจำนวนนี้เป็นของออเดอร์เก่า ห้ามนำไปรวมกับออเดอร์ใหม่\n"
-                ."⛔ ถ้าสินค้าที่เคยซื้อหมดสต็อก ให้ทำตามกฎสต็อกและเสนอตัวแทน ห้ามยึดประวัติ\n"
-                ."---\n";
-        } catch (Throwable $e) {
-            Log::warning('RAGService: buildPurchaseHistoryBlock failed', [
-                'conversation_id' => $conversation?->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return '';
-        }
+        return $this->promptBuilder->buildPurchaseHistoryBlock($conversation);
     }
 
-    /**
-     * แปลงวันที่เป็นไทยย่อ เช่น "15 ส.ค. 2026" — map เองไม่พึ่ง locale package
-     * เพื่อให้ผลลัพธ์เหมือนกันทุกเครื่องและเทสต์ได้แน่นอน
-     */
-    private function formatThaiDate(\DateTimeInterface $date): string
-    {
-        $months = [
-            1 => 'ม.ค.', 2 => 'ก.พ.', 3 => 'มี.ค.', 4 => 'เม.ย.', 5 => 'พ.ค.', 6 => 'มิ.ย.',
-            7 => 'ก.ค.', 8 => 'ส.ค.', 9 => 'ก.ย.', 10 => 'ต.ค.', 11 => 'พ.ย.', 12 => 'ธ.ค.',
-        ];
-
-        return (int) $date->format('j').' '.$months[(int) $date->format('n')].' '.$date->format('Y');
-    }
-
-    /**
-     * Inject stock status (header + reminder) around a prompt.
-     *
-     * Used by test/emulator endpoints that don't go through buildEnhancedPrompt().
-     */
+    /** @see RAGPromptBuilder::injectStockStatus() */
     public function injectStockStatus(string $prompt): string
     {
-        return $this->stockInjectionService->injectStockStatus($prompt);
+        return $this->promptBuilder->injectStockStatus($prompt);
     }
 
     /**
@@ -567,140 +347,28 @@ class RAGService
         return ($rank[$botEffort] ?? 1) > 1 ? 'medium' : $botEffort;
     }
 
-    /**
-     * Get the API key to use for a bot.
-     *
-     * Priority:
-     * 1. User's API key from Settings page
-     * 2. Config/env fallback
-     */
+    /** @see RAGKnowledgeBase::getApiKeyForBot() */
     protected function getApiKeyForBot(Bot $bot): ?string
     {
-        return $bot->user?->settings?->getOpenRouterApiKey()
-            ?? config('services.openrouter.api_key');
+        return $this->knowledgeBase->getApiKeyForBot($bot);
     }
 
-    /**
-     * Get system prompt for a bot with fallback chain:
-     * 1. Bot's own system_prompt (if set)
-     * 2. Default Flow's system_prompt (if bot has default_flow_id)
-     * 3. Default system prompt
-     */
-    protected function getSystemPromptForBot(Bot $bot): string
+    /** @see RAGKnowledgeBase::formatKnowledgeBaseContext() */
+    public function formatKnowledgeBaseContext($results): string
     {
-        // 1. Use bot's own system_prompt if set
-        if (! empty($bot->system_prompt)) {
-            return $bot->system_prompt;
-        }
-
-        // 2. Use default flow's system_prompt if available
-        if ($bot->default_flow_id) {
-            $flow = Flow::find($bot->default_flow_id);
-            if ($flow && ! empty($flow->system_prompt)) {
-                Log::debug('Using system_prompt from Flow', [
-                    'bot_id' => $bot->id,
-                    'flow_id' => $flow->id,
-                    'flow_name' => $flow->name,
-                ]);
-
-                return $flow->system_prompt;
-            }
-        }
-
-        // 3. Fallback to default
-        return $this->getDefaultSystemPrompt($bot);
+        return $this->knowledgeBase->formatKnowledgeBaseContext($results);
     }
 
-    protected function getDefaultSystemPrompt(Bot $bot): string
+    /** @see RAGKnowledgeBase::getFlowKnowledgeBaseContext() */
+    public function getFlowKnowledgeBaseContext(Flow $flow, string $query, array &$metadata): string
     {
-        return <<<PROMPT
-You are a helpful AI assistant for {$bot->name}.
-Be friendly, professional, and helpful.
-Respond in the same language as the user's message.
-If you don't know something, be honest about it.
-Keep responses concise but informative.
-PROMPT;
+        return $this->knowledgeBase->getFlowKnowledgeBaseContext($flow, $query, $metadata);
     }
 
-    /**
-     * Get context from a Flow's Knowledge Bases (Many-to-Many).
-     * Searches all attached KBs using hybrid search and merges results.
-     */
-    public function getFlowKnowledgeBaseContext(
-        Flow $flow,
-        string $query,
-        array &$metadata
-    ): string {
-        $knowledgeBases = $flow->knowledgeBases;
-
-        if ($knowledgeBases->isEmpty()) {
-            return '';
-        }
-
-        try {
-            // Build KB configs from pivot data
-            $kbConfigs = $knowledgeBases->map(fn ($kb) => [
-                'id' => $kb->id,
-                'name' => $kb->name,
-                'kb_top_k' => $kb->pivot->kb_top_k ?? 5,
-                'kb_similarity_threshold' => $kb->pivot->kb_similarity_threshold ?? 0.7,
-            ])->toArray();
-
-            // Get API key: User Settings > ENV
-            $apiKey = $flow->bot ? $this->getApiKeyForBot($flow->bot) : config('services.openrouter.api_key');
-
-            // Search all KBs using hybrid search and merge results
-            $results = $this->hybridSearchService->searchMultiple(
-                kbConfigs: $kbConfigs,
-                query: $query,
-                totalLimit: config('rag.max_results', 5),
-                apiKey: $apiKey
-            );
-
-            // CRAG: Evaluate retrieval quality and take corrective action
-            $results = $this->applyCRAG($results, $query, $kbConfigs, $metadata, $apiKey);
-
-            if ($results->isEmpty()) {
-                Log::debug('No relevant results from Flow KBs', [
-                    'flow_id' => $flow->id,
-                    'kb_count' => count($kbConfigs),
-                    'query' => substr($query, 0, 100),
-                    'search_mode' => $this->hybridSearchService->isEnabled() ? 'hybrid' : 'semantic',
-                ]);
-
-                return '';
-            }
-
-            // Update metadata with hybrid search info
-            $metadata['enabled'] = true;
-            $metadata['results_count'] = $results->count();
-            $metadata['kb_count'] = $knowledgeBases->count();
-            $metadata['search_mode'] = $this->hybridSearchService->isEnabled() ? 'hybrid' : 'semantic';
-            $metadata['chunks_used'] = $results->map(fn ($r) => [
-                'document' => $r['document_name'],
-                'knowledge_base_id' => $r['knowledge_base_id'],
-                'similarity' => $r['similarity'],
-                'rrf_score' => $r['rrf_score'] ?? null,
-            ])->toArray();
-
-            // Format context for prompt
-            return $this->formatKnowledgeBaseContext($results);
-        } catch (\Exception $e) {
-            Log::error('Flow KB search failed', [
-                'flow_id' => $flow->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return '';
-        }
-    }
-
-    /**
-     * Check if a Flow has Knowledge Bases attached.
-     */
+    /** @see RAGKnowledgeBase::flowHasKnowledgeBases() */
     public function flowHasKnowledgeBases(Flow $flow): bool
     {
-        return $flow->knowledgeBases()->exists();
+        return $this->knowledgeBase->flowHasKnowledgeBases($flow);
     }
 
     /**
@@ -717,8 +385,8 @@ PROMPT;
         ];
 
         $context = '';
-        if ($this->shouldUseKnowledgeBase($bot)) {
-            $context = $this->getKnowledgeBaseContext($bot, $testQuery, $metadata);
+        if ($this->knowledgeBase->shouldUseKnowledgeBase($bot)) {
+            $context = $this->knowledgeBase->getKnowledgeBaseContext($bot, $testQuery, $metadata);
         }
 
         return [
@@ -796,304 +464,15 @@ PROMPT;
     // Chain-of-Thought (CoT) Methods
     // =========================================================================
 
-    /**
-     * Detect if a user message requires complex reasoning (Chain-of-Thought).
-     *
-     * Uses heuristics-based detection to avoid additional LLM calls.
-     * Returns complexity score and reasons for activation.
-     *
-     * @param  string  $userMessage  The user's message
-     * @return array{is_complex: bool, score: int, reasons: array}
-     */
+    /** Detect if a user message requires complex reasoning (Chain-of-Thought). @see RAGIntentDetector::detectComplexity() */
     public function detectComplexity(string $userMessage): array
     {
-        $score = 0;
-        $reasons = [];
-        $threshold = config('rag.chain_of_thought.complexity_threshold', 2);
-
-        // Greeting patterns — should NOT trigger agent loop
-        $greetingPatterns = [
-            '/^(สวัสดี|หวัดดี|ดีครับ|ดีค่ะ|ดีจ้า|ดีจ้ะ|ดี|hello|hi|hey|yo|good\s*(morning|afternoon|evening))[\s!\.]*$/iu',
-        ];
-
-        foreach ($greetingPatterns as $pattern) {
-            if (preg_match($pattern, trim($userMessage))) {
-                return ['is_complex' => false, 'score' => 0, 'reasons' => ['greeting_detected']];
-            }
-        }
-
-        // 1. Message length > 100 characters (indicates detailed question)
-        if (mb_strlen($userMessage) > 100) {
-            $score += 1;
-            $reasons[] = 'long_message';
-        }
-
-        // 2. Multiple questions (multiple question marks)
-        $questionMarkCount = substr_count($userMessage, '?');
-        if ($questionMarkCount > 1) {
-            $score += 2;
-            $reasons[] = 'multiple_questions';
-        }
-
-        // 3. Reasoning keywords that require step-by-step thinking
-        $reasoningKeywords = [
-            // English
-            'compare', 'comparison', 'versus', 'vs',
-            'analyze', 'analysis', 'evaluate', 'assessment',
-            'why', 'how come', 'reason',
-            'explain', 'elaborate', 'describe in detail',
-            'pros and cons', 'advantages and disadvantages',
-            'step by step', 'steps to', 'process',
-            'calculate', 'compute', 'solve',
-            'if', 'assuming', 'suppose', 'what if',
-            'difference between', 'similarities',
-            'best', 'recommend', 'suggest', 'which one',
-            // Thai
-            'เปรียบเทียบ', 'เทียบกับ',
-            'วิเคราะห์', 'ประเมิน',
-            'ทำไม', 'เพราะอะไร', 'สาเหตุ',
-            'อธิบาย', 'ขยายความ',
-            'ข้อดีข้อเสีย', 'ข้อดี', 'ข้อเสีย',
-            'ทีละขั้นตอน', 'ขั้นตอน', 'วิธีการ',
-            'คำนวณ', 'หาค่า',
-            'ถ้า', 'สมมติ', 'หาก',
-            'ความแตกต่าง', 'ต่างกันยังไง',
-            'ดีที่สุด', 'แนะนำ', 'เลือกอันไหน',
-        ];
-
-        $lowerMessage = mb_strtolower($userMessage);
-        foreach ($reasoningKeywords as $keyword) {
-            if (mb_stripos($lowerMessage, $keyword) !== false) {
-                $score += 2;
-                $reasons[] = "keyword:{$keyword}";
-                break; // Only count once for keywords
-            }
-        }
-
-        // 4. Contains numbers with operations (likely calculation)
-        if (preg_match('/\d+\s*[\+\-\*\/\%]\s*\d+/', $userMessage)) {
-            $score += 1;
-            $reasons[] = 'contains_calculation';
-        }
-
-        // 5. Contains list indicators (enumeration questions)
-        if (preg_match('/\d+[\.\)]\s|\b(first|second|third|firstly|secondly|อันดับ|ประการ)\b/i', $userMessage)) {
-            $score += 1;
-            $reasons[] = 'enumeration';
-        }
-
-        return [
-            'is_complex' => $score >= $threshold,
-            'score' => $score,
-            'reasons' => $reasons,
-        ];
+        return $this->intentDetector->detectComplexity($userMessage);
     }
 
-    /**
-     * Detect if user message explicitly requires a tool.
-     *
-     * @param  string  $userMessage  User's message to analyze
-     * @param  array  $enabledTools  List of enabled tool names for this flow
-     * @return array{needs_tool: bool, tool_hint: ?string, reasons: array}
-     */
+    /** Detect if user message explicitly requires a tool. @see RAGIntentDetector::detectToolIntent() */
     public function detectToolIntent(string $userMessage, array $enabledTools = []): array
     {
-        $lowerMessage = mb_strtolower($userMessage);
-        $reasons = [];
-        $toolHint = null;
-
-        // Calculate tool
-        if (in_array('calculate', $enabledTools)) {
-            $calcKeywords = ['คำนวณ', 'คิดราคา', 'คิดเงิน', 'รวมราคา', 'ส่วนลด', 'กี่บาท',
-                'calculate', 'total', 'discount'];
-            foreach ($calcKeywords as $kw) {
-                if (mb_stripos($lowerMessage, $kw) !== false) {
-                    $reasons[] = "tool_keyword:{$kw}";
-                    $toolHint = 'calculate';
-                    break;
-                }
-            }
-            // Arithmetic expressions
-            if (preg_match('/\d+\s*[\+\-\*\/\%x]\s*\d+/', $userMessage)) {
-                $reasons[] = 'arithmetic_expression';
-                $toolHint = $toolHint ?? 'calculate';
-            }
-        }
-
-        // Datetime tool
-        if (in_array('get_current_datetime', $enabledTools) && ! $toolHint) {
-            $datetimeKeywords = ['วันนี้', 'เวลา', 'กี่โมง', 'วันที่', 'วันอะไร', 'what time', 'what day', 'today', 'date', 'current time'];
-            foreach ($datetimeKeywords as $kw) {
-                if (mb_stripos($lowerMessage, $kw) !== false) {
-                    $reasons[] = "tool_keyword:{$kw}";
-                    $toolHint = 'get_current_datetime';
-                    break;
-                }
-            }
-        }
-
-        // Escalate tool
-        if (in_array('escalate_to_human', $enabledTools) && ! $toolHint) {
-            $escalateKeywords = ['คุยกับคน', 'ติดต่อพนักงาน', 'ขอคุยกับเจ้าหน้าที่', 'talk to human', 'real person', 'human agent', 'speak to someone'];
-            foreach ($escalateKeywords as $kw) {
-                if (mb_stripos($lowerMessage, $kw) !== false) {
-                    $reasons[] = "tool_keyword:{$kw}";
-                    $toolHint = 'escalate_to_human';
-                    break;
-                }
-            }
-        }
-
-        // Think tool (complex analysis)
-        if (in_array('think', $enabledTools) && ! $toolHint) {
-            $thinkKeywords = ['วิเคราะห์เชิงลึก', 'เปรียบเทียบทุกตัว', 'สรุปให้'];
-            foreach ($thinkKeywords as $kw) {
-                if (mb_stripos($lowerMessage, $kw) !== false) {
-                    $reasons[] = "tool_keyword:{$kw}";
-                    $toolHint = 'think';
-                    break;
-                }
-            }
-        }
-
-        return [
-            'needs_tool' => ! empty($reasons),
-            'tool_hint' => $toolHint,
-            'reasons' => $reasons,
-        ];
-    }
-
-    /**
-     * Build Chain-of-Thought instruction to append to system prompt.
-     *
-     * Instructs the LLM to think step-by-step for complex questions.
-     *
-     * @param  string  $language  'thai' or 'english'
-     * @return string The CoT instruction to append
-     */
-    protected function buildChainOfThoughtInstruction(string $language = 'thai'): string
-    {
-        if ($language === 'thai') {
-            return <<<'PROMPT'
-
-
-## คำแนะนำสำหรับคำถามซับซ้อน
-คำถามนี้ต้องการการวิเคราะห์อย่างละเอียด กรุณา:
-1. **แยกประเด็น**: ระบุประเด็นสำคัญที่ต้องพิจารณา
-2. **วิเคราะห์ทีละขั้น**: อธิบายเหตุผลหรือขั้นตอนอย่างชัดเจน
-3. **สรุปคำตอบ**: ให้คำตอบที่ชัดเจนและครบถ้วน
-
-PROMPT;
-        }
-
-        return <<<'PROMPT'
-
-
-## Instructions for Complex Questions
-This question requires detailed analysis. Please:
-1. **Identify Key Points**: Break down the important aspects to consider
-2. **Analyze Step by Step**: Explain your reasoning or process clearly
-3. **Provide Conclusion**: Give a clear and comprehensive answer
-
-PROMPT;
-    }
-
-    /**
-     * Detect the primary language of a message.
-     *
-     * Simple detection based on Thai character presence.
-     *
-     * @param  string  $message  The message to analyze
-     * @return string 'thai' or 'english'
-     */
-    protected function detectLanguage(string $message): string
-    {
-        // Count Thai characters (Unicode range: \x{0E00}-\x{0E7F})
-        $thaiCharCount = preg_match_all('/[\x{0E00}-\x{0E7F}]/u', $message);
-
-        // If more than 20% Thai characters, consider it Thai
-        $totalChars = mb_strlen($message);
-        if ($totalChars > 0 && ($thaiCharCount / $totalChars) > 0.2) {
-            return 'thai';
-        }
-
-        return 'english';
-    }
-
-    /**
-     * Apply Corrective RAG (CRAG) evaluation to search results.
-     *
-     * Evaluates retrieval quality and takes corrective action:
-     * - "correct" (high similarity): use results directly
-     * - "ambiguous" (mid similarity): rewrite query and re-search
-     * - "incorrect" (low similarity): return empty (skip KB)
-     *
-     * Wrapped in try-catch so CRAG failures never break the KB search.
-     */
-    protected function applyCRAG(
-        Collection $results,
-        string $query,
-        array $kbConfigs,
-        array &$metadata,
-        ?string $apiKey
-    ): Collection {
-        if (! $this->cragService?->isEnabled() || $results->isEmpty()) {
-            return $results;
-        }
-
-        try {
-            $evaluation = $this->cragService->evaluate($results, $query);
-            $metadata['crag'] = $evaluation;
-
-            Log::debug('CRAG: Evaluation result', [
-                'grade' => $evaluation['grade'],
-                'top_similarity' => $evaluation['top_similarity'],
-            ]);
-
-            if ($evaluation['grade'] === CRAGService::GRADE_INCORRECT) {
-                return collect([]);
-            }
-
-            if ($evaluation['grade'] === CRAGService::GRADE_AMBIGUOUS) {
-                for ($attempt = 0; $attempt < $this->cragService->getMaxRewriteAttempts(); $attempt++) {
-                    $rewrittenQuery = $this->cragService->rewriteQuery($query, $results, $apiKey);
-
-                    $newResults = $this->hybridSearchService->searchMultiple(
-                        kbConfigs: $kbConfigs,
-                        query: $rewrittenQuery,
-                        totalLimit: config('rag.max_results', 5),
-                        apiKey: $apiKey
-                    );
-
-                    if ($newResults->isEmpty()) {
-                        continue;
-                    }
-
-                    $newEval = $this->cragService->evaluate($newResults, $rewrittenQuery);
-
-                    Log::debug('CRAG: Rewrite attempt result', [
-                        'attempt' => $attempt + 1,
-                        'rewritten_query' => $rewrittenQuery,
-                        'grade' => $newEval['grade'],
-                        'top_similarity' => $newEval['top_similarity'],
-                    ]);
-
-                    if ($newEval['grade'] === CRAGService::GRADE_CORRECT) {
-                        $metadata['crag']['rewrite_attempts'] = $attempt + 1;
-                        $metadata['crag']['rewritten_query'] = $rewrittenQuery;
-
-                        return $newResults;
-                    }
-                }
-            }
-
-            return $results;
-        } catch (\Exception $e) {
-            Log::warning('CRAG: Evaluation failed, using original results', [
-                'error' => $e->getMessage(),
-            ]);
-
-            return $results;
-        }
+        return $this->intentDetector->detectToolIntent($userMessage, $enabledTools);
     }
 }
