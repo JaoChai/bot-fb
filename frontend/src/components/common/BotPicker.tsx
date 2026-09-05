@@ -8,7 +8,7 @@ import {
 import { Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export interface BotOption {
+interface BotOption {
   id: number | string;
   name: string;
 }

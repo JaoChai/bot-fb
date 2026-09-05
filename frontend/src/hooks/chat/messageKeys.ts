@@ -46,15 +46,3 @@ export interface MessagesOptions {
   perPage?: number;
   order?: 'asc' | 'desc';
 }
-
-export interface SendMessageData {
-  content: string;
-  type?: 'text' | 'image' | 'video' | 'audio' | 'file';
-  media_url?: string;
-}
-
-export interface AgentMessageResponse {
-  message: string;
-  data: Message;
-  delivery_error?: string | null;
-}

@@ -4,33 +4,15 @@
  *
  * Phase 5 Optimizations (T039-T045):
  * - T039: useInfiniteMessages for cursor-based pagination
- * - T040: Optimistic updates in useSendMessage and useMarkAsRead
- * - T041: usePrefetchConversation for cache warming
+ * - T040: Optimistic updates in useMarkAsRead
  * - T042: useRealtime with useRef to prevent re-renders
- * - T043: useConnectionStatus for WebSocket status indicator
  */
 
 // Message Keys and Types
-export {
-  messageKeys,
-  FALLBACK_POLLING_INTERVAL,
-  DEFAULT_PAGE_SIZE,
-} from './messageKeys';
-export type {
-  MessagesOptions,
-  MessagesResponse,
-  SendMessageData,
-  AgentMessageResponse,
-} from './messageKeys';
+export { messageKeys } from './messageKeys';
 
 // Pure cache helpers
-export {
-  messageExistsInInfinite,
-  prependMessagesToInfinite,
-  replaceMessageInInfinite,
-  removeMessageFromInfinite,
-  type InfiniteMessages,
-} from './infiniteMessageCache';
+export { type InfiniteMessages } from './infiniteMessageCache';
 
 // Message Queries (T039)
 export {
@@ -38,32 +20,17 @@ export {
   flattenInfiniteMessages,
 } from './useMessageQueries';
 
-// Message Mutations (T040)
-export { useSendMessage } from './useMessageMutations';
-
 // Conversation List
-export {
-  useConversationList,
-  useInfiniteConversationList,
-  conversationKeys,
-} from './useConversationList';
-export type { ConversationsResponse } from './useConversationList';
+export { useInfiniteConversationList } from './useConversationList';
 
 // Conversation Details (T041)
-export {
-  useConversationDetails,
-  useConversationStats,
-  useUpdateConversation,
-  useMarkAsRead,
-  usePrefetchConversation,
-  conversationDetailKeys,
-} from './useConversationDetails';
+export { useMarkAsRead } from './useConversationDetails';
 
 // Notes (T034)
-export { useNotes, useAddNote, useUpdateNote, useDeleteNote, notesKeys } from './useNotes';
+export { useNotes, useAddNote, useUpdateNote, useDeleteNote } from './useNotes';
 
 // Tags (T035)
-export { useBotTags, useAddTags, useRemoveTag, tagsKeys } from './useTags';
+export { useBotTags, useAddTags, useRemoveTag } from './useTags';
 
 // Conversation actions (moved from the legacy conversation hooks in Track 1)
 export { useToggleHandover, useClearContext, useClearContextAll } from './useConversationActions';
@@ -71,5 +38,3 @@ export { useSendAgentMessage } from './useSendAgentMessage';
 
 // Real-time (T042, T043)
 export { useRealtime } from './useRealtime';
-export { updateConversationInList, createMessageFromEvent, isInfiniteConversationsQuery } from './realtimeUtils';
-export { useConnectionStatus } from '@/hooks/useConnectionStatus';
