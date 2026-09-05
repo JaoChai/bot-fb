@@ -11,17 +11,14 @@ use App\Services\RAG\RAGPromptBuilder;
 use Illuminate\Support\Facades\Log;
 
 /**
- * RAG (Retrieval Augmented Generation) Service
+ * RAG (Retrieval Augmented Generation) orchestrator.
  *
- * Integrates Knowledge Base search into bot responses using hybrid search
- * (semantic + keyword) with Reciprocal Rank Fusion for optimal retrieval.
- *
- * When a user sends a message, the service:
- * 1. Analyzes intent using Decision Model
- * 2. Searches the bot's KB using hybrid search (vector + full-text)
- * 3. Builds context from matching chunks
- * 4. Enhances the system prompt with KB context
- * 5. Generates an informed response via the LLM
+ * Owns generateResponse()/testRAG() and the model/effort/cache decisions;
+ * delegates to App\Services\RAG\RAGIntentDetector (message classification),
+ * RAGKnowledgeBase (KB retrieval, formatting, CRAG) and RAGPromptBuilder
+ * (system-prompt assembly). Public wrappers below keep the pre-split call
+ * surface for AIService, StreamingResponseOrchestrator, FlowController and
+ * PromptEvalRunner.
  */
 class RAGService
 {
