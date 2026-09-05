@@ -2,34 +2,21 @@
 
 namespace App\Services\Webhook\Steps;
 
-use App\Models\Message;
 use App\Services\Webhook\WebhookContext;
 use Closure;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
 /**
- * Dedup on external message id, save the user message, bump conversation and bot
- * stats — the shared part of the legacy Facebook/Telegram transaction bodies.
- * Short-circuits (does not call $next) on a duplicate.
+ * Save the user message, bump conversation and bot stats — the shared part of
+ * the legacy Facebook/Telegram transaction bodies. Dedup on external message
+ * id happens earlier in DedupUserMessageStep.
  */
 class PersistUserMessageStep
 {
     public function handle(WebhookContext $ctx, Closure $next): void
     {
         $conversation = $ctx->conversation;
-        $externalId = $this->externalMessageId($ctx);
-
-        if ($externalId !== null && Message::where('conversation_id', $conversation->id)
-            ->where('external_message_id', $externalId)
-            ->exists()) {
-            Log::info('Duplicate '.ucfirst($ctx->channelType).' message ignored', [
-                'conversation_id' => $conversation->id,
-                'message_id' => $externalId,
-            ]);
-
-            return;
-        }
+        $externalId = DedupUserMessageStep::externalMessageId($ctx);
 
         $userMessage = $conversation->messages()->create($this->messageAttributes($ctx, $externalId));
 
@@ -54,17 +41,6 @@ class PersistUserMessageStep
         $ctx->userMessage = $userMessage;
 
         $next($ctx);
-    }
-
-    private function externalMessageId(WebhookContext $ctx): ?string
-    {
-        $id = match ($ctx->channelType) {
-            'facebook' => $ctx->metadata['mid'] ?? null,
-            'telegram' => $ctx->metadata['message_id'] ?? null,
-            default => null,
-        };
-
-        return $id === null || $id === '' ? null : (string) $id;
     }
 
     private function messageAttributes(WebhookContext $ctx, ?string $externalId): array

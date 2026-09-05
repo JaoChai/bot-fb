@@ -4,7 +4,6 @@ namespace Tests\Unit\Services\Webhook\Steps;
 
 use App\Models\Bot;
 use App\Models\Conversation;
-use App\Models\Message;
 use App\Models\User;
 use App\Services\Webhook\Steps\PersistUserMessageStep;
 use App\Services\Webhook\WebhookContext;
@@ -73,21 +72,6 @@ class PersistUserMessageStepTest extends TestCase
         (new PersistUserMessageStep)->handle($ctx, fn () => null);
 
         $this->assertSame(1, (int) $this->bot->refresh()->total_conversations);
-    }
-
-    public function test_duplicate_external_message_id_short_circuits_without_writes(): void
-    {
-        Message::create(['conversation_id' => $this->conversation->id, 'sender' => 'user', 'content' => 'old', 'type' => 'text', 'external_message_id' => 'dup']);
-        $ctx = $this->ctx(['mid' => 'dup']);
-        $called = false;
-
-        (new PersistUserMessageStep)->handle($ctx, function () use (&$called) {
-            $called = true;
-        });
-
-        $this->assertFalse($called);
-        $this->assertNull($ctx->userMessage);
-        $this->assertSame(1, Message::where('conversation_id', $this->conversation->id)->count());
     }
 
     public function test_facebook_postback_saves_title_as_content_with_postback_type(): void

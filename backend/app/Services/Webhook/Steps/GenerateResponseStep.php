@@ -27,7 +27,7 @@ class GenerateResponseStep
 
     public function handle(WebhookContext $ctx, Closure $next): void
     {
-        if ($this->shouldGenerate($ctx)) {
+        if (self::shouldGenerate($ctx)) {
             try {
                 $botMessage = $this->aiService->generateAndSaveResponse(
                     $ctx->bot,
@@ -64,7 +64,7 @@ class GenerateResponseStep
         $next($ctx);
     }
 
-    private function shouldGenerate(WebhookContext $ctx): bool
+    public static function shouldGenerate(WebhookContext $ctx): bool
     {
         if ($ctx->userMessage === null || $ctx->conversation === null) {
             return false;

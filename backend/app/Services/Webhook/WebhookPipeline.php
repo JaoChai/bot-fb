@@ -15,6 +15,7 @@ use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\TelegramService;
 use App\Services\Webhook\Channels\LINE\NonTextHandler;
 use App\Services\Webhook\Steps\BroadcastStep;
+use App\Services\Webhook\Steps\DedupUserMessageStep;
 use App\Services\Webhook\Steps\Facebook\FacebookTypingStep;
 use App\Services\Webhook\Steps\FlowPluginStep;
 use App\Services\Webhook\Steps\GenerateResponseStep;
@@ -96,8 +97,8 @@ class WebhookPipeline
     }
 
     /**
-     * Compose the Facebook step list (resolve+persist in one transaction →
-     * typing → generate → send → broadcast) for the shared v2 pipeline.
+     * Compose the Facebook step list (resolve+dedup+persist in one transaction →
+     * typing_on → generate → send → typing_off → broadcast) for the shared v2 pipeline.
      *
      * @return array<int, Closure|FacebookTypingStep|GenerateResponseStep|SendResponseStep|BroadcastStep>
      */
@@ -108,17 +109,19 @@ class WebhookPipeline
         return [
             self::transactional([
                 new ResolveConversationStep,
+                new DedupUserMessageStep,
                 new PersistUserMessageStep,
             ]),
-            new FacebookTypingStep($facebookService),
+            new FacebookTypingStep($facebookService, 'typing_on'),
             new GenerateResponseStep($aiService),
             new SendResponseStep(app(ChannelAdapterFactory::class)),
+            new FacebookTypingStep($facebookService, 'typing_off'),
             new BroadcastStep(app(LeadRecoveryService::class)),
         ];
     }
 
     /**
-     * Compose the Telegram step list (resolve+media+persist in one transaction →
+     * Compose the Telegram step list (resolve+dedup+media+persist in one transaction →
      * generate → send → flow plugins → broadcast) for the shared v2 pipeline.
      *
      * @return array<int, Closure|GenerateResponseStep|SendResponseStep|FlowPluginStep|BroadcastStep>
@@ -128,6 +131,7 @@ class WebhookPipeline
         return [
             self::transactional([
                 new ResolveConversationStep(null, $telegramService),
+                new DedupUserMessageStep,
                 new TelegramMediaStep($telegramService),
                 new PersistUserMessageStep,
             ]),
