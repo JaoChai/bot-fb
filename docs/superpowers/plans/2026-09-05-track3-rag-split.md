@@ -97,7 +97,7 @@ class RAGIntentDetectorTest extends TestCase
     {
         $this->assertSame(
             ['is_complex' => false, 'score' => 0, 'reasons' => ['greeting_detected']],
-            $this->detector->detectComplexity('สวัสดีครับ')
+            $this->detector->detectComplexity('สวัสดี')
         );
     }
 
