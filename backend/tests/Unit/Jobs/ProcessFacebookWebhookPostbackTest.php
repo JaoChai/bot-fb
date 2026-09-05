@@ -89,6 +89,50 @@ class ProcessFacebookWebhookPostbackTest extends TestCase
     }
 
     /**
+     * V2 twin of the stats test above — same payload and assertions, routed
+     * through the shared WebhookPipeline (WebhookPipelineV2Flag).
+     * Skipped on sqlite (same constraint limitation as above).
+     */
+    public function test_postback_v2_path_matches_legacy_stats(): void
+    {
+        if (DB::getDriverName() === 'sqlite') {
+            $this->markTestSkipped("messages.type widened only on pgsql/mysql — sqlite can't ALTER CHECK (mirrors 2025_12_31 convention)");
+        }
+
+        config(['webhook_pipeline_v2.enabled' => true, 'webhook_pipeline_v2.bot_ids' => [(string) $this->bot->id]]);
+
+        Http::fake([
+            'graph.facebook.com/*' => Http::response(['ok' => true], 200),
+        ]);
+        Queue::fake();
+
+        $aiService = Mockery::mock(AIService::class);
+        $aiService->shouldReceive('generateAndSaveResponse')->once()->andReturn(null);
+
+        $job = new ProcessFacebookWebhook($this->bot, $this->payload);
+        $job->handle($aiService);
+
+        // Postback saved as a user message with type='postback'
+        $this->assertDatabaseHas('messages', [
+            'sender' => 'user',
+            'type' => 'postback',
+            'content' => 'ดูเมนู',
+        ]);
+
+        // Conversation stats incremented (user message + AI bot reply counted)
+        $this->assertDatabaseHas('conversations', [
+            'bot_id' => $this->bot->id,
+            'message_count' => 2,
+            'unread_count' => 1,
+        ]);
+
+        // Bot stats incremented
+        $this->bot->refresh();
+        $this->assertSame(2, (int) $this->bot->total_messages);
+        $this->assertNotNull($this->bot->last_active_at);
+    }
+
+    /**
      * Inactive bots still save the postback message — no AI reply.
      * Skipped on sqlite (same constraint limitation as above).
      */
