@@ -5,7 +5,7 @@ import {
   useBotTags,
   useAddTags,
   useRemoveTag,
-} from '@/hooks/useConversations';
+} from '@/hooks/chat';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Plus, X, Tag } from 'lucide-react';
 import { TagAutocomplete } from './TagAutocomplete';
