@@ -1,14 +1,14 @@
 import { useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { messageKeys } from './messageKeys';
+import { isInfiniteConversationsQuery } from './realtimeUtils';
 import {
-  messageKeys,
-  isInfiniteConversationsQuery,
   messageExistsInInfinite,
   prependMessagesToInfinite,
   replaceMessageInInfinite,
   removeMessageFromInfinite,
   type InfiniteMessages,
-} from '@/hooks/chat';
+} from './infiniteMessageCache';
 import type {
   Conversation,
   ConversationStatusCounts,

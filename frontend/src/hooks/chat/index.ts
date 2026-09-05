@@ -67,6 +67,7 @@ export { useBotTags, useAddTags, useRemoveTag, tagsKeys } from './useTags';
 
 // Conversation actions (moved from hooks/conversations in Track 1)
 export { useToggleHandover, useClearContext, useClearContextAll } from './useConversationActions';
+export { useSendAgentMessage } from './useSendAgentMessage';
 
 // Real-time (T042, T043)
 export { useRealtime } from './useRealtime';
