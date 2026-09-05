@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { useToggleHandover } from '@/hooks/useConversations';
+import { useToggleHandover } from '@/hooks/chat';
 import { useChannelInfo } from '@/hooks/useChannelInfo';
 import { useToast } from '@/hooks/use-toast';
 import { Bot, Headphones } from 'lucide-react';

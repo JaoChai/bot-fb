@@ -65,7 +65,7 @@ export { useNotes, useAddNote, useUpdateNote, useDeleteNote, notesKeys } from '.
 // Tags (T035)
 export { useBotTags, useAddTags, useRemoveTag, tagsKeys } from './useTags';
 
-// Conversation actions (moved from hooks/conversations in Track 1)
+// Conversation actions (moved from the legacy conversation hooks in Track 1)
 export { useToggleHandover, useClearContext, useClearContextAll } from './useConversationActions';
 export { useSendAgentMessage } from './useSendAgentMessage';
 
