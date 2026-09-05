@@ -588,7 +588,7 @@ Expected: 0 failed; Pint passed.
 Run: `cd backend && wc -l app/Services/RAG/*.php`
 Expected: each ≤ 350.
 
-- [ ] **Step 2: Verbatim gate**
+- [x] **Step 2: Verbatim gate** (ผ่าน 20/20 ที่ e9d8ff4)
 
 Save as `/private/tmp/claude-501/-Users-jaochai-Code-bot-fb/94b37e4b-8cb3-4a06-b14d-1564935faa54/scratchpad/verbatim.py` and run `python3 verbatim.py` from `backend/`:
 
@@ -605,8 +605,12 @@ moved = ['isSimpleMessage','detectComplexity','detectToolIntent','detectLanguage
          'flowHasKnowledgeBases','formatKnowledgeBaseContext','formatThaiContext',
          'formatEnglishContext','applyCRAG','getApiKeyForBot']
 def body(src, name):
-    m = re.search(r'function ' + name + r'\(.*?\n    \{(.*?)\n    \}\n', src, re.S)
-    return re.sub(r'\s+', '', m.group(1)) if m else None
+    i = src.find('function ' + name + '(')
+    if i < 0:
+        return None
+    starts = [x for x in (src.find(' {\n', i), src.find('\n    {\n', i)) if x >= 0]
+    s = min(starts)
+    return re.sub(r'\s+', '', src[s:src.find('\n    }\n', s)])
 bad = 0
 for name in moved:
     o = body(old, name)
