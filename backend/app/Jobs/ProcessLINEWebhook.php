@@ -110,7 +110,7 @@ class ProcessLINEWebhook implements ShouldQueue
     ): void {
         try {
             if (WebhookPipelineV2Flag::enabledFor($this->bot)) {
-                $this->runSharedPipeline();
+                $this->runSharedPipeline($lineService, $gating, $contextSvc, $responseSvc, $outputSvc);
 
                 return;
             }
@@ -206,7 +206,8 @@ class ProcessLINEWebhook implements ShouldQueue
 
     /**
      * Shared v2 pipeline path (Task 9). Runs the event through the channel
-     * step list (resolve → response → send) on the shared WebhookPipeline.
+     * step list (legacy event gate → LINE-specific pipeline, see
+     * WebhookPipeline::line()) on the shared WebhookPipeline.
      * Only reached when WebhookPipelineV2Flag is enabled for this bot
      * (default OFF) — the legacy paths above remain the default.
      *
@@ -215,15 +216,30 @@ class ProcessLINEWebhook implements ShouldQueue
      * in a later task; this method is the opt-in entry point that composes
      * the channel's step list and hands the context to the pipeline.
      */
-    protected function runSharedPipeline(): void
-    {
-        $lineService = app(LINEService::class);
-
+    protected function runSharedPipeline(
+        LINEService $lineService,
+        LineWebhookGatingService $gating,
+        LineWebhookContextService $contextSvc,
+        LineWebhookResponseService $responseSvc,
+        LineWebhookOutputService $outputSvc,
+    ): void {
         $context = new SharedWebhookContext($this->bot, $this->event, 'line');
         $context->metadata['user_id'] = $lineService->extractUserId($this->event);
 
-        $pipeline = app(WebhookPipeline::class);
-        $pipeline->run($context, WebhookPipeline::line($lineService, app(AIService::class)));
+        // Same construction as the legacy non-text branch of processEvent().
+        $nonTextHandler = new NonTextHandler(
+            $this->bot,
+            app(ResponseHoursService::class),
+            app(LeadRecoveryService::class),
+            fn (string $userId, LINEService $svc) => $this->createNewConversation($userId, $svc),
+            fn (Conversation $conversation, int $lastMessageId) => $this->updateStatsForUserMessageOnly($conversation, $lastMessageId),
+            new StickerHandler($this->bot, app(StickerReplyService::class)),
+        );
+
+        app(WebhookPipeline::class)->run(
+            $context,
+            WebhookPipeline::line($lineService, $nonTextHandler, $gating, $contextSvc, $responseSvc, $outputSvc)
+        );
     }
 
     /**
