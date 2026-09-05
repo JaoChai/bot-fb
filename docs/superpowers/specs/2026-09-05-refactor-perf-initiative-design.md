@@ -72,7 +72,7 @@ Baseline measured 2026-09-05 (all green: backend 1123 passed / 15 skipped, front
 - Keep `doctrine/annotations` (D7).
 
 ### 4.3 CI hardening (`.github/workflows/ci.yml`)
-- backend-tests: add step `composer audit --abort-on-severity=high` after install.
+- backend-tests: add step `composer audit --ignore-severity=low --ignore-severity=medium --abandoned=report` after install.
 - frontend-checks: add step `npm audit --omit=dev --audit-level=high`.
 - Cache invalidation unchanged.
 
