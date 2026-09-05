@@ -3,7 +3,7 @@ import type { ConversationNote, VipSource } from '@/types/api';
 const SOURCE_MANUAL: VipSource = 'vip_manual';
 const SOURCE_AUTO: VipSource = 'vip_auto';
 
-export type VipVariant = 'auto' | 'manual';
+type VipVariant = 'auto' | 'manual';
 
 export interface VipInfo {
   variant: VipVariant;

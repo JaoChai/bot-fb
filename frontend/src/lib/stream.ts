@@ -4,7 +4,7 @@
  */
 
 // Process Log Event Types
-export type ProcessEventType =
+type ProcessEventType =
   | 'process_start'
   | 'decision_start'
   | 'decision_result'

@@ -1,9 +1,8 @@
 /**
- * T017: useConversationList hook
- * Extract conversation list query with infinite scroll support
- * Includes conversationKeys factory pattern
+ * Conversation list query key factory, response types,
+ * and infinite scroll query
  */
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { buildConversationFilterParams } from '@/lib/params';
 import { useConnectionStore } from '@/stores/connectionStore';
@@ -32,30 +31,6 @@ export interface ConversationsResponse {
   meta: PaginationMeta & {
     status_counts: ConversationStatusCounts;
   };
-}
-
-/**
- * Hook to fetch conversations for a bot with filters and pagination
- */
-export function useConversationList(
-  botId: number | undefined,
-  filters: ConversationFilters = {}
-) {
-  const isConnected = useConnectionStore((state) => state.isConnected);
-
-  return useQuery({
-    queryKey: botId ? conversationKeys.list(botId, filters) : ['conversations', 'disabled'],
-    queryFn: async () => {
-      const params = buildConversationFilterParams(filters);
-      const response = await api.get<ConversationsResponse>(
-        `/bots/${botId}/conversations?${params.toString()}`
-      );
-      return response.data;
-    },
-    enabled: !!botId,
-    staleTime: 0,
-    refetchInterval: isConnected ? HEARTBEAT_INTERVAL : FALLBACK_POLLING_INTERVAL,
-  });
 }
 
 /**

@@ -8,7 +8,7 @@ import type { AddTagsData } from '@/types/api';
 import { conversationKeys, type ConversationsResponse } from './useConversationList';
 
 // Query key factory
-export const tagsKeys = {
+const tagsKeys = {
   all: ['bot-tags'] as const,
   list: (botId: number) => [...tagsKeys.all, botId] as const,
 };

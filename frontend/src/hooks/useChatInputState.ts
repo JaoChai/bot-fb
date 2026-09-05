@@ -15,7 +15,7 @@ import { useMemo } from 'react';
 import { useChannelInfo } from './useChannelInfo';
 import type { Conversation } from '@/types/api';
 
-export type InputStateType =
+type InputStateType =
   | 'closed'
   | 'telegram'
   | 'line_handover'

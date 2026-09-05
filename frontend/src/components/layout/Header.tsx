@@ -8,7 +8,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet';
-import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
+import { VisuallyHidden } from 'radix-ui';
 import { MobileNav } from './MobileNav';
 import { Menu } from 'lucide-react';
 
