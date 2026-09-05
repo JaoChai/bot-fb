@@ -39,6 +39,8 @@ class RAGService
         protected ?CRAGService $cragService = null,
         protected StockInjectionService $stockInjectionService = new StockInjectionService
     ) {
+        // Collaborators snapshot these deps at construction — swapping a protected
+        // property via reflection afterwards will not reach them.
         $this->intentDetector = new RAGIntentDetector;
         $this->promptBuilder = new RAGPromptBuilder($this->stockInjectionService);
         $this->knowledgeBase = new RAGKnowledgeBase($this->hybridSearchService, $this->flowCacheService, $this->cragService);

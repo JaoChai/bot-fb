@@ -590,7 +590,7 @@ Expected: each ≤ 350.
 
 - [x] **Step 2: Verbatim gate** (ผ่าน 20/20 ที่ e9d8ff4)
 
-Save as `/private/tmp/claude-501/-Users-jaochai-Code-bot-fb/94b37e4b-8cb3-4a06-b14d-1564935faa54/scratchpad/verbatim.py` and run `python3 verbatim.py` from `backend/`:
+Save as `verbatim.py` anywhere and run `python3 /path/to/verbatim.py` from `backend/`:
 
 ```python
 import re, subprocess, sys
