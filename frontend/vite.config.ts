@@ -26,7 +26,7 @@ export default defineConfig({
         codeSplitting: {
           groups: [
             { name: "vendor-react", test: /[/\\]node_modules[/\\](react|react-dom|react-router)[/\\]/ },
-            { name: "vendor-radix", test: /[/\\]node_modules[/\\]@radix-ui[/\\]/ },
+            { name: "vendor-radix", test: /[/\\]node_modules[/\\](radix-ui|@radix-ui)[/\\]/ },
             { name: "vendor-query", test: /[/\\]node_modules[/\\](@tanstack[/\\]react-query|@tanstack[/\\]react-virtual|axios)[/\\]/ },
             { name: "vendor-charts", test: /[/\\]node_modules[/\\]recharts[/\\]/ },
             { name: "vendor-icons", test: /[/\\]node_modules[/\\]lucide-react[/\\]/ },
