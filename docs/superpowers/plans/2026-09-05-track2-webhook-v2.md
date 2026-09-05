@@ -27,6 +27,7 @@
 ## Verified facts this plan relies on (2026-09-05)
 
 - `ProcessLINEWebhook::handle()` order: `WebhookPipelineV2Flag` → `runSharedPipeline()`; else `LineWebhookPipelineFlag` **and** message event **and** (text or image) → `runPipeline()` (the 4 `LineWebhook/*` services, live on bot 26); else `processEvent()` (legacy). Legacy `processEvent()` for a **non-message** event only logs and returns; for a **non-text** message it builds `NonTextHandler` (sticker/image/video/audio/file/location) with two closures from the job (`createNewConversation`, `updateStatsForUserMessageOnly`) and returns.
+- **`WebhookPipeline::run()` cannot dispatch the existing step objects.** Its reducer is typed `callable $step` and calls `$step($c, $next)`, but no step class defines `__invoke` (only `handle()`), so `run()` throws a `TypeError` the first time v2 is actually executed with `WebhookPipeline::line()/facebook()/telegram()`. No test exercises `run()` with step objects. Task 1 fixes this first.
 - Existing v2 steps: `ResolveConversationStep` (sets `$ctx->conversation`, `metadata['is_handover']`, `metadata['is_new_conversation']`, `$ctx->profile`), `GenerateResponseStep` (calls `AIService::generateAndSaveResponse` only when `$ctx->userMessage !== null`), `SendResponseStep` (adapter send when `metadata['bot_message']`). **Nothing persists the user message**, so today v2 for FB/TG saves no user message and never generates. `ChannelAdapterFactory` registers `line` and `telegram` only.
 - Legacy FB/TG behavior (inside one `DB::transaction`): find-or-create conversation → dedup on `external_message_id` → (TG) download media / placeholder text; (FB postback) content = title ?: payload, type `postback` → `messages()->create` → conversation stats (`unread_count+1`, `message_count+1`, `last_message_at`, `last_message_id`) → bot stats (`total_messages+1`, `last_active_at`, `+total_conversations` if new) → if `! is_handover && bot active && (text || FB postback)` generate (FB: typing_on/off around it; TG: `FlowPluginService::executePlugins` after send) and bump conversation `message_count`/`last_message_id` + bot `total_messages` for the bot message. After commit: `refresh()`, `LeadRecoveryService::markCustomerResponded`, `broadcast(MessageSent(user))`, `broadcast(MessageSent(bot))`, `broadcast(ConversationUpdated(created|message_received))`, all `->toOthers()`.
 - `AIService::generateAndSaveResponse(Bot, Conversation, Message): Message` already creates the bot message and increments bot `total_messages` + `last_active_at`. Legacy FB/TG then increment bot `total_messages` **again** for the bot message (double count) — pinned by the existing FB postback test (`total_messages === 2` after one postback with AI reply). PR-2 preserves this so the test keeps passing; PR-3 may not change it either (out of scope).
@@ -51,6 +52,78 @@
 - Produces:
   - `WebhookPipeline::line(LINEService $lineService, NonTextHandler $nonTextHandler, LineWebhookGatingService $gating, LineWebhookContextService $contextSvc, LineWebhookResponseService $responseSvc, LineWebhookOutputService $outputSvc): array` — step list `[LineEventGateStep, LinePipelineStep]`.
   - `ProcessLINEWebhook::runSharedPipeline(LINEService, LineWebhookGatingService, LineWebhookContextService, LineWebhookResponseService, LineWebhookOutputService): void` (protected).
+
+- [ ] **Step 0: Make `WebhookPipeline::run()` accept `handle()` step objects (test first)**
+
+Create `backend/tests/Unit/Services/Webhook/WebhookPipelineTest.php`:
+
+```php
+<?php
+
+namespace Tests\Unit\Services\Webhook;
+
+use App\Models\Bot;
+use App\Services\Webhook\WebhookContext;
+use App\Services\Webhook\WebhookPipeline;
+use Closure;
+use Tests\TestCase;
+
+class WebhookPipelineTest extends TestCase
+{
+    public function test_runs_handle_objects_and_closures_in_order_and_supports_short_circuit(): void
+    {
+        $order = [];
+        $objectStep = new class($order) {
+            public function __construct(private array &$order) {}
+
+            public function handle(WebhookContext $ctx, Closure $next): void
+            {
+                $this->order[] = 'object';
+                $next($ctx);
+            }
+        };
+        $closureStep = function (WebhookContext $ctx, Closure $next) use (&$order): void {
+            $order[] = 'closure';
+            // short-circuit: do not call $next
+        };
+        $neverStep = function (WebhookContext $ctx, Closure $next) use (&$order): void {
+            $order[] = 'never';
+        };
+
+        (new WebhookPipeline)->run(new WebhookContext(new Bot, [], 'line'), [$objectStep, $closureStep, $neverStep]);
+
+        $this->assertSame(['object', 'closure'], $order);
+    }
+}
+```
+
+Run: `cd backend && php artisan test --filter=WebhookPipelineTest` → Expected: FAIL with `TypeError ... must be of type callable, object given`.
+
+Then in `backend/app/Services/Webhook/WebhookPipeline.php` replace the reducer line
+
+```php
+            fn (Closure $next, callable $step) => fn (WebhookContext $c) => $step($c, $next),
+```
+
+with
+
+```php
+            fn (Closure $next, callable|object $step) => fn (WebhookContext $c) => is_callable($step)
+                ? $step($c, $next)
+                : $step->handle($c, $next),
+```
+
+and change the docblock `@param array<int, callable> $steps` to `@param array<int, callable|object> $steps  Each step: closure fn(WebhookContext, Closure $next): void, or an object with handle(WebhookContext, Closure): void`.
+
+Run the test again → Expected: PASS. Commit this alone:
+
+```bash
+git add backend/app/Services/Webhook/WebhookPipeline.php backend/tests/Unit/Services/Webhook/WebhookPipelineTest.php
+git commit -m "fix(webhook): WebhookPipeline::run รองรับ step object ที่มี handle() (เดิม TypeError เมื่อ v2 รันจริง)
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01RZjU9XVsVAq14bdEbWdfSH"
+```
 
 - [ ] **Step 1: Add the failing tests**
 
@@ -1652,13 +1725,7 @@ In `backend/app/Services/Webhook/WebhookPipeline.php` add (imports: `use App\Ser
     }
 ```
 
-`WebhookPipeline::run()` must accept callables that are plain closures as well as step objects. Its current reducer calls `$step($c, $next)` — a step object works only if it is invokable. Check: if the existing steps are called as `$step($c, $next)` and they only define `handle()`, then `run()` already normalises (read it). If not, change the reducer line to:
-
-```php
-            fn (Closure $next, callable|object $step) => fn (WebhookContext $c) => is_callable($step) ? $step($c, $next) : $step->handle($c, $next),
-```
-
-(Read `WebhookPipeline::run()` first — Task 1's LINE steps rely on the same dispatch rule.)
+`WebhookPipeline::run()` accepts both closures and `handle()` objects since Task 1 Step 0, so `transactional()` (a closure) and the step objects mix freely.
 
 Legacy TG saved media **inside** the transaction; `TelegramMediaStep` (network download) is therefore also inside — identical scope to legacy. Facebook `runSharedPipeline` in `ProcessFacebookWebhook.php` becomes `WebhookPipeline::facebook($aiService, app(FacebookService::class))`; Telegram's stays `WebhookPipeline::telegram($telegramService, $aiService)`.
 
