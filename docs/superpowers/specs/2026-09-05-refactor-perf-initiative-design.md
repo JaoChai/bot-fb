@@ -121,14 +121,12 @@ Rollback: revert PR. No persisted state involved (IndexedDB query cache uses `bu
 ### 6.2 PR-1: LINE on v2 by wrapping the proven pipeline
 New adapter steps in `app/Services/Webhook/Steps/Line/`, each ~20 LOC, delegating 1:1 to the existing service:
 
-| Step | Wraps | Short-circuits when |
+| Step | Contains | Short-circuits when |
 |---|---|---|
-| `LineGateStep` | `LineWebhookGatingService` | `GateDecision` says skip |
-| `LineContextStep` | `LineWebhookContextService` | aggregation window still open |
-| `LineResponseStep` | `LineWebhookResponseService` | — |
-| `LineOutputStep` | `LineWebhookOutputService` | — |
+| `LineEventGateStep` | legacy `processEvent()` routing: non-message → log+drop; non-text/non-image → `NonTextHandler` | non-message or non-text event |
+| `LinePipelineStep` | `ProcessLINEWebhook::runPipeline()` body **verbatim** (Gating → Context → response lock/aggregation fallback → Response → Output) | gating blocked, aggregation buffered, or response lock held |
 
-`WebhookPipeline::line()` returns `[gate, context, response, output]`; the generic `ResolveConversationStep`/`GenerateResponseStep`/`SendResponseStep` are no longer used for LINE. Non-text events (sticker/image/other) keep routing through `StickerHandler` / `VisionHandler` / `NonTextHandler` from `LineContextStep`, exactly as `runPipeline()` does today. The `LineWebhook\WebhookContext` and `Webhook\WebhookContext` DTOs coexist in this PR; the LINE steps construct the former from the latter.
+`WebhookPipeline::line()` returns `[LineEventGateStep, LinePipelineStep]`. Two steps instead of the four originally sketched: the response-lock/aggregation-fallback logic sits between Context and Response and belongs to neither, so wrapping the four services separately would have meant re-writing it. One verbatim step carries zero drift; the four services stay individually testable as they are today. The `LineWebhook\WebhookContext` instance is exposed at `$ctx->metadata['line_ctx']`. The generic `ResolveConversationStep`/`GenerateResponseStep`/`SendResponseStep` are no longer used for LINE. Non-text events (sticker/image/other) keep routing through `StickerHandler` / `VisionHandler` / `NonTextHandler`, reached via `LineEventGateStep` for the v2 path and by the legacy non-text branch otherwise.
 
 Tests: existing `ProcessLINEWebhookPipelineTest` runs against **both** flags on (v2) and LINE-flag-only, asserting identical persisted messages and outbound LINE calls. Fixtures reused, no new fixture format.
 
