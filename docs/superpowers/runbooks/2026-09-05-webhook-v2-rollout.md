@@ -24,6 +24,8 @@ Check daily:
 ## Step 2 — all bots (48 h)
 Clear `WEBHOOK_PIPELINE_V2_BOT_IDS` (empty) → v2 for every bot on every channel. Facebook/Telegram bots have no customers (spec D4); this step only proves nothing crashes for them. Watch the same three signals for 48 h.
 
+Note for LINE bots other than 26: today they run the legacy `processEvent()` path, where an **image** message goes to `NonTextHandler` (saved, no AI). On v2, images go through the full `LineWebhook` pipeline (slip verification / vision), exactly as bot 26 already does. This is the intended end state (PR-3 makes it the only path), but it is a behavior change for those bots — if any of them starts serving customers before Step 2, review their image handling first.
+
 ## Rollback (any time before PR-3)
 Set `WEBHOOK_PIPELINE_V2_ENABLED=false` and redeploy. Legacy paths resume with zero code change.
 
