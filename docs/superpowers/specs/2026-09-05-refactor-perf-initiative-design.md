@@ -64,7 +64,7 @@ Baseline measured 2026-09-05 (all green: backend 1123 passed / 15 skipped, front
   opcache.save_comments=1
   ```
   `validate_timestamps=0` is safe because the image is immutable per deploy. `save_comments=1` is required for attribute/docblock reflection (Laravel, l5-swagger). JIT stays off (no measured benefit for I/O-bound API; can be evaluated later).
-- CMD: replace `php artisan config:cache && php artisan route:cache` with `php artisan optimize` (config + events + routes + views, per Laravel 13 deployment docs). `migrate --force` stays.
+- CMD: add `php artisan event:cache` between `config:cache` and `route:cache`. `php artisan optimize` is **not** used because it also runs `view:cache`, which fails on this API-only app (no `resources/views`; verified locally 2026-09-05). `migrate --force` stays.
 
 ### 4.2 Dependencies
 - Backend: `composer update` constrained to current majors (`laravel/framework` → 13.30.x, reverb, sanctum, sentry, predis, telescope, pint, etc.). Resolves all 16 advisories (commonmark and guzzle are transitive; a plain update pulls patched versions).
