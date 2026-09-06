@@ -25,10 +25,13 @@ export function QuickReplyAutocomplete({
 
   const { data: quickReplies, isLoading } = useQuickReplySearch(query, shouldShow);
 
-  // Reset selection when results change
-  useEffect(() => {
+  // Reset selection when results change (adjust state during render, per
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  const [prevQuickReplies, setPrevQuickReplies] = useState(quickReplies);
+  if (quickReplies !== prevQuickReplies) {
+    setPrevQuickReplies(quickReplies);
     setSelectedIndex(0);
-  }, [quickReplies]);
+  }
 
   // Keyboard navigation
   useEffect(() => {

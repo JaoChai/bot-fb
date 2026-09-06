@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { useConnection } from '@/hooks/useConnections';
 import type { ReasoningEffort } from '@/types/api';
@@ -48,8 +48,13 @@ export function useConnectionForm() {
     platform: platformFromUrl || 'testing',
   });
 
-  // Populate form when existing bot data is loaded
-  useEffect(() => {
+  // Populate form when existing bot data is loaded.
+  // Track the previous `existingBot` reference in state and compare during
+  // render (React's recommended pattern for adjusting state on a changing
+  // value) instead of syncing via an effect, which would cascade an extra render.
+  const [prevExistingBot, setPrevExistingBot] = useState<typeof existingBot>(undefined);
+  if (existingBot !== prevExistingBot) {
+    setPrevExistingBot(existingBot);
     if (existingBot) {
       setFormData({
         enabled: existingBot.status === 'active',
@@ -66,7 +71,7 @@ export function useConnectionForm() {
         auto_delivery_enabled: existingBot.auto_delivery_enabled || false,
       });
     }
-  }, [existingBot]);
+  }
 
   const handleChange = <K extends keyof ConnectionFormData>(
     field: K,

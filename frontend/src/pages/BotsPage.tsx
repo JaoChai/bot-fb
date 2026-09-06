@@ -46,6 +46,7 @@ import {
   StatusDot,
 } from '@/components/common';
 import type { Platform } from '@/components/common';
+import type { Bot } from '@/types/api';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,8 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
 }
 
+const EMPTY_BOTS: Bot[] = [];
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function BotsPage() {
@@ -84,7 +87,7 @@ export function BotsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [botToDelete, setBotToDelete] = useState<{ id: number; name: string } | null>(null);
 
-  const bots = botsResponse?.data ?? [];
+  const bots = botsResponse?.data ?? EMPTY_BOTS;
 
   // Derived filtered list
   const filtered = useMemo(() => {

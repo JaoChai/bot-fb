@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,13 +58,15 @@ export function SettingsPage() {
   const [quietEnd, setQuietEnd] = useState('08:00');
   const updateQuietHoursMutation = useUpdateQuietHours();
 
-  useEffect(() => {
+  const [prevSettings, setPrevSettings] = useState<typeof settings>(undefined);
+  if (settings !== prevSettings) {
+    setPrevSettings(settings);
     if (settings) {
       setQuietEnabled(settings.quiet_hours_enabled);
       setQuietStart(settings.quiet_hours_start);
       setQuietEnd(settings.quiet_hours_end);
     }
-  }, [settings]);
+  }
 
   const handleSaveQuietHours = async () => {
     if (quietStart === quietEnd) {
@@ -81,13 +83,17 @@ export function SettingsPage() {
     }
   };
 
-  useEffect(() => {
+  const [prevOpenRouterConfigured, setPrevOpenRouterConfigured] = useState(settings?.openrouter_configured);
+  if (settings?.openrouter_configured !== prevOpenRouterConfigured) {
+    setPrevOpenRouterConfigured(settings?.openrouter_configured);
     setTestStatus('idle');
-  }, [settings?.openrouter_configured]);
+  }
 
-  useEffect(() => {
+  const [prevEasySlipConfigured, setPrevEasySlipConfigured] = useState(settings?.easyslip_configured);
+  if (settings?.easyslip_configured !== prevEasySlipConfigured) {
+    setPrevEasySlipConfigured(settings?.easyslip_configured);
     setEasySlipTestStatus('idle');
-  }, [settings?.easyslip_configured]);
+  }
 
   const handleSaveApiKey = async () => {
     if (!apiKey.trim()) {

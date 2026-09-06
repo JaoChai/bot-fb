@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
 import { UserPlus, ChevronLeft, ChevronRight, Users } from 'lucide-react';
@@ -20,23 +20,20 @@ import {
 } from '@/components/ui/alert-dialog';
 import { PageHeader } from '@/components/connections';
 import { Metric, BotPicker, EmptyState, ErrorState, Toolbar } from '@/components/common';
-import type { VipCustomer } from '@/types/api';
+import type { Bot, VipCustomer } from '@/types/api';
 
 const PAGE_SIZE = 20;
+
+const EMPTY_BOTS: Bot[] = [];
 
 export function VipManagementPage() {
   const { botId: paramBotId } = useParams<{ botId?: string }>();
   const { data: botsResponse, isLoading: botsLoading } = useBots();
-  const bots = botsResponse?.data ?? [];
+  const bots = botsResponse?.data ?? EMPTY_BOTS;
   const [selectedBotId, setSelectedBotId] = useState<string | undefined>(paramBotId);
 
-  useEffect(() => {
-    if (paramBotId) return;
-    if (selectedBotId) return;
-    if (bots.length === 1) setSelectedBotId(String(bots[0].id));
-  }, [paramBotId, selectedBotId, bots]);
-
-  const activeBotId = paramBotId ?? selectedBotId;
+  const activeBotId =
+    paramBotId ?? selectedBotId ?? (bots.length === 1 ? String(bots[0].id) : undefined);
   const showBotPicker = !paramBotId && bots.length > 1;
 
   const { data: vips, isLoading, error } = useVipCustomers(activeBotId);
@@ -64,9 +61,14 @@ export function VipManagementPage() {
   const currentPage = Math.min(page, pageCount);
   const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  useEffect(() => {
+  const [prevPageResetDeps, setPrevPageResetDeps] = useState<[string, string | undefined]>([
+    search,
+    activeBotId,
+  ]);
+  if (prevPageResetDeps[0] !== search || prevPageResetDeps[1] !== activeBotId) {
+    setPrevPageResetDeps([search, activeBotId]);
     setPage(1);
-  }, [search, activeBotId]);
+  }
 
   const total = vips?.length ?? 0;
   const autoCount = vips?.filter((v) => v.note_source === 'vip_auto').length ?? 0;
