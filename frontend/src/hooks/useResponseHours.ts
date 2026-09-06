@@ -4,7 +4,7 @@ export interface TimeSlot {
   end: string;
 }
 
-export interface DaySchedule {
+interface DaySchedule {
   enabled: boolean;
   slots: TimeSlot[];
 }

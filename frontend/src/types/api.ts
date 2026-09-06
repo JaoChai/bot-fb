@@ -24,7 +24,7 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
 }
 
 // Auth Types
-export type UserRole = 'owner' | 'admin';
+type UserRole = 'owner' | 'admin';
 
 export interface User {
   id: number;
@@ -228,7 +228,7 @@ export interface Document {
 }
 
 // Flow Types
-export interface FlowKnowledgeBase {
+interface FlowKnowledgeBase {
   id: number;
   name: string;
   kb_top_k: number;
@@ -320,11 +320,6 @@ export interface UpdateNoteData {
 }
 
 export interface AddTagsData {
-  tags: string[];
-}
-
-export interface BulkTagsData {
-  conversation_ids: number[];
   tags: string[];
 }
 
@@ -434,16 +429,6 @@ export interface ConversationStatusCounts {
   waiting_customer?: number;
 }
 
-export interface ConversationStats {
-  total: number;
-  active: number;
-  closed: number;
-  handover: number;
-  messages_today: number;
-  avg_messages_per_conversation: number;
-  by_channel: Record<string, number>;
-}
-
 export interface ConversationFilters {
   status?: string | string[];
   channel_type?: string;
@@ -458,14 +443,6 @@ export interface ConversationFilters {
   sort_direction?: 'asc' | 'desc';
   per_page?: number;
   page?: number;
-}
-
-export interface UpdateConversationData {
-  status?: 'active' | 'closed' | 'handover';
-  is_handover?: boolean;
-  assigned_user_id?: number | null;
-  tags?: string[];
-  memory_notes?: Record<string, unknown> | null;
 }
 
 // User Settings Types
@@ -496,7 +473,7 @@ export interface TestConnectionResponse {
 }
 
 // Cost Analytics Types
-export interface CostSummary {
+interface CostSummary {
   total_responses: number;
   total_cost: number;
   total_prompt_tokens: number;
@@ -513,7 +490,7 @@ export interface CostSummary {
   enhanced_data_coverage?: number;
 }
 
-export interface CostByModel {
+interface CostByModel {
   model_used: string | null;
   response_count: number;
   total_cost: number;
@@ -529,7 +506,7 @@ export interface CostTimeSeries {
   completion_tokens: number;
 }
 
-export interface CostByBot {
+interface CostByBot {
   bot_id: number;
   bot_name: string;
   response_count: number;
@@ -556,7 +533,7 @@ export interface CostAnalyticsFilters {
 }
 
 // Dashboard Types
-export interface DashboardSummary {
+interface DashboardSummary {
   total_bots: number;
   active_bots: number;
   total_conversations: number;
@@ -597,7 +574,7 @@ export interface ProductStock {
 }
 
 // Orders
-export interface OrderItem {
+interface OrderItem {
   id: number;
   order_id: number;
   product_name: string;
@@ -629,7 +606,7 @@ export interface Order {
   };
 }
 
-export interface OrderSummary {
+interface OrderSummary {
   total_orders: number;
   total_revenue: number;
   today_orders: number;
@@ -699,14 +676,14 @@ export interface Slip {
   raw: Record<string, unknown> | null;
 }
 
-export interface SlipSummary {
+interface SlipSummary {
   total_amount_passed: number;
   count_total: number;
   count_abnormal: number;
   count_system_error: number;
 }
 
-export interface SlipMeta extends PaginationMeta {
+interface SlipMeta extends PaginationMeta {
   summary: SlipSummary;
 }
 

@@ -21,7 +21,7 @@ import { ChatWindow } from '@/components/chat/ChatWindow';
 import { CustomerInfoPanel } from '@/components/chat/CustomerInfoPanel';
 import { BotSelectorPanel } from '@/components/chat/BotSelectorPanel';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
+import { VisuallyHidden } from 'radix-ui';
 import { useToast } from '@/hooks/use-toast';
 import { useKeyboardInset } from '@/hooks/useKeyboardInset';
 import { cn } from '@/lib/utils';
