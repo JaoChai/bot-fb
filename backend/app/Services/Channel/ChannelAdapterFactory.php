@@ -18,10 +18,12 @@ class ChannelAdapterFactory
 
     public function __construct(
         LINEChannelAdapter $lineAdapter,
-        TelegramChannelAdapter $telegramAdapter
+        TelegramChannelAdapter $telegramAdapter,
+        FacebookChannelAdapter $facebookAdapter
     ) {
         $this->adapters['line'] = $lineAdapter;
         $this->adapters['telegram'] = $telegramAdapter;
+        $this->adapters['facebook'] = $facebookAdapter;
     }
 
     /**

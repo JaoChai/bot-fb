@@ -12,7 +12,7 @@ RUN apk add --no-cache \
     oniguruma-dev \
     libxml2-dev \
     gettext \
-    && docker-php-ext-install pdo pdo_pgsql pgsql mbstring exif pcntl bcmath gd zip
+    && docker-php-ext-install pdo pdo_pgsql pgsql mbstring exif pcntl bcmath gd zip opcache
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
@@ -86,6 +86,9 @@ NGINX
 
 # Custom PHP-FPM pool config
 COPY docker/php-fpm/www.conf /usr/local/etc/php-fpm.d/www.conf
+
+# Production OPcache settings (extension installed above)
+COPY docker/php/opcache.ini /usr/local/etc/php/conf.d/zz-opcache.ini
 
 # Create supervisord config
 COPY <<'SUPERVISOR' /etc/supervisor/conf.d/laravel.conf
@@ -177,4 +180,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:${PORT:-80}/api/health || exit 1
 
 # Start command - substitute PORT in nginx config then start supervisord
-CMD ["sh", "-c", "envsubst '${PORT}' < /etc/nginx/http.d/default.conf.template > /etc/nginx/http.d/default.conf && php artisan config:cache && php artisan route:cache && php artisan migrate --force && supervisord -c /etc/supervisor/conf.d/laravel.conf"]
+# Cache config, discovered events and routes before serving. `php artisan optimize` is NOT used:
+# it also runs view:cache, which fails because this API has no resources/views directory.
+CMD ["sh", "-c", "envsubst '${PORT}' < /etc/nginx/http.d/default.conf.template > /etc/nginx/http.d/default.conf && php artisan config:cache && php artisan event:cache && php artisan route:cache && php artisan migrate --force && supervisord -c /etc/supervisor/conf.d/laravel.conf"]

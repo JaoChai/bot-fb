@@ -163,6 +163,32 @@ class FacebookService
     }
 
     /**
+     * Send typing indicator (sender_action) to Messenger. Failures are logged at debug and ignored.
+     */
+    public function sendTypingIndicator(Bot $bot, string $recipientId, string $action): void
+    {
+        try {
+            $accessToken = $bot->channel_access_token;
+            if (! $accessToken) {
+                return;
+            }
+
+            Http::post('https://graph.facebook.com/v19.0/me/messages', [
+                'recipient' => ['id' => $recipientId],
+                'sender_action' => $action,
+                'access_token' => $accessToken,
+            ]);
+        } catch (\Exception $e) {
+            // Silently ignore typing indicator failures
+            Log::debug('Failed to send typing indicator', [
+                'bot_id' => $bot->id,
+                'recipient_id' => $recipientId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * Send a message with quick replies.
      *
      * @throws FacebookException

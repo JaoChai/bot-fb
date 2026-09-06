@@ -425,4 +425,171 @@ class ProcessLINEWebhookPipelineTest extends TestCase
 
         $this->addToAssertionCount(1);
     }
+
+    public function test_v2_flag_routes_text_event_through_line_pipeline_services(): void
+    {
+        config([
+            'webhook_pipeline_v2.enabled' => true,
+            'webhook_pipeline_v2.bot_ids' => [(string) $this->bot->id],
+            'line_webhook.pipeline_enabled' => false,
+        ]);
+
+        $callOrder = [];
+        $gating = Mockery::mock(LineWebhookGatingService::class);
+        $gating->shouldReceive('check')->once()->andReturnUsing(function ($ctx) use (&$callOrder) {
+            $callOrder[] = 'gating';
+        });
+        $contextSvc = Mockery::mock(LineWebhookContextService::class);
+        $contextSvc->shouldReceive('resolve')->once()->andReturnUsing(function ($ctx) use (&$callOrder) {
+            $callOrder[] = 'context';
+            // Non-text semantics: no lock branch (messageType 'text' needs conversation+userMessage to lock)
+        });
+        $responseSvc = Mockery::mock(LineWebhookResponseService::class);
+        $responseSvc->shouldReceive('generate')->once()->andReturnUsing(function ($ctx) use (&$callOrder) {
+            $callOrder[] = 'response';
+        });
+        $outputSvc = Mockery::mock(LineWebhookOutputService::class);
+        $outputSvc->shouldReceive('dispatch')->once()->andReturnUsing(function ($ctx) use (&$callOrder) {
+            $callOrder[] = 'output';
+        });
+
+        $lineService = Mockery::mock(LINEService::class);
+        $lineService->shouldReceive('isMessageEvent')->andReturn(true);
+        $lineService->shouldReceive('isTextMessage')->andReturn(true);
+        $lineService->shouldReceive('isImageMessage')->andReturn(false);
+        $lineService->shouldReceive('extractUserId')->andReturn('U123');
+
+        $job = new ProcessLINEWebhook($this->bot, $this->lineEvent);
+        $job->handle(
+            $lineService,
+            Mockery::mock(AIService::class),
+            Mockery::mock(RateLimitService::class),
+            Mockery::mock(MessageAggregationService::class),
+            Mockery::mock(ResponseHoursService::class),
+            $this->buildCircuitBreakerMock(),
+            $gating, $contextSvc, $responseSvc, $outputSvc,
+        );
+
+        $this->assertSame(['gating', 'context', 'response', 'output'], $callOrder);
+    }
+
+    public function test_v2_flag_short_circuits_when_gating_blocks(): void
+    {
+        config([
+            'webhook_pipeline_v2.enabled' => true,
+            'webhook_pipeline_v2.bot_ids' => [(string) $this->bot->id],
+        ]);
+
+        $gating = Mockery::mock(LineWebhookGatingService::class);
+        $gating->shouldReceive('check')->once()->andReturnUsing(function ($ctx) {
+            $ctx->gateDecision = GateDecision::RATE_LIMITED;
+        });
+        $contextSvc = Mockery::mock(LineWebhookContextService::class);
+        $contextSvc->shouldNotReceive('resolve');
+        $responseSvc = Mockery::mock(LineWebhookResponseService::class);
+        $responseSvc->shouldNotReceive('generate');
+        $outputSvc = Mockery::mock(LineWebhookOutputService::class);
+        $outputSvc->shouldNotReceive('dispatch');
+
+        $lineService = Mockery::mock(LINEService::class);
+        $lineService->shouldReceive('isMessageEvent')->andReturn(true);
+        $lineService->shouldReceive('isTextMessage')->andReturn(true);
+        $lineService->shouldReceive('isImageMessage')->andReturn(false);
+        $lineService->shouldReceive('extractUserId')->andReturn('U123');
+
+        $job = new ProcessLINEWebhook($this->bot, $this->lineEvent);
+        $job->handle(
+            $lineService,
+            Mockery::mock(AIService::class),
+            Mockery::mock(RateLimitService::class),
+            Mockery::mock(MessageAggregationService::class),
+            Mockery::mock(ResponseHoursService::class),
+            $this->buildCircuitBreakerMock(),
+            $gating, $contextSvc, $responseSvc, $outputSvc,
+        );
+
+        $this->addToAssertionCount(1); // Mockery shouldNotReceive constraints are the assertions
+    }
+
+    public function test_v2_flag_ignores_non_message_event_without_touching_pipeline(): void
+    {
+        config([
+            'webhook_pipeline_v2.enabled' => true,
+            'webhook_pipeline_v2.bot_ids' => [(string) $this->bot->id],
+        ]);
+
+        $gating = Mockery::mock(LineWebhookGatingService::class);
+        $gating->shouldNotReceive('check');
+        $contextSvc = Mockery::mock(LineWebhookContextService::class);
+        $contextSvc->shouldNotReceive('resolve');
+        $responseSvc = Mockery::mock(LineWebhookResponseService::class);
+        $responseSvc->shouldNotReceive('generate');
+        $outputSvc = Mockery::mock(LineWebhookOutputService::class);
+        $outputSvc->shouldNotReceive('dispatch');
+
+        $lineService = Mockery::mock(LINEService::class);
+        $lineService->shouldReceive('isMessageEvent')->andReturn(false);
+        $lineService->shouldReceive('extractUserId')->andReturn('U123');
+
+        $followEvent = ['type' => 'follow', 'source' => ['userId' => 'U123'], 'replyToken' => 'rt'];
+        $job = new ProcessLINEWebhook($this->bot, $followEvent);
+        $job->handle(
+            $lineService,
+            Mockery::mock(AIService::class),
+            Mockery::mock(RateLimitService::class),
+            Mockery::mock(MessageAggregationService::class),
+            Mockery::mock(ResponseHoursService::class),
+            $this->buildCircuitBreakerMock(),
+            $gating, $contextSvc, $responseSvc, $outputSvc,
+        );
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_v2_flag_routes_sticker_event_to_non_text_handler(): void
+    {
+        config([
+            'webhook_pipeline_v2.enabled' => true,
+            'webhook_pipeline_v2.bot_ids' => [(string) $this->bot->id],
+        ]);
+
+        $gating = Mockery::mock(LineWebhookGatingService::class);
+        $gating->shouldNotReceive('check');
+        $contextSvc = Mockery::mock(LineWebhookContextService::class);
+        $contextSvc->shouldNotReceive('resolve');
+        $responseSvc = Mockery::mock(LineWebhookResponseService::class);
+        $responseSvc->shouldNotReceive('generate');
+        $outputSvc = Mockery::mock(LineWebhookOutputService::class);
+        $outputSvc->shouldNotReceive('dispatch');
+
+        $stickerEvent = include base_path('tests/fixtures/line-sticker-event.php');
+
+        // NonTextHandler::handle() starts by calling these on LINEService —
+        // proving the sticker reached the non-text branch, not the text pipeline.
+        // extractUserId runs twice (runSharedPipeline metadata + NonTextHandler) and
+        // returns null → the handler returns early before any DB write.
+        $lineService = Mockery::mock(LINEService::class);
+        $lineService->shouldReceive('isMessageEvent')->andReturn(true);
+        $lineService->shouldReceive('isTextMessage')->andReturn(false);
+        $lineService->shouldReceive('isImageMessage')->andReturn(false);
+        $lineService->shouldReceive('extractUserId')->andReturn(null);
+        $lineService->shouldReceive('extractReplyToken')->andReturn('rt');
+        $lineService->shouldReceive('extractMessage')->andReturn(['type' => 'sticker', 'id' => 'm1', 'text' => null]);
+        $lineService->shouldReceive('extractWebhookEventId')->andReturn('webhook_stk_v2');
+        $lineService->shouldReceive('extractEventTimestamp')->andReturn(time() * 1000);
+        $lineService->shouldReceive('isRedelivery')->andReturn(false);
+
+        $job = new ProcessLINEWebhook($this->bot, $stickerEvent);
+        $job->handle(
+            $lineService,
+            Mockery::mock(AIService::class),
+            Mockery::mock(RateLimitService::class),
+            Mockery::mock(MessageAggregationService::class),
+            Mockery::mock(ResponseHoursService::class),
+            $this->buildCircuitBreakerMock(),
+            $gating, $contextSvc, $responseSvc, $outputSvc,
+        );
+
+        $this->addToAssertionCount(1);
+    }
 }

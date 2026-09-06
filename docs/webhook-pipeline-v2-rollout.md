@@ -47,17 +47,12 @@ clean `runSharedPipeline()` wiring in `ProcessTelegramWebhook`. Enable the same
 way as LINE: single bot id first, widen incrementally, then all bots. (Do not
 attempt this before LINE has been stable on v2.)
 
-### 3. Facebook — DO NOT enable
+### 3. Facebook — enabled together with "all bots"
 
-**DO NOT enable v2 for Facebook bots until `FacebookChannelAdapter` exists in
-`ChannelAdapterFactory`.** The factory currently registers only `line` and
-`telegram`. If v2 is enabled for a Facebook bot, `SendResponseStep` calls
-`ChannelAdapterFactory::make('facebook')`, which throws
-`InvalidArgumentException`; the exception is caught and logged, so the bot
-does not crash, but **the message is never sent**. Until a
-`FacebookChannelAdapter` is added and the factory registers `facebook`,
-Facebook bots must stay on the legacy path (i.e. never add Facebook bot ids to
-`WEBHOOK_PIPELINE_V2_BOT_IDS`).
+`FacebookChannelAdapter` is registered in `ChannelAdapterFactory` (Track 2
+PR-2). Facebook bots follow the same flag as LINE/Telegram; no separate step.
+There are no Facebook bots serving customers today (spec D4), so this step
+only proves nothing crashes for them before the flag is widened to "all".
 
 ## Monitoring signals
 
@@ -101,22 +96,11 @@ zero behavior change. Verify the rollback by confirming webhook traffic for
 the affected bots no longer produces v2-path log lines and the monitoring
 signals return to baseline.
 
-## Known pre-existing issues (documented during this refactor)
+## Known pre-existing issues (status as of Track 2, 2026-09-05)
 
-These are **pre-existing** defects found during the webhook-pipeline refactor.
-They are not introduced by v2 and were intentionally not fixed in the
-refactor branch; both block safe full rollout of v2.
-
-1. **Facebook postback `messages.type='postback'` missing from the schema
-   enum → production postbacks fail.**
-   `ProcessFacebookWebhook::handlePostback()` writes the user message with
-   `'type' => 'postback'`, but the `messages` table schema
-   (`2025_12_23_145426_create_messages_table`) enum has no `postback` value.
-   Every FB postback webhook therefore fails on the user-message insert (CHECK
-   constraint violation) in production. Verified in Task 7 (controller-level
-   reproduction). The Task 7 tests pin the buggy behavior with a known-bug
-   docblock. A separate schema-fix task (add `postback` to the `messages.type`
-   enum) is required before Facebook postback handling can be trusted.
+1. **Facebook postback schema — fixed.** `messages.type` gained `postback` in
+   migration `2026_08_26_000000_add_postback_to_messages_type_enum.php` (PR
+   #250). No longer a blocker.
 2. **sqlite `channel_type` constraint skips `telegram` → Telegram e2e tests
    impossible locally.**
    `2025_12_27_172000_update_channel_type_constraint` widens the
@@ -125,12 +109,17 @@ refactor branch; both block safe full rollout of v2.
    not recreate the table). Local/test sqlite schemas therefore still enforce
    the original enum without `telegram`, so a full Telegram create/INSERT e2e
    flow cannot run on the sqlite test schema (production pgsql is unaffected).
-   Telegram step tests therefore cover the conversation-reuse path (seeding
-   via raw SQL) instead of the create path; the same limitation is documented
-   in the Task 8 `ProcessTelegramWebhookMapperTest`.
+   Telegram step tests cover the conversation-reuse path (seeding via raw
+   SQL) instead of the create path; the same limitation is documented in
+   `ProcessTelegramWebhookMapperTest`. Similarly, the Facebook postback v2
+   parity test (`ProcessFacebookWebhookPostbackTest::test_postback_v2_path_matches_legacy_stats`)
+   skips on sqlite for the same class of reason (its CHECK constraint predates
+   the pgsql-only widening) — production (pgsql) is unaffected in both cases.
 
-Additional v2 limitations to be aware of (tracked, not yet blockers given the
-flag is OFF): the v2 steps are not full-sequence-parity with the legacy jobs
-(dedup, stats, post-transaction broadcasts, `LeadRecoveryService::markCustomerResponded`,
-LINE aggregation/response-lock, and flow plugins are not in the v2 steps yet —
-see `runSharedPipeline()` docblocks in each job).
+Parity status (Track 2 PR-2): dedup, stats, post-commit broadcasts,
+`LeadRecoveryService::markCustomerResponded`, Facebook typing indicator,
+Telegram media/placeholder and flow plugins are implemented in the v2 steps.
+LINE runs its production `LineWebhook/*` pipeline unchanged via
+`LinePipelineStep`. See `docs/superpowers/specs/2026-09-05-refactor-perf-initiative-design.md`
+§6 and `docs/superpowers/runbooks/2026-09-05-webhook-v2-rollout.md` for the
+rollout procedure superseding the per-channel order below.

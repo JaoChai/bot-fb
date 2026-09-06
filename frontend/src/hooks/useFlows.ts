@@ -12,7 +12,7 @@ import type {
 } from '@/types/api';
 
 // Fetch all flows for a bot
-export function useFlows(botId: number | null) {
+function useFlows(botId: number | null) {
   return useQuery({
     queryKey: queryKeys.flows.list(botId ?? 0),
     queryFn: async () => {

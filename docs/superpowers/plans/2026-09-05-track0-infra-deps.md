@@ -244,7 +244,7 @@ Expected: ends with `Package manifest generated successfully` / `Generating opti
 Run:
 
 ```bash
-cd backend && composer audit --abort-on-severity=high; echo "audit exit=$?" \
+cd backend && composer audit --ignore-severity=low --ignore-severity=medium --abandoned=report; echo "audit exit=$?" \
   && composer show laravel/framework pestphp/pest phpunit/phpunit league/commonmark guzzlehttp/guzzle | grep -E "^(name|versions)"
 ```
 
@@ -336,7 +336,7 @@ In `.github/workflows/ci.yml`, after the backend `Install dependencies` step (li
 ```yaml
       - name: Audit dependencies
         working-directory: backend
-        run: composer audit --abort-on-severity=high
+        run: composer audit --ignore-severity=low --ignore-severity=medium --abandoned=report
 ```
 
 - [ ] **Step 2: Add the frontend audit step**
@@ -355,7 +355,7 @@ Run:
 
 ```bash
 python3 -c "import yaml,sys; d=yaml.safe_load(open('.github/workflows/ci.yml')); print([s['name'] for s in d['jobs']['backend-tests']['steps']]); print([s['name'] for s in d['jobs']['frontend-checks']['steps']])" \
-  && (cd backend && composer audit --abort-on-severity=high) \
+  && (cd backend && composer audit --ignore-severity=low --ignore-severity=medium --abandoned=report) \
   && (cd frontend && npm audit --omit=dev --audit-level=high) && echo GATES_OK
 ```
 

@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import type { ConversationNote, CreateNoteData, UpdateNoteData } from '@/types/api';
 
 // Query key factory
-export const notesKeys = {
+const notesKeys = {
   all: ['conversation-notes'] as const,
   list: (botId: number, conversationId: number) =>
     [...notesKeys.all, botId, conversationId] as const,

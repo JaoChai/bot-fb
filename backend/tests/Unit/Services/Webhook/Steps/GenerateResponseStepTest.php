@@ -12,71 +12,99 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
 use Tests\TestCase;
 
-/**
- * GenerateResponseStep is a thin delegation to AIService
- * (generateAndSaveResponse) — the same AI path the three jobs use today.
- */
 class GenerateResponseStepTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected function tearDown(): void
+    private Bot $bot;
+
+    private Conversation $conversation;
+
+    private Message $userMessage;
+
+    protected function setUp(): void
     {
-        Mockery::close();
-        parent::tearDown();
+        parent::setUp();
+        $this->bot = Bot::factory()->active()->facebook()->create(['total_messages' => 0]);
+        $this->conversation = Conversation::create(['bot_id' => $this->bot->id, 'external_customer_id' => 'PSID-1', 'channel_type' => 'facebook', 'status' => 'active', 'message_count' => 1]);
+        $this->userMessage = Message::create(['conversation_id' => $this->conversation->id, 'sender' => 'user', 'content' => 'hi', 'type' => 'text']);
     }
 
-    public function test_delegates_to_ai_service_and_stores_bot_message(): void
+    private function ctx(array $metadata = [], ?array $rawEvent = null): WebhookContext
     {
-        $bot = Bot::factory()->active()->create();
-        $conversation = Conversation::factory()->create(['bot_id' => $bot->id]);
-        $userMessage = Message::factory()->create([
-            'conversation_id' => $conversation->id,
-            'sender' => 'user',
-            'content' => 'hello',
-            'type' => 'text',
-        ]);
+        $ctx = new WebhookContext($this->bot, $rawEvent ?? ['type' => 'message', 'message' => ['type' => 'text', 'text' => 'hi']], 'facebook');
+        $ctx->conversation = $this->conversation;
+        $ctx->userMessage = $this->userMessage;
+        $ctx->metadata = $metadata + ['is_handover' => false];
 
-        $expectedBotMessage = Message::factory()->create([
-            'conversation_id' => $conversation->id,
-            'sender' => 'bot',
-            'content' => 'hi there',
-            'type' => 'text',
-        ]);
-
-        $aiService = Mockery::mock(AIService::class);
-        $aiService->shouldReceive('generateAndSaveResponse')
-            ->once()
-            ->with($bot, $conversation, $userMessage)
-            ->andReturn($expectedBotMessage);
-        $this->app->instance(AIService::class, $aiService);
-
-        $ctx = new WebhookContext($bot, [], 'line');
-        $ctx->conversation = $conversation;
-        $ctx->userMessage = $userMessage;
-
-        $step = new GenerateResponseStep;
-        $step->handle($ctx, fn () => null);
-
-        $this->assertSame($expectedBotMessage->id, $ctx->metadata['bot_message_id']);
+        return $ctx;
     }
 
-    public function test_skips_ai_service_when_no_user_message(): void
+    public function test_generates_and_bumps_bot_message_stats(): void
     {
-        $bot = Bot::factory()->active()->create();
-        $conversation = Conversation::factory()->create(['bot_id' => $bot->id]);
+        $botMessage = Message::create(['conversation_id' => $this->conversation->id, 'sender' => 'bot', 'content' => 'hello', 'type' => 'text']);
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateAndSaveResponse')->once()->andReturn($botMessage);
+        $ctx = $this->ctx();
 
-        $aiService = Mockery::mock(AIService::class);
-        $aiService->shouldReceive('generateAndSaveResponse')->never();
-        $this->app->instance(AIService::class, $aiService);
+        (new GenerateResponseStep($ai))->handle($ctx, fn () => null);
 
-        $ctx = new WebhookContext($bot, [], 'line');
-        $ctx->conversation = $conversation;
-        $ctx->userMessage = null;
+        $this->assertSame($botMessage->id, $ctx->metadata['bot_message_id']);
+        $this->assertSame('hello', $ctx->metadata['bot_message']['content']);
+        $this->conversation->refresh();
+        $this->assertSame(2, (int) $this->conversation->message_count);
+        $this->assertSame($botMessage->id, (int) $this->conversation->last_message_id);
+        $this->assertSame(1, (int) $this->bot->refresh()->total_messages);
+    }
 
-        $step = new GenerateResponseStep;
-        $step->handle($ctx, fn () => null);
+    public function test_skips_when_handover(): void
+    {
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldNotReceive('generateAndSaveResponse');
+        $ctx = $this->ctx(['is_handover' => true]);
+        $called = false;
 
-        $this->assertArrayNotHasKey('bot_message_id', $ctx->metadata);
+        (new GenerateResponseStep($ai))->handle($ctx, function () use (&$called) {
+            $called = true;
+        });
+
+        $this->assertTrue($called);
+        $this->assertArrayNotHasKey('bot_message', $ctx->metadata);
+    }
+
+    public function test_skips_when_bot_inactive(): void
+    {
+        $this->bot->update(['status' => 'inactive']);
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldNotReceive('generateAndSaveResponse');
+        $ctx = $this->ctx();
+
+        (new GenerateResponseStep($ai))->handle($ctx, fn () => null);
+        $this->assertArrayNotHasKey('bot_message', $ctx->metadata);
+    }
+
+    public function test_skips_non_text_non_postback(): void
+    {
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldNotReceive('generateAndSaveResponse');
+        $ctx = $this->ctx([], ['type' => 'message', 'message' => ['type' => 'image']]);
+
+        (new GenerateResponseStep($ai))->handle($ctx, fn () => null);
+        $this->assertArrayNotHasKey('bot_message', $ctx->metadata);
+    }
+
+    public function test_generation_exception_is_swallowed_like_legacy(): void
+    {
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateAndSaveResponse')->once()->andThrow(new \RuntimeException('boom'));
+        $ctx = $this->ctx();
+        $called = false;
+
+        (new GenerateResponseStep($ai))->handle($ctx, function () use (&$called) {
+            $called = true;
+        });
+
+        $this->assertTrue($called);
+        $this->assertArrayNotHasKey('bot_message', $ctx->metadata);
     }
 }

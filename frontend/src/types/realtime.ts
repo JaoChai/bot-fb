@@ -36,14 +36,6 @@ export interface ConversationUpdatedEvent {
   updated_at: string;
 }
 
-export interface AdminNotificationEvent {
-  type: 'handover_request' | 'new_conversation' | 'system' | 'info' | 'warning' | 'error';
-  title: string;
-  message: string;
-  data: Record<string, unknown>;
-  timestamp: string;
-}
-
 export interface DocumentStatusUpdatedEvent {
   id: number;
   name: string;
