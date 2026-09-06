@@ -14,8 +14,8 @@ import {
   useInfiniteConversationList,
   useRealtime,
   useMarkAsRead,
+  useClearContextAll,
 } from '@/hooks/chat';
-import { useClearContextAll } from '@/hooks/useConversations';
 import { ConversationList } from '@/components/chat/ConversationList';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { CustomerInfoPanel } from '@/components/chat/CustomerInfoPanel';

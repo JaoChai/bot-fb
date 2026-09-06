@@ -7,7 +7,7 @@ import {
   useSendAgentMessage,
   useToggleHandover,
   useClearContext,
-} from '@/hooks/useConversations';
+} from '@/hooks/chat';
 import { useToast } from '@/hooks/use-toast';
 import type { Conversation } from '@/types/api';
 import type { QuickReply } from '@/types/quick-reply';
