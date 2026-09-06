@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -68,7 +68,11 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
 
   // Plugin list state
   const [plugins, setPlugins] = useState<FlowPlugin[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  // Tracks which flowId's plugins are currently loaded, so isLoading can be
+  // derived during render instead of set synchronously inside the effect.
+  const [loadedFlowId, setLoadedFlowId] = useState<number | null>(null);
+  const isLoading = flowId !== null && loadedFlowId !== flowId;
+  const visiblePlugins = flowId ? plugins : [];
 
   // Dialog state
   const [showTypeDialog, setShowTypeDialog] = useState(false);
@@ -81,28 +85,26 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
 
   // --- Fetch plugins ---
 
-  const fetchPlugins = useCallback(async () => {
+  useEffect(() => {
     if (!flowId) {
-      setPlugins([]);
       return;
     }
-    setIsLoading(true);
-    try {
-      const response = await apiGet<{ data: FlowPlugin[] }>(
-        `/bots/${botId}/flows/${flowId}/plugins`
-      );
-      setPlugins(response.data);
-    } catch {
-      // Silently fail on fetch - plugins section is optional
-      setPlugins([]);
-    } finally {
-      setIsLoading(false);
-    }
+    let cancelled = false;
+    apiGet<{ data: FlowPlugin[] }>(`/bots/${botId}/flows/${flowId}/plugins`)
+      .then((response) => {
+        if (!cancelled) setPlugins(response.data);
+      })
+      .catch(() => {
+        // Silently fail on fetch - plugins section is optional
+        if (!cancelled) setPlugins([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadedFlowId(flowId);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [botId, flowId]);
-
-  useEffect(() => {
-    fetchPlugins();
-  }, [fetchPlugins]);
 
   // --- Handlers ---
 
@@ -257,7 +259,7 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
           <div className="flex justify-center py-8">
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
-        ) : plugins.length === 0 ? (
+        ) : visiblePlugins.length === 0 ? (
           <div className="border-2 border-dashed rounded-lg p-6 text-center">
             <Plus className="size-8 text-muted-foreground mx-auto mb-2" />
             <p className="text-sm text-muted-foreground mb-3">
@@ -275,7 +277,7 @@ export function PluginSection({ botId, flowId }: PluginSectionProps) {
           </div>
         ) : (
           <div className="space-y-2">
-            {plugins.map((plugin) => (
+            {visiblePlugins.map((plugin) => (
               <div
                 key={plugin.id}
                 className="flex items-center justify-between p-3 border rounded-lg bg-muted/30"

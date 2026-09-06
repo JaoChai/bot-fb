@@ -115,12 +115,14 @@ export function FlowEditorPage() {
     }
   }, [isEditorEntryMode, isFlowsSuccess, flows, botId, navigate]);
 
-  useEffect(() => {
+  const [prevExistingFlow, setPrevExistingFlow] = useState<typeof existingFlow>(undefined);
+  if (existingFlow !== prevExistingFlow) {
+    setPrevExistingFlow(existingFlow);
     if (existingFlow) {
       setFormData(mapFlowToFormData(existingFlow));
       setHasChanges(false);
     }
-  }, [existingFlow]);
+  }
 
   const handleChange = useCallback(<K extends keyof CreateFlowData>(field: K, value: CreateFlowData[K]) => {
     setFormData(prev => ({ ...prev, [field]: value }));

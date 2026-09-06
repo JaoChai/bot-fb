@@ -59,17 +59,17 @@ const defaultChannelInfo: ChannelInfo = {
 };
 
 /**
- * Compute channel information from a conversation (internal helper)
+ * Compute channel information from conversation fields (internal helper)
  * Single source of truth for channel detection logic
  */
 function computeChannelInfo(
-  conversation: Conversation | undefined
+  hasConversation: boolean,
+  channelType: ChannelType,
+  telegramChatType: Conversation['telegram_chat_type']
 ): ChannelInfo {
-  if (!conversation) {
+  if (!hasConversation) {
     return defaultChannelInfo;
   }
-
-  const channelType = conversation.channel_type as ChannelType;
 
   // Channel detection
   const isTelegram = channelType === 'telegram';
@@ -78,7 +78,6 @@ function computeChannelInfo(
   const isDemo = channelType === 'demo';
 
   // Telegram-specific: group detection
-  const telegramChatType = conversation.telegram_chat_type;
   const isGroup =
     isTelegram &&
     (telegramChatType === 'group' || telegramChatType === 'supergroup');
@@ -121,9 +120,13 @@ function computeChannelInfo(
 export function useChannelInfo(
   conversation: Conversation | undefined
 ): ChannelInfo {
+  const hasConversation = conversation !== undefined;
+  const channelType = (conversation?.channel_type ?? null) as ChannelType;
+  const telegramChatType = conversation?.telegram_chat_type;
+
   return useMemo(
-    () => computeChannelInfo(conversation),
-    [conversation?.channel_type, conversation?.telegram_chat_type]
+    () => computeChannelInfo(hasConversation, channelType, telegramChatType),
+    [hasConversation, channelType, telegramChatType]
   );
 }
 
@@ -152,5 +155,9 @@ function getDisplayName(channelType: ChannelType): string {
 export function getChannelInfo(
   conversation: Conversation | undefined
 ): ChannelInfo {
-  return computeChannelInfo(conversation);
+  return computeChannelInfo(
+    conversation !== undefined,
+    (conversation?.channel_type ?? null) as ChannelType,
+    conversation?.telegram_chat_type
+  );
 }

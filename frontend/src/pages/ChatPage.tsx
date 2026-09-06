@@ -25,7 +25,9 @@ import { VisuallyHidden } from 'radix-ui';
 import { useToast } from '@/hooks/use-toast';
 import { useKeyboardInset } from '@/hooks/useKeyboardInset';
 import { cn } from '@/lib/utils';
-import type { Conversation, ConversationFilters } from '@/types/api';
+import type { Bot, Conversation, ConversationFilters } from '@/types/api';
+
+const EMPTY_BOTS: Bot[] = [];
 
 export function ChatPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -55,7 +57,7 @@ export function ChatPage() {
 
   // Bots query
   const { data: botsResponse, isLoading: isBotsLoading } = useBots();
-  const bots = botsResponse?.data || [];
+  const bots = botsResponse?.data || EMPTY_BOTS;
 
   // Bot preferences
   const { lastUsedBotId, setLastUsedBotId } = useBotPreferencesStore();
