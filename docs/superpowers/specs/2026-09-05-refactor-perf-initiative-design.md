@@ -184,6 +184,7 @@ Verification: existing RAG/stock/purchase-history tests green; `php artisan prom
 - `types/api.ts` (726 LOC) codegen from l5-swagger spec.
 - Frontend Express static server → evaluate Railway static/Caddy.
 - OPcache JIT evaluation with real traffic numbers.
+- CI job ที่รัน test suite บน pgsql (Telegram e2e และ FB postback v2 parity ถูก skip บน sqlite เพราะ CHECK constraint ของ channel_type/messages.type ไม่ถูก widen บน sqlite) — review #255 finding #4.
 - Sprint-3 follow-ups from the 2026-05-25 roadmap (narrow cache invalidation, shared `ConversationResponse` types) — partially subsumed by Track 1 PR-A.
 
 ## 10. References

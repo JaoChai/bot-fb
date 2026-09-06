@@ -6,8 +6,10 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Services\Channel\ChannelAdapterFactory;
 use App\Services\Channel\ChannelAdapterInterface;
+use App\Services\Channel\FacebookChannelAdapter;
 use App\Services\Channel\LINEChannelAdapter;
 use App\Services\Channel\TelegramChannelAdapter;
+use App\Services\FacebookService;
 use App\Services\LINEService;
 use App\Services\TelegramService;
 use App\Services\Webhook\Steps\SendResponseStep;
@@ -42,9 +44,11 @@ class SendResponseStepTest extends TestCase
     {
         $lineService = Mockery::mock(LINEService::class);
         $telegramService = Mockery::mock(TelegramService::class);
+        $facebookService = Mockery::mock(FacebookService::class);
         $factory = new ChannelAdapterFactory(
             new LINEChannelAdapter($lineService),
-            new TelegramChannelAdapter($telegramService)
+            new TelegramChannelAdapter($telegramService),
+            new FacebookChannelAdapter($facebookService)
         );
         $factory->register($channelType, $adapter);
 

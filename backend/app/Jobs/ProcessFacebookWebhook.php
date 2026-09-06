@@ -11,6 +11,7 @@ use App\Models\CustomerProfile;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\AutoAssignmentService;
+use App\Services\FacebookService;
 use App\Services\LeadRecoveryService;
 use App\Services\ProfilePictureService;
 use App\Services\Webhook\Channels\Facebook\FacebookEventMapper;
@@ -170,7 +171,7 @@ class ProcessFacebookWebhook implements ShouldQueue
     protected function runSharedPipeline(WebhookContext $context, AIService $aiService): void
     {
         $pipeline = app(WebhookPipeline::class);
-        $pipeline->run($context, WebhookPipeline::facebook($aiService));
+        $pipeline->run($context, WebhookPipeline::facebook($aiService, app(FacebookService::class)));
     }
 
     /**
