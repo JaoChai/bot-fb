@@ -10,7 +10,7 @@
 import { useMemo } from 'react';
 import type { Conversation } from '@/types/api';
 
-export type ChannelType = 'line' | 'telegram' | 'facebook' | 'demo' | null;
+type ChannelType = 'line' | 'telegram' | 'facebook' | 'demo' | null;
 
 export interface ChannelInfo {
   /** Raw channel type from conversation */

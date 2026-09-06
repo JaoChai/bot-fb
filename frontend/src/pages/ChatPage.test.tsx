@@ -22,8 +22,6 @@ vi.mock('@/hooks/chat', () => ({
   }),
   useRealtime: () => {},
   useMarkAsRead: () => ({ mutate: vi.fn() }),
-}));
-vi.mock('@/hooks/useConversations', () => ({
   useClearContextAll: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));

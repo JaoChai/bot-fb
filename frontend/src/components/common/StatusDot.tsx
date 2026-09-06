@@ -34,5 +34,3 @@ export function StatusDot({ status, label, pulse = false, className }: StatusDot
     </span>
   );
 }
-
-export type { Status as StatusType };

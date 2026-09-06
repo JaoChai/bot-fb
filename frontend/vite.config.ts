@@ -1,11 +1,13 @@
 import path from "path"
 import tailwindcss from "@tailwindcss/vite"
-import react from "@vitejs/plugin-react"
+import react, { reactCompilerPreset } from "@vitejs/plugin-react"
+import babel from "@rolldown/plugin-babel"
 import { defineConfig } from "vite"
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [tailwindcss(), react()],
+  // React Compiler via @rolldown/plugin-babel (plugin-react >= 6 no longer takes a `babel` option)
+  plugins: [tailwindcss(), react(), babel({ presets: [reactCompilerPreset()] })],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -26,7 +28,7 @@ export default defineConfig({
         codeSplitting: {
           groups: [
             { name: "vendor-react", test: /[/\\]node_modules[/\\](react|react-dom|react-router)[/\\]/ },
-            { name: "vendor-radix", test: /[/\\]node_modules[/\\]@radix-ui[/\\]/ },
+            { name: "vendor-radix", test: /[/\\]node_modules[/\\](radix-ui|@radix-ui)[/\\]/ },
             { name: "vendor-query", test: /[/\\]node_modules[/\\](@tanstack[/\\]react-query|@tanstack[/\\]react-virtual|axios)[/\\]/ },
             { name: "vendor-charts", test: /[/\\]node_modules[/\\]recharts[/\\]/ },
             { name: "vendor-icons", test: /[/\\]node_modules[/\\]lucide-react[/\\]/ },

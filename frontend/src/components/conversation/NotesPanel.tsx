@@ -13,11 +13,11 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  useConversationNotes,
+  useNotes,
   useAddNote,
   useUpdateNote,
   useDeleteNote,
-} from '@/hooks/useConversations';
+} from '@/hooks/chat';
 import { useToast } from '@/hooks/use-toast';
 import {
   Loader2,
@@ -60,7 +60,7 @@ export function NotesPanel({ botId, conversationId }: NotesPanelProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const { data: notes, isLoading } = useConversationNotes(botId, conversationId);
+  const { data: notes, isLoading } = useNotes(botId, conversationId);
   const addNote = useAddNote(botId);
   const updateNote = useUpdateNote(botId);
   const deleteNote = useDeleteNote(botId);
