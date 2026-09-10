@@ -406,6 +406,36 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Forced Knowledge Keywords
+    |--------------------------------------------------------------------------
+    |
+    | Messages containing any of these keywords always force intent='knowledge'
+    | (skipping the LLM decision-model round-trip entirely), regardless of what
+    | the decision model would have classified them as. Use for high-stakes
+    | topics (insurance terms, beneficiary confirmation, tax/VAT) where an
+    | LLM-only answer with no KB grounding risks giving wrong, costly info.
+    | See RAGIntentDetector::isHighStakesMessage().
+    |
+    | WARNING: do NOT add the bare word "ยืนยัน" — it's also the standalone
+    | order-confirmation command in the sales flow (customer types "ยืนยัน" to
+    | confirm an order). Adding it here would force every order confirmation
+    | through the KB and break that flow.
+    |
+    */
+    'forced_knowledge_keywords' => [
+        'ผู้รับผลประโยชน์',
+        'ผลประโยชน์',
+        'ยืนยันตัวตน',
+        'ยืนยันผู้รับผลประโยชน์',
+        'ประกัน',
+        'เคลม',
+        'VAT',
+        'ภาษี',
+        'รับประกัน',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Stock Guard Configuration
     |--------------------------------------------------------------------------
     |

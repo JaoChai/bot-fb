@@ -21,6 +21,28 @@ class RAGIntentDetector
     }
 
     /**
+     * Whether a message touches a high-stakes topic (insurance/beneficiary/tax/legal, etc.)
+     * where an LLM-only answer without KB grounding risks giving wrong, costly information.
+     * Matching messages must always be routed to 'knowledge' regardless of what the LLM
+     * decision model would have classified them as — see RAGService::generateResponse().
+     *
+     * Keyword list lives in config('rag.forced_knowledge_keywords') so it can be tuned
+     * without a code change.
+     */
+    public function isHighStakesMessage(string $userMessage): bool
+    {
+        $keywords = config('rag.forced_knowledge_keywords', []);
+
+        foreach ($keywords as $keyword) {
+            if ($keyword !== '' && mb_stripos($userMessage, $keyword) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Detect if a user message requires complex reasoning (Chain-of-Thought).
      *
      * Uses heuristics-based detection to avoid additional LLM calls.
