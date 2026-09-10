@@ -120,12 +120,25 @@ class RAGService
         // they never need the KB and always resolve to 'chat'. Saves one ~300-800ms LLM hop.
         $isSimpleMessage = $this->isSimpleMessage($userMessage);
 
+        // High-stakes topics (insurance/beneficiary/tax, etc.) must never fall through to the
+        // decision model's "when uncertain, prefer chat" default — force 'knowledge' outright.
+        $isHighStakesMessage = ! $isSimpleMessage && $this->intentDetector->isHighStakesMessage($userMessage);
+
         if ($isSimpleMessage) {
             $intent = [
                 'intent' => 'chat',
                 'confidence' => 1.0,
                 'model_used' => null,
                 'method' => 'simple_message_skip',
+                'skipped' => true,
+                'usage' => null,
+            ];
+        } elseif ($isHighStakesMessage) {
+            $intent = [
+                'intent' => 'knowledge',
+                'confidence' => 1.0,
+                'model_used' => null,
+                'method' => 'forced_knowledge_keyword',
                 'skipped' => true,
                 'usage' => null,
             ];

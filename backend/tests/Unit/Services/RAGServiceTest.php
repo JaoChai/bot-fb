@@ -476,6 +476,58 @@ class RAGServiceTest extends TestCase
         $this->assertSame('llm_decision', $result['intent']['method']);
     }
 
+    public function test_high_stakes_message_forces_knowledge_intent_and_skips_intent_analysis(): void
+    {
+        // High-stakes topics (insurance/beneficiary/tax) must never depend on the LLM's
+        // uncertain "prefer chat" default — force 'knowledge' without the decision-model round-trip.
+        $intentAnalysis = $this->createMock(IntentAnalysisService::class);
+        $intentAnalysis->expects($this->never())->method('analyzeIntent');
+
+        $openRouter = $this->createMock(OpenRouterService::class);
+        $openRouter->method('generateBotResponse')->willReturn([
+            'content' => 'ยืนยันแล้วค่ะ',
+            'model' => 'chat-model',
+            'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+        ]);
+
+        $service = $this->makeServiceWith($openRouter, $intentAnalysis);
+        $bot = Bot::factory()->create(['user_id' => $this->user->id, 'primary_chat_model' => 'some/decider']);
+
+        $result = $service->generateResponse($bot, 'ยืนยันผู้รับผลประโยชน์รึยังครับ');
+
+        $this->assertSame('knowledge', $result['intent']['intent']);
+        $this->assertSame('forced_knowledge_keyword', $result['intent']['method']);
+    }
+
+    public function test_bare_confirm_keyword_still_invokes_intent_analysis(): void
+    {
+        // Regression guard: "ยืนยัน" alone is the order-confirmation command in the sales
+        // flow and must keep going through normal intent analysis, not be forced to knowledge.
+        $intentAnalysis = $this->createMock(IntentAnalysisService::class);
+        $intentAnalysis->expects($this->once())
+            ->method('analyzeIntent')
+            ->willReturn([
+                'intent' => 'chat',
+                'confidence' => 0.9,
+                'model_used' => 'decider',
+                'method' => 'llm_decision',
+            ]);
+
+        $openRouter = $this->createMock(OpenRouterService::class);
+        $openRouter->method('generateBotResponse')->willReturn([
+            'content' => 'รับออเดอร์เรียบร้อยค่ะ',
+            'model' => 'chat-model',
+            'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+        ]);
+
+        $service = $this->makeServiceWith($openRouter, $intentAnalysis);
+        $bot = Bot::factory()->create(['user_id' => $this->user->id, 'primary_chat_model' => 'some/decider']);
+
+        $result = $service->generateResponse($bot, 'ยืนยัน');
+
+        $this->assertSame('llm_decision', $result['intent']['method']);
+    }
+
     public function test_build_enhanced_prompt_injects_qty_when_all_in_stock(): void
     {
         // ไม่มีสินค้าหมดเลย แต่มีจำนวนคงเหลือ → ต้องฉีดทั้งหัวและท้าย
