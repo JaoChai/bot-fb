@@ -1,4 +1,4 @@
-import { useReducer, useRef, useCallback } from 'react';
+import { useReducer, useRef, useCallback, useLayoutEffect } from 'react';
 import { streamFlowTest, createStreamAbortController, type ProcessLog, type DoneSummary } from '@/lib/stream';
 
 export interface StreamingMessage {
@@ -196,10 +196,11 @@ export function useStreamingChat({ botId, flowId, conversationId }: UseStreaming
 
   // F3: Refs for stable sendMessage callback
   const messagesRef = useRef(state.messages);
-  messagesRef.current = state.messages;
-
   const isStreamingRef = useRef(state.isStreaming);
-  isStreamingRef.current = state.isStreaming;
+  useLayoutEffect(() => {
+    messagesRef.current = state.messages;
+    isStreamingRef.current = state.isStreaming;
+  });
 
   // F1: Flush accumulated streaming content to state
   const flushStreamingContent = useCallback(() => {

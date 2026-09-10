@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams } from 'react-router';
 import { Loader2, Gauge, Clock, Bot as BotIcon, Smile, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -115,57 +115,56 @@ export function BotSettingsPage() {
 
   const [formData, setFormData] = useState<BotSettingsFormData>(DEFAULT_FORM);
   const [tab, setTab] = useState<TabValue>('rate-limit');
-  const [isDirty, setIsDirty] = useState(false);
 
   // Sync form data from server settings
-  useEffect(() => {
-    if (!serverSettings) return;
-    const s = serverSettings as unknown as Record<string, unknown>;
-    setFormData({
-      daily_message_limit: (s.daily_message_limit as number) ?? 100,
-      per_user_limit: (s.per_user_limit as number) ?? 10,
-      rate_limit_bot_message: (s.rate_limit_bot_message as string) ?? '',
-      rate_limit_user_message: (s.rate_limit_user_message as string) ?? '',
-      easy_slip_enabled: false,
-      hitl_enabled: (s.hitl_enabled as boolean) ?? false,
-      reply_when_called_only: false,
-      reply_when_called_only_override_hitl: false,
-      lead_recovery_enabled: false,
-      lead_recovery_description: 'ติดตามลูกค้าอัตโนมัติเมื่อบทสนทนาเงียบ',
-      multiple_bubbles_enabled: (s.multiple_bubbles_enabled as boolean) ?? false,
-      multiple_bubbles_min: (s.multiple_bubbles_min as number) ?? 1,
-      multiple_bubbles_max: (s.multiple_bubbles_max as number) ?? 3,
-      wait_multiple_bubbles_enabled: (s.wait_multiple_bubbles_enabled as boolean) ?? false,
-      wait_multiple_bubbles_seconds: ((s.wait_multiple_bubbles_ms as number) ?? 1500) / 1000,
-      smart_aggregation_enabled: (s.smart_aggregation_enabled as boolean) ?? false,
-      smart_min_wait_seconds: ((s.smart_min_wait_ms as number) ?? 500) / 1000,
-      smart_max_wait_seconds: ((s.smart_max_wait_ms as number) ?? 3000) / 1000,
-      smart_early_trigger_enabled: (s.smart_early_trigger_enabled as boolean) ?? true,
-      smart_per_user_learning_enabled: (s.smart_per_user_learning_enabled as boolean) ?? false,
-      reply_sticker_enabled: (s.reply_sticker_enabled as boolean) ?? false,
-      reply_sticker_message: (s.reply_sticker_message as string) ?? '',
-      reply_sticker_mode: (s.reply_sticker_mode as 'static' | 'ai') ?? 'static',
-      reply_sticker_ai_prompt: (s.reply_sticker_ai_prompt as string) ?? '',
-      slip_verification_enabled: (s.slip_verification_enabled as boolean) ?? false,
-      slip_receiver_account: (s.slip_receiver_account as string) ?? '',
-      slip_amount_tolerance: (s.slip_amount_tolerance as number) ?? 0,
-      slip_success_message: (s.slip_success_message as string) ?? '',
-      slip_fail_message: (s.slip_fail_message as string) ?? '',
-      response_hours_enabled: (s.response_hours_enabled as boolean) ?? false,
-      response_hours: parseResponseHours(s.response_hours as Record<string, TimeSlot[]> | null),
-      response_hours_timezone: (s.response_hours_timezone as string) ?? 'Asia/Bangkok',
-      offline_message: (s.offline_message as string) ?? '',
-    });
-  }, [serverSettings]);
-
-  // Track dirty state
-  useEffect(() => {
-    if (!serverSettings) {
-      setIsDirty(false);
-      return;
+  const [prevServerSettings, setPrevServerSettings] = useState<typeof serverSettings>(undefined);
+  if (serverSettings !== prevServerSettings) {
+    setPrevServerSettings(serverSettings);
+    if (serverSettings) {
+      const s = serverSettings as unknown as Record<string, unknown>;
+      setFormData({
+        daily_message_limit: (s.daily_message_limit as number) ?? 100,
+        per_user_limit: (s.per_user_limit as number) ?? 10,
+        rate_limit_bot_message: (s.rate_limit_bot_message as string) ?? '',
+        rate_limit_user_message: (s.rate_limit_user_message as string) ?? '',
+        easy_slip_enabled: false,
+        hitl_enabled: (s.hitl_enabled as boolean) ?? false,
+        reply_when_called_only: false,
+        reply_when_called_only_override_hitl: false,
+        lead_recovery_enabled: false,
+        lead_recovery_description: 'ติดตามลูกค้าอัตโนมัติเมื่อบทสนทนาเงียบ',
+        multiple_bubbles_enabled: (s.multiple_bubbles_enabled as boolean) ?? false,
+        multiple_bubbles_min: (s.multiple_bubbles_min as number) ?? 1,
+        multiple_bubbles_max: (s.multiple_bubbles_max as number) ?? 3,
+        wait_multiple_bubbles_enabled: (s.wait_multiple_bubbles_enabled as boolean) ?? false,
+        wait_multiple_bubbles_seconds: ((s.wait_multiple_bubbles_ms as number) ?? 1500) / 1000,
+        smart_aggregation_enabled: (s.smart_aggregation_enabled as boolean) ?? false,
+        smart_min_wait_seconds: ((s.smart_min_wait_ms as number) ?? 500) / 1000,
+        smart_max_wait_seconds: ((s.smart_max_wait_ms as number) ?? 3000) / 1000,
+        smart_early_trigger_enabled: (s.smart_early_trigger_enabled as boolean) ?? true,
+        smart_per_user_learning_enabled: (s.smart_per_user_learning_enabled as boolean) ?? false,
+        reply_sticker_enabled: (s.reply_sticker_enabled as boolean) ?? false,
+        reply_sticker_message: (s.reply_sticker_message as string) ?? '',
+        reply_sticker_mode: (s.reply_sticker_mode as 'static' | 'ai') ?? 'static',
+        reply_sticker_ai_prompt: (s.reply_sticker_ai_prompt as string) ?? '',
+        slip_verification_enabled: (s.slip_verification_enabled as boolean) ?? false,
+        slip_receiver_account: (s.slip_receiver_account as string) ?? '',
+        slip_amount_tolerance: (s.slip_amount_tolerance as number) ?? 0,
+        slip_success_message: (s.slip_success_message as string) ?? '',
+        slip_fail_message: (s.slip_fail_message as string) ?? '',
+        response_hours_enabled: (s.response_hours_enabled as boolean) ?? false,
+        response_hours: parseResponseHours(s.response_hours as Record<string, TimeSlot[]> | null),
+        response_hours_timezone: (s.response_hours_timezone as string) ?? 'Asia/Bangkok',
+        offline_message: (s.offline_message as string) ?? '',
+      });
     }
+  }
+
+  // Derived dirty state
+  const isDirty = (() => {
+    if (!serverSettings) return false;
     const s = serverSettings as unknown as Record<string, unknown>;
-    const dirty =
+    return (
       formData.daily_message_limit !== ((s.daily_message_limit as number) ?? 100) ||
       formData.per_user_limit !== ((s.per_user_limit as number) ?? 10) ||
       formData.rate_limit_bot_message !== ((s.rate_limit_bot_message as string) ?? '') ||
@@ -181,9 +180,9 @@ export function BotSettingsPage() {
       formData.slip_receiver_account !== ((s.slip_receiver_account as string) ?? '') ||
       formData.slip_amount_tolerance !== ((s.slip_amount_tolerance as number) ?? 0) ||
       formData.slip_success_message !== ((s.slip_success_message as string) ?? '') ||
-      formData.slip_fail_message !== ((s.slip_fail_message as string) ?? '');
-    setIsDirty(dirty);
-  }, [formData, serverSettings]);
+      formData.slip_fail_message !== ((s.slip_fail_message as string) ?? '')
+    );
+  })();
 
   const onFieldChange = (field: string, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }) as BotSettingsFormData);
@@ -297,7 +296,6 @@ export function BotSettingsPage() {
         slip_success_message: formData.slip_success_message || null,
         slip_fail_message: formData.slip_fail_message || null,
       });
-      setIsDirty(false);
       toast({ title: 'บันทึกสำเร็จ', description: 'ตั้งค่าบอทได้รับการบันทึกแล้ว' });
     } catch {
       toast({

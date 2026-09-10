@@ -47,7 +47,7 @@ const MemoizedMessageItem = memo(function MemoizedMessageItem({
         previousMessageTime < contextClearedAt &&
         messageTime >= contextClearedAt)
     );
-  }, [message.created_at, previousMessage?.created_at, contextClearedAt]);
+  }, [message.created_at, previousMessage, contextClearedAt]);
 
   return (
     <div>
@@ -79,6 +79,7 @@ export function MessageList({
   isLoadingOlder = false,
   onLoadOlder,
 }: MessageListProps) {
+  "use no memo";
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const internalAutoScroll = useRef(true);
 
@@ -104,6 +105,7 @@ export function MessageList({
   }, [contextClearedAt]);
 
   // Virtualizer for efficient message rendering
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual returns un-memoizable functions; component is already opted out via "use no memo"
   const virtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => scrollViewportRef.current,

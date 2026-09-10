@@ -26,7 +26,9 @@ export function useBotChannel(
 
   // Store callbacks in refs to prevent effect re-runs
   const callbacksRef = useRef(callbacks);
-  callbacksRef.current = callbacks;
+  useEffect(() => {
+    callbacksRef.current = callbacks;
+  });
 
   useEffect(() => {
     if (!botId) {
@@ -60,8 +62,6 @@ export function useBotChannel(
       }
     };
   }, [botId]); // Only re-subscribe when botId changes
-
-  return channelRef.current;
 }
 
 /**
@@ -75,7 +75,9 @@ export function useKnowledgeBaseChannel(
 ) {
   const channelRef = useRef<Channel | null>(null);
   const callbacksRef = useRef(callbacks);
-  callbacksRef.current = callbacks;
+  useEffect(() => {
+    callbacksRef.current = callbacks;
+  });
 
   useEffect(() => {
     if (!knowledgeBaseId) return;
@@ -95,6 +97,4 @@ export function useKnowledgeBaseChannel(
       }
     };
   }, [knowledgeBaseId]);
-
-  return channelRef.current;
 }

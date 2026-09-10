@@ -27,10 +27,13 @@ function AvatarImage({
 }: React.ComponentProps<typeof AvatarPrimitive.Image>) {
   const [hasError, setHasError] = React.useState(false)
 
-  // Reset error state when src changes
-  React.useEffect(() => {
+  // Reset error state when src changes (adjust state during render, per
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  const [prevSrc, setPrevSrc] = React.useState(src)
+  if (src !== prevSrc) {
+    setPrevSrc(src)
     setHasError(false)
-  }, [src])
+  }
 
   // Don't render if no src or has error (let AvatarFallback show)
   if (!src || hasError) {
