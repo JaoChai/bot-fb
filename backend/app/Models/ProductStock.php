@@ -9,7 +9,7 @@ class ProductStock extends Model
 {
     use HasFactory;
 
-    public const STOCK_CACHE_KEY = 'product_stocks:all';
+    public const STOCK_CACHE_KEY = 'product_stocks:all:v2';
 
     protected $fillable = [
         'name',
@@ -22,6 +22,7 @@ class ProductStock extends Model
         'stock_code',
         'delivery_method',
         'price',
+        'vip_price',
     ];
 
     protected $casts = [
@@ -30,5 +31,6 @@ class ProductStock extends Model
         'manual_off' => 'boolean',
         'available_count' => 'integer',
         'price' => 'decimal:2',
+        'vip_price' => 'decimal:2',
     ];
 }

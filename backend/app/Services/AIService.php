@@ -23,6 +23,7 @@ class AIService
         private readonly OffTopicSignalExtractor $offTopicSignal,
         private readonly OffTopicCircuitBreaker $offTopicCircuitBreaker,
         private readonly GuardrailOutputSanitizer $outputSanitizer,
+        private readonly VipPriceGuardService $vipPriceGuard,
     ) {}
 
     /**
@@ -96,6 +97,23 @@ class AIService
             $result['content'] = $extracted['clean'];
             $result['order_payload'] = $extracted['payload'];
         }
+
+        // Financial safety net: prompts guide the model, but canonical VIP prices
+        // are enforced server-side before text, Flex, or order metadata can leave.
+        $vipPriceResult = $this->vipPriceGuard->enforce(
+            $result['content'] ?? '',
+            $result['order_payload'],
+            $conversation
+        );
+        if ($vipPriceResult['corrected']) {
+            Log::warning('VIP price guard corrected an inconsistent response', [
+                'bot_id' => $bot->id,
+                'conversation_id' => $conversation?->id,
+            ]);
+            $result['vip_price_guard'] = ['corrected' => true];
+        }
+        $result['content'] = $vipPriceResult['content'];
+        $result['order_payload'] = $vipPriceResult['order_payload'];
 
         // Off-topic signal marker — เหมือน [[ORDER]] ด้านบน ตัดออกก่อนใครได้เห็น
         $offTopicExtracted = $this->offTopicSignal->extract($result['content'] ?? '');

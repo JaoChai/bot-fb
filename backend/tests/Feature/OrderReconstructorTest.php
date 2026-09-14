@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Bot;
+use App\Models\Conversation;
 use App\Models\ProductStock;
 use App\Models\User;
 use App\Services\OpenRouterService;
@@ -25,8 +26,8 @@ class OrderReconstructorTest extends TestCase
         $user->getOrCreateSettings()->update(['openrouter_api_key' => 'sk-test']);
         $this->bot = Bot::factory()->create(['user_id' => $user->id, 'utility_model' => 'openai/gpt-4o-mini']);
 
-        ProductStock::create(['name' => 'Nolimit Level Up+ Personal', 'slug' => 'personal', 'aliases' => ['Personal'], 'in_stock' => true, 'display_order' => 1, 'delivery_method' => 'stock', 'price' => 1100]);
-        ProductStock::create(['name' => 'Nolimit Level Up+ BM', 'slug' => 'bm', 'aliases' => ['BM'], 'in_stock' => true, 'display_order' => 2, 'delivery_method' => 'stock', 'price' => 1100]);
+        ProductStock::create(['name' => 'Nolimit Level Up+ Personal', 'slug' => 'personal', 'stock_code' => 'NLMP', 'aliases' => ['Personal'], 'in_stock' => true, 'display_order' => 1, 'delivery_method' => 'stock', 'price' => 1100, 'vip_price' => 1000]);
+        ProductStock::create(['name' => 'Nolimit Level Up+ BM', 'slug' => 'bm', 'stock_code' => 'NLMBM', 'aliases' => ['BM'], 'in_stock' => true, 'display_order' => 2, 'delivery_method' => 'stock', 'price' => 1100, 'vip_price' => 1000]);
         ProductStock::create(['name' => 'G3D', 'slug' => 'g3d', 'aliases' => ['ไก่'], 'in_stock' => true, 'display_order' => 3, 'delivery_method' => 'stock', 'price' => 50]);
     }
 
@@ -71,6 +72,41 @@ class OrderReconstructorTest extends TestCase
         $this->assertSame('Nolimit Level Up+ Personal x2', $result->summary);
         $this->assertSame(2, $result->items[0]['qty']);
         $this->assertSame('2200', $result->items[0]['total']);
+    }
+
+    public function test_uses_vip_price_for_vip_conversation(): void
+    {
+        $this->fakeLLM('{"items":[{"slug":"personal","qty":2}]}');
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->bot->id,
+            'memory_notes' => [[
+                'type' => 'memory',
+                'source' => 'vip_auto',
+                'content' => 'ซื้อยืนยันแล้ว 3 ครั้ง',
+            ]],
+        ]);
+
+        $result = app(OrderReconstructor::class)->reconstruct($this->bot, [
+            ['sender' => 'user', 'content' => 'เอา Personal 2 ตัวครับ'],
+        ], 2000.0, $conversation);
+
+        $this->assertNotNull($result);
+        $this->assertSame('2000', $result->items[0]['total']);
+    }
+
+    public function test_does_not_give_vip_price_to_normal_conversation(): void
+    {
+        $this->fakeLLM('{"items":[{"slug":"personal","qty":1}]}');
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->bot->id,
+            'memory_notes' => [],
+        ]);
+
+        $result = app(OrderReconstructor::class)->reconstruct($this->bot, [
+            ['sender' => 'user', 'content' => 'เอา Personal 1 ตัวครับ'],
+        ], 1000.0, $conversation);
+
+        $this->assertNull($result);
     }
 
     public function test_rejects_when_total_does_not_match_the_slip(): void

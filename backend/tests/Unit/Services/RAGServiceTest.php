@@ -350,6 +350,30 @@ class RAGServiceTest extends TestCase
         $this->assertTrue($this->callShouldSkipCache($msg, $conversation));
     }
 
+    public function test_skip_cache_when_new_conversation_inherits_vip_status(): void
+    {
+        $profile = CustomerProfile::factory()->create();
+        Conversation::factory()->create([
+            'bot_id' => $this->bot->id,
+            'customer_profile_id' => $profile->id,
+            'memory_notes' => [[
+                'type' => 'memory',
+                'source' => 'vip_auto',
+                'content' => 'ซื้อยืนยันแล้ว 3 ครั้ง',
+            ]],
+        ]);
+        $newConversation = Conversation::factory()->create([
+            'bot_id' => $this->bot->id,
+            'customer_profile_id' => $profile->id,
+            'memory_notes' => [],
+        ]);
+
+        $this->assertTrue($this->callShouldSkipCache(
+            'ขอรายละเอียดเงื่อนไขการรับประกันสินค้าเพิ่มเติมทั้งหมด',
+            $newConversation
+        ));
+    }
+
     public function test_no_skip_when_no_memory_notes(): void
     {
         $conversation = Conversation::factory()->create([

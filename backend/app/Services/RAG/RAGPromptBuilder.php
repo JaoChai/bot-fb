@@ -8,6 +8,7 @@ use App\Models\Flow;
 use App\Models\Order;
 use App\Services\MultipleBubblesService;
 use App\Services\StockInjectionService;
+use App\Services\VipPricingService;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -19,6 +20,7 @@ class RAGPromptBuilder
 {
     public function __construct(
         private readonly StockInjectionService $stockInjectionService,
+        private readonly VipPricingService $vipPricingService,
     ) {}
 
     /**
@@ -29,7 +31,8 @@ class RAGPromptBuilder
         string $kbContext,
         ?Bot $bot = null,
         array $memoryNotes = [],
-        string $purchaseHistoryBlock = ''
+        string $purchaseHistoryBlock = '',
+        ?Conversation $conversation = null,
     ): string {
         // Static persona leads so it forms a stable, cacheable prefix for
         // OpenRouter/gemini prefix caching. Dynamic memory/stock/KB come AFTER.
@@ -73,6 +76,12 @@ class RAGPromptBuilder
             if (! empty($instruction)) {
                 $prompt .= "\n".$instruction;
             }
+        }
+
+        // VIP pricing comes after KB/prompt content so the live product price wins.
+        $vipPricing = $this->vipPricingService->buildPromptBlock($conversation, $stocks);
+        if ($vipPricing !== '') {
+            $prompt .= "\n\n".$vipPricing;
         }
 
         // Stock reminder at END of prompt — closest to user message = highest LLM attention

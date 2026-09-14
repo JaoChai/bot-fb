@@ -28,6 +28,8 @@ class RAGService
 
     private RAGKnowledgeBase $knowledgeBase;
 
+    private VipPricingService $vipPricingService;
+
     public function __construct(
         protected SemanticSearchService $semanticSearchService,
         protected HybridSearchService $hybridSearchService,
@@ -42,7 +44,8 @@ class RAGService
         // Collaborators snapshot these deps at construction — swapping a protected
         // property via reflection afterwards will not reach them.
         $this->intentDetector = new RAGIntentDetector;
-        $this->promptBuilder = new RAGPromptBuilder($this->stockInjectionService);
+        $this->vipPricingService = new VipPricingService;
+        $this->promptBuilder = new RAGPromptBuilder($this->stockInjectionService, $this->vipPricingService);
         $this->knowledgeBase = new RAGKnowledgeBase($this->hybridSearchService, $this->flowCacheService, $this->cragService);
     }
 
@@ -196,7 +199,8 @@ class RAGService
             $kbContext,
             $bot,
             $memoryNotes,
-            $purchaseHistoryBlock
+            $purchaseHistoryBlock,
+            $conversation,
         );
 
         // Step 7: Add Chain-of-Thought instruction if question is complex
@@ -308,9 +312,9 @@ class RAGService
     }
 
     /** @see RAGPromptBuilder::buildEnhancedPrompt() */
-    protected function buildEnhancedPrompt(string $basePrompt, string $kbContext, ?Bot $bot = null, array $memoryNotes = [], string $purchaseHistoryBlock = ''): string
+    protected function buildEnhancedPrompt(string $basePrompt, string $kbContext, ?Bot $bot = null, array $memoryNotes = [], string $purchaseHistoryBlock = '', ?Conversation $conversation = null): string
     {
-        return $this->promptBuilder->buildEnhancedPrompt($basePrompt, $kbContext, $bot, $memoryNotes, $purchaseHistoryBlock);
+        return $this->promptBuilder->buildEnhancedPrompt($basePrompt, $kbContext, $bot, $memoryNotes, $purchaseHistoryBlock, $conversation);
     }
 
     /** @see RAGPromptBuilder::buildPurchaseHistoryBlock() */
@@ -449,8 +453,11 @@ class RAGService
             return true;
         }
 
-        // 3. Conversation has memory notes (personalized state = VIP customers) — ~0.1μs
-        if ($conversation && ! empty($conversation->memory_notes)) {
+        // 3. Personalized state must never enter the bot-wide semantic cache.
+        // VipPricingService also resolves VIP status from older conversations when
+        // this is a newly-created conversation with an empty memory_notes array.
+        if (($conversation && ! empty($conversation->memory_notes))
+            || $this->vipPricingService->isVipConversation($conversation)) {
             return true;
         }
 

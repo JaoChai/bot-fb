@@ -370,7 +370,7 @@ class SlipVerificationService
 
         $reconstruction = null;
         if ($expected === null) {
-            $reconstruction = $this->reconstructor->reconstruct($bot, $conversationHistory, $slipAmount);
+            $reconstruction = $this->reconstructor->reconstruct($bot, $conversationHistory, $slipAmount, $conversation);
             if ($reconstruction !== null) {
                 $orderSource = 'llm';
                 $expected = [

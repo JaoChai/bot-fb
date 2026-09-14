@@ -3,7 +3,8 @@
 namespace App\Services\Payment;
 
 /**
- * Builds LINE Flex Message JSON for payment-related responses. VIP styling parameter is passed by callers — the builder itself does not decide VIP status (that lives in PaymentFlexService::isVipConversation). Extracted from PaymentFlexService (2026-05-26 Sprint 5).
+ * Builds LINE Flex Message JSON for payment-related responses. VIP status and
+ * pricing copy are passed by PaymentFlexService; this builder only renders them.
  */
 class FlexMessageBuilder
 {
@@ -36,6 +37,7 @@ class FlexMessageBuilder
         $headerText = $isVip ? '👑 VIP สรุปรายการสั่งซื้อ' : 'สรุปรายการสั่งซื้อ';
 
         $bodyContents = [];
+        $this->appendVipBenefit($bodyContents, $data);
 
         // Items section
         if (! empty($items)) {
@@ -374,6 +376,7 @@ class FlexMessageBuilder
         $headerText = $isVip ? '👑 VIP ยืนยันรายการสั่งซื้อ' : '📋 ยืนยันรายการสั่งซื้อ';
 
         $bodyContents = [];
+        $this->appendVipBenefit($bodyContents, $data);
 
         // Subheader text
         $bodyContents[] = [
@@ -595,6 +598,7 @@ class FlexMessageBuilder
         $footerText = $isVip ? 'ขอบคุณลูกค้า VIP ที่อุดหนุนครับ 🙏' : 'ขอบคุณที่อุดหนุนครับ 🙏';
 
         $bodyContents = [];
+        $this->appendVipBenefit($bodyContents, $data);
 
         // Centered checkmark icon
         $bodyContents[] = [
@@ -766,6 +770,31 @@ class FlexMessageBuilder
                     ],
                 ],
             ],
+        ];
+    }
+
+    /** @param array<int, array<string, mixed>> $bodyContents */
+    private function appendVipBenefit(array &$bodyContents, array $data): void
+    {
+        if (empty($data['vip_benefit']) || ! is_string($data['vip_benefit'])) {
+            return;
+        }
+
+        $bodyContents[] = [
+            'type' => 'box',
+            'layout' => 'vertical',
+            'backgroundColor' => '#FFF8E1',
+            'cornerRadius' => 'md',
+            'paddingAll' => 'md',
+            'margin' => 'md',
+            'contents' => [[
+                'type' => 'text',
+                'text' => $data['vip_benefit'],
+                'size' => 'sm',
+                'color' => self::VIP_PRIMARY_COLOR,
+                'weight' => 'bold',
+                'wrap' => true,
+            ]],
         ];
     }
 }

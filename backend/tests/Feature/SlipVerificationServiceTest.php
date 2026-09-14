@@ -15,6 +15,7 @@ use App\Services\Payment\PaymentMessageDetector;
 use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
 use App\Services\Payment\TelegramAlertBotService;
+use App\Services\VipPricingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -384,7 +385,7 @@ class SlipVerificationServiceTest extends TestCase
                 $app->make(PaymentMessageDetector::class),
                 $app->make(TelegramAlertBotService::class),
                 new LLMOrderItemExtractor($app->make(OpenRouterService::class)),
-                new OrderReconstructor($app->make(OpenRouterService::class)),
+                new OrderReconstructor($app->make(OpenRouterService::class), new VipPricingService),
             );
         });
 
@@ -462,7 +463,7 @@ class SlipVerificationServiceTest extends TestCase
                 $app->make(PaymentMessageDetector::class),
                 $app->make(TelegramAlertBotService::class),
                 new LLMOrderItemExtractor($app->make(OpenRouterService::class)),
-                new OrderReconstructor($app->make(OpenRouterService::class)),
+                new OrderReconstructor($app->make(OpenRouterService::class), new VipPricingService),
             );
         });
 
