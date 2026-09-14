@@ -18,6 +18,7 @@ use App\Services\Payment\PaymentMessageDetector;
 use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
 use App\Services\Payment\TelegramAlertBotService;
+use App\Services\VipPricingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -63,7 +64,7 @@ class OrderChecksumGuardTest extends TestCase
             new PaymentMessageDetector,
             new TelegramAlertBotService,
             new LLMOrderItemExtractor($openRouter),
-            new OrderReconstructor($openRouter),
+            new OrderReconstructor($openRouter, new VipPricingService),
         );
     }
 

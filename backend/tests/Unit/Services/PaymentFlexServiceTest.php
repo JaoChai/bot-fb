@@ -3,20 +3,29 @@
 namespace Tests\Unit\Services;
 
 use App\Models\Conversation;
+use App\Models\ProductStock;
 use App\Services\Payment\FlexMessageBuilder;
 use App\Services\Payment\PaymentMessageDetector;
 use App\Services\PaymentFlexService;
+use App\Services\VipPricingService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class PaymentFlexServiceTest extends TestCase
 {
+    use RefreshDatabase;
+
     private PaymentFlexService $service;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new PaymentFlexService(new PaymentMessageDetector, new FlexMessageBuilder);
+        $this->service = new PaymentFlexService(
+            new PaymentMessageDetector,
+            new FlexMessageBuilder,
+            app(VipPricingService::class),
+        );
     }
 
     #[Test]
@@ -556,6 +565,21 @@ class PaymentFlexServiceTest extends TestCase
     }
 
     #[Test]
+    public function test_confirm_flex_displays_vip_price_benefit(): void
+    {
+        $message = '👑 ทางร้านมอบสิทธิ VIP ราคา 1,000 บาท/ตัว (ราคาปกติ 1,100 บาท)';
+        $data = [
+            'items' => [['name' => 'Nolimit Level Up+ Personal', 'total' => '1000']],
+            'total' => '1000',
+            'vip_benefit' => $message,
+        ];
+
+        $flex = $this->service->buildConfirmFlexMessage($data, true);
+
+        $this->assertStringContainsString($message, json_encode($flex, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    #[Test]
     public function test_try_convert_returns_flex_for_confirm(): void
     {
         $text = <<<'TEXT'
@@ -578,16 +602,27 @@ class PaymentFlexServiceTest extends TestCase
     #[Test]
     public function test_try_convert_returns_flex_for_confirm_vip(): void
     {
+        ProductStock::create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'stock_code' => 'NLMBM',
+            'aliases' => ['BM'],
+            'in_stock' => true,
+            'display_order' => 1,
+            'price' => 1100,
+            'vip_price' => 1000,
+        ]);
+
         $conversation = new Conversation;
         $conversation->memory_notes = [
-            ['type' => 'memory', 'content' => 'ลูกค้า VIP ประจำ'],
+            ['type' => 'memory', 'source' => 'vip_auto', 'content' => 'ลูกค้า VIP ประจำ'],
         ];
 
         $text = <<<'TEXT'
         สรุปรายการสั่งซื้อ
-        1. Nolimit Level Up+ BM 800 บาท
+        1. Nolimit Level Up+ BM 1,000 บาท
 
-        รวม: 800 บาท
+        รวม: 1,000 บาท
 
         หากถูกต้อง กรุณาพิมพ์ "ยืนยัน" เพื่อดำเนินการต่อครับ
         TEXT;
@@ -599,6 +634,10 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('#D4A017', $result['contents']['header']['backgroundColor']);
         $headerJson = json_encode($result['contents']['header'], JSON_UNESCAPED_UNICODE);
         $this->assertStringContains('👑 VIP', $headerJson);
+        $this->assertStringContainsString(
+            'ทางร้านมอบสิทธิ VIP ราคา 1,000 บาท/ตัว (ราคาปกติ 1,100 บาท)',
+            json_encode($result['contents']['body'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
     }
 
     // ────────────────────────────────────────────────────────
@@ -709,7 +748,7 @@ class PaymentFlexServiceTest extends TestCase
     {
         $conversation = new Conversation;
         $conversation->memory_notes = [
-            ['type' => 'memory', 'content' => 'ลูกค้า VIP ประจำ'],
+            ['type' => 'memory', 'source' => 'vip_auto', 'content' => 'ลูกค้า VIP ประจำ'],
         ];
 
         $text = "ขอแจ้งให้ทราบก่อนนะครับพี่ ช่วงนี้ทีม Support อาจใช้เวลาซัพพอร์ตนานกว่าปกติ\n[แจ้งเตือน Support]";
@@ -962,24 +1001,25 @@ class PaymentFlexServiceTest extends TestCase
     // ────────────────────────────────────────────────────────
 
     #[Test]
-    public function test_detects_vip_from_memory_notes_string(): void
+    public function test_does_not_trust_vip_keyword_in_unstructured_note(): void
     {
         $conversation = new Conversation;
         $conversation->memory_notes = ['ลูกค้า VIP เคยซื้อ Nolimit 3 ครั้ง'];
 
-        $this->assertTrue($this->service->isVipConversation($conversation));
+        $this->assertFalse($this->service->isVipConversation($conversation));
     }
 
     #[Test]
     public function test_detects_vip_from_memory_notes_object(): void
     {
-        // Production format: array of objects with 'content' key
+        // Production format: explicit source written by VipDetectionService
         $conversation = new Conversation;
         $conversation->memory_notes = [
             [
                 'id' => 'test-uuid',
                 'type' => 'memory',
-                'content' => 'ลูกค้า VIP เคยซื้อ Nolimit Level Up+ BM มาแล้ว',
+                'source' => 'vip_auto',
+                'content' => 'ซื้อยืนยันแล้ว 3 ครั้ง',
                 'created_at' => '2026-01-16T05:26:19.002451Z',
             ],
         ];
@@ -988,10 +1028,14 @@ class PaymentFlexServiceTest extends TestCase
     }
 
     #[Test]
-    public function test_detects_vip_case_insensitive(): void
+    public function test_detects_manual_vip_source(): void
     {
         $conversation = new Conversation;
-        $conversation->memory_notes = ['ลูกค้า vip ประจำ'];
+        $conversation->memory_notes = [[
+            'type' => 'memory',
+            'source' => 'vip_manual',
+            'content' => 'ดูแลเป็นพิเศษ',
+        ]];
 
         $this->assertTrue($this->service->isVipConversation($conversation));
     }
@@ -1114,7 +1158,7 @@ class PaymentFlexServiceTest extends TestCase
     {
         $conversation = new Conversation;
         $conversation->memory_notes = [
-            ['type' => 'memory', 'content' => 'ลูกค้า VIP ประจำ'],
+            ['type' => 'memory', 'source' => 'vip_auto', 'content' => 'ลูกค้า VIP ประจำ'],
         ];
 
         $text = <<<'TEXT'

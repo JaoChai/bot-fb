@@ -16,6 +16,10 @@ class ProductStockSeeder extends Seeder
                 'aliases' => ['Personal', 'ส่วนตัว', 'ตัวหลัก', 'หลักพ่วง', 'พ่วงหลัก'],
                 'in_stock' => false,
                 'display_order' => 0,
+                'stock_code' => 'NLMP',
+                'delivery_method' => 'stock',
+                'price' => 1100,
+                'vip_price' => 1000,
             ],
             [
                 'slug' => 'bm',
@@ -23,6 +27,10 @@ class ProductStockSeeder extends Seeder
                 'aliases' => ['BM', 'บีเอ็ม', 'พอร์ตโฟลิโอ', 'บัญชีธุรกิจ', 'กระเป๋า BM'],
                 'in_stock' => false,
                 'display_order' => 1,
+                'stock_code' => 'NLMBM',
+                'delivery_method' => 'stock',
+                'price' => 1100,
+                'vip_price' => 1000,
             ],
             [
                 'slug' => 'page',

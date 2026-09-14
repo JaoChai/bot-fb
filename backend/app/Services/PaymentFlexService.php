@@ -12,6 +12,7 @@ class PaymentFlexService
     public function __construct(
         private PaymentMessageDetector $detector,
         private FlexMessageBuilder $builder,
+        private VipPricingService $vipPricingService,
     ) {}
 
     private const MAX_FLEX_SIZE = 30000;
@@ -34,6 +35,8 @@ class PaymentFlexService
             if ($this->isPaymentMessage($text)) {
                 $data = $this->parsePaymentData($text);
                 if ($data !== null) {
+                    $data = $this->vipPricingService->addFlexBenefit($data, $isVip);
+
                     return $this->safeBuildFlex($text, $this->buildFlexMessage($data, $isVip));
                 }
             }
@@ -52,6 +55,12 @@ class PaymentFlexService
             if ($this->isVerifySuccessMessage($text)) {
                 $data = $this->parseVerifyData($text);
                 if ($data !== null) {
+                    $data = $this->vipPricingService->addFlexBenefit(
+                        $data,
+                        $isVip,
+                        requireCanonicalItemPrices: false
+                    );
+
                     return $this->safeBuildFlex($text, $this->buildVerifyFlexMessage($data, $isVip));
                 }
             }
@@ -60,6 +69,8 @@ class PaymentFlexService
             if ($this->isConfirmMessage($text)) {
                 $data = $this->parseConfirmData($text);
                 if ($data !== null) {
+                    $data = $this->vipPricingService->addFlexBenefit($data, $isVip);
+
                     return $this->safeBuildFlex($text, $this->buildConfirmFlexMessage($data, $isVip));
                 }
             }
@@ -75,31 +86,11 @@ class PaymentFlexService
     }
 
     /**
-     * Check if conversation belongs to a VIP customer.
-     * Looks for "VIP" keyword in memory_notes.
+     * Check the canonical auto/manual VIP note, with legacy-note compatibility.
      */
     public function isVipConversation(?Conversation $conversation): bool
     {
-        if ($conversation === null) {
-            return false;
-        }
-
-        $memoryNotes = $conversation->memory_notes;
-        if (empty($memoryNotes)) {
-            return false;
-        }
-
-        // memory_notes is cast as array - each entry can be:
-        // 1. A string: "ลูกค้า VIP ..."
-        // 2. An object with 'content' key: {"type":"memory","content":"ลูกค้า VIP ..."}
-        foreach ($memoryNotes as $note) {
-            $text = is_string($note) ? $note : ($note['content'] ?? null);
-            if (is_string($text) && preg_match('/\bVIP\b/iu', $text)) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->vipPricingService->isVipConversation($conversation);
     }
 
     /**

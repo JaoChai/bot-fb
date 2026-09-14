@@ -3,8 +3,10 @@
 namespace App\Services\Payment;
 
 use App\Models\Bot;
+use App\Models\Conversation;
 use App\Models\ProductStock;
 use App\Services\OpenRouterService;
+use App\Services\VipPricingService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -34,12 +36,13 @@ PROMPT;
 
     public function __construct(
         private readonly OpenRouterService $openRouter,
+        private readonly VipPricingService $vipPricingService,
     ) {}
 
     /**
      * @param  array<int, array{sender: string, content: string}>  $history
      */
-    public function reconstruct(Bot $bot, array $history, float $slipAmount): ?OrderReconstruction
+    public function reconstruct(Bot $bot, array $history, float $slipAmount, ?Conversation $conversation = null): ?OrderReconstruction
     {
         $products = ProductStock::where('in_stock', true)->whereNotNull('price')->orderBy('display_order')->get();
         if ($products->isEmpty()) {
@@ -56,19 +59,20 @@ PROMPT;
         // $transcript ตัวเต็มยังใช้ตอนส่งให้ LLM ใน ask() เหมือนเดิม ไม่ใช่ตัว lowercase
         $haystack = mb_strtolower($transcript);
 
-        $raw = $this->ask($bot, $products, $transcript, $slipAmount);
+        $isVip = $this->vipPricingService->isVipConversation($conversation);
+        $raw = $this->ask($bot, $products, $transcript, $slipAmount, $isVip);
         if ($raw === []) {
             return null;
         }
 
-        $items = $this->validate($raw, $products, $haystack, $slipAmount, $bot);
+        $items = $this->validate($raw, $products, $haystack, $slipAmount, $bot, $isVip);
         if ($items === null) {
             return null;
         }
 
         // หา "ชุดตัวเลือกปุ่ม" (sets) กับ "กำกวมไหม" (ambiguous) ในการวน products รอบเดียว
         // (เดิม alternatives() กับ isAmbiguous() วน products ซ้ำกันสองรอบในเคสรายการเดียว)
-        $analysis = $this->analyzeAmbiguity($items, $products, $haystack);
+        $analysis = $this->analyzeAmbiguity($items, $products, $haystack, $isVip);
 
         return new OrderReconstruction(
             items: $items,
@@ -98,7 +102,7 @@ PROMPT;
      * @param  Collection<int, ProductStock>  $products
      * @return array<int, array{slug: string, qty: int}>
      */
-    private function ask(Bot $bot, Collection $products, string $transcript, float $slipAmount): array
+    private function ask(Bot $bot, Collection $products, string $transcript, float $slipAmount, bool $isVip): array
     {
         // ใช้ utility_model ตรง ๆ ไม่ใช้ resolvedUtilityModel() เพราะเมธอดนั้นจะถอยไปใช้
         // fallback_chat_model หรือ primary_chat_model เมื่อไม่ได้ตั้ง utility model ซึ่งเป็นโมเดล
@@ -113,7 +117,7 @@ PROMPT;
         }
 
         $catalog = $products
-            ->map(fn (ProductStock $p) => "- slug: {$p->slug} | ชื่อ: {$p->name} | ราคา: ".(float) $p->price.' บาท')
+            ->map(fn (ProductStock $p) => "- slug: {$p->slug} | ชื่อ: {$p->name} | ราคา: ".$this->vipPricingService->effectivePrice($p, $isVip).' บาท')
             ->implode("\n");
 
         $user = "สินค้าที่ขาย:\n{$catalog}\n\nยอดที่ลูกค้าโอนมา: {$slipAmount} บาท\n\nบทสนทนา:\n{$transcript}";
@@ -218,7 +222,7 @@ PROMPT;
      * @param  Collection<int, ProductStock>  $products
      * @return array<int, array{name: string, total: string, qty: int}>|null
      */
-    private function validate(array $raw, Collection $products, string $haystack, float $slipAmount, Bot $bot): ?array
+    private function validate(array $raw, Collection $products, string $haystack, float $slipAmount, Bot $bot, bool $isVip): ?array
     {
         if ($raw === []) {
             return null;
@@ -244,7 +248,7 @@ PROMPT;
                 return null;
             }
 
-            $lineTotal = (float) $product->price * $entry['qty'];
+            $lineTotal = (float) $this->vipPricingService->effectivePrice($product, $isVip) * $entry['qty'];
             $sum += $lineTotal;
             $items[] = [
                 'name' => $product->name,
@@ -303,14 +307,14 @@ PROMPT;
      * @param  Collection<int, ProductStock>  $products
      * @return array{sets: array<int, array<int, array{name: string, total: string, qty: int}>>, ambiguous: bool}
      */
-    private function analyzeAmbiguity(array $items, Collection $products, string $haystack): array
+    private function analyzeAmbiguity(array $items, Collection $products, string $haystack, bool $isVip): array
     {
         // หลายรายการ: ไม่สร้างปุ่มสลับ (ความเป็นไปได้บานปลาย) — คืนชุดเดียวคือ items ที่ LLM สรุป
         // เพื่อให้การ์ดยังมีปุ่มกดยืนยันออเดอร์ชุดนี้ได้ (หลังเจ้าของเปิดแชทตรวจแล้ว)
         // ตัดสินกำกวมทีละบรรทัดด้วย hasSamePriceSibling
         if (count($items) !== 1) {
             foreach ($items as $line) {
-                if ($this->hasSamePriceSibling($line, $products, $haystack)) {
+                if ($this->hasSamePriceSibling($line, $products, $haystack, $isVip)) {
                     return ['sets' => [$items], 'ambiguous' => true];
                 }
             }
@@ -325,7 +329,7 @@ PROMPT;
             if ($product->name === $chosen['name']) {
                 continue;
             }
-            $lineTotal = (float) $product->price * $chosen['qty'];
+            $lineTotal = (float) $this->vipPricingService->effectivePrice($product, $isVip) * $chosen['qty'];
             if (abs($lineTotal - (float) $chosen['total']) > 0.001) {
                 continue;
             }
@@ -345,13 +349,13 @@ PROMPT;
      * @param  array{name: string, total: string, qty: int}  $line
      * @param  Collection<int, ProductStock>  $products
      */
-    private function hasSamePriceSibling(array $line, Collection $products, string $haystack): bool
+    private function hasSamePriceSibling(array $line, Collection $products, string $haystack, bool $isVip): bool
     {
         foreach ($products as $product) {
             if ($product->name === $line['name']) {
                 continue;
             }
-            $lineTotal = (float) $product->price * $line['qty'];
+            $lineTotal = (float) $this->vipPricingService->effectivePrice($product, $isVip) * $line['qty'];
             if (abs($lineTotal - (float) $line['total']) > 0.001) {
                 continue;
             }
