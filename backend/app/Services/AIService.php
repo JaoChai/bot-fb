@@ -7,10 +7,15 @@ use App\Jobs\ExtractEntitiesJob;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Services\CommerceSafety\CanonicalCartValidator;
+use App\Services\CommerceSafety\CartProposalAdapter;
+use App\Services\CommerceSafety\CartValidation;
+use App\Services\CommerceSafety\SafetyScope;
 use App\Services\Guardrail\GuardrailOutputSanitizer;
 use App\Services\Guardrail\OffTopicCircuitBreaker;
 use App\Services\Guardrail\OffTopicSignalExtractor;
 use App\Services\Payment\OrderPayloadExtractor;
+use App\Services\Payment\PaymentMessageDetector;
 use Illuminate\Support\Facades\Log;
 
 class AIService
@@ -24,6 +29,10 @@ class AIService
         private readonly OffTopicCircuitBreaker $offTopicCircuitBreaker,
         private readonly GuardrailOutputSanitizer $outputSanitizer,
         private readonly VipPriceGuardService $vipPriceGuard,
+        private readonly SafetyScope $safetyScope,
+        private readonly CartProposalAdapter $cartProposalAdapter,
+        private readonly CanonicalCartValidator $cartValidator,
+        private readonly PaymentMessageDetector $paymentDetector,
     ) {}
 
     /**
@@ -75,6 +84,14 @@ class AIService
             flow: $flow
         );
 
+        // Bot-scoped canonical proposal inspection happens on the original model/cache
+        // output so JSON types cannot be lost through the legacy payload normalizer.
+        $cartValidation = $this->inspectScopedProposal(
+            $bot,
+            $conversation,
+            $result['content'] ?? '',
+        );
+
         // Stock Guard: hard-block selling out-of-stock products
         // (guard แก้ข้อความได้ 3 แบบ: ทับทั้งก้อน, ตัดท่อน upsell, ต่อท้ายว่าหมด —
         //  ต้องรับ content กลับมาทุกแบบ ไม่ใช่เฉพาะตอน blocked)
@@ -114,6 +131,15 @@ class AIService
         }
         $result['content'] = $vipPriceResult['content'];
         $result['order_payload'] = $vipPriceResult['order_payload'];
+
+        if ($cartValidation !== null && ! $cartValidation->valid) {
+            $result['content'] = $this->cartCorrection($cartValidation);
+            $result['order_payload'] = null;
+            $result['cart_validation'] = [
+                'corrected' => true,
+                'errors' => $cartValidation->errors,
+            ];
+        }
 
         // Off-topic signal marker — เหมือน [[ORDER]] ด้านบน ตัดออกก่อนใครได้เห็น
         $offTopicExtracted = $this->offTopicSignal->extract($result['content'] ?? '');
@@ -162,6 +188,113 @@ class AIService
         );
 
         return $result;
+    }
+
+    private function inspectScopedProposal(
+        Bot $bot,
+        ?Conversation $conversation,
+        string $content,
+    ): ?CartValidation {
+        if ($conversation === null || $this->safetyScope->mode($bot) === 'off') {
+            return null;
+        }
+
+        $proposals = [];
+        $hasOrderMarker = str_contains($content, '[[ORDER]]');
+        if ($hasOrderMarker) {
+            preg_match_all('/\[\[ORDER\]\](.*?)\[\[\/ORDER\]\]/su', $content, $blocks);
+            if (count($blocks[1] ?? []) !== 1) {
+                return $this->invalidCart($conversation, ['INVALID_PROPOSAL']);
+            }
+            $proposal = $this->cartProposalAdapter->fromOrderJson($blocks[1][0]);
+            if ($proposal === null) {
+                return $this->invalidCart($conversation, ['INVALID_PROPOSAL']);
+            }
+            $proposals[] = $proposal;
+        }
+
+        $visibleCandidate = $this->paymentDetector->parsePaymentData($content)
+            ?? $this->paymentDetector->parseConfirmData($content);
+        if ($visibleCandidate !== null && ! empty($visibleCandidate['items'])) {
+            $proposal = $this->cartProposalAdapter->fromText($content);
+            if ($proposal === null) {
+                return $this->invalidCart($conversation, ['INVALID_PROPOSAL']);
+            }
+            $proposals[] = $proposal;
+        }
+
+        if ($proposals === []) {
+            return $hasOrderMarker
+                ? $this->invalidCart($conversation, ['INVALID_PROPOSAL'])
+                : null;
+        }
+
+        $validated = array_map(
+            fn (array $proposal): CartValidation => $this->cartValidator->validate(
+                $bot,
+                $conversation,
+                $proposal['lines'],
+                $proposal['total_minor'],
+            ),
+            $proposals,
+        );
+        $first = $validated[0];
+        foreach ($validated as $validation) {
+            if (! $validation->valid) {
+                return $validation;
+            }
+            if ($validation->fingerprint !== $first->fingerprint) {
+                return $this->invalidCart($conversation, ['PROPOSAL_MISMATCH']);
+            }
+        }
+
+        return $first;
+    }
+
+    /** @param list<string> $errors */
+    private function invalidCart(Conversation $conversation, array $errors): CartValidation
+    {
+        return new CartValidation(
+            valid: false,
+            errors: $errors,
+            lines: [],
+            totalMinor: 0,
+            vip: app(VipPricingService::class)->isVipConversation($conversation),
+            fingerprint: hash('sha256', 'invalid'),
+        );
+    }
+
+    private function cartCorrection(CartValidation $validation): string
+    {
+        if ($validation->requiresManualHandling) {
+            return 'รายการนี้เกินขีดจำกัดการทำรายการอัตโนมัติครับ ทีมงานจะช่วยตรวจสอบและดำเนินการให้โดยไม่ลดจำนวนสินค้า';
+        }
+        if (array_intersect($validation->errors, ['OUT_OF_STOCK', 'STOCK_UNKNOWN', 'INSUFFICIENT_STOCK'])) {
+            return 'ขออภัยครับ ยังไม่สามารถยืนยันรายการนี้ได้ เนื่องจากสต็อกปัจจุบันไม่พร้อมหรือยืนยันจำนวนไม่ได้ กรุณาแจ้งทีมงานครับ';
+        }
+        if ($validation->lines === []) {
+            return 'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และราคาใหม่อีกครั้ง';
+        }
+
+        $lines = [];
+        foreach ($validation->lines as $index => $line) {
+            $lines[] = ($index + 1).'. '.$line['name'].' ('
+                .$this->formatMinor($line['price_minor']).' x '.$line['qty'].') = '
+                .$this->formatMinor($line['line_total_minor']).' บาท';
+        }
+
+        return "ระบบตรวจพบว่ารายการหรือราคาไม่ตรงกับข้อมูลล่าสุด ขอสรุปรายการที่แก้ไขครับ\n"
+            .implode("\n", $lines)
+            ."\nรวม: ".$this->formatMinor($validation->totalMinor)
+            .' บาท กรุณาตรวจสอบและพิมพ์ ยืนยัน อีกครั้งครับ';
+    }
+
+    private function formatMinor(int $minor): string
+    {
+        $whole = intdiv($minor, 100);
+        $fraction = $minor % 100;
+
+        return number_format($whole).($fraction === 0 ? '' : '.'.str_pad((string) $fraction, 2, '0', STR_PAD_LEFT));
     }
 
     /**
