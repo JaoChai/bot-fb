@@ -10,10 +10,10 @@ use App\Models\Message;
 use App\Services\CommerceSafety\CanonicalCartValidator;
 use App\Services\CommerceSafety\CartProposalAdapter;
 use App\Services\CommerceSafety\CartValidation;
+use App\Services\CommerceSafety\CustomerReplyGuard;
 use App\Services\CommerceSafety\FinancialOutputDetector;
 use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\CommerceSafety\SafetyScope;
-use App\Services\Guardrail\GuardrailOutputSanitizer;
 use App\Services\Guardrail\OffTopicCircuitBreaker;
 use App\Services\Guardrail\OffTopicSignalExtractor;
 use App\Services\Payment\OrderPayloadExtractor;
@@ -32,7 +32,7 @@ class AIService
         private readonly OrderPayloadExtractor $orderPayload,
         private readonly OffTopicSignalExtractor $offTopicSignal,
         private readonly OffTopicCircuitBreaker $offTopicCircuitBreaker,
-        private readonly GuardrailOutputSanitizer $outputSanitizer,
+        private readonly CustomerReplyGuard $customerReplyGuard,
         private readonly VipPriceGuardService $vipPriceGuard,
         private readonly SafetyScope $safetyScope,
         private readonly CartProposalAdapter $cartProposalAdapter,
@@ -170,18 +170,7 @@ class AIService
                 $this->offTopicCircuitBreaker->recordTrigger($bot, $conversation);
             }
 
-            // Output sanitizer — ตาข่ายสุดท้ายกันคำตอบหลุด (code block/markdown จริง/อ้างว่าเป็น AI)
-            // ใช้กับทุกคำตอบ ไม่ใช่แค่ที่ถูกตีว่า off-topic
-            $sanitizerResult = $this->outputSanitizer->check($result['content'] ?? '');
-            if ($sanitizerResult['flagged']) {
-                Log::warning('Guardrail output sanitizer triggered', [
-                    'bot_id' => $bot->id,
-                    'conversation_id' => $conversation?->id,
-                    'reason' => $sanitizerResult['reason'],
-                ]);
-                $result['content'] = OffTopicCircuitBreaker::CANNED_MESSAGE;
-                $result['order_payload'] = null;
-            }
+            $result = $this->customerReplyGuard->generated($bot, $result, $conversation, legacySanitizer: true);
 
         }
 
@@ -353,6 +342,7 @@ class AIService
             );
 
             $result = app(FinancialOutputGuard::class)->generated($bot, $result);
+            $result = $this->customerReplyGuard->generated($bot, $result, $conversation);
 
             // Build message data with RAG metadata
             $messageData = [

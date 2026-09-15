@@ -5,20 +5,28 @@ namespace Tests\Feature\CommerceSafety;
 use App\Jobs\ProcessAggregatedMessages;
 use App\Jobs\ProcessLINEWebhook;
 use App\Jobs\ReserveAccountStock;
+use App\Jobs\SendDelayedBubbleJob;
 use App\Models\Bot;
+use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
 use App\Models\Order;
+use App\Models\ProductStock;
 use App\Models\SlipVerification;
 use App\Models\User;
 use App\Models\VerifiedPaymentEvent;
 use App\Services\AIService;
 use App\Services\CircuitBreakerService;
+use App\Services\CommerceSafety\CartValidation;
+use App\Services\CommerceSafety\CheckoutRenderer;
+use App\Services\CommerceSafety\CustomerReplyGuard;
+use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\CommerceSafety\PaymentProofService;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\FlowPluginService;
+use App\Services\Guardrail\OffTopicCircuitBreaker;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
 use App\Services\LineWebhook\LineWebhookContextService;
@@ -390,6 +398,172 @@ class PaymentConsumersTest extends TestCase
         $receipt = $this->receipt();
         $this->proof($receipt);
         $this->assertNull(app(OrderService::class)->createFromPluginExtraction($this->bot, $this->conversation, $receipt, ['amount' => 999, 'product' => 'forged']));
+        $this->assertNoEffects();
+    }
+
+    private function enableReplyPolicy(): void
+    {
+        $this->bot = Bot::factory()->active()->create(['id' => 26, 'user_id' => $this->bot->user_id, 'context_window' => 10]);
+        $this->conversation->update(['bot_id' => 26]);
+        $this->conversation->unsetRelation('bot');
+        $this->financial->flow->update(['bot_id' => 26]);
+        $this->bot->update(['default_flow_id' => $this->financial->flow_id]);
+        config(['commerce_safety.bots.26.mode' => 'enforce', 'commerce_safety.bots.26.payment_plugin_ids' => [$this->financial->id], 'delivery.order_payload_enabled' => true]);
+    }
+
+    public static function rejectedProposals(): array
+    {
+        return [['@adsvance', 'ขอเช็กข้อมูลล่าสุดให้ในแชทนี้ครับ'], ["```php\n", OffTopicCircuitBreaker::CANNED_MESSAGE]];
+    }
+
+    #[DataProvider('rejectedProposals')]
+    public function test_valid_order_plus_rejected_reply_clears_all_checkout_state_and_consumers(string $text, string $fallback): void
+    {
+        $this->enableReplyPolicy();
+        ProductStock::create(['name' => 'Page', 'slug' => 'page', 'stock_code' => 'PAGE', 'aliases' => [], 'delivery_method' => 'support_link', 'price' => 199, 'is_active' => true]);
+        $proposal = '[[ORDER]]{"items":[{"name":"Page","qty":1,"price":199}],"total":199}[[/ORDER]]';
+        $raw = 'รายการพร้อมครับ ||| '.$text.' '.$proposal;
+        $this->mock(RAGService::class)->shouldReceive('generateResponse')->andReturn([
+            'content' => $raw, 'checkout_presentation' => ['action' => 'payment'],
+            'model' => 'test', 'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0],
+        ]);
+        $this->mock(StockGuardService::class)->shouldReceive('validate')->andReturn(['blocked' => false]);
+        $this->mock(OpenRouterService::class)->shouldReceive('estimateCost')->andReturn(0);
+        $ai = app(AIService::class);
+        $validation = (new \ReflectionMethod($ai, 'inspectScopedProposal'))->invoke($ai, $this->bot, $this->conversation, $raw);
+        $this->assertTrue($validation->valid, implode(',', $validation->errors));
+        $result = $ai->generateResponse($this->bot, 'hello', $this->conversation);
+        $this->assertSame($fallback, $result['content']);
+        foreach (['order_payload', 'commerce_safety_cart_validation', 'checkout_presentation'] as $key) {
+            $this->assertNull($result[$key] ?? null, $key);
+        }
+        $user = $this->conversation->messages()->create(['sender' => 'user', 'type' => 'text', 'content' => 'hello']);
+        $message = $ai->generateAndSaveResponse($this->bot, $this->conversation, $user);
+        $this->assertNull($ai->takeCommerceSafetyCartValidation($message));
+        $this->assertSame($fallback, $message->fresh()->content);
+        $this->assertSame($fallback, app(PaymentFlexService::class)->tryConvertToFlex($message->content, $this->conversation, $message));
+        $this->assertSame([$fallback], app(MultipleBubblesService::class)->parseIntoBubbles($message->content, $this->bot));
+        app(FlowPluginService::class)->executePlugins($this->bot, $this->conversation, $message);
+        $this->assertNull((new \ReflectionMethod(app(LineWebhookResponseService::class), 'checkoutProposal'))->invoke(app(LineWebhookResponseService::class), $this->replyContext($message), $message));
+        $line = Mockery::mock(LINEService::class);
+        $line->shouldReceive('generateRetryKey')->andReturn('test');
+        $line->shouldReceive('push')->once()->withArgs(fn ($bot, $user, $texts) => $texts === [$fallback])->andReturn(true);
+        $bubbles = Mockery::mock(MultipleBubblesService::class);
+        $bubbles->shouldReceive('isEnabled')->andReturn(false);
+        $job = new ProcessAggregatedMessages($this->bot, $this->conversation, 'test', 'U-test');
+        $aggregated = (new \ReflectionMethod($job, 'generateAndDeliver'))->invoke($job, 'hello', 1, $ai, $line, $bubbles);
+        $this->assertSame($fallback, $aggregated->fresh()->content);
+        $this->assertSame(0, CheckoutSession::count());
+        $this->assertNoEffects();
+    }
+
+    private function replyContext(Message $message, string $type = 'text'): WebhookContext
+    {
+        $ctx = new WebhookContext($this->bot, ['type' => 'message', 'message' => ['type' => $type], 'source' => ['userId' => 'U-test'], 'replyToken' => 'test']);
+        $ctx->conversation = $this->conversation;
+        $ctx->userMessage = $this->conversation->messages()->create(['sender' => 'user', 'type' => $type, 'content' => 'hello']);
+        $ctx->metadata['bot_message'] = $message;
+        $ctx->response = ResponseEnvelope::text($message->content);
+
+        return $ctx;
+    }
+
+    #[DataProvider('channels')]
+    public function test_contact_backstop_replaces_full_output_before_bubbles_flex_and_plugins(string $type, bool $bubblesOn): void
+    {
+        $this->enableReplyPolicy();
+        $text = 'https://lin.ee/h5wYpIf ||| @adsvance';
+        $fallback = 'ขอเช็กข้อมูลล่าสุดให้ในแชทนี้ครับ';
+        $receipt = $this->conversation->messages()->create(['sender' => 'bot', 'type' => 'text', 'content' => $text, 'metadata' => ['commerce_safety_cart_validation' => ['valid' => true]]]);
+        $line = Mockery::mock(LINEService::class);
+        $line->shouldReceive('generateRetryKey')->andReturn('test');
+        $line->shouldReceive('replyWithFallback')->withArgs(fn ($bot, $token, $user, $messages) => $messages === [$fallback])->andReturn(['success' => true]);
+        $bubbles = Mockery::mock(MultipleBubblesService::class);
+        $bubbles->shouldReceive('isEnabled')->andReturn($bubblesOn);
+        $bubbles->shouldReceive('parseIntoBubbles')->with($fallback, Mockery::any())->andReturn([$fallback]);
+        $bubbles->shouldReceive('sendBubbles')->withArgs(fn ($bot, $user, $token, $texts) => $texts === [$fallback])->andReturn(true);
+        $plugins = Mockery::mock(FlowPluginService::class);
+        $plugins->shouldReceive('executePlugins')->withArgs(fn ($bot, $conv, $msg) => $msg->content === $fallback && empty($msg->metadata['commerce_safety_cart_validation']))->andReturnNull();
+        $lead = Mockery::mock(LeadRecoveryService::class)->shouldIgnoreMissing();
+        (new LineWebhookOutputService($line, $lead, $bubbles, app(PaymentFlexService::class), $plugins))->dispatch($this->replyContext($receipt, $type));
+        $this->assertSame($fallback, $receipt->fresh()->content);
+        $this->assertEmpty($receipt->fresh()->metadata);
+        $this->assertSame([$fallback], app(MultipleBubblesService::class)->parseIntoBubbles($text, $this->bot));
+        $this->assertNoEffects();
+    }
+
+    public function test_direct_bubble_send_and_aggregate_delivery_guard_full_contact_reply(): void
+    {
+        $this->enableReplyPolicy();
+        $fallback = 'ขอเช็กข้อมูลล่าสุดให้ในแชทนี้ครับ';
+        $line = $this->mock(LINEService::class);
+        $line->shouldReceive('generateRetryKey')->andReturn('test');
+        $line->shouldReceive('replyWithFallback')->once()->withArgs(fn ($bot, $token, $user, $texts) => $texts === [$fallback])->andReturn(['success' => true]);
+        $line->shouldReceive('push')->once()->withArgs(fn ($bot, $user, $texts) => $texts === [$fallback])->andReturn(true);
+        $bubbles = app(MultipleBubblesService::class);
+        $this->assertTrue($bubbles->sendBubbles($this->bot, 'U-test', 'test', ['สวัสดีครับ', '@adsvance'], $this->conversation));
+        $receipt = $this->conversation->messages()->create(['sender' => 'bot', 'type' => 'text', 'content' => 'สวัสดีครับ ||| @adsvance']);
+        $job = new ProcessAggregatedMessages($this->bot, $this->conversation, 'test', 'U-test');
+        $this->assertTrue((new \ReflectionMethod($job, 'deliverToChannel'))->invoke($job, $receipt, $line, $bubbles));
+        $this->assertSame($fallback, $receipt->fresh()->content);
+        Queue::assertNotPushed(SendDelayedBubbleJob::class);
+        $this->assertNoEffects();
+    }
+
+    #[DataProvider('rejectedProposals')]
+    public function test_aggregate_and_save_backstops_reject_alternate_ai_results_before_persistence(string $text, string $fallback): void
+    {
+        $this->enableReplyPolicy();
+        $validation = new CartValidation(true, [], [], 19900, false, 'test');
+        $result = ['content' => 'สวัสดีครับ ||| '.$text, 'commerce_safety_cart_validation' => $validation,
+            'order_payload' => ['total' => 199], 'checkout_presentation' => ['action' => 'payment'],
+            'model' => 'test', 'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0], 'cost' => 0];
+        $dependencies = array_map(
+            fn (\ReflectionParameter $parameter) => app($parameter->getType()->getName()),
+            (new \ReflectionClass(AIService::class))->getConstructor()->getParameters(),
+        );
+        $ai = Mockery::mock(AIService::class, $dependencies)->makePartial();
+        $ai->shouldReceive('generateResponse')->andReturn($result);
+        $user = $this->conversation->messages()->create(['sender' => 'user', 'type' => 'text', 'content' => 'hello']);
+        Message::creating(function (Message $message) use ($fallback): void {
+            if ($message->sender === 'bot') {
+                $this->assertSame($fallback, $message->content);
+                $this->assertEmpty($message->metadata['order_payload'] ?? null);
+                $this->assertEmpty($message->metadata['checkout_presentation'] ?? null);
+            }
+        });
+        // Run the real persistence method with a substituted generation result.
+        $saved = $ai->generateAndSaveResponse($this->bot, $this->conversation, $user);
+        $this->assertSame($fallback, $saved->fresh()->content);
+        $this->assertNull($ai->takeCommerceSafetyCartValidation($saved));
+        $line = Mockery::mock(LINEService::class);
+        $line->shouldReceive('generateRetryKey')->andReturn('test');
+        $line->shouldReceive('push')->once()->withArgs(fn ($bot, $user, $texts) => $texts === [$fallback])->andReturn(true);
+        $bubbles = Mockery::mock(MultipleBubblesService::class);
+        $bubbles->shouldReceive('isEnabled')->andReturn(false);
+        $job = new ProcessAggregatedMessages($this->bot, $this->conversation, 'test', 'U-test');
+        $saved = (new \ReflectionMethod($job, 'generateAndDeliver'))->invoke($job, 'hello', 1, $ai, $line, $bubbles);
+        $this->assertSame($fallback, $saved->fresh()->content);
+        $this->assertSame(0, CheckoutSession::count());
+        $this->assertNoEffects();
+    }
+
+    public function test_scoped_reply_guard_preserves_server_terms_and_payment_proof(): void
+    {
+        $this->enableReplyPolicy();
+        $receipt = $this->receipt();
+        $event = $this->proof($receipt);
+        app(FinancialOutputGuard::class)->message($this->bot, $this->conversation, $receipt);
+        $canonical = $receipt->content;
+        app(CustomerReplyGuard::class)->message($this->bot, $this->conversation, $receipt);
+        $this->assertSame($canonical, $receipt->fresh()->content);
+        $this->assertSame($event->id, app(PaymentProofService::class)->forReceipt($this->bot, $this->conversation, $receipt)?->id);
+        $this->assertSame('flex', app(PaymentFlexService::class)->tryConvertToFlex($receipt->content, $this->conversation, $receipt)['type']);
+        $terms = app(CheckoutRenderer::class)->render(new CheckoutSession, 'terms');
+        $this->assertSame($terms, app(CustomerReplyGuard::class)->text($this->bot, $terms));
+        // Identical model wording remains denied by A2; C1 supplies no financial authority.
+        $generated = app(FinancialOutputGuard::class)->generated($this->bot, ['content' => $terms]);
+        $this->assertSame(self::DENIAL, app(CustomerReplyGuard::class)->generated($this->bot, $generated)['content']);
         $this->assertNoEffects();
     }
 }

@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Jobs\SendDelayedBubbleJob;
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Services\CommerceSafety\CustomerReplyGuard;
+use App\Services\CommerceSafety\CustomerReplyPolicy;
 use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Support\QueueRouter;
 use Illuminate\Support\Facades\Log;
@@ -85,6 +87,7 @@ INSTRUCTION;
     public function parseIntoBubbles(string $content, Bot $bot): array
     {
         $content = app(FinancialOutputGuard::class)->text($bot, $content);
+        $content = app(CustomerReplyGuard::class)->text($bot, $content);
         $settings = $bot->settings;
 
         // If not enabled, return single bubble
@@ -173,6 +176,13 @@ INSTRUCTION;
             $joined = implode(' ||| ', $bubbles);
             if ($guard->text($bot, $joined) !== $joined) {
                 $bubbles = [FinancialOutputGuard::DENIAL];
+            }
+        }
+        if (app(CustomerReplyPolicy::class)->mode($bot) !== 'off') {
+            $joined = implode(' ||| ', $bubbles);
+            $guarded = app(CustomerReplyGuard::class)->text($bot, $joined, $conversation);
+            if ($guarded !== $joined) {
+                $bubbles = [$guarded];
             }
         }
         $bubbles = $this->transformBubbles($bubbles, $conversation);

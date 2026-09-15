@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\PaymentEffect;
 use App\Services\CommerceSafety\CheckoutAuthority;
+use App\Services\CommerceSafety\CustomerReplyGuard;
 use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\CommerceSafety\PaymentEffectDispatcher;
 use App\Services\CommerceSafety\PaymentProofService;
@@ -90,6 +91,13 @@ class LineWebhookOutputService
         if ($conv && $message instanceof Message && $guard->enforced($ctx->bot)) {
             $guard->message($ctx->bot, $conv, $message);
             $ctx->response = ResponseEnvelope::text($message->content);
+        }
+        if ($conv && $message instanceof Message) {
+            $previousContent = $message->content;
+            app(CustomerReplyGuard::class)->message($ctx->bot, $conv, $message);
+            if ($message->content !== $previousContent) {
+                $ctx->response = ResponseEnvelope::text($message->content);
+            }
         }
 
         // --- Response path: branch by message type ---

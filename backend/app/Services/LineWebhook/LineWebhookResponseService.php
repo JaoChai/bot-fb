@@ -14,6 +14,7 @@ use App\Services\CommerceSafety\CartValidation;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CheckoutOutcome;
 use App\Services\CommerceSafety\CheckoutRenderer;
+use App\Services\CommerceSafety\CustomerReplyGuard;
 use App\Services\CommerceSafety\FinancialOutputDetector;
 use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\CommerceSafety\SafetyScope;
@@ -312,6 +313,7 @@ class LineWebhookResponseService
             }
 
             $responseMessage = $this->guardGeneratedPaymentText($ctx, $responseMessage);
+            $responseMessage = app(CustomerReplyGuard::class)->text($ctx->bot, $responseMessage, $conversation);
 
             // Save bot response (lines 927-936)
             $botMessage = $conversation->messages()->create([
@@ -445,6 +447,7 @@ class LineWebhookResponseService
             }
 
             $responseContent = $this->guardGeneratedPaymentText($ctx, $result['content'] ?? '');
+            $responseContent = app(CustomerReplyGuard::class)->text($ctx->bot, $responseContent, $conversation);
 
             if (empty($responseContent)) {
                 Log::warning('Empty response from Vision API', [

@@ -15,6 +15,7 @@ use App\Services\CommerceSafety\CartValidation;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CheckoutOutcome;
 use App\Services\CommerceSafety\CheckoutRenderer;
+use App\Services\CommerceSafety\CustomerReplyGuard;
 use App\Services\CommerceSafety\FinancialOutputDetector;
 use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\CommerceSafety\SafetyScope;
@@ -423,6 +424,7 @@ class ProcessAggregatedMessages implements ShouldQueue
         }
 
         $result = app(FinancialOutputGuard::class)->generated($this->bot, $result);
+        $result = app(CustomerReplyGuard::class)->generated($this->bot, $result, $this->conversation);
         $checkoutOutcome = $this->checkoutProposal($result);
         if ($checkoutOutcome !== null) {
             $result['content'] = $checkoutOutcome->customerText
@@ -650,6 +652,7 @@ class ProcessAggregatedMessages implements ShouldQueue
         $paymentFlex = app(PaymentFlexService::class);
         $guard = app(FinancialOutputGuard::class);
         $guard->message($this->bot, $this->conversation, $botMessage);
+        app(CustomerReplyGuard::class)->message($this->bot, $this->conversation, $botMessage);
         $transformed = $guard->enforced($this->bot)
             ? $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation, $botMessage)
             : $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation);
