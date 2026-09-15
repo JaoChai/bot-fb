@@ -117,7 +117,13 @@ class AccountDeliveryService
         string $reservationToken,
         ?AccountDelivery $duplicateOf,
     ): AccountDelivery {
-        foreach ($delivery->items()->where('status', AccountDeliveryItem::ST_RESERVING)->orderBy('id')->get() as $item) {
+        // A pre-existing delivery may have committed stock under its legacy identity.
+        // Resolve that identity outside the local transaction before allocating any unit.
+        $canReserve = $delivery->wasRecentlyCreated || $this->reconcileLegacyReservation($delivery);
+        $items = $canReserve
+            ? $delivery->items()->where('status', AccountDeliveryItem::ST_RESERVING)->orderBy('id')->get()
+            : [];
+        foreach ($items as $item) {
             $orderRef = StockPoolService::orderRef($delivery->id, $item->id);
             $ambiguous = false;
             try {
@@ -198,6 +204,48 @@ class AccountDeliveryService
         return $finished->fresh();
     }
 
+    private function reconcileLegacyReservation(AccountDelivery $delivery): bool
+    {
+        try {
+            // Exact lookup rejects multiple legacy rows without picking a credential.
+            $row = $this->pool->reservedByOrderRef(StockPoolService::orderRef($delivery->id));
+            if ($row === null || $delivery->items()->where('stock_item_id', $row['id'])->exists()) {
+                return true;
+            }
+
+            $candidates = $delivery->items()
+                ->where('kind', AccountDeliveryItem::KIND_STOCK)
+                ->where('status', AccountDeliveryItem::ST_RESERVING)
+                ->whereNull('stock_item_id')
+                ->where('stock_code', $row['name'])
+                ->where('qty', 1)
+                ->get();
+            if ($candidates->count() !== 1) {
+                return false;
+            }
+            $item = $candidates->first();
+            if ($this->pool->reservedByOrderRef(StockPoolService::orderRef($delivery->id, $item->id)) !== null) {
+                return false;
+            }
+
+            // Keep the legacy remote ref intact so a crash here remains recoverable
+            // and reconciliation can still identify the original reservation.
+            $item->update([
+                'stock_item_id' => $row['id'],
+                'status' => AccountDeliveryItem::ST_RESERVED,
+            ]);
+
+            return true;
+        } catch (\Throwable $exception) {
+            Log::warning('Delivery: legacy stock reservation requires reconciliation', [
+                'delivery_id' => $delivery->id,
+                'exception' => $exception::class,
+            ]);
+
+            return false;
+        }
+    }
+
     /** @return array{0: ?AccountDelivery, 1: ?AccountDelivery, 2: ?string, 3: bool} */
     private function initializeAndClaim(
         Bot $bot,
@@ -266,7 +314,8 @@ class AccountDeliveryService
                 'reservation_claimed_at' => now(),
             ])->save();
 
-            return [$delivery->fresh(), $duplicateOf, $token, false];
+            // Retain wasRecentlyCreated to distinguish new work from recovery.
+            return [$delivery, $duplicateOf, $token, false];
         });
     }
 
