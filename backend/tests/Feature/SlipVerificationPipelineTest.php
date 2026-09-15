@@ -710,7 +710,7 @@ class SlipVerificationPipelineTest extends TestCase
         $sent = false;
         $line = $this->mock(LINEService::class);
         $line->shouldReceive('showLoadingIndicator')->andReturn(true);
-        $line->shouldNotReceive('replyWithFallback', 'pushPaymentReceipt');
+        $line->shouldNotReceive('replyWithFallback', 'pushPaymentReceipt', 'reply', 'push');
         $ctx = $this->makeContext();
         app(LineWebhookResponseService::class)->generate($ctx);
         $event = VerifiedPaymentEvent::sole();
@@ -721,7 +721,18 @@ class SlipVerificationPipelineTest extends TestCase
         $this->assertFalse($sent);
         DB::commit();
         $this->assertFalse($sent);
-        $this->assertDatabaseCount('payment_effects', 0);
+        // Reviewed I2 policy: a valid held event owns exactly one proof-only
+        // line_receipt effect pending team verification; direct sends stay suppressed.
+        $this->assertSame('manual_hold', $event->fresh()->disposition);
+        $this->assertDatabaseCount('payment_effects', 1);
+        $this->assertDatabaseHas('payment_effects', [
+            'event_id' => $event->id,
+            'kind' => 'line_receipt',
+            'state' => 'pending',
+        ]);
+        $this->assertSame(0, DB::table('payment_effects')
+            ->whereIn('kind', ['telegram_payment', 'reserve_stock'])
+            ->count());
         $this->assertSame(1, VerifiedPaymentEvent::count());
         $this->assertSame(0, Order::count());
         Queue::assertNotPushed(ReserveAccountStock::class);
