@@ -1,0 +1,52 @@
+PHPUnit 12.5.33 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.5.2
+Configuration: /private/tmp/bot26-commerce-safety/backend/phpunit.xml
+
+FF                                                                  2 / 2 (100%)
+
+Time: 00:00.220, Memory: 67.00 MB
+
+There were 2 failures:
+
+1) Tests\Feature\ManualPaymentConfirmTest::test_scoped_manual_receipt_is_presented_from_proof_after_local_commit
+Failed asserting that 'เงินเข้าแล้ว 199 บาท ✅\n
+ออเดอร์: -\n
+ส่งใน 5-10 นาที ขอบคุณครับ\n
+[ยืนยันชำระเงิน]' [UTF-8](length: 189) does not contain "5-10" [ASCII](length: 4).
+
+/private/tmp/bot26-commerce-safety/backend/tests/Feature/ManualPaymentConfirmTest.php:345
+/private/tmp/bot26-commerce-safety/backend/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php:496
+/private/tmp/bot26-commerce-safety/backend/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php:326
+/private/tmp/bot26-commerce-safety/backend/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php:306
+/private/tmp/bot26-commerce-safety/backend/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Concerns/HasEvents.php:224
+/private/tmp/bot26-commerce-safety/backend/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Model.php:1624
+/private/tmp/bot26-commerce-safety/backend/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Model.php:1407
+/private/tmp/bot26-commerce-safety/backend/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Relations/HasOneOrMany.php:393
+/private/tmp/bot26-commerce-safety/backend/vendor/laravel/framework/src/Illuminate/Support/helpers.php:393
+/private/tmp/bot26-commerce-safety/backend/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Relations/HasOneOrMany.php:390
+/private/tmp/bot26-commerce-safety/backend/app/Services/Payment/ManualPaymentConfirmService.php:187
+/private/tmp/bot26-commerce-safety/backend/vendor/laravel/framework/src/Illuminate/Database/Concerns/ManagesTransactions.php:35
+/private/tmp/bot26-commerce-safety/backend/vendor/laravel/framework/src/Illuminate/Database/DatabaseManager.php:502
+/private/tmp/bot26-commerce-safety/backend/vendor/laravel/framework/src/Illuminate/Support/Facades/Facade.php:364
+/private/tmp/bot26-commerce-safety/backend/app/Services/Payment/ManualPaymentConfirmService.php:161
+/private/tmp/bot26-commerce-safety/backend/tests/Feature/ManualPaymentConfirmTest.php:349
+
+2) Tests\Feature\CommerceSafety\CheckoutSettlementTest::trusted_presenter_uses_settled_checkout_items_and_fails_to_hold_copy_if_order_is_mutated
+Failed asserting that '{"type":"flex","altText":"\u0e40\u0e07\u0e34\u0e19\u0e40\u0e02\u0e49\u0e32\u0e41\u0e25\u0e49\u0e27 299 \u0e1a\u0e32\u0e17\u0e04\u0e23\u0e31\u0e1a\n\u0e2a\u0e48\u0e07\u0e43\u0e19 5-10 \u0e19\u0e32\u0e17\u0e35 \u0e02\u0e2d\u0e1a\u0e04\u0e38\u0e13\u0e04\u0e23\u0e31\u0e1a","contents":{"type":"bubble","body":{"type":"box","layout":"vertical","contents":[{"type":"text","text":"\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19\u0e23\u0e31\u0e1a\u0e40\u0e07\u0e34\u0e19\u0e41\u0e25\u0e49\u0e27","weight":"bold","wrap":true},{"type":"text","text":"\u0e40\u0e07\u0e34\u0e19\u0e40\u0e02\u0e49\u0e32\u0e41\u0e25\u0e49\u0e27 299 \u0e1a\u0e32\u0e17\u0e04\u0e23\u0e31\u0e1a\n\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23: Page x1, G3D x2\n\u0e2a\u0e48\u0e07\u0e43\u0e19 5-10 \u0e19\u0e32\u0e17\u0e35 \u0e02\u0e2d\u0e1a\u0e04\u0e38\u0e13\u0e04\u0e23\u0e31\u0e1a","wrap":true,"margin":"md"}]}}}' [ASCII](length: 859) does not contain "5-10" [ASCII](length: 4).
+
+/private/tmp/bot26-commerce-safety/backend/tests/Feature/CommerceSafety/CheckoutSettlementTest.php:183
+
+--
+
+There was 1 risky test:
+
+1) Tests\Feature\ManualPaymentConfirmTest::test_scoped_manual_receipt_is_presented_from_proof_after_local_commit
+* Test code or tested code did not remove its own error handlers
+
+* Test code or tested code did not remove its own exception handlers
+
+/private/tmp/bot26-commerce-safety/backend/tests/Feature/ManualPaymentConfirmTest.php:323
+
+FAILURES!
+Tests: 2, Assertions: 8, Failures: 2, Risky: 1.

@@ -10,7 +10,6 @@ use App\Models\Order;
 use App\Models\VerifiedPaymentEvent;
 use App\Services\CommerceSafety\JsonValue;
 use App\Services\CommerceSafety\MoneyMinor;
-use App\Services\CommerceSafety\PaymentProofService;
 use App\Services\CommerceSafety\SafetyScope;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -245,12 +244,7 @@ class OrderService
         array $variables
     ): ?Order {
         if (in_array(app(SafetyScope::class)->mode($bot), ['enforce', 'hold'], true)) {
-            if ($message === null) {
-                return null;
-            }
-            $event = app(PaymentProofService::class)->forReceipt($bot, $conversation, $message);
-
-            return $event?->order_id === null ? null : Order::query()->find($event->order_id)?->load('items');
+            return null;
         }
 
         try {

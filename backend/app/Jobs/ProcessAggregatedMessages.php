@@ -16,6 +16,7 @@ use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CheckoutOutcome;
 use App\Services\CommerceSafety\CheckoutRenderer;
 use App\Services\CommerceSafety\FinancialOutputDetector;
+use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\FlowPluginService;
 use App\Services\LINEService;
@@ -421,6 +422,7 @@ class ProcessAggregatedMessages implements ShouldQueue
             return $botMessage;
         }
 
+        $result = app(FinancialOutputGuard::class)->generated($this->bot, $result);
         $checkoutOutcome = $this->checkoutProposal($result);
         if ($checkoutOutcome !== null) {
             $result['content'] = $checkoutOutcome->customerText
@@ -589,11 +591,12 @@ class ProcessAggregatedMessages implements ShouldQueue
             return null;
         }
 
+        if (app(FinancialOutputDetector::class)->detects($this->bot, (string) ($result['content'] ?? ''))) {
+            return new CheckoutOutcome('manual_hold', null, FinancialOutputGuard::DENIAL);
+        }
         $cart = $result['commerce_safety_cart_validation'] ?? null;
         if (! $cart instanceof CartValidation) {
-            return app(FinancialOutputDetector::class)->detects($this->bot, (string) ($result['content'] ?? ''))
-                ? new CheckoutOutcome('manual_hold', null, 'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง')
-                : null;
+            return null;
         }
         if (! $cart->valid) {
             return new CheckoutOutcome(
@@ -645,7 +648,13 @@ class ProcessAggregatedMessages implements ShouldQueue
         MultipleBubblesService $bubblesService
     ): bool {
         $paymentFlex = app(PaymentFlexService::class);
-        $transformed = $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation);
+        $guard = app(FinancialOutputGuard::class);
+        $guard->message($this->bot, $this->conversation, $botMessage);
+        $transformed = $guard->enforced($this->bot)
+            ? $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation, $botMessage)
+            : $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation);
+
+        $plainText = $guard->enforced($this->bot) ? $transformed : $botMessage->content;
 
         if (is_array($transformed)) {
             // Flex detected on full text → send as single message
@@ -654,7 +663,7 @@ class ProcessAggregatedMessages implements ShouldQueue
             return $lineService->push($this->bot, $this->externalUserId, [$transformed], $retryKey) === true;
         } elseif ($bubblesService->isEnabled($this->bot)) {
             // No Flex match → normal bubble flow
-            $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
+            $bubbles = $bubblesService->parseIntoBubbles($plainText, $this->bot);
 
             return $bubblesService->sendBubbles(
                 $this->bot,
@@ -670,7 +679,7 @@ class ProcessAggregatedMessages implements ShouldQueue
             return $lineService->push(
                 $this->bot,
                 $this->externalUserId,
-                [$botMessage->content],
+                [$plainText],
                 $retryKey,
             ) === true;
         }

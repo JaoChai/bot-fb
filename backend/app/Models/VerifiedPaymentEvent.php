@@ -44,6 +44,11 @@ class VerifiedPaymentEvent extends Model
         return $this->belongsTo(Message::class, 'receipt_message_id');
     }
 
+    public function checkout(): BelongsTo
+    {
+        return $this->belongsTo(CheckoutSession::class);
+    }
+
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);

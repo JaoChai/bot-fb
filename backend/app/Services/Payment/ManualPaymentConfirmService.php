@@ -16,6 +16,7 @@ use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\CommerceSafety\ConversationAuthorityLock;
 use App\Services\CommerceSafety\MoneyMinor;
+use App\Services\CommerceSafety\PaymentProofService;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\FlowPluginService;
 use App\Services\LINEService;
@@ -145,7 +146,7 @@ class ManualPaymentConfirmService
 
         // Fallback ชั้น 3 (ลูกค้าโอนข้ามขั้นตอน): ไม่มีข้อความสรุปยอด+เลขบัญชีใน window
         // → อ่านออเดอร์จากข้อความยืนยันขั้น 2 โดยยอดต้องตรงกับยอดที่กดยืนยัน
-        if ($expected === null) {
+        if (! $scoped && $expected === null) {
             $expected = $this->slipVerification->findExpectedFromConfirmMessage($history, $bot, (float) $amount);
         }
 
@@ -158,7 +159,9 @@ class ManualPaymentConfirmService
         );
 
         if ($scoped) {
-            return DB::transaction(function () use (
+            // No delivery promise exists until the persisted disposition is known.
+            $text = 'เงินเข้าแล้ว '.$amount.' บาทครับ อยู่ระหว่างให้ทีมงานตรวจสอบรายการ';
+            $result = DB::transaction(function () use (
                 $bot,
                 $conversation,
                 $amount,
@@ -212,6 +215,24 @@ class ManualPaymentConfirmService
                         && $outcome->checkout?->settled_event_id !== null,
                 ];
             });
+            DB::afterCommit(function () use ($bot, $conversation, $result): void {
+                try {
+                    $event = app(PaymentProofService::class)
+                        ->forReceipt($bot, $conversation, $result['message']);
+                    if ($event === null) {
+                        return;
+                    }
+                    $flex = $this->paymentFlex->fromVerifiedPayment($event);
+                    $result['message']->update(['content' => $flex['altText']]);
+                    if ($conversation->channel_type === 'line' && $conversation->external_customer_id) {
+                        $this->line->replyWithFallback($bot, null, $conversation->external_customer_id, [$flex], $this->line->generateRetryKey());
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Verified manual receipt presentation failed', ['message_id' => $result['message']->id, 'error' => $e->getMessage()]);
+                }
+            });
+
+            return $result;
         }
 
         // Atomic idempotency reservation: take a row lock on the conversation, re-run the

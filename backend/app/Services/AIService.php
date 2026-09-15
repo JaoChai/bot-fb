@@ -11,6 +11,7 @@ use App\Services\CommerceSafety\CanonicalCartValidator;
 use App\Services\CommerceSafety\CartProposalAdapter;
 use App\Services\CommerceSafety\CartValidation;
 use App\Services\CommerceSafety\FinancialOutputDetector;
+use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\Guardrail\GuardrailOutputSanitizer;
 use App\Services\Guardrail\OffTopicCircuitBreaker;
@@ -90,92 +91,98 @@ class AIService
             flow: $flow
         );
 
-        // Bot-scoped canonical proposal inspection happens on the original model/cache
-        // output so JSON types cannot be lost through the legacy payload normalizer.
-        $cartValidation = $this->inspectScopedProposal(
-            $bot,
-            $conversation,
-            $result['content'] ?? '',
-        );
-        // Internal, in-process hand-off to checkout authority. This object must never
-        // be serialized into Message metadata or reconstructed from display prose.
-        $result['commerce_safety_cart_validation'] = $cartValidation;
+        $result = app(FinancialOutputGuard::class)->generated($bot, $result);
+        $financialDenied = $result['financial_output_denied'] ?? false;
 
-        // Stock Guard: hard-block selling out-of-stock products
-        // (guard แก้ข้อความได้ 3 แบบ: ทับทั้งก้อน, ตัดท่อน upsell, ต่อท้ายว่าหมด —
-        //  ต้องรับ content กลับมาทุกแบบ ไม่ใช่เฉพาะตอน blocked)
-        $guardResult = $this->stockGuard->validate($result['content'], $userMessage);
-        if (($guardResult['content'] ?? $result['content']) !== $result['content']) {
-            $result['stock_guard'] = [
-                'blocked' => $guardResult['blocked'],
-                'blocked_products' => $guardResult['blocked_products'] ?? [],
-                'original_preview' => mb_substr($result['content'], 0, 300),
-            ];
-            $result['content'] = $guardResult['content'];
-        }
+        if (! $financialDenied) {
+            // Bot-scoped canonical proposal inspection happens on the original model/cache
+            // output so JSON types cannot be lost through the legacy payload normalizer.
+            $cartValidation = $this->inspectScopedProposal(
+                $bot,
+                $conversation,
+                $result['content'] ?? '',
+            );
+            // Internal, in-process hand-off to checkout authority. This object must never
+            // be serialized into Message metadata or reconstructed from display prose.
+            $result['commerce_safety_cart_validation'] = $cartValidation;
 
-        // ตัดบล็อกออเดอร์ออกจากข้อความก่อนใครได้เห็น — ทำที่นี่จุดเดียวเพราะทั้ง webhook
-        // pipeline และ ProcessAggregatedMessages ผ่านเมธอดนี้เสมอ (ทางออกอื่นทั้งหมด
-        // — LINE push, Flex, bubbles, หน้าเว็บ — อ่านจาก content ที่ผ่านตรงนี้แล้ว)
-        $result['order_payload'] = null;
-        if (config('delivery.order_payload_enabled', false)) {
-            $extracted = $this->orderPayload->extract($result['content'] ?? '');
-            $result['content'] = $extracted['clean'];
-            $result['order_payload'] = $extracted['payload'];
-        }
+            // Stock Guard: hard-block selling out-of-stock products
+            // (guard แก้ข้อความได้ 3 แบบ: ทับทั้งก้อน, ตัดท่อน upsell, ต่อท้ายว่าหมด —
+            //  ต้องรับ content กลับมาทุกแบบ ไม่ใช่เฉพาะตอน blocked)
+            $guardResult = $this->stockGuard->validate($result['content'], $userMessage);
+            if (($guardResult['content'] ?? $result['content']) !== $result['content']) {
+                $result['stock_guard'] = [
+                    'blocked' => $guardResult['blocked'],
+                    'blocked_products' => $guardResult['blocked_products'] ?? [],
+                    'original_preview' => mb_substr($result['content'], 0, 300),
+                ];
+                $result['content'] = $guardResult['content'];
+            }
 
-        // Financial safety net: prompts guide the model, but canonical VIP prices
-        // are enforced server-side before text, Flex, or order metadata can leave.
-        $vipPriceResult = $this->vipPriceGuard->enforce(
-            $result['content'] ?? '',
-            $result['order_payload'],
-            $conversation
-        );
-        if ($vipPriceResult['corrected']) {
-            Log::warning('VIP price guard corrected an inconsistent response', [
-                'bot_id' => $bot->id,
-                'conversation_id' => $conversation?->id,
-            ]);
-            $result['vip_price_guard'] = ['corrected' => true];
-        }
-        $result['content'] = $vipPriceResult['content'];
-        $result['order_payload'] = $vipPriceResult['order_payload'];
-
-        if ($cartValidation !== null
-            && ! $cartValidation->valid
-            && in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true)) {
-            $result['content'] = $this->cartCorrection($cartValidation);
+            // ตัดบล็อกออเดอร์ออกจากข้อความก่อนใครได้เห็น — ทำที่นี่จุดเดียวเพราะทั้ง webhook
+            // pipeline และ ProcessAggregatedMessages ผ่านเมธอดนี้เสมอ (ทางออกอื่นทั้งหมด
+            // — LINE push, Flex, bubbles, หน้าเว็บ — อ่านจาก content ที่ผ่านตรงนี้แล้ว)
             $result['order_payload'] = null;
-            $result['cart_validation'] = [
-                'corrected' => true,
-                'errors' => $cartValidation->errors,
-            ];
-        }
+            if (config('delivery.order_payload_enabled', false)) {
+                $extracted = $this->orderPayload->extract($result['content'] ?? '');
+                $result['content'] = $extracted['clean'];
+                $result['order_payload'] = $extracted['payload'];
+            }
 
-        // Off-topic signal marker — เหมือน [[ORDER]] ด้านบน ตัดออกก่อนใครได้เห็น
-        $offTopicExtracted = $this->offTopicSignal->extract($result['content'] ?? '');
-        $result['content'] = $offTopicExtracted['clean'];
-        $result['off_topic_triggered'] = $offTopicExtracted['triggered'];
-        if ($offTopicExtracted['triggered'] && $result['content'] === '') {
-            // LLM ปล่อยแค่ marker ไม่มีข้อความอื่นเลย — ถ้าปล่อยเป็นสตริงว่าง
-            // ProcessAggregatedMessages จะไม่ส่งอะไรถึงลูกค้าเลย (if ($botMessage->content))
-            $result['content'] = OffTopicCircuitBreaker::CANNED_MESSAGE;
-        }
-        if ($conversation !== null && $offTopicExtracted['triggered']) {
-            $this->offTopicCircuitBreaker->recordTrigger($bot, $conversation);
-        }
+            // Financial safety net: prompts guide the model, but canonical VIP prices
+            // are enforced server-side before text, Flex, or order metadata can leave.
+            $vipPriceResult = $this->vipPriceGuard->enforce(
+                $result['content'] ?? '',
+                $result['order_payload'],
+                $conversation
+            );
+            if ($vipPriceResult['corrected']) {
+                Log::warning('VIP price guard corrected an inconsistent response', [
+                    'bot_id' => $bot->id,
+                    'conversation_id' => $conversation?->id,
+                ]);
+                $result['vip_price_guard'] = ['corrected' => true];
+            }
+            $result['content'] = $vipPriceResult['content'];
+            $result['order_payload'] = $vipPriceResult['order_payload'];
 
-        // Output sanitizer — ตาข่ายสุดท้ายกันคำตอบหลุด (code block/markdown จริง/อ้างว่าเป็น AI)
-        // ใช้กับทุกคำตอบ ไม่ใช่แค่ที่ถูกตีว่า off-topic
-        $sanitizerResult = $this->outputSanitizer->check($result['content'] ?? '');
-        if ($sanitizerResult['flagged']) {
-            Log::warning('Guardrail output sanitizer triggered', [
-                'bot_id' => $bot->id,
-                'conversation_id' => $conversation?->id,
-                'reason' => $sanitizerResult['reason'],
-            ]);
-            $result['content'] = OffTopicCircuitBreaker::CANNED_MESSAGE;
-            $result['order_payload'] = null;
+            if ($cartValidation !== null
+                && ! $cartValidation->valid
+                && in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true)) {
+                $result['content'] = $this->cartCorrection($cartValidation);
+                $result['order_payload'] = null;
+                $result['cart_validation'] = [
+                    'corrected' => true,
+                    'errors' => $cartValidation->errors,
+                ];
+            }
+
+            // Off-topic signal marker — เหมือน [[ORDER]] ด้านบน ตัดออกก่อนใครได้เห็น
+            $offTopicExtracted = $this->offTopicSignal->extract($result['content'] ?? '');
+            $result['content'] = $offTopicExtracted['clean'];
+            $result['off_topic_triggered'] = $offTopicExtracted['triggered'];
+            if ($offTopicExtracted['triggered'] && $result['content'] === '') {
+                // LLM ปล่อยแค่ marker ไม่มีข้อความอื่นเลย — ถ้าปล่อยเป็นสตริงว่าง
+                // ProcessAggregatedMessages จะไม่ส่งอะไรถึงลูกค้าเลย (if ($botMessage->content))
+                $result['content'] = OffTopicCircuitBreaker::CANNED_MESSAGE;
+            }
+            if ($conversation !== null && $offTopicExtracted['triggered']) {
+                $this->offTopicCircuitBreaker->recordTrigger($bot, $conversation);
+            }
+
+            // Output sanitizer — ตาข่ายสุดท้ายกันคำตอบหลุด (code block/markdown จริง/อ้างว่าเป็น AI)
+            // ใช้กับทุกคำตอบ ไม่ใช่แค่ที่ถูกตีว่า off-topic
+            $sanitizerResult = $this->outputSanitizer->check($result['content'] ?? '');
+            if ($sanitizerResult['flagged']) {
+                Log::warning('Guardrail output sanitizer triggered', [
+                    'bot_id' => $bot->id,
+                    'conversation_id' => $conversation?->id,
+                    'reason' => $sanitizerResult['reason'],
+                ]);
+                $result['content'] = OffTopicCircuitBreaker::CANNED_MESSAGE;
+                $result['order_payload'] = null;
+            }
+
         }
 
         // Ensure usage key exists with defaults (some models may not return usage data)
@@ -197,6 +204,12 @@ class AIService
             $result['usage']['completion_tokens'] ?? 0,
             $result['model'] ?? 'unknown'
         );
+
+        if ($financialDenied) {
+            $result['content'] = FinancialOutputGuard::DENIAL;
+            $result['order_payload'] = null;
+            $result['commerce_safety_cart_validation'] = null;
+        }
 
         return $result;
     }
@@ -338,6 +351,8 @@ class AIService
                 $conversation,
                 excludeMessageIds: [$userMessage->id]
             );
+
+            $result = app(FinancialOutputGuard::class)->generated($bot, $result);
 
             // Build message data with RAG metadata
             $messageData = [

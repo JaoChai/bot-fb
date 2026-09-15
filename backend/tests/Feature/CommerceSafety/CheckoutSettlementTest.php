@@ -165,6 +165,32 @@ class CheckoutSettlementTest extends TestCase
     }
 
     #[Test]
+    public function trusted_presenter_uses_settled_checkout_items_and_fails_to_hold_copy_if_order_is_mutated(): void
+    {
+        $checkout = $this->payable([
+            ['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900],
+            ['name' => 'G3D', 'method' => 'none', 'qty' => 2, 'price_minor' => 5000],
+        ], 29900);
+        $event = $this->automaticEvent('299.00', 'PRESENT-SETTLED');
+        app(CheckoutAuthority::class)->settle($checkout, $event);
+        $presenter = app(PaymentFlexService::class);
+        $json = json_encode($presenter->fromVerifiedPayment($event), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('Page x1', $json);
+        $this->assertStringContainsString('G3D x2', $json);
+        $this->assertStringContainsString('299', $json);
+        $this->assertStringContainsString('5-10', $json);
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => 'hold']);
+        $this->assertStringNotContainsString('5-10', json_encode($presenter->fromVerifiedPayment($event)));
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => 'enforce']);
+        $event->fresh()->order->update(['total_amount' => 1]);
+        $held = json_encode($presenter->fromVerifiedPayment($event), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('ทีมงาน', $held);
+        $this->assertStringNotContainsString('5-10', $held);
+        Queue::assertNotPushed(ReserveAccountStock::class);
+        Http::assertNothingSent();
+    }
+
+    #[Test]
     public function a_slip_matching_text_but_not_checkout_total_is_preserved_on_paid_hold(): void
     {
         $checkout = $this->payable([

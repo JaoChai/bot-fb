@@ -6,6 +6,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
 use App\Models\Message;
+use App\Services\CommerceSafety\FinancialOutputGuard;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -21,6 +22,10 @@ class FlowPluginService
      */
     public function executePlugins(Bot $bot, Conversation $conversation, Message $botMessage): void
     {
+        $guard = app(FinancialOutputGuard::class);
+        $guard->message($bot, $conversation, $botMessage);
+        $financialIds = $guard->enforced($bot)
+            ? (array) config("commerce_safety.bots.{$bot->id}.payment_plugin_ids", []) : [];
         $flow = $conversation->currentFlow ?? $bot->defaultFlow;
         if (! $flow) {
             return;
@@ -37,6 +42,9 @@ class FlowPluginService
         }
 
         foreach ($plugins as $plugin) {
+            if (in_array($plugin->id, $financialIds, true)) {
+                continue;
+            }
             try {
                 // Rate limit: max 1 execution per plugin per conversation per 60 seconds
                 $cacheKey = "plugin_exec:{$plugin->id}:{$conversation->id}";

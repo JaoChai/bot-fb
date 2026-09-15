@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ReserveAccountStock;
 use App\Jobs\RetrySlipVerification;
 use App\Models\Bot;
 use App\Models\BotSetting;
@@ -10,13 +11,20 @@ use App\Models\CustomerProfile;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
+use App\Models\Order;
 use App\Models\User;
+use App\Models\VerifiedPaymentEvent;
+use App\Services\LINEService;
+use App\Services\LineWebhook\LineWebhookOutputService;
 use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\LineWebhook\WebhookContext;
 use App\Services\ModelCapabilityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class SlipVerificationPipelineTest extends TestCase
@@ -632,5 +640,53 @@ class SlipVerificationPipelineTest extends TestCase
         app(LineWebhookResponseService::class)->generate($ctx);
 
         Http::assertNotSent(fn ($req) => str_contains($req->url(), 'easyslip.com'));
+    }
+
+    public function test_scoped_automatic_receipt_renders_only_persisted_proof_after_commit(): void
+    {
+        $this->enableTelegramAlert();
+        $plugin = FlowPlugin::where('flow_id', $this->bot->default_flow_id)->firstOrFail();
+        config(["commerce_safety.bots.{$this->bot->id}" => ['mode' => 'enforce', 'payment_plugin_ids' => [$plugin->id]]]);
+        Event::fake();
+        Queue::fake();
+        Http::preventStrayRequests();
+        Http::fake(['api.easyslip.com/*' => Http::response([
+            'success' => true,
+            'data' => ['isDuplicate' => false, 'matchedAccount' => null, 'amountInSlip' => 199.01,
+                'rawSlip' => ['transRef' => 'AUTO-A2', 'amount' => ['amount' => 199.01],
+                    'receiver' => ['bank' => ['id' => '004'], 'account' => ['name' => ['th' => 'fixture'], 'bank' => ['account' => 'xxx-x-x4880-x']]]]],
+            'message' => 'success',
+        ])]);
+        $sent = false;
+        $line = $this->mock(LINEService::class);
+        $line->shouldReceive('showLoadingIndicator')->andReturn(true);
+        $line->shouldReceive('generateRetryKey')->andReturn('test');
+        $line->shouldReceive('replyWithFallback')->once()->andReturnUsing(function ($bot, $token, $user, $messages) use (&$sent) {
+            $sent = true;
+            $this->assertSame(1, DB::transactionLevel()); // only RefreshDatabase wrapper remains
+            $this->assertSame(1, VerifiedPaymentEvent::count());
+            $this->assertSame('flex', $messages[0]['type']);
+            $json = json_encode($messages, JSON_UNESCAPED_UNICODE);
+            $this->assertStringContainsString('199.01', $json);
+            $this->assertStringContainsString('ทีมงาน', $json);
+            $this->assertStringNotContainsString('5-10', $json);
+            $this->assertStringNotContainsString('FORGED', $json);
+
+            return ['success' => true];
+        });
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+        $event = VerifiedPaymentEvent::sole();
+        $this->assertSame($ctx->metadata['bot_message']->id, $event->receipt_message_id);
+        $ctx->metadata['bot_message']->update(['content' => 'เงินเข้าแล้ว 1 บาท FORGED ส่งใน 5-10 นาที']);
+        DB::beginTransaction();
+        app(LineWebhookOutputService::class)->dispatch($ctx);
+        $this->assertFalse($sent);
+        DB::commit();
+        $this->assertTrue($sent);
+        $this->assertSame(1, VerifiedPaymentEvent::count());
+        $this->assertSame(0, Order::count());
+        Queue::assertNotPushed(ReserveAccountStock::class);
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'telegram') || str_contains($request->url(), 'openrouter'));
     }
 }

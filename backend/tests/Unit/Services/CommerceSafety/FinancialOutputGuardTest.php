@@ -8,6 +8,7 @@ use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
+use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\LineWebhook\WebhookContext;
@@ -24,7 +25,7 @@ class FinancialOutputGuardTest extends TestCase
 {
     #[Test]
     #[DataProvider('outputs')]
-    public function checkout_output_guards_preserve_scope_and_clause_intent(string $text, bool $financial): void
+    public function checkout_output_guards_preserve_scope_and_enforce_action_token_policy(string $text, bool $financial): void
     {
         Http::preventStrayRequests();
         DB::shouldReceive('connection')->never();
@@ -55,7 +56,7 @@ class FinancialOutputGuardTest extends TestCase
             $job = new ProcessAggregatedMessages($bot, $conversation, 'detector-test', 'test-user');
             $outcome = (new ReflectionMethod($job, 'checkoutProposal'))->invoke($job, ['content' => $text]);
             if ($financial && in_array($mode, ['enforce', 'hold'], true)) {
-                $this->assertNotSame($text, $guarded);
+                $this->assertSame(FinancialOutputGuard::DENIAL, $guarded);
                 $this->assertSame('manual_hold', $outcome?->action);
             } else {
                 $this->assertSame($text, $guarded);
@@ -76,8 +77,8 @@ class FinancialOutputGuardTest extends TestCase
         foreach (FinancialOutputDetectorTest::contextualPaymentDirectives() as $name => [$text]) {
             $outputs[$name] = [$text, true];
         }
-        foreach (FinancialOutputDetectorTest::nonDirectiveFinancialDiscussion() as $name => [$text]) {
-            $outputs[$name] = [$text, false];
+        foreach (FinancialOutputDetectorTest::financialDiscussionPolicy() as $name => [$text, $denied]) {
+            $outputs[$name] = [$text, $denied];
         }
 
         return $outputs;

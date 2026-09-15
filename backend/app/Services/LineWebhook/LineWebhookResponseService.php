@@ -7,6 +7,7 @@ use App\Jobs\RetrySlipVerification;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\SlipVerification;
+use App\Models\VerifiedPaymentEvent;
 use App\Services\AIService;
 use App\Services\Chat\ConversationContextService;
 use App\Services\CommerceSafety\CartValidation;
@@ -14,6 +15,7 @@ use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CheckoutOutcome;
 use App\Services\CommerceSafety\CheckoutRenderer;
 use App\Services\CommerceSafety\FinancialOutputDetector;
+use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\LINEService;
 use App\Services\ModelCapabilityService;
@@ -153,7 +155,7 @@ class LineWebhookResponseService
     private function guardGeneratedPaymentText(WebhookContext $ctx, string $text): string
     {
         return $this->commerceGuardsOutput($ctx) && app(FinancialOutputDetector::class)->detects($ctx->bot, $text)
-            ? 'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง'
+            ? FinancialOutputGuard::DENIAL
             : $text;
     }
 
@@ -182,11 +184,12 @@ class LineWebhookResponseService
 
     private function checkoutProposal(WebhookContext $ctx, Message $botMessage): ?CheckoutOutcome
     {
+        if (app(FinancialOutputDetector::class)->detects($ctx->bot, (string) $botMessage->content)) {
+            return new CheckoutOutcome('manual_hold', null, FinancialOutputGuard::DENIAL);
+        }
         $cart = $this->aiService->takeCommerceSafetyCartValidation($botMessage);
         if (! $cart instanceof CartValidation || ! $ctx->conversation) {
-            return app(FinancialOutputDetector::class)->detects($ctx->bot, (string) $botMessage->content)
-                ? new CheckoutOutcome('manual_hold', null, 'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง')
-                : null;
+            return null;
         }
         if (! $cart->valid) {
             return new CheckoutOutcome(
@@ -706,7 +709,8 @@ class LineWebhookResponseService
 
             if ($result->passed && $this->commerceGuardsOutput($ctx)) {
                 $slip = SlipVerification::query()->findOrFail($result->slipVerificationId);
-                $event = $this->slipVerification->reconcileVerifiedSlip($ctx->bot, $ctx->conversation, $slip);
+                $event = VerifiedPaymentEvent::query()->where('bot_id', $ctx->bot->id)
+                    ->where('conversation_id', $ctx->conversation->id)->where('slip_verification_id', $slip->id)->firstOrFail();
                 $receipt = $event->receiptMessage()->firstOrFail();
                 $ctx->metadata['bot_message'] = $receipt;
                 $ctx->response = ResponseEnvelope::text($receipt->content);
@@ -738,6 +742,8 @@ class LineWebhookResponseService
                 $text = $settings->slip_fail_message ?: self::SLIP_FAIL_TEMPLATE;
                 $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
             }
+
+            $text = $this->guardGeneratedPaymentText($ctx, $text);
 
             $botMessage = $ctx->conversation->messages()->create([
                 'sender' => 'bot',

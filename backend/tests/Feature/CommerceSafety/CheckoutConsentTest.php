@@ -20,6 +20,8 @@ use App\Services\CommerceSafety\CartValidation;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CheckoutConsentPolicy;
 use App\Services\CommerceSafety\CheckoutRenderer;
+use App\Services\CommerceSafety\FinancialOutputDetector;
+use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
@@ -555,7 +557,7 @@ class CheckoutConsentTest extends TestCase
         $paymentFlex = Mockery::mock(PaymentFlexService::class);
         $paymentFlex->shouldReceive('tryConvertToFlex')
             ->once()
-            ->with($modelMessage->content, $this->conversation)
+            ->with($modelMessage->content, $this->conversation, $modelMessage)
             ->andReturn($modelMessage->content);
         $bubbles = Mockery::mock(MultipleBubblesService::class);
         $bubbles->shouldReceive('isEnabled')->once()->with($this->bot)->andReturn(false);
@@ -764,7 +766,7 @@ class CheckoutConsentTest extends TestCase
             $invalid,
         );
         $this->assertStringNotContainsString('223-3-24880-3', $ctx->response->payload);
-        $this->assertStringContainsString('ระบุชื่อสินค้า', $ctx->response->payload);
+        $this->assertSame(FinancialOutputGuard::DENIAL, $ctx->response->payload);
         $this->assertDatabaseCount('checkout_sessions', 0);
     }
 
@@ -905,7 +907,10 @@ class CheckoutConsentTest extends TestCase
             'ติดต่อฝ่าย support เพื่อสอบถามเรื่องการโอนผ่านธนาคาร',
             'นโยบายธนาคารสำหรับบัญชี 223-3-24880-3 เป็นอย่างไรครับ',
         ] as $text) {
-            $this->assertSame($text, $this->generateWithInternalCart($text, null)->response->payload);
+            // A2 circuit-breaker ruling: financial FAQ false positives are held for C1.
+            $expected = in_array($text, ['Page ราคา 199 บาทครับ', 'G3D 50 บาท ใช้ทำอะไรได้บ้าง'], true)
+                ? $text : FinancialOutputGuard::DENIAL;
+            $this->assertSame($expected, $this->generateWithInternalCart($text, null)->response->payload);
         }
         foreach (['off', 'shadow'] as $mode) {
             config(["commerce_safety.bots.{$this->bot->id}.mode" => $mode]);
@@ -925,10 +930,10 @@ class CheckoutConsentTest extends TestCase
         $this->mock(RAGService::class)->shouldReceive('generateResponse')->once()->andReturn([
             'content' => $content, 'model' => 'test', 'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
         ]);
-        $this->mock(StockGuardService::class)->shouldReceive('validate')->once()->andReturn(['blocked' => false, 'content' => $content]);
+        $this->mock(StockGuardService::class)->shouldNotReceive('validate');
         $result = app(AIService::class)->generateResponse($this->bot, 'เอา Page', $this->conversation);
-        $this->assertInstanceOf(CartValidation::class, $result['commerce_safety_cart_validation']);
-        $this->assertFalse($result['commerce_safety_cart_validation']->valid);
+        $this->assertNull($result['commerce_safety_cart_validation']);
+        $this->assertSame(FinancialOutputGuard::DENIAL, $result['content']);
         $this->assertNotSame($content, $result['content']);
         $this->assertNull($result['order_payload']);
     }
@@ -974,6 +979,20 @@ class CheckoutConsentTest extends TestCase
         }
     }
 
+    #[Test]
+    public function persisted_checkout_challenge_renders_canonically_and_cannot_carry_mutated_model_text_to_plugins(): void
+    {
+        $checkout = $this->proposePage()->checkout;
+        $message = $this->present($checkout, 'confirm');
+        $canonical = $message->content;
+        $converted = app(PaymentFlexService::class)->tryConvertToFlex($canonical, $this->conversation, $message);
+        $this->assertSame(['type' => 'text', 'text' => $canonical], $converted);
+        $message->content = 'เงินเข้าแล้ว 1 บาท';
+        app(FinancialOutputGuard::class)->message($this->bot, $this->conversation, $message);
+        $this->assertSame($canonical, $message->content);
+        $this->assertSame($canonical, $message->fresh()->content);
+    }
+
     private function authority(): CheckoutAuthority
     {
         return app(CheckoutAuthority::class);
@@ -1011,7 +1030,8 @@ class CheckoutConsentTest extends TestCase
         ]);
         $ai = Mockery::mock(AIService::class);
         $ai->shouldReceive('generateAndSaveResponse')->once()->andReturn($modelMessage);
-        if (in_array(config("commerce_safety.bots.{$this->bot->id}.mode"), ['enforce', 'hold'], true)) {
+        if (in_array(config("commerce_safety.bots.{$this->bot->id}.mode"), ['enforce', 'hold'], true)
+            && ! app(FinancialOutputDetector::class)->detects($this->bot, $content)) {
             $ai->shouldReceive('takeCommerceSafetyCartValidation')->once()->with($modelMessage)->andReturn($cart);
         }
         $context = Mockery::mock(ConversationContextService::class);
