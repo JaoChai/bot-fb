@@ -10,6 +10,7 @@ use App\Models\ProductStock;
 use App\Models\User;
 use App\Services\AIService;
 use App\Services\CommerceSafety\CanonicalCartValidator;
+use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\RAGService;
 use App\Services\StockGuardService;
 use App\Services\VipPricingService;
@@ -504,6 +505,34 @@ class CanonicalCartTest extends TestCase
         $this->mock(RAGService::class, function ($mock): void {
             $mock->shouldReceive('generateResponse')->once()->andReturn([
                 'content' => "1. Page (1 x 1) = 1 บาท\nรวมยอดโอน: 1 บาท\n"
+                    .'[[ORDER]]{"items":[{"name":"Page","qty":1,"price":1}],"total":1}[[/ORDER]]',
+                'model' => 'test',
+                'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+            ]);
+        });
+        // A2 rejects transfer instructions before cart/stock validation and C1.
+        $this->mock(StockGuardService::class)->shouldNotReceive('validate');
+
+        $result = app(AIService::class)->generateResponse($this->bot, 'ซื้อ Page', $this->conversation);
+
+        $this->assertSame(FinancialOutputGuard::DENIAL, $result['content']);
+        $this->assertTrue($result['financial_output_denied']);
+        $this->assertNull($result['order_payload']);
+        $this->assertNull($result['commerce_safety_cart_validation']);
+        $this->assertArrayNotHasKey('cart_validation', $result);
+        $this->assertArrayNotHasKey('checkout_presentation', $result);
+        $this->assertStringNotContainsString('[[ORDER]]', $result['content']);
+    }
+
+    #[Test]
+    public function scoped_ai_price_mismatch_without_financial_instructions_keeps_the_canonical_correction(): void
+    {
+        config(['delivery.order_payload_enabled' => true]);
+        $this->scopeBot();
+
+        $this->mock(RAGService::class, function ($mock): void {
+            $mock->shouldReceive('generateResponse')->once()->andReturn([
+                'content' => "1. Page (1 x 1) = 1 บาท\nรวม: 1 บาท\n"
                     .'[[ORDER]]{"items":[{"name":"Page","qty":1,"price":1}],"total":1}[[/ORDER]]',
                 'model' => 'test',
                 'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],

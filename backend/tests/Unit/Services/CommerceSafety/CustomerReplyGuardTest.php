@@ -51,6 +51,7 @@ class CustomerReplyGuardTest extends TestCase
         $guard = app(CustomerReplyGuard::class);
         foreach (['@adsvance' => CustomerReplyPolicy::FALLBACK, "```php\n@adsvance" => OffTopicCircuitBreaker::CANNED_MESSAGE] as $text => $fallback) {
             $result = $guard->generated($bot, ['content' => $text,
+                'cart_validation' => ['corrected' => true, 'errors' => ['PRICE_MISMATCH']],
                 'commerce_safety_cart_validation' => new CartValidation(true, [], [], 19900, false, 'test'),
                 'order_payload' => ['total' => 199], 'checkout_presentation' => ['action' => 'payment']]);
             $this->assertSame(['content' => $fallback, 'order_payload' => null], $result);
@@ -58,5 +59,24 @@ class CustomerReplyGuardTest extends TestCase
         $this->assertSame(FinancialOutputGuard::DENIAL, $guard->text($bot, FinancialOutputGuard::DENIAL));
         config(['commerce_safety.bots.26.allow_truthful_ai_identity' => false]);
         $this->assertSame(OffTopicCircuitBreaker::CANNED_MESSAGE, $guard->text($bot, 'ผมเป็น AI'));
+    }
+
+    public function test_legacy_sanitizer_rejections_clear_proposals_even_when_contact_policy_is_not_enforced(): void
+    {
+        $guard = app(CustomerReplyGuard::class);
+        foreach ([26, 27] as $id) {
+            foreach (['off', 'shadow', 'enforce', 'hold'] as $mode) {
+                config(["commerce_safety.bots.$id.mode" => $mode]);
+                $result = $guard->generated((new Bot)->forceFill(['id' => $id]), [
+                    'content' => "```php\n@adsvance",
+                    'order_payload' => ['total' => 199],
+                    'commerce_safety_cart_validation' => new CartValidation(true, [], [], 19900, false, 'test'),
+                    'cart_validation' => ['corrected' => true, 'errors' => ['PRICE_MISMATCH']],
+                    'checkout_presentation' => ['action' => 'payment'],
+                ], legacySanitizer: true);
+
+                $this->assertSame(['content' => OffTopicCircuitBreaker::CANNED_MESSAGE, 'order_payload' => null], $result);
+            }
+        }
     }
 }

@@ -36,7 +36,7 @@ final class CustomerReplyGuard
                 'reason' => $sanitized['reason'],
             ]);
             if ($legacySanitizer || $this->policy->enforced($bot)) {
-                return $this->reject($bot, $result, OffTopicCircuitBreaker::CANNED_MESSAGE);
+                return $this->reject($result, OffTopicCircuitBreaker::CANNED_MESSAGE);
             }
         }
         $decision = $this->policy->apply($bot, $content);
@@ -48,7 +48,7 @@ final class CustomerReplyGuard
             ]);
         }
 
-        return $decision['corrected'] ? $this->reject($bot, $result, $decision['content']) : $result;
+        return $decision['corrected'] ? $this->reject($result, $decision['content']) : $result;
     }
 
     public function text(Bot $bot, string $content, ?Conversation $conversation = null): string
@@ -71,13 +71,12 @@ final class CustomerReplyGuard
         }
     }
 
-    private function reject(Bot $bot, array $result, string $content): array
+    private function reject(array $result, string $content): array
     {
         $result['content'] = $content;
         $result['order_payload'] = null;
-        if ($this->policy->enforced($bot)) {
-            unset($result['commerce_safety_cart_validation'], $result['checkout_presentation']);
-        }
+        // Every rejection invalidates the proposal, including legacy sanitizer paths.
+        unset($result['cart_validation'], $result['commerce_safety_cart_validation'], $result['checkout_presentation']);
 
         return $result;
     }
