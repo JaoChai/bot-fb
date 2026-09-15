@@ -4,9 +4,9 @@
   "base_commit": "cd95fa8b7ef3531f097d159cdcc13aa9639d8a3f",
   "prompt": {
     "path": "resources/prompts/bot26/v28.txt",
-    "chars": 23253,
-    "bytes": 59024,
-    "sha256": "041781b417a842d1213de53da76d4690b16dd58a6635d27f0011c5f817b11c1f"
+    "chars": 23505,
+    "bytes": 59732,
+    "sha256": "2b52d1cd389c6fc38cf0b415d23ec9832b8dc178fc187811485a35c0fa197062"
   },
   "fixture_counts": {
     "total": 41,

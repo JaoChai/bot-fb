@@ -687,9 +687,9 @@ class PromptDeploymentTest extends TestCase
         $this->assertSame(md5($bytes), $manifest['artifact']['md5']);
         $this->assertSame('UTF-8', $manifest['artifact']['encoding']);
         $this->assertTrue($manifest['artifact']['trailing_lf']);
-        $this->assertSame(23253, $manifest['artifact']['unicode_characters']);
-        $this->assertSame(59024, $manifest['artifact']['bytes']);
-        $this->assertSame('041781b417a842d1213de53da76d4690b16dd58a6635d27f0011c5f817b11c1f', $manifest['artifact']['sha256']);
+        $this->assertSame(23505, $manifest['artifact']['unicode_characters']);
+        $this->assertSame(59732, $manifest['artifact']['bytes']);
+        $this->assertSame('2b52d1cd389c6fc38cf0b415d23ec9832b8dc178fc187811485a35c0fa197062', $manifest['artifact']['sha256']);
         $this->assertSame(41100, $manifest['source']['unicode_characters']);
         $this->assertSame('3f08720a6fb34f916561e5531119d5f1', $manifest['source']['md5']);
 
