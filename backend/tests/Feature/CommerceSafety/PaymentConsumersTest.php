@@ -17,6 +17,7 @@ use App\Models\VerifiedPaymentEvent;
 use App\Services\AIService;
 use App\Services\CircuitBreakerService;
 use App\Services\CommerceSafety\PaymentProofService;
+use App\Services\CommerceSafety\SafetyScope;
 use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
@@ -255,6 +256,53 @@ class PaymentConsumersTest extends TestCase
             $service->shouldReceive('evaluateAndExecute')->withArgs(fn ($plugin) => $plugin->id === $this->financial->id)->once()->andReturn(false);
         }
         $service->executePlugins($this->bot, $this->conversation, $this->receipt());
+        $this->assertNoEffects();
+    }
+
+    public static function malformedEnforcedModes(): array
+    {
+        return [['enforce'], ['hold']];
+    }
+
+    public static function malformedLegacyModes(): array
+    {
+        return [['off'], ['shadow']];
+    }
+
+    #[DataProvider('malformedEnforcedModes')]
+    public function test_malformed_payment_plugin_ids_fail_closed_before_any_plugin_evaluation(string $configuredMode): void
+    {
+        $this->assertSame(1, $this->financial->id);
+        config(["commerce_safety.bots.{$this->bot->id}" => [
+            'mode' => $configuredMode,
+            'payment_plugin_ids' => ['1'],
+        ]]);
+        FlowPlugin::create(['flow_id' => $this->financial->flow_id, 'name' => 'support', 'type' => 'telegram', 'enabled' => true, 'trigger_condition' => 'always', 'config' => []]);
+
+        $this->assertSame('hold', app(SafetyScope::class)->mode($this->bot));
+
+        $service = Mockery::mock(FlowPluginService::class)->makePartial()->shouldAllowMockingProtectedMethods();
+        $service->shouldNotReceive('passesKeywordFilter');
+        $service->shouldNotReceive('evaluateAndExecute');
+        $service->executePlugins($this->bot, $this->conversation, $this->receipt());
+
+        $this->assertNoEffects();
+    }
+
+    #[DataProvider('malformedLegacyModes')]
+    public function test_malformed_payment_plugin_ids_leave_off_and_shadow_plugin_evaluation_unchanged(string $configuredMode): void
+    {
+        $this->assertSame(1, $this->financial->id);
+        config(["commerce_safety.bots.{$this->bot->id}" => [
+            'mode' => $configuredMode,
+            'payment_plugin_ids' => ['1'],
+        ]]);
+        $other = FlowPlugin::create(['flow_id' => $this->financial->flow_id, 'name' => 'support', 'type' => 'telegram', 'enabled' => true, 'trigger_condition' => 'always', 'config' => []]);
+
+        $service = Mockery::mock(FlowPluginService::class)->makePartial()->shouldAllowMockingProtectedMethods();
+        $service->shouldReceive('evaluateAndExecute')->withArgs(fn ($plugin) => in_array($plugin->id, [$this->financial->id, $other->id], true))->twice()->andReturn(false);
+        $service->executePlugins($this->bot, $this->conversation, $this->receipt());
+
         $this->assertNoEffects();
     }
 

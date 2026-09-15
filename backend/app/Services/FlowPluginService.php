@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\FlowPlugin;
 use App\Models\Message;
 use App\Services\CommerceSafety\FinancialOutputGuard;
+use App\Services\CommerceSafety\SafetyScope;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -24,7 +25,14 @@ class FlowPluginService
     {
         $guard = app(FinancialOutputGuard::class);
         $guard->message($bot, $conversation, $botMessage);
-        $financialIds = $guard->enforced($bot)
+        $enforced = $guard->enforced($bot);
+        $configuredMode = config("commerce_safety.bots.{$bot->id}.mode");
+        if ($enforced
+            && in_array($configuredMode, ['enforce', 'hold'], true)
+            && ! app(SafetyScope::class)->paymentPluginsAreTrusted($bot)) {
+            return;
+        }
+        $financialIds = $enforced
             ? (array) config("commerce_safety.bots.{$bot->id}.payment_plugin_ids", []) : [];
         $flow = $conversation->currentFlow ?? $bot->defaultFlow;
         if (! $flow) {

@@ -31,6 +31,14 @@ class SafetyScope
         return $mode;
     }
 
+    public function paymentPluginsAreTrusted(Bot $bot): bool
+    {
+        $scope = config("commerce_safety.bots.{$bot->getKey()}");
+
+        return is_array($scope)
+            && $this->paymentPluginsBelongToBot($bot, $scope['payment_plugin_ids'] ?? null);
+    }
+
     private function paymentPluginsBelongToBot(Bot $bot, mixed $pluginIds): bool
     {
         if (! $bot->exists || ! is_array($pluginIds) || $pluginIds === []) {
