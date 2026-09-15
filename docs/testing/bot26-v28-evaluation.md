@@ -2,7 +2,12 @@
 
 ## Status (2026-09-15)
 
-Offline replay and application integration pass. Raw inference is **unexecuted**.
+Offline replay and application integration pass. Raw inference has been **executed**
+against the consent-vocabulary-fixed prompt (SHA-256 below): 31/38 text cases pass
+their literal fixture assertions on first pass + one rerun of failing ids; see
+[`bot26-v28-live-raw-eval-2026-09-15.md`](bot26-v28-live-raw-eval-2026-09-15.md) for
+full per-case raw output, request IDs and cost. **Manual semantic review of these new
+outputs is still required** before any production/E2E acceptance claim.
 Image classification is **blocked**; T17 does not establish camera-photo recognition.
 These results do not establish production E2E behavior or prompt semantic acceptance.
 
@@ -129,9 +134,14 @@ test writes through the same artifact writer, reads the JSON back and checks exa
 usage preservation, including token details and cost. Its temporary artifact is
 removed after the test and never placed in the live-evidence directory.
 
-Only fake-HTTP raw transport tests ran here. They check exact settings, unchanged
-protocol bytes, missing/mismatched provenance, repeated uncached requests and HTTP
-failure without retry/fallback. They do not count as live raw evaluation.
+Fake-HTTP raw transport tests check exact settings, unchanged protocol bytes,
+missing/mismatched provenance, repeated uncached requests and HTTP failure without
+retry/fallback; they do not count as live raw evaluation. A live raw run (real
+OpenRouter calls, `BOT26_PROMPT_EVAL_LIVE=1`) has now been executed once against the
+current prompt SHA-256; see
+[`bot26-v28-live-raw-eval-2026-09-15.md`](bot26-v28-live-raw-eval-2026-09-15.md) for
+full per-case raw output and request IDs. Its automatic pass/fail is literal-assertion
+only — manual semantic review of the new outputs is still required and not yet done.
 
 ## Reproduction and validation
 
