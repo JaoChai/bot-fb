@@ -1676,12 +1676,26 @@ class CheckoutSettlementTest extends TestCase
         $customer = CustomerProfile::factory()->create();
         $this->conversation->update(['customer_profile_id' => $customer->id]);
         $other = Conversation::factory()->create(['bot_id' => $this->bot->id, 'customer_profile_id' => $customer->id, 'memory_notes' => []]);
+        // Keep each checkout's consent valid after the sibling's first order.
+        // Otherwise shared first-purchase Terms change mid-race and correctly hold
+        // the second settlement, obscuring the conversation lock-order check.
+        foreach ([$this->conversation, $other] as $conversation) {
+            $conversation->update(['memory_notes' => [[
+                'id' => 'review-pg-vip-'.$conversation->id,
+                'type' => 'memory',
+                'source' => 'vip_manual',
+                'content' => 'trusted entitlement',
+            ]]]);
+        }
         $entries = [];
         foreach ([$this->conversation, $other] as $index => $conversation) {
             $checkout = $this->payable([['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000]], 5000, $conversation);
             $receipt = $conversation->messages()->create(['sender' => 'bot', 'type' => 'text', 'content' => 'เงินเข้าแล้ว 50 บาท']);
             $slip = SlipVerification::create(['bot_id' => $this->bot->id, 'conversation_id' => $conversation->id, 'amount' => '50.00', 'trans_ref' => 'REVIEW-PG-'.$index, 'status' => 'passed']);
             $event = app(PaymentProofService::class)->record($this->bot, $conversation, $slip, $receipt, null);
+            $this->assertSame($checkout->id, $event->checkout_id);
+            $this->assertSame($conversation->id, $event->conversation_id);
+            $this->assertNull($event->disposition);
             $entries[] = [$checkout->id, $event->id];
         }
         $this->runReviewWorkers(function (int $index) use ($entries): void {
