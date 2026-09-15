@@ -29,15 +29,15 @@ class FlowPluginService
     {
         $guard = app(FinancialOutputGuard::class);
         $guard->message($bot, $conversation, $botMessage);
-        $enforced = $guard->enforced($bot);
-        $configuredMode = config("commerce_safety.bots.{$bot->id}.mode");
-        if ($enforced
-            && in_array($configuredMode, ['enforce', 'hold'], true)
-            && ! app(SafetyScope::class)->paymentPluginsAreTrusted($bot)) {
-            return;
+        $scope = app(SafetyScope::class);
+        $enforced = in_array($scope->mode($bot), ['enforce', 'hold'], true);
+        $financialIds = [];
+        if ($enforced) {
+            $financialIds = $scope->paymentPluginIdsForExecution($bot);
+            if ($financialIds === null) {
+                return;
+            }
         }
-        $financialIds = $enforced
-            ? (array) config("commerce_safety.bots.{$bot->id}.payment_plugin_ids", []) : [];
         $flow = $conversation->currentFlow ?? $bot->defaultFlow;
         if (! $flow) {
             return;
