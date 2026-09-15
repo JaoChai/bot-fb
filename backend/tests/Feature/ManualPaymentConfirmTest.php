@@ -18,7 +18,6 @@ use App\Services\LINEService;
 use App\Services\Payment\ManualPaymentConfirmService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -325,7 +324,7 @@ class ManualPaymentConfirmTest extends TestCase
         );
     }
 
-    public function test_scoped_manual_receipt_is_presented_from_proof_after_local_commit(): void
+    public function test_scoped_manual_held_receipt_never_sends_directly(): void
     {
         $plugin = FlowPlugin::where('flow_id', $this->bot->default_flow_id)->firstOrFail();
         config(["commerce_safety.bots.{$this->bot->id}" => ['mode' => 'enforce', 'payment_plugin_ids' => [$plugin->id]]]);
@@ -333,20 +332,7 @@ class ManualPaymentConfirmTest extends TestCase
         Http::fake();
         Bus::fake([ReserveAccountStock::class]);
         $line = $this->mock(LINEService::class);
-        $line->shouldReceive('generateRetryKey')->andReturn('test');
-        $line->shouldReceive('replyWithFallback')->once()->withArgs(function ($bot, $token, $user, $messages) {
-            $this->assertSame(1, DB::transactionLevel());
-            $event = VerifiedPaymentEvent::sole();
-            $this->assertSame('manual', $event->source);
-            $this->assertSame($this->owner->id, $event->actor_id);
-            $this->assertSame('flex', $messages[0]['type']);
-            $json = json_encode($messages, JSON_UNESCAPED_UNICODE);
-            $this->assertStringContainsString('199.01', $json);
-            $this->assertStringContainsString('ทีมงาน', $json);
-            $this->assertStringNotContainsString('5-10', $json);
-
-            return true;
-        })->andReturn(['success' => true]);
+        $line->shouldNotReceive('replyWithFallback', 'pushPaymentReceipt');
         Message::created(function (Message $message): void {
             if ($message->sender === 'bot') {
                 $this->assertStringNotContainsString('5-10', $message->content);
@@ -354,6 +340,8 @@ class ManualPaymentConfirmTest extends TestCase
             }
         });
         $result = app(ManualPaymentConfirmService::class)->confirm($this->bot, $this->conversation, '199.01', $this->owner->id, [['name' => 'forged', 'qty' => 999]]);
+        $this->assertDatabaseCount('payment_effects', 0);
+        $this->assertSame('manual_hold', VerifiedPaymentEvent::sole()->disposition);
         $this->assertFalse($result['order_created']);
         $this->assertSame(0, Order::count());
         Bus::assertNotDispatched(ReserveAccountStock::class);

@@ -642,7 +642,7 @@ class SlipVerificationPipelineTest extends TestCase
         Http::assertNotSent(fn ($req) => str_contains($req->url(), 'easyslip.com'));
     }
 
-    public function test_scoped_automatic_receipt_renders_only_persisted_proof_after_commit(): void
+    public function test_scoped_automatic_held_receipt_never_sends_directly(): void
     {
         $this->enableTelegramAlert();
         $plugin = FlowPlugin::where('flow_id', $this->bot->default_flow_id)->firstOrFail();
@@ -660,20 +660,7 @@ class SlipVerificationPipelineTest extends TestCase
         $sent = false;
         $line = $this->mock(LINEService::class);
         $line->shouldReceive('showLoadingIndicator')->andReturn(true);
-        $line->shouldReceive('generateRetryKey')->andReturn('test');
-        $line->shouldReceive('replyWithFallback')->once()->andReturnUsing(function ($bot, $token, $user, $messages) use (&$sent) {
-            $sent = true;
-            $this->assertSame(1, DB::transactionLevel()); // only RefreshDatabase wrapper remains
-            $this->assertSame(1, VerifiedPaymentEvent::count());
-            $this->assertSame('flex', $messages[0]['type']);
-            $json = json_encode($messages, JSON_UNESCAPED_UNICODE);
-            $this->assertStringContainsString('199.01', $json);
-            $this->assertStringContainsString('ทีมงาน', $json);
-            $this->assertStringNotContainsString('5-10', $json);
-            $this->assertStringNotContainsString('FORGED', $json);
-
-            return ['success' => true];
-        });
+        $line->shouldNotReceive('replyWithFallback', 'pushPaymentReceipt');
         $ctx = $this->makeContext();
         app(LineWebhookResponseService::class)->generate($ctx);
         $event = VerifiedPaymentEvent::sole();
@@ -683,7 +670,8 @@ class SlipVerificationPipelineTest extends TestCase
         app(LineWebhookOutputService::class)->dispatch($ctx);
         $this->assertFalse($sent);
         DB::commit();
-        $this->assertTrue($sent);
+        $this->assertFalse($sent);
+        $this->assertDatabaseCount('payment_effects', 0);
         $this->assertSame(1, VerifiedPaymentEvent::count());
         $this->assertSame(0, Order::count());
         Queue::assertNotPushed(ReserveAccountStock::class);

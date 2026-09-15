@@ -3,14 +3,23 @@
 namespace Tests\Unit\Services;
 
 use App\Models\Bot;
+use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
 use App\Models\Message;
 use App\Models\User;
+use App\Models\VerifiedPaymentEvent;
+use App\Services\CommerceSafety\PaymentEffectDispatcher;
+use App\Services\CommerceSafety\PaymentEffectFailure;
+use App\Services\CommerceSafety\SafetyScope;
 use App\Services\FlowPluginService;
 use App\Services\OpenRouterService;
 use App\Services\OrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use Tests\TestCase;
 
@@ -24,8 +33,76 @@ class FlowPluginServiceTest extends TestCase
     {
         parent::setUp();
 
-        $openRouter = $this->createMock(OpenRouterService::class);
+        $openRouter = $this->createStub(OpenRouterService::class);
         $this->service = new FlowPluginService($openRouter);
+    }
+
+    #[DataProvider('verifiedTransportOutcomes')]
+    public function test_verified_transport_uses_authorized_values_and_exposes_typed_outcomes(string $outcome, ?bool $ambiguous): void
+    {
+        Http::preventStrayRequests();
+        $event = new VerifiedPaymentEvent;
+        $event->forceFill(['id' => 'fixture', 'bot_id' => 26, 'amount_minor' => 19901, 'source' => 'easyslip', 'created_at' => now()]);
+        $conversation = new Conversation;
+        $conversation->setRelation('customerProfile', null);
+        $checkout = new CheckoutSession;
+        $checkout->forceFill(['items' => [['name' => '<Page>', 'qty' => 2]]]);
+        $event->setRelations(['bot' => new Bot, 'conversation' => $conversation, 'checkout' => $checkout]);
+        $plugin = new FlowPlugin;
+        $plugin->forceFill(['id' => 1, 'config' => ['access_token' => 'fixture', 'chat_id' => 'finance',
+            'message_template' => '{amount} {product} {source_bank} {unknown}']]);
+        $dispatcher = $this->mock(PaymentEffectDispatcher::class);
+        $dispatcher->shouldReceive('authority')->once()->with('fixture')->andReturn($event);
+        $dispatcher->shouldReceive('configuredPlugin')->once()->andReturn($plugin);
+        $this->mock(SafetyScope::class)->shouldReceive('mode')->once()->andReturn('enforce');
+        $calls = 0;
+        $marked = false;
+        Http::fake(function ($request) use ($outcome, &$calls, &$marked) {
+            $calls++;
+            $this->assertTrue($marked);
+            $this->assertSame('finance', $request['chat_id']);
+            $this->assertStringContainsString('199.01 &lt;Page&gt; x2 - -', $request['text']);
+            if ($outcome === 'timeout') {
+                throw new ConnectionException('secret transport detail');
+            }
+
+            return match ($outcome) {
+                'success' => Http::response(['ok' => true, 'result' => ['message_id' => 10]]),
+                'definite' => Http::response(['ok' => false], 400),
+                'missing_id' => Http::response(['ok' => true]),
+                default => Http::response('gateway error', 502),
+            };
+        });
+        // Only the authority seam is stubbed here; the feature matrix validates its real DB scope checks.
+        $manager = DB::getFacadeRoot();
+        DB::swap(\Mockery::mock($manager)->shouldReceive('transactionLevel')->andReturn(0)->getMock());
+        try {
+            try {
+                $this->service->sendVerifiedPayment($event, $outcome === 'plugin_mismatch' ? 2 : 1, function () use (&$marked) {
+                    $marked = true;
+                });
+                $this->assertNull($ambiguous);
+            } catch (PaymentEffectFailure $e) {
+                $this->assertSame($ambiguous, $e->ambiguous);
+                $this->assertStringNotContainsString('secret', $e->getMessage());
+            }
+            $this->assertSame($outcome === 'plugin_mismatch' ? 0 : 1, $calls);
+        } finally {
+            DB::swap($manager);
+        }
+    }
+
+    public static function verifiedTransportOutcomes(): array
+    {
+        return [['success', null], ['definite', false], ['timeout', true], ['missing_id', true], ['server_error', true], ['plugin_mismatch', false]];
+    }
+
+    public function test_verified_transport_refuses_a_settlement_transaction(): void
+    {
+        Http::preventStrayRequests();
+        $this->expectException(PaymentEffectFailure::class);
+        $this->expectExceptionMessage('transport_inside_transaction');
+        $this->service->sendVerifiedPayment(new VerifiedPaymentEvent, 1);
     }
 
     /**

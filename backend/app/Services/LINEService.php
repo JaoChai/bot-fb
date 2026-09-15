@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\LINEException;
 use App\Models\Bot;
+use App\Services\CommerceSafety\PaymentEffectFailure;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -202,6 +203,22 @@ class LINEService
      *
      * @see https://developers.line.biz/en/docs/messaging-api/retrying-api-request/
      */
+    /** Durable receipt push: one persisted retry key, including LINE's accepted-duplicate response. */
+    public function pushPaymentReceipt(Bot $bot, string $userId, array $flex, string $retryKey): ?string
+    {
+        $response = $this->client($bot, ['X-Line-Retry-Key' => $retryKey])->post('/bot/message/push', [
+            'to' => $userId, 'messages' => [$flex],
+        ]);
+        if ($response->status() === 409 && $response->header('x-line-accepted-request-id')) {
+            return $response->header('x-line-accepted-request-id');
+        }
+        if (! $response->successful()) {
+            throw new PaymentEffectFailure('line_http_rejected');
+        }
+
+        return $response->header('x-line-request-id') ?: null;
+    }
+
     public function push(Bot $bot, string $userId, array $messages, ?string $retryKey = null): bool
     {
         $headers = [];

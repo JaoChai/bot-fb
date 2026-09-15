@@ -6,9 +6,13 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
 use App\Models\Message;
+use App\Models\VerifiedPaymentEvent;
 use App\Services\CommerceSafety\FinancialOutputGuard;
+use App\Services\CommerceSafety\PaymentEffectDispatcher;
+use App\Services\CommerceSafety\PaymentEffectFailure;
 use App\Services\CommerceSafety\SafetyScope;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -427,6 +431,66 @@ PROMPT,
         }
 
         return implode("\n", $lines);
+    }
+
+    /** Financial transport consumes only persisted authority and makes ONE HTTP attempt. */
+    public function sendVerifiedPayment(
+        VerifiedPaymentEvent $event,
+        int $pluginId,
+        ?callable $beforeTransport = null,
+    ): void {
+        if (DB::transactionLevel() > 0) {
+            throw new PaymentEffectFailure('transport_inside_transaction');
+        }
+        $dispatcher = app(PaymentEffectDispatcher::class);
+        $event = $dispatcher->authority($event->id);
+        if (! $event || app(SafetyScope::class)->mode($event->bot) !== 'enforce') {
+            throw new PaymentEffectFailure('authority_invalid');
+        }
+        $plugin = $dispatcher->configuredPlugin($event);
+        if (! $plugin || $plugin->id !== $pluginId) {
+            throw new PaymentEffectFailure('plugin_configuration_changed');
+        }
+        $token = $plugin->config['access_token'] ?? null;
+        $chatId = $plugin->config['chat_id'] ?? null;
+        $template = $plugin->config['message_template'] ?? null;
+        if (! is_string($token) || trim($token) === '' || ! is_scalar($chatId) || trim((string) $chatId) === ''
+            || ! is_string($template) || trim($template) === '') {
+            throw new PaymentEffectFailure('plugin_configuration_invalid');
+        }
+        $product = implode(', ', array_map(fn (array $line): string => $line['name'].' x'.$line['qty'], $event->checkout->items));
+        $variables = [
+            'amount' => intdiv($event->amount_minor, 100).'.'.str_pad((string) ($event->amount_minor % 100), 2, '0', STR_PAD_LEFT),
+            'product' => $product, 'product_category' => $product,
+            // There is no trusted normalized bank column on the proof; never extract it from receipt prose.
+            'source_bank' => '-',
+            'payment_method' => $event->source,
+            'customer_name' => $event->conversation->customerProfile?->display_name ?? '-',
+            'datetime' => $event->created_at->timezone('Asia/Bangkok')->format('d/m/Y H:i'),
+        ];
+        $message = preg_replace_callback('/\{(\w+)\}/', fn (array $m): string => htmlspecialchars((string) ($variables[$m[1]] ?? '-'), ENT_QUOTES, 'UTF-8'), $template);
+        $message .= "\n\n<b>📦 รายการสินค้า</b>";
+        foreach ($event->checkout->items as $line) {
+            $message .= "\n• ".htmlspecialchars($line['name'], ENT_QUOTES, 'UTF-8').' ×'.$line['qty'];
+        }
+        if ($beforeTransport !== null) {
+            $beforeTransport();
+        }
+        try {
+            $response = Http::connectTimeout(10)->timeout(30)->post("https://api.telegram.org/bot{$token}/sendMessage", [
+                'chat_id' => $chatId, 'text' => $message, 'parse_mode' => 'HTML',
+            ]);
+        } catch (\Throwable) {
+            throw new PaymentEffectFailure('telegram_transport_ambiguous', true);
+        }
+        if ($response->successful() && $response->json('ok') === true && $response->json('result.message_id') !== null) {
+            return;
+        }
+        // Explicit Bot API rejection means no message was accepted. Unparseable/server responses do not.
+        if ($response->json('ok') === false) {
+            throw new PaymentEffectFailure('telegram_rejected');
+        }
+        throw new PaymentEffectFailure('telegram_response_ambiguous', true);
     }
 
     protected function sendTelegramNotification(FlowPlugin $plugin, string $message): void

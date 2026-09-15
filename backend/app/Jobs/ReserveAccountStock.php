@@ -2,12 +2,15 @@
 
 namespace App\Jobs;
 
+use App\Models\AccountDelivery;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\SlipVerification;
 use App\Models\VerifiedPaymentEvent;
 use App\Services\CommerceSafety\CheckoutAuthority;
+use App\Services\CommerceSafety\PaymentEffectDispatcher;
+use App\Services\CommerceSafety\PaymentEffectFailure;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\Delivery\AccountDeliveryService;
 use App\Services\Payment\SlipVerificationResult;
@@ -37,6 +40,29 @@ class ReserveAccountStock implements ShouldQueue
         public readonly ?float $amount,
         public readonly array $items,
     ) {}
+
+    /** Scoped effect entry; the legacy five-argument constructor remains serialization-compatible. */
+    public static function runEffect(VerifiedPaymentEvent $event): ?string
+    {
+        $event = app(PaymentEffectDispatcher::class)->authority($event->id);
+        if (! $event) {
+            throw new PaymentEffectFailure('authority_invalid');
+        }
+        $checkout = app(CheckoutAuthority::class)->authorizeReservation($event->bot, $event->conversation, $event->slip_verification_id);
+        if (! $checkout) {
+            throw new PaymentEffectFailure('reservation_authority_invalid');
+        }
+        $delivery = app(AccountDeliveryService::class)->createFromPayment($event->bot, $event->conversation,
+            $event->slip_verification_id, $checkout->total_minor / 100, $checkout->items);
+        if ($delivery?->status === AccountDelivery::STATUS_RESERVING) {
+            throw new PaymentEffectFailure('reservation_reconciliation_required');
+        }
+        if (! $delivery && config('delivery.enabled') && $event->bot->auto_delivery_enabled) {
+            throw new PaymentEffectFailure('reservation_not_created');
+        }
+
+        return $delivery ? (string) $delivery->id : null;
+    }
 
     public function handle(AccountDeliveryService $service, CheckoutAuthority $authority): void
     {
@@ -117,7 +143,7 @@ class ReserveAccountStock implements ShouldQueue
                 );
             }
 
-            // A3 will durably enqueue effects after commit. B3 records authority only.
+            // Settlement inserts durable effects; scoped callers never dispatch a payload job.
             return;
         }
 

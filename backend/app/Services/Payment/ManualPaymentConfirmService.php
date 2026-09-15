@@ -16,7 +16,6 @@ use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\CommerceSafety\ConversationAuthorityLock;
 use App\Services\CommerceSafety\MoneyMinor;
-use App\Services\CommerceSafety\PaymentProofService;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\FlowPluginService;
 use App\Services\LINEService;
@@ -214,22 +213,6 @@ class ManualPaymentConfirmService
                     'order_created' => $outcome->action === 'settled'
                         && $outcome->checkout?->settled_event_id !== null,
                 ];
-            });
-            DB::afterCommit(function () use ($bot, $conversation, $result): void {
-                try {
-                    $event = app(PaymentProofService::class)
-                        ->forReceipt($bot, $conversation, $result['message']);
-                    if ($event === null) {
-                        return;
-                    }
-                    $flex = $this->paymentFlex->fromVerifiedPayment($event);
-                    $result['message']->update(['content' => $flex['altText']]);
-                    if ($conversation->channel_type === 'line' && $conversation->external_customer_id) {
-                        $this->line->replyWithFallback($bot, null, $conversation->external_customer_id, [$flex], $this->line->generateRetryKey());
-                    }
-                } catch (\Throwable $e) {
-                    Log::warning('Verified manual receipt presentation failed', ['message_id' => $result['message']->id, 'error' => $e->getMessage()]);
-                }
             });
 
             return $result;

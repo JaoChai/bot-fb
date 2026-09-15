@@ -86,6 +86,8 @@ class CheckoutAuthority
                     && $lockedEvent->amount_minor === $lockedCheckout->total_minor
                     && $this->validPaymentEvent($lockedEvent)
                     && $this->orders->lockedOrderForCheckout($lockedCheckout, $lockedEvent) !== null) {
+                    app(PaymentEffectDispatcher::class)->enqueue($lockedEvent);
+
                     return new CheckoutOutcome('settled', $lockedCheckout);
                 }
 
@@ -126,6 +128,7 @@ class CheckoutAuthority
                 throw new \LogicException('Canonical order was not linked to the payment event.');
             }
             $this->markEventDisposition($lockedEvent, 'settled');
+            app(PaymentEffectDispatcher::class)->enqueue($lockedEvent);
 
             return new CheckoutOutcome('settled', $lockedCheckout);
         });

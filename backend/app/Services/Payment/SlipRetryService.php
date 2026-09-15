@@ -12,12 +12,12 @@ use App\Models\Message;
 use App\Models\SlipVerification;
 use App\Models\VerifiedPaymentEvent;
 use App\Services\CommerceSafety\FinancialOutputGuard;
+use App\Services\CommerceSafety\PaymentEffectDispatcher;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\FlowPluginService;
 use App\Services\LINEService;
 use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\PaymentFlexService;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -51,7 +51,7 @@ class SlipRetryService
                 })->orderBy('id')->get();
             foreach ($terminal as $slip) {
                 $event = $this->slipVerification->reconcileVerifiedSlip($bot, $conversation, $slip);
-                $this->presentVerified($bot, $conversation, $event);
+                $this->enqueueVerified($event);
             }
             if ($terminal->isNotEmpty()) {
                 return;
@@ -102,7 +102,7 @@ class SlipRetryService
         if (in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true)) {
             $slip = SlipVerification::query()->findOrFail($result->slipVerificationId);
             $event = $this->slipVerification->reconcileVerifiedSlip($bot, $conversation, $slip);
-            $this->presentVerified($bot, $conversation, $event);
+            $this->enqueueVerified($event);
 
             return;
         }
@@ -141,21 +141,9 @@ class SlipRetryService
         $this->slipVerification->notifyIfAutoReconstructed($bot, $conversation, $result);
     }
 
-    private function presentVerified(Bot $bot, Conversation $conversation, VerifiedPaymentEvent $event): void
+    private function enqueueVerified(VerifiedPaymentEvent $event): void
     {
-        DB::afterCommit(function () use ($bot, $conversation, $event): void {
-            if ($conversation->channel_type !== 'line' || ! $conversation->external_customer_id) {
-                return;
-            }
-            try {
-                $flex = $this->paymentFlex->fromVerifiedPayment($event);
-                $receipt = $event->receiptMessage()->firstOrFail();
-                $receipt->update(['content' => $flex['altText']]);
-                $this->line->replyWithFallback($bot, null, $conversation->external_customer_id, [$flex], $this->line->generateRetryKey());
-            } catch (\Throwable $e) {
-                Log::warning('Verified retry receipt presentation failed', ['event_id' => $event->id, 'error' => $e->getMessage()]);
-            }
-        });
+        app(PaymentEffectDispatcher::class)->enqueue($event);
     }
 
     private function pushToLine(Bot $bot, Conversation $conversation, string $text): void

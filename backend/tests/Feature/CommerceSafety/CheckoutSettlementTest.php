@@ -3,6 +3,7 @@
 namespace Tests\Feature\CommerceSafety;
 
 use App\Jobs\ReserveAccountStock;
+use App\Jobs\RunPaymentEffect;
 use App\Jobs\SendDeliveryCard;
 use App\Models\AccountDelivery;
 use App\Models\AccountDeliveryItem;
@@ -71,7 +72,7 @@ class CheckoutSettlementTest extends TestCase
         parent::setUp();
 
         Http::preventStrayRequests();
-        Queue::fake([ReserveAccountStock::class, SendDeliveryCard::class]);
+        Queue::fake([ReserveAccountStock::class, SendDeliveryCard::class, RunPaymentEffect::class]);
         $this->setUpStockPool();
 
         $this->owner = User::factory()->owner()->create();
@@ -341,6 +342,7 @@ class CheckoutSettlementTest extends TestCase
         $this->assertSame($first->checkout->settled_event_id, $second->checkout->settled_event_id);
         $this->assertDatabaseCount('orders', 1);
         $this->assertSame(1, Order::first()->items()->count());
+        $this->assertDatabaseCount('payment_effects', 3);
     }
 
     #[Test]
@@ -360,12 +362,13 @@ class CheckoutSettlementTest extends TestCase
         $this->assertSame($checkout->id, $automatic->fresh()->checkout_id);
         $this->assertSame($checkout->id, $manual->fresh()->checkout_id);
         $this->assertDatabaseCount('orders', 1);
+        $this->assertDatabaseCount('payment_effects', 3);
     }
 
     #[Test]
     public function vip_evaluation_is_dispatched_only_after_settlement_commits(): void
     {
-        Queue::fake([ReserveAccountStock::class, SendDeliveryCard::class]);
+        Queue::fake([ReserveAccountStock::class, SendDeliveryCard::class, RunPaymentEffect::class]);
         $customer = CustomerProfile::factory()->create();
         $this->conversation->update(['customer_profile_id' => $customer->id]);
         $evaluations = 0;
@@ -400,6 +403,8 @@ class CheckoutSettlementTest extends TestCase
         }
 
         $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('payment_effects', 0);
+        Queue::assertNotPushed(RunPaymentEffect::class);
         $this->assertSame(0, $evaluations);
 
         $outcome = app(CheckoutAuthority::class)->settle($checkout->fresh(), $event->fresh());
@@ -409,7 +414,7 @@ class CheckoutSettlementTest extends TestCase
     }
 
     #[Test]
-    public function automatic_path_records_and_settles_before_leaving_effects_for_a3(): void
+    public function automatic_path_records_and_settles_with_durable_effects(): void
     {
         $checkout = $this->payable([
             ['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000],
@@ -453,6 +458,7 @@ class CheckoutSettlementTest extends TestCase
         $this->assertDatabaseMissing('order_items', ['product_name' => 'invented prose item']);
         Queue::assertNotPushed(ReserveAccountStock::class);
         $this->assertNotNull($receipt->id);
+        $this->assertDatabaseCount('payment_effects', 3);
     }
 
     #[Test]
@@ -505,6 +511,7 @@ class CheckoutSettlementTest extends TestCase
         $this->assertDatabaseCount('orders', 1);
         Queue::assertNotPushed(ReserveAccountStock::class);
         Http::assertNothingSent();
+        $this->assertDatabaseCount('payment_effects', 3);
     }
 
     #[Test]
@@ -1764,6 +1771,7 @@ class CheckoutSettlementTest extends TestCase
         $this->assertSame(1, VerifiedPaymentEvent::count());
         $this->assertSame(1, Order::count());
         $this->assertSame($beforeMessages + 1, Message::count());
+        $this->assertDatabaseCount('payment_effects', 3);
     }
 
     private function requireReviewPostgres(): void

@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\FinancialOutputGuard;
+use App\Services\CommerceSafety\PaymentEffectDispatcher;
 use App\Services\CommerceSafety\PaymentProofService;
 use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
@@ -41,7 +42,19 @@ class LineWebhookOutputService
         if ($ctx->conversation && $message instanceof Message
             && app(FinancialOutputGuard::class)->enforced($ctx->bot)
             && app(PaymentProofService::class)->forReceipt($ctx->bot, $ctx->conversation, $message)) {
-            DB::afterCommit(fn () => $this->dispatchCommitted($ctx));
+            // Settlement owns durable presentation. Keep UI receipts, but never send this proof twice.
+            $event = app(PaymentProofService::class)->forReceipt($ctx->bot, $ctx->conversation, $message);
+            app(PaymentEffectDispatcher::class)->enqueue($event);
+            DB::afterCommit(function () use ($ctx, $message): void {
+                $conversation = $ctx->conversation->fresh();
+                $this->leadRecovery->markCustomerResponded($conversation);
+                $data = $this->buildConversationData($conversation);
+                if ($ctx->userMessage) {
+                    broadcast(new MessageSent($ctx->userMessage, $data))->toOthers();
+                }
+                broadcast(new MessageSent($message->fresh(), $data))->toOthers();
+                broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
+            });
 
             return;
         }

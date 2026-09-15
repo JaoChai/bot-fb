@@ -39,7 +39,6 @@ use App\Services\RateLimitService;
 use App\Services\ResponseHoursService;
 use App\Services\StockGuardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -326,22 +325,14 @@ class PaymentConsumersTest extends TestCase
         (new ProcessLINEWebhook($this->bot, $event))->handle($line, Mockery::mock(AIService::class), Mockery::mock(RateLimitService::class), Mockery::mock(MessageAggregationService::class), Mockery::mock(ResponseHoursService::class), Mockery::mock(CircuitBreakerService::class), $gating, $context, $response, $output);
     }
 
-    public function test_retry_presents_existing_terminal_proof_after_commit_without_new_event_or_effects(): void
+    public function test_retry_leaves_held_proof_visible_without_direct_presentation_or_effects(): void
     {
         $receipt = $this->receipt();
         $event = $this->proof($receipt);
         $image = $this->conversation->messages()->create(['sender' => 'user', 'type' => 'image', 'content' => 'image']);
         $event->slipVerification->update(['message_id' => $image->id]);
         $line = $this->mock(LINEService::class);
-        $line->shouldReceive('generateRetryKey')->andReturn('test');
-        $line->shouldReceive('replyWithFallback')->once()->withArgs(function ($bot, $token, $user, $messages) {
-            $this->assertSame(1, DB::transactionLevel());
-            $this->assertSame(1, VerifiedPaymentEvent::count());
-            $this->assertStringContainsString('199.01', json_encode($messages));
-            $this->assertStringContainsString('ทีมงาน', json_encode($messages, JSON_UNESCAPED_UNICODE));
-
-            return true;
-        })->andReturn(['success' => true]);
+        $line->shouldNotReceive('replyWithFallback', 'pushPaymentReceipt');
         app(SlipRetryService::class)->retry($this->bot, $this->conversation, $image, 'https://invalid.test/slip', 1);
         $this->assertSame(1, VerifiedPaymentEvent::count());
         $this->assertNoEffects();
