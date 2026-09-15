@@ -55,31 +55,39 @@ class HealthCheckTest extends TestCase
 
     public function test_health_returns_degraded_when_queue_backlog_high(): void
     {
+        config(['queue.default' => 'database']);
         $user = User::factory()->create();
 
-        // Insert many jobs to simulate backlog
-        // Note: This depends on queue driver being 'database'
-        if (config('queue.default') === 'database') {
-            // Insert fake jobs to simulate backlog
-            for ($i = 0; $i < 1001; $i++) {
-                DB::table('jobs')->insert([
-                    'queue' => 'default',
-                    'payload' => '{}',
-                    'attempts' => 0,
-                    'reserved_at' => null,
-                    'available_at' => now()->timestamp,
-                    'created_at' => now()->timestamp,
-                ]);
-            }
+        $job = [
+            'queue' => 'default',
+            'payload' => '{}',
+            'attempts' => 0,
+            'reserved_at' => null,
+            'available_at' => now()->timestamp,
+            'created_at' => now()->timestamp,
+        ];
+        DB::table('jobs')->insert(array_fill(0, 1000, $job));
 
-            $response = $this->actingAs($user)
-                ->getJson('/api/health/detailed');
+        $this->actingAs($user)->getJson('/api/health/detailed')
+            ->assertOk()
+            ->assertJsonPath('status', 'healthy')
+            ->assertJsonPath('checks.queue.pending_jobs', 1000);
 
-            $response->assertStatus(200);
-            $this->assertContains($response->json('status'), ['degraded', 'healthy']);
-        } else {
-            $this->markTestSkipped('Queue driver is not database');
-        }
+        DB::table('jobs')->insert($job);
+
+        $this->getJson('/api/health/detailed')
+            ->assertStatus(503)
+            ->assertJsonPath('status', 'degraded')
+            ->assertJsonPath('checks.queue.status', 'degraded')
+            ->assertJsonPath('checks.queue.pending_jobs', 1001);
+
+        $this->getJson('/api/health')
+            ->assertStatus(503)
+            ->assertJsonPath('status', 'degraded');
+
+        $this->artisan('health:check', ['--json' => true])
+            ->assertExitCode(1)
+            ->expectsOutputToContain('degraded');
     }
 
     public function test_health_returns_circuit_breaker_status(): void

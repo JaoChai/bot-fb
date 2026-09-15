@@ -66,9 +66,9 @@ jobs:
       - name: Run tests
         working-directory: frontend
         run: npm run test
-      - name: TypeScript check
+      - name: TypeScript check and production build
         working-directory: frontend
-        run: npx tsc --noEmit
+        run: npm run build
 
   post-deploy-smoke:
     name: Post-Deploy Smoke Test
