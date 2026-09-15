@@ -10,10 +10,10 @@ return new class extends Migration
     {
         Schema::create('verified_payment_events', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignId('bot_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('conversation_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('slip_verification_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('receipt_message_id')->constrained('messages')->cascadeOnDelete();
+            $table->foreignId('bot_id')->constrained()->restrictOnDelete();
+            $table->foreignId('conversation_id')->constrained()->restrictOnDelete();
+            $table->foreignId('slip_verification_id')->constrained()->restrictOnDelete();
+            $table->foreignId('receipt_message_id')->constrained('messages')->restrictOnDelete();
             $table->foreignId('order_id')->nullable()->constrained()->nullOnDelete();
             $table->string('source', 16);
             $table->string('event_key');

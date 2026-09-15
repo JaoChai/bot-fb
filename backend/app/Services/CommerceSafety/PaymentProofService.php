@@ -22,50 +22,68 @@ class PaymentProofService
         Message $receipt,
         ?int $actorId,
     ): VerifiedPaymentEvent {
-        $bot = $this->reload(Bot::class, $bot->getKey(), 'bot');
-        $conversation = $this->reload(Conversation::class, $conversation->getKey(), 'conversation');
-        $slip = $this->reload(SlipVerification::class, $slip->getKey(), 'slip');
-        $receipt = $this->reload(Message::class, $receipt->getKey(), 'receipt');
-
-        if ((int) $conversation->bot_id !== (int) $bot->id
-            || (int) $slip->bot_id !== (int) $bot->id
-            || (int) $slip->conversation_id !== (int) $conversation->id
-            || (int) $receipt->conversation_id !== (int) $conversation->id) {
-            $this->invalid('proof', 'Payment proof rows must belong to the same bot and conversation.');
-        }
-
-        if ($receipt->sender !== 'bot') {
-            $this->invalid('receipt', 'Payment proof receipts must be persisted bot messages.');
-        }
-
-        [$source, $eventKey, $storedActorId] = $this->identity($bot, $slip, $receipt, $actorId);
+        $attributes = null;
 
         try {
-            $amountMinor = MoneyMinor::fromDecimal((string) $slip->getRawOriginal('amount'));
-        } catch (InvalidArgumentException) {
-            $this->invalid('amount', 'The verified payment amount is invalid.');
-        }
+            return DB::transaction(function () use (
+                $bot,
+                $conversation,
+                $slip,
+                $receipt,
+                $actorId,
+                &$attributes,
+            ): VerifiedPaymentEvent {
+                $bot = $this->reloadLocked(Bot::class, $bot->getKey(), 'bot');
+                $conversation = $this->reloadLocked(
+                    Conversation::class,
+                    $conversation->getKey(),
+                    'conversation',
+                );
+                $slip = $this->reloadLocked(SlipVerification::class, $slip->getKey(), 'slip');
+                $receipt = $this->reloadLocked(Message::class, $receipt->getKey(), 'receipt');
 
-        $attributes = [
-            'bot_id' => (int) $bot->id,
-            'conversation_id' => (int) $conversation->id,
-            'slip_verification_id' => (int) $slip->id,
-            'receipt_message_id' => (int) $receipt->id,
-            'order_id' => null,
-            'source' => $source,
-            'event_key' => $eventKey,
-            'currency' => 'THB',
-            'amount_minor' => $amountMinor,
-            'actor_id' => $storedActorId,
-        ];
+                if ((int) $conversation->bot_id !== (int) $bot->id
+                    || (int) $slip->bot_id !== (int) $bot->id
+                    || (int) $slip->conversation_id !== (int) $conversation->id
+                    || (int) $receipt->conversation_id !== (int) $conversation->id) {
+                    $this->invalid('proof', 'Payment proof rows must belong to the same bot and conversation.');
+                }
 
-        $existing = $this->findByEventKey($attributes['bot_id'], $eventKey);
-        if ($existing !== null) {
-            return $this->matchingEventOrFail($existing, $attributes);
-        }
+                if ($receipt->sender !== 'bot') {
+                    $this->invalid('receipt', 'Payment proof receipts must be persisted bot messages.');
+                }
 
-        try {
-            return DB::transaction(function () use ($attributes): VerifiedPaymentEvent {
+                [$source, $eventKey, $storedActorId] = $this->identity(
+                    $bot,
+                    $slip,
+                    $receipt,
+                    $actorId,
+                );
+
+                try {
+                    $amountMinor = MoneyMinor::fromDecimal((string) $slip->getRawOriginal('amount'));
+                } catch (InvalidArgumentException) {
+                    $this->invalid('amount', 'The verified payment amount is invalid.');
+                }
+
+                $attributes = [
+                    'bot_id' => (int) $bot->id,
+                    'conversation_id' => (int) $conversation->id,
+                    'slip_verification_id' => (int) $slip->id,
+                    'receipt_message_id' => (int) $receipt->id,
+                    'order_id' => null,
+                    'source' => $source,
+                    'event_key' => $eventKey,
+                    'currency' => 'THB',
+                    'amount_minor' => $amountMinor,
+                    'actor_id' => $storedActorId,
+                ];
+
+                $existing = $this->findByEventKey($attributes['bot_id'], $eventKey);
+                if ($existing !== null) {
+                    return $this->matchingEventOrFail($existing, $attributes);
+                }
+
                 $event = new VerifiedPaymentEvent;
 
                 foreach ($attributes as $attribute => $value) {
@@ -79,7 +97,11 @@ class PaymentProofService
         } catch (UniqueConstraintViolationException) {
             // A concurrent insert can win either unique constraint. The failed
             // transaction has rolled back here, so PostgreSQL permits this lookup.
-            $existing = $this->findByEventKey($attributes['bot_id'], $eventKey);
+            if ($attributes === null) {
+                throw new \LogicException('Payment event attributes were not resolved before insert.');
+            }
+
+            $existing = $this->findByEventKey($attributes['bot_id'], $attributes['event_key']);
 
             if ($existing !== null) {
                 return $this->matchingEventOrFail($existing, $attributes);
@@ -128,7 +150,7 @@ class PaymentProofService
             $this->invalid('slip', 'Only passed or manually confirmed slips can create payment proof.');
         }
 
-        $actor = $actorId === null ? null : User::query()->find($actorId);
+        $actor = $actorId === null ? null : User::query()->lockForUpdate()->find($actorId);
 
         if ($actor === null || ! $actor->isOwner() || (int) $actor->id !== (int) $bot->user_id) {
             $this->invalid('actor', 'Manual payment proof requires the authorized bot owner.');
@@ -171,9 +193,9 @@ class PaymentProofService
      * @param  class-string<TModel>  $model
      * @return TModel
      */
-    private function reload(string $model, mixed $key, string $field): mixed
+    private function reloadLocked(string $model, mixed $key, string $field): mixed
     {
-        if ($key === null || ($fresh = $model::query()->find($key)) === null) {
+        if ($key === null || ($fresh = $model::query()->lockForUpdate()->find($key)) === null) {
             $this->invalid($field, "The persisted {$field} row is required.");
         }
 

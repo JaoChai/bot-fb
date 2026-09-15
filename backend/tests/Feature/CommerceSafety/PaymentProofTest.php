@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
+use App\Models\Order;
 use App\Models\SlipVerification;
 use App\Models\User;
 use App\Models\VerifiedPaymentEvent;
@@ -14,8 +15,11 @@ use App\Services\CommerceSafety\MoneyMinor;
 use App\Services\CommerceSafety\PaymentProofService;
 use App\Services\CommerceSafety\SafetyScope;
 use Illuminate\Database\Eloquent\MassAssignmentException;
+use Illuminate\Database\Events\TransactionBeginning;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -191,6 +195,34 @@ class PaymentProofTest extends TestCase
 
         $this->assertSame($first->id, $second->id);
         $this->assertSame(1, VerifiedPaymentEvent::count());
+    }
+
+    public function test_authority_mutated_when_record_transaction_begins_cannot_create_an_event(): void
+    {
+        $transactionMutatedAuthority = false;
+
+        Event::listen(TransactionBeginning::class, function () use (&$transactionMutatedAuthority): void {
+            if ($transactionMutatedAuthority) {
+                return;
+            }
+
+            $transactionMutatedAuthority = true;
+            DB::table('slip_verifications')
+                ->where('id', $this->slip->id)
+                ->update(['status' => 'fake']);
+        });
+
+        try {
+            app(PaymentProofService::class)->record(
+                $this->bot, $this->conversation, $this->slip, $this->receipt, null,
+            );
+            $this->fail('Payment proof was created from authority mutated at transaction start.');
+        } catch (ValidationException) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->assertTrue($transactionMutatedAuthority);
+        $this->assertSame(0, VerifiedPaymentEvent::count());
     }
 
     public function test_a_receipt_cannot_be_reused_for_a_different_payment_event(): void
@@ -405,6 +437,63 @@ class PaymentProofTest extends TestCase
         ]);
     }
 
+    public function test_bot_cannot_be_deleted_while_it_has_a_verified_payment_event(): void
+    {
+        $event = app(PaymentProofService::class)
+            ->record($this->bot, $this->conversation, $this->slip, $this->receipt, null);
+
+        $this->assertAuthorityParentDeletionRejected('bots', $this->bot->id, $event);
+    }
+
+    public function test_conversation_cannot_be_deleted_while_it_has_a_verified_payment_event(): void
+    {
+        $event = app(PaymentProofService::class)
+            ->record($this->bot, $this->conversation, $this->slip, $this->receipt, null);
+
+        $this->assertAuthorityParentDeletionRejected(
+            'conversations',
+            $this->conversation->id,
+            $event,
+        );
+    }
+
+    public function test_slip_cannot_be_deleted_while_it_has_a_verified_payment_event(): void
+    {
+        $event = app(PaymentProofService::class)
+            ->record($this->bot, $this->conversation, $this->slip, $this->receipt, null);
+
+        $this->assertAuthorityParentDeletionRejected('slip_verifications', $this->slip->id, $event);
+    }
+
+    public function test_receipt_cannot_be_deleted_while_it_has_a_verified_payment_event(): void
+    {
+        $event = app(PaymentProofService::class)
+            ->record($this->bot, $this->conversation, $this->slip, $this->receipt, null);
+
+        $this->assertAuthorityParentDeletionRejected('messages', $this->receipt->id, $event);
+    }
+
+    public function test_order_deletion_nulls_only_the_nullable_order_relation_and_retains_the_event(): void
+    {
+        $event = app(PaymentProofService::class)
+            ->record($this->bot, $this->conversation, $this->slip, $this->receipt, null);
+        $order = Order::factory()->create([
+            'bot_id' => $this->bot->id,
+            'conversation_id' => $this->conversation->id,
+            'message_id' => null,
+        ]);
+        DB::table('verified_payment_events')
+            ->where('id', $event->id)
+            ->update(['order_id' => $order->id]);
+
+        $this->assertSame(1, DB::table('orders')->where('id', $order->id)->delete());
+
+        $this->assertDatabaseHas('verified_payment_events', [
+            'id' => $event->id,
+            'order_id' => null,
+        ]);
+    }
+
     public function test_duplicate_event_key_race_returns_one_event_on_postgresql(): void
     {
         if (DB::getDriverName() !== 'pgsql' || env('COMMERCE_SAFETY_PG_RACE') !== '1') {
@@ -488,5 +577,23 @@ class PaymentProofTest extends TestCase
         $this->assertSame([0, 0], $statuses, json_encode($results));
         $this->assertSame($results[0]['id'], $results[1]['id']);
         $this->assertSame(1, VerifiedPaymentEvent::count());
+    }
+
+    private function assertAuthorityParentDeletionRejected(
+        string $table,
+        int $parentId,
+        VerifiedPaymentEvent $event,
+    ): void {
+        try {
+            DB::transaction(function () use ($table, $parentId): void {
+                DB::table($table)->where('id', $parentId)->delete();
+                $this->fail("The [{$table}] authority parent was deleted.");
+            });
+        } catch (QueryException) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->assertDatabaseHas($table, ['id' => $parentId]);
+        $this->assertDatabaseHas('verified_payment_events', ['id' => $event->id]);
     }
 }
