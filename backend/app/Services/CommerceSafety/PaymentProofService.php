@@ -104,7 +104,10 @@ class PaymentProofService
 
                 $existing = $this->findByEventKey($attributes['bot_id'], $eventKey);
                 if ($existing !== null) {
-                    return $this->matchingEventOrFail($existing, $attributes);
+                    $existing = $this->matchingEventOrFail($existing, $attributes);
+                    app(PaymentEffectDispatcher::class)->enqueue($existing);
+
+                    return $existing;
                 }
 
                 $event = new VerifiedPaymentEvent;
@@ -114,6 +117,9 @@ class PaymentProofService
                 }
 
                 $event->save();
+                // Commit proof and durable receipt ownership together. Queue
+                // submission is deferred until the outer authority commit.
+                app(PaymentEffectDispatcher::class)->enqueue($event);
 
                 return $event;
             });

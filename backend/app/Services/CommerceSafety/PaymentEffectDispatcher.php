@@ -32,12 +32,17 @@ class PaymentEffectDispatcher
                 return;
             }
             ConversationAuthorityLock::acquire((int) $candidate->bot_id, (int) $candidate->conversation_id);
-            $candidate = $this->authority($candidate->id);
-            if (! $candidate || config("commerce_safety.bots.{$candidate->bot_id}.mode") !== 'enforce') {
+            $candidate = $this->authority($candidate->id, true);
+            if (! $candidate || ! in_array(app(SafetyScope::class)->mode($candidate->bot), ['enforce', 'hold'], true)) {
                 return;
             }
-            $plugin = $this->configuredPlugin($candidate);
-            foreach (['line_receipt', 'telegram_payment', 'reserve_stock'] as $kind) {
+            // Receipt authority is the persisted proof itself. Fulfillment still
+            // requires an enforce checkout settled into its exact Order.
+            $settled = config("commerce_safety.bots.{$candidate->bot_id}.mode") === 'enforce'
+                && $this->authority($candidate->id) !== null;
+            $plugin = $settled ? $this->configuredPlugin($candidate) : null;
+            $kinds = $settled ? ['line_receipt', 'telegram_payment', 'reserve_stock'] : ['line_receipt'];
+            foreach ($kinds as $kind) {
                 $id = (string) Str::uuid();
                 $invalidPlugin = $kind === 'telegram_payment' && $plugin === null;
                 $inserted = DB::table('payment_effects')->insertOrIgnore([
@@ -77,18 +82,12 @@ class PaymentEffectDispatcher
         $checkout = $event?->checkout;
         $slip = $event?->slipVerification;
         $receipt = $event?->receiptMessage;
-        if (! $event || ! $event->bot || ! $event->conversation || ! $checkout || ! $slip || ! $receipt
-            || ! in_array($event->disposition, $allowHeld ? ['settled', 'manual_hold'] : ['settled'], true)
-            || ! in_array($checkout->state, $allowHeld ? ['paid', 'paid_hold'] : ['paid'], true)
-            || $checkout->settled_event_id !== $event->id
-            || (int) $checkout->bot_id !== (int) $event->bot_id
-            || (int) $checkout->conversation_id !== (int) $event->conversation_id
+        if (! $event || ! $event->bot || ! $event->conversation || ! $slip || ! $receipt
             || (int) $event->conversation->bot_id !== (int) $event->bot_id
             || (int) $slip->bot_id !== (int) $event->bot_id
             || (int) $slip->conversation_id !== (int) $event->conversation_id
             || (int) $receipt->conversation_id !== (int) $event->conversation_id
-            || $receipt->sender !== 'bot' || $event->currency !== 'THB' || $checkout->currency !== 'THB'
-            || $event->amount_minor !== $checkout->total_minor) {
+            || $receipt->sender !== 'bot' || $event->currency !== 'THB') {
             return null;
         }
         try {
@@ -104,14 +103,53 @@ class PaymentEffectDispatcher
             'manual' => $slip->status === 'manual_confirmed'
                 && $event->event_key === 'manual-slip:'.$slip->id
                 && (int) $slip->message_id === (int) $receipt->id
-                && $event->actor?->isOwner() && (int) $event->actor_id === (int) $event->bot->user_id,
+                && (($event->actor?->isOwner() && (int) $event->actor_id === (int) $event->bot->user_id)
+                    || ($allowHeld && $this->recoveredManualHold($event))),
             default => false,
         };
-        if (! $valid || app(OrderService::class)->lockedOrderForCheckout($checkout, $event) === null) {
+        if (! $valid || ($event->checkout_id !== null && (! $checkout
+            || (int) $checkout->bot_id !== (int) $event->bot_id
+            || (int) $checkout->conversation_id !== (int) $event->conversation_id))) {
+            return null;
+        }
+        if (! $allowHeld && (! $checkout || $event->disposition !== 'settled'
+            || $checkout->state !== 'paid' || $checkout->settled_event_id !== $event->id
+            || $checkout->currency !== 'THB' || $event->amount_minor !== $checkout->total_minor
+            || app(OrderService::class)->lockedOrderForCheckout($checkout, $event) === null)) {
             return null;
         }
 
         return $event;
+    }
+
+    private function recoveredManualHold(VerifiedPaymentEvent $event): bool
+    {
+        return $event->source === 'manual' && $event->actor_id === null
+            && $event->checkout_id === null && $event->order_id === null
+            && $event->disposition === 'manual_hold' && $event->hold_reason === 'manual_actor_unavailable';
+    }
+
+    private function receiptFlex(VerifiedPaymentEvent $event): array
+    {
+        if (! $this->recoveredManualHold($event)) {
+            return app(PaymentFlexService::class)->fromVerifiedPayment($event);
+        }
+
+        // Recovered terminal manual proof acknowledges money only. Missing actor
+        // provenance cannot authorize an Order or enter the settled Flex path.
+        $amount = number_format(intdiv($event->amount_minor, 100))
+            .($event->amount_minor % 100 ? '.'.str_pad((string) ($event->amount_minor % 100), 2, '0', STR_PAD_LEFT) : '');
+        $text = 'เงินเข้าแล้ว '.$amount." บาทครับ\nรับเงินไว้แล้ว อยู่ระหว่างให้ทีมงานตรวจสอบรายการครับ";
+
+        return [
+            'type' => 'flex', 'altText' => $text,
+            'contents' => ['type' => 'bubble', 'body' => [
+                'type' => 'box', 'layout' => 'vertical', 'contents' => [
+                    ['type' => 'text', 'text' => 'รับเงินแล้ว รอทีมงานตรวจสอบ', 'weight' => 'bold', 'wrap' => true],
+                    ['type' => 'text', 'text' => $text, 'wrap' => true, 'margin' => 'md'],
+                ],
+            ]],
+        ];
     }
 
     public function configuredPlugin(VerifiedPaymentEvent $event): ?FlowPlugin
@@ -230,7 +268,7 @@ class PaymentEffectDispatcher
                 if ($event->conversation->channel_type !== 'line' || ! $event->conversation->external_customer_id) {
                     throw new PaymentEffectFailure('line_destination_invalid');
                 }
-                $flex = app(PaymentFlexService::class)->fromVerifiedPayment($event);
+                $flex = $this->receiptFlex($event);
                 $event->receiptMessage->update(['content' => $flex['altText']]);
                 if (! $this->beginTransport($claim)) {
                     return;

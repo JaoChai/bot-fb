@@ -11,6 +11,7 @@ use App\Models\VerifiedPaymentEvent;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CheckoutOutcome;
 use App\Services\CommerceSafety\ConversationAuthorityLock;
+use App\Services\CommerceSafety\PaymentEffectDispatcher;
 use App\Services\CommerceSafety\PaymentProofService;
 use App\Services\CommerceSafety\SafetyScope;
 use Illuminate\Http\Client\ConnectionException;
@@ -53,7 +54,7 @@ class SlipVerificationService
 
     /**
      * Common post-verification authority seam for automatic, retry and manual paths.
-     * The receipt is already persisted; this method performs no network or queue work.
+     * Proof, receipt effect and settlement commit before queue submission or transport.
      */
     public function settleVerifiedReceipt(
         Bot $bot,
@@ -63,19 +64,21 @@ class SlipVerificationService
         ?int $actorId,
         ?CheckoutSession $checkout = null,
     ): CheckoutOutcome {
-        $event = app(PaymentProofService::class)->record(
-            $bot,
-            $conversation,
-            $slip,
-            $receipt,
-            $actorId,
-            $checkout,
-        );
+        return DB::transaction(function () use ($bot, $conversation, $slip, $receipt, $actorId, $checkout): CheckoutOutcome {
+            $event = app(PaymentProofService::class)->record(
+                $bot,
+                $conversation,
+                $slip,
+                $receipt,
+                $actorId,
+                $checkout,
+            );
 
-        return app(CheckoutAuthority::class)->settleEvent($event);
+            return app(CheckoutAuthority::class)->settleEvent($event);
+        });
     }
 
-    /** Repair local proof/receipt/settlement only; no notifications or fulfillment. */
+    /** Repair local authority and durable effects; transport runs only after commit. */
     public function reconcileVerifiedSlip(Bot $bot, Conversation $conversation, SlipVerification $slip): VerifiedPaymentEvent
     {
         return DB::transaction(function () use ($bot, $conversation, $slip): VerifiedPaymentEvent {
@@ -99,6 +102,7 @@ class SlipVerificationService
                     $slip->update(['message_id' => $event->receipt_message_id]);
                 }
                 app(CheckoutAuthority::class)->settleEvent($event);
+                app(PaymentEffectDispatcher::class)->enqueue($event);
 
                 return $event->fresh();
             }
