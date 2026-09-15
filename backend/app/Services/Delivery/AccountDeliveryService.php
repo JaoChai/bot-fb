@@ -8,9 +8,13 @@ use App\Jobs\SendDeliveryCard;
 use App\Models\AccountDelivery;
 use App\Models\AccountDeliveryItem;
 use App\Models\Bot;
+use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
 use App\Models\SlipVerification;
+use App\Services\CommerceSafety\CheckoutAuthority;
+use App\Services\CommerceSafety\MoneyMinor;
+use App\Services\CommerceSafety\SafetyScope;
 use App\Services\LINEService;
 use App\Services\Payment\PaymentMessageDetector;
 use App\Services\Payment\TelegramAlertBotService;
@@ -49,6 +53,21 @@ class AccountDeliveryService
     ): ?AccountDelivery {
         if (! config('delivery.enabled') || ! $bot->auto_delivery_enabled) {
             return null;
+        }
+
+        if (in_array(app(SafetyScope::class)->mode($bot), ['enforce', 'hold'], true)) {
+            $checkout = app(CheckoutAuthority::class)
+                ->authorizeReservation($bot, $conversation, $slipVerificationId);
+            if ($checkout === null || ! $this->validScopedRequest($checkout, $amount, $items)) {
+                if ($checkout?->state === 'paid') {
+                    $checkout->forceFill(['state' => 'paid_hold'])->save();
+                }
+
+                return null;
+            }
+
+            $amount = $checkout->total_minor / 100;
+            $items = $checkout->items;
         }
 
         // lock conversation ระหว่างเช็คคู่ซ้ำ+สร้างงาน: กัน 2 dispatch path (EasySlip vs manual)
@@ -160,6 +179,34 @@ class AccountDeliveryService
         SendDeliveryCard::dispatchSafely($delivery->id, $this->duplicateWarning($duplicateOf));
 
         return $delivery;
+    }
+
+    private function validScopedRequest(
+        CheckoutSession $checkout,
+        ?float $amount,
+        array $items,
+    ): bool {
+        if ($amount !== null) {
+            try {
+                if (MoneyMinor::fromDecimal(number_format($amount, 2, '.', '')) !== $checkout->total_minor) {
+                    return false;
+                }
+            } catch (\InvalidArgumentException) {
+                return false;
+            }
+        }
+
+        $maxQty = max(1, config_int('delivery.max_qty', 20));
+        foreach ($items as $item) {
+            if (! is_array($item)
+                || ! is_int($item['qty'] ?? null)
+                || $item['qty'] <= 0
+                || $item['qty'] > $maxQty) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

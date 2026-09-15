@@ -4,8 +4,13 @@ namespace App\Jobs;
 
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\Message;
+use App\Models\SlipVerification;
+use App\Services\CommerceSafety\CheckoutAuthority;
+use App\Services\CommerceSafety\SafetyScope;
 use App\Services\Delivery\AccountDeliveryService;
 use App\Services\Payment\SlipVerificationResult;
+use App\Services\Payment\SlipVerificationService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -32,11 +37,31 @@ class ReserveAccountStock implements ShouldQueue
         public readonly array $items,
     ) {}
 
-    public function handle(AccountDeliveryService $service): void
+    public function handle(AccountDeliveryService $service, CheckoutAuthority $authority): void
     {
         $bot = Bot::find($this->botId);
         $conversation = Conversation::find($this->conversationId);
         if (! $bot || ! $conversation) {
+            return;
+        }
+
+        $mode = app(SafetyScope::class)->mode($bot);
+        if (in_array($mode, ['enforce', 'hold'], true)) {
+            if ($mode !== 'enforce') {
+                return;
+            }
+            $checkout = $authority->authorizeReservation($bot, $conversation, $this->slipVerificationId);
+            if ($checkout === null) {
+                return;
+            }
+            $service->createFromPayment(
+                $bot,
+                $conversation,
+                $this->slipVerificationId,
+                $checkout->total_minor / 100,
+                $checkout->items,
+            );
+
             return;
         }
 
@@ -72,6 +97,26 @@ class ReserveAccountStock implements ShouldQueue
             return;
         }
 
+        $bot = Bot::query()->find($botId);
+        $conversation = Conversation::query()->find($conversationId);
+        if ($bot && $conversation
+            && in_array(app(SafetyScope::class)->mode($bot), ['enforce', 'hold'], true)) {
+            $slip = SlipVerification::query()->find($result->slipVerificationId);
+            $receipt = $slip === null ? null : self::verifiedReceipt($conversation, $slip);
+            if ($slip && $receipt) {
+                app(SlipVerificationService::class)->settleVerifiedReceipt(
+                    $bot,
+                    $conversation,
+                    $slip,
+                    $receipt,
+                    null,
+                );
+            }
+
+            // A3 will durably enqueue effects after commit. B3 records authority only.
+            return;
+        }
+
         if ($result->itemsUnreliable) {
             Log::warning('Delivery: skipped auto-reserve — order items failed checksum', [
                 'conversation_id' => $conversationId,
@@ -83,5 +128,26 @@ class ReserveAccountStock implements ShouldQueue
         }
 
         self::dispatchSafely($botId, $conversationId, $result->slipVerificationId, $result->amount, $result->orderItems ?? []);
+    }
+
+    private static function verifiedReceipt(Conversation $conversation, SlipVerification $slip): ?Message
+    {
+        if ($slip->status === 'manual_confirmed' && $slip->message_id !== null) {
+            return Message::query()
+                ->whereKey($slip->message_id)
+                ->where('conversation_id', $conversation->id)
+                ->where('sender', 'bot')
+                ->first();
+        }
+
+        return Message::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('sender', 'bot')
+            ->where('metadata->slip_verification', true)
+            ->where('metadata->slip_status', 'passed')
+            ->when(trim((string) $slip->trans_ref) !== '', fn ($query) => $query
+                ->where('metadata->slip_trans_ref', trim((string) $slip->trans_ref)))
+            ->latest('id')
+            ->first();
     }
 }

@@ -8,16 +8,20 @@ use App\Exceptions\NoPendingPaymentException;
 use App\Exceptions\RecentManualConfirmException;
 use App\Jobs\ReserveAccountStock;
 use App\Models\Bot;
+use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Order;
 use App\Models\SlipVerification;
+use App\Models\User;
+use App\Services\CommerceSafety\SafetyScope;
 use App\Services\FlowPluginService;
 use App\Services\LINEService;
 use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\PaymentFlexService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Admin manual payment confirmation.
@@ -33,6 +37,7 @@ class ManualPaymentConfirmService
         private readonly PaymentFlexService $paymentFlex,
         private readonly FlowPluginService $flowPlugin,
         private readonly SlipVerificationService $slipVerification,
+        private readonly SafetyScope $safetyScope,
     ) {}
 
     /**
@@ -52,13 +57,43 @@ class ManualPaymentConfirmService
         // summary เก่าใน history (ตั้งใจ — จ่ายแล้ว) ทำให้ resolve ยอดไม่ได้ ถ้าไม่เช็คตรงนี้
         // การกดซ้ำจะกลายเป็น NoPendingPayment (422) แทน RecentManualConfirm (409)
         // เช็คจริงแบบ atomic ยังอยู่ใน transaction ด้านล่างเหมือนเดิม
+        $scoped = in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true);
+        if ($scoped) {
+            $actor = User::query()->find($confirmedBy);
+            if (! $actor || ! $actor->isOwner() || (int) $actor->id !== (int) $bot->user_id) {
+                throw ValidationException::withMessages([
+                    'actor' => 'Manual payment confirmation requires the authorized bot owner.',
+                ]);
+            }
+        }
         $this->guardAgainstDoubleConfirm($conversation);
 
-        $history = $this->recentTextHistory($conversation);
+        $checkoutQuery = CheckoutSession::query()
+            ->where('bot_id', $bot->id)
+            ->where('conversation_id', $conversation->id);
+        $checkout = $scoped ? (clone $checkoutQuery)
+            ->whereIn('state', ['draft', 'awaiting_confirm', 'awaiting_support', 'awaiting_terms', 'payable'])
+            ->latest('created_at')
+            ->latest('id')
+            ->first() : null;
+        if ($scoped && $checkout === null) {
+            $checkout = $checkoutQuery->latest('created_at')->latest('id')->first();
+        }
+        $history = $scoped ? [] : $this->recentTextHistory($conversation);
         $receiverAccount = $bot->settings?->slip_receiver_account ?: null;
 
         // เจ้าของกดเลือกรายการจากการ์ดแล้ว → ใช้ตามนั้น ไม่ต้องเดาจากข้อความอีก
-        if ($itemsOverride !== null && $itemsOverride !== []) {
+        if ($scoped) {
+            // Overrides can attest to received money, but the cart itself comes only
+            // from the persisted checkout/revision.
+            $expected = $checkout === null ? null : [
+                'total' => $checkout->total_minor / 100,
+                'summary' => collect($checkout->items)
+                    ->map(fn (array $item): string => $item['name'].' x'.$item['qty'])
+                    ->implode(', '),
+                'items' => $checkout->items,
+            ];
+        } elseif ($itemsOverride !== null && $itemsOverride !== []) {
             $expected = [
                 'total' => $amountOverride,
                 'summary' => PaymentMessageDetector::formatItemSummary($itemsOverride),
@@ -122,6 +157,23 @@ class ManualPaymentConfirmService
         ]);
 
         $this->linkSlipToMessage($slip, $botMessage);
+
+        if ($scoped) {
+            $outcome = $this->slipVerification->settleVerifiedReceipt(
+                $bot,
+                $conversation,
+                $slip->fresh(),
+                $botMessage,
+                $confirmedBy,
+                $checkout,
+            );
+
+            return [
+                'message' => $botMessage,
+                'order_created' => $outcome->action === 'settled'
+                    && $outcome->checkout?->settled_event_id !== null,
+            ];
+        }
 
         $this->pushToLine($bot, $conversation, $text);
 

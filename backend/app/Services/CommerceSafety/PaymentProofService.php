@@ -3,6 +3,7 @@
 namespace App\Services\CommerceSafety;
 
 use App\Models\Bot;
+use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\SlipVerification;
@@ -15,6 +16,47 @@ use InvalidArgumentException;
 
 class PaymentProofService
 {
+    /**
+     * Bind durable money proof to one persisted checkout.
+     *
+     * Checkout is locked first everywhere so automatic and manual workers racing
+     * for the same cart serialize on PostgreSQL. The event link is intentionally
+     * written through the query builder: proof facts remain model-immutable while
+     * these nullable authority links are filled by settlement.
+     */
+    public function bindCheckout(VerifiedPaymentEvent $event, CheckoutSession $checkout): void
+    {
+        DB::transaction(function () use ($event, $checkout): void {
+            $lockedCheckout = CheckoutSession::query()
+                ->lockForUpdate()
+                ->find($checkout->getKey());
+            $lockedEvent = VerifiedPaymentEvent::query()
+                ->lockForUpdate()
+                ->find($event->getKey());
+
+            if (! $lockedCheckout || ! $lockedEvent) {
+                $this->invalid('checkout', 'Persisted payment event and checkout rows are required.');
+            }
+            if ((int) $lockedEvent->bot_id !== (int) $lockedCheckout->bot_id
+                || (int) $lockedEvent->conversation_id !== (int) $lockedCheckout->conversation_id) {
+                $this->invalid('checkout', 'Payment proof and checkout must share bot and conversation scope.');
+            }
+            if ($lockedEvent->checkout_id !== null
+                && (string) $lockedEvent->checkout_id !== (string) $lockedCheckout->getKey()) {
+                $this->invalid('checkout', 'This payment proof is already bound to another checkout.');
+            }
+
+            if ($lockedEvent->checkout_id === null) {
+                DB::table('verified_payment_events')
+                    ->where('id', $lockedEvent->getKey())
+                    ->whereNull('checkout_id')
+                    ->update(['checkout_id' => $lockedCheckout->getKey()]);
+            }
+        });
+
+        $event->refresh();
+    }
+
     public function record(
         Bot $bot,
         Conversation $conversation,
@@ -179,6 +221,11 @@ class PaymentProofService
         array $attributes,
     ): VerifiedPaymentEvent {
         foreach ($attributes as $attribute => $value) {
+            // Settlement fills this nullable relationship after proof creation.
+            // It is not part of the immutable provider/manual event identity.
+            if ($attribute === 'order_id' && $value === null) {
+                continue;
+            }
             if ((string) $event->getAttribute($attribute) !== (string) $value) {
                 $this->invalid('proof', 'The payment event key is already bound to different proof rows.');
             }

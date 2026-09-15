@@ -3,14 +3,82 @@
 namespace App\Services;
 
 use App\Models\Bot;
+use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Order;
+use App\Models\VerifiedPaymentEvent;
+use App\Services\CommerceSafety\PaymentProofService;
+use App\Services\CommerceSafety\SafetyScope;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class OrderService
 {
+    public function createFromCheckout(CheckoutSession $checkout, VerifiedPaymentEvent $event): Order
+    {
+        if (DB::transactionLevel() < 1) {
+            throw new \LogicException('Canonical checkout orders must be created inside settlement.');
+        }
+        if ((string) $event->checkout_id !== (string) $checkout->getKey()
+            || (int) $event->bot_id !== (int) $checkout->bot_id
+            || (int) $event->conversation_id !== (int) $checkout->conversation_id) {
+            throw new \LogicException('Payment event is not bound to this checkout.');
+        }
+        if ($event->order_id !== null) {
+            $existing = Order::query()->find($event->order_id);
+            if ($existing
+                && (int) $existing->bot_id === (int) $checkout->bot_id
+                && (int) $existing->conversation_id === (int) $checkout->conversation_id) {
+                return $existing->load('items');
+            }
+            throw new \LogicException('Payment event has an invalid existing order link.');
+        }
+
+        $conversation = Conversation::query()->findOrFail($checkout->conversation_id);
+        $order = Order::create([
+            'bot_id' => $checkout->bot_id,
+            'conversation_id' => $checkout->conversation_id,
+            'customer_profile_id' => $conversation->customer_profile_id,
+            'message_id' => $event->receipt_message_id,
+            'total_amount' => $this->minorDecimal($checkout->total_minor),
+            'payment_method' => $event->source,
+            'status' => 'completed',
+            'channel_type' => $conversation->channel_type,
+            'raw_extraction' => [
+                'source' => 'checkout',
+                'checkout_id' => $checkout->getKey(),
+                'revision' => $checkout->revision,
+                'items' => $checkout->items,
+            ],
+        ]);
+
+        foreach ($checkout->items as $item) {
+            $order->items()->create([
+                'product_name' => $item['name'],
+                'category' => $this->canonicalCategory($item['sku']),
+                'variant' => match ($item['method']) {
+                    'card' => 'ผูกบัตร',
+                    'topup' => 'เติมเงิน',
+                    default => null,
+                },
+                'quantity' => $item['qty'],
+                'unit_price' => $this->minorDecimal($item['price_minor']),
+                'subtotal' => $this->minorDecimal($item['line_total_minor']),
+            ]);
+        }
+
+        $updated = DB::table('verified_payment_events')
+            ->where('id', $event->getKey())
+            ->whereNull('order_id')
+            ->update(['order_id' => $order->getKey()]);
+        if ($updated !== 1) {
+            throw new \LogicException('Payment event order link was concurrently claimed.');
+        }
+
+        return $order->load('items');
+    }
+
     /**
      * Normalize a raw product name into standard name, variant, and category.
      *
@@ -96,6 +164,15 @@ class OrderService
         ?Message $message,
         array $variables
     ): ?Order {
+        if (in_array(app(SafetyScope::class)->mode($bot), ['enforce', 'hold'], true)) {
+            if ($message === null) {
+                return null;
+            }
+            $event = app(PaymentProofService::class)->forReceipt($bot, $conversation, $message);
+
+            return $event?->order_id === null ? null : Order::query()->find($event->order_id)?->load('items');
+        }
+
         try {
             $rawAmount = $variables['amount'] ?? null;
             if ($rawAmount === null) {
@@ -168,5 +245,19 @@ class OrderService
 
             return null;
         }
+    }
+
+    private function minorDecimal(int $minor): string
+    {
+        return intdiv($minor, 100).'.'.str_pad((string) ($minor % 100), 2, '0', STR_PAD_LEFT);
+    }
+
+    private function canonicalCategory(string $sku): string
+    {
+        return match (mb_strtoupper($sku)) {
+            'PAGE' => 'page',
+            'G3D' => 'g3d',
+            default => 'nolimit',
+        };
     }
 }

@@ -10,6 +10,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\SlipVerification;
+use App\Services\CommerceSafety\SafetyScope;
 use App\Services\FlowPluginService;
 use App\Services\LINEService;
 use App\Services\LineWebhook\LineWebhookResponseService;
@@ -28,6 +29,7 @@ class SlipRetryService
         private readonly PaymentFlexService $paymentFlex,
         private readonly LINEService $line,
         private readonly FlowPluginService $flowPlugin,
+        private readonly SafetyScope $safetyScope,
     ) {}
 
     /**
@@ -93,6 +95,23 @@ class SlipRetryService
                 'slip_retry' => true,
             ],
         ]);
+
+        if (in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true)) {
+            $slip = $result->slipVerificationId === null
+                ? null
+                : SlipVerification::query()->find($result->slipVerificationId);
+            if ($slip !== null) {
+                $this->slipVerification->settleVerifiedReceipt(
+                    $bot,
+                    $conversation,
+                    $slip,
+                    $botMessage,
+                    null,
+                );
+            }
+
+            return;
+        }
 
         $this->pushToLine($bot, $conversation, $text);
         $this->runPlugins($bot, $conversation, $botMessage);

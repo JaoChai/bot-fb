@@ -3,9 +3,13 @@
 namespace App\Services\Payment;
 
 use App\Models\Bot;
+use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\SlipVerification;
+use App\Services\CommerceSafety\CheckoutAuthority;
+use App\Services\CommerceSafety\CheckoutOutcome;
+use App\Services\CommerceSafety\PaymentProofService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -42,6 +46,33 @@ class SlipVerificationService
         private readonly LLMOrderItemExtractor $itemExtractor,
         private readonly OrderReconstructor $reconstructor,
     ) {}
+
+    /**
+     * Common post-verification authority seam for automatic, retry and manual paths.
+     * The receipt is already persisted; this method performs no network or queue work.
+     */
+    public function settleVerifiedReceipt(
+        Bot $bot,
+        Conversation $conversation,
+        SlipVerification $slip,
+        Message $receipt,
+        ?int $actorId,
+        ?CheckoutSession $checkout = null,
+    ): CheckoutOutcome {
+        $event = app(PaymentProofService::class)->record(
+            $bot,
+            $conversation,
+            $slip,
+            $receipt,
+            $actorId,
+        );
+
+        $authority = app(CheckoutAuthority::class);
+
+        return $checkout === null
+            ? $authority->settleEvent($event)
+            : $authority->settle($checkout, $event);
+    }
 
     /**
      * เทียบเลขบัญชีที่ตั้งค่าไว้ กับเลขบัญชี mask จาก EasySlip (เช่น "xxx-x-x4880-x").
