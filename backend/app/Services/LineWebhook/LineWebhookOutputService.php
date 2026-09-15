@@ -7,6 +7,7 @@ use App\Events\MessageSent;
 use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\PaymentEffect;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\CommerceSafety\PaymentEffectDispatcher;
@@ -39,11 +40,11 @@ class LineWebhookOutputService
     public function dispatch(WebhookContext $ctx): void
     {
         $message = $ctx->metadata['bot_message'] ?? null;
-        if ($ctx->conversation && $message instanceof Message
-            && app(FinancialOutputGuard::class)->enforced($ctx->bot)
-            && app(PaymentProofService::class)->forReceipt($ctx->bot, $ctx->conversation, $message)) {
-            // Settlement owns durable presentation. Keep UI receipts, but never send this proof twice.
-            $event = app(PaymentProofService::class)->forReceipt($ctx->bot, $ctx->conversation, $message);
+        $event = $ctx->conversation && $message instanceof Message
+            ? app(PaymentProofService::class)->forReceipt($ctx->bot, $ctx->conversation, $message) : null;
+        if ($event && (app(FinancialOutputGuard::class)->enforced($ctx->bot)
+            || PaymentEffect::where('event_id', $event->id)->where('kind', 'line_receipt')->exists())) {
+            // Durable receipt ownership survives scope changes, including off/shadow.
             app(PaymentEffectDispatcher::class)->enqueue($event);
             DB::afterCommit(function () use ($ctx, $message): void {
                 $conversation = $ctx->conversation->fresh();

@@ -49,11 +49,23 @@ class ReserveAccountStock implements ShouldQueue
             throw new PaymentEffectFailure('authority_invalid');
         }
         $checkout = app(CheckoutAuthority::class)->authorizeReservation($event->bot, $event->conversation, $event->slip_verification_id);
-        if (! $checkout) {
+        if (! $checkout || $checkout->id !== $event->checkout_id || $checkout->settled_event_id !== $event->id) {
             throw new PaymentEffectFailure('reservation_authority_invalid');
         }
         $delivery = app(AccountDeliveryService::class)->createFromPayment($event->bot, $event->conversation,
             $event->slip_verification_id, $checkout->total_minor / 100, $checkout->items);
+        if (! $delivery) {
+            // A completed reservation returns null on replay. Recover only the delivery
+            // belonging to the freshly validated event / checkout / Order authority.
+            $delivery = AccountDelivery::query()
+                ->where('slip_verification_id', $event->slip_verification_id)
+                ->where('bot_id', $event->bot_id)
+                ->where('conversation_id', $event->conversation_id)
+                ->where('amount', $checkout->total_minor / 100)
+                ->whereIn('status', [AccountDelivery::STATUS_RESERVED, AccountDelivery::STATUS_DELIVERING,
+                    AccountDelivery::STATUS_DELIVERED, AccountDelivery::STATUS_CANCELED, AccountDelivery::STATUS_FAILED])
+                ->first();
+        }
         if ($delivery?->status === AccountDelivery::STATUS_RESERVING) {
             throw new PaymentEffectFailure('reservation_reconciliation_required');
         }

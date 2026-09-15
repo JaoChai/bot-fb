@@ -25,6 +25,7 @@ use App\Services\CommerceSafety\CheckoutConsentPolicy;
 use App\Services\CommerceSafety\PaymentEffectDispatcher;
 use App\Services\CommerceSafety\PaymentProofService;
 use App\Services\Delivery\AccountDeliveryService;
+use App\Services\Delivery\StockPoolService;
 use App\Services\LineWebhook\LineWebhookOutputService;
 use App\Services\LineWebhook\ResponseEnvelope;
 use App\Services\LineWebhook\WebhookContext;
@@ -366,6 +367,141 @@ class PaymentEffectsTest extends TestCase
         $this->assertSame('failed', $this->effect('telegram_payment')->state);
         $this->assertSame('succeeded', $this->effect('reserve_stock')->state);
         $this->assertDatabaseHas('account_delivery_items', ['status' => 'shortage']);
+    }
+
+    #[DataProvider('completedReservationOrderings')]
+    public function test_completed_reservation_recovers_after_crash_or_legacy_job_first(bool $crash, bool $shortage): void
+    {
+        $event = $this->settled();
+        if (! $shortage) {
+            $this->seedAvailable(1, 'G3D');
+        }
+        $dispatcher = app(PaymentEffectDispatcher::class);
+        $effect = $this->effect('reserve_stock');
+        if ($crash) {
+            $claim = $dispatcher->claim($effect->id);
+            $this->assertTrue($dispatcher->beginTransport($claim));
+            $deliveryId = ReserveAccountStock::runEffect($event);
+            // The worker disappears after reservation commits, without finish().
+            $this->assertSame('running', $effect->fresh()->state);
+            $this->travel(6)->minutes();
+        } else {
+            $legacy = unserialize(serialize(new ReserveAccountStock(
+                $this->bot->id, $this->conversation->id, $event->slip_verification_id, 999, [],
+            )));
+            $legacy->handle(app(AccountDeliveryService::class), app(CheckoutAuthority::class));
+            $deliveryId = (string) AccountDelivery::sole()->id;
+            $this->assertSame('pending', $effect->fresh()->state);
+        }
+        $delivery = AccountDelivery::sole();
+        $this->assertSame($shortage ? 'failed' : 'reserved', $delivery->status);
+        $items = $delivery->items->toArray();
+        $stock = DB::connection('mhha_acc')->table('items_reserved')->get()->toJson();
+        // No reserve/recovery call is allowed once the existing work is processed.
+        $this->instance(StockPoolService::class,
+            Mockery::mock(StockPoolService::class));
+        $dispatcher->run($effect->id);
+        $this->assertSame('succeeded', $effect->fresh()->state);
+        $this->assertSame($deliveryId, $effect->fresh()->remote_id);
+        $this->assertSame($crash ? 2 : 1, $effect->fresh()->attempt_count);
+        $this->assertNull($effect->fresh()->last_error_code);
+        $this->assertSame(1, AccountDelivery::count());
+        $this->assertSame(1, Order::count());
+        $this->assertSame($items, $delivery->fresh()->items->toArray());
+        $this->assertSame($stock, DB::connection('mhha_acc')->table('items_reserved')->get()->toJson());
+        Queue::assertPushed(SendDeliveryCard::class, 1);
+    }
+
+    public static function completedReservationOrderings(): array
+    {
+        return [
+            'crash after reservation' => [true, false],
+            'legacy job first' => [false, false],
+            'crash after shortage' => [true, true],
+            'legacy shortage first' => [false, true],
+        ];
+    }
+
+    #[DataProvider('invalidCompletedDeliveryAuthorities')]
+    public function test_completed_delivery_recovery_requires_exact_authority(string $mutation): void
+    {
+        $event = $this->settled();
+        $this->seedAvailable(1, 'G3D');
+        ReserveAccountStock::runEffect($event);
+        $delivery = AccountDelivery::sole();
+        match ($mutation) {
+            'bot' => $delivery->update(['bot_id' => Bot::factory()->create()->id]),
+            'conversation' => $delivery->update(['conversation_id' => Conversation::factory()->create(['bot_id' => $this->bot->id])->id]),
+            'amount' => $delivery->update(['amount' => 999]),
+            'event' => $event->checkout->forceFill(['settled_event_id' => null])->save(),
+            'order' => DB::table('verified_payment_events')->where('id', $event->id)->update(['order_id' => null]),
+        };
+        $items = $delivery->items->toArray();
+        app(PaymentEffectDispatcher::class)->run($this->effect('reserve_stock')->id);
+        $this->assertSame('failed', $this->effect('reserve_stock')->state);
+        $this->assertNull($this->effect('reserve_stock')->remote_id);
+        $this->assertSame(1, AccountDelivery::count());
+        $this->assertSame($items, $delivery->fresh()->items->toArray());
+        $this->assertSame(1, DB::connection('mhha_acc')->table('items_reserved')->count());
+        Queue::assertPushed(SendDeliveryCard::class, 1);
+    }
+
+    public static function invalidCompletedDeliveryAuthorities(): array
+    {
+        return array_map(fn ($mutation) => [$mutation], ['bot', 'conversation', 'amount', 'event', 'order']);
+    }
+
+    #[DataProvider('legacyReceiptModes')]
+    public function test_line_effect_remains_sole_owner_across_mode_switches(string $mode): void
+    {
+        Http::fake(['api.line.me/*' => Http::response([])]);
+        $event = $this->settled();
+        $effect = $this->effect('line_receipt');
+        $ctx = $this->receiptOutputContext($event);
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => $mode]);
+        app(LineWebhookOutputService::class)->dispatch($ctx);
+        Http::assertNothingSent();
+        $this->assertSame('pending', $effect->fresh()->state);
+        $this->assertSame(0, $effect->fresh()->attempt_count);
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => 'enforce']);
+        app(PaymentEffectDispatcher::class)->run($effect->id);
+        $this->assertSame('succeeded', $effect->fresh()->state);
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => $mode]);
+        app(LineWebhookOutputService::class)->dispatch($ctx);
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request) => $request->hasHeader('X-Line-Retry-Key', $effect->retry_key));
+        $this->assertSame($effect->id, $this->effect('line_receipt')->id);
+        $this->assertSame($effect->retry_key, $effect->fresh()->retry_key);
+        $this->assertSame(1, $effect->fresh()->attempt_count);
+    }
+
+    #[DataProvider('legacyReceiptModes')]
+    public function test_off_and_shadow_receipts_without_an_effect_keep_direct_output(string $mode): void
+    {
+        Http::fake(['api.line.me/*' => Http::response([])]);
+        $event = $this->settled();
+        $this->effect('line_receipt')->delete();
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => $mode]);
+        app(LineWebhookOutputService::class)->dispatch($this->receiptOutputContext($event));
+        Http::assertSentCount(1);
+        $this->assertSame(0, PaymentEffect::where('kind', 'line_receipt')->count());
+    }
+
+    public static function legacyReceiptModes(): array
+    {
+        return [['off'], ['shadow']];
+    }
+
+    private function receiptOutputContext(VerifiedPaymentEvent $event): WebhookContext
+    {
+        Event::fake([MessageSent::class, ConversationUpdated::class]);
+        $ctx = new WebhookContext($this->bot, ['message' => ['type' => 'image'], 'source' => ['userId' => 'fixture-user']]);
+        $ctx->conversation = $this->conversation;
+        $ctx->userMessage = $this->conversation->messages()->create(['sender' => 'user', 'type' => 'image', 'content' => '[image]']);
+        $ctx->metadata['bot_message'] = $event->receiptMessage;
+        $ctx->response = ResponseEnvelope::text($event->receiptMessage->content);
+
+        return $ctx;
     }
 
     public function test_line_preserves_persisted_hold_copy_and_does_not_send_after_scope_is_disabled(): void
