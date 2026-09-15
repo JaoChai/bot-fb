@@ -178,6 +178,10 @@ class FlowController extends Controller
         // Cast boolean fields for PostgreSQL compatibility
         $data = $this->castBooleanFields($data);
 
+        if ($bot->id === (int) config('prompt_deployment.bot_id')) {
+            abort_if(($data['is_default'] ?? false) || ! $bot->flows()->exists(), 422, 'Protected prompt requires audited deployment.');
+        }
+
         // If this is marked as default, unset other defaults
         if ($data['is_default'] ?? false) {
             $bot->flows()->update(['is_default' => false]);
@@ -351,6 +355,13 @@ class FlowController extends Controller
         // Cast boolean fields for PostgreSQL compatibility
         $data = $this->castBooleanFields($data);
 
+        if ($bot->id === (int) config('prompt_deployment.bot_id')) {
+            abort_if(array_key_exists('system_prompt', $data) && $data['system_prompt'] !== $flow->system_prompt, 422, 'Protected prompt requires audited deployment.');
+            abort_if(array_key_exists('is_default', $data) && ($data['is_default'] !== $flow->is_default || ($data['is_default'] && (int) $bot->default_flow_id !== $flow->id)), 422, 'Protected default flow requires audited deployment.');
+            // Existing update logic also synchronizes the pointer on unrelated edits.
+            abort_if($flow->is_default && (int) $bot->default_flow_id !== $flow->id, 422, 'Protected default flow is inconsistent.');
+        }
+
         // Extract knowledge_bases before updating flow
         $knowledgeBases = $data['knowledge_bases'] ?? null;
         unset($data['knowledge_bases']);
@@ -412,6 +423,8 @@ class FlowController extends Controller
     {
         $this->authorize('update', $bot);
         $this->ensureFlowBelongsToBot($flow, $bot);
+
+        abort_if($bot->id === (int) config('prompt_deployment.bot_id') && ($flow->is_default || (int) $bot->default_flow_id === $flow->id), 422, 'Protected default flow requires audited deployment.');
 
         // Prevent deleting Base Flow (default flow)
         if ($flow->is_default) {
@@ -480,6 +493,8 @@ class FlowController extends Controller
     {
         $this->authorize('update', $bot);
         $this->ensureFlowBelongsToBot($flow, $bot);
+
+        abort_if($bot->id === (int) config('prompt_deployment.bot_id') && (! $flow->is_default || (int) $bot->default_flow_id !== $flow->id), 422, 'Protected default flow requires audited deployment.');
 
         DB::transaction(function () use ($bot, $flow) {
             // Lock all flows for this bot to prevent race condition
