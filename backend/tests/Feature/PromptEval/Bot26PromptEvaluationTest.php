@@ -58,7 +58,7 @@ class Bot26PromptEvaluationTest extends TestCase
     // a BLOCKED camera-photo classification gate. Its passing replay is reply handling only.
     private const RAW_IMAGE_SKIP_IDS = ['T16', 'T17', 'T30'];
 
-    private const HASH = 'e132e40e070c3a5433796ee2d1732181bc637a1263462f61a349bccfb98254dd';
+    private const HASH = 'c269dbe8871e8c510e01306c3bafbad7520f1352b8bb3a15a9f9359f102983ec';
 
     private Bot $bot;
 
@@ -112,8 +112,8 @@ class Bot26PromptEvaluationTest extends TestCase
         $path = base_path('resources/prompts/bot26/v28.txt');
         $this->assertFileExists($path);
         $prompt = self::prompt();
-        $this->assertSame(23598, mb_strlen($prompt));
-        $this->assertSame(59969, strlen($prompt));
+        $this->assertSame(23814, mb_strlen($prompt));
+        $this->assertSame(60449, strlen($prompt));
         $this->assertSame(self::HASH, hash('sha256', $prompt));
         $manifest = json_decode(file_get_contents(__DIR__.'/../../Fixtures/PromptEval/bot26-v28/manifest.json'), true, 512, JSON_THROW_ON_ERROR);
         $this->assertSame(mb_strlen($prompt), $manifest['prompt']['chars']);

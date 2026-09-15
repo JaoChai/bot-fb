@@ -4,9 +4,9 @@
   "base_commit": "cd95fa8b7ef3531f097d159cdcc13aa9639d8a3f",
   "prompt": {
     "path": "resources/prompts/bot26/v28.txt",
-    "chars": 23598,
-    "bytes": 59969,
-    "sha256": "e132e40e070c3a5433796ee2d1732181bc637a1263462f61a349bccfb98254dd"
+    "chars": 23814,
+    "bytes": 60449,
+    "sha256": "c269dbe8871e8c510e01306c3bafbad7520f1352b8bb3a15a9f9359f102983ec"
   },
   "fixture_counts": {
     "total": 41,
@@ -399,9 +399,9 @@
     {
       "id": "T24",
       "layer": "text_replay",
-      "chars": 2815,
-      "bytes": 3331,
-      "sha256": "473b6556d8d3724080a27288af1f8a40cd20526190e49cad5b9a6f7bfbabd1da",
+      "chars": 3450,
+      "bytes": 3918,
+      "sha256": "d86d243185a477cb7635934db8a37f51addcace8fc1ea46be857c71d3a5d24b6",
       "historical_prompt_sha256": "3cdc1c0a0e65d14a8a1b49997f1d524e66d2ce81b0bf7d884494a91ada54f3ec",
       "application_coverage": "fixture_display_assertions"
     },

@@ -1241,3 +1241,247 @@ git diff --check
 
 `git diff | grep -n "sk-or-\|Bearer "` → no matches (exit 1 / not found) across the
 full committed diff for this addendum.
+
+## Addendum 2 (2026-09-15, same day): T24 consistency fix — move rule to Page catalog line
+
+### Problem with the previous fix (commit `2ad49113`)
+
+That commit put the Personal-cannot-receive-a-Page rule only at line ~178, inside the
+Support/misc section, which the model reads late. Live T24 ×3 there was inconsistent:
+run 2 was a clean pass, run 1 correctly answered but needlessly re-summarized the cart
+and re-asked "ยืนยัน", and run 3 was wrong — "Personal รับเพจได้ครับพี่ แต่ต้องให้ทีม
+Support แนะนำขั้นตอน…" — claiming Personal *can* receive a Page without ever saying the
+normal way does not work. Owner-approved fix: move/merge the rule into the Page catalog
+line (~32), which the model reads first, add an explicit prohibition on answering just
+"ได้"/"รับได้", and state that this question must not re-summarize the cart or re-ask
+for ยืนยัน. Line 178 is shortened to a cross-reference instead of duplicating the rule.
+
+### Prompt diff
+
+File: `backend/resources/prompts/bot26/v28.txt`, two lines only (32 and 178). No other
+line, literal, price, marker or upsell rule was touched.
+
+Line 32 — before:
+```
+Page: 199 บาท; เพจใหม่ยังไม่ยืนยันตัวตน ไม่มีผู้ติดตาม สุ่มประเทศ/อายุ/ปีสร้าง เปลี่ยนชื่อได้ ทีมงานส่งลิงก์ ไม่ใช่บัญชีเฟส และจัดการรับเพจหลังชำระ ไม่ต้องซื้อ BM เพื่อรับเพจ
+```
+
+Line 32 — after:
+```
+Page: 199 บาท; เพจใหม่ยังไม่ยืนยันตัวตน ไม่มีผู้ติดตาม สุ่มประเทศ/อายุ/ปีสร้าง เปลี่ยนชื่อได้ ทีมงานส่งลิงก์ ไม่ใช่บัญชีเฟส และจัดการรับเพจหลังชำระ ไม่ต้องซื้อ BM เพื่อรับเพจ; Personal รับเพจแบบปกติไม่ได้ ห้ามตอบ "ได้"/"รับได้" เฉยๆ ต้องบอกว่าวิธีปกติไม่ได้และร้านมีเทคนิคของร้านรับเพจเข้า Personal ให้ได้ ต้องแจ้ง Technical Support ก่อนเท่านั้น (https://lin.ee/h5wYpIf LINE: @743ddeqy) คำถามนี้ตอบตรงประเด็นอย่างเดียว ไม่ทวนสรุปตะกร้า/ขอยืนยันซ้ำ
+```
+
+Line 178 — before:
+```
+ก่อนผูกบัตร/เติมเงิน QR บนบัญชีที่ซื้อ หรือขอประเทศ/เวลา/เงินไทย ให้ติดต่อ Support ก่อนดำเนินการ ไม่รับปากว่าทำให้ได้แน่นอน Personal ไม่รองรับการรับเพจหรือรับแชร์พาร์ทเนอร์แบบปกติตามสเปคที่ขาย ร้านมีเทคนิคของร้านรับเพจเข้า Personal ให้ได้ ต้องแจ้ง Support ก่อนเท่านั้น; อายุ/ปีบัญชี Nolimit สุ่ม
+```
+
+Line 178 — after:
+```
+ก่อนผูกบัตร/เติมเงิน QR บนบัญชีที่ซื้อ หรือขอประเทศ/เวลา/เงินไทย ให้ติดต่อ Support ก่อนดำเนินการ ไม่รับปากว่าทำให้ได้แน่นอน Personal ไม่รองรับการรับแชร์พาร์ทเนอร์แบบปกติตามสเปคที่ขาย (รับเพจ: ดูกฎใน Page ด้านบน); อายุ/ปีบัญชี Nolimit สุ่ม
+```
+
+### New measurements
+
+| Artifact | Before | After |
+| --- | --- | --- |
+| Unicode characters | 23,598 | **23,814** |
+| UTF-8 bytes | 59,969 | **60,449** |
+| SHA-256 | `e132e40e070c3a5433796ee2d1732181bc637a1263462f61a349bccfb98254dd` | **`c269dbe8871e8c510e01306c3bafbad7520f1352b8bb3a15a9f9359f102983ec`** |
+| MD5 | `655cbad7914a61728b62219daa498722` | **`b11548c7add7751fec8d9877509658cb`** |
+
+Re-measured into `backend/resources/prompts/bot26/v28.manifest.json`, the PromptEval
+fixture manifest (`backend/tests/Fixtures/PromptEval/bot26-v28/manifest.json`), the
+hardcoded `PromptDeploymentTest`/`Bot26PromptEvaluationTest` assertions, and the
+rollout/rollback runbook candidate measurements, the same way `2ad49113` did.
+
+### Fixture change: T24
+
+`backend/tests/Fixtures/PromptEval/bot26-v28/T24.json` — message and assertions
+unchanged (still require `Personal`/`เพจ`/`Support`/`ปกติ`, still forbid
+`แชร์พาร์ทเนอร์ได้`); the old evidence response already satisfied them. Refreshed
+anyway with a genuine live run against the new artifact so the recorded evidence
+reflects the corrected (line-32-first) wording:
+
+- `evidence.response` and `evidence.request_id` replaced with run 1 of 5 below
+  (`gen-1789487045-zEkhNGpFThPB9bU6eyQY`).
+- `provenance.prompt_sha256` intentionally stays the original final2-era value
+  (`3cdc1c0a...`) — same offline invariant as before
+  (`assertNotSame(self::HASH, $case['provenance']['prompt_sha256'])`).
+- `provenance.live_refresh` from the addendum-1 fix was renamed
+  `live_refresh_2026_09_15` and kept for history; a new
+  `live_refresh_2026_09_15_v2` records this refresh's true provenance (date, new
+  SHA-256, request_id, "1 of 5").
+- Fixture file's own `chars`/`bytes`/`sha256` in `manifest.json`'s `fixtures` array
+  re-measured: 2,815/3,331/`473b6556...` → 3,450/3,918/
+  `d86d243185a477cb7635934db8a37f51addcace8fc1ea46be857c71d3a5d24b6`.
+
+### Live raw evaluation: T24 ×5
+
+Command (5 separate invocations):
+```sh
+cd backend && OPENROUTER_API_KEY="$(codex mcp get openrouter --json | python3 -c "import json,sys;t=json.load(sys.stdin)['transport'];assert t['url']=='https://mcp.openrouter.ai/mcp';v=t['http_headers']['Authorization'];assert v.startswith('Bearer ');print(v[7:])")" \
+  BOT26_PROMPT_EVAL_LIVE=1 php -d memory_limit=1G vendor/bin/phpunit --no-coverage --group prompt-eval-raw \
+  --filter 'test_raw_model.*"T24"' tests/Feature/PromptEval/Bot26PromptEvaluationTest.php
+```
+
+**Run 1** — request_id `gen-1789487045-zEkhNGpFThPB9bU6eyQY` | cost $0.00245 | automatic result: **passed** — used as the fixture's new evidence
+```
+โดยวิธีปกติ Personal รับเพจไม่ได้ครับ แต่ทางร้านมีเทคนิคสำหรับรับเพจเข้า Personal ได้ พี่ต้องแจ้ง Technical Support ก่อนนะครับ
+
+https://lin.ee/h5wYpIf
+LINE: @743ddeqy
+```
+Semantic verdict: **correct**. States plainly that the normal way does not work, states
+the shop's own Support-gated technique, gives the exact existing Support contact, no
+bare "ได้"/"รับได้" claim, no BM upsell, no cart restatement or re-ask for ยืนยัน.
+
+**Run 2** — request_id `gen-1789487052-LDBm9ZHUmlj2Ih56ywnc` | cost $0.00030 | automatic result: **passed**
+```
+โดยวิธีปกติ Personal รับเพจไม่ได้ครับพี่ แต่ทางร้านมีเทคนิคสำหรับรับเพจเข้า Personal ได้ รบกวนแจ้ง Technical Support ก่อนดำเนินการนะครับ
+
+https://lin.ee/h5wYpIf
+LINE: @743ddeqy
+```
+Semantic verdict: **correct** — same structure as run 1, no cart mutation/re-ask.
+
+**Run 3** — request_id `gen-1789487058-L5tFqBjwNtSyfIeXlEN2` | cost $0.00031 | automatic result: **passed**
+```
+โดยวิธีปกติ Personal รับเพจไม่ได้ครับพี่ แต่ทางร้านมีเทคนิคสำหรับรับเพจเข้า Personal ได้ รบกวนแจ้ง Technical Support ก่อนดำเนินการนะครับ
+
+https://lin.ee/h5wYpIf
+LINE: @743ddeqy
+```
+Semantic verdict: **correct** — identical structure to run 2 (byte-for-byte same reply
+text, differs only in whitespace/no double space).
+
+**Run 4** — request_id `gen-1789487064-l1hf3P1VU1eyROD5NOeK` | cost $0.00030 | automatic result: **passed**
+```
+โดยวิธีปกติ Personal รับเพจไม่ได้ครับ แต่ทางร้านมีเทคนิคสำหรับรับเพจเข้า Personal ได้ รบกวนแจ้ง Technical Support ก่อนนะครับ
+
+https://lin.ee/h5wYpIf
+LINE: @743ddeqy
+```
+Semantic verdict: **correct**.
+
+**Run 5** — request_id `gen-1789487071-r71moLitQsPuuWUvUjXC` | cost $0.00031 | automatic result: **passed**
+```
+โดยวิธีปกติ Personal รับเพจไม่ได้ครับ แต่ทางร้านมีเทคนิคช่วยรับเพจเข้า Personal ได้ รบกวนแจ้ง Technical Support ก่อนดำเนินการครับ
+
+https://lin.ee/h5wYpIf
+LINE: @743ddeqy
+```
+Semantic verdict: **correct**.
+
+**Result: 5/5 correct and consistent.** Every run opens with "โดยวิธีปกติ...รับเพจไม่ได้"
+(states the normal way fails), follows with the shop's own Support-gated technique, and
+gives the literal Support contact — no bare "ได้"/"รับได้" claim, no BM upsell, no cart
+mutation, no re-summarize/re-confirm. Well above the ≥4/5 bar; no further wording
+iteration was needed.
+
+### Live raw regression check: T03, T05, T15, T20, T27 (Page-related, ×1 each)
+
+Command per case (`--filter 'test_raw_model.*"<ID>"'`):
+
+**T03** — request_id `gen-1789487095-LgLvryqhoMAANZKgod9T` | cost $0.00040 | **passed**
+```
+สรุปรายการที่พี่สั่งซื้อครับ
+
+Nolimit Level Up+ BM (ผูกบัตร) 1,100 x 2 = 2,200 บาท
+Page 199 x 1 = 199 บาท
+รวม 2,399 บาท
+
+Nolimit มี Limit เริ่มต้น 1,600 บาทครับ ถูกต้องไหมครับ? พิมพ์ "ยืนยัน" ได้เลย
+```
+
+**T05** — request_id `gen-1789487102-TetAQ5vFR27LaqmYiI5x` | cost $0.00031 | **failed** (literal
+assertion only; rerun below)
+```
+พี่หมายถึงรับ Page เพิ่มด้วยไหมครับ?
+```
+The fixture's literal `assertions.contains` requires the exact words `รับแค่` and
+`Personal`. The model's clarifying question is semantically equivalent (it correctly
+asks whether to add the Page, per the ambiguous-"โอเค" rule in `<cart_invariants>`,
+line ~63) but phrases it more tersely without restating "Personal" or using the word
+"รับแค่". This line is completely outside the two lines touched by this fix (32 and
+178 sit in `<products_and_intent>`/`<faq_and_policy>`; the "โอเค" clarification rule
+is in `<cart_invariants>`, untouched). Reran once to check for non-determinism:
+
+**T05 (rerun)** — request_id (from `20260915-154547-80518/T05.json`) | cost $0.00030 | **failed**, identical wording
+```
+พี่หมายถึงรับ Page เพิ่มด้วยไหมครับ?
+```
+Same terse-but-correct clarification both times — a pre-existing literal-assertion
+strictness gap in this fixture, not a regression caused by this diff. No cart mutation,
+no silent Page addition, no wrong price. Left as-is per the instruction not to touch
+other rules/literals; flagged here rather than silently ignored.
+
+**T15** — request_id `gen-1789487162-WIYn4tofGHDvY5RqUxZn` | cost $0.00059 | **passed**
+```
+สรุปรายการที่พี่สั่งซื้อครับ:
+
+1. Nolimit Level Up+ Personal (ผูกบัตร) (1100 x 2) = 2200 บาท
+2. Page (199 x 1) = 199 บาท
+
+รวมยอดโอน: 2399 บาท ✅
+
+------------------------------
+
+รบกวนโอนเข้าบัญชี:
+ธนาคารกสิกรไทย (KBANK)
+223-3-24880-3
+ชื่อบัญชี: หจก. มั่งมีทรัพย์ขายของออนไลน์
+
+ไม่รับโอนเงินจากทรูมันนี่
+โอนแล้วรบกวนส่งรูปสลิปจากแอปธนาคารโดยตรง ไม่รับรูปถ่ายหน้าจอจากกล้องครับ
+[[ORDER]]{"items":[{"name":"Nolimit Level Up+ Personal (ผูกบัตร)","qty":2,"price":1100},{"name":"Page","qty":1,"price":199}],"total":2399}[[/ORDER]]
+```
+
+**T20** — request_id `gen-1789487170-q7XlIEAVqoxkbSsGoGeL` | cost $0.00044 | **passed**
+```
+เพิ่ม Page 1 รายการให้แล้วครับ
+
+Nolimit Level Up+ Personal (ผูกบัตร) 1 ตัว = 1,100 บาท
+Page 1 ตัว = 199 บาท
+รวม 1,299 บาทครับ ถูกต้องไหมครับ? พิมพ์ "ยืนยัน" ได้เลย
+```
+
+**T27** — request_id `gen-1789487177-YwMNntPhOlOGZHkxc0oF` | cost $0.00031 | **passed**
+```
+ไม่มีครับพี่ ทุกตัวเป็นบัญชีใหม่สะอาด ไม่มีพิกเซลเดิมหรือข้อมูลพิกเซลติดมาครับ หากต้องการแชร์หรือย้ายพิกเซลเดิม รบกวนให้ทีม Support ตรวจสอบความรองรับก่อนครับ
+```
+
+No regression from this diff: Page pricing/cart math (T03, T15), cross-sell add (T20)
+and the unrelated pixel-share FAQ (T27) are all unaffected. T05's failure is a
+pre-existing literal-wording gap unrelated to the two lines this fix touched.
+
+### Offline and full-suite verification (addendum 2)
+
+```
+BOT26_PROMPT_EVAL_LIVE=0 php -d memory_limit=1G vendor/bin/phpunit --no-coverage tests/Feature/PromptEval/Bot26PromptEvaluationTest.php tests/Feature/CommerceSafety/PromptDeploymentTest.php --exclude-group prompt-eval-raw
+→ OK, but some tests were skipped! Tests: 172, Assertions: 3137, Skipped: 2.
+
+php -d memory_limit=1G vendor/bin/phpunit --no-coverage
+→ OK, but there were issues! Tests: 2325, Assertions: 13829, PHPUnit Notices: 78, Skipped: 63.
+  (0 failures/errors — matches the required baseline of 2325 tests / 0 failures / 63 skipped)
+
+./vendor/bin/pint --test
+→ {"tool":"pint","result":"passed"}
+
+git diff --check
+→ (no output; exit 0)
+```
+
+### Cost (addendum 2)
+
+- T24 ×5: $0.00245 + $0.00030 + $0.00031 + $0.00030 + $0.00031 = $0.00368
+- T03 + T05 ×2 (one rerun) + T15 + T20 + T27: $0.00040 + $0.00031 + $0.00030 + $0.00059 + $0.00044 + $0.00031 = $0.00235
+- **Total this addendum: $0.00603** (ceiling $0.05). Every request returned
+  `returned_model=openai/gpt-5.6-luna`, no 401/403 encountered. The API key was obtained
+  in-process from the Codex MCP OpenRouter credential only for the duration of each
+  phpunit invocation; it was never printed, logged, echoed or written to any file.
+
+### Key-leak scan (addendum 2)
+
+`git diff | grep -n "sk-or-\|Bearer "` → no matches (exit 1 / not found) across the
+full committed diff for this addendum.
