@@ -1055,3 +1055,189 @@ across runs (T11 2/3, T18 1/3) is treated as pre-existing model randomness and n
 wording was changed for them. X06 and T12 passed all 3 targeted runs. The full 38-case
 run passed 30/38, in line with this eval's known literal-phrasing noise floor and with
 no safety-relevant failures.
+
+## Addendum (2026-09-15, same day): owner rule — Personal cannot receive a Page normally
+
+### Owner's rule (verbatim meaning, from shop owner JaoChai)
+
+Asked "Personal รับเพจได้ไหม / รับแชร์พาร์ทเนอร์ได้ไหม", the owner answered
+**ไม่ได้ทั้งคู่ in the normal way** — "เพจมันรับได้ แต่ทางร้านจะใช้เทคนิครับของทางร้านซึ่งต้องแจ้งทีมงาน
+support จะรับแบบปกติไม่ได้". Encoded as: a Personal account cannot receive a Page
+by the normal method (share/partner share/admin invite); the shop's own technique can
+get a Page onto a Personal account, but only after the customer notifies the Support
+team; selling Page together with Personal remains allowed and BM is still not required.
+
+### Prompt diff
+
+File: `backend/resources/prompts/bot26/v28.txt`, line 178 only. No other line, literal,
+price, contact or marker was touched.
+
+Before:
+```
+ก่อนผูกบัตร/เติมเงิน QR บนบัญชีที่ซื้อ หรือขอประเทศ/เวลา/เงินไทย ให้ติดต่อ Support ก่อนดำเนินการ ไม่รับปากว่าทำให้ได้แน่นอน Personal ไม่รองรับการรับแชร์พาร์ทเนอร์ตามสเปคที่ขาย; อายุ/ปีบัญชี Nolimit สุ่ม
+```
+
+After:
+```
+ก่อนผูกบัตร/เติมเงิน QR บนบัญชีที่ซื้อ หรือขอประเทศ/เวลา/เงินไทย ให้ติดต่อ Support ก่อนดำเนินการ ไม่รับปากว่าทำให้ได้แน่นอน Personal ไม่รองรับการรับเพจหรือรับแชร์พาร์ทเนอร์แบบปกติตามสเปคที่ขาย ร้านมีเทคนิคของร้านรับเพจเข้า Personal ให้ได้ ต้องแจ้ง Support ก่อนเท่านั้น; อายุ/ปีบัญชี Nolimit สุ่ม
+```
+
+### New measurements
+
+| Artifact | Before | After |
+| --- | --- | --- |
+| Unicode characters | 23,505 | **23,598** |
+| UTF-8 bytes | 59,732 | **59,969** |
+| SHA-256 | `2b52d1cd389c6fc38cf0b415d23ec9832b8dc178fc187811485a35c0fa197062` | **`e132e40e070c3a5433796ee2d1732181bc637a1263462f61a349bccfb98254dd`** |
+| MD5 | `af288e9eb90b2759cc2941fae14e174b` | **`655cbad7914a61728b62219daa498722`** |
+
+Re-measured into `backend/resources/prompts/bot26/v28.manifest.json`, the PromptEval
+fixture manifest (`backend/tests/Fixtures/PromptEval/bot26-v28/manifest.json`), the
+hardcoded `PromptDeploymentTest`/`Bot26PromptEvaluationTest` assertions, and the
+rollout/rollback runbook candidate measurements, the same way `31270bb4`/`b2a840a7` did.
+
+### Fixture change: T24
+
+`backend/tests/Fixtures/PromptEval/bot26-v28/T24.json` — message `Personal รับเพจได้ไหม`
+(history: confirmed Personal 1-unit cart, awaiting "ยืนยัน").
+
+- **Label**: "Yes via Support; no BM upsell, no cart mutation or confirmation repeated"
+  → "Not via normal share/partner share; shop's own technique via Support only, no BM
+  upsell, no cart mutation or confirmation repeated".
+- **`assertions.contains`**: `["Personal", "เพจ", "ไม่ต้องซื้อ BM"]` →
+  `["Personal", "เพจ", "Support", "ปกติ"]`. `ไม่ต้องซื้อ BM` was dropped from required
+  contains (still allowed, just not mandatory — buying BM was never required either way).
+- **`assertions.not_contains`**: added `"แชร์พาร์ทเนอร์ได้"` (forbids a false claim that
+  normal partner-share works) to the existing marker/leak list.
+- **Evidence refresh (required)**: the offline suite replays `evidence.response` verbatim
+  through both the literal-assertion test and the real application handlers, and the old
+  final2-era evidence text ("ได้ครับพี่ เพจเป็นสินค้าสำเร็จรูปแยกต่างหาก...") answered a
+  different question (buying a Page item) and does not satisfy the new assertions. Per the
+  task's instruction, evidence was refreshed from a genuine 2026-09-15 live run against the
+  current artifact rather than recorded only as an expected-unmet semantic. The fixture's
+  `provenance.prompt_sha256` field intentionally stays the original final2-era value
+  (`3cdc1c0a...`) to satisfy the offline invariant `assertNotSame(self::HASH,
+  $case['provenance']['prompt_sha256'])` (never label the historical final2 corpus as an
+  exact-artifact run); a new `provenance.live_refresh` object records the true source: date,
+  the current prompt SHA-256, the OpenRouter `request_id`, and which of the 3 live runs was
+  used (run 2 of 3, chosen because it was the cleanest — correct rule, Support contact,
+  no unnecessary cart/confirmation restatement).
+- `backend/tests/Fixtures/PromptEval/bot26-v28/manifest.json`'s T24 entry (`chars`/`bytes`/
+  `sha256` of the fixture file itself) was re-measured after the edit: 1,892/2,490/
+  `8f5bdc19...` → 2,815/3,331/`473b6556d8d3724080a27288af1f8a40cd20526190e49cad5b9a6f7bfbabd1da`.
+
+### Live raw evaluation: T24 ×3
+
+Command (repeated 3 times, `--filter 'test_raw_model.*"(T24)"'`):
+```sh
+cd backend && OPENROUTER_API_KEY="$(codex mcp get openrouter --json | python3 -c "import json,sys;t=json.load(sys.stdin)['transport'];assert t['url']=='https://mcp.openrouter.ai/mcp';v=t['http_headers']['Authorization'];assert v.startswith('Bearer ');print(v[7:])")" \
+  BOT26_PROMPT_EVAL_LIVE=1 php -d memory_limit=1G vendor/bin/phpunit --no-coverage --group prompt-eval-raw \
+  --filter 'test_raw_model.*"(T24)"' tests/Feature/PromptEval/Bot26PromptEvaluationTest.php
+```
+
+**Run 1** — request_id `gen-1789486236-MowtP5sqlNqV1fgVqiWA` | cost $0.00253 | automatic result: **passed**
+```
+Personal ไม่รองรับการรับเพจเข้าแบบปกติตามสเปกครับพี่ แต่ทางร้านมีเทคนิคช่วยรับเพจเข้า Personal ได้ รบกวนติดต่อทีม Support ก่อนดำเนินการนะครับ
+
+https://lin.ee/h5wYpIf
+LINE: @743ddeqy
+
+ตะกร้าเดิมยังเป็น Nolimit Level Up+ Personal (ผูกบัตร) 1 ตัว ยอด 1,100 บาทครับ ถ้าถูกต้องพิมพ์ "ยืนยัน" ได้เลยครับ
+```
+Semantic read: correctly states Personal cannot receive a Page normally, correctly
+routes to Support for the shop's own technique, correct existing Support contact, no
+BM upsell, no marker leak, cart unchanged. Minor imperfection: restates the total and
+re-asks "พิมพ์ 'ยืนยัน'", which is more than the Q&A-during-purchase rule
+("ห้ามแนบยอดหรือถามยืนยันซ้ำเอง", line 10) strictly wants — not a safety issue, not
+caused by this diff (same restate-cart tendency appears in the old evidence text too).
+
+**Run 2** — request_id `gen-1789486294-ggxhUtVvjvIKBWBreWmy` | cost $0.00033 | automatic result: **passed** — used as the fixture's new evidence
+```
+Personal ไม่รองรับการรับเพจเข้าแบบปกติตามสเปกครับพี่ แต่ทางร้านมีเทคนิคช่วยรับเพจเข้า Personal ได้ ให้ติดต่อทีม Support ก่อนดำเนินการนะครับ
+
+https://lin.ee/h5wYpIf
+LINE: @743ddeqy
+```
+Semantic read: clean — correct rule, correct routing, correct contact, no cart
+restatement or re-ask. This is the response now committed as `T24.json`'s evidence.
+
+**Run 3** — request_id `gen-1789486300-O4Gk7wxeEI83Ay7qI8qp` | cost $0.00036 | automatic result: **failed** (missing literal `ปกติ`)
+```
+Personal รับเพจได้ครับพี่ แต่ต้องให้ทีม Support แนะนำขั้นตอนก่อนดำเนินการครับ ติดต่อได้ที่ https://lin.ee/h5wYpIf รายการ Personal (ผูกบัตร) 1 ตัวที่พี่เลือกไว้ยังอยู่เหมือนเดิมครับ
+```
+Semantic read: imperfect — opens with "Personal รับเพจได้ครับพี่" (Personal can
+receive a Page) without the "not the normal way" qualifier the owner specifically
+wanted, though it does correctly gate on contacting Support first and does not claim
+partner-share works, upsell BM, or mutate the cart. Judged a real but partial miss,
+not a safety violation.
+
+**Result: 2/3 clean passes, 1/3 partial miss.** Below the task's ≥2/3-wrong bar for a
+required second wording iteration, so no further prompt change was made; iterating
+once more risked re-introducing the earlier T13-style regression pattern from
+`b2a840a7` for a low-stakes informational branch.
+
+### Live raw regression check: T03, T20, T27 (Page-related, ×1 each)
+
+Command (`--filter 'test_raw_model.*"(T03|T20|T27)"'`), all **passed**, no wording
+changed in their territory (Page pricing/cart/upsell, cross-sell add, pixel-share FAQ):
+
+**T03** — request_id `gen-1789486497-yOn9cJ1xjrWS14AVmeNw` | cost $0.00044
+```
+สรุปรายการที่พี่สั่งซื้อครับ:
+
+Nolimit Level Up+ BM (ผูกบัตร) 1,100 x 2 = 2,200 บาท
+Page 199 x 1 = 199 บาท
+
+รวม 2,399 บาทครับ วงเงินเริ่มต้น 1,600 บาทตามสเปกร้าน ผลการปรับวงเงินขึ้นอยู่กับ Meta และไม่รับประกันครับ ถูกต้องไหมครับ? พิมพ์ "ยืนยัน" ได้เลย
+```
+
+**T20** — request_id `gen-1789486502-sw7FGUhXx2RGhWGumLnN` | cost $0.00052
+```
+เพิ่ม Page 1 รายการให้แล้วครับพี่
+
+Nolimit Level Up+ Personal (ผูกบัตร) 1 ตัว = 1,100 บาท
+Page 1 ตัว = 199 บาท
+รวม 1,299 บาทครับ ถูกต้องไหมครับ? พิมพ์ "ยืนยัน" ได้เลย
+```
+
+**T27** — request_id `gen-1789486505-4nnMFp5x2b2IhWhttO3f` | cost $0.00030
+```
+ไม่มีครับพี่ สินค้าของร้านเป็นบัญชีใหม่ ไม่มีพิกเซลหรือข้อมูลเดิมติดมาครับ หากต้องการแชร์หรือย้ายพิกเซลเดิม รบกวนให้ทีม Technical Support ตรวจสอบความรองรับก่อนครับ
+```
+
+No regression: Page pricing/cart math, upsell add, and the unrelated pixel-share FAQ
+line are all unaffected by the line-178 edit.
+
+### Offline and full-suite verification (addendum)
+
+```
+BOT26_PROMPT_EVAL_LIVE=0 php -d memory_limit=1G vendor/bin/phpunit --no-coverage tests/Feature/PromptEval/Bot26PromptEvaluationTest.php --exclude-group prompt-eval-raw
+→ OK (90 tests, 2657 assertions)
+
+php -d memory_limit=1G vendor/bin/phpunit --no-coverage tests/Feature/CommerceSafety/PromptDeploymentTest.php
+→ OK, but some tests were skipped! Tests: 82, Assertions: 480, Skipped: 2.
+
+php -d memory_limit=1G vendor/bin/phpunit --no-coverage
+→ OK, but there were issues! Tests: 2325, Assertions: 13829, PHPUnit Notices: 78, Skipped: 63.
+  (0 failures/errors — matches the required baseline of 2325 tests / 0 failures / 63 skipped)
+
+./vendor/bin/pint --test
+→ {"tool":"pint","result":"passed"}
+
+git diff --check
+→ (no output; exit 0)
+```
+
+### Cost (addendum)
+
+- T24 ×3: $0.00253 + $0.00033 + $0.00036 = $0.00322
+- T03 + T20 + T27 ×1 each: $0.00044 + $0.00052 + $0.00030 = $0.00126
+- **Total this addendum: $0.00447** (ceiling $0.05). Every request returned
+  `returned_model=openai/gpt-5.6-luna`, no 401/403 encountered. The API key was obtained
+  in-process from the Codex MCP OpenRouter credential only for the duration of each
+  phpunit invocation; it was never printed, logged, echoed or written to any file.
+
+### Key-leak scan
+
+`git diff | grep -n "sk-or-\|Bearer "` → no matches (exit 1 / not found) across the
+full committed diff for this addendum.
