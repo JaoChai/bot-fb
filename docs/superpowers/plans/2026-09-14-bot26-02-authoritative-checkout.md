@@ -112,7 +112,7 @@ $this->assertSame('confirm', $changed->action);
 **Files**
 - Modify `backend/app/Services/CommerceSafety/CheckoutAuthority.php`
 - Modify `backend/app/Services/CommerceSafety/PaymentProofService.php`
-- Modify `backend/app/Services/CommerceSafety/PaymentEffectDispatcher.php`
+
 - Modify `backend/app/Services/Payment/SlipVerificationService.php`
 - Modify `backend/app/Services/Payment/ManualPaymentConfirmService.php`
 - Modify `backend/app/Services/Payment/SlipRetryService.php`
@@ -141,7 +141,7 @@ Queue::assertNotPushed(ReserveAccountStock::class);
 - [ ] **Implement settlement atomically:** validate event ownership/status/amount; exact expected amount by default, and never silently widen the existing bot's verified payment tolerance. Any configured tolerance must be read and expressly included in the recorded policy; otherwise mismatch becomes paid_hold. Revalidate consent revision and current canonical price/stock. Create Order and link event/checkout once. Settle before enqueueing A3 effects after commit. An incoming payment without a payable checkout still gets a verified receipt + hold, not an invented matched order.
 - [ ] **Implement final reservation boundary:** recheck inside AccountDeliveryService entry even if a caller bypasses ReserveAccountStock. Do not exempt payment lines from scoped stock policy. No coercing negative qty to one or silently clamping a paid order. Existing stock-pool reservation anchors and reconciliation handle shortages; preserve already-reserved units and do not replay external allocations when notifications fail.
 - [ ] **GREEN on two DB modes:** logic tests on SQLite; race/unique/lock tests on disposable PostgreSQL with two workers. Assert one settled checkout, one Order and one delivery identity; explicit evidence for each external shortage/timeout path. No claim of an atomic transaction spanning both stock DBs.
-- [ ] **Complete A3 GREEN**, then independent security and pricing review. Stage only listed files; `git commit -m "fix: bind payment and fulfillment to canonical checkout"`.
+- [ ] **Record the reviewed B3 settlement interfaces for A3**, then run independent security and pricing review of B3. A3 later creates `PaymentEffectDispatcher` and wires durable after-commit effects; B3 must not invent or dispatch those effects early. Stage only listed files; `git commit -m "fix: bind payment and fulfillment to canonical checkout"`.
 
 ## Gate
 
