@@ -8,8 +8,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\Chat\ConversationContextService;
-use App\Services\CommerceSafety\CanonicalCartValidator;
-use App\Services\CommerceSafety\CartProposalAdapter;
+use App\Services\CommerceSafety\CartValidation;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CheckoutOutcome;
 use App\Services\CommerceSafety\CheckoutRenderer;
@@ -53,8 +52,6 @@ class LineWebhookResponseService
         private readonly ?SafetyScope $safetyScope = null,
         private readonly ?CheckoutAuthority $checkoutAuthority = null,
         private readonly ?CheckoutRenderer $checkoutRenderer = null,
-        private readonly ?CartProposalAdapter $cartProposalAdapter = null,
-        private readonly ?CanonicalCartValidator $canonicalCartValidator = null,
     ) {}
 
     /**
@@ -161,16 +158,6 @@ class LineWebhookResponseService
         return $this->checkoutRenderer ?? app(CheckoutRenderer::class);
     }
 
-    private function proposalAdapter(): CartProposalAdapter
-    {
-        return $this->cartProposalAdapter ?? app(CartProposalAdapter::class);
-    }
-
-    private function cartValidator(): CanonicalCartValidator
-    {
-        return $this->canonicalCartValidator ?? app(CanonicalCartValidator::class);
-    }
-
     private function outcomeConsumedMessage(CheckoutOutcome $outcome, Message $message): bool
     {
         if ($outcome->customerText !== null) {
@@ -186,34 +173,16 @@ class LineWebhookResponseService
 
     private function checkoutProposal(WebhookContext $ctx, Message $botMessage): ?CheckoutOutcome
     {
-        $metadata = is_array($botMessage->metadata) ? $botMessage->metadata : [];
-        $proposal = null;
-        if (is_array($metadata['order_payload'] ?? null)) {
-            $json = json_encode($metadata['order_payload'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-            $proposal = is_string($json) ? $this->proposalAdapter()->fromOrderJson($json) : null;
-        }
-        $proposal ??= $this->proposalAdapter()->fromText((string) $botMessage->content);
-        if ($proposal === null || ! $ctx->conversation) {
+        $cart = $this->aiService->takeCommerceSafetyCartValidation($botMessage);
+        if (! $cart instanceof CartValidation || ! $ctx->conversation) {
             return null;
         }
-
-        $cart = $this->cartValidator()->validate(
-            $ctx->bot,
-            $ctx->conversation,
-            $proposal['lines'],
-            $proposal['total_minor'],
-        );
         if (! $cart->valid) {
-            $botMessage->forceFill([
-                'content' => 'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง',
-                'metadata' => array_filter([
-                    ...$metadata,
-                    'order_payload' => null,
-                    'checkout_validation_errors' => $cart->errors,
-                ]),
-            ])->save();
-
-            return null;
+            return new CheckoutOutcome(
+                'manual_hold',
+                null,
+                'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง',
+            );
         }
 
         return $this->authority()->propose($ctx->bot, $ctx->conversation, $cart);
@@ -274,7 +243,7 @@ class LineWebhookResponseService
         ];
         $metadata['checkout_presentation'] = $presentation;
         $botMessage->forceFill(['metadata' => $metadata])->save();
-        $this->authority()->pending($outcome->checkout, $outcome->checkout->revision, $botMessage);
+        $this->authority()->pending($outcome->checkout, $outcome->checkout->revision, $botMessage, $outcome->action);
         $ctx->metadata['checkout_presentation'] = $presentation;
     }
 

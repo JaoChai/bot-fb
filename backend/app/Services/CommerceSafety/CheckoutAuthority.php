@@ -6,6 +6,7 @@ use App\Models\Bot;
 use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\SlipVerification;
 use App\Models\VerifiedPaymentEvent;
 use Illuminate\Support\Facades\DB;
 
@@ -27,6 +28,18 @@ class CheckoutAuthority
         'โอเค',
         'accept',
         'agree',
+    ];
+
+    private const SLIP_UNDER_REVIEW_STATUSES = [
+        'pending',
+        'api_error',
+        'config_error',
+        'needs_choice',
+        'unreadable',
+        'image_download_failed',
+        'amount_mismatch',
+        'wrong_account',
+        'no_pending_order',
     ];
 
     public function __construct(
@@ -69,6 +82,18 @@ class CheckoutAuthority
             if ($checkout && $this->hasPaymentUnderReview($checkout)) {
                 return new CheckoutOutcome('manual_hold', $checkout);
             }
+            if ($checkout && ! $this->acceptedMessagesRemainAuthoritative($checkout)) {
+                $checkout->forceFill([
+                    'revision' => $checkout->revision + 1,
+                    'accepted' => [],
+                    'state' => $this->nextState($checkout->requirements, []),
+                    'challenge_message_id' => null,
+                    'challenge_action' => null,
+                    'presented_at' => null,
+                    'presented_event_timestamp' => null,
+                    'presented_message_watermark_id' => null,
+                ])->save();
+            }
 
             if (! $checkout) {
                 $canonical = $this->revalidate($bot, $lockedConversation, $cart->lines, $cart->totalMinor);
@@ -90,7 +115,10 @@ class CheckoutAuthority
                     'requirements' => $requirements,
                     'accepted' => [],
                     'challenge_message_id' => null,
+                    'challenge_action' => null,
                     'presented_at' => null,
+                    'presented_event_timestamp' => null,
+                    'presented_message_watermark_id' => null,
                     'settled_event_id' => null,
                 ])->save();
 
@@ -130,24 +158,34 @@ class CheckoutAuthority
                 'requirements' => $requirements,
                 'accepted' => $accepted,
                 'challenge_message_id' => null,
+                'challenge_action' => null,
                 'presented_at' => null,
+                'presented_event_timestamp' => null,
+                'presented_message_watermark_id' => null,
             ])->save();
+            $this->carryAcceptedRows($checkout, $accepted);
 
             return $this->outcome($checkout);
         });
     }
 
-    public function pending(CheckoutSession $checkout, int $revision, Message $challenge): void
+    public function pending(CheckoutSession $checkout, int $revision, Message $challenge, string $action): void
     {
-        DB::transaction(function () use ($checkout, $revision, $challenge): void {
+        DB::transaction(function () use ($checkout, $revision, $challenge, $action): void {
             $locked = CheckoutSession::query()->lockForUpdate()->find($checkout->getKey());
-            if (! $locked || $locked->revision !== $revision || ! $this->validChallenge($locked, $challenge)) {
+            if (! $locked
+                || $locked->revision !== $revision
+                || $this->actionForState($locked->state) !== $action
+                || ! $this->validChallenge($locked, $challenge)) {
                 return;
             }
 
             $locked->forceFill([
                 'challenge_message_id' => $challenge->getKey(),
+                'challenge_action' => $action,
                 'presented_at' => null,
+                'presented_event_timestamp' => null,
+                'presented_message_watermark_id' => null,
             ])->save();
         });
     }
@@ -160,6 +198,7 @@ class CheckoutAuthority
                 || $locked->revision !== $revision
                 || ($locked->challenge_message_id !== null
                     && (int) $locked->challenge_message_id !== (int) $challenge->getKey())
+                || $locked->challenge_action !== $this->actionForState($locked->state)
                 || ! $this->validChallenge($locked, $challenge)) {
                 return;
             }
@@ -167,6 +206,10 @@ class CheckoutAuthority
             $locked->forceFill([
                 'challenge_message_id' => $challenge->getKey(),
                 'presented_at' => now(),
+                'presented_event_timestamp' => now()->getTimestampMs(),
+                'presented_message_watermark_id' => Message::query()
+                    ->where('conversation_id', $locked->conversation_id)
+                    ->max('id'),
             ])->save();
         });
     }
@@ -212,7 +255,10 @@ class CheckoutAuthority
                 $checkout->forceFill([
                     'state' => 'cancelled',
                     'challenge_message_id' => null,
+                    'challenge_action' => null,
                     'presented_at' => null,
+                    'presented_event_timestamp' => null,
+                    'presented_message_watermark_id' => null,
                 ])->save();
 
                 return new CheckoutOutcome('ack', $checkout, 'ยกเลิกรายการนี้แล้วครับ');
@@ -244,8 +290,12 @@ class CheckoutAuthority
                     'requirements' => $requirements,
                     'accepted' => $accepted,
                     'challenge_message_id' => null,
+                    'challenge_action' => null,
                     'presented_at' => null,
+                    'presented_event_timestamp' => null,
+                    'presented_message_watermark_id' => null,
                 ])->save();
+                $this->carryAcceptedRows($checkout, $accepted);
                 $action = $this->actionForState($checkout->state);
 
                 return new CheckoutOutcome(
@@ -257,9 +307,26 @@ class CheckoutAuthority
 
             $action = $this->actionForState($checkout->state);
             $stage = $this->stageForState($checkout->state);
+            if (! $this->acceptedMessagesRemainAuthoritative($checkout)) {
+                $checkout->forceFill([
+                    'revision' => $checkout->revision + 1,
+                    'accepted' => [],
+                    'state' => $this->nextState($checkout->requirements, []),
+                    'challenge_message_id' => null,
+                    'challenge_action' => null,
+                    'presented_at' => null,
+                    'presented_event_timestamp' => null,
+                    'presented_message_watermark_id' => null,
+                ])->save();
+
+                return $this->outcome($checkout);
+            }
             if ($stage === null
                 || $checkout->challenge_message_id === null
+                || $checkout->challenge_action !== $action
                 || $checkout->presented_at === null
+                || $checkout->presented_event_timestamp === null
+                || $checkout->presented_message_watermark_id === null
                 || in_array((int) $message->getKey(), array_map('intval', array_values($checkout->accepted)), true)
                 || ! $this->accepts($stage, $normalized)) {
                 return new CheckoutOutcome($action, $checkout);
@@ -271,18 +338,31 @@ class CheckoutAuthority
                 ->where('sender', 'bot')
                 ->first();
             if (! $challenge
-                || (int) $message->getKey() <= (int) $challenge->getKey()
+                || $message->event_timestamp === null
+                || (int) $message->event_timestamp <= $checkout->presented_event_timestamp
+                || (int) $message->getKey() <= (int) $checkout->presented_message_watermark_id
                 || $message->created_at->lt($checkout->presented_at)) {
                 return new CheckoutOutcome($action, $checkout);
             }
 
             $accepted = $checkout->accepted;
             $accepted[$stage] = (int) $message->getKey();
+            DB::table('checkout_consent_acceptances')->insert([
+                'checkout_id' => $checkout->getKey(),
+                'revision' => $checkout->revision,
+                'stage' => $stage,
+                'message_id' => $message->getKey(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
             $checkout->forceFill([
                 'accepted' => $accepted,
                 'state' => $this->nextState($checkout->requirements, $accepted),
                 'challenge_message_id' => null,
+                'challenge_action' => null,
                 'presented_at' => null,
+                'presented_event_timestamp' => null,
+                'presented_message_watermark_id' => null,
             ])->save();
 
             return $this->outcome($checkout);
@@ -304,7 +384,52 @@ class CheckoutAuthority
     private function hasPaymentUnderReview(CheckoutSession $checkout): bool
     {
         return $checkout->settled_event_id !== null
-            || VerifiedPaymentEvent::query()->where('checkout_id', $checkout->getKey())->exists();
+            || VerifiedPaymentEvent::query()->where('checkout_id', $checkout->getKey())->exists()
+            || SlipVerification::query()
+                ->where('bot_id', $checkout->bot_id)
+                ->where('conversation_id', $checkout->conversation_id)
+                ->whereIn('status', self::SLIP_UNDER_REVIEW_STATUSES)
+                ->where('created_at', '>=', $checkout->created_at)
+                ->exists();
+    }
+
+    private function acceptedMessagesRemainAuthoritative(CheckoutSession $checkout): bool
+    {
+        foreach ($checkout->accepted as $stage => $messageId) {
+            $exists = DB::table('checkout_consent_acceptances')
+                ->join('messages', 'messages.id', '=', 'checkout_consent_acceptances.message_id')
+                ->where('checkout_consent_acceptances.checkout_id', $checkout->getKey())
+                ->where('checkout_consent_acceptances.revision', $checkout->revision)
+                ->where('checkout_consent_acceptances.stage', $stage)
+                ->where('checkout_consent_acceptances.message_id', $messageId)
+                ->where('messages.conversation_id', $checkout->conversation_id)
+                ->where('messages.sender', 'user')
+                ->exists();
+            if (! $exists) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @param array<string,int> $accepted */
+    private function carryAcceptedRows(CheckoutSession $checkout, array $accepted): void
+    {
+        foreach ($accepted as $stage => $messageId) {
+            if (Message::query()->whereKey($messageId)
+                ->where('conversation_id', $checkout->conversation_id)
+                ->where('sender', 'user')->exists()) {
+                DB::table('checkout_consent_acceptances')->insert([
+                    'checkout_id' => $checkout->getKey(),
+                    'revision' => $checkout->revision,
+                    'stage' => $stage,
+                    'message_id' => $messageId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
     }
 
     /** @param list<array<string,mixed>> $existing @param list<array<string,mixed>> $proposed */

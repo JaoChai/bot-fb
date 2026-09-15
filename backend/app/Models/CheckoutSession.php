@@ -19,6 +19,8 @@ class CheckoutSession extends Model
         'requirements' => 'array',
         'accepted' => 'array',
         'presented_at' => 'datetime',
+        'presented_event_timestamp' => 'integer',
+        'presented_message_watermark_id' => 'integer',
     ];
 
     public function bot(): BelongsTo

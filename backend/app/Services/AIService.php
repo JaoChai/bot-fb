@@ -20,6 +20,9 @@ use Illuminate\Support\Facades\Log;
 
 class AIService
 {
+    /** @var \WeakMap<Message,CartValidation> */
+    private \WeakMap $savedCartValidations;
+
     public function __construct(
         protected OpenRouterService $openRouter,
         protected RAGService $ragService,
@@ -33,7 +36,9 @@ class AIService
         private readonly CartProposalAdapter $cartProposalAdapter,
         private readonly CanonicalCartValidator $cartValidator,
         private readonly PaymentMessageDetector $paymentDetector,
-    ) {}
+    ) {
+        $this->savedCartValidations = new \WeakMap;
+    }
 
     /**
      * Generate a response for a bot given a user message.
@@ -91,6 +96,9 @@ class AIService
             $conversation,
             $result['content'] ?? '',
         );
+        // Internal, in-process hand-off to checkout authority. This object must never
+        // be serialized into Message metadata or reconstructed from display prose.
+        $result['commerce_safety_cart_validation'] = $cartValidation;
 
         // Stock Guard: hard-block selling out-of-stock products
         // (guard แก้ข้อความได้ 3 แบบ: ทับทั้งก้อน, ตัดท่อน upsell, ต่อท้ายว่าหมด —
@@ -132,7 +140,9 @@ class AIService
         $result['content'] = $vipPriceResult['content'];
         $result['order_payload'] = $vipPriceResult['order_payload'];
 
-        if ($cartValidation !== null && ! $cartValidation->valid) {
+        if ($cartValidation !== null
+            && ! $cartValidation->valid
+            && in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true)) {
             $result['content'] = $this->cartCorrection($cartValidation);
             $result['order_payload'] = null;
             $result['cart_validation'] = [
@@ -355,6 +365,10 @@ class AIService
 
             // Create bot response message
             $botMessage = $conversation->messages()->create($messageData);
+            $cartValidation = $result['commerce_safety_cart_validation'] ?? null;
+            if ($cartValidation instanceof CartValidation) {
+                $this->savedCartValidations[$botMessage] = $cartValidation;
+            }
 
             // Update bot stats
             $bot->increment('total_messages');
@@ -380,6 +394,17 @@ class AIService
                 'type' => 'text',
             ]);
         }
+    }
+
+    /**
+     * Consume the non-serialized B1 result associated with a just-saved bot message.
+     */
+    public function takeCommerceSafetyCartValidation(Message $botMessage): ?CartValidation
+    {
+        $validation = $this->savedCartValidations[$botMessage] ?? null;
+        unset($this->savedCartValidations[$botMessage]);
+
+        return $validation;
     }
 
     /**

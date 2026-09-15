@@ -30,7 +30,10 @@ return new class extends Migration
             $table->json('requirements');
             $table->json('accepted');
             $table->foreignId('challenge_message_id')->nullable()->constrained('messages')->restrictOnDelete();
+            $table->string('challenge_action', 32)->nullable();
             $table->timestamp('presented_at')->nullable();
+            $table->unsignedBigInteger('presented_event_timestamp')->nullable();
+            $table->unsignedBigInteger('presented_message_watermark_id')->nullable();
             $table->uuid('settled_event_id')->nullable()->unique();
             $table->timestamps();
 
@@ -39,6 +42,19 @@ return new class extends Migration
                 ->on('verified_payment_events')
                 ->restrictOnDelete();
             $table->index(['bot_id', 'conversation_id', 'state']);
+        });
+
+        Schema::create('checkout_consent_acceptances', function (Blueprint $table) {
+            $table->id();
+            $table->uuid('checkout_id');
+            $table->unsignedInteger('revision');
+            $table->string('stage', 32);
+            $table->foreignId('message_id')->constrained('messages')->cascadeOnDelete();
+            $table->timestamps();
+
+            $table->foreign('checkout_id')->references('id')->on('checkout_sessions')->cascadeOnDelete();
+            $table->unique(['checkout_id', 'revision', 'stage'], 'checkout_acceptance_stage_unique');
+            $table->unique(['checkout_id', 'revision', 'message_id'], 'checkout_acceptance_message_unique');
         });
 
         Schema::table('verified_payment_events', function (Blueprint $table) {
@@ -59,6 +75,7 @@ return new class extends Migration
             $table->dropColumn('checkout_id');
         });
 
+        Schema::dropIfExists('checkout_consent_acceptances');
         Schema::dropIfExists('checkout_sessions');
     }
 };

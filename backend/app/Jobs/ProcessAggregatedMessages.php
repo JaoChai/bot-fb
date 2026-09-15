@@ -11,8 +11,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\Chat\ConversationContextService;
-use App\Services\CommerceSafety\CanonicalCartValidator;
-use App\Services\CommerceSafety\CartProposalAdapter;
+use App\Services\CommerceSafety\CartValidation;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CheckoutOutcome;
 use App\Services\CommerceSafety\CheckoutRenderer;
@@ -130,14 +129,27 @@ class ProcessAggregatedMessages implements ShouldQueue
         }
 
         try {
-            $checkoutResponse = $this->consumeCheckoutMessages($cachedMessageIds, $lineService, $bubblesService);
-            if ($checkoutResponse) {
+            $checkoutProcessing = $this->consumeCheckoutMessages(
+                $cachedMessageIds,
+                $lineService,
+                $bubblesService,
+            );
+            $checkoutResponses = $checkoutProcessing['responses'];
+            $remainingMessageIds = $checkoutProcessing['remaining_message_ids'];
+            foreach ($checkoutResponses as $checkoutResponse) {
                 $this->updateStats($messageCount, $checkoutResponse->id);
+            }
+
+            if ($remainingMessageIds === []) {
                 $aggregationService->clearAggregation($conversationId);
-                $this->broadcastResponse($checkoutResponse);
+                foreach ($checkoutResponses as $checkoutResponse) {
+                    $this->broadcastResponse($checkoutResponse);
+                }
 
                 return;
             }
+
+            $mergedContent = $this->mergedContentFor($remainingMessageIds);
 
             // Auto-clear stale context before AI generates response
             app(ConversationContextService::class)->autoClearIfIdle($this->conversation);
@@ -149,7 +161,7 @@ class ProcessAggregatedMessages implements ShouldQueue
                 $aiService,
                 $lineService,
                 $bubblesService,
-                $cachedMessageIds
+                $remainingMessageIds
             );
 
             if ($botMessage) {
@@ -164,6 +176,9 @@ class ProcessAggregatedMessages implements ShouldQueue
 
         // Broadcast events after processing
         if (isset($botMessage) && $botMessage) {
+            foreach ($checkoutResponses ?? [] as $checkoutResponse) {
+                $this->broadcastResponse($checkoutResponse);
+            }
             $this->broadcastResponse($botMessage);
         }
     }
@@ -205,12 +220,15 @@ class ProcessAggregatedMessages implements ShouldQueue
             return null;
         }
 
-        $messages = Message::query()
+        $messagesById = Message::query()
             ->whereIn('id', $cachedMessageIds)
-            ->orderBy('created_at')
-            ->orderBy('id')
-            ->get(['id', 'conversation_id', 'sender', 'content']);
-        if ($messages->count() !== count(array_unique($cachedMessageIds))
+            ->get(['id', 'conversation_id', 'sender', 'content'])
+            ->keyBy('id');
+        $messages = collect($cachedMessageIds)
+            ->map(fn ($messageId) => $messagesById->get($messageId))
+            ->filter();
+        if (count($cachedMessageIds) !== count(array_unique($cachedMessageIds))
+            || $messages->count() !== count($cachedMessageIds)
             || $messages->contains(fn (Message $message): bool => (int) $message->conversation_id !== (int) $conversationId
                 || $message->sender !== 'user')) {
             Log::warning('[Aggregation] Early exit: message identity or scope mismatch', [
@@ -439,13 +457,14 @@ class ProcessAggregatedMessages implements ShouldQueue
                 $checkoutOutcome->checkout,
                 $checkoutOutcome->checkout->revision,
                 $botMessage,
+                $checkoutOutcome->action,
             );
         }
 
         // Send response to channel
         if ($botMessage->content) {
-            $this->deliverToChannel($botMessage, $lineService, $bubblesService);
-            if ($checkoutOutcome?->checkout) {
+            $delivered = $this->deliverToChannel($botMessage, $lineService, $bubblesService);
+            if ($delivered && $checkoutOutcome?->checkout) {
                 app(CheckoutAuthority::class)->presented(
                     $checkoutOutcome->checkout,
                     $checkoutOutcome->checkout->revision,
@@ -470,31 +489,40 @@ class ProcessAggregatedMessages implements ShouldQueue
         return $botMessage;
     }
 
+    /** @return array{responses:list<Message>,remaining_message_ids:list<int>} */
     private function consumeCheckoutMessages(
         array $messageIds,
         LINEService $lineService,
         MultipleBubblesService $bubblesService,
-    ): ?Message {
+    ): array {
         if (app(SafetyScope::class)->mode($this->bot) !== 'enforce') {
-            return null;
+            return ['responses' => [], 'remaining_message_ids' => array_values($messageIds)];
         }
 
-        $messages = Message::query()
+        $messagesById = Message::query()
             ->whereIn('id', $messageIds)
             ->where('conversation_id', $this->conversation->getKey())
             ->where('sender', 'user')
-            ->orderBy('created_at')
-            ->orderBy('id')
-            ->get();
+            ->get()
+            ->keyBy('id');
+        $messages = collect($messageIds)
+            ->map(fn ($messageId) => $messagesById->get($messageId))
+            ->filter();
         $authority = app(CheckoutAuthority::class);
+        $responses = [];
+        $remainingMessageIds = [];
         foreach ($messages as $message) {
             $outcome = $authority->accept($this->bot, $this->conversation, $message);
             if (! $this->outcomeConsumedMessage($outcome, $message)) {
+                $remainingMessageIds[] = (int) $message->getKey();
+
                 continue;
             }
 
             if (! $outcome->checkout) {
-                return null;
+                $remainingMessageIds[] = (int) $message->getKey();
+
+                continue;
             }
 
             $content = $outcome->customerText
@@ -517,17 +545,35 @@ class ProcessAggregatedMessages implements ShouldQueue
                 ]) ?: null,
             ]);
             if ($presentation !== null) {
-                $authority->pending($outcome->checkout, $outcome->checkout->revision, $botMessage);
+                $authority->pending($outcome->checkout, $outcome->checkout->revision, $botMessage, $outcome->action);
             }
-            $this->deliverToChannel($botMessage, $lineService, $bubblesService);
-            if ($presentation !== null) {
+            $delivered = $this->deliverToChannel($botMessage, $lineService, $bubblesService);
+            if ($delivered && $presentation !== null) {
                 $authority->presented($outcome->checkout, $outcome->checkout->revision, $botMessage);
             }
-
-            return $botMessage;
+            $responses[] = $botMessage;
         }
 
-        return null;
+        return [
+            'responses' => $responses,
+            'remaining_message_ids' => $remainingMessageIds,
+        ];
+    }
+
+    /** @param list<int> $messageIds */
+    private function mergedContentFor(array $messageIds): string
+    {
+        $messagesById = Message::query()
+            ->whereIn('id', $messageIds)
+            ->where('conversation_id', $this->conversation->getKey())
+            ->where('sender', 'user')
+            ->get(['id', 'content'])
+            ->keyBy('id');
+
+        return collect($messageIds)
+            ->map(fn ($messageId) => $messagesById->get($messageId)?->content)
+            ->filter()
+            ->implode("\n");
     }
 
     private function checkoutProposal(array $result): ?CheckoutOutcome
@@ -536,25 +582,16 @@ class ProcessAggregatedMessages implements ShouldQueue
             return null;
         }
 
-        $adapter = app(CartProposalAdapter::class);
-        $proposal = null;
-        if (is_array($result['order_payload'] ?? null)) {
-            $json = json_encode($result['order_payload'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-            $proposal = is_string($json) ? $adapter->fromOrderJson($json) : null;
-        }
-        $proposal ??= $adapter->fromText((string) ($result['content'] ?? ''));
-        if ($proposal === null) {
+        $cart = $result['commerce_safety_cart_validation'] ?? null;
+        if (! $cart instanceof CartValidation) {
             return null;
         }
-
-        $cart = app(CanonicalCartValidator::class)->validate(
-            $this->bot,
-            $this->conversation,
-            $proposal['lines'],
-            $proposal['total_minor'],
-        );
         if (! $cart->valid) {
-            return null;
+            return new CheckoutOutcome(
+                'manual_hold',
+                null,
+                'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง',
+            );
         }
 
         return app(CheckoutAuthority::class)->propose($this->bot, $this->conversation, $cart);
@@ -597,22 +634,36 @@ class ProcessAggregatedMessages implements ShouldQueue
         Message $botMessage,
         LINEService $lineService,
         MultipleBubblesService $bubblesService
-    ): void {
+    ): bool {
         $paymentFlex = app(PaymentFlexService::class);
         $transformed = $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation);
 
         if (is_array($transformed)) {
             // Flex detected on full text → send as single message
             $retryKey = $lineService->generateRetryKey();
-            $lineService->push($this->bot, $this->externalUserId, [$transformed], $retryKey);
+
+            return $lineService->push($this->bot, $this->externalUserId, [$transformed], $retryKey) === true;
         } elseif ($bubblesService->isEnabled($this->bot)) {
             // No Flex match → normal bubble flow
             $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
-            $bubblesService->sendBubbles($this->bot, $this->externalUserId, null, $bubbles, $this->conversation);
+
+            return $bubblesService->sendBubbles(
+                $this->bot,
+                $this->externalUserId,
+                null,
+                $bubbles,
+                $this->conversation,
+            ) === true;
         } else {
             // No Flex, no bubbles → send as plain text
             $retryKey = $lineService->generateRetryKey();
-            $lineService->push($this->bot, $this->externalUserId, [$botMessage->content], $retryKey);
+
+            return $lineService->push(
+                $this->bot,
+                $this->externalUserId,
+                [$botMessage->content],
+                $retryKey,
+            ) === true;
         }
     }
 

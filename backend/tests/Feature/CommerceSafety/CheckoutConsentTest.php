@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\CommerceSafety;
 
+use App\Jobs\ProcessAggregatedMessages;
 use App\Models\Bot;
 use App\Models\CheckoutSession;
 use App\Models\Conversation;
@@ -10,6 +11,7 @@ use App\Models\FlowPlugin;
 use App\Models\Message;
 use App\Models\Order;
 use App\Models\ProductStock;
+use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\AIService;
 use App\Services\Chat\ConversationContextService;
@@ -23,19 +25,23 @@ use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
 use App\Services\LineWebhook\LineWebhookOutputService;
 use App\Services\LineWebhook\LineWebhookResponseService;
+use App\Services\LineWebhook\ResponseEnvelope;
 use App\Services\LineWebhook\WebhookContext;
 use App\Services\ModelCapabilityService;
 use App\Services\MultipleBubblesService;
 use App\Services\OpenRouterService;
 use App\Services\Payment\SlipVerificationService;
 use App\Services\PaymentFlexService;
+use App\Services\RAGService;
 use App\Services\StickerReplyService;
+use App\Services\StockGuardService;
 use Illuminate\Database\Eloquent\MassAssignmentException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
+use ReflectionClass;
 use Tests\TestCase;
 
 class CheckoutConsentTest extends TestCase
@@ -510,11 +516,15 @@ class CheckoutConsentTest extends TestCase
             'type' => 'text',
             'content' => "สรุปรายการ\n1. Page (199 x 1) = 199 บาท\nรวม: 199 บาท กรุณาพิมพ์ ยืนยัน",
         ]);
+        $cart = $this->cart([
+            ['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900],
+        ], 19900);
         $ai = Mockery::mock(AIService::class);
         $ai->shouldReceive('generateAndSaveResponse')
             ->once()
             ->with($this->bot, $this->conversation, $userMessage)
             ->andReturn($modelMessage);
+        $ai->shouldReceive('takeCommerceSafetyCartValidation')->once()->with($modelMessage)->andReturn($cart);
         $context = Mockery::mock(ConversationContextService::class);
         $context->shouldReceive('autoClearIfIdle')->once()->with($this->conversation);
         $response = new LineWebhookResponseService(
@@ -540,7 +550,7 @@ class CheckoutConsentTest extends TestCase
 
         $line = Mockery::mock(LINEService::class);
         $line->shouldReceive('generateRetryKey')->once()->andReturn('checkout-retry-key');
-        $line->shouldReceive('replyWithFallback')->once();
+        $line->shouldReceive('replyWithFallback')->once()->andReturn(['method' => 'reply', 'success' => true]);
         $paymentFlex = Mockery::mock(PaymentFlexService::class);
         $paymentFlex->shouldReceive('tryConvertToFlex')
             ->once()
@@ -561,9 +571,331 @@ class CheckoutConsentTest extends TestCase
         Http::assertNothingSent();
     }
 
+    #[Test]
+    public function false_plain_and_bubble_delivery_leave_the_challenge_pending(): void
+    {
+        foreach (['plain', 'bubble'] as $delivery) {
+            Event::fake();
+            [$ctx, $checkout, $botMessage] = $this->pendingOutputContext();
+            $line = Mockery::mock(LINEService::class);
+            $bubbles = Mockery::mock(MultipleBubblesService::class);
+            $paymentFlex = Mockery::mock(PaymentFlexService::class);
+            $paymentFlex->shouldReceive('tryConvertToFlex')->once()->andReturn($botMessage->content);
+            $bubbles->shouldReceive('isEnabled')->once()->andReturn($delivery === 'bubble');
+            if ($delivery === 'bubble') {
+                $bubbles->shouldReceive('parseIntoBubbles')->once()->andReturn([$botMessage->content]);
+                $bubbles->shouldReceive('sendBubbles')->once()->andReturn(false);
+            } else {
+                $line->shouldReceive('generateRetryKey')->once()->andReturn('failed-send');
+                $line->shouldReceive('replyWithFallback')->once()
+                    ->andReturn(['method' => 'reply', 'success' => false]);
+            }
+            $flowPlugin = Mockery::mock(FlowPluginService::class);
+            $flowPlugin->shouldReceive('executePlugins')->once();
+            $leadRecovery = Mockery::mock(LeadRecoveryService::class);
+            $leadRecovery->shouldReceive('markCustomerResponded')->once();
+
+            (new LineWebhookOutputService($line, $leadRecovery, $bubbles, $paymentFlex, $flowPlugin))
+                ->dispatch($ctx);
+
+            $this->assertNull($checkout->fresh()->presented_at, $delivery);
+            $this->assertSame($botMessage->id, $checkout->fresh()->challenge_message_id);
+            $checkout->forceFill(['state' => 'cancelled'])->save();
+        }
+    }
+
+    #[Test]
+    public function late_stage_completion_and_same_second_pre_presentation_message_fail_closed(): void
+    {
+        $authority = $this->authority();
+        $checkout = $this->proposePage()->checkout;
+        $confirmChallenge = $this->present($checkout, 'confirm');
+        $terms = $authority->accept(
+            $this->bot,
+            $this->conversation,
+            $this->userMessage($this->conversation, 'ยืนยัน'),
+        );
+        $termsChallenge = $this->conversation->messages()->create([
+            'sender' => 'bot', 'type' => 'text', 'content' => 'terms challenge',
+        ]);
+        $authority->pending($terms->checkout, $terms->checkout->revision, $termsChallenge, 'terms');
+        $authority->presented($checkout, $checkout->revision, $confirmChallenge);
+        $this->assertNull($checkout->fresh()->presented_at);
+        $this->assertSame($termsChallenge->id, $checkout->fresh()->challenge_message_id);
+
+        $earlyReply = $this->userMessage($this->conversation, 'ยอมรับ');
+        $earlyReply->forceFill(['created_at' => $termsChallenge->created_at])->save();
+        $authority->presented($terms->checkout, $terms->checkout->revision, $termsChallenge);
+        $rejected = $authority->accept($this->bot, $this->conversation, $earlyReply);
+        $this->assertSame('terms', $rejected->action);
+        $this->assertArrayNotHasKey('terms', $rejected->checkout->accepted);
+    }
+
+    #[Test]
+    public function deleted_accepted_message_and_slip_under_review_fail_closed(): void
+    {
+        $authority = $this->authority();
+        $checkout = $this->proposePage()->checkout;
+        $this->present($checkout, 'confirm');
+        $confirm = $this->userMessage($this->conversation, 'ยืนยัน');
+        $terms = $authority->accept($this->bot, $this->conversation, $confirm);
+        $this->assertSame('terms', $terms->action);
+        $confirm->delete();
+        $this->present($terms->checkout, 'terms');
+        $closed = $authority->accept(
+            $this->bot,
+            $this->conversation,
+            $this->userMessage($this->conversation, 'ยอมรับ'),
+        );
+        $this->assertSame('confirm', $closed->action);
+        $this->assertSame([], $closed->checkout->accepted);
+
+        SlipVerification::create([
+            'bot_id' => $this->bot->id,
+            'conversation_id' => $this->conversation->id,
+            'status' => 'pending',
+        ]);
+        $revision = $closed->checkout->revision;
+        $held = $authority->propose($this->bot, $this->conversation, $this->cart([
+            ['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000],
+        ], 5000));
+        $this->assertSame('manual_hold', $held->action);
+        $this->assertSame($revision, $held->checkout->revision);
+        $this->assertSame(['PAGE'], array_column($held->checkout->items, 'sku'));
+    }
+
+    #[Test]
+    public function mixed_aggregation_retains_ordinary_and_cart_edit_constituents_in_order(): void
+    {
+        $checkout = $this->proposePage()->checkout;
+        $this->present($checkout, 'confirm');
+        $question = $this->userMessage($this->conversation, 'Page ใช้ทำอะไร');
+        $consent = $this->userMessage($this->conversation, 'ยืนยัน');
+        $edit = $this->userMessage($this->conversation, 'เพิ่ม G3D 2 ชิ้น');
+        $line = Mockery::mock(LINEService::class);
+        $line->shouldReceive('generateRetryKey')->once()->andReturn('aggregate-consent');
+        $line->shouldReceive('push')->once()->andReturn(true);
+        $bubbles = Mockery::mock(MultipleBubblesService::class);
+        $bubbles->shouldReceive('isEnabled')->once()->andReturn(false);
+        $paymentFlex = Mockery::mock(PaymentFlexService::class);
+        $paymentFlex->shouldReceive('tryConvertToFlex')->once()->andReturnUsing(fn (string $text) => $text);
+        $this->app->instance(PaymentFlexService::class, $paymentFlex);
+        $job = new ProcessAggregatedMessages(
+            $this->bot,
+            $this->conversation,
+            'mixed-group',
+            (string) $this->conversation->external_customer_id,
+        );
+        $method = (new ReflectionClass($job))->getMethod('consumeCheckoutMessages');
+
+        $result = $method->invoke($job, [$question->id, $consent->id, $edit->id], $line, $bubbles);
+
+        $this->assertSame([$question->id, $edit->id], $result['remaining_message_ids']);
+        $this->assertCount(1, $result['responses']);
+        $this->assertSame('awaiting_terms', $checkout->fresh()->state);
+    }
+
+    #[Test]
+    public function aggregated_false_bubble_delivery_never_presents_the_next_stage(): void
+    {
+        $checkout = $this->proposePage()->checkout;
+        $this->present($checkout, 'confirm');
+        $consent = $this->userMessage($this->conversation, 'ยืนยัน');
+        $line = Mockery::mock(LINEService::class);
+        $bubbles = Mockery::mock(MultipleBubblesService::class);
+        $bubbles->shouldReceive('isEnabled')->once()->andReturn(true);
+        $bubbles->shouldReceive('parseIntoBubbles')->once()->andReturn(['terms']);
+        $bubbles->shouldReceive('sendBubbles')->once()->andReturn(false);
+        $paymentFlex = Mockery::mock(PaymentFlexService::class);
+        $paymentFlex->shouldReceive('tryConvertToFlex')->once()->andReturnUsing(fn (string $text) => $text);
+        $this->app->instance(PaymentFlexService::class, $paymentFlex);
+        $job = new ProcessAggregatedMessages(
+            $this->bot,
+            $this->conversation,
+            'failed-bubble',
+            (string) $this->conversation->external_customer_id,
+        );
+        $method = (new ReflectionClass($job))->getMethod('consumeCheckoutMessages');
+
+        $result = $method->invoke($job, [$consent->id], $line, $bubbles);
+
+        $this->assertSame([], $result['remaining_message_ids']);
+        $this->assertCount(1, $result['responses']);
+        $this->assertNull($checkout->fresh()->presented_at);
+        $this->assertSame('terms', $checkout->fresh()->challenge_action);
+    }
+
+    #[Test]
+    public function aggregated_hold_strict_failure_replaces_the_original_payment_output(): void
+    {
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => 'hold']);
+        $job = new ProcessAggregatedMessages(
+            $this->bot,
+            $this->conversation,
+            'hold-invalid',
+            (string) $this->conversation->external_customer_id,
+        );
+        $method = (new ReflectionClass($job))->getMethod('checkoutProposal');
+        $invalid = new CartValidation(false, ['INVALID_PROPOSAL'], [], 0, false, hash('sha256', 'invalid'));
+
+        $outcome = $method->invoke($job, [
+            'content' => 'โอนเงินที่ 223-3-24880-3',
+            'commerce_safety_cart_validation' => $invalid,
+        ]);
+
+        $this->assertSame('manual_hold', $outcome->action);
+        $this->assertStringNotContainsString('223-3-24880-3', $outcome->customerText);
+        $this->assertDatabaseCount('checkout_sessions', 0);
+    }
+
+    #[Test]
+    public function off_and_shadow_preserve_output_while_hold_replaces_a_strict_failure(): void
+    {
+        foreach (['off', 'shadow'] as $mode) {
+            config(["commerce_safety.bots.{$this->bot->id}.mode" => $mode]);
+            $original = "ข้อมูลตัวอย่าง\nรวมยอดโอน 199 บาท เลขบัญชี 223-3-24880-3";
+            $cart = $mode === 'shadow' ? $this->cart([
+                ['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900],
+            ], 19900) : null;
+            $ctx = $this->generateWithInternalCart($original, $cart);
+            $this->assertSame($original, $ctx->response->payload, $mode);
+            $this->assertDatabaseCount('checkout_sessions', 0);
+        }
+
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => 'hold']);
+        $invalid = new CartValidation(false, ['INVALID_PROPOSAL'], [], 0, false, hash('sha256', 'invalid'));
+        $ctx = $this->generateWithInternalCart(
+            "รวมยอดโอน 199 บาท\nธนาคารกสิกรไทย 223-3-24880-3",
+            $invalid,
+        );
+        $this->assertStringNotContainsString('223-3-24880-3', $ctx->response->payload);
+        $this->assertStringContainsString('ระบุชื่อสินค้า', $ctx->response->payload);
+        $this->assertDatabaseCount('checkout_sessions', 0);
+    }
+
+    #[Test]
+    public function actual_ai_off_and_shadow_outputs_remain_identical(): void
+    {
+        $this->bot->update(['context_window' => 10]);
+        $content = "สรุปรายการ\n1. Page (199 x 1) = 199 บาท\nรวม: 199 บาท กรุณาพิมพ์ ยืนยัน";
+        $this->mock(RAGService::class, function ($mock) use ($content): void {
+            $mock->shouldReceive('generateResponse')->twice()->andReturn([
+                'content' => $content,
+                'model' => 'compatibility-test',
+                'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+            ]);
+        });
+        $this->mock(StockGuardService::class, function ($mock) use ($content): void {
+            $mock->shouldReceive('validate')->twice()->andReturn([
+                'blocked' => false,
+                'content' => $content,
+            ]);
+        });
+        $ai = app(AIService::class);
+
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => 'off']);
+        $off = $ai->generateResponse($this->bot, 'Page คืออะไร', $this->conversation);
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => 'shadow']);
+        $shadow = $ai->generateResponse($this->bot, 'เอา Page 1 ใบ', $this->conversation);
+
+        $this->assertSame($content, $off['content']);
+        $this->assertSame($content, $shadow['content']);
+        $this->assertNull($off['commerce_safety_cart_validation']);
+        $this->assertInstanceOf(CartValidation::class, $shadow['commerce_safety_cart_validation']);
+        $this->assertTrue($shadow['commerce_safety_cart_validation']->valid);
+        $this->assertDatabaseCount('checkout_sessions', 0);
+    }
+
+    #[Test]
+    public function ordinary_model_prose_cannot_be_reparsed_into_checkout_authority(): void
+    {
+        $userMessage = $this->userMessage($this->conversation, 'Page คืออะไร');
+        $modelMessage = $this->conversation->messages()->create([
+            'sender' => 'bot',
+            'type' => 'text',
+            'content' => "ตัวอย่างการสั่งซื้อ\n1. Page (199 x 1) = 199 บาท\nรวม: 199 บาท กรุณาพิมพ์ ยืนยัน",
+        ]);
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateAndSaveResponse')->once()->andReturn($modelMessage);
+        $ai->shouldReceive('takeCommerceSafetyCartValidation')->once()->with($modelMessage)->andReturnNull();
+        $context = Mockery::mock(ConversationContextService::class);
+        $context->shouldReceive('autoClearIfIdle')->once();
+        $response = new LineWebhookResponseService(
+            $ai,
+            Mockery::mock(OpenRouterService::class),
+            Mockery::mock(StickerReplyService::class),
+            $context,
+            Mockery::mock(ModelCapabilityService::class),
+            Mockery::mock(LINEService::class),
+            Mockery::mock(SlipVerificationService::class),
+        );
+        $ctx = new WebhookContext($this->bot, $this->lineTextEvent());
+        $ctx->conversation = $this->conversation;
+        $ctx->userMessage = $userMessage;
+
+        $response->generate($ctx);
+
+        $this->assertDatabaseCount('checkout_sessions', 0);
+        $this->assertSame($modelMessage->content, $ctx->response->payload);
+    }
+
     private function authority(): CheckoutAuthority
     {
         return app(CheckoutAuthority::class);
+    }
+
+    /** @return array{WebhookContext,CheckoutSession,Message} */
+    private function pendingOutputContext(): array
+    {
+        $checkout = $this->proposePage()->checkout;
+        $botMessage = $this->conversation->messages()->create([
+            'sender' => 'bot',
+            'type' => 'text',
+            'content' => app(CheckoutRenderer::class)->render($checkout, 'confirm'),
+            'metadata' => ['checkout_presentation' => [
+                'checkout_id' => $checkout->getKey(),
+                'revision' => $checkout->revision,
+                'action' => 'confirm',
+            ]],
+        ]);
+        $this->authority()->pending($checkout, $checkout->revision, $botMessage, 'confirm');
+        $ctx = new WebhookContext($this->bot, $this->lineTextEvent());
+        $ctx->conversation = $this->conversation;
+        $ctx->userMessage = $this->userMessage($this->conversation, 'เอา Page');
+        $ctx->response = ResponseEnvelope::text($botMessage->content);
+        $ctx->metadata['bot_message'] = $botMessage;
+
+        return [$ctx, $checkout, $botMessage];
+    }
+
+    private function generateWithInternalCart(string $content, ?CartValidation $cart): WebhookContext
+    {
+        $userMessage = $this->userMessage($this->conversation, 'คำถาม');
+        $modelMessage = $this->conversation->messages()->create([
+            'sender' => 'bot', 'type' => 'text', 'content' => $content,
+        ]);
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateAndSaveResponse')->once()->andReturn($modelMessage);
+        if (in_array(config("commerce_safety.bots.{$this->bot->id}.mode"), ['enforce', 'hold'], true)) {
+            $ai->shouldReceive('takeCommerceSafetyCartValidation')->once()->with($modelMessage)->andReturn($cart);
+        }
+        $context = Mockery::mock(ConversationContextService::class);
+        $context->shouldReceive('autoClearIfIdle')->once();
+        $response = new LineWebhookResponseService(
+            $ai,
+            Mockery::mock(OpenRouterService::class),
+            Mockery::mock(StickerReplyService::class),
+            $context,
+            Mockery::mock(ModelCapabilityService::class),
+            Mockery::mock(LINEService::class),
+            Mockery::mock(SlipVerificationService::class),
+        );
+        $ctx = new WebhookContext($this->bot, $this->lineTextEvent());
+        $ctx->conversation = $this->conversation;
+        $ctx->userMessage = $userMessage;
+        $response->generate($ctx);
+
+        return $ctx;
     }
 
     private function proposePage()
@@ -580,7 +912,7 @@ class CheckoutConsentTest extends TestCase
             'type' => 'text',
             'content' => app(CheckoutRenderer::class)->render($checkout, $action),
         ]);
-        $this->authority()->pending($checkout, $checkout->revision, $challenge);
+        $this->authority()->pending($checkout, $checkout->revision, $challenge, $action);
         $this->authority()->presented($checkout, $checkout->revision, $challenge);
 
         return $challenge;
@@ -588,10 +920,15 @@ class CheckoutConsentTest extends TestCase
 
     private function userMessage(Conversation $conversation, string $content): Message
     {
+        $presented = CheckoutSession::query()
+            ->where('conversation_id', $conversation->getKey())
+            ->max('presented_event_timestamp');
+
         return $conversation->messages()->create([
             'sender' => 'user',
             'type' => 'text',
             'content' => $content,
+            'event_timestamp' => max(now()->getTimestampMs(), ((int) $presented) + 1),
         ]);
     }
 

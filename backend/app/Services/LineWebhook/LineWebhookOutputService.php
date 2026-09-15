@@ -96,23 +96,34 @@ class LineWebhookOutputService
             $content = $botMessage->content ?? '';
 
             if ($content !== '') {
+                $delivered = false;
                 $transformed = $this->paymentFlex->tryConvertToFlex($content, $conv);
 
                 if (is_array($transformed)) {
                     // Flex detected → send as Flex message
                     $retryKey = $this->line->generateRetryKey();
-                    $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$transformed], $retryKey);
+                    $result = $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$transformed], $retryKey);
+                    $delivered = is_array($result) && ($result['success'] ?? null) === true;
                 } elseif ($this->bubbles->isEnabled($bot)) {
                     // Bubbles enabled → parse + sendBubbles
                     $bubbleList = $this->bubbles->parseIntoBubbles($content, $bot);
-                    $this->bubbles->sendBubbles($bot, $ctx->userId(), $ctx->replyToken(), $bubbleList, $conv);
+                    $delivered = $this->bubbles->sendBubbles(
+                        $bot,
+                        $ctx->userId(),
+                        $ctx->replyToken(),
+                        $bubbleList,
+                        $conv,
+                    ) === true;
                 } else {
                     // Plain text
                     $retryKey = $this->line->generateRetryKey();
-                    $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$content], $retryKey);
+                    $result = $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$content], $retryKey);
+                    $delivered = is_array($result) && ($result['success'] ?? null) === true;
                 }
 
-                $this->markCheckoutPresented($botMessage);
+                if ($delivered) {
+                    $this->markCheckoutPresented($botMessage);
+                }
             }
 
             // Flow plugins (legacy lines 530-541)
