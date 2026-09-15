@@ -24,7 +24,7 @@ class SafetyScope
         }
 
         if (in_array($mode, ['shadow', 'enforce'], true)
-            && ! $this->paymentPluginsBelongToBot($bot, $scope['payment_plugin_ids'] ?? null)) {
+            && $this->paymentPluginIds($bot) === null) {
             return 'hold';
         }
 
@@ -33,16 +33,47 @@ class SafetyScope
 
     public function paymentPluginsAreTrusted(Bot $bot): bool
     {
-        $scope = config("commerce_safety.bots.{$bot->getKey()}");
-
-        return is_array($scope)
-            && $this->paymentPluginsBelongToBot($bot, $scope['payment_plugin_ids'] ?? null);
+        return $this->paymentPluginIds($bot) !== null;
     }
 
-    private function paymentPluginsBelongToBot(Bot $bot, mixed $pluginIds): bool
+    /** @return list<int>|null */
+    public function paymentPluginIds(Bot $bot): ?array
+    {
+        $scope = config("commerce_safety.bots.{$bot->getKey()}");
+
+        if (! is_array($scope)) {
+            return null;
+        }
+
+        return $this->trustedPaymentPluginIds($bot, $scope['payment_plugin_ids'] ?? null);
+    }
+
+    /**
+     * Return normalized IDs for enforced plugin suppression, while preserving
+     * explicit legacy modes that never suppressed plugin execution.
+     *
+     * @return list<int>|null
+     */
+    public function paymentPluginIdsForExecution(Bot $bot): ?array
+    {
+        $scope = config("commerce_safety.bots.{$bot->getKey()}");
+
+        if (! is_array($scope)) {
+            return null;
+        }
+
+        if (in_array($scope['mode'] ?? null, ['off', 'shadow'], true)) {
+            return [];
+        }
+
+        return $this->trustedPaymentPluginIds($bot, $scope['payment_plugin_ids'] ?? null);
+    }
+
+    /** @return list<int>|null */
+    private function trustedPaymentPluginIds(Bot $bot, mixed $pluginIds): ?array
     {
         if (! $bot->exists || ! is_array($pluginIds) || $pluginIds === []) {
-            return false;
+            return null;
         }
 
         $ids = array_values(array_unique(array_filter(
@@ -51,12 +82,14 @@ class SafetyScope
         )));
 
         if (count($ids) !== count($pluginIds)) {
-            return false;
+            return null;
         }
 
-        return FlowPlugin::query()
+        $allBelongToBot = FlowPlugin::query()
             ->whereKey($ids)
             ->whereHas('flow', fn ($query) => $query->where('bot_id', $bot->getKey()))
             ->count() === count($ids);
+
+        return $allBelongToBot ? $ids : null;
     }
 }
