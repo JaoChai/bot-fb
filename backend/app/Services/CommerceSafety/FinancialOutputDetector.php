@@ -8,34 +8,58 @@ final class FinancialOutputDetector
 {
     public function detects(Bot $bot, string $text): bool
     {
-        $directive = preg_match(
-            '/(?:^|[\r\n.!?]\s*|(?:กรุณา|โปรด|รบกวน|ช่วย|ให้|สามารถ|คุณสามารถ|ลูกค้าสามารถ|ทำการ)\s*)(?:โอน(?:เงิน)?|ชำระ(?:เงิน)?|จ่าย(?:เงิน)?)|(?:^|[\r\n.!?]\s*|(?:(?:please|kindly|you\s+(?:can|may|should|must)|go\s+ahead\s+and)\s+)+)(?:(?:pay|transfer|remit)\b|make\s+(?:a\s+)?payment\b)/iu',
-            $text,
-        ) === 1;
+        // Receipt requests and negations apply only within their own clause.
+        $clauses = preg_split('/[\r\n!?;]+|(?<!\d)[.,]|[.,](?!\d)|(?:แต่|แล้ว|จากนั้น|และ)|\b(?:but|then|and)\b/iu', $text);
+        $hasKnownAccount = $this->containsKnownAccount($bot, $text);
 
-        if ($this->containsKnownAccount($bot, $text)) {
-            $negated = preg_match(
-                '/(?:ยัง\s*)?(?:ไม่ต้อง|ห้าม|อย่า|งด|ไม่ควร)\s*(?:โอน(?:เงิน)?|ชำระ(?:เงิน)?|จ่าย(?:เงิน)?)|\b(?:do\s+not|don[’\']t|should\s+not|shouldn[’\']t|must\s+not|mustn[’\']t|never|no\s+need\s+to)\s+(?:pay|transfer|remit)\b/iu',
-                $text,
-            ) === 1;
-
-            if ($directive || (! $negated && ! $this->isClearlyNonDirective($text))) {
+        foreach ($clauses as $clause) {
+            if ($this->detectsClause($bot, trim($clause), $hasKnownAccount)) {
                 return true;
             }
         }
 
-        if (! $directive) {
-            return false;
+        return false;
+    }
+
+    private function detectsClause(Bot $bot, string $clause, bool $hasKnownAccount): bool
+    {
+        preg_match_all('/โอน(?:เงิน)?|ชำระ(?:เงิน)?|จ่าย(?:เงิน)?|\b(?:pay|transfer|remit|make\s+(?:a\s+)?payment)\b/iu', $clause, $actions, PREG_OFFSET_CAPTURE);
+        $negated = false;
+        $directive = false;
+        foreach ($actions[0] as [$action, $offset]) {
+            $prefix = substr($clause, 0, $offset);
+            if (preg_match('/(?:ไม่\s*(?:สามารถ|ต้อง|ควร|อาจ|ให้)?|ห้าม|อย่า|งด|\b(?:do\s+not|don[’\']t|can\s*not|can[’\']t|should\s+not|shouldn[’\']t|must\s+not|mustn[’\']t|never|no\s+need\s+to))\s*(?:(?:ทำการ|ดำเนินการ|please|currently|now)\s*)*$/iu', $prefix) === 1) {
+                $negated = true;
+
+                continue;
+            }
+
+            // Exclude nominal mentions such as "proof of transfer" and "การโอน".
+            if (preg_match('/(?:การ|เรื่อง|(?<!ค)รับ|หลักฐาน|\b(?:of|for|about|regarding|bank|how\s+to|(?:policy|support)\b.{0,80}\bto))\s*$/iu', $prefix) === 1) {
+                continue;
+            }
+
+            if (preg_match('/(?:^|\s|(?:กรุณา|โปรด|รบกวน|ช่วย|ให้|สามารถ|ทำการ|ตอนนี้|วันนี้|พรุ่งนี้))$/u', $prefix) === 1) {
+                $directive = true;
+            }
         }
 
-        $amount = preg_match('/(?:\d[\d,]*(?:\.\d+)?\s*(?:บาท|THB|฿)|(?:THB|฿)\s*\d)/iu', $text);
-        $destination = preg_match('/(?:บัญชี|ธนาคาร|\b(?:bank|account)\b)/iu', $text);
-        $contextualReference = preg_match(
-            '/(?:ยอด|จำนวน|บัญชี)\s*(?:(?:เดิม|ก่อนหน้า|ที่ผ่านมา|ปัจจุบัน|นี้)|(?:ที่|ตามที่)\s*ตกลง(?:กัน)?(?:ไว้)?)|(?:(?:the|our|your)\s+)?(?:previous|prior|agreed|current|same|this)\s+(?:amount|account)|(?:amount|account)\s+(?:previously\s+)?agreed/iu',
-            $text,
-        );
+        $knownAccount = $this->containsKnownAccount($bot, $clause);
+        if ($directive) {
+            $amount = preg_match('/(?:\d[\d,]*(?:\.\d+)?\s*(?:บาท|THB|฿)|(?:THB|฿)\s*\d)/iu', $clause);
+            $destination = preg_match('/(?:บัญชี|ธนาคาร|\b(?:bank|account)\b)/iu', $clause);
+            $contextualReference = preg_match(
+                '/(?:ยอด|จำนวน|บัญชี)\s*(?:(?:เดิม|ก่อนหน้า|ที่ผ่านมา|ปัจจุบัน|นี้)|(?:ที่|ตามที่)\s*ตกลง(?:กัน)?(?:ไว้)?)|(?:(?:the|our|your)\s+)?(?:previous|prior|agreed|current|same|this)\s+(?:amount|account)|(?:amount|account)\s+(?:previously\s+)?agreed/iu',
+                $clause,
+            );
 
-        return $amount === 1 || $destination === 1 || $contextualReference === 1;
+            // A receipt clause cannot hide an account used with a separate directive.
+            if ($hasKnownAccount || $amount === 1 || $destination === 1 || $contextualReference === 1) {
+                return true;
+            }
+        }
+
+        return $knownAccount && ! $negated && ! $this->isClearlyNonDirective($clause);
     }
 
     private function containsKnownAccount(Bot $bot, string $text): bool

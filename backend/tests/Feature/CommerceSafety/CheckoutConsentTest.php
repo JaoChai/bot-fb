@@ -40,6 +40,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionClass;
 use Tests\TestCase;
@@ -855,6 +856,11 @@ class CheckoutConsentTest extends TestCase
     public function review_generated_payment_instructions_without_a_parseable_total_are_blocked(): void
     {
         $texts = [
+            'ได้เลยครับ โอนยอดเดิมเข้าบัญชีเดิมได้เลยครับ',
+            'Now transfer the agreed amount to our bank account.',
+            'ยอด 199 บาท โอนเข้าบัญชี 223-3-24880-3 แล้วส่งสลิปได้เลยครับ',
+            'ยังไม่ต้องโอนตอนนี้ แต่พรุ่งนี้โอนยอดเดิมเข้าบัญชีเดิมได้เลย',
+            'Please do not transfer now, but tomorrow transfer the agreed amount to our bank account.',
             'โอน 199 บาทเข้าบัญชี 223-3-24880-3 ได้เลยครับ',
             'บัญชี 223-3-24880-3 ครับ',
             'กรุณาชำระ 199 บาทได้เลย',
@@ -882,6 +888,9 @@ class CheckoutConsentTest extends TestCase
             }
         }
         foreach ([
+            'ไม่สามารถโอนเข้าบัญชีเดิมได้ในขณะนี้ครับ',
+            'ไม่สามารถโอนเข้าบัญชี 223-3-24880-3 ได้ในขณะนี้ครับ',
+            'Please do not transfer the agreed amount to our bank account.',
             'Page ราคา 199 บาทครับ',
             'G3D 50 บาท ใช้ทำอะไรได้บ้าง',
             'รับโอนผ่านธนาคารครับ',
@@ -900,17 +909,19 @@ class CheckoutConsentTest extends TestCase
         }
         foreach (['off', 'shadow'] as $mode) {
             config(["commerce_safety.bots.{$this->bot->id}.mode" => $mode]);
-            foreach (array_slice($texts, 5, 3) as $text) {
+            foreach ($texts as $text) {
                 $this->assertSame($text, $this->generateWithInternalCart($text, null)->response->payload);
+                $job = new ProcessAggregatedMessages($this->bot, $this->conversation, 'review-output', (string) $this->conversation->external_customer_id);
+                $this->assertNull((new \ReflectionMethod($job, 'checkoutProposal'))->invoke($job, ['content' => $text]));
             }
         }
     }
 
     #[Test]
-    public function review_actual_ai_detects_transfer_instructions_without_order_or_total(): void
+    #[DataProvider('reviewContextualDirectives')]
+    public function review_actual_ai_detects_transfer_instructions_without_order_or_total(string $content): void
     {
         $this->bot->update(['context_window' => 10]);
-        $content = 'Please transfer the agreed amount to our bank account now.';
         $this->mock(RAGService::class)->shouldReceive('generateResponse')->once()->andReturn([
             'content' => $content, 'model' => 'test', 'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
         ]);
@@ -920,6 +931,17 @@ class CheckoutConsentTest extends TestCase
         $this->assertFalse($result['commerce_safety_cart_validation']->valid);
         $this->assertNotSame($content, $result['content']);
         $this->assertNull($result['order_payload']);
+    }
+
+    public static function reviewContextualDirectives(): array
+    {
+        return [
+            ['Please transfer the agreed amount to our bank account now.'],
+            ['ได้เลยครับ โอนยอดเดิมเข้าบัญชีเดิมได้เลยครับ'],
+            ['Now transfer the agreed amount to our bank account.'],
+            ['ยอด 199 บาท โอนเข้าบัญชี 223-3-24880-3 แล้วส่งสลิปได้เลยครับ'],
+            ['ยังไม่ต้องโอนตอนนี้ แต่พรุ่งนี้โอนยอดเดิมเข้าบัญชีเดิมได้เลย'],
+        ];
     }
 
     #[Test]
