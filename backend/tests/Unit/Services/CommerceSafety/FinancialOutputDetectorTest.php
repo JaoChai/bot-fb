@@ -21,6 +21,19 @@ class FinancialOutputDetectorTest extends TestCase
     public static function contextualPaymentDirectives(): array
     {
         return [
+            'round five file processing fee' => ['Please transfer the file processing fee to the agreed account.'],
+            'round five file fee currency' => ['Please transfer the file fee of 199 THB to our bank account.'],
+            'file fee is local financial object' => ['Please transfer the file processing fee.'],
+            'image value currency symbol' => ['Please transfer the image value of $199.'],
+            'document processing fee to account' => ['Please transfer the document processing fee to our bank account.'],
+            'image processing fee with currency' => ['Please transfer the image processing fee of 199 THB.'],
+            'file object with currency' => ['Please transfer the file value of 199 THB.'],
+            'file object with amount reference' => ['Please transfer the file amount previously agreed.'],
+            'document object with bank destination' => ['Please transfer the document fee to our bank.'],
+            'completed proof followed by actual transfer' => ['Please send a receipt showing you did transfer the agreed amount and please transfer the file processing fee to our bank account.'],
+            'thai completed proof followed by actual transfer' => ['กรุณาส่งหลักฐานว่าทำการโอนยอดเดิมเรียบร้อยแล้วให้ฝ่าย support แล้วกรุณาทำการชำระยอดเดิมครับ'],
+            'no qr followed by actual payment' => ['ยอด 199 บาทครับ ตอนนี้ยังไม่มี QR สำหรับทำการชำระครับ แต่กรุณาทำการโอนยอดเดิมเข้าบัญชีเดิมครับ'],
+            'attention followed by actual payment' => ['The current amount is ready. Please pay close attention to support and please pay now.'],
             'thai perform transfer directive' => ['กรุณาทำการโอนยอดเดิมเข้าบัญชีเดิมครับ'],
             'thai perform payment directive' => ['กรุณาทำการชำระยอดเดิมครับ'],
             'transfer before comma separated context' => ['Please transfer, using the agreed amount and account.'],
@@ -66,6 +79,21 @@ class FinancialOutputDetectorTest extends TestCase
     public static function nonDirectiveFinancialDiscussion(): array
     {
         return [
+            'round five receipt completed transfer' => ['The agreed amount is ready. Please send a receipt showing you did transfer.'],
+            'round five thai proof completed transfer' => ['กรุณาส่งหลักฐานว่าทำการโอนยอดเดิมเรียบร้อยแล้วให้ฝ่าย support ครับ'],
+            'round five no qr perform payment' => ['ยอด 199 บาทครับ ตอนนี้ยังไม่มี QR สำหรับทำการชำระครับ'],
+            'round five pay close attention' => ['The current amount is ready. Please pay close attention to support.'],
+            'document transfer with shared currency' => ['Page costs 199 THB. Please transfer the document to support.'],
+            'image transfer with shared amount' => ['The agreed amount is ready. Now transfer these images to support.'],
+            'file fee negated' => ['Please do not transfer the file processing fee to the agreed account.'],
+            'document fee cannot transfer' => ['You cannot transfer the document fee to our bank account.'],
+            'receipt completed transfer known account' => ['Please send a receipt showing you did transfer to account 987-6-54321-0.'],
+            'thai proof completed transfer known account' => ['กรุณาส่งหลักฐานว่าทำการโอนเข้าบัญชี 987-6-54321-0 เรียบร้อยแล้วให้ฝ่าย support ครับ'],
+            'receipt completed pay reference' => ['The current amount is ready. Please send proof that you did pay.'],
+            'transfer capability unavailable' => ['The option to transfer the agreed amount is currently unavailable.'],
+            'no qr infinitive transfer reference' => ['The agreed amount is ready. No QR is available to transfer to our bank account.'],
+            'thai no qr nominal transfer reference' => ['ยอด 199 บาทครับ ตอนนี้ไม่มี QR สำหรับดำเนินการโอนครับ'],
+            'completed transfer statement' => ['You did transfer the agreed amount to our bank account.'],
             'genuine nominal policy' => ['นโยบายการโอนเงินเป็นอย่างไร'],
             'negated thai perform transfer' => ['กรุณาอย่าทำการโอนยอดเดิมเข้าบัญชีเดิมครับ'],
             'negated thai perform payment' => ['ไม่ต้องทำการชำระยอดเดิมครับ'],

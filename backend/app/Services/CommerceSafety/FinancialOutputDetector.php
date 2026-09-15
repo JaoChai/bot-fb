@@ -25,7 +25,6 @@ final class FinancialOutputDetector
     {
         preg_match_all('/โอน(?:เงิน)?|ชำระ(?:เงิน)?|จ่าย(?:เงิน)?|\b(?:pay|transfer|remit|make\s+(?:a\s+)?payment)\b/iu', $clause, $actions, PREG_OFFSET_CAPTURE);
         $negated = false;
-        $directive = false;
         foreach ($actions[0] as [$action, $offset]) {
             $prefix = substr($clause, 0, $offset);
             if (preg_match('/(?:ไม่\s*(?:สามารถ|ต้อง|ควร|อาจ|ให้)?|ห้าม|อย่า|งด|\b(?:do\s+not|don[’\']t|can\s*not|can[’\']t|should\s+not|shouldn[’\']t|must\s+not|mustn[’\']t|never|no\s+need\s+to))\s*(?:(?:ทำการ|ดำเนินการ|please|currently|now)\s*)*$/iu', $prefix) === 1) {
@@ -39,27 +38,58 @@ final class FinancialOutputDetector
                 continue;
             }
 
-            // Shared financial context does not change an unrelated action's object.
-            if (preg_match('/^(?:pay\s+attention\b|transfer\s+(?:(?:the|a|an|your|our|this|these)\s+)?files?\b)/iu', substr($clause, $offset)) === 1) {
+            $actionText = substr($clause, $offset);
+            if ($this->hasNonFinancialObject($bot, $actionText)) {
                 continue;
             }
 
-            if (preg_match('/(?:^|\s|(?:กรุณา|โปรด|รบกวน|ช่วย|ให้|สามารถ|ทำการ|ตอนนี้|วันนี้|พรุ่งนี้))$/u', $prefix) === 1) {
-                $directive = true;
-            }
-        }
-
-        $knownAccount = $this->containsKnownAccount($bot, $clause);
-        if ($directive) {
-            $destination = preg_match('/(?:บัญชี|ธนาคาร|\b(?:bank|account)\b)/iu', $clause);
-
-            // Only bounded financial references carry across clauses; generic destinations stay local.
-            if ($hasFinancialContext || $destination === 1) {
+            // Shared context supplies the financial referent, never the syntax.
+            if ($this->hasDirectiveSyntax($prefix)
+                && ($hasFinancialContext || $this->containsLocalFinancialContext($bot, $actionText))) {
                 return true;
             }
         }
 
+        $knownAccount = $this->containsKnownAccount($bot, $clause);
+
         return $knownAccount && ! $negated && ! $this->isClearlyNonDirective($clause);
+    }
+
+    private function hasDirectiveSyntax(string $prefix): bool
+    {
+        // English imperatives start a clause, optionally with politeness/time or a
+        // second-person modal. Whitespace after "you did" is not an imperative.
+        if (preg_match('/^(?:(?:please|kindly|now|today|tomorrow)\s+)*(?:you\s+(?:can|should|must|need\s+to)\s+)?$/iu', $prefix) === 1) {
+            return true;
+        }
+
+        // Thai request/time markers can follow an introduction. ทำการ modifies
+        // that directive; by itself inside a proof/capability reference it cannot
+        // establish one (e.g. ว่าทำการโอน or สำหรับทำการชำระ).
+        return preg_match('/(?:^|กรุณา|โปรด|รบกวน|ช่วย|ให้|สามารถ|ตอนนี้|วันนี้|พรุ่งนี้|ได้เลยครับ|ได้เลยค่ะ)\s*(?:(?:ทำการ|ดำเนินการ)\s*)*$/u', $prefix) === 1;
+    }
+
+    private function hasNonFinancialObject(Bot $bot, string $actionText): bool
+    {
+        if (preg_match('/^pay\s+(?:close\s+)?attention\b/iu', $actionText) === 1) {
+            return true;
+        }
+
+        if (preg_match('/^transfer\s+(?:(?:the|a|an|your|our|this|these)\s+)?(?:files?|documents?|images?)\b/iu', $actionText) !== 1) {
+            return false;
+        }
+
+        // Inspect the whole local object/destination, not just its first noun:
+        // a file processing fee is money. Unrelated context in another clause
+        // must still allow a genuine file/document/image transfer.
+        return ! $this->containsLocalFinancialContext($bot, $actionText);
+    }
+
+    private function containsLocalFinancialContext(Bot $bot, string $text): bool
+    {
+        // Generic monetary objects/destinations stay local to the action.
+        return $this->containsFinancialContext($bot, $text)
+            || preg_match('/\b(?:fees?|amount|bank|account|currency|THB)\b|บัญชี|ธนาคาร|บาท|\p{Sc}/iu', $text) === 1;
     }
 
     private function containsFinancialContext(Bot $bot, string $text): bool

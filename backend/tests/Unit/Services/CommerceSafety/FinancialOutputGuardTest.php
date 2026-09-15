@@ -57,11 +57,15 @@ class FinancialOutputGuardTest extends TestCase
             if ($financial && in_array($mode, ['enforce', 'hold'], true)) {
                 $this->assertNotSame($text, $guarded);
                 $this->assertSame('manual_hold', $outcome?->action);
-                $syncOutcome = (new ReflectionMethod($response, 'checkoutProposal'))->invoke($response, $ctx, $message);
-                $this->assertSame('manual_hold', $syncOutcome?->action);
             } else {
                 $this->assertSame($text, $guarded);
                 $this->assertNull($outcome);
+            }
+
+            // The synchronous caller owns scope; its proposal helper is unscoped.
+            if (in_array($mode, ['enforce', 'hold'], true)) {
+                $syncOutcome = (new ReflectionMethod($response, 'checkoutProposal'))->invoke($response, $ctx, $message);
+                $this->assertSame($financial ? 'manual_hold' : null, $syncOutcome?->action, $text);
             }
         }
     }
