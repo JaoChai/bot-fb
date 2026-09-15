@@ -23,7 +23,7 @@ class CanonicalCartValidator
         $errors = [];
         $currentConversation = $conversation->exists
             ? Conversation::query()->find($conversation->getKey())
-            : $conversation;
+            : null;
         if (! $currentConversation || (int) $currentConversation->bot_id !== (int) $bot->getKey()) {
             $errors[] = 'CONVERSATION_MISMATCH';
             $currentConversation = new Conversation(['memory_notes' => []]);
@@ -32,7 +32,9 @@ class CanonicalCartValidator
         $vip = $this->pricing->isVipConversation($currentConversation);
         $products = ProductStock::query()->orderBy('id')->get();
         $termIndex = $this->termIndex($products);
+        $skuIndex = $this->skuIndex($products);
         $aggregated = [];
+        $capacity = [];
 
         if ($proposedLines === []) {
             $errors[] = 'EMPTY_CART';
@@ -46,6 +48,7 @@ class CanonicalCartValidator
             }
 
             $name = $line['name'] ?? null;
+            $method = $line['method'] ?? null;
             $qty = $line['qty'] ?? null;
             $priceMinor = $line['price_minor'] ?? null;
             if (! is_string($name) || trim($name) === '') {
@@ -73,6 +76,18 @@ class CanonicalCartValidator
 
             /** @var ProductStock $product */
             $product = $matches[0];
+            if (! is_string($method)
+                || ($this->isNolimit($product) && ! in_array($method, ['card', 'topup'], true))) {
+                $errors[] = 'SALE_METHOD_REQUIRED';
+
+                continue;
+            }
+            if (! $this->isNolimit($product) && $method !== 'none') {
+                $errors[] = 'SALE_METHOD_INVALID';
+
+                continue;
+            }
+
             $expectedPrice = $this->pricing->effectivePriceMinor($product, $vip);
             if ($expectedPrice === null) {
                 $errors[] = 'PRICE_UNKNOWN';
@@ -88,19 +103,36 @@ class CanonicalCartValidator
                 continue;
             }
 
-            $method = $product->delivery_method;
-            if (! is_string($method) || ! in_array($method, ['stock', 'support_link', 'none'], true)) {
+            $sku = trim((string) ($product->stock_code ?: $product->slug));
+            if ($sku === '') {
+                $errors[] = 'SKU_UNKNOWN';
+
+                continue;
+            }
+            $skuKey = mb_strtolower($sku);
+            $skuProducts = $skuIndex[$skuKey] ?? [];
+            if (! $this->hasConsistentSkuRows($skuProducts, $vip)) {
+                $errors[] = 'AMBIGUOUS_SKU';
+
+                continue;
+            }
+
+            /** @var ProductStock $canonicalProduct */
+            $canonicalProduct = $skuProducts[0] ?? $product;
+            $deliveryMethod = $canonicalProduct->delivery_method;
+            if (! is_string($deliveryMethod) || ! in_array($deliveryMethod, ['stock', 'support_link', 'none'], true)) {
                 $errors[] = 'DELIVERY_METHOD_UNKNOWN';
 
                 continue;
             }
-            $key = $product->getKey().'|'.$method;
+            $key = $skuKey.'|'.$method;
             if (! isset($aggregated[$key])) {
                 $aggregated[$key] = [
-                    'product' => $product,
-                    'product_id' => (int) $product->getKey(),
-                    'sku' => (string) ($product->stock_code ?: $product->slug),
-                    'name' => (string) $product->name,
+                    'product' => $canonicalProduct,
+                    'delivery_method' => $deliveryMethod,
+                    'product_id' => (int) $canonicalProduct->getKey(),
+                    'sku' => trim((string) ($canonicalProduct->stock_code ?: $canonicalProduct->slug)),
+                    'name' => (string) $canonicalProduct->name,
                     'method' => $method,
                     'qty' => 0,
                     'price_minor' => $expectedPrice,
@@ -120,14 +152,26 @@ class CanonicalCartValidator
                 continue;
             }
             $aggregated[$key]['line_total_minor'] = $expectedPrice * $aggregated[$key]['qty'];
+
+            if (! isset($capacity[$skuKey])) {
+                $capacity[$skuKey] = [
+                    'product' => $canonicalProduct,
+                    'delivery_method' => $deliveryMethod,
+                    'qty' => 0,
+                ];
+            }
+            if ($capacity[$skuKey]['qty'] > PHP_INT_MAX - $qty) {
+                $errors[] = 'ARITHMETIC_OVERFLOW';
+
+                continue;
+            }
+            $capacity[$skuKey]['qty'] += $qty;
         }
 
         $totalMinor = 0;
         $requiresManualHandling = false;
         $maxQty = max(1, (int) config('delivery.max_qty', 20));
         foreach ($aggregated as $entry) {
-            /** @var ProductStock $product */
-            $product = $entry['product'];
             if ($totalMinor > PHP_INT_MAX - $entry['line_total_minor']) {
                 $errors[] = 'ARITHMETIC_OVERFLOW';
             } else {
@@ -138,12 +182,17 @@ class CanonicalCartValidator
                 $errors[] = 'AUTOMATION_LIMIT_EXCEEDED';
                 $requiresManualHandling = true;
             }
+        }
+
+        foreach ($capacity as $entry) {
+            /** @var ProductStock $product */
+            $product = $entry['product'];
             if ($product->manual_off || ! $product->in_stock) {
                 $errors[] = 'OUT_OF_STOCK';
 
                 continue;
             }
-            if ($entry['method'] === 'stock') {
+            if ($entry['delivery_method'] === 'stock') {
                 if ($product->available_count === null) {
                     $errors[] = 'STOCK_UNKNOWN';
                 } elseif ($entry['qty'] > $product->available_count) {
@@ -159,7 +208,7 @@ class CanonicalCartValidator
         }
 
         $lines = array_values(array_map(function (array $entry): array {
-            unset($entry['product']);
+            unset($entry['product'], $entry['delivery_method']);
 
             return $entry;
         }, $aggregated));
@@ -197,6 +246,49 @@ class CanonicalCartValidator
         }
 
         return array_map('array_values', $index);
+    }
+
+    /** @param Collection<int, ProductStock> $products */
+    private function skuIndex(Collection $products): array
+    {
+        $index = [];
+        foreach ($products as $product) {
+            $sku = trim((string) ($product->stock_code ?: $product->slug));
+            if ($sku !== '') {
+                $index[mb_strtolower($sku)][] = $product;
+            }
+        }
+
+        return $index;
+    }
+
+    /** @param list<ProductStock> $products */
+    private function hasConsistentSkuRows(array $products, bool $vip): bool
+    {
+        $signature = null;
+        foreach ($products as $product) {
+            $current = [
+                'price_minor' => $this->pricing->effectivePriceMinor($product, $vip),
+                'delivery_method' => $product->delivery_method,
+                'manual_off' => (bool) $product->manual_off,
+                'in_stock' => (bool) $product->in_stock,
+                'available_count' => $product->available_count,
+            ];
+            if ($signature !== null && $current !== $signature) {
+                return false;
+            }
+            $signature = $current;
+        }
+
+        return true;
+    }
+
+    private function isNolimit(ProductStock $product): bool
+    {
+        $sku = mb_strtolower(trim((string) ($product->stock_code ?: $product->slug)));
+
+        return in_array($sku, ['nlmp', 'nlmbm'], true)
+            || str_contains(mb_strtolower((string) $product->name), 'nolimit');
     }
 
     private function normalizeName(string $name): string

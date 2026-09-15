@@ -30,8 +30,8 @@ class CartProposalAdapterTest extends TestCase
 
         $this->assertSame([
             'lines' => [
-                ['name' => 'Page', 'qty' => 2, 'price_minor' => 19900],
-                ['name' => 'G3D', 'qty' => 3, 'price_minor' => 5000],
+                ['name' => 'Page', 'method' => 'none', 'qty' => 2, 'price_minor' => 19900],
+                ['name' => 'G3D', 'method' => 'none', 'qty' => 3, 'price_minor' => 5000],
             ],
             'total_minor' => 54800,
         ], $proposal);
@@ -46,11 +46,51 @@ class CartProposalAdapterTest extends TestCase
 
         $this->assertSame([
             'lines' => [
-                ['name' => 'Page', 'qty' => 2, 'price_minor' => 19900],
-                ['name' => 'G3D', 'qty' => 3, 'price_minor' => 5000],
+                ['name' => 'Page', 'method' => 'none', 'qty' => 2, 'price_minor' => 19900],
+                ['name' => 'G3D', 'method' => 'none', 'qty' => 3, 'price_minor' => 5000],
             ],
             'total_minor' => 54800,
         ], $proposal);
+    }
+
+    #[Test]
+    public function it_parses_the_existing_nolimit_name_suffix_as_the_internal_sale_method(): void
+    {
+        $json = $this->adapter->fromOrderJson(
+            '{"items":[{"name":"Nolimit Level Up+ Personal (ผูกบัตร)","qty":1,"price":1100}],"total":1100}'
+        );
+        $text = $this->adapter->fromText(
+            "1. Nolimit Level Up+ BM (เติมเงิน) (1,100 x 1) = 1,100 บาท\nรวมยอดโอน: 1,100 บาท"
+        );
+
+        $this->assertSame([
+            'name' => 'Nolimit Level Up+ Personal',
+            'method' => 'card',
+            'qty' => 1,
+            'price_minor' => 110000,
+        ], $json['lines'][0] ?? null);
+        $this->assertSame([
+            'name' => 'Nolimit Level Up+ BM',
+            'method' => 'topup',
+            'qty' => 1,
+            'price_minor' => 110000,
+        ], $text['lines'][0] ?? null);
+    }
+
+    #[Test]
+    public function it_rejects_bare_or_ambiguous_nolimit_names_without_changing_json_keys(): void
+    {
+        $invalid = [
+            '{"items":[{"name":"Nolimit Level Up+ Personal","qty":1,"price":1100}],"total":1100}',
+            '{"items":[{"name":"Nolimit Level Up+ BM (ผูกบัตร) (เติมเงิน)","qty":1,"price":1100}],"total":1100}',
+            '{"items":[{"name":"Page (ผูกบัตร)","qty":1,"price":199}],"total":199}',
+            '{"items":[{"name":"G3D (เติมเงิน)","qty":1,"price":50}],"total":50}',
+            '{"items":[{"name":"Page","method":"none","qty":1,"price":199}],"total":199}',
+        ];
+
+        foreach ($invalid as $json) {
+            $this->assertNull($this->adapter->fromOrderJson($json), $json);
+        }
     }
 
     #[Test]
@@ -61,7 +101,7 @@ class CartProposalAdapterTest extends TestCase
         );
 
         $this->assertSame([
-            'lines' => [['name' => 'Page', 'qty' => 1, 'price_minor' => 19900]],
+            'lines' => [['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900]],
             'total_minor' => 19900,
         ], $proposal);
     }

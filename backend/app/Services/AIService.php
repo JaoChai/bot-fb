@@ -195,37 +195,45 @@ class AIService
         ?Conversation $conversation,
         string $content,
     ): ?CartValidation {
-        if ($conversation === null || $this->safetyScope->mode($bot) === 'off') {
+        if ($this->safetyScope->mode($bot) === 'off') {
             return null;
         }
 
         $proposals = [];
         $hasOrderMarker = str_contains($content, '[[ORDER]]');
+        $visibleCandidate = $this->paymentDetector->parsePaymentData($content)
+            ?? $this->paymentDetector->parseConfirmData($content);
+
+        if (! $hasOrderMarker && $visibleCandidate === null) {
+            return null;
+        }
+        if ($conversation === null) {
+            return $this->invalidCart(['CONVERSATION_REQUIRED']);
+        }
+
         if ($hasOrderMarker) {
             preg_match_all('/\[\[ORDER\]\](.*?)\[\[\/ORDER\]\]/su', $content, $blocks);
             if (count($blocks[1] ?? []) !== 1) {
-                return $this->invalidCart($conversation, ['INVALID_PROPOSAL']);
+                return $this->invalidCart(['INVALID_PROPOSAL']);
             }
             $proposal = $this->cartProposalAdapter->fromOrderJson($blocks[1][0]);
             if ($proposal === null) {
-                return $this->invalidCart($conversation, ['INVALID_PROPOSAL']);
+                return $this->invalidCart(['INVALID_PROPOSAL']);
             }
             $proposals[] = $proposal;
         }
 
-        $visibleCandidate = $this->paymentDetector->parsePaymentData($content)
-            ?? $this->paymentDetector->parseConfirmData($content);
-        if ($visibleCandidate !== null && ! empty($visibleCandidate['items'])) {
+        if ($visibleCandidate !== null) {
             $proposal = $this->cartProposalAdapter->fromText($content);
             if ($proposal === null) {
-                return $this->invalidCart($conversation, ['INVALID_PROPOSAL']);
+                return $this->invalidCart(['INVALID_PROPOSAL']);
             }
             $proposals[] = $proposal;
         }
 
         if ($proposals === []) {
             return $hasOrderMarker
-                ? $this->invalidCart($conversation, ['INVALID_PROPOSAL'])
+                ? $this->invalidCart(['INVALID_PROPOSAL'])
                 : null;
         }
 
@@ -244,7 +252,7 @@ class AIService
                 return $validation;
             }
             if ($validation->fingerprint !== $first->fingerprint) {
-                return $this->invalidCart($conversation, ['PROPOSAL_MISMATCH']);
+                return $this->invalidCart(['PROPOSAL_MISMATCH']);
             }
         }
 
@@ -252,14 +260,14 @@ class AIService
     }
 
     /** @param list<string> $errors */
-    private function invalidCart(Conversation $conversation, array $errors): CartValidation
+    private function invalidCart(array $errors): CartValidation
     {
         return new CartValidation(
             valid: false,
             errors: $errors,
             lines: [],
             totalMinor: 0,
-            vip: app(VipPricingService::class)->isVipConversation($conversation),
+            vip: false,
             fingerprint: hash('sha256', 'invalid'),
         );
     }
@@ -278,7 +286,12 @@ class AIService
 
         $lines = [];
         foreach ($validation->lines as $index => $line) {
-            $lines[] = ($index + 1).'. '.$line['name'].' ('
+            $name = $line['name'].match ($line['method']) {
+                'card' => ' (ผูกบัตร)',
+                'topup' => ' (เติมเงิน)',
+                default => '',
+            };
+            $lines[] = ($index + 1).'. '.$name.' ('
                 .$this->formatMinor($line['price_minor']).' x '.$line['qty'].') = '
                 .$this->formatMinor($line['line_total_minor']).' บาท';
         }

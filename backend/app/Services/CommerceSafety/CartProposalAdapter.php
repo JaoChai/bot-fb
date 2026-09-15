@@ -14,7 +14,7 @@ class CartProposalAdapter
         private readonly PaymentMessageDetector $detector,
     ) {}
 
-    /** @return array{lines:list<array{name:string,qty:int,price_minor:int}>,total_minor:int}|null */
+    /** @return array{lines:list<array{name:string,method:string,qty:int,price_minor:int}>,total_minor:int}|null */
     public function fromText(string $text): ?array
     {
         $text = str_replace('|||', "\n", $text);
@@ -53,11 +53,11 @@ class CartProposalAdapter
         $lines = [];
         $sum = 0;
         foreach ($matches as $match) {
-            $name = trim($match['name']);
+            $parsedName = $this->proposalName($match['name']);
             $qty = filter_var($match['qty'], FILTER_VALIDATE_INT);
             $priceMinor = $this->moneyMinor($match['price']);
             $lineTotalMinor = $this->moneyMinor($match['line_total']);
-            if ($name === '' || ! is_int($qty) || $qty <= 0 || $priceMinor === null || $lineTotalMinor === null) {
+            if ($parsedName === null || ! is_int($qty) || $qty <= 0 || $priceMinor === null || $lineTotalMinor === null) {
                 return null;
             }
             if ($priceMinor > intdiv(PHP_INT_MAX, $qty)
@@ -67,7 +67,12 @@ class CartProposalAdapter
             }
 
             $sum += $lineTotalMinor;
-            $lines[] = ['name' => $name, 'qty' => $qty, 'price_minor' => $priceMinor];
+            $lines[] = [
+                'name' => $parsedName['name'],
+                'method' => $parsedName['method'],
+                'qty' => $qty,
+                'price_minor' => $priceMinor,
+            ];
         }
 
         $totalMinor = $this->moneyMinor($totalMatches[1][0]);
@@ -78,7 +83,7 @@ class CartProposalAdapter
         return ['lines' => $lines, 'total_minor' => $totalMinor];
     }
 
-    /** @return array{lines:list<array{name:string,qty:int,price_minor:int}>,total_minor:int}|null */
+    /** @return array{lines:list<array{name:string,method:string,qty:int,price_minor:int}>,total_minor:int}|null */
     public function fromOrderJson(string $json): ?array
     {
         try {
@@ -107,8 +112,9 @@ class CartProposalAdapter
                 return null;
             }
 
+            $parsedName = $this->proposalName($item['name']);
             $priceMinor = $this->moneyMinor($item['price']);
-            if ($priceMinor === null || $priceMinor > intdiv(PHP_INT_MAX, $item['qty'])) {
+            if ($parsedName === null || $priceMinor === null || $priceMinor > intdiv(PHP_INT_MAX, $item['qty'])) {
                 return null;
             }
             $lineTotal = $priceMinor * $item['qty'];
@@ -118,7 +124,8 @@ class CartProposalAdapter
 
             $sum += $lineTotal;
             $lines[] = [
-                'name' => trim($item['name']),
+                'name' => $parsedName['name'],
+                'method' => $parsedName['method'],
                 'qty' => $item['qty'],
                 'price_minor' => $priceMinor,
             ];
@@ -130,6 +137,42 @@ class CartProposalAdapter
         }
 
         return ['lines' => $lines, 'total_minor' => $totalMinor];
+    }
+
+    /** @return array{name:string,method:'card'|'topup'|'none'}|null */
+    private function proposalName(string $name): ?array
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return null;
+        }
+
+        $hasCard = str_contains($name, 'ผูกบัตร');
+        $hasTopup = str_contains($name, 'เติมเงิน');
+        if ($hasCard && $hasTopup) {
+            return null;
+        }
+
+        if (preg_match('/\s*\((ผูกบัตร|เติมเงิน)\)\s*$/u', $name, $match) === 1) {
+            $baseName = trim((string) preg_replace('/\s*\((ผูกบัตร|เติมเงิน)\)\s*$/u', '', $name));
+            if ($baseName === '' || str_contains($baseName, 'ผูกบัตร') || str_contains($baseName, 'เติมเงิน')) {
+                return null;
+            }
+            if (preg_match('/^(?:page|g3d)$/iu', $baseName) === 1) {
+                return null;
+            }
+
+            return [
+                'name' => $baseName,
+                'method' => $match[1] === 'ผูกบัตร' ? 'card' : 'topup',
+            ];
+        }
+
+        if ($hasCard || $hasTopup || preg_match('/nolimit/iu', $name) === 1) {
+            return null;
+        }
+
+        return ['name' => $name, 'method' => 'none'];
     }
 
     private function hasExactKeys(array $value, array $expected): bool
