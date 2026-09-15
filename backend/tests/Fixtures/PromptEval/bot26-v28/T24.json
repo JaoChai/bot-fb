@@ -1,0 +1,62 @@
+{
+  "id": "T24",
+  "label": "Yes via Support; no BM upsell, no cart mutation or confirmation repeated",
+  "message": "Personal รับเพจได้ไหม",
+  "history": [
+    {
+      "sender": "user",
+      "content": "เอา Nolimit Level Up+ Personal (ผูกบัตร) 1 ตัว"
+    },
+    {
+      "sender": "bot",
+      "content": "สรุปรายการครับพี่: Nolimit Level Up+ Personal (ผูกบัตร) 1 ตัว ราคาต่อหน่วย 1100 บาท รวมยอด 1100 บาทครับ ถูกต้องไหมครับ? พิมพ์ ยืนยัน ได้เลย"
+    }
+  ],
+  "system_injections": {
+    "stock": "available",
+    "vip": false,
+    "memory": "",
+    "kb": ""
+  },
+  "synthetic": true,
+  "layer": "text_replay",
+  "provenance": {
+    "source": "regression-final2/T24.json",
+    "prompt_sha256": "3cdc1c0a0e65d14a8a1b49997f1d524e66d2ce81b0bf7d884494a91ada54f3ec",
+    "note": "Historical final2 evidence, not inference against the imported v28 artifact. Audit located at implementation/final-audit.json (historical semantic gate blocked on T09)."
+  },
+  "assertions": {
+    "contains": [
+      "Personal",
+      "เพจ",
+      "ไม่ต้องซื้อ BM"
+    ],
+    "not_contains": [
+      "[ยืนยันชำระเงิน]",
+      "```",
+      "[[ORDER]]",
+      "223-3-24880-3"
+    ],
+    "order_block": false,
+    "items": null,
+    "total": null,
+    "manual_semantic_review": "required for any new live output; literals are insufficient"
+  },
+  "evidence": {
+    "response": "ได้ครับพี่ เพจเป็นสินค้าสำเร็จรูปแยกต่างหาก ทีมงานส่งลิงก์และจัดการรับเพจให้ ไม่ต้องซื้อ BM เพื่อรับเพจครับ รายการ Personal ผูกบัตร 1 ตัวเดิมยังอยู่ หากต้องการเพิ่มเพจบอกจำนวนได้ครับ",
+    "request_id": "gen-1789399014-BLcnUhK8b02Mw5GFMhLI",
+    "model": "openai/gpt-5.6-luna",
+    "settings": {
+      "model": "openai/gpt-5.6-luna",
+      "max_tokens": 8192,
+      "stream": false,
+      "reasoning": {
+        "effort": "medium"
+      },
+      "provider": {
+        "allow_fallbacks": false
+      }
+    },
+    "finish_reason": "stop"
+  }
+}

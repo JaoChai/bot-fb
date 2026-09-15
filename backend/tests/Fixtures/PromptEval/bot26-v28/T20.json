@@ -1,0 +1,82 @@
+{
+  "id": "T20",
+  "label": "Merge current cart; reconfirm revised total; supersede unpaid invoice",
+  "message": "เพิ่มเพจอีก 1",
+  "history": [
+    {
+      "sender": "user",
+      "content": "เอา Nolimit Level Up+ Personal (ผูกบัตร) 1 ตัว"
+    },
+    {
+      "sender": "bot",
+      "content": "สรุปรายการครับพี่: Nolimit Level Up+ Personal (ผูกบัตร) 1 ตัว ราคาต่อหน่วย 1100 บาท รวมยอด 1100 บาทครับ ถูกต้องไหมครับ? พิมพ์ ยืนยัน ได้เลย"
+    },
+    {
+      "sender": "user",
+      "content": "ยืนยัน"
+    },
+    {
+      "sender": "bot",
+      "content": "สรุปยอดโอน Nolimit Level Up+ Personal (ผูกบัตร) 1 ตัว ยอดรวม 1,100 บาท"
+    }
+  ],
+  "system_injections": {
+    "stock": "available",
+    "vip": false,
+    "memory": "",
+    "kb": ""
+  },
+  "synthetic": true,
+  "layer": "text_replay",
+  "provenance": {
+    "source": "regression-final2/T20.json",
+    "prompt_sha256": "3cdc1c0a0e65d14a8a1b49997f1d524e66d2ce81b0bf7d884494a91ada54f3ec",
+    "note": "Historical final2 evidence, not inference against the imported v28 artifact. Audit located at implementation/final-audit.json (historical semantic gate blocked on T09)."
+  },
+  "assertions": {
+    "contains": [
+      "Personal",
+      "Page",
+      "1,299",
+      "ยืนยัน"
+    ],
+    "not_contains": [
+      "[ยืนยันชำระเงิน]",
+      "```",
+      "[[ORDER]]",
+      "223-3-24880-3"
+    ],
+    "order_block": false,
+    "items": [
+      {
+        "name": "Nolimit Level Up+ Personal (ผูกบัตร)",
+        "qty": 1,
+        "price": 1100
+      },
+      {
+        "name": "Page",
+        "qty": 1,
+        "price": 199
+      }
+    ],
+    "total": 1299,
+    "manual_semantic_review": "required for any new live output; literals are insufficient"
+  },
+  "evidence": {
+    "response": "เพิ่ม Page อีก 1 ตัวให้ครับ\n\nNolimit Level Up+ Personal (ผูกบัตร) 1 ตัว = 1,100 บาท\nPage 1 ตัว = 199 บาท\nรวม 1,299 บาท\n\nรายการถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ",
+    "request_id": "gen-1789399009-TLG9F0eSGs1IRY2bvtYY",
+    "model": "openai/gpt-5.6-luna",
+    "settings": {
+      "model": "openai/gpt-5.6-luna",
+      "max_tokens": 8192,
+      "stream": false,
+      "reasoning": {
+        "effort": "medium"
+      },
+      "provider": {
+        "allow_fallbacks": false
+      }
+    },
+    "finish_reason": "stop"
+  }
+}
