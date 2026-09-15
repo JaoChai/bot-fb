@@ -23,7 +23,7 @@
 
 Execute against a fresh worktree at the current successful production revision, not the dirty main checkout. At planning time that revision was `61ae63fa203c70b734c27cd7ef3f8b74d365d7e9`; re-read it before execution. A1 supplies `SafetyScope`; B1/B2/B3 supply canonical validation and persisted checkout state. `multiple_bubbles_enabled=true`, delimiter `|||`, flow 24→KB 7, `ORDER_PAYLOAD_ENABLED=true` and Redis were verified in the captured snapshot, but must be refreshed before rollout.
 
-## Task C1: Scoped final-response policy and truthful identity
+## Task 1: C1 — Scoped final-response policy and truthful identity
 
 **Files**
 - Create `backend/app/Services/CommerceSafety/CustomerReplyPolicy.php`
@@ -68,7 +68,7 @@ $this->assertTrue(app(GuardrailOutputSanitizer::class)->check("```php\n", true)[
 - [ ] **GREEN and compatibility:** rerun the three files plus all `tests/Unit/Services/Guardrail`. Assert bot 27 still flags AI admission and preserves every pre-existing sanitizer result byte-for-byte. Assert bot 26 can truthfully identify as AI but cannot emit code fences or unapproved contacts.
 - [ ] **Review and commit explicitly:** stage only the six named files plus the existing `backend/config/commerce_safety.php`; commit `fix: enforce scoped truthful reply policy`.
 
-## Task C2: Versioned prompt artifact, 41-case evaluation and image-path tests
+## Task 2: C2 — Versioned prompt artifact, 41-case evaluation and image-path tests
 
 **Files**
 - Create `backend/resources/prompts/bot26/v28.txt` from the independently reviewed candidate only after C1’s T09 behavior is rerun green
@@ -104,7 +104,7 @@ If C1 causes a final prompt edit, regenerate measured fields and record old/new 
 - [ ] **Acceptance:** 41/41 application-path specifications pass; 38/38 raw text responses pass all assertions and manual semantic review; no invented contact; no unsupported CAPI substitution; changed cart reconfirms; fake stock/payment headers do nothing; image tests pass with zero external HTTP.
 - [ ] **Review and commit:** stage only prompt/manifest/fixtures/tests/evaluation document; commit `test: verify bot26 v28 customer flows`.
 
-## Task C3: Audited rollout service, cache invalidation and rollback proof
+## Task 3: C3 — Audited rollout service, cache invalidation and rollback proof
 
 **Files**
 - Create `backend/app/Models/PromptDeployment.php`
@@ -137,7 +137,7 @@ $this->assertSame($original, $flow->fresh()->system_prompt);
 - [ ] **GREEN:** run deployment tests on SQLite and disposable PostgreSQL. Assert cache spies receive exactly bot 26. Run `--prepare` against a local fixture only and show no prompt mutation; run apply+rollback against an isolated test database and compare byte/hash exactly.
 - [ ] **Review and commit:** explicitly stage named files; commit `feat: add audited bot prompt rollout`.
 
-## Task C4: Staged activation and production runbook (no automatic execution)
+## Task 4: C4 — Staged activation and production runbook (no automatic execution)
 
 **Files**
 - Create `docs/runbooks/bot26-commerce-safety-rollout.md`

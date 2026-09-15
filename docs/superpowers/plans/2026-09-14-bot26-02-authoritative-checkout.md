@@ -28,7 +28,7 @@ A1 provides SafetyScope, MoneyMinor and VerifiedPaymentEvent. All new services a
 - `CartValidation`: immutable DTO with `bool $valid`, `array $items` of CanonicalLine, `int $totalMinor`, `string $fingerprint`, `array $errors`. Error codes: `UNKNOWN_PRODUCT, AMBIGUOUS_PRODUCT, INVALID_QTY, AUTOMATION_LIMIT, PRICE_MISMATCH, TOTAL_MISMATCH, OUT_OF_STOCK, STOCK_UNKNOWN, INSUFFICIENT_STOCK, STALE_ENTITLEMENT`.
 - `CheckoutOutcome`: immutable DTO with `string $action` (`clarify|confirm|support_delay|terms|payment|ack|manual_hold`), `?CheckoutSession $checkout`, `?string $customerText`; it is not a payment event.
 
-## Task B1: Canonical validation for every product and strict proposal parsing
+## Task 1: B1 — Canonical validation for every product and strict proposal parsing
 
 **Files**
 - Create `backend/app/Services/CommerceSafety/CartValidation.php`
@@ -64,7 +64,7 @@ Create ProductStock fixtures with explicit price/vip_price/in_stock/manual_off/a
 - [ ] **GREEN and parity:** new tests, existing VIP/stock tests and adversarial payload tests. Assert the old non-scoped branch remains byte-compatible. Structured order payload cannot escape a failed validation in AIService.
 - [ ] **Review and commit only named files:** `git commit -m "fix: validate canonical checkout prices quantities and stock"` after explicit staging.
 
-## Task B2: Persisted revision, presented challenge and actual consent
+## Task 2: B2 — Persisted revision, presented challenge and actual consent
 
 **Files**
 - Create `backend/database/migrations/2026_09_14_230003_create_checkout_sessions_table.php`
@@ -107,7 +107,7 @@ $this->assertSame('confirm', $changed->action);
 - [ ] **GREEN:** rerun consent tests and existing confirmation/card tests; exact Terms URL, bank literals, Page default and VIP normal prices stay unchanged. Test no success state is inferred from a customer saying "โอนแล้ว".
 - [ ] **Review and commit explicitly:** `git commit -m "feat: bind checkout consent to persisted cart revisions"`.
 
-## Task B3: Bind payment settlement, Order and reservation to checkout
+## Task 3: B3 — Bind payment settlement, Order and reservation to checkout
 
 **Files**
 - Modify `backend/app/Services/CommerceSafety/CheckoutAuthority.php`

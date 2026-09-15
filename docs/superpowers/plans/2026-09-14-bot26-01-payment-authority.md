@@ -25,7 +25,7 @@ Inspected commit `61ae63fa203c70b734c27cd7ef3f8b74d365d7e9`. Main checkout has u
 
 Tests run from `backend/` using explicit `APP_ENV=testing DB_CONNECTION=sqlite DB_DATABASE=:memory: CACHE_STORE=array QUEUE_CONNECTION=sync BROADCAST_CONNECTION=null`. PostgreSQL concurrency tests use a dedicated disposable test database, never a production DSN. Call `Http::preventStrayRequests()` in integration tests.
 
-## Task A1: Scoped mode and immutable payment-event identity
+## Task 1: A1 — Scoped mode and immutable payment-event identity
 
 **Files**
 - Create `backend/config/commerce_safety.php`
@@ -73,7 +73,7 @@ For the non-scoped fixture, assign `$otherBot->id = 27` explicitly if `id` is gu
 - [ ] **GREEN:** rerun tests, including duplicate-key races on PostgreSQL; assert one event and no network calls.
 - [ ] **Review and commit only these files:** `git add backend/config/commerce_safety.php backend/app/Services/CommerceSafety/SafetyScope.php backend/app/Services/CommerceSafety/MoneyMinor.php backend/app/Models/VerifiedPaymentEvent.php backend/app/Services/CommerceSafety/PaymentProofService.php backend/database/migrations/2026_09_14_230001_create_verified_payment_events_table.php backend/tests/Feature/CommerceSafety/PaymentProofTest.php && git commit -m "feat: add scoped verified payment proof"`.
 
-## Task A2: Wire genuine producers and block text-derived success
+## Task 2: A2 — Wire genuine producers and block text-derived success
 
 **Files**
 - Modify `backend/app/Services/LineWebhook/LineWebhookResponseService.php` (automatic receipt path around 515–580)
@@ -105,7 +105,7 @@ Http::assertNothingSent();
 - [ ] **GREEN and compatibility:** run both new tests and `./vendor/bin/phpunit tests/Unit/Services/PaymentFlexServiceTest.php --no-coverage`; add an explicit non-scoped bot assertion that legacy conversion remains unchanged. Existing manual amount/items overrides must not bypass B2/B3 for bot 26.
 - [ ] **Review and commit the named changed files and tests:** `git commit -m "fix: require payment proof at financial consumers"` after explicit staging, never `git add -A`.
 
-## Task A3: Durable effects and honest retry semantics
+## Task 3: A3 — Durable effects and honest retry semantics
 
 **Files**
 - Create `backend/database/migrations/2026_09_14_230002_create_payment_effects_table.php`
