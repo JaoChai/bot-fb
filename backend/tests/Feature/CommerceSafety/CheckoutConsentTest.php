@@ -854,7 +854,21 @@ class CheckoutConsentTest extends TestCase
     #[Test]
     public function review_generated_payment_instructions_without_a_parseable_total_are_blocked(): void
     {
-        $texts = ['โอน 199 บาทเข้าบัญชี 223-3-24880-3 ได้เลยครับ', 'บัญชี 223-3-24880-3 ครับ', 'กรุณาชำระ 199 บาทได้เลย', 'Please pay THB 199 now', 'Transfer 199 THB please'];
+        $texts = [
+            'โอน 199 บาทเข้าบัญชี 223-3-24880-3 ได้เลยครับ',
+            'บัญชี 223-3-24880-3 ครับ',
+            'กรุณาชำระ 199 บาทได้เลย',
+            'Please pay THB 199 now',
+            'Transfer 199 THB please',
+            'โอนยอดเดิมเข้าบัญชีเดิมได้เลยครับ',
+            'โอน 199 เข้าบัญชีเดิมได้เลยครับ',
+            'Please transfer the agreed amount to our bank account now.',
+            'กรุณาชำระยอดก่อนหน้าเข้าบัญชีเดิมครับ',
+            'โปรดจ่ายยอดที่ตกลงไว้เข้าธนาคารได้เลย',
+            'Please remit the previous amount to the same account now.',
+            'Pay the current amount into the agreed bank account.',
+            'Kindly make payment of the agreed amount to our bank account.',
+        ];
         foreach (['enforce', 'hold'] as $mode) {
             config(["commerce_safety.bots.{$this->bot->id}.mode" => $mode]);
             foreach ($texts as $text) {
@@ -867,12 +881,28 @@ class CheckoutConsentTest extends TestCase
                 $this->assertSame('manual_hold', $outcome->action);
             }
         }
-        foreach (['Page ราคา 199 บาทครับ', 'G3D 50 บาท ใช้ทำอะไรได้บ้าง', 'รับโอนผ่านธนาคารครับ'] as $text) {
+        foreach ([
+            'Page ราคา 199 บาทครับ',
+            'G3D 50 บาท ใช้ทำอะไรได้บ้าง',
+            'รับโอนผ่านธนาคารครับ',
+            'ตอนนี้ร้านยังไม่มี QR สำหรับรับชำระครับ',
+            'นโยบายธนาคารสำหรับการโอนเงินเป็นอย่างไรครับ',
+            'ยังไม่ต้องโอนเข้าบัญชีเดิมครับ',
+            'ห้ามโอนยอดเดิมเข้าบัญชีเดิมครับ',
+            'ห้ามโอนเข้าบัญชี 223-3-24880-3 ครับ',
+            'ไม่ต้องชำระยอดที่ตกลงไว้ครับ',
+            'กรุณาส่งสลิปหรือหลักฐานการชำระเงินให้ฝ่าย support',
+            'กรุณาส่งสลิปจากบัญชี 223-3-24880-3 ให้ฝ่าย support',
+            'ติดต่อฝ่าย support เพื่อสอบถามเรื่องการโอนผ่านธนาคาร',
+            'นโยบายธนาคารสำหรับบัญชี 223-3-24880-3 เป็นอย่างไรครับ',
+        ] as $text) {
             $this->assertSame($text, $this->generateWithInternalCart($text, null)->response->payload);
         }
         foreach (['off', 'shadow'] as $mode) {
             config(["commerce_safety.bots.{$this->bot->id}.mode" => $mode]);
-            $this->assertSame($texts[0], $this->generateWithInternalCart($texts[0], null)->response->payload);
+            foreach (array_slice($texts, 5, 3) as $text) {
+                $this->assertSame($text, $this->generateWithInternalCart($text, null)->response->payload);
+            }
         }
     }
 
@@ -880,7 +910,7 @@ class CheckoutConsentTest extends TestCase
     public function review_actual_ai_detects_transfer_instructions_without_order_or_total(): void
     {
         $this->bot->update(['context_window' => 10]);
-        $content = 'โอน 199 บาทเข้าบัญชี 223-3-24880-3 ได้เลยครับ';
+        $content = 'Please transfer the agreed amount to our bank account now.';
         $this->mock(RAGService::class)->shouldReceive('generateResponse')->once()->andReturn([
             'content' => $content, 'model' => 'test', 'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
         ]);

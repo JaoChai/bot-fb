@@ -1,0 +1,79 @@
+<?php
+
+namespace Tests\Unit\Services\CommerceSafety;
+
+use App\Models\Bot;
+use App\Models\BotSetting;
+use App\Services\CommerceSafety\FinancialOutputDetector;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
+use Tests\TestCase;
+
+class FinancialOutputDetectorTest extends TestCase
+{
+    #[Test]
+    #[DataProvider('contextualPaymentDirectives')]
+    public function it_detects_contextual_payment_directives_without_currency_digits(string $text): void
+    {
+        $this->assertTrue($this->detector()->detects($this->bot(), $text), $text);
+    }
+
+    public static function contextualPaymentDirectives(): array
+    {
+        return [
+            'thai original bypass' => ['โอนยอดเดิมเข้าบัญชีเดิมได้เลยครับ'],
+            'thai bare amount bypass' => ['โอน 199 เข้าบัญชีเดิมได้เลยครับ'],
+            'english original bypass' => ['Please transfer the agreed amount to our bank account now.'],
+            'thai prior amount and account synonyms' => ['กรุณาชำระยอดก่อนหน้าเข้าบัญชีเดิมครับ'],
+            'thai agreed amount and bank synonyms' => ['โปรดจ่ายยอดที่ตกลงไว้เข้าธนาคารได้เลย'],
+            'thai current amount and account synonyms' => ['ช่วยโอนยอดปัจจุบันเข้าบัญชีนี้ตอนนี้'],
+            'english remit previous and same synonyms' => ['Please remit the previous amount to the same account now.'],
+            'english pay current and agreed synonyms' => ['Pay the current amount into the agreed bank account.'],
+            'english transfer prior amount to account' => ['You can transfer the prior amount to our account now.'],
+            'english payment directive synonym' => ['Kindly make payment of the agreed amount to our bank account.'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('nonDirectiveFinancialDiscussion')]
+    public function it_preserves_non_directive_financial_discussion(string $text): void
+    {
+        $this->assertFalse($this->detector()->detects($this->bot(), $text), $text);
+    }
+
+    public static function nonDirectiveFinancialDiscussion(): array
+    {
+        return [
+            'product price answer' => ['Page ราคา 199 บาทครับ'],
+            'product price question' => ['G3D ราคาเท่าไรครับ'],
+            'shop has no qr' => ['ตอนนี้ร้านยังไม่มี QR สำหรับรับชำระครับ'],
+            'bank policy faq thai' => ['นโยบายธนาคารสำหรับการโอนเงินเป็นอย่างไรครับ'],
+            'bank policy faq english' => ['What is your bank transfer policy?'],
+            'negative transfer' => ['ยังไม่ต้องโอนเข้าบัญชีเดิมครับ'],
+            'prohibited transfer' => ['ห้ามโอนยอดเดิมเข้าบัญชีเดิมครับ'],
+            'negative payment' => ['ไม่ต้องชำระยอดที่ตกลงไว้ครับ'],
+            'english negative transfer' => ['Please do not transfer the agreed amount yet.'],
+            'negative transfer with known account' => ['ห้ามโอนเข้าบัญชี 223-3-24880-3 ครับ'],
+            'receipt request' => ['กรุณาส่งสลิปหรือหลักฐานการชำระเงินให้ฝ่าย support'],
+            'receipt request with known account' => ['กรุณาส่งสลิปจากบัญชี 223-3-24880-3 ให้ฝ่าย support'],
+            'support discussion' => ['ติดต่อฝ่าย support เพื่อสอบถามเรื่องการโอนผ่านธนาคาร'],
+            'bank policy with known account' => ['นโยบายธนาคารสำหรับบัญชี 223-3-24880-3 เป็นอย่างไรครับ'],
+            'shop capability statement' => ['ร้านรับโอนผ่านธนาคารครับ'],
+        ];
+    }
+
+    private function detector(): FinancialOutputDetector
+    {
+        return app(FinancialOutputDetector::class);
+    }
+
+    private function bot(): Bot
+    {
+        $bot = new Bot;
+        $bot->setRelation('settings', new BotSetting([
+            'slip_receiver_account' => '223-3-24880-3',
+        ]));
+
+        return $bot;
+    }
+}
