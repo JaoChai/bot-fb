@@ -11,6 +11,9 @@ use App\Services\ModelCapabilityService;
 use App\Services\StickerReplyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class StickerReplyServiceTest extends TestCase
@@ -43,16 +46,16 @@ class StickerReplyServiceTest extends TestCase
      *
      * @return array{0: Bot, 1: Conversation}
      */
-    protected function makeBotWithAIStickerMode(string $flowPrompt): array
+    protected function makeBotWithAIStickerMode(string $flowPrompt, array $attributes = []): array
     {
         $user = User::factory()->create();
-        $bot = Bot::factory()->create([
+        $bot = Bot::factory()->create(array_merge([
             'user_id' => $user->id,
             'status' => 'active',
             'channel_type' => 'line',
             'primary_chat_model' => 'google/gemini-3.5-flash',
             'system_prompt' => null,
-        ]);
+        ], $attributes));
         $flow = Flow::factory()->create([
             'bot_id' => $bot->id,
             'system_prompt' => $flowPrompt,
@@ -88,6 +91,37 @@ class StickerReplyServiceTest extends TestCase
                 ],
             ], 200),
         ]);
+    }
+
+    public static function loggingModes(): array
+    {
+        return [['off'], ['shadow'], ['enforce'], ['hold']];
+    }
+
+    #[DataProvider('loggingModes')]
+    public function test_sanity_rejection_logs_only_safe_diagnostics(string $mode): void
+    {
+        Http::preventStrayRequests();
+        [$bot, $conversation] = $this->makeBotWithAIStickerMode('Friendly assistant.', ['id' => 26]);
+        config(['commerce_safety.bots.26.mode' => $mode]);
+        $content = '1. LINE @adsvance';
+        $this->fakeVisionResponse($content);
+        Log::spy();
+
+        $this->assertSame('ได้รับสติกเกอร์แล้วค่ะ', app(StickerReplyService::class)
+            ->generateReply($bot, $conversation, $this->stickerData));
+
+        Log::shouldHaveReceived('warning')->with(
+            'AI sticker reply failed sanity check, using static fallback',
+            ['bot_id' => 26, 'conversation_id' => $conversation->id,
+                'content_length' => mb_strlen($content), 'content_hash' => hash('sha256', $content),
+                'reason' => 'sanity_check_failed'],
+        )->once();
+        foreach (['warning', 'info', 'debug', 'error'] as $level) {
+            Log::shouldNotHaveReceived($level, [Mockery::any(), Mockery::on(
+                fn ($context) => str_contains(json_encode($context), '@adsvance')
+            )]);
+        }
     }
 
     public function test_long_flow_prompt_is_truncated_in_sticker_system_prompt(): void

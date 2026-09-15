@@ -24,7 +24,10 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class SlipVerificationPipelineTest extends TestCase
@@ -38,15 +41,19 @@ class SlipVerificationPipelineTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->makeBotAndConversation();
+    }
 
+    private function makeBotAndConversation(array $botAttributes = []): void
+    {
         $user = User::factory()->create();
         $user->getOrCreateSettings()->update(['easyslip_api_token' => 'tok-123']);
 
-        $this->bot = Bot::factory()->create([
+        $this->bot = Bot::factory()->create(array_merge([
             'user_id' => $user->id,
             'status' => 'active',
             'primary_chat_model' => 'google/gemini-3.5-flash',
-        ]);
+        ], $botAttributes));
         BotSetting::create([
             'bot_id' => $this->bot->id,
             'slip_verification_enabled' => true,
@@ -67,6 +74,49 @@ class SlipVerificationPipelineTest extends TestCase
             'type' => 'text',
             'content' => "สรุปรายการ\n1. Nolimit BM = 1,500 บาท\nรวมยอดโอน: 1,500 บาท\nโอนเข้าบัญชี 223-3-24880-3",
         ]);
+    }
+
+    public static function classificationLoggingModes(): array
+    {
+        return [['off'], ['shadow'], ['enforce'], ['hold']];
+    }
+
+    #[DataProvider('classificationLoggingModes')]
+    public function test_malformed_classification_logs_only_safe_diagnostics(string $mode): void
+    {
+        Http::preventStrayRequests();
+        $this->makeBotAndConversation(['id' => 26]);
+        config(['commerce_safety.bots.26.mode' => $mode]);
+        $content = 'malformed LINE @adsvance';
+        $this->mock(ModelCapabilityService::class, function ($mock) {
+            $mock->shouldReceive('supportsVision')->andReturn(true);
+            $mock->shouldReceive('supportsStructuredOutput')->andReturn(true);
+        });
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['success' => false,
+                'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => $content]]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+        Log::spy();
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        Log::shouldHaveReceived('info')->with('Slip image classification', [
+            'bot_id' => 26, 'conversation_id' => $this->conversation->id,
+            'content_length' => mb_strlen($content), 'content_hash' => hash('sha256', $content),
+            'reason' => 'malformed_classification',
+        ])->once();
+        $this->assertArrayNotHasKey('slip_vision_draft', $ctx->metadata);
+        foreach (['warning', 'info', 'debug', 'error'] as $level) {
+            Log::shouldNotHaveReceived($level, [Mockery::any(), Mockery::on(
+                fn ($context) => str_contains(json_encode($context), '@adsvance')
+            )]);
+        }
     }
 
     public function test_review_scoped_vision_cannot_emit_generated_transfer_instructions(): void

@@ -5,12 +5,15 @@ namespace Tests\Unit\Services;
 use App\Jobs\SendDelayedBubbleJob;
 use App\Models\Bot;
 use App\Models\BotSetting;
+use App\Services\CommerceSafety\CustomerReplyGuard;
+use App\Services\CommerceSafety\CustomerReplyPolicy;
 use App\Services\LINEService;
 use App\Services\MultipleBubblesService;
 use App\Services\PaymentFlexService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class MultipleBubblesServiceTest extends TestCase
@@ -258,6 +261,42 @@ class MultipleBubblesServiceTest extends TestCase
 
         // No jobs dispatched on failure
         Queue::assertNothingPushed();
+    }
+
+    public static function adjacentContactBubbles(): array
+    {
+        return [
+            ['https://lin.ee/h5wYpIf|||ขอบคุณครับ', ['https://lin.ee/h5wYpIf', 'ขอบคุณครับ']],
+            ['@743ddeqy|||ขอบคุณครับ', ['@743ddeqy', 'ขอบคุณครับ']],
+            ['https://lin.ee/h5wYpIf|||@adsvance', [CustomerReplyPolicy::FALLBACK]],
+            ['@743ddeqy|||https://evil.test/contact', [CustomerReplyPolicy::FALLBACK]],
+        ];
+    }
+
+    #[DataProvider('adjacentContactBubbles')]
+    public function test_adjacent_contacts_are_guarded_before_split_and_send(string $text, array $expected): void
+    {
+        Queue::fake();
+        config(['commerce_safety.bots.26.mode' => 'enforce']);
+        $bot = $this->createBotWithSettings();
+        $bot->id = 26;
+        $line = Mockery::mock(LINEService::class);
+        $line->shouldReceive('generateRetryKey')->once()->andReturn('retry-key');
+        $line->shouldReceive('replyWithFallback')->once()
+            ->with($bot, 'reply-token', 'U-test', [$expected[0]], 'retry-key')
+            ->andReturn(['success' => true, 'method' => 'reply']);
+        $service = new MultipleBubblesService($line, $this->createPaymentFlexMock());
+        $guarded = app(CustomerReplyGuard::class)->text($bot, $text);
+        $bubbles = $service->parseIntoBubbles($guarded, $bot);
+        $this->assertSame($expected, $bubbles);
+        $this->assertTrue($service->sendBubbles($bot, 'U-test', 'reply-token', $bubbles));
+        if (count($expected) === 1) {
+            Queue::assertNothingPushed();
+        } else {
+            Queue::assertPushed(SendDelayedBubbleJob::class, 1);
+            Queue::assertPushed(SendDelayedBubbleJob::class,
+                fn ($job) => $job->bubbleContent === $expected[1]);
+        }
     }
 
     public function test_parse_into_bubbles_splits_by_delimiter(): void

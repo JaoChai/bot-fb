@@ -849,8 +849,11 @@ class LineWebhookResponseService
             Log::info('Slip image classification', [
                 'bot_id' => $ctx->bot->id,
                 'conversation_id' => $ctx->conversation?->id,
-                'is_slip' => $decoded['is_slip'] ?? null,
-                'raw' => $decoded === null ? mb_substr($result['content'] ?? '', 0, 200) : null,
+                ...($decoded === null ? [
+                    'content_length' => mb_strlen($result['content'] ?? ''),
+                    'content_hash' => hash('sha256', $result['content'] ?? ''),
+                    'reason' => 'malformed_classification',
+                ] : ['is_slip' => $decoded['is_slip']]),
             ]);
 
             if ($decoded === null) {

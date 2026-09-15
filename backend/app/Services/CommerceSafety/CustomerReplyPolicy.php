@@ -71,11 +71,29 @@ final class CustomerReplyPolicy
             return 'contact_email';
         }
 
+        // Bubble separators are inspection boundaries; preserve original reply bytes.
+        $content = str_replace('|||', ' ', $content);
         $contacts = $this->allowedContacts($bot);
         $allowedUrls = array_filter(array_map($this->normalizeUrl(...), $contacts['urls']));
         $remaining = $content;
-        preg_match_all('~[a-z][a-z0-9+.-]*://[^\s<>\[\]()"\'`]+~iu', $content, $urls);
-        foreach ($urls[0] as $url) {
+        preg_match_all('~[a-z][a-z0-9+.-]*://[^\s<>\[\]"`]+~iu', $content, $urls, PREG_OFFSET_CAPTURE);
+        foreach ($urls[0] as [$url, $offset]) {
+            // Only a Markdown link's closing parenthesis is syntax. Parentheses
+            // and apostrophes in bare URLs (and nested Markdown paths) are data.
+            if (substr($content, max(0, $offset - 2), 2) === '](') {
+                $depth = 0;
+                for ($i = 0, $length = strlen($url); $i < $length; $i++) {
+                    if ($url[$i] === '(') {
+                        $depth++;
+                    } elseif ($url[$i] === ')') {
+                        if ($depth === 0) {
+                            $url = substr($url, 0, $i);
+                            break;
+                        }
+                        $depth--;
+                    }
+                }
+            }
             $normalized = $this->normalizeUrl($url);
             if ($normalized === null || ! in_array($normalized, $allowedUrls, true)) {
                 return 'contact_url';

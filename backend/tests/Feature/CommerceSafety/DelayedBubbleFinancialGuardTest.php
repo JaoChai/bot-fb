@@ -14,6 +14,7 @@ use App\Models\PaymentEffect;
 use App\Models\SlipVerification;
 use App\Models\User;
 use App\Models\VerifiedPaymentEvent;
+use App\Services\CommerceSafety\CustomerReplyPolicy;
 use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\CommerceSafety\PaymentProofService;
 use App\Services\LINEService;
@@ -21,6 +22,7 @@ use App\Services\MultipleBubblesService;
 use App\Services\PaymentFlexService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -50,6 +52,7 @@ class DelayedBubbleFinancialGuardTest extends TestCase
         $this->bot = Bot::factory()->active()->line()->create([
             'user_id' => $owner->id,
             'name' => 'Queued bot',
+            'id' => 26,
         ]);
         BotSetting::create([
             'bot_id' => $this->bot->id,
@@ -119,6 +122,69 @@ class DelayedBubbleFinancialGuardTest extends TestCase
         $this->assertSame([[FinancialOutputGuard::DENIAL]], $sent);
         $this->assertNotContains([self::FINANCIAL], $sent);
         $this->assertSame('Reloaded at execution', $executionBotName);
+        $this->assertNoAuthorityWasCreated();
+    }
+
+    public static function contactModeSwitches(): array
+    {
+        $cases = [];
+        foreach (['off', 'shadow'] as $queued) {
+            foreach (['off', 'shadow', 'enforce', 'hold'] as $execution) {
+                foreach (['@adsvance', 'ไม่ต้องชำระเงิน @adsvance', 'https://lin.ee/h5wYpIf'] as $text) {
+                    foreach ([false, true] as $legacyConversation) {
+                        $cases[] = [$queued, $execution, $text, $legacyConversation];
+                    }
+                }
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('contactModeSwitches')]
+    public function test_serialized_contacts_use_execution_mode_without_authority(
+        string $queuedMode, string $executionMode, string $text, bool $legacyConversation,
+    ): void {
+        $this->scope($queuedMode);
+        $sent = [];
+        $name = null;
+        $line = $this->lineMock($sent, $name);
+        $service = new MultipleBubblesService($line, $this->paymentFlexPassthrough());
+        $this->assertTrue($service->sendBubbles($this->bot->fresh(),
+            $this->conversation->external_customer_id, 'reply-token',
+            ['สวัสดีครับ', $text], $this->conversation));
+        $job = unserialize(serialize($this->queuedJob()));
+        // Queue payload bytes must also survive off/shadow execution unchanged.
+        $job->bubbleContent = '  '.$job->bubbleContent."\n💬  ";
+        $original = $job->bubbleContent;
+        $job = unserialize(serialize($job));
+        $this->bot->update(['name' => 'Reloaded at execution']);
+        $this->scope($executionMode);
+        $current = $this->conversation;
+        if ($legacyConversation) {
+            $this->conversation->update(['external_customer_id' => 'U-old-conversation']);
+            $current = Conversation::factory()->line()->create([
+                'bot_id' => 26, 'external_customer_id' => $job->userId,
+            ]);
+            $job->conversationId = null; // Legacy payloads resolve the current conversation.
+        }
+        $job = unserialize(serialize($job));
+        Log::spy();
+        $job->handle($line);
+
+        $enforced = in_array($executionMode, ['enforce', 'hold'], true);
+        $expected = $enforced ? match ($text) {
+            '@adsvance' => CustomerReplyPolicy::FALLBACK,
+            'ไม่ต้องชำระเงิน @adsvance' => FinancialOutputGuard::DENIAL,
+            default => $original,
+        } : $original;
+        $this->assertSame([[$expected]], $sent);
+        $this->assertSame('Reloaded at execution', $name);
+        if ($text === '@adsvance' && $executionMode !== 'off') {
+            Log::shouldHaveReceived('warning')->with('Customer reply policy triggered', [
+                'bot_id' => 26, 'conversation_id' => $current->id, 'reason' => 'contact_handle',
+            ])->once();
+        }
         $this->assertNoAuthorityWasCreated();
     }
 
@@ -214,10 +280,9 @@ class DelayedBubbleFinancialGuardTest extends TestCase
 
     private function scope(string $mode): void
     {
-        config(["commerce_safety.bots.{$this->bot->id}" => [
-            'mode' => $mode,
-            'payment_plugin_ids' => [$this->paymentPlugin->id],
-        ]]);
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => $mode,
+            "commerce_safety.bots.{$this->bot->id}.payment_plugin_ids" => [$this->paymentPlugin->id],
+        ]);
     }
 
     private function paymentFlexPassthrough(): PaymentFlexService
@@ -245,7 +310,7 @@ class DelayedBubbleFinancialGuardTest extends TestCase
             string $userId,
             array $messages,
         ) use (&$sent, &$executionBotName): bool {
-            $this->assertSame($this->conversation->external_customer_id, $userId);
+            $this->assertSame('U-delayed-guard', $userId);
             $executionBotName = $bot->name;
             $sent[] = $messages;
 

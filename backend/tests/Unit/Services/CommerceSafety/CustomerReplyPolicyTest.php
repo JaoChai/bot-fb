@@ -50,6 +50,48 @@ class CustomerReplyPolicyTest extends TestCase
         $this->assertStringNotContainsString($text, json_encode($result['reasons']));
     }
 
+    public static function completeTargets(): array
+    {
+        return array_map(fn ($text) => [$text], [
+            '[Support](https://lin.ee/h5wYpIf(extra))',
+            '[Support](https://lin.ee/h5wYpIf(extra(nested)))',
+            "[Support](https://lin.ee/h5wYpIf'extra)",
+            "https://lin.ee/h5wYpIf'extra/path",
+            'https://lin.ee/h5wYpIf(extra)/path',
+            'https://lin.ee/h5wYpIf)/path',
+            'https://lin.ee/h5wYpIf|extra',
+            'https://lin.ee/h5wYpIf||extra',
+            '[Support](https://lin.ee/h5wYpIf)|||@adsvance',
+            '@743ddeqy|||https://evil.test/contact',
+        ]);
+    }
+
+    #[DataProvider('completeTargets')]
+    public function test_complete_targets_reject_suffixes_and_mixed_bubbles(string $text): void
+    {
+        $this->test_replaces_whole_reply_without_io($text);
+    }
+
+    public static function adjacentContacts(): array
+    {
+        return array_map(fn ($text) => [$text], [
+            'https://lin.ee/h5wYpIf|||ขอบคุณครับ',
+            '@743ddeqy|||ขอบคุณครับ',
+            'ขอบคุณครับ|||https://lin.ee/h5wYpIf',
+            '[Support](https://lin.ee/h5wYpIf)|||@743ddeqy',
+            '[Support](HTTPS://LIN.EE/h5wYpIf)',
+            '<https://lin.ee/h5wYpIf>',
+        ]);
+    }
+
+    #[DataProvider('adjacentContacts')]
+    public function test_exact_targets_survive_adjacent_bubble_boundaries(string $text): void
+    {
+        config(['commerce_safety.bots.26.mode' => 'enforce']);
+        $bot = (new Bot)->forceFill(['id' => 26]);
+        $this->assertSame($text, app(CustomerReplyPolicy::class)->apply($bot, $text)['content']);
+    }
+
     public function test_exact_config_contacts_and_plain_text_are_unchanged(): void
     {
         $bot = (new Bot)->forceFill(['id' => 26]);

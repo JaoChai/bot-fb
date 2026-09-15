@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Services\CommerceSafety\CustomerReplyGuard;
 use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\LINEService;
 use Illuminate\Bus\Queueable;
@@ -68,6 +69,7 @@ class SendDelayedBubbleJob implements ShouldQueue
             $bot = $this->currentBot();
             $conversation = $this->currentConversation($bot);
             $content = app(FinancialOutputGuard::class)->text($bot, $this->bubbleContent);
+            $content = app(CustomerReplyGuard::class)->text($bot, $content, $conversation);
 
             // Use retry key for idempotency (LINE best practice)
             $retryKey = $lineService->generateRetryKey();
