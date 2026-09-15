@@ -10,6 +10,7 @@ use App\Models\Message;
 use App\Services\CommerceSafety\CanonicalCartValidator;
 use App\Services\CommerceSafety\CartProposalAdapter;
 use App\Services\CommerceSafety\CartValidation;
+use App\Services\CommerceSafety\FinancialOutputDetector;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\Guardrail\GuardrailOutputSanitizer;
 use App\Services\Guardrail\OffTopicCircuitBreaker;
@@ -215,7 +216,9 @@ class AIService
             ?? $this->paymentDetector->parseConfirmData($content);
 
         if (! $hasOrderMarker && $visibleCandidate === null) {
-            return null;
+            return app(FinancialOutputDetector::class)->detects($bot, $content)
+                ? $this->invalidCart(['INVALID_PROPOSAL'])
+                : null;
         }
         if ($conversation === null) {
             return $this->invalidCart(['CONVERSATION_REQUIRED']);

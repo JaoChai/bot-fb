@@ -22,28 +22,14 @@ class CanonicalCartValidator
         bool $lockAuthorityRows = false,
     ): CartValidation {
         $errors = [];
-        $conversationQuery = Conversation::query();
-        if ($lockAuthorityRows) {
-            $conversationQuery->lockForUpdate();
-        }
         $currentConversation = $conversation->exists
-            ? $conversationQuery->find($conversation->getKey())
+            ? ($lockAuthorityRows
+                ? ConversationAuthorityLock::acquire((int) $bot->getKey(), (int) $conversation->getKey())
+                : Conversation::query()->find($conversation->getKey()))
             : null;
         if (! $currentConversation || (int) $currentConversation->bot_id !== (int) $bot->getKey()) {
             $errors[] = 'CONVERSATION_MISMATCH';
             $currentConversation = new Conversation(['memory_notes' => []]);
-        }
-
-        // VIP authority may live on another conversation for the same customer.
-        // Lock every persisted source before pricing reads it so entitlement cannot
-        // change between canonical validation and the local settlement commit.
-        if ($lockAuthorityRows && $currentConversation->exists && $currentConversation->customer_profile_id) {
-            Conversation::query()
-                ->where('bot_id', $currentConversation->bot_id)
-                ->where('customer_profile_id', $currentConversation->customer_profile_id)
-                ->orderBy('id')
-                ->lockForUpdate()
-                ->get(['id']);
         }
 
         $vip = $this->pricing->isVipConversation($currentConversation);
@@ -229,7 +215,7 @@ class CanonicalCartValidator
         }
 
         $lines = array_values(array_map(function (array $entry): array {
-            unset($entry['product'], $entry['delivery_method']);
+            unset($entry['product']);
 
             return $entry;
         }, $aggregated));

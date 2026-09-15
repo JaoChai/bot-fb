@@ -17,8 +17,13 @@ class CheckoutRenderer
 
     public function render(CheckoutSession $checkout, string $action): string
     {
-        if ($action === 'payment' && $checkout->state !== 'payable') {
-            throw new InvalidArgumentException('Payment instructions require a payable checkout.');
+        if ($action === 'payment') {
+            $persisted = $checkout->exists ? CheckoutSession::query()->find($checkout->getKey()) : null;
+            if ($persisted === null || $persisted->state !== 'payable'
+                || $checkout->revision !== $persisted->revision) {
+                throw new InvalidArgumentException('Payment instructions require a current persisted payable checkout.');
+            }
+            $checkout = $persisted;
         }
 
         return match ($action) {

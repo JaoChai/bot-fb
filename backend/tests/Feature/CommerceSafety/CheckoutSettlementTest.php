@@ -28,8 +28,11 @@ use App\Services\Delivery\ProductMapper;
 use App\Services\Delivery\StockPoolService;
 use App\Services\FlowPluginService;
 use App\Services\LINEService;
+use App\Services\LineWebhook\LineWebhookResponseService;
+use App\Services\LineWebhook\WebhookContext;
 use App\Services\OrderService;
 use App\Services\Payment\ManualPaymentConfirmService;
+use App\Services\Payment\OrderReconstructor;
 use App\Services\Payment\SlipRetryService;
 use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
@@ -37,6 +40,7 @@ use App\Services\Payment\TelegramAlertBotService;
 use App\Services\PaymentFlexService;
 use App\Services\VipDetectionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -457,8 +461,8 @@ class CheckoutSettlementTest extends TestCase
 
             return $result;
         });
-        $verifier->shouldReceive('settleVerifiedReceipt')->once()
-            ->andReturnUsing(fn (...$arguments) => $realVerifier->settleVerifiedReceipt(...$arguments));
+        $verifier->shouldReceive('reconcileVerifiedSlip')->twice()
+            ->andReturnUsing(fn (...$arguments) => $realVerifier->reconcileVerifiedSlip(...$arguments));
         $service = new SlipRetryService(
             $verifier,
             Mockery::mock(PaymentFlexService::class),
@@ -1523,6 +1527,381 @@ class CheckoutSettlementTest extends TestCase
         $this->assertSame('manual_hold', $settlementResult);
         $this->assertSame('paid_hold', CheckoutSession::findOrFail($checkout->id)->state);
         $this->assertSame($ordersBefore, Order::count());
+    }
+
+    #[Test]
+    public function review_received_money_uses_real_verifier_and_line_path_without_prose_authority(): void
+    {
+        foreach (['missing', 'ambiguous', 'mismatched'] as $historyKind) {
+            $checkout = $this->payable([
+                ['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000],
+            ], 5000, revision: 1 + CheckoutSession::count());
+            $this->fakeReceivedTransfer('REVIEW-'.$historyKind, '50.00');
+            $image = $this->conversation->messages()->create(['sender' => 'user', 'type' => 'image', 'content' => '[image]']);
+            $ctx = new WebhookContext($this->bot, []);
+            $ctx->conversation = $this->conversation;
+            $ctx->userMessage = $image;
+            $history = match ($historyKind) {
+                'missing' => [],
+                'ambiguous' => [['sender' => 'user', 'content' => 'Personal หรือ BM ยังไม่ได้เลือก']],
+                default => [['sender' => 'bot', 'content' => "สรุปรายการ\n1. Page (199 x 1) = 199 บาท\nรวมยอดโอน: 199 บาท\n223-3-24880-3"]],
+            };
+            $service = app(LineWebhookResponseService::class);
+            $handled = (new \ReflectionMethod($service, 'trySlipVerification'))->invoke($service, $ctx, 'https://invalid.test/slip', $history);
+            $this->assertTrue($handled);
+            $event = VerifiedPaymentEvent::where('event_key', 'easyslip:REVIEW-'.$historyKind)->first();
+            $this->assertNotNull($event, $historyKind.' must record received money');
+            $this->assertSame('passed', $event->slipVerification->status);
+            $this->assertSame('paid', $checkout->fresh()->state);
+            $this->assertSame($event->receipt_message_id, $ctx->metadata['bot_message']->id);
+        }
+        $this->assertDatabaseCount('orders', 3);
+        Queue::assertNotPushed(ReserveAccountStock::class);
+    }
+
+    #[Test]
+    public function review_real_verifier_records_unmatched_and_wrong_amount_money_as_durable_hold(): void
+    {
+        $this->fakeReceivedTransfer('REVIEW-NO-CART', '50.00');
+        $service = app(SlipVerificationService::class);
+        $result = $service->verify($this->bot, $this->conversation, null, 'https://invalid.test/slip', []);
+        $this->assertTrue($result->passed);
+        $event = VerifiedPaymentEvent::sole();
+        $this->assertSame('manual_hold', $event->disposition);
+        $this->assertNotNull($event->receiptMessage);
+        $checkout = $this->payable([['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900]], 19900);
+        $this->fakeReceivedTransfer('REVIEW-WRONG-AMOUNT', '50.00');
+        $image = $this->conversation->messages()->create(['sender' => 'user', 'type' => 'image', 'content' => '[image]']);
+        $service->verify($this->bot, $this->conversation, $image, 'https://invalid.test/slip', []);
+        $this->assertSame('paid_hold', $checkout->fresh()->state);
+        $this->assertDatabaseCount('orders', 0);
+    }
+
+    #[Test]
+    public function review_retry_repairs_crashes_before_proof_and_after_proof_before_settlement(): void
+    {
+        foreach (['before_proof', 'after_proof'] as $window) {
+            $checkout = $this->payable([['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000]], 5000, revision: 1 + CheckoutSession::count());
+            $image = $this->conversation->messages()->create(['sender' => 'user', 'type' => 'image', 'content' => '[image]']);
+            $slip = SlipVerification::create([
+                'bot_id' => $this->bot->id, 'conversation_id' => $this->conversation->id,
+                'message_id' => $image->id, 'trans_ref' => 'CRASH-'.$window, 'amount' => '50.00', 'status' => 'passed',
+            ]);
+            if ($window === 'after_proof') {
+                $receipt = $this->conversation->messages()->create(['sender' => 'bot', 'type' => 'text', 'content' => 'เงินเข้าแล้ว 50 บาท']);
+                app(PaymentProofService::class)->record($this->bot, $this->conversation, $slip, $receipt, null);
+            }
+            app(SlipRetryService::class)->retry($this->bot, $this->conversation, $image, 'https://invalid.test/slip', 1);
+            $this->assertSame('paid', $checkout->fresh()->state, $window);
+            $event = VerifiedPaymentEvent::where('slip_verification_id', $slip->id)->sole();
+            $this->assertNotNull($event->receiptMessage);
+            app(SlipRetryService::class)->retry($this->bot, $this->conversation, $image, 'https://invalid.test/slip', 2);
+        }
+        $this->assertDatabaseCount('verified_payment_events', 2);
+        $this->assertDatabaseCount('orders', 2);
+        Http::assertNothingSent();
+    }
+
+    #[Test]
+    public function review_duplicate_provider_submission_converges_to_original_hold_and_receipt(): void
+    {
+        $this->fakeReceivedTransfer('REVIEW-DUP', '50.00');
+        $service = app(SlipVerificationService::class);
+        $first = $service->verify($this->bot, $this->conversation, null, 'https://invalid.test/slip', []);
+        $this->assertTrue($first->passed);
+        $event = VerifiedPaymentEvent::sole();
+        $this->payable([['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000]], 5000);
+        $second = $service->verify($this->bot, $this->conversation, null, 'https://invalid.test/slip', []);
+        $this->assertTrue($second->passed);
+        $this->assertSame($first->slipVerificationId, $second->slipVerificationId);
+        $this->assertSame($event->id, VerifiedPaymentEvent::sole()->id);
+        $this->assertSame('manual_hold', $event->fresh()->disposition);
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('slip_verifications', 1);
+    }
+
+    #[Test]
+    public function review_manual_terminal_slip_without_receipt_link_is_repaired_on_retry(): void
+    {
+        $image = $this->conversation->messages()->create(['sender' => 'user', 'type' => 'image', 'content' => '[image]']);
+        $slip = SlipVerification::create([
+            'bot_id' => $this->bot->id, 'conversation_id' => $this->conversation->id,
+            'message_id' => null, 'amount' => '50.00', 'status' => 'manual_confirmed',
+        ]);
+        app(SlipRetryService::class)->retry($this->bot, $this->conversation, $image, 'https://invalid.test/slip', 1);
+        $event = VerifiedPaymentEvent::first();
+        $this->assertNotNull($event);
+        $this->assertSame('manual_hold', $event->disposition);
+        $this->assertSame($event->receipt_message_id, $slip->fresh()->message_id);
+        $this->assertNull($event->actor_id);
+        $this->assertSame('manual_actor_unavailable', $event->hold_reason);
+        Http::assertNothingSent();
+    }
+
+    #[Test]
+    public function review_canonical_delivery_none_never_maps_to_a_misleading_nolimit_stock_product(): void
+    {
+        $this->product(['name' => 'Nolimit Share BM', 'slug' => 'share-bm', 'stock_code' => 'SHARE', 'delivery_method' => 'none', 'price' => '1100.00', 'available_count' => null]);
+        $this->product(['name' => 'Nolimit', 'slug' => 'misleading', 'stock_code' => 'WRONG', 'delivery_method' => 'stock', 'price' => '1100.00', 'available_count' => 20]);
+        $checkout = $this->settledCheckout([['name' => 'Nolimit Share BM', 'method' => 'card', 'qty' => 1, 'price_minor' => 110000]], 110000, 'REVIEW-NONE');
+        $pool = Mockery::mock(StockPoolService::class);
+        $pool->shouldNotReceive('reserveOne');
+        $mapper = Mockery::mock(ProductMapper::class);
+        $mapper->shouldNotReceive('map');
+        $service = new AccountDeliveryService($pool, $mapper, Mockery::mock(TelegramAlertBotService::class), Mockery::mock(LINEService::class));
+        $delivery = $service->createFromPayment($this->bot, $this->conversation, $checkout->settledEvent->slip_verification_id, 1100, $checkout->items);
+        $this->assertNotNull($delivery);
+        $this->assertSame(AccountDeliveryItem::KIND_MANUAL, $delivery->items()->sole()->kind);
+        $this->assertNull($delivery->items()->sole()->stock_code);
+    }
+
+    #[Test]
+    public function review_canonical_delivery_ignores_stale_mapper_cache(): void
+    {
+        $mapper = app(ProductMapper::class);
+        $mapper->map('G3D');
+        $this->products['g3d']->update(['stock_code' => 'FRESH-G3D']);
+        $checkout = $this->settledCheckout([['name' => 'G3D', 'method' => 'none', 'qty' => 2, 'price_minor' => 5000]], 10000, 'REVIEW-CACHE');
+        $pool = Mockery::mock(StockPoolService::class);
+        $pool->shouldReceive('reserveOne')->twice()->with('FRESH-G3D', Mockery::type('string'))->andReturnNull();
+        $service = new AccountDeliveryService($pool, $mapper, Mockery::mock(TelegramAlertBotService::class), Mockery::mock(LINEService::class));
+        $delivery = $service->createFromPayment($this->bot, $this->conversation, $checkout->settledEvent->slip_verification_id, 100, $checkout->items);
+        $this->assertSame(['FRESH-G3D'], $delivery->items()->pluck('stock_code')->unique()->values()->all());
+    }
+
+    #[Test]
+    public function review_postgresql_opposing_same_customer_conversations_do_not_deadlock(): void
+    {
+        $this->requireReviewPostgres();
+        $customer = CustomerProfile::factory()->create();
+        $this->conversation->update(['customer_profile_id' => $customer->id]);
+        $other = Conversation::factory()->create(['bot_id' => $this->bot->id, 'customer_profile_id' => $customer->id, 'memory_notes' => []]);
+        $entries = [];
+        foreach ([$this->conversation, $other] as $index => $conversation) {
+            $checkout = $this->payable([['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000]], 5000, $conversation);
+            $receipt = $conversation->messages()->create(['sender' => 'bot', 'type' => 'text', 'content' => 'เงินเข้าแล้ว 50 บาท']);
+            $slip = SlipVerification::create(['bot_id' => $this->bot->id, 'conversation_id' => $conversation->id, 'amount' => '50.00', 'trans_ref' => 'REVIEW-PG-'.$index, 'status' => 'passed']);
+            $event = app(PaymentProofService::class)->record($this->bot, $conversation, $slip, $receipt, null);
+            $entries[] = [$checkout->id, $event->id];
+        }
+        $this->runReviewWorkers(function (int $index) use ($entries): void {
+            // Pause after the first conversation lock. The old current-first code
+            // then holds A and B concurrently before each asks for the sibling.
+            $paused = false;
+            DB::listen(function ($query) use (&$paused): void {
+                if (! $paused && str_contains($query->sql, '"conversations"') && str_contains($query->sql, 'for update')) {
+                    $paused = true;
+                    usleep(300000);
+                }
+            });
+            [$checkoutId, $eventId] = $entries[$index];
+            $outcome = app(CheckoutAuthority::class)->settle(CheckoutSession::findOrFail($checkoutId), VerifiedPaymentEvent::findOrFail($eventId));
+            if ($outcome->action !== 'settled') {
+                throw new \RuntimeException('Unexpected settlement: '.$outcome->action);
+            }
+            $checkout = CheckoutSession::findOrFail($checkoutId);
+            $event = VerifiedPaymentEvent::findOrFail($eventId);
+            if (app(CheckoutAuthority::class)->authorizeReservation($this->bot, $checkout->conversation()->firstOrFail(), $event->slip_verification_id) === null) {
+                throw new \RuntimeException('Reservation authorization failed');
+            }
+        });
+        $this->assertSame(2, Order::count());
+        $this->assertSame(2, CheckoutSession::where('state', 'paid')->count());
+    }
+
+    #[Test]
+    public function review_postgresql_retry_workers_repair_one_proof_receipt_and_order(): void
+    {
+        $this->requireReviewPostgres();
+        $checkout = $this->payable([['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000]], 5000);
+        $image = $this->conversation->messages()->create(['sender' => 'user', 'type' => 'image', 'content' => '[image]']);
+        SlipVerification::create(['bot_id' => $this->bot->id, 'conversation_id' => $this->conversation->id, 'message_id' => $image->id, 'amount' => '50.00', 'trans_ref' => 'REVIEW-PG-RETRY', 'status' => 'passed']);
+        $beforeMessages = Message::count();
+        $this->runReviewWorkers(function () use ($image): void {
+            app(SlipRetryService::class)->retry($this->bot, $this->conversation, $image, 'https://invalid.test/slip', 1);
+        });
+        $this->assertSame('paid', $checkout->fresh()->state);
+        $this->assertSame(1, VerifiedPaymentEvent::count());
+        $this->assertSame(1, Order::count());
+        $this->assertSame($beforeMessages + 1, Message::count());
+    }
+
+    private function requireReviewPostgres(): void
+    {
+        if (DB::getDriverName() !== 'pgsql' || env('COMMERCE_SAFETY_PG_RACE') !== '1' || ! function_exists('pcntl_fork')) {
+            $this->markTestSkipped('Requires opted-in disposable PostgreSQL and pcntl; controller runs this test.');
+        }
+    }
+
+    private function runReviewWorkers(\Closure $work): void
+    {
+        $directory = sys_get_temp_dir().'/checkout-review-race-'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+        DB::commit();
+        DB::disconnect();
+        $children = [];
+        $statuses = [];
+        try {
+            foreach ([0, 1] as $index) {
+                $pid = pcntl_fork();
+                if ($pid === -1) {
+                    throw new \RuntimeException('Could not fork PostgreSQL worker');
+                }
+                if ($pid === 0) {
+                    try {
+                        DB::purge();
+                        DB::statement("SET statement_timeout = '5s'");
+                        DB::statement("SET lock_timeout = '3s'");
+                        file_put_contents("{$directory}/ready-{$index}", 'ready');
+                        $deadline = microtime(true) + 8;
+                        while (! file_exists("{$directory}/go") && microtime(true) < $deadline) {
+                            usleep(1000);
+                        }
+                        if (! file_exists("{$directory}/go")) {
+                            throw new \RuntimeException('Start barrier timed out');
+                        }
+                        $work($index);
+                        file_put_contents("{$directory}/result-{$index}", 'ok');
+                        exit(0);
+                    } catch (\Throwable $exception) {
+                        file_put_contents("{$directory}/result-{$index}", $exception::class.': '.$exception->getMessage());
+                        exit(1);
+                    }
+                }
+                $children[] = $pid;
+            }
+            $deadline = microtime(true) + 8;
+            while ((! file_exists("{$directory}/ready-0") || ! file_exists("{$directory}/ready-1")) && microtime(true) < $deadline) {
+                usleep(1000);
+            }
+            file_put_contents("{$directory}/go", 'go');
+            $deadline = microtime(true) + 12;
+            foreach ($children as $pid) {
+                do {
+                    $done = pcntl_waitpid($pid, $status, WNOHANG);
+                    if ($done === 0) {
+                        usleep(10000);
+                    }
+                } while ($done === 0 && microtime(true) < $deadline);
+                if ($done === 0) {
+                    posix_kill($pid, SIGKILL);
+                    pcntl_waitpid($pid, $status);
+                    $statuses[] = 'timeout';
+                } else {
+                    $statuses[] = pcntl_wifexited($status) ? pcntl_wexitstatus($status) : 'signal';
+                }
+            }
+            DB::purge();
+            DB::reconnect();
+            $results = [];
+            foreach ([0, 1] as $index) {
+                $results[] = is_file("{$directory}/result-{$index}") ? file_get_contents("{$directory}/result-{$index}") : 'missing result';
+            }
+            $this->assertSame([0, 0], $statuses, json_encode($results));
+            $this->assertSame(['ok', 'ok'], $results);
+        } finally {
+            foreach ($children as $pid) {
+                if (pcntl_waitpid($pid, $status, WNOHANG) === 0) {
+                    posix_kill($pid, SIGKILL);
+                    pcntl_waitpid($pid, $status);
+                }
+            }
+            foreach (glob("{$directory}/*") as $file) {
+                unlink($file);
+            }
+            rmdir($directory);
+        }
+    }
+
+    #[Test]
+    public function review_a_real_verification_crash_keeps_the_terminal_slip_for_retry(): void
+    {
+        $checkout = $this->payable([['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000]], 5000);
+        $image = $this->conversation->messages()->create(['sender' => 'user', 'type' => 'image', 'content' => '[image]']);
+        $this->fakeReceivedTransfer('REVIEW-INJECTED-CRASH', '50.00');
+        $proof = app(PaymentProofService::class);
+        $this->mock(PaymentProofService::class)->shouldReceive('record')->once()->andThrow(new \RuntimeException('injected crash before proof'));
+        try {
+            app(SlipVerificationService::class)->verify($this->bot, $this->conversation, $image, 'https://invalid.test/slip', []);
+            $this->fail('Expected injected crash');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('injected crash before proof', $exception->getMessage());
+        }
+        $this->assertSame('passed', SlipVerification::sole()->status);
+        $this->assertDatabaseCount('verified_payment_events', 0);
+        $this->app->instance(PaymentProofService::class, $proof);
+        app(SlipRetryService::class)->retry($this->bot, $this->conversation, $image, 'https://invalid.test/slip', 1);
+        $this->assertSame('paid', $checkout->fresh()->state);
+        $this->assertDatabaseCount('verified_payment_events', 1);
+        Http::assertSentCount(1);
+    }
+
+    #[Test]
+    public function review_resuming_a_stale_reservation_plan_cannot_reserve_its_old_sku(): void
+    {
+        $checkout = $this->settledCheckout([['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000]], 5000, 'REVIEW-STALE-PLAN');
+        $delivery = new AccountDelivery;
+        $delivery->forceFill([
+            'bot_id' => $this->bot->id, 'conversation_id' => $this->conversation->id,
+            'slip_verification_id' => $checkout->settledEvent->slip_verification_id,
+            'status' => AccountDelivery::STATUS_RESERVING, 'amount' => 50,
+            'reservation_plan' => [[
+                'anchor_key' => 'line:0:unit:0', 'product_name' => 'G3D', 'stock_code' => 'WRONG',
+                'kind' => AccountDeliveryItem::KIND_STOCK, 'qty' => 1, 'requested_qty' => null, 'status' => AccountDeliveryItem::ST_RESERVING,
+            ]],
+        ])->save();
+        $pool = Mockery::mock(StockPoolService::class);
+        $pool->shouldNotReceive('reserveOne');
+        $service = new AccountDeliveryService($pool, app(ProductMapper::class), Mockery::mock(TelegramAlertBotService::class), Mockery::mock(LINEService::class));
+        $this->assertNull($service->createFromPayment($this->bot, $this->conversation, $checkout->settledEvent->slip_verification_id, 50, $checkout->items));
+        $this->assertSame('paid_hold', $checkout->fresh()->state);
+        $this->assertDatabaseCount('account_deliveries', 1);
+    }
+
+    #[Test]
+    public function review_retry_repairs_manual_receipt_link_from_existing_proof(): void
+    {
+        $checkout = $this->payable([['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000]], 5000);
+        $image = $this->conversation->messages()->create(['sender' => 'user', 'type' => 'image', 'content' => '[image]']);
+        $event = $this->manualEvent('50.00', $this->owner->id, $checkout);
+        SlipVerification::whereKey($event->slip_verification_id)->update(['message_id' => null]);
+        app(SlipRetryService::class)->retry($this->bot, $this->conversation, $image, 'https://invalid.test/slip', 1);
+        $this->assertSame($event->receipt_message_id, $event->slipVerification()->first()->message_id);
+        $this->assertSame('paid', $checkout->fresh()->state);
+        $this->assertDatabaseCount('verified_payment_events', 1);
+        Http::assertNothingSent();
+    }
+
+    #[Test]
+    public function review_retry_cannot_bind_an_old_terminal_slip_to_later_same_second_consent(): void
+    {
+        Carbon::setTestNow('2026-09-15 12:00:00');
+        try {
+            $image = $this->conversation->messages()->create(['sender' => 'user', 'type' => 'image', 'content' => '[image]']);
+            SlipVerification::create(['bot_id' => $this->bot->id, 'conversation_id' => $this->conversation->id, 'message_id' => $image->id, 'amount' => '50.00', 'trans_ref' => 'REVIEW-OLD-SLIP', 'status' => 'passed']);
+            $checkout = $this->payable([['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000]], 5000);
+            app(SlipRetryService::class)->retry($this->bot, $this->conversation, $image, 'https://invalid.test/slip', 1);
+            $this->assertSame('manual_hold', VerifiedPaymentEvent::sole()->disposition);
+            $this->assertNull(VerifiedPaymentEvent::sole()->checkout_id);
+            $this->assertSame('payable', $checkout->fresh()->state);
+            $this->assertDatabaseCount('orders', 0);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    private function fakeReceivedTransfer(string $reference, string $amount): void
+    {
+        $this->owner->getOrCreateSettings()->update(['easyslip_api_token' => 'local-test-token']);
+        $this->bot->settings()->updateOrCreate(['bot_id' => $this->bot->id], ['slip_verification_enabled' => true, 'slip_receiver_account' => '223-3-24880-3']);
+        $this->bot->unsetRelation('settings')->unsetRelation('user');
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['api.easyslip.com/*' => Http::response(['data' => [
+            'amountInSlip' => $amount,
+            'rawSlip' => ['transRef' => $reference, 'receiver' => ['account' => ['bank' => ['account' => '2233248803']]]],
+        ]])]);
+        $this->mock(OrderReconstructor::class)->shouldNotReceive('reconstruct');
     }
 
     private function settledCheckout(array $lines, int $totalMinor, string $transRef, int $revision = 1): CheckoutSession

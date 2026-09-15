@@ -6,12 +6,14 @@ use App\Jobs\ReserveAccountStock;
 use App\Jobs\RetrySlipVerification;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\SlipVerification;
 use App\Services\AIService;
 use App\Services\Chat\ConversationContextService;
 use App\Services\CommerceSafety\CartValidation;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CheckoutOutcome;
 use App\Services\CommerceSafety\CheckoutRenderer;
+use App\Services\CommerceSafety\FinancialOutputDetector;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\LINEService;
 use App\Services\ModelCapabilityService;
@@ -148,6 +150,13 @@ class LineWebhookResponseService
         );
     }
 
+    private function guardGeneratedPaymentText(WebhookContext $ctx, string $text): string
+    {
+        return $this->commerceGuardsOutput($ctx) && app(FinancialOutputDetector::class)->detects($ctx->bot, $text)
+            ? 'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง'
+            : $text;
+    }
+
     private function authority(): CheckoutAuthority
     {
         return $this->checkoutAuthority ?? app(CheckoutAuthority::class);
@@ -175,7 +184,9 @@ class LineWebhookResponseService
     {
         $cart = $this->aiService->takeCommerceSafetyCartValidation($botMessage);
         if (! $cart instanceof CartValidation || ! $ctx->conversation) {
-            return null;
+            return app(FinancialOutputDetector::class)->detects($ctx->bot, (string) $botMessage->content)
+                ? new CheckoutOutcome('manual_hold', null, 'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง')
+                : null;
         }
         if (! $cart->valid) {
             return new CheckoutOutcome(
@@ -296,6 +307,8 @@ class LineWebhookResponseService
             if (! $responseMessage) {
                 return;
             }
+
+            $responseMessage = $this->guardGeneratedPaymentText($ctx, $responseMessage);
 
             // Save bot response (lines 927-936)
             $botMessage = $conversation->messages()->create([
@@ -428,7 +441,7 @@ class LineWebhookResponseService
                 );
             }
 
-            $responseContent = $result['content'] ?? '';
+            $responseContent = $this->guardGeneratedPaymentText($ctx, $result['content'] ?? '');
 
             if (empty($responseContent)) {
                 Log::warning('Empty response from Vision API', [
@@ -689,6 +702,16 @@ class LineWebhookResponseService
 
             if (! $result->isSlip) {
                 return false; // รูปทั่วไป → vision เดิม
+            }
+
+            if ($result->passed && $this->commerceGuardsOutput($ctx)) {
+                $slip = SlipVerification::query()->findOrFail($result->slipVerificationId);
+                $event = $this->slipVerification->reconcileVerifiedSlip($ctx->bot, $ctx->conversation, $slip);
+                $receipt = $event->receiptMessage()->firstOrFail();
+                $ctx->metadata['bot_message'] = $receipt;
+                $ctx->response = ResponseEnvelope::text($receipt->content);
+
+                return true;
             }
 
             if ($result->passed) {

@@ -99,6 +99,7 @@ class CanonicalCartTest extends TestCase
         $this->assertTrue($result->valid, implode(', ', $result->errors));
         $this->assertSame(249900, $result->totalMinor);
         $this->assertSame([
+            'delivery_method' => 'stock',
             'product_id' => $this->products['personal']->id,
             'sku' => 'NLMP',
             'name' => 'Nolimit Level Up+ Personal',

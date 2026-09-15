@@ -673,13 +673,7 @@ class CheckoutConsentTest extends TestCase
         $consent = $this->userMessage($this->conversation, 'ยืนยัน');
         $edit = $this->userMessage($this->conversation, 'เพิ่ม G3D 2 ชิ้น');
         $line = Mockery::mock(LINEService::class);
-        $line->shouldReceive('generateRetryKey')->once()->andReturn('aggregate-consent');
-        $line->shouldReceive('push')->once()->andReturn(true);
         $bubbles = Mockery::mock(MultipleBubblesService::class);
-        $bubbles->shouldReceive('isEnabled')->once()->andReturn(false);
-        $paymentFlex = Mockery::mock(PaymentFlexService::class);
-        $paymentFlex->shouldReceive('tryConvertToFlex')->once()->andReturnUsing(fn (string $text) => $text);
-        $this->app->instance(PaymentFlexService::class, $paymentFlex);
         $job = new ProcessAggregatedMessages(
             $this->bot,
             $this->conversation,
@@ -690,9 +684,9 @@ class CheckoutConsentTest extends TestCase
 
         $result = $method->invoke($job, [$question->id, $consent->id, $edit->id], $line, $bubbles);
 
-        $this->assertSame([$question->id, $edit->id], $result['remaining_message_ids']);
-        $this->assertCount(1, $result['responses']);
-        $this->assertSame('awaiting_terms', $checkout->fresh()->state);
+        $this->assertSame([$question->id, $consent->id, $edit->id], $result['remaining_message_ids']);
+        $this->assertCount(0, $result['responses']);
+        $this->assertSame('awaiting_confirm', $checkout->fresh()->state);
     }
 
     #[Test]
@@ -837,6 +831,95 @@ class CheckoutConsentTest extends TestCase
 
         $this->assertDatabaseCount('checkout_sessions', 0);
         $this->assertSame($modelMessage->content, $ctx->response->payload);
+    }
+
+    #[Test]
+    public function review_earlier_cart_edit_prevents_later_terms_consent_paying_the_old_cart(): void
+    {
+        $checkout = $this->proposePage()->checkout;
+        $this->present($checkout, 'confirm');
+        $this->authority()->accept($this->bot, $this->conversation, $this->userMessage($this->conversation, 'ยืนยัน'));
+        $checkout->refresh();
+        $this->present($checkout, 'terms');
+        $edit = $this->userMessage($this->conversation, 'เพิ่ม G3D 2 ชิ้น');
+        $consent = $this->userMessage($this->conversation, 'ยอมรับ');
+        $job = new ProcessAggregatedMessages($this->bot, $this->conversation, 'review-edit', (string) $this->conversation->external_customer_id);
+        $result = (new \ReflectionMethod($job, 'consumeCheckoutMessages'))->invoke($job, [$edit->id, $consent->id], Mockery::mock(LINEService::class), Mockery::mock(MultipleBubblesService::class));
+        $this->assertSame([], $result['responses']);
+        $this->assertSame([$edit->id, $consent->id], $result['remaining_message_ids']);
+        $this->assertSame('awaiting_terms', $checkout->fresh()->state);
+        $this->assertArrayNotHasKey('terms', $checkout->fresh()->accepted);
+    }
+
+    #[Test]
+    public function review_generated_payment_instructions_without_a_parseable_total_are_blocked(): void
+    {
+        $texts = ['โอน 199 บาทเข้าบัญชี 223-3-24880-3 ได้เลยครับ', 'บัญชี 223-3-24880-3 ครับ', 'กรุณาชำระ 199 บาทได้เลย', 'Please pay THB 199 now', 'Transfer 199 THB please'];
+        foreach (['enforce', 'hold'] as $mode) {
+            config(["commerce_safety.bots.{$this->bot->id}.mode" => $mode]);
+            foreach ($texts as $text) {
+                $ctx = $this->generateWithInternalCart($text, null);
+                $this->assertNotSame($text, $ctx->response->payload, $mode.': '.$text);
+                $this->assertStringNotContainsString('223-3-24880-3', $ctx->response->payload);
+                $job = new ProcessAggregatedMessages($this->bot, $this->conversation, 'review-output', (string) $this->conversation->external_customer_id);
+                $outcome = (new \ReflectionMethod($job, 'checkoutProposal'))->invoke($job, ['content' => $text]);
+                $this->assertNotNull($outcome);
+                $this->assertSame('manual_hold', $outcome->action);
+            }
+        }
+        foreach (['Page ราคา 199 บาทครับ', 'G3D 50 บาท ใช้ทำอะไรได้บ้าง', 'รับโอนผ่านธนาคารครับ'] as $text) {
+            $this->assertSame($text, $this->generateWithInternalCart($text, null)->response->payload);
+        }
+        foreach (['off', 'shadow'] as $mode) {
+            config(["commerce_safety.bots.{$this->bot->id}.mode" => $mode]);
+            $this->assertSame($texts[0], $this->generateWithInternalCart($texts[0], null)->response->payload);
+        }
+    }
+
+    #[Test]
+    public function review_actual_ai_detects_transfer_instructions_without_order_or_total(): void
+    {
+        $this->bot->update(['context_window' => 10]);
+        $content = 'โอน 199 บาทเข้าบัญชี 223-3-24880-3 ได้เลยครับ';
+        $this->mock(RAGService::class)->shouldReceive('generateResponse')->once()->andReturn([
+            'content' => $content, 'model' => 'test', 'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+        ]);
+        $this->mock(StockGuardService::class)->shouldReceive('validate')->once()->andReturn(['blocked' => false, 'content' => $content]);
+        $result = app(AIService::class)->generateResponse($this->bot, 'เอา Page', $this->conversation);
+        $this->assertInstanceOf(CartValidation::class, $result['commerce_safety_cart_validation']);
+        $this->assertFalse($result['commerce_safety_cart_validation']->valid);
+        $this->assertNotSame($content, $result['content']);
+        $this->assertNull($result['order_payload']);
+    }
+
+    #[Test]
+    public function review_ordinary_edit_is_not_consumed_when_catalog_revalidation_fails(): void
+    {
+        $checkout = $this->proposePage()->checkout;
+        $this->products['page']->update(['manual_off' => true]);
+        $edit = $this->userMessage($this->conversation, 'เพิ่ม G3D 2 ชิ้น');
+        $job = new ProcessAggregatedMessages($this->bot, $this->conversation, 'review-invalid-edit', (string) $this->conversation->external_customer_id);
+        $result = (new \ReflectionMethod($job, 'consumeCheckoutMessages'))->invoke($job, [$edit->id], Mockery::mock(LINEService::class), Mockery::mock(MultipleBubblesService::class));
+        $this->assertSame([], $result['responses']);
+        $this->assertSame([$edit->id], $result['remaining_message_ids']);
+    }
+
+    #[Test]
+    public function review_payment_renderer_requires_current_persisted_payable_state(): void
+    {
+        $renderer = app(CheckoutRenderer::class);
+        $unsaved = new CheckoutSession;
+        $unsaved->forceFill(['state' => 'payable', 'items' => [], 'total_minor' => 19900]);
+        $persisted = $this->proposePage()->checkout;
+        $persisted->state = 'payable'; // An in-memory mutation is not authority.
+        foreach ([$unsaved, $persisted] as $checkout) {
+            try {
+                $renderer->render($checkout, 'payment');
+                $this->fail('Payment renderer accepted unpersisted payable state');
+            } catch (\InvalidArgumentException $exception) {
+                $this->assertStringContainsString('payable checkout', $exception->getMessage());
+            }
+        }
     }
 
     private function authority(): CheckoutAuthority

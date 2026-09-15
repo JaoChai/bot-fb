@@ -15,6 +15,7 @@ use App\Services\CommerceSafety\CartValidation;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CheckoutOutcome;
 use App\Services\CommerceSafety\CheckoutRenderer;
+use App\Services\CommerceSafety\FinancialOutputDetector;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\FlowPluginService;
 use App\Services\LINEService;
@@ -512,6 +513,12 @@ class ProcessAggregatedMessages implements ShouldQueue
         $responses = [];
         $remainingMessageIds = [];
         foreach ($messages as $message) {
+            // Once ordinary input is reached, preserve the entire suffix for AI/B1.
+            if ($remainingMessageIds !== [] || ! $authority->isStateOnlyReply($message)) {
+                $remainingMessageIds[] = (int) $message->getKey();
+
+                continue;
+            }
             $outcome = $authority->accept($this->bot, $this->conversation, $message);
             if (! $this->outcomeConsumedMessage($outcome, $message)) {
                 $remainingMessageIds[] = (int) $message->getKey();
@@ -584,7 +591,9 @@ class ProcessAggregatedMessages implements ShouldQueue
 
         $cart = $result['commerce_safety_cart_validation'] ?? null;
         if (! $cart instanceof CartValidation) {
-            return null;
+            return app(FinancialOutputDetector::class)->detects($this->bot, (string) ($result['content'] ?? ''))
+                ? new CheckoutOutcome('manual_hold', null, 'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง')
+                : null;
         }
         if (! $cart->valid) {
             return new CheckoutOutcome(

@@ -56,7 +56,7 @@ class CheckoutAuthority
     public function settle(CheckoutSession $checkout, VerifiedPaymentEvent $event): CheckoutOutcome
     {
         return DB::transaction(function () use ($checkout, $event): CheckoutOutcome {
-            Conversation::query()->whereKey($checkout->conversation_id)->lockForUpdate()->first();
+            ConversationAuthorityLock::acquire((int) $checkout->bot_id, (int) $checkout->conversation_id);
             $lockedCheckout = CheckoutSession::query()->lockForUpdate()->find($checkout->getKey());
             $lockedEvent = VerifiedPaymentEvent::query()->lockForUpdate()->find($event->getKey());
             if (! $lockedCheckout || ! $lockedEvent) {
@@ -140,7 +140,7 @@ class CheckoutAuthority
                 return new CheckoutOutcome('manual_hold', null);
             }
 
-            Conversation::query()->whereKey($candidate->conversation_id)->lockForUpdate()->first();
+            ConversationAuthorityLock::acquire((int) $candidate->bot_id, (int) $candidate->conversation_id);
             $lockedEvent = VerifiedPaymentEvent::query()->lockForUpdate()->find($candidate->getKey());
             if ($lockedEvent === null || $lockedEvent->disposition === 'manual_hold') {
                 return new CheckoutOutcome('manual_hold', null);
@@ -168,7 +168,7 @@ class CheckoutAuthority
     ): CheckoutOutcome {
         return DB::transaction(function () use ($event, $checkout, $actor, $revision): CheckoutOutcome {
             $lockedBot = Bot::query()->lockForUpdate()->find($checkout->bot_id);
-            Conversation::query()->whereKey($checkout->conversation_id)->lockForUpdate()->first();
+            ConversationAuthorityLock::acquire((int) $checkout->bot_id, (int) $checkout->conversation_id);
             $lockedCheckout = CheckoutSession::query()->lockForUpdate()->find($checkout->getKey());
             $lockedEvent = VerifiedPaymentEvent::query()->lockForUpdate()->find($event->getKey());
             $lockedActor = User::query()->lockForUpdate()->find($actor->getKey());
@@ -199,10 +199,7 @@ class CheckoutAuthority
     public function authorizeReservation(Bot $bot, Conversation $conversation, int $slipId): ?CheckoutSession
     {
         return DB::transaction(function () use ($bot, $conversation, $slipId): ?CheckoutSession {
-            $lockedConversation = Conversation::query()
-                ->where('bot_id', $bot->getKey())
-                ->lockForUpdate()
-                ->find($conversation->getKey());
+            $lockedConversation = ConversationAuthorityLock::acquire((int) $bot->getKey(), (int) $conversation->getKey());
             $candidate = VerifiedPaymentEvent::query()
                 ->where('bot_id', $bot->getKey())
                 ->where('conversation_id', $conversation->getKey())
@@ -395,10 +392,7 @@ class CheckoutAuthority
         }
 
         return DB::transaction(function () use ($bot, $conversation, $cart): CheckoutOutcome {
-            $lockedConversation = Conversation::query()
-                ->where('bot_id', $bot->getKey())
-                ->lockForUpdate()
-                ->find($conversation->getKey());
+            $lockedConversation = ConversationAuthorityLock::acquire((int) $bot->getKey(), (int) $conversation->getKey());
             if (! $lockedConversation) {
                 return new CheckoutOutcome('clarify', null);
             }
@@ -539,6 +533,13 @@ class CheckoutAuthority
         });
     }
 
+    public function isStateOnlyReply(Message $message): bool
+    {
+        return in_array($this->normalizeResponse((string) $message->content), [
+            ...self::SUPPORT_ACCEPT, 'ยืนยัน', 'confirm', 'ยกเลิก', 'cancel',
+        ], true);
+    }
+
     public function accept(
         Bot $bot,
         Conversation $conversation,
@@ -552,10 +553,7 @@ class CheckoutAuthority
         }
 
         return DB::transaction(function () use ($bot, $conversation, $customerMessage): CheckoutOutcome {
-            $lockedConversation = Conversation::query()
-                ->where('bot_id', $bot->getKey())
-                ->lockForUpdate()
-                ->find($conversation->getKey());
+            $lockedConversation = ConversationAuthorityLock::acquire((int) $bot->getKey(), (int) $conversation->getKey());
             if (! $lockedConversation) {
                 return new CheckoutOutcome('clarify', null);
             }

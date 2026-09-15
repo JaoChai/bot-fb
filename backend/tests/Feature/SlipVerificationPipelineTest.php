@@ -61,6 +61,24 @@ class SlipVerificationPipelineTest extends TestCase
         ]);
     }
 
+    public function test_review_scoped_vision_cannot_emit_generated_transfer_instructions(): void
+    {
+        Http::preventStrayRequests();
+        $this->bot->settings->update(['slip_verification_enabled' => false]);
+        foreach (['enforce', 'hold'] as $mode) {
+            config(["commerce_safety.bots.{$this->bot->id}.mode" => $mode]);
+            Http::fake(['api.line.me/*' => Http::response(['ok' => true]), 'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => 'โอน 199 บาทเข้าบัญชี 223-3-24880-3 ได้เลยครับ']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ])]);
+            $ctx = $this->makeContext();
+            app(LineWebhookResponseService::class)->generate($ctx);
+            $this->assertNotNull($ctx->response);
+            $this->assertStringNotContainsString('223-3-24880-3', $ctx->response->payload);
+        }
+    }
+
     private function makeContext(): WebhookContext
     {
         $userMessage = Message::factory()->create([

@@ -14,6 +14,7 @@ use App\Models\Message;
 use App\Models\Order;
 use App\Models\SlipVerification;
 use App\Models\User;
+use App\Services\CommerceSafety\ConversationAuthorityLock;
 use App\Services\CommerceSafety\MoneyMinor;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\FlowPluginService;
@@ -168,7 +169,7 @@ class ManualPaymentConfirmService
                 $explicitCheckout,
             ): array {
                 Bot::whereKey($bot->id)->lockForUpdate()->firstOrFail();
-                Conversation::whereKey($conversation->id)->lockForUpdate()->firstOrFail();
+                ConversationAuthorityLock::acquire((int) $bot->id, (int) $conversation->id);
                 $this->guardAgainstDoubleConfirm($conversation);
                 $lockedCheckout = $checkout === null || ! $explicitCheckout
                     ? null

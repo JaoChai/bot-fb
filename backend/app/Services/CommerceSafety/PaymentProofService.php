@@ -31,6 +31,7 @@ class PaymentProofService
         Message $receipt,
         ?int $actorId,
         ?CheckoutSession $checkout = null,
+        bool $reconciling = false,
     ): VerifiedPaymentEvent {
         $attributes = null;
 
@@ -43,19 +44,18 @@ class PaymentProofService
                 $actorId,
                 $checkout,
                 &$attributes,
+                $reconciling,
             ): VerifiedPaymentEvent {
                 $bot = $this->reloadLocked(Bot::class, $bot->getKey(), 'bot');
-                $conversation = $this->reloadLocked(
-                    Conversation::class,
-                    $conversation->getKey(),
-                    'conversation',
-                );
+                $conversation = ConversationAuthorityLock::acquire((int) $bot->id, (int) $conversation->getKey())
+                    ?? throw ValidationException::withMessages(['conversation' => 'The persisted conversation row is required.']);
+                $slip = $this->reloadLocked(SlipVerification::class, $slip->getKey(), 'slip');
                 $lockedCheckout = $this->lockedCheckoutForNewProof(
                     $bot,
                     $conversation,
                     $checkout,
+                    $reconciling ? $slip : null,
                 );
-                $slip = $this->reloadLocked(SlipVerification::class, $slip->getKey(), 'slip');
                 $receipt = $this->reloadLocked(Message::class, $receipt->getKey(), 'receipt');
 
                 if ((int) $conversation->bot_id !== (int) $bot->id
@@ -74,6 +74,7 @@ class PaymentProofService
                     $slip,
                     $receipt,
                     $actorId,
+                    $reconciling,
                 );
 
                 try {
@@ -82,10 +83,12 @@ class PaymentProofService
                     $this->invalid('amount', 'The verified payment amount is invalid.');
                 }
 
+                $manualActorMissing = $source === 'manual' && $storedActorId === null;
+                $held = $lockedCheckout === null || $manualActorMissing;
                 $attributes = [
                     'bot_id' => (int) $bot->id,
                     'conversation_id' => (int) $conversation->id,
-                    'checkout_id' => $lockedCheckout?->getKey(),
+                    'checkout_id' => $manualActorMissing ? null : $lockedCheckout?->getKey(),
                     'slip_verification_id' => (int) $slip->id,
                     'receipt_message_id' => (int) $receipt->id,
                     'order_id' => null,
@@ -94,9 +97,9 @@ class PaymentProofService
                     'currency' => 'THB',
                     'amount_minor' => $amountMinor,
                     'actor_id' => $storedActorId,
-                    'disposition' => $lockedCheckout === null ? 'manual_hold' : null,
-                    'hold_reason' => $lockedCheckout === null ? 'no_eligible_checkout' : null,
-                    'held_at' => $lockedCheckout === null ? now() : null,
+                    'disposition' => $held ? 'manual_hold' : null,
+                    'hold_reason' => $manualActorMissing ? 'manual_actor_unavailable' : ($held ? 'no_eligible_checkout' : null),
+                    'held_at' => $held ? now() : null,
                 ];
 
                 $existing = $this->findByEventKey($attributes['bot_id'], $eventKey);
@@ -155,6 +158,7 @@ class PaymentProofService
         SlipVerification $slip,
         Message $receipt,
         ?int $actorId,
+        bool $reconciling = false,
     ): array {
         if ($slip->status === 'passed') {
             $transRef = trim((string) $slip->trans_ref);
@@ -168,6 +172,13 @@ class PaymentProofService
 
         if ($slip->status !== 'manual_confirmed') {
             $this->invalid('slip', 'Only passed or manually confirmed slips can create payment proof.');
+        }
+
+        if ($reconciling && $actorId === null
+            && (int) $slip->message_id === (int) $receipt->id) {
+            // A persisted manual terminal row records money, but missing actor
+            // provenance must remain held, never attributed to today's owner.
+            return ['manual', "manual-slip:{$slip->id}", null];
         }
 
         $actor = $actorId === null ? null : User::query()->lockForUpdate()->find($actorId);
@@ -222,6 +233,7 @@ class PaymentProofService
         Bot $bot,
         Conversation $conversation,
         ?CheckoutSession $checkout,
+        ?SlipVerification $recoveredSlip = null,
     ): ?CheckoutSession {
         if ($checkout !== null) {
             $locked = $this->reloadLocked(CheckoutSession::class, $checkout->getKey(), 'checkout');
@@ -241,7 +253,23 @@ class PaymentProofService
             ->limit(2)
             ->get();
 
-        return $candidates->count() === 1 ? $candidates->first() : null;
+        $candidate = $candidates->count() === 1 ? $candidates->first() : null;
+        if ($candidate !== null && $recoveredSlip !== null) {
+            // For a previously unlinked proof, timestamps alone cannot establish
+            // order within a second. Consent must predate the persisted slip image.
+            // Legacy manual slips without an exact event/checkout link stay held.
+            $image = $recoveredSlip->status === 'passed'
+                ? Message::query()->whereKey($recoveredSlip->message_id)
+                    ->where('conversation_id', $conversation->id)->where('sender', 'user')->first()
+                : null;
+            if ($image === null || $candidate->created_at->gt($recoveredSlip->created_at)
+                || $candidate->accepted === []
+                || max(array_map('intval', array_values($candidate->accepted))) >= (int) $image->id) {
+                return null;
+            }
+        }
+
+        return $candidate;
     }
 
     /**

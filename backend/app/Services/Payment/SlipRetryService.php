@@ -37,8 +37,26 @@ class SlipRetryService
      */
     public function retry(Bot $bot, Conversation $conversation, Message $message, string $imageUrl, int $attempt): void
     {
+        if (in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true)) {
+            $terminal = SlipVerification::query()->where('bot_id', $bot->id)->where('conversation_id', $conversation->id)
+                ->whereIn('status', ['passed', 'manual_confirmed'])
+                ->where(function ($query) use ($message): void {
+                    $query->where('message_id', $message->id)
+                        ->orWhere(function ($query) use ($message): void {
+                            $query->where('status', 'manual_confirmed')->where('created_at', '>=', $message->created_at);
+                        });
+                })->orderBy('id')->get();
+            foreach ($terminal as $slip) {
+                $this->slipVerification->reconcileVerifiedSlip($bot, $conversation, $slip);
+            }
+            if ($terminal->isNotEmpty()) {
+                return;
+            }
+        }
+
         // ลูกค้าส่งสลิปซ้ำผ่านเอง / แอดมินยืนยันมือไปแล้ว → หยุด กันออเดอร์ซ้ำ
-        if ($this->alreadyResolved($conversation, $message)) {
+        if (! in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true)
+            && $this->alreadyResolved($conversation, $message)) {
             return;
         }
 
@@ -76,6 +94,13 @@ class SlipRetryService
      */
     private function emitSuccess(Bot $bot, Conversation $conversation, SlipVerificationResult $result): void
     {
+        if (in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true)) {
+            $slip = SlipVerification::query()->findOrFail($result->slipVerificationId);
+            $this->slipVerification->reconcileVerifiedSlip($bot, $conversation, $slip);
+
+            return;
+        }
+
         $template = $bot->settings?->slip_success_message
             ?: LineWebhookResponseService::SLIP_SUCCESS_TEMPLATE;
         $text = str_replace(
@@ -95,23 +120,6 @@ class SlipRetryService
                 'slip_retry' => true,
             ],
         ]);
-
-        if (in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true)) {
-            $slip = $result->slipVerificationId === null
-                ? null
-                : SlipVerification::query()->find($result->slipVerificationId);
-            if ($slip !== null) {
-                $this->slipVerification->settleVerifiedReceipt(
-                    $bot,
-                    $conversation,
-                    $slip,
-                    $botMessage,
-                    null,
-                );
-            }
-
-            return;
-        }
 
         $this->pushToLine($bot, $conversation, $text);
         $this->runPlugins($bot, $conversation, $botMessage);

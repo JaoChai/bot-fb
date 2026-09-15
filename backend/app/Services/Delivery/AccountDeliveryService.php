@@ -11,9 +11,11 @@ use App\Models\Bot;
 use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
+use App\Models\ProductStock;
 use App\Models\SlipVerification;
 use App\Models\VerifiedPaymentEvent;
 use App\Services\CommerceSafety\CheckoutAuthority;
+use App\Services\CommerceSafety\JsonValue;
 use App\Services\CommerceSafety\MoneyMinor;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\LINEService;
@@ -63,7 +65,8 @@ class AccountDeliveryService
             ->where('slip_verification_id', $slipVerificationId)
             ->whereNotNull('checkout_id')
             ->exists();
-        if ($hasAuthoritativeCheckout || in_array($mode, ['enforce', 'hold'], true)) {
+        $canonical = $hasAuthoritativeCheckout || in_array($mode, ['enforce', 'hold'], true);
+        if ($canonical) {
             $checkout = app(CheckoutAuthority::class)
                 ->authorizeReservation($bot, $conversation, $slipVerificationId);
             if ($checkout === null || ! $this->validScopedRequest($checkout, $amount, $items)) {
@@ -78,13 +81,19 @@ class AccountDeliveryService
             $items = $checkout->items;
         }
 
-        $plan = $this->reservationPlan($items);
+        $plan = $this->reservationPlan($items, $canonical);
+        if ($plan === null) {
+            $checkout->forceFill(['state' => 'paid_hold'])->save();
+
+            return null;
+        }
         [$delivery, $duplicateOf, $reservationToken, $returnExisting] = $this->initializeAndClaim(
             $bot,
             $conversation,
             $slipVerificationId,
             $amount,
             $plan,
+            $canonical ? $checkout : null,
         );
         if ($delivery === null) {
             return null;
@@ -196,6 +205,7 @@ class AccountDeliveryService
         int $slipVerificationId,
         ?float $amount,
         array $plan,
+        ?CheckoutSession $checkout = null,
     ): array {
         return DB::transaction(function () use (
             $bot,
@@ -203,6 +213,7 @@ class AccountDeliveryService
             $slipVerificationId,
             $amount,
             $plan,
+            $checkout,
         ): array {
             Conversation::query()->whereKey($conversation->id)->lockForUpdate()->firstOrFail();
             $delivery = AccountDelivery::query()
@@ -228,6 +239,13 @@ class AccountDeliveryService
                 || (int) $delivery->conversation_id !== (int) $conversation->id) {
                 return [null, null, null, false];
             } elseif ($delivery->status !== AccountDelivery::STATUS_RESERVING) {
+                return [null, null, null, false];
+            }
+
+            if ($checkout !== null && is_array($delivery->reservation_plan)
+                && ! JsonValue::equals($delivery->reservation_plan, $plan)) {
+                $checkout->forceFill(['state' => 'paid_hold'])->save();
+
                 return [null, null, null, false];
             }
 
@@ -293,19 +311,36 @@ class AccountDeliveryService
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function reservationPlan(array $items): array
+    private function reservationPlan(array $items, bool $canonical = false): ?array
     {
         $plan = [];
         $maxQty = max(1, config_int('delivery.max_qty', 20));
         foreach (array_values($items) as $line => $item) {
-            if (PaymentMessageDetector::isZeroPriceItem($item)) {
+            if (! $canonical && PaymentMessageDetector::isZeroPriceItem($item)) {
                 continue;
             }
             $rawQty = max(1, (int) ($item['qty'] ?? 1));
             $qty = min($maxQty, $rawQty);
             $requestedQty = $qty < $rawQty ? $rawQty : null;
-            $product = $this->mapper->map((string) ($item['name'] ?? ''));
-            if ($product === null) {
+            if ($canonical) {
+                $product = ProductStock::query()->find($item['product_id'] ?? null);
+                if (! $product
+                    || ! is_int($item['qty'] ?? null) || $item['qty'] <= 0 || $item['qty'] > $maxQty
+                    || (string) $product->name !== ($item['name'] ?? null)
+                    || trim((string) ($product->stock_code ?: $product->slug)) !== ($item['sku'] ?? null)
+                    || $product->delivery_method !== ($item['delivery_method'] ?? null)
+                    || ! in_array($item['method'] ?? null, ['card', 'topup', 'none'], true)
+                    || ! $product->in_stock || $product->manual_off
+                    || ($product->delivery_method === 'stock'
+                        && ($product->available_count === null || $product->available_count < $item['qty']))) {
+                    return null;
+                }
+                $qty = $item['qty'];
+                $requestedQty = null;
+            } else {
+                $product = $this->mapper->map((string) ($item['name'] ?? ''));
+            }
+            if ($product === null || ($canonical && $product->delivery_method === 'none')) {
                 $plan[] = [
                     'anchor_key' => "line:{$line}:manual",
                     'product_name' => (string) ($item['name'] ?? ''),
@@ -335,7 +370,7 @@ class AccountDeliveryService
                 $plan[] = [
                     'anchor_key' => "line:{$line}:unit:{$unit}",
                     'product_name' => $product->name,
-                    'stock_code' => $product->stock_code,
+                    'stock_code' => $canonical ? $item['sku'] : $product->stock_code,
                     'kind' => AccountDeliveryItem::KIND_STOCK,
                     'qty' => 1,
                     'requested_qty' => $unit === 0 ? $requestedQty : null,
