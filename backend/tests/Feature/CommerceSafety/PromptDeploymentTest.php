@@ -664,6 +664,51 @@ class PromptDeploymentTest extends TestCase
         });
     }
 
+    public function test_prepare_accepts_the_real_committed_v28_manifest_and_measurements_match_file_bytes(): void
+    {
+        config(['prompt_deployment.artifact_root' => base_path('resources/prompts/bot26')]);
+        $path = base_path('resources/prompts/bot26/v28.txt');
+        $manifestPath = base_path('resources/prompts/bot26/v28.manifest.json');
+        $this->assertFileExists($path);
+        $this->assertFileExists($manifestPath);
+
+        $bytes = file_get_contents($path);
+        $manifest = json_decode(file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR);
+
+        // Manifest measurements must match the actual committed artifact bytes.
+        $this->assertSame(26, $manifest['bot_id']);
+        $this->assertSame(24, $manifest['flow_id']);
+        $this->assertSame('v28', $manifest['version']);
+        $this->assertSame('openai/gpt-5.6-luna', $manifest['model']);
+        $this->assertSame('medium', $manifest['reasoning']);
+        $this->assertSame(mb_strlen($bytes, 'UTF-8'), $manifest['artifact']['unicode_characters']);
+        $this->assertSame(strlen($bytes), $manifest['artifact']['bytes']);
+        $this->assertSame(hash('sha256', $bytes), $manifest['artifact']['sha256']);
+        $this->assertSame(md5($bytes), $manifest['artifact']['md5']);
+        $this->assertSame('UTF-8', $manifest['artifact']['encoding']);
+        $this->assertTrue($manifest['artifact']['trailing_lf']);
+        $this->assertSame(23133, $manifest['artifact']['unicode_characters']);
+        $this->assertSame(58718, $manifest['artifact']['bytes']);
+        $this->assertSame('b5d8815cd45626949482f26f5c2f0942371b5940a3ccd0f5f810379687b1fa24', $manifest['artifact']['sha256']);
+        $this->assertSame(41100, $manifest['source']['unicode_characters']);
+        $this->assertSame('3f08720a6fb34f916561e5531119d5f1', $manifest['source']['md5']);
+
+        // Drive the real manifest through C3's own prepare() validation. This environment
+        // cannot reproduce the actual 41,100-character production prompt bytes (only their
+        // hash is known), so a synthetic flow of the matching length is used: every other
+        // check (manifest schema, artifact hash/byte/char measurements against the real
+        // file, version, model, reasoning, bot/flow serving preconditions) must pass, and
+        // the only remaining rejection is the literal production-content mismatch.
+        $this->flow->update(['system_prompt' => str_repeat('ก', 41100)]);
+        try {
+            $this->service()->prepare(26, 24, $path, $manifest['source']['md5'], $manifest['artifact']['sha256'], 'release-check');
+            $this->fail('Expected rejection: this environment cannot reproduce the real production prompt bytes.');
+        } catch (RuntimeException $e) {
+            $this->assertSame('source_mismatch', $e->getMessage());
+        }
+        $this->assertDatabaseCount('prompt_deployments', 0);
+    }
+
     public function test_postgresql_cache_readback_and_exact_rollback(): void
     {
         $this->withDisposablePostgresql(function () {

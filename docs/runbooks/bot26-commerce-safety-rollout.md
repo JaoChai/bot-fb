@@ -9,8 +9,8 @@ This runbook implements the authoritative `task-4-preflight-final.txt` ruling su
 Implementation baseline: `645b386824ebff711b19e535ec4f12897fe970ba`. Known open gates at this baseline:
 
 - [C2 evidence](../testing/bot26-v28-evaluation.md) records **raw inference unexecuted**, T17 classification blocked, and application semantic gaps. Historical replay success is not 38/38 reviewed raw-text acceptance for v28.
-- The actual candidate is at repository-root `resources/prompts/bot26/v28.txt`. Its required adjacent **`v28.manifest.json` is absent**. The evaluation inventory under `backend/tests/Fixtures/PromptEval/bot26-v28/manifest.json` is not the C3 deployment manifest. C3 deliberately rejects that alternative schema. A separately reviewed release must supply the measured nested C3 manifest; do not improvise one during deployment.
-- C3 resolves artifacts beneath `prompt_deployment.artifact_root`, defaulting to the repository's `resources/prompts/bot26`. The backend Dockerfile copies a backend build context into `/var/www/html`; repository-root resources cannot be assumed present in that image. Prove the builder, packaged paths and configured artifact root satisfy C3's containment checks before activation.
+- **Fixed.** The candidate now lives inside the backend build context at `backend/resources/prompts/bot26/v28.txt` (moved via `git mv`; bytes and SHA-256 `b5d8815cd45626949482f26f5c2f0942371b5940a3ccd0f5f810379687b1fa24` unchanged). The required adjacent nested C3 manifest is now committed at `backend/resources/prompts/bot26/v28.manifest.json`, measured from the actual artifact bytes (23,133 Unicode characters, 58,718 bytes) with the known active-flow source facts (41,100 Unicode characters, MD5 `3f08720a6fb34f916561e5531119d5f1`). It is distinct from, and not confused with, the evaluation inventory schema at `backend/tests/Fixtures/PromptEval/bot26-v28/manifest.json`, which C3 still deliberately rejects. `backend/tests/Feature/CommerceSafety/PromptDeploymentTest.php::test_prepare_accepts_the_real_committed_v28_manifest_and_measurements_match_file_bytes` loads the real committed manifest through `PromptDeploymentService::prepare()` and asserts its measurements match the artifact bytes; every check except the literal production-prompt content (which this environment cannot reproduce) passes.
+- **Fixed.** `prompt_deployment.artifact_root` now defaults to `base_path('resources/prompts/bot26')` (i.e. `backend/resources/prompts/bot26`), inside the Dockerfile's `backend` build context. `docker build -t bot26-pkg-check backend` followed by `docker run --rm --entrypoint sh bot26-pkg-check -c 'sha256sum /var/www/html/resources/prompts/bot26/v28.txt'` reproduced the same SHA-256 inside the built image, proving the artifact and its manifest are packaged and resolvable under the configured root. `backend/.dockerignore` does not exist, so nothing excludes `resources/prompts/bot26` from the `COPY . .` build step. C3's path-containment checks (`PromptDeploymentService::containedPath()`) were not modified.
 - Immediate hold propagation and a usable measured shadow report are not established. See limitations below. Full-suite execution evidence is recorded below; failures do not disappear because the command ran.
 
 ## Required nonproduction gate checklist
@@ -92,10 +92,10 @@ Capture migration hashes from the reviewed source, then independently compare th
 
 ### Exact C3 commands and required outputs
 
-Run from `backend/` in a verified repository-layout release. The actual path is `../resources/prompts/bot26/v28.txt`; the brief's `backend/resources/...` location does not exist at the implementation baseline. Check both candidate and adjacent C3 manifest are packaged inside the allowed root. These commands will fail closed until the missing manifest is supplied by a reviewed release.
+Run from `backend/` in a verified repository-layout release. The candidate and its adjacent C3 manifest now live at `backend/resources/prompts/bot26/`, inside the backend Docker build context; the path below is relative to `backend/`. Check both files are packaged inside the allowed root.
 
 ```sh
-php artisan bot:deploy-prompt 26 24 ../resources/prompts/bot26/v28.txt \
+php artisan bot:deploy-prompt 26 24 resources/prompts/bot26/v28.txt \
   --expected-current-md5=3f08720a6fb34f916561e5531119d5f1 \
   --expected-candidate-sha256=b5d8815cd45626949482f26f5c2f0942371b5940a3ccd0f5f810379687b1fa24 \
   --actor='<approved-operator-id>' --prepare
@@ -134,7 +134,7 @@ Track wrong-price/false-success/unknown-contact/raw-marker or JSON output, unexp
 | No deployed runtime fake-transport mode. | PHPUnit fakes cannot prove staged egress isolation; validate network policy/test accounts independently. |
 | Cache-miss generation is not literally read-only. | Semantic caching/usage accounting may write state; obtain approval for the dedicated synthetic nonfinancial probe. |
 | Live platform topology is unverified. | Repository state cannot prove Railway builder, replicas, live SHA, environment variables, egress or process overlap. No backend `railway.toml/json` is committed; historical Railway instructions conflict with bundled Docker topology. Verify live state after authorization. |
-| Artifact packaging/manifest gap. | Root v28 exists, adjacent deployment manifest does not; backend-only image may omit both. Resolve in a reviewed release before C3 prepare. |
+| Artifact packaging/manifest gap. | **Fixed locally, not yet independently reviewed.** v28 and its adjacent deployment manifest now live at `backend/resources/prompts/bot26/`, inside the Docker build context; a local `docker build`/`docker run sha256sum` proved packaging. Still requires the separate independently reviewed release/commit review before C3 prepare in a real environment. |
 
 ## C4 local verification record
 
