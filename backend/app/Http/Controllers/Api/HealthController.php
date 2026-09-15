@@ -62,7 +62,8 @@ class HealthController extends Controller
         $broadcastDriver = config('broadcasting.default');
         $broadcastOk = $broadcastDriver !== 'null';
 
-        $status = ($broadcastOk && $failedCount < 10) ? 'healthy' : 'degraded';
+        $queueOk = $queueDepth < 100 && $failedCount < 10;
+        $status = ($broadcastOk && $queueOk) ? 'healthy' : 'degraded';
 
         return response()->json([
             'status' => $status,
@@ -72,7 +73,7 @@ class HealthController extends Controller
                     'driver' => $broadcastDriver,
                 ],
                 'queue' => [
-                    'ok' => $queueDepth < 100,
+                    'ok' => $queueOk,
                     'depth' => $queueDepth,
                     'failed' => $failedCount,
                     'connection' => config('queue.default'),
