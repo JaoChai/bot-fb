@@ -190,19 +190,23 @@ class PaymentEffectsTest extends TestCase
         Queue::assertPushed(RunPaymentEffect::class, 3);
     }
 
-    public function test_pre_b3_unsettled_held_orderless_checkoutless_and_mismatched_events_create_zero_effects(): void
+    public function test_pre_b3_unsettled_and_held_valid_proofs_create_only_one_receipt_effect(): void
     {
         $event = $this->automaticEvent('50.00', 'LEGACY');
         app(PaymentEffectDispatcher::class)->enqueue($event);
-        $this->assertSame(0, PaymentEffect::count());
+        $this->assertSame(['line_receipt' => $event->id], PaymentEffect::pluck('event_id', 'kind')->all());
+        $this->assertSame(1, PaymentEffect::count());
         $checkout = $this->payable([['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000]], 5000);
         DB::table('verified_payment_events')->where('id', $event->id)->update(['checkout_id' => $checkout->id]);
         foreach ([null, 'manual_hold', 'settled'] as $disposition) {
             DB::table('verified_payment_events')->where('id', $event->id)->update(['disposition' => $disposition]);
             app(PaymentEffectDispatcher::class)->enqueue($event->fresh());
-            $this->assertSame(0, PaymentEffect::count());
+            $this->assertSame(['line_receipt' => $event->id], PaymentEffect::pluck('event_id', 'kind')->all());
+            $this->assertSame(1, PaymentEffect::count());
         }
-        Queue::assertNothingPushed();
+        Queue::assertPushed(RunPaymentEffect::class, 1);
+        Queue::assertPushed(RunPaymentEffect::class, fn ($job) => $job->effectId === $this->effect('line_receipt')->id);
+        Queue::assertNotPushed(ReserveAccountStock::class);
     }
 
     public function test_line_timeout_reuses_key_and_accepted_duplicate_is_success(): void
@@ -353,7 +357,14 @@ class PaymentEffectsTest extends TestCase
         $this->assertSame($anchors, $delivery->fresh()->items->pluck('anchor_key')->all());
         $this->assertSame($refs, DB::connection('mhha_acc')->table('items_reserved')->pluck('order_ref')->all());
         $this->assertSame('succeeded', $this->effect('reserve_stock')->state);
-        $this->assertSame(3, PaymentEffect::count());
+        $this->assertSame(4, PaymentEffect::count());
+        $this->assertSame(
+            ['line_receipt', 'reserve_stock', 'telegram_payment'],
+            PaymentEffect::where('event_id', $event->id)->orderBy('kind')->pluck('kind')->all(),
+        );
+        $this->assertSame(['line_receipt'], PaymentEffect::where('event_id', $manual->id)->pluck('kind')->all());
+        $this->assertSame('settled', $event->fresh()->disposition);
+        $this->assertNotSame('settled', $manual->fresh()->disposition);
         $this->assertSame(1, Order::count());
         Queue::assertPushed(SendDeliveryCard::class, 1);
     }
@@ -636,20 +647,38 @@ class PaymentEffectsTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_mismatched_checkout_and_orderless_events_cannot_enqueue(): void
+    public function test_orderless_valid_proof_can_enqueue_only_its_receipt(): void
     {
         $event = $this->settled();
-        // Model a pre-effect deployed settled event, then corrupt each authority link.
+        // Model a pre-effect deployed settled event with its Order link missing.
         DB::table('payment_effects')->delete();
-        $orderId = $event->order_id;
+        Queue::fake();
         DB::table('verified_payment_events')->where('id', $event->id)->update(['order_id' => null]);
         app(PaymentEffectDispatcher::class)->enqueue($event);
-        $this->assertSame(0, PaymentEffect::count());
-        DB::table('verified_payment_events')->where('id', $event->id)->update(['order_id' => $orderId]);
+        $this->assertSame(1, PaymentEffect::count());
+        $this->assertSame(['line_receipt' => $event->id], PaymentEffect::pluck('event_id', 'kind')->all());
+        Queue::assertPushed(RunPaymentEffect::class, 1);
+        Queue::assertPushed(RunPaymentEffect::class, fn ($job) => $job->effectId === $this->effect('line_receipt')->id);
+        Queue::assertNotPushed(ReserveAccountStock::class);
+    }
+
+    public function test_cross_conversation_checkout_cannot_enqueue_or_transport(): void
+    {
+        $event = $this->settled();
         $other = Conversation::factory()->create(['bot_id' => $this->bot->id]);
         $event->checkout->forceFill(['conversation_id' => $other->id])->save();
+        Queue::fake();
+        foreach (PaymentEffect::all() as $effect) {
+            app(PaymentEffectDispatcher::class)->run($effect->id);
+            $this->assertSame('failed', $effect->fresh()->state);
+            $this->assertSame('authority_invalid', $effect->fresh()->last_error_code);
+        }
+        DB::table('payment_effects')->delete();
         app(PaymentEffectDispatcher::class)->enqueue($event);
         $this->assertSame(0, PaymentEffect::count());
+        Queue::assertNothingPushed();
+        Http::assertNothingSent();
+        $this->assertSame(0, AccountDelivery::count());
     }
 
     public function test_effect_audit_restricts_event_deletion(): void

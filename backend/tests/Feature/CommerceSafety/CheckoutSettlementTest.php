@@ -15,6 +15,7 @@ use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
 use App\Models\Order;
+use App\Models\PaymentEffect;
 use App\Models\ProductStock;
 use App\Models\SlipVerification;
 use App\Models\User;
@@ -362,7 +363,12 @@ class CheckoutSettlementTest extends TestCase
         $this->assertSame($checkout->id, $automatic->fresh()->checkout_id);
         $this->assertSame($checkout->id, $manual->fresh()->checkout_id);
         $this->assertDatabaseCount('orders', 1);
-        $this->assertDatabaseCount('payment_effects', 3);
+        $this->assertDatabaseCount('payment_effects', 4);
+        $this->assertSame(
+            ['line_receipt', 'reserve_stock', 'telegram_payment'],
+            PaymentEffect::where('event_id', $automatic->id)->orderBy('kind')->pluck('kind')->all(),
+        );
+        $this->assertSame(['line_receipt'], PaymentEffect::where('event_id', $manual->id)->pluck('kind')->all());
     }
 
     #[Test]
@@ -403,13 +409,29 @@ class CheckoutSettlementTest extends TestCase
         }
 
         $this->assertDatabaseCount('orders', 0);
-        $this->assertDatabaseCount('payment_effects', 0);
-        Queue::assertNotPushed(RunPaymentEffect::class);
+        $this->assertDatabaseCount('payment_effects', 1);
+        $receiptEffect = PaymentEffect::sole();
+        $this->assertSame('line_receipt', $receiptEffect->kind);
+        $this->assertSame($event->id, $receiptEffect->event_id);
+        $this->assertSame('pending', $receiptEffect->state);
+        $this->assertSame(0, PaymentEffect::whereIn('kind', ['telegram_payment', 'reserve_stock'])->count());
+        $this->assertDatabaseCount('account_deliveries', 0);
+        $this->assertDatabaseCount('account_delivery_items', 0);
+        Queue::assertPushed(RunPaymentEffect::class, 1);
+        Queue::assertPushed(RunPaymentEffect::class, fn ($job) => $job->effectId === $receiptEffect->id);
+        Queue::assertNotPushed(ReserveAccountStock::class);
+        Queue::assertNotPushed(SendDeliveryCard::class);
         $this->assertSame(0, $evaluations);
 
         $outcome = app(CheckoutAuthority::class)->settle($checkout->fresh(), $event->fresh());
 
         $this->assertSame('settled', $outcome->action);
+        $this->assertDatabaseCount('orders', 1);
+        $this->assertSame($receiptEffect->id, PaymentEffect::where('kind', 'line_receipt')->sole()->id);
+        $this->assertSame(
+            ['line_receipt', 'reserve_stock', 'telegram_payment'],
+            PaymentEffect::where('event_id', $event->id)->orderBy('kind')->pluck('kind')->all(),
+        );
         $this->assertSame(1, $evaluations);
     }
 
