@@ -12,6 +12,7 @@ use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
 use App\Models\SlipVerification;
+use App\Models\VerifiedPaymentEvent;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\MoneyMinor;
 use App\Services\CommerceSafety\SafetyScope;
@@ -55,7 +56,14 @@ class AccountDeliveryService
             return null;
         }
 
-        if (in_array(app(SafetyScope::class)->mode($bot), ['enforce', 'hold'], true)) {
+        $mode = app(SafetyScope::class)->mode($bot);
+        $hasAuthoritativeCheckout = VerifiedPaymentEvent::query()
+            ->where('bot_id', $bot->id)
+            ->where('conversation_id', $conversation->id)
+            ->where('slip_verification_id', $slipVerificationId)
+            ->whereNotNull('checkout_id')
+            ->exists();
+        if ($hasAuthoritativeCheckout || in_array($mode, ['enforce', 'hold'], true)) {
             $checkout = app(CheckoutAuthority::class)
                 ->authorizeReservation($bot, $conversation, $slipVerificationId);
             if ($checkout === null || ! $this->validScopedRequest($checkout, $amount, $items)) {
@@ -87,7 +95,13 @@ class AccountDeliveryService
                 ]), $duplicateOf];
             });
         } catch (UniqueConstraintViolationException) {
-            return null; // webhook ซ้ำ/job รันซ้ำ (slip เดียวกัน) — unique(slip) กันไว้แล้ว
+            $existing = AccountDelivery::query()
+                ->where('slip_verification_id', $slipVerificationId)
+                ->first();
+
+            return $existing?->status === AccountDelivery::STATUS_RESERVING
+                ? $this->resumeAmbiguousReservations($existing)
+                : null;
         }
 
         if ($duplicateOf !== null) {
@@ -148,19 +162,36 @@ class AccountDeliveryService
                     'requested_qty' => $u === 0 ? $requestedQty : null,
                     'status' => AccountDeliveryItem::ST_RESERVING,
                 ]);
+                $orderRef = StockPoolService::orderRef($delivery->id, $item->id);
+                $ambiguous = false;
                 try {
-                    $row = $this->pool->reserveOne($product->stock_code, StockPoolService::orderRef($delivery->id));
+                    $row = $this->pool->reserveOne($product->stock_code, $orderRef);
                 } catch (\Throwable $e) {
+                    $ambiguous = true;
                     Log::error('Delivery: stock reserve failed', [
                         'delivery_id' => $delivery->id, 'stock_code' => $product->stock_code,
                         'error' => $e->getMessage(),
                     ]);
+                    try {
+                        // A timeout can occur after the remote transaction commits.
+                        // Recover only the exact unit key; never take another unit.
+                        $row = $this->pool->reservedByOrderRef($orderRef);
+                    } catch (\Throwable $recoveryError) {
+                        Log::error('Delivery: stock reservation recovery failed', [
+                            'delivery_id' => $delivery->id,
+                            'stock_code' => $product->stock_code,
+                            'error' => $recoveryError->getMessage(),
+                        ]);
+                        $row = null;
+                    }
+                }
+                if ($row !== null && (string) ($row['name'] ?? '') !== (string) $product->stock_code) {
                     $row = null;
                 }
                 $item->update([
                     'stock_item_id' => $row['id'] ?? null,
                     'status' => $row === null
-                        ? AccountDeliveryItem::ST_SHORTAGE
+                        ? ($ambiguous ? AccountDeliveryItem::ST_RESERVING : AccountDeliveryItem::ST_SHORTAGE)
                         : AccountDeliveryItem::ST_RESERVED,
                 ]);
                 if ($row !== null) {
@@ -169,9 +200,13 @@ class AccountDeliveryService
             }
         }
 
-        $delivery->update([
-            'status' => $deliverable ? AccountDelivery::STATUS_RESERVED : AccountDelivery::STATUS_FAILED,
-        ]);
+        if ($delivery->items()->where('status', AccountDeliveryItem::ST_RESERVING)->exists()) {
+            $delivery->update(['status' => AccountDelivery::STATUS_RESERVING]);
+
+            return $delivery;
+        }
+
+        $delivery->update(['status' => $deliverable ? AccountDelivery::STATUS_RESERVED : AccountDelivery::STATUS_FAILED]);
 
         // ส่งผ่าน job เพื่อให้ยิงซ้ำได้เอง — ห้ามเรียก sendCard ตรงๆ ที่นี่
         // เมธอดนี้ถูกเรียกจาก ReserveAccountStock ที่ตั้ง tries=1 ไว้ (กันจองสต๊อกซ้ำ)
@@ -179,6 +214,37 @@ class AccountDeliveryService
         SendDeliveryCard::dispatchSafely($delivery->id, $this->duplicateWarning($duplicateOf));
 
         return $delivery;
+    }
+
+    private function resumeAmbiguousReservations(AccountDelivery $delivery): AccountDelivery
+    {
+        foreach ($delivery->items()->where('status', AccountDeliveryItem::ST_RESERVING)->orderBy('id')->get() as $item) {
+            $orderRef = StockPoolService::orderRef($delivery->id, $item->id);
+            try {
+                $row = $this->pool->reserveOne((string) $item->stock_code, $orderRef);
+            } catch (\Throwable $exception) {
+                Log::error('Delivery: ambiguous stock reservation retry failed', [
+                    'delivery_id' => $delivery->id,
+                    'stock_code' => $item->stock_code,
+                    'error' => $exception->getMessage(),
+                ]);
+
+                continue;
+            }
+            $item->update([
+                'stock_item_id' => $row['id'] ?? null,
+                'status' => $row === null ? AccountDeliveryItem::ST_SHORTAGE : AccountDeliveryItem::ST_RESERVED,
+            ]);
+        }
+
+        if ($delivery->items()->where('status', AccountDeliveryItem::ST_RESERVING)->exists()) {
+            return $delivery->fresh();
+        }
+        $deliverable = $delivery->items()->where('status', AccountDeliveryItem::ST_RESERVED)->exists();
+        $delivery->update(['status' => $deliverable ? AccountDelivery::STATUS_RESERVED : AccountDelivery::STATUS_FAILED]);
+        SendDeliveryCard::dispatchSafely($delivery->id);
+
+        return $delivery->fresh();
     }
 
     private function validScopedRequest(

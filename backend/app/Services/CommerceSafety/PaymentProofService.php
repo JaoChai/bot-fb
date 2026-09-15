@@ -45,6 +45,9 @@ class PaymentProofService
                 && (string) $lockedEvent->checkout_id !== (string) $lockedCheckout->getKey()) {
                 $this->invalid('checkout', 'This payment proof is already bound to another checkout.');
             }
+            if ($lockedEvent->disposition === 'manual_hold') {
+                $this->invalid('checkout', 'Held payment proof requires explicit manual resolution.');
+            }
 
             if ($lockedEvent->checkout_id === null) {
                 DB::table('verified_payment_events')

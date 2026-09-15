@@ -19,18 +19,39 @@ class CanonicalCartValidator
         Conversation $conversation,
         array $proposedLines,
         int $claimedTotalMinor,
+        bool $lockAuthorityRows = false,
     ): CartValidation {
         $errors = [];
+        $conversationQuery = Conversation::query();
+        if ($lockAuthorityRows) {
+            $conversationQuery->lockForUpdate();
+        }
         $currentConversation = $conversation->exists
-            ? Conversation::query()->find($conversation->getKey())
+            ? $conversationQuery->find($conversation->getKey())
             : null;
         if (! $currentConversation || (int) $currentConversation->bot_id !== (int) $bot->getKey()) {
             $errors[] = 'CONVERSATION_MISMATCH';
             $currentConversation = new Conversation(['memory_notes' => []]);
         }
 
+        // VIP authority may live on another conversation for the same customer.
+        // Lock every persisted source before pricing reads it so entitlement cannot
+        // change between canonical validation and the local settlement commit.
+        if ($lockAuthorityRows && $currentConversation->exists && $currentConversation->customer_profile_id) {
+            Conversation::query()
+                ->where('bot_id', $currentConversation->bot_id)
+                ->where('customer_profile_id', $currentConversation->customer_profile_id)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get(['id']);
+        }
+
         $vip = $this->pricing->isVipConversation($currentConversation);
-        $products = ProductStock::query()->orderBy('id')->get();
+        $productQuery = ProductStock::query()->orderBy('id');
+        if ($lockAuthorityRows) {
+            $productQuery->lockForUpdate();
+        }
+        $products = $productQuery->get();
         $termIndex = $this->termIndex($products);
         $skuIndex = $this->skuIndex($products);
         $aggregated = [];

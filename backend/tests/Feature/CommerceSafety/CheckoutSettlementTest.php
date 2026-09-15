@@ -450,7 +450,7 @@ class CheckoutSettlementTest extends TestCase
             app(ManualPaymentConfirmService::class)->confirm(
                 $this->bot,
                 $this->conversation,
-                199.0,
+                199,
                 $other->id,
             );
             $this->fail('Unauthorized actor confirmed received money.');
@@ -484,6 +484,28 @@ class CheckoutSettlementTest extends TestCase
     }
 
     #[Test]
+    public function an_old_unmatched_payment_cannot_bind_to_a_checkout_created_later(): void
+    {
+        $event = $this->automaticEvent('199.00', 'TX-OLD-UNMATCHED');
+
+        $first = app(CheckoutAuthority::class)->settleEvent($event);
+        $checkout = $this->payable([
+            ['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900],
+        ], 19900);
+        $retry = app(CheckoutAuthority::class)->settleEvent($event->fresh());
+
+        $this->assertSame('manual_hold', $first->action);
+        $this->assertSame('manual_hold', $retry->action);
+        $this->assertNull($retry->checkout);
+        $this->assertNull($event->fresh()->checkout_id);
+        $this->assertSame('manual_hold', $event->fresh()->disposition);
+        $this->assertSame('no_eligible_checkout', $event->fresh()->hold_reason);
+        $this->assertNotNull($event->fresh()->held_at);
+        $this->assertSame('payable', $checkout->fresh()->state);
+        $this->assertDatabaseCount('orders', 0);
+    }
+
+    #[Test]
     public function manual_amount_and_item_overrides_cannot_invent_or_replace_the_persisted_cart(): void
     {
         $checkout = $this->payable([
@@ -493,7 +515,7 @@ class CheckoutSettlementTest extends TestCase
         $result = app(ManualPaymentConfirmService::class)->confirm(
             $this->bot,
             $this->conversation,
-            199.0,
+            199,
             $this->owner->id,
             [['name' => 'G3D', 'qty' => 999, 'total' => '199']],
         );
@@ -541,7 +563,11 @@ class CheckoutSettlementTest extends TestCase
             'name' => 'Settlement callback',
             'enabled' => true,
             'trigger_condition' => 'always',
-            'config' => ['access_token' => 'SETTLE-TOK', 'chat_id' => '999'],
+            'config' => [
+                'access_token' => 'SETTLE-TOK',
+                'chat_id' => '999',
+                'authorized_user_mappings' => ['77' => $this->owner->id],
+            ],
         ]);
         config(['services.telegram_alert.secret' => 'SETTLE-SECRET']);
         Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
@@ -551,7 +577,7 @@ class CheckoutSettlementTest extends TestCase
                 'id' => 'settle-callback',
                 'from' => ['id' => 77, 'first_name' => 'Owner'],
                 'message' => ['message_id' => 88, 'chat' => ['id' => 999]],
-                'data' => 'pc|'.$this->conversation->id.'|199',
+                'data' => "pc|{$checkout->id}|{$checkout->revision}|199",
             ]])
             ->assertOk();
 
@@ -559,6 +585,154 @@ class CheckoutSettlementTest extends TestCase
         $this->assertDatabaseCount('orders', 1);
         $this->assertDatabaseCount('verified_payment_events', 1);
         Queue::assertNotPushed(ReserveAccountStock::class);
+    }
+
+    #[Test]
+    public function scoped_telegram_button_encodes_the_exact_checkout_revision(): void
+    {
+        $checkout = $this->payable([
+            ['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900],
+        ], 19900, revision: 7);
+        $flow = Flow::query()->where('bot_id', $this->bot->id)->firstOrFail();
+        $this->bot->update(['default_flow_id' => $flow->id]);
+        FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'Settlement callback',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'SETTLE-BUTTON', 'chat_id' => '999'],
+        ]);
+        $captured = null;
+        $this->mock(TelegramAlertBotService::class, function ($mock) use (&$captured): void {
+            $mock->shouldReceive('sendMessage')->once()
+                ->andReturnUsing(function ($token, $chat, $text, $keyboard) use (&$captured): array {
+                    $captured = $keyboard;
+
+                    return [];
+                });
+        });
+
+        app(SlipVerificationService::class)->notifyAdmin(
+            $this->bot,
+            $this->conversation,
+            new SlipVerificationResult(
+                isSlip: true,
+                passed: false,
+                failReason: 'unreadable',
+                expectedAmount: 199.0,
+            ),
+        );
+
+        $this->assertSame("pc|{$checkout->id}|7|199", $captured[0][0]['callback_data']);
+    }
+
+    #[Test]
+    public function scoped_telegram_confirmation_fails_closed_for_unmapped_or_stale_buttons(): void
+    {
+        $checkout = $this->payable([
+            ['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900],
+        ], 19900);
+        $flow = Flow::query()->where('bot_id', $this->bot->id)->firstOrFail();
+        $plugin = FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'Settlement callback',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'SETTLE-DENY', 'chat_id' => '999'],
+        ]);
+        config(['services.telegram_alert.secret' => 'SETTLE-SECRET']);
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $post = fn (string $data) => $this
+            ->withHeaders(['X-Telegram-Bot-Api-Secret-Token' => 'SETTLE-SECRET'])
+            ->postJson('/api/webhook/telegram-alert/SETTLE-DENY', ['callback_query' => [
+                'id' => bin2hex(random_bytes(4)),
+                'from' => ['id' => 77, 'first_name' => 'Group member'],
+                'message' => ['message_id' => 88, 'chat' => ['id' => 999]],
+                'data' => $data,
+            ]]);
+
+        $post('pc|'.$this->conversation->id.'|199')->assertOk();
+        $this->assertSame('payable', $checkout->fresh()->state);
+        $this->assertDatabaseCount('slip_verifications', 0);
+
+        $otherOwner = User::factory()->owner()->create();
+        $plugin->update(['config' => array_merge($plugin->config, [
+            'authorized_user_mappings' => ['77' => $otherOwner->id],
+        ])]);
+        $post("pc|{$checkout->id}|{$checkout->revision}|199")->assertOk();
+        $this->assertSame('payable', $checkout->fresh()->state);
+        $this->assertDatabaseCount('slip_verifications', 0);
+
+        $plugin->update(['config' => array_merge($plugin->config, [
+            'authorized_user_mappings' => ['77' => $this->owner->id],
+        ])]);
+        $post("pc|{$checkout->id}|2|199")->assertOk();
+        $this->assertSame('payable', $checkout->fresh()->state);
+        $this->assertDatabaseCount('slip_verifications', 0);
+    }
+
+    #[Test]
+    public function scoped_manual_api_rejects_more_than_two_decimals_without_recording_money(): void
+    {
+        $checkout = $this->payable([
+            ['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900],
+        ], 19900);
+        $messagesBefore = Message::count();
+
+        foreach (['198.996', 198.996, '1e2', 'NaN', '1,000', true] as $invalid) {
+            $this->actingAs($this->owner)
+                ->postJson("/api/conversations/{$this->conversation->id}/confirm-payment", ['amount' => $invalid])
+                ->assertUnprocessable();
+        }
+
+        try {
+            app(ManualPaymentConfirmService::class)->confirm(
+                $this->bot,
+                $this->conversation,
+                INF,
+                $this->owner->id,
+            );
+            $this->fail('Non-finite scoped amount was accepted.');
+        } catch (ValidationException) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->assertSame('payable', $checkout->fresh()->state);
+        $this->assertDatabaseCount('slip_verifications', 0);
+        $this->assertSame($messagesBefore, Message::count());
+        $this->assertDatabaseCount('verified_payment_events', 0);
+    }
+
+    #[Test]
+    public function scoped_manual_confirmation_rolls_back_all_local_rows_when_proof_recording_crashes(): void
+    {
+        $this->payable([
+            ['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900],
+        ], 19900);
+        $messagesBefore = Message::count();
+        $this->mock(PaymentProofService::class, function ($mock): void {
+            $mock->shouldReceive('record')->once()->andThrow(new \RuntimeException('crash boundary'));
+        });
+
+        try {
+            app(ManualPaymentConfirmService::class)->confirm(
+                $this->bot,
+                $this->conversation,
+                199,
+                $this->owner->id,
+            );
+            $this->fail('Expected the simulated proof-recording crash.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('crash boundary', $exception->getMessage());
+        }
+
+        $this->assertDatabaseCount('slip_verifications', 0);
+        $this->assertSame($messagesBefore, Message::count());
+        $this->assertDatabaseCount('verified_payment_events', 0);
+        $this->assertDatabaseCount('orders', 0);
     }
 
     #[Test]
@@ -628,6 +802,79 @@ class CheckoutSettlementTest extends TestCase
     }
 
     #[Test]
+    public function enforce_settlement_changed_to_hold_cannot_remain_fulfillment_authorized(): void
+    {
+        $checkout = $this->settledCheckout([
+            ['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000],
+        ], 5000, 'TX-MODE-HOLD');
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => 'hold']);
+
+        (new ReserveAccountStock(
+            $this->bot->id,
+            $this->conversation->id,
+            $checkout->settledEvent->slip_verification_id,
+            50.0,
+            $checkout->items,
+        ))->handle(app(AccountDeliveryService::class), app(CheckoutAuthority::class));
+
+        $this->assertSame('paid_hold', $checkout->fresh()->state);
+        $this->assertDatabaseCount('account_deliveries', 0);
+
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => 'enforce']);
+        $second = $this->settledCheckout([
+            ['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000],
+        ], 5000, 'TX-MODE-OFF', revision: 2);
+        config(["commerce_safety.bots.{$this->bot->id}.mode" => 'off']);
+        (new ReserveAccountStock(
+            $this->bot->id,
+            $this->conversation->id,
+            $second->settledEvent->slip_verification_id,
+            50.0,
+            $second->items,
+        ))->handle(app(AccountDeliveryService::class), app(CheckoutAuthority::class));
+
+        $this->assertSame('paid_hold', $second->fresh()->state);
+        $this->assertDatabaseCount('account_deliveries', 0);
+    }
+
+    #[Test]
+    public function a_tampered_or_swapped_same_scope_order_cannot_authorize_reservation(): void
+    {
+        $checkout = $this->settledCheckout([
+            ['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000],
+        ], 5000, 'TX-TAMPERED-ORDER');
+        $event = $checkout->settledEvent;
+        DB::table('order_items')->where('order_id', $event->order_id)->update(['quantity' => 2]);
+
+        $authorized = app(CheckoutAuthority::class)->authorizeReservation(
+            $this->bot,
+            $this->conversation,
+            $event->slip_verification_id,
+        );
+
+        $this->assertNull($authorized);
+        $this->assertSame('paid_hold', $checkout->fresh()->state);
+
+        $second = $this->settledCheckout([
+            ['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900],
+        ], 19900, 'TX-SWAPPED-ORDER', revision: 2);
+        $foreignSameScope = Order::factory()->create([
+            'bot_id' => $this->bot->id,
+            'conversation_id' => $this->conversation->id,
+            'message_id' => $second->settledEvent->receipt_message_id,
+            'total_amount' => '199.00',
+            'status' => 'completed',
+        ]);
+        DB::table('verified_payment_events')->where('id', $second->settledEvent->id)
+            ->update(['order_id' => $foreignSameScope->id]);
+
+        $result = app(CheckoutAuthority::class)->settle($second->fresh(), $second->settledEvent->fresh());
+
+        $this->assertSame('manual_hold', $result->action);
+        $this->assertSame('paid_hold', $second->fresh()->state);
+    }
+
+    #[Test]
     public function partial_remote_shortage_preserves_reserved_units_and_one_delivery_identity(): void
     {
         $checkout = $this->settledCheckout([
@@ -652,7 +899,7 @@ class CheckoutSettlementTest extends TestCase
     }
 
     #[Test]
-    public function remote_timeout_after_a_partial_reservation_is_anchored_as_shortage_without_replay(): void
+    public function remote_timeout_after_a_partial_reservation_remains_anchored_for_safe_retry(): void
     {
         $checkout = $this->settledCheckout([
             ['name' => 'G3D', 'method' => 'none', 'qty' => 2, 'price_minor' => 5000],
@@ -680,14 +927,84 @@ class CheckoutSettlementTest extends TestCase
         );
 
         $this->assertSame(1, $delivery->items()->where('status', 'reserved')->count());
-        $this->assertSame(1, $delivery->items()->where('status', 'shortage')->count());
-        $this->assertSame(AccountDelivery::STATUS_RESERVED, $delivery->status);
+        $this->assertSame(1, $delivery->items()->where('status', 'reserving')->count());
+        $this->assertSame(AccountDelivery::STATUS_RESERVING, $delivery->status);
         $this->assertSame(1, DB::connection('mhha_acc')->table('items_reserved')->count());
         $this->assertSame(0, DB::connection('mhha_acc')->table('items_available')->count());
     }
 
     #[Test]
-    public function automatic_and_manual_workers_serialize_to_one_order_on_postgresql(): void
+    public function remote_commit_then_lost_response_is_recovered_by_the_exact_unit_key(): void
+    {
+        $checkout = $this->settledCheckout([
+            ['name' => 'G3D', 'method' => 'none', 'qty' => 1, 'price_minor' => 5000],
+        ], 5000, 'TX-AMBIGUOUS-COMMIT');
+        $this->seedAvailable(902, 'G3D');
+        $realPool = app(StockPoolService::class);
+        $pool = new class($realPool) extends StockPoolService
+        {
+            private int $reserveAttempts = 0;
+
+            private int $recoveryAttempts = 0;
+
+            public function __construct(private readonly StockPoolService $real) {}
+
+            public function reserveOne(string $stockCode, string $orderRef): ?array
+            {
+                $this->reserveAttempts++;
+                $row = $this->real->reserveOne($stockCode, $orderRef);
+                if ($this->reserveAttempts === 1) {
+                    throw new \RuntimeException('response lost after remote commit');
+                }
+
+                return $row;
+            }
+
+            public function reservedByOrderRef(string $orderRef): ?array
+            {
+                $this->recoveryAttempts++;
+                if ($this->recoveryAttempts === 1) {
+                    throw new \RuntimeException('remote still unavailable');
+                }
+
+                return $this->real->reservedByOrderRef($orderRef);
+            }
+        };
+        $service = new AccountDeliveryService(
+            $pool,
+            app(ProductMapper::class),
+            Mockery::mock(TelegramAlertBotService::class),
+            Mockery::mock(LINEService::class),
+        );
+
+        $first = $service->createFromPayment(
+            $this->bot,
+            $this->conversation,
+            $checkout->settledEvent->slip_verification_id,
+            50.0,
+            $checkout->items,
+        );
+        $this->assertSame(AccountDelivery::STATUS_RESERVING, $first->status);
+
+        $delivery = $service->createFromPayment(
+            $this->bot,
+            $this->conversation,
+            $checkout->settledEvent->slip_verification_id,
+            50.0,
+            $checkout->items,
+        );
+
+        $this->assertSame($first->id, $delivery->id);
+        $item = $delivery->items()->firstOrFail();
+        $this->assertSame('reserved', $item->status);
+        $this->assertSame(902, $item->stock_item_id);
+        $this->assertSame("bfb:{$delivery->id}:{$item->id}", DB::connection('mhha_acc')
+            ->table('items_reserved')->value('order_ref'));
+        $this->assertSame(1, DB::connection('mhha_acc')->table('items_reserved')->count());
+    }
+
+    #[Test]
+    public function postgresql_workers_serialize_settlement_and_catalog_mutations(): void
     {
         if (DB::getDriverName() !== 'pgsql' || env('COMMERCE_SAFETY_PG_RACE') !== '1') {
             $this->markTestSkipped('Requires an explicitly opted-in disposable PostgreSQL test database.');
@@ -760,6 +1077,111 @@ class CheckoutSettlementTest extends TestCase
         $this->assertSame('paid', CheckoutSession::findOrFail($checkout->id)->state);
         $this->assertSame(1, Order::count());
         $this->assertSame(1, DB::table('order_items')->count());
+
+        $this->assertConcurrentCatalogMutationPreventsOrder(
+            ['price' => '200.00'],
+            'TX-PG-PRICE-MUTATION',
+        );
+        ProductStock::query()->whereKey($this->products['page']->id)->update(['price' => '199.00']);
+        $this->assertConcurrentCatalogMutationPreventsOrder(
+            ['available_count' => 0, 'in_stock' => false],
+            'TX-PG-STOCK-MUTATION',
+        );
+        ProductStock::query()->whereKey($this->products['page']->id)->update([
+            'available_count' => null,
+            'in_stock' => true,
+        ]);
+    }
+
+    private function assertConcurrentCatalogMutationPreventsOrder(array $mutation, string $transRef): void
+    {
+        if (DB::getDriverName() !== 'pgsql' || env('COMMERCE_SAFETY_PG_RACE') !== '1') {
+            $this->markTestSkipped('Requires an explicitly opted-in disposable PostgreSQL test database.');
+        }
+        if (! function_exists('pcntl_fork')) {
+            $this->markTestSkipped('Requires pcntl_fork for the PostgreSQL race.');
+        }
+        $ordersBefore = Order::count();
+
+        $checkout = $this->payable([
+            ['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900],
+        ], 19900);
+        $event = $this->automaticEvent('199.00', $transRef);
+        $productId = $this->products['page']->id;
+        $directory = sys_get_temp_dir().'/checkout-catalog-race-'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+
+        if (DB::transactionLevel() > 0) {
+            DB::commit();
+        }
+        DB::disconnect();
+
+        $mutator = pcntl_fork();
+        if ($mutator === 0) {
+            DB::purge();
+            try {
+                DB::beginTransaction();
+                ProductStock::query()->whereKey($productId)->update($mutation);
+                file_put_contents("{$directory}/mutation-ready", 'ready');
+                $deadline = microtime(true) + 10;
+                while (! file_exists("{$directory}/commit") && microtime(true) < $deadline) {
+                    usleep(1000);
+                }
+                DB::commit();
+                file_put_contents("{$directory}/mutation-result", 'committed');
+                exit(0);
+            } catch (\Throwable $exception) {
+                DB::rollBack();
+                file_put_contents("{$directory}/mutation-result", $exception::class.': '.$exception->getMessage());
+                exit(1);
+            }
+        }
+
+        $settler = pcntl_fork();
+        if ($settler === 0) {
+            DB::purge();
+            $deadline = microtime(true) + 10;
+            while (! file_exists("{$directory}/mutation-ready") && microtime(true) < $deadline) {
+                usleep(1000);
+            }
+            file_put_contents("{$directory}/settlement-started", 'started');
+            try {
+                $outcome = app(CheckoutAuthority::class)->settle(
+                    CheckoutSession::findOrFail($checkout->id),
+                    VerifiedPaymentEvent::findOrFail($event->id),
+                );
+                file_put_contents("{$directory}/settlement-result", $outcome->action);
+                exit(0);
+            } catch (\Throwable $exception) {
+                file_put_contents("{$directory}/settlement-result", $exception::class.': '.$exception->getMessage());
+                exit(1);
+            }
+        }
+
+        $deadline = microtime(true) + 10;
+        while (! file_exists("{$directory}/settlement-started") && microtime(true) < $deadline) {
+            usleep(1000);
+        }
+        usleep(200000);
+        file_put_contents("{$directory}/commit", 'commit');
+        pcntl_waitpid($mutator, $mutatorStatus);
+        pcntl_waitpid($settler, $settlerStatus);
+
+        DB::purge();
+        DB::reconnect();
+        $mutationResult = (string) file_get_contents("{$directory}/mutation-result");
+        $settlementResult = (string) file_get_contents("{$directory}/settlement-result");
+        foreach (glob("{$directory}/*") as $file) {
+            unlink($file);
+        }
+        rmdir($directory);
+
+        $this->assertSame(0, pcntl_wexitstatus($mutatorStatus), $mutationResult);
+        $this->assertSame(0, pcntl_wexitstatus($settlerStatus), $settlementResult);
+        $this->assertSame('committed', $mutationResult);
+        $this->assertSame('manual_hold', $settlementResult);
+        $this->assertSame('paid_hold', CheckoutSession::findOrFail($checkout->id)->state);
+        $this->assertSame($ordersBefore, Order::count());
     }
 
     private function settledCheckout(array $lines, int $totalMinor, string $transRef, int $revision = 1): CheckoutSession

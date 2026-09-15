@@ -15,6 +15,7 @@ class VerifiedPaymentEvent extends Model
 
     protected $casts = [
         'amount_minor' => 'integer',
+        'held_at' => 'datetime',
     ];
 
     protected static function booted(): void

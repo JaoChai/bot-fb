@@ -7,6 +7,7 @@ use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\SlipVerification;
+use App\Models\User;
 use App\Models\VerifiedPaymentEvent;
 use App\Services\OrderService;
 use Illuminate\Support\Facades\DB;
@@ -67,25 +68,37 @@ class CheckoutAuthority
                 return new CheckoutOutcome('manual_hold', $lockedCheckout);
             }
 
+            if ($lockedEvent->disposition === 'manual_hold') {
+                return new CheckoutOutcome('manual_hold', null);
+            }
+
             if ($lockedEvent->checkout_id !== null
                 && (string) $lockedEvent->checkout_id !== (string) $lockedCheckout->getKey()) {
-                return $this->paidHold($lockedCheckout);
+                return $this->paidHold($lockedCheckout, $lockedEvent, 'checkout_link_mismatch');
             }
 
             try {
                 $this->paymentProof->bindCheckout($lockedEvent, $lockedCheckout);
             } catch (ValidationException) {
-                return $this->paidHold($lockedCheckout);
+                return $this->paidHold($lockedCheckout, $lockedEvent, 'checkout_bind_failed');
             }
             $lockedEvent->refresh();
 
             if ($lockedCheckout->state === 'paid'
                 && (string) $lockedCheckout->settled_event_id === (string) $lockedEvent->getKey()
                 && $lockedEvent->order_id !== null) {
-                return new CheckoutOutcome('settled', $lockedCheckout);
+                if ($lockedCheckout->currency === 'THB'
+                    && $lockedEvent->currency === 'THB'
+                    && $lockedEvent->amount_minor === $lockedCheckout->total_minor
+                    && $this->validPaymentEvent($lockedEvent)
+                    && $this->orders->lockedOrderForCheckout($lockedCheckout, $lockedEvent) !== null) {
+                    return new CheckoutOutcome('settled', $lockedCheckout);
+                }
+
+                return $this->paidHold($lockedCheckout, $lockedEvent, 'linked_order_invalid');
             }
             if ($lockedCheckout->state === 'paid_hold') {
-                return new CheckoutOutcome('manual_hold', $lockedCheckout);
+                return $this->eventHold($lockedEvent, 'checkout_already_settled', $lockedCheckout);
             }
             if ($lockedCheckout->state === 'paid' || $lockedCheckout->settled_event_id !== null) {
                 // A distinct proof may be a second representation of the same payment
@@ -100,11 +113,15 @@ class CheckoutAuthority
                 || $lockedEvent->currency !== 'THB'
                 || $lockedEvent->amount_minor !== $lockedCheckout->total_minor
                 || ! $this->currentConsentIsPayable($lockedCheckout)
-                || ! $this->canonicalCheckoutIsCurrent($lockedCheckout)) {
-                return $this->paidHold($lockedCheckout);
+                || ! $this->canonicalCheckoutIsCurrent($lockedCheckout, true)) {
+                return $this->paidHold($lockedCheckout, $lockedEvent, 'settlement_validation_failed');
             }
 
-            $order = $this->orders->createFromCheckout($lockedCheckout, $lockedEvent);
+            try {
+                $order = $this->orders->createFromCheckout($lockedCheckout, $lockedEvent);
+            } catch (\LogicException) {
+                return $this->paidHold($lockedCheckout, $lockedEvent, 'linked_order_invalid');
+            }
             $lockedCheckout->forceFill([
                 'state' => 'paid',
                 'settled_event_id' => $lockedEvent->getKey(),
@@ -114,6 +131,7 @@ class CheckoutAuthority
             if ((int) $lockedEvent->order_id !== (int) $order->getKey()) {
                 throw new \LogicException('Canonical order was not linked to the payment event.');
             }
+            $this->markEventDisposition($lockedEvent, 'settled');
 
             return new CheckoutOutcome('settled', $lockedCheckout);
         });
@@ -129,40 +147,69 @@ class CheckoutAuthority
             }
 
             Conversation::query()->whereKey($candidate->conversation_id)->lockForUpdate()->first();
-            $checkout = $candidate->checkout_id === null
+            $lockedEvent = VerifiedPaymentEvent::query()->lockForUpdate()->find($candidate->getKey());
+            if ($lockedEvent === null || $lockedEvent->disposition === 'manual_hold') {
+                return new CheckoutOutcome('manual_hold', null);
+            }
+            $checkout = $lockedEvent->checkout_id === null
                 ? CheckoutSession::query()
-                    ->where('bot_id', $candidate->bot_id)
-                    ->where('conversation_id', $candidate->conversation_id)
+                    ->where('bot_id', $lockedEvent->bot_id)
+                    ->where('conversation_id', $lockedEvent->conversation_id)
                     ->whereIn('state', self::OPEN_STATES)
+                    ->where('created_at', '<=', $lockedEvent->created_at)
                     ->orderByDesc('created_at')
                     ->orderByDesc('id')
                     ->lockForUpdate()
                     ->first()
-                : CheckoutSession::query()->lockForUpdate()->find($candidate->checkout_id);
-            if ($checkout === null && $candidate->checkout_id === null) {
-                $checkout = CheckoutSession::query()
-                    ->where('bot_id', $candidate->bot_id)
-                    ->where('conversation_id', $candidate->conversation_id)
-                    ->orderByDesc('created_at')
-                    ->orderByDesc('id')
-                    ->lockForUpdate()
-                    ->first();
+                : CheckoutSession::query()->lockForUpdate()->find($lockedEvent->checkout_id);
+            if ($checkout === null) {
+                return $this->eventHold($lockedEvent, 'no_eligible_checkout');
             }
-            $lockedEvent = VerifiedPaymentEvent::query()->lockForUpdate()->find($candidate->getKey());
 
-            return $checkout === null || $lockedEvent === null
-                ? new CheckoutOutcome('manual_hold', null)
-                : $this->settle($checkout, $lockedEvent);
+            return $this->settle($checkout, $lockedEvent);
+        });
+    }
+
+    /**
+     * Explicit boundary for a future owner-driven resolution UI. Automatic retry
+     * never calls this method and can never clear an unmatched-payment hold.
+     */
+    public function settleHeldEventManually(
+        VerifiedPaymentEvent $event,
+        CheckoutSession $checkout,
+        User $actor,
+        int $revision,
+    ): CheckoutOutcome {
+        return DB::transaction(function () use ($event, $checkout, $actor, $revision): CheckoutOutcome {
+            $lockedBot = Bot::query()->lockForUpdate()->find($checkout->bot_id);
+            Conversation::query()->whereKey($checkout->conversation_id)->lockForUpdate()->first();
+            $lockedCheckout = CheckoutSession::query()->lockForUpdate()->find($checkout->getKey());
+            $lockedEvent = VerifiedPaymentEvent::query()->lockForUpdate()->find($event->getKey());
+            $lockedActor = User::query()->lockForUpdate()->find($actor->getKey());
+            if (! $lockedBot || ! $lockedEvent || ! $lockedCheckout
+                || $lockedEvent->disposition !== 'manual_hold'
+                || ! $lockedActor?->isOwner()
+                || (int) $lockedActor->id !== (int) $lockedBot->user_id
+                || (int) $lockedCheckout->revision !== $revision
+                || ! $this->sameSettlementScope($lockedCheckout, $lockedEvent)) {
+                throw ValidationException::withMessages([
+                    'payment' => 'Held payment requires an exact owner-reviewed checkout resolution.',
+                ]);
+            }
+
+            DB::table('verified_payment_events')->where('id', $lockedEvent->getKey())->update([
+                'disposition' => null,
+                'hold_reason' => null,
+                'held_at' => null,
+            ]);
+
+            return $this->settle($lockedCheckout, $lockedEvent->fresh());
         });
     }
 
     public function authorizeReservation(Bot $bot, Conversation $conversation, int $slipId): ?CheckoutSession
     {
         return DB::transaction(function () use ($bot, $conversation, $slipId): ?CheckoutSession {
-            if ($this->scope->mode($bot) !== 'enforce') {
-                return null;
-            }
-
             $lockedConversation = Conversation::query()
                 ->where('bot_id', $bot->getKey())
                 ->lockForUpdate()
@@ -182,15 +229,25 @@ class CheckoutAuthority
             if (! $lockedConversation || ! $event || ! $checkout) {
                 return null;
             }
+            if ($this->scope->mode($bot) !== 'enforce') {
+                if ($checkout->state === 'paid') {
+                    $this->paidHold($checkout, $event, 'safety_mode_not_enforce');
+                }
+
+                return null;
+            }
             if (! $this->sameSettlementScope($checkout, $event)
                 || $checkout->state !== 'paid'
                 || (string) $checkout->settled_event_id !== (string) $event->getKey()
                 || $event->order_id === null
+                || $checkout->currency !== 'THB'
+                || $event->currency !== 'THB'
                 || $event->amount_minor !== $checkout->total_minor
                 || ! $this->validPaymentEvent($event)
-                || ! $this->canonicalCheckoutIsCurrent($checkout)) {
+                || ! $this->canonicalCheckoutIsCurrent($checkout, true)
+                || $this->orders->lockedOrderForCheckout($checkout, $event) === null) {
                 if ($checkout->state === 'paid') {
-                    $checkout->forceFill(['state' => 'paid_hold'])->save();
+                    $this->paidHold($checkout, $event, 'reservation_authority_invalid');
                 }
 
                 return null;
@@ -263,7 +320,7 @@ class CheckoutAuthority
             && $this->acceptedMessagesRemainAuthoritative($checkout);
     }
 
-    private function canonicalCheckoutIsCurrent(CheckoutSession $checkout): bool
+    private function canonicalCheckoutIsCurrent(CheckoutSession $checkout, bool $lockAuthorityRows = false): bool
     {
         $bot = Bot::query()->find($checkout->bot_id);
         $conversation = Conversation::query()->find($checkout->conversation_id);
@@ -280,21 +337,52 @@ class CheckoutAuthority
                 'price_minor' => $item['price_minor'] ?? null,
             ], $checkout->items),
             $checkout->total_minor,
+            $lockAuthorityRows,
         );
 
         return $current->valid
             && $current->totalMinor === $checkout->total_minor
             && hash_equals($checkout->fingerprint, $current->fingerprint)
-            && $current->lines === $checkout->items;
+            && JsonValue::equals($current->lines, $checkout->items);
     }
 
-    private function paidHold(CheckoutSession $checkout): CheckoutOutcome
-    {
-        if ($checkout->state !== 'paid') {
+    private function paidHold(
+        CheckoutSession $checkout,
+        ?VerifiedPaymentEvent $event = null,
+        string $reason = 'manual_review',
+    ): CheckoutOutcome {
+        if ($checkout->state !== 'paid_hold') {
             $checkout->forceFill(['state' => 'paid_hold'])->save();
         }
 
+        if ($event !== null) {
+            $this->markEventDisposition($event, 'manual_hold', $reason);
+        }
+
         return new CheckoutOutcome('manual_hold', $checkout);
+    }
+
+    private function eventHold(
+        VerifiedPaymentEvent $event,
+        string $reason,
+        ?CheckoutSession $checkout = null,
+    ): CheckoutOutcome {
+        $this->markEventDisposition($event, 'manual_hold', $reason);
+
+        return new CheckoutOutcome('manual_hold', $checkout);
+    }
+
+    private function markEventDisposition(
+        VerifiedPaymentEvent $event,
+        string $disposition,
+        ?string $reason = null,
+    ): void {
+        DB::table('verified_payment_events')->where('id', $event->getKey())->update([
+            'disposition' => $disposition,
+            'hold_reason' => $reason,
+            'held_at' => $disposition === 'manual_hold' ? now() : null,
+        ]);
+        $event->refresh();
     }
 
     public function propose(Bot $bot, Conversation $conversation, CartValidation $cart): CheckoutOutcome

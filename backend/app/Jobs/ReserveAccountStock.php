@@ -6,6 +6,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\SlipVerification;
+use App\Models\VerifiedPaymentEvent;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\Delivery\AccountDeliveryService;
@@ -46,10 +47,13 @@ class ReserveAccountStock implements ShouldQueue
         }
 
         $mode = app(SafetyScope::class)->mode($bot);
-        if (in_array($mode, ['enforce', 'hold'], true)) {
-            if ($mode !== 'enforce') {
-                return;
-            }
+        $hasAuthoritativeCheckout = VerifiedPaymentEvent::query()
+            ->where('bot_id', $bot->id)
+            ->where('conversation_id', $conversation->id)
+            ->where('slip_verification_id', $this->slipVerificationId)
+            ->whereNotNull('checkout_id')
+            ->exists();
+        if ($hasAuthoritativeCheckout || in_array($mode, ['enforce', 'hold'], true)) {
             $checkout = $authority->authorizeReservation($bot, $conversation, $this->slipVerificationId);
             if ($checkout === null) {
                 return;

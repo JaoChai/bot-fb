@@ -10,6 +10,7 @@ use App\Models\SlipVerification;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CheckoutOutcome;
 use App\Services\CommerceSafety\PaymentProofService;
+use App\Services\CommerceSafety\SafetyScope;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -652,11 +653,28 @@ class SlipVerificationService
         }
 
         $action = in_array($result->failReason, self::FRAUD_REASONS, true) ? 'pa' : 'pc';
-        $id = $conversation->id;
+        $scoped = in_array(app(SafetyScope::class)->mode($conversation->bot), ['enforce', 'hold'], true);
+        $checkout = $scoped
+            ? CheckoutSession::query()
+                ->where('bot_id', $conversation->bot_id)
+                ->where('conversation_id', $conversation->id)
+                ->whereIn('state', ['draft', 'awaiting_confirm', 'awaiting_support', 'awaiting_terms', 'payable'])
+                ->latest('created_at')
+                ->latest('id')
+                ->first()
+            : null;
+        if ($scoped && $checkout === null) {
+            return null;
+        }
         $orderAmt = $result->expectedAmount;
         $slipAmt = $result->amount;
 
-        $btn = fn (string $text, string $amt) => [['text' => $text, 'callback_data' => "{$action}|{$id}|{$amt}"]];
+        $btn = fn (string $text, string $amt) => [[
+            'text' => $text,
+            'callback_data' => $scoped
+                ? "{$action}|{$checkout->id}|{$checkout->revision}|{$amt}"
+                : "{$action}|{$conversation->id}|{$amt}",
+        ]];
 
         if ($orderAmt !== null && $slipAmt !== null && $orderAmt != $slipAmt) {
             return [
