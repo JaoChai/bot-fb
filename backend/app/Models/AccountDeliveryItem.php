@@ -27,7 +27,7 @@ class AccountDeliveryItem extends Model
     public const ST_RETURNED = 'returned';
 
     protected $fillable = [
-        'account_delivery_id', 'product_name', 'stock_code', 'kind',
+        'account_delivery_id', 'anchor_key', 'product_name', 'stock_code', 'kind',
         'qty', 'requested_qty', 'stock_item_id', 'status',
     ];
 

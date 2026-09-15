@@ -50,7 +50,6 @@ class CheckoutAuthority
         private readonly SafetyScope $scope,
         private readonly CanonicalCartValidator $validator,
         private readonly CheckoutRenderer $renderer,
-        private readonly PaymentProofService $paymentProof,
         private readonly OrderService $orders,
     ) {}
 
@@ -72,17 +71,12 @@ class CheckoutAuthority
                 return new CheckoutOutcome('manual_hold', null);
             }
 
-            if ($lockedEvent->checkout_id !== null
-                && (string) $lockedEvent->checkout_id !== (string) $lockedCheckout->getKey()) {
+            if ($lockedEvent->checkout_id === null) {
+                return $this->eventHold($lockedEvent, 'no_eligible_checkout');
+            }
+            if ((string) $lockedEvent->checkout_id !== (string) $lockedCheckout->getKey()) {
                 return $this->paidHold($lockedCheckout, $lockedEvent, 'checkout_link_mismatch');
             }
-
-            try {
-                $this->paymentProof->bindCheckout($lockedEvent, $lockedCheckout);
-            } catch (ValidationException) {
-                return $this->paidHold($lockedCheckout, $lockedEvent, 'checkout_bind_failed');
-            }
-            $lockedEvent->refresh();
 
             if ($lockedCheckout->state === 'paid'
                 && (string) $lockedCheckout->settled_event_id === (string) $lockedEvent->getKey()
@@ -152,15 +146,7 @@ class CheckoutAuthority
                 return new CheckoutOutcome('manual_hold', null);
             }
             $checkout = $lockedEvent->checkout_id === null
-                ? CheckoutSession::query()
-                    ->where('bot_id', $lockedEvent->bot_id)
-                    ->where('conversation_id', $lockedEvent->conversation_id)
-                    ->whereIn('state', self::OPEN_STATES)
-                    ->where('created_at', '<=', $lockedEvent->created_at)
-                    ->orderByDesc('created_at')
-                    ->orderByDesc('id')
-                    ->lockForUpdate()
-                    ->first()
+                ? null
                 : CheckoutSession::query()->lockForUpdate()->find($lockedEvent->checkout_id);
             if ($checkout === null) {
                 return $this->eventHold($lockedEvent, 'no_eligible_checkout');
@@ -191,6 +177,8 @@ class CheckoutAuthority
                 || ! $lockedActor?->isOwner()
                 || (int) $lockedActor->id !== (int) $lockedBot->user_id
                 || (int) $lockedCheckout->revision !== $revision
+                || ($lockedEvent->checkout_id !== null
+                    && (string) $lockedEvent->checkout_id !== (string) $lockedCheckout->getKey())
                 || ! $this->sameSettlementScope($lockedCheckout, $lockedEvent)) {
                 throw ValidationException::withMessages([
                     'payment' => 'Held payment requires an exact owner-reviewed checkout resolution.',
@@ -198,6 +186,7 @@ class CheckoutAuthority
             }
 
             DB::table('verified_payment_events')->where('id', $lockedEvent->getKey())->update([
+                'checkout_id' => $lockedCheckout->getKey(),
                 'disposition' => null,
                 'hold_reason' => null,
                 'held_at' => null,

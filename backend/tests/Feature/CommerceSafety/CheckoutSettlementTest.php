@@ -5,9 +5,11 @@ namespace Tests\Feature\CommerceSafety;
 use App\Jobs\ReserveAccountStock;
 use App\Jobs\SendDeliveryCard;
 use App\Models\AccountDelivery;
+use App\Models\AccountDeliveryItem;
 use App\Models\Bot;
 use App\Models\CheckoutSession;
 use App\Models\Conversation;
+use App\Models\CustomerProfile;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
@@ -33,8 +35,11 @@ use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
 use App\Services\Payment\TelegramAlertBotService;
 use App\Services\PaymentFlexService;
+use App\Services\VipDetectionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
@@ -328,6 +333,52 @@ class CheckoutSettlementTest extends TestCase
     }
 
     #[Test]
+    public function vip_evaluation_is_dispatched_only_after_settlement_commits(): void
+    {
+        Queue::fake([ReserveAccountStock::class, SendDeliveryCard::class]);
+        $customer = CustomerProfile::factory()->create();
+        $this->conversation->update(['customer_profile_id' => $customer->id]);
+        $evaluations = 0;
+        $vip = Mockery::mock(VipDetectionService::class);
+        $vip->shouldReceive('evaluateCustomer')->once()->andReturnUsing(
+            function (CustomerProfile $evaluated) use ($customer, &$evaluations): bool {
+                $this->assertSame($customer->id, $evaluated->id);
+                $evaluations++;
+
+                return true;
+            },
+        );
+        app()->instance(VipDetectionService::class, $vip);
+        $checkout = $this->payable([
+            ['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900],
+        ], 19900);
+        $event = $this->automaticEvent('199.00', 'TX-VIP-AFTER-COMMIT');
+        $failAfterOrderCreation = true;
+        Event::listen('eloquent.created: '.Order::class, function () use (&$failAfterOrderCreation): void {
+            if ($failAfterOrderCreation) {
+                $failAfterOrderCreation = false;
+
+                throw new \RuntimeException('rollback after canonical Order creation');
+            }
+        });
+
+        try {
+            app(CheckoutAuthority::class)->settle($checkout, $event);
+            $this->fail('Settlement unexpectedly committed.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('rollback after canonical Order creation', $exception->getMessage());
+        }
+
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertSame(0, $evaluations);
+
+        $outcome = app(CheckoutAuthority::class)->settle($checkout->fresh(), $event->fresh());
+
+        $this->assertSame('settled', $outcome->action);
+        $this->assertSame(1, $evaluations);
+    }
+
+    #[Test]
     public function automatic_path_records_and_settles_before_leaving_effects_for_a3(): void
     {
         $checkout = $this->payable([
@@ -501,6 +552,32 @@ class CheckoutSettlementTest extends TestCase
         $this->assertSame('manual_hold', $event->fresh()->disposition);
         $this->assertSame('no_eligible_checkout', $event->fresh()->hold_reason);
         $this->assertNotNull($event->fresh()->held_at);
+        $this->assertSame('payable', $checkout->fresh()->state);
+        $this->assertDatabaseCount('orders', 0);
+    }
+
+    #[Test]
+    public function an_unbound_payment_never_matches_a_later_checkout_in_the_same_timestamp_second(): void
+    {
+        Carbon::setTestNow('2026-09-15 12:00:00');
+        try {
+            $event = $this->automaticEvent('199.00', 'TX-SAME-SECOND');
+            $this->assertSame('manual_hold', $event->disposition);
+            $this->assertSame('no_eligible_checkout', $event->hold_reason);
+            $checkout = $this->payable([
+                ['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900],
+            ], 19900);
+
+            $result = app(CheckoutAuthority::class)->settleEvent($event);
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $this->assertSame('manual_hold', $result->action);
+        $this->assertNull($result->checkout);
+        $this->assertNull($event->fresh()->checkout_id);
+        $this->assertSame('manual_hold', $event->fresh()->disposition);
+        $this->assertSame('no_eligible_checkout', $event->fresh()->hold_reason);
         $this->assertSame('payable', $checkout->fresh()->state);
         $this->assertDatabaseCount('orders', 0);
     }
@@ -1004,6 +1081,270 @@ class CheckoutSettlementTest extends TestCase
     }
 
     #[Test]
+    public function overlapping_delivery_workers_cannot_resume_or_finalize_an_active_delivery(): void
+    {
+        $checkout = $this->settledCheckout([
+            ['name' => 'G3D', 'method' => 'none', 'qty' => 2, 'price_minor' => 5000],
+        ], 10000, 'TX-OVERLAPPING-DELIVERY');
+        $pool = new class extends StockPoolService
+        {
+            public int $calls = 0;
+
+            public ?\Closure $duringFirstReservation = null;
+
+            public function reserveOne(string $stockCode, string $orderRef): ?array
+            {
+                $this->calls++;
+                if ($this->calls === 1) {
+                    ($this->duringFirstReservation)();
+                }
+
+                return null;
+            }
+        };
+        $firstWorker = new AccountDeliveryService(
+            $pool,
+            app(ProductMapper::class),
+            Mockery::mock(TelegramAlertBotService::class),
+            Mockery::mock(LINEService::class),
+        );
+        $secondWorker = new AccountDeliveryService(
+            $pool,
+            app(ProductMapper::class),
+            Mockery::mock(TelegramAlertBotService::class),
+            Mockery::mock(LINEService::class),
+        );
+        $overlapResult = null;
+        $pool->duringFirstReservation = function () use ($secondWorker, $checkout, &$overlapResult): void {
+            $overlapResult = $secondWorker->createFromPayment(
+                $this->bot,
+                $this->conversation,
+                $checkout->settledEvent->slip_verification_id,
+                100.0,
+                $checkout->items,
+            );
+        };
+
+        $delivery = $firstWorker->createFromPayment(
+            $this->bot,
+            $this->conversation,
+            $checkout->settledEvent->slip_verification_id,
+            100.0,
+            $checkout->items,
+        );
+
+        $this->assertSame($delivery->id, $overlapResult?->id);
+        $this->assertSame(2, $pool->calls);
+        $this->assertSame(2, $delivery->items()->count());
+        $this->assertSame(2, $delivery->items()->where('status', AccountDeliveryItem::ST_SHORTAGE)->count());
+        Queue::assertPushed(SendDeliveryCard::class, 1);
+    }
+
+    #[Test]
+    public function retry_reconstructs_a_missing_expected_anchor_before_reserving_or_finalizing(): void
+    {
+        $checkout = $this->settledCheckout([
+            ['name' => 'G3D', 'method' => 'none', 'qty' => 2, 'price_minor' => 5000],
+        ], 10000, 'TX-ANCHOR-CRASH');
+        $plan = [
+            [
+                'anchor_key' => 'line:0:unit:0',
+                'product_name' => 'G3D',
+                'stock_code' => 'G3D',
+                'kind' => AccountDeliveryItem::KIND_STOCK,
+                'qty' => 1,
+                'requested_qty' => null,
+                'status' => AccountDeliveryItem::ST_RESERVING,
+            ],
+            [
+                'anchor_key' => 'line:0:unit:1',
+                'product_name' => 'G3D',
+                'stock_code' => 'G3D',
+                'kind' => AccountDeliveryItem::KIND_STOCK,
+                'qty' => 1,
+                'requested_qty' => null,
+                'status' => AccountDeliveryItem::ST_RESERVING,
+            ],
+        ];
+        $delivery = new AccountDelivery;
+        $delivery->forceFill([
+            'bot_id' => $this->bot->id,
+            'conversation_id' => $this->conversation->id,
+            'slip_verification_id' => $checkout->settledEvent->slip_verification_id,
+            'status' => AccountDelivery::STATUS_RESERVING,
+            'amount' => 100,
+            'reservation_plan' => $plan,
+            'anchors_initialized_at' => null,
+            'reservation_token' => null,
+            'reservation_claimed_at' => null,
+        ])->save();
+        $delivery->items()->create($plan[0]);
+        $pool = new class extends StockPoolService
+        {
+            public int $calls = 0;
+
+            public function reserveOne(string $stockCode, string $orderRef): ?array
+            {
+                $this->calls++;
+
+                return null;
+            }
+        };
+        $service = new AccountDeliveryService(
+            $pool,
+            app(ProductMapper::class),
+            Mockery::mock(TelegramAlertBotService::class),
+            Mockery::mock(LINEService::class),
+        );
+
+        $result = $service->createFromPayment(
+            $this->bot,
+            $this->conversation,
+            $checkout->settledEvent->slip_verification_id,
+            100.0,
+            $checkout->items,
+        );
+
+        $this->assertSame($delivery->id, $result?->id);
+        $this->assertSame(2, $pool->calls);
+        $this->assertSame(2, $result?->items()->count());
+        $this->assertSame(2, $result?->items()->where('status', AccountDeliveryItem::ST_SHORTAGE)->count());
+        $this->assertNotNull($result?->anchors_initialized_at);
+        Queue::assertPushed(SendDeliveryCard::class, 1);
+    }
+
+    #[Test]
+    public function postgresql_delivery_workers_do_not_resume_an_active_reservation(): void
+    {
+        if (DB::getDriverName() !== 'pgsql' || env('COMMERCE_SAFETY_PG_RACE') !== '1') {
+            $this->markTestSkipped('Requires an explicitly opted-in disposable PostgreSQL test database.');
+        }
+        if (! function_exists('pcntl_fork')) {
+            $this->markTestSkipped('Requires pcntl_fork for the PostgreSQL race.');
+        }
+
+        $checkout = $this->settledCheckout([
+            ['name' => 'G3D', 'method' => 'none', 'qty' => 2, 'price_minor' => 5000],
+        ], 10000, 'TX-PG-DELIVERY-OVERLAP');
+        $directory = sys_get_temp_dir().'/delivery-reservation-race-'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+
+        DB::commit();
+        DB::disconnect();
+
+        $first = pcntl_fork();
+        if ($first === 0) {
+            DB::purge();
+            $pool = new class($directory) extends StockPoolService
+            {
+                public int $calls = 0;
+
+                public function __construct(private readonly string $directory) {}
+
+                public function reserveOne(string $stockCode, string $orderRef): ?array
+                {
+                    $this->calls++;
+                    if ($this->calls === 1) {
+                        file_put_contents("{$this->directory}/remote-started", 'started');
+                        $deadline = microtime(true) + 10;
+                        while (! file_exists("{$this->directory}/release") && microtime(true) < $deadline) {
+                            usleep(1000);
+                        }
+                    }
+
+                    return null;
+                }
+            };
+            try {
+                $delivery = (new AccountDeliveryService(
+                    $pool,
+                    app(ProductMapper::class),
+                    app(TelegramAlertBotService::class),
+                    app(LINEService::class),
+                ))->createFromPayment(
+                    Bot::findOrFail($this->bot->id),
+                    Conversation::findOrFail($this->conversation->id),
+                    $checkout->settledEvent->slip_verification_id,
+                    100.0,
+                    $checkout->items,
+                );
+                file_put_contents("{$directory}/first-result", json_encode([
+                    'delivery' => $delivery?->id,
+                    'calls' => $pool->calls,
+                ]));
+                exit(0);
+            } catch (\Throwable $exception) {
+                file_put_contents("{$directory}/first-result", $exception::class.': '.$exception->getMessage());
+                exit(1);
+            }
+        }
+
+        $deadline = microtime(true) + 10;
+        while (! file_exists("{$directory}/remote-started") && microtime(true) < $deadline) {
+            usleep(1000);
+        }
+        $second = pcntl_fork();
+        if ($second === 0) {
+            DB::purge();
+            $pool = new class extends StockPoolService
+            {
+                public int $calls = 0;
+
+                public function reserveOne(string $stockCode, string $orderRef): ?array
+                {
+                    $this->calls++;
+
+                    return null;
+                }
+            };
+            try {
+                $delivery = (new AccountDeliveryService(
+                    $pool,
+                    app(ProductMapper::class),
+                    app(TelegramAlertBotService::class),
+                    app(LINEService::class),
+                ))->createFromPayment(
+                    Bot::findOrFail($this->bot->id),
+                    Conversation::findOrFail($this->conversation->id),
+                    $checkout->settledEvent->slip_verification_id,
+                    100.0,
+                    $checkout->items,
+                );
+                file_put_contents("{$directory}/second-result", json_encode([
+                    'delivery' => $delivery?->id,
+                    'calls' => $pool->calls,
+                ]));
+                exit(0);
+            } catch (\Throwable $exception) {
+                file_put_contents("{$directory}/second-result", $exception::class.': '.$exception->getMessage());
+                exit(1);
+            }
+        }
+
+        pcntl_waitpid($second, $secondStatus);
+        file_put_contents("{$directory}/release", 'release');
+        pcntl_waitpid($first, $firstStatus);
+
+        DB::purge();
+        DB::reconnect();
+        $firstResult = json_decode((string) file_get_contents("{$directory}/first-result"), true);
+        $secondResult = json_decode((string) file_get_contents("{$directory}/second-result"), true);
+        foreach (glob("{$directory}/*") as $file) {
+            unlink($file);
+        }
+        rmdir($directory);
+
+        $this->assertSame(0, pcntl_wexitstatus($firstStatus), json_encode($firstResult));
+        $this->assertSame(0, pcntl_wexitstatus($secondStatus), json_encode($secondResult));
+        $this->assertSame($firstResult['delivery'], $secondResult['delivery']);
+        $this->assertSame(2, $firstResult['calls']);
+        $this->assertSame(0, $secondResult['calls']);
+        $delivery = AccountDelivery::findOrFail($firstResult['delivery']);
+        $this->assertSame(2, $delivery->items()->count());
+        $this->assertNotNull($delivery->card_dispatched_at);
+    }
+
+    #[Test]
     public function postgresql_workers_serialize_settlement_and_catalog_mutations(): void
     {
         if (DB::getDriverName() !== 'pgsql' || env('COMMERCE_SAFETY_PG_RACE') !== '1') {
@@ -1278,7 +1619,7 @@ class CheckoutSettlementTest extends TestCase
         ]);
 
         return app(PaymentProofService::class)->record(
-            $this->bot, $this->conversation, $slip, $receipt, $actorId,
+            $this->bot, $this->conversation, $slip, $receipt, $actorId, $checkout,
         );
     }
 

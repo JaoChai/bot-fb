@@ -78,7 +78,8 @@ class ManualPaymentConfirmService
             ->where('bot_id', $bot->id)
             ->where('conversation_id', $conversation->id);
         $checkout = null;
-        if ($scoped && ($checkoutId !== null || $checkoutRevision !== null)) {
+        $explicitCheckout = $scoped && ($checkoutId !== null || $checkoutRevision !== null);
+        if ($explicitCheckout) {
             if ($checkoutId === null || $checkoutRevision === null) {
                 throw ValidationException::withMessages([
                     'checkout' => 'Exact checkout ID and revision are required together.',
@@ -94,14 +95,11 @@ class ManualPaymentConfirmService
                 ]);
             }
         } elseif ($scoped) {
-            $checkout = (clone $checkoutQuery)
+            $candidates = (clone $checkoutQuery)
                 ->whereIn('state', ['draft', 'awaiting_confirm', 'awaiting_support', 'awaiting_terms', 'payable'])
-                ->latest('created_at')
-                ->latest('id')
-                ->first();
-            if ($checkout === null) {
-                $checkout = $checkoutQuery->latest('created_at')->latest('id')->first();
-            }
+                ->limit(2)
+                ->get();
+            $checkout = $candidates->count() === 1 ? $candidates->first() : null;
         }
         $history = $scoped ? [] : $this->recentTextHistory($conversation);
         $receiverAccount = $bot->settings?->slip_receiver_account ?: null;
@@ -167,14 +165,15 @@ class ManualPaymentConfirmService
                 $text,
                 $confirmedBy,
                 $checkout,
+                $explicitCheckout,
             ): array {
                 Bot::whereKey($bot->id)->lockForUpdate()->firstOrFail();
                 Conversation::whereKey($conversation->id)->lockForUpdate()->firstOrFail();
                 $this->guardAgainstDoubleConfirm($conversation);
-                $lockedCheckout = $checkout === null
+                $lockedCheckout = $checkout === null || ! $explicitCheckout
                     ? null
                     : CheckoutSession::query()->lockForUpdate()->find($checkout->getKey());
-                if ($checkout !== null && (! $lockedCheckout
+                if ($explicitCheckout && (! $lockedCheckout
                     || (int) $lockedCheckout->bot_id !== (int) $bot->id
                     || (int) $lockedCheckout->conversation_id !== (int) $conversation->id
                     || (int) $lockedCheckout->revision !== (int) $checkout->revision)) {

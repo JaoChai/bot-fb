@@ -66,13 +66,10 @@ class SlipVerificationService
             $slip,
             $receipt,
             $actorId,
+            $checkout,
         );
 
-        $authority = app(CheckoutAuthority::class);
-
-        return $checkout === null
-            ? $authority->settleEvent($event)
-            : $authority->settle($checkout, $event);
+        return app(CheckoutAuthority::class)->settleEvent($event);
     }
 
     /**

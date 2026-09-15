@@ -16,49 +16,13 @@ use InvalidArgumentException;
 
 class PaymentProofService
 {
-    /**
-     * Bind durable money proof to one persisted checkout.
-     *
-     * Checkout is locked first everywhere so automatic and manual workers racing
-     * for the same cart serialize on PostgreSQL. The event link is intentionally
-     * written through the query builder: proof facts remain model-immutable while
-     * these nullable authority links are filled by settlement.
-     */
-    public function bindCheckout(VerifiedPaymentEvent $event, CheckoutSession $checkout): void
-    {
-        DB::transaction(function () use ($event, $checkout): void {
-            $lockedCheckout = CheckoutSession::query()
-                ->lockForUpdate()
-                ->find($checkout->getKey());
-            $lockedEvent = VerifiedPaymentEvent::query()
-                ->lockForUpdate()
-                ->find($event->getKey());
-
-            if (! $lockedCheckout || ! $lockedEvent) {
-                $this->invalid('checkout', 'Persisted payment event and checkout rows are required.');
-            }
-            if ((int) $lockedEvent->bot_id !== (int) $lockedCheckout->bot_id
-                || (int) $lockedEvent->conversation_id !== (int) $lockedCheckout->conversation_id) {
-                $this->invalid('checkout', 'Payment proof and checkout must share bot and conversation scope.');
-            }
-            if ($lockedEvent->checkout_id !== null
-                && (string) $lockedEvent->checkout_id !== (string) $lockedCheckout->getKey()) {
-                $this->invalid('checkout', 'This payment proof is already bound to another checkout.');
-            }
-            if ($lockedEvent->disposition === 'manual_hold') {
-                $this->invalid('checkout', 'Held payment proof requires explicit manual resolution.');
-            }
-
-            if ($lockedEvent->checkout_id === null) {
-                DB::table('verified_payment_events')
-                    ->where('id', $lockedEvent->getKey())
-                    ->whereNull('checkout_id')
-                    ->update(['checkout_id' => $lockedCheckout->getKey()]);
-            }
-        });
-
-        $event->refresh();
-    }
+    private const OPEN_CHECKOUT_STATES = [
+        'draft',
+        'awaiting_confirm',
+        'awaiting_support',
+        'awaiting_terms',
+        'payable',
+    ];
 
     public function record(
         Bot $bot,
@@ -66,6 +30,7 @@ class PaymentProofService
         SlipVerification $slip,
         Message $receipt,
         ?int $actorId,
+        ?CheckoutSession $checkout = null,
     ): VerifiedPaymentEvent {
         $attributes = null;
 
@@ -76,6 +41,7 @@ class PaymentProofService
                 $slip,
                 $receipt,
                 $actorId,
+                $checkout,
                 &$attributes,
             ): VerifiedPaymentEvent {
                 $bot = $this->reloadLocked(Bot::class, $bot->getKey(), 'bot');
@@ -83,6 +49,11 @@ class PaymentProofService
                     Conversation::class,
                     $conversation->getKey(),
                     'conversation',
+                );
+                $lockedCheckout = $this->lockedCheckoutForNewProof(
+                    $bot,
+                    $conversation,
+                    $checkout,
                 );
                 $slip = $this->reloadLocked(SlipVerification::class, $slip->getKey(), 'slip');
                 $receipt = $this->reloadLocked(Message::class, $receipt->getKey(), 'receipt');
@@ -114,6 +85,7 @@ class PaymentProofService
                 $attributes = [
                     'bot_id' => (int) $bot->id,
                     'conversation_id' => (int) $conversation->id,
+                    'checkout_id' => $lockedCheckout?->getKey(),
                     'slip_verification_id' => (int) $slip->id,
                     'receipt_message_id' => (int) $receipt->id,
                     'order_id' => null,
@@ -122,6 +94,9 @@ class PaymentProofService
                     'currency' => 'THB',
                     'amount_minor' => $amountMinor,
                     'actor_id' => $storedActorId,
+                    'disposition' => $lockedCheckout === null ? 'manual_hold' : null,
+                    'hold_reason' => $lockedCheckout === null ? 'no_eligible_checkout' : null,
+                    'held_at' => $lockedCheckout === null ? now() : null,
                 ];
 
                 $existing = $this->findByEventKey($attributes['bot_id'], $eventKey);
@@ -217,16 +192,22 @@ class PaymentProofService
     }
 
     /**
-     * @param  array<string, int|string|null>  $attributes
+     * @param  array<string, mixed>  $attributes
      */
     private function matchingEventOrFail(
         VerifiedPaymentEvent $event,
         array $attributes,
     ): VerifiedPaymentEvent {
         foreach ($attributes as $attribute => $value) {
-            // Settlement fills this nullable relationship after proof creation.
-            // It is not part of the immutable provider/manual event identity.
-            if ($attribute === 'order_id' && $value === null) {
+            // Authority links/disposition can advance after proof creation. They
+            // are never allowed to redefine the immutable provider proof identity.
+            if (in_array($attribute, [
+                'checkout_id',
+                'order_id',
+                'disposition',
+                'hold_reason',
+                'held_at',
+            ], true)) {
                 continue;
             }
             if ((string) $event->getAttribute($attribute) !== (string) $value) {
@@ -235,6 +216,32 @@ class PaymentProofService
         }
 
         return $event;
+    }
+
+    private function lockedCheckoutForNewProof(
+        Bot $bot,
+        Conversation $conversation,
+        ?CheckoutSession $checkout,
+    ): ?CheckoutSession {
+        if ($checkout !== null) {
+            $locked = $this->reloadLocked(CheckoutSession::class, $checkout->getKey(), 'checkout');
+            if ((int) $locked->bot_id !== (int) $bot->getKey()
+                || (int) $locked->conversation_id !== (int) $conversation->getKey()) {
+                $this->invalid('checkout', 'Payment proof and checkout must share bot and conversation scope.');
+            }
+
+            return $locked;
+        }
+
+        $candidates = CheckoutSession::query()
+            ->where('bot_id', $bot->getKey())
+            ->where('conversation_id', $conversation->getKey())
+            ->whereIn('state', self::OPEN_CHECKOUT_STATES)
+            ->lockForUpdate()
+            ->limit(2)
+            ->get();
+
+        return $candidates->count() === 1 ? $candidates->first() : null;
     }
 
     /**
