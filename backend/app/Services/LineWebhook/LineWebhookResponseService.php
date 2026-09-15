@@ -8,6 +8,12 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\Chat\ConversationContextService;
+use App\Services\CommerceSafety\CanonicalCartValidator;
+use App\Services\CommerceSafety\CartProposalAdapter;
+use App\Services\CommerceSafety\CheckoutAuthority;
+use App\Services\CommerceSafety\CheckoutOutcome;
+use App\Services\CommerceSafety\CheckoutRenderer;
+use App\Services\CommerceSafety\SafetyScope;
 use App\Services\LINEService;
 use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
@@ -44,6 +50,11 @@ class LineWebhookResponseService
         private readonly ModelCapabilityService $modelCapability,
         private readonly LINEService $line,
         private readonly SlipVerificationService $slipVerification,
+        private readonly ?SafetyScope $safetyScope = null,
+        private readonly ?CheckoutAuthority $checkoutAuthority = null,
+        private readonly ?CheckoutRenderer $checkoutRenderer = null,
+        private readonly ?CartProposalAdapter $cartProposalAdapter = null,
+        private readonly ?CanonicalCartValidator $canonicalCartValidator = null,
     ) {}
 
     /**
@@ -91,6 +102,15 @@ class LineWebhookResponseService
             return;
         }
 
+        if ($this->commerceEnforced($ctx)) {
+            $outcome = $this->authority()->accept($ctx->bot, $conversation, $userMessage);
+            if ($this->outcomeConsumedMessage($outcome, $userMessage)) {
+                $this->setCheckoutResponse($ctx, $outcome);
+
+                return;
+            }
+        }
+
         // Auto-clear stale context before AI generates response (line 500)
         $this->conversationContext->autoClearIfIdle($conversation);
 
@@ -105,9 +125,176 @@ class LineWebhookResponseService
         // Store for Stage 4 (LINE push, stats, broadcast)
         $ctx->metadata['bot_message'] = $botMessage;
 
+        if ($this->commerceGuardsOutput($ctx)) {
+            $outcome = $this->checkoutProposal($ctx, $botMessage);
+            if ($outcome !== null) {
+                $this->replaceWithCheckoutResponse($ctx, $botMessage, $outcome);
+            }
+        }
+
         if ($botMessage->content) {
             $ctx->response = ResponseEnvelope::text($botMessage->content);
         }
+    }
+
+    private function commerceEnforced(WebhookContext $ctx): bool
+    {
+        return ($this->safetyScope ?? app(SafetyScope::class))->mode($ctx->bot) === 'enforce';
+    }
+
+    private function commerceGuardsOutput(WebhookContext $ctx): bool
+    {
+        return in_array(
+            ($this->safetyScope ?? app(SafetyScope::class))->mode($ctx->bot),
+            ['enforce', 'hold'],
+            true,
+        );
+    }
+
+    private function authority(): CheckoutAuthority
+    {
+        return $this->checkoutAuthority ?? app(CheckoutAuthority::class);
+    }
+
+    private function renderer(): CheckoutRenderer
+    {
+        return $this->checkoutRenderer ?? app(CheckoutRenderer::class);
+    }
+
+    private function proposalAdapter(): CartProposalAdapter
+    {
+        return $this->cartProposalAdapter ?? app(CartProposalAdapter::class);
+    }
+
+    private function cartValidator(): CanonicalCartValidator
+    {
+        return $this->canonicalCartValidator ?? app(CanonicalCartValidator::class);
+    }
+
+    private function outcomeConsumedMessage(CheckoutOutcome $outcome, Message $message): bool
+    {
+        if ($outcome->customerText !== null) {
+            return true;
+        }
+
+        return $outcome->checkout !== null
+            && in_array((int) $message->getKey(), array_map(
+                'intval',
+                array_values($outcome->checkout->accepted ?? []),
+            ), true);
+    }
+
+    private function checkoutProposal(WebhookContext $ctx, Message $botMessage): ?CheckoutOutcome
+    {
+        $metadata = is_array($botMessage->metadata) ? $botMessage->metadata : [];
+        $proposal = null;
+        if (is_array($metadata['order_payload'] ?? null)) {
+            $json = json_encode($metadata['order_payload'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            $proposal = is_string($json) ? $this->proposalAdapter()->fromOrderJson($json) : null;
+        }
+        $proposal ??= $this->proposalAdapter()->fromText((string) $botMessage->content);
+        if ($proposal === null || ! $ctx->conversation) {
+            return null;
+        }
+
+        $cart = $this->cartValidator()->validate(
+            $ctx->bot,
+            $ctx->conversation,
+            $proposal['lines'],
+            $proposal['total_minor'],
+        );
+        if (! $cart->valid) {
+            $botMessage->forceFill([
+                'content' => 'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง',
+                'metadata' => array_filter([
+                    ...$metadata,
+                    'order_payload' => null,
+                    'checkout_validation_errors' => $cart->errors,
+                ]),
+            ])->save();
+
+            return null;
+        }
+
+        return $this->authority()->propose($ctx->bot, $ctx->conversation, $cart);
+    }
+
+    private function setCheckoutResponse(WebhookContext $ctx, CheckoutOutcome $outcome): void
+    {
+        if (! $ctx->conversation || ! $outcome->checkout) {
+            return;
+        }
+
+        $content = $outcome->customerText ?? $this->renderer()->render($outcome->checkout, $outcome->action);
+        $botMessage = $ctx->conversation->messages()->create([
+            'sender' => 'bot',
+            'content' => $content,
+            'type' => 'text',
+        ]);
+        $ctx->metadata['bot_message'] = $botMessage;
+        $this->preparePresentation($ctx, $botMessage, $outcome);
+        $ctx->response = ResponseEnvelope::text($content);
+    }
+
+    private function replaceWithCheckoutResponse(
+        WebhookContext $ctx,
+        Message $botMessage,
+        CheckoutOutcome $outcome,
+    ): void {
+        if (! $outcome->checkout && $outcome->customerText === null) {
+            return;
+        }
+
+        $content = $outcome->customerText ?? $this->renderer()->render($outcome->checkout, $outcome->action);
+        $metadata = is_array($botMessage->metadata) ? $botMessage->metadata : [];
+        unset($metadata['order_payload']);
+        if ($outcome->action === 'payment' && $outcome->checkout) {
+            $metadata['order_payload'] = $this->serverOrderPayload($outcome->checkout->items, $outcome->checkout->total_minor);
+        }
+        $botMessage->forceFill(['content' => $content, 'metadata' => $metadata ?: null])->save();
+        $this->preparePresentation($ctx, $botMessage, $outcome);
+    }
+
+    private function preparePresentation(
+        WebhookContext $ctx,
+        Message $botMessage,
+        CheckoutOutcome $outcome,
+    ): void {
+        if (! $outcome->checkout
+            || ! in_array($outcome->action, ['ack', 'confirm', 'support_delay', 'terms', 'payment'], true)
+            || $outcome->checkout->state === 'cancelled') {
+            return;
+        }
+
+        $metadata = is_array($botMessage->metadata) ? $botMessage->metadata : [];
+        $presentation = [
+            'checkout_id' => $outcome->checkout->getKey(),
+            'revision' => $outcome->checkout->revision,
+            'action' => $outcome->action,
+        ];
+        $metadata['checkout_presentation'] = $presentation;
+        $botMessage->forceFill(['metadata' => $metadata])->save();
+        $this->authority()->pending($outcome->checkout, $outcome->checkout->revision, $botMessage);
+        $ctx->metadata['checkout_presentation'] = $presentation;
+    }
+
+    /** @param list<array<string,mixed>> $items */
+    private function serverOrderPayload(array $items, int $totalMinor): array
+    {
+        return [
+            'items' => array_map(fn (array $item): array => [
+                'name' => $item['name'].match ($item['method'] ?? 'none') {
+                    'card' => ' (ผูกบัตร)',
+                    'topup' => ' (เติมเงิน)',
+                    default => '',
+                },
+                'qty' => $item['qty'],
+                'price' => $item['price_minor'] % 100 === 0
+                    ? intdiv($item['price_minor'], 100)
+                    : $item['price_minor'] / 100,
+            ], $items),
+            'total' => $totalMinor % 100 === 0 ? intdiv($totalMinor, 100) : $totalMinor / 100,
+        ];
     }
 
     // -------------------------------------------------------------------------

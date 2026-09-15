@@ -4,8 +4,10 @@ namespace App\Services\LineWebhook;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
+use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
@@ -22,6 +24,7 @@ class LineWebhookOutputService
         private readonly MultipleBubblesService $bubbles,
         private readonly PaymentFlexService $paymentFlex,
         private readonly FlowPluginService $flowPlugin,
+        private readonly ?CheckoutAuthority $checkoutAuthority = null,
     ) {}
 
     /**
@@ -108,6 +111,8 @@ class LineWebhookOutputService
                     $retryKey = $this->line->generateRetryKey();
                     $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$content], $retryKey);
                 }
+
+                $this->markCheckoutPresented($botMessage);
             }
 
             // Flow plugins (legacy lines 530-541)
@@ -146,6 +151,34 @@ class LineWebhookOutputService
 
         broadcast(new MessageSent($botMessage, $conversationData))->toOthers();
         broadcast(new ConversationUpdated($conv, 'message_received'))->toOthers();
+    }
+
+    private function markCheckoutPresented(Message $botMessage): void
+    {
+        $metadata = is_array($botMessage->metadata) ? $botMessage->metadata : [];
+        $presentation = $metadata['checkout_presentation'] ?? null;
+        if (! is_array($presentation)
+            || ! is_string($presentation['checkout_id'] ?? null)
+            || ! is_int($presentation['revision'] ?? null)) {
+            return;
+        }
+
+        try {
+            $checkout = CheckoutSession::query()->find($presentation['checkout_id']);
+            if ($checkout) {
+                ($this->checkoutAuthority ?? app(CheckoutAuthority::class))->presented(
+                    $checkout,
+                    $presentation['revision'],
+                    $botMessage,
+                );
+            }
+        } catch (\Throwable $e) {
+            Log::error('Checkout presentation could not be persisted after outbound delivery', [
+                'checkout_id' => $presentation['checkout_id'],
+                'message_id' => $botMessage->getKey(),
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     // -------------------------------------------------------------------------
