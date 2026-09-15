@@ -10,27 +10,31 @@ use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
+use App\Models\KnowledgeBase;
 use App\Models\Message;
 use App\Models\PaymentEffect;
 use App\Models\ProductStock;
 use App\Models\User;
 use App\Models\VerifiedPaymentEvent;
+use App\Services\CommerceSafety\CanonicalCartValidator;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CustomerReplyPolicy;
 use App\Services\CommerceSafety\FinancialOutputGuard;
+use App\Services\Guardrail\OffTopicCircuitBreaker;
+use App\Services\HybridSearchService;
 use App\Services\IntentAnalysisService;
 use App\Services\LineWebhook\LineWebhookOutputService;
 use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\LineWebhook\WebhookContext;
 use App\Services\ModelCapabilityService;
-use App\Services\OpenRouterService;
+use App\Services\PromptEval\PromptEvalRunner;
 use App\Services\StockInjectionService;
 use App\Services\VipPricingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
-use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -49,6 +53,10 @@ class Bot26PromptEvaluationTest extends TestCase
     use RefreshDatabase;
 
     private const MODEL = 'openai/gpt-5.6-luna';
+
+    // Image raw skip-list: T16/T30 use canned classifications; T17 additionally has
+    // a BLOCKED camera-photo classification gate. Its passing replay is reply handling only.
+    private const RAW_IMAGE_SKIP_IDS = ['T16', 'T17', 'T30'];
 
     private const HASH = 'b5d8815cd45626949482f26f5c2f0942371b5940a3ccd0f5f810379687b1fa24';
 
@@ -101,12 +109,25 @@ class Bot26PromptEvaluationTest extends TestCase
         $this->assertSame(23133, mb_strlen($prompt));
         $this->assertSame(58718, strlen($prompt));
         $this->assertSame(self::HASH, hash('sha256', $prompt));
+        $manifest = json_decode(file_get_contents(__DIR__.'/../../Fixtures/PromptEval/bot26-v28/manifest.json'), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame(mb_strlen($prompt), $manifest['prompt']['chars']);
+        $this->assertSame(strlen($prompt), $manifest['prompt']['bytes']);
+        $this->assertSame(hash('sha256', $prompt), $manifest['prompt']['sha256']);
+        $this->assertSame(array_keys(self::fixtures()), array_column($manifest['fixtures'], 'id'));
+        foreach ($manifest['fixtures'] as $fixture) {
+            $bytes = file_get_contents(__DIR__.'/../../Fixtures/PromptEval/bot26-v28/'.$fixture['id'].'.json');
+            $this->assertSame(strlen($bytes), $fixture['bytes']);
+            $this->assertSame(mb_strlen($bytes), $fixture['chars']);
+            $this->assertSame(hash('sha256', $bytes), $fixture['sha256']);
+        }
         $this->assertStringEndsWith("\n", $prompt);
         $ids = array_merge(array_map(fn ($n) => sprintf('T%02d', $n), range(1, 33)), array_map(fn ($n) => sprintf('X%02d', $n), range(1, 8)));
         $this->assertSame($ids, array_keys(self::fixtures()));
         $this->assertCount(41, glob(__DIR__.'/../../Fixtures/PromptEval/bot26-v28/[TX]*.json'));
         $this->assertCount(38, self::textCases());
-        $this->assertSame(['T16', 'T17', 'T30'], array_keys(self::imageCases()));
+        $this->assertSame(self::RAW_IMAGE_SKIP_IDS, array_keys(self::imageCases()));
+        $this->assertTrue(self::fixtures()['T17']['classification_gate_blocked']);
+        $this->assertNotEmpty(self::fixtures()['T17']['classification_gate_blocked_reason']);
         foreach (['Nolimit Level Up+ BM (ผูกบัตร)', 'Nolimit Level Up+ BM (เติมเงิน)', 'Nolimit Level Up+ Personal (ผูกบัตร)', 'Nolimit Level Up+ Personal (เติมเงิน)', 'Page', 'G3D', '223-3-24880-3', 'หจก. มั่งมีทรัพย์ขายของออนไลน์', 'https://mhhacoursecontent.my.canva.site/ads-vance', 'https://lin.ee/h5wYpIf', '@743ddeqy', 'https://t.me/supermanth2022', '[[ORDER]]', '[[/ORDER]]', '[[OFFTOPIC]]', '[แจ้งเตือน Support]', '[ยืนยันชำระเงิน]', '|||'] as $literal) {
             $this->assertStringContainsString($literal, $prompt);
         }
@@ -248,16 +269,87 @@ class Bot26PromptEvaluationTest extends TestCase
         foreach ($this->catalog($case) as $product) {
             $product->save();
         }
-        foreach ($case['history'] as $message) {
-            $this->conversation->messages()->create($message + ['type' => 'text']);
-        }
-        $this->mock(IntentAnalysisService::class)->shouldReceive('analyzeIntent')->andReturn(['intent' => 'chat', 'confidence' => 1, 'usage' => null]);
+        $this->persistHistory($case);
+        $this->persistKnowledge($case, $flow);
+        $this->mock(IntentAnalysisService::class)->shouldReceive('analyzeIntent')->andReturn(['intent' => $case['system_injections']['kb'] === '' ? 'chat' : 'knowledge', 'confidence' => 1, 'usage' => null]);
         $capabilities = $this->mock(ModelCapabilityService::class);
         $capabilities->shouldReceive('supportsReasoning', 'supportsVision', 'supportsStructuredOutput')->andReturn(true);
         $capabilities->shouldReceive('getDefaultReasoningEffort')->andReturn('medium');
         if ($case['system_injections']['stock'] === 'unknown') {
             $this->partialMock(StockInjectionService::class)->shouldReceive('getStockStatus')->andReturn(collect());
         }
+    }
+
+    /** Only these fixtures encode a consent stage in their history/label. */
+    private function expectedCheckoutState(array $case): ?string
+    {
+        return match ($case['id']) {
+            'T12', 'X06' => 'awaiting_support',
+            'T13', 'T14' => 'awaiting_terms',
+            'T15' => 'payable',
+            default => null,
+        };
+    }
+
+    private function persistHistory(array $case): void
+    {
+        $authority = app(CheckoutAuthority::class);
+        $outcome = null;
+        foreach ($case['history'] as $index => $row) {
+            $this->travel(1)->seconds();
+            $message = $this->conversation->messages()->create($row + ['type' => 'text', 'event_timestamp' => now()->getTimestampMs()]);
+            if ($this->expectedCheckoutState($case) === null) {
+                continue;
+            }
+            // Seed only the cart actually encoded in the fixture's first summary.
+            // Then replay its consent messages via the authority with persisted challenges.
+            if ($index === 1) {
+                preg_match_all('/(Nolimit Level Up\+ (?:Personal|BM) \(ผูกบัตร\)|Page)\s+(?:(\d+) ตัว ราคาต่อหน่วย ([\d,]+) บาท|× (\d+) = ([\d,]+) บาท)/u', $row['content'], $matches, PREG_SET_ORDER);
+                $this->assertNotEmpty($matches, $case['id'].' must encode the initial cart');
+                $lines = array_map(function (array $match): array {
+                    $qty = (int) ($match[2] !== '' ? $match[2] : $match[4]);
+                    $price = $match[3] !== '' ? (int) str_replace(',', '', $match[3]) : (int) str_replace(',', '', $match[5]) / $qty;
+
+                    return ['name' => str_replace(' (ผูกบัตร)', '', $match[1]), 'method' => $match[1] === 'Page' ? 'none' : 'card', 'qty' => $qty, 'price_minor' => (int) ($price * 100)];
+                }, $matches);
+                $total = array_sum(array_map(fn ($line) => $line['qty'] * $line['price_minor'], $lines));
+                $cart = app(CanonicalCartValidator::class)->validate($this->bot, $this->conversation, $lines, $total);
+                $this->assertTrue($cart->valid, implode(', ', $cart->errors));
+                $outcome = $authority->propose($this->bot, $this->conversation, $cart);
+            } elseif ($index > 1 && $row['sender'] === 'user') {
+                $outcome = $authority->accept($this->bot, $this->conversation, $message);
+            }
+            if ($row['sender'] === 'bot' && $outcome?->checkout) {
+                $authority->pending($outcome->checkout, $outcome->checkout->revision, $message, $outcome->action);
+                $authority->presented($outcome->checkout, $outcome->checkout->revision, $message);
+            }
+        }
+    }
+
+    private function persistKnowledge(array $case, Flow $flow): void
+    {
+        $content = $case['system_injections']['kb'];
+        if ($content === '') {
+            return;
+        }
+        $kb = KnowledgeBase::create(['user_id' => $this->bot->user_id, 'name' => 'Synthetic '.$case['id'], 'document_count' => 1, 'chunk_count' => 1]);
+        $flow->knowledgeBases()->attach($kb->id);
+        $document = $kb->documents()->create([
+            'filename' => 'synthetic.txt', 'original_filename' => 'synthetic.txt',
+            'mime_type' => 'text/plain', 'file_size' => strlen($content),
+            'storage_path' => 'fixtures/synthetic.txt', 'status' => 'completed', 'chunk_count' => 1,
+        ]);
+        $chunk = $document->chunks()->create(['content' => $content, 'chunk_index' => 0]);
+        $search = $this->mock(HybridSearchService::class);
+        $search->shouldReceive('isEnabled')->andReturn(false);
+        $search->shouldReceive('searchMultiple')->once()
+            ->withArgs(fn ($configs, $query, $limit, $apiKey) => array_column($configs, 'id') === [$kb->id] && $query === $case['message'])
+            ->andReturnUsing(fn () => collect([[
+                'content' => $chunk->fresh()->content, 'document_name' => $document->original_filename,
+                'knowledge_base_id' => $kb->id, 'similarity' => 1.0,
+            ]]));
+        $this->assertDatabaseHas('flow_knowledge_base', ['flow_id' => 24, 'knowledge_base_id' => $kb->id]);
+        $this->assertDatabaseHas('document_chunks', ['id' => $chunk->id, 'content' => $content]);
     }
 
     private function memoryNotes(array $case): array
@@ -267,7 +359,7 @@ class Bot26PromptEvaluationTest extends TestCase
             $notes[] = ['source' => 'vip_manual', 'content' => 'Synthetic VIP'];
         }
         if ($case['system_injections']['memory'] !== '') {
-            $notes[] = ['source' => 'manual', 'content' => $case['system_injections']['memory']];
+            $notes[] = ['source' => 'manual', 'type' => 'memory', 'content' => $case['system_injections']['memory']];
         }
 
         return $notes;
@@ -362,11 +454,104 @@ class Bot26PromptEvaluationTest extends TestCase
         $this->persistApplication($case);
         $this->fakeTransport($case['evidence']['response']);
         $ctx = $this->handler($case['message']);
-        $this->assertSafeOutput($ctx);
+        $this->assertSafeOutput($ctx, allowBank: $case['assertions']['order_block']);
+        $this->assertApplicationScenario($case, $ctx);
         $this->assertNoPaymentEffects();
-        Http::assertSent(fn (Request $request) => str_contains($request->url(), 'openrouter.ai/api/v1/chat/completions') && $request['model'] === self::MODEL && str_contains(json_encode($request['messages'], JSON_UNESCAPED_UNICODE), 'Nolimit'));
+        if (in_array($case['id'], ['T12', 'T13', 'T15'], true)) {
+            // These exact consent replies are consumed by the persisted checkout authority.
+            Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'openrouter.ai'));
+        } else {
+            Http::assertSent(function (Request $request) use ($case): bool {
+                if (! str_contains($request->url(), 'openrouter.ai/api/v1/chat/completions')) {
+                    return false;
+                }
+                $messages = implode("\n", array_column($request['messages'], 'content'));
+                $this->assertSame(self::MODEL, $request['model']);
+                $this->assertStringContainsString(self::prompt(), $messages);
+                foreach (['memory', 'kb'] as $injection) {
+                    if ($case['system_injections'][$injection] !== '') {
+                        $this->assertStringContainsString($case['system_injections'][$injection], $messages, $case['id'].' '.$injection);
+                    }
+                }
+                if ($case['system_injections']['stock'] !== 'unknown') {
+                    $this->assertStringContainsString(app(StockInjectionService::class)->buildStockInjection($this->catalog($case)), $messages);
+                }
+                if ($case['system_injections']['vip']) {
+                    $this->assertStringContainsString(app(VipPricingService::class)->buildPromptBlock($this->conversation, $this->catalog($case)), $messages);
+                }
+
+                return true;
+            });
+        }
         Http::assertSent(fn (Request $request) => str_contains($request->url(), 'api.line.me/') && isset($request['messages']));
         $this->assertSame(self::HASH, hash('sha256', Flow::findOrFail(24)->system_prompt));
+    }
+
+    /**
+     * Measured application interlocks, NOT alternate prompt expectations. The original
+     * fixture assertions still run offline. Keep replacements explicit by case so a
+     * newly swallowed reply fails instead of silently accepting any generic fallback.
+     * See docs/testing/bot26-v28-evaluation.md for the resulting semantic coverage gaps.
+     */
+    private function applicationGuardReplacement(array $case): ?string
+    {
+        return match ($case['id']) {
+            // Existing proposal parser rejects these saved prose formats.
+            'T01', 'T03', 'T04', 'T06', 'T07', 'T11', 'T20', 'X03', 'X04', 'X05' => 'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง',
+            // Financial-word interlock also rejects negated payment claims.
+            'T19', 'T22', 'T23', 'T33', 'X02' => FinancialOutputGuard::DENIAL,
+            // Historical date prose is rejected by the existing contact policy.
+            'T29' => CustomerReplyPolicy::FALLBACK,
+            // StockGuard replaces this reply with its unavailable-product response.
+            'X08' => "ขออภัยครับ ขณะนี้ Nolimit Level Up+ BM หมด stock ชั่วคราว ไม่สามารถสั่งซื้อได้ครับ\n\nหากสนใจสินค้าอื่น หรือต้องการให้แจ้งเมื่อสินค้ากลับมา สามารถบอกได้เลยครับ",
+            default => null,
+        };
+    }
+
+    private function assertApplicationScenario(array $case, WebhookContext $ctx): void
+    {
+        $message = $ctx->metadata['bot_message']->fresh();
+        $displayCase = $case;
+        // Protocol markers are consumed by the application, not customer display text.
+        $displayCase['assertions']['contains'] = array_values(array_diff($case['assertions']['contains'], ['[[OFFTOPIC]]']));
+        $displayCase['assertions']['order_block'] = false;
+        $replacement = $this->applicationGuardReplacement($case);
+        if ($replacement !== null) {
+            // These cases assert the exact safety transformation and no cart. They do
+            // not claim that the fixture's original display/total survives the guard.
+            $this->assertSame($replacement, $message->content, $case['id'].' guard replacement');
+            $this->assertDatabaseCount('checkout_sessions', 0);
+            $displayCase['assertions']['contains'] = [$replacement];
+            $displayCase['assertions']['items'] = null;
+            $displayCase['assertions']['total'] = null;
+        }
+        if (in_array('[[OFFTOPIC]]', $case['assertions']['contains'], true)) {
+            $this->assertSame(1, Cache::get(OffTopicCircuitBreaker::cacheKey(26, $this->conversation->id)));
+        }
+        $display = trim((string) preg_replace('/\[\[ORDER\]\].*?(?:\[\[\/ORDER\]\]|$)/su', '', $message->content));
+        $this->assertSame([], $this->responseFailures($displayCase, $display), $case['id'].' display: '.$display);
+        // Fixture items/total specify cart arithmetic, not mandatory unit-price prose.
+        $state = $this->expectedCheckoutState($case);
+        if ($state !== null) {
+            $checkout = CheckoutSession::sole();
+            $this->assertSame($state, $checkout->state, $case['id']);
+            if ($case['assertions']['total'] !== null) {
+                $this->assertSame($case['assertions']['total'] * 100, $checkout->total_minor, $case['id']);
+                preg_match('/\[\[ORDER\]\](.*?)\[\[\/ORDER\]\]/su', $message->content, $order);
+                $this->assertSame(['items' => $case['assertions']['items'], 'total' => $case['assertions']['total']], json_decode($order[1], true, 512, JSON_THROW_ON_ERROR));
+                $this->assertSame(array_column($case['assertions']['items'], 'qty'), array_column($checkout->items, 'qty'));
+                $this->assertSame(array_map(fn ($item) => $item['price'] * 100, $case['assertions']['items']), array_column($checkout->items, 'price_minor'));
+            }
+            if ($state === 'payable') {
+                $this->assertSame($ctx->userMessage->id, $checkout->accepted['terms']);
+            } else {
+                $this->assertArrayNotHasKey('terms', $checkout->accepted, $case['id']);
+            }
+        }
+        // Check the actual LINE text too, so a correct DB reply cannot hide a generic wire reply.
+        $wireText = collect(Http::recorded(fn (Request $request) => str_contains($request->url(), 'api.line.me/')))
+            ->flatMap(fn ($pair) => $pair[0]['messages'])->pluck('text')->filter()->implode("\n");
+        $this->assertSame([], $this->responseFailures($displayCase, $wireText), $case['id'].' LINE display');
     }
 
     #[DataProvider('imageCases')]
@@ -374,6 +559,12 @@ class Bot26PromptEvaluationTest extends TestCase
     {
         $this->persistApplication($case);
         $this->enableSlip();
+        // T17 supplies is_slip=false and canned prose only. No camera-photo recognition
+        // is exercised; classification_gate_blocked must stay explicit in the fixture.
+        if ($case['id'] === 'T17') {
+            $this->assertTrue($case['classification_gate_blocked']);
+            $this->assertNotEmpty($case['classification_gate_blocked_reason']);
+        }
         // Synthetic payment prose triggers EasySlip's unreadable-image classifier branch.
         // It is deliberately NOT checkout or payment authority.
         $this->conversation->messages()->create(['sender' => 'bot', 'type' => 'text', 'content' => "สรุปรายการ\n1. Page (199 x 1) = 199 บาท\nรวมยอดโอน: 199 บาท\n223-3-24880-3"]);
@@ -516,9 +707,8 @@ class Bot26PromptEvaluationTest extends TestCase
         $this->assertNoPaymentEffects();
     }
 
-    // LAYER C — opt-in raw inference; test-only adapter around the existing service.
-    // PromptEvalRunner is hybrid AI/RAG and cannot produce raw/provider provenance.
-    // No production evaluator changes and no application sanitizers on this path.
+    // LAYER C — opt-in raw inference through PromptEvalRunner::runRaw().
+    // No application sanitizers, semantic cache, retries or fallback on this path.
 
     public function test_raw_layer_really_skips_without_explicit_environment_opt_in(): void
     {
@@ -549,12 +739,12 @@ class Bot26PromptEvaluationTest extends TestCase
         Http::allowStrayRequests(['https://openrouter.ai/api/v1/chat/completions']);
         $result = $this->rawRequest($case);
         $failures = $this->responseFailures($case, $result['content']);
-        foreach (['id' => $result['id'], 'returned_model' => $result['returned_model'], 'finish_reason' => $result['finish_reason']] as $key => $value) {
+        foreach (['request_id' => $result['request_id'], 'returned_model' => $result['returned_model'], 'finish_reason' => $result['finish_reason']] as $key => $value) {
             if (! is_string($value) || $value === '') {
                 $failures[] = 'missing '.$key;
             }
         }
-        if ($result['returned_model'] !== self::MODEL) {
+        if ($result['requested_model'] !== self::MODEL || $result['returned_model'] !== self::MODEL) {
             $failures[] = 'returned model mismatch or fallback';
         }
         if (($result['settings']['reasoning'] ?? null) !== ['effort' => 'medium']
@@ -572,8 +762,8 @@ class Bot26PromptEvaluationTest extends TestCase
         }
         file_put_contents($dir.'/'.$case['id'].'.json', json_encode([
             'layer' => 'raw_model', 'case_id' => $case['id'], 'prompt_sha256' => self::HASH,
-            'input_sha256' => $result['input_sha256'], 'request_id' => $result['id'],
-            'requested_model' => self::MODEL, 'returned_model' => $result['returned_model'],
+            'input_sha256' => $result['input_sha256'], 'request_id' => $result['request_id'],
+            'requested_model' => $result['requested_model'], 'returned_model' => $result['returned_model'],
             'settings' => $result['settings'], 'finish_reason' => $result['finish_reason'],
             'raw_output' => $result['content'], 'assertions' => $case['assertions'],
             'failures' => $failures, 'passed' => $failures === [], 'manual_semantic_review' => 'pending',
@@ -593,44 +783,20 @@ class Bot26PromptEvaluationTest extends TestCase
             $messages[] = ['role' => $message['sender'] === 'bot' ? 'assistant' : 'user', 'content' => $message['content']];
         }
         $messages[] = ['role' => 'user', 'content' => $case['message']];
-        $this->mock(ModelCapabilityService::class)->shouldReceive('supportsReasoning')->with(self::MODEL)->andReturn(true);
-        config(['services.openrouter.provider_preferences' => ['allow_fallbacks' => false]]);
-        // Service currently drops allow_fallbacks and defaults a missing response model.
-        // A narrow test adapter preserves both fields without changing production files.
-        $router = new class(app(ModelCapabilityService::class)) extends OpenRouterService
-        {
-            public array $wirePayload = [];
 
-            protected function client(?string $apiKey = null, ?int $timeout = null): PendingRequest
-            {
-                return parent::client($apiKey, $timeout)->beforeSending(function (Request $request): void {
-                    $this->wirePayload = $request->data();
-                });
-            }
-
-            protected function buildProviderPreferences(): array
-            {
-                return parent::buildProviderPreferences() + ['allow_fallbacks' => config('services.openrouter.provider_preferences.allow_fallbacks')];
-            }
-
-            protected function parseResponse(array $data, string $requestedModel): array
-            {
-                return parent::parseResponse($data, $requestedModel) + ['returned_model' => $data['model'] ?? null];
-            }
-        };
-        $result = $router->chat($messages, self::MODEL, temperature: 0.7, maxTokens: 8192, useFallback: false, fallbackModelOverride: null, reasoning: ['effort' => 'medium']);
-
-        return $result + ['settings' => array_diff_key($router->wirePayload, ['messages' => true]) + ['use_fallback' => false, 'semantic_cache' => false], 'input_sha256' => hash('sha256', json_encode($messages, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR))];
+        return app(PromptEvalRunner::class)->runRaw($messages, self::MODEL);
     }
 
-    public function test_raw_adapter_sends_required_settings_with_fake_http_only(): void
+    public function test_raw_runner_sends_required_settings_with_fake_http_only(): void
     {
         config(['services.openrouter.api_key' => 'synthetic-not-a-key', 'services.openrouter.base_url' => 'https://openrouter.ai/api/v1']);
         $case = self::fixtures()['T06'];
         $this->fakeTransport($case['evidence']['response']);
         $result = $this->rawRequest($case);
-        $this->assertSame('eval-request', $result['id']);
+        $this->assertSame('eval-request', $result['request_id']);
+        $this->assertSame(self::MODEL, $result['requested_model']);
         $this->assertSame(self::MODEL, $result['returned_model']);
+        $this->assertSame('stop', $result['finish_reason']);
         Http::assertSentCount(1);
         Http::assertSent(function (Request $request): bool {
             $system = $request['messages'][0]['content'];

@@ -26,6 +26,8 @@
     ],
     "boundary": "Reply handling only: current binary classifier has no camera-photo image_kind. This draft exercises the non-slip reply branch, NOT camera-photo recognition."
   },
+  "classification_gate_blocked": true,
+  "classification_gate_blocked_reason": "The binary is_slip classifier has no camera-photo image_kind contract. This fixture only replays a canned non-slip reply; camera-photo recognition is untested.",
   "raw_model_skipped": true,
   "assertions": {
     "raw_model": {
