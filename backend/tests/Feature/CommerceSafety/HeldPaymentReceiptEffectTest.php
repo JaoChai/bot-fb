@@ -175,6 +175,58 @@ class HeldPaymentReceiptEffectTest extends TestCase
         $this->reconcileAndDispatch($event, $effect, $line);
     }
 
+    public function test_held_duplicate_producer_and_line_worker_overlap_reuses_receipt_and_claim(): void
+    {
+        $event = $this->automaticEvent('50.00', 'HELD-OVERLAP');
+        $this->assertSame('manual_hold', $event->disposition);
+        $effect = $this->assertHeldEffect($event);
+        $dispatcher = app(PaymentEffectDispatcher::class);
+        $line = $this->mock(LINEService::class);
+        $line->shouldNotReceive('replyWithFallback');
+        $line->shouldReceive('pushPaymentReceipt')->once()->andReturnUsing(
+            function ($bot, $destination, $flex, $retryKey) use ($effect): string {
+                $this->assertSame(0, DB::transactionLevel());
+                $this->assertSame($this->bot->id, $bot->id);
+                $this->assertSame('fixture-user', $destination);
+                $this->assertSame($effect->retry_key, $retryKey);
+                $this->assertStringContainsString('ทีมงานตรวจสอบรายการ', $flex['altText']);
+                // Keep the first transport in flight while producer and worker retries overlap.
+                \Fiber::suspend();
+
+                return 'line-request';
+            },
+        );
+        $worker = new \Fiber(fn () => (new RunPaymentEffect($effect->id))->handle($dispatcher));
+        $worker->start();
+        $this->assertTrue($worker->isSuspended());
+        $claim = $effect->fresh();
+        $this->assertSame('running', $claim->state);
+        $this->assertNotNull($claim->transport_started_at);
+
+        $duplicate = app(PaymentProofService::class)->record(
+            $this->bot, $this->conversation, $event->slipVerification, $event->receiptMessage, null,
+        );
+        (new RunPaymentEffect($effect->id))->handle($dispatcher);
+        $this->assertSame($event->id, $duplicate->id);
+        $this->assertSame($claim->claim_token, $effect->fresh()->claim_token);
+        $this->assertSame(1, $effect->fresh()->attempt_count);
+        $this->assertSame($effect->retry_key, $effect->fresh()->retry_key);
+        Queue::assertPushed(RunPaymentEffect::class, 1);
+        Queue::assertPushed(RunPaymentEffect::class, fn ($job) => $job->effectId === $effect->id);
+
+        $worker->resume();
+        $this->assertTrue($worker->isTerminated());
+        (new RunPaymentEffect($effect->id))->handle($dispatcher);
+        $this->assertSame('succeeded', $effect->fresh()->state);
+        $this->assertSame(1, $effect->fresh()->attempt_count);
+        $this->assertSame(1, VerifiedPaymentEvent::count());
+        $this->assertSame(1, PaymentEffect::count());
+        $this->assertSame(['line_receipt' => $event->id], PaymentEffect::pluck('event_id', 'kind')->all());
+        $this->assertSame(0, Order::count());
+        Queue::assertNotPushed(ReserveAccountStock::class);
+        Http::assertNothingSent();
+    }
+
     public function test_manual_confirmation_and_retry_share_one_held_receipt_effect(): void
     {
         $line = $this->mock(LINEService::class);
