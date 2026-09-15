@@ -80,6 +80,62 @@ class LegacyReservationRecoveryTest extends TestCase
         return ['scoped' => ['enforce'], 'off' => ['off'], 'unconfigured' => [null]];
     }
 
+    public static function unresolvedLegacyCases(): array
+    {
+        $cases = [];
+        foreach (self::modes() as $name => [$mode]) {
+            $cases[$name.' shortage only'] = [$mode, false];
+            $cases[$name.' mixed completed and shortage'] = [$mode, true];
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('unresolvedLegacyCases')]
+    public function test_unresolved_legacy_reservation_holds_without_any_reserving_items(?string $mode, bool $mixed): void
+    {
+        [$delivery, $job] = $this->legacyDelivery($mode, $mixed ? 2 : 1);
+        $items = $delivery->items()->orderBy('id')->get();
+        // The old worker recorded shortage after losing the remote commit response,
+        // then crashed before delivery finalization.
+        $items->first()->update(['status' => AccountDeliveryItem::ST_SHORTAGE]);
+        $legacyRef = StockPoolService::orderRef($delivery->id);
+        $this->seedReserved(700, $legacyRef);
+        if ($mixed) {
+            $items->last()->update(['status' => AccountDeliveryItem::ST_RESERVED, 'stock_item_id' => 701]);
+            $this->seedReserved(701, StockPoolService::orderRef($delivery->id, $items->last()->id));
+        }
+        $delivery->forceFill([
+            'reservation_token' => 'crashed-worker',
+            'reservation_claimed_at' => now()->subMinutes(6),
+        ])->save();
+        $this->seedAvailable(1, 'G3D');
+        $before = $delivery->items()->orderBy('id')->get(['id', 'status', 'stock_item_id'])->toArray();
+        $remoteBefore = DB::connection('mhha_acc')->table('items_reserved')->orderBy('id')->get()->toArray();
+        $this->assertFalse($delivery->items()->where('status', AccountDeliveryItem::ST_RESERVING)->exists());
+
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $this->retry($job);
+
+            $held = $delivery->fresh();
+            $this->assertSame(AccountDelivery::STATUS_RESERVING, $held->status);
+            $this->assertNull($held->reservation_token);
+            $this->assertNull($held->reservation_claimed_at);
+            $this->assertNull($held->card_dispatched_at);
+            $this->assertSame($before, $held->items()->orderBy('id')->get(['id', 'status', 'stock_item_id'])->toArray());
+            $this->assertEquals($remoteBefore, DB::connection('mhha_acc')->table('items_reserved')->orderBy('id')->get()->toArray());
+            $this->assertSame([1], DB::connection('mhha_acc')->table('items_available')->pluck('id')->all());
+            Queue::assertNotPushed(SendDeliveryCard::class);
+        }
+
+        $this->travel(11)->minutes();
+        $this->artisan('delivery:reconcile')
+            ->expectsOutputToContain("งาน #{$delivery->id} ค้างสถานะ reserving")
+            ->assertSuccessful();
+        $this->assertSame($legacyRef, DB::connection('mhha_acc')->table('items_reserved')->where('id', 700)->value('order_ref'));
+        $this->assertRemoteOutsideLocalTransactions();
+    }
+
     #[DataProvider('modes')]
     public function test_retry_links_the_exact_legacy_row_without_allocating_again(?string $mode): void
     {

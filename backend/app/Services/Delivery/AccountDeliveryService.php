@@ -160,6 +160,7 @@ class AccountDeliveryService
         [$finished, $dispatchCard] = DB::transaction(function () use (
             $delivery,
             $reservationToken,
+            $canReserve,
         ): array {
             Conversation::query()->whereKey($delivery->conversation_id)->lockForUpdate()->first();
             $locked = AccountDelivery::query()->lockForUpdate()->findOrFail($delivery->id);
@@ -174,7 +175,9 @@ class AccountDeliveryService
 
                 return [$locked, false];
             }
-            if ($locked->items()->where('status', AccountDeliveryItem::ST_RESERVING)->exists()) {
+            // An unresolved legacy commit holds the delivery even when the old
+            // worker already marked every local item shortage or reserved.
+            if (! $canReserve || $locked->items()->where('status', AccountDeliveryItem::ST_RESERVING)->exists()) {
                 $locked->forceFill([
                     'status' => AccountDelivery::STATUS_RESERVING,
                     'reservation_token' => null,
