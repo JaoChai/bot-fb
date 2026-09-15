@@ -10,10 +10,10 @@ final class FinancialOutputDetector
     {
         // Receipt requests and negations apply only within their own clause.
         $clauses = preg_split('/[\r\n!?;]+|(?<!\d)[.,]|[.,](?!\d)|(?:แต่|แล้ว|จากนั้น|และ)|\b(?:but|then|and)\b/iu', $text);
-        $hasKnownAccount = $this->containsKnownAccount($bot, $text);
+        $hasFinancialContext = $this->containsFinancialContext($bot, $text);
 
         foreach ($clauses as $clause) {
-            if ($this->detectsClause($bot, trim($clause), $hasKnownAccount)) {
+            if ($this->detectsClause($bot, trim($clause), $hasFinancialContext)) {
                 return true;
             }
         }
@@ -21,7 +21,7 @@ final class FinancialOutputDetector
         return false;
     }
 
-    private function detectsClause(Bot $bot, string $clause, bool $hasKnownAccount): bool
+    private function detectsClause(Bot $bot, string $clause, bool $hasFinancialContext): bool
     {
         preg_match_all('/โอน(?:เงิน)?|ชำระ(?:เงิน)?|จ่าย(?:เงิน)?|\b(?:pay|transfer|remit|make\s+(?:a\s+)?payment)\b/iu', $clause, $actions, PREG_OFFSET_CAPTURE);
         $negated = false;
@@ -35,7 +35,12 @@ final class FinancialOutputDetector
             }
 
             // Exclude nominal mentions such as "proof of transfer" and "การโอน".
-            if (preg_match('/(?:การ|เรื่อง|(?<!ค)รับ|หลักฐาน|\b(?:of|for|about|regarding|bank|how\s+to|(?:policy|support)\b.{0,80}\bto))\s*$/iu', $prefix) === 1) {
+            if (preg_match('/(?:(?<!ทำ)การ|เรื่อง|(?<!ค)รับ|หลักฐาน|\b(?:of|for|about|regarding|bank|how\s+to|(?:policy|support)\b.{0,80}\bto))\s*$/iu', $prefix) === 1) {
+                continue;
+            }
+
+            // Shared financial context does not change an unrelated action's object.
+            if (preg_match('/^(?:pay\s+attention\b|transfer\s+(?:(?:the|a|an|your|our|this|these)\s+)?files?\b)/iu', substr($clause, $offset)) === 1) {
                 continue;
             }
 
@@ -46,20 +51,25 @@ final class FinancialOutputDetector
 
         $knownAccount = $this->containsKnownAccount($bot, $clause);
         if ($directive) {
-            $amount = preg_match('/(?:\d[\d,]*(?:\.\d+)?\s*(?:บาท|THB|฿)|(?:THB|฿)\s*\d)/iu', $clause);
             $destination = preg_match('/(?:บัญชี|ธนาคาร|\b(?:bank|account)\b)/iu', $clause);
-            $contextualReference = preg_match(
-                '/(?:ยอด|จำนวน|บัญชี)\s*(?:(?:เดิม|ก่อนหน้า|ที่ผ่านมา|ปัจจุบัน|นี้)|(?:ที่|ตามที่)\s*ตกลง(?:กัน)?(?:ไว้)?)|(?:(?:the|our|your)\s+)?(?:previous|prior|agreed|current|same|this)\s+(?:amount|account)|(?:amount|account)\s+(?:previously\s+)?agreed/iu',
-                $clause,
-            );
 
-            // A receipt clause cannot hide an account used with a separate directive.
-            if ($hasKnownAccount || $amount === 1 || $destination === 1 || $contextualReference === 1) {
+            // Only bounded financial references carry across clauses; generic destinations stay local.
+            if ($hasFinancialContext || $destination === 1) {
                 return true;
             }
         }
 
         return $knownAccount && ! $negated && ! $this->isClearlyNonDirective($clause);
+    }
+
+    private function containsFinancialContext(Bot $bot, string $text): bool
+    {
+        return $this->containsKnownAccount($bot, $text)
+            || preg_match('/(?:\d[\d,]*(?:\.\d+)?\s*(?:บาท|THB|฿)|(?:THB|฿)\s*\d)/iu', $text) === 1
+            || preg_match(
+                '/(?:ยอด|จำนวน|บัญชี)\s*(?:(?:เดิม|ก่อนหน้า|ที่ผ่านมา|ปัจจุบัน|นี้)|(?:ที่|ตามที่)\s*ตกลง(?:กัน)?(?:ไว้)?)|(?:(?:the|our|your)\s+)?(?:previous|prior|agreed|current|same|this)\s+(?:amount|account)|(?:amount|account)\s+(?:previously\s+)?agreed/iu',
+                $text,
+            ) === 1;
     }
 
     private function containsKnownAccount(Bot $bot, string $text): bool

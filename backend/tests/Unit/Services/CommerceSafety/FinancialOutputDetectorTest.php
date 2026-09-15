@@ -21,6 +21,15 @@ class FinancialOutputDetectorTest extends TestCase
     public static function contextualPaymentDirectives(): array
     {
         return [
+            'thai perform transfer directive' => ['กรุณาทำการโอนยอดเดิมเข้าบัญชีเดิมครับ'],
+            'thai perform payment directive' => ['กรุณาทำการชำระยอดเดิมครับ'],
+            'transfer before comma separated context' => ['Please transfer, using the agreed amount and account.'],
+            'pay before coordinated receipt context' => ['Please pay and send the receipt for the agreed amount to support.'],
+            'transfer before currency context' => ['Please transfer; the amount is 199.50 THB.'],
+            'currency context before transfer' => ['ยอด 199.50 บาท แล้วกรุณาโอนได้เลยครับ'],
+            'current reference before pay' => ['The current amount is ready. Please pay now.'],
+            'previous reference after remit' => ['Please remit; use the previous amount.'],
+            'local negation before positive with shared context' => ['Do not transfer the agreed amount today; please pay tomorrow.'],
             'thai polite prefix' => ['ได้เลยครับ โอนยอดเดิมเข้าบัญชีเดิมได้เลยครับ'],
             'english now prefix' => ['Now transfer the agreed amount to our bank account.'],
             'amount transfer and receipt' => ['ยอด 199 บาท โอนเข้าบัญชี 223-3-24880-3 แล้วส่งสลิปได้เลยครับ'],
@@ -57,6 +66,25 @@ class FinancialOutputDetectorTest extends TestCase
     public static function nonDirectiveFinancialDiscussion(): array
     {
         return [
+            'genuine nominal policy' => ['นโยบายการโอนเงินเป็นอย่างไร'],
+            'negated thai perform transfer' => ['กรุณาอย่าทำการโอนยอดเดิมเข้าบัญชีเดิมครับ'],
+            'negated thai perform payment' => ['ไม่ต้องทำการชำระยอดเดิมครับ'],
+            'split context with local negation' => ['Please do not transfer, using the agreed amount and account.'],
+            'split context with negated pay' => ['Please do not pay and send the receipt for the agreed amount to support.'],
+            'receipt only with shared context' => ['The agreed amount is ready. Please send proof of transfer to support.'],
+            'thai receipt only with shared currency' => ['ยอด 199 บาท แล้วกรุณาส่งหลักฐานการโอนให้ฝ่าย support'],
+            'policy only with shared context' => ['The current amount is ready. Our bank policy allows customers to transfer to this account.'],
+            'thai policy only with shared currency' => ['ยอด 199 บาท นโยบายการโอนเงินเป็นอย่างไร'],
+            'support only with shared currency' => ['The amount is 199 THB. Please contact support to discuss how to transfer.'],
+            'no qr with shared context' => ['The agreed amount is ready. ตอนนี้ร้านยังไม่มี QR สำหรับรับชำระครับ'],
+            'product price with shared context' => ['The agreed amount is ready. Page ราคา 199 บาทครับ'],
+            'file transfer with shared currency' => ['Page costs 199 THB. Now transfer the file to support.'],
+            'file transfer with shared reference' => ['The agreed amount is ready. Please transfer files to support.'],
+            'file transfer with shared configured account' => ['Please send the receipt for account 987-6-54321-0. Now transfer the file to support.'],
+            'pay attention with shared currency' => ['Page costs 199 THB. Please pay attention to the product price.'],
+            'pay attention with shared reference' => ['The current amount is ready. Please pay attention to support.'],
+            'pay attention with shared configured account' => ['Please send the receipt for account 987-6-54321-0. Please pay attention to support.'],
+            'generic account is not shared financial context' => ['Our account is ready. Please transfer the file to support.'],
             'cannot transfer' => ['ไม่สามารถโอนเข้าบัญชีเดิมได้ในขณะนี้ครับ'],
             'cannot transfer to known account' => ['ไม่สามารถโอนเข้าบัญชี 223-3-24880-3 ได้ในขณะนี้ครับ'],
             'cannot transfer with spaced modal' => ['ไม่สามารถ โอนเข้าบัญชีเดิมได้ในขณะนี้ครับ'],
