@@ -12,7 +12,7 @@ recomputes prompt and fixture character counts, byte counts and SHA-256 hashes.
 
 | Artifact | Measurement |
 | --- | --- |
-| Prompt | `resources/prompts/bot26/v28.txt` |
+| Prompt | `backend/resources/prompts/bot26/v28.txt` |
 | Unicode characters | 23,133 |
 | UTF-8 bytes | 58,718 |
 | SHA-256 | `b5d8815cd45626949482f26f5c2f0942371b5940a3ccd0f5f810379687b1fa24` |

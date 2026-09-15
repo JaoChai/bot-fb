@@ -102,14 +102,14 @@ class Bot26PromptEvaluationTest extends TestCase
 
     private static function prompt(): string
     {
-        return file_get_contents(dirname(__DIR__, 4).'/resources/prompts/bot26/v28.txt');
+        return file_get_contents(dirname(__DIR__, 3).'/resources/prompts/bot26/v28.txt');
     }
 
     // LAYER A — offline literal, arithmetic and protocol replay; no persisted fixtures.
 
     public function test_offline_artifact_and_fixture_inventory(): void
     {
-        $path = dirname(base_path()).'/resources/prompts/bot26/v28.txt';
+        $path = base_path('resources/prompts/bot26/v28.txt');
         $this->assertFileExists($path);
         $prompt = self::prompt();
         $this->assertSame(23133, mb_strlen($prompt));

@@ -91,7 +91,7 @@ class Bot26EndToEndTest extends TestCase
             'reasoning_effort' => 'medium', 'context_window' => 40, 'auto_delivery_enabled' => true,
         ]);
         $flow = Flow::factory()->default()->create([
-            'id' => 24, 'bot_id' => 26, 'system_prompt' => file_get_contents(dirname(__DIR__, 4).'/resources/prompts/bot26/v28.txt'),
+            'id' => 24, 'bot_id' => 26, 'system_prompt' => file_get_contents(dirname(__DIR__, 3).'/resources/prompts/bot26/v28.txt'),
         ]);
         $this->bot->update(['default_flow_id' => $flow->id]);
         $this->bot->settings()->updateOrCreate(['bot_id' => 26], [
