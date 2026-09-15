@@ -51,7 +51,93 @@
           "X08"
         ]
       },
-      "semantic_acceptance": "incomplete: explicit guard replacements are safety outcomes, not preservation of raw fixture semantics"
+      "semantic_acceptance": "incomplete: explicit guard replacements are safety outcomes, not preservation of raw fixture semantics",
+      "expected_unmet_fixture_semantics": {
+        "T01": [
+          "missing: Personal",
+          "missing: 2,200",
+          "missing: ยืนยัน",
+          "total absent"
+        ],
+        "T03": [
+          "missing: BM",
+          "missing: Page",
+          "missing: 2,399",
+          "total absent"
+        ],
+        "T04": [
+          "missing: Personal",
+          "missing: Page",
+          "missing: 3,499",
+          "missing: ยืนยัน",
+          "total absent"
+        ],
+        "T06": [
+          "missing: VIP",
+          "missing: 1,000",
+          "missing: 2,000",
+          "missing: ยืนยัน",
+          "total absent"
+        ],
+        "T07": [
+          "missing: Personal",
+          "missing: 1,100",
+          "missing: ยืนยัน"
+        ],
+        "T11": [
+          "missing: 5",
+          "missing: ผูกบัตร",
+          "missing: เติมเงิน"
+        ],
+        "T19": [
+          "missing: ขอบคุณ"
+        ],
+        "T20": [
+          "missing: Personal",
+          "missing: Page",
+          "missing: 1,299",
+          "missing: ยืนยัน",
+          "total absent"
+        ],
+        "T22": [
+          "missing: ไม่มีระบบฝาก",
+          "missing: 1",
+          "missing: 5"
+        ],
+        "T23": [
+          "missing: พร้อมส่ง",
+          "missing: ก่อน"
+        ],
+        "T29": [
+          "missing: ยังยืนยันไม่ได้"
+        ],
+        "T33": [
+          "missing: ยังไม่สามารถยืนยัน"
+        ],
+        "X02": [
+          "missing: ไม่สามารถ"
+        ],
+        "X03": [
+          "missing: 1,100",
+          "missing: ยืนยัน",
+          "total absent"
+        ],
+        "X04": [
+          "missing: VIP",
+          "missing: 1,000"
+        ],
+        "X05": [
+          "missing: BM",
+          "missing: หมด"
+        ],
+        "X08": [
+          "missing: Personal",
+          "missing: ไม่รับรอง",
+          "missing: CAPI"
+        ]
+      },
+      "fixture_semantics_cases": 38,
+      "unmet_fixture_semantics_artifacts": "backend/storage/app/prompt-eval/bot26-v28/application/{case_id}.json"
     },
     "raw": {
       "status": "unexecuted",
@@ -74,8 +160,8 @@
     }
   },
   "validation": {
-    "feature_tests": 89,
-    "feature_assertions": 2631,
+    "feature_tests": 90,
+    "feature_assertions": 2657,
     "unit_suite": {
       "status": "pass",
       "runs": 1,
@@ -92,6 +178,14 @@
       "status": "pass",
       "tests": 8,
       "assertions": 29
+    },
+    "feature_runs": 1,
+    "round_2_evidence": {
+      "base_commit": "e4bdd53c",
+      "feature_log": "/private/tmp/bot26-c2-round2-feature.log",
+      "feature_junit": "/private/tmp/bot26-c2-round2-feature.xml",
+      "unit_log": "/private/tmp/bot26-c2-round2-unit.log",
+      "unit_junit": "/private/tmp/bot26-c2-round2-unit.xml"
     }
   },
   "fixtures": [

@@ -89,6 +89,12 @@ class Bot26PromptEvaluationTest extends TestCase
         return array_map(fn ($case) => [$case], array_filter(self::fixtures(), fn ($case) => $case['layer'] === 'text_replay'));
     }
 
+    /** Fixture-derived application expectations, including guard-replaced cases. */
+    public static function fixture_semantics(): array
+    {
+        return self::textCases();
+    }
+
     public static function imageCases(): array
     {
         return array_map(fn ($case) => [$case], array_filter(self::fixtures(), fn ($case) => $case['layer'] === 'image_handler'));
@@ -114,6 +120,10 @@ class Bot26PromptEvaluationTest extends TestCase
         $this->assertSame(strlen($prompt), $manifest['prompt']['bytes']);
         $this->assertSame(hash('sha256', $prompt), $manifest['prompt']['sha256']);
         $this->assertSame(array_keys(self::fixtures()), array_column($manifest['fixtures'], 'id'));
+        $expectedUnmetIds = array_merge(...array_values($manifest['layers']['application']['guard_replacement_cases']));
+        sort($expectedUnmetIds);
+        $this->assertSame($expectedUnmetIds, array_keys($manifest['layers']['application']['expected_unmet_fixture_semantics']));
+        $this->assertSame(count(self::fixture_semantics()), $manifest['layers']['application']['fixture_semantics_cases']);
         foreach ($manifest['fixtures'] as $fixture) {
             $bytes = file_get_contents(__DIR__.'/../../Fixtures/PromptEval/bot26-v28/'.$fixture['id'].'.json');
             $this->assertSame(strlen($bytes), $fixture['bytes']);
@@ -448,7 +458,7 @@ class Bot26PromptEvaluationTest extends TestCase
         Queue::assertNotPushed(SendDeliveryCard::class);
     }
 
-    #[DataProvider('textCases')]
+    #[DataProvider('fixture_semantics')]
     public function test_application_replays_saved_text_through_real_handlers(array $case): void
     {
         $this->persistApplication($case);
@@ -489,8 +499,8 @@ class Bot26PromptEvaluationTest extends TestCase
 
     /**
      * Measured application interlocks, NOT alternate prompt expectations. The original
-     * fixture assertions still run offline. Keep replacements explicit by case so a
-     * newly swallowed reply fails instead of silently accepting any generic fallback.
+     * fixture assertions run against both application outputs and record unmet semantics.
+     * Guard checks remain separate from that manifest-pinned semantic result.
      * See docs/testing/bot26-v28-evaluation.md for the resulting semantic coverage gaps.
      */
     private function applicationGuardReplacement(array $case): ?string
@@ -516,20 +526,10 @@ class Bot26PromptEvaluationTest extends TestCase
         $displayCase['assertions']['contains'] = array_values(array_diff($case['assertions']['contains'], ['[[OFFTOPIC]]']));
         $displayCase['assertions']['order_block'] = false;
         $replacement = $this->applicationGuardReplacement($case);
-        if ($replacement !== null) {
-            // These cases assert the exact safety transformation and no cart. They do
-            // not claim that the fixture's original display/total survives the guard.
-            $this->assertSame($replacement, $message->content, $case['id'].' guard replacement');
-            $this->assertDatabaseCount('checkout_sessions', 0);
-            $displayCase['assertions']['contains'] = [$replacement];
-            $displayCase['assertions']['items'] = null;
-            $displayCase['assertions']['total'] = null;
-        }
         if (in_array('[[OFFTOPIC]]', $case['assertions']['contains'], true)) {
             $this->assertSame(1, Cache::get(OffTopicCircuitBreaker::cacheKey(26, $this->conversation->id)));
         }
         $display = trim((string) preg_replace('/\[\[ORDER\]\].*?(?:\[\[\/ORDER\]\]|$)/su', '', $message->content));
-        $this->assertSame([], $this->responseFailures($displayCase, $display), $case['id'].' display: '.$display);
         // Fixture items/total specify cart arithmetic, not mandatory unit-price prose.
         $state = $this->expectedCheckoutState($case);
         if ($state !== null) {
@@ -551,7 +551,35 @@ class Bot26PromptEvaluationTest extends TestCase
         // Check the actual LINE text too, so a correct DB reply cannot hide a generic wire reply.
         $wireText = collect(Http::recorded(fn (Request $request) => str_contains($request->url(), 'api.line.me/')))
             ->flatMap(fn ($pair) => $pair[0]['messages'])->pluck('text')->filter()->implode("\n");
-        $this->assertSame([], $this->responseFailures($displayCase, $wireText), $case['id'].' LINE display');
+        // Always evaluate the fixture semantics, even when a guard replaces the reply.
+        // Exact failure lists catch new gaps AND partial/full guard relaxation.
+        $fixture_semantics = [
+            'persisted' => $this->responseFailures($displayCase, $display),
+            'line' => $this->responseFailures($displayCase, $wireText),
+        ];
+        $unmet_fixture_semantics = array_filter($fixture_semantics, fn ($failures) => $failures !== []);
+        $manifest = json_decode(file_get_contents(__DIR__.'/../../Fixtures/PromptEval/bot26-v28/manifest.json'), true, 512, JSON_THROW_ON_ERROR);
+        $expected = $manifest['layers']['application']['expected_unmet_fixture_semantics'][$case['id']] ?? [];
+        $dir = storage_path('app/prompt-eval/bot26-v28/application');
+        if (! is_dir($dir)) {
+            mkdir($dir, 0700, true);
+        }
+        file_put_contents($dir.'/'.$case['id'].'.json', json_encode([
+            'layer' => 'application_replay', 'case_id' => $case['id'],
+            'fixture_semantics' => $case['assertions'],
+            'display_assertions' => $displayCase['assertions'],
+            'unmet_fixture_semantics' => $unmet_fixture_semantics,
+            'semantic_passed' => $unmet_fixture_semantics === [],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+        foreach ($fixture_semantics as $surface => $failures) {
+            $this->assertSame($expected, $failures, $case['id'].' '.$surface.' unmet_fixture_semantics; update the manifest when semantics change');
+        }
+        if ($replacement !== null) {
+            // Guard safety is a separate assertion target, never a fixture substitution.
+            $this->assertSame($replacement, $message->content, $case['id'].' guard replacement');
+            $this->assertDatabaseCount('checkout_sessions', 0);
+            $this->assertSame($replacement, $wireText, $case['id'].' LINE guard replacement');
+        }
     }
 
     #[DataProvider('imageCases')]
@@ -757,18 +785,27 @@ class Bot26PromptEvaluationTest extends TestCase
             $failures[] = 'incomplete generation';
         }
         $dir = storage_path('app/prompt-eval/bot26-v28/'.gmdate('Ymd-His').'-'.getmypid());
+        $this->saveRawProvenance($dir, $case, $result, $failures);
+        $this->assertSame([], $failures);
+    }
+
+    private function saveRawProvenance(string $dir, array $case, array $result, array $failures): string
+    {
         if (! is_dir($dir)) {
             mkdir($dir, 0700, true);
         }
-        file_put_contents($dir.'/'.$case['id'].'.json', json_encode([
+        $path = $dir.'/'.$case['id'].'.json';
+        file_put_contents($path, json_encode([
             'layer' => 'raw_model', 'case_id' => $case['id'], 'prompt_sha256' => self::HASH,
             'input_sha256' => $result['input_sha256'], 'request_id' => $result['request_id'],
             'requested_model' => $result['requested_model'], 'returned_model' => $result['returned_model'],
             'settings' => $result['settings'], 'finish_reason' => $result['finish_reason'],
+            'usage' => $result['usage'],
             'raw_output' => $result['content'], 'assertions' => $case['assertions'],
             'failures' => $failures, 'passed' => $failures === [], 'manual_semantic_review' => 'pending',
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
-        $this->assertSame([], $failures);
+
+        return $path;
     }
 
     private function rawRequest(array $case): array
@@ -785,6 +822,41 @@ class Bot26PromptEvaluationTest extends TestCase
         $messages[] = ['role' => 'user', 'content' => $case['message']];
 
         return app(PromptEvalRunner::class)->runRaw($messages, self::MODEL);
+    }
+
+    public function test_raw_provenance_preserves_usage_with_fake_http_only(): void
+    {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key', 'services.openrouter.base_url' => 'https://openrouter.ai/api/v1']);
+        $case = self::fixtures()['T01'];
+        $usage = [
+            'prompt_tokens' => 123, 'completion_tokens' => 45, 'total_tokens' => 168,
+            'cost' => 0.00123, 'completion_tokens_details' => ['reasoning_tokens' => 12],
+        ];
+        Http::fake(['openrouter.ai/api/v1/chat/completions' => Http::response([
+            'id' => 'synthetic-usage-request', 'model' => self::MODEL,
+            'choices' => [['message' => ['content' => $case['evidence']['response']], 'finish_reason' => 'stop']],
+            'usage' => $usage,
+        ])]);
+        $result = $this->rawRequest($case);
+        $dir = sys_get_temp_dir().'/bot26-fake-raw-'.bin2hex(random_bytes(8));
+        $path = $dir.'/'.$case['id'].'.json';
+        try {
+            $this->assertSame($path, $this->saveRawProvenance($dir, $case, $result, []));
+            $saved = json_decode(file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+            $this->assertSame($usage, $result['usage']);
+            $this->assertSame($usage, $saved['usage']);
+            $this->assertSame('synthetic-usage-request', $saved['request_id']);
+            $this->assertSame($case['evidence']['response'], $saved['raw_output']);
+        } finally {
+            if (is_file($path)) {
+                unlink($path);
+            }
+            if (is_dir($dir)) {
+                rmdir($dir);
+            }
+        }
+        Http::assertSentCount(1);
+        $this->assertDatabaseCount('bots', 0);
     }
 
     public function test_raw_runner_sends_required_settings_with_fake_http_only(): void

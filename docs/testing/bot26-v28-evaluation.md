@@ -44,7 +44,8 @@ authority and safety guards run with fake HTTP, queues and broadcasting.
 No customer records or live service responses are used.
 
 Each text fixture checks the persisted and LINE-visible reply. Fixture `contains`,
-`not_contains` and totals apply to surviving replies; ORDER/OFFTOPIC are checked at
+`not_contains`, items and totals remain the primary assertions for every case in the
+`fixture_semantics` data provider, including guard replacements. ORDER/OFFTOPIC are checked at
 their application boundaries rather than required in customer-visible text.
 OFFTOPIC must increment its circuit-breaker counter. A fixture item price is not
 treated as a requirement to print that unit price when the fixture only requires a
@@ -67,10 +68,20 @@ This proves injection plumbing, not retrieval ranking or model conflict resoluti
 #### Existing guard replacements: semantic gaps
 
 Stronger assertions exposed 17 historical replies whose original literals do not
-survive existing production guards. These cases assert exact, explicitly listed
-application replacements and zero checkout sessions; they are **not** counted as
-successful preservation of the fixture's prompt semantics. No production guard was
-disabled or changed to make the evaluation pass.
+survive existing production guards. All 38 cases run their fixture-derived assertions
+against persisted and LINE-visible text without replacing `contains` or clearing
+items/totals. Each run records the original assertions, display assertions and
+`unmet_fixture_semantics` by output surface in
+`backend/storage/app/prompt-eval/bot26-v28/application/{case_id}.json`.
+The exact unmet failure lists must match the manifest's explicit
+`layers.application.expected_unmet_fixture_semantics` entries; unlisted cases must
+have no failures. New gaps, partial improvements and fully restored semantics all
+fail until the manifest is updated. Reports are saved before that comparison, so
+changed semantics remain inspectable even on failure.
+
+Separate assertions check the exact guard replacement and zero checkout sessions.
+The 17 cases are **not** counted as successful preservation of fixture semantics.
+No production guard was disabled or changed to make the evaluation pass.
 
 | Cases | Asserted application outcome |
 | --- | --- |
@@ -79,7 +90,7 @@ disabled or changed to make the evaluation pass.
 | T29 | Contact policy returns `CustomerReplyPolicy::FALLBACK` |
 | X08 | Stock guard replaces the reply with the BM-unavailable response |
 
-The remaining 21 text cases check fixture literals/totals on actual application
+The remaining 21 text cases meet fixture literals/totals on actual application
 output. Of the eight fixtures with expected totals, T15 and X07 preserve the expected
 total in the displayed reply; the other six are among the explicit guard replacements.
 X07 has no ORDER block, so its display-total check does not claim a persisted cart
@@ -113,7 +124,10 @@ exact environment value `BOT26_PROMPT_EVAL_LIVE=1`. It requests
 0.7 and `provider.allow_fallbacks=false`. A returned-model mismatch, missing
 provenance or non-`stop` finish fails. Artifacts, if explicitly run in the future,
 go to `backend/storage/app/prompt-eval/bot26-v28/` and retain raw output, input/prompt
-hashes, settings, assertions and pending manual semantic review.
+hashes, settings, usage, assertions and pending manual semantic review. A fake-HTTP
+test writes through the same artifact writer, reads the JSON back and checks exact
+usage preservation, including token details and cost. Its temporary artifact is
+removed after the test and never placed in the live-evidence directory.
 
 Only fake-HTTP raw transport tests ran here. They check exact settings, unchanged
 protocol bytes, missing/mismatched provenance, repeated uncached requests and HTTP
@@ -126,12 +140,17 @@ Run from `backend/`; these commands explicitly keep live inference disabled:
 ```sh
 BOT26_PROMPT_EVAL_LIVE=0 vendor/bin/phpunit tests/Feature/PromptEval/Bot26PromptEvaluationTest.php --exclude-group prompt-eval-raw
 BOT26_PROMPT_EVAL_LIVE=0 vendor/bin/phpunit --testsuite Unit
-vendor/bin/pint app/Services/PromptEval/PromptEvalRunner.php tests/Feature/PromptEval/Bot26PromptEvaluationTest.php tests/Unit/PromptEvalRunnerTest.php
+vendor/bin/pint tests/Feature/PromptEval/Bot26PromptEvaluationTest.php
 git diff --check
 ```
 
-Validation: 89 feature checks pass (40 offline, 47 application, two fake/gating raw
-checks). The unit suite ran once and passed: 1,229 tests, 4,876 assertions, 70 PHPUnit
-notices and 16 skips, with no failures/errors. The existing evaluator command tests
-also pass (eight tests, 29 assertions). Pint and `git diff --check` pass.
+Round 2 validation from `e4bdd53c`: the feature evaluation ran once and passed
+90 tests / 2,657 assertions (40 offline, 47 application, three fake/gating raw checks).
+The unit suite ran once and passed: 1,229 tests, 4,876 assertions, 70 PHPUnit notices
+and 16 skips, with no failures/errors. The application artifacts retain all 38
+original assertion sets and report exactly the 17 expected unmet cases.
+Logs and JUnit reports are `/private/tmp/bot26-c2-round2-{feature,unit}.{log,xml}`;
+the manifest records their exact paths. The eight existing evaluator command tests
+(29 assertions) passed in the previous round and were not rerun in round 2.
+Pint on the changed PHP test and `git diff --check` pass.
 No live calls, customer data or `.superpowers` artifacts are part of this change.
