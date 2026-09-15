@@ -207,7 +207,8 @@ INSTRUCTION;
                         $userId,
                         $bubbles[$i],
                         $i + 1, // 1-indexed for logging
-                        $totalBubbles
+                        $totalBubbles,
+                        $conversation?->getKey(),
                     )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())
                         ->delay(now()->addMilliseconds($cumulativeDelayMs));
 
