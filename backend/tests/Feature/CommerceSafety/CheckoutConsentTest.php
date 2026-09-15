@@ -223,6 +223,66 @@ class CheckoutConsentTest extends TestCase
     }
 
     #[Test]
+    public function support_delay_accepts_dai_but_rejects_dai_mai_and_mai_dai(): void
+    {
+        $authority = $this->authority();
+        $checkout = $authority->propose($this->bot, $this->conversation, $this->cart([
+            ['name' => 'Personal', 'method' => 'card', 'qty' => 1, 'price_minor' => 110000],
+        ], 110000))->checkout;
+        $this->present($checkout, 'confirm');
+
+        $confirm = $this->userMessage($this->conversation, 'ยืนยัน');
+        $support = $authority->accept($this->bot, $this->conversation, $confirm);
+        $this->assertSame('support_delay', $support->action);
+        $this->present($support->checkout, 'support_delay');
+
+        $questioning = $this->userMessage($this->conversation, 'ได้ไหม');
+        $rejectedQuestion = $authority->accept($this->bot, $this->conversation, $questioning);
+        $this->assertSame('support_delay', $rejectedQuestion->action);
+        $this->assertArrayNotHasKey('support_delay', $rejectedQuestion->checkout->accepted);
+
+        $refusal = $this->userMessage($this->conversation, 'ไม่ได้');
+        $rejectedRefusal = $authority->accept($this->bot, $this->conversation, $refusal);
+        $this->assertSame('support_delay', $rejectedRefusal->action);
+        $this->assertArrayNotHasKey('support_delay', $rejectedRefusal->checkout->accepted);
+
+        $dai = $this->userMessage($this->conversation, 'ได้ครับ');
+        $terms = $authority->accept($this->bot, $this->conversation, $dai);
+        $this->assertSame('terms', $terms->action);
+        $this->assertSame($dai->id, $terms->checkout->accepted['support_delay']);
+    }
+
+    #[Test]
+    public function support_delay_accepts_ok_case_insensitively_but_terms_still_requires_yomrap(): void
+    {
+        $authority = $this->authority();
+        $checkout = $authority->propose($this->bot, $this->conversation, $this->cart([
+            ['name' => 'Personal', 'method' => 'card', 'qty' => 1, 'price_minor' => 110000],
+        ], 110000))->checkout;
+        $this->present($checkout, 'confirm');
+
+        $confirm = $this->userMessage($this->conversation, 'ยืนยัน');
+        $support = $authority->accept($this->bot, $this->conversation, $confirm);
+        $this->present($support->checkout, 'support_delay');
+
+        $ok = $this->userMessage($this->conversation, 'OK');
+        $terms = $authority->accept($this->bot, $this->conversation, $ok);
+        $this->assertSame('terms', $terms->action);
+        $this->assertSame($ok->id, $terms->checkout->accepted['support_delay']);
+        $this->present($terms->checkout, 'terms');
+
+        $daiForTerms = $this->userMessage($this->conversation, 'ได้ครับ');
+        $stillTerms = $authority->accept($this->bot, $this->conversation, $daiForTerms);
+        $this->assertSame('terms', $stillTerms->action);
+        $this->assertArrayNotHasKey('terms', $stillTerms->checkout->accepted);
+
+        $yomrap = $this->userMessage($this->conversation, 'ยอมรับ');
+        $payment = $authority->accept($this->bot, $this->conversation, $yomrap);
+        $this->assertSame('payment', $payment->action);
+        $this->assertSame($yomrap->id, $payment->checkout->accepted['terms']);
+    }
+
+    #[Test]
     public function one_reply_cannot_accept_a_terms_challenge_that_was_never_presented(): void
     {
         $authority = $this->authority();

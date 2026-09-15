@@ -29,6 +29,8 @@ class CheckoutAuthority
         'รับทราบ',
         'รับได้',
         'โอเค',
+        'ได้',
+        'ok',
         'accept',
         'agree',
     ];
