@@ -22,6 +22,7 @@ use App\Models\VerifiedPaymentEvent;
 use App\Services\CommerceSafety\CanonicalCartValidator;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CheckoutConsentPolicy;
+use App\Services\CommerceSafety\HoldOverride;
 use App\Services\CommerceSafety\PaymentEffectDispatcher;
 use App\Services\CommerceSafety\PaymentProofService;
 use App\Services\Delivery\AccountDeliveryService;
@@ -161,6 +162,32 @@ class PaymentEffectsTest extends TestCase
         $this->assertSame(1, Order::count());
         $this->assertSame(1, PaymentEffect::where('kind', 'reserve_stock')->count());
         Queue::assertPushed(RunPaymentEffect::class, 3);
+    }
+
+    public function test_hold_override_kill_switch_blocks_fulfillment_effects_at_enqueue_time(): void
+    {
+        // Proves the hold-propagation fix (App\Services\CommerceSafety\HoldOverride):
+        // enqueue() must resolve mode through SafetyScope, never raw config, so the
+        // emergency kill switch (bot26:commerce-safety-hold --engage) is honoured even
+        // though config itself is untouched (boot-frozen by config:cache in production).
+        $event = $this->settled();
+        PaymentEffect::query()->delete();
+        Queue::fake();
+
+        app(HoldOverride::class)->engage($this->bot->id);
+        $this->assertSame('enforce', config("commerce_safety.bots.{$this->bot->id}.mode"), 'config itself never changed');
+
+        app(PaymentEffectDispatcher::class)->enqueue($event);
+
+        $this->assertSame(['line_receipt' => $event->id], PaymentEffect::pluck('event_id', 'kind')->all());
+        $this->assertSame(1, PaymentEffect::count());
+        Queue::assertPushed(RunPaymentEffect::class, 1);
+
+        app(HoldOverride::class)->release($this->bot->id);
+        app(PaymentEffectDispatcher::class)->enqueue($event->fresh());
+        $this->assertSame(3, PaymentEffect::count());
+        $this->assertSame(1, PaymentEffect::where('kind', 'reserve_stock')->count());
+        $this->assertSame(1, PaymentEffect::where('kind', 'telegram_payment')->count());
     }
 
     public function test_rollback_and_outer_commit_queue_boundary(): void
@@ -597,14 +624,6 @@ class PaymentEffectsTest extends TestCase
     {
         Event::listen('eloquent.created: '.Order::class, function () use ($case): void {
             $plugin = FlowPlugin::first();
-            $otherBot = Bot::factory()->create();
-            $otherFlow = Flow::factory()->create(['bot_id' => $otherBot->id]);
-            $foreign = FlowPlugin::create(['flow_id' => $otherFlow->id, 'name' => 'foreign', 'trigger_condition' => 'always', 'type' => 'telegram', 'enabled' => true, 'config' => []]);
-            $ids = match ($case) {
-                'empty' => [], 'zero' => [0], 'multiple' => [$plugin->id, $foreign->id],
-                'foreign' => [$foreign->id], 'string' => [(string) $plugin->id],
-                default => [$plugin->id],
-            };
             if ($case === 'disabled') {
                 $plugin->update(['enabled' => false]);
             }
@@ -618,7 +637,6 @@ class PaymentEffectsTest extends TestCase
                     $plugin->update(['config' => $config]);
                 }
             }
-            config(["commerce_safety.bots.{$this->bot->id}.payment_plugin_ids" => $ids]);
         });
         $this->settled();
         $effect = $this->effect('telegram_payment');
@@ -631,7 +649,39 @@ class PaymentEffectsTest extends TestCase
 
     public static function invalidPluginConfigurations(): array
     {
-        return array_map(fn ($case) => [$case], ['empty', 'zero', 'multiple', 'foreign', 'string', 'disabled', 'wrong_type', 'missing_token', 'missing_chat', 'missing_template']);
+        return array_map(fn ($case) => [$case], ['disabled', 'wrong_type', 'missing_token', 'missing_chat', 'missing_template']);
+    }
+
+    /**
+     * These payment_plugin_ids configurations make SafetyScope::mode() itself no longer
+     * trust this bot's "enforce" mode (see SafetyScope::trustedPaymentPluginIds) — unlike
+     * the operational-plugin-defect cases above, which SafetyScope still trusts and which
+     * configuredPlugin() alone audits per effect. Per the single-source-of-truth invariant
+     * PaymentEffectDispatcher now resolves through SafetyScope, no fulfillment effect
+     * (reserve_stock/telegram_payment) may start while the bot-level config is this
+     * untrustworthy — only the receipt persists, exactly as under an explicit hold.
+     */
+    #[DataProvider('untrustedPluginConfigurations')]
+    public function test_untrusted_plugin_ids_degrade_scope_and_withhold_fulfillment_effects(string $case): void
+    {
+        Event::listen('eloquent.created: '.Order::class, function () use ($case): void {
+            $plugin = FlowPlugin::first();
+            $otherBot = Bot::factory()->create();
+            $otherFlow = Flow::factory()->create(['bot_id' => $otherBot->id]);
+            $foreign = FlowPlugin::create(['flow_id' => $otherFlow->id, 'name' => 'foreign', 'trigger_condition' => 'always', 'type' => 'telegram', 'enabled' => true, 'config' => []]);
+            $ids = match ($case) {
+                'empty' => [], 'zero' => [0], 'multiple' => [$plugin->id, $foreign->id],
+                'foreign' => [$foreign->id], 'string' => [(string) $plugin->id],
+            };
+            config(["commerce_safety.bots.{$this->bot->id}.payment_plugin_ids" => $ids]);
+        });
+        $event = $this->settled();
+        $this->assertSame(['line_receipt' => $event->id], PaymentEffect::pluck('event_id', 'kind')->all());
+    }
+
+    public static function untrustedPluginConfigurations(): array
+    {
+        return array_map(fn ($case) => [$case], ['empty', 'zero', 'multiple', 'foreign', 'string']);
     }
 
     public function test_frozen_plugin_cannot_be_retargeted_to_another_owned_plugin(): void
