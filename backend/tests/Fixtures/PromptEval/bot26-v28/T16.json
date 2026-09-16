@@ -17,13 +17,14 @@
     "note": "Historical final2 evidence, not inference against the imported v28 artifact. Audit located at implementation/final-audit.json (historical semantic gate blocked on T09)."
   },
   "image": {
+    "image_kind": "bank_app_slip",
     "is_slip": true,
     "reply": "",
     "expected_contains": [
       "สลิป",
       "ตรวจสอบ"
     ],
-    "boundary": "EasySlip unreadable + binary slip classifier; original-bank-app image remains unverified."
+    "boundary": "EasySlip unreadable + bank_app_slip image_kind classification; unreadable/staff-alert branch proven with a canned classifier output."
   },
   "raw_model_skipped": true,
   "assertions": {
