@@ -9,8 +9,16 @@ class SafetyScope
 {
     private const MODES = ['off', 'shadow', 'enforce', 'hold'];
 
+    public function __construct(private readonly HoldOverride $holdOverride) {}
+
     public function mode(Bot $bot): string
     {
+        // Shared runtime kill switch wins over (possibly boot-frozen, config-cached)
+        // config immediately, with no restart. See HoldOverride for why this exists.
+        if ($this->holdOverride->active((int) $bot->getKey())) {
+            return 'hold';
+        }
+
         $scope = config("commerce_safety.bots.{$bot->getKey()}");
 
         if (! is_array($scope)) {
