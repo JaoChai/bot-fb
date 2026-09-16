@@ -800,9 +800,12 @@ class LineWebhookResponseService
      * ตัดสิน+ร่างคำตอบในการเรียกครั้งเดียว (single-call structured output) — ใช้ตอน EasySlip
      * อ่านรูปไม่ได้ (400) เพื่อแยก "สลิปเบลอ" ออกจาก "รูปทั่วไป" (เช่น screenshot หน้าจออื่นๆ)
      *
+     * บอท 26 เท่านั้น (กฎร้าน v28: รับเฉพาะสกรีนช็อตจากแอปธนาคารโดยตรง ไม่รับรูปถ่ายหน้าจอ)
+     * ได้ image_kind เพิ่มจาก is_slip เดิม — บอทอื่นยัง schema/คำสั่งเดิมทุกตัวอักษร
+     *
      * คำตัดสิน (is_slip) กับคำตอบลูกค้า (reply) มาจากการมองรูปครั้งเดียวกัน จึงขัดแย้งกันเองไม่ได้
      * ถ้าไม่ใช่สลิป reply จะถูกเก็บไว้ใน metadata ให้ generateImageResponse ใช้เลยโดยไม่เรียก vision ซ้ำ
-     * คืน null เมื่อตอบไม่ได้/เรียกไม่สำเร็จ → ฝั่ง verify() จะถือเป็นสลิป (fail-safe ไปทางตรวจมือ)
+     * คืน null เมื่อตอบไม่ได้/เรียกไม่สำเร็จ/image_kind ไม่รู้จัก → ฝั่ง verify() จะถือเป็นสลิป (fail-safe ไปทางตรวจมือ)
      */
     private function classifySlipImage(WebhookContext $ctx, string $imageUrl, array $history): ?bool
     {
@@ -815,31 +818,66 @@ class LineWebhookResponseService
             $apiKey = $ctx->bot->user?->settings?->getOpenRouterApiKey()
                 ?? config('services.openrouter.api_key');
 
-            $instruction = "ลูกค้าส่งรูปมา (แนบมากับข้อความนี้) ให้ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่นนอก JSON รูปแบบ:\n"
-                ."{\"is_slip\": true/false, \"reply\": \"...\"}\n"
-                ."- is_slip: true เมื่อรูปเป็นสลิปโอนเงิน/หลักฐานการชำระเงินจากธนาคารหรือแอปการเงิน, false เมื่อเป็นรูปอื่น\n"
-                .'- reply: เมื่อ is_slip เป็น false ให้เขียนข้อความตอบลูกค้าตามบริบทบทสนทนา; เมื่อ is_slip เป็น true ให้ใส่สตริงว่าง ""';
+            $isBot26 = (int) $ctx->bot->getKey() === 26;
+
+            if ($isBot26) {
+                $instruction = "ลูกค้าส่งรูปมา (แนบมากับข้อความนี้) ให้ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่นนอก JSON รูปแบบ:\n"
+                    ."{\"image_kind\": \"bank_app_slip|camera_photo_of_screen|other\", \"is_slip\": true/false, \"reply\": \"...\"}\n"
+                    ."- image_kind: bank_app_slip = สกรีนช็อตสลิปโอนเงินที่แคปจากแอปธนาคาร/แอปการเงินโดยตรง (ไม่ใช่รูปถ่าย); "
+                    ."camera_photo_of_screen = รูปที่ถ่ายด้วยกล้องจากหน้าจอ/เอกสารที่แสดงสลิป (เห็นขอบจอ แสงสะท้อน มุมกล้อง) — ร้านไม่รับ ต้องขอสกรีนช็อตจากแอปธนาคารเท่านั้น; "
+                    ."other = รูปอื่นที่ไม่เกี่ยวกับสลิปเลย\n"
+                    ."- is_slip: true เฉพาะเมื่อ image_kind เป็น bank_app_slip เท่านั้น, false เมื่อเป็น camera_photo_of_screen หรือ other\n"
+                    .'- reply: เมื่อ image_kind เป็น other ให้เขียนข้อความตอบลูกค้าตามบริบทบทสนทนา; เมื่อเป็น bank_app_slip หรือ camera_photo_of_screen ให้ใส่สตริงว่าง ""';
+
+                $schema = [
+                    'type' => 'object',
+                    'properties' => [
+                        'image_kind' => [
+                            'type' => 'string',
+                            'enum' => self::IMAGE_KINDS,
+                            'description' => 'ประเภทของรูปที่ลูกค้าส่งมา',
+                        ],
+                        'is_slip' => [
+                            'type' => 'boolean',
+                            'description' => 'true เฉพาะเมื่อ image_kind เป็น bank_app_slip',
+                        ],
+                        'reply' => [
+                            'type' => 'string',
+                            'description' => 'ข้อความตอบลูกค้าตามบริบทบทสนทนา เมื่อ image_kind เป็น other; สตริงว่างเมื่อเป็นอย่างอื่น',
+                        ],
+                    ],
+                    'required' => ['image_kind', 'is_slip', 'reply'],
+                    'additionalProperties' => false,
+                ];
+                $schemaName = 'slip_image_check_v2';
+            } else {
+                $instruction = "ลูกค้าส่งรูปมา (แนบมากับข้อความนี้) ให้ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่นนอก JSON รูปแบบ:\n"
+                    ."{\"is_slip\": true/false, \"reply\": \"...\"}\n"
+                    ."- is_slip: true เมื่อรูปเป็นสลิปโอนเงิน/หลักฐานการชำระเงินจากธนาคารหรือแอปการเงิน, false เมื่อเป็นรูปอื่น\n"
+                    .'- reply: เมื่อ is_slip เป็น false ให้เขียนข้อความตอบลูกค้าตามบริบทบทสนทนา; เมื่อ is_slip เป็น true ให้ใส่สตริงว่าง ""';
+
+                $schema = [
+                    'type' => 'object',
+                    'properties' => [
+                        'is_slip' => [
+                            'type' => 'boolean',
+                            'description' => 'true เมื่อรูปเป็นสลิปโอนเงิน/หลักฐานการชำระเงินจากธนาคารหรือแอปการเงิน',
+                        ],
+                        'reply' => [
+                            'type' => 'string',
+                            'description' => 'ข้อความตอบลูกค้าตามบริบทบทสนทนา เมื่อ is_slip เป็น false; สตริงว่างเมื่อ is_slip เป็น true',
+                        ],
+                    ],
+                    'required' => ['is_slip', 'reply'],
+                    'additionalProperties' => false,
+                ];
+                $schemaName = 'slip_image_check';
+            }
 
             $messages = $this->buildVisionChatMessages($ctx, array_slice($history, -5), $instruction);
 
             // chatWithVision ใส่ json_schema ให้เฉพาะ model ที่รองรับ structured_outputs —
             // ตัวอื่นพึ่งคำสั่ง JSON ใน prompt แล้ว parse เอง (decodeSlipCheck รองรับ JSON ห่อข้อความ/code fence)
-            $schema = [
-                'type' => 'object',
-                'properties' => [
-                    'is_slip' => [
-                        'type' => 'boolean',
-                        'description' => 'true เมื่อรูปเป็นสลิปโอนเงิน/หลักฐานการชำระเงินจากธนาคารหรือแอปการเงิน',
-                    ],
-                    'reply' => [
-                        'type' => 'string',
-                        'description' => 'ข้อความตอบลูกค้าตามบริบทบทสนทนา เมื่อ is_slip เป็น false; สตริงว่างเมื่อ is_slip เป็น true',
-                    ],
-                ],
-                'required' => ['is_slip', 'reply'],
-                'additionalProperties' => false,
-            ];
-
             $result = $this->openRouterService->chatWithVision(
                 messages: $messages,
                 imageUrls: [$imageUrl],
@@ -849,7 +887,7 @@ class LineWebhookResponseService
                 maxTokens: $ctx->bot->llm_max_tokens ?? 1024,
                 apiKeyOverride: $apiKey,
                 fallbackModelOverride: $ctx->bot->fallback_chat_model,
-                responseFormat: ['type' => 'json_schema', 'json_schema' => ['name' => 'slip_image_check', 'strict' => true, 'schema' => $schema]],
+                responseFormat: ['type' => 'json_schema', 'json_schema' => ['name' => $schemaName, 'strict' => true, 'schema' => $schema]],
             );
 
             $decoded = $this->decodeSlipCheck($result['content'] ?? '');
@@ -861,13 +899,31 @@ class LineWebhookResponseService
                     'content_length' => mb_strlen($result['content'] ?? ''),
                     'content_hash' => hash('sha256', $result['content'] ?? ''),
                     'reason' => 'malformed_classification',
-                ] : ['is_slip' => $decoded['is_slip']]),
+                ] : ['is_slip' => $decoded['is_slip'], 'image_kind' => $decoded['image_kind']]),
             ]);
 
             if ($decoded === null) {
                 return null;
             }
 
+            $imageKind = $decoded['image_kind'];
+
+            if ($imageKind === 'camera_photo_of_screen') {
+                $ctx->metadata['slip_vision_draft'] = [
+                    'content' => self::CAMERA_PHOTO_SLIP_TEMPLATE,
+                    'model' => $result['model'] ?? $model,
+                    'usage' => $result['usage'] ?? [],
+                ];
+
+                return false;
+            }
+
+            if ($imageKind === 'bank_app_slip') {
+                return true;
+            }
+
+            // image_kind === 'other', or absent (legacy 2-key JSON from non-bot-26 schema) —
+            // identical to the pre-image_kind behavior.
             if ($decoded['is_slip'] === false && $decoded['reply'] !== '') {
                 $ctx->metadata['slip_vision_draft'] = [
                     'content' => $decoded['reply'],
@@ -891,7 +947,10 @@ class LineWebhookResponseService
      * แกะผล JSON ของ classifySlipImage — รองรับทั้ง JSON ล้วน (structured output)
      * และ JSON ที่ห่อด้วยข้อความ/code fence (model ที่ไม่รองรับ) คืน null เมื่อ parse/validate ไม่ผ่าน
      *
-     * @return array{is_slip: bool, reply: string}|null
+     * image_kind เป็น optional (บอทที่ไม่ใช่ 26 ไม่ส่งคีย์นี้มา) — ถ้ามีต้องอยู่ใน IMAGE_KINDS
+     * เท่านั้น ไม่งั้นถือว่า parse ไม่ผ่าน (fail closed แบบเดียวกับ JSON พัง)
+     *
+     * @return array{is_slip: bool, reply: string, image_kind: ?string}|null
      */
     private function decodeSlipCheck(string $content): ?array
     {
@@ -900,7 +959,12 @@ class LineWebhookResponseService
             return null;
         }
 
-        return ['is_slip' => $data['is_slip'], 'reply' => trim($data['reply'])];
+        $imageKind = $data['image_kind'] ?? null;
+        if ($imageKind !== null && ! in_array($imageKind, self::IMAGE_KINDS, true)) {
+            return null;
+        }
+
+        return ['is_slip' => $data['is_slip'], 'reply' => trim($data['reply']), 'image_kind' => $imageKind];
     }
 
     /**

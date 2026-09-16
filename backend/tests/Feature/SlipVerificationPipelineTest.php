@@ -497,6 +497,146 @@ class SlipVerificationPipelineTest extends TestCase
         Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
     }
 
+    public function test_bot26_classifier_requests_image_kind_and_bank_app_slip_flows_to_unreadable_alert(): void
+    {
+        $this->makeBotAndConversation(['id' => 26]);
+        $this->enableTelegramAlert();
+        $this->partialMock(ModelCapabilityService::class, function ($mock) {
+            $mock->shouldReceive('supportsVision')->andReturn(true);
+            $mock->shouldReceive('supportsStructuredOutput')->with('google/gemini-3.5-flash')->andReturn(true);
+        });
+
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => '{"image_kind": "bank_app_slip", "is_slip": true, "reply": ""}']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 2, 'total_tokens' => 12],
+            ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        // New request shape: the schema must offer the model a camera-photo kind to pick from.
+        Http::assertSent(function ($req) {
+            if (! str_contains($req->url(), 'openrouter.ai')) {
+                return false;
+            }
+            $schema = $req->data()['response_format']['json_schema']['schema'] ?? [];
+
+            return ($schema['properties']['image_kind']['enum'] ?? null) === ['bank_app_slip', 'camera_photo_of_screen', 'other']
+                && in_array('image_kind', $schema['required'] ?? [], true);
+        });
+
+        // bank_app_slip must still flow through the existing verification/unreadable-alert path.
+        $this->assertStringContainsString('ขอตรวจสอบยอดสักครู่', $ctx->response->payload);
+        $this->assertSame('unreadable', $ctx->metadata['bot_message']->metadata['slip_status']);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'unreadable']);
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+    }
+
+    public function test_bot26_camera_photo_of_screen_gets_fixed_reply_and_no_effects(): void
+    {
+        $this->makeBotAndConversation(['id' => 26]);
+        $this->enableTelegramAlert();
+
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => '{"image_kind": "camera_photo_of_screen", "is_slip": false, "reply": ""}']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 2, 'total_tokens' => 12],
+            ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        $this->assertStringContainsString('ต้นฉบับ', $ctx->response->payload);
+        $this->assertStringContainsString('แอปธนาคาร', $ctx->response->payload);
+        $this->assertStringContainsString('กล้อง', $ctx->response->payload);
+        $this->assertDatabaseCount('slip_verifications', 0);
+        $this->assertDatabaseCount('verified_payment_events', 0);
+        $this->assertDatabaseCount('orders', 0);
+        Http::assertNotSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+        // Single classify call only — no second vision call, no drift from the fixed template.
+        $this->assertCount(1, Http::recorded(fn ($req) => str_contains($req->url(), 'openrouter.ai')));
+    }
+
+    public function test_bot26_unrecognized_image_kind_fails_closed_to_staff_alert(): void
+    {
+        $this->makeBotAndConversation(['id' => 26]);
+        $this->enableTelegramAlert();
+        // Force manual-JSON mode (no schema enum enforcement) so an out-of-contract
+        // image_kind value can actually reach decodeSlipCheck() for this RED test.
+        $this->partialMock(ModelCapabilityService::class, function ($mock) {
+            $mock->shouldReceive('supportsVision')->andReturn(true);
+            $mock->shouldReceive('supportsStructuredOutput')->andReturn(false);
+        });
+
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => '{"image_kind": "photocopy", "is_slip": false, "reply": "แนบเอกสาร"}']]],
+                'model' => 'google/gemini-3.5-flash',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 2, 'total_tokens' => 12],
+            ]),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        // Fail closed: unknown kind must NOT be treated as a valid slip, must NOT auto-confirm,
+        // and must NOT just silently reject — it routes to the existing unreadable/staff-alert branch.
+        $this->assertStringContainsString('ขอตรวจสอบยอดสักครู่', $ctx->response->payload);
+        $this->assertSame('unreadable', $ctx->metadata['bot_message']->metadata['slip_status']);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'unreadable']);
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+        $this->assertDatabaseCount('verified_payment_events', 0);
+    }
+
+    public function test_bot26_classifier_transport_failure_fails_closed_under_new_schema(): void
+    {
+        $this->makeBotAndConversation(['id' => 26]);
+        $this->enableTelegramAlert();
+        $this->partialMock(ModelCapabilityService::class, function ($mock) {
+            $mock->shouldReceive('supportsVision')->andReturn(true);
+            $mock->shouldReceive('supportsStructuredOutput')->with('google/gemini-3.5-flash')->andReturn(true);
+        });
+
+        Http::fake([
+            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'openrouter.ai/*' => Http::response([], 500),
+        ]);
+
+        $ctx = $this->makeContext();
+        app(LineWebhookResponseService::class)->generate($ctx);
+
+        // The new bot-26 schema must still have been requested even though the call failed.
+        Http::assertSent(function ($req) {
+            if (! str_contains($req->url(), 'openrouter.ai')) {
+                return false;
+            }
+            $schema = $req->data()['response_format']['json_schema']['schema'] ?? [];
+
+            return in_array('image_kind', $schema['required'] ?? [], true);
+        });
+        $this->assertStringContainsString('ขอตรวจสอบยอดสักครู่', $ctx->response->payload);
+        $this->assertSame('unreadable', $ctx->metadata['bot_message']->metadata['slip_status']);
+        $this->assertDatabaseHas('slip_verifications', ['status' => 'unreadable']);
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
+        $this->assertDatabaseCount('verified_payment_events', 0);
+    }
+
     public function test_pending_slip_replies_pending_message_without_alert(): void
     {
         $this->enableTelegramAlert();
