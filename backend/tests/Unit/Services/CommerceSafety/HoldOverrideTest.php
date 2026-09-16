@@ -5,10 +5,13 @@ namespace Tests\Unit\Services\CommerceSafety;
 use App\Services\CommerceSafety\HoldOverride;
 use Illuminate\Support\Facades\Cache;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\UsesAnUnreadableCacheStore;
 use Tests\TestCase;
 
 class HoldOverrideTest extends TestCase
 {
+    use UsesAnUnreadableCacheStore;
+
     protected function tearDown(): void
     {
         Cache::flush();
@@ -42,5 +45,23 @@ class HoldOverrideTest extends TestCase
 
         $this->assertTrue($override->active(26));
         $this->assertFalse($override->active(27));
+    }
+
+    #[Test]
+    public function test_active_fails_closed_to_true_when_the_cache_store_is_unreadable(): void
+    {
+        $this->useUnreadableCacheStore();
+
+        $this->assertTrue(app(HoldOverride::class)->active(26));
+    }
+
+    #[Test]
+    public function test_readable_is_false_when_the_cache_store_cannot_be_read(): void
+    {
+        $this->assertTrue(app(HoldOverride::class)->readable(26));
+
+        $this->useUnreadableCacheStore();
+
+        $this->assertFalse(app(HoldOverride::class)->readable(26));
     }
 }

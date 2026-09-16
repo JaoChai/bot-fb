@@ -7,11 +7,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\UsesAnUnreadableCacheStore;
 use Tests\TestCase;
 
 class Bot26CommerceSafetyHoldCommandTest extends TestCase
 {
     use RefreshDatabase;
+    use UsesAnUnreadableCacheStore;
 
     protected function tearDown(): void
     {
@@ -57,6 +59,23 @@ class Bot26CommerceSafetyHoldCommandTest extends TestCase
             ->assertSuccessful();
 
         $this->assertFalse(app(HoldOverride::class)->active(26));
+    }
+
+    /**
+     * Regression: when the cache store is down, --status must not claim
+     * hold_override_active:true (as if an operator deliberately engaged it) —
+     * it reports the read as unreadable, while resolved_mode still shows the
+     * fail-closed `hold` that SafetyScope::mode() actually enforces.
+     */
+    #[Test]
+    public function test_status_does_not_report_engaged_when_the_cache_store_is_unreadable(): void
+    {
+        config(['commerce_safety.bots.26.mode' => 'enforce']);
+        $this->useUnreadableCacheStore();
+
+        $this->artisan('bot26:commerce-safety-hold', ['--bot' => '26', '--status' => true])
+            ->expectsOutputToContain('"hold_override_readable":false,"hold_override_active":null,"resolved_mode":"hold"')
+            ->assertSuccessful();
     }
 
     #[Test]

@@ -11,6 +11,7 @@ use App\Services\CommerceSafety\SafetyScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\UsesAnUnreadableCacheStore;
 use Tests\TestCase;
 
 /**
@@ -24,6 +25,7 @@ use Tests\TestCase;
 class SafetyScopeHoldOverrideTest extends TestCase
 {
     use RefreshDatabase;
+    use UsesAnUnreadableCacheStore;
 
     protected function tearDown(): void
     {
@@ -96,5 +98,20 @@ class SafetyScopeHoldOverrideTest extends TestCase
 
         $this->assertSame('hold', app(SafetyScope::class)->mode($held));
         $this->assertSame('off', app(SafetyScope::class)->mode($other));
+    }
+
+    /**
+     * Regression: a down/erroring cache store (Redis in production) must not let
+     * mode() fall through to the config-resolved mode as if the override were
+     * inactive — it must resolve to `hold`, same as an explicitly engaged override.
+     */
+    #[Test]
+    public function test_mode_fails_closed_to_hold_when_the_cache_store_is_unreadable(): void
+    {
+        $bot = $this->trustedBot('enforce');
+
+        $this->useUnreadableCacheStore();
+
+        $this->assertSame('hold', app(SafetyScope::class)->mode($bot));
     }
 }

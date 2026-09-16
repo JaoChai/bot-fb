@@ -45,9 +45,14 @@ class Bot26CommerceSafetyHold extends Command
         }
 
         $bot = Bot::find($botId) ?? (new Bot)->forceFill(['id' => $botId]);
+        // readable=false means the cache store could not be read at all: do not report
+        // hold_override_active as true (nobody engaged it) — resolved_mode still shows
+        // the fail-closed `hold` that SafetyScope::mode() actually enforces in that case.
+        $readable = $override->readable($botId);
         $this->line(json_encode([
             'bot_id' => $botId,
-            'hold_override_active' => $override->active($botId),
+            'hold_override_readable' => $readable,
+            'hold_override_active' => $readable ? $override->active($botId) : null,
             'resolved_mode' => $scope->mode($bot),
         ], JSON_THROW_ON_ERROR));
 
