@@ -212,3 +212,54 @@ in particular deserve their own decision, since they are defects in the artifact
 committed. Every other C2 evidence boundary in [`bot26-v28-evaluation.md`](bot26-v28-evaluation.md)
 is unchanged, and the remaining rollout gates in
 [the runbook](../runbooks/bot26-commerce-safety-rollout.md) are untouched by this work.
+
+---
+
+# Addendum — T13 fixed (2026-09-16)
+
+T13 was the one REJECT with money attached: the customer answers the Support-Delay gate and the
+purchase stalls. Measured on the artifact as merged in `4694a741`, **it failed 8 of 15 runs (53%)** —
+far worse than the 6-run probe suggested.
+
+The model said the cause out loud in two of the eight failures:
+
+> `คำว่า "ยอมรับ" ใช้สำหรับข้อตกลงการใช้บริการ แต่ขั้นตอนนี้เป็นการรับทราบเงื่อนไข Support`
+
+Line 92 tells it to demand exactly `"ยอมรับ"` at the TERMS gate, so it reserved that word for TERMS
+and refused it at the Support-Delay gate — even though line 87 lists `ยอมรับ` among the accepted
+words there. Two rules colliding, not a missing rule. That is why commit `31270bb4`, which aligned
+the accepted-word list, did not hold: it added the word to the list without stopping the model from
+disqualifying it on TERMS grounds.
+
+The fix names the collision in line 87: the accepted words now advance to TERMS immediately
+`รวมถึงคำว่า "ยอมรับ" ซึ่งใช้ที่ขั้นนี้ได้เต็มที่: ห้ามปฏิเสธหรือขอคำใหม่โดยอ้างว่า "ยอมรับ" สงวนไว้สำหรับ Terms
+และห้ามตัดคำใดออกจากรายการข้างต้นเวลาขอคำตอบรับ`.
+
+| | Before | After |
+| --- | --- | --- |
+| T13 advances to TERMS | 7/15 | **15/15** |
+| T13 stalls the flow | 8/15 | **0/15** |
+
+Fisher exact p ≈ 0.002. Three further full runs of all 38 cases (114 calls, $0.0552) show T13 no
+longer tripping its literal signal at all and no new case regressing.
+
+Artifact re-measured: 24,198 characters, 61,491 bytes, SHA-256
+`bf3df86197ac85207a616d0796838b403b2b1d20d688047b9b3387ff45c00717`.
+
+## Two pre-existing blocking failures surfaced by those runs
+
+Neither is related to this fix, and neither is touched here.
+
+- **T25 — `@adsvance` is rejected by the backend.** Prompt line 151 publishes
+  `LINE สอบถามทั่วไป: @adsvance`, but that handle is not in the contact allowlist
+  `CustomerReplyPolicy::allowedContacts()` reads, so a reply that follows the prompt is failed as an
+  unapproved handle. This is the same class of prompt↔backend mismatch that `31270bb4` addressed for
+  the consent vocabulary. It needs a decision: add the handle to the contacts config, or drop it
+  from the prompt.
+- **T09 — link glued to the following word.** The model emitted
+  `https://lin.ee/h5wYpIfครับ`, which line 7 forbids (`ลิงก์ต้องเว้นวรรคจากข้อความหรืออยู่คนละบรรทัด`)
+  and which stops the link rendering as a link.
+
+## Gate status
+
+Three REJECTs remain open and unfixed: T11, T26 and T07. The raw gate still **FAILS**.
