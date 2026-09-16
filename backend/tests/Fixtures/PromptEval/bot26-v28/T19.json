@@ -59,8 +59,7 @@
   },
   "assertions": {
     "contains": [
-      "ขอบคุณ",
-      "ตรวจสอบ"
+      ["ขอบคุณ", "ยินดี"]
     ],
     "not_contains": [
       "[ยืนยันชำระเงิน]",
@@ -71,7 +70,8 @@
     "order_block": false,
     "items": null,
     "total": null,
-    "manual_semantic_review": "required for any new live output; literals are insufficient"
+    "manual_semantic_review": "required for any new live output; literals are insufficient",
+    "note": "dropped 'ตรวจสอบ' — this fixture's history already shows a completed order ([ยืนยันชำระเงิน], เงินเข้าแล้ว 1100 บาท), and v28 forbids replying that payment is still being verified just because the history contains a slip; the case now only requires a brief acknowledgement"
   },
   "evidence": {
     "response": "ขอบคุณครับ ตอนนี้รอทีมงานตรวจสอบสลิปและยอดเข้าอยู่ครับ ยังไม่สามารถยืนยันการชำระเงินได้จนกว่าจะตรวจสอบเรียบร้อยครับ",

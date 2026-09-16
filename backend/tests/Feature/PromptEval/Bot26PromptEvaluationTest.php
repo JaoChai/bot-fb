@@ -59,7 +59,7 @@ class Bot26PromptEvaluationTest extends TestCase
     // classifier output, not live inference.
     private const RAW_IMAGE_SKIP_IDS = ['T16', 'T17', 'T30'];
 
-    private const HASH = '3383e58beebe248ebe45a3d78569cde58d7edf9cf1131a9bfa1060ecb3f8b7fc';
+    private const HASH = '0bd881e89ab2cb54f1d99dc082652da74d04a617ac178a1c37530ff33562157a';
 
     private Bot $bot;
 
@@ -113,8 +113,8 @@ class Bot26PromptEvaluationTest extends TestCase
         $path = base_path('resources/prompts/bot26/v28.txt');
         $this->assertFileExists($path);
         $prompt = self::prompt();
-        $this->assertSame(23910, mb_strlen($prompt));
-        $this->assertSame(60685, strlen($prompt));
+        $this->assertSame(24038, mb_strlen($prompt));
+        $this->assertSame(61047, strlen($prompt));
         $this->assertSame(self::HASH, hash('sha256', $prompt));
         $manifest = json_decode(file_get_contents(__DIR__.'/../../Fixtures/PromptEval/bot26-v28/manifest.json'), true, 512, JSON_THROW_ON_ERROR);
         $this->assertSame(mb_strlen($prompt), $manifest['prompt']['chars']);
@@ -195,12 +195,22 @@ class Bot26PromptEvaluationTest extends TestCase
             }
         }
         $assertions = $case['assertions'];
-        foreach ($assertions['contains'] as $literal) {
+        $matchesLiteral = function (string $literal) use ($text): bool {
             // Numeric formatting is not a semantic difference (2,200 vs 2200).
-            $found = preg_match('/^[0-9,]+$/', $literal)
+            return preg_match('/^[0-9,]+$/', $literal)
                 ? str_contains(str_replace(',', '', $text), str_replace(',', '', $literal))
                 : str_contains($text, $literal);
-            if (! $found) {
+        };
+        foreach ($assertions['contains'] as $literal) {
+            // An array element means "any one of these alternatives satisfies this requirement".
+            if (is_array($literal)) {
+                if (! array_any($literal, $matchesLiteral)) {
+                    $failures[] = 'missing: '.implode('|', $literal);
+                }
+
+                continue;
+            }
+            if (! $matchesLiteral($literal)) {
                 $failures[] = 'missing: '.$literal;
             }
         }
@@ -526,7 +536,7 @@ class Bot26PromptEvaluationTest extends TestCase
         $message = $ctx->metadata['bot_message']->fresh();
         $displayCase = $case;
         // Protocol markers are consumed by the application, not customer display text.
-        $displayCase['assertions']['contains'] = array_values(array_diff($case['assertions']['contains'], ['[[OFFTOPIC]]']));
+        $displayCase['assertions']['contains'] = array_values(array_filter($case['assertions']['contains'], fn ($literal) => $literal !== '[[OFFTOPIC]]'));
         $displayCase['assertions']['order_block'] = false;
         $replacement = $this->applicationGuardReplacement($case);
         if (in_array('[[OFFTOPIC]]', $case['assertions']['contains'], true)) {

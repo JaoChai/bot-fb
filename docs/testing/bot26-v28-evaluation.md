@@ -1,16 +1,25 @@
 # Bot 26 / Flow 24 — v28 evaluation
 
-## Status (2026-09-15)
+## Status (2026-09-16)
 
 Offline replay and application integration pass. Raw inference has been **executed**
-against the consent-vocabulary-fixed prompt (SHA-256 below): 31/38 text cases pass
-their literal fixture assertions on first pass + one rerun of failing ids; see
-[`bot26-v28-live-raw-eval-2026-09-15.md`](bot26-v28-live-raw-eval-2026-09-15.md) for
-full per-case raw output, request IDs and cost. **Manual semantic review of these new
-outputs is still required** before any production/E2E acceptance claim.
+against the prompt measured below, twelve full runs of all 38 text cases (456 live calls,
+six per artifact) — see
+[`bot26-v28-live-raw-eval-2026-09-16.md`](bot26-v28-live-raw-eval-2026-09-16.md) for the
+full method, per-case failure distribution and cost. **Manual semantic review is done:
+35 ACCEPT, 3 CONCERN, 0 REJECT** across all 38 cases, with the prompt-injection and
+payment-claim safety checks holding.
+
+**The literal 38/38 raw criterion is not a usable gate and was not met by any run.** The
+same prompt against the same fixtures produced between 2 and 12 failing cases run to run,
+because the fixtures assert exact Thai substrings against a model sampled at temperature
+0.7. 20 of 38 cases never failed; the rest failed intermittently on phrasing, not on
+meaning. The evidence doc proposes three replacement criteria for the owner to choose from.
+Raw acceptance therefore remains **open pending that ruling**, not failed.
+
 Image classification now runs through an `image_kind` contract (bot 26 only) with
 canned classifier output; live camera-photo recognition is still unverified.
-These results do not establish production E2E behavior or prompt semantic acceptance.
+These results do not establish production E2E behavior.
 
 The measured inventory is committed at
 `backend/tests/Fixtures/PromptEval/bot26-v28/manifest.json`. The offline inventory test
@@ -19,9 +28,9 @@ recomputes prompt and fixture character counts, byte counts and SHA-256 hashes.
 | Artifact | Measurement |
 | --- | --- |
 | Prompt | `backend/resources/prompts/bot26/v28.txt` |
-| Unicode characters | 23,910 |
-| UTF-8 bytes | 60,685 |
-| SHA-256 | `3383e58beebe248ebe45a3d78569cde58d7edf9cf1131a9bfa1060ecb3f8b7fc` |
+| Unicode characters | 24,038 |
+| UTF-8 bytes | 61,047 |
+| SHA-256 | `0bd881e89ab2cb54f1d99dc082652da74d04a617ac178a1c37530ff33562157a` |
 | Fixtures | 41: T01–T33 and X01–X08 |
 | Text replays | 38 |
 | Image handler replays | 3: T16, T17, T30 |
