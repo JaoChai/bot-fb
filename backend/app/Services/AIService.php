@@ -14,6 +14,7 @@ use App\Services\CommerceSafety\CustomerReplyGuard;
 use App\Services\CommerceSafety\FinancialOutputDetector;
 use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\CommerceSafety\SafetyScope;
+use App\Services\CommerceSafety\ShadowObservationRecorder;
 use App\Services\Guardrail\OffTopicCircuitBreaker;
 use App\Services\Guardrail\OffTopicSignalExtractor;
 use App\Services\Payment\OrderPayloadExtractor;
@@ -38,6 +39,7 @@ class AIService
         private readonly CartProposalAdapter $cartProposalAdapter,
         private readonly CanonicalCartValidator $cartValidator,
         private readonly PaymentMessageDetector $paymentDetector,
+        private readonly ShadowObservationRecorder $shadowObservations,
     ) {
         $this->savedCartValidations = new \WeakMap;
     }
@@ -105,6 +107,17 @@ class AIService
             // Internal, in-process hand-off to checkout authority. This object must never
             // be serialized into Message metadata or reconstructed from display prose.
             $result['commerce_safety_cart_validation'] = $cartValidation;
+
+            // Shadow-only, redacted aggregate signal for bot26:shadow-report. No-ops
+            // outside `shadow` mode; never creates authoritative state or fires effects.
+            if ($cartValidation !== null) {
+                $this->shadowObservations->recordEach(
+                    $bot,
+                    'cart_proposal',
+                    $cartValidation->valid ? 'valid' : 'invalid',
+                    $cartValidation->valid ? [] : $cartValidation->errors,
+                );
+            }
 
             // Stock Guard: hard-block selling out-of-stock products
             // (guard แก้ข้อความได้ 3 แบบ: ทับทั้งก้อน, ตัดท่อน upsell, ต่อท้ายว่าหมด —

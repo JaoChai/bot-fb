@@ -401,10 +401,13 @@ class PromptDeploymentTest extends TestCase
 
     public function test_migration_order_schema_constraints_and_disposable_sqlite_up_down(): void
     {
-        $name = '2026_09_15_000002_create_prompt_deployments_table.php';
+        $lastMigration = '2026_09_16_000001_create_commerce_safety_shadow_observations_table.php';
         $files = glob(database_path('migrations/*.php'));
         sort($files);
-        $this->assertSame($name, basename(end($files)));
+        $this->assertSame($lastMigration, basename(end($files)));
+        // The C3 prompt_deployments migration itself — rehearsed below independently
+        // of whichever migration is currently last on disk.
+        $name = '2026_09_15_000002_create_prompt_deployments_table.php';
         $columns = Schema::getColumnListing('prompt_deployments');
         $this->assertCount(25, $columns);
         $row = $this->prepare();

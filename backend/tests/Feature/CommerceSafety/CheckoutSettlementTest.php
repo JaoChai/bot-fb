@@ -23,6 +23,7 @@ use App\Models\VerifiedPaymentEvent;
 use App\Services\CommerceSafety\CanonicalCartValidator;
 use App\Services\CommerceSafety\CheckoutAuthority;
 use App\Services\CommerceSafety\CheckoutConsentPolicy;
+use App\Services\CommerceSafety\HoldOverride;
 use App\Services\CommerceSafety\PaymentProofService;
 use App\Services\CommerceSafety\SafetyScope;
 use App\Services\Delivery\AccountDeliveryService;
@@ -190,6 +191,39 @@ class CheckoutSettlementTest extends TestCase
         $this->assertStringNotContainsString('5-10', $held);
         Queue::assertNotPushed(ReserveAccountStock::class);
         Http::assertNothingSent();
+    }
+
+    #[Test]
+    public function hold_override_blocks_the_next_fulfillment_promise_for_an_already_resolved_presenter(): void
+    {
+        // Proves the hold-propagation fix (App\Services\CommerceSafety\HoldOverride):
+        // a real production gate (PaymentFlexService's settled-vs-manual-review copy)
+        // flips to hold for an already-resolved service instance — simulating a
+        // long-lived worker that resolved its dependencies while mode was `enforce`
+        // — with config itself never touched, the exact case config:cache cannot fix
+        // without a restart.
+        $checkout = $this->payable([
+            ['name' => 'Page', 'method' => 'none', 'qty' => 1, 'price_minor' => 19900],
+        ], 19900);
+        $event = $this->automaticEvent('199.00', 'HOLD-OVERRIDE');
+        app(CheckoutAuthority::class)->settle($checkout, $event);
+
+        // Simulate a long-lived worker: resolve the presenter once, before containment.
+        $presenter = app(PaymentFlexService::class);
+        $settled = json_encode($presenter->fromVerifiedPayment($event), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('5-10', $settled);
+
+        $this->assertSame('enforce', config("commerce_safety.bots.{$this->bot->id}.mode"));
+        app(HoldOverride::class)->engage($this->bot->id);
+        $this->assertSame('enforce', config("commerce_safety.bots.{$this->bot->id}.mode"), 'config itself never changed');
+
+        $held = json_encode($presenter->fromVerifiedPayment($event), JSON_UNESCAPED_UNICODE);
+        $this->assertStringNotContainsString('5-10', $held);
+        $this->assertStringContainsString('ทีมงาน', $held);
+
+        app(HoldOverride::class)->release($this->bot->id);
+        $released = json_encode($presenter->fromVerifiedPayment($event), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('5-10', $released);
     }
 
     #[Test]
