@@ -46,6 +46,14 @@ class LineWebhookResponseService
     // รูปโหลดจาก LINE ไม่สำเร็จ (media_url ว่าง) — ตอบลูกค้าให้ส่งใหม่ แทนการเงียบ
     private const IMAGE_UNAVAILABLE_TEMPLATE = 'ขออภัยครับ ระบบโหลดรูปที่ส่งมาไม่สำเร็จ 🙏 รบกวนส่งรูปอีกครั้งนะครับ';
 
+    // Bot 26 shop rule (prompt v28): only the bank app's own slip screenshot is accepted.
+    // Fixed wording — camera-photo rejections must never depend on model creativity.
+    public const CAMERA_PHOTO_SLIP_TEMPLATE = 'รบกวนส่งรูปสลิปต้นฉบับจากแอปธนาคารโดยตรงครับ ไม่รับรูปถ่ายหน้าจอจากกล้องครับ';
+
+    // Bot-26-only classifier kinds. Any other value (or absence, for legacy 2-key JSON)
+    // is handled by classifySlipImage()/decodeSlipCheck() — see there for the fail-closed rule.
+    private const IMAGE_KINDS = ['bank_app_slip', 'camera_photo_of_screen', 'other'];
+
     public function __construct(
         private readonly AIService $aiService,
         private readonly OpenRouterService $openRouterService,
