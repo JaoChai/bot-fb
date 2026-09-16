@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "measured_at_utc": "2026-09-15T12:24:26.264671+00:00",
-  "base_commit": "cd95fa8b7ef3531f097d159cdcc13aa9639d8a3f",
+  "measured_at_utc": "2026-09-16T12:36:00.734149+00:00",
+  "base_commit": "639867bd655a82ba73066176dca643305f3bcbe1",
   "prompt": {
     "path": "resources/prompts/bot26/v28.txt",
-    "chars": 23910,
-    "bytes": 60685,
-    "sha256": "3383e58beebe248ebe45a3d78569cde58d7edf9cf1131a9bfa1060ecb3f8b7fc"
+    "chars": 24038,
+    "bytes": 61047,
+    "sha256": "0bd881e89ab2cb54f1d99dc082652da74d04a617ac178a1c37530ff33562157a"
   },
   "fixture_counts": {
     "total": 41,
@@ -90,7 +90,7 @@
           "missing: เติมเงิน"
         ],
         "T19": [
-          "missing: ขอบคุณ"
+          "missing: ขอบคุณ|ยินดี"
         ],
         "T20": [
           "missing: Personal",
@@ -112,7 +112,7 @@
           "missing: ยังยืนยันไม่ได้"
         ],
         "T33": [
-          "missing: ยังไม่สามารถยืนยัน"
+          "missing: ไม่สามารถยืนยัน"
         ],
         "X02": [
           "missing: ไม่สามารถ"
@@ -140,10 +140,30 @@
       "unmet_fixture_semantics_artifacts": "backend/storage/app/prompt-eval/bot26-v28/application/{case_id}.json"
     },
     "raw": {
-      "status": "unexecuted",
+      "status": "executed",
       "gate": "BOT26_PROMPT_EVAL_LIVE=1",
       "group": "prompt-eval-raw",
-      "live_requests": 0,
+      "runs": 6,
+      "live_requests": 228,
+      "acceptance_criterion": "manual semantic review of all 38 responses; a single REJECT blocks. Fixture contains-literals are a recorded smoke signal (literal_signal), not an assertion. Deterministic raw checks still block: not_contains, contact allowlist, cart arithmetic, ORDER-block structure, finish_reason, wire settings.",
+      "criterion_set_by": "owner ruling 2026-09-16 (supersedes 38/38 literal pass)",
+      "semantic_review": {
+        "reviewed": 38,
+        "reject": 4,
+        "reject_cases": [
+          "T07",
+          "T11",
+          "T13",
+          "T26"
+        ]
+      },
+      "result": "fail",
+      "pre_existing_rejects": [
+        "T11",
+        "T13"
+      ],
+      "literal_signal_trips": 44,
+      "evidence": "docs/testing/bot26-v28-live-raw-eval-2026-09-16.md",
       "fake_transport_and_gate_tests": "pass"
     },
     "image_classification": {
@@ -275,9 +295,9 @@
     {
       "id": "T10",
       "layer": "text_replay",
-      "chars": 1445,
-      "bytes": 1591,
-      "sha256": "c3c51adc749f792a33f32fc04d673cda1a0329c5e71f57e51bc521c15419b2a0",
+      "chars": 1461,
+      "bytes": 1607,
+      "sha256": "9d2d02cccce20e3d400e04292329017eda41f9277d3e80480ac8ef9ad6b6556d",
       "historical_prompt_sha256": "3cdc1c0a0e65d14a8a1b49997f1d524e66d2ce81b0bf7d884494a91ada54f3ec",
       "application_coverage": "fixture_display_assertions"
     },
@@ -356,9 +376,9 @@
     {
       "id": "T19",
       "layer": "text_replay",
-      "chars": 2702,
-      "bytes": 3808,
-      "sha256": "9d82307507b203e99b1ff9c024101549389654cba64365616338238b39a1fa11",
+      "chars": 2984,
+      "bytes": 4160,
+      "sha256": "8c5c45b502af4d5dc25eae05ad47d0383df4f7fcf9f117ebeab003adb475a305",
       "historical_prompt_sha256": "3cdc1c0a0e65d14a8a1b49997f1d524e66d2ce81b0bf7d884494a91ada54f3ec",
       "application_coverage": "financial_denial"
     },
@@ -437,9 +457,9 @@
     {
       "id": "T28",
       "layer": "text_replay",
-      "chars": 1658,
-      "bytes": 2118,
-      "sha256": "72e1d4ecaf5e397c313f4d7729f5b3677e3f4c06f9e41e584752ab92c08f2715",
+      "chars": 1675,
+      "bytes": 2157,
+      "sha256": "106de8d1ab7c092da6a256a9a5291e67b53b134ae77f6738b61353eafb4cdb58",
       "historical_prompt_sha256": "3cdc1c0a0e65d14a8a1b49997f1d524e66d2ce81b0bf7d884494a91ada54f3ec",
       "application_coverage": "fixture_display_assertions"
     },
@@ -464,27 +484,27 @@
     {
       "id": "T31",
       "layer": "text_replay",
-      "chars": 1476,
-      "bytes": 1770,
-      "sha256": "f34a4dc590d529e1066bb286eab44a8ea6ffaa6c9db56be14336264840ed1ea5",
+      "chars": 1489,
+      "bytes": 1797,
+      "sha256": "4753558a88b7879cf6abe37020e31a609e551064fa300ef7a3d97d48bc1b8762",
       "historical_prompt_sha256": "3cdc1c0a0e65d14a8a1b49997f1d524e66d2ce81b0bf7d884494a91ada54f3ec",
       "application_coverage": "fixture_display_assertions"
     },
     {
       "id": "T32",
       "layer": "text_replay",
-      "chars": 1597,
-      "bytes": 1947,
-      "sha256": "d4b315fe8ae60f08fc16d11719eeb95c40c5bb714e6d241609ab2edd47710b7a",
+      "chars": 1607,
+      "bytes": 1965,
+      "sha256": "b2b6bbe4fb1cc4e02fa22cbde5d2fa53069394ed05ee3e3684e6900e2b5af131",
       "historical_prompt_sha256": "3cdc1c0a0e65d14a8a1b49997f1d524e66d2ce81b0bf7d884494a91ada54f3ec",
       "application_coverage": "fixture_display_assertions"
     },
     {
       "id": "T33",
       "layer": "text_replay",
-      "chars": 1568,
-      "bytes": 1924,
-      "sha256": "3dc7a4050f7420894ab57ef2596b8c27209ba6b2046d524d3d31da493c428301",
+      "chars": 1565,
+      "bytes": 1915,
+      "sha256": "18663ebd8f6d6fee93a39a1891af3be5d82439a8e09d8690bf0e0b4dcea4b038",
       "historical_prompt_sha256": "3cdc1c0a0e65d14a8a1b49997f1d524e66d2ce81b0bf7d884494a91ada54f3ec",
       "application_coverage": "financial_denial"
     },
