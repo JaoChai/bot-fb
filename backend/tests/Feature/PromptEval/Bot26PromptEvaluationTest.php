@@ -137,8 +137,10 @@ class Bot26PromptEvaluationTest extends TestCase
         $this->assertCount(41, glob(__DIR__.'/../../Fixtures/PromptEval/bot26-v28/[TX]*.json'));
         $this->assertCount(38, self::textCases());
         $this->assertSame(self::RAW_IMAGE_SKIP_IDS, array_keys(self::imageCases()));
-        $this->assertTrue(self::fixtures()['T17']['classification_gate_blocked']);
-        $this->assertNotEmpty(self::fixtures()['T17']['classification_gate_blocked_reason']);
+        foreach (self::imageCases() as $id => [$case]) {
+            $this->assertContains($case['image']['image_kind'], ['bank_app_slip', 'camera_photo_of_screen', 'other'], $id);
+            $this->assertArrayNotHasKey('classification_gate_blocked', $case, $id);
+        }
         foreach (['Nolimit Level Up+ BM (ผูกบัตร)', 'Nolimit Level Up+ BM (เติมเงิน)', 'Nolimit Level Up+ Personal (ผูกบัตร)', 'Nolimit Level Up+ Personal (เติมเงิน)', 'Page', 'G3D', '223-3-24880-3', 'หจก. มั่งมีทรัพย์ขายของออนไลน์', 'https://mhhacoursecontent.my.canva.site/ads-vance', 'https://lin.ee/h5wYpIf', '@743ddeqy', 'https://t.me/supermanth2022', '[[ORDER]]', '[[/ORDER]]', '[[OFFTOPIC]]', '[แจ้งเตือน Support]', '[ยืนยันชำระเงิน]', '|||'] as $literal) {
             $this->assertStringContainsString($literal, $prompt);
         }
