@@ -10,12 +10,20 @@ full method, per-case failure distribution and cost. **Manual semantic review is
 35 ACCEPT, 3 CONCERN, 0 REJECT** across all 38 cases, with the prompt-injection and
 payment-claim safety checks holding.
 
-**The literal 38/38 raw criterion is not a usable gate and was not met by any run.** The
-same prompt against the same fixtures produced between 2 and 12 failing cases run to run,
-because the fixtures assert exact Thai substrings against a model sampled at temperature
-0.7. 20 of 38 cases never failed; the rest failed intermittently on phrasing, not on
-meaning. The evidence doc proposes three replacement criteria for the owner to choose from.
-Raw acceptance therefore remains **open pending that ruling**, not failed.
+**The literal 38/38 raw criterion was retired by owner ruling on 2026-09-16.** It was not
+met by any run: the same prompt against the same fixtures produced between 2 and 12 failing
+cases run to run, because the fixtures assert exact Thai substrings against a model sampled
+at temperature 0.7. Manual semantic review is now the gate — every one of the 38 responses
+is reviewed and a single REJECT blocks; the literals are a recorded smoke signal, while the
+deterministic raw checks (forbidden strings, contact allowlist, cart arithmetic, ORDER-block
+structure, `finish_reason`, wire settings) still fail a case on their own.
+
+**Under that criterion the current artifact FAILS**, on four cases: T13 (refuses a valid
+`ยอมรับ` on the Support-Delay gate and never reaches TERMS), T11 (redundant BM5
+clarification the fixture exists to forbid), T26 (agrees to write code for an out-of-scope
+request), T07 (omits the mandatory initial-Limit disclosure). **T26 and T07 passed every
+literal assertion** and were caught only by review. T11 and T13 reproduce at the same rate
+against the artifact as committed at `639867bd`, so they are pre-existing defects.
 
 Image classification now runs through an `image_kind` contract (bot 26 only) with
 canned classifier output; live camera-photo recognition is still unverified.

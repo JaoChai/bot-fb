@@ -145,10 +145,24 @@
       "group": "prompt-eval-raw",
       "runs": 6,
       "live_requests": 228,
-      "case_failures": 44,
-      "runs_reaching_38_of_38": 0,
-      "cases_never_failing": 20,
-      "acceptance": "incomplete: literal contains-assertions are not a stable gate at temperature 0.7; see evidence doc",
+      "acceptance_criterion": "manual semantic review of all 38 responses; a single REJECT blocks. Fixture contains-literals are a recorded smoke signal (literal_signal), not an assertion. Deterministic raw checks still block: not_contains, contact allowlist, cart arithmetic, ORDER-block structure, finish_reason, wire settings.",
+      "criterion_set_by": "owner ruling 2026-09-16 (supersedes 38/38 literal pass)",
+      "semantic_review": {
+        "reviewed": 38,
+        "reject": 4,
+        "reject_cases": [
+          "T07",
+          "T11",
+          "T13",
+          "T26"
+        ]
+      },
+      "result": "fail",
+      "pre_existing_rejects": [
+        "T11",
+        "T13"
+      ],
+      "literal_signal_trips": 44,
       "evidence": "docs/testing/bot26-v28-live-raw-eval-2026-09-16.md",
       "fake_transport_and_gate_tests": "pass"
     },
