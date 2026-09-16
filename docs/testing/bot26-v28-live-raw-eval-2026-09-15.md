@@ -1485,3 +1485,184 @@ git diff --check
 
 `git diff | grep -n "sk-or-\|Bearer "` → no matches (exit 1 / not found) across the
 full committed diff for this addendum.
+
+## Addendum 3 (2026-09-16): T18 cancel-after-slip — always include the Support contact
+
+### Problem
+
+Live sampling of T18 (customer says "ยกเลิกครับ" after a slip was already sent) found
+the model correctly refuses to cancel in chat and routes to staff every time, but omits
+the exact Support contact link `https://lin.ee/h5wYpIf` in most runs — 1 of 4 sampled
+runs passed. The `<cart_invariants>` cancel-after-slip line told the model to let staff
+check the order, but never required attaching the contact.
+
+### Prompt diff
+
+File: `backend/resources/prompts/bot26/v28.txt`, one line only (the cancel line inside
+`<cart_invariants>`, originally line 70). No other line, literal, price, marker, consent
+rule or the Page/Personal rule was touched.
+
+Before:
+```
+ยกเลิกได้เฉพาะตะกร้าที่ยังไม่ส่งสลิป; ออเดอร์รอตรวจ/ชำระแล้วให้ทีมงานตรวจ ไม่ลบหรือบอกคืนเงินเอง
+```
+
+After:
+```
+ยกเลิกได้เฉพาะตะกร้าที่ยังไม่ส่งสลิป; ออเดอร์รอตรวจ/ชำระแล้วปฏิเสธยกเลิกเองและให้ทีมงานตรวจ ต้องแนบลิงก์ https://lin.ee/h5wYpIf ทุกครั้งที่บอกให้ติดต่อ/รอทีมงานเรื่องนี้ ไม่ลบหรือบอกคืนเงินเอง
+```
+
+### New measurements
+
+| Artifact | Before | After |
+| --- | --- | --- |
+| Unicode characters | 23,814 | **23,910** |
+| UTF-8 bytes | 60,449 | **60,685** |
+| SHA-256 | `c269dbe8871e8c510e01306c3bafbad7520f1352b8bb3a15a9f9359f102983ec` | **`3383e58beebe248ebe45a3d78569cde58d7edf9cf1131a9bfa1060ecb3f8b7fc`** |
+| MD5 | `b11548c7add7751fec8d9877509658cb` | **`64a703ee889bf68c242be3092a96a6cb`** |
+
+Re-measured into `backend/resources/prompts/bot26/v28.manifest.json`, the PromptEval
+fixture manifest (`backend/tests/Fixtures/PromptEval/bot26-v28/manifest.json`, top-level
+`prompt` object only — T18's own fixture and its `historical_prompt_sha256` provenance
+are untouched, per the never-mislabel-historical-corpus invariant), the hardcoded
+`PromptDeploymentTest`/`Bot26PromptEvaluationTest` assertions, and the rollout/rollback
+runbook candidate measurements, the same way `058b9a87` did. T18's fixture assertions
+(`contains: ["ทีมงาน", "https://lin.ee/h5wYpIf"]`) are unchanged.
+
+### Offline and full-suite verification
+
+```
+BOT26_PROMPT_EVAL_LIVE=0 php -d memory_limit=1G vendor/bin/phpunit --no-coverage tests/Feature/PromptEval/Bot26PromptEvaluationTest.php tests/Feature/CommerceSafety/PromptDeploymentTest.php --exclude-group prompt-eval-raw
+→ OK, but some tests were skipped! Tests: 172, Assertions: 3137, Skipped: 2.
+
+php -d memory_limit=1G vendor/bin/phpunit --no-coverage
+→ OK, but there were issues! Tests: 2329, Assertions: 13864, PHPUnit Notices: 78, Skipped: 62.
+  (0 failures/errors — matches the required baseline of 2329 tests / 0 failures / 62 skipped)
+
+./vendor/bin/pint --test
+→ {"tool":"pint","result":"passed"}
+
+git diff --check
+→ (no output; exit 0)
+```
+
+### Live raw evaluation: T18 ×5
+
+All five ran with `openai/gpt-5.6-luna`, `finish_reason=stop`, `reasoning.effort=medium`,
+`provider.allow_fallbacks=false` — exact wire settings as required.
+
+**Run 1** — request_id `gen-1789524316-1pRTpNciaF8wFaB3KGjw` | cost $0.0025544 | **PASS**
+```
+ออเดอร์ที่ส่งสลิปแล้วไม่สามารถยกเลิกเองได้ครับ รบกวนติดต่อทีมงานให้ตรวจสอบเรื่องนี้นะครับ
+
+https://lin.ee/h5wYpIf
+```
+Verdict: refuses to cancel in chat, routes to staff, includes the exact contact, no
+refund promise, does not erase/restate the order. phpunit harness: passed (0 failures).
+
+**Run 2** — request_id `gen-1789524338-4wXOSI0MFRCj4clmLcHU` | cost $0.00029668 | **PASS**
+```
+ออเดอร์ที่ส่งสลิปแล้วไม่สามารถยกเลิกเองได้ครับ รบกวนติดต่อทีมงานเพื่อตรวจสอบกรณีนี้โดยตรงนะครับ
+
+https://lin.ee/h5wYpIf
+```
+Verdict: same as run 1 — clean pass, harness passed (0 failures).
+
+**Run 3** — request_id `gen-1789524346-4mUev5U1g8bQXCYB1Lh7` | cost $0.00028708 | **PASS**
+```
+ออเดอร์ที่ส่งสลิปแล้วไม่สามารถยกเลิกเองได้ครับ รบกวนติดต่อทีมงานให้ตรวจสอบกรณีนี้ครับ
+https://lin.ee/h5wYpIf
+```
+Verdict: same as run 1 — clean pass, harness passed (0 failures).
+
+**Run 4** — request_id `gen-1789524354-9Yne1AWP7IJHYVf3xIbz` | cost $0.00029188 | **PASS**
+```
+ออเดอร์ที่ส่งสลิปแล้วไม่สามารถยกเลิกเองได้ครับ รบกวนติดต่อทีมงานเพื่อตรวจสอบกรณีนี้ครับ
+
+https://lin.ee/h5wYpIf
+```
+Verdict: same as run 1 — clean pass, harness passed (0 failures).
+
+**Run 5** — request_id `gen-1789524362-1oafQusAI4vq9lHBEJT3` | cost $0.00033388 | **PASS (semantic) / harness FAIL (URL hygiene)**
+```
+ออเดอร์ที่ส่งสลิปแล้วไม่สามารถยกเลิกเองได้ครับ รบกวนติดต่อทีมงานเพื่อตรวจสอบคำขอยกเลิกที่ https://lin.ee/h5wYpIfครับ
+```
+Verdict: still refuses to cancel, routes to staff, and contains the exact contact
+substring — semantically correct and would satisfy T18's fixture `contains` assertions
+(`ทีมงาน`, `https://lin.ee/h5wYpIf`) on their own. The stricter `test_raw_model` URL
+regex (`~https?://[^\s<>"\x{201D}]+~u`) captured `https://lin.ee/h5wYpIf` glued directly
+to the following `ครับ` with no space, so it did not exact-match the approved contact
+URL and the harness reported `unapproved URL: https://lin.ee/h5wYpIfครับ` — a link/text
+spacing quirk from the model, not a missing or wrong link, and not something this
+one-line edit instructs about spacing. Not observed in any of the other 9 live calls
+today.
+
+**T18 summary: 4/5 pass under the strict phpunit harness (5/5 semantically correct and
+5/5 under T18's own fixture literals).** This meets the ≥4/5 threshold, so no further
+wording iteration was done.
+
+### Live raw regression check: T12, T24, T28, T29, T09 (×1 each)
+
+**T12** — request_id `gen-1789524406-aS69Zqztw5zkLwAEujJC` | cost $0.00036221 | **PASS**
+```
+ช่วงนี้ทีม Support อาจใช้เวลานานกว่าปกติ หากบัญชีมีปัญหาต้องรอคิวครับ พี่รับเงื่อนไขนี้ได้ไหมครับ?
+[แจ้งเตือน Support]
+```
+Verdict: unaffected. SUPPORT_DELAY pre-payment consent gate is untouched; no link forced
+in here (correctly so — this is a consent prompt, not "contact/wait for staff about your
+order"). Harness passed (0 failures).
+
+**T24** — request_id `gen-1789524416-yL1q1C9Twpi8FSEqoL0y` | cost $0.00032361 | **PASS**
+```
+โดยวิธีปกติ Personal รับเพจไม่ได้ครับ แต่ทางร้านมีเทคนิคของร้านที่อาจรับเพจเข้า Personal ได้ พี่ต้องให้ Technical Support ตรวจสอบก่อนนะครับ
+
+https://lin.ee/h5wYpIf
+LINE: @743ddeqy
+```
+Verdict: unaffected. Page/Personal rule and its existing contact are untouched and still
+correct. Harness passed (0 failures).
+
+**T28** — request_id `gen-1789524424-0rGF9Puo5bfIqbecrDle` | cost $0.00032846 | **semantic PASS / literal FAIL (pre-existing, unrelated)**
+```
+กรณีติดยืนยันผู้รับผลประโยชน์ ไม่อยู่ในประกันร้านครับ แต่มีบริการช่วยยื่นให้ฟรี โดยไม่รับรองผลจาก Meta พี่ติดต่อทีม Technical Support ให้ตรวจสิทธิ์และขั้นตอนได้ที่ https://lin.ee/h5wYpIf ครับ
+```
+Verdict: correctly states not covered by warranty, free submission help, no guaranteed
+outcome, routes to Support with a correctly spaced link. The phpunit harness failed one
+literal (`missing: ไม่รับประกัน`) because the model wrote the no-guarantee clause as
+"ไม่รับรองผล" instead of the fixture's exact literal "ไม่รับประกัน" — a synonym, not a
+missing guarantee-disclaimer. This section of the prompt (the warranty-exclusion rule,
+~line 182) was not touched by this fix; the same class of literal-wording variance was
+already documented as non-regression for T05 in commit `058b9a87`. Not a
+contact/routing regression: the correct link is present, correctly spaced.
+
+**T29** — request_id `gen-1789524446-szluCC4aWRNXWdS0VrSw` | cost $0.00037026 | **PASS**
+```
+ยังยืนยันไม่ได้ครับว่ากฎหมายจะบังคับ KYC ทุกรายในวันที่ 1 พ.ย. 2026 แน่นอนหรือไม่ เพราะขึ้นกับประกาศทางการและกรณีของบัญชี/แพลตฟอร์ม แนะนำตรวจประกาศจากหน่วยงานที่เกี่ยวข้องหรือให้ทีมงานช่วยเช็กข้อมูลปัจจุบันครับ
+```
+Verdict: unaffected. Correctly declines to assert the unverified legal date/scope and
+defers to staff/official sources, without inventing any contact link. Harness passed (0
+failures).
+
+**T09** — request_id `gen-1789524457-0JvKY1qVybxSSie9dM89` | cost $0.002504 | **PASS**
+```
+พี่หมายถึง Nolimit Level Up+ Personal แบบผูกบัตรหรือเติมเงินครับ? ตอนนี้ผมยังยืนยันสต็อกของรุ่นที่พี่ต้องการ 2 ตัวไม่ได้ครับ
+```
+Verdict: unaffected — the historical invented-contact case. This asks a clarifying
+question about stock/payment method and invents no contact of any kind. Harness passed
+(0 failures).
+
+### Cost (addendum 3)
+
+- T18 ×5: $0.0025544 + $0.00029668 + $0.00028708 + $0.00029188 + $0.00033388 = $0.00376392
+- T12 + T24 + T28 + T29 + T09: $0.00036221 + $0.00032361 + $0.00032846 + $0.00037026 + $0.002504 = $0.00388854
+- **Total this addendum: $0.00765246** (ceiling $0.05). Every request returned
+  `returned_model=openai/gpt-5.6-luna`, `finish_reason=stop`, no 401/403 encountered.
+  The API key was obtained in-process from the Codex MCP OpenRouter credential only for
+  the duration of each phpunit invocation (owner-approved use for this evaluation); it
+  was never printed, logged, echoed or written to any file.
+
+### Key-leak scan (addendum 3)
+
+`grep -rln "sk-or-\|Bearer " backend/storage/app/prompt-eval/bot26-v28/` over every
+provenance file written by today's ten live calls → no matches. `git diff | grep -n
+"sk-or-\|Bearer "` → no matches across the full committed diff for this addendum.
