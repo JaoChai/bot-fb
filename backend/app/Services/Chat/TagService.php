@@ -80,12 +80,15 @@ class TagService
         }
 
         return DB::transaction(function () use ($bot, $conversationIds, $tags) {
-            $validCount = $bot->conversations()
+            // PostgreSQL rejects `SELECT COUNT(*) ... FOR UPDATE` (0A000: FOR UPDATE
+            // is not allowed with aggregate functions), so lock rows first, then
+            // count the locked ids in PHP instead of via an aggregate query.
+            $lockedIds = $bot->conversations()
                 ->whereIn('id', $conversationIds)
                 ->lockForUpdate()
-                ->count();
+                ->pluck('id');
 
-            if ($validCount !== count($conversationIds)) {
+            if ($lockedIds->count() !== count($conversationIds)) {
                 throw new \InvalidArgumentException('Some conversations do not belong to this bot');
             }
 
