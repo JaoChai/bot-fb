@@ -279,6 +279,11 @@ PROMPT;
 
         $validated = $request->validated();
 
+        if ($bot->id === (int) config('prompt_deployment.bot_id')) {
+            abort_if(array_key_exists('system_prompt', $validated) && $validated['system_prompt'] !== $bot->system_prompt, 422, 'Protected prompt requires audited deployment.');
+            abort_if(array_key_exists('default_flow_id', $validated) && (string) $validated['default_flow_id'] !== (string) $bot->default_flow_id, 422, 'Protected default flow requires audited deployment.');
+        }
+
         // Track model changes for cache invalidation
         $oldPrimaryModel = $bot->primary_chat_model;
         $oldFallbackModel = $bot->fallback_chat_model;

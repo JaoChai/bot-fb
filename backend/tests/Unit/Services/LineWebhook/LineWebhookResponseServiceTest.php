@@ -8,6 +8,9 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\Chat\ConversationContextService;
+use App\Services\CommerceSafety\FinancialOutputGuard;
+use App\Services\CommerceSafety\SafetyScope;
+use App\Services\Guardrail\OffTopicCircuitBreaker;
 use App\Services\LINEService;
 use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\LineWebhook\ResponseEnvelope;
@@ -18,6 +21,7 @@ use App\Services\Payment\SlipVerificationService;
 use App\Services\StickerReplyService;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -641,5 +645,69 @@ class LineWebhookResponseServiceTest extends TestCase
         $this->expectExceptionMessage('OpenRouter down');
 
         $svc->generate($ctx);
+    }
+
+    public static function scopedAlternateReplies(): array
+    {
+        $cases = [];
+        foreach (['sticker', 'vision', 'cached-vision'] as $path) {
+            foreach (['off', 'shadow', 'enforce', 'hold'] as $mode) {
+                foreach (['@adsvance', 'ผมเป็น AI', "```php\n", '# หัวข้อ', 'ไม่ต้องชำระเงิน @adsvance'] as $text) {
+                    $cases[] = [$path, $mode, $text];
+                }
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('scopedAlternateReplies')]
+    public function test_scoped_alternate_replies_are_guarded_before_persistence(string $path, string $mode, string $text): void
+    {
+        Http::preventStrayRequests();
+        $bot = $this->makeBot(['id' => 26]);
+        config(['commerce_safety.bots.26.mode' => $mode]);
+        $scope = Mockery::mock(SafetyScope::class);
+        $scope->shouldReceive('mode')->andReturn($mode);
+        $this->app->instance(SafetyScope::class, $scope);
+        $bot->setRelation('settings', new BotSetting(['reply_sticker_enabled' => true, 'reply_sticker_mode' => 'static']));
+        $conversation = Conversation::factory()->create(['bot_id' => 26]);
+        $ctx = new WebhookContext($bot, $path === 'sticker' ? $this->makeStickerEvent() : $this->makeImageEvent());
+        $ctx->conversation = $conversation;
+        $ctx->userMessage = $conversation->messages()->create([
+            'sender' => 'user', 'type' => 'image', 'content' => '[รูปภาพ]', 'media_url' => 'https://example.test/image.jpg',
+        ]);
+        $ctx->metadata['should_generate_response'] = true;
+        $draft = ['content' => $text, 'model' => 'test', 'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0]];
+        $sticker = Mockery::mock(StickerReplyService::class);
+        $router = Mockery::mock(OpenRouterService::class);
+        $capability = Mockery::mock(ModelCapabilityService::class);
+        $capability->shouldReceive('supportsVision')->andReturn(true);
+        $router->shouldReceive('estimateCost')->andReturn(0);
+        if ($path === 'sticker') {
+            $sticker->shouldReceive('generateReply')->once()->andReturn($text);
+        } elseif ($path === 'cached-vision') {
+            $ctx->metadata['slip_vision_draft'] = $draft;
+            $router->shouldNotReceive('chatWithVision');
+        } else {
+            $router->shouldReceive('chatWithVision')->once()->andReturn($draft);
+        }
+        $expected = $text;
+        if (in_array($mode, ['enforce', 'hold'])) {
+            $expected = match ($text) {
+                '@adsvance' => 'ขอเช็กข้อมูลล่าสุดให้ในแชทนี้ครับ',
+                "```php\n", '# หัวข้อ' => OffTopicCircuitBreaker::CANNED_MESSAGE,
+                'ไม่ต้องชำระเงิน @adsvance' => FinancialOutputGuard::DENIAL,
+                default => $text,
+            };
+        }
+        Message::creating(function (Message $message) use ($expected): void {
+            if ($message->sender === 'bot') {
+                $this->assertSame($expected, $message->content);
+            }
+        });
+        $this->makeService(openRouter: $router, stickerReply: $sticker, modelCapability: $capability)->generate($ctx);
+        $this->assertSame($expected, $ctx->response?->payload);
+        $this->assertSame($expected, $ctx->metadata['bot_message']->fresh()->content);
     }
 }

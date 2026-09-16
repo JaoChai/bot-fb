@@ -21,7 +21,7 @@ class OrderObserver
             return;
         }
 
-        EvaluateVipStatusJob::dispatch($order->customer_profile_id);
+        EvaluateVipStatusJob::dispatch($order->customer_profile_id)->afterCommit();
     }
 
     public function updated(Order $order): void
@@ -41,6 +41,6 @@ class OrderObserver
             return;
         }
 
-        EvaluateVipStatusJob::dispatch($order->customer_profile_id);
+        EvaluateVipStatusJob::dispatch($order->customer_profile_id)->afterCommit();
     }
 }

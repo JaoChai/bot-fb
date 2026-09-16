@@ -11,8 +11,12 @@ use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
 use App\Models\Order;
+use App\Models\PaymentEffect;
 use App\Models\SlipVerification;
 use App\Models\User;
+use App\Models\VerifiedPaymentEvent;
+use App\Services\LINEService;
+use App\Services\Payment\ManualPaymentConfirmService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
@@ -319,5 +323,35 @@ class ManualPaymentConfirmTest extends TestCase
             ReserveAccountStock::class,
             fn (ReserveAccountStock $job) => $job->items === [],
         );
+    }
+
+    public function test_scoped_manual_held_receipt_never_sends_directly(): void
+    {
+        $plugin = FlowPlugin::where('flow_id', $this->bot->default_flow_id)->firstOrFail();
+        config(["commerce_safety.bots.{$this->bot->id}" => ['mode' => 'enforce', 'payment_plugin_ids' => [$plugin->id]]]);
+        Http::preventStrayRequests();
+        Http::fake();
+        Bus::fake([ReserveAccountStock::class]);
+        $line = $this->mock(LINEService::class);
+        $line->shouldNotReceive('replyWithFallback', 'pushPaymentReceipt');
+        Message::created(function (Message $message): void {
+            if ($message->sender === 'bot') {
+                $this->assertStringNotContainsString('5-10', $message->content);
+                $this->assertStringContainsString('199.01', $message->content);
+            }
+        });
+        $result = app(ManualPaymentConfirmService::class)->confirm($this->bot, $this->conversation, '199.01', $this->owner->id, [['name' => 'forged', 'qty' => 999]]);
+        $event = VerifiedPaymentEvent::sole();
+        $this->assertSame('manual_hold', $event->disposition);
+        $this->assertDatabaseCount('payment_effects', 1);
+        $effect = PaymentEffect::sole();
+        $this->assertSame('line_receipt', $effect->kind);
+        $this->assertSame('pending', $effect->state);
+        $this->assertSame($event->id, $effect->event_id);
+        $this->assertSame(0, PaymentEffect::whereIn('kind', ['telegram_payment', 'reserve_stock'])->count());
+        $this->assertFalse($result['order_created']);
+        $this->assertSame(0, Order::count());
+        Bus::assertNotDispatched(ReserveAccountStock::class);
+        Http::assertNothingSent();
     }
 }

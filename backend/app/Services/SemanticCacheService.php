@@ -288,6 +288,12 @@ class SemanticCacheService
         return $deleted;
     }
 
+    /** Count all rows, including expired entries, without exposing cached queries. */
+    public function countForBot(int $botId): int
+    {
+        return RagCache::where('bot_id', $botId)->count();
+    }
+
     /**
      * Get cache statistics for a bot.
      */

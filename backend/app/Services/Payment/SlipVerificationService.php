@@ -3,10 +3,19 @@
 namespace App\Services\Payment;
 
 use App\Models\Bot;
+use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\SlipVerification;
+use App\Models\VerifiedPaymentEvent;
+use App\Services\CommerceSafety\CheckoutAuthority;
+use App\Services\CommerceSafety\CheckoutOutcome;
+use App\Services\CommerceSafety\ConversationAuthorityLock;
+use App\Services\CommerceSafety\PaymentEffectDispatcher;
+use App\Services\CommerceSafety\PaymentProofService;
+use App\Services\CommerceSafety\SafetyScope;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -42,6 +51,93 @@ class SlipVerificationService
         private readonly LLMOrderItemExtractor $itemExtractor,
         private readonly OrderReconstructor $reconstructor,
     ) {}
+
+    /**
+     * Common post-verification authority seam for automatic, retry and manual paths.
+     * Proof, receipt effect and settlement commit before queue submission or transport.
+     */
+    public function settleVerifiedReceipt(
+        Bot $bot,
+        Conversation $conversation,
+        SlipVerification $slip,
+        Message $receipt,
+        ?int $actorId,
+        ?CheckoutSession $checkout = null,
+    ): CheckoutOutcome {
+        return DB::transaction(function () use ($bot, $conversation, $slip, $receipt, $actorId, $checkout): CheckoutOutcome {
+            $event = app(PaymentProofService::class)->record(
+                $bot,
+                $conversation,
+                $slip,
+                $receipt,
+                $actorId,
+                $checkout,
+            );
+
+            return app(CheckoutAuthority::class)->settleEvent($event);
+        });
+    }
+
+    /** Repair local authority and durable effects; transport runs only after commit. */
+    public function reconcileVerifiedSlip(Bot $bot, Conversation $conversation, SlipVerification $slip): VerifiedPaymentEvent
+    {
+        return DB::transaction(function () use ($bot, $conversation, $slip): VerifiedPaymentEvent {
+            ConversationAuthorityLock::acquire((int) $bot->id, (int) $conversation->id);
+            $slip = SlipVerification::query()->lockForUpdate()->findOrFail($slip->id);
+            if ((int) $slip->bot_id !== (int) $bot->id
+                || (int) $slip->conversation_id !== (int) $conversation->id
+                || ! in_array($slip->status, ['passed', 'manual_confirmed'], true)) {
+                throw new \LogicException('Reconciliation requires a terminal slip in the same scope.');
+            }
+            $event = VerifiedPaymentEvent::query()->where('bot_id', $bot->id)
+                ->where('event_key', $slip->status === 'passed' ? 'easyslip:'.trim((string) $slip->trans_ref) : 'manual-slip:'.$slip->id)
+                ->lockForUpdate()->first();
+            if ($event !== null) {
+                if ((int) $event->conversation_id !== (int) $conversation->id) {
+                    throw new \LogicException('Provider payment belongs to another conversation.');
+                }
+                if ($event->source === 'manual' && (int) $event->slip_verification_id === (int) $slip->id
+                    && $slip->message_id === null
+                    && $event->receiptMessage()->where('conversation_id', $conversation->id)->where('sender', 'bot')->exists()) {
+                    $slip->update(['message_id' => $event->receipt_message_id]);
+                }
+                app(CheckoutAuthority::class)->settleEvent($event);
+                app(PaymentEffectDispatcher::class)->enqueue($event);
+
+                return $event->fresh();
+            }
+
+            $receipt = null;
+            if ($slip->status === 'manual_confirmed' && $slip->message_id !== null) {
+                $receipt = Message::query()->whereKey($slip->message_id)->where('conversation_id', $conversation->id)->where('sender', 'bot')->first();
+            } elseif ($slip->status === 'passed') {
+                $receipt = Message::query()->where('conversation_id', $conversation->id)->where('sender', 'bot')
+                    ->where('metadata->slip_status', 'passed')
+                    ->where('metadata->slip_trans_ref', $slip->trans_ref)
+                    ->whereNotIn('id', VerifiedPaymentEvent::query()->select('receipt_message_id'))
+                    ->orderBy('id')->first();
+            }
+            if ($receipt === null) {
+                $receipt = $conversation->messages()->create([
+                    'sender' => 'bot', 'type' => 'text',
+                    'content' => 'เงินเข้าแล้ว '.self::formatBaht($slip->amount).' บาทครับ ระบบบันทึกยอดรับเงินแล้วและกำลังตรวจสอบรายการก่อนส่งสินค้า',
+                    'metadata' => ['slip_verification' => true, 'slip_status' => $slip->status, 'slip_trans_ref' => $slip->trans_ref],
+                ]);
+            }
+            $actorId = null;
+            if ($slip->status === 'manual_confirmed') {
+                $slip->update(['message_id' => $receipt->id]);
+                $recordedActor = $receipt->metadata['confirmed_by'] ?? null;
+                if (is_int($recordedActor) && $recordedActor === (int) $bot->user_id) {
+                    $actorId = $recordedActor;
+                }
+            }
+            $event = app(PaymentProofService::class)->record($bot, $conversation, $slip, $receipt, $actorId, reconciling: true);
+            app(CheckoutAuthority::class)->settleEvent($event);
+
+            return $event->fresh();
+        });
+    }
 
     /**
      * เทียบเลขบัญชีที่ตั้งค่าไว้ กับเลขบัญชี mask จาก EasySlip (เช่น "xxx-x-x4880-x").
@@ -343,6 +439,35 @@ class SlipVerificationService
             ), $receiverAccount);
         }
 
+        if ($conversation !== null && in_array(app(SafetyScope::class)->mode($bot), ['enforce', 'hold'], true)) {
+            // Received money is independent of any generated order reconstruction.
+            // Serialize provider deduplication locally, then retain the terminal row
+            // even if a subsequent receipt/proof/settlement repair crashes.
+            $slip = DB::transaction(function () use ($bot, $conversation, $message, $response, $transRef, $slipAmount, $receiverAccount): SlipVerification {
+                ConversationAuthorityLock::acquire((int) $bot->id, (int) $conversation->id);
+                $existing = SlipVerification::query()->where('bot_id', $bot->id)
+                    ->where('trans_ref', $transRef)->where('status', 'passed')->orderBy('id')->first();
+                if ($existing !== null) {
+                    return $existing;
+                }
+                $result = $this->record($bot, $conversation, $message, $response->json(), new SlipVerificationResult(
+                    isSlip: true, passed: true, amount: $slipAmount, transRef: $transRef,
+                ), $receiverAccount);
+
+                return SlipVerification::query()->findOrFail($result->slipVerificationId);
+            });
+            $originalConversation = Conversation::query()->findOrFail($slip->conversation_id);
+            $this->reconcileVerifiedSlip($bot, $originalConversation, $slip);
+            $sameScope = (int) $slip->conversation_id === (int) $conversation->id;
+            $result = new SlipVerificationResult(
+                isSlip: true, passed: $sameScope,
+                failReason: $sameScope ? null : 'duplicate', amount: $slip->amount, transRef: $slip->trans_ref,
+            );
+            $result->slipVerificationId = $slip->id;
+
+            return $result;
+        }
+
         // เช็ค 2: สลิปซ้ำ (เคย passed แล้วใน bot นี้)
         $isDuplicate = SlipVerification::where('bot_id', $bot->id)
             ->where('trans_ref', $transRef)
@@ -621,11 +746,28 @@ class SlipVerificationService
         }
 
         $action = in_array($result->failReason, self::FRAUD_REASONS, true) ? 'pa' : 'pc';
-        $id = $conversation->id;
+        $scoped = in_array(app(SafetyScope::class)->mode($conversation->bot), ['enforce', 'hold'], true);
+        $checkout = $scoped
+            ? CheckoutSession::query()
+                ->where('bot_id', $conversation->bot_id)
+                ->where('conversation_id', $conversation->id)
+                ->whereIn('state', ['draft', 'awaiting_confirm', 'awaiting_support', 'awaiting_terms', 'payable'])
+                ->latest('created_at')
+                ->latest('id')
+                ->first()
+            : null;
+        if ($scoped && $checkout === null) {
+            return null;
+        }
         $orderAmt = $result->expectedAmount;
         $slipAmt = $result->amount;
 
-        $btn = fn (string $text, string $amt) => [['text' => $text, 'callback_data' => "{$action}|{$id}|{$amt}"]];
+        $btn = fn (string $text, string $amt) => [[
+            'text' => $text,
+            'callback_data' => $scoped
+                ? "{$action}|{$checkout->id}|{$checkout->revision}|{$amt}"
+                : "{$action}|{$conversation->id}|{$amt}",
+        ]];
 
         if ($orderAmt !== null && $slipAmt !== null && $orderAmt != $slipAmt) {
             return [

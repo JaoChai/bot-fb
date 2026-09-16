@@ -3,14 +3,161 @@
 namespace App\Services;
 
 use App\Models\Bot;
+use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Order;
+use App\Models\VerifiedPaymentEvent;
+use App\Services\CommerceSafety\JsonValue;
+use App\Services\CommerceSafety\MoneyMinor;
+use App\Services\CommerceSafety\SafetyScope;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class OrderService
 {
+    public function createFromCheckout(CheckoutSession $checkout, VerifiedPaymentEvent $event): Order
+    {
+        if (DB::transactionLevel() < 1) {
+            throw new \LogicException('Canonical checkout orders must be created inside settlement.');
+        }
+        if ((string) $event->checkout_id !== (string) $checkout->getKey()
+            || (int) $event->bot_id !== (int) $checkout->bot_id
+            || (int) $event->conversation_id !== (int) $checkout->conversation_id) {
+            throw new \LogicException('Payment event is not bound to this checkout.');
+        }
+        if ($event->order_id !== null) {
+            $existing = $this->lockedOrderForCheckout($checkout, $event);
+            if ($existing !== null) {
+                return $existing;
+            }
+            throw new \LogicException('Payment event has an invalid existing order link.');
+        }
+
+        $conversation = Conversation::query()->findOrFail($checkout->conversation_id);
+        $order = Order::create([
+            'bot_id' => $checkout->bot_id,
+            'conversation_id' => $checkout->conversation_id,
+            'customer_profile_id' => $conversation->customer_profile_id,
+            'message_id' => $event->receipt_message_id,
+            'total_amount' => $this->minorDecimal($checkout->total_minor),
+            'payment_method' => $event->source,
+            'status' => 'completed',
+            'channel_type' => $conversation->channel_type,
+            'raw_extraction' => [
+                'source' => 'checkout',
+                'checkout_id' => $checkout->getKey(),
+                'revision' => $checkout->revision,
+                'items' => $checkout->items,
+            ],
+        ]);
+
+        foreach ($checkout->items as $item) {
+            $order->items()->create([
+                'product_name' => $item['name'],
+                'category' => $this->canonicalCategory($item['sku']),
+                'variant' => match ($item['method']) {
+                    'card' => 'ผูกบัตร',
+                    'topup' => 'เติมเงิน',
+                    default => null,
+                },
+                'quantity' => $item['qty'],
+                'unit_price' => $this->minorDecimal($item['price_minor']),
+                'subtotal' => $this->minorDecimal($item['line_total_minor']),
+            ]);
+        }
+
+        $updated = DB::table('verified_payment_events')
+            ->where('id', $event->getKey())
+            ->whereNull('order_id')
+            ->update(['order_id' => $order->getKey()]);
+        if ($updated !== 1) {
+            throw new \LogicException('Payment event order link was concurrently claimed.');
+        }
+
+        return $order->load('items');
+    }
+
+    /**
+     * Lock and verify the complete persisted Order authority for a checkout/event.
+     * A same-scope Order is not sufficient: its receipt, amount, checkout metadata,
+     * exact line set, and exclusive proof link must all still agree.
+     */
+    public function lockedOrderForCheckout(
+        CheckoutSession $checkout,
+        VerifiedPaymentEvent $event,
+    ): ?Order {
+        if ($event->order_id === null) {
+            return null;
+        }
+
+        $order = Order::query()->lockForUpdate()->find($event->order_id);
+        if ($order === null) {
+            return null;
+        }
+        $items = $order->items()->orderBy('id')->lockForUpdate()->get();
+        $conversation = Conversation::query()->lockForUpdate()->find($checkout->conversation_id);
+        if ($conversation === null) {
+            return null;
+        }
+
+        try {
+            $totalMinor = MoneyMinor::fromDecimal((string) $order->getRawOriginal('total_amount'));
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+
+        $raw = $order->raw_extraction;
+        if ((int) $order->bot_id !== (int) $checkout->bot_id
+            || (int) $order->conversation_id !== (int) $checkout->conversation_id
+            || (string) $order->customer_profile_id !== (string) $conversation->customer_profile_id
+            || (int) $order->message_id !== (int) $event->receipt_message_id
+            || $totalMinor !== $checkout->total_minor
+            || $order->payment_method !== $event->source
+            || $order->status !== 'completed'
+            || $order->channel_type !== $conversation->channel_type
+            || ! is_array($raw)
+            || ($raw['source'] ?? null) !== 'checkout'
+            || (string) ($raw['checkout_id'] ?? '') !== (string) $checkout->getKey()
+            || (int) ($raw['revision'] ?? 0) !== (int) $checkout->revision
+            || ! JsonValue::equals($raw['items'] ?? null, $checkout->items)
+            || VerifiedPaymentEvent::query()->where('order_id', $order->getKey())->count() !== 1
+            || ! VerifiedPaymentEvent::query()->whereKey($event->getKey())
+                ->where('order_id', $order->getKey())->exists()) {
+            return null;
+        }
+
+        if ($items->count() !== count($checkout->items)) {
+            return null;
+        }
+        foreach (array_values($checkout->items) as $index => $line) {
+            $item = $items[$index] ?? null;
+            if ($item === null) {
+                return null;
+            }
+            try {
+                $unitMinor = MoneyMinor::fromDecimal((string) $item->getRawOriginal('unit_price'));
+                $subtotalMinor = MoneyMinor::fromDecimal((string) $item->getRawOriginal('subtotal'));
+            } catch (\InvalidArgumentException) {
+                return null;
+            }
+            if ($item->product_name !== $line['name']
+                || $item->category !== $this->canonicalCategory($line['sku'])
+                || $item->variant !== match ($line['method']) {
+                    'card' => 'ผูกบัตร',
+                    'topup' => 'เติมเงิน',
+                    default => null,
+                }
+                || (int) $item->quantity !== (int) $line['qty']
+                || $unitMinor !== (int) $line['price_minor']
+                || $subtotalMinor !== (int) $line['line_total_minor']) {
+                return null;
+            }
+        }
+
+        return $order->setRelation('items', $items);
+    }
+
     /**
      * Normalize a raw product name into standard name, variant, and category.
      *
@@ -96,6 +243,10 @@ class OrderService
         ?Message $message,
         array $variables
     ): ?Order {
+        if (in_array(app(SafetyScope::class)->mode($bot), ['enforce', 'hold'], true)) {
+            return null;
+        }
+
         try {
             $rawAmount = $variables['amount'] ?? null;
             if ($rawAmount === null) {
@@ -168,5 +319,19 @@ class OrderService
 
             return null;
         }
+    }
+
+    private function minorDecimal(int $minor): string
+    {
+        return intdiv($minor, 100).'.'.str_pad((string) ($minor % 100), 2, '0', STR_PAD_LEFT);
+    }
+
+    private function canonicalCategory(string $sku): string
+    {
+        return match (mb_strtoupper($sku)) {
+            'PAGE' => 'page',
+            'G3D' => 'g3d',
+            default => 'nolimit',
+        };
     }
 }

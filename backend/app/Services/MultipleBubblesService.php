@@ -5,6 +5,9 @@ namespace App\Services;
 use App\Jobs\SendDelayedBubbleJob;
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Services\CommerceSafety\CustomerReplyGuard;
+use App\Services\CommerceSafety\CustomerReplyPolicy;
+use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Support\QueueRouter;
 use Illuminate\Support\Facades\Log;
 
@@ -83,6 +86,8 @@ INSTRUCTION;
      */
     public function parseIntoBubbles(string $content, Bot $bot): array
     {
+        $content = app(FinancialOutputGuard::class)->text($bot, $content);
+        $content = app(CustomerReplyGuard::class)->text($bot, $content);
         $settings = $bot->settings;
 
         // If not enabled, return single bubble
@@ -166,6 +171,20 @@ INSTRUCTION;
         }
 
         // Transform text bubbles to Flex messages where applicable
+        $guard = app(FinancialOutputGuard::class);
+        if ($guard->enforced($bot)) {
+            $joined = implode(' ||| ', $bubbles);
+            if ($guard->text($bot, $joined) !== $joined) {
+                $bubbles = [FinancialOutputGuard::DENIAL];
+            }
+        }
+        if (app(CustomerReplyPolicy::class)->mode($bot) !== 'off') {
+            $joined = implode(' ||| ', $bubbles);
+            $guarded = app(CustomerReplyGuard::class)->text($bot, $joined, $conversation);
+            if ($guarded !== $joined) {
+                $bubbles = [$guarded];
+            }
+        }
         $bubbles = $this->transformBubbles($bubbles, $conversation);
 
         $delayMs = $this->getDelayMs($bot);
@@ -198,7 +217,8 @@ INSTRUCTION;
                         $userId,
                         $bubbles[$i],
                         $i + 1, // 1-indexed for logging
-                        $totalBubbles
+                        $totalBubbles,
+                        $conversation?->getKey(),
                     )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())
                         ->delay(now()->addMilliseconds($cumulativeDelayMs));
 

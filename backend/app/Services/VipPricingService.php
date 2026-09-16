@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\Conversation;
 use App\Models\ProductStock;
+use App\Services\CommerceSafety\MoneyMinor;
 use Illuminate\Support\Collection;
+use InvalidArgumentException;
 
 class VipPricingService
 {
@@ -42,6 +44,20 @@ class VipPricingService
             : $product->price;
 
         return $price === null ? null : (float) $price;
+    }
+
+    public function effectivePriceMinor(ProductStock $product, bool $isVip): ?int
+    {
+        $price = $this->effectivePrice($product, $isVip);
+        if ($price === null || ! is_finite($price)) {
+            return null;
+        }
+
+        try {
+            return MoneyMinor::fromDecimal(number_format($price, 2, '.', ''));
+        } catch (InvalidArgumentException) {
+            return null;
+        }
     }
 
     /** @param Collection<int, ProductStock> $products */

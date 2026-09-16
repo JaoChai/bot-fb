@@ -104,7 +104,10 @@ class StickerReplyService
             if ($this->looksLikeGarbage($content)) {
                 Log::warning('AI sticker reply failed sanity check, using static fallback', [
                     'bot_id' => $bot->id,
-                    'raw_content' => $content,
+                    'conversation_id' => $conversation->id,
+                    'content_length' => mb_strlen($content),
+                    'content_hash' => hash('sha256', $content),
+                    'reason' => 'sanity_check_failed',
                 ]);
 
                 return $this->getStaticReply($bot->settings);

@@ -1,0 +1,76 @@
+{
+  "id": "T24",
+  "label": "Not via normal share/partner share; shop's own technique via Support only, no BM upsell, no cart mutation or confirmation repeated",
+  "message": "Personal รับเพจได้ไหม",
+  "history": [
+    {
+      "sender": "user",
+      "content": "เอา Nolimit Level Up+ Personal (ผูกบัตร) 1 ตัว"
+    },
+    {
+      "sender": "bot",
+      "content": "สรุปรายการครับพี่: Nolimit Level Up+ Personal (ผูกบัตร) 1 ตัว ราคาต่อหน่วย 1100 บาท รวมยอด 1100 บาทครับ ถูกต้องไหมครับ? พิมพ์ ยืนยัน ได้เลย"
+    }
+  ],
+  "system_injections": {
+    "stock": "available",
+    "vip": false,
+    "memory": "",
+    "kb": ""
+  },
+  "synthetic": true,
+  "layer": "text_replay",
+  "provenance": {
+    "source": "regression-final2/T24.json",
+    "prompt_sha256": "3cdc1c0a0e65d14a8a1b49997f1d524e66d2ce81b0bf7d884494a91ada54f3ec",
+    "note": "Historical final2 evidence superseded 2026-09-15, then superseded again the same day: the response was replaced with a real live OpenRouter call (BOT26_PROMPT_EVAL_LIVE=1) against the current v28 artifact, encoding the owner's Personal-cannot-receive-a-Page-normally rule, first at the Support/misc line and then moved/merged into the Page catalog line for consistency. prompt_sha256 above intentionally stays the original final2-era value per the offline provenance invariant (never label historical-corpus outputs as exact-artifact runs, see Bot26PromptEvaluationTest::test_offline_saved_response_literals_arithmetic_and_protocol); see live_refresh_2026_09_15 (first fix) and live_refresh_2026_09_15_v2 (this fix, current evidence.response) below for the true provenance, and docs/testing/bot26-v28-live-raw-eval-2026-09-15.md for full per-run raw output, request IDs and cost.",
+    "live_refresh_2026_09_15": {
+      "date": "2026-09-15",
+      "prompt_sha256": "e132e40e070c3a5433796ee2d1732181bc637a1263462f61a349bccfb98254dd",
+      "request_id": "gen-1789486294-ggxhUtVvjvIKBWBreWmy",
+      "run": "2 of 3, BOT26_PROMPT_EVAL_LIVE=1 raw OpenRouter call, --group prompt-eval-raw --filter test_raw_model T24"
+    },
+    "live_refresh_2026_09_15_v2": {
+      "date": "2026-09-15",
+      "prompt_sha256": "c269dbe8871e8c510e01306c3bafbad7520f1352b8bb3a15a9f9359f102983ec",
+      "request_id": "gen-1789487045-zEkhNGpFThPB9bU6eyQY",
+      "run": "1 of 5, BOT26_PROMPT_EVAL_LIVE=1 raw OpenRouter call, --group prompt-eval-raw --filter test_raw_model T24; all 5 of 5 runs passed literal assertions and semantic review (see live-raw-eval doc)"
+    }
+  },
+  "assertions": {
+    "contains": [
+      "Personal",
+      "เพจ",
+      "Support",
+      "ปกติ"
+    ],
+    "not_contains": [
+      "[ยืนยันชำระเงิน]",
+      "```",
+      "[[ORDER]]",
+      "223-3-24880-3",
+      "แชร์พาร์ทเนอร์ได้"
+    ],
+    "order_block": false,
+    "items": null,
+    "total": null,
+    "manual_semantic_review": "required for any new live output; literals are insufficient"
+  },
+  "evidence": {
+    "response": "โดยวิธีปกติ Personal รับเพจไม่ได้ครับ แต่ทางร้านมีเทคนิคสำหรับรับเพจเข้า Personal ได้ พี่ต้องแจ้ง Technical Support ก่อนนะครับ\n\nhttps://lin.ee/h5wYpIf\nLINE: @743ddeqy",
+    "request_id": "gen-1789487045-zEkhNGpFThPB9bU6eyQY",
+    "model": "openai/gpt-5.6-luna",
+    "settings": {
+      "model": "openai/gpt-5.6-luna",
+      "max_tokens": 8192,
+      "stream": false,
+      "reasoning": {
+        "effort": "medium"
+      },
+      "provider": {
+        "allow_fallbacks": false
+      }
+    },
+    "finish_reason": "stop"
+  }
+}

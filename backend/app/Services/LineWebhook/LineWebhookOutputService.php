@@ -4,8 +4,15 @@ namespace App\Services\LineWebhook;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
+use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\PaymentEffect;
+use App\Services\CommerceSafety\CheckoutAuthority;
+use App\Services\CommerceSafety\CustomerReplyGuard;
+use App\Services\CommerceSafety\FinancialOutputGuard;
+use App\Services\CommerceSafety\PaymentEffectDispatcher;
+use App\Services\CommerceSafety\PaymentProofService;
 use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
@@ -22,6 +29,7 @@ class LineWebhookOutputService
         private readonly MultipleBubblesService $bubbles,
         private readonly PaymentFlexService $paymentFlex,
         private readonly FlowPluginService $flowPlugin,
+        private readonly ?CheckoutAuthority $checkoutAuthority = null,
     ) {}
 
     /**
@@ -31,6 +39,31 @@ class LineWebhookOutputService
      * handleStickerReply (894-971), and handleImageAnalysis (1106-1157).
      */
     public function dispatch(WebhookContext $ctx): void
+    {
+        $message = $ctx->metadata['bot_message'] ?? null;
+        $event = $ctx->conversation && $message instanceof Message
+            ? app(PaymentProofService::class)->forReceipt($ctx->bot, $ctx->conversation, $message) : null;
+        if ($event && (app(FinancialOutputGuard::class)->enforced($ctx->bot)
+            || PaymentEffect::where('event_id', $event->id)->where('kind', 'line_receipt')->exists())) {
+            // Durable receipt ownership survives scope changes, including off/shadow.
+            app(PaymentEffectDispatcher::class)->enqueue($event);
+            DB::afterCommit(function () use ($ctx, $message): void {
+                $conversation = $ctx->conversation->fresh();
+                $this->leadRecovery->markCustomerResponded($conversation);
+                $data = $this->buildConversationData($conversation);
+                if ($ctx->userMessage) {
+                    broadcast(new MessageSent($ctx->userMessage, $data))->toOthers();
+                }
+                broadcast(new MessageSent($message->fresh(), $data))->toOthers();
+                broadcast(new ConversationUpdated($conversation, 'message_received'))->toOthers();
+            });
+
+            return;
+        }
+        $this->dispatchCommitted($ctx);
+    }
+
+    private function dispatchCommitted(WebhookContext $ctx): void
     {
         $conv = $ctx->conversation;
         $userMessage = $ctx->userMessage;
@@ -51,6 +84,20 @@ class LineWebhookOutputService
             }
 
             return;
+        }
+
+        $guard = app(FinancialOutputGuard::class);
+        $message = $ctx->metadata['bot_message'] ?? null;
+        if ($conv && $message instanceof Message && $guard->enforced($ctx->bot)) {
+            $guard->message($ctx->bot, $conv, $message);
+            $ctx->response = ResponseEnvelope::text($message->content);
+        }
+        if ($conv && $message instanceof Message) {
+            $previousContent = $message->content;
+            app(CustomerReplyGuard::class)->message($ctx->bot, $conv, $message);
+            if ($message->content !== $previousContent) {
+                $ctx->response = ResponseEnvelope::text($message->content);
+            }
         }
 
         // --- Response path: branch by message type ---
@@ -93,20 +140,35 @@ class LineWebhookOutputService
             $content = $botMessage->content ?? '';
 
             if ($content !== '') {
-                $transformed = $this->paymentFlex->tryConvertToFlex($content, $conv);
+                $delivered = false;
+                $transformed = $this->convert($content, $conv, $botMessage);
+                $plainText = app(FinancialOutputGuard::class)->enforced($bot)
+                    ? $transformed : $content;
 
                 if (is_array($transformed)) {
                     // Flex detected → send as Flex message
                     $retryKey = $this->line->generateRetryKey();
-                    $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$transformed], $retryKey);
+                    $result = $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$transformed], $retryKey);
+                    $delivered = is_array($result) && ($result['success'] ?? null) === true;
                 } elseif ($this->bubbles->isEnabled($bot)) {
                     // Bubbles enabled → parse + sendBubbles
-                    $bubbleList = $this->bubbles->parseIntoBubbles($content, $bot);
-                    $this->bubbles->sendBubbles($bot, $ctx->userId(), $ctx->replyToken(), $bubbleList, $conv);
+                    $bubbleList = $this->bubbles->parseIntoBubbles($plainText, $bot);
+                    $delivered = $this->bubbles->sendBubbles(
+                        $bot,
+                        $ctx->userId(),
+                        $ctx->replyToken(),
+                        $bubbleList,
+                        $conv,
+                    ) === true;
                 } else {
                     // Plain text
                     $retryKey = $this->line->generateRetryKey();
-                    $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$content], $retryKey);
+                    $result = $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$plainText], $retryKey);
+                    $delivered = is_array($result) && ($result['success'] ?? null) === true;
+                }
+
+                if ($delivered) {
+                    $this->markCheckoutPresented($botMessage);
                 }
             }
 
@@ -146,6 +208,41 @@ class LineWebhookOutputService
 
         broadcast(new MessageSent($botMessage, $conversationData))->toOthers();
         broadcast(new ConversationUpdated($conv, 'message_received'))->toOthers();
+    }
+
+    private function convert(string $content, Conversation $conversation, Message $message): string|array
+    {
+        return app(FinancialOutputGuard::class)->enforced($conversation->bot)
+            ? $this->paymentFlex->tryConvertToFlex($content, $conversation, $message)
+            : $this->paymentFlex->tryConvertToFlex($content, $conversation);
+    }
+
+    private function markCheckoutPresented(Message $botMessage): void
+    {
+        $metadata = is_array($botMessage->metadata) ? $botMessage->metadata : [];
+        $presentation = $metadata['checkout_presentation'] ?? null;
+        if (! is_array($presentation)
+            || ! is_string($presentation['checkout_id'] ?? null)
+            || ! is_int($presentation['revision'] ?? null)) {
+            return;
+        }
+
+        try {
+            $checkout = CheckoutSession::query()->find($presentation['checkout_id']);
+            if ($checkout) {
+                ($this->checkoutAuthority ?? app(CheckoutAuthority::class))->presented(
+                    $checkout,
+                    $presentation['revision'],
+                    $botMessage,
+                );
+            }
+        } catch (\Throwable $e) {
+            Log::error('Checkout presentation could not be persisted after outbound delivery', [
+                'checkout_id' => $presentation['checkout_id'],
+                'message_id' => $botMessage->getKey(),
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -232,12 +329,17 @@ class LineWebhookOutputService
             'last_active_at' => now(),
         ]);
 
-        // Push (legacy lines 1106-1116)
-        if ($this->bubbles->isEnabled($bot)) {
-            $bubbleList = $this->bubbles->parseIntoBubbles($content, $bot);
+        // Convert the complete image response before any bubble split.
+        $transformed = app(FinancialOutputGuard::class)->enforced($bot)
+            ? $this->convert($content, $conv, $botMessage) : $content;
+        if (is_array($transformed)) {
+            $retryKey = $this->line->generateRetryKey();
+            $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$transformed], $retryKey);
+        } elseif ($this->bubbles->isEnabled($bot)) {
+            $bubbleList = $this->bubbles->parseIntoBubbles($transformed, $bot);
             $this->bubbles->sendBubbles($bot, $ctx->userId(), $ctx->replyToken(), $bubbleList, $conv);
         } else {
-            $transformed = $this->paymentFlex->tryConvertToFlex($content, $conv);
+            $transformed = $this->convert($content, $conv, $botMessage);
             $retryKey = $this->line->generateRetryKey();
             $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$transformed], $retryKey);
         }

@@ -1,0 +1,60 @@
+{
+  "id": "T17",
+  "label": "Request original bank-app image only, no confirmation",
+  "message": "[camera photo of phone showing slip]",
+  "history": [],
+  "system_injections": {
+    "stock": "available",
+    "vip": false,
+    "memory": "",
+    "kb": ""
+  },
+  "synthetic": true,
+  "layer": "image_handler",
+  "provenance": {
+    "source": "regression-final2/T17.json",
+    "prompt_sha256": null,
+    "note": "Historical final2 evidence, not inference against the imported v28 artifact. Audit located at implementation/final-audit.json (historical semantic gate blocked on T09)."
+  },
+  "image": {
+    "is_slip": false,
+    "reply": "รบกวนส่งรูปสลิปต้นฉบับจากแอปธนาคารโดยตรงครับ ไม่รับรูปถ่ายหน้าจอจากกล้องครับ",
+    "expected_contains": [
+      "ต้นฉบับ",
+      "แอปธนาคาร",
+      "กล้อง"
+    ],
+    "boundary": "Reply handling only: current binary classifier has no camera-photo image_kind. This draft exercises the non-slip reply branch, NOT camera-photo recognition."
+  },
+  "classification_gate_blocked": true,
+  "classification_gate_blocked_reason": "The binary is_slip classifier has no camera-photo image_kind contract. This fixture only replays a canned non-slip reply; camera-photo recognition is untested.",
+  "raw_model_skipped": true,
+  "assertions": {
+    "raw_model": {
+      "skipped": true,
+      "reason": "Requires image handler; no text inference pass"
+    },
+    "application_integration": {
+      "contains": [
+        "ต้นฉบับ",
+        "แอปธนาคาร",
+        "กล้อง"
+      ],
+      "not_contains": [
+        "[ยืนยันชำระเงิน]",
+        "เงินเข้าแล้ว",
+        "[[ORDER]]",
+        "OTP",
+        "สร้าง ticket",
+        "เปิดเคสแล้ว"
+      ],
+      "effects": {
+        "orders": 0,
+        "verified_payment_events": 0,
+        "payment_effects": 0,
+        "account_deliveries": 0,
+        "reserve_jobs": 0
+      }
+    }
+  }
+}

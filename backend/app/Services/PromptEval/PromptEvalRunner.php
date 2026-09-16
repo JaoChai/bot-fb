@@ -7,6 +7,8 @@ use App\Services\AIService;
 use App\Services\Guardrail\OffTopicSignalExtractor;
 use App\Services\RAGService;
 use App\Services\SemanticCacheService;
+use Illuminate\Support\Facades\Http;
+use InvalidArgumentException;
 use ReflectionProperty;
 use Throwable;
 
@@ -21,6 +23,59 @@ class PromptEvalRunner
         private readonly AIService $ai,
         private readonly RAGService $rag,
     ) {}
+
+    /**
+     * Explicit raw evaluation mode: one request, no AI/RAG processing, cache or fallback.
+     * Existing run() callers retain their display-response evaluation behavior.
+     * Missing provider provenance stays null; never substitute the requested model.
+     * HTTP failures propagate to the caller rather than becoming a passing empty replay.
+     *
+     * @param  list<array<string, mixed>>  $messages
+     * @return array<string, mixed>
+     */
+    public function runRaw(
+        array $messages,
+        string $model,
+        float $temperature = 0.7,
+        int $maxTokens = 8192,
+        array $reasoning = ['effort' => 'medium'],
+    ): array {
+        if (trim($model) === '' || $messages === [] || $maxTokens < 1) {
+            throw new InvalidArgumentException('Raw evaluation requires messages, a model and a positive token limit.');
+        }
+
+        $settings = [
+            'model' => $model,
+            'temperature' => $temperature,
+            'max_tokens' => $maxTokens,
+            'stream' => false,
+            'reasoning' => $reasoning,
+            'provider' => ['allow_fallbacks' => false],
+            'usage' => ['include' => true],
+        ];
+        $data = Http::baseUrl(rtrim(config_string('services.openrouter.base_url', 'https://openrouter.ai/api/v1'), '/'))
+            ->withToken(config_string('services.openrouter.api_key'))
+            ->withHeaders([
+                'HTTP-Referer' => config_string('services.openrouter.site_url', config_string('app.url')),
+                'X-Title' => config_string('services.openrouter.site_name', config_string('app.name')),
+            ])
+            ->timeout(config_int('services.openrouter.timeout', 60))
+            ->acceptJson()
+            ->post('/chat/completions', ['messages' => $messages] + $settings)
+            ->throw()
+            ->json();
+
+        return [
+            'content' => $data['choices'][0]['message']['content'] ?? '',
+            'request_id' => $data['id'] ?? null,
+            'requested_model' => $model,
+            'returned_model' => $data['model'] ?? null,
+            'settings' => $settings,
+            'finish_reason' => $data['choices'][0]['finish_reason'] ?? null,
+            'usage' => $data['usage'] ?? [],
+            'input_sha256' => hash('sha256', json_encode($messages, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)),
+        ];
+    }
 
     /**
      * @param  array<string, mixed>  $case

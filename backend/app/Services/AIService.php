@@ -7,14 +7,25 @@ use App\Jobs\ExtractEntitiesJob;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
-use App\Services\Guardrail\GuardrailOutputSanitizer;
+use App\Services\CommerceSafety\CanonicalCartValidator;
+use App\Services\CommerceSafety\CartProposalAdapter;
+use App\Services\CommerceSafety\CartValidation;
+use App\Services\CommerceSafety\CustomerReplyGuard;
+use App\Services\CommerceSafety\FinancialOutputDetector;
+use App\Services\CommerceSafety\FinancialOutputGuard;
+use App\Services\CommerceSafety\SafetyScope;
+use App\Services\CommerceSafety\ShadowObservationRecorder;
 use App\Services\Guardrail\OffTopicCircuitBreaker;
 use App\Services\Guardrail\OffTopicSignalExtractor;
 use App\Services\Payment\OrderPayloadExtractor;
+use App\Services\Payment\PaymentMessageDetector;
 use Illuminate\Support\Facades\Log;
 
 class AIService
 {
+    /** @var \WeakMap<Message,CartValidation> */
+    private \WeakMap $savedCartValidations;
+
     public function __construct(
         protected OpenRouterService $openRouter,
         protected RAGService $ragService,
@@ -22,9 +33,16 @@ class AIService
         private readonly OrderPayloadExtractor $orderPayload,
         private readonly OffTopicSignalExtractor $offTopicSignal,
         private readonly OffTopicCircuitBreaker $offTopicCircuitBreaker,
-        private readonly GuardrailOutputSanitizer $outputSanitizer,
+        private readonly CustomerReplyGuard $customerReplyGuard,
         private readonly VipPriceGuardService $vipPriceGuard,
-    ) {}
+        private readonly SafetyScope $safetyScope,
+        private readonly CartProposalAdapter $cartProposalAdapter,
+        private readonly CanonicalCartValidator $cartValidator,
+        private readonly PaymentMessageDetector $paymentDetector,
+        private readonly ShadowObservationRecorder $shadowObservations,
+    ) {
+        $this->savedCartValidations = new \WeakMap;
+    }
 
     /**
      * Generate a response for a bot given a user message.
@@ -75,70 +93,98 @@ class AIService
             flow: $flow
         );
 
-        // Stock Guard: hard-block selling out-of-stock products
-        // (guard แก้ข้อความได้ 3 แบบ: ทับทั้งก้อน, ตัดท่อน upsell, ต่อท้ายว่าหมด —
-        //  ต้องรับ content กลับมาทุกแบบ ไม่ใช่เฉพาะตอน blocked)
-        $guardResult = $this->stockGuard->validate($result['content'], $userMessage);
-        if (($guardResult['content'] ?? $result['content']) !== $result['content']) {
-            $result['stock_guard'] = [
-                'blocked' => $guardResult['blocked'],
-                'blocked_products' => $guardResult['blocked_products'] ?? [],
-                'original_preview' => mb_substr($result['content'], 0, 300),
-            ];
-            $result['content'] = $guardResult['content'];
-        }
+        $result = app(FinancialOutputGuard::class)->generated($bot, $result);
+        $financialDenied = $result['financial_output_denied'] ?? false;
 
-        // ตัดบล็อกออเดอร์ออกจากข้อความก่อนใครได้เห็น — ทำที่นี่จุดเดียวเพราะทั้ง webhook
-        // pipeline และ ProcessAggregatedMessages ผ่านเมธอดนี้เสมอ (ทางออกอื่นทั้งหมด
-        // — LINE push, Flex, bubbles, หน้าเว็บ — อ่านจาก content ที่ผ่านตรงนี้แล้ว)
-        $result['order_payload'] = null;
-        if (config('delivery.order_payload_enabled', false)) {
-            $extracted = $this->orderPayload->extract($result['content'] ?? '');
-            $result['content'] = $extracted['clean'];
-            $result['order_payload'] = $extracted['payload'];
-        }
+        if (! $financialDenied) {
+            // Bot-scoped canonical proposal inspection happens on the original model/cache
+            // output so JSON types cannot be lost through the legacy payload normalizer.
+            $cartValidation = $this->inspectScopedProposal(
+                $bot,
+                $conversation,
+                $result['content'] ?? '',
+            );
+            // Internal, in-process hand-off to checkout authority. This object must never
+            // be serialized into Message metadata or reconstructed from display prose.
+            $result['commerce_safety_cart_validation'] = $cartValidation;
 
-        // Financial safety net: prompts guide the model, but canonical VIP prices
-        // are enforced server-side before text, Flex, or order metadata can leave.
-        $vipPriceResult = $this->vipPriceGuard->enforce(
-            $result['content'] ?? '',
-            $result['order_payload'],
-            $conversation
-        );
-        if ($vipPriceResult['corrected']) {
-            Log::warning('VIP price guard corrected an inconsistent response', [
-                'bot_id' => $bot->id,
-                'conversation_id' => $conversation?->id,
-            ]);
-            $result['vip_price_guard'] = ['corrected' => true];
-        }
-        $result['content'] = $vipPriceResult['content'];
-        $result['order_payload'] = $vipPriceResult['order_payload'];
+            // Shadow-only, redacted aggregate signal for bot26:shadow-report. No-ops
+            // outside `shadow` mode; never creates authoritative state or fires effects.
+            if ($cartValidation !== null) {
+                $this->shadowObservations->recordEach(
+                    $bot,
+                    'cart_proposal',
+                    $cartValidation->valid ? 'valid' : 'invalid',
+                    $cartValidation->valid ? [] : $cartValidation->errors,
+                );
+            }
 
-        // Off-topic signal marker — เหมือน [[ORDER]] ด้านบน ตัดออกก่อนใครได้เห็น
-        $offTopicExtracted = $this->offTopicSignal->extract($result['content'] ?? '');
-        $result['content'] = $offTopicExtracted['clean'];
-        $result['off_topic_triggered'] = $offTopicExtracted['triggered'];
-        if ($offTopicExtracted['triggered'] && $result['content'] === '') {
-            // LLM ปล่อยแค่ marker ไม่มีข้อความอื่นเลย — ถ้าปล่อยเป็นสตริงว่าง
-            // ProcessAggregatedMessages จะไม่ส่งอะไรถึงลูกค้าเลย (if ($botMessage->content))
-            $result['content'] = OffTopicCircuitBreaker::CANNED_MESSAGE;
-        }
-        if ($conversation !== null && $offTopicExtracted['triggered']) {
-            $this->offTopicCircuitBreaker->recordTrigger($bot, $conversation);
-        }
+            // Stock Guard: hard-block selling out-of-stock products
+            // (guard แก้ข้อความได้ 3 แบบ: ทับทั้งก้อน, ตัดท่อน upsell, ต่อท้ายว่าหมด —
+            //  ต้องรับ content กลับมาทุกแบบ ไม่ใช่เฉพาะตอน blocked)
+            $guardResult = $this->stockGuard->validate($result['content'], $userMessage);
+            if (($guardResult['content'] ?? $result['content']) !== $result['content']) {
+                $result['stock_guard'] = [
+                    'blocked' => $guardResult['blocked'],
+                    'blocked_products' => $guardResult['blocked_products'] ?? [],
+                    'original_preview' => mb_substr($result['content'], 0, 300),
+                ];
+                $result['content'] = $guardResult['content'];
+            }
 
-        // Output sanitizer — ตาข่ายสุดท้ายกันคำตอบหลุด (code block/markdown จริง/อ้างว่าเป็น AI)
-        // ใช้กับทุกคำตอบ ไม่ใช่แค่ที่ถูกตีว่า off-topic
-        $sanitizerResult = $this->outputSanitizer->check($result['content'] ?? '');
-        if ($sanitizerResult['flagged']) {
-            Log::warning('Guardrail output sanitizer triggered', [
-                'bot_id' => $bot->id,
-                'conversation_id' => $conversation?->id,
-                'reason' => $sanitizerResult['reason'],
-            ]);
-            $result['content'] = OffTopicCircuitBreaker::CANNED_MESSAGE;
+            // ตัดบล็อกออเดอร์ออกจากข้อความก่อนใครได้เห็น — ทำที่นี่จุดเดียวเพราะทั้ง webhook
+            // pipeline และ ProcessAggregatedMessages ผ่านเมธอดนี้เสมอ (ทางออกอื่นทั้งหมด
+            // — LINE push, Flex, bubbles, หน้าเว็บ — อ่านจาก content ที่ผ่านตรงนี้แล้ว)
             $result['order_payload'] = null;
+            if (config('delivery.order_payload_enabled', false)) {
+                $extracted = $this->orderPayload->extract($result['content'] ?? '');
+                $result['content'] = $extracted['clean'];
+                $result['order_payload'] = $extracted['payload'];
+            }
+
+            // Financial safety net: prompts guide the model, but canonical VIP prices
+            // are enforced server-side before text, Flex, or order metadata can leave.
+            $vipPriceResult = $this->vipPriceGuard->enforce(
+                $result['content'] ?? '',
+                $result['order_payload'],
+                $conversation
+            );
+            if ($vipPriceResult['corrected']) {
+                Log::warning('VIP price guard corrected an inconsistent response', [
+                    'bot_id' => $bot->id,
+                    'conversation_id' => $conversation?->id,
+                ]);
+                $result['vip_price_guard'] = ['corrected' => true];
+            }
+            $result['content'] = $vipPriceResult['content'];
+            $result['order_payload'] = $vipPriceResult['order_payload'];
+
+            if ($cartValidation !== null
+                && ! $cartValidation->valid
+                && in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true)) {
+                $result['content'] = $this->cartCorrection($cartValidation);
+                $result['order_payload'] = null;
+                $result['cart_validation'] = [
+                    'corrected' => true,
+                    'errors' => $cartValidation->errors,
+                ];
+            }
+
+            // Off-topic signal marker — เหมือน [[ORDER]] ด้านบน ตัดออกก่อนใครได้เห็น
+            $offTopicExtracted = $this->offTopicSignal->extract($result['content'] ?? '');
+            $result['content'] = $offTopicExtracted['clean'];
+            $result['off_topic_triggered'] = $offTopicExtracted['triggered'];
+            if ($offTopicExtracted['triggered'] && $result['content'] === '') {
+                // LLM ปล่อยแค่ marker ไม่มีข้อความอื่นเลย — ถ้าปล่อยเป็นสตริงว่าง
+                // ProcessAggregatedMessages จะไม่ส่งอะไรถึงลูกค้าเลย (if ($botMessage->content))
+                $result['content'] = OffTopicCircuitBreaker::CANNED_MESSAGE;
+            }
+            if ($conversation !== null && $offTopicExtracted['triggered']) {
+                $this->offTopicCircuitBreaker->recordTrigger($bot, $conversation);
+            }
+
+            $result = $this->customerReplyGuard->generated($bot, $result, $conversation, legacySanitizer: true);
+
         }
 
         // Ensure usage key exists with defaults (some models may not return usage data)
@@ -161,7 +207,135 @@ class AIService
             $result['model'] ?? 'unknown'
         );
 
+        if ($financialDenied) {
+            $result['content'] = FinancialOutputGuard::DENIAL;
+            $result['order_payload'] = null;
+            $result['commerce_safety_cart_validation'] = null;
+        }
+
         return $result;
+    }
+
+    private function inspectScopedProposal(
+        Bot $bot,
+        ?Conversation $conversation,
+        string $content,
+    ): ?CartValidation {
+        if ($this->safetyScope->mode($bot) === 'off') {
+            return null;
+        }
+
+        $proposals = [];
+        $hasOrderMarker = str_contains($content, '[[ORDER]]');
+        $visibleCandidate = $this->paymentDetector->parsePaymentData($content)
+            ?? $this->paymentDetector->parseConfirmData($content);
+
+        if (! $hasOrderMarker && $visibleCandidate === null) {
+            return app(FinancialOutputDetector::class)->detects($bot, $content)
+                ? $this->invalidCart(['INVALID_PROPOSAL'])
+                : null;
+        }
+        if ($conversation === null) {
+            return $this->invalidCart(['CONVERSATION_REQUIRED']);
+        }
+
+        if ($hasOrderMarker) {
+            preg_match_all('/\[\[ORDER\]\](.*?)\[\[\/ORDER\]\]/su', $content, $blocks);
+            if (count($blocks[1] ?? []) !== 1) {
+                return $this->invalidCart(['INVALID_PROPOSAL']);
+            }
+            $proposal = $this->cartProposalAdapter->fromOrderJson($blocks[1][0]);
+            if ($proposal === null) {
+                return $this->invalidCart(['INVALID_PROPOSAL']);
+            }
+            $proposals[] = $proposal;
+        }
+
+        if ($visibleCandidate !== null) {
+            $proposal = $this->cartProposalAdapter->fromText($content);
+            if ($proposal === null) {
+                return $this->invalidCart(['INVALID_PROPOSAL']);
+            }
+            $proposals[] = $proposal;
+        }
+
+        if ($proposals === []) {
+            return $hasOrderMarker
+                ? $this->invalidCart(['INVALID_PROPOSAL'])
+                : null;
+        }
+
+        $validated = array_map(
+            fn (array $proposal): CartValidation => $this->cartValidator->validate(
+                $bot,
+                $conversation,
+                $proposal['lines'],
+                $proposal['total_minor'],
+            ),
+            $proposals,
+        );
+        $first = $validated[0];
+        foreach ($validated as $validation) {
+            if (! $validation->valid) {
+                return $validation;
+            }
+            if ($validation->fingerprint !== $first->fingerprint) {
+                return $this->invalidCart(['PROPOSAL_MISMATCH']);
+            }
+        }
+
+        return $first;
+    }
+
+    /** @param list<string> $errors */
+    private function invalidCart(array $errors): CartValidation
+    {
+        return new CartValidation(
+            valid: false,
+            errors: $errors,
+            lines: [],
+            totalMinor: 0,
+            vip: false,
+            fingerprint: hash('sha256', 'invalid'),
+        );
+    }
+
+    private function cartCorrection(CartValidation $validation): string
+    {
+        if ($validation->requiresManualHandling) {
+            return 'รายการนี้เกินขีดจำกัดการทำรายการอัตโนมัติครับ ทีมงานจะช่วยตรวจสอบและดำเนินการให้โดยไม่ลดจำนวนสินค้า';
+        }
+        if (array_intersect($validation->errors, ['OUT_OF_STOCK', 'STOCK_UNKNOWN', 'INSUFFICIENT_STOCK'])) {
+            return 'ขออภัยครับ ยังไม่สามารถยืนยันรายการนี้ได้ เนื่องจากสต็อกปัจจุบันไม่พร้อมหรือยืนยันจำนวนไม่ได้ กรุณาแจ้งทีมงานครับ';
+        }
+        if ($validation->lines === []) {
+            return 'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และราคาใหม่อีกครั้ง';
+        }
+
+        $lines = [];
+        foreach ($validation->lines as $index => $line) {
+            $name = $line['name'].match ($line['method']) {
+                'card' => ' (ผูกบัตร)',
+                'topup' => ' (เติมเงิน)',
+                default => '',
+            };
+            $lines[] = ($index + 1).'. '.$name.' ('
+                .$this->formatMinor($line['price_minor']).' x '.$line['qty'].') = '
+                .$this->formatMinor($line['line_total_minor']).' บาท';
+        }
+
+        return "ระบบตรวจพบว่ารายการหรือราคาไม่ตรงกับข้อมูลล่าสุด ขอสรุปรายการที่แก้ไขครับ\n"
+            .implode("\n", $lines)
+            ."\nรวม: ".$this->formatMinor($validation->totalMinor)
+            .' บาท กรุณาตรวจสอบและพิมพ์ ยืนยัน อีกครั้งครับ';
+    }
+
+    private function formatMinor(int $minor): string
+    {
+        $whole = intdiv($minor, 100);
+        $fraction = $minor % 100;
+
+        return number_format($whole).($fraction === 0 ? '' : '.'.str_pad((string) $fraction, 2, '0', STR_PAD_LEFT));
     }
 
     /**
@@ -179,6 +353,9 @@ class AIService
                 $conversation,
                 excludeMessageIds: [$userMessage->id]
             );
+
+            $result = app(FinancialOutputGuard::class)->generated($bot, $result);
+            $result = $this->customerReplyGuard->generated($bot, $result, $conversation);
 
             // Build message data with RAG metadata
             $messageData = [
@@ -209,6 +386,10 @@ class AIService
 
             // Create bot response message
             $botMessage = $conversation->messages()->create($messageData);
+            $cartValidation = $result['commerce_safety_cart_validation'] ?? null;
+            if ($cartValidation instanceof CartValidation) {
+                $this->savedCartValidations[$botMessage] = $cartValidation;
+            }
 
             // Update bot stats
             $bot->increment('total_messages');
@@ -234,6 +415,17 @@ class AIService
                 'type' => 'text',
             ]);
         }
+    }
+
+    /**
+     * Consume the non-serialized B1 result associated with a just-saved bot message.
+     */
+    public function takeCommerceSafetyCartValidation(Message $botMessage): ?CartValidation
+    {
+        $validation = $this->savedCartValidations[$botMessage] ?? null;
+        unset($this->savedCartValidations[$botMessage]);
+
+        return $validation;
     }
 
     /**

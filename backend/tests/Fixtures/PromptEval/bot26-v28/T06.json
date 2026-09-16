@@ -1,0 +1,60 @@
+{
+  "id": "T06",
+  "label": "Returning customer uses Personal, canonical runtime VIP1000 and confirms qty2 total2000 before bank; no upsell/Terms/SupportDelay.",
+  "message": "เอาเฟส 2 ตัว ผูกบัตร",
+  "history": [],
+  "system_injections": {
+    "stock": "available",
+    "vip": true,
+    "memory": "## Memory (ประวัติสะสมของลูกค้าจากออเดอร์เก่า):\nใช้เพื่อจดจำสินค้า/พฤติกรรมที่เคยซื้อเท่านั้น ตัวเลขจำนวนคือยอดสะสมในอดีต ห้ามนำไปรวมเป็นจำนวนออเดอร์ใหม่\n- ลูกค้าเก่า เคยซื้อ Nolimit Level Up+ Personal (ผูกบัตร)",
+    "kb": ""
+  },
+  "synthetic": true,
+  "layer": "text_replay",
+  "provenance": {
+    "source": "regression-final2/T06.json",
+    "prompt_sha256": "3cdc1c0a0e65d14a8a1b49997f1d524e66d2ce81b0bf7d884494a91ada54f3ec",
+    "note": "Historical final2 evidence, not inference against the imported v28 artifact. Audit located at implementation/final-audit.json (historical semantic gate blocked on T09)."
+  },
+  "assertions": {
+    "contains": [
+      "VIP",
+      "1,000",
+      "2,000",
+      "ยืนยัน"
+    ],
+    "not_contains": [
+      "[ยืนยันชำระเงิน]",
+      "```",
+      "[[ORDER]]",
+      "223-3-24880-3"
+    ],
+    "order_block": false,
+    "items": [
+      {
+        "name": "Nolimit Level Up+ Personal (ผูกบัตร)",
+        "qty": 2,
+        "price": 1000
+      }
+    ],
+    "total": 2000,
+    "manual_semantic_review": "required for any new live output; literals are insufficient"
+  },
+  "evidence": {
+    "response": "ทางร้านมอบสิทธิ VIP ครับ พี่สั่ง Nolimit Level Up+ Personal (ผูกบัตร) จำนวน 2 ตัว ราคา VIP ตัวละ 1,000 บาท รวม 2,000 บาทครับ วงเงินเริ่มต้น 1,600 บาทต่อบัญชี ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลย",
+    "request_id": "gen-1789399001-WHpY6eQsEXhs93JFIEnE",
+    "model": "openai/gpt-5.6-luna",
+    "settings": {
+      "model": "openai/gpt-5.6-luna",
+      "max_tokens": 8192,
+      "stream": false,
+      "reasoning": {
+        "effort": "medium"
+      },
+      "provider": {
+        "allow_fallbacks": false
+      }
+    },
+    "finish_reason": "stop"
+  }
+}

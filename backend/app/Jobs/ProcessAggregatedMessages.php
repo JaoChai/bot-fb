@@ -6,10 +6,19 @@ use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
 use App\Exceptions\OpenRouterException;
 use App\Models\Bot;
+use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\Chat\ConversationContextService;
+use App\Services\CommerceSafety\CartValidation;
+use App\Services\CommerceSafety\CheckoutAuthority;
+use App\Services\CommerceSafety\CheckoutOutcome;
+use App\Services\CommerceSafety\CheckoutRenderer;
+use App\Services\CommerceSafety\CustomerReplyGuard;
+use App\Services\CommerceSafety\FinancialOutputDetector;
+use App\Services\CommerceSafety\FinancialOutputGuard;
+use App\Services\CommerceSafety\SafetyScope;
 use App\Services\FlowPluginService;
 use App\Services\LINEService;
 use App\Services\MessageAggregationService;
@@ -123,6 +132,28 @@ class ProcessAggregatedMessages implements ShouldQueue
         }
 
         try {
+            $checkoutProcessing = $this->consumeCheckoutMessages(
+                $cachedMessageIds,
+                $lineService,
+                $bubblesService,
+            );
+            $checkoutResponses = $checkoutProcessing['responses'];
+            $remainingMessageIds = $checkoutProcessing['remaining_message_ids'];
+            foreach ($checkoutResponses as $checkoutResponse) {
+                $this->updateStats($messageCount, $checkoutResponse->id);
+            }
+
+            if ($remainingMessageIds === []) {
+                $aggregationService->clearAggregation($conversationId);
+                foreach ($checkoutResponses as $checkoutResponse) {
+                    $this->broadcastResponse($checkoutResponse);
+                }
+
+                return;
+            }
+
+            $mergedContent = $this->mergedContentFor($remainingMessageIds);
+
             // Auto-clear stale context before AI generates response
             app(ConversationContextService::class)->autoClearIfIdle($this->conversation);
 
@@ -133,7 +164,7 @@ class ProcessAggregatedMessages implements ShouldQueue
                 $aiService,
                 $lineService,
                 $bubblesService,
-                $cachedMessageIds
+                $remainingMessageIds
             );
 
             if ($botMessage) {
@@ -148,6 +179,9 @@ class ProcessAggregatedMessages implements ShouldQueue
 
         // Broadcast events after processing
         if (isset($botMessage) && $botMessage) {
+            foreach ($checkoutResponses ?? [] as $checkoutResponse) {
+                $this->broadcastResponse($checkoutResponse);
+            }
             $this->broadcastResponse($botMessage);
         }
     }
@@ -189,8 +223,28 @@ class ProcessAggregatedMessages implements ShouldQueue
             return null;
         }
 
-        // Get merged content from all messages
-        $mergedContent = $aggregationService->getMergedContent($conversationId);
+        $messagesById = Message::query()
+            ->whereIn('id', $cachedMessageIds)
+            ->get(['id', 'conversation_id', 'sender', 'content'])
+            ->keyBy('id');
+        $messages = collect($cachedMessageIds)
+            ->map(fn ($messageId) => $messagesById->get($messageId))
+            ->filter();
+        if (count($cachedMessageIds) !== count(array_unique($cachedMessageIds))
+            || $messages->count() !== count($cachedMessageIds)
+            || $messages->contains(fn (Message $message): bool => (int) $message->conversation_id !== (int) $conversationId
+                || $message->sender !== 'user')) {
+            Log::warning('[Aggregation] Early exit: message identity or scope mismatch', [
+                'conversation_id' => $conversationId,
+                'message_ids' => $cachedMessageIds,
+            ]);
+            $aggregationService->clearAggregation($conversationId);
+
+            return null;
+        }
+
+        // Build from the verified constituent rows, preserving their exact order.
+        $mergedContent = $messages->pluck('content')->filter()->implode("\n");
 
         if (empty($mergedContent)) {
             $reason = empty($cachedMessageIds) ? 'message_ids_empty' : 'messages_not_found_in_db';
@@ -369,6 +423,22 @@ class ProcessAggregatedMessages implements ShouldQueue
             return $botMessage;
         }
 
+        $result = app(FinancialOutputGuard::class)->generated($this->bot, $result);
+        $result = app(CustomerReplyGuard::class)->generated($this->bot, $result, $this->conversation);
+        $checkoutOutcome = $this->checkoutProposal($result);
+        if ($checkoutOutcome !== null) {
+            $result['content'] = $checkoutOutcome->customerText
+                ?? app(CheckoutRenderer::class)->render($checkoutOutcome->checkout, $checkoutOutcome->action);
+            $result['order_payload'] = $checkoutOutcome->action === 'payment' && $checkoutOutcome->checkout
+                ? $this->serverOrderPayload($checkoutOutcome->checkout)
+                : null;
+            $result['checkout_presentation'] = $checkoutOutcome->checkout ? [
+                'checkout_id' => $checkoutOutcome->checkout->getKey(),
+                'revision' => $checkoutOutcome->checkout->revision,
+                'action' => $checkoutOutcome->action,
+            ] : null;
+        }
+
         // Save bot response
         $botMessage = $this->conversation->messages()->create([
             'sender' => 'bot',
@@ -383,12 +453,29 @@ class ProcessAggregatedMessages implements ShouldQueue
                 'order_payload' => $result['order_payload'] ?? null,
                 // เก็บไว้ตรวจย้อนหลังว่า guard ไปแก้คำตอบอะไรของบอทบ้าง
                 'stock_guard' => $result['stock_guard'] ?? null,
+                'checkout_presentation' => $result['checkout_presentation'] ?? null,
             ]) ?: null,
         ]);
 
+        if ($checkoutOutcome?->checkout) {
+            app(CheckoutAuthority::class)->pending(
+                $checkoutOutcome->checkout,
+                $checkoutOutcome->checkout->revision,
+                $botMessage,
+                $checkoutOutcome->action,
+            );
+        }
+
         // Send response to channel
         if ($botMessage->content) {
-            $this->deliverToChannel($botMessage, $lineService, $bubblesService);
+            $delivered = $this->deliverToChannel($botMessage, $lineService, $bubblesService);
+            if ($delivered && $checkoutOutcome?->checkout) {
+                app(CheckoutAuthority::class)->presented(
+                    $checkoutOutcome->checkout,
+                    $checkoutOutcome->checkout->revision,
+                    $botMessage,
+                );
+            }
         }
 
         // Execute flow plugins (e.g., Telegram notifications)
@@ -407,6 +494,153 @@ class ProcessAggregatedMessages implements ShouldQueue
         return $botMessage;
     }
 
+    /** @return array{responses:list<Message>,remaining_message_ids:list<int>} */
+    private function consumeCheckoutMessages(
+        array $messageIds,
+        LINEService $lineService,
+        MultipleBubblesService $bubblesService,
+    ): array {
+        if (app(SafetyScope::class)->mode($this->bot) !== 'enforce') {
+            return ['responses' => [], 'remaining_message_ids' => array_values($messageIds)];
+        }
+
+        $messagesById = Message::query()
+            ->whereIn('id', $messageIds)
+            ->where('conversation_id', $this->conversation->getKey())
+            ->where('sender', 'user')
+            ->get()
+            ->keyBy('id');
+        $messages = collect($messageIds)
+            ->map(fn ($messageId) => $messagesById->get($messageId))
+            ->filter();
+        $authority = app(CheckoutAuthority::class);
+        $responses = [];
+        $remainingMessageIds = [];
+        foreach ($messages as $message) {
+            // Once ordinary input is reached, preserve the entire suffix for AI/B1.
+            if ($remainingMessageIds !== [] || ! $authority->isStateOnlyReply($message)) {
+                $remainingMessageIds[] = (int) $message->getKey();
+
+                continue;
+            }
+            $outcome = $authority->accept($this->bot, $this->conversation, $message);
+            if (! $this->outcomeConsumedMessage($outcome, $message)) {
+                $remainingMessageIds[] = (int) $message->getKey();
+
+                continue;
+            }
+
+            if (! $outcome->checkout) {
+                $remainingMessageIds[] = (int) $message->getKey();
+
+                continue;
+            }
+
+            $content = $outcome->customerText
+                ?? app(CheckoutRenderer::class)->render($outcome->checkout, $outcome->action);
+            $presentation = in_array($outcome->action, ['ack', 'confirm', 'support_delay', 'terms', 'payment'], true)
+                && $outcome->checkout->state !== 'cancelled' ? [
+                    'checkout_id' => $outcome->checkout->getKey(),
+                    'revision' => $outcome->checkout->revision,
+                    'action' => $outcome->action,
+                ] : null;
+            $botMessage = $this->conversation->messages()->create([
+                'sender' => 'bot',
+                'content' => $content,
+                'type' => 'text',
+                'metadata' => array_filter([
+                    'order_payload' => $outcome->action === 'payment'
+                        ? $this->serverOrderPayload($outcome->checkout)
+                        : null,
+                    'checkout_presentation' => $presentation,
+                ]) ?: null,
+            ]);
+            if ($presentation !== null) {
+                $authority->pending($outcome->checkout, $outcome->checkout->revision, $botMessage, $outcome->action);
+            }
+            $delivered = $this->deliverToChannel($botMessage, $lineService, $bubblesService);
+            if ($delivered && $presentation !== null) {
+                $authority->presented($outcome->checkout, $outcome->checkout->revision, $botMessage);
+            }
+            $responses[] = $botMessage;
+        }
+
+        return [
+            'responses' => $responses,
+            'remaining_message_ids' => $remainingMessageIds,
+        ];
+    }
+
+    /** @param list<int> $messageIds */
+    private function mergedContentFor(array $messageIds): string
+    {
+        $messagesById = Message::query()
+            ->whereIn('id', $messageIds)
+            ->where('conversation_id', $this->conversation->getKey())
+            ->where('sender', 'user')
+            ->get(['id', 'content'])
+            ->keyBy('id');
+
+        return collect($messageIds)
+            ->map(fn ($messageId) => $messagesById->get($messageId)?->content)
+            ->filter()
+            ->implode("\n");
+    }
+
+    private function checkoutProposal(array $result): ?CheckoutOutcome
+    {
+        if (! in_array(app(SafetyScope::class)->mode($this->bot), ['enforce', 'hold'], true)) {
+            return null;
+        }
+
+        if (app(FinancialOutputDetector::class)->detects($this->bot, (string) ($result['content'] ?? ''))) {
+            return new CheckoutOutcome('manual_hold', null, FinancialOutputGuard::DENIAL);
+        }
+        $cart = $result['commerce_safety_cart_validation'] ?? null;
+        if (! $cart instanceof CartValidation) {
+            return null;
+        }
+        if (! $cart->valid) {
+            return new CheckoutOutcome(
+                'manual_hold',
+                null,
+                'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง',
+            );
+        }
+
+        return app(CheckoutAuthority::class)->propose($this->bot, $this->conversation, $cart);
+    }
+
+    private function outcomeConsumedMessage(CheckoutOutcome $outcome, Message $message): bool
+    {
+        return $outcome->customerText !== null
+            || ($outcome->checkout !== null && in_array(
+                (int) $message->getKey(),
+                array_map('intval', array_values($outcome->checkout->accepted ?? [])),
+                true,
+            ));
+    }
+
+    private function serverOrderPayload(CheckoutSession $checkout): array
+    {
+        return [
+            'items' => array_map(fn (array $item): array => [
+                'name' => $item['name'].match ($item['method'] ?? 'none') {
+                    'card' => ' (ผูกบัตร)',
+                    'topup' => ' (เติมเงิน)',
+                    default => '',
+                },
+                'qty' => $item['qty'],
+                'price' => $item['price_minor'] % 100 === 0
+                    ? intdiv($item['price_minor'], 100)
+                    : $item['price_minor'] / 100,
+            ], $checkout->items),
+            'total' => $checkout->total_minor % 100 === 0
+                ? intdiv($checkout->total_minor, 100)
+                : $checkout->total_minor / 100,
+        ];
+    }
+
     /**
      * Deliver bot message to the appropriate channel (Flex, Bubbles, or plain text).
      */
@@ -414,22 +648,43 @@ class ProcessAggregatedMessages implements ShouldQueue
         Message $botMessage,
         LINEService $lineService,
         MultipleBubblesService $bubblesService
-    ): void {
+    ): bool {
         $paymentFlex = app(PaymentFlexService::class);
-        $transformed = $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation);
+        $guard = app(FinancialOutputGuard::class);
+        $guard->message($this->bot, $this->conversation, $botMessage);
+        app(CustomerReplyGuard::class)->message($this->bot, $this->conversation, $botMessage);
+        $transformed = $guard->enforced($this->bot)
+            ? $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation, $botMessage)
+            : $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation);
+
+        $plainText = $guard->enforced($this->bot) ? $transformed : $botMessage->content;
 
         if (is_array($transformed)) {
             // Flex detected on full text → send as single message
             $retryKey = $lineService->generateRetryKey();
-            $lineService->push($this->bot, $this->externalUserId, [$transformed], $retryKey);
+
+            return $lineService->push($this->bot, $this->externalUserId, [$transformed], $retryKey) === true;
         } elseif ($bubblesService->isEnabled($this->bot)) {
             // No Flex match → normal bubble flow
-            $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
-            $bubblesService->sendBubbles($this->bot, $this->externalUserId, null, $bubbles, $this->conversation);
+            $bubbles = $bubblesService->parseIntoBubbles($plainText, $this->bot);
+
+            return $bubblesService->sendBubbles(
+                $this->bot,
+                $this->externalUserId,
+                null,
+                $bubbles,
+                $this->conversation,
+            ) === true;
         } else {
             // No Flex, no bubbles → send as plain text
             $retryKey = $lineService->generateRetryKey();
-            $lineService->push($this->bot, $this->externalUserId, [$botMessage->content], $retryKey);
+
+            return $lineService->push(
+                $this->bot,
+                $this->externalUserId,
+                [$plainText],
+                $retryKey,
+            ) === true;
         }
     }
 
