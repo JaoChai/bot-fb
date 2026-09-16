@@ -38,7 +38,7 @@ class PaymentEffectDispatcher
             }
             // Receipt authority is the persisted proof itself. Fulfillment still
             // requires an enforce checkout settled into its exact Order.
-            $settled = config("commerce_safety.bots.{$candidate->bot_id}.mode") === 'enforce'
+            $settled = app(SafetyScope::class)->mode($candidate->bot) === 'enforce'
                 && $this->authority($candidate->id) !== null;
             $plugin = $settled ? $this->configuredPlugin($candidate) : null;
             $kinds = $settled ? ['line_receipt', 'telegram_payment', 'reserve_stock'] : ['line_receipt'];
