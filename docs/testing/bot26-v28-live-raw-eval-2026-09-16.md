@@ -276,3 +276,9 @@ Neither is related to this fix, and neither is touched here.
 ## Gate status
 
 Three REJECTs remain open and unfixed: T11, T26 and T07. The raw gate still **FAILS**.
+
+> **Update 2026-09-18.** T26 is fixed and measured (6/29 defective → 0/30, Fisher exact
+> p = 0.0105); see [T26 off-topic refusal](bot26-v28-t26-offtopic-2026-09-18.md), which also
+> records a second defect found in those runs: `[[OFFTOPIC]]` placed mid-message reached the
+> customer, now stripped in `OffTopicSignalExtractor` wherever it appears. T07 and T11 remain
+> open, so the raw gate still fails.

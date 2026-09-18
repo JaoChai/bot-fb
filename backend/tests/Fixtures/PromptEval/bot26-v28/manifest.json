@@ -4,9 +4,9 @@
   "base_commit": "4694a741e3d0453416f430ce77dd9a8fc7f345ed",
   "prompt": {
     "path": "resources/prompts/bot26/v28.txt",
-    "chars": 24198,
-    "bytes": 61491,
-    "sha256": "bf3df86197ac85207a616d0796838b403b2b1d20d688047b9b3387ff45c00717"
+    "chars": 24538,
+    "bytes": 62481,
+    "sha256": "48f045b4e1244df977adb4cc48bb0c0513fc0171dc4165f39db4cf41d2f939a9"
   },
   "fixture_counts": {
     "total": 41,
@@ -169,6 +169,7 @@
         "T09": "link glued to the following word, violating line 7"
       },
       "resolved_blocking_failures": {
+   "T26": "the model offered to write code and asked what to write instead of declining (5 of 29 live runs), and placed [[OFFTOPIC]] mid-message so the raw tag reached the customer (1 of 29). The prompt now states the shop has no code/translation/general-work service even when the customer frames it as product-related, bars conditional promises and follow-up questions about the job, and requires the tag to be last. 0 of 30 runs defective afterwards, Fisher exact p = 0.0105. OffTopicSignalExtractor now strips the tag wherever it appears. Evidence: docs/testing/bot26-v28-t26-offtopic-2026-09-18.md",
         "T25": "@adsvance is published by prompt line 151 and by the live flow-24 prompt, so the allowlist was wrong: it is now in config/commerce_safety.php reply_contacts.handles, and CustomerReplyPolicyTest::test_every_contact_published_by_the_v28_prompt_survives_the_guard fails if any contact the prompt publishes is missing from it"
       }
     },

@@ -40,9 +40,9 @@ recomputes prompt and fixture character counts, byte counts and SHA-256 hashes.
 | Artifact | Measurement |
 | --- | --- |
 | Prompt | `backend/resources/prompts/bot26/v28.txt` |
-| Unicode characters | 24,198 |
-| UTF-8 bytes | 61,491 |
-| SHA-256 | `bf3df86197ac85207a616d0796838b403b2b1d20d688047b9b3387ff45c00717` |
+| Unicode characters | 24,538 |
+| UTF-8 bytes | 62,481 |
+| SHA-256 | `48f045b4e1244df977adb4cc48bb0c0513fc0171dc4165f39db4cf41d2f939a9` |
 | Fixtures | 41: T01–T33 and X01–X08 |
 | Text replays | 38 |
 | Image handler replays | 3: T16, T17, T30 |

@@ -36,7 +36,7 @@ Run from the approved release's `backend/`, under confirmed hold and containment
 php artisan bot:deploy-prompt --status='<deployment-uuid>'
 
 php artisan bot:deploy-prompt --rollback='<deployment-uuid>' \
-  --expected-current-sha256=bf3df86197ac85207a616d0796838b403b2b1d20d688047b9b3387ff45c00717 \
+  --expected-current-sha256=48f045b4e1244df977adb4cc48bb0c0513fc0171dc4165f39db4cf41d2f939a9 \
   --actor='<approved-operator-id>' --force
 
 php artisan bot:deploy-prompt --status='<deployment-uuid>'
