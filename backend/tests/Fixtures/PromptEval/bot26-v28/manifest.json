@@ -4,9 +4,9 @@
   "base_commit": "4694a741e3d0453416f430ce77dd9a8fc7f345ed",
   "prompt": {
     "path": "resources/prompts/bot26/v28.txt",
-    "chars": 24538,
-    "bytes": 62481,
-    "sha256": "48f045b4e1244df977adb4cc48bb0c0513fc0171dc4165f39db4cf41d2f939a9"
+    "chars": 24916,
+    "bytes": 63473,
+    "sha256": "b88b8619faa911e2e76f92a08389c85dd695a02bc213bc272a93356bbdbd3473"
   },
   "fixture_counts": {
     "total": 41,
@@ -169,6 +169,8 @@
         "T09": "link glued to the following word, violating line 7"
       },
       "resolved_blocking_failures": {
+   "T07": "the mandatory initial-Limit disclosure was missing from the CONFIRM summary in 6 of 75 live runs because the rule lived only in the BROWSE section, far from the summary line the model writes from; line 81 now carries it for carts containing Nolimit. 0 of 75 afterwards, Fisher exact p = 0.0282. Evidence: docs/testing/bot26-v28-t07-t11-2026-09-18.md",
+   "T11": "the model invented a second reading of \u0022BM 5 \u0e15\u0e31\u0e27\u0e0b\u0022 and asked about it instead of the genuinely missing payment method, in 9 of 75 live runs; line 76 now states a number plus a counter is always the ordered quantity. 0 of 75 afterwards, Fisher exact p = 0.0030. Evidence: docs/testing/bot26-v28-t07-t11-2026-09-18.md",
    "T26": "the model offered to write code and asked what to write instead of declining (5 of 29 live runs), and placed [[OFFTOPIC]] mid-message so the raw tag reached the customer (1 of 29). The prompt now states the shop has no code/translation/general-work service even when the customer frames it as product-related, bars conditional promises and follow-up questions about the job, and requires the tag to be last. 0 of 30 runs defective afterwards, Fisher exact p = 0.0105. OffTopicSignalExtractor now strips the tag wherever it appears. Evidence: docs/testing/bot26-v28-t26-offtopic-2026-09-18.md",
         "T25": "@adsvance is published by prompt line 151 and by the live flow-24 prompt, so the allowlist was wrong: it is now in config/commerce_safety.php reply_contacts.handles, and CustomerReplyPolicyTest::test_every_contact_published_by_the_v28_prompt_survives_the_guard fails if any contact the prompt publishes is missing from it"
       }
