@@ -16,7 +16,7 @@ class CustomerReplyPolicyTest extends TestCase
     public static function rejectedContacts(): array
     {
         return array_map(fn ($text) => [$text], [
-            'LINE @notourshop99', 'ไทย@adsvanceครับ', '@743ddeqy_fake', '@743ddeqy.th', '@743ddeqyไทย',
+            'LINE @notourshop99', 'ไทย@adsvanceครับ', '@743ddeqy_fake', '@743ddeqy.th',
             'https://lin.ee.evil.test/h5wYpIf', 'https://sub.lin.ee/h5wYpIf',
             'https://lin.ee/h5wYpIf?next=https://evil.test', 'https://lin.ee/h5wYpIf?',
             'https://lin.ee/h5wYpIf#x', 'https://lin.ee/h5wYpIf#',
@@ -26,7 +26,7 @@ class CustomerReplyPolicyTest extends TestCase
             'https://lin.ee/%685wYpIf', 'https://lin.ee/h5wYpIf%3Ffoo',
             'https://lin.ee/h5wYpIf\\evil', "https://lin.ee/h5wYpIf\u{200B}evil",
             "https://lin.ee/h5wYpIf\t.evil", 'https://lіn.ee/h5wYpIf',
-            'lin.ee/h5wYpIf', 'www.example.com', '192.0.2.1/contact', '[2001:db8::1]/contact', '//lin.ee/h5wYpIf',
+            'https://lin.ee/h5wYpIfไป.evil.com', 'https://evil.test/helpครับ', 'lin.ee/h5wYpIf', 'www.example.com', '192.0.2.1/contact', '[2001:db8::1]/contact', '//lin.ee/h5wYpIf',
             'help@example.com', 'help@743ddeqy', 'mailto:help@example.com',
             'LINE ID: adsvance', 'Line ID = 743ddeqy', 'ไลน์ไอดี: adsvance',
             '[ติดต่อ](https://evil.test/help)', 'https://lin.ee/h5wYpIf และ @notourshop99',
@@ -109,6 +109,33 @@ class CustomerReplyPolicyTest extends TestCase
         ] as $text) {
             $this->assertSame(['content' => $text, 'corrected' => false, 'reasons' => []], $policy->apply($bot, $text), $text);
         }
+    }
+
+    /**
+     * Thai does not space between words, so the model routinely closes a sentence with ครับ
+     * against a link. A URL cannot contain Thai characters, so the word is not part of the
+     * destination — and treating it as part of one threw away an otherwise correct reply
+     * carrying the shop's real Support link (observed live on T09, T18 and T25).
+     */
+    #[DataProvider('thaiGluedContacts')]
+    public function test_a_thai_word_glued_to_an_allowed_contact_is_not_a_different_destination(string $text): void
+    {
+        config(['commerce_safety.bots.26.mode' => 'enforce']);
+        $bot = (new Bot)->forceFill(['id' => 26]);
+        $this->assertSame($text, app(CustomerReplyPolicy::class)->apply($bot, $text)['content']);
+    }
+
+    public static function thaiGluedContacts(): array
+    {
+        return array_map(fn ($text) => [$text], [
+            'https://lin.ee/h5wYpIfครับ',
+            'ติดต่อได้ที่ https://lin.ee/h5wYpIfครับ',
+            'ติดต่อ https://t.me/supermanth2022ได้เลยครับ',
+            '@743ddeqyครับ',
+            // Same rule, and the reason '@743ddeqy_fake' and '@743ddeqy.th' above stay rejected:
+            // those are spelled in characters a LINE ID may contain, so they are other handles.
+            '@743ddeqyไทย',
+        ]);
     }
 
     public function test_every_contact_published_by_the_v28_prompt_survives_the_guard(): void

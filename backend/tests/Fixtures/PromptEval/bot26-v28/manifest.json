@@ -44,9 +44,7 @@
           "T33",
           "X02"
         ],
-        "contact_fallback": [
-          "T29"
-        ],
+        "contact_fallback": [],
         "stock_replacement": [
           "X08"
         ]
@@ -108,9 +106,6 @@
           "missing: พร้อมส่ง",
           "missing: ก่อน"
         ],
-        "T29": [
-          "missing: ยังยืนยันไม่ได้"
-        ],
         "T33": [
           "missing: ไม่สามารถยืนยัน"
         ],
@@ -169,6 +164,7 @@
         "T09": "link glued to the following word, violating line 7"
       },
       "resolved_blocking_failures": {
+   "T09": "the model closes a sentence with \u0e04\u0e23\u0e31\u0e1a against a link and CustomerReplyPolicy read the Thai word as part of the destination, replacing the whole reply over the shop's own Support URL. A URL is ASCII, so a non-ASCII character now ends it (written \\P{ASCII}, not a codepoint range: under /i a range over the non-ASCII planes case-folds onto ASCII s and k). The raw gate no longer re-implements the contact scan either; it asks CustomerReplyPolicy for the verdict. Evidence: docs/testing/bot26-v28-glued-link-2026-09-18.md",
    "T07": "the mandatory initial-Limit disclosure was missing from the CONFIRM summary in 6 of 75 live runs because the rule lived only in the BROWSE section, far from the summary line the model writes from; line 81 now carries it for carts containing Nolimit. 0 of 75 afterwards, Fisher exact p = 0.0282. Evidence: docs/testing/bot26-v28-t07-t11-2026-09-18.md",
    "T11": "the model invented a second reading of \u0022BM 5 \u0e15\u0e31\u0e27\u0e0b\u0022 and asked about it instead of the genuinely missing payment method, in 9 of 75 live runs; line 76 now states a number plus a counter is always the ordered quantity. 0 of 75 afterwards, Fisher exact p = 0.0030. Evidence: docs/testing/bot26-v28-t07-t11-2026-09-18.md",
    "T26": "the model offered to write code and asked what to write instead of declining (5 of 29 live runs), and placed [[OFFTOPIC]] mid-message so the raw tag reached the customer (1 of 29). The prompt now states the shop has no code/translation/general-work service even when the customer frames it as product-related, bars conditional promises and follow-up questions about the job, and requires the tag to be last. 0 of 30 runs defective afterwards, Fisher exact p = 0.0105. OffTopicSignalExtractor now strips the tag wherever it appears. Evidence: docs/testing/bot26-v28-t26-offtopic-2026-09-18.md",

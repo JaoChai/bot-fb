@@ -76,7 +76,14 @@ final class CustomerReplyPolicy
         $contacts = $this->allowedContacts($bot);
         $allowedUrls = array_filter(array_map($this->normalizeUrl(...), $contacts['urls']));
         $remaining = $content;
-        preg_match_all('~[a-z][a-z0-9+.-]*://[^\s<>\[\]"`]+~iu', $content, $urls, PREG_OFFSET_CAPTURE);
+        // A URL is ASCII, so a non-ASCII character ends it and nothing else about this scan
+        // changes. `\P{ASCII}`, not a codepoint range: under the /i flag a range spanning the
+        // non-ASCII planes case-folds back onto ASCII letters (U+017F → s, U+212A → k), which
+        // would cut every URL short at its first `s`. Thai has no spaces between words and the model routinely writes `<link>ครับ`;
+        // reading that word as part of the destination rejected the shop's own Support link and
+        // threw away an otherwise correct reply. Whatever the URL stops short of stays in
+        // $remaining, where the schemeless-domain rule below still catches `<link>ไป.evil.test`.
+        preg_match_all('~[a-z][a-z0-9+.-]*://[^\s<>\[\]"`\P{ASCII}]+~iu', $content, $urls, PREG_OFFSET_CAPTURE);
         foreach ($urls[0] as [$url, $offset]) {
             // Only a Markdown link's closing parenthesis is syntax. Parentheses
             // and apostrophes in bare URLs (and nested Markdown paths) are data.
@@ -105,11 +112,19 @@ final class CustomerReplyPolicy
         if (preg_match('/(?:[0-9]{1,3}\.){3}[0-9]{1,3}|\[[0-9a-f]*:[0-9a-f:]+\]/i', $remaining) === 1) {
             return 'contact_schemeless';
         }
-        // Includes schemeless domains, protocol-relative URLs and Unicode lookalikes.
-        if (preg_match('~(?:[\p{L}\p{N}_-]+\.)+[\p{L}][\p{L}\p{N}-]*|://|\b(?:https?|mailto):~iu', $remaining) === 1) {
+        // Schemeless domains and protocol-relative URLs. Labels are ASCII because a domain is:
+        // matching Unicode letters here read every Thai abbreviation as a domain — "1 พ.ย. 2026"
+        // and "15 ม.ค." replaced the entire reply with the fallback, and this shop quotes dates
+        // constantly. A Unicode lookalike carrying a scheme is still caught above, by exact
+        // host comparison; a schemeless Thai-script IDN is the one destination this no longer
+        // sees, and the prompt's contact rules plus the allowlist above remain in front of it.
+        if (preg_match('~(?:[a-z0-9_-]+\.)+[a-z][a-z0-9-]+|://|\b(?:https?|mailto):~iu', $remaining) === 1) {
             return 'contact_schemeless';
         }
-        preg_match_all('/@[^\s<>\[\]()"\'`,!]+/u', $remaining, $handles);
+        // Same boundary rule for handles: a LINE ID is ASCII, so `@743ddeqyครับ` is the approved
+        // handle followed by a Thai word, while `@743ddeqy_fake` and `@743ddeqy.th` are spelled
+        // entirely in ASCII and remain different destinations.
+        preg_match_all('/@[^\s<>\[\]()"\'`,!\P{ASCII}]+/u', $remaining, $handles);
         foreach ($handles[0] as $handle) {
             if (! in_array($handle, $contacts['handles'], true)) {
                 return 'contact_handle';
