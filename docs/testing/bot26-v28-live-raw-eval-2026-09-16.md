@@ -250,12 +250,25 @@ Artifact re-measured: 24,198 characters, 61,491 bytes, SHA-256
 
 Neither is related to this fix, and neither is touched here.
 
-- **T25 — `@adsvance` is rejected by the backend.** Prompt line 151 publishes
-  `LINE สอบถามทั่วไป: @adsvance`, but that handle is not in the contact allowlist
-  `CustomerReplyPolicy::allowedContacts()` reads, so a reply that follows the prompt is failed as an
+- **T25 — `@adsvance` is rejected by the backend. Fixed (2026-09-18).** Prompt line 151 publishes
+  `LINE สอบถามทั่วไป: @adsvance`, but that handle was not in the contact allowlist
+  `CustomerReplyPolicy::allowedContacts()` reads, so a reply that follows the prompt was failed as an
   unapproved handle. This is the same class of prompt↔backend mismatch that `31270bb4` addressed for
-  the consent vocabulary. It needs a decision: add the handle to the contacts config, or drop it
-  from the prompt.
+  the consent vocabulary. The decision was settled by evidence rather than preference: the **live
+  flow-24 prompt serving customers today publishes the same handle** (line 358,
+  `LINE: @adsvance (สอบถามทั่วไป) | LINE: @743ddeqy (Technical Support)`, read over `railway ssh`),
+  so `@adsvance` is a real shop channel and the allowlist was the side that was wrong. It is now in
+  `config/commerce_safety.php` `reply_contacts.handles`. `v28.txt` was not touched, so the artifact
+  measurements (24,198 characters, SHA-256 `bf3df861…0717`) are unchanged.
+
+  Two follow-on changes came with it. The test corpus used `@adsvance` — a **real** shop handle — as
+  its example of an unapproved contact in 11 files; that is what let the allowlist and the prompt
+  drift apart without any test noticing. The canary is now `@notourshop99`, which cannot become real.
+  And `CustomerReplyPolicyTest::test_every_contact_published_by_the_v28_prompt_survives_the_guard`
+  now extracts every URL and handle from `v28.txt` and asserts the guard accepts each one, so the
+  next time the prompt publishes a channel the config does not know about, CI fails with the file to
+  edit named in the message — this whole class of mismatch is now caught at commit time instead of
+  during a six-run live evaluation.
 - **T09 — link glued to the following word.** The model emitted
   `https://lin.ee/h5wYpIfครับ`, which line 7 forbids (`ลิงก์ต้องเว้นวรรคจากข้อความหรืออยู่คนละบรรทัด`)
   and which stops the link rendering as a link.
@@ -263,3 +276,9 @@ Neither is related to this fix, and neither is touched here.
 ## Gate status
 
 Three REJECTs remain open and unfixed: T11, T26 and T07. The raw gate still **FAILS**.
+
+> **Update 2026-09-18.** T26 is fixed and measured (6/29 defective → 0/30, Fisher exact
+> p = 0.0105); see [T26 off-topic refusal](bot26-v28-t26-offtopic-2026-09-18.md), which also
+> records a second defect found in those runs: `[[OFFTOPIC]]` placed mid-message reached the
+> customer, now stripped in `OffTopicSignalExtractor` wherever it appears. T07 and T11 remain
+> open, so the raw gate still fails.

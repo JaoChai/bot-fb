@@ -10,6 +10,7 @@ use App\Services\CommerceSafety\HoldOverride;
 use App\Services\CommerceSafety\SafetyScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\UsesAnUnreadableCacheStore;
 use Tests\TestCase;
@@ -112,6 +113,62 @@ class SafetyScopeHoldOverrideTest extends TestCase
 
         $this->useUnreadableCacheStore();
 
+        $this->assertSame('hold', app(SafetyScope::class)->mode($bot));
+    }
+
+    /**
+     * ...but only where money is at stake. A bot configured `off` or `shadow` holds no
+     * authoritative commerce state, so an unrelated cache outage must not take it out of
+     * service: before this, a Redis blip escalated bot 26 to `hold` while commerce safety
+     * was not even switched on, and `hold` suppresses the payment plugin and blocks orders.
+     */
+    #[Test]
+    public function test_an_unreadable_cache_does_not_escalate_a_bot_that_is_not_enforcing(): void
+    {
+        $off = $this->trustedBot('off');
+        $shadow = $this->trustedBot('shadow');
+
+        $this->useUnreadableCacheStore();
+
+        $this->assertSame('off', app(SafetyScope::class)->mode($off));
+        $this->assertSame('shadow', app(SafetyScope::class)->mode($shadow));
+    }
+
+    /**
+     * An operator-engaged hold still reaches every mode, including `shadow`: the rollout
+     * sequence engages it as the containment step while the configured mode is still shadow.
+     */
+    #[Test]
+    public function test_an_engaged_override_still_holds_a_shadow_bot(): void
+    {
+        $bot = $this->trustedBot('shadow');
+
+        app(HoldOverride::class)->engage($bot->id);
+
+        $this->assertSame('hold', app(SafetyScope::class)->mode($bot));
+    }
+
+    /**
+     * The payment-plugin trust check exists to stop enforcement trusting a plugin that is
+     * not the bot's own. Shadow enforces nothing, so an untrusted id must not silently turn
+     * an observation phase into `hold` — and must not cost a flow_plugins query per call.
+     */
+    #[Test]
+    public function test_shadow_neither_escalates_nor_queries_plugins_when_the_plugin_id_is_untrusted(): void
+    {
+        $bot = $this->trustedBot('shadow');
+        config(["commerce_safety.bots.{$bot->id}.payment_plugin_ids" => [999999]]);
+        $queries = 0;
+        DB::listen(function ($query) use (&$queries) {
+            if (str_contains($query->sql, 'flow_plugins')) {
+                $queries++;
+            }
+        });
+
+        $this->assertSame('shadow', app(SafetyScope::class)->mode($bot));
+        $this->assertSame(0, $queries);
+
+        config(["commerce_safety.bots.{$bot->id}.mode" => 'enforce']);
         $this->assertSame('hold', app(SafetyScope::class)->mode($bot));
     }
 }

@@ -4,6 +4,7 @@ namespace App\Services\CommerceSafety;
 
 use App\Models\Bot;
 use App\Models\CommerceSafetyShadowObservation;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Records redacted, aggregate-only observations of commerce-safety decisions
@@ -23,12 +24,26 @@ final class ShadowObservationRecorder
             return;
         }
 
-        CommerceSafetyShadowObservation::forceCreate([
-            'bot_id' => $bot->getKey(),
-            'category' => $category,
-            'outcome' => $outcome,
-            'reason' => $reason,
-        ]);
+        // Observation-only by construction: shadow mode exists to watch without
+        // changing anything, so a failed write here must never reach the caller
+        // and take the customer's reply down with it. Missed rows undercount the
+        // report; a thrown exception would break the reply path in AIService.
+        try {
+            CommerceSafetyShadowObservation::forceCreate([
+                'bot_id' => $bot->getKey(),
+                'category' => $category,
+                'outcome' => $outcome,
+                'reason' => $reason,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('commerce_safety.shadow_observation.write_failed', [
+                'bot_id' => $bot->getKey(),
+                'category' => $category,
+                'outcome' => $outcome,
+                'reason' => $reason,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

@@ -25,12 +25,32 @@ use Illuminate\Support\Facades\Log;
  * ambiguity must not be read as "not engaged" — active() reports `true` and
  * logs the reason, so SafetyScope::mode() resolves to `hold` rather than
  * silently falling through to the (possibly boot-frozen) config mode.
+ *
+ * SafetyScope applies that fail-closed reading only where money is at stake
+ * (configured mode `enforce`/`hold`); see SafetyScope::holdEngaged(). It reads
+ * state() rather than active() so it can tell "engaged" from "unknown": a bot
+ * configured `off` or `shadow` has no authoritative commerce state to protect
+ * and must not lose availability over an unrelated cache outage.
  */
 final class HoldOverride
 {
     private function key(int $botId): string
     {
         return "commerce_safety:hold_override:{$botId}";
+    }
+
+    /**
+     * Distinguishes "an operator engaged hold" from "we cannot tell": callers that
+     * must not fail closed in every mode need that difference. `engaged` is the
+     * fail-closed reading (`true`) when the store is unreadable.
+     *
+     * @return array{readable: bool, engaged: bool}
+     */
+    public function state(int $botId): array
+    {
+        $read = $this->read($botId);
+
+        return ['readable' => $read['readable'], 'engaged' => $read['value']];
     }
 
     /** @return array{readable: bool, value: bool} */

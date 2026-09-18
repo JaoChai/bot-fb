@@ -12,7 +12,7 @@ return [
                     'https://mhhacoursecontent.my.canva.site/ads-vance',
                     'https://lin.ee/sTD5TQL',
                 ],
-                'handles' => ['@743ddeqy'],
+                'handles' => ['@743ddeqy', '@adsvance'],
             ],
             'allow_truthful_ai_identity' => true,
         ],

@@ -14,6 +14,8 @@ use App\Services\RAGService;
 use App\Services\StockGuardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -83,6 +85,25 @@ class ShadowObservationRecordingTest extends TestCase
         $this->assertDatabaseHas('commerce_safety_shadow_observations', [
             'bot_id' => $bot->id, 'category' => 'cart_proposal', 'outcome' => 'invalid', 'reason' => 'UNKNOWN_OR_AMBIGUOUS_PRODUCT',
         ]);
+    }
+
+    #[Test]
+    public function test_a_failed_observation_write_never_breaks_the_customer_reply(): void
+    {
+        // Shadow mode must be observation-only: if the observations table is unreachable
+        // (migration not run, connection blip), the customer still gets their answer.
+        Http::preventStrayRequests();
+        $bot = $this->trustedBot('shadow');
+        ProductStock::create(['name' => 'Page', 'slug' => 'page', 'stock_code' => 'PAGE', 'aliases' => [], 'delivery_method' => 'support_link', 'price' => 199, 'is_active' => true]);
+        Schema::drop('commerce_safety_shadow_observations');
+        Log::spy();
+
+        $result = $this->generate($bot, 'สรุปรายการ [[ORDER]]{"items":[{"name":"Page","qty":1,"price":199}],"total":199}[[/ORDER]]');
+
+        $this->assertStringContainsString('สรุปรายการ', $result['content']);
+        Log::shouldHaveReceived('warning')->with('commerce_safety.shadow_observation.write_failed', \Mockery::on(
+            fn ($context) => $context['bot_id'] === $bot->id && $context['category'] === 'cart_proposal'
+        ))->atLeast()->once();
     }
 
     #[Test]

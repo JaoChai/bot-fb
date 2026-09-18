@@ -652,7 +652,7 @@ class LineWebhookResponseServiceTest extends TestCase
         $cases = [];
         foreach (['sticker', 'vision', 'cached-vision'] as $path) {
             foreach (['off', 'shadow', 'enforce', 'hold'] as $mode) {
-                foreach (['@adsvance', 'ผมเป็น AI', "```php\n", '# หัวข้อ', 'ไม่ต้องชำระเงิน @adsvance'] as $text) {
+                foreach (['@notourshop99', 'ผมเป็น AI', "```php\n", '# หัวข้อ', 'ไม่ต้องชำระเงิน @notourshop99'] as $text) {
                     $cases[] = [$path, $mode, $text];
                 }
             }
@@ -695,9 +695,9 @@ class LineWebhookResponseServiceTest extends TestCase
         $expected = $text;
         if (in_array($mode, ['enforce', 'hold'])) {
             $expected = match ($text) {
-                '@adsvance' => 'ขอเช็กข้อมูลล่าสุดให้ในแชทนี้ครับ',
+                '@notourshop99' => 'ขอเช็กข้อมูลล่าสุดให้ในแชทนี้ครับ',
                 "```php\n", '# หัวข้อ' => OffTopicCircuitBreaker::CANNED_MESSAGE,
-                'ไม่ต้องชำระเงิน @adsvance' => FinancialOutputGuard::DENIAL,
+                'ไม่ต้องชำระเงิน @notourshop99' => FinancialOutputGuard::DENIAL,
                 default => $text,
             };
         }
