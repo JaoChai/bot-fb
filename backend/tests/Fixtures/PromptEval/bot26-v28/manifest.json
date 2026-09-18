@@ -166,8 +166,10 @@
       "evidence": "docs/testing/bot26-v28-live-raw-eval-2026-09-16.md",
       "fake_transport_and_gate_tests": "pass",
       "open_blocking_failures": {
-        "T25": "@adsvance published in prompt line 151 but absent from the CustomerReplyPolicy contact allowlist",
         "T09": "link glued to the following word, violating line 7"
+      },
+      "resolved_blocking_failures": {
+        "T25": "@adsvance is published by prompt line 151 and by the live flow-24 prompt, so the allowlist was wrong: it is now in config/commerce_safety.php reply_contacts.handles, and CustomerReplyPolicyTest::test_every_contact_published_by_the_v28_prompt_survives_the_guard fails if any contact the prompt publishes is missing from it"
       }
     },
     "image_classification": {

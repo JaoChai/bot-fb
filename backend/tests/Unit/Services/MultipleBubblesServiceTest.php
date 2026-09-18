@@ -268,7 +268,7 @@ class MultipleBubblesServiceTest extends TestCase
         return [
             ['https://lin.ee/h5wYpIf|||ขอบคุณครับ', ['https://lin.ee/h5wYpIf', 'ขอบคุณครับ']],
             ['@743ddeqy|||ขอบคุณครับ', ['@743ddeqy', 'ขอบคุณครับ']],
-            ['https://lin.ee/h5wYpIf|||@adsvance', [CustomerReplyPolicy::FALLBACK]],
+            ['https://lin.ee/h5wYpIf|||@notourshop99', [CustomerReplyPolicy::FALLBACK]],
             ['@743ddeqy|||https://evil.test/contact', [CustomerReplyPolicy::FALLBACK]],
         ];
     }

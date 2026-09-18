@@ -739,7 +739,7 @@ class Bot26PromptEvaluationTest extends TestCase
     public function test_application_t09_known_contact_defect_is_corrected(): void
     {
         $this->persistApplication(self::fixtures()['T09']);
-        $this->fakeTransport('เช็กสต็อกที่ LINE @adsvance ครับ');
+        $this->fakeTransport('เช็กสต็อกที่ LINE @notourshop99 ครับ');
         $ctx = $this->handler('Personal 2 ตัวพร้อมส่งไหม');
         $this->assertSame(CustomerReplyPolicy::FALLBACK, $ctx->metadata['bot_message']->fresh()->content);
         $this->assertSafeOutput($ctx);
