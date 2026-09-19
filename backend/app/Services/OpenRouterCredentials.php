@@ -29,7 +29,7 @@ final class OpenRouterCredentials
         $key = $this->rawKey();
 
         if ($key === '') {
-            throw new OpenRouterException('OPENROUTER_API_KEY is not set', 500);
+            throw new OpenRouterException('OPENROUTER_API_KEY is not set', 401);
         }
 
         return $key;
@@ -37,6 +37,6 @@ final class OpenRouterCredentials
 
     private function rawKey(): string
     {
-        return config_string('services.openrouter.api_key');
+        return trim(config_string('services.openrouter.api_key'));
     }
 }

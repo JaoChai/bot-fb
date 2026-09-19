@@ -59,4 +59,28 @@ class OpenRouterCredentialsTest extends TestCase
 
         app(EmbeddingService::class)->generate('hello');
     }
+
+    public function test_surrounding_whitespace_is_not_part_of_the_key(): void
+    {
+        // A trailing newline pasted into the hosting dashboard would otherwise
+        // produce an invalid Authorization header on every request.
+        config(['services.openrouter.api_key' => "  synthetic-key\n"]);
+
+        $this->assertSame('synthetic-key', (new OpenRouterCredentials)->key());
+
+        config(['services.openrouter.api_key' => " \n"]);
+        $this->assertFalse((new OpenRouterCredentials)->isConfigured());
+    }
+
+    public function test_a_missing_key_is_an_auth_error_so_customers_are_not_told_to_retry(): void
+    {
+        config(['services.openrouter.api_key' => null]);
+
+        try {
+            (new OpenRouterCredentials)->key();
+            $this->fail('expected OpenRouterException');
+        } catch (OpenRouterException $e) {
+            $this->assertTrue($e->isAuthError());
+        }
+    }
 }
