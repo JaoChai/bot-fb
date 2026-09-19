@@ -377,7 +377,7 @@ class Bot26PromptEvaluationTest extends TestCase
         $search = $this->mock(HybridSearchService::class);
         $search->shouldReceive('isEnabled')->andReturn(false);
         $search->shouldReceive('searchMultiple')->once()
-            ->withArgs(fn ($configs, $query, $limit, $apiKey) => array_column($configs, 'id') === [$kb->id] && $query === $case['message'])
+            ->withArgs(fn ($configs, $query, $limit) => array_column($configs, 'id') === [$kb->id] && $query === $case['message'])
             ->andReturnUsing(fn () => collect([[
                 'content' => $chunk->fresh()->content, 'document_name' => $document->original_filename,
                 'knowledge_base_id' => $kb->id, 'similarity' => 1.0,

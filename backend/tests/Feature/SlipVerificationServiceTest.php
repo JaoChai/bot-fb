@@ -368,7 +368,7 @@ class SlipVerificationServiceTest extends TestCase
 
         // prod จริง (bot 26) ตั้ง utility_model + openrouter key ไว้ เลยเข้า LLM fallback ได้
         $this->bot->update(['utility_model' => 'openai/gpt-4o-mini']);
-        $this->bot->user->getOrCreateSettings()->update(['openrouter_api_key' => 'sk-test']);
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
 
         // ข้อความยืนยันเป็น prose ล้วน (ไม่มี bullet/ตัวคั่นให้ regex ดึงรายการ) จึงต้องพึ่อ LLM
         // fallback ซึ่งบน prod มี utility_model ตั้งไว้จริง → จำลอง chat() ให้คืนรายการตรงยอด 1,500
@@ -446,7 +446,7 @@ class SlipVerificationServiceTest extends TestCase
         // เดิม isConfirmMessage มองเห็นคำว่า "ยืนยัน" ใน "ยืนยันตัวตน" → ถือว่ามีออเดอร์ค้าง
         // → สลิปผ่านเองแล้วส่งของทั้งที่ลูกค้ายังไม่ได้ยืนยันคำสั่งซื้อ ต้องจับเฉพาะเจตนายืนยันจริง
         $this->bot->update(['utility_model' => 'openai/gpt-4o-mini']);
-        $this->bot->user->getOrCreateSettings()->update(['openrouter_api_key' => 'sk-test']);
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $this->paymentHistory = [
             ['sender' => 'bot', 'content' => 'Nolimit Level Up+ Personal ราคา 1,500 บาทครับ ผูกบัตรมาแล้ว ไม่ต้องยืนยันตัวตนเพิ่มครับ|||สนใจตัวไหนบอกได้เลยครับ'],
             ['sender' => 'user', 'content' => 'ขอดู BM ด้วยครับ'],
@@ -480,7 +480,7 @@ class SlipVerificationServiceTest extends TestCase
         // เคสจริงแชท #169: บอทตอบ error ไม่เคยพิมพ์ยอดเลย ลูกค้าโอนมาเฉยๆ
         $this->seedProducts();
         $this->bot->update(['utility_model' => 'openai/gpt-4o-mini']);
-        $this->bot->user->getOrCreateSettings()->update(['openrouter_api_key' => 'sk-test']);
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $this->fakeReconstructorLLM('{"items":[{"slug":"personal","qty":1}],"confidence":"high"}');
         $this->paymentHistory = [
             ['sender' => 'user', 'content' => 'ซื้อ Nolimit Level Up+ Personal 1 ครับ'],
@@ -501,7 +501,7 @@ class SlipVerificationServiceTest extends TestCase
         // ในแชทพูดถึงทั้ง BM และ Personal ราคาเท่ากัน → ห้ามส่งของ ต้องให้เจ้าของเลือก
         $this->seedProducts();
         $this->bot->update(['utility_model' => 'openai/gpt-4o-mini']);
-        $this->bot->user->getOrCreateSettings()->update(['openrouter_api_key' => 'sk-test']);
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $this->fakeReconstructorLLM('{"items":[{"slug":"personal","qty":1}],"confidence":"high"}');
         $this->paymentHistory = [
             ['sender' => 'bot', 'content' => 'รอบนี้จัด Nolimit Level Up+ BM เซ็ตเดิมเลยไหมครับ?'],
@@ -538,7 +538,7 @@ class SlipVerificationServiceTest extends TestCase
     {
         $this->seedProducts();
         $this->bot->update(['utility_model' => 'openai/gpt-4o-mini']);
-        $this->bot->user->getOrCreateSettings()->update(['openrouter_api_key' => 'sk-test']);
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $this->fakeReconstructorLLM('{"items":[],"confidence":"low"}');
         $this->paymentHistory = [['sender' => 'user', 'content' => 'สวัสดีครับ']];
         Http::fake(['api.easyslip.com/*' => Http::response($this->easySlipResponse())]);

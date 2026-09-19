@@ -38,13 +38,11 @@ class ContextualRetrievalService
      *
      * @param  string  $documentTitle  The document title/filename
      * @param  string  $documentContent  The full document content
-     * @param  string|null  $apiKey  Optional API key override
      * @return array{summary: string, tokens_used: int}
      */
     public function generateDocumentSummary(
         string $documentTitle,
-        string $documentContent,
-        ?string $apiKey = null
+        string $documentContent
     ): array {
         $model = config('rag.contextual_retrieval.model', 'openai/gpt-4o-mini');
         $maxTokens = config('rag.contextual_retrieval.max_summary_tokens', 200);
@@ -80,7 +78,6 @@ PROMPT;
                 temperature: 0.3,
                 maxTokens: $maxTokens,
                 useFallback: false,
-                apiKeyOverride: $apiKey,
                 timeout: 60,
             );
 
@@ -108,14 +105,12 @@ PROMPT;
      * @param  string  $documentTitle  The document title
      * @param  string  $documentSummary  The document summary
      * @param  array  $chunks  Array of chunk contents
-     * @param  string|null  $apiKey  Optional API key override
      * @return array{contexts: array<string>, tokens_used: int}
      */
     public function generateChunkContexts(
         string $documentTitle,
         string $documentSummary,
-        array $chunks,
-        ?string $apiKey = null
+        array $chunks
     ): array {
         $model = config('rag.contextual_retrieval.model', 'openai/gpt-4o-mini');
         $maxTokens = config('rag.contextual_retrieval.max_context_tokens', 100);
@@ -134,8 +129,7 @@ PROMPT;
                     $documentSummary,
                     $batch,
                     $model,
-                    $maxTokens,
-                    $apiKey
+                    $maxTokens
                 );
 
                 $contexts = array_merge($contexts, $batchContexts['contexts']);
@@ -169,8 +163,7 @@ PROMPT;
         string $documentSummary,
         array $chunks,
         string $model,
-        int $maxTokensPerContext,
-        ?string $apiKey
+        int $maxTokensPerContext
     ): array {
         $chunksText = '';
         foreach ($chunks as $index => $chunk) {
@@ -202,7 +195,6 @@ PROMPT;
             temperature: 0.3,
             maxTokens: $maxTokensPerContext * count($chunks) + 50,
             useFallback: false,
-            apiKeyOverride: $apiKey,
             timeout: 60,
         );
 
@@ -272,14 +264,12 @@ PROMPT;
      * @param  string  $documentTitle  The document title
      * @param  string  $documentSummary  The document summary
      * @param  string  $chunkContent  The chunk content
-     * @param  string|null  $apiKey  Optional API key override
      * @return array{context: string, tokens_used: int}
      */
     public function generateSingleChunkContext(
         string $documentTitle,
         string $documentSummary,
-        string $chunkContent,
-        ?string $apiKey = null
+        string $chunkContent
     ): array {
         $model = config('rag.contextual_retrieval.model', 'openai/gpt-4o-mini');
         $maxTokens = config('rag.contextual_retrieval.max_context_tokens', 100);
@@ -308,7 +298,6 @@ PROMPT;
                 temperature: 0.3,
                 maxTokens: $maxTokens,
                 useFallback: false,
-                apiKeyOverride: $apiKey,
                 timeout: 60,
             );
 

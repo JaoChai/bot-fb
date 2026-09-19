@@ -3,6 +3,7 @@
 namespace App\Services\Payment;
 
 use App\Models\Bot;
+use App\Services\OpenRouterCredentials;
 use App\Services\OpenRouterService;
 use Illuminate\Support\Facades\Log;
 
@@ -42,8 +43,7 @@ PROMPT;
             return [];
         }
 
-        $apiKey = $bot->user?->settings?->getOpenRouterApiKey();
-        if (empty($apiKey)) {
+        if (! app(OpenRouterCredentials::class)->isConfigured()) {
             Log::debug('LLMOrderItemExtractor: no OpenRouter API key configured, skipping', ['bot_id' => $bot->id]);
 
             return [];
@@ -59,7 +59,6 @@ PROMPT;
                 temperature: 0.1,
                 maxTokens: 300,
                 useFallback: false,
-                apiKeyOverride: $apiKey,
             );
         } catch (\Throwable $e) {
             Log::warning('LLMOrderItemExtractor: LLM call failed', [

@@ -40,7 +40,7 @@ class LLMOrderItemFallbackTest extends TestCase
     private function makeBotWithUtilityModel(): Bot
     {
         $user = User::factory()->create();
-        $user->getOrCreateSettings()->update(['openrouter_api_key' => 'or-key-123']);
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
 
         return Bot::factory()->create([
             'user_id' => $user->id,
@@ -132,7 +132,7 @@ class LLMOrderItemFallbackTest extends TestCase
     public function test_skips_silently_when_no_utility_model_configured(): void
     {
         $user = User::factory()->create();
-        $user->getOrCreateSettings()->update(['openrouter_api_key' => 'or-key-123']);
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $bot = Bot::factory()->create(['user_id' => $user->id]); // no primary/fallback/utility model set
 
         $openRouter = $this->createMock(OpenRouterService::class);

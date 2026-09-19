@@ -108,10 +108,9 @@ class CRAGService
      *
      * @param  string  $originalQuery  The original user query
      * @param  Collection  $failedResults  Results that didn't meet threshold
-     * @param  string|null  $apiKey  Optional API key override
      * @return string The rewritten query
      */
-    public function rewriteQuery(string $originalQuery, Collection $failedResults, ?string $apiKey = null): string
+    public function rewriteQuery(string $originalQuery, Collection $failedResults): string
     {
         try {
             $topChunks = $failedResults->take(3)->pluck('content')->implode("\n---\n");
@@ -139,7 +138,6 @@ PROMPT;
                 temperature: 0.3,
                 maxTokens: 100,
                 useFallback: false,
-                apiKeyOverride: $apiKey
             );
 
             $rewritten = trim($response['content'] ?? '');

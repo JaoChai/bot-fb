@@ -136,10 +136,6 @@ class VisionHandler
                 'content' => $imagePrompt,
             ];
 
-            // Get API key
-            $apiKey = $this->bot->user?->settings?->getOpenRouterApiKey()
-                ?? config('services.openrouter.api_key');
-
             // Call Vision API
             $result = $this->openRouterService->chatWithVision(
                 messages: $messages,
@@ -147,7 +143,6 @@ class VisionHandler
                 model: $model,
                 temperature: $this->bot->llm_temperature ?? 0.7,
                 maxTokens: $this->bot->llm_max_tokens ?? 1024,
-                apiKeyOverride: $apiKey,
                 fallbackModelOverride: $this->bot->fallback_chat_model
             );
 

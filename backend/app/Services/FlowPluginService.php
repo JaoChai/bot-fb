@@ -48,11 +48,6 @@ class FlowPluginService
             return;
         }
 
-        // Eager load user.settings to avoid N+1 query during API key resolution
-        if (! $bot->relationLoaded('user')) {
-            $bot->load('user.settings');
-        }
-
         foreach ($plugins as $plugin) {
             if (in_array($plugin->id, $financialIds, true)) {
                 continue;
@@ -174,9 +169,7 @@ PROMPT,
             ],
         ];
 
-        // Get API key
-        $apiKey = $bot->user?->settings?->getOpenRouterApiKey() ?? config('services.openrouter.api_key');
-        if (empty($apiKey)) {
+        if (! app(OpenRouterCredentials::class)->isConfigured()) {
             Log::warning('No API key for plugin evaluation', ['plugin_id' => $plugin->id]);
 
             return false;
@@ -196,7 +189,6 @@ PROMPT,
             temperature: 0.1,
             maxTokens: 256,
             useFallback: false,
-            apiKeyOverride: $apiKey,
             timeout: 15
         );
 

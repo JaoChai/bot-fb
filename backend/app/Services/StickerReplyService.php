@@ -83,9 +83,6 @@ class StickerReplyService
         $messages = $this->buildVisionMessages($bot, $conversation);
 
         // 4. Call Vision API
-        $apiKey = $bot->user?->settings?->getOpenRouterApiKey()
-            ?? config('services.openrouter.api_key');
-
         try {
             $result = $this->openRouterService->chatWithVision(
                 messages: $messages,
@@ -93,7 +90,6 @@ class StickerReplyService
                 model: $model,
                 temperature: $bot->llm_temperature ?? 0.7,
                 maxTokens: 512,
-                apiKeyOverride: $apiKey,
                 fallbackModelOverride: $bot->fallback_chat_model
             );
 

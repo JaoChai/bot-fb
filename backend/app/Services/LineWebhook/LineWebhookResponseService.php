@@ -438,10 +438,6 @@ class LineWebhookResponseService
             } else {
                 $messages = $this->buildVisionChatMessages($ctx, $history, $this->getImageAnalysisPrompt($ctx, $history));
 
-                // Get API key (lines 1048-1050)
-                $apiKey = $ctx->bot->user?->settings?->getOpenRouterApiKey()
-                    ?? config('services.openrouter.api_key');
-
                 // Call Vision API (lines 1052-1061)
                 $result = $this->openRouterService->chatWithVision(
                     messages: $messages,
@@ -449,7 +445,6 @@ class LineWebhookResponseService
                     model: $model,
                     temperature: $ctx->bot->llm_temperature ?? 0.7,
                     maxTokens: $ctx->bot->llm_max_tokens ?? 1024,
-                    apiKeyOverride: $apiKey,
                     fallbackModelOverride: $ctx->bot->fallback_chat_model
                 );
             }
@@ -815,9 +810,6 @@ class LineWebhookResponseService
                 return null;
             }
 
-            $apiKey = $ctx->bot->user?->settings?->getOpenRouterApiKey()
-                ?? config('services.openrouter.api_key');
-
             $isBot26 = (int) $ctx->bot->getKey() === 26;
 
             if ($isBot26) {
@@ -885,7 +877,6 @@ class LineWebhookResponseService
                 // JSON ต้อง parse ได้เสถียร — ใช้ temperature ต่ำคงที่ ไม่ใช้ค่าแชทของบอท
                 temperature: 0.3,
                 maxTokens: $ctx->bot->llm_max_tokens ?? 1024,
-                apiKeyOverride: $apiKey,
                 fallbackModelOverride: $ctx->bot->fallback_chat_model,
                 responseFormat: ['type' => 'json_schema', 'json_schema' => ['name' => $schemaName, 'strict' => true, 'schema' => $schema]],
             );

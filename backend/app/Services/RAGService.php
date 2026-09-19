@@ -68,12 +68,8 @@ class RAGService
         string $userMessage,
         array $conversationHistory = [],
         ?Conversation $conversation = null,
-        ?Flow $flow = null,
-        ?string $apiKeyOverride = null
+        ?Flow $flow = null
     ): array {
-        // Get API key first (used for both decision and chat models)
-        $apiKey = $apiKeyOverride ?? $this->getApiKeyForBot($bot);
-
         $bot->loadMissing(['defaultFlow.knowledgeBases']);
 
         // ดึงประวัติการซื้อครั้งเดียวต่อการตอบ 1 ครั้ง แล้วส่งต่อทั้ง Step 0 และ Step 6
@@ -91,7 +87,7 @@ class RAGService
         );
 
         if (! $skipCache && $this->semanticCache?->isEnabled()) {
-            $cachedResponse = $this->semanticCache->get($bot, $userMessage, $apiKey);
+            $cachedResponse = $this->semanticCache->get($bot, $userMessage);
             if ($cachedResponse) {
                 Log::debug('RAGService: Cache hit, returning cached response', [
                     'bot_id' => $bot->id,
@@ -149,7 +145,6 @@ class RAGService
             $intent = $this->intentAnalysis->analyzeIntent($bot, $userMessage, [
                 'validIntents' => ['chat', 'knowledge', 'flow'],
                 'includeExamples' => true,
-                'apiKey' => $apiKey,
             ]);
         }
 
@@ -262,7 +257,6 @@ class RAGService
             fallbackModel: $fallbackChatModel,
             temperature: $temperature,
             maxTokens: $maxTokens,
-            apiKeyOverride: $apiKey,
             reasoning: ['effort' => $effort],
             timeout: $requestTimeout,
         );
@@ -290,8 +284,7 @@ class RAGService
                         'rag' => $kbMetadata,
                         'complexity' => $complexity,
                         'models_used' => $result['models_used'],
-                    ],
-                    $apiKey
+                    ]
                 );
             } catch (\Exception $e) {
                 // Cache save failure should not break the response
@@ -362,12 +355,6 @@ class RAGService
         $rank = ['low' => 0, 'medium' => 1, 'high' => 2];
 
         return ($rank[$botEffort] ?? 1) > 1 ? 'medium' : $botEffort;
-    }
-
-    /** @see RAGKnowledgeBase::getApiKeyForBot() */
-    protected function getApiKeyForBot(Bot $bot): ?string
-    {
-        return $this->knowledgeBase->getApiKeyForBot($bot);
     }
 
     /** @see RAGKnowledgeBase::formatKnowledgeBaseContext() */

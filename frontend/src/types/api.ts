@@ -65,7 +65,7 @@ export interface Bot {
   webhook_url: string;
   auto_handover: boolean;
   auto_delivery_enabled: boolean;
-  // Multi-model LLM configuration (API key now in User Settings)
+  // Multi-model LLM configuration
   primary_chat_model: string | null;
   fallback_chat_model: string | null;
   utility_model: string | null;
@@ -96,7 +96,7 @@ export interface Bot {
   updated_at: string;
 }
 
-// Connection/Bot creation data (API key now in User Settings)
+// Connection/Bot creation data
 export interface CreateConnectionData {
   name: string;
   channel_type: 'line' | 'facebook' | 'testing' | 'telegram';
@@ -110,7 +110,7 @@ export interface CreateConnectionData {
   auto_delivery_enabled?: boolean;
 }
 
-// Connection/Bot update data (API key now in User Settings)
+// Connection/Bot update data
 export interface UpdateConnectionData {
   name?: string;
   status?: 'active' | 'inactive' | 'paused';
@@ -447,9 +447,6 @@ export interface ConversationFilters {
 
 // User Settings Types
 export interface UserSettings {
-  openrouter_configured: boolean;
-  openrouter_api_key_masked: string | null;
-  openrouter_model: string;
   line_configured: boolean;
   line_channel_secret_masked: string | null;
   line_channel_access_token_masked: string | null;
@@ -458,11 +455,6 @@ export interface UserSettings {
   quiet_hours_enabled: boolean;
   quiet_hours_start: string; // 'HH:MM'
   quiet_hours_end: string; // 'HH:MM'
-}
-
-export interface UpdateOpenRouterSettings {
-  api_key?: string;
-  model: string;
 }
 
 export interface TestConnectionResponse {

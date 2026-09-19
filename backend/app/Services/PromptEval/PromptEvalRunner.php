@@ -5,6 +5,7 @@ namespace App\Services\PromptEval;
 use App\Models\Bot;
 use App\Services\AIService;
 use App\Services\Guardrail\OffTopicSignalExtractor;
+use App\Services\OpenRouterCredentials;
 use App\Services\RAGService;
 use App\Services\SemanticCacheService;
 use Illuminate\Support\Facades\Http;
@@ -22,6 +23,7 @@ class PromptEvalRunner
     public function __construct(
         private readonly AIService $ai,
         private readonly RAGService $rag,
+        private readonly OpenRouterCredentials $credentials,
     ) {}
 
     /**
@@ -54,7 +56,7 @@ class PromptEvalRunner
             'usage' => ['include' => true],
         ];
         $data = Http::baseUrl(rtrim(config_string('services.openrouter.base_url', 'https://openrouter.ai/api/v1'), '/'))
-            ->withToken(config_string('services.openrouter.api_key'))
+            ->withToken($this->credentials->key())
             ->withHeaders([
                 'HTTP-Referer' => config_string('services.openrouter.site_url', config_string('app.url')),
                 'X-Title' => config_string('services.openrouter.site_name', config_string('app.name')),

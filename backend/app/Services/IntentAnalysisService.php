@@ -32,7 +32,6 @@ class IntentAnalysisService
      *                          - validIntents: array of valid intent types (default: ['chat', 'knowledge'])
      *                          - includeExamples: whether to include examples in prompt (default: false)
      *                          - useFallback: whether to use text fallback on JSON parse failure (default: true)
-     *                          - apiKey: API key override (default: null, uses bot's key)
      * @return array Intent analysis result with 'intent', 'confidence', 'model_used', 'method'
      */
     public function analyzeIntent(Bot $bot, string $userMessage, array $options = []): array
@@ -40,7 +39,6 @@ class IntentAnalysisService
         $validIntents = $options['validIntents'] ?? ['chat', 'knowledge'];
         $includeExamples = $options['includeExamples'] ?? false;
         $useFallback = $options['useFallback'] ?? true;
-        $apiKey = $options['apiKey'] ?? $this->getApiKeyForBot($bot);
 
         // Decision uses the same chat pair from Connection Settings (single model pair)
         $decisionModel = $bot->resolvedChatModel();
@@ -73,7 +71,6 @@ class IntentAnalysisService
             'temperature' => 0.1, // Low temp for consistent decisions
             'maxTokens' => $useEnhanced ? 300 : 150,
             'useFallback' => true,
-            'apiKeyOverride' => $apiKey,
             'fallbackModelOverride' => $fallbackDecisionModel,
             'timeout' => (int) config('services.openrouter.intent_timeout', 20),
         ];
@@ -399,14 +396,5 @@ PROMPT;
     protected function isMandatoryReasoningModel(string $model): bool
     {
         return $this->openRouter->isMandatoryReasoning($model);
-    }
-
-    /**
-     * Get the API key to use for a bot.
-     */
-    protected function getApiKeyForBot(Bot $bot): ?string
-    {
-        return $bot->user?->settings?->getOpenRouterApiKey()
-            ?? config('services.openrouter.api_key');
     }
 }

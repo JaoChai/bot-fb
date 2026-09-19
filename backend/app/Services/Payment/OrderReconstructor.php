@@ -5,6 +5,7 @@ namespace App\Services\Payment;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\ProductStock;
+use App\Services\OpenRouterCredentials;
 use App\Services\OpenRouterService;
 use App\Services\VipPricingService;
 use Illuminate\Support\Collection;
@@ -109,8 +110,7 @@ PROMPT;
         // สนทนาราคาแพง (เช่น bot 28 ตั้ง gpt-5.1 ไว้) การสรุปออเดอร์เป็นงานเบื้องหลัง ต้องใช้โมเดล
         // งานเบื้องหลังเท่านั้น ไม่ได้ตั้ง utility_model = ไม่ทำงาน ดีกว่ายิงโมเดลแพงโดยไม่ตั้งใจ
         $model = $bot->utility_model;
-        $apiKey = $bot->user?->settings?->getOpenRouterApiKey();
-        if ($model === null || empty($apiKey)) {
+        if ($model === null || ! app(OpenRouterCredentials::class)->isConfigured()) {
             Log::debug('OrderReconstructor: no utility model or API key, skipping', ['bot_id' => $bot->id]);
 
             return [];
@@ -132,7 +132,6 @@ PROMPT;
                 temperature: 0.1,
                 maxTokens: 300,
                 useFallback: false,
-                apiKeyOverride: $apiKey,
             );
         } catch (\Throwable $e) {
             Log::warning('OrderReconstructor: LLM call failed', ['bot_id' => $bot->id, 'error' => $e->getMessage()]);
