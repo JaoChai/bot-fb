@@ -58,9 +58,7 @@ class User extends Authenticatable
      */
     public function getOrCreateSettings(): UserSetting
     {
-        $settings = $this->settings ?? $this->settings()->create([
-            'openrouter_model' => 'openai/gpt-4o-mini',
-        ]);
+        $settings = $this->settings ?? $this->settings()->create();
 
         // Refresh the cached relation so later `$user->settings` access on this
         // same instance sees the newly created row instead of the stale null
