@@ -6,8 +6,8 @@ use App\Services\CircuitBreakerService;
 use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterCredentials;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Mockery;
 use Tests\TestCase;
 
