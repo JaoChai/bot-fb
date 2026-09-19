@@ -1096,6 +1096,7 @@ Rollback: revert the PR. The old code finds the per-user keys again because the 
 
 **Files:**
 - Create: `backend/database/migrations/2026_09_22_000000_drop_openrouter_columns_from_user_settings_table.php` (use the real date of creation in the filename)
+- Modify: `backend/app/Models/UserSetting.php` — remove `'openrouter_api_key'` and its comment from `$hidden` (kept through PR 1 so the ciphertext could not be serialized while the column existed)
 
 **Interfaces:**
 - Consumes: PR 1 deployed and stable for ≥ 3 days.

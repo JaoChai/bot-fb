@@ -17,7 +17,7 @@ Consequences found on 2026-09-19:
 2. Three system-level call sites read the env key only and therefore never get one:
    - `ModelCapabilityService::doFetchAllModels()` returns `[]` silently, so OpenRouter-based capability resolution has been dead since the service was written (2026-01-18, three weeks after the key moved to `user_settings` on 2025-12-31). Every model resolves from the 26-entry `config/llm-models.php` table or from conservative defaults. `openai/gpt-5.6-luna` (bot 26 chat and decision model), `meta/muse-spark-1.2-contributor` and `openai/gpt-5.1` (fallbacks) all resolve to defaults: no JSON mode, no `reasoning.effort`, 4096 context.
    - `PromptEvalRunner` sends `withToken('')`; `prompt:eval` cannot authenticate.
-   - `OpenRouterService::$apiKey` is always empty; `isAvailable()` is always false.
+   - `OpenRouterService::$apiKey` is always empty; `isConfigured()` is always false.
 3. `user_settings.openrouter_model` has no consumer outside the Settings page itself.
 
 Production is single-tenant in practice: 14 users, 3 `user_settings` rows with a key, and every active bot belongs to user 14.
@@ -33,11 +33,12 @@ Production is single-tenant in practice: 14 users, 3 `user_settings` rows with a
 
 New class `App\Services\OpenRouterCredentials`:
 
-- `key(): string` reads `config('services.openrouter.api_key')`.
-- Empty or null → throws an exception whose message names `OPENROUTER_API_KEY`.
+- `isConfigured(): bool` and `key(): string`, both reading `config('services.openrouter.api_key')`.
+- `key()` on an empty or null value throws `App\Exceptions\OpenRouterException` whose message names `OPENROUTER_API_KEY`.
+- `isConfigured()` exists so the background payment path (`OrderReconstructor`, `LLMOrderItemExtractor`), flow plugins and the three test/preview endpoints keep skipping gracefully when no key is configured.
 - Stateless; resolved by the container without registration.
 
-It is the only place in `app/` that reads `services.openrouter.api_key`. Its consumers are exactly the four classes that make HTTP calls to OpenRouter: `OpenRouterService`, `EmbeddingService`, `ModelCapabilityService`, `PromptEvalRunner`. (A dedicated class rather than an accessor on `OpenRouterService` avoids the existing `OpenRouterService` → `ModelCapabilityService` dependency becoming circular.)
+It is the only place in `app/` that reads `services.openrouter.api_key`. Its consumers are the five classes that make HTTP calls to OpenRouter: `OpenRouterService`, `EmbeddingService`, `StreamingResponseOrchestrator` (it makes its own streaming call), `ModelCapabilityService`, `PromptEvalRunner`. (A dedicated class rather than an accessor on `OpenRouterService` avoids the existing `OpenRouterService` → `ModelCapabilityService` dependency becoming circular.)
 
 Before: controller/job resolves the key from the bot's user → passes it through RAGService → HybridSearch → SemanticSearch → EmbeddingService → HTTP.
 After: the intermediate layers do not know a key exists; the class that makes the HTTP call asks `OpenRouterCredentials`.
@@ -55,12 +56,12 @@ Not touched: `JinaRerankerService` (Jina's own key), LINE and EasySlip credentia
 - The 17 `getOpenRouterApiKey()` call sites: `StreamController`, `KnowledgeBaseController`, `BotController`, `FlowController`, `StickerReplyService`, `EntityExtractionService`, `FlowPluginService`, `IntentAnalysisService`, `VisionHandler`, `LineWebhookResponseService` (×2), `OrderReconstructor`, `LLMOrderItemExtractor`, `StreamingResponseOrchestrator`, `RAGKnowledgeBase`, `ProcessDocument` (×2, including its owner-lookup logic).
 - The three duplicate `getApiKeyForBot()` helpers: `RAGService`, `IntentAnalysisService`, `RAGKnowledgeBase`.
 - `?string $apiKey` / `$apiKeyOverride` parameters from: `OpenRouterService` (four public methods and `client()`), `EmbeddingService` (constructor and `withApiKey()`), `HybridSearchService`, `SemanticSearchService`, `SemanticCacheService`, `ContextualRetrievalService`, `CRAGService`, `RAGService`, `RAGKnowledgeBase`, `StreamingResponseOrchestrator`; and every argument passed to them.
-- `OpenRouterService::$apiKey`; `isAvailable()` asks `OpenRouterCredentials` instead.
+- `OpenRouterService::$apiKey`; `isConfigured()` asks `OpenRouterCredentials` instead.
 
 **B. Per-user key feature (backend)**
 - `UserSettingController`: `updateOpenRouter()`, `testOpenRouter()`, `clearOpenRouter()`; fields `openrouter_configured`, `openrouter_api_key_masked`, `openrouter_model` in `show()`.
 - Routes `PUT /settings/openrouter`, `DELETE /settings/openrouter`, `POST /settings/test-openrouter`.
-- `UserSetting`: `getOpenRouterApiKey()`, `hasOpenRouterKey()`, `getMaskedOpenRouterKeyAttribute()`, and the `openrouter_api_key` / `openrouter_model` entries in `$fillable`, `$casts`, `$hidden`.
+- `UserSetting`: `getOpenRouterApiKey()`, `hasOpenRouterKey()`, `getMaskedOpenRouterKeyAttribute()`, and the `openrouter_api_key` / `openrouter_model` entries in `$fillable` and `$casts`. The `$hidden` entry stays until PR 2 drops the column, so the stored ciphertext can never be serialized in the meantime.
 - `User.php` default `openrouter_model`.
 - New migration dropping `user_settings.openrouter_api_key` and `user_settings.openrouter_model` (**PR 2 only**, see rollout).
 
