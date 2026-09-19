@@ -67,10 +67,9 @@ class SemanticCacheService
      *
      * @param  Bot  $bot  The bot to search cache for
      * @param  string  $query  The user's query
-     * @param  string|null  $apiKey  Optional API key for embedding
      * @return array|null Cached response or null if not found
      */
-    public function get(Bot $bot, string $query, ?string $apiKey = null): ?array
+    public function get(Bot $bot, string $query): ?array
     {
         if (! $this->enabled) {
             return null;
@@ -92,7 +91,7 @@ class SemanticCacheService
             }
 
             // Step 2: Try semantic match (requires embedding API call)
-            $semanticMatch = $this->getSemanticMatch($bot, $query, $apiKey);
+            $semanticMatch = $this->getSemanticMatch($bot, $query);
             if ($semanticMatch) {
                 Log::debug('SemanticCache: Semantic match hit', [
                     'bot_id' => $bot->id,
@@ -127,15 +126,13 @@ class SemanticCacheService
      * @param  string  $query  The user's query
      * @param  string  $response  The generated response
      * @param  array  $metadata  Additional metadata (intent, rag info, etc.)
-     * @param  string|null  $apiKey  Optional API key for embedding
      * @return RagCache|null The created cache entry
      */
     public function put(
         Bot $bot,
         string $query,
         string $response,
-        array $metadata = [],
-        ?string $apiKey = null
+        array $metadata = []
     ): ?RagCache {
         if (! $this->enabled) {
             return null;
@@ -143,11 +140,7 @@ class SemanticCacheService
 
         try {
             // Generate embedding for semantic search
-            $embeddingService = $apiKey
-                ? $this->embeddingService->withApiKey($apiKey)
-                : $this->embeddingService;
-
-            $embedding = $embeddingService->generate($query);
+            $embedding = $this->embeddingService->generate($query);
 
             // Create cache entry
             $cache = RagCache::create([
@@ -201,14 +194,10 @@ class SemanticCacheService
     /**
      * Get semantic match from cache using vector similarity.
      */
-    protected function getSemanticMatch(Bot $bot, string $query, ?string $apiKey = null): ?array
+    protected function getSemanticMatch(Bot $bot, string $query): ?array
     {
         // Generate embedding for the query
-        $embeddingService = $apiKey
-            ? $this->embeddingService->withApiKey($apiKey)
-            : $this->embeddingService;
-
-        $embedding = $embeddingService->generate($query);
+        $embedding = $this->embeddingService->generate($query);
         $vector = new Vector($embedding);
 
         // Search for similar cached queries

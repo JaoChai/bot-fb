@@ -41,6 +41,15 @@ class OpenRouterServiceTest extends TestCase
         $service = app(OpenRouterService::class);
 
         $this->assertFalse($service->isConfigured());
+
+        $this->expectException(OpenRouterException::class);
+        $this->expectExceptionMessage('OPENROUTER_API_KEY');
+
+        $service->chat(
+            messages: [['role' => 'user', 'content' => 'hi']],
+            model: 'openai/gpt-4o-mini',
+            useFallback: false,
+        );
     }
 
     public function test_chat_returns_response_on_success(): void

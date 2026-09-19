@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services;
 
 use App\Exceptions\OpenRouterException;
+use App\Services\EmbeddingService;
 use App\Services\OpenRouterCredentials;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -47,5 +48,15 @@ class OpenRouterCredentialsTest extends TestCase
 
         config(['services.openrouter.api_key' => 'synthetic-late-key']);
         $this->assertSame('synthetic-late-key', $credentials->key());
+    }
+
+    public function test_embedding_service_throws_when_the_key_is_missing(): void
+    {
+        config(['services.openrouter.api_key' => null]);
+
+        $this->expectException(OpenRouterException::class);
+        $this->expectExceptionMessage('OPENROUTER_API_KEY');
+
+        app(EmbeddingService::class)->generate('hello');
     }
 }

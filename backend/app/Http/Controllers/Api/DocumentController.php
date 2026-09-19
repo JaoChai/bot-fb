@@ -52,7 +52,7 @@ class DocumentController extends Controller
         $knowledgeBase->increment('document_count');
 
         // Dispatch processing job with user's ID for API key lookup
-        ProcessDocument::dispatch($document, $request->user()->id);
+        ProcessDocument::dispatch($document);
 
         return $this->created(new DocumentResource($document), 'Document created successfully. Processing will begin shortly.');
     }
@@ -100,7 +100,7 @@ class DocumentController extends Controller
         ]);
 
         // Dispatch with user's ID for API key lookup
-        ProcessDocument::dispatch($document, $request->user()->id);
+        ProcessDocument::dispatch($document);
 
         return $this->success(new DocumentResource($document->fresh()), 'Document reprocessing started');
     }

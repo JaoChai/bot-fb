@@ -5,7 +5,6 @@ namespace App\Jobs;
 use App\Events\DocumentStatusUpdated;
 use App\Models\Document;
 use App\Models\DocumentChunk;
-use App\Models\User;
 use App\Services\ChunkingService;
 use App\Services\ContextualRetrievalService;
 use App\Services\DocumentParserService;
@@ -30,7 +29,6 @@ class ProcessDocument implements ShouldQueue
 
     public function __construct(
         public Document $document,
-        public ?int $userId = null
     ) {}
 
     public function handle(
@@ -55,9 +53,7 @@ class ProcessDocument implements ShouldQueue
                 );
             }
 
-            // Get user's API key from their settings
-            $apiKey = $this->getUserApiKey();
-            $embedder = new EmbeddingService($apiKey);
+            $embedder = app(EmbeddingService::class);
 
             // Use content directly for text-only documents, parse file for legacy
             if (! empty($this->document->content)) {
@@ -97,8 +93,7 @@ class ProcessDocument implements ShouldQueue
                 // Step 1: Generate document summary
                 $summaryResult = $contextualRetrieval->generateDocumentSummary(
                     $documentTitle,
-                    $text,
-                    $apiKey
+                    $text
                 );
                 $documentSummary = $summaryResult['summary'];
 
@@ -113,8 +108,7 @@ class ProcessDocument implements ShouldQueue
                 $contextsResult = $contextualRetrieval->generateChunkContexts(
                     $documentTitle,
                     $documentSummary,
-                    $chunkContents,
-                    $apiKey
+                    $chunkContents
                 );
                 $chunkContexts = $contextsResult['contexts'];
 
@@ -222,27 +216,6 @@ class ProcessDocument implements ShouldQueue
                 'contextual_retrieval' => $useContextualRetrieval,
             ]);
         }
-    }
-
-    /**
-     * Get the API key for embedding generation.
-     * Priority: 1) Specified user's key, 2) Document owner's key, 3) null (falls back to env)
-     */
-    protected function getUserApiKey(): ?string
-    {
-        // Try specified user first (using safe getter to handle decryption errors)
-        if ($this->userId) {
-            $user = User::find($this->userId);
-            $apiKey = $user?->settings?->getOpenRouterApiKey();
-            if ($apiKey) {
-                return $apiKey;
-            }
-        }
-
-        // Fallback to document owner's API key
-        $owner = $this->document->knowledgeBase?->user;
-
-        return $owner?->settings?->getOpenRouterApiKey();
     }
 
     public function failed(Throwable $exception): void

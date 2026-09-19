@@ -163,6 +163,8 @@ class PipelineImageRoutingTest extends TestCase
 
     public function test_image_with_slip_disabled_still_gets_vision_reply_via_pipeline(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
+
         BotSetting::create([
             'bot_id' => $this->bot->id,
             'slip_verification_enabled' => false,
@@ -211,6 +213,8 @@ class PipelineImageRoutingTest extends TestCase
      */
     public function test_responded_image_increments_message_count_by_two_and_unread_by_one(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
+
         BotSetting::create([
             'bot_id' => $this->bot->id,
             'slip_verification_enabled' => false,

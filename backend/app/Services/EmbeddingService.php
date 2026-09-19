@@ -13,28 +13,17 @@ class EmbeddingService
 
     protected int $dimensions;
 
-    protected string $apiKey;
-
     protected string $baseUrl;
 
-    /**
-     * @param  string|null  $apiKey  User's API key (takes priority over env config)
-     */
-    public function __construct(?string $apiKey = null)
+    public function __construct(private OpenRouterCredentials $credentials)
     {
         $this->model = config_string('services.embeddings.model', 'openai/text-embedding-3-small');
         $this->dimensions = config_int('services.embeddings.dimensions', 1536);
-        // User's API key takes priority, fallback to env config
-        $this->apiKey = $apiKey ?? config_string('services.openrouter.api_key');
         $this->baseUrl = config_string('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
     }
 
     public function generate(string $text): array
     {
-        if (empty($this->apiKey)) {
-            throw new RuntimeException('OpenRouter API key is not configured (OPENROUTER_API_KEY)');
-        }
-
         try {
             $response = Http::withHeaders($this->getHeaders())
                 ->timeout(30)
@@ -68,10 +57,6 @@ class EmbeddingService
 
     public function generateBatch(array $texts): array
     {
-        if (empty($this->apiKey)) {
-            throw new RuntimeException('OpenRouter API key is not configured (OPENROUTER_API_KEY)');
-        }
-
         if (empty($texts)) {
             return [];
         }
@@ -124,7 +109,7 @@ class EmbeddingService
     protected function getHeaders(): array
     {
         return [
-            'Authorization' => 'Bearer '.$this->apiKey,
+            'Authorization' => 'Bearer '.$this->credentials->key(),
             'Content-Type' => 'application/json',
             'HTTP-Referer' => config('services.openrouter.site_url', config('app.url')),
             'X-Title' => config('services.openrouter.site_name', config('app.name')),
@@ -139,29 +124,5 @@ class EmbeddingService
     public function getModel(): string
     {
         return $this->model;
-    }
-
-    /**
-     * Create a new instance with a different API key.
-     *
-     * Useful for per-user API keys from UserSettings.
-     *
-     * @param  string  $apiKey  The API key to use
-     * @return self New instance with the specified API key
-     */
-    public function withApiKey(string $apiKey): self
-    {
-        $instance = clone $this;
-        $instance->apiKey = $apiKey;
-
-        return $instance;
-    }
-
-    /**
-     * Check if the service has a valid API key configured.
-     */
-    public function hasApiKey(): bool
-    {
-        return ! empty($this->apiKey);
     }
 }

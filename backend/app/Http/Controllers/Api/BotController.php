@@ -10,6 +10,7 @@ use App\Http\Traits\ApiResponseTrait;
 use App\Models\Bot;
 use App\Services\AIService;
 use App\Services\ModelCapabilityService;
+use App\Services\OpenRouterCredentials;
 use App\Services\TelegramService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -379,7 +380,7 @@ PROMPT;
     /**
      * Test bot with a sample message.
      */
-    public function test(Request $request, Bot $bot, AIService $aiService): JsonResponse
+    public function test(Request $request, Bot $bot, AIService $aiService, OpenRouterCredentials $credentials): JsonResponse
     {
         $this->authorize('update', $bot);
 
@@ -389,14 +390,10 @@ PROMPT;
 
         $userMessage = $request->input('message');
 
-        // Check if API key is available: User Settings > ENV
-        $apiKey = $bot->user?->settings?->getOpenRouterApiKey()
-            ?? config('services.openrouter.api_key');
-
-        if (empty($apiKey)) {
+        if (! $credentials->isConfigured()) {
             return $this->success([
                 'input' => $userMessage,
-                'response' => 'กรุณาตั้งค่า OpenRouter API Key ที่หน้า Settings ก่อนทดสอบ',
+                'response' => 'ระบบยังไม่ได้ตั้งค่า OpenRouter API Key กรุณาติดต่อผู้ดูแลระบบ',
                 'bot_id' => $bot->id,
             ], 'Test message received');
         }

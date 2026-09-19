@@ -128,6 +128,8 @@ class IntentAnalysisServiceTest extends TestCase
 
     public function test_analyze_intent_uses_primary_chat_model_as_decision_model()
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
+
         Http::fake([
             'openrouter.ai/*' => Http::response([
                 'model' => 'openai/gpt-5.6-luna',

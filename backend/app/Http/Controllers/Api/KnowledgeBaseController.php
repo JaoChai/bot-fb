@@ -110,16 +110,11 @@ class KnowledgeBaseController extends Controller
         }
 
         try {
-            // Get API key: User Settings > ENV
-            $apiKey = $knowledgeBase->user?->settings?->getOpenRouterApiKey()
-                ?? config('services.openrouter.api_key');
-
             $results = $searchService->search(
                 $knowledgeBase->id,
                 $validated['query'],
                 $validated['limit'] ?? 5,
-                $validated['threshold'] ?? null,
-                $apiKey
+                $validated['threshold'] ?? null
             );
 
             return $this->success([

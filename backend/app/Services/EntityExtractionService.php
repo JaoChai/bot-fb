@@ -122,9 +122,6 @@ class EntityExtractionService
     protected function callLLM(string $messageText, string $existingContext, Conversation $conversation): array
     {
         try {
-            $apiKey = $conversation->bot?->user?->settings?->getOpenRouterApiKey()
-                ?? config('services.openrouter.api_key');
-
             $entityList = implode(', ', self::ENTITY_TYPES);
 
             $systemPrompt = <<<PROMPT
@@ -164,8 +161,7 @@ PROMPT;
                 model: $model,
                 temperature: 0.1,
                 maxTokens: 200,
-                useFallback: false,
-                apiKeyOverride: $apiKey
+                useFallback: false
             );
 
             return $this->parseResponse($response['content'] ?? '');

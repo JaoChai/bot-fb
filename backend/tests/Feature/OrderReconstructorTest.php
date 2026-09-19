@@ -23,7 +23,7 @@ class OrderReconstructorTest extends TestCase
         parent::setUp();
 
         $user = User::factory()->create();
-        $user->getOrCreateSettings()->update(['openrouter_api_key' => 'sk-test']);
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $this->bot = Bot::factory()->create(['user_id' => $user->id, 'utility_model' => 'openai/gpt-4o-mini']);
 
         ProductStock::create(['name' => 'Nolimit Level Up+ Personal', 'slug' => 'personal', 'stock_code' => 'NLMP', 'aliases' => ['Personal'], 'in_stock' => true, 'display_order' => 1, 'delivery_method' => 'stock', 'price' => 1100, 'vip_price' => 1000]);

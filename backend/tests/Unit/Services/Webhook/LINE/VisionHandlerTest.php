@@ -238,11 +238,6 @@ class VisionHandlerTest extends TestCase
         ])->save();
         Http::fake(['api.line.me/*' => Http::response(['ok' => true])]);
 
-        // The handler resolves $this->bot->user?->settings?->getOpenRouterApiKey()
-        // before falling back to config. Create the user's settings row so the
-        // encrypted-attribute access path is exercised without a decrypt error.
-        $scenario['bot']->user?->getOrCreateSettings();
-
         $handler = $this->makeHandler($scenario['bot'], $openRouter);
 
         $userMessage = Message::where('conversation_id', $scenario['conversation']->id)->latest('id')->first();

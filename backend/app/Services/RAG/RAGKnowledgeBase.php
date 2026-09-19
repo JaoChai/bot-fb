@@ -120,19 +120,6 @@ class RAGKnowledgeBase
     }
 
     /**
-     * Get the API key to use for a bot.
-     *
-     * Priority:
-     * 1. User's API key from Settings page
-     * 2. Config/env fallback
-     */
-    public function getApiKeyForBot(Bot $bot): ?string
-    {
-        return $bot->user?->settings?->getOpenRouterApiKey()
-            ?? config('services.openrouter.api_key');
-    }
-
-    /**
      * Get context from a Flow's Knowledge Bases (Many-to-Many).
      * Searches all attached KBs using hybrid search and merges results.
      */
@@ -156,19 +143,15 @@ class RAGKnowledgeBase
                 'kb_similarity_threshold' => $kb->pivot->kb_similarity_threshold ?? 0.7,
             ])->toArray();
 
-            // Get API key: User Settings > ENV
-            $apiKey = $flow->bot ? $this->getApiKeyForBot($flow->bot) : config('services.openrouter.api_key');
-
             // Search all KBs using hybrid search and merge results
             $results = $this->hybridSearchService->searchMultiple(
                 kbConfigs: $kbConfigs,
                 query: $query,
-                totalLimit: config('rag.max_results', 5),
-                apiKey: $apiKey
+                totalLimit: config('rag.max_results', 5)
             );
 
             // CRAG: Evaluate retrieval quality and take corrective action
-            $results = $this->applyCRAG($results, $query, $kbConfigs, $metadata, $apiKey);
+            $results = $this->applyCRAG($results, $query, $kbConfigs, $metadata);
 
             if ($results->isEmpty()) {
                 Log::debug('No relevant results from Flow KBs', [
@@ -227,8 +210,7 @@ class RAGKnowledgeBase
         Collection $results,
         string $query,
         array $kbConfigs,
-        array &$metadata,
-        ?string $apiKey
+        array &$metadata
     ): Collection {
         if (! $this->cragService?->isEnabled() || $results->isEmpty()) {
             return $results;
@@ -249,13 +231,12 @@ class RAGKnowledgeBase
 
             if ($evaluation['grade'] === CRAGService::GRADE_AMBIGUOUS) {
                 for ($attempt = 0; $attempt < $this->cragService->getMaxRewriteAttempts(); $attempt++) {
-                    $rewrittenQuery = $this->cragService->rewriteQuery($query, $results, $apiKey);
+                    $rewrittenQuery = $this->cragService->rewriteQuery($query, $results);
 
                     $newResults = $this->hybridSearchService->searchMultiple(
                         kbConfigs: $kbConfigs,
                         query: $rewrittenQuery,
-                        totalLimit: config('rag.max_results', 5),
-                        apiKey: $apiKey
+                        totalLimit: config('rag.max_results', 5)
                     );
 
                     if ($newResults->isEmpty()) {
