@@ -203,7 +203,8 @@ class OpenRouterServiceTest extends TestCase
     public function test_client_side_fallback_does_not_inherit_high_reasoning(): void
     {
         // Primary reasoning model gets 'high'; it times out; the fallback is ALSO a
-        // reasoning model but must fall back to ITS OWN default effort (medium), never 'high'.
+        // reasoning model but must not inherit 'high': it is sent no reasoning param at
+        // all, so the model applies its own default.
         Http::fake([
             'openrouter.ai/api/v1/models' => Http::response(['data' => [
                 ['id' => 'openai/o1', 'supported_parameters' => ['reasoning']],
@@ -234,8 +235,8 @@ class OpenRouterServiceTest extends TestCase
                 return false;
             }
 
-            // fallback must NOT carry the caller's 'high'; it uses o1-mini's own default (medium)
-            return ($body['reasoning']['effort'] ?? null) === 'medium';
+            // fallback must NOT carry the caller's 'high', nor an effort we made up for it
+            return ! isset($body['reasoning']);
         });
     }
 
@@ -661,6 +662,39 @@ class OpenRouterServiceTest extends TestCase
 
         // No user messages to attach images to, return unchanged
         $this->assertEquals($messages, $result);
+    }
+
+    public function test_a_caller_that_does_not_ask_for_reasoning_gets_none(): void
+    {
+        // Background helpers (flow plugins, order reconstruction, query rewrite) call chat()
+        // with a small max_tokens and no reasoning. On a reasoning-capable model an effort we
+        // add for them is billed against that budget: measured in production, 245 of 256
+        // tokens went to thinking and the JSON reply was cut off after 24 characters.
+        Http::fake([
+            'openrouter.ai/api/v1/models' => Http::response(['data' => [
+                ['id' => 'google/gemini-3.5-flash-lite', 'supported_parameters' => ['reasoning']],
+            ]], 200),
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'g', 'model' => 'google/gemini-3.5-flash-lite',
+                'choices' => [['message' => ['content' => '{}'], 'finish_reason' => 'stop']],
+                'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+            ], 200),
+        ]);
+
+        $this->service->chat(
+            messages: [['role' => 'user', 'content' => 'hi']],
+            model: 'google/gemini-3.5-flash-lite',
+            maxTokens: 256,
+            useFallback: false,
+        );
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'chat/completions')) {
+                return false;
+            }
+
+            return ! isset($request->data()['reasoning']);
+        });
     }
 
     public function test_generate_bot_response_sends_effort_only_for_reasoning_models(): void

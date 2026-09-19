@@ -309,7 +309,6 @@ class Bot26PromptEvaluationTest extends TestCase
         $this->mock(IntentAnalysisService::class)->shouldReceive('analyzeIntent')->andReturn(['intent' => $case['system_injections']['kb'] === '' ? 'chat' : 'knowledge', 'confidence' => 1, 'usage' => null]);
         $capabilities = $this->mock(ModelCapabilityService::class);
         $capabilities->shouldReceive('supportsReasoning', 'supportsVision', 'supportsStructuredOutput')->andReturn(true);
-        $capabilities->shouldReceive('getDefaultReasoningEffort')->andReturn('medium');
         if ($case['system_injections']['stock'] === 'unknown') {
             $this->partialMock(StockInjectionService::class)->shouldReceive('getStockStatus')->andReturn(collect());
         }

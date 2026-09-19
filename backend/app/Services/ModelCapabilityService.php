@@ -50,14 +50,6 @@ class ModelCapabilityService
     }
 
     /**
-     * Get default reasoning effort for a model.
-     */
-    public function getDefaultReasoningEffort(string $modelId): ?string
-    {
-        return $this->getCapabilities($modelId)['default_reasoning_effort'] ?? null;
-    }
-
-    /**
      * Check if a model supports structured output (JSON mode).
      */
     public function supportsStructuredOutput(string $modelId): bool
