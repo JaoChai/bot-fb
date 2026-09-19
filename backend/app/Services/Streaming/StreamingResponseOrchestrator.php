@@ -135,14 +135,10 @@ class StreamingResponseOrchestrator
             $kbContext = $this->runKnowledgeBaseSearch($bot, $flow, $message, $intent, $emit);
 
             // === STEP 4: Chat Model - Generate Response ===
-            $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $memoryNotes, $metrics, $emit);
+            $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $memoryNotes, $metrics, $emit);
 
-            // === SEMANTIC CACHE: Save response ===
-            if ($this->semanticCache?->isEnabled() && ! empty($chatResponse)) {
-                rescue(function () use ($bot, $message, $chatResponse) {
-                    $this->semanticCache->put($bot, $message, $chatResponse);
-                }, null, report: false);
-            }
+            // The emulator reads the semantic cache but never writes to it: the cache
+            // is shared with real customers, and a draft prompt's answer must not reach them.
 
             // === STEP 6: Done (if not already sent) ===
             if (! $doneSent) {

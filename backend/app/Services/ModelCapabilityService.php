@@ -129,8 +129,13 @@ class ModelCapabilityService
             return $configCapabilities;
         }
 
-        // 4. Conservative defaults
+        // 4. Conservative defaults. A model in use that nobody knows runs on guessed
+        // capabilities (no JSON mode, no reasoning control, 4k context) - say so.
         $defaults = $this->getDefaults($modelId);
+        Log::warning('ModelCapabilityService: model not in the OpenRouter list or the config table; capabilities are guessed', [
+            'model_id' => $modelId,
+            'source' => $defaults['source'] ?? null,
+        ]);
         $this->setToCache($cacheKey, $defaults, 1800); // Short cache for unknowns
 
         return $defaults;
