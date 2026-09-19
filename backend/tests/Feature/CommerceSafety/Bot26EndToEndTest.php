@@ -119,7 +119,6 @@ class Bot26EndToEndTest extends TestCase
             ->andReturn(['intent' => 'chat', 'confidence' => 1, 'usage' => null]);
         $capabilities = $this->mock(ModelCapabilityService::class);
         $capabilities->shouldReceive('supportsReasoning', 'supportsVision', 'supportsStructuredOutput')->andReturn(true);
-        $capabilities->shouldReceive('getDefaultReasoningEffort')->andReturn('medium');
     }
 
     public function test_new_customer_changed_cart_reaccepts_support_and_terms_and_duplicate_slip_is_idempotent(): void

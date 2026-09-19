@@ -97,13 +97,13 @@ class OpenRouterService
             // Use ModelCapabilityService for dynamic capability checks
             $capService = app(ModelCapabilityService::class);
 
-            // ส่ง reasoning เฉพาะโมเดลที่รองรับ; effort จาก caller (bot setting) เมื่อมี ไม่งั้น default ของโมเดล
+            // ส่ง reasoning เฉพาะเมื่อ caller ขอ (bot setting / intent) และโมเดลรองรับ
+            // caller ที่ไม่ขอ = ไม่ส่ง param เลย ให้โมเดลใช้ default ของตัวเอง: effort ที่เราเติมให้เอง
+            // ถูกคิดรวมใน max_tokens จน helper ที่ตั้ง token ต่ำ (plugin 256, order 300) ได้ JSON ขาดกลางทาง
             // ข้อจำกัด: payload เดียวใช้ร่วมทั้ง models[] — native fallback จึงได้ reasoning เดียวกับ primary
             // (OpenRouter ignore param ที่โมเดลไม่รองรับ; ส่วน client-side fallback ด้านล่างส่ง reasoning:null แยกแล้ว)
-            if ($capService->supportsReasoning($model)) {
-                $payload['reasoning'] = $reasoning ?? [
-                    'effort' => $capService->getDefaultReasoningEffort($model) ?? 'medium',
-                ];
+            if ($reasoning !== null && $capService->supportsReasoning($model)) {
+                $payload['reasoning'] = $reasoning;
                 Log::debug('Using reasoning mode', ['model' => $model, 'reasoning' => $payload['reasoning']]);
             }
 
