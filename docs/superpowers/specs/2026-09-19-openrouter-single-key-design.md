@@ -82,6 +82,13 @@ One rule: **the key must exist in Railway before the new code deploys.** Reverse
 - Verify: `prompt:eval --bot=26 --runs=2` before (run locally with the key supplied for that process only) and after; compare. Three BM cases fail regardless while "Nolimit Level Up+ BM" is out of stock.
 - Rollback: delete the variable.
 
+**Step 0 as it actually ran (2026-09-19).** Step 0 was *not* safe for the code then on `main`, and "delete the variable" was not a sufficient rollback.
+- First attempt (19:43): once the catalogue resolved from the API, `OpenRouterService::chat()` injected `reasoning: medium` into every call that did not name one. Utility calls with a small `max_tokens` (flow plugins 256, order reconstruction 300, query rewrite 100) spent the budget on reasoning and returned truncated JSON. `prompt:eval` does not exercise those paths and stayed green. Rolled back at 19:54.
+- Rollback that worked: delete the variable, **trigger a redeploy** (deleting a variable does not), then **invalidate the capability cache** — it lives in Redis, up to 24 h for known models, so the bad capabilities outlive the key.
+- Fix: PR #273 (`f78a56e0`) — `chat()` sends `reasoning` only when the caller names one.
+- Second attempt (21:14), after #273 was serving: utility call at 256 tokens used 0 reasoning tokens, JSON complete 3/3; eval 22/25 (the three BM cases). The owner chose to reuse user 14's existing key rather than issue a new one, and to keep `reasoning_effort = medium` on both bots, which only now takes effect.
+- After setting the key, invalidate the capability cache by hand; otherwise the guessed values persist for 30 minutes to 24 hours.
+
 **Step 1 — PR 1: all code changes, no migration.**
 - The two columns stay in the database, unread.
 - Before merge: confirm the Step 0 variable is present.
