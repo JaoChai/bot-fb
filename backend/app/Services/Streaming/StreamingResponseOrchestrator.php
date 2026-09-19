@@ -10,7 +10,6 @@ use App\Services\MultipleBubblesService;
 use App\Services\OpenRouterCredentials;
 use App\Services\OpenRouterService;
 use App\Services\RAGService;
-use App\Services\SemanticCacheService;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Log;
 
@@ -18,7 +17,7 @@ use Illuminate\Support\Facades\Log;
  * StreamingResponseOrchestrator - Pipeline runner for the chat-emulator SSE stream.
  *
  * Extracted from StreamController as part of Sprint 5 Task C (C2). Runs the entire
- * process_start → semantic cache → decision → KB → chat → done pipeline, emitting
+ * process_start → decision → KB → chat → done pipeline, emitting
  * SSE events through an injected `$onSseEvent` callback so the controller stays a
  * thin HTTP/SSE adapter.
  *
@@ -40,7 +39,6 @@ class StreamingResponseOrchestrator
         private RAGService $ragService,
         private MultipleBubblesService $multipleBubbles,
         private OpenRouterCredentials $credentials,
-        private ?SemanticCacheService $semanticCache = null,
     ) {
         $this->openRouterBaseUrl = config('services.openrouter.base_url') ?? 'https://openrouter.ai/api/v1';
         $this->openRouterSiteUrl = config('services.openrouter.site_url') ?? config('app.url') ?? '';
@@ -88,44 +86,6 @@ class StreamingResponseOrchestrator
                 'message' => $message,
             ]);
 
-            // === SEMANTIC CACHE: Check for cached response ===
-            if ($this->semanticCache?->isEnabled()) {
-                $cacheResult = rescue(function () use ($bot, $message) {
-                    return $this->semanticCache->get($bot, $message);
-                }, null, report: false);
-
-                if ($cacheResult) {
-                    $emit('cache_hit', [
-                        'match_type' => $cacheResult['cache_match_type'] ?? 'unknown',
-                        'similarity' => $cacheResult['cache_similarity'] ?? 1.0,
-                    ]);
-
-                    // Stream cached content in chunks for natural feel
-                    $content = $cacheResult['content'];
-                    $chunkSize = 50;
-                    $offset = 0;
-                    while ($offset < mb_strlen($content)) {
-                        $chunk = mb_substr($content, $offset, $chunkSize);
-                        $emit('content', ['text' => $chunk]);
-                        $offset += $chunkSize;
-                        usleep(5000); // 5ms delay
-                    }
-
-                    // Send done
-                    $totalTime = round((microtime(true) - $metrics['start_time']) * 1000);
-                    $emit('done', [
-                        'total_time_ms' => $totalTime,
-                        'prompt_tokens' => 0,
-                        'completion_tokens' => 0,
-                        'models_used' => [],
-                        'tool_calls' => 0,
-                        'from_cache' => true,
-                    ]);
-
-                    return;
-                }
-            }
-
             // === STANDARD MODE: Decision → KB → Chat ===
 
             // === STEP 2: Decision Model - Intent Analysis ===
@@ -137,8 +97,9 @@ class StreamingResponseOrchestrator
             // === STEP 4: Chat Model - Generate Response ===
             $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $memoryNotes, $metrics, $emit);
 
-            // The emulator reads the semantic cache but never writes to it: the cache
-            // is shared with real customers, and a draft prompt's answer must not reach them.
+            // The emulator never touches the semantic cache: it is shared with real customers and
+            // keyed on bot + query only, so a read would hide the prompt being tried out and a
+            // write would serve a draft answer to a customer.
 
             // === STEP 6: Done (if not already sent) ===
             if (! $doneSent) {

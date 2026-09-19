@@ -432,7 +432,6 @@ class ModelCapabilityService
             'supports_vision' => $supportsVision,
             'supports_reasoning' => $supportsReasoning,
             'is_mandatory_reasoning' => false, // Only from config override
-            'default_reasoning_effort' => null, // Only from config override
             'supports_structured_output' => $supportsStructuredOutput,
             'context_length' => (int) ($model['context_length'] ?? $architecture['context_length'] ?? 4096),
             'max_output_tokens' => (int) ($architecture['max_output_tokens'] ?? $model['top_provider']['max_completion_tokens'] ?? 4096),
@@ -501,9 +500,6 @@ class ModelCapabilityService
         if (isset($config['is_mandatory_reasoning'])) {
             $overrides['is_mandatory_reasoning'] = (bool) $config['is_mandatory_reasoning'];
         }
-        if (isset($config['default_reasoning_effort'])) {
-            $overrides['default_reasoning_effort'] = $config['default_reasoning_effort'];
-        }
         if (isset($config['supports_structured_output'])) {
             $overrides['supports_structured_output'] = (bool) $config['supports_structured_output'];
         }
@@ -559,7 +555,6 @@ class ModelCapabilityService
             'supports_vision' => (bool) ($config['supports_vision'] ?? false),
             'supports_reasoning' => (bool) ($config['supports_reasoning'] ?? false),
             'is_mandatory_reasoning' => (bool) ($config['is_mandatory_reasoning'] ?? false),
-            'default_reasoning_effort' => $config['default_reasoning_effort'] ?? null,
             'supports_structured_output' => (bool) ($config['supports_structured_output'] ?? false),
             'context_length' => (int) ($config['context_length'] ?? 4096),
             'max_output_tokens' => (int) ($config['max_output_tokens'] ?? 4096),
@@ -586,7 +581,6 @@ class ModelCapabilityService
             'supports_vision' => $inferredVision,
             'supports_reasoning' => false,
             'is_mandatory_reasoning' => false,
-            'default_reasoning_effort' => null,
             'supports_structured_output' => false,
             'context_length' => 4096,
             'max_output_tokens' => 4096,
