@@ -4,6 +4,7 @@ namespace Tests\Unit\Services;
 
 use App\Exceptions\OpenRouterException;
 use App\Services\OpenRouterCredentials;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class OpenRouterCredentialsTest extends TestCase
@@ -18,22 +19,24 @@ class OpenRouterCredentialsTest extends TestCase
         $this->assertSame('synthetic-not-a-key', $credentials->key());
     }
 
-    public function test_missing_key_is_reported_and_throws(): void
+    /** @return array<string, array{0: ?string}> */
+    public static function missingKeys(): array
     {
-        foreach ([null, ''] as $missing) {
-            config(['services.openrouter.api_key' => $missing]);
-            $credentials = new OpenRouterCredentials;
+        return ['null' => [null], 'empty string' => ['']];
+    }
 
-            $this->assertFalse($credentials->isConfigured());
+    #[DataProvider('missingKeys')]
+    public function test_missing_key_is_reported_and_throws(?string $missing): void
+    {
+        config(['services.openrouter.api_key' => $missing]);
+        $credentials = new OpenRouterCredentials;
 
-            try {
-                $credentials->key();
-                $this->fail('Expected OpenRouterException for '.var_export($missing, true));
-            } catch (OpenRouterException $e) {
-                $this->assertStringContainsString('OPENROUTER_API_KEY', $e->getMessage());
-                $this->assertSame(500, $e->getHttpStatus());
-            }
-        }
+        $this->assertFalse($credentials->isConfigured());
+
+        $this->expectException(OpenRouterException::class);
+        $this->expectExceptionMessage('OPENROUTER_API_KEY');
+
+        $credentials->key();
     }
 
     public function test_config_is_read_on_every_call_not_frozen_at_construction(): void

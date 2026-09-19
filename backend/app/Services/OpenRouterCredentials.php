@@ -16,7 +16,7 @@ final class OpenRouterCredentials
 {
     public function isConfigured(): bool
     {
-        return config_string('services.openrouter.api_key') !== '';
+        return $this->rawKey() !== '';
     }
 
     /**
@@ -26,12 +26,17 @@ final class OpenRouterCredentials
      */
     public function key(): string
     {
-        $key = config_string('services.openrouter.api_key');
+        $key = $this->rawKey();
 
         if ($key === '') {
             throw new OpenRouterException('OPENROUTER_API_KEY is not set', 500);
         }
 
         return $key;
+    }
+
+    private function rawKey(): string
+    {
+        return config_string('services.openrouter.api_key');
     }
 }
