@@ -20,8 +20,10 @@ class ModelCapabilityService
 
     protected CircuitBreakerService $circuitBreaker;
 
-    public function __construct(CircuitBreakerService $circuitBreaker)
-    {
+    public function __construct(
+        CircuitBreakerService $circuitBreaker,
+        private OpenRouterCredentials $credentials,
+    ) {
         $this->circuitBreaker = $circuitBreaker;
     }
 
@@ -353,14 +355,16 @@ class ModelCapabilityService
      */
     protected function doFetchAllModels(): array
     {
-        $apiKey = config('services.openrouter.api_key');
-        if (empty($apiKey)) {
+        if (! $this->credentials->isConfigured()) {
+            // Never silent again: a missing key left API-based resolution dead for months.
+            Log::error('ModelCapabilityService: OPENROUTER_API_KEY is not set; using the config table only');
+
             return [];
         }
 
         try {
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer '.$apiKey,
+                'Authorization' => 'Bearer '.$this->credentials->key(),
                 'HTTP-Referer' => config('app.url', 'https://botjao.com'),
             ])
                 ->timeout(self::API_TIMEOUT)

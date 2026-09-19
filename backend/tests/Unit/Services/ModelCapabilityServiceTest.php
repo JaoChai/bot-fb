@@ -4,7 +4,9 @@ namespace Tests\Unit\Services;
 
 use App\Services\CircuitBreakerService;
 use App\Services\ModelCapabilityService;
+use App\Services\OpenRouterCredentials;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use Mockery;
 use Tests\TestCase;
@@ -33,7 +35,7 @@ class ModelCapabilityServiceTest extends TestCase
                 }
             });
 
-        $this->service = new ModelCapabilityService($this->circuitBreaker);
+        $this->service = new ModelCapabilityService($this->circuitBreaker, new OpenRouterCredentials);
     }
 
     // -------------------------------------------------------------------------
@@ -244,6 +246,22 @@ class ModelCapabilityServiceTest extends TestCase
         // Should use default (no guessing)
         $this->assertEquals('default', $capabilities['source']);
         $this->assertFalse($capabilities['supports_vision']); // No guessing - default to false
+    }
+
+    public function test_missing_key_logs_an_error_and_falls_back_to_config(): void
+    {
+        config(['services.openrouter.api_key' => null]);
+        Cache::flush();
+        Log::spy();
+
+        $capabilities = app(ModelCapabilityService::class)
+            ->getCapabilities('google/gemini-3-flash-preview');
+
+        $this->assertSame('config', $capabilities['source']);
+
+        Log::shouldHaveReceived('error')
+            ->withArgs(fn (string $message) => str_contains($message, 'OPENROUTER_API_KEY'))
+            ->atLeast()->once();
     }
 
     // -------------------------------------------------------------------------

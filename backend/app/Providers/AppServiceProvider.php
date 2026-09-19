@@ -13,7 +13,6 @@ use App\Policies\BotPolicy;
 use App\Policies\DocumentPolicy;
 use App\Policies\KnowledgeBasePolicy;
 use App\Policies\QuickReplyPolicy;
-use App\Services\CircuitBreakerService;
 use App\Services\FlowCacheService;
 use App\Services\HybridSearchService;
 use App\Services\IntentAnalysisService;
@@ -74,11 +73,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         // Register ModelCapabilityService for dynamic model capability detection
-        $this->app->singleton(ModelCapabilityService::class, function ($app) {
-            return new ModelCapabilityService(
-                $app->make(CircuitBreakerService::class)
-            );
-        });
+        $this->app->singleton(ModelCapabilityService::class);
 
     }
 
