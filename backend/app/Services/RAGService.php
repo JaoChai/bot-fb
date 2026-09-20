@@ -36,7 +36,6 @@ class RAGService
         protected OpenRouterService $openRouter,
         protected IntentAnalysisService $intentAnalysis,
         protected FlowCacheService $flowCacheService,
-        protected ?QueryEnhancementService $queryEnhancement = null,
         protected ?SemanticCacheService $semanticCache = null,
         protected ?CRAGService $cragService = null,
         protected StockInjectionService $stockInjectionService = new StockInjectionService
@@ -385,7 +384,6 @@ class RAGService
             'results_count' => 0,
             'chunks_used' => [],
             'search_mode' => 'none',
-            'query_enhancement' => null,
         ];
 
         $context = '';
@@ -402,7 +400,6 @@ class RAGService
             'context_preview' => substr($context, 0, 500).(strlen($context) > 500 ? '...' : ''),
             'metadata' => $metadata,
             'hybrid_search_enabled' => $this->hybridSearchService->isEnabled(),
-            'query_enhancement_enabled' => $this->queryEnhancement?->isEnabled() ?? false,
             'reranking_enabled' => $this->hybridSearchService->isRerankingEnabled(),
         ];
     }

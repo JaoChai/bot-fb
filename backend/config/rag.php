@@ -202,35 +202,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Query Enhancement Configuration (Phase 3)
-    |--------------------------------------------------------------------------
-    |
-    | Uses LLM to expand and rewrite queries for better retrieval.
-    | Generates multiple search variations from a single query.
-    |
-    | Research shows: +20-48% recall improvement (Haystack, Microsoft 2024)
-    | Cost: ~$0.00005/query with GPT-4o-mini
-    |
-    */
-    'query_enhancement' => [
-        // Enable/disable query enhancement
-        'enabled' => env('RAG_QUERY_ENHANCEMENT_ENABLED', false),
-
-        // LLM model for query expansion (cheap, fast model recommended)
-        'model' => env('RAG_QUERY_ENHANCEMENT_MODEL', 'openai/gpt-4o-mini'),
-
-        // Maximum number of query variations to generate
-        'max_variations' => env('RAG_QUERY_MAX_VARIATIONS', 3),
-
-        // Minimum query length to trigger enhancement (chars)
-        'min_query_length' => 2,
-
-        // Timeout in seconds for enhancement LLM call
-        'timeout' => 5,
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
     | Chain-of-Thought (CoT) Configuration
     |--------------------------------------------------------------------------
     |
