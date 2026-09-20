@@ -12,6 +12,7 @@ use App\Http\Traits\ApiResponseTrait;
 use App\Models\Bot;
 use App\Models\Flow;
 use App\Services\FlowCacheService;
+use App\Services\OpenRouterCredentials;
 use App\Services\OpenRouterService;
 use App\Services\RAGService;
 use App\Services\SemanticCacheService;
@@ -554,7 +555,7 @@ class FlowController extends Controller
      * Test a flow with a message using the Chat Emulator.
      * Uses the flow's system_prompt and model settings to generate an AI response.
      */
-    public function test(Request $request, Bot $bot, Flow $flow, OpenRouterService $openRouter): JsonResponse
+    public function test(Request $request, Bot $bot, Flow $flow, OpenRouterService $openRouter, OpenRouterCredentials $credentials): JsonResponse
     {
         $this->authorize('view', $bot);
         $this->ensureFlowBelongsToBot($flow, $bot);
@@ -569,11 +570,8 @@ class FlowController extends Controller
         $userMessage = $request->input('message');
         $conversationHistory = $request->input('conversation_history', []);
 
-        // Get API key: User Settings > ENV
-        $apiKey = $bot->user?->settings?->getOpenRouterApiKey() ?? config('services.openrouter.api_key');
-
-        if (empty($apiKey)) {
-            return $this->validationError('ไม่พบ OpenRouter API Key กรุณาตั้งค่าในหน้า Settings', ['error_code' => 'NO_API_KEY']);
+        if (! $credentials->isConfigured()) {
+            return $this->validationError('ระบบยังไม่ได้ตั้งค่า OpenRouter API Key กรุณาติดต่อผู้ดูแลระบบ', ['error_code' => 'NO_API_KEY']);
         }
 
         // Build messages array for OpenRouter
@@ -615,7 +613,6 @@ class FlowController extends Controller
                 temperature: $flow->temperature ? (float) $flow->temperature : 0.7,
                 maxTokens: $flow->max_tokens ?? 2048,
                 useFallback: true,
-                apiKeyOverride: $apiKey,
                 fallbackModelOverride: $bot->fallback_chat_model
             );
 

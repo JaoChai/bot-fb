@@ -41,7 +41,7 @@ class ConfirmMessageFallbackTest extends TestCase
     private function makeBot(float $tolerance = 0): Bot
     {
         $user = User::factory()->create();
-        $user->getOrCreateSettings()->update(['openrouter_api_key' => 'or-key-123']);
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
 
         $bot = Bot::factory()->create([
             'user_id' => $user->id,

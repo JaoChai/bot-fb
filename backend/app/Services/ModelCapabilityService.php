@@ -20,8 +20,10 @@ class ModelCapabilityService
 
     protected CircuitBreakerService $circuitBreaker;
 
-    public function __construct(CircuitBreakerService $circuitBreaker)
-    {
+    public function __construct(
+        CircuitBreakerService $circuitBreaker,
+        private OpenRouterCredentials $credentials,
+    ) {
         $this->circuitBreaker = $circuitBreaker;
     }
 
@@ -47,14 +49,6 @@ class ModelCapabilityService
     public function isMandatoryReasoning(string $modelId): bool
     {
         return $this->getCapabilities($modelId)['is_mandatory_reasoning'] ?? false;
-    }
-
-    /**
-     * Get default reasoning effort for a model.
-     */
-    public function getDefaultReasoningEffort(string $modelId): ?string
-    {
-        return $this->getCapabilities($modelId)['default_reasoning_effort'] ?? null;
     }
 
     /**
@@ -135,8 +129,13 @@ class ModelCapabilityService
             return $configCapabilities;
         }
 
-        // 4. Conservative defaults
+        // 4. Conservative defaults. A model in use that nobody knows runs on guessed
+        // capabilities (no JSON mode, no reasoning control, 4k context) - say so.
         $defaults = $this->getDefaults($modelId);
+        Log::warning('ModelCapabilityService: model not in the OpenRouter list or the config table; capabilities are guessed', [
+            'model_id' => $modelId,
+            'source' => $defaults['source'] ?? null,
+        ]);
         $this->setToCache($cacheKey, $defaults, 1800); // Short cache for unknowns
 
         return $defaults;
@@ -361,14 +360,16 @@ class ModelCapabilityService
      */
     protected function doFetchAllModels(): array
     {
-        $apiKey = config('services.openrouter.api_key');
-        if (empty($apiKey)) {
+        if (! $this->credentials->isConfigured()) {
+            // Never silent again: a missing key left API-based resolution dead for months.
+            Log::error('ModelCapabilityService: OPENROUTER_API_KEY is not set; using the config table only');
+
             return [];
         }
 
         try {
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer '.$apiKey,
+                'Authorization' => 'Bearer '.$this->credentials->key(),
                 'HTTP-Referer' => config('app.url', 'https://botjao.com'),
             ])
                 ->timeout(self::API_TIMEOUT)
@@ -431,7 +432,6 @@ class ModelCapabilityService
             'supports_vision' => $supportsVision,
             'supports_reasoning' => $supportsReasoning,
             'is_mandatory_reasoning' => false, // Only from config override
-            'default_reasoning_effort' => null, // Only from config override
             'supports_structured_output' => $supportsStructuredOutput,
             'context_length' => (int) ($model['context_length'] ?? $architecture['context_length'] ?? 4096),
             'max_output_tokens' => (int) ($architecture['max_output_tokens'] ?? $model['top_provider']['max_completion_tokens'] ?? 4096),
@@ -500,9 +500,6 @@ class ModelCapabilityService
         if (isset($config['is_mandatory_reasoning'])) {
             $overrides['is_mandatory_reasoning'] = (bool) $config['is_mandatory_reasoning'];
         }
-        if (isset($config['default_reasoning_effort'])) {
-            $overrides['default_reasoning_effort'] = $config['default_reasoning_effort'];
-        }
         if (isset($config['supports_structured_output'])) {
             $overrides['supports_structured_output'] = (bool) $config['supports_structured_output'];
         }
@@ -558,7 +555,6 @@ class ModelCapabilityService
             'supports_vision' => (bool) ($config['supports_vision'] ?? false),
             'supports_reasoning' => (bool) ($config['supports_reasoning'] ?? false),
             'is_mandatory_reasoning' => (bool) ($config['is_mandatory_reasoning'] ?? false),
-            'default_reasoning_effort' => $config['default_reasoning_effort'] ?? null,
             'supports_structured_output' => (bool) ($config['supports_structured_output'] ?? false),
             'context_length' => (int) ($config['context_length'] ?? 4096),
             'max_output_tokens' => (int) ($config['max_output_tokens'] ?? 4096),
@@ -585,7 +581,6 @@ class ModelCapabilityService
             'supports_vision' => $inferredVision,
             'supports_reasoning' => false,
             'is_mandatory_reasoning' => false,
-            'default_reasoning_effort' => null,
             'supports_structured_output' => false,
             'context_length' => 4096,
             'max_output_tokens' => 4096,

@@ -11,8 +11,6 @@ class UserSetting extends Model
 {
     protected $fillable = [
         'user_id',
-        'openrouter_api_key',
-        'openrouter_model',
         'line_channel_secret',
         'line_channel_access_token',
         'easyslip_api_token',
@@ -25,7 +23,6 @@ class UserSetting extends Model
      * Encrypt sensitive fields when storing in database.
      */
     protected $casts = [
-        'openrouter_api_key' => 'encrypted',
         'line_channel_secret' => 'encrypted',
         'line_channel_access_token' => 'encrypted',
         'easyslip_api_token' => 'encrypted',
@@ -36,7 +33,6 @@ class UserSetting extends Model
      * Hidden fields - never expose in JSON responses.
      */
     protected $hidden = [
-        'openrouter_api_key',
         'line_channel_secret',
         'line_channel_access_token',
         'easyslip_api_token',
@@ -71,32 +67,6 @@ class UserSetting extends Model
     }
 
     /**
-     * Safely get OpenRouter API key, handling decryption errors.
-     * Returns null if decryption fails (e.g., APP_KEY changed).
-     */
-    public function getOpenRouterApiKey(): ?string
-    {
-        try {
-            return $this->openrouter_api_key;
-        } catch (DecryptException $e) {
-            Log::warning('Failed to decrypt OpenRouter API key', [
-                'user_id' => $this->user_id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
-        }
-    }
-
-    /**
-     * Check if OpenRouter is configured.
-     */
-    public function hasOpenRouterKey(): bool
-    {
-        return ! empty($this->getOpenRouterApiKey());
-    }
-
-    /**
      * Safely get EasySlip API token, handling decryption errors.
      * Returns null if decryption fails (e.g., APP_KEY changed).
      */
@@ -128,18 +98,6 @@ class UserSetting extends Model
     public function hasLineCredentials(): bool
     {
         return ! empty($this->line_channel_secret) && ! empty($this->line_channel_access_token);
-    }
-
-    /**
-     * Get masked API key for display (show last 4 chars only).
-     */
-    public function getMaskedOpenRouterKeyAttribute(): ?string
-    {
-        if (empty($this->openrouter_api_key)) {
-            return null;
-        }
-
-        return '••••••••'.substr($this->openrouter_api_key, -4);
     }
 
     /**

@@ -7,6 +7,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\User;
+use App\Services\OpenRouterCredentials;
 use App\Services\Streaming\StreamingResponseOrchestrator;
 use Illuminate\Http\Request;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -33,7 +34,7 @@ class StreamController extends Controller
      * Stream AI response with System Process Logging.
      * Shows each step: Decision Model, KB Search, Chat Model
      */
-    public function streamTest(Request $request, int $botId, int $flowId): StreamedResponse
+    public function streamTest(Request $request, OpenRouterCredentials $credentials, int $botId, int $flowId): StreamedResponse
     {
         // 1. Manual authentication (before streaming starts)
         $user = $this->authenticateFromToken($request);
@@ -72,10 +73,9 @@ class StreamController extends Controller
             return $this->errorResponse('Flow not found', 404);
         }
 
-        // 4. Get API key: User Settings > ENV
-        $apiKey = $bot->user?->settings?->getOpenRouterApiKey() ?? config('services.openrouter.api_key');
-        if (empty($apiKey)) {
-            return $this->errorResponse('No API key configured. Please set up in Settings page.', 422);
+        // 4. The OpenRouter key is system-wide (OPENROUTER_API_KEY)
+        if (! $credentials->isConfigured()) {
+            return $this->errorResponse('OpenRouter API key is not configured. Please contact the administrator.', 422);
         }
 
         // 5. Load memory notes from conversation (if provided)
@@ -95,7 +95,7 @@ class StreamController extends Controller
         // 6. Create SSE response, delegating the pipeline to the orchestrator
         $orchestrator = $this->orchestrator;
 
-        return new StreamedResponse(function () use ($orchestrator, $bot, $flow, $message, $conversationHistory, $apiKey, $memoryNotes) {
+        return new StreamedResponse(function () use ($orchestrator, $bot, $flow, $message, $conversationHistory, $memoryNotes) {
             // Disable output buffering for streaming
             while (ob_get_level()) {
                 ob_end_clean();
@@ -113,7 +113,6 @@ class StreamController extends Controller
                 flow: $flow,
                 message: $message,
                 conversationHistory: $conversationHistory,
-                apiKey: $apiKey,
                 memoryNotes: $memoryNotes,
                 onSseEvent: fn (string $event, array $data) => $this->sendSSE($event, $data),
             );

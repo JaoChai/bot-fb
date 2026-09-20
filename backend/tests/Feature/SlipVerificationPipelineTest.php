@@ -84,6 +84,7 @@ class SlipVerificationPipelineTest extends TestCase
     #[DataProvider('classificationLoggingModes')]
     public function test_malformed_classification_logs_only_safe_diagnostics(string $mode): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         Http::preventStrayRequests();
         $this->makeBotAndConversation(['id' => 26]);
         config(['commerce_safety.bots.26.mode' => $mode]);
@@ -121,6 +122,7 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_review_scoped_vision_cannot_emit_generated_transfer_instructions(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         Http::preventStrayRequests();
         $this->bot->settings->update(['slip_verification_enabled' => false]);
         foreach (['enforce', 'hold'] as $mode) {
@@ -252,6 +254,7 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_easyslip_api_error_falls_back_to_vision_and_alerts_admin(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $this->enableTelegramAlert();
 
         Http::fake([
@@ -280,6 +283,11 @@ class SlipVerificationPipelineTest extends TestCase
         // เคสจริง prod 27 ก.ค. แชท #361: screenshot หน้าเพจ FB + EasySlip ล่ม
         // → ต้องตอบลูกค้าตามบริบท และห้ามเด้งการ์ดหาเจ้าของ
         // (reply ต้องไม่มีคำว่า "ได้รับสลิป" ไม่งั้นจะไปโดน safety net อีกชั้นที่ generateImageResponse)
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
+        $this->partialMock(ModelCapabilityService::class, function ($mock) {
+            $mock->shouldReceive('supportsVision')->andReturn(true);
+            $mock->shouldReceive('supportsStructuredOutput')->andReturn(false);
+        });
         $this->enableTelegramAlert();
         $this->conversation->messages()->where('sender', 'bot')->delete();
 
@@ -310,6 +318,11 @@ class SlipVerificationPipelineTest extends TestCase
         // เฉพาะตอน is_slip=false เท่านั้น (LineWebhookResponseService::classifySlipImage)
         // พอตอบว่าเป็นสลิป generateImageResponse จึงต้องยิง vision ซ้ำเพื่อตอบลูกค้า
         // แลกกับการที่รูปทั่วไปไม่เด้งการ์ดหาเจ้าของอีกต่อไป และเกิดเฉพาะตอน EasySlip ล่ม
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
+        $this->partialMock(ModelCapabilityService::class, function ($mock) {
+            $mock->shouldReceive('supportsVision')->andReturn(true);
+            $mock->shouldReceive('supportsStructuredOutput')->andReturn(false);
+        });
         $this->enableTelegramAlert();
 
         Http::fake([
@@ -333,6 +346,7 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_non_slip_image_falls_through_to_vision(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         // Remove the pending-order summary so a 400 is treated as a genuine non-slip → vision.
         $this->conversation->messages()->where('sender', 'bot')->delete();
 
@@ -355,6 +369,11 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_unreadable_slip_replies_fail_template_and_alerts(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
+        $this->partialMock(ModelCapabilityService::class, function ($mock) {
+            $mock->shouldReceive('supportsVision')->andReturn(true);
+            $mock->shouldReceive('supportsStructuredOutput')->andReturn(false);
+        });
         $this->enableTelegramAlert();
 
         // 400 + pending order (from setUp) + vision บอกเป็นสลิป → unreadable slip.
@@ -384,6 +403,11 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_non_slip_image_with_pending_order_falls_through_to_vision(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
+        $this->partialMock(ModelCapabilityService::class, function ($mock) {
+            $mock->shouldReceive('supportsVision')->andReturn(true);
+            $mock->shouldReceive('supportsStructuredOutput')->andReturn(false);
+        });
         $this->enableTelegramAlert();
 
         // 400 + pending order แต่ vision บอกไม่ใช่สลิป (เช่น screenshot โปรโมทโพสต์)
@@ -416,6 +440,7 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_vision_fallback_slip_acknowledgement_still_alerts_admin(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $this->enableTelegramAlert();
 
         // ไม่มีออเดอร์ค้าง (ลบสรุปยอดทิ้ง) → 400 ไป vision ปกติ แต่ vision เห็นเป็นสลิป
@@ -442,6 +467,7 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_structured_output_used_when_model_supports_it(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $this->partialMock(ModelCapabilityService::class, function ($mock) {
             $mock->shouldReceive('supportsVision')->andReturn(true);
             $mock->shouldReceive('supportsStructuredOutput')->with('google/gemini-3.5-flash')->andReturn(true);
@@ -499,6 +525,7 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_bot26_classifier_requests_image_kind_and_bank_app_slip_flows_to_unreadable_alert(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $this->makeBotAndConversation(['id' => 26]);
         $this->enableTelegramAlert();
         $this->partialMock(ModelCapabilityService::class, function ($mock) {
@@ -540,8 +567,13 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_bot26_camera_photo_of_screen_gets_fixed_reply_and_no_effects(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $this->makeBotAndConversation(['id' => 26]);
         $this->enableTelegramAlert();
+        $this->partialMock(ModelCapabilityService::class, function ($mock) {
+            $mock->shouldReceive('supportsVision')->andReturn(true);
+            $mock->shouldReceive('supportsStructuredOutput')->with('google/gemini-3.5-flash')->andReturn(true);
+        });
 
         Http::fake([
             'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
@@ -604,6 +636,7 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_bot26_classifier_transport_failure_fails_closed_under_new_schema(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $this->makeBotAndConversation(['id' => 26]);
         $this->enableTelegramAlert();
         $this->partialMock(ModelCapabilityService::class, function ($mock) {
@@ -727,6 +760,7 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_config_error_falls_back_to_vision_and_alerts_admin(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $this->bot->user->settings->update(['easyslip_api_token' => null]);
 
         $this->enableTelegramAlert();
@@ -754,6 +788,7 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_enabled_bot_vision_prompt_is_cautious_no_self_confirm(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         // Remove the pending-order summary so a 400 is treated as a genuine non-slip → vision.
         $this->conversation->messages()->where('sender', 'bot')->delete();
 
@@ -785,6 +820,7 @@ class SlipVerificationPipelineTest extends TestCase
 
     public function test_disabled_bot_vision_prompt_keeps_legacy_confirm_instruction(): void
     {
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
         $this->bot->settings->update(['slip_verification_enabled' => false]);
         // Remove the pending-order summary so vision uses the generic image prompt.
         $this->conversation->messages()->where('sender', 'bot')->delete();

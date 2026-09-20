@@ -48,7 +48,6 @@ class RAGServiceTest extends TestCase
             $openRouter,
             $intentAnalysis,
             $flowCache,
-            null, // queryEnhancement
             null, // semanticCache
             null, // CRAGService
             app(StockInjectionService::class)
@@ -442,7 +441,6 @@ class RAGServiceTest extends TestCase
             $openRouter,
             $intentAnalysis,
             $flowCache ?? $this->createMock(FlowCacheService::class),
-            null, // queryEnhancement
             null, // semanticCache
             null, // CRAGService
             app(StockInjectionService::class),

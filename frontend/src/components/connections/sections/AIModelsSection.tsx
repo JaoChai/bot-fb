@@ -1,5 +1,4 @@
-import { Cpu, Key, ExternalLink } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Cpu } from 'lucide-react';
 import { Panel } from '@/components/common';
 import { ModelConfiguration } from '@/components/ModelSelector';
 import { ReasoningEffortSelector } from '@/components/connections/ReasoningEffortSelector';
@@ -13,21 +12,6 @@ interface AIModelsSectionProps {
 export function AIModelsSection({ formData, handleChange }: AIModelsSectionProps) {
   return (
     <>
-      <Panel
-        icon={Key}
-        title="OpenRouter API"
-        description="ตั้งค่า API Key สำหรับเชื่อมต่อกับ AI Models"
-      >
-        <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground max-w-md">
-          <p className="mb-2">OpenRouter API Key ตั้งค่าที่หน้า Settings เพียงที่เดียว</p>
-          <Button variant="link" className="h-auto p-0 text-sm" asChild>
-            <a href="/settings">
-              ไปที่หน้า Settings <ExternalLink className="size-3 ml-1" strokeWidth={1.5} />
-            </a>
-          </Button>
-        </div>
-      </Panel>
-
       <Panel
         icon={Cpu}
         title="AI Models"

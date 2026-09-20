@@ -11,8 +11,6 @@ use Illuminate\Support\Facades\Log;
 
 class OpenRouterService
 {
-    protected string $apiKey;
-
     protected string $baseUrl;
 
     protected string $siteUrl;
@@ -25,8 +23,8 @@ class OpenRouterService
 
     public function __construct(
         private ModelCapabilityService $modelCapability,
+        private OpenRouterCredentials $credentials,
     ) {
-        $this->apiKey = config_string('services.openrouter.api_key');
         $this->baseUrl = config_string('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
         $this->siteUrl = config_string('services.openrouter.site_url', config_string('app.url'));
         $this->siteName = config_string('services.openrouter.site_name', config_string('app.name', 'BotFacebook'));
@@ -42,7 +40,6 @@ class OpenRouterService
      * @param  float|null  $temperature  Sampling temperature
      * @param  int|null  $maxTokens  Maximum tokens in response
      * @param  bool  $useFallback  Whether to try fallback model on failure
-     * @param  string|null  $apiKeyOverride  Override API key (from user settings)
      * @param  string|null  $fallbackModelOverride  Override fallback model (from bot settings)
      * @param  int|null  $timeout  Request timeout in seconds (null uses default)
      * @param  array|null  $reasoning  Reasoning config for o1/deepseek-r1 models: ['effort' => 'low'|'medium'|'high']
@@ -54,7 +51,6 @@ class OpenRouterService
         ?float $temperature = null,
         ?int $maxTokens = null,
         bool $useFallback = true,
-        ?string $apiKeyOverride = null,
         ?string $fallbackModelOverride = null,
         ?int $timeout = null,
         ?array $reasoning = null,
@@ -69,7 +65,6 @@ class OpenRouterService
 
         $temperature = $temperature ?? 0.7;
         $maxTokens = $maxTokens ?? $this->maxTokens;
-        $apiKey = $apiKeyOverride ?? $this->apiKey;
         // Fallback model comes ONLY from bot settings (Connection Settings form) — no config substitution
         $fallbackModel = $fallbackModelOverride;
         $requestTimeout = $timeout ?? $this->timeout;
@@ -97,13 +92,13 @@ class OpenRouterService
             // Use ModelCapabilityService for dynamic capability checks
             $capService = app(ModelCapabilityService::class);
 
-            // ส่ง reasoning เฉพาะโมเดลที่รองรับ; effort จาก caller (bot setting) เมื่อมี ไม่งั้น default ของโมเดล
+            // ส่ง reasoning เฉพาะเมื่อ caller ขอ (bot setting / intent) และโมเดลรองรับ
+            // caller ที่ไม่ขอ = ไม่ส่ง param เลย ให้โมเดลใช้ default ของตัวเอง: effort ที่เราเติมให้เอง
+            // ถูกคิดรวมใน max_tokens จน helper ที่ตั้ง token ต่ำ (plugin 256, order 300) ได้ JSON ขาดกลางทาง
             // ข้อจำกัด: payload เดียวใช้ร่วมทั้ง models[] — native fallback จึงได้ reasoning เดียวกับ primary
             // (OpenRouter ignore param ที่โมเดลไม่รองรับ; ส่วน client-side fallback ด้านล่างส่ง reasoning:null แยกแล้ว)
-            if ($capService->supportsReasoning($model)) {
-                $payload['reasoning'] = $reasoning ?? [
-                    'effort' => $capService->getDefaultReasoningEffort($model) ?? 'medium',
-                ];
+            if ($reasoning !== null && $capService->supportsReasoning($model)) {
+                $payload['reasoning'] = $reasoning;
                 Log::debug('Using reasoning mode', ['model' => $model, 'reasoning' => $payload['reasoning']]);
             }
 
@@ -119,7 +114,7 @@ class OpenRouterService
                 $payload['provider'] = $providerPrefs;
             }
 
-            $response = $this->client($apiKey, $requestTimeout)->post('/chat/completions', $payload);
+            $response = $this->client($requestTimeout)->post('/chat/completions', $payload);
 
             if ($response->failed()) {
                 $error = $response->json('error.message', 'Unknown error');
@@ -156,7 +151,6 @@ class OpenRouterService
                     $temperature,
                     $maxTokens,
                     useFallback: false,
-                    apiKeyOverride: $apiKey,
                     fallbackModelOverride: null,
                     timeout: config('services.openrouter.timeout', 45), // fast escape — ไม่ inherit high 90s
                     reasoning: null, // fallback ใช้ default effort ของตัวเอง ไม่รับ high มา (กัน worst-case + กัน gemini-2.5 ได้ high)
@@ -196,7 +190,6 @@ class OpenRouterService
      * @param  string|null  $model  Model ID
      * @param  float|null  $temperature  Sampling temperature
      * @param  int|null  $maxTokens  Maximum tokens in response
-     * @param  string|null  $apiKeyOverride  Override API key
      * @param  string  $toolChoice  Tool calling behavior: 'auto', 'none', 'required'
      * @param  bool  $useFallback  Whether to try fallback model on failure
      * @param  string|null  $fallbackModelOverride  Override fallback model
@@ -208,7 +201,6 @@ class OpenRouterService
         ?string $model = null,
         ?float $temperature = null,
         ?int $maxTokens = null,
-        ?string $apiKeyOverride = null,
         string $toolChoice = 'auto',
         bool $useFallback = true,
         ?string $fallbackModelOverride = null,
@@ -223,7 +215,6 @@ class OpenRouterService
 
         $temperature = $temperature ?? 0.7;
         $maxTokens = $maxTokens ?? $this->maxTokens;
-        $apiKey = $apiKeyOverride ?? $this->apiKey;
         // Fallback model comes ONLY from bot settings (Connection Settings form) — no config substitution
         $fallbackModel = $fallbackModelOverride;
         $requestTimeout = $timeout ?? $this->timeout;
@@ -260,7 +251,7 @@ class OpenRouterService
                 $payload['provider'] = $providerPrefs;
             }
 
-            $response = $this->client($apiKey, $requestTimeout)->post('/chat/completions', $payload);
+            $response = $this->client($requestTimeout)->post('/chat/completions', $payload);
 
             if ($response->failed()) {
                 $error = $response->json('error.message', 'Unknown error');
@@ -299,7 +290,6 @@ class OpenRouterService
      * @param  string|null  $fallbackModel  Fallback model if primary fails
      * @param  float|null  $temperature  Sampling temperature
      * @param  int|null  $maxTokens  Maximum tokens in response
-     * @param  string|null  $apiKeyOverride  Override API key
      * @param  array|null  $reasoning  Reasoning config: ['effort' => 'low'|'medium'|'high'] (null = model default)
      * @param  int|null  $timeout  Request timeout in seconds (null uses default)
      */
@@ -311,7 +301,6 @@ class OpenRouterService
         ?string $fallbackModel = null,
         ?float $temperature = null,
         ?int $maxTokens = null,
-        ?string $apiKeyOverride = null,
         ?array $reasoning = null,
         ?int $timeout = null
     ): array {
@@ -339,7 +328,7 @@ class OpenRouterService
             'content' => $userMessage,
         ];
 
-        return $this->chat($messages, $model, $temperature, $maxTokens, true, $apiKeyOverride, $fallbackModel, $timeout, $reasoning);
+        return $this->chat($messages, $model, $temperature, $maxTokens, true, $fallbackModel, $timeout, $reasoning);
     }
 
     /**
@@ -402,7 +391,6 @@ class OpenRouterService
      * @param  string|null  $model  Model ID (must be vision-capable)
      * @param  float|null  $temperature  Sampling temperature
      * @param  int|null  $maxTokens  Maximum tokens in response
-     * @param  string|null  $apiKeyOverride  Override API key
      * @param  bool  $useFallback  Whether to try fallback model on failure
      * @param  string|null  $fallbackModelOverride  Override fallback model (must be vision-capable)
      * @return array Response with content and usage
@@ -413,7 +401,6 @@ class OpenRouterService
         ?string $model = null,
         ?float $temperature = null,
         ?int $maxTokens = null,
-        ?string $apiKeyOverride = null,
         bool $useFallback = true,
         ?string $fallbackModelOverride = null,
         ?array $responseFormat = null
@@ -424,7 +411,6 @@ class OpenRouterService
 
         $temperature = $temperature ?? 0.7;
         $maxTokens = $maxTokens ?? $this->maxTokens;
-        $apiKey = $apiKeyOverride ?? $this->apiKey;
         $fallbackModel = $fallbackModelOverride;
 
         // Build multimodal messages
@@ -463,7 +449,7 @@ class OpenRouterService
                 $payload['provider'] = $providerPrefs;
             }
 
-            $response = $this->client($apiKey)->post('/chat/completions', $payload);
+            $response = $this->client()->post('/chat/completions', $payload);
 
             if ($response->failed()) {
                 $error = $response->json('error.message', 'Unknown error');
@@ -599,7 +585,7 @@ class OpenRouterService
      */
     public function isConfigured(): bool
     {
-        return ! empty($this->apiKey);
+        return $this->credentials->isConfigured();
     }
 
     /**
@@ -722,12 +708,11 @@ class OpenRouterService
     /**
      * Get configured HTTP client.
      *
-     * @param  string|null  $apiKey  API key (uses default from config if not provided)
      * @param  int|null  $timeout  Request timeout in seconds (null uses default)
      */
-    protected function client(?string $apiKey = null, ?int $timeout = null): PendingRequest
+    protected function client(?int $timeout = null): PendingRequest
     {
-        $key = $apiKey ?? $this->apiKey;
+        $key = $this->credentials->key();
         $requestTimeout = $timeout ?? $this->timeout;
 
         return Http::baseUrl($this->baseUrl)

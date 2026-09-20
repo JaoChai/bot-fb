@@ -7,9 +7,9 @@ use App\Models\Flow;
 use App\Services\HybridSearchService;
 use App\Services\IntentAnalysisService;
 use App\Services\MultipleBubblesService;
+use App\Services\OpenRouterCredentials;
 use App\Services\OpenRouterService;
 use App\Services\RAGService;
-use App\Services\SemanticCacheService;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Log;
 
@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Log;
  * StreamingResponseOrchestrator - Pipeline runner for the chat-emulator SSE stream.
  *
  * Extracted from StreamController as part of Sprint 5 Task C (C2). Runs the entire
- * process_start → semantic cache → decision → KB → chat → done pipeline, emitting
+ * process_start → decision → KB → chat → done pipeline, emitting
  * SSE events through an injected `$onSseEvent` callback so the controller stays a
  * thin HTTP/SSE adapter.
  *
@@ -38,7 +38,7 @@ class StreamingResponseOrchestrator
         private IntentAnalysisService $intentAnalysis,
         private RAGService $ragService,
         private MultipleBubblesService $multipleBubbles,
-        private ?SemanticCacheService $semanticCache = null,
+        private OpenRouterCredentials $credentials,
     ) {
         $this->openRouterBaseUrl = config('services.openrouter.base_url') ?? 'https://openrouter.ai/api/v1';
         $this->openRouterSiteUrl = config('services.openrouter.site_url') ?? config('app.url') ?? '';
@@ -56,7 +56,6 @@ class StreamingResponseOrchestrator
         Flow $flow,
         string $message,
         array $conversationHistory,
-        string $apiKey,
         array $memoryNotes,
         callable $onSseEvent,
     ): void {
@@ -87,61 +86,20 @@ class StreamingResponseOrchestrator
                 'message' => $message,
             ]);
 
-            // === SEMANTIC CACHE: Check for cached response ===
-            if ($this->semanticCache?->isEnabled()) {
-                $cacheResult = rescue(function () use ($bot, $message, $apiKey) {
-                    return $this->semanticCache->get($bot, $message, $apiKey);
-                }, null, report: false);
-
-                if ($cacheResult) {
-                    $emit('cache_hit', [
-                        'match_type' => $cacheResult['cache_match_type'] ?? 'unknown',
-                        'similarity' => $cacheResult['cache_similarity'] ?? 1.0,
-                    ]);
-
-                    // Stream cached content in chunks for natural feel
-                    $content = $cacheResult['content'];
-                    $chunkSize = 50;
-                    $offset = 0;
-                    while ($offset < mb_strlen($content)) {
-                        $chunk = mb_substr($content, $offset, $chunkSize);
-                        $emit('content', ['text' => $chunk]);
-                        $offset += $chunkSize;
-                        usleep(5000); // 5ms delay
-                    }
-
-                    // Send done
-                    $totalTime = round((microtime(true) - $metrics['start_time']) * 1000);
-                    $emit('done', [
-                        'total_time_ms' => $totalTime,
-                        'prompt_tokens' => 0,
-                        'completion_tokens' => 0,
-                        'models_used' => [],
-                        'tool_calls' => 0,
-                        'from_cache' => true,
-                    ]);
-
-                    return;
-                }
-            }
-
             // === STANDARD MODE: Decision → KB → Chat ===
 
             // === STEP 2: Decision Model - Intent Analysis ===
-            $intent = $this->runDecisionModel($bot, $message, $apiKey, $metrics, $emit);
+            $intent = $this->runDecisionModel($bot, $message, $metrics, $emit);
 
             // === STEP 3: Knowledge Base Search ===
             $kbContext = $this->runKnowledgeBaseSearch($bot, $flow, $message, $intent, $emit);
 
             // === STEP 4: Chat Model - Generate Response ===
-            $chatResponse = $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $apiKey, $memoryNotes, $metrics, $emit);
+            $this->runChatModel($bot, $flow, $message, $conversationHistory, $kbContext, $memoryNotes, $metrics, $emit);
 
-            // === SEMANTIC CACHE: Save response ===
-            if ($this->semanticCache?->isEnabled() && ! empty($chatResponse)) {
-                rescue(function () use ($bot, $message, $chatResponse) {
-                    $this->semanticCache->put($bot, $message, $chatResponse);
-                }, null, report: false);
-            }
+            // The emulator never touches the semantic cache: it is shared with real customers and
+            // keyed on bot + query only, so a read would hide the prompt being tried out and a
+            // write would serve a draft answer to a customer.
 
             // === STEP 6: Done (if not already sent) ===
             if (! $doneSent) {
@@ -183,7 +141,7 @@ class StreamingResponseOrchestrator
     /**
      * Step 2: Run Decision Model for Intent Analysis
      */
-    private function runDecisionModel(Bot $bot, string $message, ?string $apiKey, array &$metrics, callable $onSseEvent): array
+    private function runDecisionModel(Bot $bot, string $message, array &$metrics, callable $onSseEvent): array
     {
         // Decision uses the same chat pair from Connection Settings (single model pair)
         $decisionModel = $bot->resolvedChatModel();
@@ -212,7 +170,6 @@ class StreamingResponseOrchestrator
             'validIntents' => ['chat', 'knowledge'],
             'includeExamples' => false,
             'useFallback' => true,
-            'apiKey' => $apiKey,
         ]);
 
         $timeMs = round((microtime(true) - $startTime) * 1000);
@@ -295,10 +252,6 @@ class StreamingResponseOrchestrator
             $results = collect();
             $kbResults = [];
 
-            // Get API key: User Settings > ENV
-            $embeddingApiKey = $bot->user?->settings?->getOpenRouterApiKey()
-                ?? config('services.openrouter.api_key');
-
             // Search flow-level KBs (many-to-many)
             if ($hasFlowKBs) {
                 $kbConfigs = $flowKBs->map(fn ($kb) => [
@@ -311,8 +264,7 @@ class StreamingResponseOrchestrator
                 $results = $this->hybridSearch->searchMultiple(
                     kbConfigs: $kbConfigs,
                     query: $message,
-                    totalLimit: config('rag.max_results', 5),
-                    apiKey: $embeddingApiKey
+                    totalLimit: config('rag.max_results', 5)
                 );
 
                 // Group results by KB
@@ -333,8 +285,7 @@ class StreamingResponseOrchestrator
                     knowledgeBaseId: $bot->knowledgeBase->id,
                     query: $message,
                     limit: $bot->kb_max_results ?? config('rag.max_results', 3),
-                    threshold: $bot->kb_relevance_threshold ?? config('rag.default_threshold', 0.7),
-                    apiKey: $embeddingApiKey
+                    threshold: $bot->kb_relevance_threshold ?? config('rag.default_threshold', 0.7)
                 );
 
                 if ($results->isNotEmpty()) {
@@ -389,7 +340,6 @@ class StreamingResponseOrchestrator
         string $message,
         array $conversationHistory,
         string $kbContext,
-        ?string $apiKey,
         array $memoryNotes,
         array &$metrics,
         callable $onSseEvent,
@@ -420,7 +370,7 @@ class StreamingResponseOrchestrator
         $collectedResponse = '';
 
         try {
-            $collectedResponse = $this->streamFromOpenRouter($messages, $chatModel, $apiKey, $flow->temperature, $flow->max_tokens, $metrics, $onSseEvent);
+            $collectedResponse = $this->streamFromOpenRouter($messages, $chatModel, $flow->temperature, $flow->max_tokens, $metrics, $onSseEvent);
             $metrics['models_used'][] = $chatModel;
         } catch (\Exception $e) {
             // Try fallback model (skip when it resolves to the same model as primary)
@@ -432,7 +382,7 @@ class StreamingResponseOrchestrator
                 ]);
 
                 try {
-                    $collectedResponse = $this->streamFromOpenRouter($messages, $fallbackChatModel, $apiKey, $flow->temperature, $flow->max_tokens, $metrics, $onSseEvent);
+                    $collectedResponse = $this->streamFromOpenRouter($messages, $fallbackChatModel, $flow->temperature, $flow->max_tokens, $metrics, $onSseEvent);
                     $metrics['models_used'][] = $fallbackChatModel;
                     $usedFallback = true;
                 } catch (\Exception $fallbackError) {
@@ -451,7 +401,7 @@ class StreamingResponseOrchestrator
      *
      * @return string The full collected response content
      */
-    private function streamFromOpenRouter(array $messages, string $model, ?string $apiKey, ?float $temperature, ?int $maxTokens, array &$metrics, callable $onSseEvent): string
+    private function streamFromOpenRouter(array $messages, string $model, ?float $temperature, ?int $maxTokens, array &$metrics, callable $onSseEvent): string
     {
         $client = new Client([
             'timeout' => (int) config('services.openrouter.stream_timeout', 120),
@@ -459,11 +409,10 @@ class StreamingResponseOrchestrator
         ]);
 
         $baseUrl = $this->openRouterBaseUrl;
-        $apiKey = $apiKey ?: config('services.openrouter.api_key');
 
         $response = $client->post($baseUrl.'/chat/completions', [
             'headers' => [
-                'Authorization' => 'Bearer '.$apiKey,
+                'Authorization' => 'Bearer '.$this->credentials->key(),
                 'Content-Type' => 'application/json',
                 'HTTP-Referer' => $this->openRouterSiteUrl,
                 'X-Title' => $this->openRouterSiteName,

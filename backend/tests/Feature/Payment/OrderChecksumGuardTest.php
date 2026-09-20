@@ -49,7 +49,7 @@ class OrderChecksumGuardTest extends TestCase
     private function makeBot(): Bot
     {
         $user = User::factory()->create();
-        $user->getOrCreateSettings()->update(['openrouter_api_key' => 'or-key-123']);
+        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
 
         return Bot::factory()->create([
             'user_id' => $user->id,

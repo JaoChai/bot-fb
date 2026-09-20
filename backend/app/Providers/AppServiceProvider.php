@@ -13,7 +13,6 @@ use App\Policies\BotPolicy;
 use App\Policies\DocumentPolicy;
 use App\Policies\KnowledgeBasePolicy;
 use App\Policies\QuickReplyPolicy;
-use App\Services\CircuitBreakerService;
 use App\Services\FlowCacheService;
 use App\Services\HybridSearchService;
 use App\Services\IntentAnalysisService;
@@ -21,7 +20,6 @@ use App\Services\JinaRerankerService;
 use App\Services\KeywordSearchService;
 use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
-use App\Services\QueryEnhancementService;
 use App\Services\RAGService;
 use App\Services\RedisFallbackSwitch;
 use App\Services\SemanticCacheService;
@@ -66,7 +64,6 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(OpenRouterService::class),
                 $app->make(IntentAnalysisService::class),
                 $app->make(FlowCacheService::class),
-                $app->make(QueryEnhancementService::class),
                 $app->make(SemanticCacheService::class),
                 null, // CRAGService
                 $app->make(StockInjectionService::class)
@@ -74,11 +71,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         // Register ModelCapabilityService for dynamic model capability detection
-        $this->app->singleton(ModelCapabilityService::class, function ($app) {
-            return new ModelCapabilityService(
-                $app->make(CircuitBreakerService::class)
-            );
-        });
+        $this->app->singleton(ModelCapabilityService::class);
 
     }
 

@@ -2,7 +2,6 @@
 
 namespace Tests\Unit\Services\RAG;
 
-use App\Models\Bot;
 use App\Services\FlowCacheService;
 use App\Services\HybridSearchService;
 use App\Services\RAG\RAGKnowledgeBase;
@@ -39,12 +38,5 @@ class RAGKnowledgeBaseTest extends TestCase
         $this->assertStringContainsString('ความเกี่ยวข้อง 88%', $context);
         $this->assertStringContainsString('📄 price.pdf', $context);
         $this->assertStringContainsString('ราคา 100 บาท', $context);
-    }
-
-    public function test_api_key_falls_back_to_config_when_bot_has_no_user_settings(): void
-    {
-        config(['services.openrouter.api_key' => 'cfg-key']);
-
-        $this->assertSame('cfg-key', $this->kb->getApiKeyForBot(new Bot));
     }
 }

@@ -309,7 +309,6 @@ class Bot26PromptEvaluationTest extends TestCase
         $this->mock(IntentAnalysisService::class)->shouldReceive('analyzeIntent')->andReturn(['intent' => $case['system_injections']['kb'] === '' ? 'chat' : 'knowledge', 'confidence' => 1, 'usage' => null]);
         $capabilities = $this->mock(ModelCapabilityService::class);
         $capabilities->shouldReceive('supportsReasoning', 'supportsVision', 'supportsStructuredOutput')->andReturn(true);
-        $capabilities->shouldReceive('getDefaultReasoningEffort')->andReturn('medium');
         if ($case['system_injections']['stock'] === 'unknown') {
             $this->partialMock(StockInjectionService::class)->shouldReceive('getStockStatus')->andReturn(collect());
         }
@@ -378,7 +377,7 @@ class Bot26PromptEvaluationTest extends TestCase
         $search = $this->mock(HybridSearchService::class);
         $search->shouldReceive('isEnabled')->andReturn(false);
         $search->shouldReceive('searchMultiple')->once()
-            ->withArgs(fn ($configs, $query, $limit, $apiKey) => array_column($configs, 'id') === [$kb->id] && $query === $case['message'])
+            ->withArgs(fn ($configs, $query, $limit) => array_column($configs, 'id') === [$kb->id] && $query === $case['message'])
             ->andReturnUsing(fn () => collect([[
                 'content' => $chunk->fresh()->content, 'document_name' => $document->original_filename,
                 'knowledge_base_id' => $kb->id, 'similarity' => 1.0,
