@@ -20,7 +20,6 @@ use App\Services\JinaRerankerService;
 use App\Services\KeywordSearchService;
 use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
-use App\Services\QueryEnhancementService;
 use App\Services\RAGService;
 use App\Services\RedisFallbackSwitch;
 use App\Services\SemanticCacheService;
@@ -65,7 +64,6 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(OpenRouterService::class),
                 $app->make(IntentAnalysisService::class),
                 $app->make(FlowCacheService::class),
-                $app->make(QueryEnhancementService::class),
                 $app->make(SemanticCacheService::class),
                 null, // CRAGService
                 $app->make(StockInjectionService::class)
