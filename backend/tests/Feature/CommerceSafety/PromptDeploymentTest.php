@@ -401,7 +401,7 @@ class PromptDeploymentTest extends TestCase
 
     public function test_migration_order_schema_constraints_and_disposable_sqlite_up_down(): void
     {
-        $lastMigration = '2026_09_16_000001_create_commerce_safety_shadow_observations_table.php';
+        $lastMigration = '2026_09_20_000001_drop_openrouter_columns_from_user_settings_table.php';
         $files = glob(database_path('migrations/*.php'));
         sort($files);
         $this->assertSame($lastMigration, basename(end($files)));

@@ -33,9 +33,6 @@ class UserSetting extends Model
      * Hidden fields - never expose in JSON responses.
      */
     protected $hidden = [
-        // Column still exists until the follow-up migration drops it; keep the
-        // stored ciphertext out of any serialization in the meantime.
-        'openrouter_api_key',
         'line_channel_secret',
         'line_channel_access_token',
         'easyslip_api_token',
