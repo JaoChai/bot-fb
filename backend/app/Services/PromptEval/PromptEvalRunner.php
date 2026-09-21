@@ -5,7 +5,6 @@ namespace App\Services\PromptEval;
 use App\Models\Bot;
 use App\Services\AIService;
 use App\Services\Guardrail\OffTopicSignalExtractor;
-use App\Services\OpenRouterCredentials;
 use App\Services\RAGService;
 use App\Services\SemanticCacheService;
 use ReflectionProperty;
@@ -21,7 +20,6 @@ class PromptEvalRunner
     public function __construct(
         private readonly AIService $ai,
         private readonly RAGService $rag,
-        private readonly OpenRouterCredentials $credentials,
     ) {}
 
     /**

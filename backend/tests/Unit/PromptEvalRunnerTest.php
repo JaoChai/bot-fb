@@ -5,7 +5,6 @@ namespace Tests\Unit;
 use App\Models\Bot;
 use App\Services\AIService;
 use App\Services\EmbeddingService;
-use App\Services\OpenRouterCredentials;
 use App\Services\PromptEval\PromptEvalRunner;
 use App\Services\RAGService;
 use App\Services\SemanticCacheService;
@@ -59,7 +58,7 @@ class PromptEvalRunnerTest extends TestCase
         $rag = Mockery::mock(RAGService::class);
         $rag->shouldReceive('generateResponse')->never();
 
-        return $this->runner($ai, $rag);
+        return new PromptEvalRunner($ai, $rag);
     }
 
     protected function tearDown(): void
@@ -232,7 +231,7 @@ class PromptEvalRunnerTest extends TestCase
             })
             ->andReturn(['content' => 'สวัสดีครับพี่', 'cost' => 0.0]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), [
             'id' => 'case_9',
@@ -261,7 +260,7 @@ class PromptEvalRunnerTest extends TestCase
         $rag = Mockery::mock(RAGService::class);
         $rag->shouldReceive('generateResponse')->never();
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), [
             'id' => 'case_10',
@@ -289,7 +288,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), [
             'id' => 'case_12',
@@ -320,7 +319,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), [
             'id' => 'case_13',
@@ -345,7 +344,7 @@ class PromptEvalRunnerTest extends TestCase
         $rag = Mockery::mock(RAGService::class);
         $rag->shouldReceive('generateResponse')->never();
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), [
             'id' => 'case_11',
@@ -379,7 +378,7 @@ class PromptEvalRunnerTest extends TestCase
                 return ['content' => 'สวัสดีครับพี่', 'cost' => 0.0];
             });
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $runner->run($this->bot(), [
             'id' => 'case_16',
@@ -402,7 +401,7 @@ class PromptEvalRunnerTest extends TestCase
         $ai = Mockery::mock(AIService::class);
         $ai->shouldReceive('generateResponse')->andThrow(new \RuntimeException('boom'));
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), [
             'id' => 'case_17',
@@ -529,7 +528,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), $this->configCase('phantom_page_line'));
 
@@ -568,7 +567,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), [
             'id' => 'case_22',
@@ -596,7 +595,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), [
             'id' => 'case_23a',
@@ -626,7 +625,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), [
             'id' => 'case_23b',
@@ -672,7 +671,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), $this->configCase('staggered_pickup'));
 
@@ -698,7 +697,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), $this->configCase('staggered_pickup'));
 
@@ -737,7 +736,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), $this->configCase('staggered_pickup'));
 
@@ -761,7 +760,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), $this->configCase('staggered_pickup'));
 
@@ -788,7 +787,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), $this->configCase('staggered_pickup'));
 
@@ -842,7 +841,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), $this->configCase('price_compliment'));
 
@@ -865,7 +864,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), $this->configCase('price_compliment'));
 
@@ -887,7 +886,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), $this->configCase('staggered_regression_partial_ship'));
 
@@ -909,7 +908,7 @@ class PromptEvalRunnerTest extends TestCase
             'cost' => 0.0,
         ]);
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), $this->configCase('slip_no_self_confirm'));
 
@@ -935,7 +934,7 @@ class PromptEvalRunnerTest extends TestCase
         $rag = Mockery::mock(RAGService::class);
         $rag->shouldReceive('generateResponse')->never();
 
-        $runner = $this->runner($ai, $rag);
+        $runner = new PromptEvalRunner($ai, $rag);
 
         $result = $runner->run($this->bot(), $this->configCase('vat_no_promise'));
 
