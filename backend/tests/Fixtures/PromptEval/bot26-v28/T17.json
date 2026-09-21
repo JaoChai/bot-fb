@@ -17,7 +17,6 @@
     "note": "Historical final2 evidence, not inference against the imported v28 artifact. Audit located at implementation/final-audit.json (historical semantic gate blocked on T09)."
   },
   "image": {
-    "image_kind": "camera_photo_of_screen",
     "is_slip": false,
     "reply": "รบกวนส่งรูปสลิปต้นฉบับจากแอปธนาคารโดยตรงครับ ไม่รับรูปถ่ายหน้าจอจากกล้องครับ",
     "expected_contains": [
@@ -25,8 +24,10 @@
       "แอปธนาคาร",
       "กล้อง"
     ],
-    "boundary": "camera_photo_of_screen is now a distinct classifier outcome (bot-26-scoped) with a fixed reply template, proven end-to-end via a canned classifier output. The real vision model's ability to visually distinguish a camera photo of a screen from a native app screenshot on an actual photograph is NOT proven here — see docs/testing/bot26-v28-evaluation.md."
+    "boundary": "Reply handling only: current binary classifier has no camera-photo image_kind. This draft exercises the non-slip reply branch, NOT camera-photo recognition."
   },
+  "classification_gate_blocked": true,
+  "classification_gate_blocked_reason": "The binary is_slip classifier has no camera-photo image_kind contract. This fixture only replays a canned non-slip reply; camera-photo recognition is untested.",
   "raw_model_skipped": true,
   "assertions": {
     "raw_model": {

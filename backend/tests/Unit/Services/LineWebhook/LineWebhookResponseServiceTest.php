@@ -710,12 +710,4 @@ class LineWebhookResponseServiceTest extends TestCase
         $this->assertSame($expected, $ctx->response?->payload);
         $this->assertSame($expected, $ctx->metadata['bot_message']->fresh()->content);
     }
-
-    public function test_camera_photo_slip_template_matches_shop_policy_wording(): void
-    {
-        $this->assertSame(
-            'รบกวนส่งรูปสลิปต้นฉบับจากแอปธนาคารโดยตรงครับ ไม่รับรูปถ่ายหน้าจอจากกล้องครับ',
-            LineWebhookResponseService::CAMERA_PHOTO_SLIP_TEMPLATE
-        );
-    }
 }

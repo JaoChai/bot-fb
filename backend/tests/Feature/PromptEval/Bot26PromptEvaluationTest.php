@@ -46,8 +46,7 @@ use Tests\TestCase;
 
 /**
  * Three evidence layers. Saved responses are historical replays, not new inference.
- * No production E2E claim. Image cases exercise the image_kind contract via canned
- * classifier output, not live recognition.
+ * No production E2E claim. Image recognition (especially T17) remains a separate gate.
  */
 class Bot26PromptEvaluationTest extends TestCase
 {
@@ -55,8 +54,8 @@ class Bot26PromptEvaluationTest extends TestCase
 
     private const MODEL = 'openai/gpt-5.6-luna';
 
-    // Image raw skip-list: all three exercise the image_kind contract via canned
-    // classifier output, not live inference.
+    // Image raw skip-list: T16/T30 use canned classifications; T17 additionally has
+    // a BLOCKED camera-photo classification gate. Its passing replay is reply handling only.
     private const RAW_IMAGE_SKIP_IDS = ['T16', 'T17', 'T30'];
 
     private const HASH = '3383e58beebe248ebe45a3d78569cde58d7edf9cf1131a9bfa1060ecb3f8b7fc';
@@ -137,10 +136,8 @@ class Bot26PromptEvaluationTest extends TestCase
         $this->assertCount(41, glob(__DIR__.'/../../Fixtures/PromptEval/bot26-v28/[TX]*.json'));
         $this->assertCount(38, self::textCases());
         $this->assertSame(self::RAW_IMAGE_SKIP_IDS, array_keys(self::imageCases()));
-        foreach (self::imageCases() as $id => [$case]) {
-            $this->assertContains($case['image']['image_kind'], ['bank_app_slip', 'camera_photo_of_screen', 'other'], $id);
-            $this->assertArrayNotHasKey('classification_gate_blocked', $case, $id);
-        }
+        $this->assertTrue(self::fixtures()['T17']['classification_gate_blocked']);
+        $this->assertNotEmpty(self::fixtures()['T17']['classification_gate_blocked_reason']);
         foreach (['Nolimit Level Up+ BM (ผูกบัตร)', 'Nolimit Level Up+ BM (เติมเงิน)', 'Nolimit Level Up+ Personal (ผูกบัตร)', 'Nolimit Level Up+ Personal (เติมเงิน)', 'Page', 'G3D', '223-3-24880-3', 'หจก. มั่งมีทรัพย์ขายของออนไลน์', 'https://mhhacoursecontent.my.canva.site/ads-vance', 'https://lin.ee/h5wYpIf', '@743ddeqy', 'https://t.me/supermanth2022', '[[ORDER]]', '[[/ORDER]]', '[[OFFTOPIC]]', '[แจ้งเตือน Support]', '[ยืนยันชำระเงิน]', '|||'] as $literal) {
             $this->assertStringContainsString($literal, $prompt);
         }
@@ -589,14 +586,16 @@ class Bot26PromptEvaluationTest extends TestCase
     {
         $this->persistApplication($case);
         $this->enableSlip();
+        // T17 supplies is_slip=false and canned prose only. No camera-photo recognition
+        // is exercised; classification_gate_blocked must stay explicit in the fixture.
+        if ($case['id'] === 'T17') {
+            $this->assertTrue($case['classification_gate_blocked']);
+            $this->assertNotEmpty($case['classification_gate_blocked_reason']);
+        }
         // Synthetic payment prose triggers EasySlip's unreadable-image classifier branch.
         // It is deliberately NOT checkout or payment authority.
         $this->conversation->messages()->create(['sender' => 'bot', 'type' => 'text', 'content' => "สรุปรายการ\n1. Page (199 x 1) = 199 บาท\nรวมยอดโอน: 199 บาท\n223-3-24880-3"]);
-        $this->fakeTransport(json_encode([
-            'image_kind' => $case['image']['image_kind'],
-            'is_slip' => $case['image']['is_slip'],
-            'reply' => $case['image']['reply'],
-        ], JSON_UNESCAPED_UNICODE));
+        $this->fakeTransport(json_encode(['is_slip' => $case['image']['is_slip'], 'reply' => $case['image']['reply']], JSON_UNESCAPED_UNICODE));
         $ctx = $this->handler($case['message'], 'image');
         $this->assertSafeOutput($ctx);
         foreach ($case['assertions']['application_integration']['contains'] as $literal) {

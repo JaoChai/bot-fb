@@ -8,8 +8,7 @@ their literal fixture assertions on first pass + one rerun of failing ids; see
 [`bot26-v28-live-raw-eval-2026-09-15.md`](bot26-v28-live-raw-eval-2026-09-15.md) for
 full per-case raw output, request IDs and cost. **Manual semantic review of these new
 outputs is still required** before any production/E2E acceptance claim.
-Image classification now runs through an `image_kind` contract (bot 26 only) with
-canned classifier output; live camera-photo recognition is still unverified.
+Image classification is **blocked**; T17 does not establish camera-photo recognition.
 These results do not establish production E2E behavior or prompt semantic acceptance.
 
 The measured inventory is committed at
@@ -110,19 +109,11 @@ fake EasySlip responses and canned binary classifier outputs. They assert reply
 literals and absence of orders, payment confirmation and fulfillment effects.
 T16 additionally exercises the unreadable-slip/staff-alert branch.
 
-The bot-26 classifier now returns an `image_kind` (`bank_app_slip`,
-`camera_photo_of_screen`, `other`) alongside `is_slip`, so the three fixtures drive a
-real contract instead of the former blocked gate. Proven here: `bank_app_slip` reaches
-the existing verification path; `camera_photo_of_screen` returns the fixed
-`CAMERA_PHOTO_SLIP_TEMPLATE` reply and creates no order, payment event or effect;
-`other` keeps the previous behavior; an unknown kind, malformed JSON or a classifier
-transport failure fails closed to manual review. Other bots keep the original two-key
-schema and behavior.
-
-Still not proven: every classification in these tests is canned. No live vision model
-was asked to tell a camera photo of a screen from a native bank-app screenshot, so
-camera-photo, original-bank-app-image and Meta-screenshot recognition remain
-unverified and need a staged check with real images.
+T17 explicitly sets `classification_gate_blocked: true` with a reason: the current
+binary `is_slip` contract has no camera-photo `image_kind`. Supplying `is_slip=false`
+and a canned request for the original bank-app image proves only reply handling.
+The test's raw-image skip-list and manifest retain this blocked classification gate.
+No camera-photo, original-bank-app-image or Meta-screenshot recognition claim is made.
 
 ### Raw mode
 

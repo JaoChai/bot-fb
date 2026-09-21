@@ -147,18 +147,16 @@
       "fake_transport_and_gate_tests": "pass"
     },
     "image_classification": {
-      "status": "exercised_via_canned_classifier",
+      "status": "blocked",
       "raw_skip_cases": [
         "T16",
         "T17",
         "T30"
       ],
-      "reason": "The bot-26 classifier now returns image_kind alongside is_slip, and all three fixtures drive that contract through a canned classifier response: bank_app_slip reaches the existing verification path, camera_photo_of_screen gets the fixed CAMERA_PHOTO_SLIP_TEMPLATE reply with no order/payment event/effect, and an unknown kind fails closed to manual review. Real vision recognition is still faked here: no live model was asked to tell a camera photo of a screen from a native bank-app screenshot.",
-      "image_kinds": {
-        "T16": "bank_app_slip",
-        "T17": "camera_photo_of_screen",
-        "T30": "other"
-      }
+      "classification_gate_blocked_cases": [
+        "T17"
+      ],
+      "reason": "T17 has no camera-photo image_kind contract; canned is_slip=false establishes reply handling only. All three image classifications are faked."
     }
   },
   "validation": {
@@ -329,18 +327,18 @@
     {
       "id": "T16",
       "layer": "image_handler",
-      "chars": 1529,
-      "bytes": 1681,
-      "sha256": "4b1c55a5b4fa9aaa9e4509573b8cfc59f3dd2bf4fcd6a24faa42d6938f5a3806",
+      "chars": 1451,
+      "bytes": 1603,
+      "sha256": "c210e4bbb48a1f110c7f545597dc32a642f9533d3c52d7b22ca62ac08933760c",
       "historical_prompt_sha256": null,
       "application_coverage": "image_reply_handling_only"
     },
     {
       "id": "T17",
       "layer": "image_handler",
-      "chars": 1852,
-      "bytes": 2172,
-      "sha256": "7842f2439c4aa641816836e69ca4259199f9f71a7787807578e646f23be1e4b2",
+      "chars": 1853,
+      "bytes": 2171,
+      "sha256": "41096341a179b88408144e8e7baa092f21f51333956f657c1affd0e9ec85b098",
       "historical_prompt_sha256": null,
       "application_coverage": "image_reply_handling_only"
     },
@@ -455,9 +453,9 @@
     {
       "id": "T30",
       "layer": "image_handler",
-      "chars": 1642,
-      "bytes": 1776,
-      "sha256": "66c88eaccafafc00b9da4c5b552b933ff7e11acce75f1bb81dfc8d17fb3ab8dc",
+      "chars": 1618,
+      "bytes": 1752,
+      "sha256": "95206ab80a6dbd02079ce95cf299a3daf3ceec5948ec979673da74adb248ed9c",
       "historical_prompt_sha256": null,
       "application_coverage": "image_reply_handling_only"
     },

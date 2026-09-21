@@ -17,7 +17,6 @@
     "note": "Historical final2 evidence, not inference against the imported v28 artifact. Audit located at implementation/final-audit.json (historical semantic gate blocked on T09)."
   },
   "image": {
-    "image_kind": "other",
     "is_slip": false,
     "reply": "ติดต่อ Technical Support ที่ https://lin.ee/h5wYpIf หรือ LINE @743ddeqy ครับ",
     "expected_contains": [
@@ -25,7 +24,7 @@
       "https://lin.ee/h5wYpIf",
       "@743ddeqy"
     ],
-    "boundary": "Synthetic Meta UI screenshot; fake other classification, no diagnosis."
+    "boundary": "Synthetic Meta UI screenshot; fake non-slip classification, no diagnosis."
   },
   "raw_model_skipped": true,
   "assertions": {
