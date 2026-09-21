@@ -18,16 +18,12 @@ is reviewed and a single REJECT blocks; the literals are a recorded smoke signal
 deterministic raw checks (forbidden strings, contact allowlist, cart arithmetic, ORDER-block
 structure, `finish_reason`, wire settings) still fail a case on their own.
 
-**Under that criterion the artifact FAILED on four cases**: T13 (refuses a valid `ยอมรับ`
-on the Support-Delay gate and never reaches TERMS), T11 (redundant BM5 clarification the
-fixture exists to forbid), T26 (agrees to write code for an out-of-scope request), T07
-(omits the mandatory initial-Limit disclosure). **T26 and T07 passed every literal
-assertion** and were caught only by review.
-
-**T13 is now fixed** — it stalled the flow in 8 of 15 runs and now stalls in 0 of 15; see
-the addendum in the evidence doc. **T11, T26 and T07 remain open, so the raw gate still
-fails.** T11 reproduces at the same rate against the artifact as committed at `639867bd`,
-so it is a pre-existing defect, as T13 was.
+**Under that criterion the current artifact FAILS**, on four cases: T13 (refuses a valid
+`ยอมรับ` on the Support-Delay gate and never reaches TERMS), T11 (redundant BM5
+clarification the fixture exists to forbid), T26 (agrees to write code for an out-of-scope
+request), T07 (omits the mandatory initial-Limit disclosure). **T26 and T07 passed every
+literal assertion** and were caught only by review. T11 and T13 reproduce at the same rate
+against the artifact as committed at `639867bd`, so they are pre-existing defects.
 
 Image classification now runs through an `image_kind` contract (bot 26 only) with
 canned classifier output; live camera-photo recognition is still unverified.
@@ -40,9 +36,9 @@ recomputes prompt and fixture character counts, byte counts and SHA-256 hashes.
 | Artifact | Measurement |
 | --- | --- |
 | Prompt | `backend/resources/prompts/bot26/v28.txt` |
-| Unicode characters | 24,198 |
-| UTF-8 bytes | 61,491 |
-| SHA-256 | `bf3df86197ac85207a616d0796838b403b2b1d20d688047b9b3387ff45c00717` |
+| Unicode characters | 24,038 |
+| UTF-8 bytes | 61,047 |
+| SHA-256 | `0bd881e89ab2cb54f1d99dc082652da74d04a617ac178a1c37530ff33562157a` |
 | Fixtures | 41: T01–T33 and X01–X08 |
 | Text replays | 38 |
 | Image handler replays | 3: T16, T17, T30 |

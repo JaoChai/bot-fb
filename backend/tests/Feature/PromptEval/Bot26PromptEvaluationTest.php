@@ -59,7 +59,7 @@ class Bot26PromptEvaluationTest extends TestCase
     // classifier output, not live inference.
     private const RAW_IMAGE_SKIP_IDS = ['T16', 'T17', 'T30'];
 
-    private const HASH = 'bf3df86197ac85207a616d0796838b403b2b1d20d688047b9b3387ff45c00717';
+    private const HASH = '0bd881e89ab2cb54f1d99dc082652da74d04a617ac178a1c37530ff33562157a';
 
     private Bot $bot;
 
@@ -113,8 +113,8 @@ class Bot26PromptEvaluationTest extends TestCase
         $path = base_path('resources/prompts/bot26/v28.txt');
         $this->assertFileExists($path);
         $prompt = self::prompt();
-        $this->assertSame(24198, mb_strlen($prompt));
-        $this->assertSame(61491, strlen($prompt));
+        $this->assertSame(24038, mb_strlen($prompt));
+        $this->assertSame(61047, strlen($prompt));
         $this->assertSame(self::HASH, hash('sha256', $prompt));
         $manifest = json_decode(file_get_contents(__DIR__.'/../../Fixtures/PromptEval/bot26-v28/manifest.json'), true, 512, JSON_THROW_ON_ERROR);
         $this->assertSame(mb_strlen($prompt), $manifest['prompt']['chars']);

@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "measured_at_utc": "2026-09-16T13:57:07.480381+00:00",
-  "base_commit": "4694a741e3d0453416f430ce77dd9a8fc7f345ed",
+  "measured_at_utc": "2026-09-16T12:36:00.734149+00:00",
+  "base_commit": "639867bd655a82ba73066176dca643305f3bcbe1",
   "prompt": {
     "path": "resources/prompts/bot26/v28.txt",
-    "chars": 24198,
-    "bytes": 61491,
-    "sha256": "bf3df86197ac85207a616d0796838b403b2b1d20d688047b9b3387ff45c00717"
+    "chars": 24038,
+    "bytes": 61047,
+    "sha256": "0bd881e89ab2cb54f1d99dc082652da74d04a617ac178a1c37530ff33562157a"
   },
   "fixture_counts": {
     "total": 41,
@@ -143,32 +143,28 @@
       "status": "executed",
       "gate": "BOT26_PROMPT_EVAL_LIVE=1",
       "group": "prompt-eval-raw",
-      "runs": 3,
-      "live_requests": 114,
+      "runs": 6,
+      "live_requests": 228,
       "acceptance_criterion": "manual semantic review of all 38 responses; a single REJECT blocks. Fixture contains-literals are a recorded smoke signal (literal_signal), not an assertion. Deterministic raw checks still block: not_contains, contact allowlist, cart arithmetic, ORDER-block structure, finish_reason, wire settings.",
       "criterion_set_by": "owner ruling 2026-09-16 (supersedes 38/38 literal pass)",
       "semantic_review": {
         "reviewed": 38,
-        "reject": 3,
+        "reject": 4,
         "reject_cases": [
           "T07",
           "T11",
+          "T13",
           "T26"
-        ],
-        "fixed_since_review": [
-          "T13"
         ]
       },
       "result": "fail",
       "pre_existing_rejects": [
-        "T11"
+        "T11",
+        "T13"
       ],
+      "literal_signal_trips": 44,
       "evidence": "docs/testing/bot26-v28-live-raw-eval-2026-09-16.md",
-      "fake_transport_and_gate_tests": "pass",
-      "open_blocking_failures": {
-        "T25": "@adsvance published in prompt line 151 but absent from the CustomerReplyPolicy contact allowlist",
-        "T09": "link glued to the following word, violating line 7"
-      }
+      "fake_transport_and_gate_tests": "pass"
     },
     "image_classification": {
       "status": "exercised_via_canned_classifier",
