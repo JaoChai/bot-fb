@@ -251,7 +251,7 @@ class AIServiceGuardrailTest extends TestCase
                 $scope = \Mockery::mock(SafetyScope::class);
                 $scope->shouldReceive('mode')->andReturn($mode);
                 $this->app->instance(SafetyScope::class, $scope);
-                foreach (['ผมเป็น AI', 'As an AI', '@notourshop99', "```php\n", '# หัวข้อ', 'ผมเป็น AI @notourshop99'] as $text) {
+                foreach (['ผมเป็น AI', 'As an AI', '@adsvance', "```php\n", '# หัวข้อ', 'ผมเป็น AI @adsvance'] as $text) {
                     $this->mock(RAGService::class)->shouldReceive('generateResponse')->once()->andReturn([
                         'content' => $text, 'model' => 'test', 'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0],
                     ]);
@@ -260,7 +260,7 @@ class AIServiceGuardrailTest extends TestCase
                     $scoped = $id === 26 && in_array($mode, ['enforce', 'hold']);
                     $sanitizer = app(GuardrailOutputSanitizer::class)->check($text, $scoped);
                     $expected = $sanitizer['flagged'] ? OffTopicCircuitBreaker::CANNED_MESSAGE
-                        : ($scoped && str_contains($text, '@notourshop99') ? 'ขอเช็กข้อมูลล่าสุดให้ในแชทนี้ครับ' : $text);
+                        : ($scoped && str_contains($text, '@adsvance') ? 'ขอเช็กข้อมูลล่าสุดให้ในแชทนี้ครับ' : $text);
                     $this->assertSame($expected, $result['content'], "$id/$mode/$text");
                 }
             }

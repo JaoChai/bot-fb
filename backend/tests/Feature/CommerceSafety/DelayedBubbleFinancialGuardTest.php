@@ -130,7 +130,7 @@ class DelayedBubbleFinancialGuardTest extends TestCase
         $cases = [];
         foreach (['off', 'shadow'] as $queued) {
             foreach (['off', 'shadow', 'enforce', 'hold'] as $execution) {
-                foreach (['@notourshop99', 'ไม่ต้องชำระเงิน @notourshop99', 'https://lin.ee/h5wYpIf'] as $text) {
+                foreach (['@adsvance', 'ไม่ต้องชำระเงิน @adsvance', 'https://lin.ee/h5wYpIf'] as $text) {
                     foreach ([false, true] as $legacyConversation) {
                         $cases[] = [$queued, $execution, $text, $legacyConversation];
                     }
@@ -174,13 +174,13 @@ class DelayedBubbleFinancialGuardTest extends TestCase
 
         $enforced = in_array($executionMode, ['enforce', 'hold'], true);
         $expected = $enforced ? match ($text) {
-            '@notourshop99' => CustomerReplyPolicy::FALLBACK,
-            'ไม่ต้องชำระเงิน @notourshop99' => FinancialOutputGuard::DENIAL,
+            '@adsvance' => CustomerReplyPolicy::FALLBACK,
+            'ไม่ต้องชำระเงิน @adsvance' => FinancialOutputGuard::DENIAL,
             default => $original,
         } : $original;
         $this->assertSame([[$expected]], $sent);
         $this->assertSame('Reloaded at execution', $name);
-        if ($text === '@notourshop99' && $executionMode !== 'off') {
+        if ($text === '@adsvance' && $executionMode !== 'off') {
             Log::shouldHaveReceived('warning')->with('Customer reply policy triggered', [
                 'bot_id' => 26, 'conversation_id' => $current->id, 'reason' => 'contact_handle',
             ])->once();

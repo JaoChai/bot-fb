@@ -13,6 +13,12 @@ class SafetyScope
 
     public function mode(Bot $bot): string
     {
+        // Shared runtime kill switch wins over (possibly boot-frozen, config-cached)
+        // config immediately, with no restart. See HoldOverride for why this exists.
+        if ($this->holdOverride->active((int) $bot->getKey())) {
+            return 'hold';
+        }
+
         $scope = config("commerce_safety.bots.{$bot->getKey()}");
 
         if (! is_array($scope)) {
@@ -25,37 +31,12 @@ class SafetyScope
             return 'hold';
         }
 
-        // Shared runtime kill switch wins over (possibly boot-frozen, config-cached)
-        // config immediately, with no restart. See HoldOverride for why this exists.
-        if ($this->holdEngaged((int) $bot->getKey(), $mode)) {
-            return 'hold';
-        }
-
-        // Only enforcement can wrongly trust a plugin that is not this bot's own, and
-        // this check costs a flow_plugins query on every mode() call. Shadow enforces
-        // nothing, so paying that per-call price there would buy no protection — and
-        // would turn a stale plugin id into a silent `hold` during an observation phase.
-        if ($mode === 'enforce' && $this->paymentPluginIds($bot) === null) {
+        if (in_array($mode, ['shadow', 'enforce'], true)
+            && $this->paymentPluginIds($bot) === null) {
             return 'hold';
         }
 
         return $mode;
-    }
-
-    /**
-     * An engaged override holds in every mode. An unreadable cache store is only read as
-     * a hold where money is at stake: a bot configured `off` or `shadow` holds no
-     * authoritative commerce state, and `hold` suppresses its payment plugin and blocks
-     * its orders, so escalating it over an unrelated cache outage costs availability and
-     * protects nothing.
-     */
-    private function holdEngaged(int $botId, string $configuredMode): bool
-    {
-        $state = $this->holdOverride->state($botId);
-
-        return $state['readable']
-            ? $state['engaged']
-            : in_array($configuredMode, ['enforce', 'hold'], true);
     }
 
     public function paymentPluginsAreTrusted(Bot $bot): bool

@@ -413,7 +413,7 @@ class PaymentConsumersTest extends TestCase
 
     public static function rejectedProposals(): array
     {
-        return [['@notourshop99', 'ขอเช็กข้อมูลล่าสุดให้ในแชทนี้ครับ'], ["```php\n", OffTopicCircuitBreaker::CANNED_MESSAGE]];
+        return [['@adsvance', 'ขอเช็กข้อมูลล่าสุดให้ในแชทนี้ครับ'], ["```php\n", OffTopicCircuitBreaker::CANNED_MESSAGE]];
     }
 
     #[DataProvider('rejectedProposals')]
@@ -472,7 +472,7 @@ class PaymentConsumersTest extends TestCase
     public function test_contact_backstop_replaces_full_output_before_bubbles_flex_and_plugins(string $type, bool $bubblesOn): void
     {
         $this->enableReplyPolicy();
-        $text = 'https://lin.ee/h5wYpIf ||| @notourshop99';
+        $text = 'https://lin.ee/h5wYpIf ||| @adsvance';
         $fallback = 'ขอเช็กข้อมูลล่าสุดให้ในแชทนี้ครับ';
         $receipt = $this->conversation->messages()->create(['sender' => 'bot', 'type' => 'text', 'content' => $text, 'metadata' => ['commerce_safety_cart_validation' => ['valid' => true]]]);
         $line = Mockery::mock(LINEService::class);
@@ -501,8 +501,8 @@ class PaymentConsumersTest extends TestCase
         $line->shouldReceive('replyWithFallback')->once()->withArgs(fn ($bot, $token, $user, $texts) => $texts === [$fallback])->andReturn(['success' => true]);
         $line->shouldReceive('push')->once()->withArgs(fn ($bot, $user, $texts) => $texts === [$fallback])->andReturn(true);
         $bubbles = app(MultipleBubblesService::class);
-        $this->assertTrue($bubbles->sendBubbles($this->bot, 'U-test', 'test', ['สวัสดีครับ', '@notourshop99'], $this->conversation));
-        $receipt = $this->conversation->messages()->create(['sender' => 'bot', 'type' => 'text', 'content' => 'สวัสดีครับ ||| @notourshop99']);
+        $this->assertTrue($bubbles->sendBubbles($this->bot, 'U-test', 'test', ['สวัสดีครับ', '@adsvance'], $this->conversation));
+        $receipt = $this->conversation->messages()->create(['sender' => 'bot', 'type' => 'text', 'content' => 'สวัสดีครับ ||| @adsvance']);
         $job = new ProcessAggregatedMessages($this->bot, $this->conversation, 'test', 'U-test');
         $this->assertTrue((new \ReflectionMethod($job, 'deliverToChannel'))->invoke($job, $receipt, $line, $bubbles));
         $this->assertSame($fallback, $receipt->fresh()->content);

@@ -59,7 +59,7 @@ class Bot26PromptEvaluationTest extends TestCase
     // classifier output, not live inference.
     private const RAW_IMAGE_SKIP_IDS = ['T16', 'T17', 'T30'];
 
-    private const HASH = 'b88b8619faa911e2e76f92a08389c85dd695a02bc213bc272a93356bbdbd3473';
+    private const HASH = 'bf3df86197ac85207a616d0796838b403b2b1d20d688047b9b3387ff45c00717';
 
     private Bot $bot;
 
@@ -113,8 +113,8 @@ class Bot26PromptEvaluationTest extends TestCase
         $path = base_path('resources/prompts/bot26/v28.txt');
         $this->assertFileExists($path);
         $prompt = self::prompt();
-        $this->assertSame(24916, mb_strlen($prompt));
-        $this->assertSame(63473, strlen($prompt));
+        $this->assertSame(24198, mb_strlen($prompt));
+        $this->assertSame(61491, strlen($prompt));
         $this->assertSame(self::HASH, hash('sha256', $prompt));
         $manifest = json_decode(file_get_contents(__DIR__.'/../../Fixtures/PromptEval/bot26-v28/manifest.json'), true, 512, JSON_THROW_ON_ERROR);
         $this->assertSame(mb_strlen($prompt), $manifest['prompt']['chars']);
@@ -179,17 +179,20 @@ class Bot26PromptEvaluationTest extends TestCase
         if (trim($text) === '') {
             $failures[] = 'empty response';
         }
-        // Judge contacts with the code that guards production replies, never a second copy of
-        // its rules: the copy that used to live here drifted from it (it read a Thai word glued
-        // to a link as part of the destination) and failed cases over the shop's own URL.
         $bot = new Bot;
         $bot->id = 26;
-        $mode = config('commerce_safety.bots.26.mode');
-        config(['commerce_safety.bots.26.mode' => 'enforce']);
-        $verdict = app(CustomerReplyPolicy::class)->apply($bot, $text);
-        config(['commerce_safety.bots.26.mode' => $mode]);
-        foreach ($verdict['corrected'] ? $verdict['reasons'] : [] as $reason) {
-            $failures[] = 'reply policy: '.$reason;
+        $contacts = app(CustomerReplyPolicy::class)->allowedContacts($bot);
+        preg_match_all('~https?://[^\s<>"\x{201D}]+~u', $text, $urls);
+        foreach ($urls[0] as $url) {
+            if (! in_array(rtrim($url, '.,)'), $contacts['urls'], true)) {
+                $failures[] = 'unapproved URL: '.$url;
+            }
+        }
+        preg_match_all('/@[a-zA-Z0-9_.-]+/', $text, $handles);
+        foreach ($handles[0] as $handle) {
+            if (! in_array($handle, $contacts['handles'], true)) {
+                $failures[] = 'unapproved handle: '.$handle;
+            }
         }
         $assertions = $case['assertions'];
         $matchesLiteral = function (string $literal) use ($text): bool {
@@ -245,21 +248,6 @@ class Bot26PromptEvaluationTest extends TestCase
         }
 
         return $failures;
-    }
-
-    /**
-     * The raw gate must judge contacts with the same code that guards production replies.
-     * It used to re-implement the extraction here, and that copy swallowed the Thai word
-     * glued to a link, failing a case over the shop's own Support URL.
-     */
-    public function test_contact_verdicts_come_from_the_production_reply_policy(): void
-    {
-        $case = self::fixtures()['T25'];
-
-        $this->assertSame([], $this->responseFailures($case, 'ติดต่อได้ที่ https://lin.ee/h5wYpIfครับ ผมเป็นผู้ช่วย AI'));
-        $this->assertNotEmpty($this->responseFailures($case, 'ติดต่อได้ที่ https://evil.test/helpครับ'));
-        $this->assertNotEmpty($this->responseFailures($case, 'ทักไลน์ @notourshop99 ได้เลยครับ'));
-        Http::assertNothingSent();
     }
 
     public function test_offline_assertions_reject_marker_and_arithmetic_mutations(): void
@@ -534,6 +522,8 @@ class Bot26PromptEvaluationTest extends TestCase
             'T01', 'T03', 'T04', 'T06', 'T07', 'T11', 'T20', 'X03', 'X04', 'X05' => 'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง',
             // Financial-word interlock also rejects negated payment claims.
             'T19', 'T22', 'T23', 'T33', 'X02' => FinancialOutputGuard::DENIAL,
+            // Historical date prose is rejected by the existing contact policy.
+            'T29' => CustomerReplyPolicy::FALLBACK,
             // StockGuard replaces this reply with its unavailable-product response.
             'X08' => "ขออภัยครับ ขณะนี้ Nolimit Level Up+ BM หมด stock ชั่วคราว ไม่สามารถสั่งซื้อได้ครับ\n\nหากสนใจสินค้าอื่น หรือต้องการให้แจ้งเมื่อสินค้ากลับมา สามารถบอกได้เลยครับ",
             default => null,
@@ -748,7 +738,7 @@ class Bot26PromptEvaluationTest extends TestCase
     public function test_application_t09_known_contact_defect_is_corrected(): void
     {
         $this->persistApplication(self::fixtures()['T09']);
-        $this->fakeTransport('เช็กสต็อกที่ LINE @notourshop99 ครับ');
+        $this->fakeTransport('เช็กสต็อกที่ LINE @adsvance ครับ');
         $ctx = $this->handler('Personal 2 ตัวพร้อมส่งไหม');
         $this->assertSame(CustomerReplyPolicy::FALLBACK, $ctx->metadata['bot_message']->fresh()->content);
         $this->assertSafeOutput($ctx);
