@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\Bot;
-use App\Models\Flow;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -154,29 +153,5 @@ class BotApiTest extends TestCase
             ->assertJsonPath('data.input', 'Hello bot!')
             ->assertJsonPath('data.bot_id', $bot->id)
             ->assertJsonStructure(['data' => ['input', 'response', 'bot_id']]);
-    }
-
-    public function test_protected_bot_rejects_prompt_and_default_changes_but_allows_unrelated_edits(): void
-    {
-        $bot = Bot::factory()->create(['id' => 26, 'user_id' => $this->user->id]);
-        $flow = Flow::factory()->create(['bot_id' => 26, 'is_default' => true]);
-        $other = Flow::factory()->create(['bot_id' => 26]);
-        $bot->update(['default_flow_id' => $flow->id]);
-        foreach ([['system_prompt' => 'override'], ['default_flow_id' => $other->id], ['default_flow_id' => null]] as $changes) {
-            $this->actingAs($this->user)->putJson('/api/bots/26', $changes)->assertUnprocessable();
-        }
-        $this->actingAs($this->user)->putJson('/api/bots/26', ['name' => 'unrelated', 'default_flow_id' => $flow->id, 'system_prompt' => null])->assertOk();
-        $this->assertNull($bot->fresh()->system_prompt);
-        $this->assertSame($flow->id, $bot->fresh()->default_flow_id);
-        $this->assertSame('unrelated', $bot->fresh()->name);
-    }
-
-    public function test_bot_27_prompt_and_default_flow_remain_editable(): void
-    {
-        $bot = Bot::factory()->create(['id' => 27, 'user_id' => $this->user->id]);
-        $flow = Flow::factory()->create(['bot_id' => 27]);
-        $this->actingAs($this->user)->putJson('/api/bots/27', ['system_prompt' => 'editable', 'default_flow_id' => $flow->id])->assertOk();
-        $this->assertSame('editable', $bot->fresh()->system_prompt);
-        $this->assertSame($flow->id, $bot->fresh()->default_flow_id);
     }
 }

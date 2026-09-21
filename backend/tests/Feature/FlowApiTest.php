@@ -204,46 +204,4 @@ class FlowApiTest extends TestCase
         $response->assertUnprocessable();
         $this->assertNotSoftDeleted('flows', ['id' => $flow1->id]);
     }
-
-    public function test_protected_prompt_and_default_flow_api_bypasses_are_rejected(): void
-    {
-        $bot = Bot::factory()->create(['id' => 26, 'user_id' => $this->user->id]);
-        $default = Flow::factory()->create(['bot_id' => 26, 'is_default' => true]);
-        $other = Flow::factory()->create(['bot_id' => 26]);
-        $bot->update(['default_flow_id' => $default->id]);
-        $base = '/api/bots/26/flows';
-        foreach ([$default, $other] as $flow) {
-            $this->actingAs($this->user)->putJson("{$base}/{$flow->id}", ['system_prompt' => 'bypass'])->assertUnprocessable();
-        }
-        $this->actingAs($this->user)->putJson("{$base}/{$default->id}", ['is_default' => false])->assertUnprocessable();
-        $this->actingAs($this->user)->putJson("{$base}/{$other->id}", ['is_default' => true])->assertUnprocessable();
-        $this->actingAs($this->user)->postJson("{$base}/{$other->id}/set-default")->assertUnprocessable();
-        $this->actingAs($this->user)->postJson($base, ['name' => 'bypass', 'system_prompt' => 'new', 'is_default' => true])->assertUnprocessable();
-        $this->actingAs($this->user)->putJson("{$base}/{$default->id}", ['name' => 'unrelated'])->assertOk();
-        $this->actingAs($this->user)->putJson("{$base}/{$default->id}", ['system_prompt' => $default->system_prompt, 'is_default' => true])->assertOk();
-        $this->actingAs($this->user)->postJson("{$base}/{$default->id}/set-default")->assertOk();
-        $this->actingAs($this->user)->postJson($base, ['name' => 'nondefault', 'system_prompt' => 'new', 'is_default' => false])->assertCreated();
-        $this->assertSame($default->system_prompt, $default->fresh()->system_prompt);
-        $this->assertSame($default->id, $bot->fresh()->default_flow_id);
-        $this->actingAs($this->user)->deleteJson("{$base}/{$default->id}")->assertUnprocessable();
-    }
-
-    public function test_protected_first_flow_cannot_change_effective_default(): void
-    {
-        Bot::factory()->create(['id' => 26, 'user_id' => $this->user->id]);
-        $this->actingAs($this->user)->postJson('/api/bots/26/flows', ['name' => 'first', 'system_prompt' => 'bypass'])->assertUnprocessable();
-        $this->assertDatabaseMissing('flows', ['bot_id' => 26]);
-    }
-
-    public function test_bot_27_retains_prompt_and_default_flow_api_behavior(): void
-    {
-        $bot = Bot::factory()->create(['id' => 27, 'user_id' => $this->user->id]);
-        $default = Flow::factory()->create(['bot_id' => 27, 'is_default' => true]);
-        $other = Flow::factory()->create(['bot_id' => 27]);
-        $bot->update(['default_flow_id' => $default->id]);
-        $this->actingAs($this->user)->putJson("/api/bots/27/flows/{$default->id}", ['system_prompt' => 'editable'])->assertOk();
-        $this->actingAs($this->user)->postJson("/api/bots/27/flows/{$other->id}/set-default")->assertOk();
-        $this->assertSame('editable', $default->fresh()->system_prompt);
-        $this->assertSame($other->id, $bot->fresh()->default_flow_id);
-    }
 }

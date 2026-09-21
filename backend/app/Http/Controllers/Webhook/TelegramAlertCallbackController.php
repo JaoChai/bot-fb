@@ -7,11 +7,9 @@ use App\Exceptions\NoPendingPaymentException;
 use App\Exceptions\RecentManualConfirmException;
 use App\Http\Controllers\Controller;
 use App\Models\AccountDelivery;
-use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
 use App\Models\SlipVerification;
-use App\Services\CommerceSafety\SafetyScope;
 use App\Services\Delivery\AccountDeliveryService;
 use App\Services\Payment\ManualPaymentConfirmService;
 use App\Services\Payment\PaymentMessageDetector;
@@ -56,53 +54,38 @@ class TelegramAlertCallbackController extends Controller
             return response()->json(['ok' => true]);
         }
 
-        $parts = explode('|', (string) ($cb['data'] ?? ''));
-        if (! in_array(count($parts), [3, 4], true)) {
+        // ถ้าตั้ง allowlist ไว้ เฉพาะ user id ที่อนุญาตเท่านั้นที่กดยืนยันรับเงิน/ส่งของได้
+        // (กันคนอื่นในกลุ่ม Telegram สั่ง deliver credential) — ไม่ตั้ง = อนุญาตทุกคนในแชท
+        if (! $this->isAuthorizedUser($plugin, $cb)) {
+            Log::warning('Telegram alert callback: unauthorized user', [
+                'plugin_id' => $plugin->id, 'from_id' => $cb['from']['id'] ?? null,
+            ]);
+            $this->alertBot->answerCallbackQuery($token, $cb['id'] ?? '', 'ไม่มีสิทธิ์กดยืนยัน');
+
             return response()->json(['ok' => true]);
         }
-        $act = $parts[0];
+
+        $parts = explode('|', (string) ($cb['data'] ?? ''));
+        if (count($parts) !== 3) {
+            return response()->json(['ok' => true]);
+        }
+        [$act, $convId, $amt] = $parts;
+
+        if (! is_numeric($convId)) {
+            return response()->json(['ok' => true]);
+        }
 
         // action งานส่งของ: ส่วนที่สองของ callback_data เป็น delivery id ไม่ใช่ conversation id
         if (in_array($act, ['dv', 'dx', 'dz'], true)) {
-            if (count($parts) !== 3 || ! is_numeric($parts[1]) || ! $this->isAuthorizedUser($plugin, $cb)) {
-                return $this->rejectUnauthorized($plugin, $cb, $token);
-            }
-
-            return $this->handleDeliveryAction($act, (int) $parts[1], $plugin, $cb, $token);
+            return $this->handleDeliveryAction($act, (int) $convId, $plugin, $cb, $token);
         }
 
         // action เลือกรายการ: ส่วนที่สองเป็น slip_verifications id ไม่ใช่ conversation id
         if ($act === 'po') {
-            if (count($parts) !== 3 || ! is_numeric($parts[1]) || ! $this->isAuthorizedUser($plugin, $cb)) {
-                return $this->rejectUnauthorized($plugin, $cb, $token);
-            }
-
-            return $this->handlePickOption((int) $parts[1], (int) $parts[2], $plugin, $cb, $token, $chatId);
+            return $this->handlePickOption((int) $convId, (int) $amt, $plugin, $cb, $token, $chatId);
         }
 
-        if (! in_array($act, ['pa', 'pc'], true)) {
-            return response()->json(['ok' => true]);
-        }
-
-        $checkout = null;
-        if (count($parts) === 4) {
-            [, $checkoutId, $revision, $amt] = $parts;
-            if (! ctype_digit($revision)) {
-                return response()->json(['ok' => true]);
-            }
-            $checkout = CheckoutSession::query()
-                ->whereKey($checkoutId)
-                ->where('revision', (int) $revision)
-                ->first();
-            $conversation = $checkout?->conversation;
-        } else {
-            [, $convId, $amt] = $parts;
-            if (! is_numeric($convId)) {
-                return response()->json(['ok' => true]);
-            }
-            $conversation = Conversation::find((int) $convId);
-        }
-
+        $conversation = Conversation::find((int) $convId);
         if (! $conversation) {
             $this->alertBot->answerCallbackQuery($token, $cb['id'] ?? '', 'ไม่พบแชท');
 
@@ -118,56 +101,30 @@ class TelegramAlertCallbackController extends Controller
             return response()->json(['ok' => true]);
         }
 
-        $bot = $conversation->bot;
-        $scoped = in_array(app(SafetyScope::class)->mode($bot), ['enforce', 'hold'], true);
-        if ($scoped) {
-            $actorId = $this->mappedApplicationActor($plugin, $cb, (int) $bot->user_id);
-            if ($checkout === null || count($parts) !== 4 || $actorId === null
-                || (int) $checkout->bot_id !== (int) $bot->id
-                || (int) $checkout->conversation_id !== (int) $conversation->id) {
-                return $this->rejectUnauthorized($plugin, $cb, $token);
-            }
-        } else {
-            if (! $this->isAuthorizedUser($plugin, $cb)) {
-                return $this->rejectUnauthorized($plugin, $cb, $token);
-            }
-            $actorId = (int) $bot->user_id;
-        }
-
         $messageId = (int) ($cb['message']['message_id'] ?? 0);
         $fromName = $cb['from']['first_name'] ?? 'admin';
         $cbId = $cb['id'] ?? '';
 
         // เคส fraud กดครั้งแรก: แค่แก้ปุ่มให้ยืนยันชั้นสอง ยังไม่ทำงาน
         if ($act === 'pa') {
-            $confirmData = $scoped
-                ? "pc|{$checkout->id}|{$checkout->revision}|{$amt}"
-                : "pc|{$conversation->id}|{$amt}";
             $this->alertBot->editMessageText($token, $chatId, $messageId,
                 "⚠️ <b>ยืนยันทั้งที่สลิปน่าสงสัย?</b>\nกดปุ่มด้านล่างอีกครั้งเพื่อยืนยันจริง",
-                [[['text' => '❗ กดอีกครั้งเพื่อยืนยันจริง', 'callback_data' => $confirmData]]],
+                [[['text' => '❗ กดอีกครั้งเพื่อยืนยันจริง', 'callback_data' => "pc|{$convId}|{$amt}"]]],
             );
             $this->alertBot->answerCallbackQuery($token, $cbId, 'กดอีกครั้งเพื่อยืนยัน');
 
             return response()->json(['ok' => true]);
         }
 
-        $amount = $amt === 'x' ? null : ($scoped ? $amt : (float) $amt);
+        if ($act !== 'pc') {
+            return response()->json(['ok' => true]);
+        }
+
+        $amount = $amt === 'x' ? null : (float) $amt;
+        $bot = $conversation->bot;
 
         try {
-            if ($scoped) {
-                $this->confirmService->confirm(
-                    $bot,
-                    $conversation,
-                    $amount,
-                    $actorId,
-                    null,
-                    $checkout->id,
-                    $checkout->revision,
-                );
-            } else {
-                $this->confirmService->confirm($bot, $conversation, $amount, $actorId);
-            }
+            $this->confirmService->confirm($bot, $conversation, $amount, $bot->user_id);
             $this->alertBot->editMessageText($token, $chatId, $messageId,
                 '✅ <b>ยืนยันรับเงินแล้ว</b> โดย '.TelegramAlertBotService::esc($fromName));
             $this->alertBot->answerCallbackQuery($token, $cbId, 'ยืนยันรับเงินแล้ว');
@@ -178,7 +135,7 @@ class TelegramAlertCallbackController extends Controller
         } catch (NoPendingPaymentException $e) {
             $this->alertBot->answerCallbackQuery($token, $cbId, 'หายอดออเดอร์ไม่พบ กรุณายืนยันในเว็บ');
         } catch (\Throwable $e) {
-            Log::error('Telegram alert confirm failed', ['conversation_id' => $conversation->id, 'error' => $e->getMessage()]);
+            Log::error('Telegram alert confirm failed', ['conversation_id' => $convId, 'error' => $e->getMessage()]);
             $this->alertBot->answerCallbackQuery($token, $cbId, 'เกิดข้อผิดพลาด ลองใหม่หรือยืนยันในเว็บ');
         }
 
@@ -198,33 +155,6 @@ class TelegramAlertCallbackController extends Controller
         $fromId = (string) ($cb['from']['id'] ?? '');
 
         return $fromId !== '' && in_array($fromId, array_map('strval', $allow), true);
-    }
-
-    private function mappedApplicationActor(FlowPlugin $plugin, array $cb, int $ownerId): ?int
-    {
-        $telegramId = (string) ($cb['from']['id'] ?? '');
-        $mapping = $plugin->config['authorized_user_mappings'] ?? null;
-        if ($telegramId === '' || ! is_array($mapping) || ! array_key_exists($telegramId, $mapping)) {
-            return null;
-        }
-        $mapped = $mapping[$telegramId];
-        if (! is_int($mapped) && (! is_string($mapped) || ! ctype_digit($mapped))) {
-            return null;
-        }
-        $actorId = (int) $mapped;
-
-        return $actorId === $ownerId ? $actorId : null;
-    }
-
-    private function rejectUnauthorized(FlowPlugin $plugin, array $cb, string $token): JsonResponse
-    {
-        Log::warning('Telegram alert callback: unauthorized user or stale authority', [
-            'plugin_id' => $plugin->id,
-            'from_id' => $cb['from']['id'] ?? null,
-        ]);
-        $this->alertBot->answerCallbackQuery($token, $cb['id'] ?? '', 'ไม่มีสิทธิ์กดยืนยัน');
-
-        return response()->json(['ok' => true]);
     }
 
     private function handleDeliveryAction(

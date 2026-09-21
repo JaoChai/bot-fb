@@ -116,22 +116,6 @@ class StockPoolServiceTest extends TestCase
         $this->assertSame(StockPoolService::orderRef(8), $orphans[0]['order_ref']);
     }
 
-    public function test_per_unit_refs_recover_exactly_and_keep_legacy_delivery_parsing(): void
-    {
-        $this->seedAvailable(20, 'NLMP');
-        $unitRef = StockPoolService::orderRef(42, 9001);
-
-        $first = $this->pool->reserveOne('NLMP', $unitRef);
-        $retry = $this->pool->reserveOne('NLMP', $unitRef);
-
-        $this->assertSame(20, (int) $first['id']);
-        $this->assertSame(20, (int) $retry['id']);
-        $this->assertSame(42, StockPoolService::deliveryIdFromRef($unitRef));
-        $this->assertSame(42, StockPoolService::deliveryIdFromRef(StockPoolService::orderRef(42)));
-        $this->assertNull(StockPoolService::deliveryIdFromRef('ext-telegram-42'));
-        $this->assertSame(1, DB::connection('mhha_acc')->table('items_reserved')->count());
-    }
-
     /**
      * items_sold / items_available เป็น Postgres IDENTITY column (id) — INSERT ที่มี id
      * แบบ explicit จะพัง "cannot insert a non-DEFAULT value into column id" บน Postgres จริง

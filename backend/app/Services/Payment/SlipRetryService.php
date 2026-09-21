@@ -10,10 +10,6 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\SlipVerification;
-use App\Models\VerifiedPaymentEvent;
-use App\Services\CommerceSafety\FinancialOutputGuard;
-use App\Services\CommerceSafety\PaymentEffectDispatcher;
-use App\Services\CommerceSafety\SafetyScope;
 use App\Services\FlowPluginService;
 use App\Services\LINEService;
 use App\Services\LineWebhook\LineWebhookResponseService;
@@ -32,7 +28,6 @@ class SlipRetryService
         private readonly PaymentFlexService $paymentFlex,
         private readonly LINEService $line,
         private readonly FlowPluginService $flowPlugin,
-        private readonly SafetyScope $safetyScope,
     ) {}
 
     /**
@@ -40,27 +35,8 @@ class SlipRetryService
      */
     public function retry(Bot $bot, Conversation $conversation, Message $message, string $imageUrl, int $attempt): void
     {
-        if (in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true)) {
-            $terminal = SlipVerification::query()->where('bot_id', $bot->id)->where('conversation_id', $conversation->id)
-                ->whereIn('status', ['passed', 'manual_confirmed'])
-                ->where(function ($query) use ($message): void {
-                    $query->where('message_id', $message->id)
-                        ->orWhere(function ($query) use ($message): void {
-                            $query->where('status', 'manual_confirmed')->where('created_at', '>=', $message->created_at);
-                        });
-                })->orderBy('id')->get();
-            foreach ($terminal as $slip) {
-                $event = $this->slipVerification->reconcileVerifiedSlip($bot, $conversation, $slip);
-                $this->enqueueVerified($event);
-            }
-            if ($terminal->isNotEmpty()) {
-                return;
-            }
-        }
-
         // ลูกค้าส่งสลิปซ้ำผ่านเอง / แอดมินยืนยันมือไปแล้ว → หยุด กันออเดอร์ซ้ำ
-        if (! in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true)
-            && $this->alreadyResolved($conversation, $message)) {
+        if ($this->alreadyResolved($conversation, $message)) {
             return;
         }
 
@@ -83,7 +59,6 @@ class SlipRetryService
         // ตอบลูกค้าด้วย fail template + แจ้งแอดมิน (mirror webhook fail path)
         $failText = $bot->settings?->slip_fail_message
             ?: LineWebhookResponseService::SLIP_FAIL_TEMPLATE;
-        $failText = app(FinancialOutputGuard::class)->text($bot, $failText);
         $conversation->messages()->create([
             'sender' => 'bot', 'type' => 'text', 'content' => $failText,
             'metadata' => ['slip_verification' => true, 'slip_status' => $result->status(), 'slip_retry' => true],
@@ -99,14 +74,6 @@ class SlipRetryService
      */
     private function emitSuccess(Bot $bot, Conversation $conversation, SlipVerificationResult $result): void
     {
-        if (in_array($this->safetyScope->mode($bot), ['enforce', 'hold'], true)) {
-            $slip = SlipVerification::query()->findOrFail($result->slipVerificationId);
-            $event = $this->slipVerification->reconcileVerifiedSlip($bot, $conversation, $slip);
-            $this->enqueueVerified($event);
-
-            return;
-        }
-
         $template = $bot->settings?->slip_success_message
             ?: LineWebhookResponseService::SLIP_SUCCESS_TEMPLATE;
         $text = str_replace(
@@ -139,11 +106,6 @@ class SlipRetryService
         // ไม่งั้นเส้นทาง auto-retry นี้จะส่งของเงียบเลยโดยเจ้าของไม่ได้รับการ์ดแจ้งเลย
         // (กฎ "เมื่อไหร่แจ้งเงียบ" อยู่ใน SlipVerificationService::notifyIfAutoReconstructed)
         $this->slipVerification->notifyIfAutoReconstructed($bot, $conversation, $result);
-    }
-
-    private function enqueueVerified(VerifiedPaymentEvent $event): void
-    {
-        app(PaymentEffectDispatcher::class)->enqueue($event);
     }
 
     private function pushToLine(Bot $bot, Conversation $conversation, string $text): void

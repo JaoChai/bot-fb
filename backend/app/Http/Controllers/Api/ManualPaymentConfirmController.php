@@ -7,8 +7,6 @@ use App\Exceptions\RecentManualConfirmException;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\MessageResource;
 use App\Models\Conversation;
-use App\Services\CommerceSafety\MoneyMinor;
-use App\Services\CommerceSafety\SafetyScope;
 use App\Services\Payment\ManualPaymentConfirmService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -30,31 +28,11 @@ class ManualPaymentConfirmController extends Controller
         // Same policy as replying in chat (agent-message): bot owner only.
         $this->authorize('update', $bot);
 
-        $scoped = in_array(app(SafetyScope::class)->mode($bot), ['enforce', 'hold'], true);
-        $amountRules = $scoped
-            ? ['sometimes', 'nullable', function (string $attribute, mixed $value, \Closure $fail): void {
-                if (! is_int($value) && ! is_string($value)) {
-                    $fail('The amount must be a plain decimal with at most two fractional digits.');
+        $validated = $request->validate([
+            'amount' => ['sometimes', 'nullable', 'numeric', 'gt:0', 'max:1000000'],
+        ]);
 
-                    return;
-                }
-                try {
-                    $minor = MoneyMinor::fromDecimal((string) $value);
-                } catch (\InvalidArgumentException) {
-                    $fail('The amount must be a plain decimal with at most two fractional digits.');
-
-                    return;
-                }
-                if ($minor <= 0 || $minor > 100000000) {
-                    $fail('The amount must be between 0.01 and 1000000.00.');
-                }
-            }]
-            : ['sometimes', 'nullable', 'numeric', 'gt:0', 'max:1000000'];
-        $validated = $request->validate(['amount' => $amountRules]);
-
-        $amount = isset($validated['amount']) && ! $scoped
-            ? (float) $validated['amount']
-            : ($validated['amount'] ?? null);
+        $amount = isset($validated['amount']) ? (float) $validated['amount'] : null;
 
         try {
             $result = $this->service->confirm($bot, $conversation, $amount, $request->user()->id);

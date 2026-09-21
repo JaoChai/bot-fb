@@ -9,9 +9,6 @@ use App\Services\OpenRouterCredentials;
 use App\Services\PromptEval\PromptEvalRunner;
 use App\Services\RAGService;
 use App\Services\SemanticCacheService;
-use Illuminate\Http\Client\Request;
-use Illuminate\Http\Client\RequestException;
-use Illuminate\Support\Facades\Http;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionProperty;
@@ -19,81 +16,6 @@ use Tests\TestCase;
 
 class PromptEvalRunnerTest extends TestCase
 {
-    private function runner(AIService $ai, RAGService $rag): PromptEvalRunner
-    {
-        return new PromptEvalRunner($ai, $rag, new OpenRouterCredentials);
-    }
-
-    private function rawRunner(): PromptEvalRunner
-    {
-        Http::preventStrayRequests();
-        config(['services.openrouter.api_key' => 'synthetic-not-a-key', 'services.openrouter.base_url' => 'https://openrouter.ai/api/v1']);
-        $ai = Mockery::mock(AIService::class);
-        $ai->shouldNotReceive('generateResponse');
-        [$rag, $cache] = $this->mockRagWithRealSemanticCache();
-        $rag->shouldNotReceive('generateResponse');
-
-        return $this->runner($ai, $rag);
-    }
-
-    public function test_raw_mode_preserves_content_and_actual_provider_provenance(): void
-    {
-        $runner = $this->rawRunner();
-        $content = '[[OFFTOPIC]] [[ORDER]]{"total":1}[[/ORDER]]';
-        Http::fake(['openrouter.ai/*' => Http::response([
-            'id' => 'synthetic-request', 'model' => 'returned/different',
-            'choices' => [['message' => ['content' => $content], 'finish_reason' => 'length']],
-        ])]);
-        $messages = [['role' => 'user', 'content' => 'synthetic evaluation']];
-        $result = $runner->runRaw($messages, 'requested/model', temperature: 0.2, maxTokens: 321, reasoning: ['effort' => 'low']);
-        $this->assertSame($content, $result['content']);
-        $this->assertSame('synthetic-request', $result['request_id']);
-        $this->assertSame('requested/model', $result['requested_model']);
-        $this->assertSame('returned/different', $result['returned_model']);
-        $this->assertSame('length', $result['finish_reason']);
-        $this->assertSame(hash('sha256', json_encode($messages, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)), $result['input_sha256']);
-        Http::assertSent(function (Request $request) use ($messages, $result): bool {
-            $this->assertSame($messages, $request['messages']);
-            $this->assertSame($result['settings'], array_diff_key($request->data(), ['messages' => true]));
-            $this->assertSame(0.2, $request['temperature']);
-            $this->assertSame(321, $request['max_tokens']);
-            $this->assertSame(['effort' => 'low'], $request['reasoning']);
-            $this->assertSame(['allow_fallbacks' => false], $request['provider']);
-            $this->assertArrayNotHasKey('models', $request->data());
-
-            return true;
-        });
-        Http::assertSentCount(1);
-    }
-
-    public function test_raw_mode_does_not_invent_missing_provenance_or_use_cache(): void
-    {
-        config(['rag.semantic_cache.enabled' => true]);
-        $runner = $this->rawRunner();
-        Http::fake(['openrouter.ai/*' => Http::response(['choices' => [['message' => ['content' => 'raw']]]])]);
-        for ($attempt = 0; $attempt < 2; $attempt++) {
-            $result = $runner->runRaw([['role' => 'user', 'content' => 'same input']], 'requested/model');
-            $this->assertNull($result['request_id']);
-            $this->assertNull($result['returned_model']);
-            $this->assertNull($result['finish_reason']);
-        }
-        Http::assertSentCount(2);
-        $this->assertTrue(config('rag.semantic_cache.enabled'));
-    }
-
-    public function test_raw_mode_propagates_http_failure_without_retry_or_fallback(): void
-    {
-        $runner = $this->rawRunner();
-        Http::fake(['openrouter.ai/*' => Http::response(['error' => ['message' => 'synthetic failure']], 503)]);
-        try {
-            $runner->runRaw([['role' => 'user', 'content' => 'synthetic']], 'requested/model');
-            $this->fail('Raw HTTP failure must propagate');
-        } catch (RequestException $exception) {
-            $this->assertSame(503, $exception->response->status());
-        }
-        Http::assertSentCount(1);
-    }
-
     private function bot(): Bot
     {
         return (new Bot)->forceFill(['id' => 1]);

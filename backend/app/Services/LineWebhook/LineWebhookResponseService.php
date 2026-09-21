@@ -6,18 +6,8 @@ use App\Jobs\ReserveAccountStock;
 use App\Jobs\RetrySlipVerification;
 use App\Models\Conversation;
 use App\Models\Message;
-use App\Models\SlipVerification;
-use App\Models\VerifiedPaymentEvent;
 use App\Services\AIService;
 use App\Services\Chat\ConversationContextService;
-use App\Services\CommerceSafety\CartValidation;
-use App\Services\CommerceSafety\CheckoutAuthority;
-use App\Services\CommerceSafety\CheckoutOutcome;
-use App\Services\CommerceSafety\CheckoutRenderer;
-use App\Services\CommerceSafety\CustomerReplyGuard;
-use App\Services\CommerceSafety\FinancialOutputDetector;
-use App\Services\CommerceSafety\FinancialOutputGuard;
-use App\Services\CommerceSafety\SafetyScope;
 use App\Services\LINEService;
 use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
@@ -54,9 +44,6 @@ class LineWebhookResponseService
         private readonly ModelCapabilityService $modelCapability,
         private readonly LINEService $line,
         private readonly SlipVerificationService $slipVerification,
-        private readonly ?SafetyScope $safetyScope = null,
-        private readonly ?CheckoutAuthority $checkoutAuthority = null,
-        private readonly ?CheckoutRenderer $checkoutRenderer = null,
     ) {}
 
     /**
@@ -104,15 +91,6 @@ class LineWebhookResponseService
             return;
         }
 
-        if ($this->commerceEnforced($ctx)) {
-            $outcome = $this->authority()->accept($ctx->bot, $conversation, $userMessage);
-            if ($this->outcomeConsumedMessage($outcome, $userMessage)) {
-                $this->setCheckoutResponse($ctx, $outcome);
-
-                return;
-            }
-        }
-
         // Auto-clear stale context before AI generates response (line 500)
         $this->conversationContext->autoClearIfIdle($conversation);
 
@@ -127,158 +105,9 @@ class LineWebhookResponseService
         // Store for Stage 4 (LINE push, stats, broadcast)
         $ctx->metadata['bot_message'] = $botMessage;
 
-        if ($this->commerceGuardsOutput($ctx)) {
-            $outcome = $this->checkoutProposal($ctx, $botMessage);
-            if ($outcome !== null) {
-                $this->replaceWithCheckoutResponse($ctx, $botMessage, $outcome);
-            }
-        }
-
         if ($botMessage->content) {
             $ctx->response = ResponseEnvelope::text($botMessage->content);
         }
-    }
-
-    private function commerceEnforced(WebhookContext $ctx): bool
-    {
-        return ($this->safetyScope ?? app(SafetyScope::class))->mode($ctx->bot) === 'enforce';
-    }
-
-    private function commerceGuardsOutput(WebhookContext $ctx): bool
-    {
-        return in_array(
-            ($this->safetyScope ?? app(SafetyScope::class))->mode($ctx->bot),
-            ['enforce', 'hold'],
-            true,
-        );
-    }
-
-    private function guardGeneratedPaymentText(WebhookContext $ctx, string $text): string
-    {
-        return $this->commerceGuardsOutput($ctx) && app(FinancialOutputDetector::class)->detects($ctx->bot, $text)
-            ? FinancialOutputGuard::DENIAL
-            : $text;
-    }
-
-    private function authority(): CheckoutAuthority
-    {
-        return $this->checkoutAuthority ?? app(CheckoutAuthority::class);
-    }
-
-    private function renderer(): CheckoutRenderer
-    {
-        return $this->checkoutRenderer ?? app(CheckoutRenderer::class);
-    }
-
-    private function outcomeConsumedMessage(CheckoutOutcome $outcome, Message $message): bool
-    {
-        if ($outcome->customerText !== null) {
-            return true;
-        }
-
-        return $outcome->checkout !== null
-            && in_array((int) $message->getKey(), array_map(
-                'intval',
-                array_values($outcome->checkout->accepted ?? []),
-            ), true);
-    }
-
-    private function checkoutProposal(WebhookContext $ctx, Message $botMessage): ?CheckoutOutcome
-    {
-        if (app(FinancialOutputDetector::class)->detects($ctx->bot, (string) $botMessage->content)) {
-            return new CheckoutOutcome('manual_hold', null, FinancialOutputGuard::DENIAL);
-        }
-        $cart = $this->aiService->takeCommerceSafetyCartValidation($botMessage);
-        if (! $cart instanceof CartValidation || ! $ctx->conversation) {
-            return null;
-        }
-        if (! $cart->valid) {
-            return new CheckoutOutcome(
-                'manual_hold',
-                null,
-                'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง',
-            );
-        }
-
-        return $this->authority()->propose($ctx->bot, $ctx->conversation, $cart);
-    }
-
-    private function setCheckoutResponse(WebhookContext $ctx, CheckoutOutcome $outcome): void
-    {
-        if (! $ctx->conversation || ! $outcome->checkout) {
-            return;
-        }
-
-        $content = $outcome->customerText ?? $this->renderer()->render($outcome->checkout, $outcome->action);
-        $botMessage = $ctx->conversation->messages()->create([
-            'sender' => 'bot',
-            'content' => $content,
-            'type' => 'text',
-        ]);
-        $ctx->metadata['bot_message'] = $botMessage;
-        $this->preparePresentation($ctx, $botMessage, $outcome);
-        $ctx->response = ResponseEnvelope::text($content);
-    }
-
-    private function replaceWithCheckoutResponse(
-        WebhookContext $ctx,
-        Message $botMessage,
-        CheckoutOutcome $outcome,
-    ): void {
-        if (! $outcome->checkout && $outcome->customerText === null) {
-            return;
-        }
-
-        $content = $outcome->customerText ?? $this->renderer()->render($outcome->checkout, $outcome->action);
-        $metadata = is_array($botMessage->metadata) ? $botMessage->metadata : [];
-        unset($metadata['order_payload']);
-        if ($outcome->action === 'payment' && $outcome->checkout) {
-            $metadata['order_payload'] = $this->serverOrderPayload($outcome->checkout->items, $outcome->checkout->total_minor);
-        }
-        $botMessage->forceFill(['content' => $content, 'metadata' => $metadata ?: null])->save();
-        $this->preparePresentation($ctx, $botMessage, $outcome);
-    }
-
-    private function preparePresentation(
-        WebhookContext $ctx,
-        Message $botMessage,
-        CheckoutOutcome $outcome,
-    ): void {
-        if (! $outcome->checkout
-            || ! in_array($outcome->action, ['ack', 'confirm', 'support_delay', 'terms', 'payment'], true)
-            || $outcome->checkout->state === 'cancelled') {
-            return;
-        }
-
-        $metadata = is_array($botMessage->metadata) ? $botMessage->metadata : [];
-        $presentation = [
-            'checkout_id' => $outcome->checkout->getKey(),
-            'revision' => $outcome->checkout->revision,
-            'action' => $outcome->action,
-        ];
-        $metadata['checkout_presentation'] = $presentation;
-        $botMessage->forceFill(['metadata' => $metadata])->save();
-        $this->authority()->pending($outcome->checkout, $outcome->checkout->revision, $botMessage, $outcome->action);
-        $ctx->metadata['checkout_presentation'] = $presentation;
-    }
-
-    /** @param list<array<string,mixed>> $items */
-    private function serverOrderPayload(array $items, int $totalMinor): array
-    {
-        return [
-            'items' => array_map(fn (array $item): array => [
-                'name' => $item['name'].match ($item['method'] ?? 'none') {
-                    'card' => ' (ผูกบัตร)',
-                    'topup' => ' (เติมเงิน)',
-                    default => '',
-                },
-                'qty' => $item['qty'],
-                'price' => $item['price_minor'] % 100 === 0
-                    ? intdiv($item['price_minor'], 100)
-                    : $item['price_minor'] / 100,
-            ], $items),
-            'total' => $totalMinor % 100 === 0 ? intdiv($totalMinor, 100) : $totalMinor / 100,
-        ];
     }
 
     // -------------------------------------------------------------------------
@@ -311,9 +140,6 @@ class LineWebhookResponseService
             if (! $responseMessage) {
                 return;
             }
-
-            $responseMessage = $this->guardGeneratedPaymentText($ctx, $responseMessage);
-            $responseMessage = app(CustomerReplyGuard::class)->text($ctx->bot, $responseMessage, $conversation);
 
             // Save bot response (lines 927-936)
             $botMessage = $conversation->messages()->create([
@@ -441,8 +267,7 @@ class LineWebhookResponseService
                 );
             }
 
-            $responseContent = $this->guardGeneratedPaymentText($ctx, $result['content'] ?? '');
-            $responseContent = app(CustomerReplyGuard::class)->text($ctx->bot, $responseContent, $conversation);
+            $responseContent = $result['content'] ?? '';
 
             if (empty($responseContent)) {
                 Log::warning('Empty response from Vision API', [
@@ -705,17 +530,6 @@ class LineWebhookResponseService
                 return false; // รูปทั่วไป → vision เดิม
             }
 
-            if ($result->passed && $this->commerceGuardsOutput($ctx)) {
-                $slip = SlipVerification::query()->findOrFail($result->slipVerificationId);
-                $event = VerifiedPaymentEvent::query()->where('bot_id', $ctx->bot->id)
-                    ->where('conversation_id', $ctx->conversation->id)->where('slip_verification_id', $slip->id)->firstOrFail();
-                $receipt = $event->receiptMessage()->firstOrFail();
-                $ctx->metadata['bot_message'] = $receipt;
-                $ctx->response = ResponseEnvelope::text($receipt->content);
-
-                return true;
-            }
-
             if ($result->passed) {
                 $template = $settings->slip_success_message ?: self::SLIP_SUCCESS_TEMPLATE;
                 $text = str_replace(
@@ -740,8 +554,6 @@ class LineWebhookResponseService
                 $text = $settings->slip_fail_message ?: self::SLIP_FAIL_TEMPLATE;
                 $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
             }
-
-            $text = $this->guardGeneratedPaymentText($ctx, $text);
 
             $botMessage = $ctx->conversation->messages()->create([
                 'sender' => 'bot',
@@ -840,11 +652,8 @@ class LineWebhookResponseService
             Log::info('Slip image classification', [
                 'bot_id' => $ctx->bot->id,
                 'conversation_id' => $ctx->conversation?->id,
-                ...($decoded === null ? [
-                    'content_length' => mb_strlen($result['content'] ?? ''),
-                    'content_hash' => hash('sha256', $result['content'] ?? ''),
-                    'reason' => 'malformed_classification',
-                ] : ['is_slip' => $decoded['is_slip']]),
+                'is_slip' => $decoded['is_slip'] ?? null,
+                'raw' => $decoded === null ? mb_substr($result['content'] ?? '', 0, 200) : null,
             ]);
 
             if ($decoded === null) {
