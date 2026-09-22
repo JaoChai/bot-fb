@@ -96,15 +96,16 @@ ProcessAggregatedMessages
   generate AI response
   persist bot message
   AggregatedMessageDeliveryService::deliver(...)
+  capture immutable plugin flow/context snapshot
   update stats
-  release response lock
-  dispatch ExecuteFlowPlugins job
+  finally: release response lock, then dispatch ExecuteFlowPlugins
   broadcast
 
 ExecuteFlowPlugins (llm queue, best effort)
-  reload Bot / Conversation / Message by ID
+  reload Bot / Conversation / Message by ID plus scalar snapshot fields
   verify that the message belongs to the conversation and bot
-  FlowPluginService::executePlugins(...)
+  atomically claim flow_plugins:message:{messageId} for 24 hours
+  FlowPluginService::executePluginsSnapshot(...)
 ```
 
 ## 6. Components
@@ -152,22 +153,26 @@ public function __construct(
     public int $botId,
     public int $conversationId,
     public int $messageId,
+    public ?int $flowId = null,
+    public array $contextMessageIds = [],
 ) {}
 ```
 
 Execution rules:
 
 - implements `ShouldQueue`;
-- uses `QueueRouter::connection()` for Redis/database fallback;
+- uses `QueueRouter::asyncConnection()` so the sync queue is never used inline;
 - is explicitly routed to `QueueRouter::QUEUE_LLM`, because plugin evaluation can call OpenRouter;
 - `$tries = 1`, preserving the current best-effort behavior and avoiding Telegram/order duplication from queue retries;
-- `$timeout = 90` seconds, leaving headroom for the existing 15-second OpenRouter evaluation plus Telegram HTTP retries while staying below the 160-second LLM-worker ceiling;
+- `$timeout = 75` seconds, strictly below the repository-default 90-second Redis/database `retry_after`;
+- carries the captured flow ID and chronological message IDs used by the former inline plugin call;
 - reloads the three records and returns safely when any is missing;
 - validates `conversation.bot_id === bot.id` and `message.conversation_id === conversation.id` before executing plugins;
-- delegates to `FlowPluginService::executePlugins()`;
-- catches unexpected exceptions and logs IDs plus the error, never message content or credentials.
+- atomically claims `flow_plugins:message:{messageId}` for 24 hours before plugin execution;
+- delegates snapshot jobs to `FlowPluginService::executePluginsSnapshot()` and legacy three-argument callers to `executePlugins()`;
+- catches unexpected exceptions and logs IDs, exception type, and numeric code, never message content or credentials.
 
-The service’s existing per-plugin 60-second cache guard remains unchanged.
+`FlowPluginService::executePlugins()` remains backward compatible. The snapshot entry point scopes the captured flow to the bot, loads only captured message IDs scoped to the conversation, preserves their order, and shares the existing plugin loop without querying live recent messages.
 
 ### 6.3 `ProcessAggregatedMessages`
 
@@ -175,9 +180,10 @@ Changes are surgical:
 
 - inject `AggregatedMessageDeliveryService` into `handle()` and pass it through the existing private methods;
 - remove direct `LINEService`, `MultipleBubblesService`, `PaymentFlexService`, and `FlowPluginService` orchestration from the job where no longer needed;
-- `generateAndDeliver()` persists the bot message and delegates delivery to the new service;
-- it no longer executes plugins;
-- after the `finally` block releases the response lock, dispatch `ExecuteFlowPlugins` for a successfully persisted bot message;
+- initialize the bot message and plugin snapshot before the response-lock guarded work;
+- after successful delivery and before `updateStats()`, capture `conversation.current_flow_id ?? bot.default_flow_id` and the exact five chronological context message IDs;
+- in the response-lock `finally` block, release the lock first, then dispatch `ExecuteFlowPlugins` with the snapshot;
+- catch dispatch failures in that `finally` block so they cannot replace a statistics or processing exception;
 - retain the existing ordering of aggregation cleanup, statistics, and broadcasts unless a test proves an ordering dependency requires the dispatch to move one line later.
 
 ## 7. Data and Error Flow
@@ -187,11 +193,12 @@ Changes are surgical:
 1. AI result generated.
 2. Bot message persisted.
 3. LINE delivery succeeds.
-4. Conversation/bot statistics update.
-5. Response lock releases.
-6. Plugin job is queued.
-7. Realtime events broadcast.
-8. Plugin job evaluates triggers independently.
+4. Immutable plugin flow/context snapshot is captured.
+5. Conversation/bot statistics update.
+6. Response lock releases.
+7. Plugin job is queued on an asynchronous connection.
+8. Realtime events broadcast.
+9. Plugin job evaluates triggers independently.
 
 ### AI failure with friendly fallback
 
@@ -203,7 +210,7 @@ The existing exception behavior remains: the parent job fails before post-respon
 
 ### Plugin failure
 
-The plugin job logs and completes without retry. The customer reply, message persistence, statistics, and broadcast are unaffected.
+The plugin job atomically claims a message-level 24-hour idempotency key, logs and completes without retry, and swallows plugin exceptions. The customer reply, message persistence, statistics, and broadcast are unaffected.
 
 ### Missing or mismatched records
 
@@ -227,10 +234,13 @@ Create `backend/tests/Unit/Services/Chat/AggregatedMessageDeliveryServiceTest.ph
 Create `backend/tests/Unit/Jobs/ExecuteFlowPluginsTest.php`:
 
 - valid IDs call `FlowPluginService::executePlugins()` once;
+- captured flow/context IDs call `executePluginsSnapshot()` without live-state recalculation;
 - missing bot, conversation, or message exits safely;
 - cross-bot conversation is rejected;
 - message from another conversation is rejected;
-- the job declares one attempt, a 90-second timeout, and the `llm` queue.
+- duplicate handling executes a message only once using an atomic cache claim;
+- plugin exceptions are swallowed;
+- the job declares one attempt, a 75-second timeout, and the `llm` queue.
 
 ### Aggregated job characterization
 
@@ -239,6 +249,10 @@ Add focused tests proving:
 - successful and fallback bot messages dispatch `ExecuteFlowPlugins`;
 - early exits and failed delivery do not dispatch it;
 - `FlowPluginService` is not called synchronously by `ProcessAggregatedMessages`;
+- sync queue defaults are routed to the database connection and plugin execution is not inline;
+- statistics failure still dispatches after lock release and rethrows the statistics exception;
+- dispatch failure is best effort and does not replace completed response behavior;
+- changing live flow/message state after dispatch does not change snapshot evaluation;
 - existing message persistence, stats, and broadcast behavior remains intact.
 
 ### Verification commands
@@ -275,16 +289,16 @@ Rollback is a normal git revert of the refactor PR. No schema, data, prompt, or 
 ## 10. Risks
 
 1. **Plugin ordering changes:** plugins run after lock release and may complete after broadcasts. Mitigation: plugin inputs are persisted IDs, and no customer response depends on plugin completion.
-2. **Queue outage:** `QueueRouter::connection()` preserves the existing Redis-to-database fallback. The customer reply remains successful even if plugin dispatch fails; log the dispatch failure.
-3. **Duplicate side effects:** the job uses one attempt and the existing plugin cache guard. No automatic job retries are introduced.
+2. **Queue outage:** `QueueRouter::asyncConnection()` preserves the Redis-to-database fallback and replaces a sync default with database. The customer reply remains successful even if plugin dispatch fails; log the dispatch failure by exception type/code.
+3. **Duplicate side effects:** the job uses one attempt plus an atomic message-level 24-hour claim. No automatic job retries are introduced; a crash after claiming can lose best-effort plugin work.
 4. **Stacked-branch drift:** PR #278 may change before merge. Mitigation: rebase and run the complete suite before opening the refactor PR.
 
 ## 11. Acceptance Criteria
 
 - `ProcessAggregatedMessages` no longer calls `FlowPluginService::executePlugins()` directly.
-- The response lock is released before `ExecuteFlowPlugins` is dispatched.
+- The response lock is released before `ExecuteFlowPlugins` is dispatched, including when `updateStats()` throws.
 - Flex, bubble, and plain-text delivery behavior is unchanged and directly unit tested.
-- Plugin processing uses scalar IDs, validates ownership boundaries, and runs on the `llm` queue with one attempt.
+- Plugin processing uses scalar IDs plus immutable flow/context snapshot fields, validates ownership boundaries, claims messages atomically, and runs on the `llm` queue with one attempt.
 - No files outside the aggregated-response path, its focused tests, and this documentation are changed.
 - Pint passes.
 - Full backend suite passes with no new skips or warnings relative to the clean baseline.

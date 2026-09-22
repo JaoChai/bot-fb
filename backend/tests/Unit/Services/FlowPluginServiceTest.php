@@ -4,6 +4,7 @@ namespace Tests\Unit\Services;
 
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
 use App\Models\User;
@@ -274,5 +275,73 @@ class FlowPluginServiceTest extends TestCase
         $result = $method->invoke($service, $plugin, $bot, $conversation, $botMessage);
 
         $this->assertFalse($result);
+    }
+
+    public function test_snapshot_uses_captured_flow_and_message_ids_in_captured_order(): void
+    {
+        config(['services.openrouter.api_key' => 'test-key']);
+
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create([
+            'user_id' => $user->id,
+            'utility_model' => 'test/model',
+        ]);
+        $capturedFlow = Flow::factory()->create(['bot_id' => $bot->id]);
+        $liveFlow = Flow::factory()->create(['bot_id' => $bot->id]);
+        $capturedFlow->plugins()->create([
+            'type' => 'telegram',
+            'enabled' => true,
+            'trigger_condition' => 'captured flow',
+            'config' => ['message_template' => 'captured'],
+        ]);
+        $liveFlow->plugins()->create([
+            'type' => 'telegram',
+            'enabled' => true,
+            'trigger_condition' => 'live flow',
+            'config' => ['message_template' => 'live'],
+        ]);
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'current_flow_id' => $capturedFlow->id,
+        ]);
+        $first = Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'user',
+            'content' => 'first captured message',
+        ]);
+        $second = Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'bot',
+            'content' => 'second captured message',
+        ]);
+        $botMessage = Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'bot',
+            'content' => 'captured bot response',
+        ]);
+
+        $conversation->update(['current_flow_id' => $liveFlow->id]);
+        $newer = Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'user',
+            'content' => 'newer live message',
+        ]);
+
+        $openRouter = $this->createMock(OpenRouterService::class);
+        $openRouter->expects($this->once())
+            ->method('chat')
+            ->with($this->callback(function (array $messages) use ($first, $second, $botMessage, $newer): bool {
+                $prompt = $messages[1]['content'];
+
+                return str_contains($prompt, $first->content)
+                    && str_contains($prompt, $second->content)
+                    && str_contains($prompt, $botMessage->content)
+                    && ! str_contains($prompt, $newer->content)
+                    && str_contains($prompt, 'captured flow');
+            }), 'test/model', $this->anything(), $this->anything(), $this->anything(), $this->anything())
+            ->willReturn(['content' => '{"triggered": false}']);
+
+        $service = new FlowPluginService($openRouter);
+        $service->executePluginsSnapshot($bot, $conversation, $botMessage, $capturedFlow->id, [$first->id, $second->id, $botMessage->id]);
     }
 }

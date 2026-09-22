@@ -116,6 +116,9 @@ class ProcessAggregatedMessages implements ShouldQueue
             return;
         }
 
+        $botMessage = null;
+        $pluginSnapshot = null;
+
         try {
             // Auto-clear stale context before AI generates response
             app(ConversationContextService::class)->autoClearIfIdle($this->conversation);
@@ -130,26 +133,23 @@ class ProcessAggregatedMessages implements ShouldQueue
             );
 
             if ($botMessage) {
+                $pluginSnapshot = $this->capturePluginSnapshot();
                 $this->updateStats($messageCount, $botMessage->id);
             }
         } finally {
             $responseLock->release();
-        }
-
-        if (isset($botMessage) && $botMessage) {
-            try {
-                ExecuteFlowPlugins::dispatch(
-                    $this->bot->id,
-                    $this->conversation->id,
-                    $botMessage->id,
-                )->onConnection(QueueRouter::connection());
-            } catch (\Throwable $e) {
-                Log::warning('Flow plugin dispatch failed after aggregation response', [
-                    'bot_id' => $this->bot->id,
-                    'conversation_id' => $this->conversation->id,
-                    'message_id' => $botMessage->id,
-                    'error' => $e->getMessage(),
-                ]);
+            if ($botMessage && $pluginSnapshot !== null) {
+                try {
+                    $this->dispatchFlowPlugins($botMessage, $pluginSnapshot);
+                } catch (\Throwable $e) {
+                    Log::warning('Flow plugin dispatch failed after aggregation response', [
+                        'bot_id' => $this->bot->id,
+                        'conversation_id' => $this->conversation->id,
+                        'message_id' => $botMessage->id,
+                        'exception_type' => $e::class,
+                        'exception_code' => $e->getCode(),
+                    ]);
+                }
             }
         }
 
@@ -401,6 +401,37 @@ class ProcessAggregatedMessages implements ShouldQueue
         }
 
         return $botMessage;
+    }
+
+    /**
+     * Capture the flow and exact five-message context used by the old inline plugin call.
+     */
+    private function capturePluginSnapshot(): array
+    {
+        $contextMessageIds = $this->conversation->messages()
+            ->orderBy('created_at', 'desc')
+            ->limit(5)
+            ->pluck('id')
+            ->reverse()
+            ->values()
+            ->map(static fn ($messageId): int => (int) $messageId)
+            ->all();
+
+        return [
+            'flowId' => $this->conversation->current_flow_id ?? $this->bot->default_flow_id,
+            'contextMessageIds' => $contextMessageIds,
+        ];
+    }
+
+    protected function dispatchFlowPlugins(Message $botMessage, array $pluginSnapshot): void
+    {
+        ExecuteFlowPlugins::dispatch(
+            $this->bot->id,
+            $this->conversation->id,
+            $botMessage->id,
+            $pluginSnapshot['flowId'],
+            $pluginSnapshot['contextMessageIds'],
+        )->onConnection(QueueRouter::asyncConnection());
     }
 
     /**

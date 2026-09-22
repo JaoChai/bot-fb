@@ -12,6 +12,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class ExecuteFlowPlugins implements ShouldQueue
@@ -20,12 +21,14 @@ class ExecuteFlowPlugins implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 90;
+    public int $timeout = 75;
 
     public function __construct(
         public int $botId,
         public int $conversationId,
         public int $messageId,
+        public ?int $flowId = null,
+        public array $contextMessageIds = [],
     ) {
         $this->onQueue(QueueRouter::QUEUE_LLM);
     }
@@ -48,14 +51,34 @@ class ExecuteFlowPlugins implements ShouldQueue
             return;
         }
 
+        $idempotencyKey = "flow_plugins:message:{$message->id}";
+        if (! Cache::add($idempotencyKey, true, 86400)) {
+            Log::debug('ExecuteFlowPlugins skipped duplicate message', [
+                'message_id' => $this->messageId,
+            ]);
+
+            return;
+        }
+
         try {
-            $plugins->executePlugins($bot, $conversation, $message);
+            if ($this->flowId !== null || $this->contextMessageIds !== []) {
+                $plugins->executePluginsSnapshot(
+                    $bot,
+                    $conversation,
+                    $message,
+                    $this->flowId,
+                    $this->contextMessageIds,
+                );
+            } else {
+                $plugins->executePlugins($bot, $conversation, $message);
+            }
         } catch (\Throwable $e) {
             Log::warning('ExecuteFlowPlugins failed', [
                 'bot_id' => $this->botId,
                 'conversation_id' => $this->conversationId,
                 'message_id' => $this->messageId,
-                'error' => $e->getMessage(),
+                'exception_type' => $e::class,
+                'exception_code' => $e->getCode(),
             ]);
         }
     }

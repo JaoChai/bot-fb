@@ -8,6 +8,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\FlowPluginService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Mockery;
 use Tests\TestCase;
 
@@ -35,8 +36,10 @@ class ExecuteFlowPluginsTest extends TestCase
         $job = new ExecuteFlowPlugins(1, 2, 3);
 
         $this->assertSame(1, $job->tries);
-        $this->assertSame(90, $job->timeout);
+        $this->assertSame(75, $job->timeout);
         $this->assertSame('llm', $job->queue);
+        $this->assertGreaterThan($job->timeout, config('queue.connections.database.retry_after'));
+        $this->assertGreaterThan($job->timeout, config('queue.connections.redis.retry_after'));
     }
 
     public function test_valid_records_execute_plugins_once(): void
@@ -48,6 +51,49 @@ class ExecuteFlowPluginsTest extends TestCase
         );
 
         (new ExecuteFlowPlugins($bot->id, $conversation->id, $message->id))->handle($plugins);
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_duplicate_delivery_for_the_same_message_executes_plugins_once(): void
+    {
+        config(['cache.default' => 'array']);
+        Cache::flush();
+        [$bot, $conversation, $message] = $this->records();
+        $plugins = Mockery::mock(FlowPluginService::class);
+        $plugins->shouldReceive('executePlugins')->once();
+        $job = new ExecuteFlowPlugins($bot->id, $conversation->id, $message->id);
+
+        $job->handle($plugins);
+        $job->handle($plugins);
+
+        $this->assertTrue(Cache::has("flow_plugins:message:{$message->id}"));
+    }
+
+    public function test_plugin_exception_is_swallowed(): void
+    {
+        [$bot, $conversation, $message] = $this->records();
+        $plugins = Mockery::mock(FlowPluginService::class);
+        $plugins->shouldReceive('executePlugins')->once()->andThrow(new \RuntimeException('secret details'));
+
+        (new ExecuteFlowPlugins($bot->id, $conversation->id, $message->id))->handle($plugins);
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_snapshot_fields_are_forwarded_to_snapshot_entry_point(): void
+    {
+        [$bot, $conversation, $message] = $this->records();
+        $plugins = Mockery::mock(FlowPluginService::class);
+        $plugins->shouldReceive('executePluginsSnapshot')->once()->with(
+            Mockery::on(fn (Bot $actualBot): bool => $actualBot->is($bot)),
+            Mockery::on(fn (Conversation $actualConversation): bool => $actualConversation->is($conversation)),
+            Mockery::on(fn (Message $actualMessage): bool => $actualMessage->is($message)),
+            123,
+            [4, 5, 6],
+        );
+
+        (new ExecuteFlowPlugins($bot->id, $conversation->id, $message->id, 123, [4, 5, 6]))->handle($plugins);
 
         $this->addToAssertionCount(1);
     }

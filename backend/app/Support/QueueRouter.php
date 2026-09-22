@@ -29,4 +29,23 @@ class QueueRouter
     {
         return app(RedisHealthGate::class)->isRedisUp() ? null : 'database';
     }
+
+    /**
+     * Resolve an asynchronous connection for best-effort jobs.
+     *
+     * The sync driver is never safe for plugin work because it executes inline.
+     */
+    public static function asyncConnection(): string
+    {
+        if (self::connection() === 'database') {
+            return 'database';
+        }
+
+        $default = config('queue.default');
+        if ($default === 'sync') {
+            return 'database';
+        }
+
+        return $default ?: 'redis';
+    }
 }

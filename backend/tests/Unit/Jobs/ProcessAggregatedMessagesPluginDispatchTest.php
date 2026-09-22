@@ -9,6 +9,7 @@ use App\Jobs\ExecuteFlowPlugins;
 use App\Jobs\ProcessAggregatedMessages;
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\Flow;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\Chat\AggregatedMessageDeliveryService;
@@ -152,6 +153,7 @@ class ProcessAggregatedMessagesPluginDispatchTest extends TestCase
     public function test_plugin_execution_can_acquire_lock_after_parent_releases_it(): void
     {
         config(['queue.default' => 'sync', 'cache.default' => 'array']);
+        Queue::fake([ExecuteFlowPlugins::class]);
         Event::fake([MessageSent::class, ConversationUpdated::class]);
         [$bot, $conversation, $aggregation, $groupId] = $this->context();
 
@@ -161,7 +163,7 @@ class ProcessAggregatedMessagesPluginDispatchTest extends TestCase
 
         $lockWasFree = false;
         $plugins = Mockery::mock(FlowPluginService::class);
-        $plugins->shouldReceive('executePlugins')->once()->andReturnUsing(
+        $plugins->shouldReceive('executePluginsSnapshot')->once()->andReturnUsing(
             function () use ($conversation, &$lockWasFree): void {
                 $probe = Cache::lock("ai_response:{$conversation->id}", 30);
                 $lockWasFree = $probe->get();
@@ -178,6 +180,91 @@ class ProcessAggregatedMessagesPluginDispatchTest extends TestCase
         (new ProcessAggregatedMessages($bot, $conversation, $groupId, 'U_test'))
             ->handle($aggregation, $this->successfulAi(), $delivery);
 
+        $this->assertFalse($lockWasFree, 'plugin execution must not run inline on the sync queue');
+        $queued = Queue::pushed(ExecuteFlowPlugins::class)->sole();
+        $queued->handle($plugins);
         $this->assertTrue($lockWasFree, 'response lock must be released before plugin execution');
+    }
+
+    public function test_statistics_failure_still_dispatches_plugins_and_propagates_original_exception(): void
+    {
+        Event::fake([MessageSent::class, ConversationUpdated::class]);
+        [$bot, $conversation, $aggregation, $groupId] = $this->context();
+        $statsFailure = new \RuntimeException('statistics failure');
+        $dispatched = false;
+
+        $job = Mockery::mock(ProcessAggregatedMessages::class, [$bot, $conversation, $groupId, 'U_test'])
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
+        $job->shouldReceive('updateStats')->once()->andThrow($statsFailure);
+        $job->shouldReceive('dispatchFlowPlugins')->once()->andReturnUsing(
+            function () use (&$dispatched): void {
+                $dispatched = true;
+            }
+        );
+
+        try {
+            $job->handle($aggregation, $this->successfulAi(), $this->deliveryMock());
+            $this->fail('Expected statistics failure to propagate');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('statistics failure', $e->getMessage());
+        }
+
+        $this->assertTrue($dispatched);
+    }
+
+    public function test_dispatch_failure_does_not_replace_successful_response(): void
+    {
+        Event::fake([MessageSent::class, ConversationUpdated::class]);
+        [$bot, $conversation, $aggregation, $groupId] = $this->context();
+
+        $job = Mockery::mock(ProcessAggregatedMessages::class, [$bot, $conversation, $groupId, 'U_test'])
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
+        $job->shouldReceive('dispatchFlowPlugins')->once()->andThrow(new \RuntimeException('queue unavailable'));
+
+        $job->handle($aggregation, $this->successfulAi(), $this->deliveryMock());
+
+        $this->assertSame(2, $conversation->fresh()->message_count);
+        $this->assertSame(1, $conversation->fresh()->unread_count);
+    }
+
+    public function test_snapshot_is_immutable_after_dispatch(): void
+    {
+        Queue::fake([ExecuteFlowPlugins::class]);
+        Event::fake([MessageSent::class, ConversationUpdated::class]);
+        [$bot, $conversation, $aggregation, $groupId] = $this->context();
+        $firstFlow = Flow::factory()->create(['bot_id' => $bot->id]);
+        $secondFlow = Flow::factory()->create(['bot_id' => $bot->id]);
+        $conversation->update(['current_flow_id' => $firstFlow->id]);
+
+        $oldMessage = Message::factory()->fromUser()->create([
+            'conversation_id' => $conversation->id,
+            'content' => 'captured context',
+        ]);
+
+        (new ProcessAggregatedMessages($bot, $conversation, $groupId, 'U_test'))
+            ->handle($aggregation, $this->successfulAi(), $this->deliveryMock());
+
+        $queued = Queue::pushed(ExecuteFlowPlugins::class)->sole();
+        $botMessage = Message::query()->where('conversation_id', $conversation->id)->where('sender', 'bot')->sole();
+        $conversation->update(['current_flow_id' => $secondFlow->id]);
+        $newMessage = Message::factory()->fromUser()->create([
+            'conversation_id' => $conversation->id,
+            'content' => 'newer context',
+        ]);
+
+        $this->assertSame($firstFlow->id, $queued->flowId);
+        $this->assertContains($oldMessage->id, $queued->contextMessageIds);
+        $this->assertContains($botMessage->id, $queued->contextMessageIds);
+        $this->assertNotContains($newMessage->id, $queued->contextMessageIds);
+    }
+
+    private function deliveryMock(): AggregatedMessageDeliveryService
+    {
+        $delivery = Mockery::mock(AggregatedMessageDeliveryService::class);
+        $delivery->shouldReceive('deliver')->once();
+
+        return $delivery;
     }
 }

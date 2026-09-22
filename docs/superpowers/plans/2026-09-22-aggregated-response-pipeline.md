@@ -4,7 +4,7 @@
 
 **Goal:** Shorten the aggregated LINE response critical path by extracting delivery selection and running flow plugins in a best-effort queued job after the response lock is released.
 
-**Architecture:** `ProcessAggregatedMessages` remains the orchestration entry point but delegates Flex/bubble/plain delivery to `AggregatedMessageDeliveryService`. After a persisted response is delivered, statistics are updated and the response lock is released; only then does the job dispatch `ExecuteFlowPlugins`, which reloads scoped records and runs the existing plugin service on the `llm` queue.
+**Architecture:** `ProcessAggregatedMessages` remains the orchestration entry point but delegates Flex/bubble/plain delivery to `AggregatedMessageDeliveryService`. After a persisted response is delivered, it captures the selected flow and exact chronological five-message plugin context, updates statistics, releases the response lock, and dispatches `ExecuteFlowPlugins` from the lock-release `finally` block. The job reloads scoped records, atomically claims the message, and runs the snapshot-aware plugin service on an asynchronous `llm` queue connection.
 
 **Tech Stack:** PHP 8.4, Laravel 13, Pest/PHPUnit 12, Mockery, Laravel Queue/Cache fakes.
 
@@ -16,8 +16,10 @@
 - Use TDD for every production change: write the test, run it and observe the expected failure, then write minimal production code.
 - Preserve response text, persistence, Flex/bubble/plain selection, fallback behavior, statistics, and broadcasts.
 - Do not change RAG, prompts, OpenRouter selection, Railway variables, queue-split flags, payment, slip verification, delivery, Facebook, or Telegram webhook behavior.
-- `ExecuteFlowPlugins` receives scalar IDs, uses one attempt, has a 90-second timeout, and runs on `QueueRouter::QUEUE_LLM`.
+- `ExecuteFlowPlugins` receives scalar IDs plus optional immutable flow/context snapshot fields, uses one attempt, has a 75-second timeout, and runs on `QueueRouter::QUEUE_LLM`.
 - Plugin execution must occur after the per-conversation response lock is released.
+- Plugin dispatch must use `QueueRouter::asyncConnection()` so a sync default cannot execute plugins inline.
+- Plugin execution claims `flow_plugins:message:{messageId}` atomically for 24 hours and swallows plugin exceptions without raw exception messages in logs.
 - Do not log message bodies, plugin credentials, tokens, or customer data.
 - Keep changes confined to the aggregated-response job, one delivery service, one plugin job, focused tests, and this documentation.
 
@@ -256,7 +258,7 @@ git commit -m "refactor(chat): extract aggregated message delivery"
 
 **Interfaces:**
 - Consumes: persisted `Bot`, `Conversation`, and `Message` IDs; `FlowPluginService`
-- Produces: a queue job whose public configuration is `$tries = 1`, `$timeout = 90`, and `$queue = 'llm'`
+- Produces: a queue job whose public configuration is `$tries = 1`, `$timeout = 75`, and `$queue = 'llm'`, plus optional immutable flow/context snapshot fields
 
 - [ ] **Step 1: Write failing plugin job tests**
 
@@ -300,7 +302,7 @@ class ExecuteFlowPluginsTest extends TestCase
         $job = new ExecuteFlowPlugins(1, 2, 3);
 
         $this->assertSame(1, $job->tries);
-        $this->assertSame(90, $job->timeout);
+        $this->assertSame(75, $job->timeout);
         $this->assertSame('llm', $job->queue);
     }
 
@@ -350,6 +352,9 @@ class ExecuteFlowPluginsTest extends TestCase
 
         $this->assertNotSame($conversation->id, $otherConversation->id);
     }
+
+    // Additional final-review coverage: snapshot forwarding, atomic message
+    // idempotency, swallowed plugin exceptions, and retry-after ordering.
 }
 ```
 
@@ -380,6 +385,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class ExecuteFlowPlugins implements ShouldQueue
@@ -388,12 +394,14 @@ class ExecuteFlowPlugins implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 90;
+    public int $timeout = 75;
 
     public function __construct(
         public int $botId,
         public int $conversationId,
         public int $messageId,
+        public ?int $flowId = null,
+        public array $contextMessageIds = [],
     ) {
         $this->onQueue(QueueRouter::QUEUE_LLM);
     }
@@ -416,14 +424,26 @@ class ExecuteFlowPlugins implements ShouldQueue
             return;
         }
 
+        $idempotencyKey = "flow_plugins:message:{$message->id}";
+        if (! Cache::add($idempotencyKey, true, 86400)) {
+            Log::debug('ExecuteFlowPlugins skipped duplicate message', ['message_id' => $message->id]);
+
+            return;
+        }
+
         try {
-            $plugins->executePlugins($bot, $conversation, $message);
+            if ($this->flowId !== null || $this->contextMessageIds !== []) {
+                $plugins->executePluginsSnapshot($bot, $conversation, $message, $this->flowId, $this->contextMessageIds);
+            } else {
+                $plugins->executePlugins($bot, $conversation, $message);
+            }
         } catch (\Throwable $e) {
             Log::warning('ExecuteFlowPlugins failed', [
                 'bot_id' => $this->botId,
                 'conversation_id' => $this->conversationId,
                 'message_id' => $this->messageId,
-                'error' => $e->getMessage(),
+                'exception_type' => $e::class,
+                'exception_code' => $e->getCode(),
             ]);
         }
     }
@@ -686,26 +706,23 @@ Apply these exact structural changes:
    ```
 6. Delete synchronous `FlowPluginService::executePlugins()` from `generateAndDeliver()`.
 7. Delete the private `deliverToChannel()` method.
-8. Immediately after the `finally` block releases `$responseLock`, dispatch the plugin job for a non-null `$botMessage`:
+8. Initialize `$botMessage` and `$pluginSnapshot` before the response-lock guarded work. After delivery succeeds and before `updateStats()`, capture the selected flow ID and exact chronological five-message IDs. In the same `finally` block, release `$responseLock` first, then dispatch the plugin job with the snapshot:
    ```php
-   if (isset($botMessage) && $botMessage) {
+   if ($botMessage && $pluginSnapshot !== null) {
        try {
-           ExecuteFlowPlugins::dispatch(
-               $this->bot->id,
-               $this->conversation->id,
-               $botMessage->id,
-           )->onConnection(QueueRouter::connection());
+           $this->dispatchFlowPlugins($botMessage, $pluginSnapshot);
        } catch (\Throwable $e) {
            Log::warning('Flow plugin dispatch failed after aggregation response', [
                'bot_id' => $this->bot->id,
                'conversation_id' => $this->conversation->id,
                'message_id' => $botMessage->id,
-               'error' => $e->getMessage(),
+               'exception_type' => $e::class,
+               'exception_code' => $e->getCode(),
            ]);
        }
    }
    ```
-9. Keep aggregation cleanup and broadcasts in their current relative order after this dispatch.
+9. Use `QueueRouter::asyncConnection()` in `dispatchFlowPlugins()` so the sync default routes to database. Keep aggregation cleanup and broadcasts in their current relative order after the guarded work.
 
 - [ ] **Step 4: Verify GREEN for focused tests**
 
