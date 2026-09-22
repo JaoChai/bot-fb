@@ -48,6 +48,8 @@ class ExecuteFlowPluginsTest extends TestCase
         );
 
         (new ExecuteFlowPlugins($bot->id, $conversation->id, $message->id))->handle($plugins);
+
+        $this->addToAssertionCount(1);
     }
 
     public function test_missing_record_is_a_noop(): void
