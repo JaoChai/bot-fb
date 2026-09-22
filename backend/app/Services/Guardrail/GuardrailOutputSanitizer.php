@@ -22,12 +22,9 @@ class GuardrailOutputSanitizer
     /**
      * @return array{flagged: bool, reason: ?string}
      */
-    public function check(string $content, bool $allowTruthfulAiIdentity = false): array
+    public function check(string $content): array
     {
         foreach (self::PATTERNS as $reason => $pattern) {
-            if ($allowTruthfulAiIdentity && in_array($reason, ['ai_admission_th', 'ai_admission_en'], true)) {
-                continue;
-            }
             if (preg_match($pattern, $content) === 1) {
                 return ['flagged' => true, 'reason' => $reason];
             }

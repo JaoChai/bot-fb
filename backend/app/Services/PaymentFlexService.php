@@ -2,18 +2,9 @@
 
 namespace App\Services;
 
-use App\Models\Bot;
 use App\Models\Conversation;
-use App\Models\Message;
-use App\Models\VerifiedPaymentEvent;
-use App\Services\CommerceSafety\ConversationAuthorityLock;
-use App\Services\CommerceSafety\FinancialOutputGuard;
-use App\Services\CommerceSafety\MoneyMinor;
-use App\Services\CommerceSafety\PaymentProofService;
-use App\Services\CommerceSafety\SafetyScope;
 use App\Services\Payment\FlexMessageBuilder;
 use App\Services\Payment\PaymentMessageDetector;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class PaymentFlexService
@@ -32,31 +23,8 @@ class PaymentFlexService
      *
      * @return string|array Original text or Flex message array
      */
-    public function tryConvertToFlex(string $text, ?Conversation $conversation = null, ?Message $receipt = null): string|array
+    public function tryConvertToFlex(string $text, ?Conversation $conversation = null): string|array
     {
-        $guard = app(FinancialOutputGuard::class);
-        if ($conversation !== null && $guard->enforced($conversation->bot)) {
-            if ($receipt === null) {
-                return $guard->text($conversation->bot, $text);
-            }
-            $guard->message($conversation->bot, $conversation, $receipt);
-            $event = app(PaymentProofService::class)->forReceipt($conversation->bot, $conversation, $receipt);
-            if ($event !== null) {
-                try {
-                    return $this->fromVerifiedPayment($event);
-                } catch (\Throwable) {
-                    return FinancialOutputGuard::DENIAL;
-                }
-            }
-
-            $checkoutText = $guard->checkoutText($conversation->bot, $conversation, $receipt);
-            if ($checkoutText !== null) {
-                return ['type' => 'text', 'text' => trim(preg_replace('/\[\[ORDER\]\].*?\[\[\/ORDER\]\]/s', '', $checkoutText))];
-            }
-
-            return $guard->text($conversation->bot, (string) $receipt->content);
-        }
-
         // Strip markdown bold before regex parsing (LINE doesn't render markdown)
         $text = str_replace('**', '', $text);
 
@@ -115,78 +83,6 @@ class PaymentFlexService
 
             return $text;
         }
-    }
-
-    /** The only trusted payment presentation entry point. No parsed prose or effects. */
-    public function fromVerifiedPayment(VerifiedPaymentEvent $event): array
-    {
-        $candidate = VerifiedPaymentEvent::query()->find($event->getKey());
-        if ($candidate === null) {
-            throw new \InvalidArgumentException('A persisted payment event is required.');
-        }
-
-        return DB::transaction(function () use ($candidate): array {
-            Bot::query()->lockForUpdate()->findOrFail($candidate->bot_id);
-            ConversationAuthorityLock::acquire((int) $candidate->bot_id, (int) $candidate->conversation_id);
-            $event = VerifiedPaymentEvent::query()->with([
-                'bot', 'conversation', 'slipVerification', 'receiptMessage', 'checkout', 'order', 'actor',
-            ])->find($candidate->getKey());
-            $slip = $event?->slipVerification;
-            $receipt = $event?->receiptMessage;
-            if (! $event || ! $slip || ! $receipt || ! $event->bot || ! $event->conversation
-                || (int) $event->conversation->bot_id !== (int) $event->bot_id
-                || (int) $slip->bot_id !== (int) $event->bot_id
-                || (int) $slip->conversation_id !== (int) $event->conversation_id
-                || (int) $receipt->conversation_id !== (int) $event->conversation_id
-                || $receipt->sender !== 'bot' || $event->currency !== 'THB'
-                || MoneyMinor::fromDecimal((string) $slip->getRawOriginal('amount')) !== $event->amount_minor) {
-                throw new \InvalidArgumentException('Payment proof is missing or inconsistent.');
-            }
-            $valid = match ($event->source) {
-                'easyslip' => $slip->status === 'passed' && trim((string) $slip->trans_ref) !== ''
-                    && $event->event_key === 'easyslip:'.trim((string) $slip->trans_ref),
-                'manual' => $slip->status === 'manual_confirmed'
-                    && $event->event_key === 'manual-slip:'.$slip->id
-                    && (int) $slip->message_id === (int) $receipt->id
-                    && $event->actor?->isOwner()
-                    && (int) $event->actor_id === (int) $event->bot->user_id,
-                default => false,
-            };
-            if (! $valid) {
-                throw new \InvalidArgumentException('Payment provenance is no longer valid.');
-            }
-            $checkout = $event->checkout;
-            if ($event->checkout_id !== null && (! $checkout
-                || (int) $checkout->bot_id !== (int) $event->bot_id
-                || (int) $checkout->conversation_id !== (int) $event->conversation_id)) {
-                throw new \InvalidArgumentException('Payment checkout scope is inconsistent.');
-            }
-            $settled = app(SafetyScope::class)->mode($event->bot) !== 'hold'
-                && $event->disposition === 'settled' && $checkout?->state === 'paid'
-                && $checkout->settled_event_id === $event->id && $checkout->currency === 'THB'
-                && $checkout->total_minor === $event->amount_minor
-                && app(OrderService::class)->lockedOrderForCheckout($checkout, $event) !== null;
-            $amount = number_format(intdiv($event->amount_minor, 100))
-                .($event->amount_minor % 100 ? '.'.str_pad((string) ($event->amount_minor % 100), 2, '0', STR_PAD_LEFT) : '');
-            $text = 'เงินเข้าแล้ว '.$amount.' บาทครับ';
-            $items = array_map(fn (array $item): string => $item['name'].' x'.$item['qty'], $checkout?->items ?? []);
-            if ($items !== []) {
-                $text .= "\nรายการ: ".implode(', ', $items);
-            }
-            $dispositionText = $settled ? "\nส่งใน 5-10 นาที ขอบคุณครับ" : "\nรับเงินไว้แล้ว อยู่ระหว่างให้ทีมงานตรวจสอบรายการครับ";
-
-            $text .= $dispositionText;
-
-            return [
-                'type' => 'flex', 'altText' => 'เงินเข้าแล้ว '.$amount.' บาทครับ'.$dispositionText,
-                'contents' => ['type' => 'bubble', 'body' => [
-                    'type' => 'box', 'layout' => 'vertical', 'contents' => [
-                        ['type' => 'text', 'text' => $settled ? 'ยืนยันรับเงินแล้ว' : 'รับเงินแล้ว รอทีมงานตรวจสอบ', 'weight' => 'bold', 'wrap' => true],
-                        ['type' => 'text', 'text' => $text, 'wrap' => true, 'margin' => 'md'],
-                    ],
-                ]],
-            ];
-        });
     }
 
     /**

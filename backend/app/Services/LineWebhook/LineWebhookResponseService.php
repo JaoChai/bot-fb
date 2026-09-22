@@ -6,18 +6,8 @@ use App\Jobs\ReserveAccountStock;
 use App\Jobs\RetrySlipVerification;
 use App\Models\Conversation;
 use App\Models\Message;
-use App\Models\SlipVerification;
-use App\Models\VerifiedPaymentEvent;
 use App\Services\AIService;
 use App\Services\Chat\ConversationContextService;
-use App\Services\CommerceSafety\CartValidation;
-use App\Services\CommerceSafety\CheckoutAuthority;
-use App\Services\CommerceSafety\CheckoutOutcome;
-use App\Services\CommerceSafety\CheckoutRenderer;
-use App\Services\CommerceSafety\CustomerReplyGuard;
-use App\Services\CommerceSafety\FinancialOutputDetector;
-use App\Services\CommerceSafety\FinancialOutputGuard;
-use App\Services\CommerceSafety\SafetyScope;
 use App\Services\LINEService;
 use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
@@ -46,14 +36,6 @@ class LineWebhookResponseService
     // รูปโหลดจาก LINE ไม่สำเร็จ (media_url ว่าง) — ตอบลูกค้าให้ส่งใหม่ แทนการเงียบ
     private const IMAGE_UNAVAILABLE_TEMPLATE = 'ขออภัยครับ ระบบโหลดรูปที่ส่งมาไม่สำเร็จ 🙏 รบกวนส่งรูปอีกครั้งนะครับ';
 
-    // Bot 26 shop rule (prompt v28): only the bank app's own slip screenshot is accepted.
-    // Fixed wording — camera-photo rejections must never depend on model creativity.
-    public const CAMERA_PHOTO_SLIP_TEMPLATE = 'รบกวนส่งรูปสลิปต้นฉบับจากแอปธนาคารโดยตรงครับ ไม่รับรูปถ่ายหน้าจอจากกล้องครับ';
-
-    // Bot-26-only classifier kinds. Any other value (or absence, for legacy 2-key JSON)
-    // is handled by classifySlipImage()/decodeSlipCheck() — see there for the fail-closed rule.
-    private const IMAGE_KINDS = ['bank_app_slip', 'camera_photo_of_screen', 'other'];
-
     public function __construct(
         private readonly AIService $aiService,
         private readonly OpenRouterService $openRouterService,
@@ -62,9 +44,6 @@ class LineWebhookResponseService
         private readonly ModelCapabilityService $modelCapability,
         private readonly LINEService $line,
         private readonly SlipVerificationService $slipVerification,
-        private readonly ?SafetyScope $safetyScope = null,
-        private readonly ?CheckoutAuthority $checkoutAuthority = null,
-        private readonly ?CheckoutRenderer $checkoutRenderer = null,
     ) {}
 
     /**
@@ -112,15 +91,6 @@ class LineWebhookResponseService
             return;
         }
 
-        if ($this->commerceEnforced($ctx)) {
-            $outcome = $this->authority()->accept($ctx->bot, $conversation, $userMessage);
-            if ($this->outcomeConsumedMessage($outcome, $userMessage)) {
-                $this->setCheckoutResponse($ctx, $outcome);
-
-                return;
-            }
-        }
-
         // Auto-clear stale context before AI generates response (line 500)
         $this->conversationContext->autoClearIfIdle($conversation);
 
@@ -135,158 +105,9 @@ class LineWebhookResponseService
         // Store for Stage 4 (LINE push, stats, broadcast)
         $ctx->metadata['bot_message'] = $botMessage;
 
-        if ($this->commerceGuardsOutput($ctx)) {
-            $outcome = $this->checkoutProposal($ctx, $botMessage);
-            if ($outcome !== null) {
-                $this->replaceWithCheckoutResponse($ctx, $botMessage, $outcome);
-            }
-        }
-
         if ($botMessage->content) {
             $ctx->response = ResponseEnvelope::text($botMessage->content);
         }
-    }
-
-    private function commerceEnforced(WebhookContext $ctx): bool
-    {
-        return ($this->safetyScope ?? app(SafetyScope::class))->mode($ctx->bot) === 'enforce';
-    }
-
-    private function commerceGuardsOutput(WebhookContext $ctx): bool
-    {
-        return in_array(
-            ($this->safetyScope ?? app(SafetyScope::class))->mode($ctx->bot),
-            ['enforce', 'hold'],
-            true,
-        );
-    }
-
-    private function guardGeneratedPaymentText(WebhookContext $ctx, string $text): string
-    {
-        return $this->commerceGuardsOutput($ctx) && app(FinancialOutputDetector::class)->detects($ctx->bot, $text)
-            ? FinancialOutputGuard::DENIAL
-            : $text;
-    }
-
-    private function authority(): CheckoutAuthority
-    {
-        return $this->checkoutAuthority ?? app(CheckoutAuthority::class);
-    }
-
-    private function renderer(): CheckoutRenderer
-    {
-        return $this->checkoutRenderer ?? app(CheckoutRenderer::class);
-    }
-
-    private function outcomeConsumedMessage(CheckoutOutcome $outcome, Message $message): bool
-    {
-        if ($outcome->customerText !== null) {
-            return true;
-        }
-
-        return $outcome->checkout !== null
-            && in_array((int) $message->getKey(), array_map(
-                'intval',
-                array_values($outcome->checkout->accepted ?? []),
-            ), true);
-    }
-
-    private function checkoutProposal(WebhookContext $ctx, Message $botMessage): ?CheckoutOutcome
-    {
-        if (app(FinancialOutputDetector::class)->detects($ctx->bot, (string) $botMessage->content)) {
-            return new CheckoutOutcome('manual_hold', null, FinancialOutputGuard::DENIAL);
-        }
-        $cart = $this->aiService->takeCommerceSafetyCartValidation($botMessage);
-        if (! $cart instanceof CartValidation || ! $ctx->conversation) {
-            return null;
-        }
-        if (! $cart->valid) {
-            return new CheckoutOutcome(
-                'manual_hold',
-                null,
-                'ระบบตรวจสอบรายการนี้ไม่ได้อย่างชัดเจนครับ กรุณาระบุชื่อสินค้า จำนวน และวิธีรับสินค้าใหม่อีกครั้ง',
-            );
-        }
-
-        return $this->authority()->propose($ctx->bot, $ctx->conversation, $cart);
-    }
-
-    private function setCheckoutResponse(WebhookContext $ctx, CheckoutOutcome $outcome): void
-    {
-        if (! $ctx->conversation || ! $outcome->checkout) {
-            return;
-        }
-
-        $content = $outcome->customerText ?? $this->renderer()->render($outcome->checkout, $outcome->action);
-        $botMessage = $ctx->conversation->messages()->create([
-            'sender' => 'bot',
-            'content' => $content,
-            'type' => 'text',
-        ]);
-        $ctx->metadata['bot_message'] = $botMessage;
-        $this->preparePresentation($ctx, $botMessage, $outcome);
-        $ctx->response = ResponseEnvelope::text($content);
-    }
-
-    private function replaceWithCheckoutResponse(
-        WebhookContext $ctx,
-        Message $botMessage,
-        CheckoutOutcome $outcome,
-    ): void {
-        if (! $outcome->checkout && $outcome->customerText === null) {
-            return;
-        }
-
-        $content = $outcome->customerText ?? $this->renderer()->render($outcome->checkout, $outcome->action);
-        $metadata = is_array($botMessage->metadata) ? $botMessage->metadata : [];
-        unset($metadata['order_payload']);
-        if ($outcome->action === 'payment' && $outcome->checkout) {
-            $metadata['order_payload'] = $this->serverOrderPayload($outcome->checkout->items, $outcome->checkout->total_minor);
-        }
-        $botMessage->forceFill(['content' => $content, 'metadata' => $metadata ?: null])->save();
-        $this->preparePresentation($ctx, $botMessage, $outcome);
-    }
-
-    private function preparePresentation(
-        WebhookContext $ctx,
-        Message $botMessage,
-        CheckoutOutcome $outcome,
-    ): void {
-        if (! $outcome->checkout
-            || ! in_array($outcome->action, ['ack', 'confirm', 'support_delay', 'terms', 'payment'], true)
-            || $outcome->checkout->state === 'cancelled') {
-            return;
-        }
-
-        $metadata = is_array($botMessage->metadata) ? $botMessage->metadata : [];
-        $presentation = [
-            'checkout_id' => $outcome->checkout->getKey(),
-            'revision' => $outcome->checkout->revision,
-            'action' => $outcome->action,
-        ];
-        $metadata['checkout_presentation'] = $presentation;
-        $botMessage->forceFill(['metadata' => $metadata])->save();
-        $this->authority()->pending($outcome->checkout, $outcome->checkout->revision, $botMessage, $outcome->action);
-        $ctx->metadata['checkout_presentation'] = $presentation;
-    }
-
-    /** @param list<array<string,mixed>> $items */
-    private function serverOrderPayload(array $items, int $totalMinor): array
-    {
-        return [
-            'items' => array_map(fn (array $item): array => [
-                'name' => $item['name'].match ($item['method'] ?? 'none') {
-                    'card' => ' (ผูกบัตร)',
-                    'topup' => ' (เติมเงิน)',
-                    default => '',
-                },
-                'qty' => $item['qty'],
-                'price' => $item['price_minor'] % 100 === 0
-                    ? intdiv($item['price_minor'], 100)
-                    : $item['price_minor'] / 100,
-            ], $items),
-            'total' => $totalMinor % 100 === 0 ? intdiv($totalMinor, 100) : $totalMinor / 100,
-        ];
     }
 
     // -------------------------------------------------------------------------
@@ -319,9 +140,6 @@ class LineWebhookResponseService
             if (! $responseMessage) {
                 return;
             }
-
-            $responseMessage = $this->guardGeneratedPaymentText($ctx, $responseMessage);
-            $responseMessage = app(CustomerReplyGuard::class)->text($ctx->bot, $responseMessage, $conversation);
 
             // Save bot response (lines 927-936)
             $botMessage = $conversation->messages()->create([
@@ -449,8 +267,7 @@ class LineWebhookResponseService
                 );
             }
 
-            $responseContent = $this->guardGeneratedPaymentText($ctx, $result['content'] ?? '');
-            $responseContent = app(CustomerReplyGuard::class)->text($ctx->bot, $responseContent, $conversation);
+            $responseContent = $result['content'] ?? '';
 
             if (empty($responseContent)) {
                 Log::warning('Empty response from Vision API', [
@@ -713,17 +530,6 @@ class LineWebhookResponseService
                 return false; // รูปทั่วไป → vision เดิม
             }
 
-            if ($result->passed && $this->commerceGuardsOutput($ctx)) {
-                $slip = SlipVerification::query()->findOrFail($result->slipVerificationId);
-                $event = VerifiedPaymentEvent::query()->where('bot_id', $ctx->bot->id)
-                    ->where('conversation_id', $ctx->conversation->id)->where('slip_verification_id', $slip->id)->firstOrFail();
-                $receipt = $event->receiptMessage()->firstOrFail();
-                $ctx->metadata['bot_message'] = $receipt;
-                $ctx->response = ResponseEnvelope::text($receipt->content);
-
-                return true;
-            }
-
             if ($result->passed) {
                 $template = $settings->slip_success_message ?: self::SLIP_SUCCESS_TEMPLATE;
                 $text = str_replace(
@@ -748,8 +554,6 @@ class LineWebhookResponseService
                 $text = $settings->slip_fail_message ?: self::SLIP_FAIL_TEMPLATE;
                 $this->slipVerification->notifyAdmin($ctx->bot, $ctx->conversation, $result);
             }
-
-            $text = $this->guardGeneratedPaymentText($ctx, $text);
 
             $botMessage = $ctx->conversation->messages()->create([
                 'sender' => 'bot',
@@ -795,12 +599,9 @@ class LineWebhookResponseService
      * ตัดสิน+ร่างคำตอบในการเรียกครั้งเดียว (single-call structured output) — ใช้ตอน EasySlip
      * อ่านรูปไม่ได้ (400) เพื่อแยก "สลิปเบลอ" ออกจาก "รูปทั่วไป" (เช่น screenshot หน้าจออื่นๆ)
      *
-     * บอท 26 เท่านั้น (กฎร้าน v28: รับเฉพาะสกรีนช็อตจากแอปธนาคารโดยตรง ไม่รับรูปถ่ายหน้าจอ)
-     * ได้ image_kind เพิ่มจาก is_slip เดิม — บอทอื่นยัง schema/คำสั่งเดิมทุกตัวอักษร
-     *
      * คำตัดสิน (is_slip) กับคำตอบลูกค้า (reply) มาจากการมองรูปครั้งเดียวกัน จึงขัดแย้งกันเองไม่ได้
      * ถ้าไม่ใช่สลิป reply จะถูกเก็บไว้ใน metadata ให้ generateImageResponse ใช้เลยโดยไม่เรียก vision ซ้ำ
-     * คืน null เมื่อตอบไม่ได้/เรียกไม่สำเร็จ/image_kind ไม่รู้จัก → ฝั่ง verify() จะถือเป็นสลิป (fail-safe ไปทางตรวจมือ)
+     * คืน null เมื่อตอบไม่ได้/เรียกไม่สำเร็จ → ฝั่ง verify() จะถือเป็นสลิป (fail-safe ไปทางตรวจมือ)
      */
     private function classifySlipImage(WebhookContext $ctx, string $imageUrl, array $history): ?bool
     {
@@ -810,66 +611,31 @@ class LineWebhookResponseService
                 return null;
             }
 
-            $isBot26 = (int) $ctx->bot->getKey() === 26;
-
-            if ($isBot26) {
-                $instruction = "ลูกค้าส่งรูปมา (แนบมากับข้อความนี้) ให้ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่นนอก JSON รูปแบบ:\n"
-                    ."{\"image_kind\": \"bank_app_slip|camera_photo_of_screen|other\", \"is_slip\": true/false, \"reply\": \"...\"}\n"
-                    .'- image_kind: bank_app_slip = สกรีนช็อตสลิปโอนเงินที่แคปจากแอปธนาคาร/แอปการเงินโดยตรง (ไม่ใช่รูปถ่าย); '
-                    .'camera_photo_of_screen = รูปที่ถ่ายด้วยกล้องจากหน้าจอ/เอกสารที่แสดงสลิป (เห็นขอบจอ แสงสะท้อน มุมกล้อง) — ร้านไม่รับ ต้องขอสกรีนช็อตจากแอปธนาคารเท่านั้น; '
-                    ."other = รูปอื่นที่ไม่เกี่ยวกับสลิปเลย\n"
-                    ."- is_slip: true เฉพาะเมื่อ image_kind เป็น bank_app_slip เท่านั้น, false เมื่อเป็น camera_photo_of_screen หรือ other\n"
-                    .'- reply: เมื่อ image_kind เป็น other ให้เขียนข้อความตอบลูกค้าตามบริบทบทสนทนา; เมื่อเป็น bank_app_slip หรือ camera_photo_of_screen ให้ใส่สตริงว่าง ""';
-
-                $schema = [
-                    'type' => 'object',
-                    'properties' => [
-                        'image_kind' => [
-                            'type' => 'string',
-                            'enum' => self::IMAGE_KINDS,
-                            'description' => 'ประเภทของรูปที่ลูกค้าส่งมา',
-                        ],
-                        'is_slip' => [
-                            'type' => 'boolean',
-                            'description' => 'true เฉพาะเมื่อ image_kind เป็น bank_app_slip',
-                        ],
-                        'reply' => [
-                            'type' => 'string',
-                            'description' => 'ข้อความตอบลูกค้าตามบริบทบทสนทนา เมื่อ image_kind เป็น other; สตริงว่างเมื่อเป็นอย่างอื่น',
-                        ],
-                    ],
-                    'required' => ['image_kind', 'is_slip', 'reply'],
-                    'additionalProperties' => false,
-                ];
-                $schemaName = 'slip_image_check_v2';
-            } else {
-                $instruction = "ลูกค้าส่งรูปมา (แนบมากับข้อความนี้) ให้ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่นนอก JSON รูปแบบ:\n"
-                    ."{\"is_slip\": true/false, \"reply\": \"...\"}\n"
-                    ."- is_slip: true เมื่อรูปเป็นสลิปโอนเงิน/หลักฐานการชำระเงินจากธนาคารหรือแอปการเงิน, false เมื่อเป็นรูปอื่น\n"
-                    .'- reply: เมื่อ is_slip เป็น false ให้เขียนข้อความตอบลูกค้าตามบริบทบทสนทนา; เมื่อ is_slip เป็น true ให้ใส่สตริงว่าง ""';
-
-                $schema = [
-                    'type' => 'object',
-                    'properties' => [
-                        'is_slip' => [
-                            'type' => 'boolean',
-                            'description' => 'true เมื่อรูปเป็นสลิปโอนเงิน/หลักฐานการชำระเงินจากธนาคารหรือแอปการเงิน',
-                        ],
-                        'reply' => [
-                            'type' => 'string',
-                            'description' => 'ข้อความตอบลูกค้าตามบริบทบทสนทนา เมื่อ is_slip เป็น false; สตริงว่างเมื่อ is_slip เป็น true',
-                        ],
-                    ],
-                    'required' => ['is_slip', 'reply'],
-                    'additionalProperties' => false,
-                ];
-                $schemaName = 'slip_image_check';
-            }
+            $instruction = "ลูกค้าส่งรูปมา (แนบมากับข้อความนี้) ให้ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่นนอก JSON รูปแบบ:\n"
+                ."{\"is_slip\": true/false, \"reply\": \"...\"}\n"
+                ."- is_slip: true เมื่อรูปเป็นสลิปโอนเงิน/หลักฐานการชำระเงินจากธนาคารหรือแอปการเงิน, false เมื่อเป็นรูปอื่น\n"
+                .'- reply: เมื่อ is_slip เป็น false ให้เขียนข้อความตอบลูกค้าตามบริบทบทสนทนา; เมื่อ is_slip เป็น true ให้ใส่สตริงว่าง ""';
 
             $messages = $this->buildVisionChatMessages($ctx, array_slice($history, -5), $instruction);
 
             // chatWithVision ใส่ json_schema ให้เฉพาะ model ที่รองรับ structured_outputs —
             // ตัวอื่นพึ่งคำสั่ง JSON ใน prompt แล้ว parse เอง (decodeSlipCheck รองรับ JSON ห่อข้อความ/code fence)
+            $schema = [
+                'type' => 'object',
+                'properties' => [
+                    'is_slip' => [
+                        'type' => 'boolean',
+                        'description' => 'true เมื่อรูปเป็นสลิปโอนเงิน/หลักฐานการชำระเงินจากธนาคารหรือแอปการเงิน',
+                    ],
+                    'reply' => [
+                        'type' => 'string',
+                        'description' => 'ข้อความตอบลูกค้าตามบริบทบทสนทนา เมื่อ is_slip เป็น false; สตริงว่างเมื่อ is_slip เป็น true',
+                    ],
+                ],
+                'required' => ['is_slip', 'reply'],
+                'additionalProperties' => false,
+            ];
+
             $result = $this->openRouterService->chatWithVision(
                 messages: $messages,
                 imageUrls: [$imageUrl],
@@ -878,7 +644,7 @@ class LineWebhookResponseService
                 temperature: 0.3,
                 maxTokens: $ctx->bot->llm_max_tokens ?? 1024,
                 fallbackModelOverride: $ctx->bot->fallback_chat_model,
-                responseFormat: ['type' => 'json_schema', 'json_schema' => ['name' => $schemaName, 'strict' => true, 'schema' => $schema]],
+                responseFormat: ['type' => 'json_schema', 'json_schema' => ['name' => 'slip_image_check', 'strict' => true, 'schema' => $schema]],
             );
 
             $decoded = $this->decodeSlipCheck($result['content'] ?? '');
@@ -886,35 +652,14 @@ class LineWebhookResponseService
             Log::info('Slip image classification', [
                 'bot_id' => $ctx->bot->id,
                 'conversation_id' => $ctx->conversation?->id,
-                ...($decoded === null ? [
-                    'content_length' => mb_strlen($result['content'] ?? ''),
-                    'content_hash' => hash('sha256', $result['content'] ?? ''),
-                    'reason' => 'malformed_classification',
-                ] : ['is_slip' => $decoded['is_slip'], 'image_kind' => $decoded['image_kind']]),
+                'is_slip' => $decoded['is_slip'] ?? null,
+                'raw' => $decoded === null ? mb_substr($result['content'] ?? '', 0, 200) : null,
             ]);
 
             if ($decoded === null) {
                 return null;
             }
 
-            $imageKind = $decoded['image_kind'];
-
-            if ($imageKind === 'camera_photo_of_screen') {
-                $ctx->metadata['slip_vision_draft'] = [
-                    'content' => self::CAMERA_PHOTO_SLIP_TEMPLATE,
-                    'model' => $result['model'] ?? $model,
-                    'usage' => $result['usage'] ?? [],
-                ];
-
-                return false;
-            }
-
-            if ($imageKind === 'bank_app_slip') {
-                return true;
-            }
-
-            // image_kind === 'other', or absent (legacy 2-key JSON from non-bot-26 schema) —
-            // identical to the pre-image_kind behavior.
             if ($decoded['is_slip'] === false && $decoded['reply'] !== '') {
                 $ctx->metadata['slip_vision_draft'] = [
                     'content' => $decoded['reply'],
@@ -938,10 +683,7 @@ class LineWebhookResponseService
      * แกะผล JSON ของ classifySlipImage — รองรับทั้ง JSON ล้วน (structured output)
      * และ JSON ที่ห่อด้วยข้อความ/code fence (model ที่ไม่รองรับ) คืน null เมื่อ parse/validate ไม่ผ่าน
      *
-     * image_kind เป็น optional (บอทที่ไม่ใช่ 26 ไม่ส่งคีย์นี้มา) — ถ้ามีต้องอยู่ใน IMAGE_KINDS
-     * เท่านั้น ไม่งั้นถือว่า parse ไม่ผ่าน (fail closed แบบเดียวกับ JSON พัง)
-     *
-     * @return array{is_slip: bool, reply: string, image_kind: ?string}|null
+     * @return array{is_slip: bool, reply: string}|null
      */
     private function decodeSlipCheck(string $content): ?array
     {
@@ -950,12 +692,7 @@ class LineWebhookResponseService
             return null;
         }
 
-        $imageKind = $data['image_kind'] ?? null;
-        if ($imageKind !== null && ! in_array($imageKind, self::IMAGE_KINDS, true)) {
-            return null;
-        }
-
-        return ['is_slip' => $data['is_slip'], 'reply' => trim($data['reply']), 'image_kind' => $imageKind];
+        return ['is_slip' => $data['is_slip'], 'reply' => trim($data['reply'])];
     }
 
     /**

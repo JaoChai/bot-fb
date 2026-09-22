@@ -91,17 +91,4 @@ class GuardrailOutputSanitizerTest extends TestCase
 
         $this->assertFalse($result['flagged']);
     }
-
-    #[Test]
-    public function test_identity_option_skips_only_existing_ai_patterns(): void
-    {
-        foreach (['ผมเป็น AI', 'ในฐานะ AI', 'ฉันเป็น AI', 'As an AI', "I'm an AI", 'I am an AI'] as $text) {
-            $this->assertTrue($this->sanitizer->check($text)['flagged']);
-            $this->assertSame(['flagged' => false, 'reason' => null], $this->sanitizer->check($text, true));
-        }
-        foreach (["```php\nผมเป็น AI" => 'code_fence', "# หัวข้อ\nผมเป็น AI" => 'markdown_heading'] as $text => $reason) {
-            $this->assertSame(['flagged' => true, 'reason' => $reason], $this->sanitizer->check($text, true));
-            $this->assertSame($this->sanitizer->check($text), $this->sanitizer->check($text, false));
-        }
-    }
 }

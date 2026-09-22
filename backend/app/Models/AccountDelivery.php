@@ -22,17 +22,11 @@ class AccountDelivery extends Model
 
     protected $fillable = [
         'bot_id', 'conversation_id', 'slip_verification_id', 'status',
-        'amount', 'reservation_plan', 'anchors_initialized_at', 'reservation_token',
-        'reservation_claimed_at', 'card_dispatched_at', 'confirmed_by', 'delivered_at',
-        'last_reminded_at', 'card_message_id',
+        'amount', 'confirmed_by', 'delivered_at', 'last_reminded_at', 'card_message_id',
     ];
 
     protected $casts = [
         'amount' => 'float',
-        'reservation_plan' => 'array',
-        'anchors_initialized_at' => 'datetime',
-        'reservation_claimed_at' => 'datetime',
-        'card_dispatched_at' => 'datetime',
         'delivered_at' => 'datetime',
         'last_reminded_at' => 'datetime',
     ];

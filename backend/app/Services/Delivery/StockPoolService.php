@@ -25,9 +25,9 @@ class StockPoolService
     ];
 
     /** สร้าง order_ref ของ bot-fb จาก delivery id */
-    public static function orderRef(int|string $deliveryId, int|string|null $unitId = null): string
+    public static function orderRef(int|string $deliveryId): string
     {
-        return self::ORDER_REF_PREFIX.$deliveryId.($unitId === null ? '' : ':'.$unitId);
+        return self::ORDER_REF_PREFIX.$deliveryId;
     }
 
     /** ถอด delivery id จาก order_ref ของ bot-fb — คืน null ถ้าไม่ใช่ของ bot-fb (บอทภายนอก) */
@@ -36,11 +36,9 @@ class StockPoolService
         if (! str_starts_with($orderRef, self::ORDER_REF_PREFIX)) {
             return null;
         }
-        $suffix = substr($orderRef, strlen(self::ORDER_REF_PREFIX));
+        $id = substr($orderRef, strlen(self::ORDER_REF_PREFIX));
 
-        return preg_match('/^(\d+)(?::[^:]+)?$/', $suffix, $matches) === 1
-            ? (int) $matches[1]
-            : null;
+        return ctype_digit($id) ? (int) $id : null;
     }
 
     /**
@@ -54,30 +52,6 @@ class StockPoolService
             $conn = DB::connection(self::CONNECTION);
 
             return $conn->transaction(function () use ($conn, $stockCode, $orderRef) {
-                // The external schema has no idempotency column. Use the existing
-                // order_ref as an exact per-unit key and serialize that key on PG.
-                $unitKey = preg_match('/^'.preg_quote(self::ORDER_REF_PREFIX, '/').'\d+:[^:]+$/', $orderRef) === 1;
-                if ($unitKey && $conn->getDriverName() === 'pgsql') {
-                    $conn->select('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', [$orderRef]);
-                }
-                if ($unitKey) {
-                    $existing = $conn->table('items_reserved')
-                        ->where('order_ref', $orderRef)
-                        ->lockForUpdate()
-                        ->get();
-                    if ($existing->count() > 1) {
-                        throw new \RuntimeException('Ambiguous duplicate stock reservation key.');
-                    }
-                    if ($existing->count() === 1) {
-                        $row = (array) $existing->first();
-                        if ((string) $row['name'] !== $stockCode) {
-                            throw new \RuntimeException('Stock reservation key belongs to another product.');
-                        }
-
-                        return $row;
-                    }
-                }
-
                 $lock = $conn->getDriverName() === 'pgsql' ? 'FOR UPDATE SKIP LOCKED' : '';
                 $rows = $conn->select(
                     "DELETE FROM items_available WHERE id = (
@@ -98,21 +72,6 @@ class StockPoolService
 
                 return $row;
             });
-        });
-    }
-
-    /** Recover an ambiguous remote commit by its exact, credential-free unit key. */
-    public function reservedByOrderRef(string $orderRef): ?array
-    {
-        return $this->guarded(function () use ($orderRef): ?array {
-            $rows = DB::connection(self::CONNECTION)->table('items_reserved')
-                ->where('order_ref', $orderRef)
-                ->get();
-            if ($rows->count() > 1) {
-                throw new \RuntimeException('Ambiguous duplicate stock reservation key.');
-            }
-
-            return $rows->isEmpty() ? null : (array) $rows->first();
         });
     }
 
@@ -189,18 +148,14 @@ class StockPoolService
      */
     public function orphanedReservedRows(array $activeOrderRefs): array
     {
-        return $this->guarded(function () use ($activeOrderRefs): array {
-            $query = DB::connection(self::CONNECTION)->table('items_reserved')
-                ->where('order_ref', 'like', self::ORDER_REF_PREFIX.'%')
-                ->where('reservedAt', '<=', now()->subMinutes(10));
-            foreach ($activeOrderRefs as $activeRef) {
-                // Exclude both legacy bfb:<delivery> and new bfb:<delivery>:<unit>.
-                $query->where('order_ref', '!=', $activeRef)
-                    ->where('order_ref', 'not like', $activeRef.':%');
-            }
-
-            return $query->get()->map(fn ($row) => (array) $row)->all();
-        });
+        return $this->guarded(fn () => DB::connection(self::CONNECTION)->table('items_reserved')
+            ->where('order_ref', 'like', self::ORDER_REF_PREFIX.'%')
+            ->where('reservedAt', '<=', now()->subMinutes(10))
+            ->when($activeOrderRefs !== [],
+                fn ($q) => $q->whereNotIn('order_ref', $activeOrderRefs))
+            ->get()
+            ->map(fn ($row) => (array) $row)
+            ->all());
     }
 
     /**

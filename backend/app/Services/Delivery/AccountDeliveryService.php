@@ -8,22 +8,15 @@ use App\Jobs\SendDeliveryCard;
 use App\Models\AccountDelivery;
 use App\Models\AccountDeliveryItem;
 use App\Models\Bot;
-use App\Models\CheckoutSession;
 use App\Models\Conversation;
 use App\Models\FlowPlugin;
-use App\Models\ProductStock;
 use App\Models\SlipVerification;
-use App\Models\VerifiedPaymentEvent;
-use App\Services\CommerceSafety\CheckoutAuthority;
-use App\Services\CommerceSafety\JsonValue;
-use App\Services\CommerceSafety\MoneyMinor;
-use App\Services\CommerceSafety\SafetyScope;
 use App\Services\LINEService;
 use App\Services\Payment\PaymentMessageDetector;
 use App\Services\Payment\TelegramAlertBotService;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 /**
  * งานส่งบัญชีอัตโนมัติ: จองจาก stock (mhha_acc_db) → การ์ด Telegram → ส่ง LINE → sold
@@ -58,48 +51,24 @@ class AccountDeliveryService
             return null;
         }
 
-        $mode = app(SafetyScope::class)->mode($bot);
-        $hasAuthoritativeCheckout = VerifiedPaymentEvent::query()
-            ->where('bot_id', $bot->id)
-            ->where('conversation_id', $conversation->id)
-            ->where('slip_verification_id', $slipVerificationId)
-            ->whereNotNull('checkout_id')
-            ->exists();
-        $canonical = $hasAuthoritativeCheckout || in_array($mode, ['enforce', 'hold'], true);
-        if ($canonical) {
-            $checkout = app(CheckoutAuthority::class)
-                ->authorizeReservation($bot, $conversation, $slipVerificationId);
-            if ($checkout === null || ! $this->validScopedRequest($checkout, $amount, $items)) {
-                if ($checkout?->state === 'paid') {
-                    $checkout->forceFill(['state' => 'paid_hold'])->save();
-                }
+        // lock conversation ระหว่างเช็คคู่ซ้ำ+สร้างงาน: กัน 2 dispatch path (EasySlip vs manual)
+        // ยิงพร้อมกันแล้วต่างฝ่ายต่างมองไม่เห็นกัน จนได้การ์ด 2 ใบที่ไม่มีคำเตือนสักใบ
+        try {
+            [$delivery, $duplicateOf] = DB::transaction(function () use ($bot, $conversation, $slipVerificationId, $amount) {
+                Conversation::whereKey($conversation->id)->lockForUpdate()->first();
 
-                return null;
-            }
+                $duplicateOf = $this->recentDuplicateDelivery($conversation->id, $amount, $slipVerificationId);
 
-            $amount = $checkout->total_minor / 100;
-            $items = $checkout->items;
-        }
-
-        $plan = $this->reservationPlan($items, $canonical);
-        if ($plan === null) {
-            $checkout->forceFill(['state' => 'paid_hold'])->save();
-
-            return null;
-        }
-        [$delivery, $duplicateOf, $reservationToken, $returnExisting] = $this->initializeAndClaim(
-            $bot,
-            $conversation,
-            $slipVerificationId,
-            $amount,
-            $plan,
-            $canonical ? $checkout : null,
-        );
-        if ($delivery === null) {
-            return null;
-        }
-        if ($returnExisting || $reservationToken === null) {
-            return $delivery;
+                return [AccountDelivery::create([
+                    'bot_id' => $bot->id,
+                    'conversation_id' => $conversation->id,
+                    'slip_verification_id' => $slipVerificationId,
+                    'status' => AccountDelivery::STATUS_RESERVING,
+                    'amount' => $amount,
+                ]), $duplicateOf];
+            });
+        } catch (UniqueConstraintViolationException) {
+            return null; // webhook ซ้ำ/job รันซ้ำ (slip เดียวกัน) — unique(slip) กันไว้แล้ว
         }
 
         if ($duplicateOf !== null) {
@@ -109,357 +78,88 @@ class AccountDeliveryService
             ]);
         }
 
-        return $this->resumeAmbiguousReservations($delivery, $reservationToken, $duplicateOf);
-    }
-
-    private function resumeAmbiguousReservations(
-        AccountDelivery $delivery,
-        string $reservationToken,
-        ?AccountDelivery $duplicateOf,
-    ): AccountDelivery {
-        // A pre-existing delivery may have committed stock under its legacy identity.
-        // Resolve that identity outside the local transaction before allocating any unit.
-        $canReserve = $delivery->wasRecentlyCreated || $this->reconcileLegacyReservation($delivery);
-        $items = $canReserve
-            ? $delivery->items()->where('status', AccountDeliveryItem::ST_RESERVING)->orderBy('id')->get()
-            : [];
-        foreach ($items as $item) {
-            $orderRef = StockPoolService::orderRef($delivery->id, $item->id);
-            $ambiguous = false;
-            try {
-                $row = $this->pool->reserveOne((string) $item->stock_code, $orderRef);
-            } catch (\Throwable $exception) {
-                $ambiguous = true;
-                Log::error('Delivery: ambiguous stock reservation retry failed', [
-                    'delivery_id' => $delivery->id,
-                    'stock_code' => $item->stock_code,
-                    'error' => $exception->getMessage(),
-                ]);
-                try {
-                    $row = $this->pool->reservedByOrderRef($orderRef);
-                } catch (\Throwable $recoveryError) {
-                    Log::error('Delivery: stock reservation recovery failed', [
-                        'delivery_id' => $delivery->id,
-                        'stock_code' => $item->stock_code,
-                        'error' => $recoveryError->getMessage(),
-                    ]);
-                    $row = null;
-                }
-            }
-            if ($row !== null && (string) ($row['name'] ?? '') !== (string) $item->stock_code) {
-                $row = null;
-            }
-            $item->update([
-                'stock_item_id' => $row['id'] ?? null,
-                'status' => $row === null
-                    ? ($ambiguous ? AccountDeliveryItem::ST_RESERVING : AccountDeliveryItem::ST_SHORTAGE)
-                    : AccountDeliveryItem::ST_RESERVED,
-            ]);
-        }
-
-        [$finished, $dispatchCard] = DB::transaction(function () use (
-            $delivery,
-            $reservationToken,
-            $canReserve,
-        ): array {
-            Conversation::query()->whereKey($delivery->conversation_id)->lockForUpdate()->first();
-            $locked = AccountDelivery::query()->lockForUpdate()->findOrFail($delivery->id);
-            if (! hash_equals((string) $locked->reservation_token, $reservationToken)) {
-                return [$locked, false];
-            }
-            if (! $this->anchorsAreComplete($locked)) {
-                $locked->forceFill([
-                    'reservation_token' => null,
-                    'reservation_claimed_at' => null,
-                ])->save();
-
-                return [$locked, false];
-            }
-            // An unresolved legacy commit holds the delivery even when the old
-            // worker already marked every local item shortage or reserved.
-            if (! $canReserve || $locked->items()->where('status', AccountDeliveryItem::ST_RESERVING)->exists()) {
-                $locked->forceFill([
-                    'status' => AccountDelivery::STATUS_RESERVING,
-                    'reservation_token' => null,
-                    'reservation_claimed_at' => null,
-                ])->save();
-
-                return [$locked, false];
-            }
-
-            $deliverable = $locked->items()->where('status', AccountDeliveryItem::ST_RESERVED)->exists();
-            $dispatchCard = $locked->card_dispatched_at === null;
-            $locked->forceFill([
-                'status' => $deliverable ? AccountDelivery::STATUS_RESERVED : AccountDelivery::STATUS_FAILED,
-                'reservation_token' => null,
-                'reservation_claimed_at' => null,
-                'card_dispatched_at' => $dispatchCard ? now() : $locked->card_dispatched_at,
-            ])->save();
-
-            return [$locked, $dispatchCard];
-        });
-
-        if ($dispatchCard) {
-            // ส่งผ่าน job หลัง local commit และ claim/finalization แบบ once-only เท่านั้น
-            SendDeliveryCard::dispatchSafely($finished->id, $this->duplicateWarning($duplicateOf));
-        }
-
-        return $finished->fresh();
-    }
-
-    private function reconcileLegacyReservation(AccountDelivery $delivery): bool
-    {
-        try {
-            // Exact lookup rejects multiple legacy rows without picking a credential.
-            $row = $this->pool->reservedByOrderRef(StockPoolService::orderRef($delivery->id));
-            if ($row === null || $delivery->items()->where('stock_item_id', $row['id'])->exists()) {
-                return true;
-            }
-
-            $candidates = $delivery->items()
-                ->where('kind', AccountDeliveryItem::KIND_STOCK)
-                ->where('status', AccountDeliveryItem::ST_RESERVING)
-                ->whereNull('stock_item_id')
-                ->where('stock_code', $row['name'])
-                ->where('qty', 1)
-                ->get();
-            if ($candidates->count() !== 1) {
-                return false;
-            }
-            $item = $candidates->first();
-            if ($this->pool->reservedByOrderRef(StockPoolService::orderRef($delivery->id, $item->id)) !== null) {
-                return false;
-            }
-
-            // Keep the legacy remote ref intact so a crash here remains recoverable
-            // and reconciliation can still identify the original reservation.
-            $item->update([
-                'stock_item_id' => $row['id'],
-                'status' => AccountDeliveryItem::ST_RESERVED,
-            ]);
-
-            return true;
-        } catch (\Throwable $exception) {
-            Log::warning('Delivery: legacy stock reservation requires reconciliation', [
-                'delivery_id' => $delivery->id,
-                'exception' => $exception::class,
-            ]);
-
-            return false;
-        }
-    }
-
-    /** @return array{0: ?AccountDelivery, 1: ?AccountDelivery, 2: ?string, 3: bool} */
-    private function initializeAndClaim(
-        Bot $bot,
-        Conversation $conversation,
-        int $slipVerificationId,
-        ?float $amount,
-        array $plan,
-        ?CheckoutSession $checkout = null,
-    ): array {
-        return DB::transaction(function () use (
-            $bot,
-            $conversation,
-            $slipVerificationId,
-            $amount,
-            $plan,
-            $checkout,
-        ): array {
-            Conversation::query()->whereKey($conversation->id)->lockForUpdate()->firstOrFail();
-            $delivery = AccountDelivery::query()
-                ->where('slip_verification_id', $slipVerificationId)
-                ->lockForUpdate()
-                ->first();
-            $duplicateOf = null;
-            if ($delivery === null) {
-                $duplicateOf = $this->recentDuplicateDelivery(
-                    $conversation->id,
-                    $amount,
-                    $slipVerificationId,
-                );
-                $delivery = AccountDelivery::create([
-                    'bot_id' => $bot->id,
-                    'conversation_id' => $conversation->id,
-                    'slip_verification_id' => $slipVerificationId,
-                    'status' => AccountDelivery::STATUS_RESERVING,
-                    'amount' => $amount,
-                    'reservation_plan' => $plan,
-                ]);
-            } elseif ((int) $delivery->bot_id !== (int) $bot->id
-                || (int) $delivery->conversation_id !== (int) $conversation->id) {
-                return [null, null, null, false];
-            } elseif ($delivery->status !== AccountDelivery::STATUS_RESERVING) {
-                return [null, null, null, false];
-            }
-
-            if ($checkout !== null && is_array($delivery->reservation_plan)
-                && ! JsonValue::equals($delivery->reservation_plan, $plan)) {
-                $checkout->forceFill(['state' => 'paid_hold'])->save();
-
-                return [null, null, null, false];
-            }
-
-            if (! is_array($delivery->reservation_plan)) {
-                $delivery->forceFill(['reservation_plan' => $plan])->save();
-            }
-            $this->initializeAnchors($delivery, $delivery->reservation_plan ?? []);
-
-            if ($delivery->reservation_token !== null
-                && ($delivery->reservation_claimed_at === null
-                    || $delivery->reservation_claimed_at->gt(now()->subMinutes(5)))) {
-                return [$delivery->fresh(), $duplicateOf, null, true];
-            }
-
-            $token = (string) Str::uuid();
-            $delivery->forceFill([
-                'reservation_token' => $token,
-                'reservation_claimed_at' => now(),
-            ])->save();
-
-            // Retain wasRecentlyCreated to distinguish new work from recovery.
-            return [$delivery, $duplicateOf, $token, false];
-        });
-    }
-
-    /** @param array<int, array<string, mixed>> $plan */
-    private function initializeAnchors(AccountDelivery $delivery, array $plan): void
-    {
-        $unclaimed = $delivery->items()->whereNull('anchor_key')->orderBy('id')->get();
-        foreach ($plan as $anchor) {
-            $exists = $delivery->items()->where('anchor_key', $anchor['anchor_key'])->exists();
-            if ($exists) {
-                continue;
-            }
-
-            $legacy = $unclaimed->first(function (AccountDeliveryItem $item) use ($anchor): bool {
-                return $item->product_name === $anchor['product_name']
-                    && (string) $item->stock_code === (string) ($anchor['stock_code'] ?? null)
-                    && $item->kind === $anchor['kind']
-                    && (int) $item->qty === (int) $anchor['qty'];
-            });
-            if ($legacy !== null) {
-                $legacy->update(['anchor_key' => $anchor['anchor_key']]);
-                $unclaimed = $unclaimed->reject(fn (AccountDeliveryItem $item): bool => $item->is($legacy));
-
-                continue;
-            }
-
-            $delivery->items()->create($anchor);
-        }
-
-        $delivery->forceFill(['anchors_initialized_at' => now()])->save();
-    }
-
-    private function anchorsAreComplete(AccountDelivery $delivery): bool
-    {
-        $plan = $delivery->reservation_plan;
-        if (! is_array($plan) || $delivery->anchors_initialized_at === null) {
-            return false;
-        }
-        $keys = array_column($plan, 'anchor_key');
-
-        return $delivery->items()->whereIn('anchor_key', $keys)->count() === count($keys);
-    }
-
-    /** @return array<int, array<string, mixed>> */
-    private function reservationPlan(array $items, bool $canonical = false): ?array
-    {
-        $plan = [];
+        $deliverable = false;
+        // floor ที่ 1 กัน footgun: ตั้ง max_qty=0 ผิดจะทำให้ loop ไม่รัน item หายเงียบ
         $maxQty = max(1, config_int('delivery.max_qty', 20));
-        foreach (array_values($items) as $line => $item) {
-            if (! $canonical && PaymentMessageDetector::isZeroPriceItem($item)) {
+        foreach ($items as $item) {
+            // ข้ามของแถมราคา 0 ก่อนแมพ กัน parser จับ "Page" ไปสร้าง support_link
+            // (ส่งข้อความแจ้งรับเพจผิด) ทั้งที่ลูกค้าซื้อแค่บัญชี
+            if (PaymentMessageDetector::isZeroPriceItem($item)) {
+                Log::info('Delivery: skip zero-price summary line', [
+                    'delivery_id' => $delivery->id, 'product' => $item['name'] ?? '',
+                ]);
+
                 continue;
             }
             $rawQty = max(1, (int) ($item['qty'] ?? 1));
             $qty = min($maxQty, $rawQty);
+            // เกินเพดานแล้ว "จองให้น้อยกว่าที่สั่ง" — เดิมบอกแค่ผ่าน Log::warning ซึ่ง
+            // LOG_LEVEL บน prod กลืนทิ้ง เจ้าของจึงไม่มีทางรู้ว่าลูกค้ายังขาดของ
+            // จากนี้ผูกไว้กับ item เพื่อให้ขึ้นหน้าการ์ด Telegram (cardText)
             $requestedQty = $qty < $rawQty ? $rawQty : null;
-            if ($canonical) {
-                $product = ProductStock::query()->find($item['product_id'] ?? null);
-                if (! $product
-                    || ! is_int($item['qty'] ?? null) || $item['qty'] <= 0 || $item['qty'] > $maxQty
-                    || (string) $product->name !== ($item['name'] ?? null)
-                    || trim((string) ($product->stock_code ?: $product->slug)) !== ($item['sku'] ?? null)
-                    || $product->delivery_method !== ($item['delivery_method'] ?? null)
-                    || ! in_array($item['method'] ?? null, ['card', 'topup', 'none'], true)
-                    || ! $product->in_stock || $product->manual_off
-                    || ($product->delivery_method === 'stock'
-                        && ($product->available_count === null || $product->available_count < $item['qty']))) {
-                    return null;
-                }
-                $qty = $item['qty'];
-                $requestedQty = null;
-            } else {
-                $product = $this->mapper->map((string) ($item['name'] ?? ''));
-            }
-            if ($product === null || ($canonical && $product->delivery_method === 'none')) {
-                $plan[] = [
-                    'anchor_key' => "line:{$line}:manual",
-                    'product_name' => (string) ($item['name'] ?? ''),
-                    'stock_code' => null,
-                    'kind' => AccountDeliveryItem::KIND_MANUAL,
-                    'qty' => $qty,
-                    'requested_qty' => $requestedQty,
-                    'status' => AccountDeliveryItem::ST_UNMAPPED,
-                ];
+            $product = $this->mapper->map($item['name']);
+
+            if ($product === null) {
+                $delivery->items()->create([
+                    'product_name' => $item['name'], 'kind' => AccountDeliveryItem::KIND_MANUAL,
+                    'qty' => $qty, 'requested_qty' => $requestedQty, 'status' => AccountDeliveryItem::ST_UNMAPPED,
+                ]);
 
                 continue;
             }
+
             if ($product->delivery_method === 'support_link') {
-                $plan[] = [
-                    'anchor_key' => "line:{$line}:support",
-                    'product_name' => $product->name,
-                    'stock_code' => null,
-                    'kind' => AccountDeliveryItem::KIND_SUPPORT_LINK,
-                    'qty' => $qty,
-                    'requested_qty' => $requestedQty,
-                    'status' => AccountDeliveryItem::ST_RESERVED,
-                ];
+                $delivery->items()->create([
+                    'product_name' => $product->name, 'kind' => AccountDeliveryItem::KIND_SUPPORT_LINK,
+                    'qty' => $qty, 'requested_qty' => $requestedQty, 'status' => AccountDeliveryItem::ST_RESERVED,
+                ]);
+                $deliverable = true;
 
                 continue;
             }
-            for ($unit = 0; $unit < $qty; $unit++) {
-                $plan[] = [
-                    'anchor_key' => "line:{$line}:unit:{$unit}",
+
+            for ($u = 0; $u < $qty; $u++) {
+                // สร้าง item anchor ก่อนจอง: ถ้า process ตายหลัง reserveOne สำเร็จแต่ก่อน update
+                // จะเหลือ item ค้าง reserving ให้ตามได้ ไม่ใช่ stock หายเงียบไม่มีที่อ้างอิง
+                $item = $delivery->items()->create([
                     'product_name' => $product->name,
-                    'stock_code' => $canonical ? $item['sku'] : $product->stock_code,
+                    'stock_code' => $product->stock_code,
                     'kind' => AccountDeliveryItem::KIND_STOCK,
                     'qty' => 1,
-                    'requested_qty' => $unit === 0 ? $requestedQty : null,
+                    'requested_qty' => $u === 0 ? $requestedQty : null,
                     'status' => AccountDeliveryItem::ST_RESERVING,
-                ];
-            }
-        }
-
-        return $plan;
-    }
-
-    private function validScopedRequest(
-        CheckoutSession $checkout,
-        ?float $amount,
-        array $items,
-    ): bool {
-        if ($amount !== null) {
-            try {
-                if (MoneyMinor::fromDecimal(number_format($amount, 2, '.', '')) !== $checkout->total_minor) {
-                    return false;
+                ]);
+                try {
+                    $row = $this->pool->reserveOne($product->stock_code, StockPoolService::orderRef($delivery->id));
+                } catch (\Throwable $e) {
+                    Log::error('Delivery: stock reserve failed', [
+                        'delivery_id' => $delivery->id, 'stock_code' => $product->stock_code,
+                        'error' => $e->getMessage(),
+                    ]);
+                    $row = null;
                 }
-            } catch (\InvalidArgumentException) {
-                return false;
+                $item->update([
+                    'stock_item_id' => $row['id'] ?? null,
+                    'status' => $row === null
+                        ? AccountDeliveryItem::ST_SHORTAGE
+                        : AccountDeliveryItem::ST_RESERVED,
+                ]);
+                if ($row !== null) {
+                    $deliverable = true;
+                }
             }
         }
 
-        $maxQty = max(1, config_int('delivery.max_qty', 20));
-        foreach ($items as $item) {
-            if (! is_array($item)
-                || ! is_int($item['qty'] ?? null)
-                || $item['qty'] <= 0
-                || $item['qty'] > $maxQty) {
-                return false;
-            }
-        }
+        $delivery->update([
+            'status' => $deliverable ? AccountDelivery::STATUS_RESERVED : AccountDelivery::STATUS_FAILED,
+        ]);
 
-        return true;
+        // ส่งผ่าน job เพื่อให้ยิงซ้ำได้เอง — ห้ามเรียก sendCard ตรงๆ ที่นี่
+        // เมธอดนี้ถูกเรียกจาก ReserveAccountStock ที่ตั้ง tries=1 ไว้ (กันจองสต๊อกซ้ำ)
+        // การ์ดที่ยิงพลาดตรงนี้จึงไม่มีทางได้ไปต่อ ถ้าไม่แยกออกเป็น job ของตัวเอง
+        SendDeliveryCard::dispatchSafely($delivery->id, $this->duplicateWarning($duplicateOf));
+
+        return $delivery;
     }
 
     /**

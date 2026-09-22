@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Jobs\ReserveAccountStock;
 use App\Jobs\RetrySlipVerification;
 use App\Models\Bot;
 use App\Models\BotSetting;
@@ -11,23 +10,13 @@ use App\Models\CustomerProfile;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
-use App\Models\Order;
 use App\Models\User;
-use App\Models\VerifiedPaymentEvent;
-use App\Services\LINEService;
-use App\Services\LineWebhook\LineWebhookOutputService;
 use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\LineWebhook\WebhookContext;
 use App\Services\ModelCapabilityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Queue;
-use Mockery;
-use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class SlipVerificationPipelineTest extends TestCase
@@ -41,19 +30,15 @@ class SlipVerificationPipelineTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->makeBotAndConversation();
-    }
 
-    private function makeBotAndConversation(array $botAttributes = []): void
-    {
         $user = User::factory()->create();
         $user->getOrCreateSettings()->update(['easyslip_api_token' => 'tok-123']);
 
-        $this->bot = Bot::factory()->create(array_merge([
+        $this->bot = Bot::factory()->create([
             'user_id' => $user->id,
             'status' => 'active',
             'primary_chat_model' => 'google/gemini-3.5-flash',
-        ], $botAttributes));
+        ]);
         BotSetting::create([
             'bot_id' => $this->bot->id,
             'slip_verification_enabled' => true,
@@ -74,69 +59,6 @@ class SlipVerificationPipelineTest extends TestCase
             'type' => 'text',
             'content' => "สรุปรายการ\n1. Nolimit BM = 1,500 บาท\nรวมยอดโอน: 1,500 บาท\nโอนเข้าบัญชี 223-3-24880-3",
         ]);
-    }
-
-    public static function classificationLoggingModes(): array
-    {
-        return [['off'], ['shadow'], ['enforce'], ['hold']];
-    }
-
-    #[DataProvider('classificationLoggingModes')]
-    public function test_malformed_classification_logs_only_safe_diagnostics(string $mode): void
-    {
-        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
-        Http::preventStrayRequests();
-        $this->makeBotAndConversation(['id' => 26]);
-        config(['commerce_safety.bots.26.mode' => $mode]);
-        $content = 'malformed LINE @adsvance';
-        $this->mock(ModelCapabilityService::class, function ($mock) {
-            $mock->shouldReceive('supportsVision')->andReturn(true);
-            $mock->shouldReceive('supportsStructuredOutput')->andReturn(true);
-        });
-        Http::fake([
-            'api.easyslip.com/*' => Http::response(['success' => false,
-                'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
-            'api.line.me/*' => Http::response(['ok' => true]),
-            'openrouter.ai/*' => Http::response([
-                'choices' => [['message' => ['content' => $content]]],
-                'model' => 'google/gemini-3.5-flash',
-                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
-            ]),
-        ]);
-        Log::spy();
-        $ctx = $this->makeContext();
-        app(LineWebhookResponseService::class)->generate($ctx);
-
-        Log::shouldHaveReceived('info')->with('Slip image classification', [
-            'bot_id' => 26, 'conversation_id' => $this->conversation->id,
-            'content_length' => mb_strlen($content), 'content_hash' => hash('sha256', $content),
-            'reason' => 'malformed_classification',
-        ])->once();
-        $this->assertArrayNotHasKey('slip_vision_draft', $ctx->metadata);
-        foreach (['warning', 'info', 'debug', 'error'] as $level) {
-            Log::shouldNotHaveReceived($level, [Mockery::any(), Mockery::on(
-                fn ($context) => str_contains(json_encode($context), '@adsvance')
-            )]);
-        }
-    }
-
-    public function test_review_scoped_vision_cannot_emit_generated_transfer_instructions(): void
-    {
-        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
-        Http::preventStrayRequests();
-        $this->bot->settings->update(['slip_verification_enabled' => false]);
-        foreach (['enforce', 'hold'] as $mode) {
-            config(["commerce_safety.bots.{$this->bot->id}.mode" => $mode]);
-            Http::fake(['api.line.me/*' => Http::response(['ok' => true]), 'openrouter.ai/*' => Http::response([
-                'choices' => [['message' => ['content' => 'โอน 199 บาทเข้าบัญชี 223-3-24880-3 ได้เลยครับ']]],
-                'model' => 'google/gemini-3.5-flash',
-                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
-            ])]);
-            $ctx = $this->makeContext();
-            app(LineWebhookResponseService::class)->generate($ctx);
-            $this->assertNotNull($ctx->response);
-            $this->assertStringNotContainsString('223-3-24880-3', $ctx->response->payload);
-        }
     }
 
     private function makeContext(): WebhookContext
@@ -523,153 +445,6 @@ class SlipVerificationPipelineTest extends TestCase
         Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
     }
 
-    public function test_bot26_classifier_requests_image_kind_and_bank_app_slip_flows_to_unreadable_alert(): void
-    {
-        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
-        $this->makeBotAndConversation(['id' => 26]);
-        $this->enableTelegramAlert();
-        $this->partialMock(ModelCapabilityService::class, function ($mock) {
-            $mock->shouldReceive('supportsVision')->andReturn(true);
-            $mock->shouldReceive('supportsStructuredOutput')->with('google/gemini-3.5-flash')->andReturn(true);
-        });
-
-        Http::fake([
-            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
-            'api.line.me/*' => Http::response(['ok' => true]),
-            'api.telegram.org/*' => Http::response(['ok' => true]),
-            'openrouter.ai/*' => Http::response([
-                'choices' => [['message' => ['content' => '{"image_kind": "bank_app_slip", "is_slip": true, "reply": ""}']]],
-                'model' => 'google/gemini-3.5-flash',
-                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 2, 'total_tokens' => 12],
-            ]),
-        ]);
-
-        $ctx = $this->makeContext();
-        app(LineWebhookResponseService::class)->generate($ctx);
-
-        // New request shape: the schema must offer the model a camera-photo kind to pick from.
-        Http::assertSent(function ($req) {
-            if (! str_contains($req->url(), 'openrouter.ai')) {
-                return false;
-            }
-            $schema = $req->data()['response_format']['json_schema']['schema'] ?? [];
-
-            return ($schema['properties']['image_kind']['enum'] ?? null) === ['bank_app_slip', 'camera_photo_of_screen', 'other']
-                && in_array('image_kind', $schema['required'] ?? [], true);
-        });
-
-        // bank_app_slip must still flow through the existing verification/unreadable-alert path.
-        $this->assertStringContainsString('ขอตรวจสอบยอดสักครู่', $ctx->response->payload);
-        $this->assertSame('unreadable', $ctx->metadata['bot_message']->metadata['slip_status']);
-        $this->assertDatabaseHas('slip_verifications', ['status' => 'unreadable']);
-        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
-    }
-
-    public function test_bot26_camera_photo_of_screen_gets_fixed_reply_and_no_effects(): void
-    {
-        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
-        $this->makeBotAndConversation(['id' => 26]);
-        $this->enableTelegramAlert();
-        $this->partialMock(ModelCapabilityService::class, function ($mock) {
-            $mock->shouldReceive('supportsVision')->andReturn(true);
-            $mock->shouldReceive('supportsStructuredOutput')->with('google/gemini-3.5-flash')->andReturn(true);
-        });
-
-        Http::fake([
-            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
-            'api.line.me/*' => Http::response(['ok' => true]),
-            'api.telegram.org/*' => Http::response(['ok' => true]),
-            'openrouter.ai/*' => Http::response([
-                'choices' => [['message' => ['content' => '{"image_kind": "camera_photo_of_screen", "is_slip": false, "reply": ""}']]],
-                'model' => 'google/gemini-3.5-flash',
-                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 2, 'total_tokens' => 12],
-            ]),
-        ]);
-
-        $ctx = $this->makeContext();
-        app(LineWebhookResponseService::class)->generate($ctx);
-
-        $this->assertStringContainsString('ต้นฉบับ', $ctx->response->payload);
-        $this->assertStringContainsString('แอปธนาคาร', $ctx->response->payload);
-        $this->assertStringContainsString('กล้อง', $ctx->response->payload);
-        $this->assertDatabaseCount('slip_verifications', 0);
-        $this->assertDatabaseCount('verified_payment_events', 0);
-        $this->assertDatabaseCount('orders', 0);
-        Http::assertNotSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
-        // Single classify call only — no second vision call, no drift from the fixed template.
-        $this->assertCount(1, Http::recorded(fn ($req) => str_contains($req->url(), 'openrouter.ai')));
-    }
-
-    public function test_bot26_unrecognized_image_kind_fails_closed_to_staff_alert(): void
-    {
-        $this->makeBotAndConversation(['id' => 26]);
-        $this->enableTelegramAlert();
-        // Force manual-JSON mode (no schema enum enforcement) so an out-of-contract
-        // image_kind value can actually reach decodeSlipCheck() for this RED test.
-        $this->partialMock(ModelCapabilityService::class, function ($mock) {
-            $mock->shouldReceive('supportsVision')->andReturn(true);
-            $mock->shouldReceive('supportsStructuredOutput')->andReturn(false);
-        });
-
-        Http::fake([
-            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
-            'api.line.me/*' => Http::response(['ok' => true]),
-            'api.telegram.org/*' => Http::response(['ok' => true]),
-            'openrouter.ai/*' => Http::response([
-                'choices' => [['message' => ['content' => '{"image_kind": "photocopy", "is_slip": false, "reply": "แนบเอกสาร"}']]],
-                'model' => 'google/gemini-3.5-flash',
-                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 2, 'total_tokens' => 12],
-            ]),
-        ]);
-
-        $ctx = $this->makeContext();
-        app(LineWebhookResponseService::class)->generate($ctx);
-
-        // Fail closed: unknown kind must NOT be treated as a valid slip, must NOT auto-confirm,
-        // and must NOT just silently reject — it routes to the existing unreadable/staff-alert branch.
-        $this->assertStringContainsString('ขอตรวจสอบยอดสักครู่', $ctx->response->payload);
-        $this->assertSame('unreadable', $ctx->metadata['bot_message']->metadata['slip_status']);
-        $this->assertDatabaseHas('slip_verifications', ['status' => 'unreadable']);
-        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
-        $this->assertDatabaseCount('verified_payment_events', 0);
-    }
-
-    public function test_bot26_classifier_transport_failure_fails_closed_under_new_schema(): void
-    {
-        config(['services.openrouter.api_key' => 'synthetic-not-a-key']);
-        $this->makeBotAndConversation(['id' => 26]);
-        $this->enableTelegramAlert();
-        $this->partialMock(ModelCapabilityService::class, function ($mock) {
-            $mock->shouldReceive('supportsVision')->andReturn(true);
-            $mock->shouldReceive('supportsStructuredOutput')->with('google/gemini-3.5-flash')->andReturn(true);
-        });
-
-        Http::fake([
-            'api.easyslip.com/*' => Http::response(['success' => false, 'error' => ['code' => 'INVALID_IMAGE_TYPE', 'message' => 'invalid image type']], 400),
-            'api.line.me/*' => Http::response(['ok' => true]),
-            'api.telegram.org/*' => Http::response(['ok' => true]),
-            'openrouter.ai/*' => Http::response([], 500),
-        ]);
-
-        $ctx = $this->makeContext();
-        app(LineWebhookResponseService::class)->generate($ctx);
-
-        // The new bot-26 schema must still have been requested even though the call failed.
-        Http::assertSent(function ($req) {
-            if (! str_contains($req->url(), 'openrouter.ai')) {
-                return false;
-            }
-            $schema = $req->data()['response_format']['json_schema']['schema'] ?? [];
-
-            return in_array('image_kind', $schema['required'] ?? [], true);
-        });
-        $this->assertStringContainsString('ขอตรวจสอบยอดสักครู่', $ctx->response->payload);
-        $this->assertSame('unreadable', $ctx->metadata['bot_message']->metadata['slip_status']);
-        $this->assertDatabaseHas('slip_verifications', ['status' => 'unreadable']);
-        Http::assertSent(fn ($req) => str_contains($req->url(), 'api.telegram.org'));
-        $this->assertDatabaseCount('verified_payment_events', 0);
-    }
-
     public function test_pending_slip_replies_pending_message_without_alert(): void
     {
         $this->enableTelegramAlert();
@@ -866,52 +641,5 @@ class SlipVerificationPipelineTest extends TestCase
         app(LineWebhookResponseService::class)->generate($ctx);
 
         Http::assertNotSent(fn ($req) => str_contains($req->url(), 'easyslip.com'));
-    }
-
-    public function test_scoped_automatic_held_receipt_never_sends_directly(): void
-    {
-        $this->enableTelegramAlert();
-        $plugin = FlowPlugin::where('flow_id', $this->bot->default_flow_id)->firstOrFail();
-        config(["commerce_safety.bots.{$this->bot->id}" => ['mode' => 'enforce', 'payment_plugin_ids' => [$plugin->id]]]);
-        Event::fake();
-        Queue::fake();
-        Http::preventStrayRequests();
-        Http::fake(['api.easyslip.com/*' => Http::response([
-            'success' => true,
-            'data' => ['isDuplicate' => false, 'matchedAccount' => null, 'amountInSlip' => 199.01,
-                'rawSlip' => ['transRef' => 'AUTO-A2', 'amount' => ['amount' => 199.01],
-                    'receiver' => ['bank' => ['id' => '004'], 'account' => ['name' => ['th' => 'fixture'], 'bank' => ['account' => 'xxx-x-x4880-x']]]]],
-            'message' => 'success',
-        ])]);
-        $sent = false;
-        $line = $this->mock(LINEService::class);
-        $line->shouldReceive('showLoadingIndicator')->andReturn(true);
-        $line->shouldNotReceive('replyWithFallback', 'pushPaymentReceipt', 'reply', 'push');
-        $ctx = $this->makeContext();
-        app(LineWebhookResponseService::class)->generate($ctx);
-        $event = VerifiedPaymentEvent::sole();
-        $this->assertSame($ctx->metadata['bot_message']->id, $event->receipt_message_id);
-        $ctx->metadata['bot_message']->update(['content' => 'เงินเข้าแล้ว 1 บาท FORGED ส่งใน 5-10 นาที']);
-        DB::beginTransaction();
-        app(LineWebhookOutputService::class)->dispatch($ctx);
-        $this->assertFalse($sent);
-        DB::commit();
-        $this->assertFalse($sent);
-        // Reviewed I2 policy: a valid held event owns exactly one proof-only
-        // line_receipt effect pending team verification; direct sends stay suppressed.
-        $this->assertSame('manual_hold', $event->fresh()->disposition);
-        $this->assertDatabaseCount('payment_effects', 1);
-        $this->assertDatabaseHas('payment_effects', [
-            'event_id' => $event->id,
-            'kind' => 'line_receipt',
-            'state' => 'pending',
-        ]);
-        $this->assertSame(0, DB::table('payment_effects')
-            ->whereIn('kind', ['telegram_payment', 'reserve_stock'])
-            ->count());
-        $this->assertSame(1, VerifiedPaymentEvent::count());
-        $this->assertSame(0, Order::count());
-        Queue::assertNotPushed(ReserveAccountStock::class);
-        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'telegram') || str_contains($request->url(), 'openrouter'));
     }
 }

@@ -3,9 +3,6 @@
 namespace App\Jobs;
 
 use App\Models\Bot;
-use App\Models\Conversation;
-use App\Services\CommerceSafety\CustomerReplyGuard;
-use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\LINEService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -34,12 +31,6 @@ class SendDelayedBubbleJob implements ShouldQueue
     public int $backoff = 2;
 
     /**
-     * Persisted conversation identity for execution-time scope validation.
-     * Nullable for delayed jobs serialized before this field existed.
-     */
-    public ?int $conversationId = null;
-
-    /**
      * Create a new job instance.
      *
      * @param  Bot  $bot  The bot sending the message
@@ -47,18 +38,14 @@ class SendDelayedBubbleJob implements ShouldQueue
      * @param  string  $bubbleContent  The text content of the bubble
      * @param  int  $bubbleIndex  Index of this bubble (1-indexed, for logging)
      * @param  int  $totalBubbles  Total bubbles being sent (for logging)
-     * @param  int|null  $conversationId  Conversation that originated the bubble
      */
     public function __construct(
         public Bot $bot,
         public string $userId,
         public string $bubbleContent,
         public int $bubbleIndex,
-        public int $totalBubbles,
-        ?int $conversationId = null,
-    ) {
-        $this->conversationId = $conversationId;
-    }
+        public int $totalBubbles
+    ) {}
 
     /**
      * Execute the job.
@@ -66,18 +53,12 @@ class SendDelayedBubbleJob implements ShouldQueue
     public function handle(LINEService $lineService): void
     {
         try {
-            $bot = $this->currentBot();
-            $conversation = $this->currentConversation($bot);
-            $content = app(FinancialOutputGuard::class)->text($bot, $this->bubbleContent);
-            $content = app(CustomerReplyGuard::class)->text($bot, $content, $conversation);
-
             // Use retry key for idempotency (LINE best practice)
             $retryKey = $lineService->generateRetryKey();
-            $lineService->push($bot, $this->userId, [$content], $retryKey);
+            $lineService->push($this->bot, $this->userId, [$this->bubbleContent], $retryKey);
 
             Log::debug('Delayed bubble sent successfully', [
-                'bot_id' => $bot->id,
-                'conversation_id' => $conversation?->id,
+                'bot_id' => $this->bot->id,
                 'user_id' => $this->userId,
                 'bubble_index' => $this->bubbleIndex,
                 'total_bubbles' => $this->totalBubbles,
@@ -93,33 +74,6 @@ class SendDelayedBubbleJob implements ShouldQueue
 
             throw $e; // Re-throw for retry logic
         }
-    }
-
-    private function currentBot(): Bot
-    {
-        // Unsaved models are supported by the direct unit-test contract only.
-        // Persisted queue payloads must always reload current database state.
-        return $this->bot->exists
-            ? Bot::query()->findOrFail($this->bot->getKey())
-            : $this->bot;
-    }
-
-    private function currentConversation(Bot $bot): ?Conversation
-    {
-        if (! $bot->exists) {
-            return null;
-        }
-
-        return Conversation::query()
-            ->where('bot_id', $bot->getKey())
-            ->where('external_customer_id', $this->userId)
-            ->where('channel_type', 'line')
-            ->when(
-                $this->conversationId !== null,
-                fn ($query) => $query->whereKey($this->conversationId),
-            )
-            ->latest('id')
-            ->first();
     }
 
     /**

@@ -86,6 +86,3 @@ Schedule::command('delivery:reconcile')->hourly()->withoutOverlapping();
 
 // Auto Account Delivery — เปิด/ปิดสวิตช์ขายตามของจริงใน stock DB
 Schedule::command('stock:sync-pool')->everyFiveMinutes()->withoutOverlapping();
-
-// Durable payment effects survive queue outages and worker loss. Uncertain transport is report-only.
-Schedule::command('payment-effects:reconcile')->everyMinute()->withoutOverlapping(5);

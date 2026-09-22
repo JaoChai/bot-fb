@@ -13,7 +13,6 @@ use App\Services\AIService;
 use App\Services\AutoAssignmentService;
 use App\Services\Chat\ConversationContextService;
 use App\Services\CircuitBreakerService;
-use App\Services\CommerceSafety\FinancialOutputGuard;
 use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
@@ -110,14 +109,6 @@ class ProcessLINEWebhook implements ShouldQueue
         LineWebhookOutputService $outputSvc,
     ): void {
         try {
-            if (app(FinancialOutputGuard::class)->enforced($this->bot)
-                && ($this->event['type'] ?? null) === 'message'
-                && in_array($this->event['message']['type'] ?? null, ['text', 'image', 'sticker'], true)) {
-                $this->runPipeline($gating, $contextSvc, $responseSvc, $outputSvc);
-
-                return;
-            }
-
             if (WebhookPipelineV2Flag::enabledFor($this->bot)) {
                 $this->runSharedPipeline($lineService, $gating, $contextSvc, $responseSvc, $outputSvc);
 

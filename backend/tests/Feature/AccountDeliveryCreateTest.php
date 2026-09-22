@@ -12,7 +12,6 @@ use App\Models\ProductStock;
 use App\Models\SlipVerification;
 use App\Models\User;
 use App\Services\Delivery\AccountDeliveryService;
-use App\Services\Delivery\StockPoolService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -140,13 +139,7 @@ class AccountDeliveryCreateTest extends TestCase
 
         // order_ref ต้องมี prefix bfb: เพื่อแยกจากบอทเบิกภายนอกที่ใช้ items_reserved ร่วมกัน
         $ref = DB::connection('mhha_acc')->table('items_reserved')->value('order_ref');
-        $this->assertSame(
-            StockPoolService::orderRef(
-                $delivery->id,
-                $delivery->items()->firstOrFail()->id,
-            ),
-            $ref,
-        );
+        $this->assertSame("bfb:{$delivery->id}", $ref);
     }
 
     public function test_shortage_and_unmapped_are_recorded_not_guessed(): void

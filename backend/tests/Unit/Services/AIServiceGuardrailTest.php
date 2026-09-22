@@ -6,14 +6,11 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\User;
 use App\Services\AIService;
-use App\Services\CommerceSafety\SafetyScope;
-use App\Services\Guardrail\GuardrailOutputSanitizer;
 use App\Services\Guardrail\OffTopicCircuitBreaker;
 use App\Services\RAGService;
 use App\Services\StockGuardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -238,33 +235,6 @@ class AIServiceGuardrailTest extends TestCase
 
         $this->assertStringNotContainsString('[[OFFTOPIC]]', $result['content']);
         $this->assertTrue($result['off_topic_triggered']);
-    }
-
-    #[Test]
-    public function test_scoped_identity_contacts_and_legacy_mode_matrix(): void
-    {
-        Http::preventStrayRequests();
-        foreach ([26, 27] as $id) {
-            $bot = Bot::factory()->create(['id' => $id, 'context_window' => 10]);
-            foreach (['off', 'shadow', 'enforce', 'hold'] as $mode) {
-                config(["commerce_safety.bots.$id.mode" => $mode]);
-                $scope = \Mockery::mock(SafetyScope::class);
-                $scope->shouldReceive('mode')->andReturn($mode);
-                $this->app->instance(SafetyScope::class, $scope);
-                foreach (['ผมเป็น AI', 'As an AI', '@notourshop99', "```php\n", '# หัวข้อ', 'ผมเป็น AI @notourshop99'] as $text) {
-                    $this->mock(RAGService::class)->shouldReceive('generateResponse')->once()->andReturn([
-                        'content' => $text, 'model' => 'test', 'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0],
-                    ]);
-                    $this->mock(StockGuardService::class)->shouldReceive('validate')->andReturn(['blocked' => false]);
-                    $result = app(AIService::class)->generateResponse($bot, 'hello');
-                    $scoped = $id === 26 && in_array($mode, ['enforce', 'hold']);
-                    $sanitizer = app(GuardrailOutputSanitizer::class)->check($text, $scoped);
-                    $expected = $sanitizer['flagged'] ? OffTopicCircuitBreaker::CANNED_MESSAGE
-                        : ($scoped && str_contains($text, '@notourshop99') ? 'ขอเช็กข้อมูลล่าสุดให้ในแชทนี้ครับ' : $text);
-                    $this->assertSame($expected, $result['content'], "$id/$mode/$text");
-                }
-            }
-        }
     }
 
     private function makeBotWithConversation(): array
