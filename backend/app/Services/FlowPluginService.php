@@ -4,8 +4,10 @@ namespace App\Services;
 
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -26,6 +28,55 @@ class FlowPluginService
             return;
         }
 
+        $this->executePluginsForFlow($flow, $bot, $conversation, $botMessage, $this->loadRecentMessages($conversation));
+    }
+
+    /**
+     * Execute plugins using the flow and context captured before queue dispatch.
+     */
+    public function executePluginsSnapshot(
+        Bot $bot,
+        Conversation $conversation,
+        Message $botMessage,
+        ?int $flowId,
+        array $contextMessageIds,
+    ): void {
+        if ($flowId === null) {
+            return;
+        }
+
+        $flow = Flow::query()
+            ->where('bot_id', $bot->id)
+            ->whereKey($flowId)
+            ->first();
+        if (! $flow) {
+            return;
+        }
+
+        $contextMessageIds = array_values(array_filter(
+            $contextMessageIds,
+            static fn (mixed $messageId): bool => is_int($messageId)
+        ));
+        $messagesById = Message::query()
+            ->where('conversation_id', $conversation->id)
+            ->whereIn('id', $contextMessageIds)
+            ->get()
+            ->keyBy('id');
+        $contextMessages = collect($contextMessageIds)
+            ->map(fn (int $messageId): ?Message => $messagesById->get($messageId))
+            ->filter()
+            ->values();
+
+        $this->executePluginsForFlow($flow, $bot, $conversation, $botMessage, $contextMessages);
+    }
+
+    private function executePluginsForFlow(
+        Flow $flow,
+        Bot $bot,
+        Conversation $conversation,
+        Message $botMessage,
+        Collection $recentMessages,
+    ): void {
         $plugins = $flow->plugins()->where('enabled', true)->get();
         if ($plugins->isEmpty()) {
             return;
@@ -41,7 +92,7 @@ class FlowPluginService
                     continue;
                 }
 
-                $triggered = $this->evaluateAndExecute($plugin, $bot, $conversation, $botMessage);
+                $triggered = $this->evaluateAndExecute($plugin, $bot, $conversation, $botMessage, $recentMessages);
 
                 if ($triggered) {
                     Cache::put($cacheKey, true, 60);
@@ -55,6 +106,16 @@ class FlowPluginService
                 ]);
             }
         }
+    }
+
+    private function loadRecentMessages(Conversation $conversation): Collection
+    {
+        return $conversation->messages()
+            ->orderBy('created_at', 'desc')
+            ->limit(5)
+            ->get()
+            ->reverse()
+            ->values();
     }
 
     /**
@@ -93,7 +154,8 @@ class FlowPluginService
         FlowPlugin $plugin,
         Bot $bot,
         Conversation $conversation,
-        Message $botMessage
+        Message $botMessage,
+        ?Collection $recentMessages = null
     ): bool {
         // Keyword pre-filter: skip AI call if bot message doesn't contain any trigger keywords
         if (! $this->passesKeywordFilter($plugin, $botMessage)) {
@@ -104,13 +166,8 @@ class FlowPluginService
         $conversation->loadMissing('customerProfile');
         $customerName = $conversation->customerProfile?->display_name ?? 'ไม่ทราบชื่อ';
 
-        // Get last 5 messages for context
-        $recentMessages = $conversation->messages()
-            ->orderBy('created_at', 'desc')
-            ->limit(5)
-            ->get()
-            ->reverse()
-            ->values();
+        // Use the captured collection for queued execution; legacy callers load live context.
+        $recentMessages ??= $this->loadRecentMessages($conversation);
 
         $conversationContext = $recentMessages->map(function ($msg) {
             $role = $msg->sender === 'bot' ? 'Assistant' : 'User';

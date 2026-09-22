@@ -9,12 +9,9 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
+use App\Services\Chat\AggregatedMessageDeliveryService;
 use App\Services\Chat\ConversationContextService;
-use App\Services\FlowPluginService;
-use App\Services\LINEService;
 use App\Services\MessageAggregationService;
-use App\Services\MultipleBubblesService;
-use App\Services\PaymentFlexService;
 use App\Support\QueueRouter;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Cache\Lock;
@@ -59,15 +56,13 @@ class ProcessAggregatedMessages implements ShouldQueue
     public function handle(
         MessageAggregationService $aggregationService,
         AIService $aiService,
-        LINEService $lineService,
-        MultipleBubblesService $bubblesService
+        AggregatedMessageDeliveryService $delivery
     ): void {
         try {
             $this->processAggregatedMessages(
                 $aggregationService,
                 $aiService,
-                $lineService,
-                $bubblesService
+                $delivery
             );
         } catch (\Exception $e) {
             Log::error('Failed to process aggregated messages', [
@@ -91,8 +86,7 @@ class ProcessAggregatedMessages implements ShouldQueue
     protected function processAggregatedMessages(
         MessageAggregationService $aggregationService,
         AIService $aiService,
-        LINEService $lineService,
-        MultipleBubblesService $bubblesService
+        AggregatedMessageDeliveryService $delivery
     ): void {
         $conversationId = $this->conversation->id;
 
@@ -122,6 +116,9 @@ class ProcessAggregatedMessages implements ShouldQueue
             return;
         }
 
+        $botMessage = null;
+        $pluginSnapshot = null;
+
         try {
             // Auto-clear stale context before AI generates response
             app(ConversationContextService::class)->autoClearIfIdle($this->conversation);
@@ -131,16 +128,29 @@ class ProcessAggregatedMessages implements ShouldQueue
                 $mergedContent,
                 $messageCount,
                 $aiService,
-                $lineService,
-                $bubblesService,
+                $delivery,
                 $cachedMessageIds
             );
 
             if ($botMessage) {
+                $pluginSnapshot = $this->capturePluginSnapshot();
                 $this->updateStats($messageCount, $botMessage->id);
             }
         } finally {
             $responseLock->release();
+            if ($botMessage && $pluginSnapshot !== null) {
+                try {
+                    $this->dispatchFlowPlugins($botMessage, $pluginSnapshot);
+                } catch (\Throwable $e) {
+                    Log::warning('Flow plugin dispatch failed after aggregation response', [
+                        'bot_id' => $this->bot->id,
+                        'conversation_id' => $this->conversation->id,
+                        'message_id' => $botMessage->id,
+                        'exception_type' => $e::class,
+                        'exception_code' => $e->getCode(),
+                    ]);
+                }
+            }
         }
 
         // Clear aggregation data after successful processing
@@ -332,8 +342,7 @@ class ProcessAggregatedMessages implements ShouldQueue
         string $mergedContent,
         int $messageCount,
         AIService $aiService,
-        LINEService $lineService,
-        MultipleBubblesService $bubblesService,
+        AggregatedMessageDeliveryService $delivery,
         array $currentTurnMessageIds = []
     ): ?Message {
         Log::debug('[Aggregation] Generating AI response', [
@@ -364,7 +373,7 @@ class ProcessAggregatedMessages implements ShouldQueue
                 'content' => $aiService->getErrorMessage($e),
                 'type' => 'text',
             ]);
-            $this->deliverToChannel($botMessage, $lineService, $bubblesService);
+            $delivery->deliver($this->bot, $this->conversation, $botMessage, $this->externalUserId);
 
             return $botMessage;
         }
@@ -388,49 +397,41 @@ class ProcessAggregatedMessages implements ShouldQueue
 
         // Send response to channel
         if ($botMessage->content) {
-            $this->deliverToChannel($botMessage, $lineService, $bubblesService);
-        }
-
-        // Execute flow plugins (e.g., Telegram notifications)
-        if ($botMessage) {
-            try {
-                app(FlowPluginService::class)
-                    ->executePlugins($this->bot, $this->conversation, $botMessage);
-            } catch (\Exception $e) {
-                Log::warning('Flow plugin execution failed in aggregation', [
-                    'conversation_id' => $this->conversation->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            $delivery->deliver($this->bot, $this->conversation, $botMessage, $this->externalUserId);
         }
 
         return $botMessage;
     }
 
     /**
-     * Deliver bot message to the appropriate channel (Flex, Bubbles, or plain text).
+     * Capture the flow and exact five-message context used by the old inline plugin call.
      */
-    private function deliverToChannel(
-        Message $botMessage,
-        LINEService $lineService,
-        MultipleBubblesService $bubblesService
-    ): void {
-        $paymentFlex = app(PaymentFlexService::class);
-        $transformed = $paymentFlex->tryConvertToFlex($botMessage->content, $this->conversation);
+    private function capturePluginSnapshot(): array
+    {
+        $contextMessageIds = $this->conversation->messages()
+            ->orderBy('created_at', 'desc')
+            ->limit(5)
+            ->pluck('id')
+            ->reverse()
+            ->values()
+            ->map(static fn ($messageId): int => (int) $messageId)
+            ->all();
 
-        if (is_array($transformed)) {
-            // Flex detected on full text → send as single message
-            $retryKey = $lineService->generateRetryKey();
-            $lineService->push($this->bot, $this->externalUserId, [$transformed], $retryKey);
-        } elseif ($bubblesService->isEnabled($this->bot)) {
-            // No Flex match → normal bubble flow
-            $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
-            $bubblesService->sendBubbles($this->bot, $this->externalUserId, null, $bubbles, $this->conversation);
-        } else {
-            // No Flex, no bubbles → send as plain text
-            $retryKey = $lineService->generateRetryKey();
-            $lineService->push($this->bot, $this->externalUserId, [$botMessage->content], $retryKey);
-        }
+        return [
+            'flowId' => $this->conversation->current_flow_id ?? $this->bot->default_flow_id,
+            'contextMessageIds' => $contextMessageIds,
+        ];
+    }
+
+    protected function dispatchFlowPlugins(Message $botMessage, array $pluginSnapshot): void
+    {
+        ExecuteFlowPlugins::dispatch(
+            $this->bot->id,
+            $this->conversation->id,
+            $botMessage->id,
+            $pluginSnapshot['flowId'],
+            $pluginSnapshot['contextMessageIds'],
+        )->onConnection(QueueRouter::asyncConnection());
     }
 
     /**
