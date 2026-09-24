@@ -82,6 +82,7 @@ class VipPriceGuardService
         bool $isVip,
     ): bool {
         $lines = preg_split('/\R/u', $content) ?: [$content];
+        $allProducts = ProductStock::query()->get();
 
         foreach ($lines as $line) {
             foreach ($products as $product) {
@@ -89,11 +90,16 @@ class VipPriceGuardService
                     continue;
                 }
 
-                preg_match_all('/(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?:บาท|฿|\.\-)/u', $line, $matches);
-                $amounts = array_map(
-                    fn (string $amount): float => (float) str_replace(',', '', $amount),
-                    $matches[1] ?? []
-                );
+                preg_match_all('/(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?:บาท|฿|\.\-)/u', $line, $matches, PREG_OFFSET_CAPTURE);
+                $amounts = [];
+                foreach ($matches[1] ?? [] as [$amount, $offset]) {
+                    $value = (float) str_replace(',', '', $amount);
+                    if ($this->isAdSpendLimitAmount($line, $offset)
+                        || $this->isAnotherMentionedProductPrice($line, $value, $products, $allProducts)) {
+                        continue;
+                    }
+                    $amounts[] = $value;
+                }
                 if ($amounts === []) {
                     continue;
                 }
@@ -107,6 +113,37 @@ class VipPriceGuardService
                     continue;
                 }
 
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isAdSpendLimitAmount(string $line, int $amountOffset): bool
+    {
+        $precedingText = mb_substr(substr($line, 0, $amountOffset), -25);
+
+        return preg_match('/(?<![a-z])limit|ลิมิต|วงเงิน/iu', $precedingText) === 1;
+    }
+
+    /** @param Collection<int, ProductStock> $guardedProducts
+     * @param  Collection<int, ProductStock>  $allProducts
+     */
+    private function isAnotherMentionedProductPrice(
+        string $line,
+        float $amount,
+        Collection $guardedProducts,
+        Collection $allProducts,
+    ): bool {
+        foreach ($allProducts as $otherProduct) {
+            if ($guardedProducts->contains(fn (ProductStock $guardedProduct) => $guardedProduct->is($otherProduct))
+                || ! $this->pricing->textMentionsProduct($line, $otherProduct)
+                || $otherProduct->price === null) {
+                continue;
+            }
+
+            if (abs($amount - (float) $otherProduct->price) <= 0.5) {
                 return true;
             }
         }

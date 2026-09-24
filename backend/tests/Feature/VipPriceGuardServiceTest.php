@@ -26,7 +26,7 @@ class VipPriceGuardServiceTest extends TestCase
             'name' => 'Nolimit Level Up+ Personal',
             'slug' => 'personal',
             'stock_code' => 'NLMP',
-            'aliases' => ['Personal'],
+            'aliases' => ['Personal', 'BM'],
             'in_stock' => true,
             'display_order' => 1,
             'price' => 1100,
@@ -144,6 +144,111 @@ class VipPriceGuardServiceTest extends TestCase
 
             $this->assertTrue($result['corrected'], "Expected {$wrongPrice} to be rejected");
         }
+    }
+
+    public function test_rejects_normal_price_when_two_vip_products_are_mentioned(): void
+    {
+        ProductStock::create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'stock_code' => 'NLMBM',
+            'aliases' => ['BM'],
+            'in_stock' => true,
+            'display_order' => 2,
+            'price' => 1100,
+            'vip_price' => 1000,
+        ]);
+
+        $result = $this->guard->enforce(
+            'Nolimit Personal กับ BM ราคา 1,100 บาทเท่ากันครับ',
+            null,
+            $this->vipConversation
+        );
+
+        $this->assertTrue($result['corrected']);
+    }
+
+    public function test_allows_non_vip_limit_amount_without_space_before_thai_text(): void
+    {
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->vipConversation->bot_id,
+            'memory_notes' => [],
+        ]);
+        $content = 'BM 5 ตัวครับ Limitเริ่มต้น 1,600 บาท';
+
+        $result = $this->guard->enforce($content, null, $conversation);
+
+        $this->assertFalse($result['corrected']);
+        $this->assertSame($content, $result['content']);
+    }
+
+    public function test_allows_non_vip_limit_amount_on_product_line(): void
+    {
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->vipConversation->bot_id,
+            'memory_notes' => [],
+        ]);
+        $content = 'BM 5 ตัวครับ ขอแจ้งก่อนนะครับ Limit เริ่มต้นที่ 1,600 บาท';
+
+        $result = $this->guard->enforce($content, null, $conversation);
+
+        $this->assertFalse($result['corrected']);
+        $this->assertSame($content, $result['content']);
+    }
+
+    public function test_allows_price_of_another_mentioned_product(): void
+    {
+        ProductStock::create([
+            'name' => 'Page',
+            'slug' => 'page',
+            'stock_code' => 'PAGE',
+            'aliases' => [],
+            'in_stock' => true,
+            'display_order' => 2,
+            'price' => 199,
+            'vip_price' => null,
+        ]);
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->vipConversation->bot_id,
+            'memory_notes' => [],
+        ]);
+        $content = 'Nolimit BM 1 ตัว กับ Page 199 บาทครับ';
+
+        $result = $this->guard->enforce($content, null, $conversation);
+
+        $this->assertFalse($result['corrected']);
+        $this->assertSame($content, $result['content']);
+    }
+
+    public function test_still_rejects_incorrect_non_vip_price(): void
+    {
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->vipConversation->bot_id,
+            'memory_notes' => [],
+        ]);
+        $result = $this->guard->enforce('Nolimit BM ราคา 1,600 บาทครับ', null, $conversation);
+
+        $this->assertTrue($result['corrected']);
+    }
+
+    public function test_vip_still_rejects_normal_price_with_limit_on_same_line(): void
+    {
+        $result = $this->guard->enforce(
+            'BM ราคา 1,100 บาท Limit เริ่มต้น 1,600 บาท',
+            null,
+            $this->vipConversation
+        );
+
+        $this->assertTrue($result['corrected']);
+    }
+
+    public function test_allows_vip_price_with_limit_on_same_line(): void
+    {
+        $content = 'BM 2 ตัว ราคา 1,000 บาท Limit 1,600 บาท';
+        $result = $this->guard->enforce($content, null, $this->vipConversation);
+
+        $this->assertFalse($result['corrected']);
+        $this->assertSame($content, $result['content']);
     }
 
     public function test_allows_visible_normal_and_vip_comparison(): void
