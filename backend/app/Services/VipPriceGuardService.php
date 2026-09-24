@@ -95,7 +95,7 @@ class VipPriceGuardService
                 foreach ($matches[1] ?? [] as [$amount, $offset]) {
                     $value = (float) str_replace(',', '', $amount);
                     if ($this->isAdSpendLimitAmount($line, $offset)
-                        || $this->isAnotherMentionedProductPrice($line, $value, $product, $allProducts)) {
+                        || $this->isAnotherMentionedProductPrice($line, $value, $products, $allProducts)) {
                         continue;
                     }
                     $amounts[] = $value;
@@ -124,18 +124,20 @@ class VipPriceGuardService
     {
         $precedingText = mb_substr(substr($line, 0, $amountOffset), -25);
 
-        return preg_match('/(?:\blimit\b|ลิมิต|วงเงิน)/iu', $precedingText) === 1;
+        return preg_match('/(?<![a-z])limit|ลิมิต|วงเงิน/iu', $precedingText) === 1;
     }
 
-    /** @param Collection<int, ProductStock> $allProducts */
+    /** @param Collection<int, ProductStock> $guardedProducts
+     *  @param Collection<int, ProductStock> $allProducts
+     */
     private function isAnotherMentionedProductPrice(
         string $line,
         float $amount,
-        ProductStock $product,
+        Collection $guardedProducts,
         Collection $allProducts,
     ): bool {
         foreach ($allProducts as $otherProduct) {
-            if ($otherProduct->is($product)
+            if ($guardedProducts->contains(fn (ProductStock $guardedProduct) => $guardedProduct->is($otherProduct))
                 || ! $this->pricing->textMentionsProduct($line, $otherProduct)
                 || $otherProduct->price === null) {
                 continue;

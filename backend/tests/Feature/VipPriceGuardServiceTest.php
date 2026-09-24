@@ -146,6 +146,42 @@ class VipPriceGuardServiceTest extends TestCase
         }
     }
 
+    public function test_rejects_normal_price_when_two_vip_products_are_mentioned(): void
+    {
+        ProductStock::create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'stock_code' => 'NLMBM',
+            'aliases' => ['BM'],
+            'in_stock' => true,
+            'display_order' => 2,
+            'price' => 1100,
+            'vip_price' => 1000,
+        ]);
+
+        $result = $this->guard->enforce(
+            'Nolimit Personal กับ BM ราคา 1,100 บาทเท่ากันครับ',
+            null,
+            $this->vipConversation
+        );
+
+        $this->assertTrue($result['corrected']);
+    }
+
+    public function test_allows_non_vip_limit_amount_without_space_before_thai_text(): void
+    {
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $this->vipConversation->bot_id,
+            'memory_notes' => [],
+        ]);
+        $content = 'BM 5 ตัวครับ Limitเริ่มต้น 1,600 บาท';
+
+        $result = $this->guard->enforce($content, null, $conversation);
+
+        $this->assertFalse($result['corrected']);
+        $this->assertSame($content, $result['content']);
+    }
+
     public function test_allows_non_vip_limit_amount_on_product_line(): void
     {
         $conversation = Conversation::factory()->create([
