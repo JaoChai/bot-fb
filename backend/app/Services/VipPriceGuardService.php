@@ -128,7 +128,7 @@ class VipPriceGuardService
     }
 
     /** @param Collection<int, ProductStock> $guardedProducts
-     *  @param Collection<int, ProductStock> $allProducts
+     * @param  Collection<int, ProductStock>  $allProducts
      */
     private function isAnotherMentionedProductPrice(
         string $line,
