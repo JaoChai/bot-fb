@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Cache;
  */
 class StockInjectionService
 {
+    /** เหลือ ≤ ค่านี้ = ใกล้หมด บอกจำนวนลูกค้าได้ (เร่งปิดการขาย) / เกินกว่านี้ = ห้ามเปิดเผยตัวเลข */
+    public const DISCLOSE_QTY_THRESHOLD = 10;
+
     public function getStockStatus(): Collection
     {
         return Cache::remember(ProductStock::STOCK_CACHE_KEY, 300, function () {
@@ -33,6 +36,12 @@ class StockInjectionService
     private function inStockWithQty(Collection $stocks): Collection
     {
         return $stocks->where('in_stock', true)->filter(fn ($p) => $p->available_count !== null);
+    }
+
+    /** ป้ายกำกับให้ LLM ไม่ต้องเทียบตัวเลขเอง */
+    private function qtyLabel(int $count): string
+    {
+        return $count <= self::DISCLOSE_QTY_THRESHOLD ? '(ใกล้หมด — บอกจำนวนได้)' : '(ของเยอะ — ห้ามบอกตัวเลข)';
     }
 
     public function buildStockInjection(Collection $stocks): string
@@ -62,9 +71,10 @@ class StockInjectionService
         $withQty = $this->inStockWithQty($stocks);
         if ($withQty->isNotEmpty()) {
             $lines[] = '[จำนวนพร้อมส่ง]: '
-                .$withQty->map(fn ($p) => "{$p->name} = {$p->available_count} ชิ้น")->implode(', ');
+                .$withQty->map(fn ($p) => "{$p->name} = {$p->available_count} ชิ้น {$this->qtyLabel($p->available_count)}")->implode(', ');
             $lines[] = 'ห้ามรับออเดอร์/เพิ่มตะกร้า/สรุปยอดเกินจำนวนพร้อมส่งเด็ดขาด!';
-            $lines[] = '- ลูกค้าสั่งไม่เกินจำนวนพร้อมส่ง → ขายปกติ ห้ามพูดถึงจำนวนคงเหลือ';
+            $lines[] = '- ลูกค้าถามจำนวน/มีกี่ตัว → ทำตามป้าย: "ห้ามบอกตัวเลข" = ตอบว่ามีพร้อมส่งเยอะ ห้ามบอกเลข / "บอกจำนวนได้" = บอกจำนวนที่เหลือได้';
+            $lines[] = '- ลูกค้าสั่งไม่เกินจำนวนพร้อมส่ง → ขายปกติ ไม่ต้องพูดถึงจำนวนคงเหลือเอง';
             $lines[] = '- ลูกค้าสั่งเกิน → เสนอขายเท่าที่มี บอกจำนวนที่พร้อมส่งตอนนี้'
                 .' และแจ้งว่าส่วนที่เหลือของเข้าแล้วจะรีบแจ้ง (สรุปยอด/ราคาตามจำนวนที่ขายจริงเท่านั้น)';
         }
@@ -90,10 +100,10 @@ class StockInjectionService
         // double-injection กติกาจำนวน — LLM มักลืมกติกาที่อยู่ต้น prompt
         $withQty = $this->inStockWithQty($stocks);
         if ($withQty->isNotEmpty()) {
-            $qtyList = $withQty->map(fn ($p) => "{$p->name} = {$p->available_count}")->implode(', ');
+            $qtyList = $withQty->map(fn ($p) => "{$p->name} = {$p->available_count} {$this->qtyLabel($p->available_count)}")->implode(', ');
             $parts[] = "⛔ QTY REMINDER: จำนวนพร้อมส่ง → {$qtyList} — ห้ามรับออเดอร์เกินจำนวนนี้!"
                 .' ลูกค้าสั่งเกิน → เสนอขายเท่าที่มี + แจ้งว่าส่วนที่เหลือของเข้าแล้วจะรีบแจ้ง'
-                .' (สั่งไม่เกิน → ขายปกติ ห้ามพูดถึงจำนวนคงเหลือ)';
+                .' (ลูกค้าถามจำนวน → ทำตามป้าย / สั่งไม่เกิน → ขายปกติ ไม่พูดถึงจำนวนเอง)';
         }
 
         return implode("\n", $parts);
