@@ -6,6 +6,7 @@ import type {
   Bot,
   Conversation,
   CustomerProfile,
+  DashboardBotSummary,
   Flow,
   Message,
   PaginationMeta,
@@ -57,6 +58,20 @@ export const bot = {
   created_at: '2026-01-01T00:00:00.000000Z',
   updated_at: '2026-01-01T00:00:00.000000Z',
 } satisfies Bot
+
+// Dashboard summary row (DashboardData.bots[] in src/types/api.ts) — narrower
+// than `bot`, which is a full Bot.
+export const dashboardBot = {
+  id: 1,
+  name: 'E2E Bot',
+  status: 'active',
+  channel_type: 'testing',
+  last_active_at: '2026-01-01T00:00:00.000000Z',
+  conversation_count: 1,
+  active_conversations: 1,
+  handover_count: 0,
+  messages_today: 1,
+} satisfies DashboardBotSummary
 
 export const customerProfile = {
   id: 1,

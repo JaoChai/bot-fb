@@ -2,6 +2,7 @@ import { test as base, expect } from '@playwright/test'
 import {
   bot,
   conversation,
+  dashboardBot,
   flow,
   message,
   pagination,
@@ -76,7 +77,7 @@ export const test = base.extend<Fixtures>({
                 vip_customers: 0,
                 vip_total_spent: 0,
               },
-              bots: [bot],
+              bots: [dashboardBot],
             },
           },
         }),
