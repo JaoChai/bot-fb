@@ -75,6 +75,40 @@ class VipPriceGuardServiceTest extends TestCase
         $this->assertSame($payload, $result['order_payload']);
     }
 
+    public function test_correction_reports_offending_line_and_amounts_for_diagnosis(): void
+    {
+        $result = $this->guard->enforce(
+            "สวัสดีครับ\nNolimit Level Up+ Personal ตัวละ 1,250 บาทครับ",
+            null,
+            $this->vipConversation
+        );
+
+        $this->assertTrue($result['corrected']);
+        $this->assertSame('informational_price', $result['reason']['type']);
+        $this->assertSame('Nolimit Level Up+ Personal ตัวละ 1,250 บาทครับ', $result['reason']['line']);
+        $this->assertSame([1250.0], $result['reason']['amounts']);
+        $this->assertSame(1000.0, $result['reason']['expected']);
+    }
+
+    public function test_correction_reports_payload_reason(): void
+    {
+        $result = $this->guard->enforce(
+            'ตรวจสอบรายการให้แล้วครับ',
+            ['items' => [['name' => 'Nolimit Level Up+ Personal', 'qty' => 1, 'total' => '1100']], 'total' => 1100],
+            $this->vipConversation
+        );
+
+        $this->assertSame('order_payload', $result['reason']['type']);
+    }
+
+    public function test_unchanged_result_has_no_reason(): void
+    {
+        $result = $this->guard->enforce('Nolimit Level Up+ Personal ราคา 1,000 บาท', null, $this->vipConversation);
+
+        $this->assertFalse($result['corrected']);
+        $this->assertNull($result['reason']);
+    }
+
     public function test_rejects_stale_hidden_order_payload_even_when_visible_text_has_no_price(): void
     {
         $result = $this->guard->enforce(
