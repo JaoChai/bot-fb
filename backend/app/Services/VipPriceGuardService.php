@@ -19,7 +19,7 @@ class VipPriceGuardService
      * non-canonical price for NLMP/NLMBM.
      *
      * @param  array{items?: array<int, mixed>, total?: float}|null  $orderPayload
-     * @return array{content: string, order_payload: ?array, corrected: bool}
+     * @return array{content: string, order_payload: ?array, corrected: bool, reason: ?array}
      */
     public function enforce(string $content, ?array $orderPayload, ?Conversation $conversation): array
     {
@@ -37,14 +37,20 @@ class VipPriceGuardService
 
         $invalidVisibleOrder = $this->orderDataIsInvalid($visibleOrder, $isVip, $products);
         $invalidPayload = $this->orderDataIsInvalid($orderPayload, $isVip, $products);
-        $invalidInformationalPrice = $visiblePriceStatus === null
-            && $this->containsIncorrectInformationalPrice($content, $products, $isVip);
+        // เหตุผลที่จับได้ — ส่งให้ caller log ไว้ย้อนตรวจ false positive (ข้อความเดิมจะถูกทับ)
+        $reason = match (true) {
+            $invalidVisibleOrder => ['type' => 'visible_order'],
+            $invalidPayload => ['type' => 'order_payload'],
+            $visiblePriceStatus === null => $this->findIncorrectInformationalPrice($content, $products, $isVip),
+            default => null,
+        };
 
-        if ($invalidVisibleOrder || $invalidPayload || $invalidInformationalPrice) {
+        if ($reason !== null) {
             return [
                 'content' => $this->correctiveMessage($products, $isVip),
                 'order_payload' => null,
                 'corrected' => true,
+                'reason' => $reason,
             ];
         }
 
@@ -75,12 +81,15 @@ class VipPriceGuardService
         return PaymentMessageDetector::itemsMatchTotal($data['items'], (float) $normalizedTotal) === false;
     }
 
-    /** @param Collection<int, ProductStock> $products */
-    private function containsIncorrectInformationalPrice(
+    /**
+     * @param  Collection<int, ProductStock>  $products
+     * @return array{type: string, line: string, amounts: array<int, float>, expected: float}|null
+     */
+    private function findIncorrectInformationalPrice(
         string $content,
         Collection $products,
         bool $isVip,
-    ): bool {
+    ): ?array {
         $lines = preg_split('/\R/u', $content) ?: [$content];
         $allProducts = ProductStock::query()->get();
 
@@ -113,11 +122,11 @@ class VipPriceGuardService
                     continue;
                 }
 
-                return true;
+                return ['type' => 'informational_price', 'line' => $line, 'amounts' => $amounts, 'expected' => $expected];
             }
         }
 
-        return false;
+        return null;
     }
 
     private function isAdSpendLimitAmount(string $line, int $amountOffset): bool
@@ -193,9 +202,9 @@ class VipPriceGuardService
         return $pricingText."\nรบกวนพี่พิมพ์รายการและจำนวนอีกครั้ง เดี๋ยวสรุปยอดใหม่ให้ถูกต้องและตรวจสต็อกให้ครับ";
     }
 
-    /** @return array{content: string, order_payload: ?array, corrected: false} */
+    /** @return array{content: string, order_payload: ?array, corrected: false, reason: null} */
     private function unchanged(string $content, ?array $orderPayload): array
     {
-        return ['content' => $content, 'order_payload' => $orderPayload, 'corrected' => false];
+        return ['content' => $content, 'order_payload' => $orderPayload, 'corrected' => false, 'reason' => null];
     }
 }

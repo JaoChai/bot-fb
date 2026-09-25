@@ -9,6 +9,7 @@ use App\Services\AIService;
 use App\Services\Guardrail\OffTopicCircuitBreaker;
 use App\Services\RAGService;
 use App\Services\StockGuardService;
+use App\Services\VipPriceGuardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -114,6 +115,43 @@ class AIServiceGuardrailTest extends TestCase
         $this->assertStringContainsString('หมดสต็อกชั่วคราว', $result['content']);
         $this->assertFalse($result['stock_guard']['blocked']);
         $this->assertSame('BM ราคา 1,100 บาทครับ', $result['stock_guard']['original_preview']);
+    }
+
+    #[Test]
+    public function test_vip_price_guard_correction_logs_original_content_and_reason(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $reason = ['type' => 'informational_price', 'line' => 'BM 1,600 บาท', 'amounts' => [1600.0], 'expected' => 1100.0];
+
+        $this->mock(RAGService::class, function ($m) {
+            $m->shouldReceive('generateResponse')->once()->andReturn([
+                'content' => 'BM 1,600 บาทครับ',
+                'model' => 'test',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]);
+        });
+        $this->mock(StockGuardService::class, function ($m) {
+            $m->shouldReceive('validate')->andReturn(['blocked' => false]);
+        });
+        $this->mock(VipPriceGuardService::class, function ($m) use ($reason) {
+            $m->shouldReceive('enforce')->once()->andReturn([
+                'content' => 'ราคาปกติสำหรับ NLMP คือ 1,100 บาท/ตัวครับ',
+                'order_payload' => null,
+                'corrected' => true,
+                'reason' => $reason,
+            ]);
+        });
+        Log::spy();
+
+        $result = app(AIService::class)->generateResponse($bot, 'BM วงเงินเท่าไหร่', $conversation);
+
+        $this->assertStringStartsWith('ราคาปกติสำหรับ NLMP', $result['content']);
+        Log::shouldHaveReceived('warning')->with('VIP price guard corrected an inconsistent response', [
+            'bot_id' => $bot->id,
+            'conversation_id' => $conversation->id,
+            'reason' => $reason,
+            'original_content' => 'BM 1,600 บาทครับ',
+        ])->once();
     }
 
     #[Test]

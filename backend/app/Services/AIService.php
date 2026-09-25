@@ -109,6 +109,9 @@ class AIService
             Log::warning('VIP price guard corrected an inconsistent response', [
                 'bot_id' => $bot->id,
                 'conversation_id' => $conversation?->id,
+                'reason' => $vipPriceResult['reason'],
+                // ข้อความเดิมถูกทับก่อนบันทึก DB — เก็บไว้ที่นี่ที่เดียวเพื่อย้อนตรวจ false positive
+                'original_content' => mb_substr((string) ($result['content'] ?? ''), 0, 1000),
             ]);
             $result['vip_price_guard'] = ['corrected' => true];
         }
