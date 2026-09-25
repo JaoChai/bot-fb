@@ -1,5 +1,13 @@
 import { test as base, expect } from '@playwright/test'
-import { user, token } from './mock-data'
+import {
+  bot,
+  conversation,
+  flow,
+  message,
+  pagination,
+  user,
+  token,
+} from './mock-data'
 
 type Fixtures = {
   mockApi: void
@@ -51,24 +59,24 @@ export const test = base.extend<Fixtures>({
       )
 
       // Dashboard needs summary OBJECTS (DashboardPage reads
-      // data?.summary.messages_today — an array would throw), plus an empty
-      // bots list. Shapes = DashboardData / CostAnalyticsData from
-      // src/types/api.ts.
+      // data?.summary.messages_today — an array would throw), plus one bot so
+      // the "การเชื่อมต่อล่าสุด" list is populated. Shapes = DashboardData /
+      // CostAnalyticsData from src/types/api.ts.
       await page.route('**/api/dashboard/summary', (route) =>
         route.fulfill({
           json: {
             data: {
               summary: {
-                total_bots: 0,
-                active_bots: 0,
-                total_conversations: 0,
-                active_conversations: 0,
-                messages_today: 0,
+                total_bots: 1,
+                active_bots: 1,
+                total_conversations: 1,
+                active_conversations: 1,
+                messages_today: 1,
                 messages_yesterday: 0,
                 vip_customers: 0,
                 vip_total_spent: 0,
               },
-              bots: [],
+              bots: [bot],
             },
           },
         }),
@@ -96,9 +104,66 @@ export const test = base.extend<Fixtures>({
         }),
       )
 
-      // All other dashboard reads are null-safe with defaults, so the
-      // catch-all { data: [] } is enough for them (orders summary,
-      // orders list, product stocks).
+      // Bots list (BotsPage / ChatPage / FlowEditorPage sidebars).
+      // PaginatedResponse<Bot> from useKnowledgeBase.ts useBots().
+      await page.route('**/api/bots', (route) =>
+        route.fulfill({ json: { data: [bot], meta: pagination } }),
+      )
+      // Single bot detail — ApiResponse<Bot> (useConnections.ts).
+      await page.route('**/api/bots/1', (route) =>
+        route.fulfill({ json: { data: bot } }),
+      )
+      // Bot settings — ApiResponse<BotSettings> (useBotSettings.ts); minimal
+      // object is fine, consumers null-check their fields.
+      await page.route('**/api/bots/1/settings', (route) =>
+        route.fulfill({ json: { data: { id: 1, bot_id: 1 } } }),
+      )
+
+      // Flows — PaginatedResponse<Flow> (useFlows.ts useFlows) and
+      // ApiResponse<Flow> (useFlow) for the editor detail.
+      await page.route('**/api/bots/1/flows', (route) =>
+        route.fulfill({ json: { data: [flow], meta: pagination } }),
+      )
+      await page.route('**/api/bots/1/flows/1', (route) =>
+        route.fulfill({ json: { data: flow } }),
+      )
+      // Knowledge bases for the editor's Knowledge tab —
+      // apiGet<{ data: KnowledgeBaseListItem[] }> (useKnowledgeBase.ts).
+      await page.route('**/api/knowledge-bases', (route) =>
+        route.fulfill({ json: { data: [] } }),
+      )
+
+      // Chat — conversations list is ConversationsResponse
+      // (hooks/chat/useConversationList.ts): { data, meta } with
+      // status_counts. A `conversations*` glob stops at `/`, so it matches
+      // the list URL's query string but NOT /tags, /notes, /mark-as-read,
+      // /messages (each needs a different shape — narrow routes below win by
+      // being registered later).
+      await page.route('**/api/bots/1/conversations*', (route) =>
+        route.fulfill({
+          json: {
+            data: [conversation],
+            meta: { ...pagination, status_counts: { active: 1, closed: 0, handover: 0, total: 1 } },
+          },
+        }),
+      )
+      await page.route('**/api/bots/1/conversations/1/messages*', (route) =>
+        route.fulfill({
+          json: { data: [message], meta: pagination },
+        }),
+      )
+      // useBotTags → TagsResponse { data: string[] }.
+      await page.route('**/api/bots/1/conversations/tags', (route) =>
+        route.fulfill({ json: { data: [] } }),
+      )
+      // useNotes → NotesResponse { data: ConversationNote[] }.
+      await page.route('**/api/bots/1/conversations/1/notes', (route) =>
+        route.fulfill({ json: { data: [] } }),
+      )
+      // useMarkAsRead → ConversationResponse { data: Conversation }.
+      await page.route('**/api/bots/1/conversations/1/mark-as-read', (route) =>
+        route.fulfill({ json: { data: conversation } }),
+      )
 
       // Block realtime so no websocket reaches a real host.
       await page.route(/pusher|reverb|sockjs/, (route) => route.abort())
