@@ -34,8 +34,41 @@ class StockInjectionServiceTest extends TestCase
 
         $this->assertStringContainsString('[จำนวนพร้อมส่ง]: BM แดง = 5 ชิ้น', $result);
         $this->assertStringContainsString('ห้ามรับออเดอร์/เพิ่มตะกร้า/สรุปยอดเกินจำนวนพร้อมส่ง', $result);
-        $this->assertStringContainsString('ห้ามพูดถึงจำนวนคงเหลือ', $result);
         $this->assertStringContainsString('เสนอขายเท่าที่มี', $result);
+    }
+
+    public function test_injection_labels_plenty_stock_as_do_not_disclose(): void
+    {
+        $result = $this->service->buildStockInjection(collect([
+            $this->stockProduct('BM', 78),
+        ]));
+
+        $this->assertStringContainsString('BM = 78 ชิ้น (ของเยอะ — ห้ามบอกตัวเลข)', $result);
+        $this->assertStringContainsString('ลูกค้าถามจำนวน', $result);
+    }
+
+    public function test_injection_labels_low_stock_as_disclosable_at_threshold(): void
+    {
+        $result = $this->service->buildStockInjection(collect([
+            $this->stockProduct('BM', 10),
+            $this->stockProduct('Personal', 6),
+            $this->stockProduct('G3D', 11),
+        ]));
+
+        $this->assertStringContainsString('BM = 10 ชิ้น (ใกล้หมด — บอกจำนวนได้)', $result);
+        $this->assertStringContainsString('Personal = 6 ชิ้น (ใกล้หมด — บอกจำนวนได้)', $result);
+        $this->assertStringContainsString('G3D = 11 ชิ้น (ของเยอะ — ห้ามบอกตัวเลข)', $result);
+    }
+
+    public function test_reminder_carries_disclosure_labels(): void
+    {
+        $result = $this->service->buildStockReminder(collect([
+            $this->stockProduct('BM', 78),
+            $this->stockProduct('G3D', 4),
+        ]));
+
+        $this->assertStringContainsString('BM = 78 (ของเยอะ — ห้ามบอกตัวเลข)', $result);
+        $this->assertStringContainsString('G3D = 4 (ใกล้หมด — บอกจำนวนได้)', $result);
     }
 
     public function test_injection_skips_qty_for_null_count_and_out_of_stock(): void
