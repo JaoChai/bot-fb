@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "check:chunks": "node scripts/check-initial-chunks.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
