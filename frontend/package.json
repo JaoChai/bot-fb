@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
@@ -52,6 +53,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
+    "@playwright/test": "^1.63.0",
     "@rolldown/plugin-babel": "^0.2.3",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

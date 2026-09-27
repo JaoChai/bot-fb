@@ -30,4 +30,14 @@ export default defineConfig([
       'react-hooks/refs': 'error',
     },
   },
+  {
+    // Playwright e2e: `await use(...)` inside fixtures is fixture
+    // registration, not a React hook call, and `({}, use)` is the idiomatic
+    // signature for fixtures that don't need the page. Neither rule applies.
+    files: ['e2e/**/*.ts', 'playwright.config.ts'],
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+      'no-empty-pattern': 'off',
+    },
+  },
 ])
