@@ -69,6 +69,9 @@ jobs:
       - name: TypeScript check and production build
         working-directory: frontend
         run: npm run build
+      - name: Check initial chunks
+        working-directory: frontend
+        run: npm run check:chunks
       - name: Install Playwright browser
         working-directory: frontend
         run: npx playwright install --with-deps chromium
