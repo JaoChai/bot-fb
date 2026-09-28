@@ -161,7 +161,8 @@ PROMPT;
                 model: $model,
                 temperature: 0.1,
                 maxTokens: 200,
-                useFallback: false
+                useFallback: false,
+                reasoning: ['effort' => 'none'], // งานสั้น — ไม่ให้ token คิดกินงบ maxTokens
             );
 
             return $this->parseResponse($response['content'] ?? '');

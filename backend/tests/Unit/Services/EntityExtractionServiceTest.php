@@ -249,7 +249,7 @@ class EntityExtractionServiceTest extends TestCase
 
         $this->openRouter->expects($this->once())
             ->method('chat')
-            ->with($this->anything(), 'anthropic/claude-3-haiku', $this->anything(), $this->anything(), $this->anything(), $this->anything())
+            ->with($this->anything(), 'anthropic/claude-3-haiku', $this->anything(), $this->anything(), $this->anything(), $this->anything(), $this->anything(), ['effort' => 'none'])
             ->willReturn(['content' => '{"entities": []}']);
 
         $this->service->extractAndSave($conversation);

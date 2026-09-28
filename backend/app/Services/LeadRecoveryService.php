@@ -324,7 +324,8 @@ class LeadRecoveryService
                 model: $model,
                 temperature: 0.7,
                 maxTokens: 150,
-                useFallback: true
+                useFallback: true,
+                reasoning: ['effort' => 'none'], // งานสั้น — ไม่ให้ token คิดกินงบ maxTokens
             );
 
             $generatedMessage = trim($result['content'] ?? '');

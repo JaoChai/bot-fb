@@ -10,9 +10,10 @@ class ModelCapabilityService
 {
     private const CACHE_TTL = 86400; // 24 hours for per-model merged cache
 
-    private const CACHE_PREFIX = 'model_cap';
+    // v2: เพิ่ม supports_reasoning_off — bump key ให้ cache เก่าที่ไม่มีฟิลด์นี้ไม่ถูกอ่าน
+    private const CACHE_PREFIX = 'model_cap_v2';
 
-    private const ALL_MODELS_CACHE_KEY = 'model_cap:all_models';
+    private const ALL_MODELS_CACHE_KEY = 'model_cap_v2:all_models';
 
     private const ALL_MODELS_CACHE_TTL = 21600; // 6 hours
 
@@ -49,6 +50,15 @@ class ModelCapabilityService
     public function isMandatoryReasoning(string $modelId): bool
     {
         return $this->getCapabilities($modelId)['is_mandatory_reasoning'] ?? false;
+    }
+
+    /**
+     * Check if reasoning can be switched off (OpenRouter lists effort "none").
+     * Mandatory-reasoning models (e.g. gemini-3.5-flash-lite, glm-5.3-flashx) reject "none" with a 400.
+     */
+    public function supportsReasoningOff(string $modelId): bool
+    {
+        return $this->getCapabilities($modelId)['supports_reasoning_off'] ?? false;
     }
 
     /**
@@ -417,6 +427,9 @@ class ModelCapabilityService
         // Reasoning detection from supported_parameters
         $supportsReasoning = in_array('reasoning', $supportedParams, true);
 
+        // effort "none" is listed only when reasoning is optional for this model
+        $supportsReasoningOff = in_array('none', $model['reasoning']['supported_efforts'] ?? [], true);
+
         // Structured output detection from supported_parameters
         $supportsStructuredOutput = in_array('structured_outputs', $supportedParams, true);
 
@@ -432,6 +445,7 @@ class ModelCapabilityService
             'supports_vision' => $supportsVision,
             'supports_reasoning' => $supportsReasoning,
             'is_mandatory_reasoning' => false, // Only from config override
+            'supports_reasoning_off' => $supportsReasoningOff,
             'supports_structured_output' => $supportsStructuredOutput,
             'context_length' => (int) ($model['context_length'] ?? $architecture['context_length'] ?? 4096),
             'max_output_tokens' => (int) ($architecture['max_output_tokens'] ?? $model['top_provider']['max_completion_tokens'] ?? 4096),

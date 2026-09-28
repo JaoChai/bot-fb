@@ -97,7 +97,10 @@ class OpenRouterService
             // ถูกคิดรวมใน max_tokens จน helper ที่ตั้ง token ต่ำ (plugin 256, order 300) ได้ JSON ขาดกลางทาง
             // ข้อจำกัด: payload เดียวใช้ร่วมทั้ง models[] — native fallback จึงได้ reasoning เดียวกับ primary
             // (OpenRouter ignore param ที่โมเดลไม่รองรับ; ส่วน client-side fallback ด้านล่างส่ง reasoning:null แยกแล้ว)
-            if ($reasoning !== null && $capService->supportsReasoning($model)) {
+            // effort "none" (งานเบื้องหลัง) ส่งเฉพาะโมเดลที่ปิด reasoning ได้ — โมเดล mandatory ตอบ 400
+            // ข้อจำกัดเดิม: ถ้า OpenRouter ถอยไป native fallback ที่ปิดไม่ได้ (เช่น glm) request นั้น fail
+            $reasoningOffBlocked = ($reasoning['effort'] ?? null) === 'none' && ! $capService->supportsReasoningOff($model);
+            if ($reasoning !== null && ! $reasoningOffBlocked && $capService->supportsReasoning($model)) {
                 $payload['reasoning'] = $reasoning;
                 Log::debug('Using reasoning mode', ['model' => $model, 'reasoning' => $payload['reasoning']]);
             }

@@ -177,7 +177,7 @@ class ModelCapabilityServiceTest extends TestCase
         $this->service->getCapabilities('openai/gpt-4o');
 
         // Verify cached
-        $cacheKey = 'model_cap:openai_gpt-4o';
+        $cacheKey = 'model_cap_v2:openai_gpt-4o';
         $this->assertTrue(Cache::has($cacheKey));
     }
 
@@ -189,7 +189,7 @@ class ModelCapabilityServiceTest extends TestCase
         $capabilities1 = $this->service->getCapabilities('openai/gpt-4o');
 
         // Modify cache to verify it's being used
-        $cacheKey = 'model_cap:openai_gpt-4o';
+        $cacheKey = 'model_cap_v2:openai_gpt-4o';
         $modifiedCapabilities = $capabilities1;
         $modifiedCapabilities['test_marker'] = 'cached_value';
         Cache::put($cacheKey, $modifiedCapabilities, 3600);
@@ -207,7 +207,7 @@ class ModelCapabilityServiceTest extends TestCase
         // Populate cache
         $this->service->getCapabilities('openai/gpt-4o');
 
-        $cacheKey = 'model_cap:openai_gpt-4o';
+        $cacheKey = 'model_cap_v2:openai_gpt-4o';
         $this->assertTrue(Cache::has($cacheKey));
 
         // Invalidate
@@ -442,7 +442,7 @@ class ModelCapabilityServiceTest extends TestCase
         // Different case variations should produce same cache key
         $this->service->getCapabilities('OpenAI/GPT-4o');
 
-        $cacheKey = 'model_cap:openai_gpt-4o';
+        $cacheKey = 'model_cap_v2:openai_gpt-4o';
         $this->assertTrue(Cache::has($cacheKey));
     }
 

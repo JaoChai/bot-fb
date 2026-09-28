@@ -232,7 +232,7 @@ class FlowPluginServiceTest extends TestCase
         $openRouter = $this->createMock(OpenRouterService::class);
         $openRouter->expects($this->once())
             ->method('chat')
-            ->with($this->anything(), 'anthropic/claude-3-haiku', $this->anything(), $this->anything(), $this->anything(), $this->anything())
+            ->with($this->anything(), 'anthropic/claude-3-haiku', $this->anything(), $this->anything(), $this->anything(), $this->anything(), $this->anything(), ['effort' => 'none'])
             ->willReturn(['content' => '{"triggered": false}']);
 
         $service = new FlowPluginService($openRouter);
