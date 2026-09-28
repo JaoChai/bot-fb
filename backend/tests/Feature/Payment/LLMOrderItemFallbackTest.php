@@ -66,6 +66,7 @@ class LLMOrderItemFallbackTest extends TestCase
         $openRouter = $this->createMock(OpenRouterService::class);
         $openRouter->expects($this->once())
             ->method('chat')
+            ->with($this->anything(), $this->anything(), $this->anything(), $this->anything(), $this->anything(), $this->anything(), $this->anything(), ['effort' => 'none'])
             ->willReturn([
                 'content' => '{"items":[{"name":"Nolimit Level Up+ Personal","qty":1,"total":"1000"},{"name":"Page","qty":1,"total":"600"}]}',
             ]);

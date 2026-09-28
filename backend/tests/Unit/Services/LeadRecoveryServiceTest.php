@@ -521,8 +521,10 @@ class LeadRecoveryServiceTest extends TestCase
 
         $this->openRouterService->shouldReceive('chat')
             ->once()
-            ->withArgs(function ($messages, $model) {
-                return $model === 'anthropic/claude-3-haiku';
+            ->withArgs(function (...$args) {
+                // chat() positional order: messages, model, temperature, maxTokens, useFallback, fallbackOverride, timeout, reasoning
+                return $args[1] === 'anthropic/claude-3-haiku'
+                    && ($args[7] ?? null) === ['effort' => 'none'];
             })
             ->andReturn(['content' => 'สวัสดีค่ะ ยังสนใจสินค้าตัว A อยู่ไหมคะ?']);
 

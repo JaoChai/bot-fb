@@ -132,6 +132,7 @@ PROMPT;
                 temperature: 0.1,
                 maxTokens: 300,
                 useFallback: false,
+                reasoning: ['effort' => 'none'], // งานสั้น — ไม่ให้ token คิดกินงบ maxTokens
             );
         } catch (\Throwable $e) {
             Log::warning('OrderReconstructor: LLM call failed', ['bot_id' => $bot->id, 'error' => $e->getMessage()]);

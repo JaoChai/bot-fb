@@ -226,7 +226,8 @@ PROMPT,
             temperature: 0.1,
             maxTokens: 256,
             useFallback: false,
-            timeout: 15
+            timeout: 15,
+            reasoning: ['effort' => 'none'], // งานสั้น — ไม่ให้ token คิดกินงบ maxTokens
         );
 
         $responseContent = $result['content'] ?? '';

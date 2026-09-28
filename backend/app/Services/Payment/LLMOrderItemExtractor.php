@@ -59,6 +59,7 @@ PROMPT;
                 temperature: 0.1,
                 maxTokens: 300,
                 useFallback: false,
+                reasoning: ['effort' => 'none'], // งานสั้น — ไม่ให้ token คิดกินงบ maxTokens
             );
         } catch (\Throwable $e) {
             Log::warning('LLMOrderItemExtractor: LLM call failed', [

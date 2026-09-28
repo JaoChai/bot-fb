@@ -34,7 +34,9 @@ class OrderReconstructorTest extends TestCase
     private function fakeLLM(string $json): void
     {
         $mock = Mockery::mock(OpenRouterService::class);
-        $mock->shouldReceive('chat')->andReturn(['content' => $json]);
+        $mock->shouldReceive('chat')
+            ->withArgs(fn (...$args) => ($args[7] ?? null) === ['effort' => 'none']) // 8th param = reasoning
+            ->andReturn(['content' => $json]);
         $this->app->instance(OpenRouterService::class, $mock);
     }
 

@@ -706,6 +706,66 @@ class OpenRouterServiceTest extends TestCase
         });
     }
 
+    public function test_effort_none_is_sent_to_a_model_that_can_switch_reasoning_off(): void
+    {
+        // gpt-6-luna thinks at "medium" by default; background helpers turn that off so the
+        // thinking tokens do not eat their small max_tokens (measured: 150/150 → empty reply).
+        Http::fake([
+            'openrouter.ai/api/v1/models' => Http::response(['data' => [
+                ['id' => 'openai/gpt-6-luna', 'supported_parameters' => ['reasoning'],
+                    'reasoning' => ['mandatory' => false, 'supported_efforts' => ['medium', 'low', 'none']]],
+            ]], 200),
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'g', 'model' => 'openai/gpt-6-luna',
+                'choices' => [['message' => ['content' => '{}'], 'finish_reason' => 'stop']],
+                'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+            ], 200),
+        ]);
+
+        $this->service->chat(
+            messages: [['role' => 'user', 'content' => 'hi']],
+            model: 'openai/gpt-6-luna',
+            maxTokens: 256,
+            useFallback: false,
+            reasoning: ['effort' => 'none'],
+        );
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'chat/completions')
+                && ($request->data()['reasoning']['effort'] ?? null) === 'none';
+        });
+    }
+
+    public function test_effort_none_is_not_sent_to_a_mandatory_reasoning_model(): void
+    {
+        // gemini-3.5-flash-lite / glm answer 400 "Reasoning is mandatory" to effort "none":
+        // omit the param so they keep their own default.
+        Http::fake([
+            'openrouter.ai/api/v1/models' => Http::response(['data' => [
+                ['id' => 'google/gemini-3.5-flash-lite', 'supported_parameters' => ['reasoning'],
+                    'reasoning' => ['mandatory' => true, 'supported_efforts' => ['medium', 'low', 'minimal']]],
+            ]], 200),
+            'openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'g', 'model' => 'google/gemini-3.5-flash-lite',
+                'choices' => [['message' => ['content' => '{}'], 'finish_reason' => 'stop']],
+                'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1, 'total_tokens' => 2],
+            ], 200),
+        ]);
+
+        $this->service->chat(
+            messages: [['role' => 'user', 'content' => 'hi']],
+            model: 'google/gemini-3.5-flash-lite',
+            maxTokens: 256,
+            useFallback: false,
+            reasoning: ['effort' => 'none'],
+        );
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'chat/completions')
+                && ! isset($request->data()['reasoning']);
+        });
+    }
+
     public function test_generate_bot_response_sends_effort_only_for_reasoning_models(): void
     {
         // reasoning model → effort ถูกส่ง
