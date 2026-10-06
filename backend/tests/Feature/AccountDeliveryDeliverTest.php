@@ -17,6 +17,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Mockery\MockInterface;
 use Tests\Support\InteractsWithStockPool;
 use Tests\TestCase;
@@ -334,6 +335,189 @@ class AccountDeliveryDeliverTest extends TestCase
         foreach ($accountBubbles as $b) {
             $this->assertStringNotContainsString('lin.ee/sTD5TQL', $b);
         }
+    }
+
+    /** เพิ่มบัญชีจองเข้า delivery จนรวม (กับ id 10 ของ setUp) ได้ $total บัญชี: id 10..(9+$total) */
+    private function addReservedAccounts(int $total): void
+    {
+        $pool = app(StockPoolService::class);
+        foreach (range(11, 9 + $total) as $id) {
+            $this->seedAvailable($id, 'NLMP', "uid{$id}|pass{$id}|mail|2fa");
+            $pool->reserveOne('NLMP', '1');
+            $this->delivery->items()->create([
+                'product_name' => 'Nolimit ส่วนตัว', 'stock_code' => 'NLMP', 'kind' => 'stock',
+                'qty' => 1, 'stock_item_id' => $id, 'status' => 'reserved',
+            ]);
+        }
+    }
+
+    /**
+     * mock LINE: เก็บข้อความแต่ละ push แยกกัน (คืน closure ที่ให้ array ของ string ต่อ push)
+     * $failOnCall = push ครั้งที่เท่าไรให้พัง (null = ไม่พัง)
+     */
+    private function capturePushes(?int $failOnCall = null): \Closure
+    {
+        $pushes = [];
+        $this->mock(LINEService::class, function (MockInterface $mock) use (&$pushes, $failOnCall) {
+            $mock->shouldReceive('generateRetryKey')->andReturn('rk');
+            $mock->shouldReceive('replyWithFallback')
+                ->andReturnUsing(function ($bot, $token, $userId, $messages) use (&$pushes, $failOnCall) {
+                    if ($failOnCall !== null && count($pushes) + 1 === $failOnCall) {
+                        throw new \RuntimeException('LINE down');
+                    }
+                    $pushes[] = implode("\n", array_column($messages, 'text'));
+
+                    return ['method' => 'push', 'success' => true];
+                });
+        });
+
+        return function () use (&$pushes): array {
+            return $pushes;
+        };
+    }
+
+    public function test_nine_accounts_still_go_in_a_single_push(): void
+    {
+        $this->addReservedAccounts(9);
+        $pushes = $this->capturePushes();
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        $this->assertCount(1, $pushes());
+        $this->assertSame(AccountDelivery::STATUS_DELIVERED, $this->delivery->fresh()->status);
+    }
+
+    public function test_ten_accounts_are_split_into_two_pushes_of_five(): void
+    {
+        $this->addReservedAccounts(10);
+        $pushes = $this->capturePushes();
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        [$first, $second] = $pushes();
+        $this->assertCount(2, $pushes());
+        foreach (range(10, 14) as $id) {
+            $this->assertStringContainsString("uid{$id}|pass{$id}", $first);
+            $this->assertStringNotContainsString("uid{$id}|pass{$id}", $second);
+        }
+        foreach (range(15, 19) as $id) {
+            $this->assertStringContainsString("uid{$id}|pass{$id}", $second);
+            $this->assertStringNotContainsString("uid{$id}|pass{$id}", $first);
+        }
+        // เลขลำดับนับต่อเนื่องทั้งออเดอร์
+        $this->assertStringContainsString('(1/10)', $first);
+        $this->assertStringContainsString('(10/10)', $second);
+        // support อยู่ท้ายรอบสองเท่านั้น
+        $this->assertStringNotContainsString('lin.ee/sTD5TQL', $first);
+        $this->assertStringContainsString('lin.ee/sTD5TQL', $second);
+
+        $this->assertSame(AccountDelivery::STATUS_DELIVERED, $this->delivery->fresh()->status);
+        $this->assertSame(10, DB::connection('mhha_acc')->table('items_sold')->count());
+        $this->assertSame(0, DB::connection('mhha_acc')->table('items_reserved')->count());
+    }
+
+    public function test_odd_count_gives_the_first_push_the_extra_account(): void
+    {
+        $this->addReservedAccounts(15);
+        $pushes = $this->capturePushes();
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        [$first, $second] = $pushes();
+        $this->assertSame(8, substr_count($first, '|mail|2fa'));
+        $this->assertSame(7, substr_count($second, '|mail|2fa'));
+    }
+
+    public function test_second_push_failure_keeps_first_half_sold_and_retry_sends_only_the_rest(): void
+    {
+        $this->addReservedAccounts(10);
+        $this->capturePushes(failOnCall: 2);
+
+        try {
+            app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+            $this->fail('expected exception');
+        } catch (\RuntimeException) {
+        }
+
+        // รอบแรกถึงลูกค้าแล้ว → ขายแล้ว ห้ามกลับเข้า stock; รอบสองยังจองไว้ กดส่งใหม่ได้
+        $fresh = $this->delivery->fresh();
+        $this->assertSame(AccountDelivery::STATUS_RESERVED, $fresh->status);
+        $this->assertSame(5, $fresh->items()->where('kind', 'stock')->where('status', 'delivered')->count());
+        $this->assertSame(5, DB::connection('mhha_acc')->table('items_sold')->count());
+        $this->assertSame(5, DB::connection('mhha_acc')->table('items_reserved')->count());
+
+        $pushes = $this->capturePushes();
+        app(AccountDeliveryService::class)->deliver($fresh, 'บูม');
+
+        $this->assertCount(1, $pushes());
+        $retry = $pushes()[0];
+        $this->assertStringNotContainsString('uid10|pass10', $retry);
+        foreach (range(15, 19) as $id) {
+            $this->assertStringContainsString("uid{$id}|pass{$id}", $retry);
+        }
+        $this->assertStringContainsString('(6/10)', $retry);
+        $this->assertStringContainsString('lin.ee/sTD5TQL', $retry);
+        $this->assertSame(AccountDelivery::STATUS_DELIVERED, $this->delivery->fresh()->status);
+        $this->assertSame(10, DB::connection('mhha_acc')->table('items_sold')->count());
+        $this->assertSame(0, DB::connection('mhha_acc')->table('items_reserved')->count());
+    }
+
+    public function test_bookkeeping_failure_after_push_never_reverts_to_reserved(): void
+    {
+        // push ถึงลูกค้าแล้ว แต่บันทึกสถานะ item พัง (DB ล่ม) — ห้ามย้อนเป็น reserved
+        // (reserved = ปุ่มยกเลิกคืน stock ได้ → บัญชีที่ลูกค้าได้ไปแล้วถูกขายซ้ำ) ต้องค้าง delivering ให้ reconcile เตือน
+        $this->mock(LINEService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('generateRetryKey')->andReturn('rk');
+            $mock->shouldReceive('replyWithFallback')->once()->andReturnUsing(function () {
+                Schema::rename('account_delivery_items', 'account_delivery_items_gone');
+
+                return ['method' => 'push', 'success' => true];
+            });
+        });
+
+        $threw = false;
+        try {
+            app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+        } catch (\Throwable) {
+            $threw = true;
+        }
+
+        $this->assertTrue($threw);
+        $this->assertSame(AccountDelivery::STATUS_DELIVERING, $this->delivery->fresh()->status);
+    }
+
+    public function test_cancel_after_partial_delivery_returns_only_undelivered_accounts(): void
+    {
+        $this->addReservedAccounts(10);
+        $this->capturePushes(failOnCall: 2);
+        try {
+            app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+        } catch (\RuntimeException) {
+        }
+
+        app(AccountDeliveryService::class)->cancel($this->delivery->fresh(), 'บูม');
+
+        // id ปลายทางถูก gen ใหม่ (IDENTITY) — เทียบด้วย detail แทน
+        $available = DB::connection('mhha_acc')->table('items_available')->pluck('detail')->sort()->values()->all();
+        $this->assertSame(array_map(fn ($id) => "uid{$id}|pass{$id}|mail|2fa", range(15, 19)), $available);
+        $this->assertSame(5, DB::connection('mhha_acc')->table('items_sold')->count());
+    }
+
+    public function test_card_shows_partial_progress(): void
+    {
+        $this->addReservedAccounts(10);
+        $this->capturePushes(failOnCall: 2);
+        try {
+            app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+        } catch (\RuntimeException) {
+        }
+
+        $service = app(AccountDeliveryService::class);
+        $fresh = $this->delivery->fresh();
+        $this->assertStringContainsString('ส่งแล้ว 5/10 บัญชี เหลือ 5', $service->partialNote($fresh));
+        $this->assertStringContainsString('ส่งแล้ว 5/10 บัญชี เหลือ 5', $service->cardTextForTesting($fresh));
+        // งานที่ยังไม่เริ่มส่ง ไม่มีบรรทัดนี้
+        $this->assertSame('', $service->partialNote(AccountDelivery::make()));
     }
 
     public function test_line_failure_keeps_stock_reserved(): void

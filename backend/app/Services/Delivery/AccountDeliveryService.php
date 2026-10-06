@@ -300,6 +300,26 @@ class AccountDeliveryService
         ) !== null;
     }
 
+    /**
+     * งานที่ส่งไปบางรอบแล้ว (รอบหลังพัง) — บอกเจ้าของว่าลูกค้าได้ไปแล้วกี่บัญชี เหลือเท่าไร
+     * ยังไม่เริ่มส่ง / ส่งครบแล้ว = '' (ไม่ต้องโชว์)
+     */
+    public function partialNote(AccountDelivery $delivery): string
+    {
+        if (! $delivery->exists) {
+            return '';
+        }
+        $stock = $delivery->items()->where('kind', AccountDeliveryItem::KIND_STOCK);
+        $sent = (clone $stock)->where('status', AccountDeliveryItem::ST_DELIVERED)->count();
+        $left = (clone $stock)->where('status', AccountDeliveryItem::ST_RESERVED)->count();
+        if ($sent === 0 || $left === 0) {
+            return '';
+        }
+        $total = $sent + $left;
+
+        return "⚠️ <b>ส่งแล้ว {$sent}/{$total} บัญชี เหลือ {$left}</b> — กดส่งอีกครั้งจะส่งเฉพาะที่เหลือ";
+    }
+
     /** @return array<int, array<int, array{text: string, callback_data: string}>> */
     public function cardKeyboard(AccountDelivery $delivery): array
     {
@@ -355,6 +375,9 @@ class AccountDeliveryService
                 ->whereIn('status', [AccountDeliveryItem::ST_RESERVED, AccountDeliveryItem::ST_DELIVERED])
                 ->sum('qty');
             $lines[] = "⚠️ <b>{$name}: ลูกค้าสั่ง {$item->requested_qty} แต่จองได้ {$reserved}</b> (เกินเพดานระบบ) — ส่วนที่เหลือต้องส่งเอง";
+        }
+        if ($delivery->status === AccountDelivery::STATUS_RESERVED && ($partial = $this->partialNote($delivery)) !== '') {
+            $lines[] = $partial;
         }
         if ($items !== []) {
             $lines[] = '<blockquote>'.implode("\n", $items).'</blockquote>';
@@ -420,30 +443,36 @@ class AccountDeliveryService
                 }
             }
 
-            $messages = $this->buildCustomerMessages($delivery, $stockItems, $supportItems, $reservedRows);
-            $this->pushTextsToLine($delivery, $messages['accounts'], $messages['support']);
+            // เลขลำดับนับต่อจากบัญชีที่ส่งไปแล้ว (เคสกดส่งใหม่หลังรอบสองพัง) ให้ลูกค้าเห็น (6/10) ไม่ใช่ (1/5)
+            $alreadySent = $delivery->items()
+                ->where('kind', AccountDeliveryItem::KIND_STOCK)
+                ->where('status', AccountDeliveryItem::ST_DELIVERED)
+                ->count();
+            $messages = $this->buildCustomerMessages($delivery, $stockItems, $supportItems, $reservedRows, $alreadySent);
+
+            // จัดทุกรอบให้เสร็จ + ตรวจขนาดก่อนยิงรอบแรก: ถ้ารอบไหนเกิน limit ต้องพังตอนยังไม่ส่งอะไรเลย
+            $rounds = $this->splitRounds($stockItems->values()->all(), $messages['accounts'], $messages['support']);
+            foreach ($rounds as $round) {
+                $this->assertFitsSinglePush($delivery, $round['bubbles']);
+            }
         } catch (\Throwable $e) {
             $delivery->update(['status' => AccountDelivery::STATUS_RESERVED]);
             throw $e;
         }
 
-        // ลูกค้าได้ของแล้ว — จากนี้ห้าม throw กลับไปเป็น "ยังไม่ส่ง"
-        $stockItemIds = $stockItems->pluck('stock_item_id')->all();
-        try {
-            $this->pool->markSold($stockItemIds, $confirmedByName, 'bot-fb');
-        } catch (\Throwable $e) {
-            // dispatch job ตามเก็บ (idempotent) แทนปล่อยของค้าง items_reserved ให้เจ้าของเดาเอง
-            Log::error('Delivery: markSold failed AFTER customer push — retry job dispatched', [
-                'delivery_id' => $delivery->id, 'error' => $e->getMessage(),
-            ]);
+        foreach ($rounds as $round) {
             try {
-                MarkStockSold::dispatch($stockItemIds, $confirmedByName);
-            } catch (\Throwable $dispatchError) {
-                // ลูกค้าได้ของแล้ว — dispatch พังก็ต้องจบ DELIVERED ให้ได้ (ของค้าง items_reserved ให้ reconcile จับ)
-                Log::error('Delivery: MarkStockSold dispatch failed — ของค้างรอ reconcile', [
-                    'delivery_id' => $delivery->id, 'error' => $dispatchError->getMessage(),
-                ]);
+                $this->pushToLine($delivery, $round['bubbles']);
+            } catch (\Throwable $e) {
+                // รอบนี้ไม่ถึงลูกค้า → กลับเป็น reserved ให้กดส่งใหม่ได้
+                // รอบก่อนหน้าที่ถึงแล้วเป็น delivered ไปแล้ว จะไม่ถูกส่งซ้ำ/คืน stock
+                $delivery->update(['status' => AccountDelivery::STATUS_RESERVED]);
+                throw $e;
             }
+            // รอบนี้ถึงลูกค้าแล้ว — ปิดเป็นส่งแล้ว/ขายแล้วทันที; อยู่นอก try ด้านบนโดยตั้งใจ:
+            // ถ้าบันทึกพัง (DB ล่ม) ต้องค้าง delivering ให้ reconcile เตือน "เช็คแชทก่อน" ห้ามย้อนเป็น reserved
+            // (reserved = ปุ่มยกเลิกคืน stock ได้ → บัญชีที่ลูกค้าได้ไปแล้วถูกขายซ้ำ)
+            $this->markRoundDelivered($delivery, $round['items'], $confirmedByName);
         }
 
         $delivery->update([
@@ -493,13 +522,13 @@ class AccountDeliveryService
      * แต่ละบัญชี = 1 ข้อความ; support แยกออกมาต่างหาก (null ถ้าไม่มี):
      * มีเพจ → ข้อความเพจ, บัญชีล้วน → ข้อความ Support เรื่องบัญชี/ตั้งค่า
      */
-    private function buildCustomerMessages(AccountDelivery $delivery, $stockItems, $supportItems, array $reservedRows): array
+    private function buildCustomerMessages(AccountDelivery $delivery, $stockItems, $supportItems, array $reservedRows, int $alreadySent = 0): array
     {
         $accounts = [];
-        $n = $stockItems->count();
+        $n = $alreadySent + $stockItems->count();
         foreach ($stockItems->values() as $i => $item) {
             $row = $reservedRows[$item->stock_item_id];
-            $no = $i + 1;
+            $no = $alreadySent + $i + 1;
             $text = "✅ {$item->product_name} ({$no}/{$n})\n\n{$row['detail']}";
             // แจ้ง id ตามข้อมูลจริงของแถวนั้น: BM มี bmId+adsId, ส่วนตัวมีแค่ adsId, G3D ไม่มี
             $idLines = [];
@@ -537,33 +566,96 @@ class AccountDeliveryService
     }
 
     /**
-     * ส่งเป็น push เดียวแบบ all-or-nothing (text ล้วน ห้ามผ่าน LLM/Flex) — ห้ามแบ่งหลาย push:
-     * ถ้า push แรกสำเร็จแล้ว push ถัดไปพัง ระบบจะคิดว่ายังไม่ส่งและอาจคืน stock
-     * ทั้งที่ลูกค้าได้ credential ไปแล้ว → บัญชีเดิมถูกขายซ้ำได้
-     * LINE ให้ 5 ข้อความ/push, ข้อความละ ~5000 ตัวอักษร
-     * ถ้าจัดแล้วเกิน 5 bubble หรือ bubble ไหนยาวเกิน 5000 ให้ throw ก่อนส่ง (fail-safe: ยังไม่ส่งเลย)
+     * แบ่งการส่งเป็นรอบ (1 รอบ = 1 push): บัญชี ≥ delivery.split_from → 2 รอบ ครึ่งแรกได้เศษ (15 → 8+7)
+     * น้อยกว่านั้นรอบเดียวเหมือนเดิม; support ไปท้ายรอบสุดท้ายเสมอ
+     * แต่ละรอบปิดสถานะของตัวเองหลัง push สำเร็จ (markRoundDelivered) — push ที่ถึงลูกค้าแล้วห้ามถูกนับว่า "ยังไม่ส่ง"
+     *
+     * @param  array<int, AccountDeliveryItem>  $items  เรียงตรงกับ $accounts
+     * @param  array<int, string>  $accounts
+     * @return array<int, array{items: array<int, AccountDeliveryItem>, bubbles: array<int, string>}>
      */
-    private function pushTextsToLine(AccountDelivery $delivery, array $accounts, ?string $support): void
+    private function splitRounds(array $items, array $accounts, ?string $support): array
     {
-        $conversation = $delivery->conversation;
-        $externalId = $conversation?->external_customer_id;
-        if ($conversation?->channel_type !== 'line' || ! $externalId) {
-            throw new \RuntimeException('delivery target is not a LINE conversation');
-        }
         if ($accounts === [] && $support === null) {
             throw new \RuntimeException('nothing to deliver');
         }
 
-        $messages = $this->packTexts($accounts, $support);
-        if (count($messages) > 5 || $this->anyBubbleTooLong($messages)) {
-            throw new \RuntimeException('delivery message too large for a single LINE push');
+        $count = count($accounts);
+        $splitFrom = max(2, config_int('delivery.split_from', 10));
+        $firstSize = $count >= $splitFrom ? (int) ceil($count / 2) : $count;
+        $sizes = $firstSize < $count ? [$firstSize, $count - $firstSize] : [$count];
+
+        $rounds = [];
+        $offset = 0;
+        foreach ($sizes as $i => $size) {
+            $isLast = $i === count($sizes) - 1;
+            $rounds[] = [
+                'items' => array_slice($items, $offset, $size),
+                'bubbles' => $this->packTexts(array_slice($accounts, $offset, $size), $isLast ? $support : null),
+            ];
+            $offset += $size;
         }
 
+        return $rounds;
+    }
+
+    /**
+     * LINE ให้ 5 ข้อความ/push, ข้อความละ ~5000 ตัวอักษร — เกินให้ throw ก่อนส่ง (fail-safe: ยังไม่ส่งรอบไหนเลย)
+     */
+    private function assertFitsSinglePush(AccountDelivery $delivery, array $bubbles): void
+    {
+        $conversation = $delivery->conversation;
+        if ($conversation?->channel_type !== 'line' || ! $conversation->external_customer_id) {
+            throw new \RuntimeException('delivery target is not a LINE conversation');
+        }
+        if (count($bubbles) > 5 || $this->anyBubbleTooLong($bubbles)) {
+            throw new \RuntimeException('delivery message too large for a single LINE push');
+        }
+    }
+
+    /** ส่ง 1 รอบเป็น push เดียว (text ล้วน ห้ามผ่าน LLM/Flex) — ภายในรอบเป็น all-or-nothing ตาม LINE */
+    private function pushToLine(AccountDelivery $delivery, array $bubbles): void
+    {
         $this->line->replyWithFallback(
-            $delivery->bot, null, $externalId,
-            array_map(fn (string $t) => ['type' => 'text', 'text' => $t], $messages),
+            $delivery->bot, null, $delivery->conversation->external_customer_id,
+            array_map(fn (string $t) => ['type' => 'text', 'text' => $t], $bubbles),
             $this->line->generateRetryKey(),
         );
+    }
+
+    /**
+     * ปิดรอบที่ถึงลูกค้าแล้ว: item → delivered และย้ายของเข้า items_sold
+     * markSold พัง = ห้าม throw (ลูกค้าได้ของแล้ว) → dispatch job ตามเก็บแทน
+     *
+     * @param  array<int, AccountDeliveryItem>  $items
+     */
+    private function markRoundDelivered(AccountDelivery $delivery, array $items, string $confirmedByName): void
+    {
+        if ($items === []) {
+            return;
+        }
+
+        $delivery->items()
+            ->whereIn('id', array_map(fn (AccountDeliveryItem $i) => $i->id, $items))
+            ->update(['status' => AccountDeliveryItem::ST_DELIVERED]);
+
+        $stockItemIds = array_map(fn (AccountDeliveryItem $i) => $i->stock_item_id, $items);
+        try {
+            $this->pool->markSold($stockItemIds, $confirmedByName, 'bot-fb');
+        } catch (\Throwable $e) {
+            // dispatch job ตามเก็บ (idempotent) แทนปล่อยของค้าง items_reserved ให้เจ้าของเดาเอง
+            Log::error('Delivery: markSold failed AFTER customer push — retry job dispatched', [
+                'delivery_id' => $delivery->id, 'error' => $e->getMessage(),
+            ]);
+            try {
+                MarkStockSold::dispatch($stockItemIds, $confirmedByName);
+            } catch (\Throwable $dispatchError) {
+                // ลูกค้าได้ของแล้ว — dispatch พังก็ต้องจบ DELIVERED ให้ได้ (ของค้าง items_reserved ให้ reconcile จับ)
+                Log::error('Delivery: MarkStockSold dispatch failed — ของค้างรอ reconcile', [
+                    'delivery_id' => $delivery->id, 'error' => $dispatchError->getMessage(),
+                ]);
+            }
+        }
     }
 
     /**
