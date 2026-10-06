@@ -119,6 +119,24 @@ class ReconcileDeliveriesTest extends TestCase
             && str_contains($r['text'] ?? '', '#77'));
     }
 
+    public function test_canceled_partial_delivery_orphan_of_sent_account_says_do_not_resell(): void
+    {
+        // ส่งไปครึ่งแรกแล้ว (item delivered) แต่ markSold ไม่สำเร็จ จากนั้นถูกยกเลิก —
+        // แถวนั้นค้าง items_reserved ทั้งที่ลูกค้าได้ไปแล้ว: ต้องบอก "ห้ามขายซ้ำ" ไม่ใช่ "คืน stock ได้"
+        $delivery = $this->makeDelivery('canceled');
+        $delivery->items()->create([
+            'product_name' => 'Nolimit ส่วนตัว', 'stock_code' => 'NLMP', 'kind' => 'stock',
+            'qty' => 1, 'stock_item_id' => 56, 'status' => 'delivered',
+        ]);
+        $this->insertReserved(56, StockPoolService::orderRef($delivery->id));
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage')
+            && str_contains($r['text'] ?? '', '#56')
+            && str_contains($r['text'] ?? '', 'ห้ามขายซ้ำ'));
+    }
+
     public function test_delivered_orphan_says_do_not_resell(): void
     {
         // markSold พังหลังส่ง → แถวค้าง items_reserved โดยงานเป็น delivered

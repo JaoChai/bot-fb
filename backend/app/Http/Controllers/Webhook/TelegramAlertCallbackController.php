@@ -225,8 +225,10 @@ class TelegramAlertCallbackController extends Controller
                     "↩️ ยกเลิกงาน #{$delivery->id} แล้ว แต่คืนของเข้า stock ไม่สำเร็จ\nของยังค้างอยู่ในตารางจอง — ระบบตรวจ (delivery:reconcile) จะแจ้งเตือนซ้ำ อย่าเพิ่งขายชิ้นนี้ซ้ำ");
                 $this->alertBot->answerCallbackQuery($token, $cbId, 'ยกเลิกแล้ว แต่คืนของไม่สำเร็จ');
             } else {
+                // ส่งไปบางรอบแล้ว → บอกว่าลูกค้าได้ไปแล้วเท่าไร ไม่ให้เจ้าของเข้าใจว่ายังไม่ได้อะไรเลย
+                $partial = $this->deliveryService->partialNote($fresh);
                 $this->alertBot->editMessageText($token, $chatId, $messageId,
-                    "❌ ทำไม่สำเร็จ — กดลองใหม่ได้ (งาน #{$delivery->id})",
+                    "❌ ทำไม่สำเร็จ — กดลองใหม่ได้ (งาน #{$delivery->id})".($partial !== '' ? "\n{$partial}" : ''),
                     $this->deliveryService->cardKeyboard($delivery));
                 $this->alertBot->answerCallbackQuery($token, $cbId, 'เกิดข้อผิดพลาด ลองใหม่');
             }

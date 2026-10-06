@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\AccountDelivery;
+use App\Models\AccountDeliveryItem;
 use App\Models\Bot;
 use App\Models\FlowPlugin;
 use App\Models\SlipVerification;
@@ -60,8 +61,14 @@ class ReconcileDeliveries extends Command
             foreach ($orphans as $row) {
                 $deliveryId = StockPoolService::deliveryIdFromRef($row['order_ref']);
                 $delivery = $deliveryId !== null ? $deliveries->get($deliveryId) : null;
-                // งาน delivered ที่ยังมีของค้าง = ส่งลูกค้าแล้วแต่ markSold ไม่สำเร็จ — ห้ามคืน/ขายซ้ำ
-                $problems[] = $delivery?->status === AccountDelivery::STATUS_DELIVERED
+                // ของค้างที่ส่งลูกค้าแล้วแต่ markSold ไม่สำเร็จ — ห้ามคืน/ขายซ้ำ: งาน delivered ทั้งงาน
+                // หรือ item นั้น delivered แล้ว (ส่งแบ่งรอบไปบางส่วนก่อนงานถูกยกเลิก)
+                $sentToCustomer = $delivery?->status === AccountDelivery::STATUS_DELIVERED
+                    || ($delivery && $delivery->items()
+                        ->where('stock_item_id', $row['id'])
+                        ->where('status', AccountDeliveryItem::ST_DELIVERED)
+                        ->exists());
+                $problems[] = $sentToCustomer
                     ? "⚠️ ของจอง #{$row['id']} ({$row['name']}) — ส่งลูกค้าไปแล้ว (งาน #{$delivery->id}) แต่ยังไม่ย้ายเข้า sold: ต้องย้ายเข้า items_sold เอง ห้ามขายซ้ำ"
                     : "ของจองค้าง #{$row['id']} ({$row['name']}) order_ref={$row['order_ref']} ไม่มีงาน active — คืน stock ได้";
             }

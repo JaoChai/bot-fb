@@ -11,7 +11,11 @@ return [
     'dedup_window_minutes' => (int) env('ACCOUNT_DELIVERY_DEDUP_MINUTES', 30),
 
     // เพดานจำนวนต่อรายการ กัน summary เพี้ยน (qty สูงผิดปกติ) จองรัวจน stock หมดในงานเดียว
-    'max_qty' => (int) env('ACCOUNT_DELIVERY_MAX_QTY', 20),
+    'max_qty' => (int) env('ACCOUNT_DELIVERY_MAX_QTY', 30),
+
+    // ส่งบัญชีแบ่ง 2 รอบ (2 push) เมื่อจำนวนบัญชีถึงค่านี้: ครึ่งแรกได้เศษ (15 → 8+7), support ไปท้ายรอบสอง
+    // แต่ละรอบปิด delivered/sold ของตัวเองทันทีที่ส่งถึง — รอบหลังพัง กดส่งใหม่ได้เฉพาะที่เหลือ
+    'split_from' => (int) env('ACCOUNT_DELIVERY_SPLIT_FROM', 10),
 
     // หน่วง job จองสต๊อก+ส่งการ์ดปุ่ม เพื่อให้ข้อความ "ออเดอร์ใหม่!" จาก Telegram plugin
     // (ส่งใน executePlugins หลังตอบลูกค้า) ไปถึงก่อนการ์ดเสมอ — ปุ่มจะได้อยู่ล่างสุดของแชท
