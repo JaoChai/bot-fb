@@ -84,6 +84,11 @@ export const queryKeys = {
     detail: (id: number) => [...queryKeys.bots.details(), id] as const,
     settings: (id: number) => [...queryKeys.bots.detail(id), 'settings'] as const,
   },
+  // Models (dynamic model discovery)
+  models: {
+    all: ['models'] as const,
+    decisions: () => [...queryKeys.models.all, 'decisions'] as const,
+  },
   // Conversations
   conversations: {
     all: ['conversations'] as const,

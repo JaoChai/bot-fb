@@ -8,7 +8,13 @@ interface ModelSelectorProps {
   placeholder?: string;
 }
 
+// Backend (Update/StoreBotRequest) rejects any -decisions model in the chat
+// model fields with 422 — warn inline before it ever reaches the server.
+const DECISIONS_MODEL_WARNING =
+  'โมเดล Decisions ใช้ตอบแชทไม่ได้ — ใส่ได้เฉพาะช่องคัดแยกส่ง Support';
+
 function ModelSelector({ label, value, onChange, placeholder }: ModelSelectorProps) {
+  const isDecisionsModel = value.endsWith('-decisions');
   return (
     <div className="space-y-2">
       <Label className="text-sm text-muted-foreground">{label}</Label>
@@ -17,7 +23,11 @@ function ModelSelector({ label, value, onChange, placeholder }: ModelSelectorPro
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || 'provider/model-name (เช่น openai/gpt-4o-mini)'}
         className="h-11 font-mono text-sm sm:h-10"
+        aria-invalid={isDecisionsModel}
       />
+      {isDecisionsModel && (
+        <p className="text-xs text-destructive">{DECISIONS_MODEL_WARNING}</p>
+      )}
     </div>
   );
 }

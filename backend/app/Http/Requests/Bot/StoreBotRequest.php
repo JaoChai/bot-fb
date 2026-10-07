@@ -23,10 +23,21 @@ class StoreBotRequest extends FormRequest
             'page_id' => ['nullable', 'string'],
 
             // Multi-model LLM configuration (API key now in User Settings)
-            'primary_chat_model' => ['nullable', 'string', 'max:100'],
-            'fallback_chat_model' => ['nullable', 'string', 'max:100'],
-            'utility_model' => ['nullable', 'string', 'max:100'],
+            'primary_chat_model' => ['nullable', 'string', 'max:100', 'not_regex:/-decisions$/'],
+            'fallback_chat_model' => ['nullable', 'string', 'max:100', 'not_regex:/-decisions$/'],
+            'utility_model' => ['nullable', 'string', 'max:100', 'not_regex:/-decisions$/'],
             'reasoning_effort' => ['nullable', 'in:low,medium,high'],
+
+            // Support Router (Luna Decisions)
+            'support_router_mode' => ['sometimes', 'in:off,shadow,on'],
+            'support_router_model' => [
+                'nullable', 'string', 'max:100', 'regex:/-decisions$/',
+                'required_if:support_router_mode,shadow,on',
+            ],
+            'support_handover_message' => [
+                'nullable', 'string', 'max:2000',
+                'required_if:support_router_mode,on',
+            ],
 
             // Auto handover
             'auto_handover' => ['nullable', 'boolean'],
@@ -78,6 +89,11 @@ class StoreBotRequest extends FormRequest
             'name.required' => 'Bot name is required',
             'channel_type.required' => 'Channel type is required',
             'channel_type.in' => 'Channel type must be line, facebook, or telegram',
+
+            'primary_chat_model.not_regex' => 'โมเดลประเภท Decisions ใช้ตอบแชทไม่ได้ ใช้ได้เฉพาะช่องคัดแยกส่ง Support',
+            'fallback_chat_model.not_regex' => 'โมเดลประเภท Decisions ใช้ตอบแชทไม่ได้ ใช้ได้เฉพาะช่องคัดแยกส่ง Support',
+            'utility_model.not_regex' => 'โมเดลประเภท Decisions ใช้ตอบแชทไม่ได้ ใช้ได้เฉพาะช่องคัดแยกส่ง Support',
+            'support_router_model.regex' => 'ช่องนี้ต้องเป็นโมเดลประเภท Decisions (ชื่อลงท้าย -decisions)',
         ];
     }
 }

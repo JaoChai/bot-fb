@@ -28,6 +28,7 @@ import { BasicInfoSection } from '@/components/connections/sections/BasicInfoSec
 import { LineCredentialsSection } from '@/components/connections/sections/LineCredentialsSection';
 import { TelegramCredentialsSection } from '@/components/connections/sections/TelegramCredentialsSection';
 import { AIModelsSection } from '@/components/connections/sections/AIModelsSection';
+import { SupportRouterSection } from '@/components/connections/sections/SupportRouterSection';
 import { AdvancedOptionsSection } from '@/components/connections/sections/AdvancedOptionsSection';
 import { cn } from '@/lib/utils';
 
@@ -121,6 +122,25 @@ export function EditConnectionPage() {
       }
     }
 
+    if (formData.support_router_mode !== 'off') {
+      if (!formData.support_router_model.endsWith('-decisions')) {
+        toast({
+          title: 'ข้อผิดพลาด',
+          description: 'ช่องคัดแยกส่ง Support ต้องเลือกโมเดลประเภท Decisions (ลงท้าย -decisions)',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (formData.support_router_mode === 'on' && !formData.support_handover_message.trim()) {
+        toast({
+          title: 'ข้อผิดพลาด',
+          description: 'กรุณากรอกข้อความแจ้งลูกค้าก่อนส่งต่อทีม Support',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
     try {
       if (isEditMode) {
         await updateMutation.mutateAsync({
@@ -131,6 +151,9 @@ export function EditConnectionPage() {
           fallback_chat_model: formData.fallback_chat_model,
           utility_model: formData.utility_model,
           reasoning_effort: formData.reasoning_effort,
+          support_router_mode: formData.support_router_mode,
+          support_router_model: formData.support_router_mode === 'off' ? null : formData.support_router_model || undefined,
+          support_handover_message: formData.support_router_mode === 'off' ? null : formData.support_handover_message || undefined,
           auto_handover: formData.auto_handover,
           auto_delivery_enabled: formData.auto_delivery_enabled,
           ...(formData.platform === 'line' && formData.line_channel_secret && {
@@ -152,6 +175,9 @@ export function EditConnectionPage() {
           fallback_chat_model: formData.fallback_chat_model,
           utility_model: formData.utility_model,
           reasoning_effort: formData.reasoning_effort,
+          support_router_mode: formData.support_router_mode,
+          support_router_model: formData.support_router_mode === 'off' ? null : formData.support_router_model || undefined,
+          support_handover_message: formData.support_router_mode === 'off' ? null : formData.support_handover_message || undefined,
           auto_handover: formData.auto_handover,
           auto_delivery_enabled: formData.auto_delivery_enabled,
         };
@@ -283,6 +309,8 @@ export function EditConnectionPage() {
         )}
 
         <AIModelsSection formData={formData} handleChange={handleChange} />
+
+        <SupportRouterSection formData={formData} handleChange={handleChange} />
 
         <AdvancedOptionsSection formData={formData} handleChange={handleChange} />
       </div>

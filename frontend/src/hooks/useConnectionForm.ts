@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { useConnection } from '@/hooks/useConnections';
-import type { ReasoningEffort } from '@/types/api';
+import { FALLBACK_DECISIONS_MODEL } from '@/hooks/useDecisionsModels';
+import type { ReasoningEffort, SupportRouterMode } from '@/types/api';
 
 export interface ConnectionFormData {
   enabled: boolean;
@@ -11,12 +12,20 @@ export interface ConnectionFormData {
   fallback_chat_model: string;
   utility_model: string;
   reasoning_effort: ReasoningEffort;
+  support_router_mode: SupportRouterMode;
+  support_router_model: string;
+  support_handover_message: string;
   line_channel_secret: string;
   line_channel_access_token: string;
   telegram_bot_token: string;
   auto_handover: boolean;
   auto_delivery_enabled: boolean;
 }
+
+// Pre-filled only when the loaded bot has no saved handover message yet —
+// it is the default for new values, never a replacement for a saved value.
+export const DEFAULT_HANDOVER_MESSAGE =
+  'รับทราบครับ\n\nเรื่องนี้ต้องให้ทีม Technical Support ช่วยดูโดยเฉพาะครับ รบกวนแคปรูปส่งให้ทีมงานได้เลยนะครับ ทีมงานจะช่วยดูให้ครับ';
 
 const DEFAULT_FORM_DATA: ConnectionFormData = {
   enabled: true,
@@ -26,6 +35,9 @@ const DEFAULT_FORM_DATA: ConnectionFormData = {
   fallback_chat_model: 'google/gemini-2.0-flash-001',
   utility_model: '',
   reasoning_effort: 'medium',
+  support_router_mode: 'off',
+  support_router_model: '',
+  support_handover_message: '',
   line_channel_secret: '',
   line_channel_access_token: '',
   telegram_bot_token: '',
@@ -64,6 +76,16 @@ export function useConnectionForm() {
         fallback_chat_model: existingBot.fallback_chat_model || DEFAULT_FORM_DATA.fallback_chat_model,
         utility_model: existingBot.utility_model || '',
         reasoning_effort: existingBot.reasoning_effort || 'medium',
+        support_router_mode: existingBot.support_router_mode || 'off',
+        // Bot saved before round-2 fix: mode on but no model → persist the
+        // Luna default now, so the select never displays a value the form
+        // doesn't hold (review round 2 blocker: display/saved divergence).
+        support_router_model:
+          existingBot.support_router_model ||
+          (existingBot.support_router_mode && existingBot.support_router_mode !== 'off'
+            ? FALLBACK_DECISIONS_MODEL.model_id
+            : ''),
+        support_handover_message: existingBot.support_handover_message || DEFAULT_HANDOVER_MESSAGE,
         line_channel_secret: '',
         line_channel_access_token: '',
         telegram_bot_token: '',

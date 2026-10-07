@@ -37,6 +37,11 @@ class BotResource extends JsonResource
             'utility_model' => $this->utility_model,
             'reasoning_effort' => $this->reasoning_effort,
 
+            // Support Router (Luna Decisions) settings
+            'support_router_mode' => $this->support_router_mode ?? 'off',
+            'support_router_model' => $this->support_router_model,
+            'support_handover_message' => $this->support_handover_message,
+
             // Knowledge Base (RAG) Settings
             'kb_enabled' => $this->kb_enabled ?? false,
             'kb_relevance_threshold' => $this->kb_relevance_threshold ?? 0.7,

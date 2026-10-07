@@ -570,6 +570,7 @@ class ModelCapabilityService
             'supports_reasoning' => (bool) ($config['supports_reasoning'] ?? false),
             'is_mandatory_reasoning' => (bool) ($config['is_mandatory_reasoning'] ?? false),
             'supports_structured_output' => (bool) ($config['supports_structured_output'] ?? false),
+            'is_decisions_model' => (bool) ($config['is_decisions_model'] ?? false),
             'context_length' => (int) ($config['context_length'] ?? 4096),
             'max_output_tokens' => (int) ($config['max_output_tokens'] ?? 4096),
             'pricing_prompt' => (float) ($config['pricing_prompt'] ?? 0),

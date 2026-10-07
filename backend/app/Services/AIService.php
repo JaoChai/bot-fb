@@ -11,6 +11,7 @@ use App\Services\Guardrail\GuardrailOutputSanitizer;
 use App\Services\Guardrail\OffTopicCircuitBreaker;
 use App\Services\Guardrail\OffTopicSignalExtractor;
 use App\Services\Payment\OrderPayloadExtractor;
+use App\Services\SupportRouter\SupportRouterService;
 use Illuminate\Support\Facades\Log;
 
 class AIService
@@ -24,6 +25,7 @@ class AIService
         private readonly OffTopicCircuitBreaker $offTopicCircuitBreaker,
         private readonly GuardrailOutputSanitizer $outputSanitizer,
         private readonly VipPriceGuardService $vipPriceGuard,
+        private readonly SupportRouterService $supportRouter,
     ) {}
 
     /**
@@ -65,6 +67,32 @@ class AIService
 
         // Get flow for RAGService (agentic mode) and Second AI check
         $flow = $conversation?->currentFlow ?? $bot->defaultFlow;
+
+        // Support Router (Luna Decisions) — one cheap yes/no call BEFORE the main LLM:
+        // post-sale/support message in "on" mode => reply support_handover_message +
+        // Telegram alert, skip the chat model entirely. Shadow mode just records the
+        // score in message metadata; off mode or any router failure = reply as today.
+        $routerDecision = null;
+        if ($conversation !== null) {
+            $routerDecision = $this->supportRouter->decide($bot, $userMessage, $history);
+
+            if ($routerDecision !== null && $routerDecision['handover']) {
+                Log::info('Support router: handover', [
+                    'bot_id' => $bot->id,
+                    'conversation_id' => $conversation->id,
+                    'score' => $routerDecision['score'],
+                ]);
+
+                return [
+                    'content' => (string) ($bot->support_handover_message ?? ''),
+                    'model' => 'support_router',
+                    'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0],
+                    'cost' => $routerDecision['cost'],
+                    'order_payload' => null,
+                    'support_router' => $routerDecision,
+                ];
+            }
+        }
 
         // Use RAGService to generate response (handles KB integration automatically)
         $result = $this->ragService->generateResponse(
@@ -164,6 +192,13 @@ class AIService
             $result['model'] ?? 'unknown'
         );
 
+        // Support Router decision (score recorded even when not handing over) —
+        // consumers (generateAndSaveResponse / ProcessAggregatedMessages) persist it
+        // into message metadata the same way as stock_guard.
+        if ($routerDecision !== null) {
+            $result['support_router'] = $routerDecision;
+        }
+
         return $result;
     }
 
@@ -205,6 +240,11 @@ class AIService
             // แหล่งความจริงของจำนวนสินค้า — เส้นทางเงินอ่านจากตรงนี้ก่อน regex (Task 10)
             if (! empty($result['order_payload'])) {
                 $metadata['order_payload'] = $result['order_payload'];
+            }
+            // Support Router decision (shadow score / handover) — บันทึกไว้ตรวจย้อนหลัง
+            // ว่า router ตัดสินอะไร ทำงานเหมือน stock_guard ด้านบน
+            if (! empty($result['support_router'])) {
+                $metadata['support_router'] = $result['support_router'];
             }
             if ($metadata !== []) {
                 $messageData['metadata'] = $metadata;

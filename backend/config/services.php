@@ -41,6 +41,10 @@ return [
         'site_url' => env('OPENROUTER_SITE_URL', env('APP_URL')),
         'site_name' => env('OPENROUTER_SITE_NAME', env('APP_NAME', 'BotFacebook')),
         'timeout' => env('OPENROUTER_TIMEOUT', 45),
+        // Decisions API (Support Router / Luna Decisions): B1 sets config only; B2 consumes it.
+        'decisions_url' => env('OPENROUTER_DECISIONS_URL', 'https://openrouter.ai/api/alpha/decisions'),
+        'support_router_threshold' => (float) env('SUPPORT_ROUTER_THRESHOLD', 0.7),
+        'support_router_timeout' => (int) env('SUPPORT_ROUTER_TIMEOUT', 5),
         // medium=60 ให้ reasoning models (เช่น luna) มี headroom ใต้เพดาน LINE loading 60s; high=90 (LINE loading ตันที่ 60s อยู่แล้ว)
         'effort_timeouts' => [
             'low' => (int) env('OPENROUTER_TIMEOUT_LOW', 45),

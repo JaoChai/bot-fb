@@ -392,6 +392,7 @@ class ProcessAggregatedMessages implements ShouldQueue
                 'order_payload' => $result['order_payload'] ?? null,
                 // เก็บไว้ตรวจย้อนหลังว่า guard ไปแก้คำตอบอะไรของบอทบ้าง
                 'stock_guard' => $result['stock_guard'] ?? null,
+                'support_router' => $result['support_router'] ?? null,
             ]) ?: null,
         ]);
 
