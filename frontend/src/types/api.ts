@@ -56,6 +56,25 @@ export interface AuthResponse {
 // Bot Types
 export type ReasoningEffort = 'low' | 'medium' | 'high';
 
+// Support Router (Luna Decisions)
+export type SupportRouterMode = 'off' | 'shadow' | 'on';
+
+// Model discovered via GET /models (ModelCapabilityService)
+export interface AvailableModel {
+  model_id: string;
+  name: string;
+  provider: string;
+  description: string;
+  supports_vision: boolean;
+  supports_reasoning: boolean;
+  is_decisions_model?: boolean;
+  context_length: number;
+  max_output_tokens: number;
+  pricing_prompt: number;
+  pricing_completion: number;
+  source: 'api' | 'config' | 'api+config';
+}
+
 export interface Bot {
   id: number;
   name: string;
@@ -70,6 +89,10 @@ export interface Bot {
   fallback_chat_model: string | null;
   utility_model: string | null;
   reasoning_effort: ReasoningEffort | null;
+  // Support Router (Luna Decisions)
+  support_router_mode: SupportRouterMode;
+  support_router_model: string | null;
+  support_handover_message: string | null;
   system_prompt: string | null;
   llm_temperature: number;
   llm_max_tokens: number;
@@ -104,6 +127,9 @@ export interface CreateConnectionData {
   fallback_chat_model?: string;
   utility_model?: string;
   reasoning_effort?: ReasoningEffort;
+  support_router_mode?: SupportRouterMode;
+  support_router_model?: string | null;
+  support_handover_message?: string | null;
   channel_access_token?: string;
   channel_secret?: string;
   auto_handover?: boolean;
@@ -119,6 +145,9 @@ export interface UpdateConnectionData {
   fallback_chat_model?: string;
   utility_model?: string;
   reasoning_effort?: ReasoningEffort;
+  support_router_mode?: SupportRouterMode;
+  support_router_model?: string | null;
+  support_handover_message?: string | null;
   channel_access_token?: string;
   channel_secret?: string;
   auto_handover?: boolean;

@@ -41,6 +41,18 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 }
 
+// jsdom lacks Pointer Capture APIs — Radix Select/Menu read them on click
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false
+  Element.prototype.setPointerCapture = () => {}
+  Element.prototype.releasePointerCapture = () => {}
+}
+
+// jsdom has no layout engine — Radix Select calls scrollIntoView on focus
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {}
+}
+
 // Mock import.meta.env
 Object.defineProperty(import.meta, "env", {
   value: {
