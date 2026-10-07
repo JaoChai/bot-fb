@@ -52,9 +52,17 @@ export function SupportRouterSection({ formData, handleChange }: SupportRouterSe
           <Label className="text-sm text-muted-foreground">โหมดทำงาน</Label>
           <Select
             value={formData.support_router_mode}
-            onValueChange={(value) =>
-              handleChange('support_router_mode', value as ConnectionFormData['support_router_mode'])
-            }
+            onValueChange={(value) => {
+              const mode = value as ConnectionFormData['support_router_mode'];
+              // The select displays the Luna fallback while the saved value is
+              // still empty; Radix fires no onValueChange when the user clicks
+              // the already-displayed option, so persist the default here or
+              // display and saved value diverge (review round 2 blocker).
+              if (mode !== 'off' && !formData.support_router_model) {
+                handleChange('support_router_model', FALLBACK_DECISIONS_MODEL.model_id);
+              }
+              handleChange('support_router_mode', mode);
+            }}
           >
             <SelectTrigger aria-label="โหมดทำงาน" className="w-full max-w-xs">
               <SelectValue />

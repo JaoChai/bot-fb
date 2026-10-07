@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { useConnection } from '@/hooks/useConnections';
+import { FALLBACK_DECISIONS_MODEL } from '@/hooks/useDecisionsModels';
 import type { ReasoningEffort, SupportRouterMode } from '@/types/api';
 
 export interface ConnectionFormData {
@@ -76,7 +77,14 @@ export function useConnectionForm() {
         utility_model: existingBot.utility_model || '',
         reasoning_effort: existingBot.reasoning_effort || 'medium',
         support_router_mode: existingBot.support_router_mode || 'off',
-        support_router_model: existingBot.support_router_model || '',
+        // Bot saved before round-2 fix: mode on but no model → persist the
+        // Luna default now, so the select never displays a value the form
+        // doesn't hold (review round 2 blocker: display/saved divergence).
+        support_router_model:
+          existingBot.support_router_model ||
+          (existingBot.support_router_mode && existingBot.support_router_mode !== 'off'
+            ? FALLBACK_DECISIONS_MODEL.model_id
+            : ''),
         support_handover_message: existingBot.support_handover_message || DEFAULT_HANDOVER_MESSAGE,
         line_channel_secret: '',
         line_channel_access_token: '',

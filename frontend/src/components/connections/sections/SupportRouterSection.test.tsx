@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
+import { useState } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { SupportRouterSection } from './SupportRouterSection';
+import { FALLBACK_DECISIONS_MODEL } from '@/hooks/useDecisionsModels';
 import { server } from '@/test/mocks/server';
 import type { ConnectionFormData } from '@/hooks/useConnectionForm';
 import type { AvailableModel } from '@/types/api';
@@ -198,5 +200,55 @@ describe('SupportRouterSection', () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/ข้อความแจ้งลูกค้า/), 'สวัสดีครับ');
     expect(handleChange).toHaveBeenCalledWith('support_handover_message', 'ส');
+  });
+
+  // Regression guard (review round 2, blocker): the trigger showed the Luna
+  // fallback while formData.support_router_model was still ''. Radix Select
+  // fires no onValueChange when the user clicks the already-displayed option,
+  // so a bot saved in that state went to the backend with support_router_model
+  // = null while the UI kept displaying Luna.
+  it('persists the shown default model when the mode leaves off while support_router_model is empty', async () => {
+    server.use(
+      http.get(`${API_URL}/models`, () => HttpResponse.json({ data: [LUNA_MODEL] }))
+    );
+
+    const user = userEvent.setup();
+    let latest: ConnectionFormData | null = null;
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    function Harness() {
+      const [formData, setFormData] = useState(
+        makeFormData({ support_router_mode: 'off', support_router_model: '' })
+      );
+      latest = formData;
+      const handleChange: HandleChange = (field, value) =>
+        setFormData((prev) => ({ ...prev, [field]: value }));
+      return (
+        <QueryClientProvider client={queryClient}>
+          <SupportRouterSection formData={formData} handleChange={handleChange} />
+        </QueryClientProvider>
+      );
+    }
+
+    render(<Harness />);
+
+    // Turn the router on from the default 'off' state with no saved model.
+    await user.click(screen.getByLabelText('โหมดทำงาน'));
+    await user.click(screen.getByRole('option', { name: 'เปิดใช้งาน' }));
+    expect(await screen.findByLabelText(/ข้อความแจ้งลูกค้า/)).toBeInTheDocument();
+
+    // The model displayed in the select must be the value stored in the form
+    // state — display and saved value may never diverge.
+    await waitFor(() => {
+      expect(latest?.support_router_model).toBe(FALLBACK_DECISIONS_MODEL.model_id);
+    });
+
+    // Re-enacting the reviewer repro: clicking the shown Luna option must be a
+    // harmless no-op, not the only way the value gets persisted.
+    await user.click(screen.getByLabelText('โมเดล Decisions'));
+    await user.click(await screen.findByRole('option', { name: /GPT-6 Luna Decisions/ }));
+    expect(latest?.support_router_model).toBe(FALLBACK_DECISIONS_MODEL.model_id);
   });
 });
