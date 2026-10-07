@@ -87,7 +87,7 @@ class AIService
                     'content' => (string) ($bot->support_handover_message ?? ''),
                     'model' => 'support_router',
                     'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0],
-                    'cost' => 0.0,
+                    'cost' => $routerDecision['cost'],
                     'order_payload' => null,
                     'support_router' => $routerDecision,
                 ];

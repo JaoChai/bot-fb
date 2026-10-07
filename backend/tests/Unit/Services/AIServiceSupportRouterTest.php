@@ -232,6 +232,8 @@ class AIServiceSupportRouterTest extends TestCase
             $this->assertArrayHasKey($key, $result);
         }
         $this->assertSame(0, $result['usage']['total_tokens']);
+        // cost must be the router's real paid cost (usage.cost), not a hardcoded 0.
+        $this->assertSame(0.0000639, $result['cost']);
         $this->assertIsFloat($result['support_router']['cost']);
         $this->assertIsInt($result['support_router']['latency_ms']);
     }
