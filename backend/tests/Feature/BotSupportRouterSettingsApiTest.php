@@ -30,6 +30,35 @@ class BotSupportRouterSettingsApiTest extends TestCase
         $this->assertSame('กำลังต่อสายให้ทีมซัพพอร์ต กรุณารอสักครู่', $bot->fresh()->support_handover_message);
     }
 
+    public function test_put_with_null_support_router_mode_is_rejected_not_500(): void
+    {
+        $user = User::factory()->owner()->create();
+        $bot = Bot::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user)->putJson("/api/bots/{$bot->id}", [
+            'support_router_mode' => null,
+        ]);
+
+        $response->assertStatus(422)->assertJsonValidationErrors(['support_router_mode']);
+        $this->assertSame('off', $bot->fresh()->support_router_mode);
+    }
+
+    public function test_post_without_support_router_mode_stores_off(): void
+    {
+        $user = User::factory()->owner()->create();
+
+        $response = $this->actingAs($user)->postJson('/api/bots', [
+            'name' => 'Router Bot',
+            'channel_type' => 'line',
+        ]);
+
+        $response->assertCreated();
+
+        $bot = Bot::where('name', 'Router Bot')->firstOrFail();
+
+        $this->assertSame('off', $bot->support_router_mode);
+    }
+
     public function test_support_router_mode_defaults_to_off_in_resource(): void
     {
         $user = User::factory()->owner()->create();

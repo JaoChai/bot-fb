@@ -31,7 +31,7 @@ class UpdateBotRequest extends FormRequest
             'reasoning_effort' => ['nullable', 'in:low,medium,high'],
 
             // Support Router (Luna Decisions)
-            'support_router_mode' => ['nullable', 'in:off,shadow,on'],
+            'support_router_mode' => ['sometimes', 'in:off,shadow,on'],
             'support_router_model' => [
                 'nullable', 'string', 'max:100', 'regex:/-decisions$/',
                 'required_if:support_router_mode,shadow,on',
