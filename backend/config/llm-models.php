@@ -358,6 +358,18 @@ return [
             'pricing_completion' => 2.4,
             'description' => 'High-efficiency MoE model with strong multilingual support',
         ],
+        'openai/gpt-6-luna-decisions' => [
+            'name' => 'GPT-6 Luna Decisions',
+            'provider' => 'openai',
+            'context_length' => 1050000,
+            'max_output_tokens' => 0,
+            'supports_vision' => true,
+            'supports_structured_output' => false,
+            'pricing_prompt' => 0.10,
+            'pricing_completion' => 0.0,
+            'is_decisions_model' => true,
+            'description' => 'Decisions API only: returns probabilities for classification/routing. Not a chat model.',
+        ],
     ],
 
     /*

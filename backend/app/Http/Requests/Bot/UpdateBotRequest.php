@@ -25,10 +25,21 @@ class UpdateBotRequest extends FormRequest
             'default_flow_id' => ['nullable', 'exists:flows,id'],
 
             // Multi-model LLM configuration (API key now in User Settings)
-            'primary_chat_model' => ['nullable', 'string', 'max:100'],
-            'fallback_chat_model' => ['nullable', 'string', 'max:100'],
-            'utility_model' => ['nullable', 'string', 'max:100'],
+            'primary_chat_model' => ['nullable', 'string', 'max:100', 'not_regex:/-decisions$/'],
+            'fallback_chat_model' => ['nullable', 'string', 'max:100', 'not_regex:/-decisions$/'],
+            'utility_model' => ['nullable', 'string', 'max:100', 'not_regex:/-decisions$/'],
             'reasoning_effort' => ['nullable', 'in:low,medium,high'],
+
+            // Support Router (Luna Decisions)
+            'support_router_mode' => ['nullable', 'in:off,shadow,on'],
+            'support_router_model' => [
+                'nullable', 'string', 'max:100', 'regex:/-decisions$/',
+                'required_if:support_router_mode,shadow,on',
+            ],
+            'support_handover_message' => [
+                'nullable', 'string', 'max:2000',
+                'required_if:support_router_mode,on',
+            ],
 
             // Auto handover
             'auto_handover' => ['sometimes', 'boolean'],
@@ -46,6 +57,16 @@ class UpdateBotRequest extends FormRequest
             'kb_enabled' => ['sometimes', 'boolean'],
             'kb_relevance_threshold' => ['sometimes', 'numeric', 'min:0', 'max:1'],
             'kb_max_results' => ['sometimes', 'integer', 'min:1', 'max:10'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'primary_chat_model.not_regex' => 'โมเดลประเภท Decisions ใช้ตอบแชทไม่ได้ ใช้ได้เฉพาะช่องคัดแยกส่ง Support',
+            'fallback_chat_model.not_regex' => 'โมเดลประเภท Decisions ใช้ตอบแชทไม่ได้ ใช้ได้เฉพาะช่องคัดแยกส่ง Support',
+            'utility_model.not_regex' => 'โมเดลประเภท Decisions ใช้ตอบแชทไม่ได้ ใช้ได้เฉพาะช่องคัดแยกส่ง Support',
+            'support_router_model.regex' => 'ช่องนี้ต้องเป็นโมเดลประเภท Decisions (ชื่อลงท้าย -decisions)',
         ];
     }
 }

@@ -31,6 +31,10 @@ class Bot extends Model
         'fallback_chat_model',
         'utility_model',
         'reasoning_effort',
+        // Support Router (Luna Decisions) settings
+        'support_router_mode',
+        'support_router_model',
+        'support_handover_message',
         'system_prompt',
         'llm_temperature',
         'llm_max_tokens',
