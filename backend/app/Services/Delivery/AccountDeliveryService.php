@@ -569,6 +569,8 @@ class AccountDeliveryService
      * แบ่งการส่งเป็นรอบ (1 รอบ = 1 push): บัญชี ≥ delivery.split_from → 2 รอบ ครึ่งแรกได้เศษ (15 → 8+7)
      * น้อยกว่านั้นรอบเดียวเหมือนเดิม; support ไปท้ายรอบสุดท้ายเสมอ
      * แต่ละรอบปิดสถานะของตัวเองหลัง push สำเร็จ (markRoundDelivered) — push ที่ถึงลูกค้าแล้วห้ามถูกนับว่า "ยังไม่ส่ง"
+     * ออเดอร์ที่แบ่งรอบ (≥ split_from): แต่ละรอบรวมเป็น bubble เดียว (หนึ่งชุด = หนึ่งข้อความ)
+     * เกิน 5000 ตัวอักษรจึงแยกเป็นกลุ่มติดกันที่สุดที่แต่ละก้อน ≤ 5000 แบบสมดุล
      *
      * @param  array<int, AccountDeliveryItem>  $items  เรียงตรงกับ $accounts
      * @param  array<int, string>  $accounts
@@ -584,14 +586,19 @@ class AccountDeliveryService
         $splitFrom = max(2, config_int('delivery.split_from', 10));
         $firstSize = $count >= $splitFrom ? (int) ceil($count / 2) : $count;
         $sizes = $firstSize < $count ? [$firstSize, $count - $firstSize] : [$count];
+        $isSplit = count($sizes) > 1;
 
         $rounds = [];
         $offset = 0;
         foreach ($sizes as $i => $size) {
             $isLast = $i === count($sizes) - 1;
+            $roundAccounts = array_slice($accounts, $offset, $size);
+            $roundSupport = $isLast ? $support : null;
             $rounds[] = [
                 'items' => array_slice($items, $offset, $size),
-                'bubbles' => $this->packTexts(array_slice($accounts, $offset, $size), $isLast ? $support : null),
+                'bubbles' => $isSplit
+                    ? $this->packRound($roundAccounts, $roundSupport)
+                    : $this->packTexts($roundAccounts, $roundSupport),
             ];
             $offset += $size;
         }
@@ -697,6 +704,70 @@ class AccountDeliveryService
         $bubbles = [];
         $offset = 0;
         for ($g = 0; $g < $max; $g++) {
+            $size = $base + ($g < $rem ? 1 : 0);
+            $bubbles[] = implode(self::ACCOUNT_DIVIDER, array_slice($accounts, $offset, $size));
+            $offset += $size;
+        }
+
+        return $bubbles;
+    }
+
+    /**
+     * จัด bubble ของ 1 รอบ "ในออเดอร์ที่แบ่งรอบ" (≥ delivery.split_from) — หนึ่งชุด = หนึ่งข้อความ:
+     * รวมบัญชีทั้งรอบเป็น bubble เดียวด้วย ACCOUNT_DIVIDER; support ยังเป็น bubble ของตัวเองท้ายรอบสุดท้าย
+     * ถ้ารวมแล้วเกิน 5000 ตัวอักษร (limit ของ LINE): แยกเป็นกลุ่มติดกัน "น้อยกลุ่มที่สุด" ที่แต่ละก้อน ≤ 5000
+     * แบ่งตามจำนวนบัญชีให้สมดุล (ขนาดต่างกัน ≤ 1) โดยกำหนดเพดานจำนวนก้อนตาม LINE (5, ถ้ามี support ร่วม push = 4)
+     * ถ้าแม้แต่งบสูงสุดก็ยังเกิน — คืนงบสูงสุดไปให้ assertFitsSinglePush throw ตามระบบเดิม (fail-safe ก่อนส่ง)
+     *
+     * @param  array<int, string>  $accounts
+     * @return array<int, string>
+     */
+    private function packRound(array $accounts, ?string $support): array
+    {
+        $maxBubbles = $support !== null ? 4 : 5;
+
+        $fewestFitting = null;
+        for ($groups = 1; $groups <= $maxBubbles; $groups++) {
+            $bubbles = $this->balancedDivide($accounts, $groups);
+            if (! $this->anyBubbleTooLong($bubbles)) {
+                $fewestFitting = $bubbles;
+
+                break;
+            }
+        }
+
+        if ($fewestFitting !== null) {
+            if ($support !== null) {
+                $fewestFitting[] = $support;
+            }
+
+            return $fewestFitting;
+        }
+
+        // เกินเพดานไปแล้ว — คืนการแบ่งที่งบสูงสุด เพื่อให้ assertFitsSinglePush throw เอง (fail-safe เหมือนเดิม)
+        $bubbles = $this->balancedDivide($accounts, $maxBubbles);
+        if ($support !== null) {
+            $bubbles[] = $support;
+        }
+
+        return $bubbles;
+    }
+
+    /**
+     * แบ่งบัญชีเรียงต่อกันเป็น $groups ก้อนแบบสมดุลตามจำนวน (ก้อนแรกๆ ได้ +1 ถ้าหารไม่ลงตัว) คั่นด้วย ACCOUNT_DIVIDER
+     *
+     * @param  array<int, string>  $accounts
+     * @return array<int, string>
+     */
+    private function balancedDivide(array $accounts, int $groups): array
+    {
+        $accounts = array_values($accounts);
+        $count = count($accounts);
+        $base = intdiv($count, $groups);
+        $rem = $count % $groups;
+        $bubbles = [];
+        $offset = 0;
+        for ($g = 0; $g < $groups; $g++) {
             $size = $base + ($g < $rem ? 1 : 0);
             $bubbles[] = implode(self::ACCOUNT_DIVIDER, array_slice($accounts, $offset, $size));
             $offset += $size;
