@@ -537,4 +537,124 @@ class AccountDeliveryDeliverTest extends TestCase
         $this->assertSame(1, DB::connection('mhha_acc')->table('items_reserved')->count());
         $this->assertSame(0, DB::connection('mhha_acc')->table('items_sold')->count());
     }
+
+    /** แบบ capturePushes() แต่เก็บแต่ละ push เป็น array ของ bubble (ไม่ implode) — ใช้นับจำนวนข้อความต่อ push */
+    private function capturePushBubbles(): \Closure
+    {
+        $pushes = [];
+        $this->mock(LINEService::class, function (MockInterface $mock) use (&$pushes) {
+            $mock->shouldReceive('generateRetryKey')->andReturn('rk');
+            $mock->shouldReceive('replyWithFallback')
+                ->andReturnUsing(function ($bot, $token, $userId, $messages) use (&$pushes) {
+                    $pushes[] = array_column($messages, 'text');
+
+                    return ['method' => 'push', 'success' => true];
+                });
+        });
+
+        return function () use (&$pushes): array {
+            return $pushes;
+        };
+    }
+
+    /** จำนวนบัญชี (|mail|2fa) ในแต่ละ bubble ของ push เดียว */
+    private static function accountsPerBubble(array $bubbles): array
+    {
+        return array_map(fn (string $b): int => substr_count($b, '|mail|2fa'), $bubbles);
+    }
+
+    public function test_thirty_accounts_split_into_two_pushes_of_one_message_each(): void
+    {
+        // prod case #498: 30 × G3D → 15+15 ต่อ push และ "แต่ละชุด = ข้อความเดียว" + support ท้ายรอบสอง
+        $this->addReservedAccounts(30);
+        $pushes = $this->capturePushBubbles();
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        [$first, $second] = $pushes();
+        $this->assertCount(1, $first);
+        $this->assertSame([15], self::accountsPerBubble($first));
+        $this->assertCount(2, $second);
+        $this->assertSame([15], self::accountsPerBubble([$second[0]]));
+        $this->assertStringContainsString('lin.ee/sTD5TQL', $second[1]);
+        foreach (range(10, 39) as $id) {
+            $this->assertStringContainsString("uid{$id}|pass{$id}", $first[0].$second[0]);
+        }
+        $this->assertSame(AccountDelivery::STATUS_DELIVERED, $this->delivery->fresh()->status);
+    }
+
+    public function test_ten_accounts_one_message_per_push_plus_support(): void
+    {
+        $this->addReservedAccounts(10);
+        $pushes = $this->capturePushBubbles();
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        [$first, $second] = $pushes();
+        $this->assertCount(1, $first);
+        $this->assertSame([5], self::accountsPerBubble($first));
+        $this->assertCount(2, $second);
+        $this->assertSame([5], self::accountsPerBubble([$second[0]]));
+        $this->assertStringContainsString('lin.ee/sTD5TQL', $second[1]);
+    }
+
+    public function test_fifteen_accounts_one_message_per_push_plus_support(): void
+    {
+        $this->addReservedAccounts(15);
+        $pushes = $this->capturePushBubbles();
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        [$first, $second] = $pushes();
+        $this->assertCount(1, $first);
+        $this->assertSame([8], self::accountsPerBubble($first));
+        $this->assertCount(2, $second);
+        $this->assertSame([7], self::accountsPerBubble([$second[0]]));
+        $this->assertStringContainsString('lin.ee/sTD5TQL', $second[1]);
+        $this->assertSame(AccountDelivery::STATUS_DELIVERED, $this->delivery->fresh()->status);
+        $this->assertSame(15, DB::connection('mhha_acc')->table('items_sold')->count());
+    }
+
+    public function test_long_detail_rounds_split_into_fewest_balanced_bubbles(): void
+    {
+        // 15 บัญชี detail ~700 ตัวอักษร (รวมบัญชี setUp id 10 ที่สั้น): รอบละ 8/7 บัญชี
+        // รวมก้อนเดียว ~5450/5390 > 5000 → รอบละ 2 ก้อน แบ่งตามจำนวนบัญชีแบบสมดุล (4+4, 4+3)
+        $pool = app(StockPoolService::class);
+        foreach (range(11, 24) as $id) {
+            // คง marker |mail|2fa ไว้ตรงกลาง (accountsPerBubble นับจำนวนบัญชีจาก marker นี้) แล้วต่อ filler ท้าย
+            $long = "uid{$id}|pass{$id}|mail|2fa|".str_pad('x', 670, 'l');
+            $this->seedAvailable($id, 'NLMP', $long);
+            $pool->reserveOne('NLMP', '1');
+            $this->delivery->items()->create([
+                'product_name' => 'Nolimit ส่วนตัว', 'stock_code' => 'NLMP', 'kind' => 'stock',
+                'qty' => 1, 'stock_item_id' => $id, 'status' => 'reserved',
+            ]);
+        }
+        $pushes = $this->capturePushBubbles();
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        [$first, $second] = $pushes();
+        $this->assertSame([4, 4], self::accountsPerBubble($first));
+        $this->assertSame([4, 3, 0], self::accountsPerBubble($second));
+        foreach ([$first[0], $first[1], $second[0], $second[1]] as $bubble) {
+            $this->assertLessThanOrEqual(5000, mb_strlen($bubble));
+        }
+        $this->assertStringContainsString('lin.ee/sTD5TQL', $second[2]);
+    }
+
+    public function test_nine_accounts_keep_old_bubble_layout(): void
+    {
+        // ต่ำกว่า split_from → พฤติกรรมเดิม packTexts: 9 บัญชี + เพจ = 4 bubble บัญชี (3,2,2,2) + support
+        $this->addReservedAccounts(9);
+        $pushes = $this->capturePushBubbles();
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        [$only] = $pushes();
+        $this->assertCount(5, $only);
+        $this->assertSame([3, 2, 2, 2, 0], self::accountsPerBubble($only));
+        $this->assertStringContainsString('lin.ee/sTD5TQL', $only[4]);
+        $this->assertSame(AccountDelivery::STATUS_DELIVERED, $this->delivery->fresh()->status);
+    }
 }
