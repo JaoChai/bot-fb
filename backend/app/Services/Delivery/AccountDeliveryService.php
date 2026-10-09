@@ -223,6 +223,30 @@ class AccountDeliveryService
     }
 
     /**
+     * สรุปหลังส่งสำเร็จ: ขนาดชุดที่ใช้จริง (จาก chosen_set_size + จำนวนรอบจริงจากการส่ง)
+     * + คำเตือน shortage/unmapped เดิม — ใช้กับ editMessageText ที่แทนที่การ์ดหลังกดส่ง
+     */
+    public function statusNoteAfterDelivery(AccountDelivery $delivery): string
+    {
+        // ผู้เรียก (controller) โหลดงานไว้ก่อน deliver() — โมเดลในมือสถานะค้าง reserved ต้อง fresh ก่อนอ่าน
+        $delivery = $delivery->fresh() ?? $delivery;
+        $note = '';
+
+        // นับจากของที่ถึงลูกค้าจริง (delivered) ไม่ใช่เดาจากตัวเลขบนปุ่ม
+        $deliveredCount = $delivery->items()
+            ->where('kind', AccountDeliveryItem::KIND_STOCK)
+            ->whereIn('status', [AccountDeliveryItem::ST_DELIVERED])
+            ->count();
+        if ($delivery->status === AccountDelivery::STATUS_DELIVERED && $deliveredCount > 0) {
+            $note .= $delivery->chosen_set_size !== null
+                ? "\n✅ ส่งแล้ว · ชุดละ {$delivery->chosen_set_size} (".max(1, (int) ceil($deliveredCount / $delivery->chosen_set_size)).' ชุด)'
+                : "\n✅ ส่งแล้ว · ".($deliveredCount >= config_int('delivery.split_from', 10) ? 'แบ่งครึ่ง (2 ชุด)' : '1 ชุด');
+        }
+
+        return $note.$this->pendingManualNote($delivery);
+    }
+
+    /**
      * ส่งการ์ดสรุป + ปุ่มเข้า Telegram (ใช้ตอนสร้างงาน และตอนเตือนซ้ำ)
      *
      * @return bool false = การ์ดไม่ได้ออก ผู้เรียกต้องจัดการต่อ (ยิงซ้ำ / บันทึกไว้ตาม)
@@ -407,12 +431,6 @@ class AccountDeliveryService
                 ->sum('qty');
             array_unshift($lines, "⚠️ <b>{$name}: ลูกค้าสั่ง {$item->requested_qty} แต่จองได้ {$reserved}</b> (เกินเพดานระบบ) — ส่วนที่เหลือต้องส่งเอง");
         }
-        if ($delivery->status === AccountDelivery::STATUS_DELIVERED) {
-            $deliveredCount = (clone $delivery->items())->where('status', AccountDeliveryItem::ST_DELIVERED)->where('kind', AccountDeliveryItem::KIND_STOCK)->count();
-            $lines[] = $delivery->chosen_set_size !== null
-                ? '✅ ส่งแล้ว · ชุดละ '.$delivery->chosen_set_size.' ('.max(1, (int) ceil($deliveredCount / $delivery->chosen_set_size)).' ชุด)'
-                : '✅ ส่งแล้ว · แบ่งครึ่ง (2 ชุด)';
-        }
         if ($delivery->status === AccountDelivery::STATUS_RESERVED && ($partial = $this->partialNote($delivery)) !== '') {
             $lines[] = $partial;
         }
@@ -496,20 +514,8 @@ class AccountDeliveryService
             $messages = $this->buildCustomerMessages($delivery, $stockItems, $supportItems, $reservedRows, $alreadySent);
 
             // แจ้งลูกค้าตรงนั้นด้วยว่าถูกเพดานตัดจำนวน (สั่ง X ได้ Y) — อย่าให้ส่งเงียบๆ แล้วลูกค้านับเองว่าขาด
-            $cappedItem = $delivery->items->firstWhere('requested_qty');
-            $capNotice = null;
-            if ($cappedItem !== null) {
-                $cappedName = $cappedItem->product_name;
-                $cappedReserved = (int) $delivery->items
-                    ->where('product_name', $cappedName)
-                    ->whereIn('status', [AccountDeliveryItem::ST_RESERVED, AccountDeliveryItem::ST_DELIVERED])
-                    ->sum('qty');
-                $missing = max(0, $cappedItem->requested_qty - $cappedReserved);
-                if ($cappedReserved > 0 && $missing > 0) {
-                    $capNotice = "ℹ️ ระบบส่งให้แล้ว {$cappedReserved} จาก {$cappedItem->requested_qty} บัญชี ({$cappedName})"
-                        ." — อีก {$missing} บัญชี เกินเพดานระบบ ทีมงานกำลังส่งตามให้ในแชทนี้นะครับ";
-                }
-            }
+            // ทุกสินค้าที่โดนตัดมีบรรทัดของตัวเอง รวมเป็นบับเบิลเดียว
+            $capNotice = $this->capNotice($delivery);
 
             // จัดทุกรอบให้เสร็จ + ตรวจขนาดก่อนยิงรอบแรก: ถ้ารอบไหนเกิน limit ต้องพังตอนยังไม่ส่งอะไรเลย
             // (capNotice เข้ารอบสุดท้ายใน splitRounds/packRound แล้ว — หลังบัญชี ก่อน support)
@@ -628,6 +634,33 @@ class AccountDeliveryService
     }
 
     /**
+     * ข้อความแจ้งลูกค้าว่าถูกเพดานตัดจำนวน — ทุกสินค้าที่โดนตัดมีบรรทัดของตัวเอง (บรรทัดเดียว/สินค้า)
+     * คืน null เมื่อไม่มีอะไรถูกตัด (ไม่มี requested_qty หรือจองได้ครบ)
+     */
+    private function capNotice(AccountDelivery $delivery): ?string
+    {
+        $cappedItems = $delivery->items->whereNotNull('requested_qty');
+        if ($cappedItems->isEmpty()) {
+            return null;
+        }
+
+        $lines = [];
+        foreach ($cappedItems as $item) {
+            $reserved = (int) $delivery->items
+                ->where('product_name', $item->product_name)
+                ->whereIn('status', [AccountDeliveryItem::ST_RESERVED, AccountDeliveryItem::ST_DELIVERED])
+                ->sum('qty');
+            $missing = max(0, $item->requested_qty - $reserved);
+            if ($reserved > 0 && $missing > 0) {
+                $lines[] = "📦 ระบบส่งให้แล้ว {$reserved} จาก {$item->requested_qty} บัญชี ({$item->product_name})"
+                    ." อีก {$missing} บัญชี ทีมงานกำลังส่งตามให้ในแชทนี้นะครับ";
+            }
+        }
+
+        return $lines === [] ? null : implode("\n", $lines);
+    }
+
+    /**
      * แบ่งการส่งเป็นรอบ (1 รอบ = 1 push): บัญชี ≥ delivery.split_from → 2 รอบ ครึ่งแรกได้เศษ (15 → 8+7)
      * น้อยกว่านั้นรอบเดียวเหมือนเดิม; support ไปท้ายรอบสุดท้ายเสมอ
      * แต่ละรอบปิดสถานะของตัวเองหลัง push สำเร็จ (markRoundDelivered) — push ที่ถึงลูกค้าแล้วห้ามถูกนับว่า "ยังไม่ส่ง"
@@ -646,8 +679,8 @@ class AccountDeliveryService
 
         $count = count($accounts);
         $splitFrom = max(2, config_int('delivery.split_from', 10));
-        // ขนาดชุดที่แอดมินเลือกบนการ์ด (เก็บไว้กับงาน) มาก่อนการแบ่งครึ่งอัตโนมัติเสมอ —
-        // รอบหลังพังกดส่งซ้ำ ก็ยังแบ่งตามชุดที่เลือกไว้ ไม่หลุดกลับไปแบ่งครึ่งเอง
+        // ขนาดชุดที่แอดมินเลือกบนการ์ด (ตั้งใหม่ทุกครั้งที่กดส่ง) มาก่อนการแบ่งครึ่งอัตโนมัติเสมอ —
+        // รอบหลังพังกดส่งซ้ำด้วยปุ่มขนาดเดิม ก็ยังแบ่งตามชุดที่เลือกไว้ ไม่หลุดกลับไปแบ่งครึ่งเอง
         if ($chosenSetSize !== null) {
             $sizes = [];
             for ($remaining = $count; $remaining > 0; $remaining -= min($chosenSetSize, $remaining)) {
@@ -669,7 +702,7 @@ class AccountDeliveryService
                 'items' => array_slice($items, $offset, $size),
                 'bubbles' => $isSplit
                     ? $this->packRound($roundAccounts, $roundSupport, $isLast ? $capNotice : null)
-                    : $this->packTexts($roundAccounts, $roundSupport),
+                    : $this->packTexts($roundAccounts, $roundSupport, $isLast ? $capNotice : null),
             ];
             $offset += $size;
         }
@@ -738,17 +771,18 @@ class AccountDeliveryService
 
     /**
      * จัด bubble สำหรับ push เดียว (≤5 ตาม LINE limit) โดยกัน 1 bubble ให้ support เสมอ:
-     * บัญชี ≤ งบ → ตัวละ bubble; เกินงบ → กระจายลงครบงบให้สมดุล; support ต่อท้ายเป็น bubble ของตัวเอง
+     * บัญชี ≤ งบ → ตัวละ bubble; เกินงบ → กระจายลงครบงบให้สมดุล; แจ้งเพดาน (ถ้ามี) หลังบัญชี ก่อน support
      *
      * @param  array<int, string>  $accounts
      * @return array<int, string>
      */
-    private function packTexts(array $accounts, ?string $support): array
+    private function packTexts(array $accounts, ?string $support, ?string $capNotice = null): array
     {
-        $budget = $support !== null ? 4 : 5;
+        $extras = array_values(array_filter([$capNotice, $support], fn ($t) => $t !== null));
+        $budget = 5 - count($extras);
         $bubbles = $this->groupAccounts($accounts, $budget);
-        if ($support !== null) {
-            $bubbles[] = $support;
+        foreach ($extras as $extra) {
+            $bubbles[] = $extra;
         }
 
         return $bubbles;
@@ -788,6 +822,8 @@ class AccountDeliveryService
      * รวมบัญชีทั้งรอบเป็น bubble เดียวด้วย ACCOUNT_DIVIDER; support ยังเป็น bubble ของตัวเองท้ายรอบสุดท้าย
      * ถ้ารวมแล้วเกิน 5000 ตัวอักษร (limit ของ LINE): แยกเป็นกลุ่มติดกัน "น้อยกลุ่มที่สุด" ที่แต่ละก้อน ≤ 5000
      * แบ่งตามจำนวนบัญชีให้สมดุล (ขนาดต่างกัน ≤ 1) โดยกำหนดเพดานจำนวนก้อนตาม LINE (5, ถ้ามี support ร่วม push = 4)
+     * บับเบิลแจ้งเพดาน (capNotice) กินโควตา bubble ของ push ด้วย — ต้องกันที่ไว้ให้ ไม่งั้น push มี 6 บับเบิล
+     * แล้ว assertFitsSinglePush throw ทั้งงาน; เรียงหลังบัญชี ก่อน support เสมอ
      * ถ้าแม้แต่งบสูงสุดก็ยังเกิน — คืนงบสูงสุดไปให้ assertFitsSinglePush throw ตามระบบเดิม (fail-safe ก่อนส่ง)
      *
      * @param  array<int, string>  $accounts
@@ -795,7 +831,10 @@ class AccountDeliveryService
      */
     private function packRound(array $accounts, ?string $support, ?string $capNotice = null): array
     {
-        $maxBubbles = $support !== null ? 4 : 5;
+        // บับเบิลแจ้งเพดาน + support แยกกันเป็นบับเบิลของตัวเองทั้งคู่ — หักออกจากงบบัญชีตั้งแต่คำนวณ
+        // (ก่อนหน้านี้หักแค่ support ทำให้ push ได้ 6 บับเบิลแล้ว assertFitsSinglePush throw ทั้งงาน)
+        $extras = array_values(array_filter([$capNotice, $support], fn ($t) => $t !== null));
+        $maxBubbles = 5 - count($extras);
 
         $fewestFitting = null;
         for ($groups = 1; $groups <= $maxBubbles; $groups++) {
@@ -883,17 +922,8 @@ class AccountDeliveryService
         }
 
         // ทำซ้ำบนการ์ดถึงลูกค้าแล้ว เข้าประวัติแชทด้วย (บอทจะได้บอกลูกค้าได้ตรงกันว่าขาดไปเท่าไร)
-        $cappedItem = $delivery->items->firstWhere('requested_qty');
-        if ($cappedItem !== null) {
-            $cappedReserved = (int) $delivery->items
-                ->where('product_name', $cappedItem->product_name)
-                ->whereIn('status', [AccountDeliveryItem::ST_RESERVED, AccountDeliveryItem::ST_DELIVERED])
-                ->sum('qty');
-            $missing = max(0, $cappedItem->requested_qty - $cappedReserved);
-            if ($cappedReserved > 0 && $missing > 0) {
-                $lines[] = "ℹ️ ระบบส่งให้แล้ว {$cappedReserved} จาก {$cappedItem->requested_qty} บัญชี ({$cappedItem->product_name})"
-                    ." — อีก {$missing} บัญชี เกินเพดานระบบ ทีมงานกำลังส่งตามให้ในแชทนี้นะครับ";
-            }
+        if (($capNotice = $this->capNotice($delivery)) !== null) {
+            $lines[] = $capNotice;
         }
 
         try {

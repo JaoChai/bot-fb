@@ -215,9 +215,10 @@ class TelegramAlertCallbackController extends Controller
                 }
                 $this->deliveryService->deliver($delivery, $fromName, $setSize);
                 // ต่อท้ายคำเตือน shortage/unmapped ไม่ให้หายตอนแทนที่การ์ด (ลูกค้าจ่ายครบแต่ได้ไม่ครบ)
-                $note = $this->deliveryService->pendingManualNote($delivery);
+                // + บรรทัด "ส่งแล้ว · ชุดละ N (X ชุด)" ตามขนาดชุดที่ใช้จริง — แอดมินเห็นว่าระบบแบ่งไปกี่รอบ
+                $note = $this->deliveryService->statusNoteAfterDelivery($delivery);
                 $this->alertBot->editMessageText($token, $chatId, $messageId,
-                    "✅ <b>ส่งให้ลูกค้าแล้ว</b> โดย {$escapedFrom} · งาน #{$delivery->id}".$note);
+                    "✅ <b>ส่งให้ลูกค้าแล้ว</b> โดย {$escapedFrom} · งาน #{$delivery->id}{$note}");
                 $this->alertBot->answerCallbackQuery($token, $cbId, 'ส่งแล้ว');
             }
         } catch (DeliveryAlreadyHandledException $e) {

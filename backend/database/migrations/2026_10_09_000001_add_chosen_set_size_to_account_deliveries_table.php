@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 // ขนาดชุดที่แอดมินเลือกจากปุ่มบนการ์ด (dv|id|setSize) — null = พฤติกรรมเดิม (แบ่งครึ่ง)
-// จำสถานะไว้เพราะรอบหลังพังต้องกดส่งซ้ำด้วยขนาดชุดเดิม ไม่ใช่เริ่มแบ่งครึ่งใหม่เอง
+// ตั้งใหม่ทุกครั้งที่กดส่ง (ส่งซ้ำหลังพังด้วยขนาดของปุ่มล่าสุด); ค่า null จึงเป็นแค่ "ครั้งนี้ไม่ได้เลือก"
 return new class extends Migration
 {
     public function up(): void

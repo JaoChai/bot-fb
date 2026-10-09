@@ -180,7 +180,6 @@ class AccountDeliverySetSizeTest extends TestCase
         app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
 
         [$p1, $p2] = $pushes();
-        fwrite(STDERR, 'P5: '.var_export(array_map(fn ($b) => mb_substr($b, 0, 40), $p2), true)."\n");
         $this->assertSame([15], self::accountsPerBubble([$p1[0]]));
         $this->assertSame([15], self::accountsPerBubble([$p2[0]]));
         // บับเบิลแจ้งลูกค้า: หลังบัญชี ก่อน support — ข้อความตามที่การ์ดกำหนด
@@ -269,25 +268,95 @@ class AccountDeliverySetSizeTest extends TestCase
         });
     }
 
-    public function test_delivered_card_text_states_the_set_size_used(): void
+    /**
+     * ทุกสินค้าที่โดนเพดานตัด ต้องมีบรรทัดของตัวเองในบับเบิลเดียวกัน (spec: one line per capped product)
+     */
+    public function test_notice_bubble_has_one_line_per_capped_product(): void
     {
         $this->addReservedAccounts(30);
-        $this->mockLineOk();
+        $this->capFirstStockItem(41); // G3D สั่ง 41 จองได้ 30
+        $this->seedAvailable(900, 'BM', 'uid900|pass900|mail|2fa');
+        app(StockPoolService::class)->reserveOne('BM', '1');
+        $this->delivery->items()->create([
+            'product_name' => 'BM', 'stock_code' => 'BM', 'kind' => 'stock',
+            'qty' => 1, 'stock_item_id' => 900, 'status' => 'reserved', 'requested_qty' => 5,
+        ]);
+        $pushes = $this->capturePushes();
 
-        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม', 20);
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
 
-        $text = app(AccountDeliveryService::class)->cardTextForTesting($this->delivery->fresh());
-        $this->assertStringContainsString('ส่งแล้ว · ชุดละ 20 (2 ชุด)', $text);
+        $notice = $pushes()[1][1];
+        $this->assertStringContainsString('ระบบส่งให้แล้ว 30 จาก 41 บัญชี (G3D)', $notice);
+        $this->assertStringContainsString('ระบบส่งให้แล้ว 1 จาก 5 บัญชี (BM)', $notice);
     }
 
-    public function test_delivered_card_text_states_half_split_when_no_size_chosen(): void
+    /** ข้อความแจ้งลูกค้าต้องตรง spec ทุกตัวอักษร (emoji, ไม่มีขีดคั่นก่อน "อีก") */
+    public function test_notice_text_matches_spec_exactly(): void
     {
         $this->addReservedAccounts(30);
+        $this->capFirstStockItem(41);
+        $pushes = $this->capturePushes();
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        $notice = $pushes()[1][1];
+        $this->assertSame(
+            '📦 ระบบส่งให้แล้ว 30 จาก 41 บัญชี (G3D) อีก 11 บัญชี ทีมงานกำลังส่งตามให้ในแชทนี้นะครับ',
+            $notice
+        );
+    }
+
+    /** บับเบิลแจ้งเพดานต้องกินโควตา 5 บับเบิลของ push ด้วย — packRound ต้องกันที่ไว้ให้ (spec: leave room) */
+    public function test_pack_round_reserves_a_bubble_slot_for_the_cap_notice(): void
+    {
+        $service = app(AccountDeliveryService::class);
+        $packRound = new \ReflectionMethod($service, 'packRound');
+        $packRound->setAccessible(true);
+
+        // repro ของ reviewer: 16 บัญชี × ~1050 ตัวอักษร — ใส่ได้แค่ก้อนละ 4 บัญชี (≤5000)
+        // ก่อนแก้: 4 ก้อนบัญชี + notice + support = 6 บับเบิล → assertFitsSinglePush พังทั้งงาน
+        $accounts = array_fill(0, 16, str_repeat('ก', 1050));
+        $bubbles = $packRound->invoke($service, $accounts, 'SUPPORT', 'NOTICE');
+
+        $this->assertLessThanOrEqual(5, count($bubbles));
+        $this->assertSame('NOTICE', $bubbles[count($bubbles) - 2]);
+        $this->assertSame('SUPPORT', $bubbles[count($bubbles) - 1]);
+    }
+
+    /** ส่งรอบเดียว (packTexts path) ก็ต้องได้บับเบิลแจ้งเพดานบน push สุดท้ายเหมือนกัน */
+    public function test_single_round_delivery_still_shows_the_cap_notice(): void
+    {
+        $this->addReservedAccounts(9); // < split_from → รอบเดียว
+        $this->capFirstStockItem(41);  // สั่ง 41 จองได้แค่ 9
+        $pushes = $this->capturePushes();
+
+        app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
+
+        $this->assertCount(1, $pushes());
+        $bubbles = $pushes()[0];
+        // 9 บัญชี กับ 2 บับเบิลจองแล้ว (notice+support) → บัญชี 3 ก้อนก้อนละ 3
+        $this->assertSame([3, 3, 3], self::accountsPerBubble([$bubbles[0], $bubbles[1], $bubbles[2]]));
+        $this->assertSame('📦 ระบบส่งให้แล้ว 9 จาก 41 บัญชี (G3D) อีก 32 บัญชี ทีมงานกำลังส่งตามให้ในแชทนี้นะครับ', $bubbles[3]);
+        $this->assertStringContainsString('lin.ee/sTD5TQL', $bubbles[4]);
+    }
+
+    /** ประวัติแชทต้องมีบรรทัดแจ้งเพดานครบทุกสินค้าที่โดนตัด (บอท AI ต้องรู้เท่าลูกค้า) */
+    public function test_conversation_history_has_one_line_per_capped_product(): void
+    {
+        $this->addReservedAccounts(30);
+        $this->capFirstStockItem(41);
+        $this->seedAvailable(901, 'BM', 'uid901|pass901|mail|2fa');
+        app(StockPoolService::class)->reserveOne('BM', '1');
+        $this->delivery->items()->create([
+            'product_name' => 'BM', 'stock_code' => 'BM', 'kind' => 'stock',
+            'qty' => 1, 'stock_item_id' => 901, 'status' => 'reserved', 'requested_qty' => 5,
+        ]);
         $this->mockLineOk();
 
         app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
 
-        $text = app(AccountDeliveryService::class)->cardTextForTesting($this->delivery->fresh());
-        $this->assertStringContainsString('ส่งแล้ว · แบ่งครึ่ง (2 ชุด)', $text);
+        $msg = $this->conversation->messages()->latest('id')->first();
+        $this->assertStringContainsString('ระบบส่งให้แล้ว 30 จาก 41 บัญชี (G3D)', $msg->content);
+        $this->assertStringContainsString('ระบบส่งให้แล้ว 1 จาก 5 บัญชี (BM)', $msg->content);
     }
 }

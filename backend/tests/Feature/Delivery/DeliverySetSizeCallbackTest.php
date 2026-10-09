@@ -167,4 +167,46 @@ class DeliverySetSizeCallbackTest extends TestCase
                 && ($context['raw'] ?? null) === 0)
             ->once();
     }
+
+    /** การ์ดหลังส่งต้องบอกขนาดชุดที่ใช้จริง (จำนวนรอบจริงจากการส่ง ไม่ใช่เดา) */
+    public function test_delivered_card_edit_states_the_set_size_used(): void
+    {
+        $this->addReservedAccounts(19); // setUp มี 1 → รวม 20 บัญชี ชุดละ 8 → 3 รอบ
+        $this->mockLinePush();
+
+        $this->press("dv|{$this->delivery->id}|8")->assertOk();
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'editMessageText')
+                && str_contains($request['text'] ?? '', 'ส่งแล้ว · ชุดละ 8 (3 ชุด)');
+        });
+    }
+
+    /** แบ่งครึ่ง (กด x) การ์ดต้องบอกว่าแบ่งครึ่ง 2 ชุด */
+    public function test_delivered_card_edit_states_half_split_when_pressed_x(): void
+    {
+        $this->addReservedAccounts(19); // 20 บัญชี → แบ่งครึ่ง 10+10
+        $this->mockLinePush();
+
+        $this->press("dv|{$this->delivery->id}|x")->assertOk();
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'editMessageText')
+                && str_contains($request['text'] ?? '', 'ส่งแล้ว · แบ่งครึ่ง (2 ชุด)');
+        });
+    }
+
+    /** งานรอบเดียวจบ (N < split_from) ต้องบอก "1 ชุด" ไม่ใช่ "แบ่งครึ่ง (2 ชุด)" เหมือนโค้ดเดิม */
+    public function test_delivered_card_edit_states_single_round_without_halving(): void
+    {
+        $this->mockLinePush(); // setUp มี 1 บัญชี → รอบเดียว
+
+        $this->press("dv|{$this->delivery->id}|x")->assertOk();
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'editMessageText')
+                && str_contains($request['text'] ?? '', 'ส่งแล้ว · 1 ชุด')
+                && ! str_contains($request['text'] ?? '', 'แบ่งครึ่ง');
+        });
+    }
 }
