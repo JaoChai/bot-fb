@@ -653,7 +653,7 @@ class AccountDeliveryService
             $missing = max(0, $item->requested_qty - $reserved);
             if ($reserved > 0 && $missing > 0) {
                 $lines[] = "📦 ระบบส่งให้แล้ว {$reserved} จาก {$item->requested_qty} บัญชี ({$item->product_name})"
-                    ." อีก {$missing} บัญชี ทีมงานกำลังส่งตามให้ในแชทนี้นะครับ";
+                    ." อีก {$missing} บัญชี ทีมงานกำลังส่งตามให้ในแชตนี้นะครับ";
             }
         }
 

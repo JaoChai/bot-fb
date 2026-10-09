@@ -186,7 +186,7 @@ class AccountDeliverySetSizeTest extends TestCase
         $notice = $p2[1];
         $this->assertStringContainsString('ระบบส่งให้แล้ว 30 จาก 41 บัญชี (G3D)', $notice);
         $this->assertStringContainsString('อีก 11 บัญชี', $notice);
-        $this->assertStringContainsString('ทีมงานกำลังส่งตามให้ในแชทนี้นะครับ', $notice);
+        $this->assertStringContainsString('ทีมงานกำลังส่งตามให้ในแชตนี้นะครับ', $notice);
         $this->assertStringContainsString('lin.ee/sTD5TQL', $p2[2]);
     }
 
@@ -301,7 +301,7 @@ class AccountDeliverySetSizeTest extends TestCase
 
         $notice = $pushes()[1][1];
         $this->assertSame(
-            '📦 ระบบส่งให้แล้ว 30 จาก 41 บัญชี (G3D) อีก 11 บัญชี ทีมงานกำลังส่งตามให้ในแชทนี้นะครับ',
+            '📦 ระบบส่งให้แล้ว 30 จาก 41 บัญชี (G3D) อีก 11 บัญชี ทีมงานกำลังส่งตามให้ในแชตนี้นะครับ',
             $notice
         );
     }
@@ -336,7 +336,7 @@ class AccountDeliverySetSizeTest extends TestCase
         $bubbles = $pushes()[0];
         // 9 บัญชี กับ 2 บับเบิลจองแล้ว (notice+support) → บัญชี 3 ก้อนก้อนละ 3
         $this->assertSame([3, 3, 3], self::accountsPerBubble([$bubbles[0], $bubbles[1], $bubbles[2]]));
-        $this->assertSame('📦 ระบบส่งให้แล้ว 9 จาก 41 บัญชี (G3D) อีก 32 บัญชี ทีมงานกำลังส่งตามให้ในแชทนี้นะครับ', $bubbles[3]);
+        $this->assertSame('📦 ระบบส่งให้แล้ว 9 จาก 41 บัญชี (G3D) อีก 32 บัญชี ทีมงานกำลังส่งตามให้ในแชตนี้นะครับ', $bubbles[3]);
         $this->assertStringContainsString('lin.ee/sTD5TQL', $bubbles[4]);
     }
 
