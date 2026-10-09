@@ -323,9 +323,39 @@ class AccountDeliveryService
     /** @return array<int, array<int, array{text: string, callback_data: string}>> */
     public function cardKeyboard(AccountDelivery $delivery): array
     {
-        return [
+        $legacy = [
             [['text' => '✅ ส่งให้ลูกค้าเลย', 'callback_data' => "dv|{$delivery->id}|x"]],
             [['text' => '↩️ ยกเลิก คืนเข้า stock', 'callback_data' => "dx|{$delivery->id}|x"]],
+        ];
+
+        // ปุ่มเลือกขนาดชุดเฉพาะงานที่เหลือ ≥ split_from (ต่ำกว่านั้นระบบส่งรอบเดียว ไม่มีอะไรให้เลือก)
+        $left = (clone $delivery->items())
+            ->where('kind', AccountDeliveryItem::KIND_STOCK)
+            ->where('status', AccountDeliveryItem::ST_RESERVED)
+            ->count();
+        if ($left < max(2, config_int('delivery.split_from', 10))) {
+            return $legacy;
+        }
+
+        $maxQty = config_int('delivery.max_qty', 30);
+        $sizes = array_values(array_filter(
+            array_unique([10, 15, 20]),
+            fn (int $size): bool => $size < $left && $size <= $maxQty,
+        ));
+        if ($sizes === []) {
+            // ไม่มีปุ่มไหนเล็กกว่าจำนวนที่เหลือได้ (เช่น N=10) — ไม่มีแถวปุ่มว่างให้ Telegram ปฏิเสธ
+            return $legacy;
+        }
+
+        $buttons = array_map(
+            fn (int $size): array => ['text' => "ชุดละ {$size}", 'callback_data' => "dv|{$delivery->id}|{$size}"],
+            $sizes,
+        );
+
+        return [
+            [['text' => '✅ แบ่งครึ่ง', 'callback_data' => "dv|{$delivery->id}|x"]],
+            $buttons,
+            $legacy[1],
         ];
     }
 
@@ -365,6 +395,7 @@ class AccountDeliveryService
             "👤 <b>{$customer}</b> · แชท #{$conv?->id}",
             "💵 ยอด <code>{$amount}</code> บาท",
         ];
+        // เตือน "สั่งเกินเพดาน" ขึ้นหัวการ์ด (บรรทัดแรก) — แอดมินกดปุ่มไล่จากบน ได้เห็นก่อนกดส่ง
         $capped = $delivery->items->whereNotNull('requested_qty');
         foreach ($capped as $item) {
             $name = TelegramAlertBotService::esc($item->product_name);
@@ -374,7 +405,13 @@ class AccountDeliveryService
                 ->where('product_name', $item->product_name)
                 ->whereIn('status', [AccountDeliveryItem::ST_RESERVED, AccountDeliveryItem::ST_DELIVERED])
                 ->sum('qty');
-            $lines[] = "⚠️ <b>{$name}: ลูกค้าสั่ง {$item->requested_qty} แต่จองได้ {$reserved}</b> (เกินเพดานระบบ) — ส่วนที่เหลือต้องส่งเอง";
+            array_unshift($lines, "⚠️ <b>{$name}: ลูกค้าสั่ง {$item->requested_qty} แต่จองได้ {$reserved}</b> (เกินเพดานระบบ) — ส่วนที่เหลือต้องส่งเอง");
+        }
+        if ($delivery->status === AccountDelivery::STATUS_DELIVERED) {
+            $deliveredCount = (clone $delivery->items())->where('status', AccountDeliveryItem::ST_DELIVERED)->where('kind', AccountDeliveryItem::KIND_STOCK)->count();
+            $lines[] = $delivery->chosen_set_size !== null
+                ? '✅ ส่งแล้ว · ชุดละ '.$delivery->chosen_set_size.' ('.max(1, (int) ceil($deliveredCount / $delivery->chosen_set_size)).' ชุด)'
+                : '✅ ส่งแล้ว · แบ่งครึ่ง (2 ชุด)';
         }
         if ($delivery->status === AccountDelivery::STATUS_RESERVED && ($partial = $this->partialNote($delivery)) !== '') {
             $lines[] = $partial;
@@ -413,15 +450,23 @@ class AccountDeliveryService
      *
      * @throws DeliveryAlreadyHandledException สถานะไม่ใช่ reserved (กดซ้ำ/ยกเลิกแล้ว)
      */
-    public function deliver(AccountDelivery $delivery, string $confirmedByName): void
+    public function deliver(AccountDelivery $delivery, string $confirmedByName, ?int $setSize = null): void
     {
+        // ค่าขนาดชุดมาจาก callback ของ client — ใช้เฉพาะค่าในช่วงที่ยอมรับได้ นอกเหนือจากนั้นละเชิงแล้วใช้พฤติกรรมเดิม
+        if ($setSize !== null && ($setSize < 1 || $setSize > config_int('delivery.max_qty', 30))) {
+            Log::warning('Delivery: setSize out of range — fallback to halving', [
+                'delivery_id' => $delivery->id, 'raw' => $setSize,
+            ]);
+            $setSize = null;
+        }
+
         // จองสิทธิ์ส่ง: reserved → delivering ใน transaction เดียว กันกดพร้อมกัน
-        $delivery = DB::transaction(function () use ($delivery) {
+        $delivery = DB::transaction(function () use ($delivery, $setSize) {
             $locked = AccountDelivery::whereKey($delivery->id)->lockForUpdate()->firstOrFail();
             if ($locked->status !== AccountDelivery::STATUS_RESERVED) {
                 throw new DeliveryAlreadyHandledException($locked->status);
             }
-            $locked->update(['status' => AccountDelivery::STATUS_DELIVERING]);
+            $locked->update(['status' => AccountDelivery::STATUS_DELIVERING, 'chosen_set_size' => $setSize]);
 
             return $locked;
         });
@@ -450,8 +495,25 @@ class AccountDeliveryService
                 ->count();
             $messages = $this->buildCustomerMessages($delivery, $stockItems, $supportItems, $reservedRows, $alreadySent);
 
+            // แจ้งลูกค้าตรงนั้นด้วยว่าถูกเพดานตัดจำนวน (สั่ง X ได้ Y) — อย่าให้ส่งเงียบๆ แล้วลูกค้านับเองว่าขาด
+            $cappedItem = $delivery->items->firstWhere('requested_qty');
+            $capNotice = null;
+            if ($cappedItem !== null) {
+                $cappedName = $cappedItem->product_name;
+                $cappedReserved = (int) $delivery->items
+                    ->where('product_name', $cappedName)
+                    ->whereIn('status', [AccountDeliveryItem::ST_RESERVED, AccountDeliveryItem::ST_DELIVERED])
+                    ->sum('qty');
+                $missing = max(0, $cappedItem->requested_qty - $cappedReserved);
+                if ($cappedReserved > 0 && $missing > 0) {
+                    $capNotice = "ℹ️ ระบบส่งให้แล้ว {$cappedReserved} จาก {$cappedItem->requested_qty} บัญชี ({$cappedName})"
+                        ." — อีก {$missing} บัญชี เกินเพดานระบบ ทีมงานกำลังส่งตามให้ในแชทนี้นะครับ";
+                }
+            }
+
             // จัดทุกรอบให้เสร็จ + ตรวจขนาดก่อนยิงรอบแรก: ถ้ารอบไหนเกิน limit ต้องพังตอนยังไม่ส่งอะไรเลย
-            $rounds = $this->splitRounds($stockItems->values()->all(), $messages['accounts'], $messages['support']);
+            // (capNotice เข้ารอบสุดท้ายใน splitRounds/packRound แล้ว — หลังบัญชี ก่อน support)
+            $rounds = $this->splitRounds($stockItems->values()->all(), $messages['accounts'], $messages['support'], $delivery->chosen_set_size, $capNotice);
             foreach ($rounds as $round) {
                 $this->assertFitsSinglePush($delivery, $round['bubbles']);
             }
@@ -576,7 +638,7 @@ class AccountDeliveryService
      * @param  array<int, string>  $accounts
      * @return array<int, array{items: array<int, AccountDeliveryItem>, bubbles: array<int, string>}>
      */
-    private function splitRounds(array $items, array $accounts, ?string $support): array
+    private function splitRounds(array $items, array $accounts, ?string $support, ?int $chosenSetSize = null, ?string $capNotice = null): array
     {
         if ($accounts === [] && $support === null) {
             throw new \RuntimeException('nothing to deliver');
@@ -584,8 +646,17 @@ class AccountDeliveryService
 
         $count = count($accounts);
         $splitFrom = max(2, config_int('delivery.split_from', 10));
-        $firstSize = $count >= $splitFrom ? (int) ceil($count / 2) : $count;
-        $sizes = $firstSize < $count ? [$firstSize, $count - $firstSize] : [$count];
+        // ขนาดชุดที่แอดมินเลือกบนการ์ด (เก็บไว้กับงาน) มาก่อนการแบ่งครึ่งอัตโนมัติเสมอ —
+        // รอบหลังพังกดส่งซ้ำ ก็ยังแบ่งตามชุดที่เลือกไว้ ไม่หลุดกลับไปแบ่งครึ่งเอง
+        if ($chosenSetSize !== null) {
+            $sizes = [];
+            for ($remaining = $count; $remaining > 0; $remaining -= min($chosenSetSize, $remaining)) {
+                $sizes[] = min($chosenSetSize, $remaining);
+            }
+        } else {
+            $firstSize = $count >= $splitFrom ? (int) ceil($count / 2) : $count;
+            $sizes = $firstSize < $count ? [$firstSize, $count - $firstSize] : [$count];
+        }
         $isSplit = count($sizes) > 1;
 
         $rounds = [];
@@ -597,7 +668,7 @@ class AccountDeliveryService
             $rounds[] = [
                 'items' => array_slice($items, $offset, $size),
                 'bubbles' => $isSplit
-                    ? $this->packRound($roundAccounts, $roundSupport)
+                    ? $this->packRound($roundAccounts, $roundSupport, $isLast ? $capNotice : null)
                     : $this->packTexts($roundAccounts, $roundSupport),
             ];
             $offset += $size;
@@ -722,13 +793,16 @@ class AccountDeliveryService
      * @param  array<int, string>  $accounts
      * @return array<int, string>
      */
-    private function packRound(array $accounts, ?string $support): array
+    private function packRound(array $accounts, ?string $support, ?string $capNotice = null): array
     {
         $maxBubbles = $support !== null ? 4 : 5;
 
         $fewestFitting = null;
         for ($groups = 1; $groups <= $maxBubbles; $groups++) {
             $bubbles = $this->balancedDivide($accounts, $groups);
+            if ($capNotice !== null) {
+                $bubbles[] = $capNotice;
+            }
             if (! $this->anyBubbleTooLong($bubbles)) {
                 $fewestFitting = $bubbles;
 
@@ -746,6 +820,9 @@ class AccountDeliveryService
 
         // เกินเพดานไปแล้ว — คืนการแบ่งที่งบสูงสุด เพื่อให้ assertFitsSinglePush throw เอง (fail-safe เหมือนเดิม)
         $bubbles = $this->balancedDivide($accounts, $maxBubbles);
+        if ($capNotice !== null) {
+            $bubbles[] = $capNotice;
+        }
         if ($support !== null) {
             $bubbles[] = $support;
         }
@@ -803,6 +880,20 @@ class AccountDeliveryService
         }
         if ($lines === []) {
             return;
+        }
+
+        // ทำซ้ำบนการ์ดถึงลูกค้าแล้ว เข้าประวัติแชทด้วย (บอทจะได้บอกลูกค้าได้ตรงกันว่าขาดไปเท่าไร)
+        $cappedItem = $delivery->items->firstWhere('requested_qty');
+        if ($cappedItem !== null) {
+            $cappedReserved = (int) $delivery->items
+                ->where('product_name', $cappedItem->product_name)
+                ->whereIn('status', [AccountDeliveryItem::ST_RESERVED, AccountDeliveryItem::ST_DELIVERED])
+                ->sum('qty');
+            $missing = max(0, $cappedItem->requested_qty - $cappedReserved);
+            if ($cappedReserved > 0 && $missing > 0) {
+                $lines[] = "ℹ️ ระบบส่งให้แล้ว {$cappedReserved} จาก {$cappedItem->requested_qty} บัญชี ({$cappedItem->product_name})"
+                    ." — อีก {$missing} บัญชี เกินเพดานระบบ ทีมงานกำลังส่งตามให้ในแชทนี้นะครับ";
+            }
         }
 
         try {
