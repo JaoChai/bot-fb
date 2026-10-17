@@ -12,6 +12,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -170,6 +171,38 @@ class AlertUnansweredHandoverTest extends TestCase
         $this->artisan('handover:alert-unanswered')->assertSuccessful();
 
         Http::assertNothingSent();
+    }
+
+    public function test_loads_only_conversations_with_recent_activity_and_alerts_only_the_fresh_one(): void
+    {
+        // รีวิวข้อบังคับ #1: is_handover ถาวร — query นอกต้องผูกหน้าต่าง 24 ชม.ผ่าน messages
+        // (index conversation_id, created_at) ไม่งั้นเซ็ตที่ต้องโหลดโตทุกนาที
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]])]);
+        $bot = $this->makeBot();
+        $stale = $this->makeHandoverConversation($bot);
+        $fresh = $this->makeHandoverConversation($bot);
+        $this->addMessage($stale, 'user', 'สั่งของเมื่อสามวันก่อน', now()->subDays(3));
+        $this->addMessage($fresh, 'user', 'สั่งของตอนนี้', now()->subMinutes(16));
+
+        DB::enableQueryLog();
+        $this->artisan('handover:alert-unanswered')->assertSuccessful();
+        $queries = collect(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($r) => str_contains($r['text'] ?? '', 'สั่งของตอนนี้'));
+
+        // คิวรี่หลักต้องมีเงื่อนไข exists บน messages ที่ผูก created_at ที่ cutoff 24 ชม.
+        $mainQuery = $queries->first(fn ($q) => str_contains($q['query'], 'from "conversations"'));
+        $this->assertNotNull($mainQuery, 'main conversations query not captured');
+        $this->assertStringContainsString('exists', $mainQuery['query']);
+        $this->assertStringContainsString('"messages"', $mainQuery['query']);
+        $this->assertStringContainsString('created_at', $mainQuery['query']);
+        $bindings = array_map(
+            fn ($b) => $b instanceof \DateTimeInterface ? $b->format('Y-m-d H:i:s') : (string) $b,
+            $mainQuery['bindings'],
+        );
+        $this->assertContains('2026-10-16 12:00:00', $bindings);
     }
 
     public function test_skips_silently_when_bot_has_no_telegram_plugin(): void

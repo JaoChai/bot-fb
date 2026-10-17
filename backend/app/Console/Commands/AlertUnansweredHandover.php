@@ -42,11 +42,24 @@ class AlertUnansweredHandover extends Command
 
         $conversations = Conversation::query()
             ->where('is_handover', true)
+            // ผูกหน้าต่าง 24 ชม.ผ่าน index messages (conversation_id, created_at) —
+            // handover ถาวร เซ็ตนี้โตทุกนาที ห้ามโหลดแชทที่ไม่มีกิจกรรมในหน้าต่าง
+            ->whereHas('messages', fn ($q) => $q->where('created_at', '>=', now()->subHours(self::MAX_WAIT_HOURS)))
             ->with('currentFlow.plugins', 'bot.defaultFlow.plugins', 'customerProfile')
             ->get();
 
+        // ข้อความล่าสุดของทุกแชทในหน้าต่างได้จาก 2 คิวรี่ (กัน N+1 ล่าสุด-ต่อ-แชท)
+        $latestMessages = Message::query()
+            ->whereIn('conversation_id', $conversations->modelKeys())
+            ->whereIn('id', Message::query()
+                ->selectRaw('max(id)')
+                ->whereIn('conversation_id', $conversations->modelKeys())
+                ->groupBy('conversation_id'))
+            ->get()
+            ->keyBy('conversation_id');
+
         foreach ($conversations as $conversation) {
-            $lastMessage = $conversation->messages()->latest('id')->first();
+            $lastMessage = $latestMessages->get($conversation->id);
 
             // มีคนตอบแล้ว (แอดมินหรือบอทเป็นข้อความล่าสุด) หรือแชทยังไม่มีข้อความ
             if (! $lastMessage || $lastMessage->sender !== 'user') {
