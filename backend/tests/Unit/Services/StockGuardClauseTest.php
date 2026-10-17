@@ -171,6 +171,84 @@ class StockGuardClauseTest extends TestCase
         $this->assertStringContainsString('หมด stock', $result['content']);
     }
 
+    // ---- reviewer round 3: "ทั้งหมด" means total, not out of stock ----
+
+    public function test_order_summary_with_x_quantity_and_total_still_blocks(): void
+    {
+        $response = 'สรุปรายการ: BM x2 รวมทั้งหมด 2,200 บาทครับ';
+
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+        $this->assertSame(['Nolimit Level Up+ BM'], $result['blocked_products']);
+        $this->assertStringContainsString('หมด stock', $result['content']);
+        $this->assertStringNotContainsString($response, $result['content']);
+    }
+
+    public function test_order_summary_with_total_before_quantity_still_blocks(): void
+    {
+        $response = 'สรุป BM ทั้งหมด 2 ตัว 2,200 บาทครับ';
+
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+        $this->assertSame(['Nolimit Level Up+ BM'], $result['blocked_products']);
+        $this->assertStringContainsString('หมด stock', $result['content']);
+        $this->assertStringNotContainsString($response, $result['content']);
+    }
+
+    public function test_order_summary_with_total_before_product_still_blocks(): void
+    {
+        $response = 'ยอดรวมทั้งหมด BM 2 ตัว 2,200 บาทครับ';
+
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+        $this->assertSame(['Nolimit Level Up+ BM'], $result['blocked_products']);
+        $this->assertStringContainsString('หมด stock', $result['content']);
+        $this->assertStringNotContainsString($response, $result['content']);
+    }
+
+    public function test_total_after_price_only_clause_does_not_suppress_notice(): void
+    {
+        $response = 'BM ราคา 1,100 บาทครับ ราคานี้สำหรับทั้งหมดครับ';
+
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertSame($response."\n\nตอนนี้ Nolimit Level Up+ BM หมดสต็อกชั่วคราวครับ", $result['content']);
+    }
+
+    public function test_total_before_price_only_clause_does_not_suppress_notice(): void
+    {
+        $response = 'ราคานี้สำหรับทั้งหมดครับ BM ราคา 1,100 บาทครับ';
+
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertSame($response."\n\nตอนนี้ Nolimit Level Up+ BM หมดสต็อกชั่วคราวครับ", $result['content']);
+    }
+
+    public function test_total_in_product_price_description_does_not_suppress_notice(): void
+    {
+        $response = 'สินค้า BM ทั้งหมดราคา 1,100 บาทครับ';
+
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertSame($response."\n\nตอนนี้ Nolimit Level Up+ BM หมดสต็อกชั่วคราวครับ", $result['content']);
+    }
+
+    public function test_total_followed_by_already_does_not_suppress_notice(): void
+    {
+        $response = 'BM ทั้งหมดแล้ว 1,100 บาทครับ';
+
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertSame($response."\n\nตอนนี้ Nolimit Level Up+ BM หมดสต็อกชั่วคราวครับ", $result['content']);
+    }
+
     // ---- reviewer round 2: cheer words must belong to THIS product ----
 
     public function test_cheer_word_of_other_product_page_does_not_block_bm_mention(): void

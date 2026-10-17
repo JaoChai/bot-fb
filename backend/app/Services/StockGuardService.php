@@ -222,7 +222,8 @@ class StockGuardService
     protected function isExcludedClause(string $clause, string $name): bool
     {
         $quoted = preg_quote($name, '/');
-        $refusal = 'หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|ยกเลิก|ไม่ต้อง|ไม่จำเป็น|ไม่ใช่|out\s*of\s*stock';
+        // "ทั้งหมด" means total/all, not a refusal to sell.
+        $refusal = '(?<!ทั้ง)หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|ยกเลิก|ไม่ต้อง|ไม่จำเป็น|ไม่ใช่|out\s*of\s*stock';
 
         $patterns = [
             // บอกว่าหมด/ไม่มีขาย/ไม่เอา/ยกเลิก ใกล้ชื่อสินค้าเท่านั้น
@@ -367,11 +368,11 @@ class StockGuardService
 
         $refusalPatterns = [
             // Refusal keyword near product name (within 40 chars)
-            "/{$quotedName}.{0,40}(หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|out.of.stock)/iu",
-            "/(หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|out.of.stock).{0,40}{$quotedName}/iu",
+            "/{$quotedName}.{0,40}((?<!ทั้ง)หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|out.of.stock)/iu",
+            "/((?<!ทั้ง)หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|out.of.stock).{0,40}{$quotedName}/iu",
             // "สินค้าXXXหมด" pattern
-            "/สินค้า.{0,10}{$quotedName}.{0,10}(หมด|ไม่มี)/iu",
-            "/{$quotedName}.{0,10}หมด(ชั่วคราว|stock|สต็อก|แล้ว)/iu",
+            "/สินค้า.{0,10}{$quotedName}.{0,10}((?<!ทั้ง)หมด|ไม่มี)/iu",
+            "/{$quotedName}.{0,10}(?<!ทั้ง)หมด(ชั่วคราว|stock|สต็อก|แล้ว)/iu",
         ];
 
         foreach ($refusalPatterns as $pattern) {
