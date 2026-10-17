@@ -369,7 +369,8 @@ class StockGuardService
      */
     protected function isRefusingContext(string $response, string $productName, string $ownerName): bool
     {
-        preg_match_all('/'.self::PRODUCT_REFUSAL.'/iu', $response, $refusals, PREG_OFFSET_CAPTURE);
+        // Cross-clause refusals retain the stock-only set, not unrelated follow-up negations.
+        preg_match_all('/(?:(?<!ทั้ง)หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|out\s*of\s*stock)(?!ค่า|จ่าย|รอ|โอน|เสีย|ธรรมเนียม)/iu', $response, $refusals, PREG_OFFSET_CAPTURE);
         $clauses = $this->splitClauses($response);
         $nameLength = mb_strlen($productName);
 

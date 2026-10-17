@@ -374,6 +374,29 @@ class StockGuardClauseTest extends TestCase
         $this->assertSame($response."\n\nตอนนี้ Nolimit Level Up+ BM หมดสต็อกชั่วคราวครับ", $result['content']);
     }
 
+    // ---- reviewer round 5: unrelated follow-up clauses must not hide the notice ----
+
+    public static function informationalPricesWithUnrelatedFollowUp(): array
+    {
+        return [
+            'E13 reassurance' => ['BM ราคา 1,100 บาทครับ ไม่ต้องห่วงเรื่องการใช้งานครับ'],
+            'Z1 alias reassurance' => ['Nolimit BM ราคา 1,100 บาทครับ ไม่ต้องกังวลเรื่องการใช้งานครับ'],
+            'Z2 not a promotion' => ['BM ราคา 1,100 บาทครับ ไม่ใช่ราคาโปรนะครับ'],
+            'Z3 cancellation policy' => ['BM ราคา 1,100 บาทครับ ยกเลิกได้ภายใน 7 วันครับ'],
+            'Z4 identity verification' => ['BM ราคา 1,100 บาทครับ ไม่จำเป็นต้องยืนยันตัวตนครับ'],
+        ];
+    }
+
+    #[DataProvider('informationalPricesWithUnrelatedFollowUp')]
+    public function test_unrelated_follow_up_does_not_suppress_price_notice(string $response): void
+    {
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertSame([], $result['blocked_products']);
+        $this->assertSame($response."\n\nตอนนี้ Nolimit Level Up+ BM หมดสต็อกชั่วคราวครับ", $result['content']);
+    }
+
     // ---- reviewer round 2: cheer words must belong to THIS product ----
 
     public function test_cheer_word_of_other_product_page_does_not_block_bm_mention(): void
