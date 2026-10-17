@@ -86,3 +86,7 @@ Schedule::command('delivery:reconcile')->hourly()->withoutOverlapping();
 
 // Auto Account Delivery — เปิด/ปิดสวิตช์ขายตามของจริงใน stock DB
 Schedule::command('stock:sync-pool')->everyFiveMinutes()->withoutOverlapping();
+
+// Handover — เตือนแอดมินเมื่อลูกค้ารอคำตอบเกิน handover.alert_after_minutes นาที
+// withoutOverlapping(10) + runInBackground เหตุผลเดียวกับ delivery:remind (Telegram ตอบช้าได้ ~30 วิ)
+Schedule::command('handover:alert-unanswered')->everyMinute()->withoutOverlapping(10)->runInBackground();
