@@ -77,7 +77,7 @@ class TelegramAlertCallbackController extends Controller
 
         // action งานส่งของ: ส่วนที่สองของ callback_data เป็น delivery id ไม่ใช่ conversation id
         if (in_array($act, ['dv', 'dx', 'dz'], true)) {
-            return $this->handleDeliveryAction($act, (int) $convId, $plugin, $cb, $token);
+            return $this->handleDeliveryAction($act, (int) $convId, $amt, $plugin, $cb, $token);
         }
 
         // action เลือกรายการ: ส่วนที่สองเป็น slip_verifications id ไม่ใช่ conversation id
@@ -160,6 +160,7 @@ class TelegramAlertCallbackController extends Controller
     private function handleDeliveryAction(
         string $act,
         int $deliveryId,
+        string $sizeToken,
         FlowPlugin $plugin,
         array $cb,
         string $token,
@@ -203,11 +204,21 @@ class TelegramAlertCallbackController extends Controller
                     "↩️ <b>คืนของเข้า stock แล้ว</b> โดย {$escapedFrom} · งาน #{$delivery->id}");
                 $this->alertBot->answerCallbackQuery($token, $cbId, 'คืนของแล้ว');
             } else { // dv
-                $this->deliveryService->deliver($delivery, $fromName);
+                // ค่าที่ 3 = ขนาดชุด (จากปุ่ม "ชุดละ N") — 'x' = พฤติกรรมเดิม (แบ่งครึ่ง)
+                // ตัวเลขส่งต่อให้ deliver ตรวจช่วงเอง; ไม่ใช่ตัวเลข (ยิงยาว/แก้ข้อความ) เตือนที่นี่แล้วส่ง null
+                // (ห้าม (int) cast ก่อน — 'abc' จะกลายเป็น 0 แล้วหลบการตรวจได้)
+                $setSize = ctype_digit($sizeToken) ? (int) $sizeToken : null;
+                if ($sizeToken !== 'x' && $setSize === null) {
+                    Log::warning('Delivery: setSize ignored — not numeric', [
+                        'delivery_id' => $delivery->id, 'raw' => $sizeToken,
+                    ]);
+                }
+                $this->deliveryService->deliver($delivery, $fromName, $setSize);
                 // ต่อท้ายคำเตือน shortage/unmapped ไม่ให้หายตอนแทนที่การ์ด (ลูกค้าจ่ายครบแต่ได้ไม่ครบ)
-                $note = $this->deliveryService->pendingManualNote($delivery);
+                // + บรรทัด "ส่งแล้ว · ชุดละ N (X ชุด)" ตามขนาดชุดที่ใช้จริง — แอดมินเห็นว่าระบบแบ่งไปกี่รอบ
+                $note = $this->deliveryService->statusNoteAfterDelivery($delivery);
                 $this->alertBot->editMessageText($token, $chatId, $messageId,
-                    "✅ <b>ส่งให้ลูกค้าแล้ว</b> โดย {$escapedFrom} · งาน #{$delivery->id}".$note);
+                    "✅ <b>ส่งให้ลูกค้าแล้ว</b> โดย {$escapedFrom} · งาน #{$delivery->id}{$note}");
                 $this->alertBot->answerCallbackQuery($token, $cbId, 'ส่งแล้ว');
             }
         } catch (DeliveryAlreadyHandledException $e) {
