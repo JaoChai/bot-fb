@@ -156,6 +156,60 @@ class StockGuardClauseTest extends TestCase
         $this->assertStringContainsString('หมด stock', $result['content']);
     }
 
+    // ---- reviewer round 2: refusal must refer to the product itself ----
+
+    public function test_order_summary_with_unrelated_negation_still_blocks(): void
+    {
+        // "ไม่มีค่าส่ง" negates the shipping fee, not BM — the summary with
+        // BM's own quantity/price must stay blocked (main blocks this too)
+        $response = 'สรุปรายการ: BM 2 ตัว รวม 2,200 บาท ไม่มีค่าส่งครับ';
+
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked']);
+        $this->assertContains('Nolimit Level Up+ BM', $result['blocked_products']);
+        $this->assertStringContainsString('หมด stock', $result['content']);
+    }
+
+    // ---- reviewer round 2: cheer words must belong to THIS product ----
+
+    public function test_cheer_word_of_other_product_page_does_not_block_bm_mention(): void
+    {
+        // "พร้อมส่ง" pitches Page (in stock); BM is only a compatibility mention
+        $response = 'Page ราคา 199 บาท ใช้กับ BM ได้ พร้อมส่งครับ';
+
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertStringContainsString('ใช้กับ BM ได้', $result['content']);
+        $this->assertStringNotContainsString('หมด stock', $result['content']);
+    }
+
+    public function test_cheer_word_of_other_product_personal_does_not_block_bm_mention(): void
+    {
+        $response = 'Personal พร้อมส่งเลย ใช้ร่วมกับ BM ได้ครับ';
+
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertStringContainsString('ใช้ร่วมกับ BM ได้', $result['content']);
+        $this->assertStringNotContainsString('หมด stock', $result['content']);
+    }
+
+    // ---- reviewer round 2: quantity must belong to the product itself ----
+
+    public function test_feature_count_is_not_own_quantity(): void
+    {
+        // "50 เพจ" counts pages the BM can create, not units of BM being sold
+        $response = 'BM สร้างเพจได้ 50 เพจครับ';
+
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertStringContainsString('สร้างเพจได้ 50 เพจ', $result['content']);
+        $this->assertStringNotContainsString('หมด stock', $result['content']);
+    }
+
     // ---- new clause-level mechanics ----
 
     public function test_payment_word_alone_near_name_appends_notice_not_block(): void
