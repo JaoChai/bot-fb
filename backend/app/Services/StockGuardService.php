@@ -17,6 +17,10 @@ class StockGuardService
     /** ราคาที่ห่างจากชื่อสินค้าไม่เกินนี้ (ตัวอักษร) ถือว่าพูดถึงคู่กัน */
     private const PRICE_PROXIMITY = 60;
 
+    // A negation of a fee, wait, or payment is not a refusal of the product.
+    // "ทั้งหมด" means total/all, not out of stock.
+    private const PRODUCT_REFUSAL = '(?:(?<!ทั้ง)หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|ยกเลิก|ไม่ต้อง|ไม่จำเป็น|ไม่ใช่|out\s*of\s*stock)(?!ค่า|จ่าย|รอ|โอน|เสีย|ธรรมเนียม)';
+
     public function __construct(
         protected StockInjectionService $stockInjection
     ) {}
@@ -130,9 +134,11 @@ class StockGuardService
 
                     $kind = $this->strongSellingKind($text, $clause['offset'], $response, $name, $product->name);
 
-                    // ประโยคที่เอ่ยชื่อในบริบทปฏิเสธ/ไม่เอา/ยกเลิก/บัญชีลูกค้าเอง ไม่นับเป็นการขาย —
-                    // ยกเว้น "ตะกร้า" ซึ่งเป็นการกระทำตรงๆ (bot ใส่ของหมดลงตะกร้า = ต้องบล็อก)
-                    if ($kind !== 'cart' && $this->isExcludedClause($text, $name)) {
+                    // Own summary/quantity/price wins over an unattached negation.
+                    // Customer-owned accounts still skip; cart actions still override refusal.
+                    $hasHardSale = in_array($kind, ['summary', 'qty', 'price'], true)
+                        || ($kind === 'offer' && $this->hasOwnPriceInClause($text, $clause['offset'], $response, $name, $product->name));
+                    if ($kind !== 'cart' && $this->isExcludedClause($text, $name, $hasHardSale)) {
                         continue;
                     }
 
@@ -161,7 +167,7 @@ class StockGuardService
             // ถ้ามีการบอกว่าหมดที่ไหนสักแห่งในข้อความ → ปล่อยผ่านทั้งข้อความ
             // ถ้าไม่มี → คงคำตอบไว้แล้วเติมแจ้งเตือนท้ายข้อความ
             if ($strong && $strongIsPriceOnly) {
-                if ($this->isRefusedSomewhere($response, $names)) {
+                if ($this->isRefusedSomewhere($response, $names, $product->name)) {
                     continue;
                 }
 
@@ -210,25 +216,21 @@ class StockGuardService
     }
 
     /**
-     * ประโยคที่เอ่ยชื่อสินค้าในบริบท "ไม่ได้ขาย" — คำปฏิเสธ/ไม่เอา/ยกเลิก
-     * ต้องอยู่ใกล้ชื่อจริงๆ จึงนับว่าหมายถึงสินค้าตัวนี้:
-     * ชื่อ → คำปฏิเสธ ห่างกันไม่เกิน ~12 ตัวอักษร ("BM ตอนนี้หมด"),
-     * คำปฏิเสธ → ชื่อ ห่างกันไม่เกิน ~16 ("ไม่จำเป็นต้องมี BM",
-     * "ยกเลิกรายการ BM", "ไม่ใช่บัญชียิงแอดแบบ BM")
-     * — หน้าต่างกว้างกว่านี้จะกินคำปฏิเสธของสิ่งอื่นในประโยคเดียวกัน
-     * เช่น "BM 2 ตัว รวม 2,200 บาท ไม่มีค่าส่ง" (ไม่มี = ค่าส่ง ไม่ใช่ BM)
-     * (ประโยคเดียวกันอาจมีทั้ง "BM หมด" และการขาย Page — ต้องไม่ปิด Page ด้วย)
+     * Exclude customer-owned accounts and product refusals, not unrelated negations.
+     * With an own summary/quantity/price, only a refusal attached within 3 chars wins.
+     * Informational clauses retain the broader 12/16-char windows ("BM ตอนนี้หมด",
+     * "ยกเลิกรายการ BM", "ไม่จำเป็นต้องมี BM", "ไม่ใช่บัญชียิงแอดแบบ BM").
      */
-    protected function isExcludedClause(string $clause, string $name): bool
+    protected function isExcludedClause(string $clause, string $name, bool $hasHardSale = false): bool
     {
         $quoted = preg_quote($name, '/');
-        // "ทั้งหมด" means total/all, not a refusal to sell.
-        $refusal = '(?<!ทั้ง)หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|ยกเลิก|ไม่ต้อง|ไม่จำเป็น|ไม่ใช่|out\s*of\s*stock';
+        $refusal = self::PRODUCT_REFUSAL;
+        $after = $hasHardSale ? 3 : 12;
+        $before = $hasHardSale ? 3 : 16;
 
         $patterns = [
-            // บอกว่าหมด/ไม่มีขาย/ไม่เอา/ยกเลิก ใกล้ชื่อสินค้าเท่านั้น
-            "/{$quoted}.{0,12}(?:{$refusal})/iu",
-            "/(?:{$refusal}).{0,16}{$quoted}/iu",
+            "/{$quoted}.{0,{$after}}{$refusal}/iu",
+            "/{$refusal}.{0,{$before}}{$quoted}/iu",
             // ชื่อสินค้า = บัญชี/ID ของลูกค้าเอง (เข้า BM, BM ของพี่, BM ID, BM =156…)
             "/เข้า\s*{$quoted}/iu",
             "/{$quoted}\s*ของ\s*(?:พี่|คุณ|ผม|เรา|ลูกค้า)/iu",
@@ -262,21 +264,22 @@ class StockGuardService
     {
         $quoted = preg_quote($name, '/');
 
-        // สรุป/ยอดรวมที่มีชื่อสินค้า นับเป็นการปิดการขายเมื่อมีตัวเลข (จำนวน/ราคา) ด้วย
+        // A summary must carry THIS product's quantity/price, not another line's digits.
+        $hasOwnQuantity = preg_match("/{$quoted}.{0,3}(?:x\s*\d+|\d+\s*(?:ตัว|เพจ|ชุด|อัน|บิล|ไลน์|หน้า)|จำนวน)/iu", $clauseText) === 1;
+        $hasOwnPrice = $this->hasOwnPriceInClause($clauseText, $clauseOffset, $response, $name, $ownerName);
+
         if ((preg_match("/(?:สรุป|รวม|ยอด).{0,40}{$quoted}/iu", $clauseText)
-                || preg_match("/{$quoted}.{0,40}(?:สรุป|รวม[:=])/iu", $clauseText))
-            && preg_match('/\d/u', $clauseText) === 1) {
+                || preg_match("/{$quoted}.{0,40}(?:สรุป|รวม[:=]|รวม\s*[\d,]+\s*บาท)/iu", $clauseText))
+            && ($hasOwnQuantity || $hasOwnPrice)) {
             return 'summary';
         }
 
+        // Adjacent own quantity, not a feature count like "BM สร้างเพจได้ 50 เพจ".
+        if ($hasOwnQuantity) {
+            return 'qty';
+        }
+
         $checks = [
-            'qty' => [
-                // จำนวนของสินค้าตัวนี้เอง ต้องอยู่ติดกับชื่อ (ห่างไม่เกิน ~3 ตัวอักษร):
-                // "BM 2 ตัว", "BM x2", "BM x 1" — ห่างกว่านี้คือจำนวนของอย่างอื่น
-                // เช่น "BM สร้างเพจได้ 50 เพจ" (นับจำนวนเพจ ไม่ใช่จำนวน BM)
-                "/{$quoted}.{0,3}(?:x\s*\d+|\d+\s*(?:ตัว|เพจ|ชุด|อัน|บิล|ไลน์|หน้า))/iu",
-                "/{$quoted}.{0,3}(?:x\d|จำนวน)/iu",
-            ],
             'cart' => [
                 '/(?:เพิ่ม|ลง).{0,20}(?:ตะกร้า|cart|รถเข็น)/iu',
             ],
@@ -294,8 +297,6 @@ class StockGuardService
                 }
             }
         }
-
-        $hasOwnPrice = $this->hasOwnPriceInClause($clauseText, $clauseOffset, $response, $name, $ownerName);
 
         // คำเชียร์ขาย (พร้อมส่ง/ส่งทันที/โอนแล้วส่ง) นับเป็นการเสนอขายเฉพาะเมื่อ
         // ราคาในประโยคเป็นราคาของสินค้าตัวนี้เอง — ไม่งั้นมันเป็นแค่ pitch
@@ -329,6 +330,12 @@ class StockGuardService
                     continue;
                 }
 
+                if ($pricePos < $namePos
+                    && preg_match('/(?:ส่วน|แต่)\s*$/u', mb_substr($clauseText, $pricePos, $namePos - $pricePos))) {
+                    // "... 3,300 บาท ส่วน BM ..." starts a new product topic.
+                    continue;
+                }
+
                 if ($this->nearestProductAt($response, $clauseOffset + $pricePos) === $ownerName) {
                     return true;
                 }
@@ -344,10 +351,10 @@ class StockGuardService
      *
      * @param  array<int, string>  $names
      */
-    protected function isRefusedSomewhere(string $response, array $names): bool
+    protected function isRefusedSomewhere(string $response, array $names, string $ownerName): bool
     {
         foreach ($names as $name) {
-            if (mb_strlen($name) >= 2 && $this->isRefusingContext($response, $name)) {
+            if (mb_strlen($name) >= 2 && $this->isRefusingContext($response, $name, $ownerName)) {
                 return true;
             }
         }
@@ -356,28 +363,45 @@ class StockGuardService
     }
 
     /**
-     * Check if the response is correctly REFUSING to sell a SPECIFIC product.
-     *
-     * Refusal keywords must appear within proximity of the product name,
-     * not just anywhere in the response — prevents bypass when LLM refuses
-     * one product but sells another in the same message.
+     * Price-only replies can give a price and refuse in a subsequent clause.
+     * Keep that informational path, but do not let it undo the same-clause
+     * hard-sale precedence or reinterpret a fee/wait/payment as a refusal.
      */
-    protected function isRefusingContext(string $response, string $productName): bool
+    protected function isRefusingContext(string $response, string $productName, string $ownerName): bool
     {
-        $quotedName = preg_quote($productName, '/');
+        preg_match_all('/'.self::PRODUCT_REFUSAL.'/iu', $response, $refusals, PREG_OFFSET_CAPTURE);
+        $clauses = $this->splitClauses($response);
+        $nameLength = mb_strlen($productName);
 
-        $refusalPatterns = [
-            // Refusal keyword near product name (within 40 chars)
-            "/{$quotedName}.{0,40}((?<!ทั้ง)หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|out.of.stock)/iu",
-            "/((?<!ทั้ง)หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|out.of.stock).{0,40}{$quotedName}/iu",
-            // "สินค้าXXXหมด" pattern
-            "/สินค้า.{0,10}{$quotedName}.{0,10}((?<!ทั้ง)หมด|ไม่มี)/iu",
-            "/{$quotedName}.{0,10}(?<!ทั้ง)หมด(ชั่วคราว|stock|สต็อก|แล้ว)/iu",
-        ];
+        foreach ($this->positionsOf($response, $productName) as $namePos) {
+            foreach ($refusals[0] as [$refusal, $byteOffset]) {
+                $refusalPos = mb_strlen(substr($response, 0, $byteOffset));
+                $distance = max($refusalPos - ($namePos + $nameLength), $namePos - ($refusalPos + mb_strlen($refusal)), 0);
+                if ($distance > 40) {
+                    continue;
+                }
 
-        foreach ($refusalPatterns as $pattern) {
-            if (preg_match($pattern, $response)) {
-                return true;
+                // As before, a newline cannot link a name to an unrelated refusal.
+                $between = mb_substr($response, min($namePos, $refusalPos), abs($namePos - $refusalPos));
+                if (str_contains($between, "\n")) {
+                    continue;
+                }
+
+                $window = 40;
+                foreach ($clauses as $clause) {
+                    $start = $clause['offset'];
+                    $end = $start + mb_strlen($clause['text']);
+                    if ($namePos >= $start && $namePos < $end && $refusalPos >= $start && $refusalPos < $end) {
+                        if ($this->hasOwnPriceInClause($clause['text'], $start, $response, $productName, $ownerName)) {
+                            $window = 3;
+                        }
+                        break;
+                    }
+                }
+
+                if ($distance <= $window) {
+                    return true;
+                }
             }
         }
 

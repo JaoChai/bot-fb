@@ -6,6 +6,7 @@ use App\Models\ProductStock;
 use App\Services\StockGuardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -246,6 +247,130 @@ class StockGuardClauseTest extends TestCase
         $result = $this->guard->validate($response);
 
         $this->assertFalse($result['blocked']);
+        $this->assertSame($response."\n\nตอนนี้ Nolimit Level Up+ BM หมดสต็อกชั่วคราวครับ", $result['content']);
+    }
+
+    // ---- reviewer round 4: product refusal, not unrelated negation, wins ----
+
+    public static function feeAndWaitRegressions(): array
+    {
+        return [
+            ['BM x2 ไม่มีค่าส่ง รวม 2,200 บาทครับ'],
+            ['สรุปรายการ: BM 2 ตัว ไม่มีค่าส่ง รวม 2,200 บาทครับ'],
+            ['สรุปรายการ: BM 2 ตัว ไม่มีค่าธรรมเนียม รวม 2,200 บาทครับ'],
+            ['สรุปรายการ: BM 2 ตัว ไม่ต้องจ่ายค่าส่ง รวม 2,200 บาทครับ'],
+            ['สรุปรายการ: BM 2 ตัว ไม่ต้องรอ รวม 2,200 บาทครับ'],
+            ['สรุปรายการ: ไม่มีค่าส่ง BM 2 ตัว รวม 2,200 บาทครับ'],
+        ];
+    }
+
+    #[DataProvider('feeAndWaitRegressions')]
+    public function test_fee_or_wait_negation_cannot_hide_an_order(string $response): void
+    {
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked'], $response);
+        $this->assertSame(['Nolimit Level Up+ BM'], $result['blocked_products']);
+        $this->assertStringContainsString('หมด stock', $result['content']);
+        $this->assertStringNotContainsString($response, $result['content']);
+    }
+
+    public static function summaryNegationMatrix(): array
+    {
+        $cases = [];
+        foreach ([
+            'สรุปรายการ: BM 2 ตัว %s รวม 2,200 บาทครับ',
+            'BM x2 %s รวม 2,200 บาทครับ',
+            'ยอดรวมทั้งหมด BM 2 ตัว %s 2,200 บาทครับ',
+        ] as $template) {
+            foreach (['', 'ไม่มีค่าส่ง', 'ไม่ต้องรอ', 'ไม่ต้องจ่ายค่าส่ง', 'ไม่มีค่าธรรมเนียม'] as $negation) {
+                $cases[] = [sprintf($template, $negation)];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('summaryNegationMatrix')]
+    public function test_summary_negation_matrix_stays_blocked(string $response): void
+    {
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked'], $response);
+        $this->assertSame(['Nolimit Level Up+ BM'], $result['blocked_products']);
+        $this->assertStringContainsString('หมด stock', $result['content']);
+        $this->assertStringNotContainsString($response, $result['content']);
+    }
+
+    public static function hardSalesWithDistantRefusal(): array
+    {
+        return [
+            ['สรุปรายการ: BM 2 ตัว ยกเลิกบริการเสริม รวม 2,200 บาทครับ'],
+            ['BM x2 ยกเลิกบริการเสริมครับ'],
+            ['ยกเลิกบริการเสริม BM x2 ครับ'],
+            ['สรุปรายการ: BM รวม 2,200 บาท ยกเลิกบริการเสริมครับ'],
+            ['BM รวม 2,200 บาทครับ'],
+            ['BM รวม 2,200 บาท ยกเลิกบริการเสริมครับ'],
+            ['BM 1100 ไม่มีบริการเสริม พร้อมส่งครับ'],
+            ['แนะนำ BM 1100 ไม่มีบริการเสริมครับ'],
+            ['BM x2 หมดครับ'], // Four characters from the name: not attached.
+            ['หมดabc BM x2 ครับ'], // Four characters before the name: not attached.
+        ];
+    }
+
+    #[DataProvider('hardSalesWithDistantRefusal')]
+    public function test_hard_sale_wins_over_unattached_refusal(string $response): void
+    {
+        $result = $this->guard->validate($response);
+
+        $this->assertTrue($result['blocked'], $response);
+        $this->assertSame(['Nolimit Level Up+ BM'], $result['blocked_products']);
+    }
+
+    public static function attachedProductRefusals(): array
+    {
+        return [
+            ['สรุปรายการ: BM หมด 2 ตัว รวม 2,200 บาทครับ'],
+            ['สรุปรายการ: ไม่มี BM 2 ตัว รวม 2,200 บาทครับ'],
+            ['สรุปรายการ: ยกเลิก BM 2 ตัว รวม 2,200 บาทครับ'],
+            ['BM x2หมดครับ'], // Three characters from the name: attached.
+            ['หมดab BM x2 ครับ'], // Three characters before the name: attached.
+        ];
+    }
+
+    #[DataProvider('attachedProductRefusals')]
+    public function test_attached_product_refusal_still_excludes_summary_or_quantity(string $response): void
+    {
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertSame([], $result['blocked_products']);
+        $this->assertSame($response, $result['content']);
+    }
+
+    public static function nonProductNegations(): array
+    {
+        $cases = [];
+        foreach (['ไม่มีค่าส่ง', 'ไม่ต้องจ่ายค่าส่ง', 'ไม่ต้องรอ', 'ไม่ต้องโอน', 'ไม่ต้องเสีย', 'ไม่มีธรรมเนียม'] as $negation) {
+            $cases[] = ["BM {$negation}ครับ"];
+            $cases[] = ["{$negation} BM ครับ"];
+            $cases[] = ["BM 1100 {$negation}ครับ"];
+            $cases[] = ["{$negation} BM 1100 ครับ"];
+        }
+        $cases[] = ['BM 1100 ยกเลิกบริการเสริมครับ'];
+        $cases[] = ['BM 1100 ไม่มีบริการเสริมครับ'];
+        $cases[] = ['ไม่มีบริการเสริม BM 1100 ครับ'];
+
+        return $cases;
+    }
+
+    #[DataProvider('nonProductNegations')]
+    public function test_non_product_negation_does_not_suppress_informational_notice(string $response): void
+    {
+        $result = $this->guard->validate($response);
+
+        $this->assertFalse($result['blocked']);
+        $this->assertSame([], $result['blocked_products']);
         $this->assertSame($response."\n\nตอนนี้ Nolimit Level Up+ BM หมดสต็อกชั่วคราวครับ", $result['content']);
     }
 
