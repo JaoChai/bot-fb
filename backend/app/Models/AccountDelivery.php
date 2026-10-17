@@ -23,12 +23,14 @@ class AccountDelivery extends Model
     protected $fillable = [
         'bot_id', 'conversation_id', 'slip_verification_id', 'status',
         'amount', 'confirmed_by', 'delivered_at', 'last_reminded_at', 'card_message_id',
+        'chosen_set_size',
     ];
 
     protected $casts = [
         'amount' => 'float',
         'delivered_at' => 'datetime',
         'last_reminded_at' => 'datetime',
+        'chosen_set_size' => 'integer',
     ];
 
     public function bot(): BelongsTo
