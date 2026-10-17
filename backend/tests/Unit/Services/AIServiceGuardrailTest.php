@@ -121,7 +121,9 @@ class AIServiceGuardrailTest extends TestCase
     public function test_vip_price_guard_correction_logs_original_content_and_reason(): void
     {
         [$bot, $conversation] = $this->makeBotWithConversation();
-        $reason = ['type' => 'informational_price', 'line' => 'BM 1,600 บาท', 'amounts' => [1600.0], 'expected' => 1100.0];
+        // visible_order = money-safety layer: canned immediately, no regeneration retry
+        // (informational_price retries via AIServiceVipRetryTest)
+        $reason = ['type' => 'visible_order', 'line' => 'BM 1,600 บาท', 'amounts' => [1600.0], 'expected' => 1100.0];
 
         $this->mock(RAGService::class, function ($m) {
             $m->shouldReceive('generateResponse')->once()->andReturn([

@@ -104,7 +104,8 @@ class VipPriceGuardService
                 foreach ($matches[1] ?? [] as [$amount, $offset]) {
                     $value = (float) str_replace(',', '', $amount);
                     if ($this->isAdSpendLimitAmount($line, $offset)
-                        || $this->isAnotherMentionedProductPrice($line, $value, $products, $allProducts)) {
+                        || $this->isAnotherMentionedProductPrice($line, $value, $products, $allProducts)
+                        || $this->isMultiProductTotal($line, $offset, $value, $products, $allProducts, $isVip)) {
                         continue;
                     }
                     $amounts[] = $value;
@@ -129,11 +130,118 @@ class VipPriceGuardService
         return null;
     }
 
+    private const LIMIT_KEYWORD_PATTERN = '/(?<![a-z])limit|ลิมิต|วงเงิน/iu';
+
+    private const TOTAL_KEYWORD_PATTERN = '/รวม|ยอด|ทั้งหมด|เป็น/u';
+
+    private const QUANTITY_PATTERN = '/[x×]\s*(\d+)|(\d+)\s*(?:แอคเคานต์|บัญชี|ตัว|เพจ|ชิ้น|อัน|แอค)/iu';
+
+    /**
+     * Ad-account spending limits (วงเงิน/Limit) are not product prices. The
+     * keyword may sit anywhere within the previous 60 characters of the same
+     * line, but a ราคา between the keyword and the amount means the amount is
+     * a real price again ("วงเงินเริ่ม 1,600 ราคา 1,100 บาท").
+     */
     private function isAdSpendLimitAmount(string $line, int $amountOffset): bool
     {
-        $precedingText = mb_substr(substr($line, 0, $amountOffset), -25);
+        $window = mb_substr(substr($line, 0, $amountOffset), -60);
+        $keywordCount = preg_match_all(self::LIMIT_KEYWORD_PATTERN, $window, $matches, PREG_OFFSET_CAPTURE);
+        if ($keywordCount === false || $keywordCount === 0) {
+            return false;
+        }
 
-        return preg_match('/(?<![a-z])limit|ลิมิต|วงเงิน/iu', $precedingText) === 1;
+        foreach ($matches[0] as [$keyword, $keywordOffset]) {
+            $betweenKeywordAndAmount = substr($window, $keywordOffset + strlen($keyword));
+            if (mb_stripos($betweenKeywordAndAmount, 'ราคา') === false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * A grand total over several products named on one line ("Personal 2 ตัว
+     * และเพจ 2 เพจ รวม 2,598 บาท") is consistent when a total keyword precedes
+     * the amount and the amount equals Σ stated quantity × effective price
+     * over the products mentioned on that line (guarded products use their
+     * VIP/normal effective price, other products their normal price).
+     *
+     * @param  Collection<int, ProductStock>  $guardedProducts
+     * @param  Collection<int, ProductStock>  $allProducts
+     */
+    private function isMultiProductTotal(
+        string $line,
+        int $amountOffset,
+        float $amount,
+        Collection $guardedProducts,
+        Collection $allProducts,
+        bool $isVip,
+    ): bool {
+        $beforeAmount = mb_substr(substr($line, 0, $amountOffset), -20);
+        if (preg_match(self::TOTAL_KEYWORD_PATTERN, $beforeAmount) !== 1) {
+            return false;
+        }
+
+        $sum = 0.0;
+        foreach ($allProducts as $product) {
+            $mention = $this->firstProductMention($line, $product);
+            if ($mention === null) {
+                continue;
+            }
+            [$mentionOffset, $term] = $mention;
+            $quantity = $this->statedQuantityAfter($line, $mentionOffset + mb_strlen($term));
+            $isGuarded = $guardedProducts->contains(fn (ProductStock $guarded) => $guarded->is($product));
+            $price = $isGuarded
+                ? $this->pricing->effectivePrice($product, $isVip)
+                : ($product->price === null ? null : (float) $product->price);
+            if ($price === null) {
+                return false;
+            }
+            $sum += $quantity * $price;
+        }
+
+        return $sum > 0 && abs($sum - $amount) <= 0.5;
+    }
+
+    /**
+     * Earliest occurrence of the product's name/slug/code/aliases on the line
+     * (a product named through several aliases counts once).
+     *
+     * @return array{int, string}|null [character offset, matched term]
+     */
+    private function firstProductMention(string $line, ProductStock $product): ?array
+    {
+        $terms = array_filter(array_merge(
+            [$product->name, $product->slug, $product->stock_code],
+            $product->aliases ?? []
+        ));
+        $best = null;
+        foreach ($terms as $term) {
+            if (! is_string($term) || $term === '') {
+                continue;
+            }
+            $position = mb_stripos($line, $term);
+            if ($position !== false && ($best === null || $position < $best[0])) {
+                $best = [$position, $term];
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * First quantity stated within 25 characters after a product mention
+     * ("N ตัว|บัญชี|แอคเคานต์|แอค|เพจ|ชิ้น|อัน" or "x N" / "×N"); 1 if none.
+     */
+    private function statedQuantityAfter(string $line, int $mentionEndOffset): int
+    {
+        $window = mb_substr($line, $mentionEndOffset, 25);
+        if (preg_match(self::QUANTITY_PATTERN, $window, $match) === 1) {
+            return (int) (($match[1] ?? '') !== '' ? $match[1] : $match[2]);
+        }
+
+        return 1;
     }
 
     /** @param Collection<int, ProductStock> $guardedProducts
