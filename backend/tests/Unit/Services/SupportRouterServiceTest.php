@@ -25,6 +25,8 @@ class SupportRouterServiceTest extends TestCase
     {
         parent::setUp();
 
+        Http::preventStrayRequests();
+
         config([
             'services.openrouter.api_key' => 'test-key',
             'services.openrouter.decisions_url' => self::DECISIONS_URL,
@@ -565,6 +567,7 @@ class SupportRouterServiceTest extends TestCase
         $this->giveTelegramPlugin($bot);
 
         $this->fakeByQuestion(0.93, 0.1);
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
 
         app(SupportRouterService::class)->decide($bot, 'บัญชีโดนแบนครับ ช่วยดูให้หน่อย', $this->history());
 

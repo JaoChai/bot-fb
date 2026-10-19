@@ -25,6 +25,8 @@ class AIServiceSupportRouterTest extends TestCase
     {
         parent::setUp();
 
+        Http::preventStrayRequests();
+
         config([
             'services.openrouter.api_key' => 'test-key',
             'services.openrouter.decisions_url' => self::DECISIONS_URL,
