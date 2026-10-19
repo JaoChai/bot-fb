@@ -183,7 +183,8 @@ class SupportRouterServiceTest extends TestCase
         $this->assertSame('on', $decision['mode']);
         $this->assertSame('openai/gpt-6-luna-decisions', $decision['model']);
         $this->assertIsInt($decision['latency_ms']);
-        $this->assertEqualsWithDelta(0.0000639, $decision['cost'], 1e-12);
+        // cost = support call + buying call (0.0000639 + 0.0000021)
+        $this->assertEqualsWithDelta(0.0000639 + 0.0000021, $decision['cost'], 1e-12);
     }
 
     #[Test]
@@ -237,6 +238,7 @@ class SupportRouterServiceTest extends TestCase
         ]);
         $this->giveTelegramPlugin($bot);
         $this->fakeByQuestion(0.99, 0.10);
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
 
         $decision = app(SupportRouterService::class)->decide($bot, 'เปิดยังพี่', $this->history());
 
@@ -340,7 +342,7 @@ class SupportRouterServiceTest extends TestCase
     }
 
     #[Test]
-    public function test_buying_score_is_clamped_to_unit_interval(): void
+    public function test_buying_score_above_one_is_clamped_to_one(): void
     {
         $bot = $this->makeBot([
             'support_router_mode' => 'shadow',
@@ -350,6 +352,15 @@ class SupportRouterServiceTest extends TestCase
         $this->fakeByQuestion(0.4, 1.7);
         $decision = app(SupportRouterService::class)->decide($bot, 'เอา 40 อันครับ', $this->history());
         $this->assertSame(1.0, $decision['buying_score']);
+    }
+
+    #[Test]
+    public function test_buying_score_below_zero_is_clamped_to_zero(): void
+    {
+        $bot = $this->makeBot([
+            'support_router_mode' => 'shadow',
+            'support_router_model' => 'openai/gpt-6-luna-decisions',
+        ]);
 
         $this->fakeByQuestion(0.4, -0.5);
         $decision = app(SupportRouterService::class)->decide($bot, 'เอา 40 อันครับ', $this->history());

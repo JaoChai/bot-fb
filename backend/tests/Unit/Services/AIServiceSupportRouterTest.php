@@ -77,7 +77,9 @@ class AIServiceSupportRouterTest extends TestCase
         $this->assertSame('support_router', $botMessage->model_used);
         $this->assertSame(0.9, $botMessage->metadata['support_router']['score']);
         $this->assertTrue($botMessage->metadata['support_router']['handover']);
-        $this->assertSame(0.0, $botMessage->metadata['support_router']['buying_score']);
+        // 0.25 on purpose: a whole float (0.0) json_roundtrips to int 0 through the
+        // metadata cast, and a non-buying score must stay below the 0.5 block threshold
+        $this->assertSame(0.25, $botMessage->metadata['support_router']['buying_score']);
     }
 
     #[Test]
@@ -234,7 +236,8 @@ class AIServiceSupportRouterTest extends TestCase
         }
         $this->assertSame(0, $result['usage']['total_tokens']);
         // cost must be the router's real paid cost (usage.cost), not a hardcoded 0.
-        $this->assertSame(0.0000639, $result['cost']);
+        // With the buy gate the router pays for TWO calls: 0.0000639 + 0.0000021.
+        $this->assertEqualsWithDelta(0.0000639 + 0.0000021, $result['cost'], 1e-12);
         $this->assertIsFloat($result['support_router']['cost']);
         $this->assertIsInt($result['support_router']['latency_ms']);
     }
@@ -377,7 +380,7 @@ class AIServiceSupportRouterTest extends TestCase
                 if (isset($request->data()['questions']['buying'])) {
                     return Http::response([
                         'model' => 'openai/gpt-6-luna-decisions-20261006',
-                        'answers' => ['buying' => ['type' => 'noul', 'noul' => 0.0]],
+                        'answers' => ['buying' => ['type' => 'noul', 'noul' => 0.25]],
                         'usage' => ['input_tokens' => 31, 'output_tokens' => 0, 'cost' => 0.0000021],
                         'id' => 'gen-dec-buy',
                         'provider' => 'OpenAI',
