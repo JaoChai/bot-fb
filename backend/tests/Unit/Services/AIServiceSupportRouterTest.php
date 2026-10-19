@@ -77,6 +77,7 @@ class AIServiceSupportRouterTest extends TestCase
         $this->assertSame('support_router', $botMessage->model_used);
         $this->assertSame(0.9, $botMessage->metadata['support_router']['score']);
         $this->assertTrue($botMessage->metadata['support_router']['handover']);
+        $this->assertSame(0.0, $botMessage->metadata['support_router']['buying_score']);
     }
 
     #[Test]
@@ -259,7 +260,13 @@ class AIServiceSupportRouterTest extends TestCase
         app(AIService::class)->generateResponse($bot, 'บัญชีโดนแบนครับ', $conversation, [$userMessage->id]);
 
         Http::assertSent(function ($request) {
-            $recent = $request->data()['state']['recent_conversation'];
+            $data = $request->data();
+
+            if (! isset($data['questions']['support'])) {
+                return false; // the buying request has no recent_conversation by design
+            }
+
+            $recent = $data['state']['recent_conversation'];
 
             foreach ($recent as $entry) {
                 $this->assertNotSame('บัญชีโดนแบนครับ', $entry['text']);
@@ -362,7 +369,24 @@ class AIServiceSupportRouterTest extends TestCase
 
     private function fakeDecision(float $score): void
     {
-        Http::fake([self::DECISIONS_URL => Http::response($this->decisionPayload($score))]);
+        // Both Decisions calls (support + buying) hit the same URL; route the fake
+        // by the question name in the request body. Buying defaults to 0.0 so the
+        // support-score expectations of the existing tests stay unchanged.
+        Http::fake([
+            self::DECISIONS_URL => function ($request) use ($score) {
+                if (isset($request->data()['questions']['buying'])) {
+                    return Http::response([
+                        'model' => 'openai/gpt-6-luna-decisions-20261006',
+                        'answers' => ['buying' => ['type' => 'noul', 'noul' => 0.0]],
+                        'usage' => ['input_tokens' => 31, 'output_tokens' => 0, 'cost' => 0.0000021],
+                        'id' => 'gen-dec-buy',
+                        'provider' => 'OpenAI',
+                    ]);
+                }
+
+                return Http::response($this->decisionPayload($score));
+            },
+        ]);
     }
 
     private function decisionPayload(float $noul): array
