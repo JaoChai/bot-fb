@@ -56,6 +56,8 @@ class ProcessAggregatedMessagesSupportRouterTest extends TestCase
 
         $decision = [
             'score' => 0.93,
+            'buying_score' => 0.1,
+            'buying_blocked' => false,
             'handover' => false,
             'mode' => 'shadow',
             'model' => 'openai/gpt-6-luna-decisions',
@@ -86,6 +88,9 @@ class ProcessAggregatedMessagesSupportRouterTest extends TestCase
         $this->assertIsArray($botMessage->metadata);
         $this->assertArrayHasKey('support_router', $botMessage->metadata);
         $this->assertSame($decision, $botMessage->metadata['support_router']);
+        // the new buy-gate keys survive the save path untouched
+        $this->assertSame(0.1, $botMessage->metadata['support_router']['buying_score']);
+        $this->assertFalse($botMessage->metadata['support_router']['buying_blocked']);
     }
 
     public function test_job_without_support_router_key_stores_null_metadata_not_null_entry(): void
