@@ -80,7 +80,7 @@ class SupportRouterService
      * @param  array<int, array{sender: string, content: string}>  $history  messages BEFORE
      *                                                                       $latestMessage (already deduplicated by the caller)
      * @return array{score: float, buying_score: float|null, buying_blocked: bool, handover: bool, mode: string, model: string, latency_ms: int, cost: float}|null
-     *                                                                                                             null = router off or support-call failure — reply as today
+     *                                                                                                                                                             null = router off or support-call failure — reply as today
      */
     public function decide(Bot $bot, string $latestMessage, array $history): ?array
     {
