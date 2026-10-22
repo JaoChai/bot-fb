@@ -28,6 +28,18 @@ class WebhookThrottle extends ThrottleRequests
 {
     public function handle($request, Closure $next, ...$options): Response
     {
+        // Already known down (this or an earlier request marked it, inside the
+        // health TTL): skip the limiter entirely. The RateLimiter singleton
+        // keeps the Redis store it was built with at boot — the fallback
+        // switch's config('cache.default') change cannot rebind it — so
+        // parent::handle() would still make one dead-Redis connect attempt and
+        // log one warning per webhook for the whole TTL. The fallback
+        // middleware has already switched cache/session; pass the request
+        // through uncounted.
+        if (! app(RedisHealthGate::class)->isRedisUp()) {
+            return $next($request);
+        }
+
         $exceptionFromNext = false;
         $downstreamResponse = null;
 
