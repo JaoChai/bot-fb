@@ -7,8 +7,9 @@ use App\Models\Bot;
 use App\Models\User;
 use App\Support\QueueRouter;
 use Illuminate\Cache\RateLimiter;
+use Illuminate\Cache\RedisStore;
 use Illuminate\Contracts\Cache\Repository;
-use Illuminate\Contracts\Cache\Store;
+use Illuminate\Contracts\Redis\Factory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -266,10 +267,11 @@ class WebhookRedisBlipTest extends TestCase
     {
         Queue::fake();
         Log::spy();
-        // The gate must be UP for the limiter to run at all (the throttle skips
-        // it while the gate is down). Seed the cached "up" verdict so this
-        // tests the real 429 on any host, with or without a live Redis.
-        $this->gateUpFromCachedProbe();
+        // No gate seed: on a Redis-less host (CI) the health gate is DOWN, and
+        // this test proves the limiter still runs and returns the real 429 —
+        // its cache store is not a RedisStore, so the throttle's skip does not
+        // apply. On a host with a live Redis the gate is up and the limiter
+        // runs directly; the 429 assertion holds either way.
 
         // Derive the key/limit exactly like ThrottleRequests does for named
         // limiters: md5($limiterName.$limit->key) with the registered closure.
@@ -290,17 +292,27 @@ class WebhookRedisBlipTest extends TestCase
 }
 
 /**
- * Stands in for the app's redis cache store during an outage: counts every
- * access attempt and, like real dead Redis, throws a Predis StreamInitException
- * on any of them. Tests assert the counters stayed at zero.
+ * Stands in for the app's redis cache store during an outage: a RedisStore
+ * subclass (like the store the RateLimiter singleton is built with at boot in
+ * prod) that counts every access attempt and, like real dead Redis, throws a
+ * Predis StreamInitException on any of them. Tests assert the counters stayed
+ * at zero.
  */
-class ThrowingRedisStoreSpy implements Store
+class ThrowingRedisStoreSpy extends RedisStore
 {
     /** Cache reads attempted on the store (get/many). */
     public int $reads = 0;
 
     /** Every access attempt, whatever the operation. */
     public int $touches = 0;
+
+    public function __construct()
+    {
+        // The overridden accessors below throw before any parent logic runs,
+        // so the factory is never consulted; the mock only satisfies the
+        // parent constructor.
+        parent::__construct(Mockery::mock(Factory::class));
+    }
 
     public function get($key)
     {
