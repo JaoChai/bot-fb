@@ -92,6 +92,27 @@ class WebhookRedisBlipTest extends TestCase
         $this->app->instance(RateLimiter::class, $limiter);
     }
 
+    /**
+     * The incident's mid-request shape (reviewer probe on b04ca788): the
+     * limiter's pre-controller read succeeds, Redis dies during the
+     * controller, and the post-controller header read throws.
+     */
+    protected function rateLimiterCacheReadsOkThenThrows(int $okReads, \Throwable $exception): void
+    {
+        $real = $this->app->make(RateLimiter::class);
+
+        $cache = Mockery::mock(Repository::class);
+        $cache->shouldIgnoreMissing();
+        $cache->shouldReceive('add')->andReturn(true);
+        $cache->shouldReceive('get')->times($okReads)->andReturn(0);
+        $cache->shouldReceive('get')->andThrow($exception);
+
+        $limiter = new RateLimiter($cache);
+        $limiter->for('webhook', $real->limiter('webhook'));
+
+        $this->app->instance(RateLimiter::class, $limiter);
+    }
+
     protected function postValidLineWebhook()
     {
         $body = json_encode([
@@ -148,6 +169,22 @@ class WebhookRedisBlipTest extends TestCase
         Queue::assertPushed(ProcessLINEWebhook::class, function ($job) {
             return $job->connection === 'database' && $job->queue === 'webhooks';
         });
+        Log::shouldHaveReceived('warning')->once()->with('Redis blip on webhook throttle - failing open');
+    }
+
+    public function test_redis_dying_during_the_controller_still_returns_200(): void
+    {
+        Queue::fake();
+        Log::spy();
+        $this->gateUpFromCachedProbe();
+        $this->rateLimiterCacheReadsOkThenThrows(1, new StreamInitException(
+            'php_network_getaddresses: getaddrinfo for redis.railway.internal failed: Try again'
+        ));
+
+        $response = $this->postValidLineWebhook();
+
+        $response->assertStatus(200);
+        Queue::assertPushed(ProcessLINEWebhook::class, 1);
         Log::shouldHaveReceived('warning')->once()->with('Redis blip on webhook throttle - failing open');
     }
 

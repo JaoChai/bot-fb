@@ -12,6 +12,7 @@ use Predis\Connection\ConnectionException;
 use Predis\PredisException;
 use RedisException;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 /**
  * Webhook rate limiter that fails open on a short Redis connection failure.
@@ -27,21 +28,33 @@ class WebhookThrottle extends ThrottleRequests
 {
     public function handle($request, Closure $next, ...$options): Response
     {
-        $reachedNext = false;
+        $exceptionFromNext = false;
+        $downstreamResponse = null;
+
+        // The parent reads the limiter before AND after $next (the post-next
+        // read only builds the X-RateLimit headers). A "reached next" flag
+        // cannot tell an exception raised inside the downstream stack apart
+        // from that post-next header read, so record whether an exception
+        // actually escaped $next and keep the response it produced.
+        $wrappedNext = function ($request) use ($next, &$exceptionFromNext, &$downstreamResponse) {
+            try {
+                return $downstreamResponse = $next($request);
+            } catch (Throwable $e) {
+                $exceptionFromNext = true;
+
+                throw $e;
+            }
+        };
 
         try {
             // Forward the received arguments as-is: the parent's named-limiter
             // branch requires the middleware to be invoked with exactly three
             // arguments ('throttle.webhook' passes only the limiter name).
-            return parent::handle($request, function ($request) use ($next, &$reachedNext) {
-                $reachedNext = true;
-
-                return $next($request);
-            }, ...$options);
+            return parent::handle($request, $wrappedNext, ...$options);
         } catch (PredisException|ConnectionException|RedisException $e) {
-            // Exceptions thrown after the request passed the limiter check
-            // belong to the rest of the stack — rethrow them unchanged.
-            if ($reachedNext) {
+            // A Redis exception that escaped the downstream stack belongs to
+            // the rest of the stack — rethrow it unchanged.
+            if ($exceptionFromNext) {
                 throw $e;
             }
 
@@ -50,7 +63,10 @@ class WebhookThrottle extends ThrottleRequests
 
             Log::warning('Redis blip on webhook throttle - failing open');
 
-            return $next($request);
+            // Before $next: pass the request through without counting it.
+            // After $next the event is already dispatched and only the
+            // header read failed, so return the response we captured.
+            return $downstreamResponse ?? $next($request);
         }
     }
 }
