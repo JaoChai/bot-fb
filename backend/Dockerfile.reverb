@@ -1,5 +1,6 @@
 # Laravel Reverb WebSocket Server Dockerfile
-FROM php:8.4-cli-alpine
+# Pinned to the PHP security release (CVE-2026-109618/109619). Bump the patch tag on each PHP security release.
+FROM php:8.4.27-cli-alpine
 
 # Install system dependencies
 RUN apk add --no-cache \
