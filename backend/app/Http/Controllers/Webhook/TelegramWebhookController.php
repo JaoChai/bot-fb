@@ -56,8 +56,7 @@ class TelegramWebhookController extends Controller
         ]);
 
         // Dispatch job for processing (async)
-        ProcessTelegramWebhook::dispatch($bot, $update)
-            ->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue());
+        QueueRouter::dispatchLlm(new ProcessTelegramWebhook($bot, $update));
 
         // Return 200 OK immediately - Telegram requires fast response
         return response()->json(['ok' => true]);

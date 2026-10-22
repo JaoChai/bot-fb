@@ -3,6 +3,9 @@
 namespace App\Support;
 
 use App\Services\RedisHealthGate;
+use Predis\Connection\ConnectionException;
+use Predis\PredisException;
+use RedisException;
 
 /**
  * Resolves the queue name LLM-bound jobs should be dispatched to.
@@ -47,5 +50,33 @@ class QueueRouter
         }
 
         return $default ?: 'redis';
+    }
+
+    /**
+     * Dispatch an LLM-bound webhook job on connection()/llmQueue(), falling
+     * back to the database queue when Redis dies mid-dispatch (2026-10-22
+     * incident). The SAME job object is dispatched exactly once — either to
+     * the resolved connection, or once to 'database' on the same queue after
+     * marking the health gate down.
+     */
+    public static function dispatchLlm(object $job, ?\DateTimeInterface $delay = null): void
+    {
+        $job->onConnection(self::connection())
+            ->onQueue(self::llmQueue());
+
+        if ($delay !== null) {
+            $job->delay($delay);
+        }
+
+        try {
+            dispatch($job);
+        } catch (PredisException|ConnectionException|RedisException) {
+            app(RedisHealthGate::class)->markDown();
+
+            $job->onConnection('database')
+                ->onQueue(self::llmQueue());
+
+            dispatch($job);
+        }
     }
 }
