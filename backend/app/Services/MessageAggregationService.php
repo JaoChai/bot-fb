@@ -5,97 +5,105 @@ namespace App\Services;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\MessageAggregationGroup;
 use App\Services\SmartAggregation\AggregationContext;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Throwable;
 
 class MessageAggregationService
 {
     /**
-     * Cache key prefixes
+     * Cache key prefixes (legacy format, kept for cut-over read-through:
+     * jobs queued by the old release must still find their cache-only group).
      */
     private const CACHE_PREFIX = 'msg_agg';
 
     /**
      * Start or continue an aggregation group for a conversation.
      * Returns the group ID and whether this is a new group.
-     * Returns null if cache is unavailable (fallback to immediate response).
+     * Returns null if the database write fails (fallback to immediate response).
+     *
+     * The `message_aggregation_groups` row is authoritative: a Redis drop can
+     * no longer expire unsent work. When no row exists yet (one-deploy
+     * cut-over), a group written by the old release is adopted from the legacy
+     * cache keys instead of being dropped.
      */
     public function startOrContinueAggregation(
         Conversation $conversation,
         Message $message,
         int $waitTimeMs
     ): ?array {
-        $conversationId = $conversation->id;
-        $groupKey = $this->getGroupIdKey($conversationId);
-        $messagesKey = $this->getMessagesKey($conversationId);
-        $timestampKey = $this->getTimestampKey($conversationId);
-
-        // TTL: wait time + 10 seconds buffer (in seconds)
-        $ttl = (int) ceil(($waitTimeMs + 10000) / 1000);
-
-        // Use cache lock to prevent race conditions
-        $lock = Cache::lock("msg_agg_lock:{$conversationId}", 5);
-
         try {
-            $lock->block(3);
+            return DB::transaction(function () use ($conversation, $message, $waitTimeMs): array {
+                // Mutate groups under the conversation row lock so two
+                // webhooks/jobs cannot interleave group state.
+                DB::table('conversations')->where('id', $conversation->id)->lockForUpdate()->first();
 
-            // Check if there's an active aggregation group
-            $existingGroupId = Cache::get($groupKey);
-            $isNewGroup = ! $existingGroupId;
+                $group = MessageAggregationGroup::where('conversation_id', $conversation->id)
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($isNewGroup) {
-                // Create new aggregation group
+                $isNewGroup = false;
+
+                if ($group === null) {
+                    $legacy = $this->readLegacyCacheGroup($conversation->id);
+
+                    $group = new MessageAggregationGroup([
+                        'conversation_id' => $conversation->id,
+                        'group_id' => $legacy['group_id'] ?? (string) Str::uuid(),
+                        'message_ids' => $legacy['message_ids'] ?? [],
+                        'started_at' => isset($legacy['started_at'])
+                            ? Carbon::createFromTimestamp((int) $legacy['started_at'])
+                            : now(),
+                    ]);
+                    $isNewGroup = ($legacy === null || $legacy['group_id'] === null);
+                }
+
+                // Timer reset: every added message takes a NEW group id, so
+                // older delayed jobs supersede themselves.
                 $groupId = (string) Str::uuid();
-                Cache::put($groupKey, $groupId, $ttl);
-                Cache::put($messagesKey, [$message->id], $ttl);
-                Cache::put($timestampKey, now()->timestamp, $ttl);
-
-                Log::debug('Started new aggregation group', [
-                    'conversation_id' => $conversationId,
-                    'group_id' => $groupId,
-                    'message_id' => $message->id,
-                    'wait_time_ms' => $waitTimeMs,
-                ]);
-            } else {
-                // Add to existing group with NEW group_id to invalidate old jobs
-                // This implements timer reset: old jobs will see group_id mismatch
-                $groupId = (string) Str::uuid();  // New UUID to invalidate old delayed jobs
-                $messageIds = Cache::get($messagesKey, []);
+                $messageIds = $group->message_ids ?? [];
                 $messageIds[] = $message->id;
 
-                // Update with new group_id (timer reset mechanism)
-                Cache::put($groupKey, $groupId, $ttl);
-                Cache::put($messagesKey, $messageIds, $ttl);
-                // Keep original timestamp for debugging
-                $originalTimestamp = Cache::get($timestampKey, now()->timestamp);
-                Cache::put($timestampKey, $originalTimestamp, $ttl);
+                $group->group_id = $groupId;
+                $group->message_ids = $messageIds;
+                $group->due_at = now()->addMilliseconds($waitTimeMs);
+                $group->save();
 
-                Log::debug('Added to existing aggregation group (timer reset)', [
-                    'conversation_id' => $conversationId,
-                    'old_group_id' => $existingGroupId,
-                    'new_group_id' => $groupId,
-                    'message_id' => $message->id,
-                    'total_messages' => count($messageIds),
-                ]);
-            }
+                if ($isNewGroup) {
+                    Log::debug('Started new aggregation group', [
+                        'conversation_id' => $conversation->id,
+                        'group_id' => $groupId,
+                        'message_id' => $message->id,
+                        'wait_time_ms' => $waitTimeMs,
+                    ]);
+                } else {
+                    Log::debug('Added to existing aggregation group (timer reset)', [
+                        'conversation_id' => $conversation->id,
+                        'new_group_id' => $groupId,
+                        'message_id' => $message->id,
+                        'total_messages' => count($messageIds),
+                    ]);
+                }
 
-            return [
-                'group_id' => $groupId,
-                'is_new_group' => $isNewGroup,
-                'message_count' => count(Cache::get($messagesKey, [])),
-            ];
-        } catch (\Exception $e) {
-            Log::warning('Message aggregation cache error, falling back to immediate response', [
-                'conversation_id' => $conversationId,
+                return [
+                    'group_id' => $groupId,
+                    'is_new_group' => $isNewGroup,
+                    'message_count' => count($messageIds),
+                ];
+            });
+        } catch (Throwable $e) {
+            Log::warning('Message aggregation database error, falling back to immediate response', [
+                'conversation_id' => $conversation->id,
+                'exception_type' => $e::class,
                 'error' => $e->getMessage(),
             ]);
 
             return null; // Signal to use immediate response
-        } finally {
-            optional($lock)->release();
         }
     }
 
@@ -105,17 +113,30 @@ class MessageAggregationService
      */
     public function isActiveGroup(int $conversationId, string $groupId): bool
     {
-        $currentGroupId = Cache::get($this->getGroupIdKey($conversationId));
+        $group = $this->authoritativeGroup($conversationId);
 
-        return $currentGroupId === $groupId;
+        if ($group !== null) {
+            return $group->group_id === $groupId;
+        }
+
+        // Cut-over read-through: an old-release job with no row yet.
+        $legacy = $this->readLegacyCacheGroup($conversationId);
+
+        return $legacy !== null && $legacy['group_id'] === $groupId;
     }
 
     /**
-     * Get the current group ID from cache (for debugging).
+     * Get the current group ID (for debugging).
      */
     public function getCurrentGroupId(int $conversationId): ?string
     {
-        return Cache::get($this->getGroupIdKey($conversationId));
+        $group = $this->authoritativeGroup($conversationId);
+
+        if ($group !== null) {
+            return $group->group_id;
+        }
+
+        return $this->readLegacyCacheGroup($conversationId)['group_id'] ?? null;
     }
 
     /**
@@ -123,7 +144,13 @@ class MessageAggregationService
      */
     public function getMessageIds(int $conversationId): array
     {
-        return Cache::get($this->getMessagesKey($conversationId), []);
+        $group = $this->authoritativeGroup($conversationId);
+
+        if ($group !== null) {
+            return $group->message_ids ?? [];
+        }
+
+        return $this->readLegacyCacheGroup($conversationId)['message_ids'] ?? [];
     }
 
     /**
@@ -150,30 +177,35 @@ class MessageAggregationService
     /**
      * Clear aggregation data for a conversation.
      * Should be called after successfully processing the group.
+     *
+     * Best-effort and never throws: a failure here must not mask the caller's
+     * primary exception nor trigger duplicate sends (the response lease and
+     * hasAlreadyResponded() guard those). Unsent rows are never expired by
+     * time; only explicit clears remove them.
      */
     public function clearAggregation(int $conversationId): void
     {
-        $lock = Cache::lock("msg_agg_lock:{$conversationId}", 5);
-
         try {
-            $lock->block(3);
-
-            Cache::forget($this->getGroupIdKey($conversationId));
-            Cache::forget($this->getMessagesKey($conversationId));
-            Cache::forget($this->getTimestampKey($conversationId));
-
-            Log::debug('Cleared aggregation data', [
+            MessageAggregationGroup::where('conversation_id', $conversationId)->delete();
+        } catch (Throwable $e) {
+            Log::warning('Failed to clear aggregation group row', [
                 'conversation_id' => $conversationId,
-            ]);
-        } catch (\Exception $e) {
-            Log::warning('Failed to clear aggregation data', [
-                'conversation_id' => $conversationId,
+                'exception_type' => $e::class,
                 'error' => $e->getMessage(),
             ]);
-            // Don't rethrow - clearing is best-effort, data will expire anyway
-        } finally {
-            optional($lock)->release();
         }
+
+        foreach ($this->legacyKeys($conversationId) as $key) {
+            try {
+                Cache::forget($key);
+            } catch (Throwable) {
+                // Best-effort: legacy keys expire on their own.
+            }
+        }
+
+        Log::debug('Cleared aggregation data', [
+            'conversation_id' => $conversationId,
+        ]);
     }
 
     /**
@@ -201,7 +233,15 @@ class MessageAggregationService
      */
     public function getStartedAt(int $conversationId): ?int
     {
-        return Cache::get($this->getTimestampKey($conversationId));
+        $group = $this->authoritativeGroup($conversationId);
+
+        if ($group !== null) {
+            return $group->started_at?->timestamp;
+        }
+
+        $startedAt = $this->readLegacyCacheGroup($conversationId)['started_at'] ?? null;
+
+        return $startedAt !== null ? (int) $startedAt : null;
     }
 
     /**
@@ -262,6 +302,52 @@ class MessageAggregationService
             bot: $bot,
             customerId: $customerId,
         );
+    }
+
+    /**
+     * The DB row is authoritative; null when none exists yet.
+     */
+    private function authoritativeGroup(int $conversationId): ?MessageAggregationGroup
+    {
+        return MessageAggregationGroup::where('conversation_id', $conversationId)->first();
+    }
+
+    /**
+     * Legacy cache-only group written by the old release. Returns null when
+     * the cache has no group (or cache errors — a Redis outage then simply
+     * means "nothing pending" until the next DB-backed write).
+     */
+    private function readLegacyCacheGroup(int $conversationId): ?array
+    {
+        try {
+            $groupId = Cache::get($this->getGroupIdKey($conversationId));
+
+            if (! $groupId) {
+                return null;
+            }
+
+            return [
+                'group_id' => $groupId,
+                'message_ids' => Cache::get($this->getMessagesKey($conversationId), []),
+                'started_at' => Cache::get($this->getTimestampKey($conversationId)),
+            ];
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Legacy cache keys (old release format) for read-through and cleanup.
+     *
+     * @return list<string>
+     */
+    private function legacyKeys(int $conversationId): array
+    {
+        return [
+            $this->getGroupIdKey($conversationId),
+            $this->getMessagesKey($conversationId),
+            $this->getTimestampKey($conversationId),
+        ];
     }
 
     /**

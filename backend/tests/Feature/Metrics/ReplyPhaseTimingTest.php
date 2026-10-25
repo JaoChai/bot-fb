@@ -10,6 +10,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\AIService;
+use App\Services\ConversationResponseLease;
 use App\Services\MessageAggregationService;
 use App\Services\RAGService;
 use App\Services\ReplyPhaseTimingCollector;
@@ -19,7 +20,6 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -300,7 +300,7 @@ class ReplyPhaseTimingTest extends TestCase
             'bot_id' => 26,
             'external_customer_id' => 'U_user_26',
         ]);
-        Cache::lock("ai_response:{$conversation->id}", 30)->get();
+        app(ConversationResponseLease::class)->acquire($conversation->id);
         $this->fakeHttp();
 
         $this->runLineJob($bot, $this->lineEvent('สวัสดีครับ', 'U_user_26'));

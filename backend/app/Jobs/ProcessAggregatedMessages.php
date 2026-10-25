@@ -10,13 +10,13 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\Chat\AggregatedMessageDeliveryService;
+use App\Services\ConversationResponseLease;
 use App\Services\Chat\ConversationContextService;
 use App\Services\MessageAggregationService;
 use App\Services\ReplyPhaseTimingCollector;
 use App\Services\ReplyPhaseTimingRecorder;
 use App\Support\QueueRouter;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -24,6 +24,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class ProcessAggregatedMessages implements ShouldQueue
 {
@@ -73,7 +74,8 @@ class ProcessAggregatedMessages implements ShouldQueue
     public function handle(
         MessageAggregationService $aggregationService,
         AIService $aiService,
-        AggregatedMessageDeliveryService $delivery
+        AggregatedMessageDeliveryService $delivery,
+        ?ConversationResponseLease $leases = null
     ): void {
         // Wave 2 timing: debounce reported verbatim, queue wait measured on top.
         $timing = ReplyPhaseTimingCollector::start($this->queuedAtMs);
@@ -84,7 +86,8 @@ class ProcessAggregatedMessages implements ShouldQueue
                 $aggregationService,
                 $aiService,
                 $delivery,
-                $timing
+                $timing,
+                $leases
             );
             $this->writeTimingRow($timing);
         } catch (\Exception $e) {
@@ -134,7 +137,8 @@ class ProcessAggregatedMessages implements ShouldQueue
         MessageAggregationService $aggregationService,
         AIService $aiService,
         AggregatedMessageDeliveryService $delivery,
-        ?ReplyPhaseTimingCollector $timing = null
+        ?ReplyPhaseTimingCollector $timing = null,
+        ?ConversationResponseLease $leases = null
     ): void {
         $conversationId = $this->conversation->id;
 
@@ -158,9 +162,11 @@ class ProcessAggregatedMessages implements ShouldQueue
             return;
         }
 
-        // Acquire lock and attempt to generate response
-        $responseLock = $this->acquireResponseLock($aggregationService);
-        if ($responseLock === null) {
+        // Acquire the per-conversation response lease and attempt to generate.
+        // DB-backed: the fence holds even while Redis is down.
+        $leases ??= app(ConversationResponseLease::class);
+        $leaseToken = $this->acquireResponseLease($leases, $aggregationService);
+        if ($leaseToken === null) {
             return;
         }
 
@@ -186,7 +192,17 @@ class ProcessAggregatedMessages implements ShouldQueue
                 $this->updateStats($messageCount, $botMessage->id);
             }
         } finally {
-            $responseLock->release();
+            try {
+                $leases->release($conversationId, $leaseToken);
+            } catch (Throwable $e) {
+                // Defense in depth (the service already swallows): a release
+                // failure must never mask the primary exception nor skip the
+                // post-send plugin work below.
+                Log::warning('Response lease release threw past its guard', [
+                    'conversation_id' => $conversationId,
+                    'exception_type' => $e::class,
+                ]);
+            }
             if ($botMessage && $pluginSnapshot !== null) {
                 try {
                     $this->dispatchFlowPlugins($botMessage, $pluginSnapshot);
@@ -339,49 +355,79 @@ class ProcessAggregatedMessages implements ShouldQueue
     }
 
     /**
-     * Acquire per-conversation response lock to prevent concurrent AI responses.
-     * Returns lock on success, null if lock could not be acquired or max retries exceeded.
+     * Acquire the per-conversation response lease (DB-backed, survives Redis
+     * outages) to prevent concurrent AI responses.
+     * Returns the lease token on success, null when another worker holds the
+     * conversation's response fence.
      */
-    private function acquireResponseLock(MessageAggregationService $aggregationService): ?Lock
-    {
+    private function acquireResponseLease(
+        ConversationResponseLease $leases,
+        MessageAggregationService $aggregationService
+    ): ?string {
         $conversationId = $this->conversation->id;
-        $responseLock = Cache::lock("ai_response:{$conversationId}", 30);
+        $redispatchKey = "ai_response_redispatch:{$conversationId}:{$this->groupId}";
 
-        if (! $responseLock->get()) {
-            // Limit re-dispatch attempts to prevent infinite loop
-            $redispatchKey = "ai_response_redispatch:{$conversationId}:{$this->groupId}";
-            $attempts = (int) Cache::get($redispatchKey, 0);
+        $token = $leases->acquire($conversationId);
 
-            if ($attempts >= 3) {
-                Log::warning('Aggregation: max re-dispatch attempts reached', [
-                    'conversation_id' => $conversationId,
-                    'group_id' => $this->groupId,
-                    'attempts' => $attempts,
-                ]);
+        if ($token !== null) {
+            // Clean up re-dispatch counter on successful acquisition
+            try {
                 Cache::forget($redispatchKey);
-                $aggregationService->clearAggregation($conversationId);
-
-                return null;
+            } catch (Throwable) {
+                // Advisory counter only.
             }
 
-            Cache::put($redispatchKey, $attempts + 1, now()->addMinutes(5));
+            return $token;
+        }
 
-            Log::info('Aggregation: response lock held, re-dispatching', [
+        // Limit re-dispatch attempts to prevent infinite loop
+        try {
+            $attempts = (int) Cache::get($redispatchKey, 0);
+        } catch (Throwable) {
+            // Redis down: the counter is unreadable, so a bounded re-dispatch
+            // chain cannot be tracked. The lease holder will reply; keep the
+            // group row so nothing pending is dropped.
+            Log::info('Aggregation: response lease held, redispatch counter unreadable (cache down)', [
                 'conversation_id' => $conversationId,
-                'attempt' => $attempts + 1,
+                'group_id' => $this->groupId,
             ]);
-            // Re-dispatch with shorter delay
-            ProcessAggregatedMessages::dispatch(
-                $this->bot, $this->conversation, $this->groupId, $this->externalUserId
-            )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(5));
 
             return null;
         }
 
-        // Clean up re-dispatch counter on successful lock acquisition
-        Cache::forget("ai_response_redispatch:{$conversationId}:{$this->groupId}");
+        if ($attempts >= 3) {
+            Log::warning('Aggregation: max re-dispatch attempts reached', [
+                'conversation_id' => $conversationId,
+                'group_id' => $this->groupId,
+                'attempts' => $attempts,
+            ]);
+            try {
+                Cache::forget($redispatchKey);
+            } catch (Throwable) {
+                // Advisory counter only.
+            }
+            $aggregationService->clearAggregation($conversationId);
 
-        return $responseLock;
+            return null;
+        }
+
+        try {
+            Cache::put($redispatchKey, $attempts + 1, now()->addMinutes(5));
+        } catch (Throwable) {
+            // Without a countable attempt we cannot bound the chain.
+            return null;
+        }
+
+        Log::info('Aggregation: response lease held, re-dispatching', [
+            'conversation_id' => $conversationId,
+            'attempt' => $attempts + 1,
+        ]);
+        // Re-dispatch with shorter delay
+        ProcessAggregatedMessages::dispatch(
+            $this->bot, $this->conversation, $this->groupId, $this->externalUserId
+        )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(5));
+
+        return null;
     }
 
     /**
