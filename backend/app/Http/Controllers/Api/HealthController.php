@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\CircuitBreakerService;
+use App\Services\Health\RealtimeHealthSnapshotStore;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +13,15 @@ use Illuminate\Support\Facades\Queue;
 
 class HealthController extends Controller
 {
+    /** Snapshot older than this = the health pipeline itself is broken. */
+    private const SNAPSHOT_MAX_AGE_SECONDS = 180;
+
+    /** Total ready backlog across all queues above this = degraded. */
+    private const QUEUE_BACKLOG_THRESHOLD = 100;
+
+    /** Failed jobs in the last 5 minutes above this = degraded. */
+    private const QUEUE_RECENT_FAILURE_THRESHOLD = 10;
+
     public function __construct(
         private CircuitBreakerService $circuitBreaker
     ) {}
@@ -52,18 +63,62 @@ class HealthController extends Controller
     /**
      * Realtime-focused health check (broadcasting + queue).
      *
-     * Lightweight endpoint for monitoring real-time chat infrastructure.
+     * Reads the snapshot written by `health:check-realtime` (scheduled every
+     * minute) instead of making outbound calls per request. Falls back to the
+     * legacy direct counts when no snapshot exists yet (e.g. right after a
+     * deploy before the first scheduler tick), which also keeps the status
+     * degraded until fresh data arrives.
      */
-    public function realtime(): JsonResponse
+    public function realtime(RealtimeHealthSnapshotStore $snapshots): JsonResponse
     {
-        $queueDepth = DB::table('jobs')->where('available_at', '<=', now()->timestamp)->count();
-        $failedCount = DB::table('failed_jobs')->count();
+        $snapshot = $snapshots->read();
 
         $broadcastDriver = config('broadcasting.default');
         $broadcastOk = $broadcastDriver !== 'null';
 
-        $queueOk = $queueDepth < 100 && $failedCount < 10;
-        $status = ($broadcastOk && $queueOk) ? 'healthy' : 'degraded';
+        $live = $snapshot['broadcasting']['live'] ?? null;
+        if (! is_bool($live)) {
+            $live = null;
+        }
+
+        $checkedAt = $snapshot['checked_at'] ?? null;
+        $ageSeconds = null;
+        if (is_string($checkedAt)) {
+            try {
+                $ageSeconds = max(0, now()->getTimestamp() - Carbon::parse($checkedAt)->getTimestamp());
+            } catch (\Throwable) {
+                $ageSeconds = null; // unparseable timestamp = cannot prove freshness
+            }
+        }
+
+        $latencyMs = $snapshot['broadcasting']['latency_ms'] ?? null;
+        $backlog = $snapshot['queue']['backlog'] ?? null;
+        $backlogTotal = $this->sumBacklog($backlog);
+
+        if ($snapshot === null) {
+            // Legacy behaviour: answer from the database directly.
+            $failedTotal = (int) DB::table('failed_jobs')->count();
+            $failedRecent = (int) DB::table('failed_jobs')
+                ->where('failed_at', '>=', now()->subMinutes(5))
+                ->count();
+            $depth = (int) DB::table('jobs')->where('available_at', '<=', now()->timestamp)->count();
+            $backlog = ['database' => ['ready' => $depth]];
+        } else {
+            $failedTotal = (int) ($snapshot['queue']['failed_total'] ?? 0);
+            $failedRecent = (int) ($snapshot['queue']['failed_recent_5m'] ?? 0);
+            $depth = $backlogTotal ?? 0;
+        }
+
+        // Degraded when: probe says Reverb is dead, the snapshot is missing or
+        // stale (> 180 s = scheduler/probe itself is broken), or the queues are
+        // backing up / failing now. Historical failures alone are NOT an
+        // incident — only failures in the last 5 minutes count.
+        $staleSnapshot = $snapshot === null || $ageSeconds === null || $ageSeconds > self::SNAPSHOT_MAX_AGE_SECONDS;
+        $queueOk = ($backlogTotal ?? 0) < self::QUEUE_BACKLOG_THRESHOLD
+            && $failedRecent < self::QUEUE_RECENT_FAILURE_THRESHOLD;
+        $status = ($broadcastOk && $queueOk && ! $staleSnapshot && $live !== false)
+            ? 'healthy'
+            : 'degraded';
 
         return response()->json([
             'status' => $status,
@@ -71,15 +126,42 @@ class HealthController extends Controller
                 'broadcasting' => [
                     'ok' => $broadcastOk,
                     'driver' => $broadcastDriver,
+                    'live' => $live,
+                    'checked_at' => $checkedAt,
+                    'age_seconds' => $ageSeconds,
+                    'latency_ms' => $latencyMs,
                 ],
                 'queue' => [
                     'ok' => $queueOk,
-                    'depth' => $queueDepth,
-                    'failed' => $failedCount,
+                    'depth' => $depth,
+                    'failed' => $failedTotal,
                     'connection' => config('queue.default'),
+                    'failed_recent_5m' => $failedRecent,
+                    'failed_total' => $failedTotal,
+                    'backlog' => $backlog,
                 ],
             ],
         ]);
+    }
+
+    /**
+     * Sum every integer count in the backlog tree; null entries (a queue that
+     * could not be sampled) contribute nothing instead of hiding the total.
+     */
+    private function sumBacklog(mixed $backlog): ?int
+    {
+        if (! is_array($backlog)) {
+            return null;
+        }
+
+        $total = 0;
+        array_walk_recursive($backlog, function ($value) use (&$total): void {
+            if (is_int($value) || is_float($value)) {
+                $total += $value;
+            }
+        });
+
+        return $total;
     }
 
     /**

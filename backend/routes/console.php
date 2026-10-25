@@ -84,5 +84,13 @@ Schedule::command('delivery:remind')->everyThirtyMinutes()->withoutOverlapping(1
 // Auto Account Delivery — ตรวจของค้าง/limbo ระหว่าง bot-fb กับ mhha_acc_db
 Schedule::command('delivery:reconcile')->hourly()->withoutOverlapping();
 
+// Truthful realtime health — probe Reverb + sample queue backlog into the
+// snapshot /api/health/realtime serves. Runs INLINE (never on the Redis
+// queue): when Redis or Reverb is down this check must still execute and
+// record the snapshot, so the outside watchdog can alert the owner.
+Schedule::command('health:check-realtime')
+    ->everyMinute()
+    ->withoutOverlapping();
+
 // Auto Account Delivery — เปิด/ปิดสวิตช์ขายตามของจริงใน stock DB
 Schedule::command('stock:sync-pool')->everyFiveMinutes()->withoutOverlapping();
