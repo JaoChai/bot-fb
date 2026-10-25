@@ -4,10 +4,15 @@ namespace Tests\Unit\Services;
 
 use App\Models\ProductStock;
 use App\Services\StockInjectionService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use RuntimeException;
 use Tests\TestCase;
 
 class StockInjectionServiceTest extends TestCase
 {
+    use RefreshDatabase;
+
     private StockInjectionService $service;
 
     protected function setUp(): void
@@ -143,5 +148,23 @@ class StockInjectionServiceTest extends TestCase
         ]));
 
         $this->assertSame('', $result);
+    }
+
+    /** Wave 2 #4b: stock status feeds the AI reply prompt — Redis down must
+     * degrade to the database, not kill the reply. */
+    public function test_get_stock_status_falls_back_to_database_when_cache_throws(): void
+    {
+        ProductStock::factory()->create([
+            'name' => 'BM เขียว', 'slug' => 'bm-green', 'aliases' => [],
+            'in_stock' => true, 'available_count' => 7,
+            'stock_code' => 'X', 'delivery_method' => 'stock',
+        ]);
+
+        Cache::shouldReceive('remember')->andThrow(new RuntimeException('redis down'));
+
+        $stocks = $this->service->getStockStatus();
+
+        $this->assertCount(1, $stocks, 'must fall back to the database when the cache throws');
+        $this->assertSame('BM เขียว', $stocks->first()->name);
     }
 }

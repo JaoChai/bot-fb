@@ -13,6 +13,7 @@ use App\Services\AIService;
 use App\Services\AutoAssignmentService;
 use App\Services\Chat\ConversationContextService;
 use App\Services\CircuitBreakerService;
+use App\Services\ConversationResponseLease;
 use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
@@ -45,7 +46,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -213,11 +213,13 @@ class ProcessLINEWebhook implements ShouldQueue
             return;
         }
 
-        // For text messages: acquire response lock around Stage 3 + Stage 4 (mirror legacy order)
+        // For text messages: acquire the DB-backed response lease around
+        // Stage 3 + Stage 4 (mirror legacy order). Survives Redis outages.
         if ($ctx->messageType() === 'text' && $ctx->conversation !== null && $ctx->userMessage !== null) {
-            $lock = Cache::lock("ai_response:{$ctx->conversation->id}", 30);
-            if (! $lock->get()) {
-                Log::info('Response lock held, falling back to aggregation', [
+            $leases = app(ConversationResponseLease::class);
+            $leaseToken = $leases->acquire($ctx->conversation->id);
+            if ($leaseToken === null) {
+                Log::info('Response lease held, falling back to aggregation', [
                     'conversation_id' => $ctx->conversation->id,
                 ]);
 
@@ -244,7 +246,15 @@ class ProcessLINEWebhook implements ShouldQueue
 
                 throw $e;
             } finally {
-                $lock->release();
+                try {
+                    $leases->release($ctx->conversation->id, $leaseToken);
+                } catch (\Throwable $e) {
+                    // Never mask the primary result with a cleanup failure.
+                    Log::warning('Response lease release threw past its guard', [
+                        'conversation_id' => $ctx->conversation->id,
+                        'exception_type' => $e::class,
+                    ]);
+                }
             }
 
             return;
@@ -682,10 +692,12 @@ class ProcessLINEWebhook implements ShouldQueue
         // === API calls OUTSIDE transaction (no DB lock held) ===
         // AI generate (~2-3s) + LINE reply (~200ms) no longer block concurrent requests
         if ($shouldGenerateResponse && $userMessage && $conversation) {
-            // Acquire per-conversation response lock to prevent duplicate AI responses
-            $responseLock = Cache::lock("ai_response:{$conversation->id}", 30);
+            // Acquire the DB-backed response lease to prevent duplicate AI
+            // responses (survives Redis outages, unlike the old 30 s lock).
+            $leases = app(ConversationResponseLease::class);
+            $leaseToken = $leases->acquire($conversation->id);
 
-            if (! $responseLock->get()) {
+            if ($leaseToken === null) {
                 // Another job is already generating a response for this conversation
                 // Fallback: create aggregation group as safety net
                 Log::info('Response lock held, falling back to aggregation', [
@@ -781,7 +793,15 @@ class ProcessLINEWebhook implements ShouldQueue
 
                 throw $e;
             } finally {
-                $responseLock->release();
+                try {
+                    $leases->release($conversation->id, $leaseToken);
+                } catch (\Throwable $e) {
+                    // Never mask the primary result with a cleanup failure.
+                    Log::warning('Response lease release threw past its guard', [
+                        'conversation_id' => $conversation->id,
+                        'exception_type' => $e::class,
+                    ]);
+                }
             }
         }
 

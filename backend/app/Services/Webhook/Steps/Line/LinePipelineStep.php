@@ -3,6 +3,7 @@
 namespace App\Services\Webhook\Steps\Line;
 
 use App\Jobs\ProcessAggregatedMessages;
+use App\Services\ConversationResponseLease;
 use App\Services\LineWebhook\LineWebhookContextService;
 use App\Services\LineWebhook\LineWebhookGatingService;
 use App\Services\LineWebhook\LineWebhookOutputService;
@@ -12,8 +13,8 @@ use App\Services\MessageAggregationService;
 use App\Services\Webhook\WebhookContext;
 use App\Support\QueueRouter;
 use Closure;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Runs the LINE-specific pipeline (Gating → Context → Response → Output) that
@@ -56,11 +57,13 @@ class LinePipelineStep
             return;
         }
 
-        // For text messages: acquire response lock around Stage 3 + Stage 4 (mirror legacy order)
+        // For text messages: acquire the DB-backed response lease around
+        // Stage 3 + Stage 4 (mirror legacy order). Survives Redis outages.
         if ($ctx->messageType() === 'text' && $ctx->conversation !== null && $ctx->userMessage !== null) {
-            $lock = Cache::lock("ai_response:{$ctx->conversation->id}", 30);
-            if (! $lock->get()) {
-                Log::info('Response lock held, falling back to aggregation', [
+            $leases = app(ConversationResponseLease::class);
+            $leaseToken = $leases->acquire($ctx->conversation->id);
+            if ($leaseToken === null) {
+                Log::info('Response lease held, falling back to aggregation', [
                     'conversation_id' => $ctx->conversation->id,
                 ]);
 
@@ -83,7 +86,15 @@ class LinePipelineStep
                 $this->responseSvc->generate($ctx);
                 $this->outputSvc->dispatch($ctx);
             } finally {
-                $lock->release();
+                try {
+                    $leases->release($ctx->conversation->id, $leaseToken);
+                } catch (Throwable $e) {
+                    // Never mask the primary result with a cleanup failure.
+                    Log::warning('Response lease release threw past its guard', [
+                        'conversation_id' => $ctx->conversation->id,
+                        'exception_type' => $e::class,
+                    ]);
+                }
             }
 
             $next($shared);

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Flow;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Cache service for Flow-related queries.
@@ -21,13 +22,21 @@ class FlowCacheService
      */
     public function getDefaultFlow(int $botId): ?Flow
     {
-        return Cache::remember(
-            $this->getDefaultFlowKey($botId),
-            self::CACHE_TTL,
-            fn () => Flow::where('bot_id', $botId)
+        try {
+            return Cache::remember(
+                $this->getDefaultFlowKey($botId),
+                self::CACHE_TTL,
+                fn () => Flow::where('bot_id', $botId)
+                    ->where('is_default', true)
+                    ->first()
+            );
+        } catch (\Throwable) {
+            // Redis down (Wave 2 #4b): this read sits on the AI reply path —
+            // degrade to the database instead of killing the reply.
+            return Flow::where('bot_id', $botId)
                 ->where('is_default', true)
-                ->first()
-        );
+                ->first();
+        }
     }
 
     /**
@@ -35,11 +44,15 @@ class FlowCacheService
      */
     public function hasFlows(int $botId): bool
     {
-        return Cache::remember(
-            $this->getHasFlowsKey($botId),
-            self::CACHE_TTL,
-            fn () => Flow::where('bot_id', $botId)->exists()
-        );
+        try {
+            return Cache::remember(
+                $this->getHasFlowsKey($botId),
+                self::CACHE_TTL,
+                fn () => Flow::where('bot_id', $botId)->exists()
+            );
+        } catch (\Throwable) {
+            return Flow::where('bot_id', $botId)->exists();
+        }
     }
 
     /**
@@ -48,8 +61,19 @@ class FlowCacheService
      */
     public function invalidateBot(int $botId): void
     {
-        Cache::forget($this->getDefaultFlowKey($botId));
-        Cache::forget($this->getHasFlowsKey($botId));
+        foreach ([$this->getDefaultFlowKey($botId), $this->getHasFlowsKey($botId)] as $key) {
+            try {
+                Cache::forget($key);
+            } catch (\Throwable $e) {
+                // Best-effort: entries carry a TTL (CACHE_TTL = 1800 s). But the
+                // stale window must be visible: an admin edit made during a
+                // Redis outage can serve the OLD flow for up to that long.
+                Log::warning('FlowCache invalidate failed; stale flow possible until TTL', [
+                    'bot_id' => $botId,
+                    'exception_type' => $e::class,
+                ]);
+            }
+        }
     }
 
     /**
@@ -58,7 +82,15 @@ class FlowCacheService
      */
     public function invalidateDefaultFlow(int $botId): void
     {
-        Cache::forget($this->getDefaultFlowKey($botId));
+        try {
+            Cache::forget($this->getDefaultFlowKey($botId));
+        } catch (\Throwable $e) {
+            // Same stale-window trade-off as invalidateBot().
+            Log::warning('FlowCache invalidate failed; stale flow possible until TTL', [
+                'bot_id' => $botId,
+                'exception_type' => $e::class,
+            ]);
+        }
     }
 
     /**

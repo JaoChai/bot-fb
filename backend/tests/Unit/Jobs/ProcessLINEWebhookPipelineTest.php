@@ -10,6 +10,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Services\AIService;
 use App\Services\CircuitBreakerService;
+use App\Services\ConversationResponseLease;
 use App\Services\LINEService;
 use App\Services\LineWebhook\GateDecision;
 use App\Services\LineWebhook\LineWebhookContextService;
@@ -21,7 +22,6 @@ use App\Services\MessageAggregationService;
 use App\Services\RateLimitService;
 use App\Services\ResponseHoursService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
 use Tests\TestCase;
@@ -286,8 +286,7 @@ class ProcessLINEWebhookPipelineTest extends TestCase
             'channel_type' => 'line',
             'status' => 'active',
         ]);
-        $lockKey = "ai_response:{$conv->id}";
-        Cache::lock($lockKey, 30)->get(); // acquire — pipeline will fail to get it
+        $leaseToken = app(ConversationResponseLease::class)->acquire($conv->id); // acquire — pipeline will fail to get it
 
         // Gating: allow
         $gating = Mockery::mock(LineWebhookGatingService::class);
@@ -352,7 +351,7 @@ class ProcessLINEWebhookPipelineTest extends TestCase
 
         Queue::assertPushed(ProcessAggregatedMessages::class);
 
-        Cache::lock($lockKey, 30)->forceRelease();
+        app(ConversationResponseLease::class)->release($conv->id, $leaseToken);
     }
 
     public function test_non_text_event_uses_legacy_path(): void
