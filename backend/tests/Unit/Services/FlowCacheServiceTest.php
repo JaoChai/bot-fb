@@ -4,7 +4,6 @@ namespace Tests\Unit\Services;
 
 use App\Models\Bot;
 use App\Models\Flow;
-use App\Models\User;
 use App\Services\FlowCacheService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;

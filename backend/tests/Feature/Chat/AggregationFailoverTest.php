@@ -13,6 +13,7 @@ use App\Services\ConversationResponseLease;
 use App\Services\Guardrail\OffTopicCircuitBreaker;
 use App\Services\MessageAggregationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
@@ -345,7 +346,7 @@ class AggregationFailoverTest extends TestCase
     {
         $group = $this->startGroup($this->userMessage('hello'), 1500);
 
-        \Illuminate\Support\Facades\Broadcast::shouldReceive('event')
+        Broadcast::shouldReceive('event')
             ->andThrow(new RuntimeException('redis down'));
 
         $this->runJob($group['group_id'], $this->aiReplyingOnce('hello'), $this->deliveryExpectingOnce());

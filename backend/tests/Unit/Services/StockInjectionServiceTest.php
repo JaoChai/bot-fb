@@ -12,6 +12,7 @@ use Tests\TestCase;
 class StockInjectionServiceTest extends TestCase
 {
     use RefreshDatabase;
+
     private StockInjectionService $service;
 
     protected function setUp(): void
