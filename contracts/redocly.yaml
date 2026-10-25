@@ -1,0 +1,20 @@
+# Redocly lint config for contracts/openapi.yaml.
+#
+# The contract lints clean with the recommended ruleset except for four
+# warnings that are deliberate for this repo:
+# - info-license: the OpenApi annotations in backend/app/OpenApi carry the
+#   license; this scoped contract file does not need to duplicate it.
+# - no-server-example.com: the localhost server entry mirrors the existing
+#   @OA\Server annotations (production + local development).
+# - no-unused-components: MessageSentPayload / ConversationUpdatedPayload are
+#   consumed through the x-broadcast map (and validated live by
+#   backend/tests/Feature/Contracts/AuthChatContractTest.php), which the
+#   unused-components analyzer cannot see.
+# - tag-description: two single-purpose tags, self-explanatory.
+extends:
+  - recommended
+rules:
+  info-license: off
+  no-server-example.com: off
+  no-unused-components: off
+  tag-description: off
