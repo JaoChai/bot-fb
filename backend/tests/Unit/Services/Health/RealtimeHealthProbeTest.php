@@ -3,7 +3,12 @@
 namespace Tests\Unit\Services\Health;
 
 use App\Services\Health\RealtimeHealthProbe;
+use GuzzleHttp\Client;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Config;
+use Pusher\ApiErrorException;
+use Pusher\Pusher;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -14,29 +19,77 @@ class RealtimeHealthProbeTest extends TestCase
         return new RealtimeHealthProbe(clientFactory: fn (): object => $client);
     }
 
-    public function test_success_reports_live_true_without_error(): void
+    /**
+     * Real Pusher SDK client with the HTTP layer stubbed by a Guzzle
+     * MockHandler — exercises the SDK's real signing/request/decode path.
+     */
+    private function probeWithRealPusher(MockHandler $handler): RealtimeHealthProbe
     {
-        $probe = $this->probeWithClient(new class
-        {
-            public function getChannels(): object
-            {
-                return (object) ['channels' => (object) []];
-            }
-        });
+        $pusher = new Pusher(
+            'health-probe-key',
+            'health-probe-secret',
+            'health-probe-app',
+            ['cluster' => 'mt1'],
+            new Client(['handler' => $handler]),
+        );
+
+        return $this->probeWithClient($pusher);
+    }
+
+    /**
+     * Regression: Reverb alive with 0 subscribers answers the channels REST
+     * API with {"channels":[]} — a JSON empty array, which json_decode()
+     * (associative=false) yields as a PHP array, not an object. The probe
+     * must report the server as LIVE, not catch a TypeError and say dead.
+     */
+    public function test_real_client_zero_subscribers_empty_channels_array_reports_live_true(): void
+    {
+        $probe = $this->probeWithRealPusher(new MockHandler([
+            new Response(200, [], '{"channels":[]}'),
+        ]));
+
+        $result = $probe->check();
+
+        $this->assertTrue($result['live'], 'Reverb alive with 0 subscribers must be live=true');
+        $this->assertNull($result['error_class']);
+        $this->assertIsInt($result['latency_ms']);
+    }
+
+    public function test_real_client_object_channels_with_presence_channel_reports_live_true(): void
+    {
+        $probe = $this->probeWithRealPusher(new MockHandler([
+            new Response(200, [], '{"channels":{"presence-x":{}}}'),
+        ]));
 
         $result = $probe->check();
 
         $this->assertTrue($result['live']);
         $this->assertNull($result['error_class']);
-        $this->assertIsInt($result['latency_ms']);
-        $this->assertGreaterThanOrEqual(0, $result['latency_ms']);
     }
 
+    public function test_real_client_http_500_reports_live_false(): void
+    {
+        $probe = $this->probeWithRealPusher(new MockHandler([
+            new Response(500, [], '{"error":"internal"}'),
+        ]));
+
+        $result = $probe->check();
+
+        $this->assertFalse($result['live']);
+        $this->assertSame(ApiErrorException::class, $result['error_class']);
+    }
+
+    /**
+     * The old object-shaped success fake (`getChannels()` returning
+     * (object)['channels' => (object)[]]) was removed: it masked the exact
+     * Reverb reply shape that broke the probe. The live=true path is now
+     * covered by the real-client tests above, against the real SDK.
+     */
     public function test_transport_failure_reports_live_false_without_throwing(): void
     {
         $probe = $this->probeWithClient(new class
         {
-            public function getChannels(): object
+            public function get(string $path, array $params = [], $associative = false): object
             {
                 throw new \RuntimeException('cURL error 7: Failed to connect to reverb host');
             }
@@ -53,7 +106,7 @@ class RealtimeHealthProbeTest extends TestCase
     {
         $probe = $this->probeWithClient(new class
         {
-            public function getChannels(): object
+            public function get(string $path, array $params = [], $associative = false): object
             {
                 throw new \RuntimeException('Pusher error: 502 Application failed to respond');
             }
@@ -69,7 +122,7 @@ class RealtimeHealthProbeTest extends TestCase
     {
         $probe = $this->probeWithClient(new class
         {
-            public function getChannels(): object
+            public function get(string $path, array $params = [], $associative = false): object
             {
                 usleep(300_000);
                 throw new \RuntimeException('cURL error 28: Operation timed out');
