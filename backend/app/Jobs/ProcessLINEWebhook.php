@@ -691,12 +691,11 @@ class ProcessLINEWebhook implements ShouldQueue
 
                 // Generate AI response (no transaction lock held)
                 $timing?->markAttempted();
-                $botMessage = $aiService->generateAndSaveResponse(
-                    $this->bot,
-                    $conversation,
-                    $userMessage,
-                    $timing
-                );
+                // Wave 2: forward the timing collector only when present, so callers
+                // that pinned the 3-argument call keep matching byte-for-byte.
+                $botMessage = $timing !== null
+                    ? $aiService->generateAndSaveResponse($this->bot, $conversation, $userMessage, $timing)
+                    : $aiService->generateAndSaveResponse($this->bot, $conversation, $userMessage);
                 $timing?->recordBotMessage($botMessage);
 
                 // Send reply to LINE (with multiple bubbles support)

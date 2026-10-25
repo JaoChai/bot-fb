@@ -99,12 +99,11 @@ class LineWebhookResponseService
 
         // Generate AI response — also persists bot Message (line 503-507)
         // Exception intentionally re-thrown: mirrors legacy lines 545-555 (throw $e)
-        $botMessage = $this->aiService->generateAndSaveResponse(
-            $ctx->bot,
-            $conversation,
-            $userMessage,
-            $timing
-        );
+        // Wave 2: forward the timing collector only when present, so callers that
+        // pinned the 3-argument call keep matching byte-for-byte.
+        $botMessage = $timing !== null
+            ? $this->aiService->generateAndSaveResponse($ctx->bot, $conversation, $userMessage, $timing)
+            : $this->aiService->generateAndSaveResponse($ctx->bot, $conversation, $userMessage);
         $timing?->recordBotMessage($botMessage);
 
         // Store for Stage 4 (LINE push, stats, broadcast)
