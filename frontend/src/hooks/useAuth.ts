@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { apiPost } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
+import { clearSessionQueries } from '@/lib/sessionCache';
 import { useAuthStore } from '@/stores/authStore';
 import type {
   LoginCredentials,
@@ -20,7 +21,10 @@ function useLogin() {
       const response = await apiPost<AuthResponse>('/auth/login', credentials);
       return response;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
+      // Account replacement: drop any cached data left by a previous user
+      // (e.g. after a forced 401 logout) before this user's data lands.
+      await clearSessionQueries();
       login(data.user, data.token);
       queryClient.setQueryData(queryKeys.auth.user(), data.user);
       navigate('/dashboard');
@@ -49,7 +53,6 @@ function useRegister() {
 
 // Logout mutation
 function useLogout() {
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { logout } = useAuthStore();
 
@@ -57,10 +60,11 @@ function useLogout() {
     mutationFn: async () => {
       await apiPost('/auth/logout');
     },
-    onSettled: () => {
+    onSettled: async () => {
       // Always logout locally, even if API call fails
       logout();
-      queryClient.clear();
+      // Drop cached queries in memory AND the persisted IndexedDB copy.
+      await clearSessionQueries();
       navigate('/login');
     },
   });

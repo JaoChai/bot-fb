@@ -1,5 +1,6 @@
 # Laravel Production Dockerfile
-FROM php:8.4-fpm-alpine AS base
+# Pinned to the PHP security release (CVE-2026-109618/109619). Bump the patch tag on each PHP security release.
+FROM php:8.4.27-fpm-alpine AS base
 
 # Install system dependencies
 RUN apk add --no-cache \

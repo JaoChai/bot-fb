@@ -2,11 +2,15 @@ import { QueryClient } from '@tanstack/react-query';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import { get, set, del } from 'idb-keyval';
 
-// Query keys that should NOT be persisted
-const NON_PERSISTENT_KEYS = [
-  'bots',
-  'bot-tags',
-];
+// IndexedDB storage key for the persisted query cache.
+export const PERSISTENCE_KEY = 'BOTJAO_QUERY_CACHE_v2';
+
+// Allowlist policy (owner decision 2026-10-25): ONLY non-customer catalog
+// roots may be persisted to IndexedDB. Chat, conversations, orders, slips,
+// payments, auth, settings and bot config never touch the disk cache.
+// A new root is added here only after proving it carries no customer,
+// order, payment or credential data.
+const PERSISTENT_QUERY_ROOTS = ['models'];
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,14 +41,12 @@ export const queryClient = new QueryClient({
 });
 
 /**
- * Check if a query should be persisted to IndexedDB
+ * Check if a query should be persisted to IndexedDB.
  */
 export function shouldDehydrateQuery(query: { queryKey: readonly unknown[] }): boolean {
   const firstKey = query.queryKey[0];
-  if (typeof firstKey === 'string' && NON_PERSISTENT_KEYS.includes(firstKey)) {
-    return false; // Don't persist real-time conversation data
-  }
-  return true; // Persist other queries (bots, settings, etc.)
+  // Deny by default: a root must be explicitly allowlisted above.
+  return typeof firstKey === 'string' && PERSISTENT_QUERY_ROOTS.includes(firstKey);
 }
 
 // Persister for IndexedDB — keeps cache across page refreshes with async I/O
@@ -54,7 +56,7 @@ export const persister = createAsyncStoragePersister({
     setItem: async (key, value) => { await set(key, value); },
     removeItem: async (key) => { await del(key); },
   },
-  key: 'BOTJAO_QUERY_CACHE_v2',
+  key: PERSISTENCE_KEY,
 });
 
 // Clear old localStorage cache (one-time migration from v1)

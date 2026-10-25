@@ -8,6 +8,7 @@ use App\Http\Middleware\SanitizeInput;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TrustProxies;
 use App\Http\Middleware\ValidateJsonContent;
+use App\Http\Middleware\WebhookThrottle;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -62,7 +63,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'throttle.auth' => ThrottleRequests::class.':auth',
             'throttle.api' => ThrottleRequests::class.':api',
-            'throttle.webhook' => ThrottleRequests::class.':webhook',
+            'throttle.webhook' => WebhookThrottle::class.':webhook',
             'throttle.bot-test' => ThrottleRequests::class.':bot-test',
             'throttle.uploads' => ThrottleRequests::class.':uploads',
             'throttle.qa-inspector-read' => ThrottleRequests::class.':qa-inspector-read',

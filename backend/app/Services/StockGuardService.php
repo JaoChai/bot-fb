@@ -17,6 +17,10 @@ class StockGuardService
     /** ราคาที่ห่างจากชื่อสินค้าไม่เกินนี้ (ตัวอักษร) ถือว่าพูดถึงคู่กัน */
     private const PRICE_PROXIMITY = 60;
 
+    // A negation of a fee, wait, or payment is not a refusal of the product.
+    // "ทั้งหมด" means total/all, not out of stock.
+    private const PRODUCT_REFUSAL = '(?:(?<!ทั้ง)หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|ยกเลิก|ไม่ต้อง|ไม่จำเป็น|ไม่ใช่|out\s*of\s*stock)(?!ค่า|จ่าย|รอ|โอน|เสีย|ธรรมเนียม)';
+
     public function __construct(
         protected StockInjectionService $stockInjection
     ) {}
@@ -95,11 +99,16 @@ class StockGuardService
     /**
      * Detect if response is SELLING (not just mentioning) out-of-stock products.
      *
+     * ตัดสินใจ "ต่อประโยค (clause)" ไม่ใช่ต่อหน้าต่าง 40-60 ตัวอักษรทั้งข้อความ —
+     * คำขายของสินค้าอื่นหรือคำโอน/ชำระของลูกค้าเองที่อยู่ไกลๆ ต้องไม่ทำให้
+     * ประโยคที่แค่เอ่ยถึง/ปฏิเสธสินค้าหมดถูกบล็อกทั้งก้อน (false positive 8 เคสจริงใน prod)
+     *
      * @return array<string, bool> ชื่อสินค้า => ปิดการขายจริงไหม (false = แค่เอ่ยชื่อ/ราคา)
      */
     protected function detectViolations(string $response, Collection $outOfStock): array
     {
         $violations = [];
+        $clauses = $this->splitClauses($response);
 
         // Payment instructions (STEP 4) list products as order line items,
         // not as selling recommendations. Skip guard for those.
@@ -107,75 +116,133 @@ class StockGuardService
 
         foreach ($outOfStock as $product) {
             $names = array_merge([$product->name], $product->aliases ?? []);
+            $strong = false;
+            $strongIsPriceOnly = true;
+            $mentioned = false;
 
             foreach ($names as $name) {
                 if (mb_strlen($name) < 2) {
                     continue;
                 }
 
-                if (mb_stripos($response, $name) === false) {
-                    continue;
-                }
+                foreach ($clauses as $clause) {
+                    $text = $clause['text'];
 
-                // Product name found — check both refusal and selling contexts
-                $isRefused = $this->isRefusingContext($response, $name);
-                $isSelling = $this->isSellingContext($response, $name, $product->name);
-
-                // In payment instructions, product names as line items are not violations
-                if ($isSelling && $isPayment && $this->isOrderLineItem($response, $name)) {
-                    continue;
-                }
-
-                // Informational: response mentions price BUT also refuses the same product
-                // → allowed (e.g., "BM ราคา 1,100 บาท แต่หมดชั่วคราว")
-                // UNLESS there are active selling keywords (cart/order/recommendation)
-                if ($isSelling && $isRefused) {
-                    if ($this->isActivelySelling($response, $name)) {
-                        $violations[$product->name] = true;
-                        break;
+                    if (mb_stripos($text, $name) === false) {
+                        continue;
                     }
 
-                    continue;
-                }
+                    $kind = $this->strongSellingKind($text, $clause['offset'], $response, $name, $product->name);
 
-                // Selling without refusal → violation
-                if ($isSelling) {
-                    $violations[$product->name] = $this->isActivelySelling($response, $name);
-                    break;
-                }
+                    // Own summary/quantity/price wins over an unattached negation.
+                    // Customer-owned accounts still skip; cart actions still override refusal.
+                    $hasHardSale = in_array($kind, ['summary', 'qty', 'price'], true)
+                        || ($kind === 'offer' && $this->hasOwnPriceInClause($text, $clause['offset'], $response, $name, $product->name));
+                    if ($kind !== 'cart' && $this->isExcludedClause($text, $name, $hasHardSale)) {
+                        continue;
+                    }
 
-                // Refusal without selling → skip
-                if ($isRefused) {
-                    continue;
+                    // ใน payment instruction ชื่อสินค้าคือ line item ไม่ใช่การขาย
+                    if ($kind !== null && $isPayment && $this->isOrderLineItem($response, $name)) {
+                        continue;
+                    }
+
+                    if ($kind !== null) {
+                        $strong = true;
+                        if ($kind !== 'price') {
+                            $strongIsPriceOnly = false;
+                        }
+                    } else {
+                        // เอ่ยชื่อในประโยคที่ไม่มีสัญญาณขายชัดเจน (เช่น แค่คำว่าโอน/ชำระเงิน)
+                        $mentioned = true;
+                    }
                 }
             }
+
+            if (! $strong && ! $mentioned) {
+                continue;
+            }
+
+            // บอกราคาอย่างเดียว (ไม่มีจำนวน/ตะกร้า/สรุปยอด/เสนอขาย) = การตอบแบบให้ข้อมูล:
+            // ถ้ามีการบอกว่าหมดที่ไหนสักแห่งในข้อความ → ปล่อยผ่านทั้งข้อความ
+            // ถ้าไม่มี → คงคำตอบไว้แล้วเติมแจ้งเตือนท้ายข้อความ
+            if ($strong && $strongIsPriceOnly) {
+                if ($this->isRefusedSomewhere($response, $names, $product->name)) {
+                    continue;
+                }
+
+                $violations[$product->name] = false;
+
+                continue;
+            }
+
+            $violations[$product->name] = $strong;
         }
 
         return $violations;
     }
 
     /**
-     * Check if the response is correctly REFUSING to sell a SPECIFIC product.
+     * แบ่งข้อความเป็นประโยค (clause): ขึ้นบรรทัดใหม่, . ! ?,
+     * หรือ ครับ/ค่ะ/คะ ตามด้วยช่องว่างหรือจบข้อความ
      *
-     * Refusal keywords must appear within proximity of the product name,
-     * not just anywhere in the response — prevents bypass when LLM refuses
-     * one product but sells another in the same message.
+     * @return array<int, array{text: string, offset: int}> offset = ตำแหน่งตัวอักษร (mb) ในข้อความเดิม
      */
-    protected function isRefusingContext(string $response, string $productName): bool
+    protected function splitClauses(string $response): array
     {
-        $quotedName = preg_quote($productName, '/');
+        $parts = preg_split(
+            '/\n+|\s*[.!?]+\s*|(?<=ครับ)\s+|(?<=ค่ะ)\s+|(?<=คะ)\s+/u',
+            $response,
+            -1,
+            PREG_SPLIT_OFFSET_CAPTURE
+        );
 
-        $refusalPatterns = [
-            // Refusal keyword near product name (within 40 chars)
-            "/{$quotedName}.{0,40}(หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|out.of.stock)/iu",
-            "/(หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|out.of.stock).{0,40}{$quotedName}/iu",
-            // "สินค้าXXXหมด" pattern
-            "/สินค้า.{0,10}{$quotedName}.{0,10}(หมด|ไม่มี)/iu",
-            "/{$quotedName}.{0,10}หมด(ชั่วคราว|stock|สต็อก|แล้ว)/iu",
+        if ($parts === false) {
+            return [['text' => $response, 'offset' => 0]];
+        }
+
+        $clauses = [];
+        foreach ($parts as [$text, $byteOffset]) {
+            $text = trim($text);
+            if ($text !== '') {
+                $clauses[] = [
+                    'text' => $text,
+                    'offset' => mb_strlen(substr($response, 0, $byteOffset)),
+                ];
+            }
+        }
+
+        return $clauses === [] ? [['text' => $response, 'offset' => 0]] : $clauses;
+    }
+
+    /**
+     * Exclude customer-owned accounts and product refusals, not unrelated negations.
+     * With an own summary/quantity/price, only a refusal attached within 3 chars wins.
+     * Informational clauses retain the broader 12/16-char windows ("BM ตอนนี้หมด",
+     * "ยกเลิกรายการ BM", "ไม่จำเป็นต้องมี BM", "ไม่ใช่บัญชียิงแอดแบบ BM").
+     */
+    protected function isExcludedClause(string $clause, string $name, bool $hasHardSale = false): bool
+    {
+        $quoted = preg_quote($name, '/');
+        $refusal = self::PRODUCT_REFUSAL;
+        $after = $hasHardSale ? 3 : 12;
+        $before = $hasHardSale ? 3 : 16;
+
+        $patterns = [
+            "/{$quoted}.{0,{$after}}{$refusal}/iu",
+            "/{$refusal}.{0,{$before}}{$quoted}/iu",
+            // ชื่อสินค้า = บัญชี/ID ของลูกค้าเอง (เข้า BM, BM ของพี่, BM ID, BM =156…)
+            "/เข้า\s*{$quoted}/iu",
+            "/{$quoted}\s*ของ\s*(?:พี่|คุณ|ผม|เรา|ลูกค้า)/iu",
+            "/{$quoted}\s*(?:ID|ไอดี)/iu",
+            "/{$quoted}\s*[=:]\s*\d/iu",
+            // ตัวเลขยาว >= 10 หลักใกล้ชื่อ = ID/เลขบัญชี ไม่ใช่ราคาหรือจำนวน
+            "/{$quoted}.{0,30}\d{10,}/iu",
+            "/\d{10,}.{0,30}{$quoted}/iu",
         ];
 
-        foreach ($refusalPatterns as $pattern) {
-            if (preg_match($pattern, $response)) {
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $clause)) {
                 return true;
             }
         }
@@ -184,65 +251,156 @@ class StockGuardService
     }
 
     /**
-     * Check if the response is actively SELLING the product.
+     * สัญญาณ "กำลังขายจริง" ในประโยคเดียวกับชื่อสินค้า — คืนชนิดของสัญญาณ
+     * ('summary'|'qty'|'cart'|'offer'|'price') หรือ null ถ้าไม่มี
      *
-     * Selling = product name appears WITH price/payment/cart/recommendation keywords.
+     * คำโอน/ชำระ/จ่าย/QR/พร้อมเพย์เฉยๆ ไม่ใช่สัญญาณขาย — ขายจริงต้องมี
+     * จำนวน/ราคาของสินค้าตัวนี้, ตะกร้า, สรุปยอด, หรือการเสนอขาย ในประโยคเดียวกัน
+     *
+     * @param  string  $clauseText  ข้อความของประโยค
+     * @param  int  $clauseOffset  ตำแหน่ง (mb) เริ่มประโยคใน $response
      */
-    protected function isSellingContext(string $response, string $productName, string $ownerName): bool
+    protected function strongSellingKind(string $clauseText, int $clauseOffset, string $response, string $name, string $ownerName): ?string
     {
-        $quotedName = preg_quote($productName, '/');
+        $quoted = preg_quote($name, '/');
 
-        // ราคาที่อยู่ใกล้ชื่อ ต้องเป็นราคาของสินค้าตัวนี้จริง ไม่ใช่ราคาของตัวอื่นที่บังเอิญ
-        // อยู่ในประโยคเดียวกัน (เช่น "G3D ราคา 50 บาท ... ไม่ใช่บัญชียิงแอดแบบ BM")
-        if ($this->hasOwnPriceNearby($response, $productName, $ownerName)) {
-            return true;
+        // A summary must carry THIS product's quantity/price, not another line's digits.
+        $hasOwnQuantity = preg_match("/{$quoted}.{0,3}(?:x\s*\d+|\d+\s*(?:ตัว|เพจ|ชุด|อัน|บิล|ไลน์|หน้า)|จำนวน)/iu", $clauseText) === 1;
+        $hasOwnPrice = $this->hasOwnPriceInClause($clauseText, $clauseOffset, $response, $name, $ownerName);
+
+        if ((preg_match("/(?:สรุป|รวม|ยอด).{0,40}{$quoted}/iu", $clauseText)
+                || preg_match("/{$quoted}.{0,40}(?:สรุป|รวม[:=]|รวม\s*[\d,]+\s*บาท)/iu", $clauseText))
+            && ($hasOwnQuantity || $hasOwnPrice)) {
+            return 'summary';
         }
 
-        $sellingPatterns = [
-            // Cart/order keywords
-            '/(เพิ่ม|ลง).{0,20}(ตะกร้า|cart)/iu',
-            "/{$quotedName}.{0,40}(x\\d|จำนวน)/iu",
-            // Payment keywords near product
-            "/(โอน|ชำระ|จ่าย|เลขบัญชี|QR|พร้อมเพย์).{0,60}{$quotedName}/iu",
-            "/{$quotedName}.{0,60}(โอน|ชำระ|จ่าย|เลขบัญชี|QR|พร้อมเพย์)/iu",
-            // Recommendation
-            "/(แนะนำ|สนใจ).{0,30}{$quotedName}/iu",
-            "/รับ.{0,10}{$quotedName}.{0,10}(ไหม|มั้ย|ด้วย)/iu",
-            "/{$quotedName}.{0,30}(ด้วยไหม|ดีไหม|สนใจไหม|เพิ่มไหม)/iu",
-            // Order summary
-            "/(สรุป|รวม|ยอด).{0,40}{$quotedName}/iu",
-            "/{$quotedName}.{0,40}(สรุป|รวม[:=])/iu",
+        // Adjacent own quantity, not a feature count like "BM สร้างเพจได้ 50 เพจ".
+        if ($hasOwnQuantity) {
+            return 'qty';
+        }
+
+        $checks = [
+            'cart' => [
+                '/(?:เพิ่ม|ลง).{0,20}(?:ตะกร้า|cart|รถเข็น)/iu',
+            ],
+            'offer' => [
+                "/(?:แนะนำ|เสนอ|สนใจ).{0,30}{$quoted}/iu",
+                "/รับ.{0,10}{$quoted}.{0,10}(?:ไหม|มั้ย|ด้วย|กี่)/iu",
+                "/{$quoted}.{0,30}(?:ด้วยไหม|ดีไหม|สนใจไหม|เพิ่มไหม)/iu",
+            ],
         ];
 
-        foreach ($sellingPatterns as $pattern) {
-            if (preg_match($pattern, $response)) {
-                return true;
+        foreach ($checks as $kind => $patterns) {
+            foreach ($patterns as $pattern) {
+                if (preg_match($pattern, $clauseText)) {
+                    return $kind;
+                }
             }
         }
 
-        return false;
+        // คำเชียร์ขาย (พร้อมส่ง/ส่งทันที/โอนแล้วส่ง) นับเป็นการเสนอขายเฉพาะเมื่อ
+        // ราคาในประโยคเป็นราคาของสินค้าตัวนี้เอง — ไม่งั้นมันเป็นแค่ pitch
+        // ของสินค้าอื่นในประโยคเดียวกัน เช่น "Page ราคา 199 บาท ใช้กับ BM ได้ พร้อมส่ง"
+        if (preg_match('/(?:พร้อมส่ง|ส่งทันที|โอนแล้วส่ง)/iu', $clauseText) === 1 && $hasOwnPrice) {
+            return 'offer';
+        }
+
+        // ราคาในประโยคเดียวกับชื่อ (ห่างไม่เกิน 60 ตัวอักษร) — แต่ "ราคานี้เป็นของใคร"
+        // ยังตัดสินจากทั้งข้อความ เพื่อไม่เอาราคาของสินค้าอื่นที่อยู่ประโยคข้างๆ มาให้ตัวนี้
+        if ($hasOwnPrice) {
+            return 'price';
+        }
+
+        return null;
     }
 
     /**
-     * ราคาที่อยู่ใกล้ชื่อสินค้า นับเป็น "กำลังขาย" ต่อเมื่อราคานั้นเป็นของสินค้าตัวนี้จริง —
-     * ถ้ามีชื่อสินค้าตัวอื่นอยู่ใกล้ราคานั้นมากกว่า แปลว่าราคาเป็นของตัวอื่น
+     * ราคาในประโยคนี้เป็นราคาของสินค้าตัวนี้เองหรือไม่ — ชื่ออยู่ใกล้ราคา
+     * (≤ 60 ตัวอักษร) และจุดราคานั้นอยู่ใกล้ชื่อสินค้าตัวนี้ที่สุดเมื่อเทียบ
+     * ทุกสินค้าในระบบ (กันราคาของสินค้าอื่นในประโยคเดียวกัน)
      */
-    protected function hasOwnPriceNearby(string $response, string $name, string $ownerName): bool
+    protected function hasOwnPriceInClause(string $clauseText, int $clauseOffset, string $response, string $name, string $ownerName): bool
     {
-        $namePositions = $this->positionsOf($response, $name);
-        if (empty($namePositions)) {
-            return false;
-        }
-
+        $namePositions = $this->positionsOf($clauseText, $name);
         $nameLength = mb_strlen($name);
 
-        foreach ($this->pricePositions($response) as $pricePos) {
+        foreach ($this->pricePositions($clauseText) as $pricePos) {
             foreach ($namePositions as $namePos) {
                 if ($this->gap($namePos, $nameLength, $pricePos) > self::PRICE_PROXIMITY) {
                     continue;
                 }
 
-                if ($this->nearestProductAt($response, $pricePos) === $ownerName) {
+                if ($pricePos < $namePos
+                    && preg_match('/(?:ส่วน|แต่)\s*$/u', mb_substr($clauseText, $pricePos, $namePos - $pricePos))) {
+                    // "... 3,300 บาท ส่วน BM ..." starts a new product topic.
+                    continue;
+                }
+
+                if ($this->nearestProductAt($response, $clauseOffset + $pricePos) === $ownerName) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * สินค้านี้ถูกบอกว่าหมด/ปฏิเสธที่ไหนสักแห่งในข้อความหรือไม่ (ดูทั้งข้อความ —
+     * "บอกราคาแล้วบอกหมดในประโยคถัดไป" เป็นการตอบแบบให้ข้อมูล ไม่ใช่การขาย)
+     *
+     * @param  array<int, string>  $names
+     */
+    protected function isRefusedSomewhere(string $response, array $names, string $ownerName): bool
+    {
+        foreach ($names as $name) {
+            if (mb_strlen($name) >= 2 && $this->isRefusingContext($response, $name, $ownerName)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Price-only replies can give a price and refuse in a subsequent clause.
+     * Keep that informational path, but do not let it undo the same-clause
+     * hard-sale precedence or reinterpret a fee/wait/payment as a refusal.
+     */
+    protected function isRefusingContext(string $response, string $productName, string $ownerName): bool
+    {
+        // Cross-clause refusals retain the stock-only set, not unrelated follow-up negations.
+        preg_match_all('/(?:(?<!ทั้ง)หมด|ไม่มี|ไม่สามารถ|ปิดการขาย|out\s*of\s*stock)(?!ค่า|จ่าย|รอ|โอน|เสีย|ธรรมเนียม)/iu', $response, $refusals, PREG_OFFSET_CAPTURE);
+        $clauses = $this->splitClauses($response);
+        $nameLength = mb_strlen($productName);
+
+        foreach ($this->positionsOf($response, $productName) as $namePos) {
+            foreach ($refusals[0] as [$refusal, $byteOffset]) {
+                $refusalPos = mb_strlen(substr($response, 0, $byteOffset));
+                $distance = max($refusalPos - ($namePos + $nameLength), $namePos - ($refusalPos + mb_strlen($refusal)), 0);
+                if ($distance > 40) {
+                    continue;
+                }
+
+                // As before, a newline cannot link a name to an unrelated refusal.
+                $between = mb_substr($response, min($namePos, $refusalPos), abs($namePos - $refusalPos));
+                if (str_contains($between, "\n")) {
+                    continue;
+                }
+
+                $window = 40;
+                foreach ($clauses as $clause) {
+                    $start = $clause['offset'];
+                    $end = $start + mb_strlen($clause['text']);
+                    if ($namePos >= $start && $namePos < $end && $refusalPos >= $start && $refusalPos < $end) {
+                        if ($this->hasOwnPriceInClause($clause['text'], $start, $response, $productName, $ownerName)) {
+                            $window = 3;
+                        }
+                        break;
+                    }
+                }
+
+                if ($distance <= $window) {
                     return true;
                 }
             }
@@ -313,40 +471,6 @@ class StockGuardService
         }
 
         return $nearest;
-    }
-
-    /**
-     * Check if the response has ACTIVE selling intent (cart/order/recommendation),
-     * not just a price mention. Used when both selling and refusal contexts are detected
-     * to distinguish informational responses from actual selling attempts.
-     */
-    protected function isActivelySelling(string $response, string $productName): bool
-    {
-        $quotedName = preg_quote($productName, '/');
-
-        $activePatterns = [
-            // Cart/order keywords
-            '/(เพิ่ม|ลง).{0,20}(ตะกร้า|cart)/iu',
-            "/{$quotedName}.{0,40}(x\\d|จำนวน)/iu",
-            // Payment processing near product
-            "/(โอน|ชำระ|จ่าย|เลขบัญชี|QR|พร้อมเพย์).{0,60}{$quotedName}/iu",
-            "/{$quotedName}.{0,60}(โอน|ชำระ|จ่าย|เลขบัญชี|QR|พร้อมเพย์)/iu",
-            // Active recommendation/upsell — เชียร์ของที่ไม่มีขาย = ต้องบล็อก ไม่ใช่แค่เตือน
-            "/(แนะนำ|เสนอ).{0,30}{$quotedName}/iu",
-            "/รับ.{0,10}{$quotedName}.{0,10}(ไหม|มั้ย|ด้วย)/iu",
-            "/{$quotedName}.{0,30}(ด้วยไหม|ดีไหม|สนใจไหม|เพิ่มไหม)/iu",
-            // Order summary
-            "/(สรุป|รวม|ยอด).{0,40}{$quotedName}/iu",
-            "/{$quotedName}.{0,40}(สรุป|รวม[:=])/iu",
-        ];
-
-        foreach ($activePatterns as $pattern) {
-            if (preg_match($pattern, $response)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**

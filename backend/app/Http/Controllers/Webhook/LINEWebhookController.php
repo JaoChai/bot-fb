@@ -88,8 +88,7 @@ class LINEWebhookController extends Controller
 
         // Dispatch job for each event
         foreach ($events as $event) {
-            ProcessLINEWebhook::dispatch($bot, $event)
-                ->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue());
+            QueueRouter::dispatchLlm(new ProcessLINEWebhook($bot, $event));
 
             Log::debug('LINE webhook job dispatched', [
                 'bot_id' => $bot->id,

@@ -5,7 +5,11 @@ import {
   dashboardBot,
   flow,
   message,
+  order,
+  orderSummary,
   pagination,
+  productBreakdown,
+  productStock,
   user,
   token,
 } from './mock-data'
@@ -32,6 +36,7 @@ type Fixtures = {
 // react-hooks/rules-of-hooks mistakes Playwright's `use` for React's use().
 export const test = base.extend<Fixtures>({
   // Playwright requires a destructured first arg even when no fixtures are used.
+  // Each entry is "METHOD /pathname" of an /api call no explicit mock handled.
   unmockedCalls: async ({}, provide) => {
     await provide([])
   },
@@ -44,11 +49,19 @@ export const test = base.extend<Fixtures>({
 
   mockApi: [
     async ({ page, unmockedCalls }, provide) => {
-      // Catch-all first (lowest priority): anything not mocked explicitly
-      // gets an empty ApiListResponse and is recorded in unmockedCalls.
+      // Catch-all first (lowest priority), FAIL-CLOSED: anything not mocked
+      // explicitly is recorded in unmockedCalls and answered 501 (never an
+      // empty-success body), and the teardown below fails the test. A page
+      // that calls a wrong or new endpoint can therefore no longer pass by
+      // silently rendering an empty list.
       await page.route('**/api/**', (route) => {
-        unmockedCalls.push(new URL(route.request().url()).pathname)
-        return route.fulfill({ json: { data: [] } })
+        const request = route.request()
+        const call = `${request.method()} ${new URL(request.url()).pathname}`
+        unmockedCalls.push(call)
+        return route.fulfill({
+          status: 501,
+          json: { message: `Unmocked API call in e2e: ${call}` },
+        })
       })
 
       // Auth — login is a FLAT AuthResponse (api.ts), NOT wrapped in { data }.
@@ -103,6 +116,24 @@ export const test = base.extend<Fixtures>({
             },
           },
         }),
+      )
+
+      // Orders — read by the dashboard (useOrderSummary, useOrdersByProduct,
+      // RecentOrdersPreview -> useOrders { per_page: 5 }) and by the Orders
+      // page. `*` stops at `/`, so each glob matches its own endpoint plus
+      // query string only (hooks/useOrders.ts builds ?bot_id=&per_page=...).
+      await page.route('**/api/orders/summary*', (route) =>
+        route.fulfill({ json: { data: orderSummary } }),
+      )
+      await page.route('**/api/orders/by-product*', (route) =>
+        route.fulfill({ json: { data: [productBreakdown] } }),
+      )
+      await page.route('**/api/orders*', (route) =>
+        route.fulfill({ json: { data: [order], meta: pagination } }),
+      )
+      // Dashboard stock toggle (useProductStocks) — { data: ProductStock[] }.
+      await page.route('**/api/product-stocks', (route) =>
+        route.fulfill({ json: { data: [productStock] } }),
       )
 
       // Bots list (BotsPage / ChatPage / FlowEditorPage sidebars).
@@ -169,6 +200,19 @@ export const test = base.extend<Fixtures>({
       // Block realtime so no websocket reaches a real host.
       await page.route(/pusher|reverb|sockjs/, (route) => route.abort())
       await provide()
+
+      // Teardown (runs after the test body, also on failure): every API call
+      // must have hit an explicit mock. Reports each distinct METHOD + path
+      // with its hit count so the missing mock is obvious.
+      const counts = new Map<string, number>()
+      for (const call of unmockedCalls) {
+        counts.set(call, (counts.get(call) ?? 0) + 1)
+      }
+      const report = [...counts].map(([call, n]) => `${call} (x${n})`)
+      expect(
+        report,
+        'Unmocked API calls (add an explicit mock in e2e/fixtures.ts + mock-data.ts)',
+      ).toEqual([])
     },
     { auto: true },
   ],

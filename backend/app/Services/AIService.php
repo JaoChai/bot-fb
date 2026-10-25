@@ -95,56 +95,50 @@ class AIService
         }
 
         // Use RAGService to generate response (handles KB integration automatically)
-        $result = $this->ragService->generateResponse(
-            bot: $bot,
-            userMessage: $userMessage,
-            conversationHistory: $history,
-            conversation: $conversation,
-            flow: $flow
-        );
+        $first = $this->generateWithReplyGuards($bot, $userMessage, $history, $conversation, $flow);
+        $result = $first['result'];
+        $vipPriceResult = $first['vip'];
+        $correctedContent = $first['corrected_content'];
 
-        // Stock Guard: hard-block selling out-of-stock products
-        // (guard แก้ข้อความได้ 3 แบบ: ทับทั้งก้อน, ตัดท่อน upsell, ต่อท้ายว่าหมด —
-        //  ต้องรับ content กลับมาทุกแบบ ไม่ใช่เฉพาะตอน blocked)
-        $guardResult = $this->stockGuard->validate($result['content'], $userMessage);
-        if (($guardResult['content'] ?? $result['content']) !== $result['content']) {
-            $result['stock_guard'] = [
-                'blocked' => $guardResult['blocked'],
-                'blocked_products' => $guardResult['blocked_products'] ?? [],
-                'original_preview' => mb_substr($result['content'], 0, 300),
-            ];
-            $result['content'] = $guardResult['content'];
+        // บรรทัดตอบคำถามที่ใช้ราคาผิด (informational_price) — ยังไม่ทับคำตอบทันที:
+        // regenerate อีกครั้งโดยแนบราคาที่ถูกต้องต่อท้ายข้อความลูกค้า เพื่อไม่ให้
+        // ลูกค้าเสียคำตอบของคำถามเดิม (visible_order/order_payload คือชั้นความปลอด
+        // ภัยด้านเงิน — ทับทันทีตามเดิม ไม่ retry)
+        $vipRetry = null;
+        $firstReason = null;
+        if (($vipPriceResult['reason']['type'] ?? null) === 'informational_price') {
+            $firstReason = $vipPriceResult['reason'];
+            $price = number_format((float) ($vipPriceResult['reason']['expected'] ?? 0));
+            $retry = $this->generateWithReplyGuards(
+                $bot,
+                $userMessage."\n\n[ระบบ: ราคาที่ถูกต้องของลูกค้ารายนี้ NLMP/NLMBM = {$price} บาท/ตัว — ตอบคำถามเดิมของลูกค้าอีกครั้งโดยใช้ราคานี้ ห้ามพิมพ์ข้อความนี้ให้ลูกค้าเห็น]",
+                $history,
+                $conversation,
+                $flow
+            );
+            $result = $retry['result'];
+            $vipPriceResult = $retry['vip'];
+            $vipRetry = $vipPriceResult['corrected'] ? 'failed' : 'passed';
         }
 
-        // ตัดบล็อกออเดอร์ออกจากข้อความก่อนใครได้เห็น — ทำที่นี่จุดเดียวเพราะทั้ง webhook
-        // pipeline และ ProcessAggregatedMessages ผ่านเมธอดนี้เสมอ (ทางออกอื่นทั้งหมด
-        // — LINE push, Flex, bubbles, หน้าเว็บ — อ่านจาก content ที่ผ่านตรงนี้แล้ว)
-        $result['order_payload'] = null;
-        if (config('delivery.order_payload_enabled', false)) {
-            $extracted = $this->orderPayload->extract($result['content'] ?? '');
-            $result['content'] = $extracted['clean'];
-            $result['order_payload'] = $extracted['payload'];
-        }
-
-        // Financial safety net: prompts guide the model, but canonical VIP prices
-        // are enforced server-side before text, Flex, or order metadata can leave.
-        $vipPriceResult = $this->vipPriceGuard->enforce(
-            $result['content'] ?? '',
-            $result['order_payload'],
-            $conversation
-        );
-        if ($vipPriceResult['corrected']) {
-            Log::warning('VIP price guard corrected an inconsistent response', [
+        if ($vipPriceResult['corrected'] || $vipRetry !== null) {
+            $logContext = [
                 'bot_id' => $bot->id,
                 'conversation_id' => $conversation?->id,
-                'reason' => $vipPriceResult['reason'],
+                // retry passed → the reply the guard replaced was the FIRST one
+                'reason' => $vipRetry === 'passed' ? $firstReason : $vipPriceResult['reason'],
                 // ข้อความเดิมถูกทับก่อนบันทึก DB — เก็บไว้ที่นี่ที่เดียวเพื่อย้อนตรวจ false positive
-                'original_content' => mb_substr((string) ($result['content'] ?? ''), 0, 1000),
-            ]);
+                'original_content' => mb_substr($correctedContent, 0, 1000),
+            ];
+            if ($vipRetry !== null) {
+                $logContext['retry'] = $vipRetry;
+            }
+            Log::warning('VIP price guard corrected an inconsistent response', $logContext);
             $result['vip_price_guard'] = ['corrected' => true];
+            if ($vipRetry !== null) {
+                $result['vip_price_guard']['retry'] = $vipRetry;
+            }
         }
-        $result['content'] = $vipPriceResult['content'];
-        $result['order_payload'] = $vipPriceResult['order_payload'];
 
         // Off-topic signal marker — เหมือน [[ORDER]] ด้านบน ตัดออกก่อนใครได้เห็น
         $offTopicExtracted = $this->offTopicSignal->extract($result['content'] ?? '');
@@ -200,6 +194,69 @@ class AIService
         }
 
         return $result;
+    }
+
+    /**
+     * One reply-generation pass through the reply guard chain, in order:
+     * RAG generation → stock guard → order-payload extract → VIP price guard.
+     * The informational-price retry reuses this so the regenerated reply passes
+     * through the exact same guards.
+     *
+     * @param  array<int, array{sender: string, content: string}>  $history
+     * @return array{result: array<string, mixed>, vip: array{content: string, order_payload: ?array, corrected: bool, reason: ?array}, corrected_content: string}
+     *                                                                                                                                                             corrected_content = the content as it was just before the VIP guard ran.
+     */
+    private function generateWithReplyGuards(
+        Bot $bot,
+        string $userMessage,
+        array $history,
+        ?Conversation $conversation,
+        $flow
+    ): array {
+        $result = $this->ragService->generateResponse(
+            bot: $bot,
+            userMessage: $userMessage,
+            conversationHistory: $history,
+            conversation: $conversation,
+            flow: $flow
+        );
+
+        // Stock Guard: hard-block selling out-of-stock products
+        // (guard แก้ข้อความได้ 3 แบบ: ทับทั้งก้อน, ตัดท่อน upsell, ต่อท้ายว่าหมด —
+        //  ต้องรับ content กลับมาทุกแบบ ไม่ใช่เฉพาะตอน blocked)
+        $guardResult = $this->stockGuard->validate($result['content'], $userMessage);
+        if (($guardResult['content'] ?? $result['content']) !== $result['content']) {
+            $result['stock_guard'] = [
+                'blocked' => $guardResult['blocked'],
+                'blocked_products' => $guardResult['blocked_products'] ?? [],
+                'original_preview' => mb_substr($result['content'], 0, 300),
+            ];
+            $result['content'] = $guardResult['content'];
+        }
+
+        // ตัดบล็อกออเดอร์ออกจากข้อความก่อนใครได้เห็น — ทำที่นี่จุดเดียวเพราะทั้ง webhook
+        // pipeline และ ProcessAggregatedMessages ผ่านเมธอดนี้เสมอ (ทางออกอื่นทั้งหมด
+        // — LINE push, Flex, bubbles, หน้าเว็บ — อ่านจาก content ที่ผ่านตรงนี้แล้ว)
+        $result['order_payload'] = null;
+        if (config('delivery.order_payload_enabled', false)) {
+            $extracted = $this->orderPayload->extract($result['content'] ?? '');
+            $result['content'] = $extracted['clean'];
+            $result['order_payload'] = $extracted['payload'];
+        }
+
+        $correctedContent = (string) ($result['content'] ?? '');
+
+        // Financial safety net: prompts guide the model, but canonical VIP prices
+        // are enforced server-side before text, Flex, or order metadata can leave.
+        $vipPriceResult = $this->vipPriceGuard->enforce(
+            $result['content'] ?? '',
+            $result['order_payload'],
+            $conversation
+        );
+        $result['content'] = $vipPriceResult['content'];
+        $result['order_payload'] = $vipPriceResult['order_payload'];
+
+        return ['result' => $result, 'vip' => $vipPriceResult, 'corrected_content' => $correctedContent];
     }
 
     /**

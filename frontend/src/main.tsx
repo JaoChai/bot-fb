@@ -49,7 +49,7 @@ createRoot(document.getElementById("root")!).render(
       client={queryClient}
       persistOptions={{
         persister,
-        buster: 'v4',
+        buster: 'v5',
         dehydrateOptions: {
           shouldDehydrateQuery,
         },
