@@ -337,6 +337,27 @@ class AggregationFailoverTest extends TestCase
     }
 
     /**
+     * The reply is already delivered when the realtime broadcast fires; a
+     * broadcast failure (Redis down → queued broadcast cannot be pushed) must
+     * not turn a delivered reply into a failed job.
+     */
+    public function test_broadcast_failure_after_delivery_does_not_fail_the_job(): void
+    {
+        $group = $this->startGroup($this->userMessage('hello'), 1500);
+
+        \Illuminate\Support\Facades\Broadcast::shouldReceive('event')
+            ->andThrow(new RuntimeException('redis down'));
+
+        $this->runJob($group['group_id'], $this->aiReplyingOnce('hello'), $this->deliveryExpectingOnce());
+
+        $this->assertSame(1, $this->botReplyCount(), 'reply survives broadcast failure');
+        $this->assertFalse(
+            app(MessageAggregationService::class)->isActiveGroup($this->conversation->id, $group['group_id']),
+            'group still cleared after the reply'
+        );
+    }
+
+    /**
      * The reply path must have no unwrapped cache reads left: the off-topic
      * breaker runs before the LLM call, so a Redis outage there would kill
      * the reply. Fail open (guardrail is cost-saving, not correctness).

@@ -548,8 +548,20 @@ class ProcessAggregatedMessages implements ShouldQueue
             'last_message_at' => $this->conversation->last_message_at?->toISOString(),
             'unread_count' => $this->conversation->unread_count,
         ];
-        broadcast(new MessageSent($botMessage, $conversationData))->toOthers();
-        broadcast(new ConversationUpdated($this->conversation, 'message_received'))->toOthers();
+
+        try {
+            broadcast(new MessageSent($botMessage, $conversationData))->toOthers();
+            broadcast(new ConversationUpdated($this->conversation, 'message_received'))->toOthers();
+        } catch (Throwable $e) {
+            // Post-delivery realtime UI only (Wave 2 #4b): the customer's
+            // reply is already sent — a Redis outage must not turn a
+            // delivered reply into a failed job (retry churn, duplicate-send
+            // risk, lost timing row).
+            Log::warning('Broadcast after reply failed; reply already delivered', [
+                'conversation_id' => $this->conversation->id,
+                'exception_type' => $e::class,
+            ]);
+        }
     }
 
     /**

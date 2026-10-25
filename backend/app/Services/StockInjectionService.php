@@ -16,9 +16,15 @@ class StockInjectionService
 
     public function getStockStatus(): Collection
     {
-        return Cache::remember(ProductStock::STOCK_CACHE_KEY, 300, function () {
+        try {
+            return Cache::remember(ProductStock::STOCK_CACHE_KEY, 300, function () {
+                return ProductStock::orderBy('display_order')->get();
+            });
+        } catch (\Throwable) {
+            // Redis down (Wave 2 #4b): this read feeds the AI reply prompt —
+            // degrade to the database instead of killing the reply.
             return ProductStock::orderBy('display_order')->get();
-        });
+        }
     }
 
     public function getOutOfStockProducts(): Collection
