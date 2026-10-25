@@ -12,8 +12,9 @@ use Illuminate\Queue\QueueServiceProvider;
 
 /**
  * QueueManager whose pause/resume state lives in the worker-control cache
- * store (the `cache.store` binding, bound to the redis-independent database
- * store in AppServiceProvider) instead of the default store.
+ * store (the redis-independent `database` store, shared with the
+ * WorkCommand/RestartCommand bindings in AppServiceProvider) instead of the
+ * default store.
  *
  * Laravel's QueueManager reads and writes pause state through the default
  * cache store. With prod's CACHE_STORE=redis that state becomes unreadable
@@ -27,6 +28,13 @@ use Illuminate\Queue\QueueServiceProvider;
  */
 class WorkerControlQueueManager extends QueueManager
 {
+    /**
+     * The cache store name the worker-control plane (restart signal, pause
+     * state) is pinned to: redis-independent, so queue:restart, queue:pause
+     * and the worker loop keep working while Redis is down.
+     */
+    public const CONTROL_CACHE_STORE = 'database';
+
     public function __construct($app)
     {
         parent::__construct($app);
@@ -40,7 +48,7 @@ class WorkerControlQueueManager extends QueueManager
      */
     private function controlStore(): Repository
     {
-        return $this->app['cache.store'];
+        return $this->app['cache']->store(self::CONTROL_CACHE_STORE);
     }
 
     public function pause($connection, $queue)

@@ -2,25 +2,33 @@
 
 namespace Tests\Feature\Queue;
 
+use App\Jobs\EvaluateVipStatusJob;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Cache\Store;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Queue\Console\RestartCommand;
+use Illuminate\Queue\Console\WorkCommand;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
  * Worker-control cache coherence.
  *
- * Laravel injects the container's `cache.store` repository into
- * WorkCommand (restart signal + pause checks) and RestartCommand
- * (`illuminate:queue:restart`), and QueueManager reads/writes
- * pause state through the default store. With prod's
- * CACHE_STORE=redis, a Redis outage throws out of the worker's
- * daemon loop *before* the RedisFallbackSwitch Looping hook can
- * engage, killing the worker. These tests pin the whole
- * restart/pause control plane to the Redis-independent `database`
- * cache store.
+ * Laravel injects a cache repository into WorkCommand (restart signal +
+ * pause checks, handed to the worker loop via setCache()) and
+ * RestartCommand (`illuminate:queue:restart`), and QueueManager reads and
+ * writes pause state through its cache store. With prod's CACHE_STORE=redis,
+ * a Redis outage throws out of the worker's daemon loop *before* the
+ * RedisFallbackSwitch Looping hook can engage, killing the worker.
+ *
+ * The worker-control plane (those two commands plus the pause/resume plane
+ * in WorkerControlQueueManager) is pinned to the Redis-independent
+ * `database` cache store. The global cache repository contract — and every
+ * business cache on the default store (ShouldBeUnique locks, rate limits,
+ * aggregation) — must stay untouched.
  */
 class WorkerControlCacheTest extends TestCase
 {
@@ -138,12 +146,59 @@ class WorkerControlCacheTest extends TestCase
             'worker-control keys must not leak into the default (business) cache store.'
         );
         $this->assertNotNull(Cache::store('database')->get('illuminate:queue:restart'));
+        $workCommand = $this->app->make(WorkCommand::class);
+        $restartCommand = $this->app->make(RestartCommand::class);
         $this->assertSame(
             Cache::store('database'),
-            $this->app['cache.store'],
-            'the cache.store repository Laravel injects into queue commands must be the database store.'
+            $this->injectedCacheRepository($workCommand),
+            'WorkCommand must receive the redis-independent database store; the worker loop reads restart/pause signals through it via setCache().'
+        );
+        $this->assertSame(
+            Cache::store('database'),
+            $this->injectedCacheRepository($restartCommand),
+            'RestartCommand must write the restart signal to the redis-independent database store.'
         );
         $this->assertSame('array', config('cache.default'));
+    }
+
+    public function test_global_cache_repository_contract_stays_on_the_default_store(): void
+    {
+        $this->assertSame(
+            Cache::store(),
+            $this->app->make(Repository::class),
+            'The global cache repository contract must stay on the default (business) store.'
+        );
+        $this->assertNotSame(
+            Cache::store('database'),
+            $this->app->make(Repository::class),
+            'The database store is worker-control-only; the contract must not resolve to it.'
+        );
+        $this->assertSame('array', config('cache.default'));
+    }
+
+    public function test_should_be_unique_job_locks_on_the_default_store_and_cache_locks_stay_empty(): void
+    {
+        // ShouldBeUnique locking resolves the cache repository contract at
+        // dispatch time (PendingDispatch::shouldDispatch()). On the default
+        // store (array here, redis in prod) it must dedupe without ever
+        // touching the database cache_locks table.
+        config(['queue.default' => 'database']);
+
+        EvaluateVipStatusJob::dispatch(4242);
+        EvaluateVipStatusJob::dispatch(4242);
+
+        // Second dispatch deduplicated by the unique lock.
+        $this->assertDatabaseCount('jobs', 1);
+        $this->assertSame(
+            0,
+            DB::table('cache_locks')->count(),
+            'The unique lock must not move into the database cache_locks table.'
+        );
+        $this->assertArrayHasKey(
+            UniqueLock::getKey(new EvaluateVipStatusJob(4242)),
+            Cache::store()->getStore()->locks,
+            'The unique lock must be held by the default cache store.'
+        );
     }
 
     /**
@@ -259,6 +314,15 @@ PHP);
         fclose($sock);
 
         return (int) substr((string) $name, strrpos((string) $name, ':') + 1);
+    }
+
+    /**
+     * The cache repository injected into a console command (WorkCommand and
+     * RestartCommand keep theirs in the `cache` property).
+     */
+    private function injectedCacheRepository(object $command): Repository
+    {
+        return (new \ReflectionClass($command))->getProperty('cache')->getValue($command);
     }
 
     private function subprocessEnv(array $overrides): array
