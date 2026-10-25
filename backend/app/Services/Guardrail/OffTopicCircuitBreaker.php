@@ -22,7 +22,13 @@ class OffTopicCircuitBreaker
 
     public function isTripped(Bot $bot, Conversation $conversation): bool
     {
-        $count = (int) Cache::get(self::cacheKey($bot->id, $conversation->id), 0);
+        try {
+            $count = (int) Cache::get(self::cacheKey($bot->id, $conversation->id), 0);
+        } catch (\Throwable) {
+            // Fail open (Wave 2 #4b): the breaker is a cost guard, not reply
+            // correctness — a Redis outage must not kill the customer's reply.
+            return false;
+        }
 
         return $count >= self::THRESHOLD;
     }

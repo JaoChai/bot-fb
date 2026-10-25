@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\AIService;
 use App\Services\Chat\AggregatedMessageDeliveryService;
 use App\Services\ConversationResponseLease;
+use App\Services\Guardrail\OffTopicCircuitBreaker;
 use App\Services\MessageAggregationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -333,5 +334,22 @@ class AggregationFailoverTest extends TestCase
         // Best-effort cleanup must swallow cache errors.
         $aggregation->clearAggregation($this->conversation->id);
         $this->assertFalse($aggregation->isActiveGroup($this->conversation->id, $group['group_id']));
+    }
+
+    /**
+     * The reply path must have no unwrapped cache reads left: the off-topic
+     * breaker runs before the LLM call, so a Redis outage there would kill
+     * the reply. Fail open (guardrail is cost-saving, not correctness).
+     */
+    public function test_off_topic_breaker_fails_open_when_cache_throws(): void
+    {
+        $breaker = new OffTopicCircuitBreaker;
+
+        Cache::shouldReceive('get')->andThrow(new RuntimeException('redis down'));
+
+        $this->assertFalse(
+            $breaker->isTripped($this->bot, $this->conversation),
+            'breaker must fail open instead of throwing on cache errors'
+        );
     }
 }
