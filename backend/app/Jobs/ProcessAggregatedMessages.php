@@ -21,6 +21,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -124,8 +125,10 @@ class ProcessAggregatedMessages implements ShouldQueue
                 ...(! app()->environment('production') ? ['trace' => $e->getTraceAsString()] : []),
             ]);
 
-            // Clear aggregation on failure so user can try again
-            $aggregationService->clearAggregation($this->conversation->id);
+            // The group is unsent: clear ONLY our own group id so a newer
+            // group that arrived while we were failing survives untouched
+            // (X1: the whole-row clear dropped it too).
+            $aggregationService->releaseAnsweredGroup($this->conversation->id, $this->groupId, []);
 
             throw $e;
         }
@@ -164,23 +167,8 @@ class ProcessAggregatedMessages implements ShouldQueue
     ): void {
         $conversationId = $this->conversation->id;
 
-        // Validate and get content (with early exit checks)
-        $validationResult = $this->validateAndGetContent($aggregationService);
-        if ($validationResult === null) {
-            return;
-        }
-
-        ['mergedContent' => $mergedContent, 'messageCount' => $messageCount, 'cachedMessageIds' => $cachedMessageIds] = $validationResult;
-
         // Check if bot is active and not in handover mode
         if (! $this->shouldGenerate()) {
-            return;
-        }
-
-        // Safety check: skip if bot already responded
-        if ($this->hasAlreadyResponded($conversationId, $cachedMessageIds)) {
-            $aggregationService->clearAggregation($conversationId);
-
             return;
         }
 
@@ -196,6 +184,26 @@ class ProcessAggregatedMessages implements ShouldQueue
         $pluginSnapshot = null;
 
         try {
+            // Everything below reads the group WHILE holding the fence: the
+            // previous holder hands over the row (releaseAnsweredGroup)
+            // before it releases the lease, so under the fence we always
+            // observe the post-handover message ids (X1).
+            $validationResult = $this->validateAndGetContent($aggregationService);
+            if ($validationResult === null) {
+                return;
+            }
+
+            ['mergedContent' => $mergedContent, 'messageCount' => $messageCount, 'cachedMessageIds' => $cachedMessageIds, 'turnBoundary' => $turnBoundary] = $validationResult;
+
+            // Safety check: skip if a bot reply that is not older than this
+            // turn already covers the group. Evaluated under the fence, so
+            // the in-flight holder's half-written state cannot be misread.
+            if ($this->hasAlreadyResponded($conversationId, $cachedMessageIds, $turnBoundary)) {
+                $aggregationService->releaseAnsweredGroup($conversationId, $this->groupId, $cachedMessageIds);
+
+                return;
+            }
+
             // Auto-clear stale context before AI generates response
             app(ConversationContextService::class)->autoClearIfIdle($this->conversation);
 
@@ -212,6 +220,11 @@ class ProcessAggregatedMessages implements ShouldQueue
             if ($botMessage) {
                 $pluginSnapshot = $this->capturePluginSnapshot();
                 $this->updateStats($messageCount, $botMessage->id);
+
+                // X1 root fix: hand the group over BEFORE releasing the
+                // fence — subtract the ids this reply answered, leaving
+                // exactly the unanswered ones for the next turn.
+                $aggregationService->releaseAnsweredGroup($conversationId, $this->groupId, $cachedMessageIds);
             }
         } finally {
             try {
@@ -240,8 +253,9 @@ class ProcessAggregatedMessages implements ShouldQueue
             }
         }
 
-        // Clear aggregation data after successful processing
-        $aggregationService->clearAggregation($conversationId);
+        // (Row already handed over by releaseAnsweredGroup above, while the
+        // fence was still held — no whole-row clear here: it would delete a
+        // newer group that arrived during generation, the X1 bug.)
 
         // Broadcast events after processing
         if (isset($botMessage) && $botMessage) {
@@ -261,6 +275,7 @@ class ProcessAggregatedMessages implements ShouldQueue
         $cachedGroupId = $aggregationService->getCurrentGroupId($conversationId);
         $cachedMessageIds = $aggregationService->getMessageIds($conversationId);
         $startedAt = $aggregationService->getStartedAt($conversationId);
+        $turnBoundary = $aggregationService->getGroupUpdatedAt($conversationId);
 
         Log::debug('[Aggregation] Job started', [
             'conversation_id' => $conversationId,
@@ -296,7 +311,9 @@ class ProcessAggregatedMessages implements ShouldQueue
                 'message_ids' => $cachedMessageIds,
                 'conversation_id' => $conversationId,
             ]);
-            $aggregationService->clearAggregation($conversationId);
+            // Only these ids are unanswerable — a newer group in the row
+            // keeps whatever we did not touch (X1).
+            $aggregationService->releaseAnsweredGroup($conversationId, $this->groupId, $cachedMessageIds);
 
             return null;
         }
@@ -305,6 +322,7 @@ class ProcessAggregatedMessages implements ShouldQueue
             'mergedContent' => $mergedContent,
             'messageCount' => count($cachedMessageIds),
             'cachedMessageIds' => $cachedMessageIds,
+            'turnBoundary' => $turnBoundary,
         ];
     }
 
@@ -342,9 +360,20 @@ class ProcessAggregatedMessages implements ShouldQueue
     }
 
     /**
-     * Check if bot already responded after the latest message in this group.
+     * Check if a bot reply that is not older than this turn already covers
+     * the group.
+     *
+     * A reply counts only when it is newer than the latest remaining message
+     * AND STRICTLY newer than the row's last mutation: the mutation was the
+     * handover save (releaseAnsweredGroup) that bumped updated_at past the
+     * just-written reply, so a reply at or before the mutation answered an
+     * EARLIER turn and must not suppress the remaining messages (X1: it did,
+     * and msg B was lost a second time even without the whole-row clear).
+     * Second-precision timestamps cannot order sub-second events, so
+     * same-second counts as "row mutated after the reply" — the conservative
+     * direction is answering, not dropping the customer's message.
      */
-    private function hasAlreadyResponded(int $conversationId, array $cachedMessageIds): bool
+    private function hasAlreadyResponded(int $conversationId, array $cachedMessageIds, ?int $turnBoundary = null): bool
     {
         if (empty($cachedMessageIds)) {
             return false;
@@ -359,8 +388,16 @@ class ProcessAggregatedMessages implements ShouldQueue
 
         $alreadyResponded = Message::where('conversation_id', $conversationId)
             ->where('sender', 'bot')
-            ->where('created_at', '>=', $latestTimestamp)
-            ->exists();
+            ->where('created_at', '>=', $latestTimestamp);
+
+        if ($turnBoundary !== null) {
+            // created_at column values are stored in the app timezone (this
+            // project runs +07:00); the boundary must be formatted in the
+            // same zone or the comparison shifts by the UTC offset.
+            $alreadyResponded->where('created_at', '>', Carbon::createFromTimestamp($turnBoundary, config('app.timezone')));
+        }
+
+        $alreadyResponded = $alreadyResponded->exists();
 
         if ($alreadyResponded) {
             Log::info('Safety net: bot already responded after latest message, skipping aggregation response', [
