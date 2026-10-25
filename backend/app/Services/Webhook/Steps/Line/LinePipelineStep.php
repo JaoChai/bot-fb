@@ -69,8 +69,10 @@ class LinePipelineStep
                     $ctx->conversation, $ctx->userMessage, 15000
                 );
                 if ($fallback) {
+                    // 15000 mirrors the other lock-fallback call sites — the
+                    // debounce is the aggregation wait, not queue wait (Wave 2).
                     ProcessAggregatedMessages::dispatch(
-                        $ctx->bot, $ctx->conversation, $fallback['group_id'], $ctx->userId()
+                        $ctx->bot, $ctx->conversation, $fallback['group_id'], $ctx->userId(), 15000
                     )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(15));
                 }
 

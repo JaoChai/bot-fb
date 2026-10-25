@@ -97,6 +97,11 @@ class LineWebhookResponseService
         // Auto-clear stale context before AI generates response (line 500)
         $this->conversationContext->autoClearIfIdle($conversation);
 
+        // Wave 2: mark the attempt BEFORE the AI call (mirrors the legacy path).
+        // generateAndSaveResponse only catches OpenRouterException — any other
+        // exception must still leave a failed timing row.
+        $timing?->markAttempted();
+
         // Generate AI response — also persists bot Message (line 503-507)
         // Exception intentionally re-thrown: mirrors legacy lines 545-555 (throw $e)
         // Wave 2: forward the timing collector only when present, so callers that

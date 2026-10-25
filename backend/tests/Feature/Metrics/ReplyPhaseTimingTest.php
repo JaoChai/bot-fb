@@ -19,6 +19,7 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -199,7 +200,40 @@ class ReplyPhaseTimingTest extends TestCase
         $this->assertNotNull($row->created_at);
     }
 
+    /**
+     * Prod bot 26 path: WebhookPipelineV2Flag is checked FIRST in handle(),
+     * so prod runs the shared v2 pipeline (LineEventGateStep → LinePipelineStep),
+     * not the runPipeline() path — the row must be written here too.
+     */
     public function test_line_v2_pipeline_records_one_phase_timing_row(): void
+    {
+        config([
+            'webhook_pipeline_v2.enabled' => true,
+            'webhook_pipeline_v2.bot_ids' => ['26'],
+        ]);
+
+        $bot = $this->makeBot(26, ['primary_chat_model' => 'test/primary-model']);
+        $this->fakeHttp(genMs: 2500, model: 'test/primary-model', lineMs: 300);
+
+        $this->runLineJob($bot, $this->lineEvent('สวัสดีครับ pipeline', 'U_user_26'));
+
+        $row = $this->timingRowFor(26);
+        $this->assertNotNull($row, 'LINE v2 shared pipeline (prod bot 26) must write one reply_phase_timings row');
+        $conversation = Conversation::where('bot_id', 26)->first();
+        $this->assertSame($conversation->id, $row->conversation_id);
+        $this->assertSame('success', $row->outcome);
+        $this->assertSame('test/primary-model', $row->model);
+        $this->assertSame(250, $row->queue_wait_ms);
+        $this->assertSame(2500, $row->primary_ms);
+        $this->assertNull($row->fallback_ms);
+        $this->assertSame(300, $row->send_ms);
+        $this->assertGreaterThanOrEqual(2750, $row->total_ms);
+    }
+
+    /**
+     * The runPipeline() path (line_webhook.pipeline_* without v2) keeps its row.
+     */
+    public function test_line_pipeline_path_records_one_phase_timing_row(): void
     {
         config([
             'line_webhook.pipeline_enabled' => true,
@@ -212,14 +246,68 @@ class ReplyPhaseTimingTest extends TestCase
         $this->runLineJob($bot, $this->lineEvent('สวัสดีครับ pipeline', 'U_user_26'));
 
         $row = $this->timingRowFor(26);
-        $this->assertNotNull($row, 'LINE v2 pipeline must write one reply_phase_timings row');
+        $this->assertNotNull($row, 'runPipeline path must still write one reply_phase_timings row');
         $this->assertSame('success', $row->outcome);
-        $this->assertSame('test/primary-model', $row->model);
-        $this->assertSame(250, $row->queue_wait_ms);
         $this->assertSame(2500, $row->primary_ms);
-        $this->assertNull($row->fallback_ms);
         $this->assertSame(300, $row->send_ms);
-        $this->assertGreaterThanOrEqual(2750, $row->total_ms);
+    }
+
+    /**
+     * A non-OpenRouter exception escaping the v2 pipeline must still leave a
+     * failed row WITH the conversation id (markAttempted happens before the
+     * AI call, the row is written in the catch around WebhookPipeline::run()).
+     */
+    public function test_line_v2_pipeline_failure_still_writes_failed_row(): void
+    {
+        config([
+            'webhook_pipeline_v2.enabled' => true,
+            'webhook_pipeline_v2.bot_ids' => ['26'],
+        ]);
+
+        $bot = $this->makeBot(26);
+        $this->mock(AIService::class, function ($mock) {
+            $mock->shouldReceive('generateAndSaveResponse')->once()->andThrow(new \RuntimeException('boom'));
+        });
+
+        try {
+            $this->runLineJob($bot, $this->lineEvent('สวัสดีครับ', 'U_user_26'));
+            $this->fail('The non-OpenRouter exception must still propagate');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('boom', $e->getMessage());
+        }
+
+        $row = $this->timingRowFor(26);
+        $this->assertNotNull($row, 'Failed v2 pipeline attempt must still write its row');
+        $conversation = Conversation::where('bot_id', 26)->first();
+        $this->assertSame($conversation->id, $row->conversation_id);
+        $this->assertSame('failed', $row->outcome);
+    }
+
+    /**
+     * Lock held in the v2 pipeline: the aggregation fallback dispatch must
+     * carry the 15000ms debounce, or that wait lands in queue_wait_ms.
+     */
+    public function test_line_v2_pipeline_lock_fallback_dispatches_with_debounce(): void
+    {
+        Queue::fake();
+        config([
+            'webhook_pipeline_v2.enabled' => true,
+            'webhook_pipeline_v2.bot_ids' => ['26'],
+        ]);
+
+        $bot = $this->makeBot(26);
+        $conversation = Conversation::factory()->line()->create([
+            'bot_id' => 26,
+            'external_customer_id' => 'U_user_26',
+        ]);
+        Cache::lock("ai_response:{$conversation->id}", 30)->get();
+        $this->fakeHttp();
+
+        $this->runLineJob($bot, $this->lineEvent('สวัสดีครับ', 'U_user_26'));
+
+        Queue::assertPushed(ProcessAggregatedMessages::class, function ($job) {
+            return $job->intendedDebounceMs === 15000;
+        });
     }
 
     // ------------------------------------------------------------------
@@ -317,6 +405,40 @@ class ReplyPhaseTimingTest extends TestCase
         $this->assertSame(45000, $row->fallback_ms);
         $this->assertSame('test/fallback-model', $row->model);
         $this->assertSame('success', $row->outcome);
+    }
+
+    // ------------------------------------------------------------------
+    // Fallback ALSO fails → its time must still be recorded
+    // ------------------------------------------------------------------
+
+    public function test_failed_fallback_still_records_its_time(): void
+    {
+        $bot = $this->makeBot(28);
+        $calls = 0;
+        $this->fakeHttp(
+            lineMs: 200,
+            onOpenRouter: function () use (&$calls) {
+                $calls++;
+                if ($calls === 1) {
+                    $this->advanceMs(90000); // primary read-timeout window
+
+                    throw new ConnectionException('cURL error 28: timeout');
+                }
+
+                $this->advanceMs(45000); // fallback model also times out
+
+                throw new ConnectionException('fallback model timed out');
+            },
+        );
+
+        $this->runLineJob($bot, $this->lineEvent('hello'));
+
+        $row = $this->timingRowFor(28);
+        $this->assertNotNull($row);
+        $this->assertSame(90000, $row->primary_ms);
+        $this->assertSame(45000, $row->fallback_ms, 'A failed fallback must still record its time');
+        $this->assertSame('ai_failed', $row->outcome);
+        $this->assertNull($row->model, 'No model answered');
     }
 
     // ------------------------------------------------------------------

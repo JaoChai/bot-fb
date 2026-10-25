@@ -288,10 +288,35 @@ class ProcessLINEWebhook implements ShouldQueue
             new StickerHandler($this->bot, app(StickerReplyService::class)),
         );
 
-        app(WebhookPipeline::class)->run(
-            $context,
-            WebhookPipeline::line($lineService, $nonTextHandler, $gating, $contextSvc, $responseSvc, $outputSvc)
-        );
+        try {
+            app(WebhookPipeline::class)->run(
+                $context,
+                WebhookPipeline::line($lineService, $nonTextHandler, $gating, $contextSvc, $responseSvc, $outputSvc)
+            );
+
+            // Wave 2 timing: the row is written after the pipeline finished
+            // (the reply was already sent); conversation id comes from the
+            // LINE ctx the pipeline built.
+            $this->writeTimingRow($this->sharedPipelineConversationId($context));
+        } catch (\Throwable $e) {
+            // Wave 2 timing: a failure that escaped the pipeline still leaves
+            // its row — with the conversation id, not a null one.
+            $this->timing?->setOutcome('failed');
+            $this->writeTimingRow($this->sharedPipelineConversationId($context));
+
+            throw $e;
+        }
+    }
+
+    /** LINE conversation id the v2 pipeline resolved, null if it never got that far. */
+    private function sharedPipelineConversationId(SharedWebhookContext $context): ?int
+    {
+        $lineCtx = $context->metadata['line_ctx'] ?? null;
+        if (! $lineCtx instanceof WebhookContext) {
+            return null;
+        }
+
+        return $lineCtx->conversation?->id;
     }
 
     /**

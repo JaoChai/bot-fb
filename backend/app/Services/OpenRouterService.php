@@ -158,20 +158,24 @@ class OpenRouterService
                 ]);
 
                 $fallbackStart = $timing?->nowMs();
-                $fallbackResult = $this->chat(
-                    $messages,
-                    $fallbackModel,
-                    $temperature,
-                    $maxTokens,
-                    useFallback: false,
-                    fallbackModelOverride: null,
-                    timeout: config('services.openrouter.timeout', 45), // fast escape — ไม่ inherit high 90s
-                    reasoning: null, // fallback ใช้ default effort ของตัวเอง ไม่รับ high มา (กัน worst-case + กัน gemini-2.5 ได้ high)
-                    responseFormat: $responseFormat,
-                );
-                $timing?->addMs('fallback_ms', $timing->nowMs() - $fallbackStart);
-
-                return $fallbackResult;
+                try {
+                    return $this->chat(
+                        $messages,
+                        $fallbackModel,
+                        $temperature,
+                        $maxTokens,
+                        useFallback: false,
+                        fallbackModelOverride: null,
+                        timeout: config('services.openrouter.timeout', 45), // fast escape — ไม่ inherit high 90s
+                        reasoning: null, // fallback ใช้ default effort ของตัวเอง ไม่รับ high มา (กัน worst-case + กัน gemini-2.5 ได้ high)
+                        responseFormat: $responseFormat,
+                    );
+                } finally {
+                    // Wave 2: fallback time is recorded even when the fallback
+                    // itself fails — the 90+45s worst case must still reach the
+                    // report instead of vanishing.
+                    $timing?->addMs('fallback_ms', $timing->nowMs() - $fallbackStart);
+                }
             }
 
             Log::error('OpenRouter request failed', [
