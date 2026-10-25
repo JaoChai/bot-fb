@@ -10,8 +10,8 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
 use App\Services\Chat\AggregatedMessageDeliveryService;
-use App\Services\ConversationResponseLease;
 use App\Services\Chat\ConversationContextService;
+use App\Services\ConversationResponseLease;
 use App\Services\MessageAggregationService;
 use App\Services\ReplyPhaseTimingCollector;
 use App\Services\ReplyPhaseTimingRecorder;
@@ -206,7 +206,7 @@ class ProcessAggregatedMessages implements ShouldQueue
             if ($botMessage && $pluginSnapshot !== null) {
                 try {
                     $this->dispatchFlowPlugins($botMessage, $pluginSnapshot);
-                } catch (\Throwable $e) {
+                } catch (Throwable $e) {
                     Log::warning('Flow plugin dispatch failed after aggregation response', [
                         'bot_id' => $this->bot->id,
                         'conversation_id' => $this->conversation->id,
@@ -578,7 +578,7 @@ class ProcessAggregatedMessages implements ShouldQueue
     /**
      * Handle job failure.
      */
-    public function failed(\Throwable $exception): void
+    public function failed(Throwable $exception): void
     {
         Log::error('ProcessAggregatedMessages job failed', [
             'bot_id' => $this->bot->id,
