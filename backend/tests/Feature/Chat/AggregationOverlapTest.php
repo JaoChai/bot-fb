@@ -14,9 +14,11 @@ use App\Services\AIService;
 use App\Services\Chat\AggregatedMessageDeliveryService;
 use App\Services\MessageAggregationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use LogicException;
 use Mockery;
 use RuntimeException;
 use Tests\TestCase;
@@ -59,8 +61,11 @@ class AggregationOverlapTest extends TestCase
 
     protected function tearDown(): void
     {
-        Mockery::close();
-        parent::tearDown();
+        try {
+            Mockery::close();
+        } finally {
+            parent::tearDown();
+        }
     }
 
     // ------------------------------------------------------------------
@@ -404,5 +409,183 @@ class AggregationOverlapTest extends TestCase
         $this->assertNull(
             MessageAggregationGroup::where('conversation_id', $conversation->id)->first(),
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Throw AFTER the holder's reply row is persisted (review round 1,
+    // PR #309): the handover must not depend on the steps that follow the
+    // persisted reply (delivery, timing, snapshot, stats). Clock is frozen
+    // so the holder's reply and B's arrival share one second — the exact
+    // same-second overlap that once made the safety net suppress B and
+    // would now make the waiter re-answer A.
+    // ------------------------------------------------------------------
+
+    private function frozenOverlap(array &$aiInputs): array
+    {
+        Carbon::setTestNow('2026-10-25 12:00:00');
+        Queue::fake();
+
+        $aggregation = app(MessageAggregationService::class);
+        $msgA = $this->userMessage('ข้อความเก่า A');
+        $groupA = $aggregation->startOrContinueAggregation($this->conversation, $msgA, 1500);
+        $this->assertNotNull($groupA, 'aggregation accepted msg A');
+
+        // Runs INSIDE the holder's generateResponse(): B arrives as a NEW
+        // group [A,B] while the holder holds the lease.
+        $whileHolding = function () use ($aggregation, $msgA, &$aiInputs) {
+            $msgB = $this->userMessage('ข้อความใหม่ B');
+            $groupB = $aggregation->startOrContinueAggregation($this->conversation, $msgB, 1500);
+            $this->assertSame([$msgA->id, $msgB->id], $aggregation->getMessageIds($this->conversation->id));
+
+            // B's debounce attempt while the fence is still held.
+            ['ai' => $silentAi, 'delivery' => $silentDelivery] = $this->uncallables();
+            $this->runJob($groupB['group_id'], $silentAi, $silentDelivery);
+        };
+
+        $ai = $this->holdingAi($aiInputs, $whileHolding);
+
+        return [$aggregation, $ai, $groupA['group_id']];
+    }
+
+    /**
+     * updateStats throws AFTER the holder's reply row exists (stats write
+     * failure). The waiter must still answer exactly "B" — never "A\nB".
+     */
+    public function test_holder_stats_step_throwing_after_reply_persists_still_answers_b_once(): void
+    {
+        $aiInputs = [];
+        [$aggregation, $ai, $holderGroupId] = $this->frozenOverlap($aiInputs);
+
+        $delivered = [];
+        $delivery = Mockery::mock(AggregatedMessageDeliveryService::class);
+        $delivery->shouldReceive('deliver')->twice()->andReturnUsing(
+            function ($bot, $conversation, $message) use (&$delivered): void {
+                $delivered[] = $message->content;
+            }
+        );
+
+        $holder = new class($this->bot, $this->conversation, $holderGroupId, 'U_overlap') extends ProcessAggregatedMessages
+        {
+            protected function updateStats(int $aggregatedMessageCount, int $lastMessageId): void
+            {
+                throw new LogicException('stats write failed');
+            }
+        };
+
+        try {
+            $holder->handle($aggregation, $ai, $delivery);
+            $this->fail('the stats step was expected to throw after the reply was persisted');
+        } catch (LogicException $e) {
+            $this->assertSame('stats write failed', $e->getMessage());
+        }
+
+        // The waiter that re-dispatched while the fence was held.
+        $waiter = $this->lastPushedWaiter();
+        $waiter->handle($aggregation, $ai, $delivery);
+
+        $this->assertSame(
+            ['ข้อความเก่า A', 'ข้อความใหม่ B'],
+            $aiInputs,
+            'the waiter must answer exactly B — never re-answer A ("A\nB")'
+        );
+        $this->assertSame(
+            ['ตอบกลับ: ข้อความเก่า A', 'ตอบกลับ: ข้อความใหม่ B'],
+            $this->botReplyContents(),
+            'each message answered exactly once'
+        );
+        $this->assertSame(
+            ['ตอบกลับ: ข้อความเก่า A', 'ตอบกลับ: ข้อความใหม่ B'],
+            $delivered,
+        );
+        $this->assertNoPendingGroup();
+    }
+
+    /**
+     * deliver throws AFTER the holder's reply row exists (LINE push error).
+     * The waiter must answer exactly "B"; A's persisted reply must never be
+     * re-answered. (Re-delivering the failed push is out of scope — the
+     * assertion here is that nothing is answered TWICE.)
+     */
+    public function test_holder_delivery_throwing_after_reply_persists_still_answers_b_without_re_answering_a(): void
+    {
+        $aiInputs = [];
+        [$aggregation, $ai, $holderGroupId] = $this->frozenOverlap($aiInputs);
+
+        $delivered = [];
+        $deliverCalls = 0;
+        $delivery = Mockery::mock(AggregatedMessageDeliveryService::class);
+        $delivery->shouldReceive('deliver')->twice()->andReturnUsing(
+            function ($bot, $conversation, $message) use (&$delivered, &$deliverCalls): void {
+                if (++$deliverCalls === 1) {
+                    throw new RuntimeException('LINE push failed (holder)');
+                }
+
+                $delivered[] = $message->content;
+            }
+        );
+
+        try {
+            $this->runJob($holderGroupId, $ai, $delivery);
+            $this->fail('the delivery step was expected to throw after the reply was persisted');
+        } catch (RuntimeException $e) {
+            $this->assertSame('LINE push failed (holder)', $e->getMessage());
+        }
+
+        $waiter = $this->lastPushedWaiter();
+        $waiter->handle($aggregation, $ai, $delivery);
+
+        $this->assertSame(
+            ['ข้อความเก่า A', 'ข้อความใหม่ B'],
+            $aiInputs,
+            'the waiter must answer exactly B — never re-answer A ("A\nB")'
+        );
+        $this->assertSame(
+            ['ตอบกลับ: ข้อความเก่า A', 'ตอบกลับ: ข้อความใหม่ B'],
+            $this->botReplyContents(),
+            'A was answered exactly once (its reply row persisted even though the push failed)'
+        );
+        $this->assertSame(
+            ['ตอบกลับ: ข้อความใหม่ B'],
+            $delivered,
+            'the holder push failed, the waiter push succeeded'
+        );
+        $this->assertNoPendingGroup();
+    }
+
+    // ------------------------------------------------------------------
+    // hasAlreadyResponded() safety net (review round 1, PR #309): a real
+    // covering reply written in a LATER second than the row's last
+    // mutation must make the job skip without calling the AI. This is the
+    // duplicate guard itself — it must fail if the check is disabled or
+    // its boundary shifts (verified by mutation below the suite).
+    // ------------------------------------------------------------------
+
+    public function test_covering_reply_in_a_later_second_skips_the_job_without_calling_ai(): void
+    {
+        Queue::fake();
+        $aggregation = app(MessageAggregationService::class);
+
+        Carbon::setTestNow('2026-10-25 12:00:00');
+        $msgA = $this->userMessage('ข้อความเก่า A');
+        $groupA = $aggregation->startOrContinueAggregation($this->conversation, $msgA, 1500);
+        $this->assertNotNull($groupA, 'aggregation accepted msg A');
+
+        // A bot reply lands in a LATER second and covers the pending group
+        // (e.g. an admin replied, or a previous turn's reply raced ahead of
+        // the row mutation). hasAlreadyResponded() must stop the job.
+        Carbon::setTestNow('2026-10-25 12:01:00');
+        Message::factory()->fromBot()->create([
+            'conversation_id' => $this->conversation->id,
+            'content' => 'ตอบกลับ: ข้อความเก่า A',
+        ]);
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->never();
+        $delivery = Mockery::mock(AggregatedMessageDeliveryService::class);
+        $delivery->shouldReceive('deliver')->never();
+
+        $this->runJob($groupA['group_id'], $ai, $delivery);
+
+        $this->assertNoPendingGroup('the skipped job must still release its group');
     }
 }

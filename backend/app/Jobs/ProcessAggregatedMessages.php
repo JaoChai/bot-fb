@@ -213,6 +213,7 @@ class ProcessAggregatedMessages implements ShouldQueue
                 $messageCount,
                 $aiService,
                 $delivery,
+                $aggregationService,
                 $cachedMessageIds,
                 $timing
             );
@@ -220,11 +221,6 @@ class ProcessAggregatedMessages implements ShouldQueue
             if ($botMessage) {
                 $pluginSnapshot = $this->capturePluginSnapshot();
                 $this->updateStats($messageCount, $botMessage->id);
-
-                // X1 root fix: hand the group over BEFORE releasing the
-                // fence — subtract the ids this reply answered, leaving
-                // exactly the unanswered ones for the next turn.
-                $aggregationService->releaseAnsweredGroup($conversationId, $this->groupId, $cachedMessageIds);
             }
         } finally {
             try {
@@ -253,9 +249,9 @@ class ProcessAggregatedMessages implements ShouldQueue
             }
         }
 
-        // (Row already handed over by releaseAnsweredGroup above, while the
-        // fence was still held — no whole-row clear here: it would delete a
-        // newer group that arrived during generation, the X1 bug.)
+        // (Row already handed over inside generateAndDeliver's transaction,
+        // while the fence was still held — no whole-row clear here: it would
+        // delete a newer group that arrived during generation, the X1 bug.)
 
         // Broadcast events after processing
         if (isset($botMessage) && $botMessage) {
@@ -484,6 +480,7 @@ class ProcessAggregatedMessages implements ShouldQueue
         int $messageCount,
         AIService $aiService,
         AggregatedMessageDeliveryService $delivery,
+        MessageAggregationService $aggregationService,
         array $currentTurnMessageIds = [],
         ?ReplyPhaseTimingCollector $timing = null
     ): ?Message {
@@ -512,11 +509,15 @@ class ProcessAggregatedMessages implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
 
-            $botMessage = $this->conversation->messages()->create([
-                'sender' => 'bot',
-                'content' => $aiService->getErrorMessage($e),
-                'type' => 'text',
-            ]);
+            // X1 round 2 (review #105): the reply AND the handover commit in
+            // ONE transaction (see handOverReplyAndHandOverGroup()).
+            $botMessage = $this->handOverReplyAndHandOverGroup($aggregationService, function () use ($aiService, $e): Message {
+                return $this->conversation->messages()->create([
+                    'sender' => 'bot',
+                    'content' => $aiService->getErrorMessage($e),
+                    'type' => 'text',
+                ]);
+            }, $currentTurnMessageIds);
             $timing?->recordBotMessage($botMessage);
             ReplyPhaseTimingCollector::measure($timing, 'send_ms', fn () => $delivery->deliver($this->bot, $this->conversation, $botMessage, $this->externalUserId));
 
@@ -524,22 +525,32 @@ class ProcessAggregatedMessages implements ShouldQueue
         }
 
         // Save bot response
-        $botMessage = $this->conversation->messages()->create([
-            'sender' => 'bot',
-            'content' => $result['content'],
-            'type' => 'text',
-            'model_used' => $result['model'],
-            'prompt_tokens' => $result['usage']['prompt_tokens'],
-            'completion_tokens' => $result['usage']['completion_tokens'],
-            'cost' => $result['cost'],
-            'metadata' => array_filter([
-                ...($result['rag_metadata'] ?? []),
-                'order_payload' => $result['order_payload'] ?? null,
-                // เก็บไว้ตรวจย้อนหลังว่า guard ไปแก้คำตอบอะไรของบอทบ้าง
-                'stock_guard' => $result['stock_guard'] ?? null,
-                'support_router' => $result['support_router'] ?? null,
-            ]) ?: null,
-        ]);
+        // X1 round 2 (review #105): persist the reply AND hand the answered
+        // ids over in ONE database transaction, BEFORE delivery. Everything
+        // after the commit (deliver, timing, snapshot, stats) may now throw
+        // or the process may be killed: the row is then already reduced to
+        // exactly the unanswered ids (or gone), so the next job can never
+        // re-answer what this reply covered, and a kill BEFORE the commit
+        // rolls the reply back — the next job sees either no reply or a
+        // handed-over row, never a reply whose ids are still pending.
+        $botMessage = $this->handOverReplyAndHandOverGroup($aggregationService, function () use ($result): Message {
+            return $this->conversation->messages()->create([
+                'sender' => 'bot',
+                'content' => $result['content'],
+                'type' => 'text',
+                'model_used' => $result['model'],
+                'prompt_tokens' => $result['usage']['prompt_tokens'],
+                'completion_tokens' => $result['usage']['completion_tokens'],
+                'cost' => $result['cost'],
+                'metadata' => array_filter([
+                    ...($result['rag_metadata'] ?? []),
+                    'order_payload' => $result['order_payload'] ?? null,
+                    // เก็บไว้ตรวจย้อนหลังว่า guard ไปแก้คำตอบอะไรของบอทบ้าง
+                    'stock_guard' => $result['stock_guard'] ?? null,
+                    'support_router' => $result['support_router'] ?? null,
+                ]) ?: null,
+            ]);
+        }, $currentTurnMessageIds);
 
         // Send response to channel
         if ($botMessage->content) {
@@ -548,6 +559,26 @@ class ProcessAggregatedMessages implements ShouldQueue
         }
 
         return $botMessage;
+    }
+
+    /**
+     * Commit the bot reply row and the group handover as one atomic unit,
+     * while the response fence is still held (review #105 items 1-2).
+     */
+    private function handOverReplyAndHandOverGroup(
+        MessageAggregationService $aggregationService,
+        callable $createReply,
+        array $currentTurnMessageIds
+    ): Message {
+        return DB::transaction(function () use ($aggregationService, $createReply, $currentTurnMessageIds): Message {
+            $botMessage = $createReply();
+
+            // Subtract the ids this reply answers, leaving exactly the
+            // unanswered ones for the next turn.
+            $aggregationService->handOverAnsweredIds($this->conversation->id, $this->groupId, $currentTurnMessageIds);
+
+            return $botMessage;
+        });
     }
 
     /**
