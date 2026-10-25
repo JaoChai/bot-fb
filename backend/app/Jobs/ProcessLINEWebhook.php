@@ -27,6 +27,8 @@ use App\Services\MultipleBubblesService;
 use App\Services\PaymentFlexService;
 use App\Services\ProfilePictureService;
 use App\Services\RateLimitService;
+use App\Services\ReplyPhaseTimingCollector;
+use App\Services\ReplyPhaseTimingRecorder;
 use App\Services\ResponseHoursService;
 use App\Services\SmartAggregation\SmartAggregationAnalyzer;
 use App\Services\SmartAggregation\UserTypingStats;
@@ -78,12 +80,25 @@ class ProcessLINEWebhook implements ShouldQueue
     protected ?int $adaptiveWaitTimeMs = null;
 
     /**
+     * Wave 2 timing: when the job instance was created (= queued, since the
+     * constructor runs in the dispatching process and the object is then
+     * serialized to the queue). `queue_wait_ms` = handle() start − this − debounce.
+     */
+    public ?int $queuedAtMs = null;
+
+    protected ?ReplyPhaseTimingCollector $timing = null;
+
+    protected bool $timingRowWritten = false;
+
+    /**
      * Create a new job instance.
      */
     public function __construct(
         public Bot $bot,
         public array $event
-    ) {}
+    ) {
+        $this->queuedAtMs = ReplyPhaseTimingCollector::clock();
+    }
 
     /**
      * The middleware to run when the job is dispatched (queued).
@@ -108,6 +123,10 @@ class ProcessLINEWebhook implements ShouldQueue
         LineWebhookResponseService $responseSvc,
         LineWebhookOutputService $outputSvc,
     ): void {
+        // Wave 2 timing: one collector per reply attempt; rows are written
+        // best-effort AFTER the reply was sent (never blocks a reply).
+        $this->timing = ReplyPhaseTimingCollector::start($this->queuedAtMs);
+
         try {
             if (WebhookPipelineV2Flag::enabledFor($this->bot)) {
                 $this->runSharedPipeline($lineService, $gating, $contextSvc, $responseSvc, $outputSvc);
@@ -127,8 +146,11 @@ class ProcessLINEWebhook implements ShouldQueue
 
                 return;
             }
-            $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService);
+            $this->processEvent($lineService, $aiService, $rateLimitService, $aggregationService, $responseHoursService, $this->timing);
         } catch (\Exception $e) {
+            $this->timing?->setOutcome('failed');
+            $this->writeTimingRow();
+
             Log::error('LINE webhook processing failed', [
                 'bot_id' => $this->bot->id,
                 'event_type' => $this->event['type'] ?? 'unknown',
@@ -140,6 +162,28 @@ class ProcessLINEWebhook implements ShouldQueue
         }
     }
 
+    /**
+     * Wave 2 timing: write the reply_phase_timings row once, best-effort,
+     * only for attempts that actually reached generation.
+     */
+    protected function writeTimingRow(?int $conversationId = null): void
+    {
+        if ($this->timing === null || ! $this->timing->attempted() || $this->timingRowWritten) {
+            return;
+        }
+
+        $this->timingRowWritten = true;
+
+        app(ReplyPhaseTimingRecorder::class)->write(
+            $this->timing,
+            $this->timing->toRow(
+                $this->bot->id,
+                $conversationId,
+                $this->job !== null ? $this->job->getJobId() : null,
+            )
+        );
+    }
+
     private function runPipeline(
         LineWebhookGatingService $gating,
         LineWebhookContextService $contextSvc,
@@ -147,6 +191,7 @@ class ProcessLINEWebhook implements ShouldQueue
         LineWebhookOutputService $outputSvc,
     ): void {
         $ctx = new WebhookContext($this->bot, $this->event);
+        $ctx->metadata['reply_phase_timing'] = $this->timing;
 
         Log::debug('LINE webhook pipeline.start', [
             'bot_id' => $this->bot->id,
@@ -182,7 +227,7 @@ class ProcessLINEWebhook implements ShouldQueue
                 );
                 if ($fallback) {
                     ProcessAggregatedMessages::dispatch(
-                        $ctx->bot, $ctx->conversation, $fallback['group_id'], $ctx->userId()
+                        $ctx->bot, $ctx->conversation, $fallback['group_id'], $ctx->userId(), 15000
                     )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(15));
                 }
 
@@ -192,6 +237,12 @@ class ProcessLINEWebhook implements ShouldQueue
             try {
                 $responseSvc->generate($ctx);
                 $outputSvc->dispatch($ctx);
+                $this->writeTimingRow($ctx->conversation?->id);
+            } catch (\Throwable $e) {
+                $this->timing?->setOutcome('failed');
+                $this->writeTimingRow($ctx->conversation?->id);
+
+                throw $e;
             } finally {
                 $lock->release();
             }
@@ -225,6 +276,7 @@ class ProcessLINEWebhook implements ShouldQueue
     ): void {
         $context = new SharedWebhookContext($this->bot, $this->event, 'line');
         $context->metadata['user_id'] = $lineService->extractUserId($this->event);
+        $context->metadata['reply_phase_timing'] = $this->timing;
 
         // Same construction as the legacy non-text branch of processEvent().
         $nonTextHandler = new NonTextHandler(
@@ -236,10 +288,35 @@ class ProcessLINEWebhook implements ShouldQueue
             new StickerHandler($this->bot, app(StickerReplyService::class)),
         );
 
-        app(WebhookPipeline::class)->run(
-            $context,
-            WebhookPipeline::line($lineService, $nonTextHandler, $gating, $contextSvc, $responseSvc, $outputSvc)
-        );
+        try {
+            app(WebhookPipeline::class)->run(
+                $context,
+                WebhookPipeline::line($lineService, $nonTextHandler, $gating, $contextSvc, $responseSvc, $outputSvc)
+            );
+
+            // Wave 2 timing: the row is written after the pipeline finished
+            // (the reply was already sent); conversation id comes from the
+            // LINE ctx the pipeline built.
+            $this->writeTimingRow($this->sharedPipelineConversationId($context));
+        } catch (\Throwable $e) {
+            // Wave 2 timing: a failure that escaped the pipeline still leaves
+            // its row — with the conversation id, not a null one.
+            $this->timing?->setOutcome('failed');
+            $this->writeTimingRow($this->sharedPipelineConversationId($context));
+
+            throw $e;
+        }
+    }
+
+    /** LINE conversation id the v2 pipeline resolved, null if it never got that far. */
+    private function sharedPipelineConversationId(SharedWebhookContext $context): ?int
+    {
+        $lineCtx = $context->metadata['line_ctx'] ?? null;
+        if (! $lineCtx instanceof WebhookContext) {
+            return null;
+        }
+
+        return $lineCtx->conversation?->id;
     }
 
     /**
@@ -287,7 +364,8 @@ class ProcessLINEWebhook implements ShouldQueue
         AIService $aiService,
         RateLimitService $rateLimitService,
         MessageAggregationService $aggregationService,
-        ResponseHoursService $responseHoursService
+        ResponseHoursService $responseHoursService,
+        ?ReplyPhaseTimingCollector $timing = null
     ): void {
         // Only process message events
         if (! $lineService->isMessageEvent($this->event)) {
@@ -623,7 +701,8 @@ class ProcessLINEWebhook implements ShouldQueue
                         $this->bot,
                         $conversation,
                         $fallbackResult['group_id'],
-                        $userId
+                        $userId,
+                        15000
                     )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(15));
                 }
 
@@ -636,38 +715,44 @@ class ProcessLINEWebhook implements ShouldQueue
                 app(ConversationContextService::class)->autoClearIfIdle($conversation);
 
                 // Generate AI response (no transaction lock held)
-                $botMessage = $aiService->generateAndSaveResponse(
-                    $this->bot,
-                    $conversation,
-                    $userMessage
-                );
+                $timing?->markAttempted();
+                // Wave 2: forward the timing collector only when present, so callers
+                // that pinned the 3-argument call keep matching byte-for-byte.
+                $botMessage = $timing !== null
+                    ? $aiService->generateAndSaveResponse($this->bot, $conversation, $userMessage, $timing)
+                    : $aiService->generateAndSaveResponse($this->bot, $conversation, $userMessage);
+                $timing?->recordBotMessage($botMessage);
 
                 // Send reply to LINE (with multiple bubbles support)
-                if ($botMessage->content) {
-                    $bubblesService = app(MultipleBubblesService::class);
-                    $paymentFlex = app(PaymentFlexService::class);
-                    $transformed = $paymentFlex->tryConvertToFlex($botMessage->content, $conversation);
+                ReplyPhaseTimingCollector::measure($timing, 'send_ms', function () use ($botMessage, $lineService, $replyToken, $userId, $conversation) {
+                    if ($botMessage->content) {
+                        $bubblesService = app(MultipleBubblesService::class);
+                        $paymentFlex = app(PaymentFlexService::class);
+                        $transformed = $paymentFlex->tryConvertToFlex($botMessage->content, $conversation);
 
-                    if (is_array($transformed)) {
-                        // Flex detected on full text → send as single message
-                        $retryKey = $lineService->generateRetryKey();
-                        $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$transformed], $retryKey);
-                    } elseif ($bubblesService->isEnabled($this->bot)) {
-                        // No Flex match → normal bubble flow
-                        $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
-                        $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles, $conversation);
-                    } else {
-                        // No Flex, no bubbles → send as plain text
-                        $retryKey = $lineService->generateRetryKey();
-                        $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$botMessage->content], $retryKey);
+                        if (is_array($transformed)) {
+                            // Flex detected on full text → send as single message
+                            $retryKey = $lineService->generateRetryKey();
+                            $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$transformed], $retryKey);
+                        } elseif ($bubblesService->isEnabled($this->bot)) {
+                            // No Flex match → normal bubble flow
+                            $bubbles = $bubblesService->parseIntoBubbles($botMessage->content, $this->bot);
+                            $bubblesService->sendBubbles($this->bot, $userId, $replyToken, $bubbles, $conversation);
+                        } else {
+                            // No Flex, no bubbles → send as plain text
+                            $retryKey = $lineService->generateRetryKey();
+                            $lineService->replyWithFallback($this->bot, $replyToken, $userId, [$botMessage->content], $retryKey);
+                        }
                     }
-                }
+                });
 
                 // Execute flow plugins (e.g., Telegram notifications)
                 if ($botMessage) {
                     try {
-                        app(FlowPluginService::class)
-                            ->executePlugins($this->bot, $conversation, $botMessage);
+                        ReplyPhaseTimingCollector::measure($timing, 'plugin_ms', function () use ($conversation, $botMessage) {
+                            app(FlowPluginService::class)
+                                ->executePlugins($this->bot, $conversation, $botMessage);
+                        });
                     } catch (\Exception $e2) {
                         Log::warning('Flow plugin execution failed in LINE webhook', [
                             'conversation_id' => $conversation->id,
@@ -678,7 +763,13 @@ class ProcessLINEWebhook implements ShouldQueue
 
                 // Update stats with atomic DB::raw operations (no transaction needed)
                 $this->updateStatsInBatch($conversation, $isNewConversation);
+
+                // Wave 2 timing: row goes out after the reply was already sent (R5)
+                $this->writeTimingRow($conversation->id);
             } catch (\Exception $e) {
+                $this->timing?->setOutcome('failed');
+                $this->writeTimingRow($conversation->id);
+
                 // User message is already saved in transaction 1
                 // Log error but don't lose the user message
                 Log::error('Failed to generate/send AI response after transaction', [
@@ -703,7 +794,8 @@ class ProcessLINEWebhook implements ShouldQueue
                 $this->bot,
                 $conversation,
                 $aggregationGroupId,
-                $userId
+                $userId,
+                $delayMs
             )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addMilliseconds($delayMs));
 
             Log::info('Dispatched aggregated message job', [

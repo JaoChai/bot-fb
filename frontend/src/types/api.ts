@@ -1,5 +1,12 @@
 // API Response Types
 
+// Contract-derived types for the auth + chat slice. Source of truth:
+// contracts/openapi.yaml (operations login / listConversations /
+// listConversationMessages + the MessageSent / ConversationUpdated
+// broadcasts). Regenerate with `npm run contract:check`; do not hand-edit
+// src/types/generated/auth-chat.ts.
+import type { components, operations } from './generated/auth-chat';
+
 export interface ApiResponse<T = unknown> {
   data: T;
   message?: string;
@@ -23,23 +30,13 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
   meta: PaginationMeta;
 }
 
-// Auth Types
-type UserRole = 'owner' | 'admin';
+// Auth Types — contract-covered: User is the contract's LoginUser, the login
+// envelope is the contract's flat LoginResponse, and LoginCredentials is the
+// login request body. The exported names are unchanged, so no call site
+// churns; the shapes now come from the contract instead of being hand-copied.
+export type User = components['schemas']['LoginUser'];
 
-export interface User {
-  id: number;
-  name: string;
-  email: string;
-  role: UserRole;
-  email_verified_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface LoginCredentials {
-  email: string;
-  password: string;
-}
+export type LoginCredentials = operations['login']['requestBody']['content']['application/json'];
 
 export interface RegisterCredentials {
   name: string;
@@ -48,10 +45,7 @@ export interface RegisterCredentials {
   password_confirmation: string;
 }
 
-export interface AuthResponse {
-  user: User;
-  token: string;
-}
+export type AuthResponse = components['schemas']['LoginResponse'];
 
 // Bot Types
 export type ReasoningEffort = 'low' | 'medium' | 'high';
@@ -387,67 +381,51 @@ export interface VipCustomersResponse {
   data: VipCustomer[];
 }
 
-export interface Message {
-  id: number;
-  conversation_id: number;
-  sender: 'user' | 'bot' | 'agent';
-  content: string;
-  type: 'text' | 'image' | 'file' | 'sticker' | 'location' | 'audio' | 'video' | 'template' | 'flex' | 'photo' | 'voice' | 'contact' | 'poll';
-  media_url: string | null;
-  media_type: string | null;
-  media_metadata: Record<string, unknown> | null;
-  model_used: string | null;
-  prompt_tokens: number | null;
-  completion_tokens: number | null;
-  cost: number | null;
-  external_message_id: string | null;
-  reply_to_message_id: string | null;
-  sentiment: string | null;
-  intents: string[] | null;
-  // Enhanced usage tracking (OpenRouter Best Practice)
+/**
+ * Contract Message (schema `Message`), adapted for the client:
+ * - `type` keeps the legacy display-only values 'photo' | 'voice' |
+ *   'contact' | 'poll' that channel adapters switch on. The backend never
+ *   sends them today (the contract enum ends at postback), but removing
+ *   them would break rendering code outside this card's scope.
+ * - The usage-tracking keys stay optional: optimistic and echo-derived
+ *   messages are built client-side without them. API responses always
+ *   carry them (contract: required, nullable).
+ */
+export type Message = Omit<
+  components['schemas']['Message'],
+  'type' | 'cached_tokens' | 'reasoning_tokens' | 'reasoning_content'
+> & {
+  type: components['schemas']['Message']['type'] | 'photo' | 'voice' | 'contact' | 'poll';
   cached_tokens?: number | null;
   reasoning_tokens?: number | null;
   reasoning_content?: string | null;
-  created_at: string;
-  updated_at: string;
-}
+};
 
-export interface Conversation {
-  id: number;
-  bot_id: number;
-  customer_profile_id: number | null;
-  external_customer_id: string;
-  channel_type: 'line' | 'facebook' | 'demo' | 'telegram';
-  status: 'active' | 'closed' | 'handover';
-  is_handover: boolean;
-  // Telegram-specific fields
+/**
+ * Contract Conversation (schema `Conversation`), adapted for the client:
+ * - `customer_profile` / `assigned_user` are typed with the existing manual
+ *   CustomerProfile / User shapes (the contract leaves them untyped objects).
+ * - `last_message` uses the client Message alias (see above).
+ * - Optional fields the UI reads but the resource does not send today are
+ *   kept as tolerated extras (telegram headers, assignment bookkeeping,
+ *   eager relations) so existing components compile unchanged.
+ */
+export type Conversation = Omit<
+  components['schemas']['Conversation'],
+  'customer_profile' | 'assigned_user' | 'last_message' | 'memory_notes'
+> & {
+  customer_profile?: CustomerProfile | null;
+  assigned_user?: User | null;
+  last_message?: Message | null;
+  memory_notes: ConversationNote[] | null;
   telegram_chat_type?: 'private' | 'group' | 'supergroup' | 'channel' | null;
   telegram_chat_title?: string | null;
-  assigned_user_id: number | null;
-  assignment_method: 'manual' | 'claimed' | 'auto' | null;
-  assigned_at: string | null;
-  memory_notes: ConversationNote[] | null;
-  tags: string[];
-  context: Record<string, unknown> | null;
-  current_flow_id: number | null;
-  message_count: number;
-  unread_count: number;
-  last_message_at: string | null;
-  bot_auto_enable_at: string | null;
-  bot_auto_enable_remaining_seconds: number | null;
-  context_cleared_at: string | null;
-  created_at: string;
-  updated_at: string;
-  // Computed fields
-  needs_response?: boolean;
-  // Relationships
+  assignment_method?: 'manual' | 'claimed' | 'auto' | null;
+  assigned_at?: string | null;
   bot?: Bot;
-  customer_profile?: CustomerProfile;
-  assigned_user?: User;
   current_flow?: Flow;
   messages?: Message[];
-  last_message?: Message;
-}
+};
 
 export interface ConversationStatusCounts {
   active: number;

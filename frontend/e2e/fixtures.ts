@@ -2,9 +2,11 @@ import { test as base, expect } from '@playwright/test'
 import {
   bot,
   conversation,
+  conversationsListResponse,
   dashboardBot,
   flow,
-  message,
+  loginResponse,
+  messagesListResponse,
   order,
   orderSummary,
   pagination,
@@ -64,9 +66,11 @@ export const test = base.extend<Fixtures>({
         })
       })
 
-      // Auth — login is a FLAT AuthResponse (api.ts), NOT wrapped in { data }.
+      // Auth — login is the FLAT contract envelope (LoginResponse in
+      // contracts/openapi.yaml): { message, user, token, token_type }, never
+      // wrapped in { data }.
       await page.route('**/api/auth/login', (route) =>
-        route.fulfill({ json: { user, token } }),
+        route.fulfill({ json: loginResponse }),
       )
       await page.route('**/api/auth/user', (route) =>
         route.fulfill({ json: { data: user } }),
@@ -172,17 +176,10 @@ export const test = base.extend<Fixtures>({
       // /messages (each needs a different shape — narrow routes below win by
       // being registered later).
       await page.route('**/api/bots/1/conversations*', (route) =>
-        route.fulfill({
-          json: {
-            data: [conversation],
-            meta: { ...pagination, status_counts: { active: 1, closed: 0, handover: 0, total: 1 } },
-          },
-        }),
+        route.fulfill({ json: conversationsListResponse }),
       )
       await page.route('**/api/bots/1/conversations/1/messages*', (route) =>
-        route.fulfill({
-          json: { data: [message], meta: pagination },
-        }),
+        route.fulfill({ json: messagesListResponse }),
       )
       // useBotTags → TagsResponse { data: string[] }.
       await page.route('**/api/bots/1/conversations/tags', (route) =>

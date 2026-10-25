@@ -42,6 +42,9 @@ const userA: User = {
   email_verified_at: null,
   created_at: '',
   updated_at: '',
+  subscription_plan: 'free',
+  subscription_expires_at: null,
+  timezone: 'Asia/Bangkok',
 };
 const userB: User = {
   id: 2,
@@ -51,8 +54,16 @@ const userB: User = {
   email_verified_at: null,
   created_at: '',
   updated_at: '',
+  subscription_plan: 'free',
+  subscription_expires_at: null,
+  timezone: 'Asia/Bangkok',
 };
-const loginResponseB: AuthResponse = { user: userB, token: 'token-b' };
+const loginResponseB: AuthResponse = {
+  message: 'Login successful',
+  user: userB,
+  token: 'token-b',
+  token_type: 'Bearer',
+};
 const messagesKey = ['messages', 'list', 1] as const;
 
 function seedUserASession() {
