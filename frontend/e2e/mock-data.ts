@@ -1,8 +1,8 @@
-// E2E mock data. Shapes copied from src/types/api.ts (User, Bot,
-// CustomerProfile, Conversation, Message, Flow, PaginationMeta, Order,
-// OrderSummaryData, ProductOrderBreakdown, ProductStock, Slip) and the flat
-// AuthResponse contract (backend AuthController returns `user` + `token` at
-// the top level) — keep in sync with both. All values are synthetic.
+// E2E mock data. The contract-covered shapes (User/login envelope,
+// Conversation, Message, the conversations and messages list envelopes) are
+// copied from contracts/openapi.yaml and locked there by
+// src/types/contract-mocks.test.ts; everything else copies src/types/api.ts.
+// Keep in sync with both. All values are synthetic.
 import type {
   Bot,
   Conversation,
@@ -27,6 +27,9 @@ export const user = {
   email_verified_at: '2026-01-01T00:00:00.000000Z',
   created_at: '2026-01-01T00:00:00.000000Z',
   updated_at: '2026-01-01T00:00:00.000000Z',
+  subscription_plan: 'free',
+  subscription_expires_at: null,
+  timezone: 'Asia/Bangkok',
 } as const
 
 export const token = 'e2e-token'
@@ -118,12 +121,16 @@ export const message = {
   reply_to_message_id: null,
   sentiment: null,
   intents: null,
+  cached_tokens: null,
+  reasoning_tokens: null,
+  reasoning_content: null,
   created_at: '2026-01-01T00:00:00.000000Z',
   updated_at: '2026-01-01T00:00:00.000000Z',
 } satisfies Message
 
-// No `last_message`: the list row then falls back to the "N messages" preview,
-// so 'สวัสดีครับ' stays unique to the chat bubble for the visibility assert.
+// No `last_message` value: the list row then falls back to the "N messages"
+// preview, so 'สวัสดีครับ' stays unique to the chat bubble for the visibility
+// assert.
 export const conversation = {
   id: 1,
   bot_id: 1,
@@ -133,8 +140,6 @@ export const conversation = {
   status: 'active',
   is_handover: false,
   assigned_user_id: null,
-  assignment_method: null,
-  assigned_at: null,
   memory_notes: null,
   tags: [],
   context: null,
@@ -148,6 +153,9 @@ export const conversation = {
   created_at: '2026-01-01T00:00:00.000000Z',
   updated_at: '2026-01-01T00:00:00.000000Z',
   customer_profile: customerProfile,
+  assigned_user: null,
+  last_message: null,
+  needs_response: false,
 } satisfies Conversation
 
 export const flow = {
@@ -306,3 +314,64 @@ export const emptySlipsResponse = {
     },
   },
 } satisfies SlipsResponse
+
+// ---------------------------------------------------------------------------
+// Contract-covered response bodies — the exact objects the e2e routes serve,
+// validated against contracts/openapi.yaml (operations login /
+// listConversations / listConversationMessages) by
+// src/types/contract-mocks.test.ts.
+// ---------------------------------------------------------------------------
+
+// Laravel-style pagination envelope parts shared by the two list responses
+// (schema PaginationLinks / PaginationMetaLink in contracts/openapi.yaml).
+const listLinks = { first: null, last: null, prev: null, next: null }
+const metaLinks = [
+  { url: null, label: '&laquo; Previous', page: null, active: false },
+  { url: 'http://localhost/api?page=1', label: '1', page: 1, active: true },
+  { url: null, label: 'Next &raquo;', page: null, active: false },
+]
+
+// POST /api/auth/login — flat contract envelope (LoginResponse), NOT wrapped
+// in { data }: { message, user, token, token_type }.
+export const loginResponse = {
+  message: 'Login successful',
+  user,
+  token,
+  token_type: 'Bearer',
+}
+
+// GET /api/bots/1/conversations — ConversationListResponse: { data, links,
+// meta } with status counters (whole bot, not just this page) in meta.
+export const conversationsListResponse = {
+  data: [conversation],
+  links: listLinks,
+  meta: {
+    ...pagination,
+    from: 1,
+    to: 1,
+    path: 'http://localhost/api/bots/1/conversations',
+    links: metaLinks,
+    status_counts: {
+      active: 1,
+      closed: 0,
+      handover: 0,
+      needs_response: 0,
+      waiting_customer: 0,
+      total: 1,
+    },
+  },
+}
+
+// GET /api/bots/1/conversations/1/messages — MessageListResponse: { data,
+// links, meta } (offset pagination).
+export const messagesListResponse = {
+  data: [message],
+  links: listLinks,
+  meta: {
+    ...pagination,
+    from: 1,
+    to: 1,
+    path: 'http://localhost/api/bots/1/conversations/1/messages',
+    links: metaLinks,
+  },
+}
