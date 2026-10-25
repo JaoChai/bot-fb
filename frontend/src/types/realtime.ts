@@ -1,40 +1,18 @@
 /**
  * Real-time event types for Laravel Echo / Reverb
+ *
+ * MessageSentEvent and ConversationUpdatedEvent are the contract broadcast
+ * payloads (schemas MessageSentPayload / ConversationUpdatedPayload in
+ * contracts/openapi.yaml; regenerate with `npm run contract:check`). The
+ * other events are not contract-covered yet and stay hand-declared.
  */
+import type { components } from './generated/auth-chat';
 
-export interface MessageSentEvent {
-  id: number;
-  conversation_id: number;
-  sender: 'user' | 'bot' | 'agent';
-  content: string;
-  type: 'text' | 'image' | 'video' | 'audio' | 'file' | 'sticker' | 'location';
-  media_url: string | null;
-  media_type: string | null;
-  created_at: string;
-  // Included conversation update data to reduce double broadcasts
-  conversation?: {
-    id: number;
-    message_count: number;
-    last_message_at: string | null;
-    needs_response: boolean;
-    unread_count: number;
-  };
-}
+/** Broadcast of App\Events\MessageSent — event `message.sent`, private `bot.{bot_id}`. */
+export type MessageSentEvent = components['schemas']['MessageSentPayload'];
 
-export interface ConversationUpdatedEvent {
-  id: number;
-  bot_id: number;
-  status: 'active' | 'closed' | 'handover';
-  is_handover: boolean;
-  assigned_user_id: number | null;
-  message_count: number;
-  last_message_at: string | null;
-  needs_response: boolean;
-  unread_count: number;
-  bot_auto_enable_at: string | null;
-  update_type: 'created' | 'updated' | 'message_received' | 'handover' | 'closed';
-  updated_at: string;
-}
+/** Broadcast of App\Events\ConversationUpdated — event `conversation.{update_type}`. */
+export type ConversationUpdatedEvent = components['schemas']['ConversationUpdatedPayload'];
 
 export interface DocumentStatusUpdatedEvent {
   id: number;

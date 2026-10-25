@@ -1,0 +1,839 @@
+# BotJao — auth + chat data contract (OpenAPI 3.1)
+#
+# Written description of TODAY'S backend behavior for the operations
+# `login`, `listConversations`, `listConversationMessages` and the
+# MessageSent / ConversationUpdated broadcasts. It is deliberately
+# server-shaped, not aspirational: if the backend changes an observable
+# shape, this file and tests/Feature/Contracts/AuthChatContractTest.php
+# must change in the same review.
+#
+# Fixed by plan #3 (2026-10-25): login stays flat {user, token}; lists keep
+# {data, meta} page-based pagination; the message list is offset/page
+# pagination (the cursor comment in useMessageQueries.ts is stale and stays);
+# errors keep the legacy {message, errors} style (no RFC 9457 conversion).
+openapi: 3.1.0
+info:
+  title: BotJao Auth + Chat contract
+  version: 1.0.0
+  description: |
+    Scoped contract for the login + chat slice. Each response body is a named
+    schema under components/schemas so tests can validate real payloads
+    against one component. `x-broadcast` maps each Laravel event class to the
+    private channel it broadcasts on and the event name clients subscribe to.
+servers:
+  - url: https://api.botjao.com
+  - url: http://localhost:8000
+tags:
+  - name: Auth
+  - name: Chat
+
+x-broadcast:
+  MessageSent:
+    event: message.sent
+    channel: private-bot.{bot_id}
+    authorization: Bot owner only — Broadcast::channel('bot.{botId}') returns bot.user_id === user.id (routes/channels.php).
+    payload: MessageSentPayload
+  ConversationUpdated:
+    event: conversation.{update_type}
+    channel: private-bot.{bot_id}
+    authorization: Bot owner only — Broadcast::channel('bot.{botId}') returns bot.user_id === user.id (routes/channels.php).
+    payload: ConversationUpdatedPayload
+    update_type values: [updated, created, message_received]
+
+paths:
+  /api/auth/login:
+    post:
+      operationId: login
+      tags: [Auth]
+      summary: Log in with email + password, receive a flat {message, user, token, token_type} envelope.
+      description: |
+        Public, behind the strict `auth` rate limiter: 5 attempts per minute
+        keyed by `email|IP`. Tokens are Sanctum personal access tokens valid
+        for 30 days. `revoke_previous` deletes all of the user's existing
+        tokens before minting the new one.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                device_name:
+                  type: [string, "null"]
+                  maxLength: 255
+                  description: Token name shown in /auth/tokens; defaults to "auth-token".
+                revoke_previous:
+                  type: [boolean, "null"]
+                  default: false
+      responses:
+        "200":
+          description: Logged in. Flat envelope — never wrapped in `data`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "422":
+          description: |
+            Validation failed (unknown email, bad email format, missing
+            password, wrong password). An unknown email is answered with the
+            same {message, errors.email} shape — this operation has no 404.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "429":
+          description: More than 5 login attempts per minute for this email|IP.
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until the next attempt is allowed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitError"
+
+  /api/bots/{bot}/conversations:
+    get:
+      operationId: listConversations
+      tags: [Chat]
+      summary: Paginated conversation list for one bot, plus status counters in meta.
+      description: |
+        Sanctum bearer auth + BotPolicy::view (bot owner, or admin assigned to
+        the bot). Default filter excludes `closed` conversations unless
+        `status` is passed. Page-based pagination (default per_page 20).
+        `meta.status_counts` covers all conversations of the bot regardless of
+        the current page/filter.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          description: Comma-separated or repeated; defaults to "active,handover".
+          schema:
+            type: string
+            example: active,handover
+        - name: channel_type
+          in: query
+          schema:
+            type: string
+            enum: [line, facebook, telegram, demo]
+        - name: telegram_chat_type
+          in: query
+          schema:
+            type: string
+        - name: is_handover
+          in: query
+          schema:
+            type: boolean
+        - name: assigned_user_id
+          in: query
+          schema:
+            type: integer
+        - name: tags
+          in: query
+          description: Comma-separated tag names, each matched via JSON contains.
+          schema:
+            type: string
+        - name: from_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: search
+          in: query
+          description: Matches external customer id, or profile name/email/phone via full-text.
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+            enum: [last_message_at, created_at, message_count, status]
+            default: last_message_at
+        - name: sort_direction
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        "200":
+          description: Conversation page with pagination links/meta and status counts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationListResponse"
+        "401":
+          description: Missing/expired Sanctum token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+        "403":
+          description: Authenticated user cannot view this bot (not owner, not assigned).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+        "429":
+          description: API rate limit exceeded (300 requests per minute).
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitError"
+
+  /api/bots/{bot}/conversations/{conversation}/messages:
+    get:
+      operationId: listConversationMessages
+      tags: [Chat]
+      summary: Paginated messages of one conversation (offset/page, NOT cursor).
+      description: |
+        Sanctum bearer auth, BotPolicy::view, and the conversation must belong
+        to the bot (otherwise 404). Offset/page pagination: `per_page` is
+        capped server-side at 100 (default 50), `order` defaults to `desc`
+        (newest first). This is the shape the message hook paginates with.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+        - $ref: "#/components/parameters/ConversationId"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Capped at 100 server-side.
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        "200":
+          description: Message page with pagination links/meta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageListResponse"
+        "401":
+          description: Missing/expired Sanctum token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+        "403":
+          description: Authenticated user cannot view this bot — no data in the body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+        "404":
+          description: Conversation does not belong to the bot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "429":
+          description: API rate limit exceeded (300 requests per minute).
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Sanctum personal access token (issued by `login`).
+
+  parameters:
+    BotId:
+      name: bot
+      in: path
+      required: true
+      schema:
+        type: integer
+    ConversationId:
+      name: conversation
+      in: path
+      required: true
+      schema:
+        type: integer
+
+  schemas:
+    # ---------- login ----------
+    LoginUser:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - email
+        - email_verified_at
+        - created_at
+        - updated_at
+        - subscription_plan
+        - subscription_expires_at
+        - timezone
+        - role
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        email_verified_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        subscription_plan:
+          type: string
+        subscription_expires_at:
+          type: [string, "null"]
+          format: date-time
+        timezone:
+          type: string
+          default: Asia/Bangkok
+        role:
+          type: string
+          enum: [owner, admin]
+
+    LoginResponse:
+      type: object
+      additionalProperties: false
+      required: [message, user, token, token_type]
+      properties:
+        message:
+          type: string
+          const: Login successful
+        user:
+          $ref: "#/components/schemas/LoginUser"
+        token:
+          type: string
+          description: Sanctum plain-text token; store it, it is not retrievable later.
+        token_type:
+          type: string
+          const: Bearer
+
+    # ---------- chat resources ----------
+    Conversation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - bot_id
+        - customer_profile_id
+        - external_customer_id
+        - channel_type
+        - status
+        - is_handover
+        - assigned_user_id
+        - memory_notes
+        - tags
+        - context
+        - current_flow_id
+        - message_count
+        - unread_count
+        - last_message_at
+        - bot_auto_enable_at
+        - bot_auto_enable_remaining_seconds
+        - context_cleared_at
+        - created_at
+        - updated_at
+        - customer_profile
+        - assigned_user
+        - last_message
+        - needs_response
+      properties:
+        id:
+          type: integer
+        bot_id:
+          type: integer
+        customer_profile_id:
+          type: [integer, "null"]
+        external_customer_id:
+          type: string
+        channel_type:
+          type: string
+          enum: [line, facebook, telegram, demo]
+        status:
+          type: string
+          enum: [active, closed, handover]
+        is_handover:
+          type: boolean
+        assigned_user_id:
+          type: [integer, "null"]
+        memory_notes:
+          description: AI-generated memory; JSON column, decoded array or null.
+          type: [array, "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        context:
+          description: Free-form JSON column (array or object) or null.
+          type: [array, object, "null"]
+        current_flow_id:
+          type: [integer, "null"]
+        message_count:
+          type: integer
+        unread_count:
+          type: integer
+        last_message_at:
+          type: [string, "null"]
+          format: date-time
+        bot_auto_enable_at:
+          type: [string, "null"]
+          format: date-time
+        bot_auto_enable_remaining_seconds:
+          description: Seconds left before the bot auto-resumes; null while no timer or timer elapsed.
+          type: [integer, "null"]
+        context_cleared_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        customer_profile:
+          description: >
+            Loaded CustomerProfileResource when the conversation has a profile,
+            null otherwise. Full shape owned by CustomerProfileResource —
+            enumerated when that resource joins this contract.
+          type: [object, "null"]
+        assigned_user:
+          description: Loaded UserResource when assigned; null otherwise.
+          type: [object, "null"]
+        last_message:
+          oneOf:
+            - $ref: "#/components/schemas/Message"
+            - type: "null"
+        needs_response:
+          description: True when the latest message is from the customer (or there are no messages).
+          type: boolean
+
+    Message:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - conversation_id
+        - sender
+        - content
+        - type
+        - media_url
+        - media_type
+        - media_metadata
+        - model_used
+        - prompt_tokens
+        - completion_tokens
+        - cost
+        - external_message_id
+        - reply_to_message_id
+        - sentiment
+        - intents
+        - cached_tokens
+        - reasoning_tokens
+        - reasoning_content
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+        conversation_id:
+          type: integer
+        sender:
+          type: string
+          enum: [user, bot, agent]
+        content:
+          type: string
+        type:
+          type: string
+          enum: [text, image, file, sticker, location, audio, video, template, flex, postback]
+        media_url:
+          type: [string, "null"]
+        media_type:
+          type: [string, "null"]
+        media_metadata:
+          type: [object, array, "null"]
+        model_used:
+          type: [string, "null"]
+        prompt_tokens:
+          type: [integer, "null"]
+        completion_tokens:
+          type: [integer, "null"]
+        cost:
+          type: [number, "null"]
+          description: USD cost, float with up to 6 decimals; null when the message used no billable model.
+        external_message_id:
+          type: [string, "null"]
+        reply_to_message_id:
+          type: [string, "null"]
+        sentiment:
+          type: [string, "null"]
+        intents:
+          type: [array, "null"]
+        cached_tokens:
+          type: [integer, "null"]
+        reasoning_tokens:
+          type: [integer, "null"]
+        reasoning_content:
+          type: [string, "null"]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PaginationLinks:
+      type: object
+      additionalProperties: false
+      required: [first, last, prev, next]
+      properties:
+        first:
+          type: [string, "null"]
+        last:
+          type: [string, "null"]
+        prev:
+          type: [string, "null"]
+        next:
+          type: [string, "null"]
+
+    PaginationMetaLink:
+      type: object
+      additionalProperties: false
+      required: [url, label, page, active]
+      properties:
+        url:
+          type: [string, "null"]
+        label:
+          type: string
+        page:
+          type: [integer, "null"]
+        active:
+          type: boolean
+
+    StatusCounts:
+      type: object
+      additionalProperties: false
+      required: [active, closed, handover, total, needs_response, waiting_customer]
+      properties:
+        active:
+          type: integer
+        closed:
+          type: integer
+        handover:
+          type: integer
+        total:
+          type: integer
+        needs_response:
+          type: integer
+        waiting_customer:
+          type: integer
+
+    ConversationListMeta:
+      type: object
+      additionalProperties: false
+      required:
+        - current_page
+        - from
+        - last_page
+        - links
+        - path
+        - per_page
+        - to
+        - total
+        - status_counts
+      properties:
+        current_page:
+          type: integer
+        from:
+          type: [integer, "null"]
+        last_page:
+          type: integer
+        links:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaginationMetaLink"
+        path:
+          type: string
+        per_page:
+          type: integer
+        to:
+          type: [integer, "null"]
+        total:
+          type: integer
+        status_counts:
+          $ref: "#/components/schemas/StatusCounts"
+
+    MessageListMeta:
+      type: object
+      additionalProperties: false
+      required: [current_page, from, last_page, links, path, per_page, to, total]
+      properties:
+        current_page:
+          type: integer
+        from:
+          type: [integer, "null"]
+        last_page:
+          type: integer
+        links:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaginationMetaLink"
+        path:
+          type: string
+        per_page:
+          type: integer
+        to:
+          type: [integer, "null"]
+        total:
+          type: integer
+
+    ConversationListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, links, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Conversation"
+        links:
+          $ref: "#/components/schemas/PaginationLinks"
+        meta:
+          $ref: "#/components/schemas/ConversationListMeta"
+
+    MessageListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, links, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+        links:
+          $ref: "#/components/schemas/PaginationLinks"
+        meta:
+          $ref: "#/components/schemas/MessageListMeta"
+
+    # ---------- errors (legacy {message, errors} style — kept by decision) ----------
+    UnauthorizedError:
+      type: object
+      additionalProperties: false
+      required: [message, error]
+      properties:
+        message:
+          type: string
+          const: Unauthenticated.
+        error:
+          type: string
+          const: Token expired or invalid. Please login again.
+
+    ForbiddenError:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          type: string
+          description: Laravel's default denial — "This action is unauthorized."
+
+    NotFoundError:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          type: string
+          description: '"Conversation not found" for a conversation outside the bot; otherwise Laravel''s default 404 message.'
+
+    ValidationError:
+      type: object
+      additionalProperties: false
+      required: [message, errors]
+      properties:
+        message:
+          type: string
+          description: Localized summary; may carry Laravel's "(and N more error)" suffix.
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Field name -> list of localized messages.
+
+    RateLimitError:
+      type: object
+      additionalProperties: false
+      required: [message, retry_after]
+      properties:
+        message:
+          type: string
+        retry_after:
+          type: integer
+          description: Seconds until the next attempt is allowed; mirrors the Retry-After header.
+
+    # ---------- broadcast payloads ----------
+    MessageSentConversationSnapshot:
+      type: object
+      additionalProperties: false
+      required: [id, message_count, last_message_at, needs_response, unread_count]
+      properties:
+        id:
+          type: integer
+        message_count:
+          type: integer
+        last_message_at:
+          type: [string, "null"]
+          format: date-time
+        needs_response:
+          type: boolean
+        unread_count:
+          type: integer
+
+    MessageSentPayload:
+      description: |
+        broadcastWith() of App\Events\MessageSent, event name `message.sent`,
+        on private channel `bot.{bot_id}` (client channel: private-bot.{bot_id}).
+        The conversation object is the snapshot captured at dispatch time, not
+        a fresh read.
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - conversation_id
+        - sender
+        - content
+        - type
+        - media_url
+        - media_type
+        - created_at
+        - conversation
+      properties:
+        id:
+          type: integer
+        conversation_id:
+          type: integer
+        sender:
+          type: string
+          enum: [user, bot, agent]
+        content:
+          type: string
+        type:
+          type: string
+          enum: [text, image, file, sticker, location, audio, video, template, flex, postback]
+        media_url:
+          type: [string, "null"]
+        media_type:
+          type: [string, "null"]
+        created_at:
+          type: string
+          format: date-time
+        conversation:
+          $ref: "#/components/schemas/MessageSentConversationSnapshot"
+
+    ConversationUpdatedPayload:
+      description: |
+        broadcastWith() of App\Events\ConversationUpdated, event name
+        `conversation.{update_type}`, on private channel `bot.{bot_id}`.
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - bot_id
+        - status
+        - is_handover
+        - assigned_user_id
+        - message_count
+        - last_message_at
+        - needs_response
+        - unread_count
+        - bot_auto_enable_at
+        - update_type
+        - updated_at
+      properties:
+        id:
+          type: integer
+        bot_id:
+          type: integer
+        status:
+          type: string
+          enum: [active, closed, handover]
+        is_handover:
+          type: boolean
+        assigned_user_id:
+          type: [integer, "null"]
+        message_count:
+          type: integer
+        last_message_at:
+          type: [string, "null"]
+          format: date-time
+        needs_response:
+          type: boolean
+        unread_count:
+          type: integer
+        bot_auto_enable_at:
+          type: [string, "null"]
+          format: date-time
+        update_type:
+          type: string
+          enum: [updated, created, message_received]
+          description: Dispatched values today — 'updated' (default), 'created', 'message_received'.
+        updated_at:
+          type: string
+          format: date-time
