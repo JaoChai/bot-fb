@@ -4,6 +4,7 @@ namespace Tests\Feature\Contracts;
 
 use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
+use App\Http\Resources\MessageResource;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
@@ -129,6 +130,34 @@ class AuthChatContractTest extends TestCase
         $this->assertValidAgainstContract($response->json(), 'RateLimitError', 'login 429');
     }
 
+    public function test_login_unknown_email_returns_422_and_contract_documents_no_404(): void
+    {
+        // Real behavior: an unknown but well-formed email raises a
+        // ValidationException (AuthController::login), so the response is a
+        // 422 ValidationError — there is no 404 on this operation.
+        $response = $this->postJson('/api/auth/login', [
+            'email' => 'nobody@unknown.test',
+            'password' => 'whatever-password',
+        ]);
+
+        $response->assertUnprocessable();
+        $response->assertJsonValidationErrors(['email']);
+        $this->assertValidAgainstContract($response->json(), 'ValidationError', 'login unknown email 422');
+
+        $responses = $this->contract['paths']['/api/auth/login']['post']['responses'];
+        $this->assertArrayNotHasKey(
+            '404',
+            $responses,
+            'login must not document a 404 — an unknown email is answered as a 422 validation error.'
+        );
+        $this->assertArrayHasKey('422', $responses);
+        $this->assertStringContainsStringIgnoringCase(
+            'unknown email',
+            (string) $responses['422']['description'],
+            'The login 422 description must mention the unknown-email case.'
+        );
+    }
+
     // ------------------------------------------------------------------
     // listConversations
     // ------------------------------------------------------------------
@@ -228,6 +257,54 @@ class AuthChatContractTest extends TestCase
         $this->assertValidAgainstContract($body, 'ForbiddenError', 'listConversationMessages 403');
         $this->assertArrayNotHasKey('data', $body, 'A 403 refusal must not carry any message data.');
         $this->assertStringNotContainsString('customer-secret-message', $response->getContent());
+    }
+
+    // ------------------------------------------------------------------
+    // Message type: postback (Facebook postbacks are persisted as messages)
+    // ------------------------------------------------------------------
+
+    /**
+     * Build an unsaved postback Message. The sqlite test schema's enum check
+     * has no `postback` (the 2026-08-26 migration only alters pg/mysql), so
+     * the row is factory-made, never inserted — prod writes it via
+     * PersistUserMessageStep / ProcessFacebookWebhook.
+     */
+    private function makePostbackMessage(Conversation $conversation): Message
+    {
+        $message = Message::factory()->for($conversation)->make([
+            'sender' => 'user',
+            'content' => 'ซื้อแพ็กเกจโปร',
+            'type' => 'postback',
+        ]);
+        $message->id = 999999;
+        $message->created_at = now();
+        $message->updated_at = now();
+
+        return $message;
+    }
+
+    public function test_postback_message_resource_matches_contract(): void
+    {
+        $owner = User::factory()->owner()->create();
+        $bot = Bot::factory()->for($owner)->create();
+        $conversation = Conversation::factory()->for($bot)->create();
+
+        $payload = MessageResource::make($this->makePostbackMessage($conversation))->resolve();
+
+        $this->assertSame('postback', $payload['type']);
+        $this->assertValidAgainstContract($payload, 'Message', 'postback message via MessageResource');
+    }
+
+    public function test_message_sent_postback_payload_matches_contract(): void
+    {
+        $owner = User::factory()->owner()->create();
+        $bot = Bot::factory()->for($owner)->create();
+        $conversation = Conversation::factory()->for($bot)->create(['unread_count' => 1]);
+
+        $event = new MessageSent($this->makePostbackMessage($conversation));
+
+        $this->assertSame('postback', $event->broadcastWith()['type']);
+        $this->assertValidAgainstContract($event->broadcastWith(), 'MessageSentPayload', 'postback MessageSent payload');
     }
 
     // ------------------------------------------------------------------

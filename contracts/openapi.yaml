@@ -79,14 +79,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
-        "404":
-          description: Email not found in the system (raised as a 422-style validation error).
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ValidationError"
         "422":
-          description: Validation failed (bad email format, missing password, wrong password).
+          description: |
+            Validation failed (unknown email, bad email format, missing
+            password, wrong password). An unknown email is answered with the
+            same {message, errors.email} shape — this operation has no 404.
           content:
             application/json:
               schema:
@@ -503,7 +500,7 @@ components:
           type: string
         type:
           type: string
-          enum: [text, image, file, sticker, location, audio, video, template, flex]
+          enum: [text, image, file, sticker, location, audio, video, template, flex, postback]
         media_url:
           type: [string, "null"]
         media_type:
@@ -779,7 +776,7 @@ components:
           type: string
         type:
           type: string
-          enum: [text, image, file, sticker, location, audio, video, template, flex]
+          enum: [text, image, file, sticker, location, audio, video, template, flex, postback]
         media_url:
           type: [string, "null"]
         media_type:
