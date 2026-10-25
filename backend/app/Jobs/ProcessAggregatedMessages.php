@@ -21,7 +21,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -55,6 +54,27 @@ class ProcessAggregatedMessages implements ShouldQueue
     public ?int $queuedAtMs = null;
 
     /**
+     * Review round 1 (blocking #1): how many times this job has already
+     * re-queued itself while another worker held the response lease.
+     * Lives in the JOB PAYLOAD (serialized with the job), not in the cache,
+     * so the wait chain survives a full Redis outage.
+     */
+    public int $leaseWaitAttempts = 0;
+
+    /**
+     * Lease-wait budget. Each re-dispatch waits at least MIN seconds, so the
+     * chain provably outlasts the fence: 45 attempts × 5 s = 225 s >
+     * ConversationResponseLease::TTL_SECONDS (210 s, which itself exceeds the
+     * 200 s job timeout). While a holder is live the wait is capped at MAX,
+     * so a normal reply lands within seconds of the holder releasing.
+     */
+    public const MAX_LEASE_WAIT_ATTEMPTS = 45;
+
+    private const MIN_LEASE_RETRY_SECONDS = 5;
+
+    private const MAX_LEASE_RETRY_SECONDS = 10;
+
+    /**
      * Create a new job instance.
      */
     public function __construct(
@@ -62,10 +82,12 @@ class ProcessAggregatedMessages implements ShouldQueue
         public Conversation $conversation,
         public string $groupId,
         public string $externalUserId,
-        ?int $intendedDebounceMs = null
+        ?int $intendedDebounceMs = null,
+        int $leaseWaitAttempts = 0
     ) {
         $this->intendedDebounceMs = $intendedDebounceMs;
         $this->queuedAtMs = ReplyPhaseTimingCollector::clock();
+        $this->leaseWaitAttempts = $leaseWaitAttempts;
     }
 
     /**
@@ -165,7 +187,7 @@ class ProcessAggregatedMessages implements ShouldQueue
         // Acquire the per-conversation response lease and attempt to generate.
         // DB-backed: the fence holds even while Redis is down.
         $leases ??= app(ConversationResponseLease::class);
-        $leaseToken = $this->acquireResponseLease($leases, $aggregationService);
+        $leaseToken = $this->acquireResponseLease($leases);
         if ($leaseToken === null) {
             return;
         }
@@ -359,73 +381,60 @@ class ProcessAggregatedMessages implements ShouldQueue
      * outages) to prevent concurrent AI responses.
      * Returns the lease token on success, null when another worker holds the
      * conversation's response fence.
+     *
+     * The waiting side never depends on Redis (review round 1): the attempt
+     * budget rides in this job's payload and the remaining fence time is read
+     * from the database, so a cache outage cannot orphan a pending group.
      */
-    private function acquireResponseLease(
-        ConversationResponseLease $leases,
-        MessageAggregationService $aggregationService
-    ): ?string {
+    private function acquireResponseLease(ConversationResponseLease $leases): ?string
+    {
         $conversationId = $this->conversation->id;
-        $redispatchKey = "ai_response_redispatch:{$conversationId}:{$this->groupId}";
 
         $token = $leases->acquire($conversationId);
 
         if ($token !== null) {
-            // Clean up re-dispatch counter on successful acquisition
-            try {
-                Cache::forget($redispatchKey);
-            } catch (Throwable) {
-                // Advisory counter only.
-            }
-
             return $token;
         }
 
-        // Limit re-dispatch attempts to prevent infinite loop
-        try {
-            $attempts = (int) Cache::get($redispatchKey, 0);
-        } catch (Throwable) {
-            // Redis down: the counter is unreadable, so a bounded re-dispatch
-            // chain cannot be tracked. The lease holder will reply; keep the
-            // group row so nothing pending is dropped.
-            Log::info('Aggregation: response lease held, redispatch counter unreadable (cache down)', [
+        // The fence is held. Bound the wait WITHOUT the cache: every re-dispatch
+        // waits at least MIN_LEASE_RETRY_SECONDS, so the chain covers the full
+        // lease TTL (45 × 5 s = 225 s > 210 s) — a holder legitimately generating
+        // for minutes, or a stale lease after a hard kill, can never outlive it.
+        if ($this->leaseWaitAttempts >= self::MAX_LEASE_WAIT_ATTEMPTS) {
+            // Review round 1 (blocking #1): the budget running out must NEVER
+            // clear unsent work. Leave the authoritative row so the customer's
+            // next message continues this group with a fresh job + full budget.
+            Log::warning('Aggregation: lease-wait budget exhausted, group kept for the next message', [
                 'conversation_id' => $conversationId,
                 'group_id' => $this->groupId,
+                'attempts' => $this->leaseWaitAttempts,
             ]);
 
             return null;
         }
 
-        if ($attempts >= 3) {
-            Log::warning('Aggregation: max re-dispatch attempts reached', [
-                'conversation_id' => $conversationId,
-                'group_id' => $this->groupId,
-                'attempts' => $attempts,
-            ]);
-            try {
-                Cache::forget($redispatchKey);
-            } catch (Throwable) {
-                // Advisory counter only.
-            }
-            $aggregationService->clearAggregation($conversationId);
-
-            return null;
-        }
-
-        try {
-            Cache::put($redispatchKey, $attempts + 1, now()->addMinutes(5));
-        } catch (Throwable) {
-            // Without a countable attempt we cannot bound the chain.
-            return null;
-        }
+        $remaining = $leases->secondsRemaining($conversationId);
+        $delaySeconds = max(
+            self::MIN_LEASE_RETRY_SECONDS,
+            min($remaining + 2, self::MAX_LEASE_RETRY_SECONDS)
+        );
 
         Log::info('Aggregation: response lease held, re-dispatching', [
             'conversation_id' => $conversationId,
-            'attempt' => $attempts + 1,
+            'group_id' => $this->groupId,
+            'attempt' => $this->leaseWaitAttempts + 1,
+            'lease_seconds_remaining' => $remaining,
+            'redispatch_delay_seconds' => $delaySeconds,
         ]);
-        // Re-dispatch with shorter delay
+
         ProcessAggregatedMessages::dispatch(
-            $this->bot, $this->conversation, $this->groupId, $this->externalUserId
-        )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds(5));
+            $this->bot,
+            $this->conversation,
+            $this->groupId,
+            $this->externalUserId,
+            $this->intendedDebounceMs,
+            $this->leaseWaitAttempts + 1
+        )->onConnection(QueueRouter::connection())->onQueue(QueueRouter::llmQueue())->delay(now()->addSeconds($delaySeconds));
 
         return null;
     }

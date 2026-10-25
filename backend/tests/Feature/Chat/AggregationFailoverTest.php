@@ -15,6 +15,8 @@ use App\Services\MessageAggregationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
 use RuntimeException;
@@ -141,6 +143,31 @@ class AggregationFailoverTest extends TestCase
         return Message::where('conversation_id', $this->conversation->id)
             ->where('sender', 'bot')
             ->count();
+    }
+
+    private function lastPushedJob(): ProcessAggregatedMessages
+    {
+        $pushed = Queue::pushedJobs()[ProcessAggregatedMessages::class];
+        $job = end($pushed)['job'];
+
+        $this->assertInstanceOf(ProcessAggregatedMessages::class, $job);
+
+        return $job;
+    }
+
+    private function holdLeaseFor(int $seconds): string
+    {
+        $lease = app(ConversationResponseLease::class);
+        $token = $lease->acquire($this->conversation->id);
+        $this->assertNotNull($token, 'holder acquires the response lease');
+
+        if ($seconds !== ConversationResponseLease::TTL_SECONDS) {
+            DB::table('conversation_response_leases')
+                ->where('conversation_id', $this->conversation->id)
+                ->update(['lease_until' => now()->addSeconds($seconds)]);
+        }
+
+        return $token;
     }
 
     /**
@@ -373,5 +400,133 @@ class AggregationFailoverTest extends TestCase
             $breaker->isTripped($this->bot, $this->conversation),
             'breaker must fail open instead of throwing on cache errors'
         );
+    }
+
+    /**
+     * Review round 1, blocking #1: the loser side must outlast the lease, not
+     * the old 30 s lock. A holder may legitimately own the fence for up to
+     * TTL_SECONDS = 210 s (long model time, or a stale lease after a hard
+     * kill). The old 3×5 s budget deleted the group row on its 4th run while
+     * the lease was still live — unsent work dropped. Now the waiter chain
+     * (budget carried in the job payload) keeps the group until the fence
+     * frees, then replies exactly once.
+     */
+    public function test_lease_held_beyond_old_lock_budget_group_survives_and_replies_once_after_release(): void
+    {
+        Queue::fake();
+
+        $aggregation = app(MessageAggregationService::class);
+        $group = $this->startGroup($this->userMessage('hello'), 1500);
+
+        // A live holder well past the old 30 s lock: 90 s of remaining lease.
+        $token = $this->holdLeaseFor(90);
+
+        // Four loser runs, 6 s apart — the old budget (3 × 5 s) expired here
+        // and cleared the group while nobody had replied.
+        $waiters = [];
+        $job = new ProcessAggregatedMessages($this->bot, $this->conversation, $group['group_id'], 'U_test');
+        for ($run = 1; $run <= 4; $run++) {
+            $this->travel(6)->seconds();
+            $job->handle(app(MessageAggregationService::class), $this->silentAi(), $this->silentDelivery());
+
+            $waiters[] = $job = $this->lastPushedJob();
+        }
+
+        $this->assertTrue(
+            $aggregation->isActiveGroup($this->conversation->id, $group['group_id']),
+            'unsent group must never be cleared while the lease is still live'
+        );
+
+        foreach ($waiters as $index => $waiter) {
+            $this->assertSame(
+                $index + 1,
+                $waiter->leaseWaitAttempts,
+                'the wait budget must live in the job payload, not in the (losable) cache'
+            );
+        }
+
+        // The holder finishes (or a stale lease is cleared): the waiter
+        // acquires the free fence and answers the group exactly once.
+        app(ConversationResponseLease::class)->release($this->conversation->id, $token);
+
+        $job->handle(
+            app(MessageAggregationService::class),
+            $this->aiReplyingOnce('hello'),
+            $this->deliveryExpectingOnce()
+        );
+
+        $this->assertSame(1, $this->botReplyCount(), 'group replied exactly once after the holder released');
+        $this->assertFalse($aggregation->isActiveGroup($this->conversation->id, $group['group_id']));
+    }
+
+    /**
+     * Review round 1, blocking #2: Redis down AND the lease held — the
+     * card's exact outage. The old waiter read its attempt counter from the
+     * cache, got an exception and returned without re-dispatching: the group
+     * row sat orphaned until the customer wrote again. The waiter is now
+     * Redis-independent end to end (payload budget + DB fence), so it still
+     * re-dispatches and the group is answered exactly once — with the cache
+     * throwing on every single operation.
+     */
+    public function test_cache_down_and_lease_held_still_redispatches_and_replies_once(): void
+    {
+        Queue::fake();
+
+        $aggregation = app(MessageAggregationService::class);
+        $group = $this->startGroup($this->userMessage('hello'), 1500);
+
+        // Lease held by a live holder while Redis goes down completely.
+        $token = $this->holdLeaseFor(120);
+
+        Cache::shouldReceive('get')->andThrow(new RuntimeException('redis down'));
+        Cache::shouldReceive('put')->andThrow(new RuntimeException('redis down'));
+        Cache::shouldReceive('forget')->andThrow(new RuntimeException('redis down'));
+        Cache::shouldReceive('add')->andThrow(new RuntimeException('redis down'));
+
+        $this->runJob($group['group_id'], $this->silentAi(), $this->silentDelivery());
+
+        Queue::assertPushed(ProcessAggregatedMessages::class, 1);
+        $this->assertSame(
+            1,
+            $this->lastPushedJob()->leaseWaitAttempts,
+            'the re-dispatch must happen without any readable cache'
+        );
+        $this->assertTrue(
+            $aggregation->isActiveGroup($this->conversation->id, $group['group_id']),
+            'group row kept while the waiter is parked'
+        );
+
+        // The holder finishes while Redis is still down; the parked waiter
+        // picks the group up through the DB alone and replies once.
+        app(ConversationResponseLease::class)->release($this->conversation->id, $token);
+
+        $this->lastPushedJob()->handle(
+            app(MessageAggregationService::class),
+            $this->aiReplyingOnce('hello'),
+            $this->deliveryExpectingOnce()
+        );
+
+        $this->assertSame(1, $this->botReplyCount(), 'outage group replied exactly once');
+        $this->assertFalse($aggregation->isActiveGroup($this->conversation->id, $group['group_id']));
+    }
+
+    /**
+     * Review round 1, non-blocking: recordTrigger() runs AFTER the LLM call.
+     * A cache error there must fail open (the trip counter is a cost guard,
+     * not reply correctness) and leave a log line instead of killing the job.
+     */
+    public function test_off_topic_breaker_record_trigger_fails_open_when_cache_throws(): void
+    {
+        $breaker = new OffTopicCircuitBreaker;
+
+        Cache::shouldReceive('add')->andThrow(new RuntimeException('redis down'));
+        $logged = false;
+        Log::shouldReceive('warning')->andReturnUsing(function (string $message) use (&$logged): void {
+            $logged = str_contains($message, 'Off-topic breaker');
+        });
+
+        $breaker->recordTrigger($this->bot, $this->conversation);
+
+        $this->assertTrue($logged, 'recordTrigger must log a warning when the cache throws');
     }
 }

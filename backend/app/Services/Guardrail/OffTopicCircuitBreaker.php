@@ -5,6 +5,7 @@ namespace App\Services\Guardrail;
 use App\Models\Bot;
 use App\Models\Conversation;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 /**
  * ตัดวงจรเมื่อลูกค้าคนเดียวโดน off-topic guardrail ซ้ำเกิน threshold ในบทสนทนาเดียว
@@ -37,14 +38,25 @@ class OffTopicCircuitBreaker
     {
         $key = self::cacheKey($bot->id, $conversation->id);
 
-        // Cache::add() ตั้งค่า+TTL แบบ atomic เฉพาะตอน key ไม่มีอยู่ — กัน race ที่ key
-        // หมดอายุระหว่าง has()/increment() แล้ว increment() ไปสร้าง key ใหม่แบบไม่มี TTL
-        // (นับไม่มีวันหมดอายุ = ล็อกลูกค้าถาวรแทนที่จะรีเซ็ตทุก 24 ชม.)
-        if (Cache::add($key, 1, self::TTL_SECONDS)) {
-            return;
-        }
+        try {
+            // Cache::add() ตั้งค่า+TTL แบบ atomic เฉพาะตอน key ไม่มีอยู่ — กัน race ที่ key
+            // หมดอายุระหว่าง has()/increment() แล้ว increment() ไปสร้าง key ใหม่แบบไม่มี TTL
+            // (นับไม่มีวันหมดอายุ = ล็อกลูกค้าถาวรแทนที่จะรีเซ็ตทุก 24 ชม.)
+            if (Cache::add($key, 1, self::TTL_SECONDS)) {
+                return;
+            }
 
-        Cache::increment($key);
+            Cache::increment($key);
+        } catch (\Throwable $e) {
+            // Fail open (Wave 2 #4b, review round 1): recordTrigger runs after
+            // the LLM reply — the trip counter is a cost guard, so an outage
+            // here must not fail the already-delivered reply.
+            Log::warning('Off-topic breaker: failed to record trigger', [
+                'bot_id' => $bot->id,
+                'conversation_id' => $conversation->id,
+                'exception_type' => $e::class,
+            ]);
+        }
     }
 
     public static function cacheKey(int $botId, int $conversationId): string

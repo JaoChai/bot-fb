@@ -7,6 +7,7 @@ use App\Models\Flow;
 use App\Services\FlowCacheService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Mockery;
 use RuntimeException;
 use Tests\TestCase;
@@ -62,5 +63,27 @@ class FlowCacheServiceTest extends TestCase
         app(FlowCacheService::class)->invalidateDefaultFlow(1);
 
         $this->assertTrue(true);
+    }
+
+    /**
+     * Review round 1, non-blocking: a forget() failure during a Redis outage
+     * leaves a stale cached flow for up to CACHE_TTL (1800 s) after an admin
+     * edit. The swallow stays, but the stale window must be visible in logs.
+     */
+    public function test_invalidate_logs_warning_when_cache_forget_throws(): void
+    {
+        Cache::shouldReceive('forget')->andThrow(new RuntimeException('redis down'));
+        $logged = false;
+        $warnings = 0;
+        Log::shouldReceive('warning')->andReturnUsing(function (string $message) use (&$logged, &$warnings): void {
+            $warnings++;
+            $logged = $logged || str_contains($message, 'FlowCache invalidate failed');
+        });
+
+        app(FlowCacheService::class)->invalidateBot(1);
+        app(FlowCacheService::class)->invalidateDefaultFlow(1);
+
+        $this->assertTrue($logged, 'the stale-flow window must be logged');
+        $this->assertSame(3, $warnings, 'one warning per failed forget (2 keys + default flow)');
     }
 }

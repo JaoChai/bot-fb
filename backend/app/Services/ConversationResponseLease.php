@@ -93,6 +93,33 @@ class ConversationResponseLease
         }
     }
 
+    /**
+     * Seconds until the current lease expires (0 when none or expired).
+     *
+     * The waiting side of the fence uses this to schedule its re-dispatch
+     * from the DATABASE, not Redis — a full cache outage cannot orphan a
+     * pending group (review round 1, blocking #2). When the row cannot be
+     * read at all, assume the full TTL so the waiter provably outlasts any
+     * possible holder.
+     */
+    public function secondsRemaining(int $conversationId): int
+    {
+        try {
+            $lease = $this->readLease($conversationId);
+
+            if ($lease === null) {
+                return 0;
+            }
+
+            $until = $lease->lease_until;
+            $expiresAt = $until instanceof Carbon ? $until : Carbon::parse($until);
+
+            return max(0, $expiresAt->getTimestamp() - now()->getTimestamp());
+        } catch (Throwable) {
+            return self::TTL_SECONDS;
+        }
+    }
+
     private function readLease(int $conversationId, bool $lock = false): ?object
     {
         $query = DB::table('conversation_response_leases')

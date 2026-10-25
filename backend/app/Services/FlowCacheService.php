@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Flow;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Cache service for Flow-related queries.
@@ -63,8 +64,14 @@ class FlowCacheService
         foreach ([$this->getDefaultFlowKey($botId), $this->getHasFlowsKey($botId)] as $key) {
             try {
                 Cache::forget($key);
-            } catch (\Throwable) {
-                // Best-effort: entries carry a TTL.
+            } catch (\Throwable $e) {
+                // Best-effort: entries carry a TTL (CACHE_TTL = 1800 s). But the
+                // stale window must be visible: an admin edit made during a
+                // Redis outage can serve the OLD flow for up to that long.
+                Log::warning('FlowCache invalidate failed; stale flow possible until TTL', [
+                    'bot_id' => $botId,
+                    'exception_type' => $e::class,
+                ]);
             }
         }
     }
@@ -77,8 +84,12 @@ class FlowCacheService
     {
         try {
             Cache::forget($this->getDefaultFlowKey($botId));
-        } catch (\Throwable) {
-            // Best-effort: entries carry a TTL.
+        } catch (\Throwable $e) {
+            // Same stale-window trade-off as invalidateBot().
+            Log::warning('FlowCache invalidate failed; stale flow possible until TTL', [
+                'bot_id' => $botId,
+                'exception_type' => $e::class,
+            ]);
         }
     }
 
