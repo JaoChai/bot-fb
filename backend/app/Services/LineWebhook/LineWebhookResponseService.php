@@ -13,6 +13,7 @@ use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
 use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
+use App\Services\ReplyPhaseTimingCollector;
 use App\Services\StickerReplyService;
 use App\Support\LlmJson;
 use Illuminate\Support\Facades\Log;
@@ -86,6 +87,8 @@ class LineWebhookResponseService
     {
         $conversation = $ctx->conversation;
         $userMessage = $ctx->userMessage;
+        $timing = $ctx->metadata['reply_phase_timing'] ?? null;
+        $timing = $timing instanceof ReplyPhaseTimingCollector ? $timing : null;
 
         if (! $conversation || ! $userMessage) {
             return;
@@ -94,13 +97,19 @@ class LineWebhookResponseService
         // Auto-clear stale context before AI generates response (line 500)
         $this->conversationContext->autoClearIfIdle($conversation);
 
+        // Wave 2: mark the attempt BEFORE the AI call (mirrors the legacy path).
+        // generateAndSaveResponse only catches OpenRouterException — any other
+        // exception must still leave a failed timing row.
+        $timing?->markAttempted();
+
         // Generate AI response — also persists bot Message (line 503-507)
         // Exception intentionally re-thrown: mirrors legacy lines 545-555 (throw $e)
-        $botMessage = $this->aiService->generateAndSaveResponse(
-            $ctx->bot,
-            $conversation,
-            $userMessage
-        );
+        // Wave 2: forward the timing collector only when present, so callers that
+        // pinned the 3-argument call keep matching byte-for-byte.
+        $botMessage = $timing !== null
+            ? $this->aiService->generateAndSaveResponse($ctx->bot, $conversation, $userMessage, $timing)
+            : $this->aiService->generateAndSaveResponse($ctx->bot, $conversation, $userMessage);
+        $timing?->recordBotMessage($botMessage);
 
         // Store for Stage 4 (LINE push, stats, broadcast)
         $ctx->metadata['bot_message'] = $botMessage;

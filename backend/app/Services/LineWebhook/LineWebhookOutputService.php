@@ -11,6 +11,7 @@ use App\Services\LeadRecoveryService;
 use App\Services\LINEService;
 use App\Services\MultipleBubblesService;
 use App\Services\PaymentFlexService;
+use App\Services\ReplyPhaseTimingCollector;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -91,28 +92,32 @@ class LineWebhookOutputService
 
         try {
             $content = $botMessage->content ?? '';
+            $timing = $ctx->metadata['reply_phase_timing'] ?? null;
+            $timing = $timing instanceof ReplyPhaseTimingCollector ? $timing : null;
 
             if ($content !== '') {
-                $transformed = $this->paymentFlex->tryConvertToFlex($content, $conv);
+                ReplyPhaseTimingCollector::measure($timing, 'send_ms', function () use ($bot, $ctx, $conv, $content): void {
+                    $transformed = $this->paymentFlex->tryConvertToFlex($content, $conv);
 
-                if (is_array($transformed)) {
-                    // Flex detected → send as Flex message
-                    $retryKey = $this->line->generateRetryKey();
-                    $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$transformed], $retryKey);
-                } elseif ($this->bubbles->isEnabled($bot)) {
-                    // Bubbles enabled → parse + sendBubbles
-                    $bubbleList = $this->bubbles->parseIntoBubbles($content, $bot);
-                    $this->bubbles->sendBubbles($bot, $ctx->userId(), $ctx->replyToken(), $bubbleList, $conv);
-                } else {
-                    // Plain text
-                    $retryKey = $this->line->generateRetryKey();
-                    $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$content], $retryKey);
-                }
+                    if (is_array($transformed)) {
+                        // Flex detected → send as Flex message
+                        $retryKey = $this->line->generateRetryKey();
+                        $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$transformed], $retryKey);
+                    } elseif ($this->bubbles->isEnabled($bot)) {
+                        // Bubbles enabled → parse + sendBubbles
+                        $bubbleList = $this->bubbles->parseIntoBubbles($content, $bot);
+                        $this->bubbles->sendBubbles($bot, $ctx->userId(), $ctx->replyToken(), $bubbleList, $conv);
+                    } else {
+                        // Plain text
+                        $retryKey = $this->line->generateRetryKey();
+                        $this->line->replyWithFallback($bot, $ctx->replyToken(), $ctx->userId(), [$content], $retryKey);
+                    }
+                });
             }
 
             // Flow plugins (legacy lines 530-541)
             try {
-                $this->flowPlugin->executePlugins($bot, $conv, $botMessage);
+                ReplyPhaseTimingCollector::measure($timing, 'plugin_ms', fn () => $this->flowPlugin->executePlugins($bot, $conv, $botMessage));
             } catch (\Exception $e) {
                 Log::warning('Flow plugin execution failed in LINE webhook', [
                     'conversation_id' => $conv->id,

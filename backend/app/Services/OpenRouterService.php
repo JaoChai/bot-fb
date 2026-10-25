@@ -54,7 +54,8 @@ class OpenRouterService
         ?string $fallbackModelOverride = null,
         ?int $timeout = null,
         ?array $reasoning = null,
-        ?array $responseFormat = null
+        ?array $responseFormat = null,
+        ?ReplyPhaseTimingCollector $timing = null
     ): array {
         // Model comes ONLY from caller (Connection Settings form) — no config substitution.
         // OpenRouterException (not InvalidArgumentException) so webhook paths reply with a
@@ -68,6 +69,8 @@ class OpenRouterService
         // Fallback model comes ONLY from bot settings (Connection Settings form) — no config substitution
         $fallbackModel = $fallbackModelOverride;
         $requestTimeout = $timeout ?? $this->timeout;
+
+        $primaryStart = $timing?->nowMs();
 
         try {
             // Build payload with native fallback support (OpenRouter Best Practice)
@@ -133,10 +136,16 @@ class OpenRouterService
 
             $data = $response->json();
 
+            $timing?->addMs('primary_ms', $timing->nowMs() - $primaryStart);
+
             return $this->parseResponse($data, $model);
         } catch (OpenRouterException $e) {
+            $timing?->addMs('primary_ms', $timing->nowMs() - $primaryStart);
+
             throw $e;
         } catch (\Exception $e) {
+            $timing?->addMs('primary_ms', $timing->nowMs() - $primaryStart);
+
             // A read-timeout on the primary model raises ConnectionException and aborts the
             // request client-side — before OpenRouter's server-side `models` fallback can
             // engage (that only triggers on provider errors, not slow generation). So try the
@@ -148,17 +157,25 @@ class OpenRouterService
                     'fallback' => $fallbackModel,
                 ]);
 
-                return $this->chat(
-                    $messages,
-                    $fallbackModel,
-                    $temperature,
-                    $maxTokens,
-                    useFallback: false,
-                    fallbackModelOverride: null,
-                    timeout: config('services.openrouter.timeout', 45), // fast escape — ไม่ inherit high 90s
-                    reasoning: null, // fallback ใช้ default effort ของตัวเอง ไม่รับ high มา (กัน worst-case + กัน gemini-2.5 ได้ high)
-                    responseFormat: $responseFormat,
-                );
+                $fallbackStart = $timing?->nowMs();
+                try {
+                    return $this->chat(
+                        $messages,
+                        $fallbackModel,
+                        $temperature,
+                        $maxTokens,
+                        useFallback: false,
+                        fallbackModelOverride: null,
+                        timeout: config('services.openrouter.timeout', 45), // fast escape — ไม่ inherit high 90s
+                        reasoning: null, // fallback ใช้ default effort ของตัวเอง ไม่รับ high มา (กัน worst-case + กัน gemini-2.5 ได้ high)
+                        responseFormat: $responseFormat,
+                    );
+                } finally {
+                    // Wave 2: fallback time is recorded even when the fallback
+                    // itself fails — the 90+45s worst case must still reach the
+                    // report instead of vanishing.
+                    $timing?->addMs('fallback_ms', $timing->nowMs() - $fallbackStart);
+                }
             }
 
             Log::error('OpenRouter request failed', [
@@ -305,7 +322,8 @@ class OpenRouterService
         ?float $temperature = null,
         ?int $maxTokens = null,
         ?array $reasoning = null,
-        ?int $timeout = null
+        ?int $timeout = null,
+        ?ReplyPhaseTimingCollector $timing = null
     ): array {
         $messages = [];
 
@@ -331,7 +349,7 @@ class OpenRouterService
             'content' => $userMessage,
         ];
 
-        return $this->chat($messages, $model, $temperature, $maxTokens, true, $fallbackModel, $timeout, $reasoning);
+        return $this->chat($messages, $model, $temperature, $maxTokens, true, $fallbackModel, $timeout, $reasoning, timing: $timing);
     }
 
     /**

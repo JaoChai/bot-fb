@@ -67,7 +67,8 @@ class RAGService
         string $userMessage,
         array $conversationHistory = [],
         ?Conversation $conversation = null,
-        ?Flow $flow = null
+        ?Flow $flow = null,
+        ?ReplyPhaseTimingCollector $timing = null
     ): array {
         $bot->loadMissing(['defaultFlow.knowledgeBases']);
 
@@ -141,10 +142,14 @@ class RAGService
                 'usage' => null,
             ];
         } else {
-            $intent = $this->intentAnalysis->analyzeIntent($bot, $userMessage, [
-                'validIntents' => ['chat', 'knowledge', 'flow'],
-                'includeExamples' => true,
-            ]);
+            $intent = ReplyPhaseTimingCollector::measure(
+                $timing,
+                'intent_ms',
+                fn () => $this->intentAnalysis->analyzeIntent($bot, $userMessage, [
+                    'validIntents' => ['chat', 'knowledge', 'flow'],
+                    'includeExamples' => true,
+                ])
+            );
         }
 
         // Step 2: Detect complexity for Chain-of-Thought
@@ -170,10 +175,14 @@ class RAGService
             // Use enhanced search_query from reasoning model if available (more accurate KB search)
             $searchQuery = $intent['search_query'] ?? $userMessage;
 
-            $kbContext = $this->knowledgeBase->getKnowledgeBaseContext(
-                $bot,
-                $searchQuery,
-                $kbMetadata
+            $kbContext = ReplyPhaseTimingCollector::measure(
+                $timing,
+                'retrieval_ms',
+                fn () => $this->knowledgeBase->getKnowledgeBaseContext(
+                    $bot,
+                    $searchQuery,
+                    $kbMetadata
+                )
             );
         }
 
@@ -258,6 +267,7 @@ class RAGService
             maxTokens: $maxTokens,
             reasoning: ['effort' => $effort],
             timeout: $requestTimeout,
+            timing: $timing,
         );
 
         // Add metadata to result

@@ -12,6 +12,8 @@ use App\Services\AIService;
 use App\Services\Chat\AggregatedMessageDeliveryService;
 use App\Services\Chat\ConversationContextService;
 use App\Services\MessageAggregationService;
+use App\Services\ReplyPhaseTimingCollector;
+use App\Services\ReplyPhaseTimingRecorder;
 use App\Support\QueueRouter;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Cache\Lock;
@@ -41,14 +43,29 @@ class ProcessAggregatedMessages implements ShouldQueue
     public int $timeout = 200;
 
     /**
+     * Wave 2 timing: debounce the dispatcher intended (reported verbatim as
+     * aggregation_wait_ms; queue_wait_ms is what came ON TOP of it).
+     */
+    public ?int $intendedDebounceMs = null;
+
+    /**
+     * Wave 2 timing: when the job instance was created (= queued).
+     */
+    public ?int $queuedAtMs = null;
+
+    /**
      * Create a new job instance.
      */
     public function __construct(
         public Bot $bot,
         public Conversation $conversation,
         public string $groupId,
-        public string $externalUserId
-    ) {}
+        public string $externalUserId,
+        ?int $intendedDebounceMs = null
+    ) {
+        $this->intendedDebounceMs = $intendedDebounceMs;
+        $this->queuedAtMs = ReplyPhaseTimingCollector::clock();
+    }
 
     /**
      * Execute the job.
@@ -58,13 +75,22 @@ class ProcessAggregatedMessages implements ShouldQueue
         AIService $aiService,
         AggregatedMessageDeliveryService $delivery
     ): void {
+        // Wave 2 timing: debounce reported verbatim, queue wait measured on top.
+        $timing = ReplyPhaseTimingCollector::start($this->queuedAtMs);
+        $timing->setDebounceMs($this->intendedDebounceMs ?? 0);
+
         try {
             $this->processAggregatedMessages(
                 $aggregationService,
                 $aiService,
-                $delivery
+                $delivery,
+                $timing
             );
+            $this->writeTimingRow($timing);
         } catch (\Exception $e) {
+            $timing->setOutcome('failed');
+            $this->writeTimingRow($timing);
+
             Log::error('Failed to process aggregated messages', [
                 'bot_id' => $this->bot->id,
                 'conversation_id' => $this->conversation->id,
@@ -81,12 +107,34 @@ class ProcessAggregatedMessages implements ShouldQueue
     }
 
     /**
+     * Wave 2 timing: write the row once, best-effort, only when generation
+     * was actually attempted (early exits write nothing).
+     */
+    private function writeTimingRow(ReplyPhaseTimingCollector $timing): void
+    {
+        if (! $timing->attempted()) {
+            return;
+        }
+
+        app(ReplyPhaseTimingRecorder::class)->write(
+            $timing,
+            $timing->toRow(
+                $this->bot->id,
+                $this->conversation->id,
+                $this->job !== null ? $this->job->getJobId() : null,
+                $this->groupId,
+            )
+        );
+    }
+
+    /**
      * Process the aggregated messages.
      */
     protected function processAggregatedMessages(
         MessageAggregationService $aggregationService,
         AIService $aiService,
-        AggregatedMessageDeliveryService $delivery
+        AggregatedMessageDeliveryService $delivery,
+        ?ReplyPhaseTimingCollector $timing = null
     ): void {
         $conversationId = $this->conversation->id;
 
@@ -129,7 +177,8 @@ class ProcessAggregatedMessages implements ShouldQueue
                 $messageCount,
                 $aiService,
                 $delivery,
-                $cachedMessageIds
+                $cachedMessageIds,
+                $timing
             );
 
             if ($botMessage) {
@@ -343,7 +392,8 @@ class ProcessAggregatedMessages implements ShouldQueue
         int $messageCount,
         AIService $aiService,
         AggregatedMessageDeliveryService $delivery,
-        array $currentTurnMessageIds = []
+        array $currentTurnMessageIds = [],
+        ?ReplyPhaseTimingCollector $timing = null
     ): ?Message {
         Log::debug('[Aggregation] Generating AI response', [
             'conversation_id' => $this->conversation->id,
@@ -353,11 +403,13 @@ class ProcessAggregatedMessages implements ShouldQueue
         // Generate AI response using merged content
         // exclude ข้อความของ turn นี้ออกจาก history — mergedContent เป็นตัวแทน turn ปัจจุบันอยู่แล้ว
         try {
+            $timing?->markAttempted();
             $result = $aiService->generateResponse(
                 $this->bot,
                 $mergedContent,
                 $this->conversation,
-                excludeMessageIds: $currentTurnMessageIds
+                excludeMessageIds: $currentTurnMessageIds,
+                timing: $timing
             );
         } catch (OpenRouterException $e) {
             // Unlike the synchronous webhook path, this job calls generateResponse() (which
@@ -373,7 +425,8 @@ class ProcessAggregatedMessages implements ShouldQueue
                 'content' => $aiService->getErrorMessage($e),
                 'type' => 'text',
             ]);
-            $delivery->deliver($this->bot, $this->conversation, $botMessage, $this->externalUserId);
+            $timing?->recordBotMessage($botMessage);
+            ReplyPhaseTimingCollector::measure($timing, 'send_ms', fn () => $delivery->deliver($this->bot, $this->conversation, $botMessage, $this->externalUserId));
 
             return $botMessage;
         }
@@ -398,7 +451,8 @@ class ProcessAggregatedMessages implements ShouldQueue
 
         // Send response to channel
         if ($botMessage->content) {
-            $delivery->deliver($this->bot, $this->conversation, $botMessage, $this->externalUserId);
+            $timing?->recordBotMessage($botMessage);
+            ReplyPhaseTimingCollector::measure($timing, 'send_ms', fn () => $delivery->deliver($this->bot, $this->conversation, $botMessage, $this->externalUserId));
         }
 
         return $botMessage;
