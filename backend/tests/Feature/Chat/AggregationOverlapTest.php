@@ -588,4 +588,61 @@ class AggregationOverlapTest extends TestCase
 
         $this->assertNoPendingGroup('the skipped job must still release its group');
     }
+
+    // ------------------------------------------------------------------
+    // handOverReplyAndHandOverGroup() atomicity guard (X1 follow-up to
+    // PR #309): the holder's reply row and the group handover commit as
+    // ONE database transaction. Reviewer mutation on #309 head 10149e81 —
+    // DB::transaction( replaced by a plain closure call — kept the whole
+    // suite green, so nothing failed when a throwing handover left the
+    // reply row committed while its message ids stayed pending (the
+    // duplicate window the atomic commit exists to close).
+    // ------------------------------------------------------------------
+
+    /**
+     * handOverAnsweredIds() throws while the holder's reply is being
+     * persisted: the whole unit must roll back — no reply row, delivery
+     * never reached, and the job fails loudly (tries=1: the customer's
+     * next message re-drives the conversation).
+     */
+    public function test_holder_handover_throwing_rolls_back_the_reply_and_never_delivers(): void
+    {
+        Queue::fake();
+
+        // A MessageAggregationService whose handOverAnsweredIds() throws;
+        // every other method behaves exactly like the real one.
+        $aggregation = new class extends MessageAggregationService
+        {
+            public function handOverAnsweredIds(int $conversationId, string $groupId, array $answeredMessageIds): void
+            {
+                throw new RuntimeException('handover failed');
+            }
+        };
+        $this->app->instance(MessageAggregationService::class, $aggregation);
+
+        $msgA = $this->userMessage('ข้อความเก่า A');
+        $groupA = $aggregation->startOrContinueAggregation($this->conversation, $msgA, 1500);
+        $this->assertNotNull($groupA, 'aggregation accepted msg A');
+
+        $ai = Mockery::mock(AIService::class);
+        $ai->shouldReceive('generateResponse')->once()->andReturnUsing(
+            fn ($bot, string $userMessage): array => $this->aiReplyFor($userMessage)
+        );
+
+        $delivery = Mockery::mock(AggregatedMessageDeliveryService::class);
+        $delivery->shouldReceive('deliver')->never();
+
+        try {
+            $this->runJob($groupA['group_id'], $ai, $delivery);
+            $this->fail('the handover failure must abort the holder job');
+        } catch (RuntimeException $e) {
+            $this->assertSame('handover failed', $e->getMessage());
+        }
+
+        $this->assertSame(
+            0,
+            $this->botReplyCount(),
+            'the reply row must roll back together with the throwing handover'
+        );
+    }
 }
