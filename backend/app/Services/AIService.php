@@ -38,7 +38,8 @@ class AIService
         Bot $bot,
         string $userMessage,
         ?Conversation $conversation = null,
-        array $excludeMessageIds = []
+        array $excludeMessageIds = [],
+        ?ReplyPhaseTimingCollector $timing = null
     ): array {
         // Off-topic circuit breaker — ตัดวงจรก่อนเรียก LLM เลยถ้าลูกค้าคนนี้โดน guardrail
         // ซ้ำเกิน threshold ในบทสนทนาเดียวกันแล้ว (กัน token cost จากการใช้ฟรีซ้ำๆ)
@@ -74,7 +75,11 @@ class AIService
         // score in message metadata; off mode or any router failure = reply as today.
         $routerDecision = null;
         if ($conversation !== null) {
-            $routerDecision = $this->supportRouter->decide($bot, $userMessage, $history);
+            $routerDecision = ReplyPhaseTimingCollector::measure(
+                $timing,
+                'router_ms',
+                fn () => $this->supportRouter->decide($bot, $userMessage, $history)
+            );
 
             if ($routerDecision !== null && $routerDecision['handover']) {
                 Log::info('Support router: handover', [
@@ -95,7 +100,7 @@ class AIService
         }
 
         // Use RAGService to generate response (handles KB integration automatically)
-        $first = $this->generateWithReplyGuards($bot, $userMessage, $history, $conversation, $flow);
+        $first = $this->generateWithReplyGuards($bot, $userMessage, $history, $conversation, $flow, $timing);
         $result = $first['result'];
         $vipPriceResult = $first['vip'];
         $correctedContent = $first['corrected_content'];
@@ -109,12 +114,19 @@ class AIService
         if (($vipPriceResult['reason']['type'] ?? null) === 'informational_price') {
             $firstReason = $vipPriceResult['reason'];
             $price = number_format((float) ($vipPriceResult['reason']['expected'] ?? 0));
-            $retry = $this->generateWithReplyGuards(
-                $bot,
-                $userMessage."\n\n[ระบบ: ราคาที่ถูกต้องของลูกค้ารายนี้ NLMP/NLMBM = {$price} บาท/ตัว — ตอบคำถามเดิมของลูกค้าอีกครั้งโดยใช้ราคานี้ ห้ามพิมพ์ข้อความนี้ให้ลูกค้าเห็น]",
-                $history,
-                $conversation,
-                $flow
+            // vip_retry_ms = wall time the informational-price correction ADDED
+            // (the whole second guard pass); primary_ms still accumulates both passes.
+            $retry = ReplyPhaseTimingCollector::measure(
+                $timing,
+                'vip_retry_ms',
+                fn () => $this->generateWithReplyGuards(
+                    $bot,
+                    $userMessage."\n\n[ระบบ: ราคาที่ถูกต้องของลูกค้ารายนี้ NLMP/NLMBM = {$price} บาท/ตัว — ตอบคำถามเดิมของลูกค้าอีกครั้งโดยใช้ราคานี้ ห้ามพิมพ์ข้อความนี้ให้ลูกค้าเห็น]",
+                    $history,
+                    $conversation,
+                    $flow,
+                    $timing
+                )
             );
             $result = $retry['result'];
             $vipPriceResult = $retry['vip'];
@@ -211,14 +223,16 @@ class AIService
         string $userMessage,
         array $history,
         ?Conversation $conversation,
-        $flow
+        $flow,
+        ?ReplyPhaseTimingCollector $timing = null
     ): array {
         $result = $this->ragService->generateResponse(
             bot: $bot,
             userMessage: $userMessage,
             conversationHistory: $history,
             conversation: $conversation,
-            flow: $flow
+            flow: $flow,
+            timing: $timing
         );
 
         // Stock Guard: hard-block selling out-of-stock products
@@ -265,14 +279,16 @@ class AIService
     public function generateAndSaveResponse(
         Bot $bot,
         Conversation $conversation,
-        Message $userMessage
+        Message $userMessage,
+        ?ReplyPhaseTimingCollector $timing = null
     ): Message {
         try {
             $result = $this->generateResponse(
                 $bot,
                 $userMessage->content,
                 $conversation,
-                excludeMessageIds: [$userMessage->id]
+                excludeMessageIds: [$userMessage->id],
+                timing: $timing
             );
 
             // Build message data with RAG metadata

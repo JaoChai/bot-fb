@@ -33,6 +33,8 @@ class LinePipelineStep
     {
         $ctx = new LineCtx($shared->bot, $shared->rawEvent);
         $shared->metadata['line_ctx'] = $ctx;
+        // Wave 2 timing: hop the reply-phase collector onto the LINE context
+        $ctx->metadata['reply_phase_timing'] = $shared->metadata['reply_phase_timing'] ?? null;
 
         Log::debug('LINE webhook pipeline.start', [
             'bot_id' => $shared->bot->id,

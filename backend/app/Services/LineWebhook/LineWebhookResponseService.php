@@ -13,6 +13,7 @@ use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
 use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
+use App\Services\ReplyPhaseTimingCollector;
 use App\Services\StickerReplyService;
 use App\Support\LlmJson;
 use Illuminate\Support\Facades\Log;
@@ -86,6 +87,8 @@ class LineWebhookResponseService
     {
         $conversation = $ctx->conversation;
         $userMessage = $ctx->userMessage;
+        $timing = $ctx->metadata['reply_phase_timing'] ?? null;
+        $timing = $timing instanceof ReplyPhaseTimingCollector ? $timing : null;
 
         if (! $conversation || ! $userMessage) {
             return;
@@ -99,8 +102,10 @@ class LineWebhookResponseService
         $botMessage = $this->aiService->generateAndSaveResponse(
             $ctx->bot,
             $conversation,
-            $userMessage
+            $userMessage,
+            $timing
         );
+        $timing?->recordBotMessage($botMessage);
 
         // Store for Stage 4 (LINE push, stats, broadcast)
         $ctx->metadata['bot_message'] = $botMessage;
