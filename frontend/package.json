@@ -11,6 +11,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "check:chunks": "node scripts/check-initial-chunks.mjs",
+    "contract:generate": "openapi-typescript ../contracts/openapi.yaml -o src/types/generated/auth-chat.ts",
+    "contract:check": "openapi-typescript ../contracts/openapi.yaml -o src/types/generated/auth-chat.ts && git diff --exit-code -- src/types/generated/auth-chat.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -52,6 +54,11 @@
     "zod": "^4.2.1",
     "zustand": "^5.0.9"
   },
+  "overrides": {
+    "openapi-typescript": {
+      "typescript": "$typescript"
+    }
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
     "@playwright/test": "^1.63.0",
@@ -63,6 +70,8 @@
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^2.1.1",
     "babel-plugin-react-compiler": "^1.0.0",
     "eslint": "^10.0.0",
     "eslint-plugin-react-hooks": "^7.0.1",
@@ -70,9 +79,11 @@
     "globals": "^16.5.0",
     "jsdom": "^28.0.0",
     "msw": "^2.12.8",
+    "openapi-typescript": "^7.13.0",
     "typescript": "~6.0.0",
     "typescript-eslint": "^8.46.4",
     "vite": "^8.0.0",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "yaml": "^2.9.1"
   }
 }

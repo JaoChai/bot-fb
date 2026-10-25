@@ -57,6 +57,9 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
+      - name: Generated types match contracts/openapi.yaml
+        working-directory: frontend
+        run: npm run contract:check
       - name: Audit dependencies
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=high
