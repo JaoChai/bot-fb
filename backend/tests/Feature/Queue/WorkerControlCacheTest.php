@@ -2,9 +2,10 @@
 
 namespace Tests\Feature\Queue;
 
+use Illuminate\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Cache\Store;
-use Illuminate\Cache\Repository as CacheRepository;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
@@ -23,7 +24,7 @@ use Tests\TestCase;
  */
 class WorkerControlCacheTest extends TestCase
 {
-    use \Illuminate\Foundation\Testing\RefreshDatabase;
+    use RefreshDatabase;
 
     /**
      * Bind the default cache store to a store whose every operation throws,
