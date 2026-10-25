@@ -25,9 +25,12 @@ use App\Services\RedisFallbackSwitch;
 use App\Services\SemanticCacheService;
 use App\Services\SemanticSearchService;
 use App\Services\StockInjectionService;
+use App\Support\WorkerControlQueueManager;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Cache\CacheServiceProvider;
 use Illuminate\Database\Connection;
 use Illuminate\Http\Request;
+use Illuminate\Queue\QueueServiceProvider;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -46,6 +49,30 @@ class AppServiceProvider extends ServiceProvider
         Connection::resolverFor('pgsql', function ($connection, $database, $prefix, $config) {
             return new PostgresConnection($connection, $database, $prefix, $config);
         });
+
+        // The framework registers its cache and queue providers AFTER this
+        // one (they are deferred), and their `cache.store` / `queue`
+        // singletons would then overwrite the worker-control bindings below
+        // the first time those services resolve. Force-load both providers
+        // first so the rebindings below are final.
+        $this->app->register(CacheServiceProvider::class);
+        $this->app->register(QueueServiceProvider::class);
+
+        // Worker-control cache: Laravel resolves the repository it injects
+        // into WorkCommand/RestartCommand through the `cache.store` alias.
+        // With prod's CACHE_STORE=redis a Redis outage throws out of
+        // Worker::daemon()'s restart-signal read (Worker.php reads it BEFORE
+        // the RedisFallbackSwitch Looping hook can engage) and out of
+        // queue:restart itself. Bind that repository to the redis-independent
+        // database store so the restart signal, pause state and the worker
+        // loop never touch Redis. Business caches keep using the default
+        // store (CACHE_STORE) — only the worker control plane moves.
+        $this->app->singleton('cache.store', fn ($app) => $app['cache']->store('database'));
+
+        // Pause/resume state rides the same control store (see
+        // WorkerControlQueueManager) so queue:pause/queue:resume and the
+        // worker's pause checks agree even while Redis is down.
+        $this->app->singleton('queue', fn ($app) => new WorkerControlQueueManager($app));
 
         // Register HybridSearchService with JinaRerankerService dependency
         $this->app->singleton(HybridSearchService::class, function ($app) {
