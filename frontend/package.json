@@ -54,6 +54,11 @@
     "zod": "^4.2.1",
     "zustand": "^5.0.9"
   },
+  "overrides": {
+    "openapi-typescript": {
+      "typescript": "$typescript"
+    }
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
     "@playwright/test": "^1.63.0",
