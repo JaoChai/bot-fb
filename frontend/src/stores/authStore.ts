@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { clearSessionQueries } from '@/lib/sessionCache';
 import type { User } from '@/types/api';
 
 interface AuthState {
@@ -94,5 +95,9 @@ export const useAuthStore = create<AuthStore>()(
 if (typeof window !== 'undefined') {
   window.addEventListener('auth:logout', () => {
     useAuthStore.getState().logout();
+    // Forced logout must also drop cached queries (in memory + IndexedDB).
+    void clearSessionQueries().catch((e) =>
+      console.warn('[auth] clearing session queries failed', e)
+    );
   });
 }
