@@ -1,7 +1,8 @@
 // E2E mock data. Shapes copied from src/types/api.ts (User, Bot,
-// CustomerProfile, Conversation, Message, Flow, PaginationMeta) and the flat
+// CustomerProfile, Conversation, Message, Flow, PaginationMeta, Order,
+// OrderSummaryData, ProductOrderBreakdown, ProductStock, Slip) and the flat
 // AuthResponse contract (backend AuthController returns `user` + `token` at
-// the top level) — keep in sync with both.
+// the top level) — keep in sync with both. All values are synthetic.
 import type {
   Bot,
   Conversation,
@@ -9,7 +10,13 @@ import type {
   DashboardBotSummary,
   Flow,
   Message,
+  Order,
+  OrderSummaryData,
   PaginationMeta,
+  ProductOrderBreakdown,
+  ProductStock,
+  Slip,
+  SlipsResponse,
 } from '../src/types/api'
 
 export const user = {
@@ -156,3 +163,146 @@ export const flow = {
   created_at: '2026-01-01T00:00:00.000000Z',
   updated_at: '2026-01-01T00:00:00.000000Z',
 } satisfies Flow
+
+// ---------------------------------------------------------------------------
+// Orders (OrderController: /orders, /orders/summary, /orders/by-product)
+// ---------------------------------------------------------------------------
+
+// One completed order of two units: 2 x 750 = 1500. The page renders items as
+// "<product_name> x<quantity>" and the customer from customer_profile.
+export const order = {
+  id: 1,
+  bot_id: 1,
+  conversation_id: 1,
+  customer_profile_id: 1,
+  message_id: null,
+  total_amount: 1500,
+  payment_method: 'transfer',
+  status: 'completed',
+  channel_type: 'line',
+  raw_extraction: null,
+  notes: 'E2E order note',
+  created_at: '2026-01-01T00:00:00.000000Z',
+  updated_at: '2026-01-01T00:00:00.000000Z',
+  items: [
+    {
+      id: 1,
+      order_id: 1,
+      product_name: 'E2E Product',
+      category: 'nolimit',
+      quantity: 2,
+      unit_price: 750,
+      subtotal: 1500,
+    },
+  ],
+  customer_profile: {
+    id: 1,
+    display_name: 'E2E Customer',
+    picture_url: null,
+  },
+} satisfies Order
+
+// GET /orders/summary -> { data: OrderSummaryData } (OrderController::summary).
+export const orderSummary = {
+  summary: {
+    total_orders: 1,
+    total_revenue: 1500,
+    today_orders: 1,
+    today_revenue: 1500,
+    yesterday_orders: 0,
+    yesterday_revenue: 0,
+    this_week_orders: 1,
+    this_week_revenue: 1500,
+    this_month_orders: 1,
+    this_month_revenue: 1500,
+    all_time_orders: 1,
+    all_time_revenue: 1500,
+  },
+  time_series: [{ date: '2026-01-01', orders: 1, revenue: 1500 }],
+} satisfies OrderSummaryData
+
+// Same endpoint when the owner has no orders yet (all-zero aggregates).
+export const emptyOrderSummary = {
+  summary: {
+    total_orders: 0,
+    total_revenue: 0,
+    today_orders: 0,
+    today_revenue: 0,
+    yesterday_orders: 0,
+    yesterday_revenue: 0,
+    this_week_orders: 0,
+    this_week_revenue: 0,
+    this_month_orders: 0,
+    this_month_revenue: 0,
+    all_time_orders: 0,
+    all_time_revenue: 0,
+  },
+  time_series: [],
+} satisfies OrderSummaryData
+
+// GET /orders/by-product -> { data: ProductOrderBreakdown[] }.
+export const productBreakdown = {
+  product_name: 'E2E Product',
+  category: 'nolimit',
+  quantity_sold: 2,
+  total_revenue: 1500,
+  order_count: 1,
+} satisfies ProductOrderBreakdown
+
+// GET /product-stocks -> { data: ProductStock[] } (dashboard stock toggle).
+export const productStock = {
+  id: 1,
+  name: 'E2E Product',
+  slug: 'e2e-product',
+  aliases: [],
+  in_stock: true,
+  display_order: 1,
+  created_at: '2026-01-01T00:00:00.000000Z',
+  updated_at: '2026-01-01T00:00:00.000000Z',
+} satisfies ProductStock
+
+// ---------------------------------------------------------------------------
+// Slips (SlipController::index + SlipResource) -> SlipsResponse
+// ---------------------------------------------------------------------------
+
+export const slip = {
+  id: 1,
+  created_at: '2026-01-01T03:30:00+00:00',
+  status: 'passed',
+  status_label: 'ผ่าน',
+  amount: 1500,
+  trans_ref: 'E2ESLIP0001',
+  receiver_account: 'xxx-x-x1234-x',
+  conversation_id: 1,
+  customer_name: 'E2E Customer',
+  raw: null,
+} satisfies Slip
+
+export const slipsResponse = {
+  data: [slip],
+  meta: {
+    ...pagination,
+    per_page: 20,
+    summary: {
+      total_amount_passed: 1500,
+      count_total: 1,
+      count_abnormal: 0,
+      count_system_error: 0,
+    },
+  },
+} satisfies SlipsResponse
+
+export const emptySlipsResponse = {
+  data: [],
+  meta: {
+    ...pagination,
+    per_page: 20,
+    total: 0,
+    summary: {
+      total_amount_passed: 0,
+      count_total: 0,
+      count_abnormal: 0,
+      count_system_error: 0,
+    },
+  },
+} satisfies SlipsResponse
