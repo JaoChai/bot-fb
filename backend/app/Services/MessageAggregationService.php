@@ -195,6 +195,113 @@ class MessageAggregationService
             ]);
         }
 
+        $this->forgetLegacyKeys($conversationId);
+
+        Log::debug('Cleared aggregation data', [
+            'conversation_id' => $conversationId,
+        ]);
+    }
+
+    /**
+     * End the caller's turn while preserving any newer pending messages.
+     *
+     * X1 root fix: clearAggregation() after the holder's reply deleted the
+     * WHOLE row — including a newer group that arrived while the holder was
+     * generating. That newer message was then lost (its job found no group),
+     * and hasAlreadyResponded() would suppress it again: the just-written
+     * reply is newer than the newer message. Instead this leaves exactly the
+     * unanswered ids in the row. The save bumps the row's updated_at past
+     * the reply that was just written, which is what lets
+     * hasAlreadyResponded() tell "a reply from an earlier turn" apart from
+     * "a reply covering this group".
+     *
+     * Deleting when the row still belongs to the caller keeps
+     * clearAggregation()'s old meaning for every non-overlap completion;
+     * deleting an emptied newer row keeps one row per conversation.
+     *
+     * Best-effort, never throws. Callers must run this BEFORE releasing the
+     * response lease, so the next job can only observe the post-handover row
+     * while holding the fence.
+     */
+    public function releaseAnsweredGroup(int $conversationId, string $groupId, array $answeredMessageIds): void
+    {
+        try {
+            DB::transaction(
+                fn () => $this->handOverAnsweredIds($conversationId, $groupId, $answeredMessageIds)
+            );
+        } catch (Throwable $e) {
+            Log::warning('Failed to hand over aggregation group after reply', [
+                'conversation_id' => $conversationId,
+                'exception_type' => $e::class,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * The core of releaseAnsweredGroup() WITHOUT its own transaction and
+     * WITHOUT the best-effort catch: it throws, and it joins the CALLER's
+     * transaction.
+     *
+     * X1 round 2 (review #105): the aggregation job persists the bot reply
+     * and the handover in ONE database transaction, so a throw or a process
+     * kill around delivery leaves either NO reply or a handed-over row —
+     * never a reply whose ids are still pending in the row (the waiter
+     * would re-answer them once the lease expires). Callers that only want
+     * best-effort behaviour must use releaseAnsweredGroup().
+     */
+    public function handOverAnsweredIds(int $conversationId, string $groupId, array $answeredMessageIds): void
+    {
+        DB::table('conversations')->where('id', $conversationId)->lockForUpdate()->first();
+
+        $group = MessageAggregationGroup::where('conversation_id', $conversationId)
+            ->lockForUpdate()
+            ->first();
+
+        if ($group === null) {
+            return;
+        }
+
+        if ($group->group_id === $groupId) {
+            $group->delete();
+            $this->forgetLegacyKeys($conversationId);
+            Log::debug('Cleared aggregation data', [
+                'conversation_id' => $conversationId,
+            ]);
+
+            return;
+        }
+
+        $current = $group->message_ids ?? [];
+        $remaining = array_values(array_diff($current, $answeredMessageIds));
+
+        if ($remaining === $current) {
+            return; // none of our ids are in the newer group
+        }
+
+        if (empty($remaining)) {
+            $group->delete();
+            Log::debug('Cleared emptied newer aggregation group', [
+                'conversation_id' => $conversationId,
+            ]);
+
+            return;
+        }
+
+        // The save also bumps updated_at — hasAlreadyResponded() uses
+        // it as the turn boundary: a bot reply created before this
+        // save answered an earlier turn and must not suppress the
+        // remaining messages.
+        $group->message_ids = $remaining;
+        $group->save();
+        Log::debug('Handed unanswered messages to the newer aggregation group', [
+            'conversation_id' => $conversationId,
+            'remaining_count' => count($remaining),
+        ]);
+    }
+
+    private function forgetLegacyKeys(int $conversationId): void
+    {
         foreach ($this->legacyKeys($conversationId) as $key) {
             try {
                 Cache::forget($key);
@@ -202,10 +309,6 @@ class MessageAggregationService
                 // Best-effort: legacy keys expire on their own.
             }
         }
-
-        Log::debug('Cleared aggregation data', [
-            'conversation_id' => $conversationId,
-        ]);
     }
 
     /**
@@ -242,6 +345,21 @@ class MessageAggregationService
         $startedAt = $this->readLegacyCacheGroup($conversationId)['started_at'] ?? null;
 
         return $startedAt !== null ? (int) $startedAt : null;
+    }
+
+    /**
+     * Unix timestamp of the pending row's last mutation, or null when the
+     * group lives only in the legacy cache.
+     *
+     * Turn boundary for hasAlreadyResponded(): a bot reply created BEFORE
+     * the row was last mutated answered an earlier turn — the mutation was
+     * releaseAnsweredGroup() handing over the messages it did not answer.
+     */
+    public function getGroupUpdatedAt(int $conversationId): ?int
+    {
+        $group = $this->authoritativeGroup($conversationId);
+
+        return $group !== null ? $group->updated_at?->timestamp : null;
     }
 
     /**
