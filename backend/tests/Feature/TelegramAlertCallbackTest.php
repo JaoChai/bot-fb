@@ -245,6 +245,92 @@ class TelegramAlertCallbackTest extends TestCase
         });
     }
 
+    public function test_failed_confirm_restores_the_choice_for_another_try(): void
+    {
+        [$bot, $conv] = $this->seedPlugin();
+        // ยืนยันล้มกลางทาง (เช่น DB ล่ม) — ปุ่มต้องกลับมากดได้ (needs_choice)
+        // ไม่ใช่ติดค้าง choice_confirmed แล้วรอบหน้าโดน "ยืนยันไปแล้ว" ปลอม
+        // mock เดียวสลับพฤติกรรมตามจำนวนครั้งที่ถูกยิง: ครั้งแรกพัง ครั้งที่สองสำเร็จ
+        // (Route จำ controller จากคำขอแรกไว้ — mock() รอบที่สองไม่มีทางเข้าถึงตัวจริง)
+        $failed = false;
+        $this->mock(ManualPaymentConfirmService::class, function ($m) use (&$failed) {
+            $m->shouldReceive('confirm')->twice()->andReturnUsing(function () use (&$failed) {
+                if (! $failed) {
+                    $failed = true;
+                    throw new \RuntimeException('db down');
+                }
+
+                return ['message' => new Message, 'order_created' => true];
+            });
+        });
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $slip = $this->makeChoiceSlip($bot, $conv);
+
+        $callback = [
+            'id' => 'cb1',
+            'from' => ['id' => 111, 'first_name' => 'owner'],
+            'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
+        ];
+
+        $this->postCallback('TOK', $callback + ['data' => "po|{$slip->id}|0"])->assertOk();
+        $this->assertSame('needs_choice', $slip->fresh()->status,
+            'A failed approval left the choice consumed — the next press shows a false "already confirmed"');
+
+        // ระบบหายแล้ว กดซ้ำ → ปุ่มกลับมาใช้ได้จริง: consume ผ่าน (needs_choice → choice_confirmed)
+        // และ confirm ถูกเรียกครั้งที่สอง — mock ไม่เขียน manual_confirmed เอง (เคสยืนยันจริงไม่ mock มีเทสครอบแยก)
+        $this->postCallback('TOK', $callback + ['data' => "po|{$slip->id}|0"])->assertOk();
+
+        $this->assertSame('choice_confirmed', $slip->fresh()->status,
+            'The retry press after a restored choice must go through the consume again, not bounce');
+    }
+
+    public function test_recent_confirm_by_others_keeps_the_choice_consumed(): void
+    {
+        // ยืนยันล้มเพราะคนอื่นยืนยันเพิ่งไป (RecentManualConfirmException) = การชำระถูกยืนยันแล้วจริง
+        // → ห้ามคืน needs_choice: ปุ่มต้องยังถือว่าใช้แล้ว กดซ้ำไม่ยืนยันซ้ำ
+        [$bot, $conv] = $this->seedPlugin();
+        $this->mock(ManualPaymentConfirmService::class, function ($m) {
+            $m->shouldReceive('confirm')->once()->andThrow(new RecentManualConfirmException);
+        });
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $slip = $this->makeChoiceSlip($bot, $conv);
+
+        $callback = [
+            'id' => 'cb2',
+            'from' => ['id' => 111, 'first_name' => 'owner'],
+            'message' => ['message_id' => 5, 'chat' => ['id' => 999]],
+        ];
+
+        $this->postCallback('TOK', $callback + ['data' => "po|{$slip->id}|0"])->assertOk();
+        $this->assertSame('choice_confirmed', $slip->fresh()->status,
+            'A recent-confirm-by-others must keep the choice consumed — the payment was really confirmed');
+
+        // กดซ้ำ: consume หา row needs_choice ไม่เจอ (0 แถว) → ไม่ยืนยันซ้ำ สถานะคงเดิม
+        $this->postCallback('TOK', $callback + ['data' => "po|{$slip->id}|0"])->assertOk();
+
+        $this->assertSame('choice_confirmed', $slip->fresh()->status);
+    }
+
+    private function makeChoiceSlip(Bot $bot, Conversation $conv): SlipVerification
+    {
+        return SlipVerification::create([
+            'bot_id' => $bot->id,
+            'conversation_id' => $conv->id,
+            'amount' => 1100,
+            'status' => 'needs_choice',
+            'order_source' => 'llm',
+            'reconstructed' => [
+                'items' => [['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1]],
+                'alternatives' => [
+                    [['name' => 'Nolimit Level Up+ Personal', 'total' => '1100', 'qty' => 1]],
+                    [['name' => 'Nolimit Level Up+ BM', 'total' => '1100', 'qty' => 1]],
+                ],
+            ],
+        ]);
+    }
+
     public function test_picking_an_option_that_does_not_exist_is_ignored(): void
     {
         [$bot, $conv] = $this->seedPlugin();

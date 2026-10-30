@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Exceptions\DeliveryAlreadyHandledException;
+use App\Exceptions\LINEException;
 use App\Jobs\MarkStockSold;
 use App\Models\AccountDelivery;
 use App\Models\Bot;
@@ -355,15 +356,18 @@ class AccountDeliveryDeliverTest extends TestCase
      * mock LINE: เก็บข้อความแต่ละ push แยกกัน (คืน closure ที่ให้ array ของ string ต่อ push)
      * $failOnCall = push ครั้งที่เท่าไรให้พัง (null = ไม่พัง)
      */
-    private function capturePushes(?int $failOnCall = null): \Closure
+    private function capturePushes(?int $failOnCall = null, bool $failWith4xx = false): \Closure
     {
         $pushes = [];
-        $this->mock(LINEService::class, function (MockInterface $mock) use (&$pushes, $failOnCall) {
+        $this->mock(LINEService::class, function (MockInterface $mock) use (&$pushes, $failOnCall, $failWith4xx) {
             $mock->shouldReceive('generateRetryKey')->andReturn('rk');
             $mock->shouldReceive('replyWithFallback')
-                ->andReturnUsing(function ($bot, $token, $userId, $messages) use (&$pushes, $failOnCall) {
+                ->andReturnUsing(function ($bot, $token, $userId, $messages) use (&$pushes, $failOnCall, $failWith4xx) {
                     if ($failOnCall !== null && count($pushes) + 1 === $failOnCall) {
-                        throw new \RuntimeException('LINE down');
+                        // 4xx = LINE ปฏิเสธชัดเจน (ไม่ถึงลูกค้า) — ต่างจากผลกำกวมที่เป็น delivery_unknown
+                        throw $failWith4xx
+                            ? new LINEException('Failed to send LINE push: rejected', 400)
+                            : new \RuntimeException('LINE down');
                     }
                     $pushes[] = implode("\n", array_column($messages, 'text'));
 
@@ -440,8 +444,9 @@ class AccountDeliveryDeliverTest extends TestCase
         }
 
         // รอบแรกถึงลูกค้าแล้ว → ขายแล้ว ห้ามกลับเข้า stock; รอบสองยังจองไว้ กดส่งใหม่ได้
+        // RuntimeException = ผล push กำกวม (ไม่มี HTTP status) → delivery_unknown: ยกเลิกไม่ได้ แต่กดส่งใหม่ได้
         $fresh = $this->delivery->fresh();
-        $this->assertSame(AccountDelivery::STATUS_RESERVED, $fresh->status);
+        $this->assertSame(AccountDelivery::STATUS_DELIVERY_UNKNOWN, $fresh->status);
         $this->assertSame(5, $fresh->items()->where('kind', 'stock')->where('status', 'delivered')->count());
         $this->assertSame(5, DB::connection('mhha_acc')->table('items_sold')->count());
         $this->assertSame(5, DB::connection('mhha_acc')->table('items_reserved')->count());
@@ -489,10 +494,10 @@ class AccountDeliveryDeliverTest extends TestCase
     public function test_cancel_after_partial_delivery_returns_only_undelivered_accounts(): void
     {
         $this->addReservedAccounts(10);
-        $this->capturePushes(failOnCall: 2);
+        $this->capturePushes(failOnCall: 2, failWith4xx: true);
         try {
             app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
-        } catch (\RuntimeException) {
+        } catch (LINEException) {
         }
 
         app(AccountDeliveryService::class)->cancel($this->delivery->fresh(), 'บูม');
@@ -506,10 +511,10 @@ class AccountDeliveryDeliverTest extends TestCase
     public function test_card_shows_partial_progress(): void
     {
         $this->addReservedAccounts(10);
-        $this->capturePushes(failOnCall: 2);
+        $this->capturePushes(failOnCall: 2, failWith4xx: true);
         try {
             app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
-        } catch (\RuntimeException) {
+        } catch (LINEException) {
         }
 
         $service = app(AccountDeliveryService::class);
@@ -522,15 +527,16 @@ class AccountDeliveryDeliverTest extends TestCase
 
     public function test_line_failure_keeps_stock_reserved(): void
     {
+        // 4xx = LINE ปฏิเสธชัดเจน รอบนี้แน่นอนว่าไม่ถึงลูกค้า → กลับ reserved กดส่งใหม่/ยกเลิกได้
         $this->mock(LINEService::class, function (MockInterface $mock) {
             $mock->shouldReceive('generateRetryKey')->andReturn('rk');
-            $mock->shouldReceive('replyWithFallback')->andThrow(new \RuntimeException('LINE down'));
+            $mock->shouldReceive('replyWithFallback')->andThrow(new LINEException('Failed to send LINE push: Invalid message', 400));
         });
 
         try {
             app(AccountDeliveryService::class)->deliver($this->delivery, 'บูม');
             $this->fail('expected exception');
-        } catch (\RuntimeException) {
+        } catch (LINEException) {
         }
 
         $this->assertSame(AccountDelivery::STATUS_RESERVED, $this->delivery->fresh()->status);

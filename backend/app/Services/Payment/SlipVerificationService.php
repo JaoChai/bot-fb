@@ -6,6 +6,7 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\SlipVerification;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -343,9 +344,8 @@ class SlipVerificationService
             ), $receiverAccount);
         }
 
-        // เช็ค 2: สลิปซ้ำ (เคย passed แล้วใน bot นี้)
-        $isDuplicate = SlipVerification::where('bot_id', $bot->id)
-            ->where('trans_ref', $transRef)
+        // เช็ค 2: สลิปซ้ำ (เคย passed แล้ว — ทั้งระบบ ไม่จำกัดบอท: สลิปเดียวใช้ยืนยันได้ครั้งเดียว)
+        $isDuplicate = SlipVerification::where('trans_ref', $transRef)
             ->where('status', 'passed')
             ->exists();
         if ($isDuplicate) {
@@ -671,6 +671,15 @@ class SlipVerificationService
                 ],
             ]);
             $result->slipVerificationId = $created->id;
+        } catch (UniqueConstraintViolationException $e) {
+            // ชน unique index (trans_ref ที่ passed ใช้ได้ครั้งเดียวทั้งระบบ — กันสอง request
+            // ผ่านเช็ค duplicate พร้อมกัน): แปลงเป็น duplicate ห้ามปล่อยผ่านเป็น passed โดยไม่มีแถวบันทึก
+            Log::warning('Slip trans_ref already used (unique index)', ['bot_id' => $bot->id, 'trans_ref' => $result->transRef]);
+
+            return new SlipVerificationResult(
+                isSlip: true, passed: false, failReason: 'duplicate',
+                amount: $result->amount, transRef: $result->transRef,
+            );
         } catch (\Throwable $e) {
             Log::error('Failed to record slip verification', ['bot_id' => $bot->id, 'error' => $e->getMessage()]);
         }
