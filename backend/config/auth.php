@@ -22,6 +22,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Registration
+    |--------------------------------------------------------------------------
+    |
+    | Public self-registration is closed by default. Set REGISTRATION_OPEN=true
+    | in the environment to allow POST /api/auth/register to create accounts.
+    |
+    */
+
+    'registration_open' => env('REGISTRATION_OPEN', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Authentication Guards
     |--------------------------------------------------------------------------
     |

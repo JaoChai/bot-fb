@@ -48,7 +48,9 @@ use Illuminate\Support\Facades\Route;
 
 // Public routes with auth rate limiting (stricter limits)
 Route::prefix('auth')->middleware('throttle.auth')->group(function () {
-    Route::post('/register', [AuthController::class, 'register'])->name('auth.register');
+    Route::post('/register', [AuthController::class, 'register'])
+        ->middleware('registration.open')
+        ->name('auth.register');
     Route::post('/login', [AuthController::class, 'login'])->name('auth.login');
 });
 

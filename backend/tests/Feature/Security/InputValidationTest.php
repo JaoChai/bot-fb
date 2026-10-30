@@ -45,6 +45,8 @@ class InputValidationTest extends TestCase
 
     public function test_registration_validates_email_format(): void
     {
+        config(['auth.registration_open' => true]);
+
         $response = $this->postJson('/api/auth/register', [
             'name' => 'Test User',
             'email' => 'not-an-email',
@@ -58,6 +60,8 @@ class InputValidationTest extends TestCase
 
     public function test_registration_enforces_strong_password(): void
     {
+        config(['auth.registration_open' => true]);
+
         $response = $this->postJson('/api/auth/register', [
             'name' => 'Test User',
             'email' => 'test@example.com',
@@ -123,6 +127,8 @@ class InputValidationTest extends TestCase
 
     public function test_passwords_are_not_sanitized(): void
     {
+        config(['auth.registration_open' => true]);
+
         // Passwords with special characters should work
         $password = 'P@ssw0rd!<>Special&*';
 
