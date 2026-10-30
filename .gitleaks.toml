@@ -1,10 +1,14 @@
 # gitleaks configuration for bot-fb.
 # Default rules stay enabled ([extend] useDefault). This file ONLY adds
-# per-finding allowlists: each block is pinned to one exact commit + exact file.
+# per-finding allowlists: each block uses condition = "AND" so it suppresses
+# ONLY the finding at that exact commit AND exact file — a new secret added
+# later in the same file is still reported.
 # 13 blocks cover all 19 findings from the 2026-10-30 CI run (41064222701).
 # Triage by the Lead 30-31 Oct 2026 per owner decision A; secret values were
 # never printed anywhere. Note: gitleaks 8.30.1 requires every allowlist to
 # carry a commits/paths check, so fingerprints-only entries are not usable.
+# Commits entries are matched as exact strings (not regexes), so they are
+# written bare, without ^/$ anchors.
 
 [extend]
 useDefault = true
@@ -12,43 +16,51 @@ useDefault = true
 # ---- test fixture: placeholder API key string in a PHPUnit test ----
 [[allowlists]]
 description = "test fixture placeholder key in IdempotencyTest (1 finding)"
-commits = ['''^949ed337003cfc815714668f2dde32bc388f7403$''']
+condition = "AND"
+commits = ['''949ed337003cfc815714668f2dde32bc388f7403''']
 paths = ['''^backend/tests/Feature/IdempotencyTest\.php$''']
 
 # ---- teaching docs (.claude/skills), placeholder-shaped example values ----
 [[allowlists]]
 description = "doc example values in creds-002 teaching rule (2 findings)"
-commits = ['''^fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c$''']
+condition = "AND"
+commits = ['''fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c''']
 paths = ['''^\.claude/skills/auth-security/rules/creds-002-encrypt-credentials\.md$''']
 
 [[allowlists]]
 description = "doc example value in security-006 teaching rule (1 finding)"
-commits = ['''^fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c$''']
+condition = "AND"
+commits = ['''fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c''']
 paths = ['''^\.claude/skills/code-review/rules/security-006-data-exposure\.md$''']
 
 [[allowlists]]
 description = "doc example values in creds-005 teaching rule (2 findings)"
-commits = ['''^fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c$''']
+condition = "AND"
+commits = ['''fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c''']
 paths = ['''^\.claude/skills/auth-security/rules/creds-005-api-key-management\.md$''']
 
 [[allowlists]]
 description = "doc examples (OPENROUTER_KEY/LINE_CHANNEL_SECRET/access_token labels) in creds-001 teaching rule (5 findings)"
-commits = ['''^fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c$''']
+condition = "AND"
+commits = ['''fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c''']
 paths = ['''^\.claude/skills/auth-security/rules/creds-001-env-secrets\.md$''']
 
 [[allowlists]]
 description = "prompt-injection teaching example (Here is your API key) in injection-004 rule (1 finding)"
-commits = ['''^fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c$''']
+condition = "AND"
+commits = ['''fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c''']
 paths = ['''^\.claude/skills/prompt-eng/rules/injection-004-output-filtering\.md$''']
 
 [[allowlists]]
 description = "skill-name bullet list, no quoted secret present - false positive (1 finding)"
-commits = ['''^fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c$''']
+condition = "AND"
+commits = ['''fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c''']
 paths = ['''^\.claude/skills/code-review/AGENTS\.md$''']
 
 [[allowlists]]
 description = "skill-name bullet list, no quoted secret present - false positive (1 finding)"
-commits = ['''^fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c$''']
+condition = "AND"
+commits = ['''fb1d84603b06e7a4f7e2c5c9b23355a5b8aea66c''']
 paths = ['''^\.claude/skills/frontend-dev/AGENTS\.md$''']
 
 # ---- bot 17 "Line บุญ" webhook URL token: LINE webhook additionally requires
@@ -56,28 +68,33 @@ paths = ['''^\.claude/skills/frontend-dev/AGENTS\.md$''']
 # cannot inject messages; bot inactive since 2025-12-31; owner accepted allowlist. ----
 [[allowlists]]
 description = "bot 17 webhook URL token (1 finding)"
-commits = ['''^5efa58f58a442e784f9cadd1ba172d8dac02f98f$''']
+condition = "AND"
+commits = ['''5efa58f58a442e784f9cadd1ba172d8dac02f98f''']
 paths = ['''^backend/routes/api\.php$''']
 
 # ---- all-caps placeholder (YOUR_TOKEN style, len 10) in curl teaching examples ----
 [[allowlists]]
 description = "placeholder curl auth header, facebook-bot-testing doc (1 finding)"
-commits = ['''^f6898e84153e02eeffa83a526712e163435a728b$''']
+condition = "AND"
+commits = ['''f6898e84153e02eeffa83a526712e163435a728b''']
 paths = ['''^\.claude/skills/facebook-bot-testing/SKILL\.md$''']
 
 [[allowlists]]
 description = "placeholder curl auth header, laravel-debugging doc (1 finding)"
-commits = ['''^f6898e84153e02eeffa83a526712e163435a728b$''']
+condition = "AND"
+commits = ['''f6898e84153e02eeffa83a526712e163435a728b''']
 paths = ['''^\.claude/skills/laravel-debugging/SKILL\.md$''']
 
 # ---- same Neon DB_PASSWORD leaked via two docs. ROTATED 31 Oct 2026 02:00-02:03
 # Bangkok; old value verified dead (login fails) by the Lead before allowlisting. ----
 [[allowlists]]
 description = "Neon DB_PASSWORD in COMPLETION_SUMMARY.md - rotated 31 Oct, dead (1 finding)"
-commits = ['''^27f5da1ae5700228e228799a90ed1385d5cbe100$''']
+condition = "AND"
+commits = ['''27f5da1ae5700228e228799a90ed1385d5cbe100''']
 paths = ['''^COMPLETION_SUMMARY\.md$''']
 
 [[allowlists]]
 description = "Neon DB_PASSWORD in DEPLOYMENT_CHECKLIST.md - rotated 31 Oct, dead (1 finding)"
-commits = ['''^9f925e881ed508891946d0cc2e66d7a171abb133$''']
+condition = "AND"
+commits = ['''9f925e881ed508891946d0cc2e66d7a171abb133''']
 paths = ['''^DEPLOYMENT_CHECKLIST\.md$''']
