@@ -3,6 +3,7 @@
 namespace App\Services\Delivery;
 
 use App\Exceptions\DeliveryAlreadyHandledException;
+use App\Exceptions\LINEException;
 use App\Jobs\MarkStockSold;
 use App\Jobs\SendDeliveryCard;
 use App\Models\AccountDelivery;
@@ -17,6 +18,7 @@ use App\Services\Payment\TelegramAlertBotService;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Ramsey\Uuid\Uuid;
 
 /**
  * งานส่งบัญชีอัตโนมัติ: จองจาก stock (mhha_acc_db) → การ์ด Telegram → ส่ง LINE → sold
@@ -479,9 +481,11 @@ class AccountDeliveryService
         }
 
         // จองสิทธิ์ส่ง: reserved → delivering ใน transaction เดียว กันกดพร้อมกัน
+        // delivery_unknown = รอบก่อนผล push กำกวม (ไม่รู้ว่าถึงลูกค้าหรือยัง) — กดส่งใหม่ได้
+        // (push ซ้ำใช้ retry key เดิม LINE จะไม่ส่งซ้ำ) แต่ cancel จะปฏิเสธ
         $delivery = DB::transaction(function () use ($delivery, $setSize) {
             $locked = AccountDelivery::whereKey($delivery->id)->lockForUpdate()->firstOrFail();
-            if ($locked->status !== AccountDelivery::STATUS_RESERVED) {
+            if (! in_array($locked->status, [AccountDelivery::STATUS_RESERVED, AccountDelivery::STATUS_DELIVERY_UNKNOWN], true)) {
                 throw new DeliveryAlreadyHandledException($locked->status);
             }
             $locked->update(['status' => AccountDelivery::STATUS_DELIVERING, 'chosen_set_size' => $setSize]);
@@ -531,10 +535,20 @@ class AccountDeliveryService
         foreach ($rounds as $round) {
             try {
                 $this->pushToLine($delivery, $round['bubbles']);
+            } catch (LINEException $e) {
+                if ($e->getCode() >= 400 && $e->getCode() < 500) {
+                    // LINE ปฏิเสธชัดเจน (4xx) = รอบนี้แน่นอนว่าไม่ถึงลูกค้า → reserved กดส่งใหม่/ยกเลิกได้
+                    $delivery->update(['status' => AccountDelivery::STATUS_RESERVED]);
+                } else {
+                    // 5xx/ไม่มี HTTP status = ไม่รู้ว่ารอบนี้ถึงมือลูกค้าหรือยัง → ห้ามกลับ reserved
+                    // (reserved = cancel คืน stock ได้ → บัญชีที่ลูกค้าอาจได้ไปแล้วถูกขายซ้ำ)
+                    $delivery->update(['status' => AccountDelivery::STATUS_DELIVERY_UNKNOWN]);
+                }
+                throw $e;
             } catch (\Throwable $e) {
-                // รอบนี้ไม่ถึงลูกค้า → กลับเป็น reserved ให้กดส่งใหม่ได้
-                // รอบก่อนหน้าที่ถึงแล้วเป็น delivered ไปแล้ว จะไม่ถูกส่งซ้ำ/คืน stock
-                $delivery->update(['status' => AccountDelivery::STATUS_RESERVED]);
+                // connection error/timeout = ไม่รู้ว่ารอบนี้ถึงมือลูกค้าหรือยัง → ห้ามกลับ reserved เหมือนกัน
+                // กดส่งใหม่ได้ (deliver รับ delivery_unknown) โดย push ซ้ำใช้ retry key เดิม LINE ไม่ส่งซ้ำ
+                $delivery->update(['status' => AccountDelivery::STATUS_DELIVERY_UNKNOWN]);
                 throw $e;
             }
             // รอบนี้ถึงลูกค้าแล้ว — ปิดเป็นส่งแล้ว/ขายแล้วทันที; อยู่นอก try ด้านบนโดยตั้งใจ:
@@ -730,8 +744,18 @@ class AccountDeliveryService
         $this->line->replyWithFallback(
             $delivery->bot, null, $delivery->conversation->external_customer_id,
             array_map(fn (string $t) => ['type' => 'text', 'text' => $t], $bubbles),
-            $this->line->generateRetryKey(),
+            $this->pushRetryKeyFor($delivery, $bubbles),
         );
+    }
+
+    /**
+     * retry key ของ push รอบนี้ — deterministic จากเนื้อหา: เนื้อหารอบเดิม = key เดิม
+     * กดส่งใหม่หลังผล push กำกวม (delivery_unknown) LINE เห็น key เดิมจะไม่ส่งซ้ำให้ลูกค้า
+     * เนื้อหาต่างไป = key ต่างไป (LINE ปฏิเสธ key เดิม+เนื้อหาใหม่ → fail-closed ปลอดภัยกว่า)
+     */
+    private function pushRetryKeyFor(AccountDelivery $delivery, array $bubbles): string
+    {
+        return (string) Uuid::uuid5(Uuid::NAMESPACE_URL, 'delivery-push|'.$delivery->id.'|'.md5(json_encode($bubbles)));
     }
 
     /**
