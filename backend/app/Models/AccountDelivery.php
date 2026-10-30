@@ -14,6 +14,9 @@ class AccountDelivery extends Model
 
     public const STATUS_DELIVERING = 'delivering';
 
+    /** ผล push กำกวม (หมดเวลา/หลุดการเชื่อมต่อ ไม่รู้ว่าของถึงลูกค้าหรือยัง) — ห้าม cancel คืน stock, กดส่งใหม่ได้ */
+    public const STATUS_DELIVERY_UNKNOWN = 'delivery_unknown';
+
     public const STATUS_DELIVERED = 'delivered';
 
     public const STATUS_CANCELED = 'canceled';
