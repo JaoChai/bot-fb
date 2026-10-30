@@ -303,6 +303,12 @@ class TelegramAlertCallbackController extends Controller
             $this->alertBot->editMessageText($token, $chatId, $messageId, '✅ <b>ยืนยันไปแล้ว</b> (โดยคนอื่นหรือทางเว็บ)');
             $this->alertBot->answerCallbackQuery($token, $cbId, 'ยืนยันไปแล้ว');
         } catch (\Throwable $e) {
+            // ยืนยันล้มเอง (ระบบล่ม ฯลฯ) → คืนปุ่มเป็น needs_choice ให้กดใหม่ได้
+            // (แบบ conditional: ถ้าคนอื่นยืนยันไประหว่างนี้ สถานะจะไม่ใช่ choice_confirmed → ไม่แตะ)
+            // เคส RecentManualConfirmException ด้านบนถือว่ายืนยันสำเร็จแล้วจริง → ปุ่มยังถูกใช้ไป
+            SlipVerification::where('id', $slip->id)
+                ->where('status', 'choice_confirmed')
+                ->update(['status' => 'needs_choice']);
             Log::error('Telegram alert pick option failed', ['slip_id' => $slipId, 'error' => $e->getMessage()]);
             $this->alertBot->answerCallbackQuery($token, $cbId, 'เกิดข้อผิดพลาด ลองใหม่หรือยืนยันในเว็บ');
         }
