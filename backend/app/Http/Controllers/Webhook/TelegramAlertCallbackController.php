@@ -278,6 +278,19 @@ class TelegramAlertCallbackController extends Controller
             return response()->json(['ok' => true]);
         }
 
+        // ปุ่มเลือกรายการ 1 ปุ่ม = ยืนยันได้ 1 ครั้ง: กิน source slip แบบ atomic
+        // (needs_choice → choice_confirmed) ก่อนยืนยัน ถ้า UPDATE ได้ 0 แถวแปลว่าปุ่มนี้ถูกใช้ไปแล้ว
+        // — ไม่ยืนยันซ้ำ แม้ guard 120 วินาทีหมดอายุไปแล้วหรือถูกข้าม
+        $consumed = SlipVerification::where('id', $slip->id)
+            ->where('status', 'needs_choice')
+            ->update(['status' => 'choice_confirmed']);
+        if ($consumed !== 1) {
+            $this->alertBot->editMessageText($token, $chatId, $messageId, '✅ <b>ยืนยันไปแล้ว</b> (โดยคนอื่นหรือทางเว็บ)');
+            $this->alertBot->answerCallbackQuery($token, $cbId, 'ยืนยันไปแล้ว');
+
+            return response()->json(['ok' => true]);
+        }
+
         $bot = $conversation->bot;
 
         try {
