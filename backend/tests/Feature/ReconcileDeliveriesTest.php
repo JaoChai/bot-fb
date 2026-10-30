@@ -106,6 +106,32 @@ class ReconcileDeliveriesTest extends TestCase
             && str_contains($r['text'] ?? '', 'เช็คแชทก่อน'));
     }
 
+    public function test_alerts_on_stuck_unknown_outcome_delivery(): void
+    {
+        // push พังแบบรู้ผลไม่ชัด (timeout) → งานค้าง delivery_unknown:
+        // ต้องเตือน "เช็คแชทก่อน ห้ามคืน stock" ไม่ใช่ปล่อยเงียบ
+        $this->makeDelivery('delivery_unknown', ['updated_at' => now()->subMinutes(30)]);
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'sendMessage')
+            && str_contains($r['text'] ?? '', 'delivery_unknown')
+            && str_contains($r['text'] ?? '', 'เช็คแชทก่อน')
+            && str_contains($r['text'] ?? '', 'ห้ามคืน stock'));
+    }
+
+    public function test_unknown_outcome_delivery_is_not_reported_as_orphan(): void
+    {
+        // งาน delivery_unknown ยังถือของไว้ (อาจถึงลูกค้าแล้ว) — แถว items_reserved ที่ชี้มัน
+        // ต้องไม่ถูกรายงานเป็น orphan "ไม่มีงาน active — คืน stock ได้"
+        $delivery = $this->makeDelivery('delivery_unknown'); // updated_at = now → ยังไม่เข้าเงื่อนไข stuck
+        $this->insertReserved(99, StockPoolService::orderRef($delivery->id));
+
+        $this->artisan('delivery:reconcile')->assertSuccessful();
+
+        Http::assertNothingSent();
+    }
+
     public function test_alerts_on_orphaned_reserved_rows(): void
     {
         // แถว reserved ที่ชี้ order_ref = bfb:9999 ซึ่งไม่มีงาน active

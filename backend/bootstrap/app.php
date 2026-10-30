@@ -3,6 +3,7 @@
 use App\Exceptions\CircuitOpenException;
 use App\Http\Middleware\CacheHeaders;
 use App\Http\Middleware\CompressResponse;
+use App\Http\Middleware\EnsureRegistrationOpen;
 use App\Http\Middleware\RedisFallbackMiddleware;
 use App\Http\Middleware\SanitizeInput;
 use App\Http\Middleware\SecurityHeaders;
@@ -69,6 +70,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'throttle.qa-inspector-read' => ThrottleRequests::class.':qa-inspector-read',
             'throttle.qa-inspector-write' => ThrottleRequests::class.':qa-inspector-write',
             'throttle.qa-report-generate' => ThrottleRequests::class.':qa-report-generate',
+            'registration.open' => EnsureRegistrationOpen::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
