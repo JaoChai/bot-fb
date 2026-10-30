@@ -17,8 +17,8 @@ use Illuminate\Support\Facades\Log;
 /**
  * ตรวจของค้างระหว่าง bot-fb กับ mhha_acc_db แล้วแจ้งเตือน (ไม่แก้เองอัตโนมัติ):
  * 1. งานค้าง 'reserving' > 10 นาที = job ตายกลางคัน
- * 2. งานค้าง 'delivering' > 10 นาที = process ตายระหว่างส่ง — ห้ามคืน stock อัตโนมัติ ให้เจ้าของเช็คแชทก่อน
- * 3. แถว items_reserved ที่ไม่มีงาน active (reserved/delivering) ชี้อยู่ = ของหลุดอยู่ใน limbo
+ * 2. งานค้าง 'delivering'/'delivery_unknown' > 10 นาที = ผลการส่งไม่ชัด — ห้ามคืน stock อัตโนมัติ ให้เจ้าของเช็คแชทก่อน
+ * 3. แถว items_reserved ที่ไม่มีงาน active (reserved/delivering/delivery_unknown) ชี้อยู่ = ของหลุดอยู่ใน limbo
  * 4. สลิปที่ผ่านแล้วแต่ไม่มีงานส่งของผูกอยู่เลย = เงินเข้าแต่ของไม่ออก
  */
 class ReconcileDeliveries extends Command
@@ -34,13 +34,19 @@ class ReconcileDeliveries extends Command
         $stuck = AccountDelivery::whereIn('status', [
             AccountDelivery::STATUS_RESERVING,
             AccountDelivery::STATUS_DELIVERING,
+            AccountDelivery::STATUS_DELIVERY_UNKNOWN,
         ])
             ->where('updated_at', '<=', now()->subMinutes(10))
             ->get();
         foreach ($stuck as $d) {
-            $hint = $d->status === AccountDelivery::STATUS_DELIVERING
-                ? 'process อาจตายระหว่างส่ง — เช็คแชทก่อนว่าลูกค้าได้ของหรือยัง ห้ามรีบคืน stock'
-                : 'job อาจตายกลางคัน';
+            if ($d->status === AccountDelivery::STATUS_DELIVERING) {
+                $hint = 'process อาจตายระหว่างส่ง — เช็คแชทก่อนว่าลูกค้าได้ของหรือยัง ห้ามรีบคืน stock';
+            } elseif ($d->status === AccountDelivery::STATUS_DELIVERY_UNKNOWN) {
+                // ผล push กำกวม: ของอาจถึงลูกค้าแล้ว — ยังถือสิทธิ์ของไว้ ห้ามคืน stock จนเช็คแชทเสร็จ
+                $hint = 'ผลส่งกำกวม อาจถึงลูกค้าแล้ว — เช็คแชทก่อน ห้ามคืน stock (กดส่งใหม่ได้ ระบบกันส่งซ้ำให้เอง)';
+            } else {
+                $hint = 'job อาจตายกลางคัน';
+            }
             $problems[] = "งาน #{$d->id} ค้างสถานะ {$d->status} ตั้งแต่ {$d->updated_at} ({$hint})";
         }
 
@@ -48,6 +54,7 @@ class ReconcileDeliveries extends Command
             AccountDelivery::STATUS_RESERVING,
             AccountDelivery::STATUS_RESERVED,
             AccountDelivery::STATUS_DELIVERING,
+            AccountDelivery::STATUS_DELIVERY_UNKNOWN,
         ])->pluck('id')->map(fn ($id) => StockPoolService::orderRef($id))->all();
 
         try {
