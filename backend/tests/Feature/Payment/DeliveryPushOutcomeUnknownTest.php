@@ -104,4 +104,59 @@ class DeliveryPushOutcomeUnknownTest extends TestCase
         $this->assertSame(1, DB::connection('mhha_acc')->table('items_sold')->count());
         $this->assertSame($firstRetryKey, $retryKeys[0], 'The retry used a different X-Line-Retry-Key — the provider could double-send');
     }
+
+    public function test_retry_keyed_push_answered_409_confirms_delivery(): void
+    {
+        // First attempt times out (outcome unknown). When the owner retries with the same
+        // X-Line-Retry-Key, the provider answers 409 Conflict — the FIRST push was already
+        // accepted, i.e. the round reached the customer. That must close the delivery as
+        // delivered: never back to "reserved" (cancel would return a sent item to stock).
+        $phase = 'fail';
+        Http::fake(function (Request $r) use (&$phase) {
+            if (str_contains($r->url(), 'api.line.me') && str_contains($r->url(), '/message/push')) {
+                if ($phase === 'fail') {
+                    throw new ConnectionException('cURL error 28: Operation timed out (simulated)');
+                }
+                if ($phase === 'conflict') {
+                    return Http::response(['message' => 'The retry key has already been accepted'], 409);
+                }
+            }
+
+            return Http::response(['ok' => true]);
+        });
+
+        try {
+            app(AccountDeliveryService::class)->deliver($this->delivery, 'admin');
+            $this->fail('expected the push failure to surface');
+        } catch (ConnectionException) {
+        }
+        $this->assertSame('delivery_unknown', $this->delivery->fresh()->status);
+
+        $phase = 'conflict';
+        $thrown = null;
+        try {
+            app(AccountDeliveryService::class)->deliver($this->delivery->fresh(), 'admin');
+        } catch (\Throwable $e) {
+            $thrown = $e;
+        }
+        $this->assertNull($thrown,
+            'A 409 on the retry-keyed push means the first push was accepted — deliver must close the round, not throw');
+
+        $fresh = $this->delivery->fresh();
+        $this->assertSame(AccountDelivery::STATUS_DELIVERED, $fresh->status,
+            'A 409 on the retry-keyed push fell back to reserved — cancel would return an item the provider already sent');
+        $this->assertSame(1, DB::connection('mhha_acc')->table('items_sold')->count(),
+            'The round was accepted by the provider but its credential never moved to sold');
+        $this->assertSame(0, DB::connection('mhha_acc')->table('items_reserved')->count());
+
+        try {
+            app(AccountDeliveryService::class)->cancel($fresh, 'admin');
+            $this->fail('cancel must refuse a delivery closed as delivered');
+        } catch (DeliveryAlreadyHandledException) {
+        }
+        $this->assertNull(
+            DB::connection('mhha_acc')->table('items_available')->where('detail', 'like', '%DUMMYCRED-uid10%')->value('detail'),
+            'The credential the provider accepted on the first push was returned to available stock',
+        );
+    }
 }

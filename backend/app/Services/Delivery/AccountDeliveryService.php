@@ -536,6 +536,14 @@ class AccountDeliveryService
             try {
                 $this->pushToLine($delivery, $round['bubbles']);
             } catch (LINEException $e) {
+                if ($e->getCode() === 409) {
+                    // 409 = retry key เดิมถูกยอมรับไปแล้ว (ส่งซ้ำหลังผลกำกวม) — LINE ปฏิเสธส่งซ้ำ
+                    // = รอบนี้ถึงลูกค้าแน่นอน → ปิดรอบเป็น delivered แล้วทำรอบถัดไป
+                    // (ห้ามกลับ reserved: cancel จะคืนของที่ลูกค้าได้ไปแล้วเข้า stock)
+                    $this->markRoundDelivered($delivery, $round['items'], $confirmedByName);
+
+                    continue;
+                }
                 if ($e->getCode() >= 400 && $e->getCode() < 500) {
                     // LINE ปฏิเสธชัดเจน (4xx) = รอบนี้แน่นอนว่าไม่ถึงลูกค้า → reserved กดส่งใหม่/ยกเลิกได้
                     $delivery->update(['status' => AccountDelivery::STATUS_RESERVED]);
