@@ -278,6 +278,12 @@ class TelegramAlertCallbackController extends Controller
             return response()->json(['ok' => true]);
         }
 
+        // Snapshot the durable confirmation boundary before consuming this choice.
+        // confirm() can throw after committing its reservation and queuing stock.
+        $lastConfirmationId = (int) SlipVerification::where('conversation_id', $conversation->id)
+            ->where('status', 'manual_confirmed')
+            ->max('id');
+
         // ปุ่มเลือกรายการ 1 ปุ่ม = ยืนยันได้ 1 ครั้ง: กิน source slip แบบ atomic
         // (needs_choice → choice_confirmed) ก่อนยืนยัน ถ้า UPDATE ได้ 0 แถวแปลว่าปุ่มนี้ถูกใช้ไปแล้ว
         // — ไม่ยืนยันซ้ำ แม้ guard 120 วินาทีหมดอายุไปแล้วหรือถูกข้าม
@@ -303,12 +309,22 @@ class TelegramAlertCallbackController extends Controller
             $this->alertBot->editMessageText($token, $chatId, $messageId, '✅ <b>ยืนยันไปแล้ว</b> (โดยคนอื่นหรือทางเว็บ)');
             $this->alertBot->answerCallbackQuery($token, $cbId, 'ยืนยันไปแล้ว');
         } catch (\Throwable $e) {
-            // ยืนยันล้มเอง (ระบบล่ม ฯลฯ) → คืนปุ่มเป็น needs_choice ให้กดใหม่ได้
-            // (แบบ conditional: ถ้าคนอื่นยืนยันไประหว่างนี้ สถานะจะไม่ใช่ choice_confirmed → ไม่แตะ)
-            // เคส RecentManualConfirmException ด้านบนถือว่ายืนยันสำเร็จแล้วจริง → ปุ่มยังถูกใช้ไป
-            SlipVerification::where('id', $slip->id)
-                ->where('status', 'choice_confirmed')
-                ->update(['status' => 'needs_choice']);
+            // An exception does not imply rollback: keep the choice consumed if
+            // confirm() committed a new reservation, even if a later side effect failed.
+            try {
+                $confirmed = SlipVerification::where('conversation_id', $conversation->id)
+                    ->where('status', 'manual_confirmed')
+                    ->where('id', '>', $lastConfirmationId)
+                    ->exists();
+                if (! $confirmed) {
+                    SlipVerification::where('id', $slip->id)
+                        ->where('status', 'choice_confirmed')
+                        ->update(['status' => 'needs_choice']);
+                }
+            } catch (\Throwable $restoreError) {
+                // If confirmation state cannot be checked/restored, fail closed.
+                Log::error('Telegram alert pick option restore failed', ['slip_id' => $slipId, 'error' => $restoreError->getMessage()]);
+            }
             Log::error('Telegram alert pick option failed', ['slip_id' => $slipId, 'error' => $e->getMessage()]);
             $this->alertBot->answerCallbackQuery($token, $cbId, 'เกิดข้อผิดพลาด ลองใหม่หรือยืนยันในเว็บ');
         }
