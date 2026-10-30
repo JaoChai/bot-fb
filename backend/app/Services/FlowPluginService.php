@@ -250,7 +250,10 @@ PROMPT,
             return false;
         }
 
-        if (! ($evaluation['triggered'] ?? false)) {
+        // triggered ต้องเป็น boolean จริง (หรือ "true"/"1") เท่านั้น — เดิมใช้ truthiness
+        // ทำให้ string "false" (truthy) กลายเป็น trigger สร้างออเดอร์เสร็จโดยไม่มีการจ่ายเงิน
+        $triggered = filter_var($evaluation['triggered'] ?? null, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        if ($triggered !== true) {
             return false;
         }
 
