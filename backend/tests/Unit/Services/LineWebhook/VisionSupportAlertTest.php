@@ -9,6 +9,7 @@ use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\AIService;
 use App\Services\Chat\ConversationContextService;
 use App\Services\LINEService;
 use App\Services\LineWebhook\LineWebhookResponseService;
@@ -18,6 +19,7 @@ use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
 use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
+use App\Services\StickerReplyService;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -173,9 +175,9 @@ class VisionSupportAlertTest extends TestCase
         ?OpenRouterService $openRouter = null,
         ?SlipVerificationService $slipVerification = null,
     ): LineWebhookResponseService {
-        $aiService = Mockery::mock(\App\Services\AIService::class);
+        $aiService = Mockery::mock(AIService::class);
         $openRouter ??= Mockery::mock(OpenRouterService::class);
-        $stickerReply = Mockery::mock(\App\Services\StickerReplyService::class);
+        $stickerReply = Mockery::mock(StickerReplyService::class);
 
         $contextService = Mockery::mock(ConversationContextService::class);
         $contextService->shouldReceive('autoClearIfIdle')->andReturn(true)->byDefault();
@@ -405,10 +407,12 @@ class VisionSupportAlertTest extends TestCase
         $this->assertInstanceOf(ResponseEnvelope::class, $ctx->response);
         $this->assertSame(self::VISION_REPLY, $ctx->response->payload);
 
-        // the failed alert only logs a warning
+        // the failed alert only logs a warning — after Http retries are exhausted
+        // the exception lands in TelegramAlertBotService::call()'s catch, which
+        // logs "Telegram alert API call failed" (method sendMessage)
         Log::shouldHaveReceived('warning')->once()->withArgs(function (string $message, array $context) {
-            return $message === 'Telegram alert API non-OK response'
-                && $context['status'] === 500;
+            return $message === 'Telegram alert API call failed'
+                && $context['method'] === 'sendMessage';
         });
         $this->assertGreaterThanOrEqual(1, $this->telegramCallCount());
 
