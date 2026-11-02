@@ -2,6 +2,7 @@
 
 namespace App\Services\Payment;
 
+use App\Models\Bot;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -29,6 +30,49 @@ class TelegramAlertBotService
     public static function esc(?string $value): string
     {
         return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
+    }
+
+    /**
+     * แจ้งเจ้าของว่า "ลูกค้าต้องการ Support" — ใช้ร่วมกันทั้ง Support Router
+     * ($detailLine = "คะแนน x.xx") และคำตอบรูปจาก vision ที่พาลูกค้าไปหาทีม
+     * Support ($detailLine = "จากรูปภาพ") ให้เป็น alert รูปแบบเดียวกัน
+     * (header เดิม + ชื่อบอท + $detailLine + 300 ตัวอักษรแรกของข้อความ, escape ทุกค่า)
+     * ไม่มีทางโยน exception — ไม่มี plugin / config หาย / API ล่ม = log แล้วจบ
+     */
+    public function notifySupportAlert(Bot $bot, string $detailLine, string $message): void
+    {
+        try {
+            $flow = $bot->defaultFlow;
+            $plugin = $flow?->plugins()
+                ->where('type', 'telegram')
+                ->where('enabled', true)
+                ->first();
+
+            if (! $plugin) {
+                Log::debug('Support router alert: no enabled telegram plugin', ['bot_id' => $bot->id]);
+
+                return;
+            }
+
+            $token = $plugin->config['access_token'] ?? '';
+            $chatId = $plugin->config['chat_id'] ?? '';
+            if (empty($token) || empty($chatId)) {
+                Log::debug('Support router alert: telegram plugin missing config', ['plugin_id' => $plugin->id]);
+
+                return;
+            }
+
+            $text = '🛠 <b>ลูกค้าต้องการ Support</b> ('.self::esc($bot->name).")\n"
+                .self::esc($detailLine)."\n"
+                .self::esc(mb_substr($message, 0, 300));
+
+            $this->sendMessage($token, $chatId, $text);
+        } catch (\Throwable $e) {
+            Log::warning('Support router alert failed', [
+                'bot_id' => $bot->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

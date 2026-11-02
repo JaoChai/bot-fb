@@ -347,41 +347,16 @@ class SupportRouterService
     }
 
     /**
-     * Telegram alert to the admin on handover (never throws — no plugin = log and continue).
+     * Telegram alert to the admin on handover — thin wrapper over the shared
+     * notifySupportAlert() (the alert code itself lives in TelegramAlertBotService,
+     * shared with the vision image path). Router alert text unchanged.
      */
     private function notifyAdmin(Bot $bot, string $latestMessage, float $score): void
     {
-        try {
-            $flow = $bot->defaultFlow;
-            $plugin = $flow?->plugins()
-                ->where('type', 'telegram')
-                ->where('enabled', true)
-                ->first();
-
-            if (! $plugin) {
-                Log::debug('Support router alert: no enabled telegram plugin', ['bot_id' => $bot->id]);
-
-                return;
-            }
-
-            $token = $plugin->config['access_token'] ?? '';
-            $chatId = $plugin->config['chat_id'] ?? '';
-            if (empty($token) || empty($chatId)) {
-                Log::debug('Support router alert: telegram plugin missing config', ['plugin_id' => $plugin->id]);
-
-                return;
-            }
-
-            $text = '🛠 <b>ลูกค้าต้องการ Support</b> ('.TelegramAlertBotService::esc($bot->name).")\n"
-                .'คะแนน '.TelegramAlertBotService::esc(number_format($score, 2))."\n"
-                .TelegramAlertBotService::esc(mb_substr($latestMessage, 0, 300));
-
-            app(TelegramAlertBotService::class)->sendMessage($token, $chatId, $text);
-        } catch (\Throwable $e) {
-            Log::warning('Support router alert failed', [
-                'bot_id' => $bot->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        app(TelegramAlertBotService::class)->notifySupportAlert(
+            $bot,
+            'คะแนน '.number_format($score, 2),
+            $latestMessage,
+        );
     }
 }

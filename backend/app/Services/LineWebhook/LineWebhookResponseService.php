@@ -4,6 +4,7 @@ namespace App\Services\LineWebhook;
 
 use App\Jobs\ReserveAccountStock;
 use App\Jobs\RetrySlipVerification;
+use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\AIService;
@@ -13,6 +14,7 @@ use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
 use App\Services\Payment\SlipVerificationResult;
 use App\Services\Payment\SlipVerificationService;
+use App\Services\Payment\TelegramAlertBotService;
 use App\Services\ReplyPhaseTimingCollector;
 use App\Services\StickerReplyService;
 use App\Support\LlmJson;
@@ -287,6 +289,19 @@ class LineWebhookResponseService
                 return;
             }
 
+            // คำตอบ vision พาลูกค้าไปหาทีม Support (มีลิงก์เดียวกับ support_handover_message,
+            // บอทเปิด support_router_mode = 'on') → แจ้งเจ้าของทาง Telegram เหมือน router handover
+            $visionSupportAlert = $this->visionReplyTargetsSupport($ctx->bot, $responseContent);
+
+            $metadata = [
+                'vision_analysis' => true,
+                'image_url' => $imageUrl,
+            ];
+
+            if ($visionSupportAlert) {
+                $metadata['support_alert'] = 'vision';
+            }
+
             // Save bot response (lines 1075-1091)
             $botMessage = $conversation->messages()->create([
                 'sender' => 'bot',
@@ -300,14 +315,17 @@ class LineWebhookResponseService
                     $result['usage']['completion_tokens'] ?? 0,
                     $result['model'] ?? $model
                 ),
-                'metadata' => [
-                    'vision_analysis' => true,
-                    'image_url' => $imageUrl,
-                ],
+                'metadata' => $metadata,
             ]);
 
             $ctx->metadata['bot_message'] = $botMessage;
             $ctx->response = ResponseEnvelope::text($responseContent);
+
+            // แจ้งเจ้าของแบบเดียวกับ router handover ("จากรูปภาพ" แทนบรรทัดคะแนน) —
+            // notifySupportAlert ไม่มีทาง throw: ส่งไม่สำเร็จ = log warning แล้วคำตอบลูกค้าเหมือนเดิม
+            if ($visionSupportAlert) {
+                app(TelegramAlertBotService::class)->notifySupportAlert($ctx->bot, 'จากรูปภาพ', $responseContent);
+            }
 
             // Vision ตัดสินเองว่าเป็นสลิป (ตอบให้ลูกค้ารอทีมงาน) ทั้งที่ EasySlip/classifier ไม่จับ —
             // ต้องมี alert ไปหาแอดมินด้วย ไม่งั้นลูกค้ารอเงียบๆ โดยไม่มีใครรู้ (ข้าม ถ้า alert ไปแล้วในรอบนี้)
@@ -378,6 +396,35 @@ class LineWebhookResponseService
         ]);
 
         return null;
+    }
+
+    /**
+     * True เมื่อคำตอบ vision พาลูกค้าไปหาทีม Support: บอทเปิด support_router_mode = 'on'
+     * และคำตอบมี URL ที่ปรากฏใน support_handover_message ของบอทเดียวกัน
+     * (สกัด URL จากข้อความ handover ด้วย https?://\S+; ข้อความ handover ไม่มี URL = ไม่เตือน)
+     * เช็คจากข้อความที่มีอยู่แล้ว — ไม่มีการเรียก model เพิ่ม
+     */
+    private function visionReplyTargetsSupport(Bot $bot, string $replyContent): bool
+    {
+        if (($bot->support_router_mode ?? 'off') !== 'on') {
+            return false;
+        }
+
+        $handoverMessage = $bot->support_handover_message;
+
+        if (! is_string($handoverMessage) || $handoverMessage === '') {
+            return false;
+        }
+
+        preg_match_all('/https?:\/\/\S+/', $handoverMessage, $matches);
+
+        foreach (array_unique($matches[0]) as $url) {
+            if (str_contains($replyContent, $url)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
