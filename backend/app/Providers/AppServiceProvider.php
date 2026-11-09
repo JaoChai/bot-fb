@@ -41,6 +41,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Predis\Connection\Resource\Exception\StreamInitException;
+use Predis\TimeoutException;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -61,13 +63,17 @@ class AppServiceProvider extends ServiceProvider
         // cache keys or values (no customer data).
         $this->app->extend('events', function ($dispatcher) {
             $dispatcher->listen(CacheFailedOver::class, function (CacheFailedOver $event): void {
-                // FailoverStore absorbs the exception: invalidate even a cached
-                // UP verdict and move later operations off Redis immediately.
-                // markDown uses file; apply rebinds to database without I/O on
-                // the failing store, so this cannot recursively fail over.
                 if ($event->storeName === 'redis') {
-                    app(RedisHealthGate::class)->markDown();
-                    app(RedisFallbackSwitch::class)->apply();
+                    $gate = app(RedisHealthGate::class);
+                    // Stalls already spent the timeout budget: do not probe
+                    // again. Other failures may be a stale worker socket after
+                    // recovery, so confirm with fresh connections first.
+                    if ($event->exception instanceof StreamInitException
+                        || $event->exception instanceof TimeoutException
+                        || ! $gate->probeFresh()) {
+                        $gate->markDown();
+                        app(RedisFallbackSwitch::class)->apply();
+                    }
                 }
 
                 Log::warning('Cache store failed over', [
