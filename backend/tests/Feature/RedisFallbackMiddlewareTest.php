@@ -48,4 +48,32 @@ class RedisFallbackMiddlewareTest extends TestCase
         $this->assertSame('database', config('session.driver'));
         $this->assertSame('array', config('cache.default'));
     }
+
+    /**
+     * Spec item 4: with the new `failover` cache baseline the middleware must
+     * behave exactly like the redis baseline.
+     */
+    public function test_swaps_failover_baseline_to_database_when_redis_down(): void
+    {
+        config(['cache.default' => 'failover']);
+
+        $gate = Mockery::mock(RedisHealthGate::class);
+        $gate->shouldReceive('isRedisUp')->andReturnFalse();
+
+        (new RedisFallbackMiddleware($gate))->handle(Request::create('/'), fn ($r) => response('ok'));
+
+        $this->assertSame('database', config('cache.default'));
+    }
+
+    public function test_keeps_failover_baseline_when_redis_up(): void
+    {
+        config(['cache.default' => 'failover']);
+
+        $gate = Mockery::mock(RedisHealthGate::class);
+        $gate->shouldReceive('isRedisUp')->andReturnTrue();
+
+        (new RedisFallbackMiddleware($gate))->handle(Request::create('/'), fn ($r) => response('ok'));
+
+        $this->assertSame('failover', config('cache.default'));
+    }
 }

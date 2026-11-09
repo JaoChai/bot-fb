@@ -44,4 +44,36 @@ class WorkerRedisFallbackTest extends TestCase
         $this->assertSame('redis', config('cache.default'));
         $this->assertSame('redis', config('session.driver'));
     }
+
+    /**
+     * Spec item 4, worker path: the new `failover` baseline must swap to
+     * database while Redis is down and be RESTORED (not overwritten with
+     * `redis`) once Redis recovers.
+     */
+    public function test_looping_event_swaps_failover_baseline_to_database_when_redis_down(): void
+    {
+        config(['cache.default' => 'failover', 'session.driver' => 'database']);
+        $this->bindGate(false);
+
+        RedisFallbackSwitch::registerWorkerHook();
+        event(new Looping('database', 'default'));
+
+        $this->assertSame('database', config('cache.default'));
+        $this->assertSame('database', config('session.driver'));
+    }
+
+    public function test_looping_event_restores_failover_baseline_after_recovery(): void
+    {
+        // Capture baseline while the failover store is the configured driver.
+        config(['cache.default' => 'failover', 'session.driver' => 'database']);
+        RedisFallbackSwitch::registerWorkerHook();
+
+        // A prior outage already swapped this worker to database.
+        config(['cache.default' => 'database']);
+        $this->bindGate(true);
+
+        event(new Looping('database', 'default'));
+
+        $this->assertSame('failover', config('cache.default'));
+    }
 }

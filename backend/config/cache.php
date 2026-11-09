@@ -59,9 +59,15 @@ return [
 
         'failover' => [
             'driver' => 'failover',
+            // Redis first for speed; the database store catches a Redis
+            // outage (2026-11-09: scheduled commands died on a network
+            // stall). FailoverStore::lock() only hands back the FIRST
+            // store's lock object, so the scheduler mutex must NOT depend
+            // on this store — routes/console.php pins Schedule::useCache
+            // to the database store instead.
             'stores' => [
+                'redis',
                 'database',
-                'array',
             ],
         ],
 

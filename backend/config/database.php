@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Str;
 use Pdo\Mysql;
+use Predis\Retry\Strategy\ExponentialBackoff;
 
 return [
 
@@ -163,8 +164,23 @@ return [
             'password' => env('REDIS_PASSWORD'),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_DB', '0'),
-            'timeout' => (float) env('REDIS_TIMEOUT', 1.0),
+            // 0.5s + one retry keeps the worst-case connect under the ~1.1s
+            // budget (LINE webhook cut-off ~1.8s) while absorbing short
+            // network stalls like the 2026-11-09 StreamInitException blip.
+            'timeout' => (float) env('REDIS_TIMEOUT', 0.5),
             'read_write_timeout' => (float) env('REDIS_READ_WRITE_TIMEOUT', 2.0),
+            // Array form is config:cache safe; PredisConnector::formatRetry
+            // builds the Predis\Retry\Retry instance from it. Predis backoff
+            // units are MICROSECONDS (usleep): worst backoff = min(cap, base)
+            // = 50ms, so worst-case connect = 0.5s + 0.05s + 0.5s ≈ 1.05s.
+            'retry' => [
+                ExponentialBackoff::class => [
+                    (int) env('REDIS_RETRY_BACKOFF_BASE_US', 50_000),
+                    (int) env('REDIS_RETRY_BACKOFF_CAP_US', 200_000),
+                    true,
+                ],
+            ],
+            'max_retries' => (int) env('REDIS_MAX_RETRIES', 1),
         ],
 
         'cache' => [
@@ -175,8 +191,17 @@ return [
             'password' => env('REDIS_PASSWORD'),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_CACHE_DB', '0'),
-            'timeout' => (float) env('REDIS_TIMEOUT', 1.0),
+            'timeout' => (float) env('REDIS_TIMEOUT', 0.5),
             'read_write_timeout' => (float) env('REDIS_READ_WRITE_TIMEOUT', 2.0),
+            // Same retry policy as the default connection (see above).
+            'retry' => [
+                ExponentialBackoff::class => [
+                    (int) env('REDIS_RETRY_BACKOFF_BASE_US', 50_000),
+                    (int) env('REDIS_RETRY_BACKOFF_CAP_US', 200_000),
+                    true,
+                ],
+            ],
+            'max_retries' => (int) env('REDIS_MAX_RETRIES', 1),
         ],
 
     ],

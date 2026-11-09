@@ -22,10 +22,13 @@ use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
 use App\Services\RAGService;
 use App\Services\RedisFallbackSwitch;
+use App\Services\RedisHealthGate;
 use App\Services\SemanticCacheService;
 use App\Services\SemanticSearchService;
 use App\Services\StockInjectionService;
+use App\Services\StreamInitRetryPredisConnector;
 use App\Support\WorkerControlQueueManager;
+use Illuminate\Cache\Events\CacheFailedOver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Connection;
 use Illuminate\Http\Request;
@@ -38,6 +41,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Predis\Connection\Resource\Exception\StreamInitException;
+use Predis\TimeoutException;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -46,6 +51,57 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Cache-layer failover visibility (2026-11-09 incident, spec item 5).
+        // Wired through an `events` extension instead of boot(): package
+        // providers (Telescope) read the DEFAULT cache store during their
+        // boot, so with CACHE_STORE=failover the outage streak can START and
+        // dispatch its only CacheFailedOver event BEFORE our boot() runs — a
+        // listener wired in boot() misses it and the process stays silent.
+        // `events` resolves inside the failover driver itself, so this fires
+        // before the first possible dispatch. The listener resolves Log
+        // lazily at dispatch time. Store name + exception class only, never
+        // cache keys or values (no customer data).
+        $this->app->extend('events', function ($dispatcher) {
+            $dispatcher->listen(CacheFailedOver::class, function (CacheFailedOver $event): void {
+                if ($event->storeName === 'redis') {
+                    $gate = app(RedisHealthGate::class);
+                    // Stalls already spent the timeout budget: do not probe
+                    // again. Other failures may be a stale worker socket after
+                    // recovery, so confirm with fresh connections first.
+                    if ($event->exception instanceof StreamInitException
+                        || $event->exception instanceof TimeoutException
+                        || ! $gate->probeFresh()) {
+                        $gate->markDown();
+                        app(RedisFallbackSwitch::class)->apply();
+                    }
+                }
+
+                Log::warning('Cache store failed over', [
+                    'store' => $event->storeName,
+                    'exception' => $event->exception::class,
+                ]);
+            });
+
+            return $dispatcher;
+        });
+
+        // Predis retry fires ONLY on connect failures — StreamInitException,
+        // the 2026-11-09 incident shape (review round 1 item 3, Lead
+        // decision B). PredisConnector::formatRetry() cannot pass a
+        // catchable list, and Predis's DEFAULT list also retries
+        // TimeoutException/ConnectionException: those fire on READ stalls
+        // after a successful connect, so a retry would double the stall
+        // latency (2.0s -> ~4.05s measured) and could re-send the lost
+        // reply of a non-idempotent command (INCR, queue push eval). The
+        // config files keep the scalar `'retry' => [ExponentialBackoff]
+        // array form (config:cache safe); the connector swaps in the
+        // restricted catchable list when a connection is built.
+        $this->app->extend('redis', function ($manager) {
+            $manager->extend('predis', fn () => new StreamInitRetryPredisConnector);
+
+            return $manager;
+        });
+
         // Register custom PostgreSQL connection for proper boolean handling
         Connection::resolverFor('pgsql', function ($connection, $database, $prefix, $config) {
             return new PostgresConnection($connection, $database, $prefix, $config);
@@ -114,6 +170,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+
         // Force HTTPS in production to prevent redirect loops
         // when behind Cloudflare/Railway reverse proxies
         if (app()->environment('production')) {

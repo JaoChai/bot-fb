@@ -49,6 +49,34 @@ class RedisHealthGate
         }
     }
 
+    /**
+     * A reset/closed cache socket does not prove an outage. Drop both stale
+     * connections and bypass the cached verdict once, without replaying the
+     * failed cache command. Neither disconnect nor ping uses FailoverStore.
+     */
+    public function probeFresh(): bool
+    {
+        try {
+            Cache::store('redis')->getStore()->connection()->disconnect();
+            Redis::connection()->disconnect();
+            $up = $this->probe();
+        } catch (\Throwable) {
+            $up = false;
+        }
+
+        $this->requestMemo = $up;
+
+        if ($up) {
+            try {
+                Cache::store('file')->put(self::CACHE_KEY, true, (int) config('redis-fallback.health_ttl', 10));
+            } catch (\Throwable) {
+                // A failed file write must not turn a successful probe DOWN.
+            }
+        }
+
+        return $up;
+    }
+
     private function probe(): bool
     {
         try {

@@ -5,8 +5,6 @@ namespace App\Http\Middleware;
 use App\Services\RedisFallbackSwitch;
 use App\Services\RedisHealthGate;
 use Closure;
-use Illuminate\Cache\RateLimiter;
-use Illuminate\Cache\RedisStore;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Log;
@@ -22,27 +20,17 @@ use Throwable;
  * The plain ThrottleRequests 500s the webhook when the limiter's cache read
  * hits dead Redis (2026-10-22 incident: the platform answered 499 after LINE
  * closed the connection). Here a Redis blip during the limiter check marks
- * the health gate down, applies the cache/session fallback, logs once, and
- * passes the request through without counting it — the event is not lost.
- * Any other exception is rethrown unchanged, and a real 429 still returns 429.
+ * the health gate down, applies the cache/session fallback — which also
+ * rebinds the RateLimiter singleton onto the database store, so later
+ * requests keep counting on a store that answers instead of calling dead
+ * Redis — logs once, and passes the request through without counting it —
+ * the event is not lost. Any other exception is rethrown unchanged, and a
+ * real 429 still returns 429.
  */
 class WebhookThrottle extends ThrottleRequests
 {
     public function handle($request, Closure $next, ...$options): Response
     {
-        // Already known down (this or an earlier request marked it, inside the
-        // health TTL) AND the bound RateLimiter still runs on the Redis store
-        // it was built with at boot: skip the limiter entirely. The singleton
-        // keeps that store — the fallback switch's config('cache.default')
-        // change cannot rebind it — so parent::handle() would still make one
-        // dead-Redis connect attempt and log one warning per webhook for the
-        // whole TTL. A limiter bound to another store (cache.default != redis)
-        // is healthy and must keep counting 429s. The fallback middleware has
-        // already switched cache/session; pass the request through uncounted.
-        if (! app(RedisHealthGate::class)->isRedisUp() && $this->boundLimiterStoreIsRedis()) {
-            return $next($request);
-        }
-
         $exceptionFromNext = false;
         $downstreamResponse = null;
 
@@ -83,21 +71,5 @@ class WebhookThrottle extends ThrottleRequests
             // header read failed, so return the response we captured.
             return $downstreamResponse ?? $next($request);
         }
-    }
-
-    /**
-     * Whether the bound RateLimiter singleton runs on the Redis cache store.
-     * That singleton is the instance ThrottleRequests' named-limiter branch
-     * uses; its cache repository is protected, so read the store it fronts
-     * through a closure bound to the limiter's own scope. Never touches
-     * Redis itself — a property read plus an instanceof check.
-     */
-    private function boundLimiterStoreIsRedis(): bool
-    {
-        $limiter = app(RateLimiter::class);
-
-        $store = Closure::bind(fn () => $this->cache->getStore(), $limiter, RateLimiter::class)();
-
-        return $store instanceof RedisStore;
     }
 }
