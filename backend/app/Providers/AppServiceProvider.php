@@ -34,7 +34,6 @@ use Illuminate\Queue\Console\RestartCommand;
 use Illuminate\Queue\Console\WorkCommand;
 use Illuminate\Queue\QueueServiceProvider;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
@@ -48,6 +47,27 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Cache-layer failover visibility (2026-11-09 incident, spec item 5).
+        // Wired through an `events` extension instead of boot(): package
+        // providers (Telescope) read the DEFAULT cache store during their
+        // boot, so with CACHE_STORE=failover the outage streak can START and
+        // dispatch its only CacheFailedOver event BEFORE our boot() runs — a
+        // listener wired in boot() misses it and the process stays silent.
+        // `events` resolves inside the failover driver itself, so this fires
+        // before the first possible dispatch. The listener resolves Log
+        // lazily at dispatch time. Store name + exception class only, never
+        // cache keys or values (no customer data).
+        $this->app->extend('events', function ($dispatcher) {
+            $dispatcher->listen(CacheFailedOver::class, function (CacheFailedOver $event): void {
+                Log::warning('Cache store failed over', [
+                    'store' => $event->storeName,
+                    'exception' => $event->exception::class,
+                ]);
+            });
+
+            return $dispatcher;
+        });
+
         // Register custom PostgreSQL connection for proper boolean handling
         Connection::resolverFor('pgsql', function ($connection, $database, $prefix, $config) {
             return new PostgresConnection($connection, $database, $prefix, $config);
@@ -116,6 +136,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+
         // Force HTTPS in production to prevent redirect loops
         // when behind Cloudflare/Railway reverse proxies
         if (app()->environment('production')) {
@@ -134,18 +155,6 @@ class AppServiceProvider extends ServiceProvider
         Order::observe(OrderObserver::class);
 
         RedisFallbackSwitch::registerWorkerHook();
-
-        // Cache-layer failover visibility (2026-11-09 incident): the
-        // failover store dispatches this once per failing streak — usually
-        // from a scheduled/artisan command whose output goes to /dev/null,
-        // so the log is the only trace. Store name + exception class only,
-        // never cache keys or values (no customer data).
-        Event::listen(CacheFailedOver::class, function (CacheFailedOver $event): void {
-            Log::warning('Cache store failed over', [
-                'store' => $event->storeName,
-                'exception' => $event->exception::class,
-            ]);
-        });
 
         $this->configureRateLimiting();
         $this->configureQueryLogging();
