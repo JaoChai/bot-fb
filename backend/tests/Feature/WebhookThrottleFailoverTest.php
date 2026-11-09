@@ -6,8 +6,10 @@ use App\Jobs\ProcessLINEWebhook;
 use App\Models\Bot;
 use App\Models\User;
 use App\Support\QueueRouter;
+use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Cache\Repository;
+use Illuminate\Contracts\Cache\Store;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -17,12 +19,13 @@ use Tests\Support\DeadRedisStoreSpy;
 use Tests\TestCase;
 
 /**
- * Spec item 4: under cache.default=failover the webhook throttle must keep
- * enforcing (and counting) even while Redis is down. The cause: the bound
- * RateLimiter store is a FailoverStore — NOT a RedisStore — so the throttle's
- * skip branch does not apply, and the FailoverStore lands every limiter read
- * and hit on the database store when the redis store throws. Throttling must
- * NOT be disabled for every failover config.
+ * Spec item 4 + review round 1 item 1 (option b): under cache.default=failover
+ * the gate-down swap must rebind the RateLimiter singleton onto the database
+ * store, so the webhook throttle keeps counting WITHOUT touching the dead
+ * Redis store the FailoverStore fronts (measured at head c13082fa: 24s per
+ * webhook while Redis was paused, because every limiter op tried Redis first).
+ * Throttling must NOT be disabled for the failover config: with a healthy
+ * redis-led store and the limiter exceeded, the response is still 429.
  */
 class WebhookThrottleFailoverTest extends TestCase
 {
@@ -60,12 +63,10 @@ class WebhookThrottleFailoverTest extends TestCase
     /**
      * Rebuild the app's RateLimiter singleton on the failover store — what
      * boot does in prod once CACHE_STORE=failover — with the redis sub-store
-     * replaced by a spy that throws like dead Redis.
+     * replaced by the given spy store.
      */
-    protected function failoverLimiterWithDeadRedis(): DeadRedisStoreSpy
+    protected function failoverLimiterWithSpyStore(Store $spy): Store
     {
-        $spy = new DeadRedisStoreSpy;
-
         config(['cache.default' => 'failover']);
 
         $cacheManager = $this->app['cache'];
@@ -80,6 +81,11 @@ class WebhookThrottleFailoverTest extends TestCase
         $rebuilt->for('webhook', $boundAtBoot->limiter('webhook'));
 
         return $spy;
+    }
+
+    protected function failoverLimiterWithDeadRedis(): DeadRedisStoreSpy
+    {
+        return $this->failoverLimiterWithSpyStore(new DeadRedisStoreSpy);
     }
 
     protected function gateDown(): void
@@ -107,11 +113,14 @@ class WebhookThrottleFailoverTest extends TestCase
     }
 
     /**
-     * The gate is already down, the limiter is bound to the FailoverStore:
-     * the skip branch must NOT apply (FailoverStore is not a RedisStore), so
-     * the limiter keeps counting through the database store.
+     * The gate is already down and the limiter is bound to the FailoverStore
+     * led by dead Redis: the gate-down swap must rebind the limiter onto the
+     * database store, so the REQUEST never touches the dead redis store and
+     * still counts — 429 when over the limit. (The seeding hits before the
+     * request legitimately attempt redis first through the FailoverStore;
+     * what must stay at zero is the dead-store work the request itself does.)
      */
-    public function test_throttling_is_not_disabled_for_failover_config_even_when_gate_is_down(): void
+    public function test_gate_down_request_never_touches_dead_redis_and_keeps_counting_429(): void
     {
         Queue::fake();
         Log::spy();
@@ -126,16 +135,50 @@ class WebhookThrottleFailoverTest extends TestCase
         for ($i = 0; $i < $limit->maxAttempts; $i++) {
             app(RateLimiter::class)->hit($key, $limit->decaySeconds);
         }
+        $touchesBeforeRequest = $spy->touches;
 
         $response = $this->postValidLineWebhook();
 
         $response->assertStatus(429);
-        $this->assertGreaterThan(0, $spy->touches, 'the dead redis store must be attempted (and failed over), not skipped by config sniffing');
+        $this->assertSame(0, $spy->touches - $touchesBeforeRequest, 'the request must not touch the dead redis store: the gate-down swap must rebind the limiter onto the database store');
         $this->assertGreaterThanOrEqual(
             $limit->maxAttempts,
             app(RateLimiter::class)->attempts($key),
             'the limiter must keep counting while Redis is down'
         );
+        Queue::assertNotPushed(ProcessLINEWebhook::class);
+        Log::shouldNotHaveReceived('warning', ['Redis blip on webhook throttle - failing open']);
+    }
+
+    /**
+     * The acceptance case as worded by the reviewer: failover config, Redis
+     * UP (the failover store's first store WORKS), limiter genuinely exceeded
+     * → 429. Throttling is never blanket-disabled for a failover config.
+     */
+    public function test_429_when_failover_redis_store_is_healthy_and_limiter_exceeded(): void
+    {
+        Queue::fake();
+        Log::spy();
+
+        $spy = $this->failoverLimiterWithSpyStore(new WorkingRedisLedStoreSpy);
+        // Deterministic on every host (CI has no live Redis): the incident
+        // premise is "the gate believed Redis was up".
+        Cache::store('file')->put('redis_health:up', true, 10);
+
+        $request = Request::create(config('app.url').'/api/webhook/x', 'POST');
+        $limit = app(RateLimiter::class)->limiter('webhook')($request);
+        $key = md5('webhook'.$limit->key);
+
+        for ($i = 0; $i < $limit->maxAttempts; $i++) {
+            app(RateLimiter::class)->hit($key, $limit->decaySeconds);
+        }
+        $touchesBeforeRequest = $spy->touches;
+
+        $response = $this->postValidLineWebhook();
+
+        $response->assertStatus(429);
+        $response->assertJson(['message' => 'Webhook rate limit exceeded.']);
+        $this->assertGreaterThan($touchesBeforeRequest, $spy->touches, 'the healthy failover limiter must keep counting through its redis-led store');
         Queue::assertNotPushed(ProcessLINEWebhook::class);
         Log::shouldNotHaveReceived('warning', ['Redis blip on webhook throttle - failing open']);
     }
@@ -174,5 +217,86 @@ class WebhookThrottleFailoverTest extends TestCase
     protected function gateUp(): void
     {
         Cache::store('file')->put('redis_health:up', true, 10);
+    }
+}
+
+/**
+ * A WORKING stand-in for the app's redis cache store: every access is counted
+ * but served (from an in-memory array), like healthy Redis. Used as the FIRST
+ * store of the failover cache config so a test can prove the failover
+ * limiter genuinely counts through redis while it is up.
+ */
+class WorkingRedisLedStoreSpy extends ArrayStore
+{
+    /** Every access attempt, whatever the operation. */
+    public int $touches = 0;
+
+    public function get($key)
+    {
+        $this->touches++;
+
+        return parent::get($key);
+    }
+
+    public function many(array $keys)
+    {
+        $this->touches++;
+
+        return parent::many($keys);
+    }
+
+    public function add($key, $value, $seconds)
+    {
+        $this->touches++;
+
+        // ArrayStore has no native add(); implement add-once semantics here
+        // (Repository::add prefers a store-level add when one exists).
+        if (parent::get($key) === null) {
+            parent::put($key, $value, $seconds);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    public function put($key, $value, $seconds)
+    {
+        $this->touches++;
+
+        return parent::put($key, $value, $seconds);
+    }
+
+    public function increment($key, $value = 1)
+    {
+        $this->touches++;
+
+        return parent::increment($key, $value);
+    }
+
+    public function decrement($key, $value = 1)
+    {
+        $this->touches++;
+
+        return parent::decrement($key, $value);
+    }
+
+    public function forever($key, $value)
+    {
+        $this->touches++;
+
+        return parent::forever($key, $value);
+    }
+
+    public function forget($key)
+    {
+        $this->touches++;
+
+        return parent::forget($key);
+    }
+
+    public function getPrefix()
+    {
+        return '';
     }
 }
