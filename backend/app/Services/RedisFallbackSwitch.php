@@ -77,7 +77,7 @@ class RedisFallbackSwitch
         // Recovery first: hand the rate limiter its baseline store back. If
         // Redis is still down, apply() below swaps config AND the limiter to
         // the database store again.
-        if ($this->gate->isRedisUp()) {
+        if ($this->isRedisBacked($cacheBaseline) && $this->gate->isRedisUp()) {
             $this->rebindRateLimiter($cacheBaseline);
         }
 

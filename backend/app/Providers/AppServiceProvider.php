@@ -22,6 +22,7 @@ use App\Services\ModelCapabilityService;
 use App\Services\OpenRouterService;
 use App\Services\RAGService;
 use App\Services\RedisFallbackSwitch;
+use App\Services\RedisHealthGate;
 use App\Services\SemanticCacheService;
 use App\Services\SemanticSearchService;
 use App\Services\StockInjectionService;
@@ -60,6 +61,15 @@ class AppServiceProvider extends ServiceProvider
         // cache keys or values (no customer data).
         $this->app->extend('events', function ($dispatcher) {
             $dispatcher->listen(CacheFailedOver::class, function (CacheFailedOver $event): void {
+                // FailoverStore absorbs the exception: invalidate even a cached
+                // UP verdict and move later operations off Redis immediately.
+                // markDown uses file; apply rebinds to database without I/O on
+                // the failing store, so this cannot recursively fail over.
+                if ($event->storeName === 'redis') {
+                    app(RedisHealthGate::class)->markDown();
+                    app(RedisFallbackSwitch::class)->apply();
+                }
+
                 Log::warning('Cache store failed over', [
                     'store' => $event->storeName,
                     'exception' => $event->exception::class,

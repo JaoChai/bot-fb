@@ -56,6 +56,29 @@ class RedisFallbackSwitchFailoverTest extends TestCase
         $this->assertSame('database', config('cache.default'), 'a failover baseline must swap to database while Redis is down');
     }
 
+    public function test_non_redis_worker_baseline_does_not_probe_redis_or_rebind_limiter(): void
+    {
+        $this->resolveLimiterOnBaseline('array');
+        $store = $this->limiterStore();
+        $gate = new class extends RedisHealthGate
+        {
+            public int $probes = 0;
+
+            public function isRedisUp(): bool
+            {
+                $this->probes++;
+
+                return true;
+            }
+        };
+
+        (new RedisFallbackSwitch($gate))->refresh('array', 'database');
+
+        $this->assertSame(0, $gate->probes);
+        $this->assertSame('array', config('cache.default'));
+        $this->assertSame($store, $this->limiterStore());
+    }
+
     public function test_leaves_failover_baseline_when_up(): void
     {
         config(['cache.default' => 'failover']);

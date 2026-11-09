@@ -70,7 +70,7 @@ class HandoverAlertFailoverTest extends TestCase
             ->expectsOutputToContain('handover alerts sent: 1')
             ->assertExitCode(0);
 
-        $this->assertGreaterThanOrEqual(2, $spy->touches, 'the dead redis store must be attempted before failing over');
+        $this->assertSame(1, $spy->touches, 'the first failure must switch later operations off dead Redis');
 
         // The dedupe stamp must live in the DATABASE store, not silently in
         // redis: the next run must see it and not re-alert.

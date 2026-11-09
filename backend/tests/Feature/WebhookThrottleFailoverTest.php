@@ -204,12 +204,9 @@ class WebhookThrottleFailoverTest extends TestCase
         $this->assertGreaterThan(0, $spy->touches, 'the limiter must have attempted the dead redis store');
         Queue::assertPushed(ProcessLINEWebhook::class, 1);
         Queue::assertPushed(ProcessLINEWebhook::class, function ($job) {
-            // The queue name is gate-independent. The connection is NOT
-            // asserted: under failover the throttle never throws, so it never
-            // calls markDown() and the dispatch connection keeps following
-            // the gate verdict exactly like on main (null when up,
-            // 'database' when down).
-            return $job->queue === QueueRouter::llmQueue();
+            // The failover event marks the gate down before dispatch, so
+            // the job must use the independent database queue connection.
+            return $job->queue === QueueRouter::llmQueue() && $job->connection === 'database';
         });
         Log::shouldNotHaveReceived('warning', ['Redis blip on webhook throttle - failing open']);
     }
@@ -217,6 +214,26 @@ class WebhookThrottleFailoverTest extends TestCase
     protected function gateUp(): void
     {
         Cache::store('file')->put('redis_health:up', true, 10);
+    }
+
+    public function test_cached_up_gate_learns_from_first_failover_and_skips_dead_redis_afterwards(): void
+    {
+        Queue::fake();
+        Log::spy();
+        $spy = $this->failoverLimiterWithDeadRedis();
+        $this->gateUp();
+
+        $this->postValidLineWebhook()->assertOk();
+
+        $this->assertSame(1, $spy->touches, 'only the first limiter operation may attempt dead Redis while the gate is cached up');
+        $this->assertFalse(Cache::store('file')->get('redis_health:up'));
+        $this->assertSame('database', config('cache.default'));
+        $touches = $spy->touches;
+
+        $this->postValidLineWebhook()->assertOk();
+
+        $this->assertSame(0, $spy->touches - $touches, 'the next request must not attempt dead Redis');
+        Queue::assertPushed(ProcessLINEWebhook::class, fn ($job) => $job->connection === 'database');
     }
 }
 

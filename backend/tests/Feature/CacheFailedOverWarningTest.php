@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use Illuminate\Cache\ArrayStore;
+use Illuminate\Cache\Events\CacheFailedOver;
 use Illuminate\Cache\Repository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -45,6 +46,35 @@ class CacheFailedOverWarningTest extends TestCase
         config(['cache.default' => 'failover']);
     }
 
+    protected function tearDown(): void
+    {
+        Cache::store('file')->forget('redis_health:up');
+
+        parent::tearDown();
+    }
+
+    public function test_redis_failover_switches_default_cache_without_recursive_failover_events(): void
+    {
+        Cache::store('file')->put('redis_health:up', true, 10);
+        $events = 0;
+        $this->app['events']->listen(CacheFailedOver::class, function () use (&$events): void {
+            $events++;
+            $this->assertLessThan(2, $events, 'the listener must not recursively call the failing store');
+        });
+
+        Cache::get(self::SECRET_KEY);
+        Cache::put(self::SECRET_KEY, self::SECRET_VALUE, 10);
+
+        $this->assertSame('database', config('cache.default'));
+        $this->assertSame(self::SECRET_VALUE, Cache::store('database')->get(self::SECRET_KEY));
+        $this->assertSame(1, $events);
+        $this->assertSame(1, $this->spy->touches);
+        Log::shouldHaveReceived('warning')->with('Cache store failed over', [
+            'store' => 'redis',
+            'exception' => StreamInitException::class,
+        ])->once();
+    }
+
     public function test_one_warning_per_failing_streak_without_cache_key_or_value(): void
     {
         // Streak 1: two failing operations back-to-back...
@@ -62,11 +92,11 @@ class CacheFailedOverWarningTest extends TestCase
         $this->app['cache']->forgetDriver('redis');
         Cache::store('failover')->get(self::SECRET_KEY);
 
-        Log::shouldHaveReceived('warning')->twice();
+        Log::shouldHaveReceived('warning')->with('Cache store failed over', Mockery::type('array'))->twice();
 
         // Both streaks fail the same way, so both warnings carry the same
         // minimal shape: store name + exception class, no key, no value.
-        Log::shouldHaveReceived('warning')->twice()->with(
+        Log::shouldHaveReceived('warning')->with(
             'Cache store failed over',
             Mockery::on(function (array $context): bool {
                 $encoded = json_encode($context);
@@ -76,6 +106,6 @@ class CacheFailedOverWarningTest extends TestCase
                     && ! str_contains($encoded, self::SECRET_KEY)
                     && ! str_contains($encoded, self::SECRET_VALUE);
             }),
-        );
+        )->twice();
     }
 }
