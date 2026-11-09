@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use Illuminate\Cache\ArrayStore;
+use Illuminate\Cache\Repository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -34,8 +35,12 @@ class CacheFailedOverWarningTest extends TestCase
 
         $this->spy = new DeadRedisStoreSpy;
 
+        // Capture the spy as a LOCAL value: CacheManager::extend() rebinds the
+        // creator closure to the CacheManager, so `$this` inside it is NOT the
+        // test (same pattern WebhookRedisBlipTest uses).
+        $spyStore = $this->spy;
         $cacheManager = $this->app['cache'];
-        $cacheManager->extend('redis', fn () => new \Illuminate\Cache\Repository($this->spy));
+        $cacheManager->extend('redis', fn () => new Repository($spyStore));
         $cacheManager->forgetDriver('failover');
         config(['cache.default' => 'failover']);
     }
@@ -47,18 +52,21 @@ class CacheFailedOverWarningTest extends TestCase
         Cache::store('failover')->put(self::SECRET_KEY, self::SECRET_VALUE, 10);
 
         // ...then the redis sub-store recovers, which resets the streak...
-        $this->app['cache']->extend('redis', fn () => new \Illuminate\Cache\Repository(new ArrayStore));
+        $this->app['cache']->extend('redis', fn () => new Repository(new ArrayStore));
         $this->app['cache']->forgetDriver('redis');
         Cache::store('failover')->get(self::SECRET_KEY);
 
         // ...then Redis breaks again: a new streak must warn again.
-        $this->app['cache']->extend('redis', fn () => new \Illuminate\Cache\Repository($this->spy));
+        $spyStore = $this->spy;
+        $this->app['cache']->extend('redis', fn () => new Repository($spyStore));
         $this->app['cache']->forgetDriver('redis');
         Cache::store('failover')->get(self::SECRET_KEY);
 
         Log::shouldHaveReceived('warning')->twice();
 
-        Log::shouldHaveReceived('warning')->once()->with(
+        // Both streaks fail the same way, so both warnings carry the same
+        // minimal shape: store name + exception class, no key, no value.
+        Log::shouldHaveReceived('warning')->twice()->with(
             'Cache store failed over',
             Mockery::on(function (array $context): bool {
                 $encoded = json_encode($context);

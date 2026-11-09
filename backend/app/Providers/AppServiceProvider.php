@@ -26,6 +26,7 @@ use App\Services\SemanticCacheService;
 use App\Services\SemanticSearchService;
 use App\Services\StockInjectionService;
 use App\Support\WorkerControlQueueManager;
+use Illuminate\Cache\Events\CacheFailedOver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Connection;
 use Illuminate\Http\Request;
@@ -33,6 +34,7 @@ use Illuminate\Queue\Console\RestartCommand;
 use Illuminate\Queue\Console\WorkCommand;
 use Illuminate\Queue\QueueServiceProvider;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
@@ -132,6 +134,18 @@ class AppServiceProvider extends ServiceProvider
         Order::observe(OrderObserver::class);
 
         RedisFallbackSwitch::registerWorkerHook();
+
+        // Cache-layer failover visibility (2026-11-09 incident): the
+        // failover store dispatches this once per failing streak — usually
+        // from a scheduled/artisan command whose output goes to /dev/null,
+        // so the log is the only trace. Store name + exception class only,
+        // never cache keys or values (no customer data).
+        Event::listen(CacheFailedOver::class, function (CacheFailedOver $event): void {
+            Log::warning('Cache store failed over', [
+                'store' => $event->storeName,
+                'exception' => $event->exception::class,
+            ]);
+        });
 
         $this->configureRateLimiting();
         $this->configureQueryLogging();

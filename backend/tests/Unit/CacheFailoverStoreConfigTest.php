@@ -3,8 +3,9 @@
 namespace Tests\Unit;
 
 use Illuminate\Cache\FailoverStore;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Cache\Repository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\Support\DeadRedisStoreSpy;
 use Tests\TestCase;
 
@@ -32,7 +33,7 @@ class CacheFailoverStoreConfigTest extends TestCase
         $spy = new DeadRedisStoreSpy;
 
         $cacheManager = $this->app['cache'];
-        $cacheManager->extend('redis', fn () => new \Illuminate\Cache\Repository($spy));
+        $cacheManager->extend('redis', fn () => new Repository($spy));
         $cacheManager->forgetDriver('failover');
 
         config(['cache.default' => 'failover']);

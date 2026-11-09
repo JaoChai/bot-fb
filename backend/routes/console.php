@@ -6,6 +6,13 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
 
+// Scheduler mutexes live on the database store, NOT the default cache store:
+// FailoverStore::lock() only hands back the FIRST store's lock object, so a
+// Redis failure inside withoutOverlapping's lock acquire() is not failed
+// over. The every-minute tasks below must keep their mutexes working while
+// Redis is stalled (2026-11-09 incident).
+Schedule::useCache('database');
+
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');

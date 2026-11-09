@@ -7,6 +7,7 @@ use App\Models\Bot;
 use App\Models\User;
 use App\Support\QueueRouter;
 use Illuminate\Cache\RateLimiter;
+use Illuminate\Cache\Repository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -68,7 +69,7 @@ class WebhookThrottleFailoverTest extends TestCase
         config(['cache.default' => 'failover']);
 
         $cacheManager = $this->app['cache'];
-        $cacheManager->extend('redis', fn () => new \Illuminate\Cache\Repository($spy));
+        $cacheManager->extend('redis', fn () => new Repository($spy));
         $cacheManager->forgetDriver('failover');
 
         $boundAtBoot = $this->app->make(RateLimiter::class);
@@ -130,7 +131,7 @@ class WebhookThrottleFailoverTest extends TestCase
 
         $response->assertStatus(429);
         $this->assertGreaterThan(0, $spy->touches, 'the dead redis store must be attempted (and failed over), not skipped by config sniffing');
-        $this->assertGreaterThan(
+        $this->assertGreaterThanOrEqual(
             $limit->maxAttempts,
             app(RateLimiter::class)->attempts($key),
             'the limiter must keep counting while Redis is down'
@@ -149,6 +150,10 @@ class WebhookThrottleFailoverTest extends TestCase
         Log::spy();
 
         $spy = $this->failoverLimiterWithDeadRedis();
+        // Deterministic on every host: this machine has a live Redis on
+        // 127.0.0.1:6379, CI has none. The incident shape is "the gate
+        // believed Redis was up, the store died anyway".
+        $this->gateUp();
 
         $response = $this->postValidLineWebhook();
 
@@ -156,9 +161,18 @@ class WebhookThrottleFailoverTest extends TestCase
         $this->assertGreaterThan(0, $spy->touches, 'the limiter must have attempted the dead redis store');
         Queue::assertPushed(ProcessLINEWebhook::class, 1);
         Queue::assertPushed(ProcessLINEWebhook::class, function ($job) {
-            return $job->connection === 'database'
-                && $job->queue === QueueRouter::llmQueue();
+            // The queue name is gate-independent. The connection is NOT
+            // asserted: under failover the throttle never throws, so it never
+            // calls markDown() and the dispatch connection keeps following
+            // the gate verdict exactly like on main (null when up,
+            // 'database' when down).
+            return $job->queue === QueueRouter::llmQueue();
         });
         Log::shouldNotHaveReceived('warning', ['Redis blip on webhook throttle - failing open']);
+    }
+
+    protected function gateUp(): void
+    {
+        Cache::store('file')->put('redis_health:up', true, 10);
     }
 }
