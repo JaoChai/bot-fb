@@ -25,6 +25,7 @@ use App\Services\RedisFallbackSwitch;
 use App\Services\SemanticCacheService;
 use App\Services\SemanticSearchService;
 use App\Services\StockInjectionService;
+use App\Services\StreamInitRetryPredisConnector;
 use App\Support\WorkerControlQueueManager;
 use Illuminate\Cache\Events\CacheFailedOver;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -66,6 +67,23 @@ class AppServiceProvider extends ServiceProvider
             });
 
             return $dispatcher;
+        });
+
+        // Predis retry fires ONLY on connect failures — StreamInitException,
+        // the 2026-11-09 incident shape (review round 1 item 3, Lead
+        // decision B). PredisConnector::formatRetry() cannot pass a
+        // catchable list, and Predis's DEFAULT list also retries
+        // TimeoutException/ConnectionException: those fire on READ stalls
+        // after a successful connect, so a retry would double the stall
+        // latency (2.0s -> ~4.05s measured) and could re-send the lost
+        // reply of a non-idempotent command (INCR, queue push eval). The
+        // config files keep the scalar `'retry' => [ExponentialBackoff]
+        // array form (config:cache safe); the connector swaps in the
+        // restricted catchable list when a connection is built.
+        $this->app->extend('redis', function ($manager) {
+            $manager->extend('predis', fn () => new StreamInitRetryPredisConnector);
+
+            return $manager;
         });
 
         // Register custom PostgreSQL connection for proper boolean handling

@@ -2,6 +2,9 @@
 
 namespace App\Services;
 
+use Closure;
+use Illuminate\Cache\RateLimiter;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
@@ -49,6 +52,7 @@ class RedisFallbackSwitch
 
         if ($this->isRedisBacked($cache)) {
             config(['cache.default' => self::DRIVER_FALLBACK]);
+            $this->rebindRateLimiter(self::DRIVER_FALLBACK);
         }
         if ($this->isRedisBacked($session)) {
             config(['session.driver' => self::DRIVER_FALLBACK]);
@@ -70,11 +74,40 @@ class RedisFallbackSwitch
             'session.driver' => $sessionBaseline,
         ]);
 
+        // Recovery first: hand the rate limiter its baseline store back. If
+        // Redis is still down, apply() below swaps config AND the limiter to
+        // the database store again.
+        if ($this->gate->isRedisUp()) {
+            $this->rebindRateLimiter($cacheBaseline);
+        }
+
         $this->apply();
     }
 
     private function isRedisBacked(string $driver): bool
     {
         return in_array($driver, self::REDIS_BACKED_DRIVERS, true);
+    }
+
+    /**
+     * The RateLimiter singleton keeps the cache repository it was built with
+     * at boot — the config('cache.default') swap above cannot reach it — so
+     * every throttle middleware (webhook, api, auth, bot-test, uploads)
+     * would keep calling dead Redis behind the gate-down switch (review
+     * round 1 item 1: 24s per webhook under failover with a paused Redis).
+     * Swap the repository onto the given store IN PLACE via a closure bound
+     * to the protected property: the instance is what carries the named
+     * limiters registered at boot, so they keep working, now counting on a
+     * store that answers.
+     */
+    private function rebindRateLimiter(string $storeName): void
+    {
+        $limiter = app(RateLimiter::class);
+
+        Closure::bind(
+            fn () => $this->cache = Cache::store($storeName),
+            $limiter,
+            RateLimiter::class,
+        )();
     }
 }
