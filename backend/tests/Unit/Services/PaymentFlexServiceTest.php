@@ -1153,6 +1153,7 @@ class PaymentFlexServiceTest extends TestCase
         foreach ([
             "1. Page = 199 บาท\nรวม: 199 บาท",
             "- Page x2 - 398 บาท\nรวม 398 บาท",
+            "- Page x1 - 199 บาท\n- G3D x1 - 50 บาท\nรวม 249 บาท",
             'เพิ่ม Page 1 เพจ ลงตะกร้าแล้วครับ ราคา 199 บาท รวมทั้งหมด 199 บาท',
         ] as $cart) {
             $conversation = $this->conversationWithBotMessage(
@@ -1196,6 +1197,43 @@ class PaymentFlexServiceTest extends TestCase
             'เพิ่ม Nolimit Level Up+ BM 1 ตัว ลงตะกร้าแล้วครับ รวม 1,100 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
             "เพิ่มลงตะกร้าแล้วครับ\n1. Page = 199 บาท\nรวม: 1,299 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ",
         ]);
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_primary_item_exceeds_catalogue_price(): void
+    {
+        $this->seedCatalogue();
+        // X1/X8/X12: generic Nolimit has no catalogue alias. Subtotals alone match
+        // 1,299, but one Page costs 199, so this is not proof of a Page-only cart.
+        foreach ([
+            "- Nolimit + Page x1 - 1,299 บาท\nรวม 1,299 บาท",
+            "- Nolimit พร้อม Page x1 - 1,299 บาท\nรวม 1,299 บาท",
+            "- Nolimit เติมเงิน + เพจ - 1,299 บาท\nรวม 1,299 บาท",
+        ] as $cart) {
+            $conversation = $this->conversationWithBotMessage(
+                $cart.' ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
+            );
+
+            $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+            $this->assertIsArray($result);
+            $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result), $cart);
+        }
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_primary_item_catalogue_price_is_missing(): void
+    {
+        $this->seedCatalogue();
+        ProductStock::where('slug', 'page')->update(['price' => null]);
+        $conversation = $this->conversationWithBotMessage(
+            "- Page x1 - 199 บาท\nรวม 199 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ"
+        );
 
         $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
 

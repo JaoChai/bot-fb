@@ -249,28 +249,25 @@ class PaymentFlexService
             $products[] = $product;
         }
 
-        // ชื่อจาก one-liner ตะกร้าระบุแค่ของที่เพิ่มล่าสุด — ซ่อนได้เมื่อยอด "รวม" ใน
-        // ข้อความตรงกับ qty × ราคาแคตตาล็อกของรายการที่ชื่อเท่านั้น (มิฉะนั้นยอดอาจ
-        // พ่วงรายการเก่า เช่น upsell "เพิ่ม Page … รวม 1,299" ที่พ่วง Nolimit เดิม)
-        if ($order['needs_price_parity']) {
-            if ($order['total'] === null) {
+        // Every parser path must prove catalogue-price parity: a compound name
+        // like "Nolimit + Page" may match only Page while carrying a larger total.
+        if ($order['total'] === null) {
+            return true;
+        }
+
+        $sum = 0.0;
+        foreach ($products as $i => $product) {
+            $price = $product->price;
+            $qty = $order['quantities'][$i] ?? null;
+            // ราคา/จำนวนขาด = พิสูจน์ไม่ได้ → แสดง
+            if ($price === null || $qty === null || $qty < 1) {
                 return true;
             }
+            $sum += (float) $price * $qty;
+        }
 
-            $sum = 0.0;
-            foreach ($order['names'] as $i => $name) {
-                $price = $products[$i]->price;
-                $qty = $order['quantities'][$i] ?? null;
-                // ราคา/จำนวนขาด = พิสูจน์ไม่ได้ → แสดง
-                if ($price === null || $qty === null || $qty < 1) {
-                    return true;
-                }
-                $sum += (float) $price * $qty;
-            }
-
-            if (abs($sum - $order['total']) > 0.01) {
-                return true;
-            }
+        if (abs($sum - $order['total']) > 0.01) {
+            return true;
         }
 
         return false;
@@ -330,14 +327,14 @@ class PaymentFlexService
      * คืน null (ห้ามไล่ไปข้อความเก่ากว่า — ตะกร้าเก่าไม่ใช่ออเดอร์ปัจจุบัน เช่น เพิ่ม
      * Nolimit ทีหลัง Page). SlipVerification มียอดโอนเป็น guard ไฟล์นี้ไม่มี จึงต้องเข้มกว่า.
      *
-     * คืน array{names, needs_price_parity, total, quantities}:
+     * คืน array{names, total, quantities}:
      *  - names: ชื่อรายการทั้งหมดที่อ่านได้
-     *  - needs_price_parity: true เมื่อชื่อมาจาก one-liner ตะกร้า (ระบุเฉพาะของที่เพิ่ม)
+     *  - quantities: จำนวนจาก parser หลัก (ไม่ระบุ = 1) หรือจำนวนชัดเจนจาก one-liner
      *    → caller ต้องพิสูจน์ว่ายอดรวมครบทั้งตะกร้า (total == Σ qty × ราคาแคตตาล็อก)
-     *    ก่อนจะซ่อน notice ได้; false เมื่อ parser หลักผ่านการเทียบผลรวมรายการกับยอดรวมแล้ว
+     *    ก่อนจะซ่อน notice ได้เสมอ แม้ผลรวมรายการจาก parser หลักจะตรงกับยอดรวมแล้ว
      * คืน null = ไม่มีข้อความยืนยัน หรืออ่านรายการไม่ได้ → caller แสดง notice.
      *
-     * @return array{names: list<string>, needs_price_parity: bool, total: ?float, quantities: list<int>|null}|null
+     * @return array{names: list<string>, total: ?float, quantities: list<int>}|null
      */
     private function latestCartOrder(?Conversation $conversation): ?array
     {
@@ -378,9 +375,11 @@ class PaymentFlexService
                         fn (array $item): string => (string) ($item['name'] ?? ''),
                         $data['items']
                     ),
-                    'needs_price_parity' => false,
                     'total' => $total,
-                    'quantities' => null,
+                    'quantities' => array_map(
+                        fn (array $item): int => ($item['qty'] ?? '') === '' ? 1 : (int) $item['qty'],
+                        $data['items']
+                    ),
                 ];
             }
 
@@ -403,7 +402,6 @@ class PaymentFlexService
 
                 return [
                     'names' => array_map('trim', $matches[1]),
-                    'needs_price_parity' => true,
                     'total' => $total,
                     'quantities' => array_map('intval', $matches[2]),
                 ];
