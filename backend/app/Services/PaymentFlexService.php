@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\Conversation;
+use App\Models\ProductStock;
 use App\Services\Payment\FlexMessageBuilder;
 use App\Services\Payment\PaymentMessageDetector;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class PaymentFlexService
@@ -48,7 +50,10 @@ class PaymentFlexService
 
             // Step 3: Terms message (always uses fixed TERMS_URL)
             if ($this->isTermsMessage($text)) {
-                return $this->safeBuildFlex($text, $this->buildTermsFlexMessage());
+                return $this->safeBuildFlex(
+                    $text,
+                    $this->buildTermsFlexMessage($this->shouldShowIdvNotice($conversation))
+                );
             }
 
             // Step 5: Verify success message
@@ -214,9 +219,199 @@ class PaymentFlexService
      * Build LINE Flex Message for terms/agreement (Step 3).
      * Always uses the fixed TERMS_URL constant.
      */
-    public function buildTermsFlexMessage(): array
+    public function buildTermsFlexMessage(bool $showIdvNotice = true): array
     {
-        return $this->builder->buildTermsFlexMessage();
+        return $this->builder->buildTermsFlexMessage($showIdvNotice);
+    }
+
+    /**
+     * Page/เฟสไก่ cannot run ads — ออเดอร์ล่าสุดที่เป็น Page/เฟสไก่ล้วนไม่ต้องเห็นกล่อง
+     * แจ้งยืนยันตัวตน. ทุกกรณีอื่น (ผสม, อ่านรายการไม่ออก, พิสูจน์ว่ายอดไม่ครบทั้งตะกร้า,
+     * ไม่มีแชท/ข้อความยืนยัน) คืน true = แสดงต่อ — fail-safe ตามค่าเริ่มของ builder.
+     */
+    private function shouldShowIdvNotice(?Conversation $conversation): bool
+    {
+        $order = $this->latestCartOrder($conversation);
+
+        if ($order === null) {
+            return true;
+        }
+
+        // ทุกรายการต้อง map กลับไปยังสินค้า Page/G3D ในแคตตาล็อกจริง
+        // (ชื่อ/alias — เทียบทั้งคำสำหรับ term อังกฤษ, substring สำหรับ term ไทย)
+        $catalogue = ProductStock::query()->get();
+        $products = [];
+        foreach ($order['names'] as $name) {
+            $product = $this->catalogueProduct((string) $name, $catalogue);
+            if ($product === null || ! in_array($product->slug, ['page', 'g3d'], true)) {
+                return true;
+            }
+            $products[] = $product;
+        }
+
+        // Every parser path must prove catalogue-price parity: a compound name
+        // like "Nolimit + Page" may match only Page while carrying a larger total.
+        if ($order['total'] === null) {
+            return true;
+        }
+
+        $sum = 0.0;
+        foreach ($products as $i => $product) {
+            $price = $product->price;
+            $qty = $order['quantities'][$i] ?? null;
+            // ราคา/จำนวนขาด = พิสูจน์ไม่ได้ → แสดง
+            if ($price === null || $qty === null || $qty < 1) {
+                return true;
+            }
+            $sum += (float) $price * $qty;
+        }
+
+        if (abs($sum - $order['total']) > 0.01) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * หาสินค้าจริงใน ProductStock จากชื่อรายการที่อ่านได้จากข้อความ — เทียบทั้งชื่อและ
+     * alias — ทุก term ที่ตรงต้องเป็นสินค้าเดียวกัน มิฉะนั้นชื่ออาจรวมหลายสินค้า.
+     * term อังกฤษ/ตัวเลขต้องเป็นคำเต็ม (word boundary) กัน
+     * "Webpage" ไปจับ "page"; term ไทยเทียบ substring (ภาษาไทยไม่มีขอบคำใน regex).
+     * ตรงหลาย product = กำกวม → ไม่เดา (คืน null → caller แสดง notice).
+     *
+     * @param  Collection<int, ProductStock>  $catalogue
+     */
+    private function catalogueProduct(string $name, $catalogue): ?ProductStock
+    {
+        $needle = mb_strtolower(trim($name));
+        if ($needle === '') {
+            return null;
+        }
+
+        $candidates = [];
+        foreach ($catalogue as $product) {
+            foreach (array_merge([$product->name], $product->aliases ?? []) as $term) {
+                $term = mb_strtolower(trim((string) $term));
+                if (mb_strlen($term) < 2 || ! $this->nameContainsTerm($needle, $term)) {
+                    continue;
+                }
+                $candidates[$product->id] = $product;
+            }
+        }
+
+        if (count($candidates) !== 1) {
+            return null;
+        }
+
+        return reset($candidates);
+    }
+
+    /**
+     * needle มี term อยู่ไหม — term ที่เป็นตัวอักษรอังกฤษ/ตัวเลขล้วนต้องเป็นคำเต็ม
+     * (ตัวอักษร/ตัวเลขล้อมรอบ = คนละคำ)
+     */
+    private function nameContainsTerm(string $needle, string $term): bool
+    {
+        if (preg_match('/^[a-z0-9+&.]+$/', $term) === 1) {
+            return preg_match('/(?<![a-z0-9])'.preg_quote($term, '/').'(?![a-z0-9])/', $needle) === 1;
+        }
+
+        return mb_strpos($needle, $term) !== false;
+    }
+
+    /**
+     * อ่านออเดอร์ล่าสุดจากข้อความยืนยัน/ตะกร้าของบอท (เกณฑ์ isConfirmMessage เดียวกับ
+     * SlipVerificationService::findExpectedFromConfirmMessage) — แต่ต่างที่: ตัดสินจาก
+     * ข้อความยืนยันล่าสุด *เท่านั้น* ถึงข้อความแรกที่เป็นยืนยันแล้วหยุดทันที อ่านไม่ออกก็
+     * คืน null (ห้ามไล่ไปข้อความเก่ากว่า — ตะกร้าเก่าไม่ใช่ออเดอร์ปัจจุบัน เช่น เพิ่ม
+     * Nolimit ทีหลัง Page). SlipVerification มียอดโอนเป็น guard ไฟล์นี้ไม่มี จึงต้องเข้มกว่า.
+     *
+     * คืน array{names, total, quantities}:
+     *  - names: ชื่อรายการทั้งหมดที่อ่านได้
+     *  - quantities: จำนวนจาก parser หลัก (ไม่ระบุ = 1) หรือจำนวนชัดเจนจาก one-liner
+     *    → caller ต้องพิสูจน์ว่ายอดรวมครบทั้งตะกร้า (total == Σ qty × ราคาแคตตาล็อก)
+     *    ก่อนจะซ่อน notice ได้เสมอ แม้ผลรวมรายการจาก parser หลักจะตรงกับยอดรวมแล้ว
+     * คืน null = ไม่มีข้อความยืนยัน หรืออ่านรายการไม่ได้ → caller แสดง notice.
+     *
+     * @return array{names: list<string>, total: ?float, quantities: list<int>}|null
+     */
+    private function latestCartOrder(?Conversation $conversation): ?array
+    {
+        if ($conversation === null) {
+            return null;
+        }
+
+        $query = $conversation->messages()
+            ->where('sender', 'bot')
+            ->where('type', 'text');
+
+        if ($conversation->context_cleared_at) {
+            $query->where('created_at', '>', $conversation->context_cleared_at);
+        }
+
+        foreach ($query->latest('id')->take(15)->pluck('content') as $content) {
+            $content = (string) $content;
+
+            if (! $this->detector->isConfirmMessage($content)) {
+                continue;
+            }
+
+            // Primary: canonical parser (bulleted/numbered item lines — สรุปยอดทั้งตะกร้า)
+            $data = $this->detector->parseConfirmData($content);
+            if ($data === null) {
+                return null;
+            }
+
+            $total = (float) str_replace(',', '', $data['total']);
+            if ($data['items'] !== []) {
+                // Even a numbered summary may omit items; unknown parity must also show.
+                if (PaymentMessageDetector::itemsMatchTotal($data['items'], $total, 0.01) !== true) {
+                    return null;
+                }
+
+                return [
+                    'names' => array_map(
+                        fn (array $item): string => (string) ($item['name'] ?? ''),
+                        $data['items']
+                    ),
+                    'total' => $total,
+                    'quantities' => array_map(
+                        fn (array $item): int => ($item['qty'] ?? '') === '' ? 1 : (int) $item['qty'],
+                        $data['items']
+                    ),
+                ];
+            }
+
+            // Cart one-liner ("เพิ่มเฟสไก่ (G3D) 1 ตัว ลงตะกร้าแล้วครับ รวม 50 บาทครับ…"):
+            // parseConfirmData reads the total but no item names — the item line carries no
+            // "บาท" (known limitation, documented in
+            // backend/docs/superpowers/specs/2026-07-31-order-reconstruction-design.md).
+            // Anchored on the cart phrase so price-quote confirm messages never match.
+            if (mb_strpos($content, 'ลงตะกร้า') !== false) {
+                preg_match_all(
+                    '/(?:เพิ่ม|และ)\s*([^\n]+?)\s+(\d+)\s*(?:ตัว|เพจ|ใบ|ชิ้น|อัน)/u',
+                    $content,
+                    $matches,
+                );
+
+                if ($matches[1] === []) {
+                    // อ่านชื่อ+จำนวนไม่ได้ — อย่าไล่ไปข้อความเก่ากว่า
+                    return null;
+                }
+
+                return [
+                    'names' => array_map('trim', $matches[1]),
+                    'total' => $total,
+                    'quantities' => array_map('intval', $matches[2]),
+                ];
+            }
+
+            // ข้อความยืนยันล่าสุดแต่อ่านรายการไม่ได้ทั้งสองทาง — หยุดที่ออเดอร์นี้
+            return null;
+        }
+
+        return null;
     }
 
     // ────────────────────────────────────────────────────────
