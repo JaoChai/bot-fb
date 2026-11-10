@@ -278,10 +278,10 @@ class PaymentFlexService
 
     /**
      * หาสินค้าจริงใน ProductStock จากชื่อรายการที่อ่านได้จากข้อความ — เทียบทั้งชื่อและ
-     * alias แล้วเลือก term ที่ยาวที่สุดก่อน (กัน "เฟสไก่ (G3D)" จับด้วย "ไก่" ที่สั้นกว่า
-     * ทั้งที่ "G3D" ตรงกว่า). term อังกฤษ/ตัวเลขต้องเป็นคำเต็ม (word boundary) กัน
+     * alias — ทุก term ที่ตรงต้องเป็นสินค้าเดียวกัน มิฉะนั้นชื่ออาจรวมหลายสินค้า.
+     * term อังกฤษ/ตัวเลขต้องเป็นคำเต็ม (word boundary) กัน
      * "Webpage" ไปจับ "page"; term ไทยเทียบ substring (ภาษาไทยไม่มีขอบคำใน regex).
-     * ยาวสุดเสมอกันหลาย product = กำกวม → ไม่เดา (คืน null → caller แสดง notice).
+     * ตรงหลาย product = กำกวม → ไม่เดา (คืน null → caller แสดง notice).
      *
      * @param  Collection<int, ProductStock>  $catalogue
      */
@@ -299,26 +299,15 @@ class PaymentFlexService
                 if (mb_strlen($term) < 2 || ! $this->nameContainsTerm($needle, $term)) {
                     continue;
                 }
-                $candidates[] = ['len' => mb_strlen($term), 'product' => $product];
+                $candidates[$product->id] = $product;
             }
         }
 
-        if ($candidates === []) {
+        if (count($candidates) !== 1) {
             return null;
         }
 
-        usort($candidates, fn ($a, $b) => $b['len'] <=> $a['len']);
-
-        $maxLen = $candidates[0]['len'];
-        $topProductIds = array_unique(array_map(
-            fn ($c) => $c['product']->id,
-            array_filter($candidates, fn ($c) => $c['len'] === $maxLen),
-        ));
-        if (count($topProductIds) > 1) {
-            return null;
-        }
-
-        return $candidates[0]['product'];
+        return reset($candidates);
     }
 
     /**
@@ -345,7 +334,7 @@ class PaymentFlexService
      *  - names: ชื่อรายการทั้งหมดที่อ่านได้
      *  - needs_price_parity: true เมื่อชื่อมาจาก one-liner ตะกร้า (ระบุเฉพาะของที่เพิ่ม)
      *    → caller ต้องพิสูจน์ว่ายอดรวมครบทั้งตะกร้า (total == Σ qty × ราคาแคตตาล็อก)
-     *    ก่อนจะซ่อน notice ได้; false เมื่อมาจาก parser หลัก (สรุปยอดทั้งตะกร้า)
+     *    ก่อนจะซ่อน notice ได้; false เมื่อ parser หลักผ่านการเทียบผลรวมรายการกับยอดรวมแล้ว
      * คืน null = ไม่มีข้อความยืนยัน หรืออ่านรายการไม่ได้ → caller แสดง notice.
      *
      * @return array{names: list<string>, needs_price_parity: bool, total: ?float, quantities: list<int>|null}|null
@@ -373,14 +362,24 @@ class PaymentFlexService
 
             // Primary: canonical parser (bulleted/numbered item lines — สรุปยอดทั้งตะกร้า)
             $data = $this->detector->parseConfirmData($content);
-            if ($data !== null && $data['items'] !== []) {
+            if ($data === null) {
+                return null;
+            }
+
+            $total = (float) str_replace(',', '', $data['total']);
+            if ($data['items'] !== []) {
+                // Even a numbered summary may omit items; unknown parity must also show.
+                if (PaymentMessageDetector::itemsMatchTotal($data['items'], $total, 0.01) !== true) {
+                    return null;
+                }
+
                 return [
                     'names' => array_map(
                         fn (array $item): string => (string) ($item['name'] ?? ''),
                         $data['items']
                     ),
                     'needs_price_parity' => false,
-                    'total' => null,
+                    'total' => $total,
                     'quantities' => null,
                 ];
             }
@@ -402,15 +401,10 @@ class PaymentFlexService
                     return null;
                 }
 
-                if (preg_match('/(?:รวม|ราคา)\s*:?\s*([\d,]+(?:\.\d+)?)\s*บาท/u', $content, $totalMatch) !== 1) {
-                    // ยอดรวมอ่านไม่ได้ = พิสูจน์ความครบตะกร้าไม่ได้ → แสดง
-                    return null;
-                }
-
                 return [
                     'names' => array_map('trim', $matches[1]),
                     'needs_price_parity' => true,
-                    'total' => (float) str_replace(',', '', $totalMatch[1]),
+                    'total' => $total,
                     'quantities' => array_map('intval', $matches[2]),
                 ];
             }

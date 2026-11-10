@@ -1146,6 +1146,77 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
     }
 
+    #[Test]
+    public function test_terms_flex_hides_idv_notice_when_complete_page_cart_matches_total(): void
+    {
+        $this->seedCatalogue();
+        foreach ([
+            "1. Page = 199 บาท\nรวม: 199 บาท",
+            "- Page x2 - 398 บาท\nรวม 398 บาท",
+            'เพิ่ม Page 1 เพจ ลงตะกร้าแล้วครับ ราคา 199 บาท รวมทั้งหมด 199 บาท',
+        ] as $cart) {
+            $conversation = $this->conversationWithBotMessage(
+                $cart.' ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
+            );
+
+            $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+            $this->assertIsArray($result);
+            $this->assertStringNotContainsString('📌 กฎใหม่', $this->flexJson($result), $cart);
+        }
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_upsell_unit_price_precedes_cart_total(): void
+    {
+        $this->seedCatalogue();
+        // G1–G3: the 199-baht unit price must not replace the 1,299-baht cart total.
+        foreach ([
+            'เพิ่ม Page 1 เพจ ราคา 199 บาท ลงตะกร้าแล้วครับ รวม 1,299 บาท',
+            'เพิ่ม Page 1 เพจ ลงตะกร้าแล้วครับ ราคา 199 บาท รวมทั้งหมด 1,299 บาท',
+            'เพิ่ม Page 1 เพจ (ราคา 199 บาท) ลงตะกร้าแล้วครับ รวม 1,299 บาท',
+        ] as $latest) {
+            $conversation = $this->conversationWithBotMessages([
+                'เพิ่ม Nolimit Level Up+ BM 1 ตัว ลงตะกร้าแล้วครับ รวม 1,100 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+                $latest.' ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+            ]);
+
+            $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+            $this->assertIsArray($result);
+            $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result), $latest);
+        }
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_numbered_items_do_not_cover_cart_total(): void
+    {
+        $this->seedCatalogue();
+        $conversation = $this->conversationWithBotMessages([
+            'เพิ่ม Nolimit Level Up+ BM 1 ตัว ลงตะกร้าแล้วครับ รวม 1,100 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+            "เพิ่มลงตะกร้าแล้วครับ\n1. Page = 199 บาท\nรวม: 1,299 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ",
+        ]);
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_one_item_name_matches_multiple_products(): void
+    {
+        $this->seedCatalogue();
+        $conversation = $this->conversationWithBotMessage(
+            "- Nolimit BM + Page x1 - 199 บาท\nรวม 199 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ"
+        );
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
     // ────────────────────────────────────────────────────────
     // Step 5: Verify Success Message Tests
     // ────────────────────────────────────────────────────────
