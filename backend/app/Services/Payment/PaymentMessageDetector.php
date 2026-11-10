@@ -358,7 +358,7 @@ class PaymentMessageDetector
         }
 
         // Fallback: TERMS_URL present (very reliable signal)
-        return mb_strpos($text, 'canva.site/ads-vance') !== false;
+        return mb_strpos($text, 'terms.adsvance.xyz') !== false;
     }
 
     /**

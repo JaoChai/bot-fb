@@ -16,7 +16,7 @@ class FlexMessageBuilder
 
     private const CLIPBOARD_TEXT = '2233248803';
 
-    private const TERMS_URL = 'https://mhhacoursecontent.my.canva.site/ads-vance';
+    private const TERMS_URL = 'https://terms.adsvance.xyz/';
 
     private const SUPPORT_LINE_ID = '@743ddeqy';
 
