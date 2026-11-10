@@ -492,9 +492,69 @@ class FlexMessageBuilder
      * Build LINE Flex Message for terms/agreement (Step 3).
      * Always uses the fixed TERMS_URL constant.
      */
-    public function buildTermsFlexMessage(): array
+    public function buildTermsFlexMessage(bool $showIdvNotice = true): array
     {
         $url = self::TERMS_URL;
+
+        $bodyContents = [
+            [
+                'type' => 'text',
+                'text' => 'ก่อนชำระเงิน',
+                'size' => 'md',
+                'color' => '#555555',
+            ],
+            [
+                'type' => 'text',
+                'text' => 'รบกวนอ่านข้อตกลงก่อนนะครับ',
+                'size' => 'md',
+                'color' => '#555555',
+                'margin' => 'sm',
+            ],
+        ];
+
+        // Page/เฟสไก่ cannot run ads — an order that is only Page/เฟสไก่ hides the FB
+        // identity-verification notice (owner rule 2026-11-10); tryConvertToFlex passes false.
+        if ($showIdvNotice) {
+            $bodyContents[] = [
+                'type' => 'box',
+                'layout' => 'vertical',
+                'margin' => 'lg',
+                'backgroundColor' => '#FFF4E5',
+                'cornerRadius' => 'md',
+                'paddingAll' => 'md',
+                'contents' => [
+                    [
+                        'type' => 'text',
+                        'text' => '📌 กฎใหม่: FB อาจขอยืนยันตัวตนหลังยิงแอด (ระบบสุ่ม) ทีมงานช่วยยื่นได้ มีค่าบริการ',
+                        'size' => 'sm',
+                        'color' => '#B45309',
+                        'wrap' => true,
+                    ],
+                ],
+            ];
+        }
+
+        $bodyContents[] = [
+            'type' => 'separator',
+            'margin' => 'lg',
+        ];
+        $bodyContents[] = [
+            'type' => 'box',
+            'layout' => 'vertical',
+            'margin' => 'lg',
+            'backgroundColor' => '#E8F4FD',
+            'cornerRadius' => 'md',
+            'paddingAll' => 'md',
+            'contents' => [
+                [
+                    'type' => 'text',
+                    'text' => "ℹ️ อ่านจบแล้ว พิมพ์ 'ยอมรับ' ได้เลยครับ",
+                    'size' => 'sm',
+                    'color' => '#0367D3',
+                    'wrap' => true,
+                ],
+            ],
+        ];
 
         return [
             'type' => 'flex',
@@ -519,59 +579,7 @@ class FlexMessageBuilder
                 'body' => [
                     'type' => 'box',
                     'layout' => 'vertical',
-                    'contents' => [
-                        [
-                            'type' => 'text',
-                            'text' => 'ก่อนชำระเงิน',
-                            'size' => 'md',
-                            'color' => '#555555',
-                        ],
-                        [
-                            'type' => 'text',
-                            'text' => 'รบกวนอ่านข้อตกลงก่อนนะครับ',
-                            'size' => 'md',
-                            'color' => '#555555',
-                            'margin' => 'sm',
-                        ],
-                        [
-                            'type' => 'box',
-                            'layout' => 'vertical',
-                            'margin' => 'lg',
-                            'backgroundColor' => '#FFF4E5',
-                            'cornerRadius' => 'md',
-                            'paddingAll' => 'md',
-                            'contents' => [
-                                [
-                                    'type' => 'text',
-                                    'text' => '📌 กฎใหม่: FB อาจขอยืนยันตัวตนหลังยิงแอด (ระบบสุ่ม) ทีมงานช่วยยื่นได้ มีค่าบริการ',
-                                    'size' => 'sm',
-                                    'color' => '#B45309',
-                                    'wrap' => true,
-                                ],
-                            ],
-                        ],
-                        [
-                            'type' => 'separator',
-                            'margin' => 'lg',
-                        ],
-                        [
-                            'type' => 'box',
-                            'layout' => 'vertical',
-                            'margin' => 'lg',
-                            'backgroundColor' => '#E8F4FD',
-                            'cornerRadius' => 'md',
-                            'paddingAll' => 'md',
-                            'contents' => [
-                                [
-                                    'type' => 'text',
-                                    'text' => "ℹ️ อ่านจบแล้ว พิมพ์ 'ยอมรับ' ได้เลยครับ",
-                                    'size' => 'sm',
-                                    'color' => '#0367D3',
-                                    'wrap' => true,
-                                ],
-                            ],
-                        ],
-                    ],
+                    'contents' => $bodyContents,
                 ],
                 'footer' => [
                     'type' => 'box',

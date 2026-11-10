@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services;
 
 use App\Models\Conversation;
+use App\Models\Message;
 use App\Models\ProductStock;
 use App\Services\Payment\FlexMessageBuilder;
 use App\Services\Payment\PaymentMessageDetector;
@@ -928,6 +929,330 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('flex', $result['type']);
         $this->assertEquals('bubble', $result['contents']['type']);
         $this->assertEquals('#0367D3', $result['contents']['header']['backgroundColor']);
+    }
+
+    // ────────────────────────────────────────────────────────
+    // Step 3: Identity-verification notice on cart contents
+    // (Page/เฟสไก่ cannot run ads — a Page/เฟสไก่-only order hides the notice)
+    // ────────────────────────────────────────────────────────
+
+    private function termsText(): string
+    {
+        return "📋 ก่อนชำระเงิน รบกวนอ่านข้อตกลงครับ\n🔗 https://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ' หลังอ่านจบครับ";
+    }
+
+    private function flexJson(array $flex): string
+    {
+        return json_encode($flex, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    private function conversationWithBotMessage(string $content): Conversation
+    {
+        return $this->conversationWithBotMessages([$content]);
+    }
+
+    /**
+     * Seed bot messages oldest → newest (the idv scan reads latest id first).
+     *
+     * @param  list<string>  $contents
+     */
+    private function conversationWithBotMessages(array $contents): Conversation
+    {
+        $conversation = Conversation::factory()->create();
+        foreach ($contents as $content) {
+            Message::factory()->create([
+                'conversation_id' => $conversation->id,
+                'sender' => 'bot',
+                'type' => 'text',
+                'content' => $content,
+            ]);
+        }
+
+        return $conversation;
+    }
+
+    /**
+     * Real catalogue rows (slugs/aliases from ProductStockSeeder, prices from
+     * the 2026-07-31 price migration: Personal/BM 1100, Page 199, G3D 50).
+     */
+    private function seedCatalogue(): void
+    {
+        ProductStock::create([
+            'name' => 'Nolimit Level Up+ Personal',
+            'slug' => 'personal',
+            'aliases' => ['Personal'],
+            'in_stock' => false,
+            'display_order' => 0,
+            'stock_code' => 'NLMP',
+            'delivery_method' => 'stock',
+            'price' => 1100,
+        ]);
+        ProductStock::create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM'],
+            'in_stock' => false,
+            'display_order' => 1,
+            'stock_code' => 'NLMBM',
+            'delivery_method' => 'stock',
+            'price' => 1100,
+        ]);
+        ProductStock::create([
+            'name' => 'Page',
+            'slug' => 'page',
+            'aliases' => ['เพจ', 'fanpage'],
+            'in_stock' => true,
+            'display_order' => 2,
+            'price' => 199,
+        ]);
+        ProductStock::create([
+            'name' => 'G3D',
+            'slug' => 'g3d',
+            'aliases' => ['ไก่'],
+            'in_stock' => true,
+            'display_order' => 3,
+            'price' => 50,
+        ]);
+    }
+
+    #[Test]
+    public function test_terms_flex_hides_idv_notice_for_page_only_order(): void
+    {
+        $this->seedCatalogue();
+        $conversation = $this->conversationWithBotMessage(
+            'เพิ่ม Page 1 เพจ ลงตะกร้าแล้วครับ รวม 199 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
+        );
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringNotContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_hides_idv_notice_for_g3d_only_order(): void
+    {
+        // Real prod cart text (owner quote, 2026-11-10)
+        $this->seedCatalogue();
+        $conversation = $this->conversationWithBotMessage(
+            'เพิ่มเฟสไก่ (G3D) 1 ตัว ลงตะกร้าแล้วครับ รวม 50 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
+        );
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringNotContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_hides_idv_notice_for_page_and_g3d_order(): void
+    {
+        $this->seedCatalogue();
+        $conversation = $this->conversationWithBotMessage(
+            'เพิ่ม Page 1 เพจ และเฟสไก่ (G3D) 1 ตัว ลงตะกร้าแล้วครับ รวม 249 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
+        );
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringNotContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_for_mixed_order(): void
+    {
+        // Real prod cart text (owner quote, 2026-11-10): Nolimit runs ads → notice stays
+        $this->seedCatalogue();
+        $fuller = $this->conversationWithBotMessage(
+            'Nolimit Level Up+ Personal (เติมเงิน) 1 ตัว = 1,000 บาท Page 1 ตัว = 199 บาท รวม 1,199 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
+        );
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $fuller);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+
+        // Verbatim owner quote (truncated "รวม 1,199") — unparseable → safe default: show
+        $verbatim = $this->conversationWithBotMessage(
+            'Nolimit Level Up+ Personal (เติมเงิน) 1 ตัว = 1,000 บาท Page 1 ตัว = 199 บาท รวม 1,199'
+        );
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $verbatim);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_without_conversation(): void
+    {
+        $result = $this->service->tryConvertToFlex($this->termsText());
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_newest_confirm_adds_nolimit_after_page_cart(): void
+    {
+        // Reviewer round-1 case A: newest cart message adds Nolimit (unreadable names,
+        // no qty). The scan must stop there — falling through to the older Page-only
+        // cart would hide the notice for an order that runs ads.
+        $this->seedCatalogue();
+        $conversation = $this->conversationWithBotMessages([
+            'เพิ่ม Page 1 เพจ ลงตะกร้าแล้วครับ รวม 199 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+            'เพิ่ม Nolimit Level Up+ BM ลงตะกร้าแล้วครับ รวม 1,299 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+        ]);
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_page_upsell_total_carries_earlier_nolimit(): void
+    {
+        // Reviewer round-1 case B: the Page one-liner names only the Page just added,
+        // but its total (1,299) still carries the earlier Nolimit. Price parity must
+        // fail (1 × 199 ≠ 1,299) → notice stays.
+        $this->seedCatalogue();
+        $conversation = $this->conversationWithBotMessages([
+            'เพิ่ม Nolimit Level Up+ BM 1 ตัว ลงตะกร้าแล้วครับ รวม 1,100 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+            'เพิ่ม Page 1 เพจ ลงตะกร้าแล้วครับ รวม 1,299 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+        ]);
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_newest_confirm_is_switch_to_nolimit(): void
+    {
+        // Reviewer round-1 case F: "เปลี่ยนเป็น Nolimit แทน" supersedes the earlier
+        // Page-only summary. The newest confirm is unreadable → show; no fall-through
+        // to the older Page cart.
+        $this->seedCatalogue();
+        $conversation = $this->conversationWithBotMessages([
+            'Page x1 - 199 บาท รวม 199 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+            'เปลี่ยนเป็น Nolimit Level Up+ BM แทนแล้วครับ รวม 1,100 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+        ]);
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_hides_idv_notice_when_complete_page_cart_matches_total(): void
+    {
+        $this->seedCatalogue();
+        foreach ([
+            "1. Page = 199 บาท\nรวม: 199 บาท",
+            "- Page x2 - 398 บาท\nรวม 398 บาท",
+            "- Page x1 - 199 บาท\n- G3D x1 - 50 บาท\nรวม 249 บาท",
+            'เพิ่ม Page 1 เพจ ลงตะกร้าแล้วครับ ราคา 199 บาท รวมทั้งหมด 199 บาท',
+        ] as $cart) {
+            $conversation = $this->conversationWithBotMessage(
+                $cart.' ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
+            );
+
+            $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+            $this->assertIsArray($result);
+            $this->assertStringNotContainsString('📌 กฎใหม่', $this->flexJson($result), $cart);
+        }
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_upsell_unit_price_precedes_cart_total(): void
+    {
+        $this->seedCatalogue();
+        // G1–G3: the 199-baht unit price must not replace the 1,299-baht cart total.
+        foreach ([
+            'เพิ่ม Page 1 เพจ ราคา 199 บาท ลงตะกร้าแล้วครับ รวม 1,299 บาท',
+            'เพิ่ม Page 1 เพจ ลงตะกร้าแล้วครับ ราคา 199 บาท รวมทั้งหมด 1,299 บาท',
+            'เพิ่ม Page 1 เพจ (ราคา 199 บาท) ลงตะกร้าแล้วครับ รวม 1,299 บาท',
+        ] as $latest) {
+            $conversation = $this->conversationWithBotMessages([
+                'เพิ่ม Nolimit Level Up+ BM 1 ตัว ลงตะกร้าแล้วครับ รวม 1,100 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+                $latest.' ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+            ]);
+
+            $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+            $this->assertIsArray($result);
+            $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result), $latest);
+        }
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_numbered_items_do_not_cover_cart_total(): void
+    {
+        $this->seedCatalogue();
+        $conversation = $this->conversationWithBotMessages([
+            'เพิ่ม Nolimit Level Up+ BM 1 ตัว ลงตะกร้าแล้วครับ รวม 1,100 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+            "เพิ่มลงตะกร้าแล้วครับ\n1. Page = 199 บาท\nรวม: 1,299 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ",
+        ]);
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_primary_item_exceeds_catalogue_price(): void
+    {
+        $this->seedCatalogue();
+        // X1/X8/X12: generic Nolimit has no catalogue alias. Subtotals alone match
+        // 1,299, but one Page costs 199, so this is not proof of a Page-only cart.
+        foreach ([
+            "- Nolimit + Page x1 - 1,299 บาท\nรวม 1,299 บาท",
+            "- Nolimit พร้อม Page x1 - 1,299 บาท\nรวม 1,299 บาท",
+            "- Nolimit เติมเงิน + เพจ - 1,299 บาท\nรวม 1,299 บาท",
+        ] as $cart) {
+            $conversation = $this->conversationWithBotMessage(
+                $cart.' ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
+            );
+
+            $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+            $this->assertIsArray($result);
+            $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result), $cart);
+        }
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_primary_item_catalogue_price_is_missing(): void
+    {
+        $this->seedCatalogue();
+        ProductStock::where('slug', 'page')->update(['price' => null]);
+        $conversation = $this->conversationWithBotMessage(
+            "- Page x1 - 199 บาท\nรวม 199 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ"
+        );
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_one_item_name_matches_multiple_products(): void
+    {
+        $this->seedCatalogue();
+        $conversation = $this->conversationWithBotMessage(
+            "- Nolimit BM + Page x1 - 199 บาท\nรวม 199 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ"
+        );
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
     }
 
     // ────────────────────────────────────────────────────────
