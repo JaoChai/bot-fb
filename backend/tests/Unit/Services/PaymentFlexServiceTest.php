@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services;
 
 use App\Models\Conversation;
+use App\Models\Message;
 use App\Models\ProductStock;
 use App\Services\Payment\FlexMessageBuilder;
 use App\Services\Payment\PaymentMessageDetector;
@@ -928,6 +929,107 @@ class PaymentFlexServiceTest extends TestCase
         $this->assertEquals('flex', $result['type']);
         $this->assertEquals('bubble', $result['contents']['type']);
         $this->assertEquals('#0367D3', $result['contents']['header']['backgroundColor']);
+    }
+
+    // ────────────────────────────────────────────────────────
+    // Step 3: Identity-verification notice on cart contents
+    // (Page/เฟสไก่ cannot run ads — a Page/เฟสไก่-only order hides the notice)
+    // ────────────────────────────────────────────────────────
+
+    private function termsText(): string
+    {
+        return "📋 ก่อนชำระเงิน รบกวนอ่านข้อตกลงครับ\n🔗 https://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ' หลังอ่านจบครับ";
+    }
+
+    private function flexJson(array $flex): string
+    {
+        return json_encode($flex, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    private function conversationWithBotMessage(string $content): Conversation
+    {
+        $conversation = Conversation::factory()->create();
+        Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'bot',
+            'type' => 'text',
+            'content' => $content,
+        ]);
+
+        return $conversation;
+    }
+
+    #[Test]
+    public function test_terms_flex_hides_idv_notice_for_page_only_order(): void
+    {
+        $conversation = $this->conversationWithBotMessage(
+            'เพิ่ม Page 1 เพจ ลงตะกร้าแล้วครับ รวม 199 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
+        );
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringNotContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_hides_idv_notice_for_g3d_only_order(): void
+    {
+        // Real prod cart text (owner quote, 2026-11-10)
+        $conversation = $this->conversationWithBotMessage(
+            'เพิ่มเฟสไก่ (G3D) 1 ตัว ลงตะกร้าแล้วครับ รวม 50 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
+        );
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringNotContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_hides_idv_notice_for_page_and_g3d_order(): void
+    {
+        $conversation = $this->conversationWithBotMessage(
+            'เพิ่ม Page 1 เพจ และเฟสไก่ (G3D) 1 ตัว ลงตะกร้าแล้วครับ รวม 249 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
+        );
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringNotContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_for_mixed_order(): void
+    {
+        // Real prod cart text (owner quote, 2026-11-10): Nolimit runs ads → notice stays
+        $fuller = $this->conversationWithBotMessage(
+            'Nolimit Level Up+ Personal (เติมเงิน) 1 ตัว = 1,000 บาท Page 1 ตัว = 199 บาท รวม 1,199 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
+        );
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $fuller);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+
+        // Verbatim owner quote (truncated "รวม 1,199") — unparseable → safe default: show
+        $verbatim = $this->conversationWithBotMessage(
+            'Nolimit Level Up+ Personal (เติมเงิน) 1 ตัว = 1,000 บาท Page 1 ตัว = 199 บาท รวม 1,199'
+        );
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $verbatim);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_without_conversation(): void
+    {
+        $result = $this->service->tryConvertToFlex($this->termsText());
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
     }
 
     // ────────────────────────────────────────────────────────

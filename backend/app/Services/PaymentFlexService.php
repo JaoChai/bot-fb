@@ -48,7 +48,10 @@ class PaymentFlexService
 
             // Step 3: Terms message (always uses fixed TERMS_URL)
             if ($this->isTermsMessage($text)) {
-                return $this->safeBuildFlex($text, $this->buildTermsFlexMessage());
+                return $this->safeBuildFlex(
+                    $text,
+                    $this->buildTermsFlexMessage($this->shouldShowIdvNotice($conversation))
+                );
             }
 
             // Step 5: Verify success message
@@ -214,9 +217,98 @@ class PaymentFlexService
      * Build LINE Flex Message for terms/agreement (Step 3).
      * Always uses the fixed TERMS_URL constant.
      */
-    public function buildTermsFlexMessage(): array
+    public function buildTermsFlexMessage(bool $showIdvNotice = true): array
     {
-        return $this->builder->buildTermsFlexMessage();
+        return $this->builder->buildTermsFlexMessage($showIdvNotice);
+    }
+
+    /**
+     * Page/เฟสไก่ cannot run ads — ออเดอร์ล่าสุดที่เป็น Page/เฟสไก่ล้วนไม่ต้องเห็นกล่อง
+     * แจ้งยืนยันตัวตน. ทุกกรณีอื่น (ผสม, อ่านชื่อรายการไม่ออก, ไม่มีแชท/ข้อความยืนยัน)
+     * คืน true = แสดงต่อ — fail-safe ตามค่าเริ่มของ builder.
+     */
+    private function shouldShowIdvNotice(?Conversation $conversation): bool
+    {
+        $names = $this->cartItemNames($conversation);
+
+        if ($names === null) {
+            return true;
+        }
+
+        foreach ($names as $name) {
+            if (! $this->isPageOrG3dName($name)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * ชื่อรายการเป็น Page/เพจ/FanPage หรือ G3D/เฟสไก่ (match แบบไม่สนตัวพิมพ์)
+     */
+    private function isPageOrG3dName(string $name): bool
+    {
+        foreach (['page', 'เพจ', 'g3d', 'เฟสไก่'] as $token) {
+            if (mb_stripos($name, $token) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * ชื่อรายการจากข้อความยืนยัน/ตะกร้าล่าสุดของบอท — ไล่ใหม่→เก่าเหมือน
+     * SlipVerificationService::findExpectedFromConfirmMessage.
+     * คืน null = ไม่มีข้อความยืนยัน หรืออ่านชื่อรายการไม่ได้ → caller แสดง notice.
+     *
+     * @return array<int, string>|null
+     */
+    private function cartItemNames(?Conversation $conversation): ?array
+    {
+        if ($conversation === null) {
+            return null;
+        }
+
+        $query = $conversation->messages()
+            ->where('sender', 'bot')
+            ->where('type', 'text');
+
+        if ($conversation->context_cleared_at) {
+            $query->where('created_at', '>', $conversation->context_cleared_at);
+        }
+
+        foreach ($query->latest('id')->take(15)->pluck('content') as $content) {
+            $content = (string) $content;
+
+            if (! $this->detector->isConfirmMessage($content)) {
+                continue;
+            }
+
+            // Primary: canonical parser (bulleted/numbered item lines)
+            $data = $this->detector->parseConfirmData($content);
+            if ($data !== null && $data['items'] !== []) {
+                return array_map(
+                    fn (array $item): string => (string) ($item['name'] ?? ''),
+                    $data['items']
+                );
+            }
+
+            // Cart one-liner ("เพิ่มเฟสไก่ (G3D) 1 ตัว ลงตะกร้าแล้วครับ รวม 50 บาทครับ…"):
+            // parseConfirmData reads the total but no item names — the item line carries no
+            // "บาท" (known limitation, documented in
+            // backend/docs/superpowers/specs/2026-07-31-order-reconstruction-design.md).
+            // Anchored on the cart phrase so price-quote confirm messages never match.
+            if (mb_strpos($content, 'ลงตะกร้า') !== false) {
+                preg_match_all('/(?:เพิ่ม|และ)\s*([^\n]+?)\s+\d+\s*(?:ตัว|เพจ|ใบ|ชิ้น|อัน)/u', $content, $matches);
+                if ($matches[1] !== []) {
+                    return array_map('trim', $matches[1]);
+                }
+            }
+        }
+
+        return null;
     }
 
     // ────────────────────────────────────────────────────────
