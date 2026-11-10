@@ -860,6 +860,64 @@ class PaymentFlexServiceTest extends TestCase
     }
 
     #[Test]
+    public function test_builds_terms_flex_shows_identity_verification_notice_before_separator(): void
+    {
+        $flex = $this->service->buildTermsFlexMessage();
+        $bodyContents = $flex['contents']['body']['contents'];
+
+        $notice = '📌 กฎใหม่: FB อาจขอยืนยันตัวตนหลังยิงแอด (ระบบสุ่ม) ทีมงานช่วยยื่นได้ มีค่าบริการ';
+
+        $introIndex = null;
+        $noticeBoxIndex = null;
+        $noticeBox = null;
+        $noticeTextNode = null;
+        foreach ($bodyContents as $index => $node) {
+            if (($node['type'] ?? null) === 'text' && ($node['text'] ?? null) === 'รบกวนอ่านข้อตกลงก่อนนะครับ') {
+                $introIndex = $index;
+            }
+            if (($node['type'] ?? null) !== 'box') {
+                continue;
+            }
+            foreach ($node['contents'] ?? [] as $child) {
+                if (($child['type'] ?? null) === 'text' && ($child['text'] ?? null) === $notice) {
+                    $noticeBoxIndex = $index;
+                    $noticeBox = $node;
+                    $noticeTextNode = $child;
+                    break 2;
+                }
+            }
+        }
+
+        $this->assertNotNull($noticeBoxIndex, 'Terms body must contain the identity-verification notice');
+
+        // Amber box styling, mirroring the existing blue info-box pattern
+        $this->assertEquals('#FFF4E5', $noticeBox['backgroundColor']);
+        $this->assertEquals('md', $noticeBox['cornerRadius']);
+        $this->assertEquals('md', $noticeBox['paddingAll']);
+        $this->assertEquals('lg', $noticeBox['margin']);
+
+        // Text node requirements
+        $this->assertEquals('sm', $noticeTextNode['size']);
+        $this->assertEquals('#B45309', $noticeTextNode['color']);
+        $this->assertTrue($noticeTextNode['wrap']);
+
+        // Buyer must read the notice before tapping "อ่านข้อตกลง" and typing "ยอมรับ":
+        // after the intro line, before the separator.
+        $this->assertNotNull($introIndex, 'Terms body must keep its intro line');
+        $this->assertGreaterThan($introIndex, $noticeBoxIndex);
+
+        $separatorIndex = null;
+        foreach ($bodyContents as $index => $node) {
+            if (($node['type'] ?? null) === 'separator') {
+                $separatorIndex = $index;
+                break;
+            }
+        }
+        $this->assertNotNull($separatorIndex, 'Terms body must keep its separator');
+        $this->assertLessThan($separatorIndex, $noticeBoxIndex);
+    }
+
+    #[Test]
     public function test_try_convert_returns_flex_for_terms(): void
     {
         $text = "📋 ก่อนชำระเงิน รบกวนอ่านข้อตกลงครับ\n🔗 https://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ' หลังอ่านจบครับ";

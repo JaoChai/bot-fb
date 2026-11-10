@@ -534,6 +534,23 @@ class FlexMessageBuilder
                             'margin' => 'sm',
                         ],
                         [
+                            'type' => 'box',
+                            'layout' => 'vertical',
+                            'margin' => 'lg',
+                            'backgroundColor' => '#FFF4E5',
+                            'cornerRadius' => 'md',
+                            'paddingAll' => 'md',
+                            'contents' => [
+                                [
+                                    'type' => 'text',
+                                    'text' => '📌 กฎใหม่: FB อาจขอยืนยันตัวตนหลังยิงแอด (ระบบสุ่ม) ทีมงานช่วยยื่นได้ มีค่าบริการ',
+                                    'size' => 'sm',
+                                    'color' => '#B45309',
+                                    'wrap' => true,
+                                ],
+                            ],
+                        ],
+                        [
                             'type' => 'separator',
                             'margin' => 'lg',
                         ],
