@@ -891,7 +891,7 @@ class PaymentFlexServiceTest extends TestCase
         $flex = $this->service->buildTermsFlexMessage();
         $bodyContents = $flex['contents']['body']['contents'];
 
-        $notice = '📌 กฎใหม่: FB อาจขอยืนยันตัวตนหลังยิงแอด (ระบบสุ่ม) ราคานี้รวมทีมงานช่วยยื่นให้แล้ว แจ้ง Support ได้เลย';
+        $notice = '📌 กฎใหม่: FB อาจขอยืนยันตัวตนหลังยิงแอด (ระบบสุ่ม) ทีมงานช่วยยื่นได้ มีค่าบริการ';
 
         $introIndex = null;
         $noticeBoxIndex = null;
