@@ -769,7 +769,7 @@ class PaymentFlexServiceTest extends TestCase
     #[Test]
     public function test_detects_terms_message(): void
     {
-        $text = "📋 ก่อนชำระเงิน รบกวนอ่านข้อตกลงครับ\n🔗 https://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ' หลังอ่านจบครับ";
+        $text = "📋 ก่อนชำระเงิน รบกวนอ่านข้อตกลงครับ\n🔗 https://terms.adsvance.xyz/\nพิมพ์ 'ยอมรับ' หลังอ่านจบครับ";
 
         $this->assertTrue($this->service->isTermsMessage($text));
     }
@@ -778,7 +778,7 @@ class PaymentFlexServiceTest extends TestCase
     public function test_detects_terms_with_เงื่อนไข_and_url(): void
     {
         // "เงื่อนไข" alone is too broad — but with URL it triggers via URL fallback
-        $text = "รบกวนอ่านเงื่อนไขก่อนนะครับ\nhttps://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ' หลังอ่านจบ";
+        $text = "รบกวนอ่านเงื่อนไขก่อนนะครับ\nhttps://terms.adsvance.xyz/\nพิมพ์ 'ยอมรับ' หลังอ่านจบ";
 
         $this->assertTrue($this->service->isTermsMessage($text));
     }
@@ -796,7 +796,17 @@ class PaymentFlexServiceTest extends TestCase
     public function test_detects_terms_with_url_fallback(): void
     {
         // LLM omits both "ข้อตกลง" and "เงื่อนไข" but includes TERMS_URL
-        $text = "อ่านก่อนนะครับ\nhttps://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ'";
+        $text = "อ่านก่อนนะครับ\nhttps://terms.adsvance.xyz/\nพิมพ์ 'ยอมรับ'";
+
+        $this->assertTrue($this->service->isTermsMessage($text));
+    }
+
+    #[Test]
+    public function test_detects_terms_message_with_new_terms_url_only(): void
+    {
+        // Message carrying only the new terms URL (no "ข้อตกลง"/"เงื่อนไข")
+        // must still be detected via the URL fallback.
+        $text = "ขอให้อ่านตามลิงก์นี้ก่อนนะครับ https://terms.adsvance.xyz/ แล้วพิมพ์ 'ยอมรับ' หลังอ่านจบ";
 
         $this->assertTrue($this->service->isTermsMessage($text));
     }
@@ -852,11 +862,26 @@ class PaymentFlexServiceTest extends TestCase
         // Header should be blue
         $this->assertEquals('#0367D3', $flex['contents']['header']['backgroundColor']);
 
-        // Footer should have URI button with fixed canva.site URL
+        // Footer should have URI button with fixed terms.adsvance.xyz URL
         $json = json_encode($flex, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $this->assertStringContains('uri', $json);
-        $this->assertStringContains('canva.site/ads-vance', $json);
+        $this->assertStringContains('terms.adsvance.xyz', $json);
         $this->assertStringContains('อ่านข้อตกลง', $json);
+    }
+
+    #[Test]
+    public function test_builds_terms_flex_button_links_to_terms_adsvance_xyz(): void
+    {
+        $flex = $this->service->buildTermsFlexMessage();
+
+        $uri = null;
+        array_walk_recursive($flex['contents'], function ($value, $key) use (&$uri): void {
+            if ($key === 'uri') {
+                $uri = $value;
+            }
+        });
+
+        $this->assertSame('https://terms.adsvance.xyz/', $uri);
     }
 
     #[Test]
@@ -920,7 +945,7 @@ class PaymentFlexServiceTest extends TestCase
     #[Test]
     public function test_try_convert_returns_flex_for_terms(): void
     {
-        $text = "📋 ก่อนชำระเงิน รบกวนอ่านข้อตกลงครับ\n🔗 https://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ' หลังอ่านจบครับ";
+        $text = "📋 ก่อนชำระเงิน รบกวนอ่านข้อตกลงครับ\n🔗 https://terms.adsvance.xyz/\nพิมพ์ 'ยอมรับ' หลังอ่านจบครับ";
 
         $result = $this->service->tryConvertToFlex($text);
 
