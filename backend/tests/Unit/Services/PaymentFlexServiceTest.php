@@ -963,7 +963,7 @@ class PaymentFlexServiceTest extends TestCase
 
     private function termsText(): string
     {
-        return "📋 ก่อนชำระเงิน รบกวนอ่านข้อตกลงครับ\n🔗 https://mhhacoursecontent.my.canva.site/ads-vance\nพิมพ์ 'ยอมรับ' หลังอ่านจบครับ";
+        return "📋 ก่อนชำระเงิน รบกวนอ่านข้อตกลงครับ\n🔗 https://terms.adsvance.xyz/\nพิมพ์ 'ยอมรับ' หลังอ่านจบครับ";
     }
 
     private function flexJson(array $flex): string
