@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\Conversation;
+use App\Models\ProductStock;
 use App\Services\Payment\FlexMessageBuilder;
 use App\Services\Payment\PaymentMessageDetector;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class PaymentFlexService
@@ -224,19 +226,49 @@ class PaymentFlexService
 
     /**
      * Page/เฟสไก่ cannot run ads — ออเดอร์ล่าสุดที่เป็น Page/เฟสไก่ล้วนไม่ต้องเห็นกล่อง
-     * แจ้งยืนยันตัวตน. ทุกกรณีอื่น (ผสม, อ่านชื่อรายการไม่ออก, ไม่มีแชท/ข้อความยืนยัน)
-     * คืน true = แสดงต่อ — fail-safe ตามค่าเริ่มของ builder.
+     * แจ้งยืนยันตัวตน. ทุกกรณีอื่น (ผสม, อ่านรายการไม่ออก, พิสูจน์ว่ายอดไม่ครบทั้งตะกร้า,
+     * ไม่มีแชท/ข้อความยืนยัน) คืน true = แสดงต่อ — fail-safe ตามค่าเริ่มของ builder.
      */
     private function shouldShowIdvNotice(?Conversation $conversation): bool
     {
-        $names = $this->cartItemNames($conversation);
+        $order = $this->latestCartOrder($conversation);
 
-        if ($names === null) {
+        if ($order === null) {
             return true;
         }
 
-        foreach ($names as $name) {
-            if (! $this->isPageOrG3dName($name)) {
+        // ทุกรายการต้อง map กลับไปยังสินค้า Page/G3D ในแคตตาล็อกจริง
+        // (ชื่อ/alias — เทียบทั้งคำสำหรับ term อังกฤษ, substring สำหรับ term ไทย)
+        $catalogue = ProductStock::query()->get();
+        $products = [];
+        foreach ($order['names'] as $name) {
+            $product = $this->catalogueProduct((string) $name, $catalogue);
+            if ($product === null || ! in_array($product->slug, ['page', 'g3d'], true)) {
+                return true;
+            }
+            $products[] = $product;
+        }
+
+        // ชื่อจาก one-liner ตะกร้าระบุแค่ของที่เพิ่มล่าสุด — ซ่อนได้เมื่อยอด "รวม" ใน
+        // ข้อความตรงกับ qty × ราคาแคตตาล็อกของรายการที่ชื่อเท่านั้น (มิฉะนั้นยอดอาจ
+        // พ่วงรายการเก่า เช่น upsell "เพิ่ม Page … รวม 1,299" ที่พ่วง Nolimit เดิม)
+        if ($order['needs_price_parity']) {
+            if ($order['total'] === null) {
+                return true;
+            }
+
+            $sum = 0.0;
+            foreach ($order['names'] as $i => $name) {
+                $price = $products[$i]->price;
+                $qty = $order['quantities'][$i] ?? null;
+                // ราคา/จำนวนขาด = พิสูจน์ไม่ได้ → แสดง
+                if ($price === null || $qty === null || $qty < 1) {
+                    return true;
+                }
+                $sum += (float) $price * $qty;
+            }
+
+            if (abs($sum - $order['total']) > 0.01) {
                 return true;
             }
         }
@@ -245,27 +277,80 @@ class PaymentFlexService
     }
 
     /**
-     * ชื่อรายการเป็น Page/เพจ/FanPage หรือ G3D/เฟสไก่ (match แบบไม่สนตัวพิมพ์)
-     */
-    private function isPageOrG3dName(string $name): bool
-    {
-        foreach (['page', 'เพจ', 'g3d', 'เฟสไก่'] as $token) {
-            if (mb_stripos($name, $token) !== false) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * ชื่อรายการจากข้อความยืนยัน/ตะกร้าล่าสุดของบอท — ไล่ใหม่→เก่าเหมือน
-     * SlipVerificationService::findExpectedFromConfirmMessage.
-     * คืน null = ไม่มีข้อความยืนยัน หรืออ่านชื่อรายการไม่ได้ → caller แสดง notice.
+     * หาสินค้าจริงใน ProductStock จากชื่อรายการที่อ่านได้จากข้อความ — เทียบทั้งชื่อและ
+     * alias แล้วเลือก term ที่ยาวที่สุดก่อน (กัน "เฟสไก่ (G3D)" จับด้วย "ไก่" ที่สั้นกว่า
+     * ทั้งที่ "G3D" ตรงกว่า). term อังกฤษ/ตัวเลขต้องเป็นคำเต็ม (word boundary) กัน
+     * "Webpage" ไปจับ "page"; term ไทยเทียบ substring (ภาษาไทยไม่มีขอบคำใน regex).
+     * ยาวสุดเสมอกันหลาย product = กำกวม → ไม่เดา (คืน null → caller แสดง notice).
      *
-     * @return array<int, string>|null
+     * @param  Collection<int, ProductStock>  $catalogue
      */
-    private function cartItemNames(?Conversation $conversation): ?array
+    private function catalogueProduct(string $name, $catalogue): ?ProductStock
+    {
+        $needle = mb_strtolower(trim($name));
+        if ($needle === '') {
+            return null;
+        }
+
+        $candidates = [];
+        foreach ($catalogue as $product) {
+            foreach (array_merge([$product->name], $product->aliases ?? []) as $term) {
+                $term = mb_strtolower(trim((string) $term));
+                if (mb_strlen($term) < 2 || ! $this->nameContainsTerm($needle, $term)) {
+                    continue;
+                }
+                $candidates[] = ['len' => mb_strlen($term), 'product' => $product];
+            }
+        }
+
+        if ($candidates === []) {
+            return null;
+        }
+
+        usort($candidates, fn ($a, $b) => $b['len'] <=> $a['len']);
+
+        $maxLen = $candidates[0]['len'];
+        $topProductIds = array_unique(array_map(
+            fn ($c) => $c['product']->id,
+            array_filter($candidates, fn ($c) => $c['len'] === $maxLen),
+        ));
+        if (count($topProductIds) > 1) {
+            return null;
+        }
+
+        return $candidates[0]['product'];
+    }
+
+    /**
+     * needle มี term อยู่ไหม — term ที่เป็นตัวอักษรอังกฤษ/ตัวเลขล้วนต้องเป็นคำเต็ม
+     * (ตัวอักษร/ตัวเลขล้อมรอบ = คนละคำ)
+     */
+    private function nameContainsTerm(string $needle, string $term): bool
+    {
+        if (preg_match('/^[a-z0-9+&.]+$/', $term) === 1) {
+            return preg_match('/(?<![a-z0-9])'.preg_quote($term, '/').'(?![a-z0-9])/', $needle) === 1;
+        }
+
+        return mb_strpos($needle, $term) !== false;
+    }
+
+    /**
+     * อ่านออเดอร์ล่าสุดจากข้อความยืนยัน/ตะกร้าของบอท (เกณฑ์ isConfirmMessage เดียวกับ
+     * SlipVerificationService::findExpectedFromConfirmMessage) — แต่ต่างที่: ตัดสินจาก
+     * ข้อความยืนยันล่าสุด *เท่านั้น* ถึงข้อความแรกที่เป็นยืนยันแล้วหยุดทันที อ่านไม่ออกก็
+     * คืน null (ห้ามไล่ไปข้อความเก่ากว่า — ตะกร้าเก่าไม่ใช่ออเดอร์ปัจจุบัน เช่น เพิ่ม
+     * Nolimit ทีหลัง Page). SlipVerification มียอดโอนเป็น guard ไฟล์นี้ไม่มี จึงต้องเข้มกว่า.
+     *
+     * คืน array{names, needs_price_parity, total, quantities}:
+     *  - names: ชื่อรายการทั้งหมดที่อ่านได้
+     *  - needs_price_parity: true เมื่อชื่อมาจาก one-liner ตะกร้า (ระบุเฉพาะของที่เพิ่ม)
+     *    → caller ต้องพิสูจน์ว่ายอดรวมครบทั้งตะกร้า (total == Σ qty × ราคาแคตตาล็อก)
+     *    ก่อนจะซ่อน notice ได้; false เมื่อมาจาก parser หลัก (สรุปยอดทั้งตะกร้า)
+     * คืน null = ไม่มีข้อความยืนยัน หรืออ่านรายการไม่ได้ → caller แสดง notice.
+     *
+     * @return array{names: list<string>, needs_price_parity: bool, total: ?float, quantities: list<int>|null}|null
+     */
+    private function latestCartOrder(?Conversation $conversation): ?array
     {
         if ($conversation === null) {
             return null;
@@ -286,13 +371,18 @@ class PaymentFlexService
                 continue;
             }
 
-            // Primary: canonical parser (bulleted/numbered item lines)
+            // Primary: canonical parser (bulleted/numbered item lines — สรุปยอดทั้งตะกร้า)
             $data = $this->detector->parseConfirmData($content);
             if ($data !== null && $data['items'] !== []) {
-                return array_map(
-                    fn (array $item): string => (string) ($item['name'] ?? ''),
-                    $data['items']
-                );
+                return [
+                    'names' => array_map(
+                        fn (array $item): string => (string) ($item['name'] ?? ''),
+                        $data['items']
+                    ),
+                    'needs_price_parity' => false,
+                    'total' => null,
+                    'quantities' => null,
+                ];
             }
 
             // Cart one-liner ("เพิ่มเฟสไก่ (G3D) 1 ตัว ลงตะกร้าแล้วครับ รวม 50 บาทครับ…"):
@@ -301,11 +391,32 @@ class PaymentFlexService
             // backend/docs/superpowers/specs/2026-07-31-order-reconstruction-design.md).
             // Anchored on the cart phrase so price-quote confirm messages never match.
             if (mb_strpos($content, 'ลงตะกร้า') !== false) {
-                preg_match_all('/(?:เพิ่ม|และ)\s*([^\n]+?)\s+\d+\s*(?:ตัว|เพจ|ใบ|ชิ้น|อัน)/u', $content, $matches);
-                if ($matches[1] !== []) {
-                    return array_map('trim', $matches[1]);
+                preg_match_all(
+                    '/(?:เพิ่ม|และ)\s*([^\n]+?)\s+(\d+)\s*(?:ตัว|เพจ|ใบ|ชิ้น|อัน)/u',
+                    $content,
+                    $matches,
+                );
+
+                if ($matches[1] === []) {
+                    // อ่านชื่อ+จำนวนไม่ได้ — อย่าไล่ไปข้อความเก่ากว่า
+                    return null;
                 }
+
+                if (preg_match('/(?:รวม|ราคา)\s*:?\s*([\d,]+(?:\.\d+)?)\s*บาท/u', $content, $totalMatch) !== 1) {
+                    // ยอดรวมอ่านไม่ได้ = พิสูจน์ความครบตะกร้าไม่ได้ → แสดง
+                    return null;
+                }
+
+                return [
+                    'names' => array_map('trim', $matches[1]),
+                    'needs_price_parity' => true,
+                    'total' => (float) str_replace(',', '', $totalMatch[1]),
+                    'quantities' => array_map('intval', $matches[2]),
+                ];
             }
+
+            // ข้อความยืนยันล่าสุดแต่อ่านรายการไม่ได้ทั้งสองทาง — หยุดที่ออเดอร์นี้
+            return null;
         }
 
         return null;

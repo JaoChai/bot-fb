@@ -948,20 +948,77 @@ class PaymentFlexServiceTest extends TestCase
 
     private function conversationWithBotMessage(string $content): Conversation
     {
+        return $this->conversationWithBotMessages([$content]);
+    }
+
+    /**
+     * Seed bot messages oldest → newest (the idv scan reads latest id first).
+     *
+     * @param  list<string>  $contents
+     */
+    private function conversationWithBotMessages(array $contents): Conversation
+    {
         $conversation = Conversation::factory()->create();
-        Message::factory()->create([
-            'conversation_id' => $conversation->id,
-            'sender' => 'bot',
-            'type' => 'text',
-            'content' => $content,
-        ]);
+        foreach ($contents as $content) {
+            Message::factory()->create([
+                'conversation_id' => $conversation->id,
+                'sender' => 'bot',
+                'type' => 'text',
+                'content' => $content,
+            ]);
+        }
 
         return $conversation;
+    }
+
+    /**
+     * Real catalogue rows (slugs/aliases from ProductStockSeeder, prices from
+     * the 2026-07-31 price migration: Personal/BM 1100, Page 199, G3D 50).
+     */
+    private function seedCatalogue(): void
+    {
+        ProductStock::create([
+            'name' => 'Nolimit Level Up+ Personal',
+            'slug' => 'personal',
+            'aliases' => ['Personal'],
+            'in_stock' => false,
+            'display_order' => 0,
+            'stock_code' => 'NLMP',
+            'delivery_method' => 'stock',
+            'price' => 1100,
+        ]);
+        ProductStock::create([
+            'name' => 'Nolimit Level Up+ BM',
+            'slug' => 'bm',
+            'aliases' => ['BM'],
+            'in_stock' => false,
+            'display_order' => 1,
+            'stock_code' => 'NLMBM',
+            'delivery_method' => 'stock',
+            'price' => 1100,
+        ]);
+        ProductStock::create([
+            'name' => 'Page',
+            'slug' => 'page',
+            'aliases' => ['เพจ', 'fanpage'],
+            'in_stock' => true,
+            'display_order' => 2,
+            'price' => 199,
+        ]);
+        ProductStock::create([
+            'name' => 'G3D',
+            'slug' => 'g3d',
+            'aliases' => ['ไก่'],
+            'in_stock' => true,
+            'display_order' => 3,
+            'price' => 50,
+        ]);
     }
 
     #[Test]
     public function test_terms_flex_hides_idv_notice_for_page_only_order(): void
     {
+        $this->seedCatalogue();
         $conversation = $this->conversationWithBotMessage(
             'เพิ่ม Page 1 เพจ ลงตะกร้าแล้วครับ รวม 199 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
         );
@@ -976,6 +1033,7 @@ class PaymentFlexServiceTest extends TestCase
     public function test_terms_flex_hides_idv_notice_for_g3d_only_order(): void
     {
         // Real prod cart text (owner quote, 2026-11-10)
+        $this->seedCatalogue();
         $conversation = $this->conversationWithBotMessage(
             'เพิ่มเฟสไก่ (G3D) 1 ตัว ลงตะกร้าแล้วครับ รวม 50 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
         );
@@ -989,6 +1047,7 @@ class PaymentFlexServiceTest extends TestCase
     #[Test]
     public function test_terms_flex_hides_idv_notice_for_page_and_g3d_order(): void
     {
+        $this->seedCatalogue();
         $conversation = $this->conversationWithBotMessage(
             'เพิ่ม Page 1 เพจ และเฟสไก่ (G3D) 1 ตัว ลงตะกร้าแล้วครับ รวม 249 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
         );
@@ -1003,6 +1062,7 @@ class PaymentFlexServiceTest extends TestCase
     public function test_terms_flex_shows_idv_notice_for_mixed_order(): void
     {
         // Real prod cart text (owner quote, 2026-11-10): Nolimit runs ads → notice stays
+        $this->seedCatalogue();
         $fuller = $this->conversationWithBotMessage(
             'Nolimit Level Up+ Personal (เติมเงิน) 1 ตัว = 1,000 บาท Page 1 ตัว = 199 บาท รวม 1,199 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ'
         );
@@ -1027,6 +1087,60 @@ class PaymentFlexServiceTest extends TestCase
     public function test_terms_flex_shows_idv_notice_without_conversation(): void
     {
         $result = $this->service->tryConvertToFlex($this->termsText());
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_newest_confirm_adds_nolimit_after_page_cart(): void
+    {
+        // Reviewer round-1 case A: newest cart message adds Nolimit (unreadable names,
+        // no qty). The scan must stop there — falling through to the older Page-only
+        // cart would hide the notice for an order that runs ads.
+        $this->seedCatalogue();
+        $conversation = $this->conversationWithBotMessages([
+            'เพิ่ม Page 1 เพจ ลงตะกร้าแล้วครับ รวม 199 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+            'เพิ่ม Nolimit Level Up+ BM ลงตะกร้าแล้วครับ รวม 1,299 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+        ]);
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_page_upsell_total_carries_earlier_nolimit(): void
+    {
+        // Reviewer round-1 case B: the Page one-liner names only the Page just added,
+        // but its total (1,299) still carries the earlier Nolimit. Price parity must
+        // fail (1 × 199 ≠ 1,299) → notice stays.
+        $this->seedCatalogue();
+        $conversation = $this->conversationWithBotMessages([
+            'เพิ่ม Nolimit Level Up+ BM 1 ตัว ลงตะกร้าแล้วครับ รวม 1,100 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+            'เพิ่ม Page 1 เพจ ลงตะกร้าแล้วครับ รวม 1,299 บาทครับ ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+        ]);
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
+
+        $this->assertIsArray($result);
+        $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
+    }
+
+    #[Test]
+    public function test_terms_flex_shows_idv_notice_when_newest_confirm_is_switch_to_nolimit(): void
+    {
+        // Reviewer round-1 case F: "เปลี่ยนเป็น Nolimit แทน" supersedes the earlier
+        // Page-only summary. The newest confirm is unreadable → show; no fall-through
+        // to the older Page cart.
+        $this->seedCatalogue();
+        $conversation = $this->conversationWithBotMessages([
+            'Page x1 - 199 บาท รวม 199 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+            'เปลี่ยนเป็น Nolimit Level Up+ BM แทนแล้วครับ รวม 1,100 บาท ถูกต้องไหมครับ? พิมพ์ “ยืนยัน” ได้เลยครับ',
+        ]);
+
+        $result = $this->service->tryConvertToFlex($this->termsText(), $conversation);
 
         $this->assertIsArray($result);
         $this->assertStringContainsString('📌 กฎใหม่', $this->flexJson($result));
