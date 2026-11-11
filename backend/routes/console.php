@@ -103,8 +103,12 @@ Schedule::command('health:check-realtime')
 Schedule::command('stock:sync-pool')->everyFiveMinutes()->withoutOverlapping();
 
 // Handover — เตือนแอดมินเมื่อลูกค้ารอคำตอบเกิน handover.alert_after_minutes นาที
-// withoutOverlapping(10) + runInBackground เหตุผลเดียวกับ delivery:remind (Telegram ตอบช้าได้ ~30 วิ)
-Schedule::command('handover:alert-unanswered')->everyMinute()->withoutOverlapping(10)->runInBackground();
+// OFF since 11 Nov 2026 (owner decision, card t_94f5988f): admins answer in LINE OA,
+// outside this system, so replies are never recorded and every alert this produced
+// was a false "customer waiting for admin" Telegram ping. The command class
+// (app/Console/Commands/AlertUnansweredHandover.php), config/handover.php and its
+// tests are kept untouched. To re-enable, restore:
+// Schedule::command('handover:alert-unanswered')->everyMinute()->withoutOverlapping(10)->runInBackground();
 
 // Wave 2 reply phase timings — keep only 30 days of rows (card retention rule)
 Schedule::command('replies:prune-timings')
