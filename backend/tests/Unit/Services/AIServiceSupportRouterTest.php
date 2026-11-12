@@ -328,6 +328,31 @@ class AIServiceSupportRouterTest extends TestCase
         $this->assertTrue(ExtractEntitiesJob::shouldExtract($conversation) === false || true);
     }
 
+    #[Test]
+    public function test_kb_shadow_scores_persist_into_message_metadata(): void
+    {
+        config(['services.openrouter.support_router_kb_shadow' => true]);
+        [$bot, $conversation] = $this->makeBotWithConversation([
+            'support_router_mode' => 'shadow',
+            'support_router_model' => 'openai/gpt-6-luna-decisions',
+        ]);
+        $userMessage = $this->seedHistory($conversation, 'BM ราคาเท่าไหร่ครับ');
+        $this->fakeKbShadowDecision(0.8, 0.75, 0.45);
+
+        $this->mockRagReply('คำตอบปกติจากบอท');
+        $this->mock(StockGuardService::class, function ($m) {
+            $m->shouldReceive('validate')->andReturn(['blocked' => false]);
+        });
+
+        $botMessage = app(AIService::class)->generateAndSaveResponse($bot, $conversation, $userMessage);
+
+        // the reply itself is unchanged
+        $this->assertSame('คำตอบปกติจากบอท', $botMessage->content);
+        // the KB shadow scores ride along in the existing persistence path
+        $this->assertSame(0.75, $botMessage->metadata['support_router']['kb_score']);
+        $this->assertSame(0.45, $botMessage->metadata['support_router']['kb_ctx_score']);
+    }
+
     private function makeBotWithConversation(array $botAttributes = []): array
     {
         $user = User::factory()->create();
@@ -390,6 +415,45 @@ class AIServiceSupportRouterTest extends TestCase
                 }
 
                 return Http::response($this->decisionPayload($score));
+            },
+        ]);
+    }
+
+    /**
+     * Four-way fake for the KB shadow flag: support gets $support, buying stays
+     * at 0.25 (same as fakeDecision), and the two kb variants — which share the
+     * question name "kb" and differ only in state — get $kb / $kbCtx.
+     */
+    private function fakeKbShadowDecision(float $support, float $kb, float $kbCtx): void
+    {
+        Http::fake([
+            self::DECISIONS_URL => function ($request) use ($support, $kb, $kbCtx) {
+                $data = $request->data();
+                $questions = $data['questions'] ?? [];
+
+                if (isset($questions['buying'])) {
+                    return Http::response([
+                        'model' => 'openai/gpt-6-luna-decisions-20261006',
+                        'answers' => ['buying' => ['type' => 'noul', 'noul' => 0.25]],
+                        'usage' => ['input_tokens' => 31, 'output_tokens' => 0, 'cost' => 0.0000021],
+                        'id' => 'gen-dec-buy',
+                        'provider' => 'OpenAI',
+                    ]);
+                }
+
+                if (isset($questions['kb'])) {
+                    $noul = isset($data['state']['recent_conversation']) ? $kbCtx : $kb;
+
+                    return Http::response([
+                        'model' => 'openai/gpt-6-luna-decisions-20261006',
+                        'answers' => ['kb' => ['type' => 'noul', 'noul' => $noul]],
+                        'usage' => ['input_tokens' => 31, 'output_tokens' => 0, 'cost' => 0.0000031],
+                        'id' => 'gen-dec-kb',
+                        'provider' => 'OpenAI',
+                    ]);
+                }
+
+                return Http::response($this->decisionPayload($support));
             },
         ]);
     }

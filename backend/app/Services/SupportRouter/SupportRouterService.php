@@ -34,6 +34,16 @@ use RuntimeException;
  * The router must never block or break a reply: a SUPPORT failure => null =>
  * reply as today. A BUYING failure only yields buying_score null, which never
  * causes a handover (sales-safe).
+ *
+ * KB shadow measurement (LK2, config services.openrouter.support_router_kb_shadow):
+ * when the flag is on, the same pool asks the "does this message need the
+ * knowledge base?" question TWICE more (kb = latest message only, kb_ctx = with
+ * the recent conversation) and records kb_score / kb_ctx_score in the decision
+ * array (persisted to messages.metadata.support_router). NOTHING reads them —
+ * the reply path, the handover rule, the intent step and the KB search stay
+ * exactly as today. A failed kb call yields a null score only, with one warning
+ * (bot id, status, error only — never customer text), and never changes any
+ * existing key. Flag off (default) = today's two requests, byte-identical.
  */
 class SupportRouterService
 {
@@ -61,6 +71,17 @@ class SupportRouterService
         .'False when the latest message reports a problem, asks for a claim/replacement, asks how to use something '
         .'already bought, or chases support, even if the customer bought earlier.';
 
+    /**
+     * Exact KB-shadow question text (Lead measured 2026-11-12 on 543 real bot-26
+     * messages, LK1 blind read: Luna missed 3, live system 22 — card LK2, frozen).
+     * Sent in BOTH shadow variants (kb without history, kb_ctx with history); the
+     * answer is read from answers.kb.noul in both. Do not paraphrase: wording
+     * changes move the score.
+     */
+    private const KB_QUESTION = 'Is the latest customer message a question that needs factual shop information to answer '
+        .'(products, prices, stock, how to use or set up, policies, warranty, documentation)? Answer No for greetings, '
+        .'casual talk, opinions, thanks, acknowledgements, confirmations, order placement, payment notices and short follow-ups.';
+
     /** A buying score at or above this blocks the support handover. */
     private const BUYING_BLOCK_THRESHOLD = 0.5;
 
@@ -79,8 +100,9 @@ class SupportRouterService
     /**
      * @param  array<int, array{sender: string, content: string}>  $history  messages BEFORE
      *                                                                       $latestMessage (already deduplicated by the caller)
-     * @return array{score: float, buying_score: float|null, buying_blocked: bool, handover: bool, mode: string, model: string, latency_ms: int, cost: float}|null
-     *                                                                                                                                                             null = router off or support-call failure — reply as today
+     * @return array{score: float, buying_score: float|null, buying_blocked: bool, handover: bool, mode: string, model: string, latency_ms: int, cost: float, kb_score?: float|null, kb_ctx_score?: float|null}|null
+     *                                                                                                                                                                                                               null = router off or support-call failure — reply as today
+     *                                                                                                                                                                                                               kb_score / kb_ctx_score are present ONLY when the KB shadow flag is on (LK2, recorded, nothing reads them)
      */
     public function decide(Bot $bot, string $latestMessage, array $history): ?array
     {
@@ -109,13 +131,22 @@ class SupportRouterService
         $timeout = (int) config('services.openrouter.support_router_timeout', 5);
         $url = config_string('services.openrouter.decisions_url', 'https://openrouter.ai/api/alpha/decisions');
         $headers = ['Authorization' => 'Bearer '.$this->credentials->key()];
+        // LK2 shadow measurement: OFF (default) = today's two requests, byte-identical.
+        $kbShadow = (bool) config('services.openrouter.support_router_kb_shadow', false);
 
         try {
-            $responses = Http::pool(function (Pool $pool) use ($headers, $history, $latestMessage, $model, $timeout, $url) {
-                return [
+            $responses = Http::pool(function (Pool $pool) use ($headers, $history, $kbShadow, $latestMessage, $model, $timeout, $url) {
+                $requests = [
                     'support' => $pool->as('support')->timeout($timeout)->withHeaders($headers)->post($url, $this->supportBody($model, $latestMessage, $history)),
                     'buying' => $pool->as('buying')->timeout($timeout)->withHeaders($headers)->post($url, $this->buyingBody($model, $latestMessage)),
                 ];
+
+                if ($kbShadow) {
+                    $requests['kb'] = $pool->as('kb')->timeout($timeout)->withHeaders($headers)->post($url, $this->kbBody($model, $latestMessage));
+                    $requests['kb_ctx'] = $pool->as('kb_ctx')->timeout($timeout)->withHeaders($headers)->post($url, $this->kbCtxBody($model, $latestMessage, $history));
+                }
+
+                return $requests;
             });
         } catch (ConnectionException $e) {
             Log::warning('Support router: Decisions API timed out', [
@@ -161,6 +192,14 @@ class SupportRouterService
             'latency_ms' => (int) round((microtime(true) - $startedAt) * 1000),
             'cost' => $this->costOf($responses['support'] ?? null) + $this->costOf($responses['buying'] ?? null),
         ];
+
+        if ($kbShadow) {
+            // LK2 shadow: recorded only — nothing branches on these values, a kb
+            // failure lands here as a null score and changes no key above.
+            $decision['kb_score'] = $this->kbScore($responses['kb'] ?? null, 'kb', $bot->id);
+            $decision['kb_ctx_score'] = $this->kbScore($responses['kb_ctx'] ?? null, 'kb_ctx', $bot->id);
+            $decision['cost'] += $this->costOf($responses['kb'] ?? null) + $this->costOf($responses['kb_ctx'] ?? null);
+        }
 
         if ($handover) {
             $this->notifyAdmin($bot, $latestMessage, $supportScore);
@@ -213,6 +252,59 @@ class SupportRouterService
                 'buying' => [
                     'type' => 'noul',
                     'instructions' => self::BUYING,
+                    'criteria' => ['true' => 'Yes', 'false' => 'No'],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * KB shadow request, "kb" variant — ONLY the latest customer message, no
+     * recent_conversation (the shape the Lead measured on 2026-11-12). Same
+     * question name as the ctx variant; the answer is read from answers.kb.noul.
+     *
+     * @return array<string, mixed>
+     */
+    private function kbBody(string $model, string $latestMessage): array
+    {
+        return [
+            'model' => $model,
+            'state' => [
+                'shop' => self::SHOP_LINE,
+                'latest_customer_message' => $latestMessage,
+            ],
+            'questions' => [
+                'kb' => [
+                    'type' => 'noul',
+                    'instructions' => self::KB_QUESTION,
+                    'criteria' => ['true' => 'Yes', 'false' => 'No'],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * KB shadow request, "kb_ctx" variant — same question name, the state adds
+     * the recent conversation exactly as recentConversation() builds it for the
+     * support call (last 6 messages, 300 chars each). State keys in this order:
+     * shop, latest_customer_message, recent_conversation.
+     *
+     * @param  array<int, array{sender: string, content: string}>  $history
+     * @return array<string, mixed>
+     */
+    private function kbCtxBody(string $model, string $latestMessage, array $history): array
+    {
+        return [
+            'model' => $model,
+            'state' => [
+                'shop' => self::SHOP_LINE,
+                'latest_customer_message' => $latestMessage,
+                'recent_conversation' => $this->recentConversation($history, $latestMessage),
+            ],
+            'questions' => [
+                'kb' => [
+                    'type' => 'noul',
+                    'instructions' => self::KB_QUESTION,
                     'criteria' => ['true' => 'Yes', 'false' => 'No'],
                 ],
             ],
@@ -294,6 +386,46 @@ class SupportRouterService
             return $this->clamp((float) $score);
         } catch (\Throwable $e) {
             Log::warning('Support router: buying check failed', [
+                'bot_id' => $botId,
+                'status' => $response instanceof Response ? $response->status() : null,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * KB shadow score, or null when that call failed — one warning per failed
+     * call, never throws, never affects the reply decision. The warning logs
+     * bot id, status and error ONLY (no customer text).
+     *
+     * @param  'kb'|'kb_ctx'  $question  which shadow variant failed, for the log message
+     */
+    private function kbScore(mixed $response, string $question, int $botId): ?float
+    {
+        try {
+            if ($response instanceof ConnectionException) {
+                throw new RuntimeException($response->getMessage());
+            }
+
+            if (! $response instanceof Response) {
+                throw new RuntimeException($response instanceof \Throwable ? $response->getMessage() : 'no response');
+            }
+
+            if ($response->failed()) {
+                throw new RuntimeException('HTTP '.$response->status());
+            }
+
+            $score = $response->json('answers.kb.noul');
+
+            if (! is_numeric($score)) {
+                throw new RuntimeException('missing numeric score');
+            }
+
+            return $this->clamp((float) $score);
+        } catch (\Throwable $e) {
+            Log::warning("Support router: KB shadow check failed ({$question})", [
                 'bot_id' => $botId,
                 'status' => $response instanceof Response ? $response->status() : null,
                 'error' => $e->getMessage(),
