@@ -3,7 +3,7 @@
  * Handles Telegram and LINE message rendering
  * Extracted from ChatWindow.tsx
  */
-import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { ChevronDown, Loader2 } from 'lucide-react';
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { TelegramMessageBubble } from '@/components/telegram/TelegramMessageBubble';
 import { LINEMessageBubble } from '@/components/line/LINEMessageBubble';
+import { filterVisibleMessages } from './messageVisibility';
 import type { Message, Conversation } from '@/types/api';
 
 interface ChannelMessageAreaProps {
@@ -51,12 +52,20 @@ export function ChannelMessageArea({
   } | null>(null);
   const prevFirstIdRef = useRef<number | null>(null);
 
+  // Hide bot text messages that carry no content and no media (e.g. the
+  // Support Router's duplicate-suppressed rows): they would render as a
+  // blank bubble in LINEMessageBubble/TelegramMessageBubble. Shared rule
+  // with MessageList; every read below (map, previousMessage, auto-scroll,
+  // load-older anchor, empty state) uses this filtered list so hidden rows
+  // never leave a gap.
+  const visibleMessages = useMemo(() => filterVisibleMessages(messages), [messages]);
+
   // Auto scroll to bottom when messages change
   useEffect(() => {
     if (autoScroll && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages, autoScroll]);
+  }, [visibleMessages, autoScroll]);
 
   // Restore scroll position after older messages are prepended
   useLayoutEffect(() => {
@@ -65,7 +74,7 @@ export function ChannelMessageArea({
       anchor.sawLoading = true;
     }
 
-    const firstId = messages[0]?.id ?? null;
+    const firstId = visibleMessages[0]?.id ?? null;
     const viewport = scrollViewportRef.current;
 
     if (anchor && viewport && prevFirstIdRef.current !== null && firstId !== prevFirstIdRef.current) {
@@ -90,7 +99,7 @@ export function ChannelMessageArea({
     }
 
     prevFirstIdRef.current = firstId;
-  }, [messages, isLoadingOlder]);
+  }, [visibleMessages, isLoadingOlder]);
 
   // Handle scroll: bottom detection for auto-scroll + top detection for load-older
   const handleScroll = useCallback(
@@ -142,11 +151,11 @@ export function ChannelMessageArea({
 
   const renderMessages = () => {
     const Bubble = channelType === 'telegram' ? TelegramMessageBubble : LINEMessageBubble;
-    return messages.map((message, index) => (
+    return visibleMessages.map((message, index) => (
       <div key={message.id} data-message-id={message.id}>
         <Bubble
           message={message}
-          previousMessage={index > 0 ? messages[index - 1] : undefined}
+          previousMessage={index > 0 ? visibleMessages[index - 1] : undefined}
         />
       </div>
     ));
@@ -164,7 +173,7 @@ export function ChannelMessageArea({
             <div className="flex items-center justify-center py-8">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
-          ) : messages.length === 0 ? (
+          ) : visibleMessages.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               No messages in this conversation yet
             </div>
