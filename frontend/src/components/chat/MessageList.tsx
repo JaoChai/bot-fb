@@ -10,6 +10,7 @@ import { Loader2, ChevronDown, RotateCcw } from 'lucide-react';
 import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { MessageBubble } from './MessageBubble';
+import { filterVisibleMessages } from './messageVisibility';
 import type { Message } from '@/types/api';
 
 export interface MessageListProps {
@@ -106,22 +107,10 @@ export function MessageList({
 
   // Hide bot text messages that carry no content and no media (e.g. the
   // Support Router's duplicate-suppressed rows): they would render as a
-  // blank bubble. The single filtered list below drives the virtualizer
-  // count, previousMessage, separators, auto-scroll and the load-older
-  // anchor, so hidden rows never leave a gap in any of them.
-  const visibleMessages = useMemo(
-    () =>
-      messages.filter(
-        (message) =>
-          !(
-            message.sender === 'bot' &&
-            (message.type == null || message.type === 'text') &&
-            !message.media_url &&
-            !message.content?.trim()
-          ),
-      ),
-    [messages],
-  );
+  // blank bubble. Shared rule with ChannelMessageArea (LINE/Telegram);
+  // the filtered list below drives every read in this component so hidden
+  // rows never leave a gap.
+  const visibleMessages = useMemo(() => filterVisibleMessages(messages), [messages]);
 
   // Virtualizer for efficient message rendering
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual returns un-memoizable functions; component is already opted out via "use no memo"
