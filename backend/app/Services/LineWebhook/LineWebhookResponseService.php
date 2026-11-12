@@ -535,6 +535,7 @@ class LineWebhookResponseService
         return $query->latest()
             ->take($limit)
             ->get()
+            ->filter(fn (Message $msg) => $msg->content !== null && $msg->content !== '') // ตัดแถว handover ที่ถูกยับเนื้อหาว่าง — Lead widening 2026-11-12
             ->reverse()
             ->map(fn (Message $msg) => [
                 'sender' => $msg->sender,

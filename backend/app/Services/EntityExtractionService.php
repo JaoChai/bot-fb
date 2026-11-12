@@ -56,6 +56,7 @@ class EntityExtractionService
             ->latest()
             ->take($messageLimit)
             ->get()
+            ->filter(fn ($msg) => $msg->content !== null && $msg->content !== '') // drop suppressed handover rows (empty content) — Lead widening 2026-11-12
             ->reverse()
             ->values();
 

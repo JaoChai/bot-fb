@@ -16,6 +16,13 @@ use Illuminate\Support\Facades\Log;
 
 class AIService
 {
+    /**
+     * Duplicate-handover window: a bot message of the same conversation newer
+     * than this many seconds already pointing to Support suppresses the router's
+     * handover text for the current turn. Class constant on purpose — no config.
+     */
+    private const SUPPORT_HANDOVER_DEDUPE_WINDOW_SECONDS = 60;
+
     public function __construct(
         protected OpenRouterService $openRouter,
         protected RAGService $ragService,
@@ -87,6 +94,36 @@ class AIService
                     'conversation_id' => $conversation->id,
                     'score' => $routerDecision['score'],
                 ]);
+
+                // Duplicate-handover suppression: images bypass the aggregation
+                // buffer by design, so image + following text are two turns and the
+                // router has no memory of the reply it already caused. If this
+                // conversation was pointed to Support within the last
+                // SUPPORT_HANDOVER_DEDUPE_WINDOW_SECONDS, return the handover with
+                // EMPTY content — both consumers (generateAndSaveResponse /
+                // ProcessAggregatedMessages) send nothing when content is empty, so
+                // the customer receives silence instead of the same Support text
+                // twice. The router decision itself (score, alert, cost) is unchanged.
+                $earlierSupportMessage = $this->findRecentSupportPointingBotMessage($bot, $conversation);
+
+                if ($earlierSupportMessage !== null) {
+                    Log::info('Support router: duplicate handover suppressed', [
+                        'bot_id' => $bot->id,
+                        'conversation_id' => $conversation->id,
+                        'earlier_message_id' => $earlierSupportMessage->id,
+                    ]);
+
+                    $routerDecision['duplicate_suppressed'] = true;
+
+                    return [
+                        'content' => '',
+                        'model' => 'support_router',
+                        'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0],
+                        'cost' => $routerDecision['cost'],
+                        'order_payload' => null,
+                        'support_router' => $routerDecision,
+                    ];
+                }
 
                 return [
                     'content' => (string) ($bot->support_handover_message ?? ''),
@@ -373,12 +410,71 @@ class AIService
             ->take($limit)
             ->get()
             ->reverse()
+            // A suppressed handover row (content '') must never reach the chat
+            // model or the router's recent_conversation as an empty turn —
+            // dropped AFTER the window slice so every non-empty row and its
+            // order stay exactly as before (Lead widening, 2026-11-12).
+            ->filter(fn (Message $msg) => $msg->content !== null && $msg->content !== '')
             ->map(fn (Message $msg) => [
                 'sender' => $msg->sender,
                 'content' => $msg->content,
             ])
             ->values()
             ->toArray();
+    }
+
+    /**
+     * A bot message of THIS conversation, created within the last
+     * SUPPORT_HANDOVER_DEDUPE_WINDOW_SECONDS, that already points the customer
+     * to Support: model_used = support_router with non-empty content, OR content
+     * containing a URL extracted from support_handover_message.
+     *
+     * The URL rule repeats LineWebhookResponseService::visionReplyTargetsSupport()
+     * on purpose: sharing it would require editing that file (its behaviour must
+     * not change) on top of a new shared helper. Keep the two regexes in sync.
+     */
+    private function findRecentSupportPointingBotMessage(Bot $bot, Conversation $conversation): ?Message
+    {
+        $recentBotMessages = $conversation->messages()
+            ->where('sender', 'bot')
+            ->where('created_at', '>=', now()->subSeconds(self::SUPPORT_HANDOVER_DEDUPE_WINDOW_SECONDS))
+            ->orderBy('id')
+            ->get(['id', 'content', 'model_used']);
+
+        $handoverUrls = $this->handoverUrls($bot);
+
+        return $recentBotMessages->first(function (Message $message) use ($handoverUrls) {
+            if ($message->model_used === 'support_router' && (string) $message->content !== '') {
+                return true;
+            }
+
+            foreach ($handoverUrls as $url) {
+                if (str_contains((string) $message->content, $url)) {
+                    return true;
+                }
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * URLs extracted from the handover message with https?://\S+ — empty when
+     * the bot's support_handover_message carries no URL.
+     *
+     * @return list<string>
+     */
+    private function handoverUrls(Bot $bot): array
+    {
+        $handoverMessage = $bot->support_handover_message;
+
+        if (! is_string($handoverMessage) || $handoverMessage === '') {
+            return [];
+        }
+
+        preg_match_all('/https?:\/\/\S+/', $handoverMessage, $matches);
+
+        return array_values(array_unique($matches[0]));
     }
 
     /**

@@ -270,6 +270,7 @@ class StickerReplyService
         return $query->latest()
             ->take($limit)
             ->get()
+            ->filter(fn ($msg) => $msg->content !== null && $msg->content !== '') // drop suppressed handover rows (empty content) — Lead widening 2026-11-12
             ->reverse()
             ->map(fn ($msg) => ['sender' => $msg->sender, 'content' => $msg->content])
             ->values()
