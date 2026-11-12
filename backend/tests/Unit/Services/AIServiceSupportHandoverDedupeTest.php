@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\AIService;
 use App\Services\RAGService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\Test;
@@ -41,6 +42,13 @@ class AIServiceSupportHandoverDedupeTest extends TestCase
             'services.openrouter.support_router_threshold' => 0.7,
             'delivery.order_payload_enabled' => false,
         ]);
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+
+        parent::tearDown();
     }
 
     #[Test]
@@ -241,6 +249,70 @@ class AIServiceSupportHandoverDedupeTest extends TestCase
             ['sender' => 'user', 'content' => 'สอบถามครับ'],
             ['sender' => 'bot', 'content' => 'กรุณาติดต่อ https://support.example.com/th ครับ'],
         ], $history);
+    }
+
+    #[Test]
+    public function test_suppression_chain_pins_empty_rows_never_count_and_exact_60s_boundary(): void
+    {
+        // Reviewer round 1 item 2: pins the "content is non-empty" half of the
+        // rule. Rows are written by the REAL code through generateAndSaveResponse
+        // under a travelled clock (no hand-set created_at — a hand-set timestamp
+        // could cross the boundary for timezone reasons). A suppressed row
+        // (model_used = support_router, content '') must NOT itself count as
+        // pointing to Support: the handover text comes back the moment the last
+        // row that really carried text is older than 60 s, even while suppressed
+        // rows still sit inside the window, and the fresh handover then counts
+        // again. The exact boundary is pinned in the same chain: 59/60 s inside,
+        // 61 s outside.
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $this->mockRagNeverCalled();
+        $this->fakeDecision(0.9);
+
+        $t0 = Carbon::now();
+        Carbon::setTestNow($t0);
+
+        // T0: no earlier bot row — the handover text goes out and is saved by
+        // the real code (support_router, non-empty, carries the handover URL).
+        $first = $this->handoverTurn($bot, $conversation, 'ล็อกอินไม่ได้ครับ');
+        $this->assertSame(self::HANDOVER_MESSAGE, $first->content);
+        $this->assertArrayNotHasKey('duplicate_suppressed', $first->metadata['support_router']);
+
+        $steps = [
+            10 => 'suppressed', // first duplicate turn inside the window
+            50 => 'suppressed', // second suppressed turn — '' rows never count
+            59 => 'suppressed', // boundary: 59 s old is inside the window
+            60 => 'suppressed', // boundary: exactly 60 s old is still inside
+            61 => 'text',       // boundary: 61 s old is outside -> fresh handover text
+            80 => 'suppressed', // the fresh handover (+61 text row) counts again
+            141 => 'text',      // '' rows never extend the window: text comes back
+        ];
+
+        foreach ($steps as $seconds => $expected) {
+            Carbon::setTestNow($t0->copy()->addSeconds($seconds));
+            $botMessage = $this->handoverTurn($bot, $conversation, "ยังไม่ได้ครับ (t+{$seconds})");
+
+            if ($expected === 'suppressed') {
+                $this->assertSame('', $botMessage->content, "at t+{$seconds}s the duplicate handover must be suppressed");
+                $this->assertTrue(
+                    $botMessage->metadata['support_router']['duplicate_suppressed'],
+                    "at t+{$seconds}s duplicate_suppressed must be set",
+                );
+            } else {
+                $this->assertSame(self::HANDOVER_MESSAGE, $botMessage->content, "at t+{$seconds}s the handover text must come back");
+                $this->assertArrayNotHasKey(
+                    'duplicate_suppressed',
+                    $botMessage->metadata['support_router'],
+                    "at t+{$seconds}s the fresh handover must not carry the key",
+                );
+            }
+        }
+    }
+
+    private function handoverTurn(Bot $bot, Conversation $conversation, string $userText): Message
+    {
+        $userMessage = $this->seedCurrentUserMessage($conversation, $userText);
+
+        return app(AIService::class)->generateAndSaveResponse($bot, $conversation, $userMessage);
     }
 
     private function makeBotWithConversation(): array

@@ -4,9 +4,11 @@ namespace Tests\Unit\Services;
 
 use App\Models\Bot;
 use App\Models\Conversation;
+use App\Models\Flow;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\EntityExtractionService;
+use App\Services\FlowPluginService;
 use App\Services\LeadRecoveryService;
 use App\Services\LineWebhook\LineWebhookResponseService;
 use App\Services\OpenRouterService;
@@ -145,5 +147,98 @@ class EmptyBotRowModelContextTest extends TestCase
             ['role' => 'customer', 'content' => 'ล็อกอินไม่ได้ครับ'],
             ['role' => 'assistant', 'content' => 'ลิงก์เข้าระบบ: https://example.com/login'],
         ], $context);
+    }
+
+    public function test_flow_plugin_evaluation_prompt_leaves_out_empty_bot_rows(): void
+    {
+        // Reviewer round 1 item 1: FlowPluginService::evaluateAndExecute maps the
+        // conversation context to "{$role}: {$msg->content}" and sends it inside
+        // the plugin-evaluation prompt to openRouter->chat. Both entry points go
+        // through that same map: executePlugins() (webhook path, live context)
+        // and executePluginsSnapshot() (aggregated job, captured message ids).
+        config(['services.openrouter.api_key' => 'test-key']);
+
+        $user = User::factory()->create();
+        $bot = Bot::factory()->create([
+            'user_id' => $user->id,
+            'utility_model' => 'test/model',
+            'support_router_mode' => 'on',
+            'support_handover_message' => 'กรุณาติดต่อทีมซัพพอร์ตที่ https://support.example.com/th ครับ',
+        ]);
+        $flow = Flow::factory()->create(['bot_id' => $bot->id]);
+        $flow->plugins()->create([
+            'type' => 'telegram',
+            'enabled' => true,
+            'trigger_condition' => 'ลูกค้าต้องการติดต่อซัพพอร์ต',
+            'config' => ['message_template' => 'no trigger keywords configured'],
+        ]);
+        $conversation = Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'current_flow_id' => $flow->id,
+        ]);
+
+        // the reviewer's repro: user / bot URL reply / user / suppressed row '',
+        // and the suppressed row is also the botMessage the plugins run for
+        // (the webhook path runs plugins even when it sends nothing).
+        $userFirst = Message::factory()->fromUser()->create([
+            'conversation_id' => $conversation->id,
+            'content' => 'ล็อกอินไม่ได้ครับ',
+            'created_at' => now()->subSeconds(40),
+        ]);
+        $botUrlReply = Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'bot',
+            'content' => 'กรุณาติดต่อ https://support.example.com/th ครับ',
+            'model_used' => 'vision-model',
+            'created_at' => now()->subSeconds(30),
+        ]);
+        $userSecond = Message::factory()->fromUser()->create([
+            'conversation_id' => $conversation->id,
+            'content' => 'รหัสผ่านไม่ถูกครับ',
+            'created_at' => now()->subSeconds(20),
+        ]);
+        $suppressed = Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'bot',
+            'content' => '',
+            'model_used' => 'support_router',
+            'created_at' => now()->subSeconds(10),
+        ]);
+
+        $captured = [];
+        $this->mock(OpenRouterService::class, function ($mock) use (&$captured) {
+            $mock->shouldReceive('chat')->twice()->andReturnUsing(function (...$args) use (&$captured) {
+                // args[0] is the messages array; [1] is the user prompt that
+                // carries the transcript of the conversation context
+                $captured[] = $args[0][1]['content'];
+
+                return ['content' => '{"triggered": false}'];
+            });
+        });
+
+        $service = app(FlowPluginService::class);
+        $service->executePlugins($bot, $conversation, $suppressed);
+        $service->executePluginsSnapshot(
+            $bot,
+            $conversation,
+            $suppressed,
+            $flow->id,
+            [$userFirst->id, $botUrlReply->id, $userSecond->id, $suppressed->id],
+        );
+
+        $this->assertCount(2, $captured, 'both entry points must reach the evaluation LLM');
+        foreach ($captured as $userPrompt) {
+            // no empty "Assistant:" turn — the suppressed row must be dropped
+            $this->assertSame(0, preg_match('/^Assistant:\s*$/m', $userPrompt));
+            // non-empty lines keep their exact content and order
+            $this->assertSame(
+                [
+                    'User: ล็อกอินไม่ได้ครับ',
+                    'Assistant: กรุณาติดต่อ https://support.example.com/th ครับ',
+                    'User: รหัสผ่านไม่ถูกครับ',
+                ],
+                array_values(preg_grep('/^(User|Assistant):/', explode("\n", $userPrompt))),
+            );
+        }
     }
 }

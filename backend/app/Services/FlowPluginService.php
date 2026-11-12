@@ -169,11 +169,13 @@ class FlowPluginService
         // Use the captured collection for queued execution; legacy callers load live context.
         $recentMessages ??= $this->loadRecentMessages($conversation);
 
-        $conversationContext = $recentMessages->map(function ($msg) {
-            $role = $msg->sender === 'bot' ? 'Assistant' : 'User';
+        $conversationContext = $recentMessages
+            ->filter(fn ($msg) => $msg->content !== null && $msg->content !== '') // drop suppressed handover rows (empty content) — Lead widening 2026-11-12
+            ->map(function ($msg) {
+                $role = $msg->sender === 'bot' ? 'Assistant' : 'User';
 
-            return "{$role}: {$msg->content}";
-        })->implode("\n");
+                return "{$role}: {$msg->content}";
+            })->implode("\n");
 
         // Extract variable names from message_template
         $template = $plugin->config['message_template'] ?? '';

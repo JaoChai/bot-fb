@@ -206,4 +206,61 @@ class ProcessAggregatedMessagesSupportHandoverDedupeTest extends TestCase
         $this->assertSame('support_router', $timingRow->model);
         $this->assertFalse($aggregation->isActiveGroup($conversation->id, $groupId));
     }
+
+    public function test_empty_chat_model_reply_keeps_failed_timing_outcome(): void
+    {
+        // Reviewer round 1 item 3 (narrowing): recordBotMessage must fire only
+        // for a row with non-empty content or a router handover (whose empty
+        // content is deliberate silence). A chat-model turn that returned EMPTY
+        // text (the customer receives nothing, model_used != support_router)
+        // keeps the pre-PR behaviour — outcome 'failed', model null — instead of
+        // being recorded as a success the card never asked to change.
+        $bot = Bot::factory()->active()->line()->create([
+            'total_messages' => 0,
+            'support_router_mode' => 'off',
+        ]);
+        $conversation = Conversation::factory()->line()->create([
+            'bot_id' => $bot->id,
+            'external_customer_id' => 'U_test_empty_reply',
+            'message_count' => 1,
+            'unread_count' => 0,
+            'is_handover' => false,
+        ]);
+
+        $userMessage = Message::factory()->fromUser()->create([
+            'conversation_id' => $conversation->id,
+            'content' => 'สอบถามครับ',
+        ]);
+
+        $aggregation = app(MessageAggregationService::class);
+        $group = $aggregation->startOrContinueAggregation($conversation, $userMessage, 0);
+        $this->assertNotNull($group);
+        $groupId = $group['group_id'];
+
+        // router off -> the normal chat path; the chat model returned empty text
+        $this->mock(AIService::class, function ($mock) {
+            $mock->shouldReceive('generateResponse')->once()->andReturn([
+                'content' => '',
+                'model' => 'test/model',
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 0, 'total_tokens' => 10],
+                'cost' => 0.0,
+                'order_payload' => null,
+            ]);
+        });
+
+        $delivery = Mockery::mock(AggregatedMessageDeliveryService::class);
+        $delivery->shouldReceive('deliver')->never();
+
+        (new ProcessAggregatedMessages($bot, $conversation, $groupId, 'U_test_empty_reply'))
+            ->handle($aggregation, app(AIService::class), $delivery);
+
+        $timingRow = DB::table('reply_phase_timings')
+            ->where('conversation_id', $conversation->id)
+            ->first();
+
+        $this->assertNotNull($timingRow, 'the attempted turn must write a timing row');
+        $this->assertSame('failed', $timingRow->outcome, 'an empty non-router reply must keep the pre-PR outcome failed');
+        $this->assertNull($timingRow->model, 'recordBotMessage must not fire for an empty non-router row');
+        $this->assertFalse($aggregation->isActiveGroup($conversation->id, $groupId));
+    }
 }

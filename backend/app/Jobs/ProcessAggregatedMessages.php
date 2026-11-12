@@ -553,13 +553,16 @@ class ProcessAggregatedMessages implements ShouldQueue
         }, $currentTurnMessageIds);
 
         // Send response to channel
-        // Timing outcome is decided from the saved row unconditionally — the
-        // same shape as the webhook path (LineWebhookResponseService
-        // ::generateTextResponse): a suppressed handover (empty content,
-        // model_used = support_router) must record router_handover, not the
-        // default 'failed' (Lead widening item 3, 2026-11-12). Delivery stays
-        // gated on non-empty content.
-        $timing?->recordBotMessage($botMessage);
+        // Timing outcome is decided from the saved row, but only for turns the
+        // customer could act on: non-empty content, or a router handover whose
+        // empty content is deliberate silence (a suppressed duplicate must
+        // record router_handover like the webhook path — Lead widening item 3,
+        // 2026-11-12; narrowed by reviewer round 1 item 3 so an empty
+        // NON-router chat reply keeps the pre-PR outcome 'failed'). Delivery
+        // stays gated on non-empty content.
+        if ($botMessage->content || $botMessage->model_used === 'support_router') {
+            $timing?->recordBotMessage($botMessage);
+        }
         if ($botMessage->content) {
             ReplyPhaseTimingCollector::measure($timing, 'send_ms', fn () => $delivery->deliver($this->bot, $this->conversation, $botMessage, $this->externalUserId));
         }
