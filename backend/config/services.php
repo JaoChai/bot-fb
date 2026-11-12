@@ -45,6 +45,11 @@ return [
         'decisions_url' => env('OPENROUTER_DECISIONS_URL', 'https://openrouter.ai/api/alpha/decisions'),
         'support_router_threshold' => (float) env('SUPPORT_ROUTER_THRESHOLD', 0.7),
         'support_router_timeout' => (int) env('SUPPORT_ROUTER_TIMEOUT', 5),
+        // LK2 shadow measurement: when true, the Decisions pool asks the "does this
+        // message need the knowledge base?" question in two variants (kb / kb_ctx)
+        // and records kb_score / kb_ctx_score in messages.metadata.support_router.
+        // Nothing reads them — reply path unchanged. Off (default) = two requests.
+        'support_router_kb_shadow' => (bool) env('SUPPORT_ROUTER_KB_SHADOW', false),
         // medium=60 ให้ reasoning models (เช่น luna) มี headroom ใต้เพดาน LINE loading 60s; high=90 (LINE loading ตันที่ 60s อยู่แล้ว)
         'effort_timeouts' => [
             'low' => (int) env('OPENROUTER_TIMEOUT_LOW', 45),
