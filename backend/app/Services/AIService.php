@@ -410,6 +410,11 @@ class AIService
             ->take($limit)
             ->get()
             ->reverse()
+            // A suppressed handover row (content '') must never reach the chat
+            // model or the router's recent_conversation as an empty turn —
+            // dropped AFTER the window slice so every non-empty row and its
+            // order stay exactly as before (Lead widening, 2026-11-12).
+            ->filter(fn (Message $msg) => $msg->content !== null && $msg->content !== '')
             ->map(fn (Message $msg) => [
                 'sender' => $msg->sender,
                 'content' => $msg->content,

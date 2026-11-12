@@ -442,6 +442,7 @@ class LeadRecoveryService
                 ->orderByDesc('created_at')
                 ->limit($limit)
                 ->get()
+                ->filter(fn ($message) => $message->content !== null && $message->content !== '') // drop suppressed handover rows (empty content) — Lead widening 2026-11-12
                 ->reverse()
                 ->values();
 

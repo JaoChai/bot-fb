@@ -383,6 +383,7 @@ class VisionHandler
         return $query->latest()
             ->take($limit)
             ->get()
+            ->filter(fn (Message $msg) => $msg->content !== null && $msg->content !== '') // drop suppressed handover rows (empty content) — Lead widening 2026-11-12
             ->reverse()
             ->map(fn (Message $msg) => [
                 'sender' => $msg->sender,

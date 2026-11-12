@@ -207,6 +207,42 @@ class AIServiceSupportHandoverDedupeTest extends TestCase
         $this->assertTrue($botMessage->metadata['support_router']['duplicate_suppressed']);
     }
 
+    #[Test]
+    public function test_get_conversation_history_leaves_out_empty_bot_rows(): void
+    {
+        // Lead widening item 1: the suppressed handover row (content '') must
+        // never reach the chat model as an empty turn. Non-empty rows keep
+        // their order; only the empty row is dropped.
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        Message::factory()->fromUser()->create([
+            'conversation_id' => $conversation->id,
+            'content' => 'สอบถามครับ',
+            'created_at' => now()->subSeconds(30),
+        ]);
+        Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'bot',
+            'content' => '',
+            'model_used' => 'support_router',
+            'created_at' => now()->subSeconds(20),
+        ]);
+        Message::factory()->create([
+            'conversation_id' => $conversation->id,
+            'sender' => 'bot',
+            'content' => 'กรุณาติดต่อ https://support.example.com/th ครับ',
+            'model_used' => 'vision-model',
+            'created_at' => now()->subSeconds(10),
+        ]);
+
+        $method = new \ReflectionMethod(AIService::class, 'getConversationHistory');
+        $history = $method->invoke(app(AIService::class), $conversation, 10);
+
+        $this->assertSame([
+            ['sender' => 'user', 'content' => 'สอบถามครับ'],
+            ['sender' => 'bot', 'content' => 'กรุณาติดต่อ https://support.example.com/th ครับ'],
+        ], $history);
+    }
+
     private function makeBotWithConversation(): array
     {
         $user = User::factory()->create();
