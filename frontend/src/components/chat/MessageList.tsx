@@ -104,22 +104,41 @@ export function MessageList({
     return isValid(d) ? d : null;
   }, [contextClearedAt]);
 
+  // Hide bot text messages that carry no content and no media (e.g. the
+  // Support Router's duplicate-suppressed rows): they would render as a
+  // blank bubble. The single filtered list below drives the virtualizer
+  // count, previousMessage, separators, auto-scroll and the load-older
+  // anchor, so hidden rows never leave a gap in any of them.
+  const visibleMessages = useMemo(
+    () =>
+      messages.filter(
+        (message) =>
+          !(
+            message.sender === 'bot' &&
+            (message.type == null || message.type === 'text') &&
+            !message.media_url &&
+            !message.content?.trim()
+          ),
+      ),
+    [messages],
+  );
+
   // Virtualizer for efficient message rendering
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual returns un-memoizable functions; component is already opted out via "use no memo"
   const virtualizer = useVirtualizer({
-    count: messages.length,
+    count: visibleMessages.length,
     getScrollElement: () => scrollViewportRef.current,
     estimateSize: () => 80,
     overscan: 10,
-    getItemKey: (index) => messages[index].id,
+    getItemKey: (index) => visibleMessages[index].id,
   });
 
   // Auto scroll to bottom when messages change
   useEffect(() => {
-    if (autoScroll && messages.length > 0) {
-      virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' });
+    if (autoScroll && visibleMessages.length > 0) {
+      virtualizer.scrollToIndex(visibleMessages.length - 1, { align: 'end', behavior: 'smooth' });
     }
-  }, [messages.length, autoScroll, virtualizer]);
+  }, [visibleMessages.length, autoScroll, virtualizer]);
 
   // Restore scroll position after older messages are prepended. The anchor
   // message was index 0 (offset 0) at capture; its new virtualizer offset is
@@ -131,11 +150,11 @@ export function MessageList({
       anchor.sawLoading = true;
     }
 
-    const firstId = messages[0]?.id ?? null;
+    const firstId = visibleMessages[0]?.id ?? null;
     const viewport = scrollViewportRef.current;
 
     if (anchor && viewport && prevFirstIdRef.current !== null && firstId !== prevFirstIdRef.current) {
-      const newIndex = messages.findIndex((m) => m.id === anchor.messageId);
+      const newIndex = visibleMessages.findIndex((m) => m.id === anchor.messageId);
       const offsetForIndex =
         newIndex > 0 ? virtualizer.getOffsetForIndex(newIndex, 'start')?.[0] : undefined;
 
@@ -154,7 +173,7 @@ export function MessageList({
     }
 
     prevFirstIdRef.current = firstId;
-  }, [messages, isLoadingOlder, virtualizer]);
+  }, [visibleMessages, isLoadingOlder, virtualizer]);
 
   // Handle scroll: bottom detection for auto-scroll + top detection for load-older
   const handleScroll = useCallback(
@@ -176,12 +195,12 @@ export function MessageList({
         !isLoadingOlder &&
         !loadOlderAnchorRef.current &&
         onLoadOlder &&
-        messages.length > 0
+        visibleMessages.length > 0
       ) {
-        // messages[0] is at virtualizer index 0 → offset 0; after the prepend
-        // its new offset IS the height added above the viewport.
+        // visibleMessages[0] is at virtualizer index 0 → offset 0; after the
+        // prepend its new offset IS the height added above the viewport.
         loadOlderAnchorRef.current = {
-          messageId: messages[0].id,
+          messageId: visibleMessages[0].id,
           scrollTop: target.scrollTop,
           totalSize: virtualizer.getTotalSize(),
           sawLoading: false,
@@ -189,15 +208,15 @@ export function MessageList({
         onLoadOlder();
       }
     },
-    [autoScroll, onAutoScrollChange, hasOlder, isLoadingOlder, onLoadOlder, virtualizer, messages]
+    [autoScroll, onAutoScrollChange, hasOlder, isLoadingOlder, onLoadOlder, virtualizer, visibleMessages]
   );
 
   // Handle scroll to bottom button click
   const handleScrollToBottom = useCallback(() => {
     internalAutoScroll.current = true;
     onAutoScrollChange?.(true);
-    virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' });
-  }, [onAutoScrollChange, virtualizer, messages.length]);
+    virtualizer.scrollToIndex(visibleMessages.length - 1, { align: 'end', behavior: 'smooth' });
+  }, [onAutoScrollChange, virtualizer, visibleMessages.length]);
 
   if (isLoading) {
     return (
@@ -248,8 +267,9 @@ export function MessageList({
             }}
           >
             {virtualizer.getVirtualItems().map((virtualItem) => {
-              const message = messages[virtualItem.index];
-              const previousMessage = virtualItem.index > 0 ? messages[virtualItem.index - 1] : undefined;
+              const message = visibleMessages[virtualItem.index];
+              const previousMessage =
+                virtualItem.index > 0 ? visibleMessages[virtualItem.index - 1] : undefined;
               return (
                 <div
                   key={message.id}
