@@ -135,18 +135,15 @@ Schedule::command('health:check-realtime')
 
 // Outage recovery (การ์ด t_44675510) — บอทกลับมาตอบได้แล้ว: ขอให้ลูกค้าที่ค้าง
 // ตอนล่ม (แถวติด model_error="auth") พิมพ์ใหม่ แล้วสรุปยอดให้เจ้าของต่อบอท
-// การจอง recovery_notice="sending" ไม่ใช่ atomic (อ่านรายชื่อห้องครั้งเดียวตอนต้น
-// แล้วเขียนจองทีหลัง ไม่มีเงื่อนไขกันชน) — ส่งซ้ำให้ลูกค้าได้เฉพาะเมื่อ scheduler
-// สองตัวทับกัน (เช่นตอน swap container ตอน deploy) และรอบนั้นยืดเกิน 5 นาที
+// จอง recovery_notice="sending" แบบ atomic ในฐานข้อมูล — ส่งเฉพาะรอบที่จองได้
+// แม้ scheduler สองตัวทับกันหรือรันเกิน 5 นาที แถวเดิมก็ไม่ถูกส่งซ้ำ (ไม่มี retry)
 Schedule::command('outage:send-recovery-notices')->everyFiveMinutes()->withoutOverlapping(5);
-// expiresAt 5: bounded by 24h of auth-tagged rows. The recovery_notice='sending'
-// reservation is NOT atomic (waitingRooms() loads every candidate up front;
-// mark() is an unconditional save), so a duplicate notice is possible only
-// when two schedulers overlap (e.g. old and new containers during a deploy
-// swap) AND a run exceeds 5 min (~10+ rooms at LINE's 30s timeout,
-// LINEService l.569). The command runs in the foreground of the single
-// `while true; ... sleep 60` scheduler loop (Dockerfile l.120), so there is
-// normally exactly one copy. Atomic reservation: separate Lead follow-up card.
+// expiresAt 5: bounded by 24h of auth-tagged rows. A conditional whole-column
+// UPDATE claims recovery_notice='sending' only while the key is absent; only
+// the copy that changes exactly one row may push, write a notice, or count it.
+// Overlapping schedulers (including a deploy swap or a run exceeding 5 min)
+// cannot re-send the same tagged row. A process killed after claiming leaves
+// 'sending' permanently: unchanged at-most-once policy, no retry.
 
 // Auto Account Delivery — เปิด/ปิดสวิตช์ขายตามของจริงใน stock DB
 Schedule::command('stock:sync-pool')->everyFiveMinutes()->withoutOverlapping(5);
