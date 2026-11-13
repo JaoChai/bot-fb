@@ -16,9 +16,10 @@ use Illuminate\Support\Facades\Log;
  * ลูกค้าพิมพ์ใหม่ / แจ้งไปแล้ว = ห้องนั้นไม่รอแล้วทั้งหมด)
  *
  * ลำดับต่อรอบ: มีห้องรอ → อยู่ช่วง 08:00-22:00 (Asia/Bangkok) → probe
- * GET {base_url}/key = 200 เท่านั้น → ต่อห้อง: จอง recovery_notice = "sending"
- * ก่อนส่ง, สำเร็จ: เขียนแถวแจ้งลูกค้า (metadata.outage_notice = true) + "sent",
- * ล้ม: "failed" และไม่มีแถว — ห้องไหนถูกจองแล้วไม่มีวันถูกส่งซ้ำ (ไม่มี retry)
+ * GET {base_url}/key = 200 เท่านั้น → ต่อห้อง: จอง recovery_notice = "sending" แบบ atomic
+ * ส่งเฉพาะเมื่อ UPDATE จองได้ 1 แถว; แพ้จอง = ข้าม ไม่ส่ง/เขียนแถว/นับยอด
+ * สำเร็จ: เขียนแถวแจ้งลูกค้า (metadata.outage_notice = true) + "sent",
+ * ล้ม: "failed" และไม่มีแถว — ตายหลังจองก็ไม่ retry; รอบซ้อนกันไม่ส่งแถวเดิมซ้ำ
  * ปิดท้าย: "Back" แจ้งเจ้าของต่อบอท 1 ข้อความ รวมยอด sent/failed ของบอทนั้น
  */
 class OutageRecoveryService
@@ -129,8 +130,10 @@ class OutageRecoveryService
             $conversation = $tagged->conversation;
             $bot = $conversation->bot;
 
-            // จองก่อนส่งเสมอ — process ตายกลางทางก็ยังไม่ส่งซ้ำให้ลูกค้า
-            $this->mark($tagged, 'sending');
+            // จองแบบ atomic ก่อนส่ง — ผู้ชนะเท่านั้นส่งได้; ตายหลังจองก็ไม่ retry
+            if (! $this->claim($tagged)) {
+                continue;
+            }
 
             $text = $this->noticeText($conversation, $tagged);
             $sent = $this->leadRecovery->sendStaticFollowUp($conversation, $text);
@@ -156,6 +159,19 @@ class OutageRecoveryService
         foreach ($countsByBot as $entry) {
             $this->outageNotice->alertOwnerRecovered($entry['bot'], $entry['sent'], $entry['failed']);
         }
+    }
+
+    private function claim(Message $tagged): bool
+    {
+        $metadata = $tagged->metadata ?? [];
+        $metadata['recovery_notice'] = 'sending';
+        $tagged->forceFill(['metadata' => $metadata]);
+
+        // SET the whole cast JSON value: PostgreSQL metadata is json, not jsonb.
+        return $tagged->newQuery()
+            ->whereKey($tagged->getKey())
+            ->whereJsonDoesntContainKey('metadata->recovery_notice')
+            ->update(['metadata' => $tagged->getAttributes()['metadata']]) === 1;
     }
 
     private function mark(Message $tagged, string $status): void

@@ -9,10 +9,12 @@ use App\Models\FlowPlugin;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\OutageRecoveryService;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -202,6 +204,195 @@ class OutageRecoveryNoticesTest extends TestCase
         $texts = collect($alerts)->pluck('text');
         $this->assertStringContainsString($this->esc($botA->name), $texts[0]);
         $this->assertStringContainsString($this->esc($botB->name), $texts[1]);
+    }
+
+    #[Test]
+    public function test_overlapping_runs_push_each_room_once_and_count_only_their_own_claims(): void
+    {
+        $bot = $this->makeBot();
+        $first = Conversation::factory()->line()->create(['bot_id' => $bot->id]);
+        $this->seedOutageTurn($first, 'สวัสดี');
+        $second = Conversation::factory()->line()->create(['bot_id' => $bot->id]);
+        $this->seedOutageTurn($second, 'สวัสดี');
+        $pushes = [];
+        $nested = false;
+        Http::fake([
+            'openrouter.test/api/v1/key' => Http::response(['data' => []], 200),
+            'api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]]),
+            'api.line.me/*' => function ($request) use (&$pushes, &$nested) {
+                $pushes[] = $request['to'];
+                if (! $nested) {
+                    $nested = true;
+                    $this->runRecovery();
+                }
+
+                return Http::response([], 200);
+            },
+        ]);
+
+        $this->runRecovery();
+
+        $counts = collect($pushes)->countBy()->all();
+        $evidence = 'pushes per room: '.json_encode([
+            'room1' => $counts[$first->external_customer_id] ?? 0,
+            'room2' => $counts[$second->external_customer_id] ?? 0,
+        ]);
+        $this->assertSame(1, $counts[$second->external_customer_id] ?? 0, $evidence);
+        $this->assertSame(1, $counts[$first->external_customer_id] ?? 0, $evidence);
+        foreach ([$first, $second] as $room) {
+            $this->assertSame(1, $this->noticeRows()->where('conversation_id', $room->id)->count());
+        }
+        $alerts = $this->telegramAlerts();
+        $this->assertCount(2, $alerts);
+        foreach ($alerts as $alert) {
+            $this->assertStringContainsString('ส่งข้อความขอให้ลูกค้าพิมพ์ใหม่ 1 ห้อง · ส่งไม่สำเร็จ 0 ห้อง', $alert['text']);
+        }
+        if (getenv('OUTAGE_CLAIM_EVIDENCE')) {
+            fwrite(STDOUT, "\n".$evidence.'; notice rows per room: '.json_encode([
+                'room1' => $this->noticeRows()->where('conversation_id', $first->id)->count(),
+                'room2' => $this->noticeRows()->where('conversation_id', $second->id)->count(),
+            ])."; Back summaries: 1 sent / 0 failed each\n");
+        }
+    }
+
+    #[Test]
+    public function test_a_run_that_loses_every_claim_sends_no_notice_or_back_alert(): void
+    {
+        $bot = $this->makeBot();
+        $rooms = [];
+        foreach (range(1, 2) as $i) {
+            $room = Conversation::factory()->line()->create(['bot_id' => $bot->id]);
+            $this->seedOutageTurn($room, 'สวัสดี');
+            $rooms[] = $room;
+        }
+        $nested = false;
+        Http::fake([
+            'openrouter.test/api/v1/key' => function () use (&$nested) {
+                if (! $nested) {
+                    $nested = true;
+                    $this->runRecovery();
+                }
+
+                return Http::response(['data' => []], 200);
+            },
+            'api.line.me/*' => Http::response([], 200),
+            'api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]]),
+        ]);
+
+        $this->runRecovery();
+
+        $this->assertCount(2, $this->linePushes());
+        foreach ($rooms as $room) {
+            $this->assertSame(1, collect($this->linePushes())->filter(fn ($r) => $r['to'] === $room->external_customer_id)->count());
+            $this->assertSame(1, $this->noticeRows()->where('conversation_id', $room->id)->count());
+        }
+        $alerts = $this->telegramAlerts();
+        $this->assertCount(1, $alerts);
+        $this->assertStringContainsString('ส่งข้อความขอให้ลูกค้าพิมพ์ใหม่ 2 ห้อง · ส่งไม่สำเร็จ 0 ห้อง', $alerts[0]['text']);
+    }
+
+    #[Test]
+    public function test_a_process_stopped_after_claim_before_push_is_never_retried(): void
+    {
+        $this->fakeAllWorking();
+        [$bot, $room, $tagged] = $this->roomWithOutage('สวัสดี');
+        $connection = DB::connection();
+        $dispatcher = $connection->getEventDispatcher();
+        $connection->setEventDispatcher(clone $dispatcher);
+        $connection->listen(function (QueryExecuted $query) {
+            if (str_starts_with($query->sql, 'update "messages"')
+                && collect($query->bindings)->contains(fn ($value) => is_string($value) && str_contains($value, '"recovery_notice":"sending"'))) {
+                throw new \RuntimeException('Process stopped after durable claim');
+            }
+        });
+        try {
+            $this->runRecovery();
+            $this->fail('The process-stop injection was not reached');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Process stopped after durable claim', $e->getMessage());
+        } finally {
+            $connection->setEventDispatcher($dispatcher);
+        }
+
+        $this->assertSame('sending', $tagged->refresh()->metadata['recovery_notice']);
+        $this->assertCount(0, $this->linePushes());
+        $this->assertNoNoticeRow();
+        $this->assertCount(0, $this->telegramAlerts());
+        Http::fake($this->workingFakes());
+        $this->runRecovery();
+        Http::assertNothingSent();
+        $this->assertNoNoticeRow();
+    }
+
+    #[Test]
+    public function test_a_recovery_key_added_as_json_null_after_loading_still_loses_the_claim(): void
+    {
+        [$bot, $room, $tagged] = $this->roomWithOutage('สวัสดี');
+        Http::fake([
+            'openrouter.test/api/v1/key' => function () use ($tagged) {
+                $tagged->update(['metadata' => ['model_error' => 'auth', 'recovery_notice' => null]]);
+
+                return Http::response(['data' => []], 200);
+            },
+        ]);
+
+        $this->runRecovery();
+
+        $this->assertCount(0, $this->linePushes());
+        $this->assertNoNoticeRow();
+        $this->assertCount(0, $this->telegramAlerts());
+        $this->assertSame(['model_error' => 'auth', 'recovery_notice' => null], $tagged->refresh()->metadata);
+    }
+
+    #[Test]
+    public function test_claim_writes_whole_json_and_compiles_for_postgres_json_columns(): void
+    {
+        $this->fakeAllWorking();
+        [$bot, $room, $tagged] = $this->roomWithOutage('สวัสดี');
+        DB::connection()->enableQueryLog();
+        try {
+            $this->runRecovery();
+            $claims = collect(DB::getQueryLog())->filter(fn ($query) => str_starts_with($query['query'], 'update "messages"')
+                && in_array('{"model_error":"auth","recovery_notice":"sending"}', $query['bindings'], true));
+        } finally {
+            DB::connection()->disableQueryLog();
+            DB::connection()->flushQueryLog();
+        }
+        $this->assertCount(1, $claims);
+        $sqlite = $claims->first();
+        $this->assertStringContainsString('set "metadata" = ?', $sqlite['query']);
+        $this->assertStringContainsString('not json_type("metadata", \'$."recovery_notice"\') is not null', $sqlite['query']);
+        $this->assertSame('sent', $tagged->refresh()->metadata['recovery_notice']);
+        $this->assertCount(1, $this->noticeRows());
+
+        // Compile the actual production claim, without connecting to PostgreSQL.
+        $tagged->setConnection('pgsql');
+        // pretend() still quotes bindings for its log; use local PDO, never a server.
+        DB::connection('pgsql')->setPdo(new \PDO('sqlite::memory:'));
+        $postgres = DB::connection('pgsql')->pretend(fn () => (new \ReflectionMethod(OutageRecoveryService::class, 'claim'))
+            ->invoke(app(OutageRecoveryService::class), $tagged));
+        $this->assertCount(1, $postgres);
+        $this->assertStringContainsString('set "metadata" = \'{"model_error":"auth","recovery_notice":"sending"}\'', $postgres[0]['query']);
+        $this->assertStringContainsString('not coalesce(("metadata")::jsonb ? \'recovery_notice\', false)', $postgres[0]['query']);
+        $this->assertSame('{"model_error":"auth","recovery_notice":"sending"}', $postgres[0]['bindings'][0]);
+        if (getenv('OUTAGE_CLAIM_EVIDENCE')) {
+            fwrite(STDOUT, "\nSQLite claim: ".json_encode($sqlite)."\nPostgres claim (pretend): ".json_encode($postgres[0])."\n");
+        }
+    }
+
+    #[Test]
+    public function test_manual_recovery_command_sends_once_and_does_not_retry(): void
+    {
+        $this->fakeAllWorking();
+        $this->roomWithOutage('สวัสดี');
+
+        $this->artisan('outage:send-recovery-notices')->assertExitCode(0);
+        $this->assertCount(1, $this->linePushes());
+        $this->assertCount(1, $this->noticeRows());
+        Http::fake($this->workingFakes());
+        $this->artisan('outage:send-recovery-notices')->assertExitCode(0);
+        Http::assertNothingSent();
+        $this->assertCount(1, $this->noticeRows());
     }
 
     // ------------------------------------------------------------------
