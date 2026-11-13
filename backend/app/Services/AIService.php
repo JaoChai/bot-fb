@@ -33,6 +33,7 @@ class AIService
         private readonly GuardrailOutputSanitizer $outputSanitizer,
         private readonly VipPriceGuardService $vipPriceGuard,
         private readonly SupportRouterService $supportRouter,
+        private readonly OutageNoticeService $outageNotice,
     ) {}
 
     /**
@@ -381,11 +382,17 @@ class AIService
             ]);
 
             // Create error message
-            return $conversation->messages()->create([
+            $botMessage = $conversation->messages()->create([
                 'sender' => 'bot',
                 'content' => $this->getErrorMessage($e),
                 'type' => 'text',
             ]);
+
+            // Outage bookkeeping (tag model_error="auth" + owner alert) อยู่ที่เดียวกลาง
+            // สำหรับทั้งสองจุดที่สร้างแถว auth-failure — no-op เมื่อไม่ใช่ 401/403
+            $this->outageNotice->handleAuthFailure($botMessage, $bot, $e);
+
+            return $botMessage;
         }
     }
 

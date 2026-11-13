@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Log;
 
 class OpenRouterService
 {
+    /** timeout ของ probe กุญแจ (GET /key) หน่วยวินาที — spec การ์ด t_44675510 กำหนด 10 วิ */
+    private const KEY_PROBE_TIMEOUT_SECONDS = 10;
+
     protected string $baseUrl;
 
     protected string $siteUrl;
@@ -198,6 +201,20 @@ class OpenRouterService
         $result = $this->chat($messages, $model, $temperature);
 
         return $result['content'];
+    }
+
+    /**
+     * Outage recovery probe (การ์ด t_44675510): กุญแจที่ตั้งไว้ใช้ได้อีกแล้วหรือยัง?
+     * GET {base_url}/key ด้วยกุญแจปัจจุบัน — HTTP 200 = ใช้ได้ หมดอายุ/timeout/สถานะอื่น
+     * (401/403/5xx) = ยังไม่ฟื้น ล้มด้วยทุกกรณี ไม่โยน exception
+     */
+    public function keyWorks(): bool
+    {
+        try {
+            return $this->client(self::KEY_PROBE_TIMEOUT_SECONDS)->get('/key')->status() === 200;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**
