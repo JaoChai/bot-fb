@@ -99,6 +99,11 @@ Schedule::command('health:check-realtime')
     ->everyMinute()
     ->withoutOverlapping();
 
+// Outage recovery (การ์ด t_44675510) — บอทกลับมาตอบได้แล้ว: ขอให้ลูกค้าที่ค้าง
+// ตอนล่ม (แถวติด model_error="auth") พิมพ์ใหม่ แล้วสรุปยอดให้เจ้าของต่อบอท
+// ห้องถูกจอง recovery_notice="sending" ก่อนส่ง จึงปลอดภัยแม้รันชนกันเอง
+Schedule::command('outage:send-recovery-notices')->everyFiveMinutes()->withoutOverlapping();
+
 // Auto Account Delivery — เปิด/ปิดสวิตช์ขายตามของจริงใน stock DB
 Schedule::command('stock:sync-pool')->everyFiveMinutes()->withoutOverlapping();
 

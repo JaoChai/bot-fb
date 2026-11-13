@@ -42,25 +42,12 @@ class TelegramAlertBotService
     public function notifySupportAlert(Bot $bot, string $detailLine, string $message): void
     {
         try {
-            $flow = $bot->defaultFlow;
-            $plugin = $flow?->plugins()
-                ->where('type', 'telegram')
-                ->where('enabled', true)
-                ->first();
+            $targets = $this->alertTargets($bot, 'Support router alert');
 
-            if (! $plugin) {
-                Log::debug('Support router alert: no enabled telegram plugin', ['bot_id' => $bot->id]);
-
+            if ($targets === null) {
                 return;
             }
-
-            $token = $plugin->config['access_token'] ?? '';
-            $chatId = $plugin->config['chat_id'] ?? '';
-            if (empty($token) || empty($chatId)) {
-                Log::debug('Support router alert: telegram plugin missing config', ['plugin_id' => $plugin->id]);
-
-                return;
-            }
+            [$token, $chatId] = $targets;
 
             $text = '🛠 <b>ลูกค้าต้องการ Support</b> ('.self::esc($bot->name).")\n"
                 .self::esc($detailLine)."\n"
@@ -73,6 +60,94 @@ class TelegramAlertBotService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * แจ้งเจ้าของว่า "บอทล่ม — OpenRouter ปฏิเสธกุญแจ" (การ์ด t_44675510)
+     * ลูกค้าได้แต่ข้อความ "ระบบขัดข้องชั่วคราว" ต้องรีบเปลี่ยน OPENROUTER_API_KEY
+     * ไม่มีทางโยน exception — ไม่มี plugin / config หาย / API ล่ม = log แล้วจบ
+     */
+    public function notifyOutageDown(Bot $bot, int $httpStatus): void
+    {
+        try {
+            $targets = $this->alertTargets($bot, 'Outage alert');
+
+            if ($targets === null) {
+                return;
+            }
+            [$token, $chatId] = $targets;
+
+            $text = '🚨 <b>บอทตอบลูกค้าไม่ได้</b> ('.self::esc($bot->name).")\n"
+                .'OpenRouter ปฏิเสธกุญแจ (HTTP '.self::esc((string) $httpStatus).")\n"
+                .'ลูกค้าได้ข้อความ "ระบบขัดข้องชั่วคราว" ต้องเปลี่ยน OPENROUTER_API_KEY';
+
+            $this->sendMessage($token, $chatId, $text);
+        } catch (\Throwable $e) {
+            Log::warning('Outage alert failed', [
+                'bot_id' => $bot->id,
+                'http_status' => $httpStatus,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * บอกเจ้าของว่า "บอทกลับมาตอบได้แล้ว" พร้อมยอดต่อบอท (การ์ด t_44675510)
+     * $sent = ส่งข้อความขอให้ลูกค้าพิมพ์ใหม่สำเร็จ, $failed = ส่งไม่สำเร็จ (ไม่ retry แล้ว)
+     */
+    public function notifyOutageRecovered(Bot $bot, int $sent, int $failed): void
+    {
+        try {
+            $targets = $this->alertTargets($bot, 'Outage recovery alert');
+
+            if ($targets === null) {
+                return;
+            }
+            [$token, $chatId] = $targets;
+
+            $text = '✅ <b>บอทกลับมาตอบได้แล้ว</b> ('.self::esc($bot->name).")\n"
+                .'ส่งข้อความขอให้ลูกค้าพิมพ์ใหม่ '.self::esc((string) $sent).' ห้อง · ส่งไม่สำเร็จ '.self::esc((string) $failed).' ห้อง';
+
+            $this->sendMessage($token, $chatId, $text);
+        } catch (\Throwable $e) {
+            Log::warning('Outage recovery alert failed', [
+                'bot_id' => $bot->id,
+                'sent' => $sent,
+                'failed' => $failed,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * token + chat_id ของ plugin telegram ที่เปิดใช้อยู่ใน default flow ของบอท
+     * คืน null เมื่อไม่มี plugin หรือ config ไม่ครบ (log ทิ้ง label ของ alert นั้นๆ)
+     *
+     * @return array{0: string, 1: string}|null [access_token, chat_id]
+     */
+    private function alertTargets(Bot $bot, string $label): ?array
+    {
+        $flow = $bot->defaultFlow;
+        $plugin = $flow?->plugins()
+            ->where('type', 'telegram')
+            ->where('enabled', true)
+            ->first();
+
+        if (! $plugin) {
+            Log::debug($label.': no enabled telegram plugin', ['bot_id' => $bot->id]);
+
+            return null;
+        }
+
+        $token = $plugin->config['access_token'] ?? '';
+        $chatId = $plugin->config['chat_id'] ?? '';
+        if (empty($token) || empty($chatId)) {
+            Log::debug($label.': telegram plugin missing config', ['plugin_id' => $plugin->id]);
+
+            return null;
+        }
+
+        return [$token, $chatId];
     }
 
     /**

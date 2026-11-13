@@ -13,6 +13,7 @@ use App\Services\Chat\AggregatedMessageDeliveryService;
 use App\Services\Chat\ConversationContextService;
 use App\Services\ConversationResponseLease;
 use App\Services\MessageAggregationService;
+use App\Services\OutageNoticeService;
 use App\Services\ReplyPhaseTimingCollector;
 use App\Services\ReplyPhaseTimingRecorder;
 use App\Support\QueueRouter;
@@ -520,6 +521,10 @@ class ProcessAggregatedMessages implements ShouldQueue
             }, $currentTurnMessageIds);
             $timing?->recordBotMessage($botMessage);
             ReplyPhaseTimingCollector::measure($timing, 'send_ms', fn () => $delivery->deliver($this->bot, $this->conversation, $botMessage, $this->externalUserId));
+
+            // Outage bookkeeping (tag model_error="auth" + owner alert) AFTER the reply
+            // went out — ต้องไม่หน่วงหรือทำของลูกค้าตก (การ์ด t_44675510)
+            app(OutageNoticeService::class)->handleAuthFailure($botMessage, $this->bot, $e);
 
             return $botMessage;
         }
