@@ -92,6 +92,16 @@ class TelegramAlertBotService
     }
 
     /**
+     * มีปลายทางแจ้งเตือนจริงไหม (plugin telegram เปิดใช้อยู่ + token/chat_id ครบ) —
+     * OutageNoticeService ใช้เช็ค "จะส่งได้จริงไหม" ก่อนกินสล็อต throttle
+     * เพื่อไม่ให้บอทที่แจ้งไม่ได้เผาโควตาแจ้งเตือนของบอทอื่น (review round 1 #2)
+     */
+    public function hasAlertTarget(Bot $bot): bool
+    {
+        return $this->alertTargets($bot, 'Outage alert target check') !== null;
+    }
+
+    /**
      * บอกเจ้าของว่า "บอทกลับมาตอบได้แล้ว" พร้อมยอดต่อบอท (การ์ด t_44675510)
      * $sent = ส่งข้อความขอให้ลูกค้าพิมพ์ใหม่สำเร็จ, $failed = ส่งไม่สำเร็จ (ไม่ retry แล้ว)
      */

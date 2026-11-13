@@ -35,6 +35,9 @@ class OutageAuthTagAndAlertTest extends TestCase
 {
     use RefreshDatabase;
 
+    /** exception ที่รอดออกจาก handle() เมื่อ push ล้ม — ตั้งโดย runAggregatedJob() */
+    private ?RuntimeException $pushThrew = null;
+
     private const AUTH_TEXT = 'ระบบขัดข้องชั่วคราวครับ 🙏 เดี๋ยวแอดมินรีบตรวจสอบให้นะครับ';
 
     private const RATE_LIMIT_TEXT = 'ตอนนี้มีข้อความเข้ามาเยอะมากครับ 🙏 รบกวนพี่รอสักครู่แล้วส่งใหม่อีกครั้งนะครับ';
@@ -45,6 +48,7 @@ class OutageAuthTagAndAlertTest extends TestCase
     {
         parent::setUp();
 
+        $this->pushThrew = null;
         Http::preventStrayRequests();
         Cache::flush();
         Carbon::setTestNow(Carbon::parse('2026-11-14 12:00:00'));
@@ -168,12 +172,15 @@ class OutageAuthTagAndAlertTest extends TestCase
         $this->fakeOpenRouterFailure(401);
         $this->fakeOwnerAlertAndCustomerDelivery();
 
+        // ทุกเข็มเดินจาก "การแจ้งครั้งแรก" — ล็อก +31 นาทีให้แน่นกับ TTL 30 นาที
+        // (ถ้า TTL > 31 นาที สล็อตยังไม่หมดอายุ การแจ้งครั้งที่สามต้องไม่ออก — review round 1 #3)
+        $firstAlertAt = Carbon::now();
         $this->failAReply($bot, $conversation);
-        Carbon::setTestNow(Carbon::now()->addMinutes(29));
+        Carbon::setTestNow($firstAlertAt->copy()->addMinutes(29));
         $this->failAReply($bot, $conversation);
         $this->assertSame(1, count($this->telegramAlerts()));
 
-        Carbon::setTestNow(Carbon::now()->addMinutes(31));
+        Carbon::setTestNow($firstAlertAt->copy()->addMinutes(31));
         $this->failAReply($bot, $conversation);
 
         $this->assertSame(2, count($this->telegramAlerts()));
@@ -192,6 +199,30 @@ class OutageAuthTagAndAlertTest extends TestCase
         $this->assertSame(self::AUTH_TEXT, $row->content);
         $row->refresh();
         $this->assertSame('auth', $row->metadata['model_error']);
+    }
+
+    #[Test]
+    public function test_a_plugin_less_bot_failing_first_does_not_burn_the_alert_slot(): void
+    {
+        // บอท A ไม่มี plugin ล่มก่อน ต้องไม่กินสล็อต 30 นาที — ไม่งั้นบอท B (มี plugin)
+        // ที่ล่มตามมาในอีก 1 นาทีจะเงียบ และเจ้านายไม่รู้เลยว่าระบบล่ม (review round 1 #2)
+        [$botA, $conversationA] = $this->makeBotWithConversation(withTelegramPlugin: false);
+        [$botB, $conversationB] = $this->makeBotWithConversation(withTelegramPlugin: true);
+        $this->fakeOpenRouterFailure(401);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+
+        $rowA = $this->failAReply($botA, $conversationA);
+
+        Carbon::setTestNow(Carbon::now()->addMinute());
+        $rowB = $this->failAReply($botB, $conversationB);
+
+        $alerts = $this->telegramAlerts();
+        $this->assertCount(1, $alerts);
+        $this->assertSame('999', $alerts[0]['chat_id']);
+        $rowA->refresh();
+        $rowB->refresh();
+        $this->assertSame('auth', $rowA->metadata['model_error']);
+        $this->assertSame('auth', $rowB->metadata['model_error']);
     }
 
     #[Test]
@@ -262,6 +293,112 @@ class OutageAuthTagAndAlertTest extends TestCase
         $this->assertSame(1, count($this->telegramAlerts()));
     }
 
+    #[Test]
+    public function test_the_aggregated_job_tags_a_403_row_as_auth(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $this->fakeOpenRouterFailure(403);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+        Queue::fake();
+
+        $row = $this->runAggregatedJob($bot, $conversation);
+
+        $this->assertSame(self::AUTH_TEXT, $row->content);
+        $row->refresh();
+        $this->assertSame('auth', $row->metadata['model_error']);
+    }
+
+    #[Test]
+    public function test_the_aggregated_job_keeps_the_rate_limit_text_and_no_tag_on_429(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $this->fakeOpenRouterFailure(429);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+        Queue::fake();
+
+        $row = $this->runAggregatedJob($bot, $conversation);
+
+        $this->assertSame(self::RATE_LIMIT_TEXT, $row->content);
+        $row->refresh();
+        $this->assertNull($row->metadata);
+        $this->assertSame(0, count($this->telegramAlerts()));
+    }
+
+    #[Test]
+    public function test_the_aggregated_job_keeps_the_generic_text_and_no_tag_on_500(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $this->fakeOpenRouterFailure(500);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+        Queue::fake();
+
+        $row = $this->runAggregatedJob($bot, $conversation);
+
+        $this->assertSame(self::GENERIC_TEXT, $row->content);
+        $row->refresh();
+        $this->assertNull($row->metadata);
+        $this->assertSame(0, count($this->telegramAlerts()));
+    }
+
+    #[Test]
+    public function test_the_aggregated_job_survives_telegram_being_down(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $this->fakeOpenRouterFailure(401);
+        $this->fakeOwnerAlertAndCustomerDelivery(['api.telegram.org/*' => Http::response(['ok' => false], 500)]);
+        Queue::fake();
+
+        $row = $this->runAggregatedJob($bot, $conversation);
+
+        $this->assertNull($this->pushThrew);
+        $this->assertSame(self::AUTH_TEXT, $row->content);
+        $row->refresh();
+        $this->assertSame('auth', $row->metadata['model_error']);
+        // ลูกค้ายังได้ข้อความ แม้ Telegram ล่ม
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'api.line.me') && str_contains($r->url(), 'message/push'));
+    }
+
+    #[Test]
+    public function test_the_aggregated_job_survives_the_cache_being_down(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $this->fakeOpenRouterFailure(401);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+        $this->breakCacheForAuthAlert();
+        Queue::fake();
+
+        $row = $this->runAggregatedJob($bot, $conversation);
+
+        $this->assertNull($this->pushThrew);
+        $this->assertSame(self::AUTH_TEXT, $row->content);
+        $row->refresh();
+        $this->assertSame('auth', $row->metadata['model_error']);
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'api.line.me') && str_contains($r->url(), 'message/push'));
+        // cache ล่ม = ยังต้องแจ้งเจ้านาย
+        $this->assertSame(1, count($this->telegramAlerts()));
+    }
+
+    #[Test]
+    public function test_a_failing_line_push_still_tags_the_row_and_alerts_the_owner(): void
+    {
+        // Lead round 1 note A: tag ต้องเกิดก่อน deliver() และ alert ต้องออกแม้ push โยน exception
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $this->fakeOpenRouterFailure(401);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+        Queue::fake();
+
+        $delivery = Mockery::mock(AggregatedMessageDeliveryService::class);
+        $delivery->shouldReceive('deliver')->once()->andThrow(new RuntimeException('LINE push failed'));
+
+        $row = $this->runAggregatedJob($bot, $conversation, $delivery);
+
+        $this->assertInstanceOf(RuntimeException::class, $this->pushThrew);
+        $this->assertSame(self::AUTH_TEXT, $row->content);
+        $row->refresh();
+        $this->assertSame('auth', $row->metadata['model_error']);
+        $this->assertSame(1, count($this->telegramAlerts()));
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
@@ -326,6 +463,31 @@ class OutageAuthTagAndAlertTest extends TestCase
         ]);
 
         return app(AIService::class)->generateAndSaveResponse($bot, $conversation, $userMessage);
+    }
+
+    /** สร้างข้อความลูกค้า เข้า aggregation, รัน ProcessAggregatedMessages แล้วคืนแถวคำตอบบอทล่าสุด */
+    private function runAggregatedJob(Bot $bot, Conversation $conversation, ?AggregatedMessageDeliveryService $delivery = null): Message
+    {
+        $userMessage = Message::factory()->fromUser()->create([
+            'conversation_id' => $conversation->id,
+            'content' => 'สั่งของครับ',
+        ]);
+        $group = app(MessageAggregationService::class)->startOrContinueAggregation($conversation, $userMessage, 0);
+        $this->assertNotNull($group);
+
+        try {
+            (new ProcessAggregatedMessages($bot, $conversation, $group['group_id'], $conversation->external_customer_id))
+                ->handle(
+                    app(MessageAggregationService::class),
+                    app(AIService::class),
+                    $delivery ?? app(AggregatedMessageDeliveryService::class),
+                );
+        } catch (RuntimeException $e) {
+            // push ที่ล้มทิ้ง exception ต่อเหมือนของจริง — เก็บไว้ให้เทสต์เช็คว่า tag+alert รอดมาก่อน
+            $this->pushThrew = $e;
+        }
+
+        return Message::query()->where('sender', 'bot')->orderByDesc('id')->first();
     }
 
     private function telegramAlerts(): array

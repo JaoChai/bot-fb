@@ -34,14 +34,38 @@ class OutageNoticeService
 
     /**
      * เรียกท้าย catch หลังแถวคำตอบลูกค้าถูกสร้างแล้ว — no-op เมื่อไม่ใช่ auth error
+     * (เส้นทาง sync: AIService::generateAndSaveResponse)
      */
     public function handleAuthFailure(Message $botMessage, Bot $bot, OpenRouterException $e): void
+    {
+        $this->tagIfAuthError($botMessage, $e);
+        $this->alertIfAuthError($bot, $e);
+    }
+
+    /**
+     * tag model_error="auth" บนแถวคำตอบ — เส้นทาง aggregated เรียก "ก่อน" deliver()
+     * (Lead round 1 note A): push ที่โยน exception ต้องไม่ทำให้แถวหลุด tag
+     * ไม่งั้นห้องนั้นหลุดจากคิวขอให้ลูกค้าพิมพ์ใหม่ตอนกุญแจกลับมา
+     */
+    public function tagIfAuthError(Message $botMessage, OpenRouterException $e): void
     {
         if (! $e->isAuthError()) {
             return;
         }
 
         $this->tagAuthFailure($botMessage);
+    }
+
+    /**
+     * alert ปิดท้ายเส้นทาง (sync: ท้าย catch / aggregated: หลัง deliver ใน finally) —
+     * no-op เมื่อไม่ใช่ auth error; ไม่มีทางโยน exception ออกนอกเมธอด
+     */
+    public function alertIfAuthError(Bot $bot, OpenRouterException $e): void
+    {
+        if (! $e->isAuthError()) {
+            return;
+        }
+
         $this->alertOwnerDown($bot, $e->getHttpStatus());
     }
 
@@ -69,6 +93,12 @@ class OutageNoticeService
 
     private function alertOwnerDown(Bot $bot, int $httpStatus): void
     {
+        // เช็คปลายทาง "ก่อน" กินสล็อต — บอทที่แจ้งไม่ได้ (บน prod 11/12 บอทไม่มี plugin)
+        // ต้องไม่เผาสล็อต 30 นาทีของบอทที่แจ้งได้ (review round 1 #2)
+        if (! $this->telegram->hasAlertTarget($bot)) {
+            return;
+        }
+
         try {
             $first = Cache::add(self::AUTH_ALERT_CACHE_KEY, 1, self::AUTH_ALERT_TTL_SECONDS);
         } catch (\Throwable $e) {

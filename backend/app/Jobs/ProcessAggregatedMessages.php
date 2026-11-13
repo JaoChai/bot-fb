@@ -520,11 +520,18 @@ class ProcessAggregatedMessages implements ShouldQueue
                 ]);
             }, $currentTurnMessageIds);
             $timing?->recordBotMessage($botMessage);
-            ReplyPhaseTimingCollector::measure($timing, 'send_ms', fn () => $delivery->deliver($this->bot, $this->conversation, $botMessage, $this->externalUserId));
 
-            // Outage bookkeeping (tag model_error="auth" + owner alert) AFTER the reply
-            // went out — ต้องไม่หน่วงหรือทำของลูกค้าตก (การ์ด t_44675510)
-            app(OutageNoticeService::class)->handleAuthFailure($botMessage, $this->bot, $e);
+            // Lead round 1 note A: tag "ก่อน" deliver() — push ที่โยน exception ต้องไม่
+            // ทำให้แถวหลุด tag (ไม่งั้นห้องนั้นหลุดจากคิวขอให้ลูกค้าพิมพ์ใหม่ตอนกุญแจกลับมา)
+            app(OutageNoticeService::class)->tagIfAuthError($botMessage, $e);
+
+            try {
+                ReplyPhaseTimingCollector::measure($timing, 'send_ms', fn () => $delivery->deliver($this->bot, $this->conversation, $botMessage, $this->externalUserId));
+            } finally {
+                // Owner alert หลัง deliver() และอยู่ใน finally — push ล้มก็ยังแจ้งเจ้านาย
+                // (alertIfAuthError ไม่มีทางโยน exception — การ์ด t_44675510)
+                app(OutageNoticeService::class)->alertIfAuthError($this->bot, $e);
+            }
 
             return $botMessage;
         }
