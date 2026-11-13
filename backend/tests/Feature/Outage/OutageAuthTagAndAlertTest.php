@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use RuntimeException;
@@ -256,6 +257,24 @@ class OutageAuthTagAndAlertTest extends TestCase
         $this->assertSame('auth', $row->metadata['model_error']);
     }
 
+    #[Test]
+    public function test_a_plugin_lookup_failure_still_returns_the_tagged_customer_row(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $this->fakeOpenRouterFailure(401);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+        // Real DB lookup failure; RefreshDatabase rolls this test-only DDL back.
+        Schema::drop('flow_plugins');
+
+        $row = $this->failAReply($bot, $conversation);
+
+        $this->assertSame(self::AUTH_TEXT, $row->content);
+        $row->refresh();
+        $this->assertSame('auth', $row->metadata['model_error']);
+        $this->assertCount(0, $this->telegramAlerts());
+        $this->assertFalse(Cache::has('outage:auth-alert'));
+    }
+
     // ------------------------------------------------------------------
     // Part 1+2 — tag + alert ผ่าน ProcessAggregatedMessages
     // ------------------------------------------------------------------
@@ -376,6 +395,29 @@ class OutageAuthTagAndAlertTest extends TestCase
         Http::assertSent(fn ($r) => str_contains($r->url(), 'api.line.me') && str_contains($r->url(), 'message/push'));
         // cache ล่ม = ยังต้องแจ้งเจ้านาย
         $this->assertSame(1, count($this->telegramAlerts()));
+    }
+
+    #[Test]
+    public function test_the_aggregated_job_survives_a_plugin_lookup_failure(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $this->fakeOpenRouterFailure(401);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+        Queue::fake();
+        Schema::drop('flow_plugins');
+
+        $row = $this->runAggregatedJob($bot, $conversation);
+
+        $this->assertNull($this->pushThrew);
+        $this->assertSame(self::AUTH_TEXT, $row->content);
+        $row->refresh();
+        $this->assertSame('auth', $row->metadata['model_error']);
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'api.line.me')
+            && str_contains($r->url(), 'message/push')
+            && $r['to'] === $conversation->external_customer_id
+            && $r['messages'][0]['text'] === self::AUTH_TEXT);
+        $this->assertCount(0, $this->telegramAlerts());
+        $this->assertFalse(Cache::has('outage:auth-alert'));
     }
 
     #[Test]

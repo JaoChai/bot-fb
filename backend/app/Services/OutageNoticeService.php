@@ -93,26 +93,30 @@ class OutageNoticeService
 
     private function alertOwnerDown(Bot $bot, int $httpStatus): void
     {
-        // เช็คปลายทาง "ก่อน" กินสล็อต — บอทที่แจ้งไม่ได้ (บน prod 11/12 บอทไม่มี plugin)
-        // ต้องไม่เผาสล็อต 30 นาทีของบอทที่แจ้งได้ (review round 1 #2)
-        if (! $this->telegram->hasAlertTarget($bot)) {
-            return;
-        }
-
         try {
-            $first = Cache::add(self::AUTH_ALERT_CACHE_KEY, 1, self::AUTH_ALERT_TTL_SECONDS);
+            // Resolve the target before taking the slot, inside the best-effort boundary:
+            // a failed plugin lookup must not interrupt the customer's fallback reply.
+            if (! $this->telegram->hasAlertTarget($bot)) {
+                return;
+            }
+
+            try {
+                $first = Cache::add(self::AUTH_ALERT_CACHE_KEY, 1, self::AUTH_ALERT_TTL_SECONDS);
+            } catch (\Throwable $e) {
+                // cache ล่ม = ยังต้องแจ้ง (ของจริงพังทั้งระบบอยู่แล้ว ไม่มีเหตุผลเงียบ)
+                Log::warning('Outage alert throttle cache unavailable — alerting anyway', [
+                    'error' => $e->getMessage(),
+                ]);
+                $first = true;
+            }
+
+            if (! $first) {
+                return;
+            }
+
+            $this->telegram->notifyOutageDown($bot, $httpStatus);
         } catch (\Throwable $e) {
-            // cache ล่ม = ยังต้องแจ้ง (ของจริงพังทั้งระบบอยู่แล้ว ไม่มีเหตุผลเงียบ)
-            Log::warning('Outage alert throttle cache unavailable — alerting anyway', [
-                'error' => $e->getMessage(),
-            ]);
-            $first = true;
+            Log::warning('Outage owner alert failed', ['bot_id' => $bot->id]);
         }
-
-        if (! $first) {
-            return;
-        }
-
-        $this->telegram->notifyOutageDown($bot, $httpStatus);
     }
 }
