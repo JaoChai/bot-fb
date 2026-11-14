@@ -470,6 +470,7 @@ class RedactorTest extends TestCase
             $normalized = FollowUpAccountDataDetector::normalize($input);
             if ($normalized === null || FollowUpAccountDataDetector::normalize($normalized) !== $normalized) {
                 $failures[] = 'fixpoint: normalize(normalize(input)) != normalize(input), input='.bin2hex($input);
+
                 continue;
             }
 
@@ -477,12 +478,14 @@ class RedactorTest extends TestCase
             if (FollowUpRedactor::containsAccountData($redacted)) {
                 $failures[] = 'property 1: containsAccountData(redact(input)) != false, input='.bin2hex($input)
                     .' redacted='.bin2hex($redacted);
+
                 continue;
             }
 
             if (FollowUpRedactor::redact($redacted) !== $redacted) {
                 $failures[] = 'property 2: redact(redact(input)) != redact(input), input='.bin2hex($input)
                     .' redacted='.bin2hex($redacted);
+
                 continue;
             }
         }
