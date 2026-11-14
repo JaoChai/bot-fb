@@ -15,12 +15,17 @@ use App\Services\TelegramService;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Mockery;
 use Tests\TestCase;
 
 /**
- * Regression test for Sprint 1 #11 — findEligibleConversations must eager-load
- * the bot relation, otherwise processRecovery triggers a lazy-load per row.
+ * B1 retirement — the old autonomous picker never runs a query again.
+ *
+ * The retired findEligibleConversations must return an empty collection with
+ * zero queries, zero model hydration and zero network, even with rooms that
+ * the old picker would have matched and the legacy toggle on. The performance
+ * proof for the new picker moves to B2.
  */
 class LeadRecoveryServiceEagerLoadTest extends TestCase
 {
@@ -39,68 +44,64 @@ class LeadRecoveryServiceEagerLoadTest extends TestCase
             Mockery::mock(ResponseHoursService::class),
             Mockery::mock(OpenRouterService::class),
         );
+
+        Http::fake([
+            'api.line.me/*' => Http::response(['ok' => true]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+            'graph.facebook.com/*' => Http::response(['ok' => true]),
+        ]);
+        Http::preventStrayRequests();
     }
 
     protected function tearDown(): void
     {
-        Mockery::close();
+        // Rollback the DB transaction BEFORE Mockery verifies: a violated
+        // expectation must not abort the RefreshDatabase rollback.
         parent::tearDown();
+        Mockery::close();
     }
 
-    public function test_find_eligible_conversations_eager_loads_bot(): void
+    public function test_find_eligible_conversations_returns_empty_without_any_query_or_network(): void
     {
         $bot = Bot::factory()->create();
 
-        // Create the settings chain so bot.settings.hitlSettings resolves
-        // to non-null rows, making the eager-load assertions meaningful.
+        // Settings chain with the legacy toggle ON — the retired picker must
+        // not even look at it.
         $botSetting = BotSetting::create(['bot_id' => $bot->id]);
-        BotHITLSettings::create(['bot_setting_id' => $botSetting->id]);
+        BotHITLSettings::create([
+            'bot_setting_id' => $botSetting->id,
+            'lead_recovery_enabled' => true,
+        ]);
 
-        // Create 3 conversations that satisfy needsRecovery():
+        // Three rooms the old needsRecovery() scope would have matched:
         //   status='active', is_handover=false, recovery_attempts=0,
-        //   last_message_at older than the default 24h timeout,
-        //   last_recovery_at=null.
+        //   last_message_at older than the timeout, last_recovery_at=null.
         Conversation::factory()->count(3)->create([
             'bot_id' => $bot->id,
+            'status' => 'active',
+            'is_handover' => false,
             'last_message_at' => now()->subHours(25),
             'last_recovery_at' => null,
             'recovery_attempts' => 0,
         ]);
 
-        $results = $this->service->findEligibleConversations($bot);
-
-        // Sanity: result set must be non-empty, otherwise the test would
-        // trivially pass without proving anything.
-        $this->assertCount(3, $results, 'Expected 3 eligible conversations; factory setup may be wrong.');
-
-        // Register the listener AFTER the initial fetch so we only capture
-        // queries fired while iterating the already-fetched collection.
-        $queriesAfterFetch = 0;
-        DB::listen(function () use (&$queriesAfterFetch) {
-            $queriesAfterFetch++;
+        $queries = 0;
+        DB::listen(function () use (&$queries) {
+            $queries++;
         });
 
-        foreach ($results as $conversation) {
-            $this->assertTrue(
-                $conversation->relationLoaded('bot'),
-                'bot relation must be eager-loaded on each conversation'
-            );
-            $this->assertTrue(
-                $conversation->bot?->relationLoaded('settings') ?? false,
-                'bot.settings relation must be eager-loaded'
-            );
-            $this->assertTrue(
-                $conversation->bot?->settings?->relationLoaded('hitlSettings') ?? false,
-                'bot.settings.hitlSettings relation must be eager-loaded'
-            );
-        }
+        $results = $this->service->findEligibleConversations($bot);
+
+        $this->assertCount(0, $results, 'the retired picker must return an empty collection');
+
+        DB::getEventDispatcher()->forget(QueryExecuted::class);
 
         $this->assertSame(
             0,
-            $queriesAfterFetch,
-            "Expected zero queries when iterating eager-loaded bot relation, got $queriesAfterFetch"
+            $queries,
+            "Expected zero queries from the retired picker, got $queries"
         );
 
-        DB::getEventDispatcher()->forget(QueryExecuted::class);
+        Http::assertNothingSent('the retired picker must not touch the network');
     }
 }

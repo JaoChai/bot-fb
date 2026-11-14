@@ -10,11 +10,10 @@ use Illuminate\Support\Facades\Log;
 
 class LeadRecoveryService
 {
-    protected const DEFAULT_TIMEOUT_HOURS = 24;
-
-    protected const DEFAULT_MAX_ATTEMPTS = 3;
-
-    protected const DEFAULT_MESSAGE = 'สวัสดีค่ะ ไม่ทราบว่ายังสนใจอยู่ไหมคะ? หากมีข้อสงสัยสามารถสอบถามได้เลยนะคะ';
+    /**
+     * How long after a sent follow-up a customer reply still counts (B1).
+     */
+    protected const RESPONSE_WINDOW_HOURS = 72;
 
     public function __construct(
         protected LINEService $lineService,
@@ -27,91 +26,26 @@ class LeadRecoveryService
     /**
      * Find conversations that need recovery for a specific bot.
      *
+     * Retired in B1: the old autonomous follow-up never picks rooms anymore.
+     * The new eligibility query lands with B2 (follow_up_sales_signals).
+     *
      * @return Collection<int, Conversation>
      */
     public function findEligibleConversations(Bot $bot): Collection
     {
-        // Get HITL settings for timeout and max attempts
-        $settings = $bot->settings?->hitlSettings;
-
-        $timeoutHours = $settings?->lead_recovery_timeout_hours ?? self::DEFAULT_TIMEOUT_HOURS;
-        $maxAttempts = $settings?->lead_recovery_max_attempts ?? self::DEFAULT_MAX_ATTEMPTS;
-
-        return Conversation::query()
-            ->forBot($bot->id)
-            ->needsRecovery($timeoutHours, $maxAttempts)
-            ->with(['customerProfile', 'bot.settings.hitlSettings'])
-            ->get();
+        return new Collection;
     }
 
     /**
      * Process recovery for a conversation.
-     * Main entry point for lead recovery.
      *
-     * @return bool Success status
+     * Retired in B1: a hard no-op. No model read, no channel send, no log row,
+     * no counter change — even when the legacy lead_recovery_enabled toggle is
+     * still on. Kept only so existing callers resolve to a clean false.
      */
     public function processRecovery(Conversation $conversation): bool
     {
-        $bot = $conversation->bot;
-
-        // Check response hours
-        $responseCheck = $this->responseHoursService->checkResponseHours($bot);
-        if (! $responseCheck['allowed']) {
-            Log::debug('Lead recovery skipped: outside response hours', [
-                'conversation_id' => $conversation->id,
-                'bot_id' => $bot->id,
-                'status' => $responseCheck['status'],
-            ]);
-
-            return false;
-        }
-
-        // Get HITL settings
-        $settings = $bot->settings?->hitlSettings;
-        $mode = $settings?->lead_recovery_mode ?? 'static';
-
-        try {
-            // Generate message based on mode
-            $message = match ($mode) {
-                'ai' => $this->generateAIFollowUp($conversation) ?? $this->generateStaticMessage($bot),
-                default => $this->generateStaticMessage($bot),
-            };
-
-            // Send the follow-up message
-            $success = $this->sendStaticFollowUp($conversation, $message);
-
-            // Log the attempt
-            $this->logRecoveryAttempt(
-                $conversation,
-                $mode,
-                $message,
-                $success ? 'sent' : 'failed',
-                $success ? null : 'Failed to send message'
-            );
-
-            // Update conversation after recovery attempt
-            if ($success) {
-                $this->updateConversationAfterRecovery($conversation);
-            }
-
-            return $success;
-        } catch (\Exception $e) {
-            Log::error('Lead recovery failed', [
-                'conversation_id' => $conversation->id,
-                'bot_id' => $bot->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            $this->logRecoveryAttempt(
-                $conversation,
-                $mode,
-                '',
-                'failed',
-                $e->getMessage()
-            );
-
-            return false;
-        }
+        return false;
     }
 
     /**
@@ -200,235 +134,50 @@ class LeadRecoveryService
     }
 
     /**
-     * Generate a static follow-up message for the bot.
-     */
-    public function generateStaticMessage(Bot $bot): string
-    {
-        $settings = $bot->settings?->hitlSettings;
-        $customMessage = $settings?->lead_recovery_message;
-
-        if (! empty($customMessage)) {
-            return $customMessage;
-        }
-
-        return $this->getDefaultMessage();
-    }
-
-    /**
-     * Log a recovery attempt to the database.
-     *
-     * @param  string  $mode  'static' or 'ai'
-     * @param  string  $message  The message that was sent
-     * @param  string  $status  'sent', 'failed', 'pending'
-     * @param  string|null  $error  Error message if failed
-     */
-    public function logRecoveryAttempt(
-        Conversation $conversation,
-        string $mode,
-        string $message,
-        string $status,
-        ?string $error = null
-    ): LeadRecoveryLog {
-        return LeadRecoveryLog::create([
-            'conversation_id' => $conversation->id,
-            'bot_id' => $conversation->bot_id,
-            'attempt_number' => ($conversation->recovery_attempts ?? 0) + 1,
-            'message_mode' => $mode,
-            'message_sent' => $message,
-            'sent_at' => now(),
-            'delivery_status' => $status,
-            'error_message' => $error,
-            'customer_responded' => false,
-        ]);
-    }
-
-    /**
-     * Update conversation after a successful recovery attempt.
-     */
-    public function updateConversationAfterRecovery(Conversation $conversation): void
-    {
-        $conversation->update([
-            'recovery_attempts' => ($conversation->recovery_attempts ?? 0) + 1,
-            'last_recovery_at' => now(),
-        ]);
-    }
-
-    /**
-     * Get the default Thai follow-up message.
-     */
-    public function getDefaultMessage(): string
-    {
-        return self::DEFAULT_MESSAGE;
-    }
-
-    // =========================================================================
-    // AI Mode Methods
-    // =========================================================================
-
-    /**
-     * Generate an AI-powered follow-up message.
-     *
-     * @return string|null Returns null if AI generation fails
-     */
-    public function generateAIFollowUp(Conversation $conversation): ?string
-    {
-        try {
-            $bot = $conversation->bot;
-
-            // Get system prompt from default flow
-            $systemPrompt = $this->getSystemPromptFromDefaultFlow($bot);
-            if (empty($systemPrompt)) {
-                Log::debug('Lead recovery AI: no system prompt, falling back to static', [
-                    'conversation_id' => $conversation->id,
-                    'bot_id' => $bot->id,
-                ]);
-
-                return null;
-            }
-
-            // Get conversation context (last 5 messages)
-            $context = $this->getConversationContext($conversation, 5);
-
-            // Format context for prompt
-            $contextFormatted = '';
-            foreach ($context as $msg) {
-                $role = $msg['role'] === 'customer' ? 'ลูกค้า' : 'บอท';
-                $contextFormatted .= "{$role}: {$msg['content']}\n";
-            }
-
-            // Build the prompt
-            $prompt = "{$systemPrompt}
-
-## Task
-ลูกค้าเคยสนทนาแต่หายไป ให้ส่งข้อความติดตามสั้นๆ 1-2 ประโยค
-
-## Recent Conversation
-{$contextFormatted}
-
-## Rules
-- เป็นมิตร ไม่กดดัน
-- อ้างอิงสิ่งที่ลูกค้าสนใจ (ถ้ามี)
-- รักษา personality จาก system prompt
-- ตอบเป็นภาษาไทย";
-
-            // Call OpenRouter to generate message
-            $messages = [
-                ['role' => 'user', 'content' => $prompt],
-            ];
-
-            // Utility model from Connection Settings (no model configured → skip AI, use static fallback)
-            $model = $bot->resolvedUtilityModel();
-            if ($model === null) {
-                return null;
-            }
-
-            $result = $this->openRouterService->chat(
-                messages: $messages,
-                model: $model,
-                temperature: 0.7,
-                maxTokens: 150,
-                useFallback: true,
-                reasoning: ['effort' => 'none'], // งานสั้น — ไม่ให้ token คิดกินงบ maxTokens
-            );
-
-            $generatedMessage = trim($result['content'] ?? '');
-
-            if (empty($generatedMessage)) {
-                Log::warning('Lead recovery AI: empty response from OpenRouter', [
-                    'conversation_id' => $conversation->id,
-                    'bot_id' => $bot->id,
-                ]);
-
-                return null;
-            }
-
-            Log::info('Lead recovery AI: generated follow-up message', [
-                'conversation_id' => $conversation->id,
-                'bot_id' => $bot->id,
-                'message_length' => strlen($generatedMessage),
-                'model_used' => $result['model'] ?? 'unknown',
-            ]);
-
-            return $generatedMessage;
-        } catch (\Exception $e) {
-            Log::error('Lead recovery AI: failed to generate message', [
-                'conversation_id' => $conversation->id,
-                'bot_id' => $conversation->bot_id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
-        }
-    }
-
-    /**
-     * Get the system prompt from the bot's default flow.
-     */
-    public function getSystemPromptFromDefaultFlow(Bot $bot): ?string
-    {
-        try {
-            // Load default flow if not already loaded
-            if (! $bot->relationLoaded('defaultFlow')) {
-                $bot->load('defaultFlow');
-            }
-
-            $defaultFlow = $bot->defaultFlow;
-
-            if (! $defaultFlow) {
-                Log::debug('Lead recovery: bot has no default flow', [
-                    'bot_id' => $bot->id,
-                ]);
-
-                return null;
-            }
-
-            $systemPrompt = $defaultFlow->system_prompt;
-
-            if (empty($systemPrompt)) {
-                Log::debug('Lead recovery: default flow has no system prompt', [
-                    'bot_id' => $bot->id,
-                    'flow_id' => $defaultFlow->id,
-                ]);
-
-                return null;
-            }
-
-            return $systemPrompt;
-        } catch (\Exception $e) {
-            Log::error('Lead recovery: failed to get system prompt', [
-                'bot_id' => $bot->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
-        }
-    }
-
-    /**
      * Mark that a customer has responded to a lead recovery attempt.
      *
-     * Finds the most recent LeadRecoveryLog for this conversation where
-     * customer_responded = false and updates it to mark the response.
+     * B1 rule: only the newest log row that was actually SENT, at most 72
+     * hours old and not yet marked may flip to responded — and only when a
+     * real customer message arrived after that row was sent. Failed and
+     * unsent rows never count, bot output never counts, and a second call
+     * finds nothing left to mark (idempotent).
      */
     public function markCustomerResponded(Conversation $conversation): void
     {
-        $log = LeadRecoveryLog::where('conversation_id', $conversation->id)
+        $log = LeadRecoveryLog::query()
+            ->where('conversation_id', $conversation->id)
             ->where('customer_responded', false)
+            ->where('delivery_status', 'sent')
+            ->where('sent_at', '>=', now()->subHours(self::RESPONSE_WINDOW_HOURS))
             ->orderByDesc('sent_at')
             ->first();
 
-        if ($log) {
-            $log->update([
-                'customer_responded' => true,
-                'responded_at' => now(),
-            ]);
-
-            Log::info('Lead recovery: customer responded', [
-                'conversation_id' => $conversation->id,
-                'log_id' => $log->id,
-                'attempt_number' => $log->attempt_number,
-            ]);
+        if ($log === null) {
+            return;
         }
+
+        // Only an actual customer message newer than the follow-up counts
+        // as the reply; the row carries that real message's timestamp.
+        $reply = $conversation->messages()
+            ->where('sender', 'user')
+            ->where('created_at', '>', $log->sent_at)
+            ->orderBy('created_at')
+            ->first();
+
+        if ($reply === null) {
+            return;
+        }
+
+        $log->update([
+            'customer_responded' => true,
+            'responded_at' => $reply->created_at,
+        ]);
+
+        Log::info('Lead recovery: customer responded', [
+            'conversation_id' => $conversation->id,
+            'log_id' => $log->id,
+            'attempt_number' => $log->attempt_number,
+        ]);
     }
 
     /**

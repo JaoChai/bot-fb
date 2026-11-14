@@ -6,10 +6,6 @@ use App\Models\Bot;
 use App\Models\BotHITLSettings;
 use App\Models\BotSetting;
 use App\Models\Conversation;
-use App\Models\CustomerProfile;
-use App\Models\Flow;
-use App\Models\LeadRecoveryLog;
-use App\Models\Message;
 use App\Models\User;
 use App\Services\FacebookService;
 use App\Services\LeadRecoveryService;
@@ -21,46 +17,65 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
 use Tests\TestCase;
 
+/**
+ * B1 retirement of the old autonomous follow-up sender.
+ *
+ * The unit side pins the service contract after retirement:
+ *   - findEligibleConversations is always empty, whatever the legacy toggle.
+ *   - processRecovery returns false and touches nothing.
+ *   - sendStaticFollowUp keeps working as the generic outage transport with
+ *     the same constructor signature.
+ */
 class LeadRecoveryServiceTest extends TestCase
 {
     use RefreshDatabase;
 
     private LeadRecoveryService $service;
 
+    private LINEService $lineService;
+
+    private TelegramService $telegramService;
+
+    private FacebookService $facebookService;
+
+    private ResponseHoursService $responseHoursService;
+
     private User $user;
 
     private Bot $bot;
-
-    private OpenRouterService $openRouterService;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        // Create mock services
-        $lineService = Mockery::mock(LINEService::class);
-        $telegramService = Mockery::mock(TelegramService::class);
-        $facebookService = Mockery::mock(FacebookService::class);
-        $responseHoursService = Mockery::mock(ResponseHoursService::class);
+        // Create mock services — constructor signature must stay the same (B1)
+        $this->lineService = Mockery::mock(LINEService::class);
+        $this->telegramService = Mockery::mock(TelegramService::class);
+        $this->facebookService = Mockery::mock(FacebookService::class);
+        $this->responseHoursService = Mockery::mock(ResponseHoursService::class);
         $openRouterService = Mockery::mock(OpenRouterService::class);
-        $this->openRouterService = $openRouterService;
 
         $this->service = new LeadRecoveryService(
-            $lineService,
-            $telegramService,
-            $facebookService,
-            $responseHoursService,
+            $this->lineService,
+            $this->telegramService,
+            $this->facebookService,
+            $this->responseHoursService,
             $openRouterService
         );
 
         $this->user = User::factory()->create();
-        $this->bot = Bot::factory()->create(['user_id' => $this->user->id]);
+        $this->bot = Bot::factory()->create([
+            'user_id' => $this->user->id,
+            'channel_type' => 'telegram',
+        ]);
     }
 
     protected function tearDown(): void
     {
-        Mockery::close();
+        // Rollback the DB transaction BEFORE Mockery verifies: a violated
+        // shouldNotReceive must not abort the RefreshDatabase rollback.
         parent::tearDown();
+        Mockery::close();
     }
 
     /**
@@ -88,146 +103,40 @@ class LeadRecoveryServiceTest extends TestCase
         ]);
     }
 
-    // =========================================================================
-    // Test: findEligibleConversations
-    // =========================================================================
-
-    public function test_finds_eligible_conversations(): void
+    /**
+     * A room that the old silent-room picker would have picked.
+     */
+    private function eligibleLookingRoom(Bot $bot): Conversation
     {
-        // Setup: Bot with lead recovery enabled, timeout 4 hours
-        $this->createBotSettingsWithHITL($this->bot, true, 4, 3);
-
-        // Create conversation inactive for 5 hours (past the 4 hour timeout)
-        $conversation = Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
+        return Conversation::factory()->create([
+            'bot_id' => $bot->id,
+            'channel_type' => $bot->channel_type,
+            'external_customer_id' => 'legacy-customer-1',
             'status' => 'active',
             'is_handover' => false,
             'recovery_attempts' => 0,
-            'last_message_at' => now()->subHours(5),
-            'last_recovery_at' => null,
-        ]);
-
-        $result = $this->service->findEligibleConversations($this->bot);
-
-        $this->assertCount(1, $result);
-        $this->assertEquals($conversation->id, $result->first()->id);
-    }
-
-    public function test_excludes_hitl_conversations(): void
-    {
-        // Setup: Bot with lead recovery enabled
-        $this->createBotSettingsWithHITL($this->bot, true, 4, 3);
-
-        // Create conversation with is_handover = true
-        Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'status' => 'active',
-            'is_handover' => true,
-            'recovery_attempts' => 0,
-            'last_message_at' => now()->subHours(5),
-            'last_recovery_at' => null,
-        ]);
-
-        $result = $this->service->findEligibleConversations($this->bot);
-
-        $this->assertCount(0, $result);
-    }
-
-    public function test_excludes_conversations_at_max_attempts(): void
-    {
-        // Setup: Bot with max_attempts = 3
-        $this->createBotSettingsWithHITL($this->bot, true, 4, 3);
-
-        // Create conversation with recovery_attempts = 3 (at max)
-        Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'status' => 'active',
-            'is_handover' => false,
-            'recovery_attempts' => 3,
-            'last_message_at' => now()->subHours(5),
-            'last_recovery_at' => null,
-        ]);
-
-        $result = $this->service->findEligibleConversations($this->bot);
-
-        $this->assertCount(0, $result);
-    }
-
-    public function test_respects_24_hour_cooldown(): void
-    {
-        // Setup: Bot with lead recovery enabled
-        $this->createBotSettingsWithHITL($this->bot, true, 4, 3);
-
-        // Create conversation with last_recovery_at within 24 hours
-        Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'status' => 'active',
-            'is_handover' => false,
-            'recovery_attempts' => 1,
-            'last_message_at' => now()->subHours(5),
-            'last_recovery_at' => now()->subHours(12), // Only 12 hours ago
-        ]);
-
-        $result = $this->service->findEligibleConversations($this->bot);
-
-        $this->assertCount(0, $result);
-    }
-
-    public function test_includes_conversation_after_24_hour_cooldown(): void
-    {
-        // Setup: Bot with lead recovery enabled
-        $this->createBotSettingsWithHITL($this->bot, true, 4, 3);
-
-        // Create conversation with last_recovery_at over 24 hours ago
-        $conversation = Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'status' => 'active',
-            'is_handover' => false,
-            'recovery_attempts' => 1,
             'last_message_at' => now()->subHours(30),
-            'last_recovery_at' => now()->subHours(25), // 25 hours ago (past cooldown)
+            'last_recovery_at' => null,
         ]);
+    }
+
+    // =========================================================================
+    // Retirement: the old picker never picks anything
+    // =========================================================================
+
+    public function test_find_eligible_conversations_returns_nothing_even_with_old_toggle_true(): void
+    {
+        $this->createBotSettingsWithHITL($this->bot, true, 4, 3);
+        $this->eligibleLookingRoom($this->bot);
 
         $result = $this->service->findEligibleConversations($this->bot);
 
-        $this->assertCount(1, $result);
-        $this->assertEquals($conversation->id, $result->first()->id);
+        $this->assertCount(0, $result, 'the retired picker must never return a room');
     }
 
-    public function test_excludes_closed_conversations(): void
+    public function test_find_eligible_conversations_returns_nothing_without_settings(): void
     {
-        // Setup: Bot with lead recovery enabled
-        $this->createBotSettingsWithHITL($this->bot, true, 4, 3);
-
-        // Create closed conversation
-        Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'status' => 'closed',
-            'is_handover' => false,
-            'recovery_attempts' => 0,
-            'last_message_at' => now()->subHours(5),
-            'last_recovery_at' => null,
-        ]);
-
-        $result = $this->service->findEligibleConversations($this->bot);
-
-        $this->assertCount(0, $result);
-    }
-
-    public function test_excludes_recently_active_conversations(): void
-    {
-        // Setup: Bot with 4 hour timeout
-        $this->createBotSettingsWithHITL($this->bot, true, 4, 3);
-
-        // Create conversation active 2 hours ago (within timeout)
-        Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'status' => 'active',
-            'is_handover' => false,
-            'recovery_attempts' => 0,
-            'last_message_at' => now()->subHours(2),
-            'last_recovery_at' => null,
-        ]);
+        $this->eligibleLookingRoom($this->bot);
 
         $result = $this->service->findEligibleConversations($this->bot);
 
@@ -235,323 +144,138 @@ class LeadRecoveryServiceTest extends TestCase
     }
 
     // =========================================================================
-    // Test: generateStaticMessage
+    // Retirement: processRecovery is a hard no-op
     // =========================================================================
 
-    public function test_generates_static_message(): void
-    {
-        // Setup: Bot with lead_recovery_message set
-        $customMessage = 'สวัสดีครับ ยังสนใจสินค้าของเราอยู่ไหมครับ?';
-        $this->createBotSettingsWithHITL($this->bot, true, 4, 3, $customMessage);
-
-        // Force reload to get the settings
-        $this->bot->load('settings.hitlSettings');
-
-        $result = $this->service->generateStaticMessage($this->bot);
-
-        $this->assertEquals($customMessage, $result);
-    }
-
-    public function test_uses_default_message_when_not_configured(): void
-    {
-        // Setup: Bot with lead_recovery_message = null
-        $this->createBotSettingsWithHITL($this->bot, true, 4, 3, null);
-
-        // Force reload to get the settings
-        $this->bot->load('settings.hitlSettings');
-
-        $result = $this->service->generateStaticMessage($this->bot);
-
-        $expectedDefault = 'สวัสดีค่ะ ไม่ทราบว่ายังสนใจอยู่ไหมคะ? หากมีข้อสงสัยสามารถสอบถามได้เลยนะคะ';
-        $this->assertEquals($expectedDefault, $result);
-    }
-
-    public function test_uses_default_message_when_no_settings(): void
-    {
-        // Bot without any settings
-        $result = $this->service->generateStaticMessage($this->bot);
-
-        $expectedDefault = 'สวัสดีค่ะ ไม่ทราบว่ายังสนใจอยู่ไหมคะ? หากมีข้อสงสัยสามารถสอบถามได้เลยนะคะ';
-        $this->assertEquals($expectedDefault, $result);
-    }
-
-    public function test_uses_default_message_when_empty_string(): void
-    {
-        // Setup: Bot with lead_recovery_message = '' (empty string)
-        $this->createBotSettingsWithHITL($this->bot, true, 4, 3, '');
-
-        // Force reload to get the settings
-        $this->bot->load('settings.hitlSettings');
-
-        $result = $this->service->generateStaticMessage($this->bot);
-
-        $expectedDefault = 'สวัสดีค่ะ ไม่ทราบว่ายังสนใจอยู่ไหมคะ? หากมีข้อสงสัยสามารถสอบถามได้เลยนะคะ';
-        $this->assertEquals($expectedDefault, $result);
-    }
-
-    // =========================================================================
-    // Test: logRecoveryAttempt
-    // =========================================================================
-
-    public function test_logs_recovery_attempt(): void
-    {
-        $conversation = Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'recovery_attempts' => 0,
-        ]);
-
-        $log = $this->service->logRecoveryAttempt(
-            $conversation,
-            'static',
-            'Test message',
-            'sent',
-            null
-        );
-
-        $this->assertInstanceOf(LeadRecoveryLog::class, $log);
-        $this->assertDatabaseHas('lead_recovery_logs', [
-            'conversation_id' => $conversation->id,
-            'bot_id' => $this->bot->id,
-            'attempt_number' => 1,
-            'message_mode' => 'static',
-            'message_sent' => 'Test message',
-            'delivery_status' => 'sent',
-            'error_message' => null,
-            'customer_responded' => false,
-        ]);
-    }
-
-    public function test_logs_recovery_attempt_with_error(): void
-    {
-        $conversation = Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'recovery_attempts' => 1,
-        ]);
-
-        $log = $this->service->logRecoveryAttempt(
-            $conversation,
-            'ai',
-            '',
-            'failed',
-            'Network timeout'
-        );
-
-        $this->assertDatabaseHas('lead_recovery_logs', [
-            'conversation_id' => $conversation->id,
-            'attempt_number' => 2,
-            'message_mode' => 'ai',
-            'delivery_status' => 'failed',
-            'error_message' => 'Network timeout',
-        ]);
-    }
-
-    public function test_logs_recovery_attempt_increments_attempt_number(): void
-    {
-        $conversation = Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'recovery_attempts' => 2,
-        ]);
-
-        $log = $this->service->logRecoveryAttempt(
-            $conversation,
-            'static',
-            'Test message',
-            'sent'
-        );
-
-        $this->assertEquals(3, $log->attempt_number);
-    }
-
-    // =========================================================================
-    // Test: updateConversationAfterRecovery
-    // =========================================================================
-
-    public function test_updates_conversation_after_recovery(): void
-    {
-        $conversation = Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'recovery_attempts' => 0,
-            'last_recovery_at' => null,
-        ]);
-
-        $this->service->updateConversationAfterRecovery($conversation);
-
-        $conversation->refresh();
-
-        $this->assertEquals(1, $conversation->recovery_attempts);
-        $this->assertNotNull($conversation->last_recovery_at);
-        $this->assertTrue($conversation->last_recovery_at->isToday());
-    }
-
-    public function test_updates_conversation_increments_attempts(): void
-    {
-        $conversation = Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'recovery_attempts' => 2,
-            'last_recovery_at' => now()->subDays(2),
-        ]);
-
-        $this->service->updateConversationAfterRecovery($conversation);
-
-        $conversation->refresh();
-
-        $this->assertEquals(3, $conversation->recovery_attempts);
-        $this->assertTrue($conversation->last_recovery_at->isToday());
-    }
-
-    public function test_updates_conversation_handles_zero_recovery_attempts(): void
-    {
-        // Use 0 instead of null since the column has NOT NULL constraint
-        $conversation = Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'recovery_attempts' => 0,
-            'last_recovery_at' => null,
-        ]);
-
-        $this->service->updateConversationAfterRecovery($conversation);
-
-        $conversation->refresh();
-
-        $this->assertEquals(1, $conversation->recovery_attempts);
-    }
-
-    // =========================================================================
-    // Test: getDefaultMessage
-    // =========================================================================
-
-    public function test_get_default_message_returns_thai_message(): void
-    {
-        $result = $this->service->getDefaultMessage();
-
-        $expected = 'สวัสดีค่ะ ไม่ทราบว่ายังสนใจอยู่ไหมคะ? หากมีข้อสงสัยสามารถสอบถามได้เลยนะคะ';
-        $this->assertEquals($expected, $result);
-    }
-
-    // =========================================================================
-    // Test: Edge cases
-    // =========================================================================
-
-    public function test_find_eligible_uses_default_timeout_when_no_settings(): void
-    {
-        // Bot without settings - should use default 24 hour timeout
-        // Conversation inactive for 25 hours
-        $conversation = Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'status' => 'active',
-            'is_handover' => false,
-            'recovery_attempts' => 0,
-            'last_message_at' => now()->subHours(25),
-            'last_recovery_at' => null,
-        ]);
-
-        $result = $this->service->findEligibleConversations($this->bot);
-
-        $this->assertCount(1, $result);
-        $this->assertEquals($conversation->id, $result->first()->id);
-    }
-
-    public function test_find_eligible_uses_default_max_attempts_when_no_settings(): void
-    {
-        // Bot without settings - should use default 3 max attempts
-        // Conversation with 3 attempts (at default max)
-        Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'status' => 'active',
-            'is_handover' => false,
-            'recovery_attempts' => 3,
-            'last_message_at' => now()->subHours(25),
-            'last_recovery_at' => null,
-        ]);
-
-        $result = $this->service->findEligibleConversations($this->bot);
-
-        $this->assertCount(0, $result);
-    }
-
-    public function test_loads_customer_profile_with_eligible_conversations(): void
+    public function test_process_recovery_returns_false_without_sending_or_logging(): void
     {
         $this->createBotSettingsWithHITL($this->bot, true, 4, 3);
+        $conversation = $this->eligibleLookingRoom($this->bot);
 
-        // Create a customer profile with all required fields
-        $customerProfile = CustomerProfile::create([
-            'display_name' => 'Test Customer',
-            'external_id' => 'U'.fake()->uuid(),
-            'channel_type' => 'line',
-        ]);
+        // Nothing may send: the three channel mocks stay untouched. The
+        // response-hours mock is lenient — its non-use is proven by the
+        // no-op result below, and on the pre-change code a strict mock
+        // would only add noise to the primary RED failure.
+        $this->responseHoursService->shouldReceive('checkResponseHours')
+            ->zeroOrMoreTimes()
+            ->andReturn(['allowed' => true, 'status' => 'within_test_hours']);
+        $this->lineService->shouldNotReceive('push');
+        $this->telegramService->shouldNotReceive('sendMessage');
+        $this->facebookService->shouldNotReceive('sendMessage');
 
-        $conversation = Conversation::factory()->create([
-            'bot_id' => $this->bot->id,
-            'customer_profile_id' => $customerProfile->id,
-            'status' => 'active',
-            'is_handover' => false,
-            'recovery_attempts' => 0,
-            'last_message_at' => now()->subHours(5),
-            'last_recovery_at' => null,
-        ]);
+        $result = $this->service->processRecovery($conversation);
 
-        $result = $this->service->findEligibleConversations($this->bot);
+        $this->assertFalse($result);
+        $this->assertDatabaseCount('lead_recovery_logs', 0);
 
-        $this->assertCount(1, $result);
-        $this->assertTrue($result->first()->relationLoaded('customerProfile'));
-        $this->assertEquals($customerProfile->id, $result->first()->customerProfile->id);
+        $conversation->refresh();
+        $this->assertSame(0, $conversation->recovery_attempts);
+        $this->assertNull($conversation->last_recovery_at);
     }
 
     // =========================================================================
-    // Test: generateAIFollowUp() — resolvedUtilityModel() call site
+    // Generic transport (used by outage notices) stays intact
     // =========================================================================
 
-    public function test_generate_ai_follow_up_uses_bot_utility_model_when_configured(): void
+    public function test_static_follow_up_sends_via_line_with_retry_key(): void
     {
-        $flow = Flow::factory()->create([
-            'bot_id' => $this->bot->id,
-            'system_prompt' => 'คุณเป็นผู้ช่วยขายที่เป็นมิตร',
-        ]);
-        $this->bot->update([
-            'default_flow_id' => $flow->id,
-            'primary_chat_model' => 'openai/gpt-4o-mini',
-            'utility_model' => 'anthropic/claude-3-haiku',
-        ]);
+        $conversation = $this->eligibleLookingRoom($this->bot->forceFill(['channel_type' => 'line']));
+        $message = 'ขออภัยค่ะ ระบบกลับมาใช้ได้แล้ว';
 
-        $conversation = Conversation::factory()->create(['bot_id' => $this->bot->id]);
-        Message::factory()->create([
-            'conversation_id' => $conversation->id,
-            'sender' => 'user',
-            'content' => 'สนใจสินค้าตัว A ครับ',
-        ]);
-
-        $this->openRouterService->shouldReceive('chat')
+        $this->lineService->shouldReceive('generateRetryKey')->once()->andReturn('retry-key-1');
+        $this->lineService->shouldReceive('push')
             ->once()
-            ->withArgs(function (...$args) {
-                // chat() positional order: messages, model, temperature, maxTokens, useFallback, fallbackOverride, timeout, reasoning
-                return $args[1] === 'anthropic/claude-3-haiku'
-                    && ($args[7] ?? null) === ['effort' => 'none'];
-            })
-            ->andReturn(['content' => 'สวัสดีค่ะ ยังสนใจสินค้าตัว A อยู่ไหมคะ?']);
+            ->with(
+                Mockery::on(fn ($arg) => $arg->is($this->bot)),
+                'legacy-customer-1',
+                Mockery::on(fn ($arg) => count($arg) === 1 && $arg[0] === $message),
+                'retry-key-1'
+            );
 
-        $result = $this->service->generateAIFollowUp($conversation);
-
-        $this->assertEquals('สวัสดีค่ะ ยังสนใจสินค้าตัว A อยู่ไหมคะ?', $result);
+        $this->assertTrue($this->service->sendStaticFollowUp($conversation, $message));
     }
 
-    public function test_generate_ai_follow_up_returns_null_when_bot_has_no_model_configured(): void
+    public function test_static_follow_up_sends_plain_text_telegram_without_parse_mode(): void
     {
-        $flow = Flow::factory()->create([
-            'bot_id' => $this->bot->id,
-            'system_prompt' => 'คุณเป็นผู้ช่วยขายที่เป็นมิตร',
-        ]);
-        $this->bot->update(['default_flow_id' => $flow->id]);
+        $conversation = $this->eligibleLookingRoom($this->bot);
+        $message = 'ขออภัยครับพี่ ระบบกลับมาใช้ได้แล้ว รบกวนพิมพ์ใหม่อีกครั้งนะครับ';
 
-        $conversation = Conversation::factory()->create(['bot_id' => $this->bot->id]);
-        Message::factory()->create([
-            'conversation_id' => $conversation->id,
-            'sender' => 'user',
-            'content' => 'สนใจสินค้าตัว A ครับ',
-        ]);
+        $this->telegramService->shouldReceive('sendMessage')
+            ->once()
+            ->with(
+                Mockery::on(fn ($arg) => $arg->is($this->bot)),
+                'legacy-customer-1',
+                $message,
+                ['parse_mode' => null]
+            );
 
-        $this->openRouterService->shouldNotReceive('chat');
+        $this->assertTrue($this->service->sendStaticFollowUp($conversation, $message, true));
+    }
 
-        $result = $this->service->generateAIFollowUp($conversation);
+    public function test_static_follow_up_keeps_html_parse_mode_by_default(): void
+    {
+        $conversation = $this->eligibleLookingRoom($this->bot);
+        $message = 'สวัสดีค่ะ';
 
-        $this->assertNull($result);
+        $this->telegramService->shouldReceive('sendMessage')
+            ->once()
+            ->with(
+                Mockery::on(fn ($arg) => $arg->is($this->bot)),
+                'legacy-customer-1',
+                $message,
+                []
+            );
+
+        $this->assertTrue($this->service->sendStaticFollowUp($conversation, $message));
+    }
+
+    public function test_static_follow_up_sends_via_facebook(): void
+    {
+        $conversation = $this->eligibleLookingRoom($this->bot->forceFill(['channel_type' => 'facebook']));
+        $message = 'ขออภัยค่ะ ระบบกลับมาใช้ได้แล้วค่ะ';
+
+        $this->facebookService->shouldReceive('sendMessage')
+            ->once()
+            ->with(
+                Mockery::on(fn ($arg) => $arg->is($this->bot)),
+                'legacy-customer-1',
+                $message
+            );
+
+        $this->assertTrue($this->service->sendStaticFollowUp($conversation, $message));
+    }
+
+    public function test_static_follow_up_rejects_unsupported_channel(): void
+    {
+        $conversation = $this->eligibleLookingRoom($this->bot->forceFill(['channel_type' => 'web']));
+
+        $this->lineService->shouldNotReceive('push');
+        $this->telegramService->shouldNotReceive('sendMessage');
+        $this->facebookService->shouldNotReceive('sendMessage');
+
+        $this->assertFalse($this->service->sendStaticFollowUp($conversation, 'any text'));
+    }
+
+    public function test_static_follow_up_requires_external_customer_id(): void
+    {
+        $conversation = $this->eligibleLookingRoom($this->bot);
+        $conversation->update(['external_customer_id' => '']);
+
+        $this->lineService->shouldNotReceive('push');
+        $this->telegramService->shouldNotReceive('sendMessage');
+        $this->facebookService->shouldNotReceive('sendMessage');
+
+        $this->assertFalse($this->service->sendStaticFollowUp($conversation, 'any text'));
+    }
+
+    public function test_static_follow_up_returns_false_when_channel_throws(): void
+    {
+        $conversation = $this->eligibleLookingRoom($this->bot);
+
+        $this->telegramService->shouldReceive('sendMessage')
+            ->once()
+            ->andThrow(new \RuntimeException('network down'));
+
+        $this->assertFalse($this->service->sendStaticFollowUp($conversation, 'any text'));
     }
 }

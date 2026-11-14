@@ -190,21 +190,9 @@ class Conversation extends Model
         return $remaining > 0 ? null : abs($remaining);
     }
 
-    /**
-     * Conversations eligible for lead recovery
-     */
-    public function scopeNeedsRecovery($query, int $timeoutHours, int $maxAttempts)
-    {
-        return $query
-            ->where('status', 'active')
-            ->where('is_handover', false)
-            ->where('recovery_attempts', '<', $maxAttempts)
-            ->where('last_message_at', '<', now()->subHours($timeoutHours))
-            ->where(function ($q) {
-                $q->whereNull('last_recovery_at')
-                    ->orWhere('last_recovery_at', '<', now()->subHours(24));
-            });
-    }
+    // scopeNeedsRecovery removed in B1: the old autonomous follow-up picker is
+    // retired. Counters (recovery_attempts, last_recovery_at), their casts and
+    // the recoveryLogs relation stay for audit and reply tracking.
 
     public function recoveryLogs(): HasMany
     {
