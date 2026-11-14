@@ -249,6 +249,12 @@ class TelegramService
             'parse_mode' => 'HTML',
         ], $options);
 
+        // F18 (การ์ด outage-settings B2): ตัวเลือก plain text แบบชัดเจน —
+        // parse_mode = null ตัดคีย์ออกจาก payload ห้ามส่ง JSON null เป็นโหมด
+        if (array_key_exists('parse_mode', $params) && $params['parse_mode'] === null) {
+            unset($params['parse_mode']);
+        }
+
         $response = $this->client($bot)->post('/sendMessage', $params);
 
         if ($response->failed() || ! $response->json('ok')) {

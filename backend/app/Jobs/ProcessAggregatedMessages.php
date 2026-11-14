@@ -515,7 +515,7 @@ class ProcessAggregatedMessages implements ShouldQueue
             $botMessage = $this->handOverReplyAndHandOverGroup($aggregationService, function () use ($aiService, $e): Message {
                 return $this->conversation->messages()->create([
                     'sender' => 'bot',
-                    'content' => $aiService->getErrorMessage($e),
+                    'content' => $aiService->getErrorMessage($e, $this->bot),
                     'type' => 'text',
                 ]);
             }, $currentTurnMessageIds);

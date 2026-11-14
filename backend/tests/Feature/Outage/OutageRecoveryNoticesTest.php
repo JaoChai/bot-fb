@@ -3,6 +3,7 @@
 namespace Tests\Feature\Outage;
 
 use App\Models\Bot;
+use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
@@ -686,6 +687,213 @@ class OutageRecoveryNoticesTest extends TestCase
             && str_contains($r->url(), 'sendMessage')
             && $r['chat_id'] === '999888');
         $this->assertSame(2, $this->noticeRows()->count());
+    }
+
+    // ------------------------------------------------------------------
+    // การตั้งค่า "เมื่อบอทล่ม" — อ่านสดตอนส่ง + สวิตช์ปิด (การ์ด outage-settings B2)
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_recovery_reads_latest_settings_despite_cached_relation(): void
+    {
+        $this->fakeAllWorking();
+        [$bot, $conversation] = $this->roomWithOutage('เอา2ชุดครับ');
+        BotSetting::query()->create(['bot_id' => $bot->id, 'outage_recovery_message_th' => 'ฉบับแรก']);
+        $bot->load('settings'); // อย่างใจ: cache ฉบับแรกไว้ใน relation ก่อนรอบส่ง
+        BotSetting::query()->where('bot_id', $bot->id)->update(['outage_recovery_message_th' => 'ฉบับล่าสุด']);
+
+        $this->runRecovery();
+
+        $this->assertSame(['ฉบับล่าสุด'], $this->pushTexts(), 'must read settings fresh at send time');
+    }
+
+    #[Test]
+    public function test_custom_thai_text_is_pinned_in_push_body_and_saved_rows(): void
+    {
+        $this->fakeAllWorking();
+        [$bot, $conversation, $tagged] = $this->roomWithOutage('สวัสดี');
+        BotSetting::query()->create([
+            'bot_id' => $bot->id,
+            'outage_recovery_message_th' => 'เจ้าของเขียนเอง ขอโทษลูกค้าด้วยนะครับ',
+            'outage_recovery_message_en' => 'Owner wrote English too',
+        ]);
+
+        $this->runRecovery();
+
+        $this->assertSame(['เจ้าของเขียนเอง ขอโทษลูกค้าด้วยนะครับ'], $this->pushTexts());
+        $notice = $this->noticeRows()->first();
+        $this->assertNotNull($notice);
+        $this->assertSame('เจ้าของเขียนเอง ขอโทษลูกค้าด้วยนะครับ', $notice->content);
+        $this->assertSame($this->pushTexts()[0], $notice->content);
+        $tagged->refresh();
+        $this->assertSame('sent', $tagged->metadata['recovery_notice']);
+    }
+
+    #[Test]
+    public function test_english_customer_with_custom_texts_gets_thai_blank_line_then_english(): void
+    {
+        $this->fakeAllWorking();
+        [$bot, $conversation] = $this->roomWithOutage('Do you ship to Chiang Mai?');
+        BotSetting::query()->create([
+            'bot_id' => $bot->id,
+            'outage_recovery_message_th' => 'เจ้าของเขียนเองภาษาไทย',
+            'outage_recovery_message_en' => 'Owner wrote English',
+        ]);
+
+        $this->runRecovery();
+
+        $expected = 'เจ้าของเขียนเองภาษาไทย'."\n\n".'Owner wrote English';
+        $this->assertSame([$expected], $this->pushTexts());
+        $this->assertSame($expected, $this->noticeRows()->first()->content);
+    }
+
+    #[Test]
+    public function test_switch_off_sends_zero_pushes_and_zero_notice_rows_and_claims_disabled(): void
+    {
+        $this->fakeAllWorking();
+        [$bot, $conversation, $tagged] = $this->roomWithOutage('เอา2ชุดครับ');
+        [$otherBot, $otherConversation, $otherTagged] = $this->roomWithOutage('อีกห้องหนึ่ง');
+        BotSetting::query()->create(['bot_id' => $bot->id, 'outage_recovery_enabled' => false]);
+
+        $this->runRecovery();
+
+        // บอทที่เปิดยังส่งปกติให้ห้องของมัน
+        $this->assertSame([self::CUSTOMER_THAI], $this->pushTexts());
+        $this->assertSame(1, $this->noticeRows()->count());
+        $otherTagged->refresh();
+        $this->assertSame('sent', $otherTagged->metadata['recovery_notice']);
+
+        // ห้องของบอทที่ปิด: ไม่มี push, ไม่มีแถวแจ้ง, ถูก claim เป็น disabled แบบ terminal
+        $pushesToDisabledRoom = collect($this->linePushes())
+            ->filter(fn ($r) => str_contains((string) json_encode($r['to'] ?? ''), (string) $conversation->external_customer_id))
+            ->count();
+        $this->assertSame(0, $pushesToDisabledRoom, 'disabled room must get no push');
+        $tagged->refresh();
+        $this->assertSame('disabled', $tagged->metadata['recovery_notice']);
+        $disabledRows = Message::query()->where('metadata->outage_notice', true)
+            ->where('conversation_id', $conversation->id)->count();
+        $this->assertSame(0, $disabledRows, 'disabled room must get no notice row');
+    }
+
+    #[Test]
+    public function test_rerun_after_switch_on_sends_nothing(): void
+    {
+        $this->fakeAllWorking();
+        [$bot, $conversation, $tagged] = $this->roomWithOutage('เอา2ชุดครับ');
+        BotSetting::query()->create(['bot_id' => $bot->id, 'outage_recovery_enabled' => false]);
+
+        $this->runRecovery();
+        $tagged->refresh();
+        $this->assertSame('disabled', $tagged->metadata['recovery_notice']);
+
+        // เปิดสวิตช์ทีหลัง: ห้องที่ถูกปิดท้ายแล้วห้ามฟื้น
+        BotSetting::query()->where('bot_id', $bot->id)->update(['outage_recovery_enabled' => true]);
+        Http::fake($this->workingFakes());
+        $this->runRecovery();
+
+        Http::assertNothingSent();
+        $this->assertNoNoticeRow();
+    }
+
+    #[Test]
+    public function test_back_alert_carries_the_d3_disabled_suffix(): void
+    {
+        $this->fakeAllWorking();
+        [$bot, $conversation] = $this->roomWithOutage('เอา2ชุดครับ');
+        BotSetting::query()->create(['bot_id' => $bot->id, 'outage_recovery_enabled' => false]);
+
+        $this->runRecovery();
+
+        $expected = '✅ <b>บอทกลับมาตอบได้แล้ว</b> ('.$this->esc($bot->name).")\n"
+            .'ส่งข้อความขอให้ลูกค้าพิมพ์ใหม่ 0 ห้อง · ส่งไม่สำเร็จ 0 ห้อง'
+            .' · ไม่ได้ส่ง 1 ห้อง (ปิดการส่งข้อความตามลูกค้าไว้)';
+        $texts = collect($this->telegramAlerts())->map(fn ($request) => $request['text'])->all();
+        $this->assertSame([$expected], $texts);
+    }
+
+    #[Test]
+    public function test_a_settings_read_failure_leaves_the_room_unclaimed_and_unpushed(): void
+    {
+        $this->fakeAllWorking();
+        [$bot, $conversation, $tagged] = $this->roomWithOutage('เอา2ชุดครับ');
+        DB::beforeExecuting(function (string $sql): void {
+            if (str_contains($sql, 'bot_settings')) {
+                throw new \RuntimeException('bot_settings lookup failed');
+            }
+        });
+
+        $this->runRecovery();
+
+        $this->assertSame([], $this->pushTexts(), 'a room whose settings cannot be read must not be pushed');
+        $tagged->refresh();
+        $this->assertArrayNotHasKey('recovery_notice', $tagged->metadata ?? [], 'an unreadable room must stay unclaimed');
+    }
+
+    #[Test]
+    public function test_disabled_processing_preserves_probe_time_age_and_handover_gates(): void
+    {
+        // probe ปรับตามเวลา: 401 ก่อน 09:30 (phase 2), หลังจากนั้น 200 (phase 3) —
+        // stub เดียวตั้งแต่ต้นเพราะ Http::fake ผูก callback แรกของ URL ตายตัว
+        Http::fake([
+            'api.line.me/*' => Http::response([], 200),
+            'api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]]),
+            'openrouter.test/api/v1/key' => function () {
+                return Carbon::now()->lt(Carbon::parse('2026-11-15 09:30:00'))
+                    ? Http::response([], 401)
+                    : Http::response(['data' => []], 200);
+            },
+        ]);
+
+        // สวิตช์ปิด + หลัง 22:00 → นอกช่วงเวลา = ไม่มีการ claim disabled เลย
+        Carbon::setTestNow(Carbon::parse('2026-11-14 23:30:00'));
+        [$bot, $conversation, $tagged] = $this->roomWithOutage('เอา2ชุดครับ', Carbon::now()->subMinutes(30));
+        BotSetting::query()->create(['bot_id' => $bot->id, 'outage_recovery_enabled' => false]);
+
+        $this->runRecovery();
+
+        Http::assertNothingSent();
+        $tagged->refresh();
+        $this->assertArrayNotHasKey('recovery_notice', $tagged->metadata ?? []);
+
+        // เข้าช่วงเวลาแล้วแต่ probe ล้ม (401) → ยังไม่ claim อะไรทั้งสิ้น
+        Carbon::setTestNow(Carbon::parse('2026-11-15 09:00:00'));
+        $this->runRecovery();
+
+        $this->assertSame([], $this->pushTexts());
+        $tagged->refresh();
+        $this->assertArrayNotHasKey('recovery_notice', $tagged->metadata ?? []);
+
+        // ผ่าน probe แต่อายุแถวเกิน 24 ชม. → ไม่ใช่ห้องรอ จึงไม่ claim disabled
+        Carbon::setTestNow(Carbon::parse('2026-11-15 09:31:00'));
+        $tagged->forceFill(['created_at' => Carbon::now()->subHours(25), 'updated_at' => Carbon::now()->subHours(25)])->save();
+        $this->runRecovery();
+
+        $this->assertSame([], $this->pushTexts());
+        $tagged->refresh();
+        $this->assertArrayNotHasKey('recovery_notice', $tagged->metadata ?? []);
+    }
+
+    #[Test]
+    public function test_a_custom_down_text_is_found_by_tag_but_the_same_text_without_a_tag_is_not(): void
+    {
+        $this->fakeAllWorking();
+        $bot = $this->makeBot();
+
+        // ห้อง A: แถวล่าสุดของบอทติด tag (ข้อความกำหนดเอง) → เจอและแจ้งลูกค้า
+        $convA = Conversation::factory()->line()->create(['bot_id' => $bot->id]);
+        $taggedA = $this->seedOutageTurn($convA, 'สอบถามครับ');
+        $taggedA->forceFill(['content' => 'บอทกำลังอัปเดตครับ'])->save();
+
+        // ห้อง B: ข้อความเดียวกันเป๊ะแต่ไม่มี tag → ไม่ใช่ห้องรอ
+        $convB = Conversation::factory()->line()->create(['bot_id' => $bot->id]);
+        $plainB = $this->seedOutageTurn($convB, 'สอบถามครับ');
+        $plainB->forceFill(['content' => 'บอทกำลังอัปเดตครับ', 'metadata' => null])->save();
+
+        $this->runRecovery();
+
+        // ห้อง A (ติด tag) ได้ข้อความแจ้งตามการตั้งค่า; ห้อง B (ข้อความเดียวกัน ไม่ติด tag) เงียบ
+        $this->assertSame([self::CUSTOMER_THAI], $this->pushTexts(), 'detection must follow the auth tag, not the text');
+        $this->assertSame(1, $this->noticeRows()->count());
     }
 
     // ------------------------------------------------------------------
