@@ -9,6 +9,7 @@ use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\LeadRecoveryLog;
 use App\Models\User;
+use App\Services\FollowUp\FollowUpDraftService;
 use App\Services\FollowUp\FollowUpPipeline;
 use App\Services\FollowUp\FollowUpPrompts;
 use App\Services\FollowUp\FollowUpReservationService;
@@ -20,6 +21,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Mockery\MockInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -47,6 +49,12 @@ class PipelineTest extends TestCase
 
     /** @var list<array{step: string, body: array}> */
     private array $decisionRequests = [];
+
+    /** รุ่นของ stub ปัจจุบัน — stub เก่าใช้เทียบว่าตัวเองหมดอายุหรือยัง */
+    private int $fakeGeneration = 0;
+
+    /** จำนวน request Decisions สะสมทั้งเทส (ไม่รีเซ็ตต่อรุ่น stub) */
+    private int $decisionRequestTotal = 0;
 
     /** @var list<array{message: string, context: mixed}> */
     private array $logCalls = [];
@@ -165,7 +173,9 @@ class PipelineTest extends TestCase
         $bot = $this->seedBot();
         $room = $this->makePaymentRoom($bot, 'U2A', $this->at('2026-11-16 11:00:00'));
         $logId = $this->makeLog($room, $this->at('2026-11-16 11:00:00'));
-        // payment room 25 ชม. เงียบ → ผ่าน recheck; G2 ไม่เข้ากฎหน่วงการชำระ
+        // ห้องส่งสรุปยอดไปก่อนกรอบ projection — คอลัมน์ของ log ต้องเป็น true เอง
+        DB::table('lead_recovery_logs')->where('id', $logId)->update(['transfer_summary_sent' => true]);
+        // payment room 29 ชม. เงียบ → ผ่าน recheck; G2 ไม่เข้ากฎหน่วงการชำระ
         $this->fakeDecisions(sort: ['group' => ['choice' => 'G2', 'confidence' => 0.95], 'declined' => ['noul' => 0.05]]);
         $this->fakeWriter();
 
@@ -213,7 +223,7 @@ class PipelineTest extends TestCase
         $room = $this->makePaymentRoom($bot, 'U3R', $this->at('2026-11-16 11:00:00'));
         $logId = $this->makeLog($room, $this->at('2026-11-16 11:00:00'));
         $this->fakeDecisions();
-        $this->fakeWriter();
+        $this->fakeWriter(null);
 
         $this->runPrepare($logId, $this->at('2026-11-16 11:00:00'));
         $this->assertSame('deferred', $this->logRow($logId)->delivery_status);
@@ -364,23 +374,23 @@ class PipelineTest extends TestCase
     public function test_empty_context_lines_return_empty_list(): void
     {
         $bot = $this->seedBot();
-        $room = Conversation::factory()->line()->create(['bot_id' => $bot->id, 'external_customer_id' => 'UEMP']);
+        $room = $this->makeRoom($bot, 'UEMP');
 
-        // ห้องที่ไม่มีข้อความตัวตนรู้จัก (sender ไม่ใช่ user/bot/agent) — snapshot คืน list ว่าง
-        DB::table('messages')->insert([
-            ['conversation_id' => $room->id, 'sender' => 'system', 'content' => 'ประกาศระบบ', 'type' => 'text', 'created_at' => '2026-11-15 08:55:00', 'updated_at' => '2026-11-15 08:55:00'],
-            ['conversation_id' => $room->id, 'sender' => 'system', 'content' => 'ประกาศระบบอีก', 'type' => 'text', 'created_at' => '2026-11-15 08:59:00', 'updated_at' => '2026-11-15 08:59:00'],
-        ]);
-
-        $log = new LeadRecoveryLog;
-        $log->id = 0;
-        $log->setRawAttributes([
+        // แถวเก่าที่ไม่มีขอบเขตการขาย (sales_started_at null) — ห้ามยิง query ไม่มีขอบ
+        $logId = DB::table('lead_recovery_logs')->insertGetId([
             'conversation_id' => $room->id,
-            'observed_last_message_id' => 999999,
-            'sales_started_at' => '2026-10-01 00:00:00',
+            'bot_id' => $bot->id,
+            'attempt_number' => 0,
+            'message_mode' => 'ai',
+            'delivery_status' => 'candidate',
+            'silence_user_message_id' => 1,
+            'observed_last_message_id' => 2,
+            'sales_started_at' => null,
+            'created_at' => self::NOW,
+            'updated_at' => self::NOW,
         ]);
 
-        $lines = app(FollowUpPipeline::class)->contextLines($log);
+        $lines = app(FollowUpPipeline::class)->contextLines(LeadRecoveryLog::query()->findOrFail($logId));
 
         $this->assertSame([], $lines);
     }
@@ -538,7 +548,7 @@ class PipelineTest extends TestCase
             $row = $this->logRow($logId);
             $this->assertSame('cancelled', $row->delivery_status, "reason $reason must cancel");
             $this->assertSame($reason, $row->reason_code);
-            $this->assertNull($row->attempt_count);
+            $this->assertSame(0, (int) $row->attempt_count);
             $this->assertNull($row->next_attempt_at);
             Http::assertNothingSent();
             $this->assertSame(0, DB::table('follow_up_approvals')->count());
@@ -559,7 +569,7 @@ class PipelineTest extends TestCase
         $row = $this->logRow($logId);
         $this->assertSame('candidate', $row->delivery_status);
         $this->assertSame('outside_hours', $row->reason_code);
-        $this->assertNull($row->attempt_count);
+        $this->assertSame(0, (int) $row->attempt_count);
         $this->assertNull($row->next_attempt_at);
         Http::assertNothingSent();
 
@@ -592,7 +602,7 @@ class PipelineTest extends TestCase
         $row3 = $this->logRow($logId3);
         $this->assertSame('candidate', $row3->delivery_status);
         $this->assertSame('outside_hours', $row3->reason_code);
-        $this->assertNull($row3->attempt_count);
+        $this->assertSame(0, (int) $row3->attempt_count);
     }
 
     // ------------------------------------------------------------------
@@ -693,7 +703,7 @@ class PipelineTest extends TestCase
         $this->assertNull($row->group_code);
         $this->assertNull($row->draft);
 
-        $this->assertSame(3, count($this->decisionRequests));
+        $this->assertSame(3, $this->decisionRequestTotal);
         $this->assertSame(0, $this->usedSlots($bot->id, '2026-11-16'));
     }
 
@@ -999,7 +1009,7 @@ class PipelineTest extends TestCase
         $this->runPrepare($logId2, $utcNow);
 
         $row2 = $this->logRow($logId2);
-        $this->assertSame('pending', $row2->delivery_status);
+        $this->assertSame('pending', $row2->delivery_status, "reason={$row2->reason_code} group={$row2->group_code} next={$row2->next_attempt_at}");
         $this->assertSame('2026-11-16 10:00:00', (string) $row2->updated_at);
         $approval = DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId2)->first();
         $this->assertSame('2026-11-16 22:00:00', (string) $approval->expires_at);
@@ -1029,12 +1039,16 @@ class PipelineTest extends TestCase
             ['tries' => 1, 'timeout' => 180, 'logId' => 7],
             array_intersect_key(get_object_vars($job), ['tries' => true, 'timeout' => true, 'logId' => true])
         );
-        foreach (get_object_vars($job) as $prop => $value) {
-            if (in_array($prop, ['tries', 'timeout', 'logId'], true)) {
-                continue;
+        // payload การ์ดคือ id เท่านั้น — จาก id 7 เป็น id 8 มีแค่ logId เปลี่ยน
+        $otherVars = get_object_vars(new GenerateCustomerFollowUp(8));
+        $jobVars = get_object_vars($job);
+        $differences = [];
+        foreach ($otherVars as $prop => $value) {
+            if ($jobVars[$prop] !== $value) {
+                $differences[] = $prop;
             }
-            $this->assertTrue($value === null || $value === [], "job must not carry other data on $prop");
         }
+        $this->assertSame(['logId'], $differences);
         foreach (['conversation_id', 'claim_token', 'context', 'draft'] as $forbidden) {
             $this->assertStringNotContainsString($serialised, $forbidden);
         }
@@ -1101,7 +1115,7 @@ class PipelineTest extends TestCase
         return $room;
     }
 
-    /** ห้องสเตปชำระเงินจริง: ข้อความบอทสรุปยอดเงียบมา 5 ชม. ก่อน $now พอดี */
+    /** ห้องสเตปชำระเงินจริง: บอทแจ้งคิว Support (เงียบ 5 ชม. ก่อน $now พอดี) — projector เห็น payment_step */
     private function makePaymentRoom(Bot $bot, string $externalCustomerId, CarbonImmutable $now): Conversation
     {
         $room = Conversation::factory()->line()->create([
@@ -1110,7 +1124,7 @@ class PipelineTest extends TestCase
         ]);
         $this->addMessage($room->id, 'user', $now->subHours(5)->subMinutes(5)->format('Y-m-d H:i:s'), 'สนใจสินค้าครับ');
         $this->addMessage($room->id, 'user', $now->subHours(5)->subMinutes(2)->format('Y-m-d H:i:s'), 'ประเมินราคาให้หน่อยครับ');
-        $this->addMessage($room->id, 'bot', $now->subHours(5)->format('Y-m-d H:i:s'), 'สรุปยอด 500 บาท รบกวนตรวจสอบบัญชีที่แชร์ไว้นะครับ');
+        $this->addMessage($room->id, 'bot', $now->subHours(5)->format('Y-m-d H:i:s'), '[แจ้งเตือน Support] ทีมงานรับเรื่องไว้แล้ว รบกวนรอสักครู่นะครับ');
         FollowUpSalesProjector::refresh($room, $now);
 
         return $room;
@@ -1156,10 +1170,18 @@ class PipelineTest extends TestCase
         $checkUsage = $checkUsage ?? ['input_tokens' => 30, 'output_tokens' => 8, 'cost' => 0.0003];
         $this->decisionRequests = [];
 
-        Http::fake(function (Request $request) use ($sortAnswer, $checkAnswer, $sortStatus, $checkStatus, $sortUsage, $checkUsage, $onSort): mixed {
+        // Http::fake() เติม stub ต่อท้ายของเก่า ไม่ทับ — stub รุ่นเก๋าต้องปล่อยผ่านให้รุ่นใหม่
+        $this->fakeGeneration++;
+        $generation = $this->fakeGeneration;
+
+        Http::fake(function (Request $request) use ($sortAnswer, $checkAnswer, $sortStatus, $checkStatus, $sortUsage, $checkUsage, $onSort, $generation): mixed {
+            if ($generation !== $this->fakeGeneration) {
+                return null; // stub รุ่นเก่า — ให้ stub รุ่นล่าสุดตอบ
+            }
             $body = $request->data();
             $isSort = isset($body['questions']['group']);
             $this->decisionRequests[] = ['step' => $isSort ? 'sort' : 'check', 'body' => $body];
+            $this->decisionRequestTotal++;
 
             if ($isSort) {
                 if ($onSort !== null) {
@@ -1220,7 +1242,7 @@ class PipelineTest extends TestCase
     {
         $this->logCalls = [];
         foreach (['warning', 'error', 'notice', 'info'] as $level) {
-            \Illuminate\Support\Facades\Log::shouldReceive($level)
+            Log::shouldReceive($level)
                 ->zeroOrMoreTimes()
                 ->andReturnUsing(function (string $message, array $context = []) use ($level): void {
                     $this->logCalls[] = ['level' => $level, 'message' => $message, 'context' => $context];
