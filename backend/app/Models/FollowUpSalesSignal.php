@@ -20,6 +20,13 @@ class FollowUpSalesSignal extends Model
 
     protected $table = 'follow_up_sales_signals';
 
+    /** ตารางใช้ PK = conversation_id (ไม่มีคอลัมน์ id) — Eloquent ต้องรู้ ไม่งั้น PostgreSQL `returning "id"` พัง */
+    protected $primaryKey = 'conversation_id';
+
+    public $incrementing = false;
+
+    protected $keyType = 'int';
+
     protected $fillable = [
         'conversation_id',
         'last_message_id',

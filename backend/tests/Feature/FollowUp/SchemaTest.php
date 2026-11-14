@@ -276,6 +276,11 @@ class SchemaTest extends TestCase
             'projected_at' => '2026-11-01 10:00:00',
         ]);
 
+        // โมเดลต้องประกาศ PK ตามตาราง (ไม่มีคอลัมน์ id) — CI รัน SQLite เท่านั้น จึงต้องกุมไว้ที่นี่
+        // ไม่งั้น PostgreSQL `returning "id"` พัง (การ์ด B2c, D17)
+        $this->assertSame('conversation_id', (new FollowUpSalesSignal)->getKeyName(), 'signal model must use the table primary key conversation_id');
+        $this->assertFalse((new FollowUpSalesSignal)->incrementing, 'conversation_id is not auto-increment');
+
         $conversation->forceDelete();
 
         $this->assertSame(0, LeadRecoveryLog::query()->where('conversation_id', $conversation->id)->count(), 'log must cascade with its conversation');

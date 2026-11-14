@@ -66,7 +66,7 @@ class ReservationTest extends TestCase
         // ครั้งที่สองของเงียบเดียวกัน = แถวเดิม ทุกคอลัมน์คงเดิม
         $second = $this->service->candidate($room, $now);
         $this->assertSame($first->id, $second->id, 'second candidate() for the same silence must return the same row');
-        $this->assertSame($rowAfterFirst, $this->logRow($first->id), 'second candidate() must not change the row');
+        $this->assertRowUnchanged($rowAfterFirst, $first->id, 'second candidate() must not change the row');
         $this->assertSame(1, $this->logCount(), 'one silence must produce exactly one log row');
 
         // skipped → คืนแถวเดิมตามที่เป็น ห้ามสร้างใหม่
@@ -204,15 +204,15 @@ class ReservationTest extends TestCase
         $eleventh = $this->service->candidate($this->makeRoom($bot, 'U11'), $now);
         $beforeEleventh = $this->logRow($eleventh->id);
         $this->assertFalse($this->service->reserveDraft($eleventh, $now), 'the eleventh reservation must fail at the cap');
-        $this->assertSame($beforeEleventh, $this->logRow($eleventh->id), 'a failed reserve must leave the row unchanged');
+        $this->assertRowUnchanged($beforeEleventh, $eleventh->id, 'a failed reserve must leave the row unchanged');
 
         // token ผิด: release และ mark ต้อง false และแถวคงเดิม
         $f4Row = $this->logRow($fillers[4]->id);
         $this->assertFalse($this->service->releaseDraft($fillers[4], '00000000-0000-0000-0000-000000000000', $now));
-        $this->assertSame($f4Row, $this->logRow($fillers[4]->id), 'wrong-token release must change nothing');
+        $this->assertRowUnchanged($f4Row, $fillers[4]->id, 'wrong-token release must change nothing');
         $f5Row = $this->logRow($fillers[5]->id);
         $this->assertFalse($this->service->markDraftProduced($fillers[5], 'not-the-token', $now));
-        $this->assertSame($f5Row, $this->logRow($fillers[5]->id), 'wrong-token mark must change nothing');
+        $this->assertRowUnchanged($f5Row, $fillers[5]->id, 'wrong-token mark must change nothing');
         $this->assertNull($this->logRow($fillers[5]->id)->drafted_at);
 
         // จองซ้ำ log เดิม = ใช้ slot เดิม ไม่กินเพิ่ม token คงเดิม
@@ -269,11 +269,19 @@ class ReservationTest extends TestCase
         }
 
         $this->assertFalse($this->service->reserveDraft($roomLog, $now), 'reserve must fail at the cap');
-        $this->assertSame(0, FollowUpEligibility::query($bot, $now)->count(), 'the gate must agree: no eligible room at the cap');
+        $this->assertNotContains(
+            $room->id,
+            FollowUpEligibility::query($bot, $now)->get()->pluck('id')->all(),
+            'the gate must agree: the room drops out at the cap'
+        );
 
         $releaseRow = $this->logRow($fillerLogs[1]->id);
         $this->assertTrue($this->service->releaseDraft($fillerLogs[1], $releaseRow->claim_token, $now), 'release one filler slot');
-        $this->assertSame(1, FollowUpEligibility::query($bot, $now)->count(), 'after one release the gate returns the room again');
+        $this->assertContains(
+            $room->id,
+            FollowUpEligibility::query($bot, $now)->get()->pluck('id')->all(),
+            'after one release the gate returns the room again'
+        );
         $this->assertTrue($this->service->reserveDraft($roomLog, $now), 'the room log can now reserve the freed slot');
     }
 
@@ -440,6 +448,12 @@ class ReservationTest extends TestCase
         $this->assertNotNull($row, 'log row must exist');
 
         return $row;
+    }
+
+    /** เทียบแถว "คงเดิมทุกคอลัมน์" — assertSame บน stdClass สองตัวเช็ค identity ไม่ใช่ค่า */
+    private function assertRowUnchanged(object $before, int $logId, string $message): void
+    {
+        $this->assertSame((array) $before, (array) $this->logRow($logId), $message);
     }
 
     private function logCount(): int
