@@ -11,10 +11,14 @@ use Normalizer;
  * การ์ด B3a: redactor ใช้ findAccountData() เพื่อแทนที่ span ที่จับได้ และใช้
  * normalize() เพื่อให้ข้อความกับ offset อยู่บน string ฉบับเดียวกัน (plan §3.4)
  *
- * ก่อนจับทุกครั้ง (D20): แปลงเป็น NFKC แล้วตัดอักขระควบคุม/มองไม่เห็น (\p{Cc} ยกเว้น
- * \r \n, \p{Cf}, U+034F — INVISIBLE_CHARS ออกแบบเป็นคลาส รอบ 1 ข้อ 2 ของรีวิว) —
+ * ก่อนจับทุกครั้ง (D20): ตัดอักขระควบคุม/มองไม่เห็นก่อน (\p{Cc} ยกเว้น \r \n, \p{Cf},
+ * U+034F — INVISIBLE_CHARS ออกแบบเป็นคลาส รอบ 1 ข้อ 2 ของรีวิว) แล้วแปลงเป็น NFKC —
  * fullwidth pipe/label/เลข/เครื่องหมาย จึงถูกจับเท่าตัว ASCII และ label ที่ถูกคั่นด้วย
  * อักขระมองไม่เห็น (รวม soft hyphen, U+061C ฯลฯ) ก็ยังถูกจับ
+ * รีวิวรอบ 4 ข้อ 1: ลำดับ "ตัดก่อน NFKC" ทำให้ normalize เป็น fixed point (ตัดหลัง NFKC
+ * เปิดลำดับ base+mark ที่ยังไม่ normalize ทิ้งไว้ แล้ว normalize รอบสอง compose ต่อ;
+ * สแกน code point ครบทุกตัวยืนยันว่า NFKC ไม่เคยแปลงอักขระที่มองเห็นไปเป็น INVISIBLE_CHARS
+ * จึงพอตัดก่อนรอบเดียว)
  * รีวิวรอบ 3 (D22): หลัง NFKC คืนสระอำ U+0E4D U+0E32 → U+0E33 (และ Lao U+0ECD U+0EB2
  * → U+0EB3) ข้อความไทยที่ไม่ลับจึงคงการสะกดตรงตามที่พิมพ์
  * อ่านข้อความไม่ได้ (invalid UTF-8 หรือ preg error ใดๆ) = ถือว่ามีข้อมูลบัญชี (fail closed)
@@ -57,8 +61,9 @@ class FollowUpAccountDataDetector
 
     private const EMAIL_SEGMENT = '/^[^@\s]+@[^@\s]+\.[^@\s]+$/';
 
-    /** ชิ้น password-like: ตัวอักษร+ตัวเลข ≥6 ตัว ไม่มีเว้นวรรค (ในบรรทัด pipe เท่านั้น) */
-    private const PASSWORD_LIKE = '/^(?=.*\p{L})(?=.*\d)[\p{L}\p{N}@._-]{6,}$/u';
+    /** ชิ้น password-like: ตัวอักษร+ตัวเลข ≥6 ตัว ไม่มีเว้นวรรค (ในบรรทัด pipe เท่านั้น) —
+     * \p{M} ครอบสระบน/วรรณยุกต์ไทยที่แทรกในค่า เช่น น้ำใส2024 (รีวิวรอบ 4 ข้อ 2) */
+    private const PASSWORD_LIKE = '/^(?=.*\p{L})(?=.*\d)[\p{L}\p{M}\p{N}@._-]{6,}$/u';
 
     /**
      * อักขระควบคุม/มองไม่เห็นที่ตัดทิ้งก่อนจับ (line break \r \n คงเดิม) —
@@ -71,7 +76,8 @@ class FollowUpAccountDataDetector
     public const INVISIBLE_CHARS = '/(?![\r\n])[\p{Cc}\p{Cf}\x{034F}\x{E0001}-\x{E007F}\x{FFFE}\x{FFFF}]/u';
 
     /**
-     * ข้อความฉบับ normalized (NFKC + ตัด zero-width/control/bidi, line break คงเดิม)
+     * ข้อความฉบับ normalized (ตัด zero-width/control/bidi ก่อน + NFKC + คืนสระอำไทย/ลาว,
+     * line break คงเดิม)
      * คืน null เมื่ออ่านไม่ได้อย่างปลอดภัย: invalid UTF-8 หรือ normalization/preg error (D20)
      */
     public static function normalize(string $text): ?string
@@ -80,28 +86,33 @@ class FollowUpAccountDataDetector
             return null;
         }
 
-        $normalized = Normalizer::normalize($text, Normalizer::FORM_KC);
+        // รีวิวรอบ 4 ข้อ 1 — ตัดอักขระมองไม่เห็น "ก่อน" NFKC เพื่อให้ normalize เป็น fixed
+        // point: ถ้าตัดหลัง NFKC การตัดอักขระที่คั่นฐานออกจากวรรณยุกต์ (เช่น e+U+200B+U+0301)
+        // เปิดลำดับ base+mark ที่ยังไม่ normalize ทิ้งไว้ แล้ว redact รอบสอง compose ต่อ
+        // ทำให้ redact(redact(x)) != redact(x) และ containsAccountData(redact(x)) เป็น true
+        // (สแกน code point ครบทุกตัว: NFKC ไม่เคยแปลงอักขระที่มองเห็นไปเป็นอักขระใน
+        // INVISIBLE_CHARS จึงพอตัดก่อน NFKC รอบเดียว)
+        $cleaned = preg_replace(self::INVISIBLE_CHARS, '', $text);
+        if ($cleaned === null || preg_last_error() !== PREG_NO_ERROR) {
+            return null;
+        }
+
+        $normalized = Normalizer::normalize($cleaned, Normalizer::FORM_KC);
         if ($normalized === false) {
             return null;
         }
 
         // D22 (รีวิวรอบ 3): NFKC เป็น compatibility mapping ที่แยกสระอำ U+0E33 ออกเป็น
         // U+0E4D (nikhahit) + U+0E32 (สระอา) — และคู่ Lao U+0ECD U+0EB2 — ทำให้ข้อความไทย
-        // ที่ไม่ลับออกจาก redact/snapshot เปลี่ยนการสะกด คืนสภาพเดิมทันทีหลัง NFKC
-        // เพื่อให้ข้อความที่พิมพ์ด้วยสระอำออกมาตรงตามเดิมทุกไบต์ และ pattern ทั้งหมด
-        // ยังทำงานบนฉบับ normalized ชุดเดียวกัน
-        $normalized = str_replace(
+        // ที่ไม่ลับออกจาก redact/snapshot เปลี่ยนการสะกด คืนสภาพเดิมหลัง NFKC เพื่อให้
+        // ข้อความที่พิมพ์ด้วยสระอำออกมาตรงตามเดิมทุกไบต์ และ pattern ทั้งหมดยังทำงานบน
+        // ฉบับ normalized ชุดเดียวกัน (recompose ก็ fixed point: NFKC รอบถัดไปแยกออก
+        // แล้ว str_replace คืนให้เหมือนเดิมทุกครั้ง)
+        return str_replace(
             ["\u{0E4D}\u{0E32}", "\u{0ECD}\u{0EB2}"],
             ["\u{0E33}", "\u{0EB3}"],
             $normalized,
         );
-
-        $cleaned = preg_replace(self::INVISIBLE_CHARS, '', $normalized);
-        if ($cleaned === null || preg_last_error() !== PREG_NO_ERROR) {
-            return null;
-        }
-
-        return $cleaned;
     }
 
     public static function containsAccountData(string $text): bool

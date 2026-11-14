@@ -9,7 +9,8 @@ use InvalidArgumentException;
  * ตัวปิดข้อมูลลับก่อนส่งแชตให้ AI (plan §3.4, การ์ด B3a) — pure text:
  * ไม่มี database ไม่มี HTTP ไม่มี config ไม่มี log ไม่มี model call (D18)
  *
- * - redact(): NFKC + ตัดอักขระควบคุม/มองไม่เห็น (ผ่าน detector::normalize ที่เดียว D15)
+ * - redact(): ตัดอักขระควบคุม/มองไม่เห็น → NFKC → คืนสระอำ (ผ่าน detector::normalize ที่เดียว D15;
+ *   ลำดับตัดก่อน NFKC ทำให้ normalize เป็น fixed point รีวิวรอบ 4 ข้อ 1)
  *   แล้วแทนที่ทุกชิ้นของลับด้วย marker รูปแบบคงที่ [redacted:<kind>] —
  *   pattern ฝั่ง detector อยู่กับ FollowUpAccountDataDetector; อีเมล (รวมไทย IDN),
  *   URL ทั้ง token (Lead D21, รีวิวรอบ 1), เลข ≥10 หลัก และกลุ่มเลขคั่น อยู่ที่นี่
