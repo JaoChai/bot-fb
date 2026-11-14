@@ -85,10 +85,11 @@ return [
 
     /*
     | ขีดจำกัดข้อความ: ร่างไม่เกิน 400 code points, สูงสุด 3 บรรทัดที่ไม่ว่าง (D7);
-    | writer_max_tokens พอสำหรับร่างไทยสองประโยค
+    | writer_max_tokens (D28): reasoning tokens ของ chat model นับรวมในงบนี้ด้วย
+    | — 1024 จึงพอสำหรับร่างไทยสองประโยค (ที่ 256 เคยถูกตัด 4/36 ร่าง)
     */
     'max_text_code_points' => 400,
-    'writer_max_tokens' => 256,
+    'writer_max_tokens' => 1024,
 
     /*
     | งบร่างรายวันต่อบอท (เขตเวลากรุงเทพฯ)

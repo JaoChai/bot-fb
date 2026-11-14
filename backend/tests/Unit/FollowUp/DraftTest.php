@@ -10,6 +10,7 @@ use App\Services\OpenRouterService;
 use App\Support\FollowUpRedactor;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Mockery\MockInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -52,7 +53,7 @@ class DraftTest extends TestCase
         ];
     }
 
-    /** @return array{0: \App\Services\FollowUp\FollowUpDraftService, 1: \Mockery\MockInterface&OpenRouterService} */
+    /** @return array{0: FollowUpDraftService, 1: MockInterface&OpenRouterService} */
     private function makeService(): array
     {
         $mock = $this->mock(OpenRouterService::class);

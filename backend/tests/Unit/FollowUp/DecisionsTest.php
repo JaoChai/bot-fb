@@ -2,6 +2,8 @@
 
 namespace Tests\Unit\FollowUp;
 
+use App\Services\FollowUp\FollowUpDecisionsService;
+use App\Services\FollowUp\FollowUpPrompts;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -160,7 +162,7 @@ class DecisionsTest extends TestCase
     #[Test]
     public function test_prompts_hold_the_frozen_strings(): void
     {
-        $service = new \App\Services\FollowUp\FollowUpPrompts;
+        $service = new FollowUpPrompts;
 
         $this->assertSame('sort-v1', $service::SORT_VERSION);
         $this->assertSame('check-v1', $service::CHECK_VERSION);
@@ -187,7 +189,7 @@ class DecisionsTest extends TestCase
     public function test_sort_posts_frozen_body_once_without_agent_suffix(): void
     {
         Http::fake([$this->url => Http::response($this->validSortBody(), 200)]);
-        $service = app(\App\Services\FollowUp\FollowUpDecisionsService::class);
+        $service = app(FollowUpDecisionsService::class);
 
         $result = $service->sort($this->context, true, false);
 
@@ -195,7 +197,7 @@ class DecisionsTest extends TestCase
         $expected = [
             'model' => config('customer_follow_up.decisions_model'),
             'state' => [
-                'shop' => \App\Services\FollowUp\FollowUpPrompts::shopSentence($this->context),
+                'shop' => FollowUpPrompts::shopSentence($this->context),
                 'known_facts' => [
                     'bought_from_this_shop_before' => true,
                     'transfer_summary_was_sent' => false,
@@ -217,7 +219,7 @@ class DecisionsTest extends TestCase
     public function test_sort_posts_shop_with_agent_suffix_when_agent_line_present(): void
     {
         Http::fake([$this->url => Http::response($this->validSortBody(), 200)]);
-        $service = app(\App\Services\FollowUp\FollowUpDecisionsService::class);
+        $service = app(FollowUpDecisionsService::class);
 
         $withAgent = array_merge($this->context, ['A: รอเจ้าหน้าที่ตอบกลับอยู่นะครับ']);
         $result = $service->sort($withAgent, false, true);
@@ -226,7 +228,7 @@ class DecisionsTest extends TestCase
         $expected = [
             'model' => config('customer_follow_up.decisions_model'),
             'state' => [
-                'shop' => \App\Services\FollowUp\FollowUpPrompts::shopSentence($withAgent),
+                'shop' => FollowUpPrompts::shopSentence($withAgent),
                 'known_facts' => [
                     'bought_from_this_shop_before' => false,
                     'transfer_summary_was_sent' => true,
@@ -248,12 +250,18 @@ class DecisionsTest extends TestCase
     #[DataProvider('sortParsingProvider')]
     public function test_sort_parses_only_valid_answers(array|string $body, int $status, bool $connectionError, ?array $expected): void
     {
+        $attempts = 0;
         if ($connectionError) {
-            Http::fake([$this->url => fn (): string => throw new ConnectionException('cURL error 28')]);
+            // connection error ไม่ถูกบันทึกเป็น request — นับจำนวนครั้งที่ยิงจริงแทน
+            Http::fake([$this->url => function () use (&$attempts): string {
+                $attempts++;
+
+                throw new ConnectionException('cURL error 28');
+            }]);
         } else {
             Http::fake([$this->url => Http::response($body, $status)]);
         }
-        $service = app(\App\Services\FollowUp\FollowUpDecisionsService::class);
+        $service = app(FollowUpDecisionsService::class);
 
         $result = $service->sort($this->context, false, false);
 
@@ -270,7 +278,12 @@ class DecisionsTest extends TestCase
             $this->assertGreaterThanOrEqual(0, $result['latency_ms']);
             $this->assertArrayNotHasKey('answers', $result, 'D30: no answers key in the return value');
         }
-        Http::assertSentCount(1);
+
+        if ($connectionError) {
+            $this->assertSame(1, $attempts, 'exactly one request attempt — no retry');
+        } else {
+            Http::assertSentCount(1);
+        }
     }
 
     public static function sortParsingProvider(): array
@@ -387,7 +400,7 @@ class DecisionsTest extends TestCase
     #[Test]
     public function test_sort_refuses_unsafe_context_without_any_request(): void
     {
-        $service = app(\App\Services\FollowUp\FollowUpDecisionsService::class);
+        $service = app(FollowUpDecisionsService::class);
 
         $rows = [
             'account_data_line' => [$this->accountDataLine()],
@@ -405,7 +418,7 @@ class DecisionsTest extends TestCase
     #[Test]
     public function test_sort_fails_closed_when_not_configured(): void
     {
-        $service = app(\App\Services\FollowUp\FollowUpDecisionsService::class);
+        $service = app(FollowUpDecisionsService::class);
 
         config(['services.openrouter.api_key' => '']);
         $this->assertNull($service->sort($this->context, false, false));
@@ -424,7 +437,7 @@ class DecisionsTest extends TestCase
             $answers[$key] = ['type' => 'noul', 'noul' => 0.1];
         }
         Http::fake([$this->url => Http::response(['answers' => $answers, 'usage' => ['cost' => 0.002, 'input_tokens' => 200, 'output_tokens' => 30]], 200)]);
-        $service = app(\App\Services\FollowUp\FollowUpDecisionsService::class);
+        $service = app(FollowUpDecisionsService::class);
 
         $result = $service->check($this->context, 'G2', 'ยังสนใจเพจ 5 เพจอยู่ไหมครับ');
 
@@ -432,7 +445,7 @@ class DecisionsTest extends TestCase
         $expected = [
             'model' => config('customer_follow_up.decisions_model'),
             'state' => [
-                'shop' => \App\Services\FollowUp\FollowUpPrompts::shopSentence($this->context),
+                'shop' => FollowUpPrompts::shopSentence($this->context),
                 'conversation' => $this->context,
                 'group' => 'G2',
                 'draft' => 'ยังสนใจเพจ 5 เพจอยู่ไหมครับ',
@@ -464,7 +477,7 @@ class DecisionsTest extends TestCase
             $answersBody[$key] = ['type' => 'noul', 'noul' => $noul];
         }
         Http::fake([$this->url => Http::response(['answers' => $answersBody], 200)]);
-        $service = app(\App\Services\FollowUp\FollowUpDecisionsService::class);
+        $service = app(FollowUpDecisionsService::class);
 
         $result = $service->check($this->context, 'G2', 'ยังสนใจเพจ 5 เพจอยู่ไหมครับ');
 
@@ -510,7 +523,7 @@ class DecisionsTest extends TestCase
         $all = ['support_free' => 0.1, 'promise' => 0.1, 'cannot_self' => 0.1, 'price_stock' => 0.1, 'pressure' => 0.1, 'off_topic' => 0.1];
         unset($all['pressure']);
         Http::fake([$this->url => Http::response(['answers' => array_map(fn (float $noul): array => ['type' => 'noul', 'noul' => $noul], $all)], 200)]);
-        $service = app(\App\Services\FollowUp\FollowUpDecisionsService::class);
+        $service = app(FollowUpDecisionsService::class);
 
         $result = $service->check($this->context, 'G2', 'ยังสนใจอยู่ไหมครับ');
 
@@ -528,7 +541,7 @@ class DecisionsTest extends TestCase
         $answers = array_map(fn (float $noul): array => ['type' => 'noul', 'noul' => $noul], $all);
         $answers['off_topic'] = ['type' => 'noul', 'noul' => '0.9'];
         Http::fake([$this->url => Http::response(['answers' => $answers], 200)]);
-        $service = app(\App\Services\FollowUp\FollowUpDecisionsService::class);
+        $service = app(FollowUpDecisionsService::class);
 
         $result = $service->check($this->context, 'G2', 'ยังสนใจอยู่ไหมครับ');
 
@@ -539,9 +552,9 @@ class DecisionsTest extends TestCase
     }
 
     #[Test]
-    public function test_check_http_and_connection_errors_give_check_error_without_scores(): void
+    public function test_check_http_error_gives_check_error_without_scores(): void
     {
-        $service = app(\App\Services\FollowUp\FollowUpDecisionsService::class);
+        $service = app(FollowUpDecisionsService::class);
 
         Http::fake([$this->url => Http::response(['error' => 'boom'], 500)]);
         $result = $service->check($this->context, 'G2', 'ยังสนใจอยู่ไหมครับ');
@@ -550,20 +563,31 @@ class DecisionsTest extends TestCase
         $this->assertSame(['check_error'], $result['failed']);
         $this->assertSame(array_fill_keys(array_keys(self::expectedCheckQuestions()), null), $result['scores']);
         Http::assertSentCount(1);
+    }
 
-        Http::fake([$this->url => fn (): string => throw new ConnectionException('cURL error 28')]);
+    #[Test]
+    public function test_check_connection_error_gives_check_error_without_scores(): void
+    {
+        $service = app(FollowUpDecisionsService::class);
+
+        $attempts = 0;
+        Http::fake([$this->url => function () use (&$attempts): string {
+            $attempts++;
+
+            throw new ConnectionException('cURL error 28');
+        }]);
         $result = $service->check($this->context, 'G2', 'ยังสนใจอยู่ไหมครับ');
         $this->assertIsArray($result);
         $this->assertTrue($result['error']);
         $this->assertSame(['check_error'], $result['failed']);
         $this->assertTrue($result['failed'] !== []);
-        Http::assertSentCount(1);
+        $this->assertSame(1, $attempts, 'exactly one request attempt — no retry');
     }
 
     #[Test]
     public function test_check_refuses_unsafe_context_or_draft_without_any_request(): void
     {
-        $service = app(\App\Services\FollowUp\FollowUpDecisionsService::class);
+        $service = app(FollowUpDecisionsService::class);
 
         $rows = [
             'account_data_line' => [$this->accountDataLine()],
@@ -590,7 +614,7 @@ class DecisionsTest extends TestCase
     #[Test]
     public function test_check_fails_closed_when_not_configured(): void
     {
-        $service = app(\App\Services\FollowUp\FollowUpDecisionsService::class);
+        $service = app(FollowUpDecisionsService::class);
 
         config(['services.openrouter.api_key' => '']);
         $result = $service->check($this->context, 'G2', 'ยังสนใจอยู่ไหมครับ');
@@ -623,7 +647,7 @@ class DecisionsTest extends TestCase
             return array_keys($context) === ['step', 'reason'] && ! str_contains($serialized, $canary);
         });
 
-        $service = app(\App\Services\FollowUp\FollowUpDecisionsService::class);
+        $service = app(FollowUpDecisionsService::class);
         $this->assertNull($service->sort($contextWithCanary, false, false));
         $result = $service->check($this->context, 'G2', 'ยังสนใจอยู่ไหมครับ');
         $this->assertIsArray($result);
