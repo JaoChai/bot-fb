@@ -34,12 +34,7 @@ class OutageRecoveryService
     /** แถวติด tag อายุเกินนี้ = ห้องค้างนานเกินไป ปล่อยผ่าน (24 ชม.พอดียังนับ) */
     private const MAX_AGE_HOURS = 24;
 
-    /** ข้อความลูกค้าไม่มีตัวอักษรไทยตัวไหน = แถบภาษาอังกฤษท้ายข้อความ */
-    private const THAI_CHAR_REGEX = '/[\x{0E00}-\x{0E7F}]/u';
-
     public const CUSTOMER_TEXT_THAI = OutageMessageText::RECOVERY_THAI;
-
-    public const CUSTOMER_TEXT_ENGLISH = OutageMessageText::RECOVERY_ENGLISH;
 
     public function __construct(
         private readonly LeadRecoveryService $leadRecovery,
@@ -160,7 +155,7 @@ class OutageRecoveryService
                 continue;
             }
 
-            $text = $this->noticeText($conversation, $tagged, $settings);
+            $text = $this->noticeText($settings);
             // F18: ข้อความแจ้งลูกค้าเป็นข้อความที่เจ้าของแก้เองได้ → plain text
             $sent = $this->leadRecovery->sendStaticFollowUp($conversation, $text, true);
 
@@ -225,29 +220,12 @@ class OutageRecoveryService
     }
 
     /**
-     * ข้อความลูกค้า: ไทยเสมอ + แถบอังกฤษต่อท้ายเมื่อข้อความ (type=text) ล่าสุดของ
-     * ลูกค้าก่อนแถวติด tag ไม่มีตัวอักษรไทยเลย — ข้อความจริงอ่านจาก $settings
-     * ที่อ่านสดก่อนจอง (ค่าว่าง/null = ใช้ค่าเริ่มต้นของโค้ด)
+     * ข้อความลูกค้า: ข้อความไทยของบอทเสมอ ทุกลูกค้า (owner order 14 Nov 2026 —
+     * ไม่มีแถบอังกฤษต่อท้ายอีกต่อไป ไม่ว่าข้อความล่าสุดของลูกค้าจะเป็นภาษาอะไร) —
+     * ข้อความจริงอ่านจาก $settings ที่อ่านสดก่อนจอง (ค่าว่าง/null = ใช้ค่าเริ่มต้นของโค้ด)
      */
-    private function noticeText(Conversation $conversation, Message $tagged, ?BotSetting $settings): string
+    private function noticeText(?BotSetting $settings): string
     {
-        $lastCustomerText = $conversation->messages()
-            ->where('sender', 'user')
-            ->where('type', 'text')
-            ->where('id', '<', $tagged->id)
-            ->orderByDesc('id')
-            ->value('content');
-
-        $needsEnglish = is_string($lastCustomerText)
-            && $lastCustomerText !== ''
-            && preg_match(self::THAI_CHAR_REGEX, $lastCustomerText) !== 1;
-
-        if (! $needsEnglish) {
-            return OutageMessageText::resolve($settings?->outage_recovery_message_th, OutageMessageText::RECOVERY_THAI);
-        }
-
-        return OutageMessageText::resolve($settings?->outage_recovery_message_th, OutageMessageText::RECOVERY_THAI)
-            ."\n\n"
-            .OutageMessageText::resolve($settings?->outage_recovery_message_en, OutageMessageText::RECOVERY_ENGLISH);
+        return OutageMessageText::resolve($settings?->outage_recovery_message_th, OutageMessageText::RECOVERY_THAI);
     }
 }

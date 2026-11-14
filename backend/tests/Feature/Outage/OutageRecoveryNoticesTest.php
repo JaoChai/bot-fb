@@ -39,8 +39,6 @@ class OutageRecoveryNoticesTest extends TestCase
 
     private const CUSTOMER_THAI = 'ขออภัยครับพี่ 🙏 ก่อนหน้านี้ระบบขัดข้องชั่วคราว ตอนนี้กลับมาใช้งานได้ปกติแล้วครับ รบกวนพี่พิมพ์ข้อความเข้ามาใหม่อีกครั้งนะครับ';
 
-    private const CUSTOMER_EN = 'Sorry for the inconvenience 🙏 Our system had a temporary issue and is working again now. Please send your message again.';
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -549,25 +547,27 @@ class OutageRecoveryNoticesTest extends TestCase
     // ------------------------------------------------------------------
 
     #[Test]
-    public function test_an_english_speaking_customer_gets_thai_plus_english(): void
+    public function test_an_english_speaking_customer_gets_thai_only(): void
     {
         $this->fakeAllWorking();
-        [$bot, $conversation] = $this->roomWithOutage('Hello');
+        [$bot, $conversation] = $this->roomWithOutage('Hello, I want to buy');
 
         $this->runRecovery();
 
-        $this->assertSame([self::CUSTOMER_THAI."\n\n".self::CUSTOMER_EN], $this->pushTexts());
+        $this->assertSame([self::CUSTOMER_THAI], $this->pushTexts());
+        $this->assertSame(self::CUSTOMER_THAI, $this->noticeRows()->first()->content);
     }
 
     #[Test]
-    public function test_hi_also_gets_the_english_appendix(): void
+    public function test_hi_also_gets_thai_only(): void
     {
         $this->fakeAllWorking();
-        [$bot, $conversation] = $this->roomWithOutage('Hi');
+        [$bot, $conversation] = $this->roomWithOutage('hi');
 
         $this->runRecovery();
 
-        $this->assertSame([self::CUSTOMER_THAI."\n\n".self::CUSTOMER_EN], $this->pushTexts());
+        $this->assertSame([self::CUSTOMER_THAI], $this->pushTexts());
+        $this->assertSame(self::CUSTOMER_THAI, $this->noticeRows()->first()->content);
     }
 
     #[Test]
@@ -756,7 +756,7 @@ class OutageRecoveryNoticesTest extends TestCase
     }
 
     #[Test]
-    public function test_english_customer_with_custom_texts_gets_thai_blank_line_then_english(): void
+    public function test_english_customer_with_custom_english_and_custom_thai_gets_the_custom_thai_only(): void
     {
         $this->fakeAllWorking();
         [$bot, $conversation] = $this->roomWithOutage('Do you ship to Chiang Mai?');
@@ -768,9 +768,24 @@ class OutageRecoveryNoticesTest extends TestCase
 
         $this->runRecovery();
 
-        $expected = 'เจ้าของเขียนเองภาษาไทย'."\n\n".'Owner wrote English';
-        $this->assertSame([$expected], $this->pushTexts());
-        $this->assertSame($expected, $this->noticeRows()->first()->content);
+        $this->assertSame(['เจ้าของเขียนเองภาษาไทย'], $this->pushTexts());
+        $this->assertSame('เจ้าของเขียนเองภาษาไทย', $this->noticeRows()->first()->content);
+    }
+
+    #[Test]
+    public function test_a_custom_english_text_with_no_thai_text_sends_the_default_thai_only(): void
+    {
+        $this->fakeAllWorking();
+        [$bot, $conversation] = $this->roomWithOutage('Do you ship to Chiang Mai?');
+        BotSetting::query()->create([
+            'bot_id' => $bot->id,
+            'outage_recovery_message_en' => 'Owner wrote English',
+        ]);
+
+        $this->runRecovery();
+
+        $this->assertSame([self::CUSTOMER_THAI], $this->pushTexts());
+        $this->assertSame(self::CUSTOMER_THAI, $this->noticeRows()->first()->content);
     }
 
     #[Test]

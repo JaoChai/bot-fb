@@ -13,6 +13,7 @@ class OutageMessageText
 {
     public const RECOVERY_THAI = 'ขออภัยครับพี่ 🙏 ก่อนหน้านี้ระบบขัดข้องชั่วคราว ตอนนี้กลับมาใช้งานได้ปกติแล้วครับ รบกวนพี่พิมพ์ข้อความเข้ามาใหม่อีกครั้งนะครับ';
 
+    /** RECOVERY_ENGLISH เหลือไว้เพื่อค่าเริ่มต้นของ API (defaults()) เท่านั้น — เส้นทางส่งข้อความจริงไม่ใช้แล้ว (owner order 14 Nov 2026) */
     public const RECOVERY_ENGLISH = 'Sorry for the inconvenience 🙏 Our system had a temporary issue and is working again now. Please send your message again.';
 
     public const DOWN_REPLY = 'ระบบขัดข้องชั่วคราวครับ 🙏 เดี๋ยวแอดมินรีบตรวจสอบให้นะครับ';
