@@ -177,10 +177,17 @@ class RedactorTest extends TestCase
     #[Test]
     public function test_keeps_normal_thai_text_exactly(): void
     {
+        // "คงเดิม (หลัง normalization)" = เท่ากับฉบับ NFKC ของอินพุต
+        // (NFKC แยก ำ U+0E33 เป็น ํ+า ตาม Unicode — ตัวอักษรเดิม ไม่มีอะไรถูกตัด)
         foreach ($this->keptTexts() as $text) {
-            $this->assertSame($text, FollowUpRedactor::redact($text), 'ข้อความปกติต้องคงเดิม');
+            $expected = FollowUpAccountDataDetector::normalize($text);
+            $this->assertNotNull($expected);
+            $this->assertSame($expected, FollowUpRedactor::redact($text), 'ข้อความปกติต้องคงเดิมหลัง normalization');
             $this->assertFalse(FollowUpRedactor::containsAccountData($text), 'ข้อความปกติไม่ใช่ account data');
         }
+
+        // ตัวอักษร ASCII/เลข/emoji ล้วน — NFKC เป็น identity ต้องได้ string เดิมมาก
+        $this->assertSame('ราคา 1,299 บาท ออเดอร์ 123456789 Nolimit BM 🙏', FollowUpRedactor::redact('ราคา 1,299 บาท ออเดอร์ 123456789 Nolimit BM 🙏'));
     }
 
     #[Test]
@@ -289,7 +296,7 @@ class RedactorTest extends TestCase
     public function test_assert_safe_outbound_allows_normal_thai_message(): void
     {
         $text = "สวัสดีครับพี่ 🙏\nสินค้า Nolimit BM ที่พี่เลือกไว้ยังค้างอยู่นะครับ\nถ้ายังสนใจ พิมพ์มาได้เลยครับ ราคา 1,299 บาท"
-            .str_repeat(' ขอบคุณมากครับ', 14);
+            .str_repeat(' ขอบคุณมากครับ', 40);
 
         $this->assertGreaterThan(400, mb_strlen($text));
         $this->assertNull(FollowUpRedactor::assertSafeOutbound($text));
@@ -326,9 +333,9 @@ class RedactorTest extends TestCase
         ]);
 
         $this->assertSame([
-            'C: ตกลงครับ',
-            'B: รับคำสั่งครับ',
-            'A: พนักงานดูแลให้ครับ',
+            'C: '.FollowUpAccountDataDetector::normalize('ตกลงครับ'),
+            'B: '.FollowUpAccountDataDetector::normalize('รับคำสั่งครับ'), // NFKC แยก ำ เป็น ํ+า
+            'A: '.FollowUpAccountDataDetector::normalize('พนักงานดูแลให้ครับ'),
             'C: [non-text:image]',
             'C: [non-text:sticker]',
             'B:',
@@ -373,8 +380,10 @@ class RedactorTest extends TestCase
         ini_set('pcre.backtrack_limit', '500');
 
         try {
-            // segment ยาวที่บังคับ PASSWORD_LIKE ทำงานเกิน backtrack limit → preg error → fail closed (D20)
-            $text = 'foo'.'@'.'mail.com|'.'a1'.str_repeat('a', 6000).'!';
+            // segment ยาวที่ทำให้ regex ใน line check backtrack เกินลิมิต → preg error → fail closed (D20)
+            // ตั้งใจให้ท่อนแรก ('zzz') ไม่ match อะไรเลย เพื่อบังคับว่ามาถึงจุดนี้ได้
+            // ทางเดียวคือ PASSWORD_LIKE บน segment ยาว — ผิดพลาดได้ทางเดียวคือ preg error
+            $text = 'zzz|'.'a1'.str_repeat('a', 6000).'!';
 
             $this->assertTrue(FollowUpAccountDataDetector::containsAccountData($text), 'preg error ต้อง fail closed');
             $this->assertTrue(FollowUpRedactor::containsAccountData($text));

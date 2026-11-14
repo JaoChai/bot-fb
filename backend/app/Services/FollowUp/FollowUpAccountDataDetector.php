@@ -2,14 +2,22 @@
 
 namespace App\Services\FollowUp;
 
+use Normalizer;
+
 /**
  * ตัวจับ "ข้อมูลบัญชี/credential" ในข้อความ — ล้วนๆ pure ไม่มี I/O ไม่มี network (D15)
  *
  * การ์ด B2b: projector ใช้ติดธง sensitive_account_data บน read model;
- * การ์ด redactor (B3) จะ reuse class เดียวกันตอนตัดข้อความก่อนส่งให้ model
+ * การ์ด B3a: redactor ใช้ findAccountData() เพื่อแทนที่ span ที่จับได้ และใช้
+ * normalize() เพื่อให้ข้อความกับ offset อยู่บน string ฉบับเดียวกัน (plan §3.4)
+ *
+ * ก่อนจับทุกครั้ง (D20): แปลงเป็น NFKC แล้วตัด zero-width / control /
+ * bidi-override ออก (line break คงเดิม) — fullwidth pipe/label/เลข/เครื่องหมาย
+ * จึงถูกจับเท่าตัว ASCII และ label ที่ถูกคั่นด้วยอักขระมองไม่เห็นก็ยังถูกจับ
+ * อ่านข้อความไม่ได้ (invalid UTF-8 หรือ preg error ใดๆ) = ถือว่ามีข้อมูลบัญชี (fail closed)
  *
  * จับ (plan §3.4):
- * - บรรทัด credential คั่น pipe — รวม pipe เว้นวรรค ("a | b") และ fullwidth "｜"
+ * - บรรทัด credential คั่น pipe — รวม pipe เว้นวรรค และ fullwidth "｜" (ผ่าน NFKC)
  * - label-values: password / pass / pwd / รหัสผ่าน / OTP / 2FA / cookie / token /
  *   secret / authorization ตามด้วย : หรือ = แล้วมีค่า
  * - Facebook cookies: c_user และ xs
@@ -24,7 +32,11 @@ class FollowUpAccountDataDetector
     /** label ที่ตามด้วยค่า ([:=]) ถือว่าเป็น credential — ASCII + ไทย "รหัสผ่าน" */
     private const LABELS = 'password|passwd|pass|pwd|token|secret|authorization|cookie|otp|2fa';
 
-    private const LABEL_VALUE = '/(?:\b(?:'.self::LABELS.')\b|รหัสผ่าน)\s*[=:]\s*\S/iu';
+    /**
+     * span สำหรับการแทนที่: label + ค่า ถึงท้ายบรรทัด (ต้องมีอย่างน้อย 1 ตัวอักษรหลังคั่น —
+     * ทริกเกอร์เดิมของ LABEL_VALUE จึงไม่เปลี่ยน แต่ค่าทั้งค่าถูกแทนที่ ไม่เหลือเศษ)
+     */
+    private const LABEL_VALUE_SPAN = '/(?:\b(?:'.self::LABELS.')\b|รหัสผ่าน)\s*[=:]\s*\S[^\r\n]*/iu';
 
     /** segment ที่เป็น label ล้วน ("otp|482913") ก็นับเป็นบรรทัด credential */
     private const BARE_LABEL = '/^(?:'.self::LABELS.'|รหัสผ่าน)$/iu';
@@ -35,63 +47,204 @@ class FollowUpAccountDataDetector
 
     private const URL_USERINFO = '#[a-z][a-z0-9+.-]*://[^\s/@]+:[^\s/@]+@#i';
 
-    private const FB_COOKIE = '/(?:\bc_user\s*[=:]\s*\S|\bxs\s*[=:;]\s*\S)/i';
+    private const FB_COOKIE_SPAN = '/(?:\bc_user\s*[=:]\s*|\bxs\s*[=:;]\s*)\S+/i';
 
     /** คู่แบบ combolist: อีเมล ตามด้วย : หรือ ; ทันที (ไม่เว้นวรรค) แล้วมีค่า */
-    private const EMAIL_PAIR = '#[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}[:;](?!\s)\S#i';
+    private const EMAIL_PAIR_SPAN = '#[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}[:;](?!\s)\S+#i';
 
     private const EMAIL_SEGMENT = '/^[^@\s]+@[^@\s]+\.[^@\s]+$/';
 
     /** ชิ้น password-like: ตัวอักษร+ตัวเลข ≥6 ตัว ไม่มีเว้นวรรค (ในบรรทัด pipe เท่านั้น) */
     private const PASSWORD_LIKE = '/^(?=.*\p{L})(?=.*\d)[\p{L}\p{N}@._-]{6,}$/u';
 
-    public static function containsAccountData(string $text): bool
+    /** zero-width / control / bidi-override ที่ตัดทิ้งก่อนจับ — line break (\r \n) คงเดิม */
+    private const INVISIBLE_CHARS = '/[\x{00}-\x{08}\x{0B}\x{0C}\x{0E}-\x{1F}\x{7F}-\x{9F}\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}-\x{2069}\x{FFFE}\x{FFFF}\x{FEFF}]/u';
+
+    /**
+     * ข้อความฉบับ normalized (NFKC + ตัด zero-width/control/bidi, line break คงเดิม)
+     * คืน null เมื่ออ่านไม่ได้อย่างปลอดภัย: invalid UTF-8 หรือ normalization/preg error (D20)
+     */
+    public static function normalize(string $text): ?string
     {
-        if ($text === '') {
-            return false;
+        if (! mb_check_encoding($text, 'UTF-8')) {
+            return null;
         }
 
-        $normalized = str_replace(["\u{FEFF}", "\u{200B}", "\u{200C}", "\u{200D}"], '', $text);
+        $normalized = Normalizer::normalize($text, Normalizer::FORM_KC);
+        if ($normalized === false) {
+            return null;
+        }
 
-        foreach ([self::LABEL_VALUE, self::JWT, self::BEARER, self::URL_USERINFO, self::FB_COOKIE, self::EMAIL_PAIR] as $pattern) {
-            if (preg_match($pattern, $normalized) === 1) {
-                return true;
+        $cleaned = preg_replace(self::INVISIBLE_CHARS, '', $normalized);
+        if ($cleaned === null || preg_last_error() !== PREG_NO_ERROR) {
+            return null;
+        }
+
+        return $cleaned;
+    }
+
+    public static function containsAccountData(string $text): bool
+    {
+        $spans = self::findAccountData($text);
+
+        // null = อ่านข้อความไม่ได้อย่างปลอดภัย (invalid UTF-8 / preg error) → fail closed (D20)
+        return $spans === null || $spans !== [];
+    }
+
+    /**
+     * span ของข้อมูลบัญชีบนข้อความ "ฉบับ normalized" (byte offset, byte length) เรียงตาม
+     * ตำแหน่ง ตัด span ที่ซ้อนใน span ก่อนหน้า (บรรทัด pipe กลืน match ย่อยภายใน) —
+     * ผู้เรียก (redactor) แทนที่ทีละ span ด้วย marker แล้วไม่ซ้ำ
+     * kind: credential_line | label_value | jwt | bearer | url_userinfo | fb_cookie | email_pair
+     * คืน null เมื่ออ่านข้อความไม่ได้อย่างปลอดภัย — caller ต้อง fail closed (D20)
+     *
+     * @return list<array{start: int, length: int, kind: string}>|null
+     */
+    public static function findAccountData(string $text): ?array
+    {
+        $normalized = self::normalize($text);
+        if ($normalized === null) {
+            return null;
+        }
+
+        $spans = [];
+        foreach ([
+            'label_value' => self::LABEL_VALUE_SPAN,
+            'jwt' => self::JWT,
+            'bearer' => self::BEARER,
+            'url_userinfo' => self::URL_USERINFO,
+            'fb_cookie' => self::FB_COOKIE_SPAN,
+            'email_pair' => self::EMAIL_PAIR_SPAN,
+        ] as $kind => $pattern) {
+            $matches = self::matchAllSpans($pattern, $normalized);
+            if ($matches === null) {
+                return null;
+            }
+            foreach ($matches as [$match, $offset]) {
+                $spans[] = ['start' => $offset, 'length' => strlen($match), 'kind' => $kind];
             }
         }
 
-        return self::hasCredentialPipeLine(str_replace("\u{FF5C}", '|', $normalized));
+        $lineSpans = self::credentialLineSpans($normalized);
+        if ($lineSpans === null) {
+            return null;
+        }
+        foreach ($lineSpans as $span) {
+            $spans[] = $span;
+        }
+
+        if ($spans === []) {
+            return [];
+        }
+
+        usort($spans, function (array $a, array $b): int {
+            return $a['start'] <=> $b['start'] ?: $b['length'] <=> $a['length'];
+        });
+
+        $merged = [];
+        $coveredUntil = -1;
+        foreach ($spans as $span) {
+            if ($span['start'] < $coveredUntil) {
+                continue;
+            }
+            $merged[] = $span;
+            $coveredUntil = $span['start'] + $span['length'];
+        }
+
+        return $merged;
+    }
+
+    /**
+     * @return list<array{string, int}>|null null เมื่อ preg error (fail closed)
+     */
+    private static function matchAllSpans(string $pattern, string $subject): ?array
+    {
+        $matched = preg_match_all($pattern, $subject, $matches, PREG_OFFSET_CAPTURE);
+        if ($matched === false || preg_last_error() !== PREG_NO_ERROR) {
+            return null;
+        }
+
+        $spans = [];
+        foreach ($matches[0] as [$match, $offset]) {
+            $spans[] = [$match, $offset];
+        }
+
+        return $spans;
+    }
+
+    /**
+     * span ของทุกบรรทัดที่เป็น credential line (ทั้งบรรทัด เว้น line break)
+     *
+     * @return list<array{start: int, length: int, kind: string}>|null null เมื่อ preg error
+     */
+    private static function credentialLineSpans(string $normalized): ?array
+    {
+        $pieces = preg_split('/\r\n|\r|\n/', $normalized, -1, PREG_SPLIT_OFFSET_CAPTURE);
+        if ($pieces === false || preg_last_error() !== PREG_NO_ERROR) {
+            return null;
+        }
+
+        $spans = [];
+        foreach ($pieces as [$line, $offset]) {
+            $isCredential = self::lineIsCredential($line);
+            if ($isCredential === null) {
+                return null;
+            }
+            if ($isCredential) {
+                $spans[] = ['start' => $offset, 'length' => strlen($line), 'kind' => 'credential_line'];
+            }
+        }
+
+        return $spans;
     }
 
     /**
      * บรรทัด credential คั่น pipe: ≥2 ช่วง และช่วงใดช่วงหนึ่งเป็นอีเมล,
      * label ล้วน, label ตามด้วยค่า หรือ password-like — pipe ปกติ/เว้นวรรค/fullwidth เท่ากัน
+     * คืน null เมื่อ preg error (fail closed)
      */
-    private static function hasCredentialPipeLine(string $normalized): bool
+    private static function lineIsCredential(string $line): ?bool
     {
-        foreach (preg_split('/\r\n|\r|\n/', $normalized) as $line) {
-            if (! str_contains($line, '|')) {
-                continue;
-            }
+        if (! str_contains($line, '|')) {
+            return false;
+        }
 
-            $segments = array_values(array_filter(
-                array_map('trim', explode('|', $line)),
-                fn (string $segment): bool => $segment !== ''
-            ));
+        $segments = array_values(array_filter(
+            array_map('trim', explode('|', $line)),
+            fn (string $segment): bool => $segment !== ''
+        ));
 
-            if (count($segments) < 2) {
-                continue;
-            }
+        if (count($segments) < 2) {
+            return false;
+        }
 
-            foreach ($segments as $segment) {
-                if (preg_match(self::EMAIL_SEGMENT, $segment) === 1
-                    || preg_match(self::BARE_LABEL, $segment) === 1
-                    || preg_match(self::PASSWORD_LIKE, $segment) === 1
-                    || preg_match(self::LABEL_VALUE, $segment) === 1) {
+        foreach ($segments as $segment) {
+            foreach ([self::EMAIL_SEGMENT, self::BARE_LABEL, self::PASSWORD_LIKE, self::LABEL_VALUE_SPAN] as $pattern) {
+                $matched = self::pregMatch($pattern, $segment);
+                if ($matched === null) {
+                    return null;
+                }
+                if ($matched) {
                     return true;
                 }
             }
         }
 
         return false;
+    }
+
+    /**
+     * preg_match แบบแยก "ไม่ match" ออกจาก "preg error"
+     *
+     * @return ?bool null เมื่อ preg error (fail closed)
+     */
+    private static function pregMatch(string $pattern, string $subject): ?bool
+    {
+        $result = preg_match($pattern, $subject);
+        if ($result === false || preg_last_error() !== PREG_NO_ERROR) {
+            return null;
+        }
+
+        return $result === 1;
     }
 }
