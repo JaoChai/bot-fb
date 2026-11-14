@@ -151,6 +151,17 @@ class AccountDataDetectorTest extends TestCase
     }
 
     #[Test]
+    public function test_label_with_sara_am_around_it_still_matches(): void
+    {
+        // รีวิวรอบ 3 — D22: normalize คืนสระอำเดิม (U+0E33) แล้ว label ต้องยังจับ
+        // ทั้งกรณีสระอำอยู่หน้า label และหลังค่า
+        $this->assertSame('ทำ น้ำ คำ', FollowUpAccountDataDetector::normalize('ทำ น้ำ คำ'), 'D22: normalize ต้องคืนสระอำเดิม');
+        $this->assertTrue($this->detector->containsAccountData('สำหรับคำสั่ง pass'.'word: Sup3rSecret'), 'สระอำหน้า label ต้องยังจับ');
+        $this->assertTrue($this->detector->containsAccountData('รหัสผ่าน : ทดสอบ123 สำหรับคำสั่งซื้อ'), 'สระอำหลังค่าต้องยังจับ');
+        $this->assertTrue($this->detector->containsAccountData('จำนวน token: '.'abc123def456'.' ครับ'), 'สระอำหน้า label อังกฤษต้องยังจับ');
+    }
+
+    #[Test]
     public function test_invalid_utf8_counts_as_account_data(): void
     {
         $this->assertTrue($this->detector->containsAccountData("\xC3\x28"), 'invalid UTF-8 ต้อง fail closed (D20)');
@@ -223,6 +234,8 @@ class AccountDataDetectorTest extends TestCase
             ['text' => '090 123 4567', 'is_account_data' => false],
             ['text' => '๐๑๒๓๔๕๖๗๘๙', 'is_account_data' => false],
             ['text' => '', 'is_account_data' => false],
+            // รีวิวรอบ 3 — D22: label ที่ข้อความรอบตัวมีสระอำ ยังต้องจับ
+            ['text' => 'สำหรับคำสั่ง pass'.'word: Sup3rSecret', 'is_account_data' => true],
             // fail closed (D20)
             ['text' => "\xC3\x28", 'is_account_data' => true],
         ];

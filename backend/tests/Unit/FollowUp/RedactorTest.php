@@ -181,6 +181,27 @@ class RedactorTest extends TestCase
                 'input' => 'ดูที่สมชาย'.$this->canary('ej').'@shop.example.com',
                 'canaries' => [$this->canary('ej')],
             ],
+            // ==== รอบ 3 — Lead 02:01: URL รูปร่างที่ D21 ยังเหลือ (พอร์ต/โฮสต์เลข/localhost/www เกาไทย) ====
+            'url_host_port' => [
+                'input' => 'ลิงก์ shop.test:8080/reset/'.$this->canary('v1').' ครับ',
+                'canaries' => [$this->canary('v1')],
+            ],
+            'url_numeric_host' => [
+                'input' => '192.168.1.1/admin?k='.$this->canary('v2'),
+                'canaries' => [$this->canary('v2')],
+            ],
+            'url_numeric_host_port' => [
+                'input' => '192.168.1.1:8080/admin?k='.$this->canary('v3'),
+                'canaries' => [$this->canary('v3')],
+            ],
+            'url_localhost_port' => [
+                'input' => 'localhost:8000/reset/'.$this->canary('v4'),
+                'canaries' => [$this->canary('v4')],
+            ],
+            'url_www_glued_thai' => [
+                'input' => 'ดูที่www.'.$this->canary('v5').'.com จ้า',
+                'canaries' => [$this->canary('v5')],
+            ],
             'unreadable' => [
                 'input' => "\xC3\x28",
                 'canaries' => [],
@@ -205,6 +226,10 @@ class RedactorTest extends TestCase
             'ประเภทไหนดีครับ?#ตอบหน่อยครับ',
             '#ลดแรง โปรโมชันวันนี้ครับ',
             '15/11/2026 ส่งได้ไหมครับ',
+            // ==== รอบ 3 — D22: ประโยคไทยมีสระอำ (ทำ/น้ำ/คำ/สำหรับ/จำนวน) ต้องคงเดิมทุกไบต์ ====
+            'สนใจครับ เดี๋ยวผมทำรายการเองครับ',
+            'น้ำมันเครื่อง จำนวน 2 ขวด สำหรับรถเก๋งครับ',
+            'คำสั่งซื้อนี้ยืนยันแล้วครับ',
             '',
         ];
     }
@@ -256,12 +281,11 @@ class RedactorTest extends TestCase
     #[Test]
     public function test_keeps_normal_thai_text_exactly(): void
     {
-        // "คงเดิม (หลัง normalization)" = เท่ากับฉบับ NFKC ของอินพุต
-        // (NFKC แยก ำ U+0E33 เป็น ํ+า ตาม Unicode — ตัวอักษรเดิม ไม่มีอะไรถูกตัด)
+        // รีวิวรอบ 3 — D22 migration: เทียบกับ input ตรงๆ ไม่ใช่ normalize()
+        // (เดิม NFKC แยกสระอำ U+0E33 เป็น ํ+า และการเทียบ normalize() กลืนบั๊กนั้นไป —
+        // ข้อความปกติต้องออกจาก redact ตรงตามที่พิมพ์ทุกไบต์)
         foreach ($this->keptTexts() as $text) {
-            $expected = FollowUpAccountDataDetector::normalize($text);
-            $this->assertNotNull($expected);
-            $this->assertSame($expected, FollowUpRedactor::redact($text), 'ข้อความปกติต้องคงเดิมหลัง normalization');
+            $this->assertSame($text, FollowUpRedactor::redact($text), 'ข้อความปกติต้องคงเดิมตรงตามที่พิมพ์ (D22)');
             $this->assertFalse(FollowUpRedactor::containsAccountData($text), 'ข้อความปกติไม่ใช่ account data');
         }
 
@@ -340,6 +364,59 @@ class RedactorTest extends TestCase
             'ส่งที่ [redacted:email] จ้า',
             FollowUpRedactor::redact('ส่งที่ somchai'.$this->canary('ek').'@shop.example.com จ้า'),
         );
+    }
+
+    #[Test]
+    public function test_thai_sara_am_text_survives_byte_for_byte_per_lead_d22(): void
+    {
+        // รีวิวรอบ 3 ข้อ 1 — Lead D22: NFKC แยกสระอำ U+0E33 เป็น U+0E4D U+0E32 ทำให้ redact
+        // เปลี่ยนการสะกดของประโยคไทยปกติ (probe ของ Lead: 'ทำ น้ำ คำ' 9 → 12 code points)
+        // ข้อความที่ไม่ใช่ลับต้องออกมาตรงตามที่พิมพ์ — เทียบกับ input ล้วน ไม่เทียบ normalize()
+        $sentences = [
+            'ทำ น้ำ คำ',
+            'สนใจครับ จะทำรายการตอนไหนดี',
+            'สำหรับลูกค้าใหม่ จำนวนเงินเท่าไหร่ครับ',
+            'คำสั่งซื้อนี้ยืนยันแล้วครับ',
+            'ผมลืมรหัสผ่านครับ ต้องทำยังไง',
+        ];
+        foreach ($sentences as $sentence) {
+            $this->assertSame($sentence, FollowUpRedactor::redact($sentence), 'redact ต้องคงสระอำเดิมทุกไบต์');
+            $this->assertSame($sentence, FollowUpAccountDataDetector::normalize($sentence), 'normalize ต้องคืนสระอำเดิม');
+        }
+
+        $lines = FollowUpRedactor::snapshot([
+            ['sender' => 'user', 'type' => 'text', 'content' => 'สนใจทำรายการครับ'],
+        ]);
+        $this->assertSame(['C: สนใจทำรายการครับ'], $lines, 'snapshot ต้องไม่เปลี่ยนสะกดสระอำ');
+
+        // label ยังถูกจับ แม้ข้อความรอบตัวมีสระอำ
+        $this->assertSame(
+            'คำสั่งนี้ [redacted:label_value]',
+            FollowUpRedactor::redact('คำสั่งนี้ pass'.'word: Sup3rSecret'),
+            'label ต้องยังจับเมื่อข้อความรอบตัวมีสระอำ',
+        );
+    }
+
+    #[Test]
+    public function test_url_port_numeric_host_localhost_and_glued_www_per_lead_round3(): void
+    {
+        // รีวิวรอบ 3 — ขยาย D21 ตามคำสั่ง Lead 02:01: URL รูปร่างที่ยังหลุด ต้องจบด้วย
+        // [redacted:url] ทั้ง token เหมือนเดิม
+        // (a) โฮสต์มีพอร์ต
+        $this->assertSame('ลิงก์ [redacted:url] ครับ', FollowUpRedactor::redact('ลิงก์ shop.test:8080/reset/'.$this->canary('w1').' ครับ'));
+        // (b) โฮสต์เป็นเลข (IP) มีและไม่มีพอร์ต
+        $this->assertSame('[redacted:url]', FollowUpRedactor::redact('192.168.1.1/admin?k='.$this->canary('w2')));
+        $this->assertSame('[redacted:url]', FollowUpRedactor::redact('192.168.1.1:8080/admin?k='.$this->canary('w3')));
+        // (c) localhost มีพอร์ต
+        $this->assertSame('[redacted:url]', FollowUpRedactor::redact('localhost:8000/reset/'.$this->canary('w4')));
+        // (d) www. เกาข้อความไทย ไม่มี path ต่อท้าย
+        $this->assertSame('ดูที่[redacted:url]', FollowUpRedactor::redact('ดูที่www.'.$this->canary('w5').'.com'));
+        // ต้องคงเดิมตาม Lead: ราคา วันที่ เวลา เวอร์ชัน/อัตราส่วน (ไม่มี / ? # ต่อท้ายโฮสต์)
+        $this->assertSame('ราคา 1.500/ชิ้น ครับ', FollowUpRedactor::redact('ราคา 1.500/ชิ้น ครับ'));
+        $this->assertSame('15/11/2026 ส่งได้ไหมครับ', FollowUpRedactor::redact('15/11/2026 ส่งได้ไหมครับ'));
+        $this->assertSame('นัดรับของ 14.30 น. ครับ', FollowUpRedactor::redact('นัดรับของ 14.30 น. ครับ'));
+        $this->assertSame('นัดคุย 10:30 ครับ', FollowUpRedactor::redact('นัดคุย 10:30 ครับ'));
+        $this->assertSame('อัปเดตเป็นเวอร์ชัน 1.2.3 แล้วครับ', FollowUpRedactor::redact('อัปเดตเป็นเวอร์ชัน 1.2.3 แล้วครับ'));
     }
 
     #[Test]
@@ -476,10 +553,11 @@ class RedactorTest extends TestCase
             ['sender' => 'bot', 'type' => 'text', 'content' => null],
         ]);
 
+        // รีวิวรอบ 3 — D22 migration: เทียบกับ input ตรงๆ (เดิมใช้ normalize() ซึ่งแยก ำ เป็น ํ+า)
         $this->assertSame([
-            'C: '.FollowUpAccountDataDetector::normalize('ตกลงครับ'),
-            'B: '.FollowUpAccountDataDetector::normalize('รับคำสั่งครับ'), // NFKC แยก ำ เป็น ํ+า
-            'A: '.FollowUpAccountDataDetector::normalize('พนักงานดูแลให้ครับ'),
+            'C: ตกลงครับ',
+            'B: รับคำสั่งครับ',
+            'A: พนักงานดูแลให้ครับ',
             'C: [non-text:image]',
             'C: [non-text:sticker]',
             'B:',
