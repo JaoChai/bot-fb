@@ -15,9 +15,9 @@ import {
 interface OutageSettingsTabProps {
   outage_recovery_enabled: boolean;
   outage_recovery_message_th: string;
-  outage_recovery_message_en: string;
   outage_down_message: string;
-  defaults: OutageTextDefaults;
+  /** API outage_defaults; undefined is a safe display fallback (page blocks saving without it) */
+  defaults?: OutageTextDefaults;
   errors?: Partial<Record<keyof OutageTextDefaults, string>>;
   onChange: (field: string, value: unknown) => void;
 }
@@ -112,16 +112,17 @@ const OUTAGE_FACTS: { strong: string; rest: string }[] = [
 export function OutageSettingsTab({
   outage_recovery_enabled,
   outage_recovery_message_th,
-  outage_recovery_message_en,
   outage_down_message,
   defaults,
   errors,
   onChange,
 }: OutageSettingsTabProps) {
+  const defaultThai = defaults?.outage_recovery_message_th ?? '';
+  const defaultDown = defaults?.outage_down_message ?? '';
   const previewText =
     outage_recovery_message_th.trim() !== ''
       ? outage_recovery_message_th
-      : defaults.outage_recovery_message_th;
+      : defaultThai;
 
   return (
     <div className="space-y-6">
@@ -153,22 +154,8 @@ export function OutageSettingsTab({
               value={outage_recovery_message_th}
               serverError={errors?.outage_recovery_message_th}
               resetLabel="คืนค่ามาตรฐาน ข้อความภาษาไทย"
-              onReset={() =>
-                onChange('outage_recovery_message_th', defaults.outage_recovery_message_th)
-              }
+              onReset={() => onChange('outage_recovery_message_th', defaultThai)}
               onChange={(v) => onChange('outage_recovery_message_th', v)}
-            />
-            <OutageTextField
-              id="outage-recovery-en"
-              label="ข้อความภาษาอังกฤษ"
-              description="ต่อท้ายข้อความไทย เฉพาะลูกค้าที่พิมพ์มาเป็นภาษาอังกฤษ"
-              value={outage_recovery_message_en}
-              serverError={errors?.outage_recovery_message_en}
-              resetLabel="คืนค่ามาตรฐาน ข้อความภาษาอังกฤษ"
-              onReset={() =>
-                onChange('outage_recovery_message_en', defaults.outage_recovery_message_en)
-              }
-              onChange={(v) => onChange('outage_recovery_message_en', v)}
             />
             <div
               data-testid="outage-preview"
@@ -199,7 +186,7 @@ export function OutageSettingsTab({
             value={outage_down_message}
             serverError={errors?.outage_down_message}
             resetLabel="คืนค่ามาตรฐาน ข้อความ"
-            onReset={() => onChange('outage_down_message', defaults.outage_down_message)}
+            onReset={() => onChange('outage_down_message', defaultDown)}
             onChange={(v) => onChange('outage_down_message', v)}
           />
         </div>

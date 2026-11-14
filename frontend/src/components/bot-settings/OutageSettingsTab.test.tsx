@@ -14,7 +14,6 @@ const defaults: OutageTextDefaults = {
 const baseProps = {
   outage_recovery_enabled: true,
   outage_recovery_message_th: defaults.outage_recovery_message_th,
-  outage_recovery_message_en: defaults.outage_recovery_message_en,
   outage_down_message: defaults.outage_down_message,
   defaults,
   onChange: vi.fn(),
@@ -25,7 +24,6 @@ function ControlledOutageTab(props: typeof baseProps) {
   const [state, setState] = useState({
     outage_recovery_enabled: props.outage_recovery_enabled,
     outage_recovery_message_th: props.outage_recovery_message_th,
-    outage_recovery_message_en: props.outage_recovery_message_en,
     outage_down_message: props.outage_down_message,
   });
   const onChangeSpy = vi.fn();
@@ -43,18 +41,23 @@ function ControlledOutageTab(props: typeof baseProps) {
 }
 
 describe('OutageSettingsTab', () => {
-  it('renders_three_editors_and_resets_from_api_defaults', () => {
-    render(<ControlledOutageTab {...baseProps} />);
+  it('renders_two_editors_and_resets_from_api_defaults', () => {
+    const { container } = render(<ControlledOutageTab {...baseProps} />);
 
     expect(
       screen.getByRole('textbox', { name: 'ข้อความภาษาไทย' })
     ).toHaveDisplayValue(defaults.outage_recovery_message_th);
     expect(
-      screen.getByRole('textbox', { name: 'ข้อความภาษาอังกฤษ' })
-    ).toHaveDisplayValue(defaults.outage_recovery_message_en);
-    expect(
       screen.getByRole('textbox', { name: 'ข้อความ' })
     ).toHaveDisplayValue(defaults.outage_down_message);
+
+    // Thai-only (owner order 14 Nov): the English field is gone entirely —
+    // no textbox, no #outage-recovery-en element, no reset action
+    expect(screen.queryByRole('textbox', { name: 'ข้อความภาษาอังกฤษ' })).toBeNull();
+    expect(container.querySelector('#outage-recovery-en')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'คืนค่ามาตรฐาน ข้อความภาษาอังกฤษ' })
+    ).toBeNull();
 
     fireEvent.click(
       screen.getByRole('button', { name: 'คืนค่ามาตรฐาน ข้อความภาษาไทย' })
@@ -75,19 +78,23 @@ describe('OutageSettingsTab', () => {
   });
 
   it('off_disables_recovery_controls_but_retains_values_and_down_editor', () => {
-    render(
+    const { container } = render(
       <ControlledOutageTab {...baseProps} outage_recovery_enabled={false} />
     );
 
     const th = screen.getByRole('textbox', { name: 'ข้อความภาษาไทย' });
-    const en = screen.getByRole('textbox', { name: 'ข้อความภาษาอังกฤษ' });
     const down = screen.getByRole('textbox', { name: 'ข้อความ' });
+
+    // No English field with the switch off either
+    expect(screen.queryByRole('textbox', { name: 'ข้อความภาษาอังกฤษ' })).toBeNull();
+    expect(container.querySelector('#outage-recovery-en')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'คืนค่ามาตรฐาน ข้อความภาษาอังกฤษ' })
+    ).toBeNull();
 
     // Values retained, controls disabled
     expect(th).toHaveDisplayValue(defaults.outage_recovery_message_th);
-    expect(en).toHaveDisplayValue(defaults.outage_recovery_message_en);
     expect(th).toBeDisabled();
-    expect(en).toBeDisabled();
     expect(
       screen.getByRole('button', { name: 'คืนค่ามาตรฐาน ข้อความภาษาไทย' })
     ).toBeDisabled();

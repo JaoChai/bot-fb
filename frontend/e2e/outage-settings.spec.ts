@@ -10,6 +10,10 @@ import { conversation, message as messageFixture, pagination } from './mock-data
 // Server-state pattern: the settings route is method-aware (GET returns the
 // captured state, PUT merges the body into it), so a reload proves real
 // persistence through the mock instead of a no-op stub.
+//
+// Thai-only (owner order 14 Nov, decision D5): the tab has no English field
+// and the PUT never carries outage_recovery_message_en. The mocked API keeps
+// accepting and returning the English fields, as the real API does.
 
 const OUTAGE_TAB = 'เมื่อบอทล่ม'
 const BADGE_LABEL = 'ส่งอัตโนมัติหลังบอทล่ม'
@@ -170,26 +174,37 @@ function messagesEnvelope(messages: Record<string, unknown>[]) {
 test.describe(`outage settings journeys`, () => {
   for (const combo of COMBOS) {
     test.describe(`${combo.width}-${combo.theme}`, () => {
-      test('edits_saves_reloads_and_resets_all_three_texts', async ({
+      test('edits_saves_reloads_and_resets_th_and_down_texts', async ({
         page,
         loggedIn,
         pageErrors,
       }, testInfo) => {
         void loggedIn
-        const state = await openOutageTab(page, combo, initialSettings())
+        // The mocked API carries a stored English text, as the real API may
+        // (D5); the tab must load, edit and save the Thai texts without ever
+        // showing or sending it.
+        const state = await openOutageTab(page, combo, {
+          ...initialSettings(),
+          outage_recovery_message_en: 'E2E-STORED-EN-back online',
+        })
         const th = page.getByRole('textbox', { name: 'ข้อความภาษาไทย' })
-        const en = page.getByRole('textbox', { name: 'ข้อความภาษาอังกฤษ' })
         const down = page.getByRole('textbox', { name: 'ข้อความ', exact: true })
+
+        // No English field on the tab: no textbox, no #outage-recovery-en, no
+        // reset action — even with the switch on and a stored value returned
+        await expect(page.getByRole('textbox', { name: 'ข้อความภาษาอังกฤษ' })).toHaveCount(0)
+        await expect(page.locator('#outage-recovery-en')).toHaveCount(0)
+        await expect(
+          page.getByRole('button', { name: 'คืนค่ามาตรฐาน ข้อความภาษาอังกฤษ' }),
+        ).toHaveCount(0)
 
         // Null stored values hydrate to the API defaults
         await expect(th).toHaveValue(DEFAULTS.outage_recovery_message_th)
-        await expect(en).toHaveValue(DEFAULTS.outage_recovery_message_en)
         await expect(down).toHaveValue(DEFAULTS.outage_down_message)
         await assertEditorHealth(page)
         await shot(page, testInfo, `outage-default-${combo.width}-${combo.theme}`)
 
         await th.fill('ทดสอบกลับมาแล้ว')
-        await en.fill('Back online test')
         await down.fill('ขออภัย ตอบไม่ได้ตอนนี้')
         await shot(page, testInfo, `outage-edited-${combo.width}-${combo.theme}`)
 
@@ -200,6 +215,7 @@ test.describe(`outage settings journeys`, () => {
         await firstPut
         expect(state.puts[0]).not.toHaveProperty('outage_defaults')
         expect(state.puts[0].outage_recovery_message_th).toBe('ทดสอบกลับมาแล้ว')
+        expect(state.puts[0]).not.toHaveProperty('outage_recovery_message_en')
 
         // Reload proves persistence through the captured server state
         await page.reload()
@@ -214,7 +230,7 @@ test.describe(`outage settings journeys`, () => {
         await page.getByRole('button', { name: 'บันทึกตั้งค่า' }).click()
         await secondPut
         expect(state.puts[1].outage_recovery_message_th).toBeNull()
-        expect(state.puts[1].outage_recovery_message_en).toBe('Back online test')
+        expect(state.puts[1]).not.toHaveProperty('outage_recovery_message_en')
 
         await page.reload()
         await page.getByRole('button', { name: OUTAGE_TAB }).click()
@@ -238,6 +254,11 @@ test.describe(`outage settings journeys`, () => {
         await page.getByRole('switch').click()
         await expect(th).toBeDisabled()
         await expect(th).toHaveValue('ทดสอบกลับมาแล้ว')
+        // No English field with the switch off either
+        await expect(page.getByRole('textbox', { name: 'ข้อความภาษาอังกฤษ' })).toHaveCount(0)
+        await expect(
+          page.getByRole('button', { name: 'คืนค่ามาตรฐาน ข้อความภาษาอังกฤษ' }),
+        ).toHaveCount(0)
         await expect(page.getByTestId('outage-preview')).toHaveAttribute(
           'aria-disabled',
           'true',
@@ -254,6 +275,7 @@ test.describe(`outage settings journeys`, () => {
         await put
         expect(state.puts[0].outage_recovery_enabled).toBe(false)
         expect(state.puts[0].outage_recovery_message_th).toBe('ทดสอบกลับมาแล้ว')
+        expect(state.puts[0]).not.toHaveProperty('outage_recovery_message_en')
 
         await page.reload()
         await page.getByRole('button', { name: OUTAGE_TAB }).click()
@@ -296,10 +318,12 @@ test.describe(`outage settings journeys`, () => {
         // The app retries mutations once on failure (src/lib/query.ts retry: 1),
         // so the 422 fires up to two PUTs. What the rule forbids is the
         // over-limit click ever reaching the wire: every attempted PUT must
-        // carry the under-limit draft, never the 501-char text.
+        // carry the under-limit draft, never the 501-char text — and never the
+        // English key.
         expect(state.puts.length).toBeGreaterThanOrEqual(1)
         for (const put of state.puts) {
           expect(put.outage_recovery_message_th).toBe('<b>โฆษณา</b>')
+          expect(put).not.toHaveProperty('outage_recovery_message_en')
         }
         expect(
           state.puts.some((p) => p.outage_recovery_message_th === 'ก'.repeat(501)),
@@ -311,7 +335,8 @@ test.describe(`outage settings journeys`, () => {
         void loggedIn
         const state = await openOutageTab(page, combo, initialSettings())
 
-        // Save from ANOTHER tab without editing: the three texts go out as null
+        // Save from ANOTHER tab without editing: the two texts go out as null
+        // and the English key is never sent
         await page.getByRole('button', { name: 'ข้อจำกัด' }).click()
         const put = page.waitForResponse(
           (r) => r.url().includes('/settings') && r.request().method() === 'PUT',
@@ -319,9 +344,9 @@ test.describe(`outage settings journeys`, () => {
         await page.getByRole('button', { name: 'บันทึกตั้งค่า' }).click()
         await put
         expect(state.puts[0].outage_recovery_message_th).toBeNull()
-        expect(state.puts[0].outage_recovery_message_en).toBeNull()
         expect(state.puts[0].outage_down_message).toBeNull()
         expect(state.puts[0]).not.toHaveProperty('outage_defaults')
+        expect(state.puts[0]).not.toHaveProperty('outage_recovery_message_en')
 
         // Reload: the defaults are still what the fields show
         await page.reload()

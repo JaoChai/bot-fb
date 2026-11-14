@@ -67,7 +67,6 @@ interface BotSettingsFormData {
   slip_fail_message: string;
   outage_recovery_enabled: boolean;
   outage_recovery_message_th: string;
-  outage_recovery_message_en: string;
   outage_down_message: string;
   response_hours_enabled: boolean;
   response_hours: ResponseHoursConfig;
@@ -107,7 +106,6 @@ const DEFAULT_FORM: BotSettingsFormData = {
   slip_fail_message: '',
   outage_recovery_enabled: true,
   outage_recovery_message_th: '',
-  outage_recovery_message_en: '',
   outage_down_message: '',
   response_hours_enabled: false,
   response_hours: createDefaultResponseHours(),
@@ -171,10 +169,6 @@ export function BotSettingsPage() {
           (s.outage_recovery_message_th as string | null) ??
           (s.outage_defaults as OutageTextDefaults | undefined)?.outage_recovery_message_th ??
           '',
-        outage_recovery_message_en:
-          (s.outage_recovery_message_en as string | null) ??
-          (s.outage_defaults as OutageTextDefaults | undefined)?.outage_recovery_message_en ??
-          '',
         outage_down_message:
           (s.outage_down_message as string | null) ??
           (s.outage_defaults as OutageTextDefaults | undefined)?.outage_down_message ??
@@ -212,8 +206,6 @@ export function BotSettingsPage() {
       formData.outage_recovery_enabled !== ((s.outage_recovery_enabled as boolean) ?? true) ||
       formData.outage_recovery_message_th !==
         ((s.outage_recovery_message_th as string | null) ?? outageDefaults?.outage_recovery_message_th ?? '') ||
-      formData.outage_recovery_message_en !==
-        ((s.outage_recovery_message_en as string | null) ?? outageDefaults?.outage_recovery_message_en ?? '') ||
       formData.outage_down_message !==
         ((s.outage_down_message as string | null) ?? outageDefaults?.outage_down_message ?? '')
     );
@@ -222,7 +214,6 @@ export function BotSettingsPage() {
   // Outage save gate: over-limit texts or a failed/defaults-less load block every save
   const outageOverLimit =
     isOverOutageLimit(formData.outage_recovery_message_th) ||
-    isOverOutageLimit(formData.outage_recovery_message_en) ||
     isOverOutageLimit(formData.outage_down_message);
   const outageDefaultsMissing = !!serverSettings && !outageDefaults;
   const saveBlocked = outageOverLimit || outageDefaultsMissing || isError;
@@ -348,10 +339,6 @@ export function BotSettingsPage() {
           formData.outage_recovery_message_th,
           outageDefaults?.outage_recovery_message_th
         ),
-        outage_recovery_message_en: outageTextOrNull(
-          formData.outage_recovery_message_en,
-          outageDefaults?.outage_recovery_message_en
-        ),
         outage_down_message: outageTextOrNull(
           formData.outage_down_message,
           outageDefaults?.outage_down_message
@@ -365,7 +352,6 @@ export function BotSettingsPage() {
       if (errorMap) {
         for (const field of [
           'outage_recovery_message_th',
-          'outage_recovery_message_en',
           'outage_down_message',
         ] as const) {
           const entry = errorMap[field];
@@ -528,15 +514,8 @@ export function BotSettingsPage() {
             <OutageSettingsTab
               outage_recovery_enabled={formData.outage_recovery_enabled}
               outage_recovery_message_th={formData.outage_recovery_message_th}
-              outage_recovery_message_en={formData.outage_recovery_message_en}
               outage_down_message={formData.outage_down_message}
-              defaults={
-                outageDefaults ?? {
-                  outage_recovery_message_th: '',
-                  outage_recovery_message_en: '',
-                  outage_down_message: '',
-                }
-              }
+              defaults={outageDefaults ?? undefined}
               errors={fieldErrors}
               onChange={onFieldChange}
             />

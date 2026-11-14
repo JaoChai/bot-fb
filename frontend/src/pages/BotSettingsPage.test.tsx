@@ -76,7 +76,6 @@ function getSaveButton() {
 }
 
 const TH_EDITOR = () => screen.getByRole('textbox', { name: 'ข้อความภาษาไทย' });
-const EN_EDITOR = () => screen.getByRole('textbox', { name: 'ข้อความภาษาอังกฤษ' });
 const DOWN_EDITOR = () => screen.getByRole('textbox', { name: 'ข้อความ' });
 
 beforeEach(() => {
@@ -122,17 +121,17 @@ describe('BotSettingsPage (outage tab)', () => {
     goToOutageTab();
     // Null stored values hydrate to the API defaults, not placeholders
     expect(TH_EDITOR()).toHaveDisplayValue(DEF.outage_recovery_message_th);
-    expect(EN_EDITOR()).toHaveDisplayValue(DEF.outage_recovery_message_en);
     expect(DOWN_EDITOR()).toHaveDisplayValue(DEF.outage_down_message);
+    // Thai-only (owner order 14 Nov): no English editor on the tab
+    expect(screen.queryByRole('textbox', { name: 'ข้อความภาษาอังกฤษ' })).toBeNull();
   });
 
-  it('saves_four_outage_fields_and_preserves_null_inheritance', async () => {
+  it('saves_three_outage_fields_and_never_sends_english', async () => {
     h.state.settings = makeSettings();
     renderPage();
     goToOutageTab();
 
     fireEvent.change(TH_EDITOR(), { target: { value: 'กลับมาแล้วจริงๆ' } });
-    fireEvent.change(EN_EDITOR(), { target: { value: 'Back for real' } });
     fireEvent.change(DOWN_EDITOR(), { target: { value: 'ตอบไม่ได้ตอนนี้' } });
     fireEvent.click(screen.getByRole('switch'));
 
@@ -142,21 +141,62 @@ describe('BotSettingsPage (outage tab)', () => {
     const first = h.mutateAsync.mock.calls[0][0] as Record<string, unknown>;
     expect(first.outage_recovery_enabled).toBe(false);
     expect(first.outage_recovery_message_th).toBe('กลับมาแล้วจริงๆ');
-    expect(first.outage_recovery_message_en).toBe('Back for real');
     expect(first.outage_down_message).toBe('ตอบไม่ได้ตอนนี้');
     expect(first).not.toHaveProperty('outage_defaults');
+    // The English key must never leave the page, even as null
+    expect(first).not.toHaveProperty('outage_recovery_message_en');
 
     // Reset TH to the API default → next save must send null (inheritance)
     fireEvent.click(screen.getByRole('button', { name: 'คืนค่ามาตรฐาน ข้อความภาษาไทย' }));
-    // Blank EN → null too
-    fireEvent.change(EN_EDITOR(), { target: { value: '' } });
     fireEvent.click(getSaveButton());
     await waitFor(() => expect(h.mutateAsync).toHaveBeenCalledTimes(2));
 
     const second = h.mutateAsync.mock.calls[1][0] as Record<string, unknown>;
     expect(second.outage_recovery_message_th).toBeNull();
-    expect(second.outage_recovery_message_en).toBeNull();
     expect(second.outage_down_message).toBe('ตอบไม่ได้ตอนนี้');
+    expect(second).not.toHaveProperty('outage_recovery_message_en');
+
+    // Blank/whitespace-only overrides also save as null (inherit outage_defaults)
+    fireEvent.change(TH_EDITOR(), { target: { value: '   ' } });
+    fireEvent.change(DOWN_EDITOR(), { target: { value: '' } });
+    fireEvent.click(getSaveButton());
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalledTimes(3));
+
+    const third = h.mutateAsync.mock.calls[2][0] as Record<string, unknown>;
+    expect(third.outage_recovery_message_th).toBeNull();
+    expect(third.outage_down_message).toBeNull();
+    expect(third).not.toHaveProperty('outage_recovery_message_en');
+  });
+
+  it('stored_english_text_is_never_sent_back', async () => {
+    // D5: the API keeps returning a stored outage_recovery_message_en; the
+    // page loads, edits and saves the Thai texts without ever sending it back
+    h.state.settings = makeSettings({
+      outage_recovery_message_en: 'STORED-EN-old text',
+    });
+    renderPage();
+    goToOutageTab();
+
+    expect(TH_EDITOR()).toHaveDisplayValue(DEF.outage_recovery_message_th);
+    expect(DOWN_EDITOR()).toHaveDisplayValue(DEF.outage_down_message);
+    expect(screen.queryByRole('textbox', { name: 'ข้อความภาษาอังกฤษ' })).toBeNull();
+
+    fireEvent.change(TH_EDITOR(), { target: { value: 'ไทยอย่างเดียว' } });
+    fireEvent.change(DOWN_EDITOR(), { target: { value: 'DRAFT-DOWN' } });
+    fireEvent.click(getSaveButton());
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalledTimes(1));
+    const first = h.mutateAsync.mock.calls[0][0] as Record<string, unknown>;
+    expect(first.outage_recovery_message_th).toBe('ไทยอย่างเดียว');
+    expect(first.outage_down_message).toBe('DRAFT-DOWN');
+    expect(first).not.toHaveProperty('outage_recovery_message_en');
+
+    // Saving from ANOTHER tab never sends the key either
+    fireEvent.click(screen.getByRole('button', { name: 'ข้อจำกัด' }));
+    fireEvent.click(getSaveButton());
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalledTimes(2));
+    expect(h.mutateAsync.mock.calls[1][0]).not.toHaveProperty(
+      'outage_recovery_message_en'
+    );
   });
 
   it('keeps_dirty_edits_across_tab_changes_and_failed_save', async () => {
