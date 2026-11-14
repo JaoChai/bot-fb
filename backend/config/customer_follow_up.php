@@ -16,8 +16,12 @@
 $services = require config_path('services.php');
 
 // โควต้า LINE สำรวจไว้ส่ง — ขาด/ไม่ใช่จำนวนเต็ม/ไม่เป็นบวก = null (null = หยุดส่ง, D5)
+// ยอมรับเฉพาะ string หรือ int เท่านั้น: env() แปลง "true" เป็น bool แล้ว bool ต้องไม่กลายเป็น 1
 $quotaReserveMessages = null;
-$parsedReserve = filter_var(env('CUSTOMER_FOLLOW_UP_LINE_RESERVE'), FILTER_VALIDATE_INT);
+$rawReserve = env('CUSTOMER_FOLLOW_UP_LINE_RESERVE');
+$parsedReserve = is_string($rawReserve) || is_int($rawReserve)
+    ? filter_var($rawReserve, FILTER_VALIDATE_INT)
+    : false;
 if ($parsedReserve !== false && $parsedReserve > 0) {
     $quotaReserveMessages = $parsedReserve;
 }
@@ -35,7 +39,9 @@ if (is_string($rawAutomaticBotIds) && $rawAutomaticBotIds !== '') {
     $automaticBotIds = array_values(array_unique($automaticBotIds));
 }
 
-// ลิงก์ "เปิดห้องใน admin web" บนบัตร Telegram — ยอมรับเฉพาะ https origin (ไม่มี path/query/user)
+// ลิงก์ "เปิดห้องใน admin web" บนบัตร Telegram — ยอมรับเฉพาะ https://host[:port]
+// เช็ค user/pass/path/query/fragment ทีละตัว (isset หลาย argument จะจริงเมื่อ "ครบทุกตัว" เท่านั้น);
+// path เป็น "/" เดี่ยวหลัง host ให้ผ่านแล้วเก็บแบบตัด "/" ทิ้ง, path ยาวกว่านั้น = null
 $adminWebUrl = null;
 $rawAdminWebUrl = env('CUSTOMER_FOLLOW_UP_ADMIN_WEB_URL');
 if (is_string($rawAdminWebUrl) && $rawAdminWebUrl !== '') {
@@ -43,9 +49,15 @@ if (is_string($rawAdminWebUrl) && $rawAdminWebUrl !== '') {
     $isHttpsOrigin = is_array($urlParts)
         && ($urlParts['scheme'] ?? '') === 'https'
         && ($urlParts['host'] ?? '') !== ''
-        && ! isset($urlParts['user'], $urlParts['pass'], $urlParts['path'], $urlParts['query'], $urlParts['fragment']);
+        && ! isset($urlParts['user'])
+        && ! isset($urlParts['pass'])
+        && ! isset($urlParts['query'])
+        && ! isset($urlParts['fragment'])
+        && (! isset($urlParts['path']) || $urlParts['path'] === '/');
     if ($isHttpsOrigin) {
-        $adminWebUrl = $rawAdminWebUrl;
+        $adminWebUrl = isset($urlParts['port'])
+            ? 'https://'.$urlParts['host'].':'.$urlParts['port']
+            : 'https://'.$urlParts['host'];
     }
 }
 
