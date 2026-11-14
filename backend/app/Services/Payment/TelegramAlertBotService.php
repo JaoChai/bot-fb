@@ -64,7 +64,7 @@ class TelegramAlertBotService
 
     /**
      * แจ้งเจ้าของว่า "บอทล่ม — OpenRouter ปฏิเสธกุญแจ" (การ์ด t_44675510)
-     * ลูกค้าได้แต่ข้อความ "ระบบขัดข้องชั่วคราว" ต้องรีบเปลี่ยน OPENROUTER_API_KEY
+     * ลูกค้าได้ข้อความแจ้งระบบขัดข้องตามที่ตั้งไว้ ต้องรีบเปลี่ยน OPENROUTER_API_KEY
      * ไม่มีทางโยน exception — ไม่มี plugin / config หาย / API ล่ม = log แล้วจบ
      */
     public function notifyOutageDown(Bot $bot, int $httpStatus): void
