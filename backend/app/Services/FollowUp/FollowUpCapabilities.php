@@ -123,7 +123,7 @@ class FollowUpCapabilities
     }
 
     /**
-     * allowlist ต้อง "ชัดเจน" — ขาด / ไม่ใช่ list / ว่าง ต้อง block ทั้งหมด
+     * allowlist ต้อง "ชัดเจน" — ขาด / ไม่ใช่ list / ว่าง / มีแต่ id ว่าง ต้อง block ทั้งหมด
      * (ต่างจาก TelegramAlertCallbackController ที่ยอมรับค่าว่างเป็น "ทุกคน" ได้ —
      * การตามลูกค้าเข้มกว่าเพราะเป็นการส่งออกนอกห้อง)
      */
@@ -131,6 +131,16 @@ class FollowUpCapabilities
     {
         $allow = $plugin->config['authorized_user_ids'] ?? null;
 
-        return is_array($allow) && $allow !== [];
+        if (! is_array($allow) || ! array_is_list($allow)) {
+            return false;
+        }
+
+        foreach ($allow as $id) {
+            if (is_scalar($id) && trim((string) $id) !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
