@@ -21,7 +21,8 @@ use InvalidArgumentException;
  *   คนที่ insert สำเร็จคือผู้ชนะ คนที่ชนกันอ่านแถวผู้ชนะกลับไป (lock winner only)
  * - reserveDraft(): transaction เดียว ล็อก bot_settings ก่อนแล้วล็อกแถว log
  *   (ทุก transaction ล็อกตามลำดับเดียวกันจึงไม่ deadlock), นับด้วยกฎเดียวกับประตู
- *   (FollowUpEligibility line 155) ต่ำกว่า daily_draft_cap จึงเขียนจอง
+ *   (FollowUpEligibility line 155) ต่ำกว่า daily_draft_cap จึงเขียนจอง; ร่างที่
+ *   ผลิตแล้ว (drafted_at) ไม่จองซ้ำอีกทุกวัน และไม่แตะแถว
  * - markDraftProduced(): ร่างผลิตแล้ว — เขียน drafted_at และใช้ token ทิ้ง
  *   (claim_token = null) เพื่อให้ release ภายหลังคืน slot ไม่ได้ ไม่ว่าร่างจะเป็นอย่างไร
  * - releaseDraft(): ล้มเหลวโดยไม่มีร่าง — คืน slot ทั้งสี่คอลัมน์เป็น null
@@ -106,7 +107,8 @@ class FollowUpReservationService
     /**
      * จองโควตาร่างของวันนี้ (กรุงเทพฯ) ให้ log — true เมื่อจองได้หรือ log นี้ถือ
      * slot วันนี้อยู่แล้ว (จองซ้ำไม่กินโควตาใหม่), false เมื่อ cap เต็ม/แถวหาย/
-     * ไม่มี bot_settings — กรณี false แถวคงเดิมทุกคอลัมน์
+     * ไม่มี bot_settings หรือร่างถูกผลิตไปแล้ว (drafted_at ไม่ null = ไม่จองซ้ำ
+     * อีกทั้งวันไหน แถวไม่ถูกแตะ) — กรณี false แถวคงเดิมทุกคอลัมน์
      */
     public function reserveDraft(LeadRecoveryLog $log, CarbonImmutable $now): bool
     {
@@ -133,8 +135,14 @@ class FollowUpReservationService
                 return false;
             }
 
-            // log นี้ถือ slot วันนี้อยู่แล้ว (จองค้างหรือร่างจริง) — ไม่กิน slot ที่สอง (plan line 141)
-            if ($row->draft_day === $today && ($row->drafted_at !== null || $row->draft_reserved_at !== null)) {
+            // ร่างผลิตแล้ว (drafted_at ไม่ null) — วันไหนก็ตามไม่จองซ้ำ ไม่เขียนแถวเลย
+            // (one draft per silence: owner edit / recheck ของร่างเดิมไม่เรียก reserveDraft)
+            if ($row->drafted_at !== null) {
+                return false;
+            }
+
+            // log นี้ถือ slot วันนี้อยู่แล้ว (จองค้าง ยังไม่มีร่าง) — ไม่กิน slot ที่สอง (plan line 141)
+            if ($row->draft_day === $today && $row->draft_reserved_at !== null) {
                 return true;
             }
 
