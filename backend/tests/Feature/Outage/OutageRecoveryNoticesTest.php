@@ -875,6 +875,42 @@ class OutageRecoveryNoticesTest extends TestCase
     }
 
     #[Test]
+    public function test_disabled_claim_is_atomic_and_only_winners_are_counted(): void
+    {
+        // R6 + แผนแถว 265: สวิตช์ปิด — ผู้ชนะ claim "disabled" มีตัวเดียว ไม่สร้างแถวแจ้งลูกค้า
+        // รันถัดไป (สวิตช์เปิด) ตามห้องที่ถูก claim แบบ terminal ไปแล้ว → ส่งไม่ได้ นับไม่ได้
+        // และรอบที่ไม่มีห้องรอเลยไม่ส่ง "Back" ให้ใคร
+        $bot = $this->makeBot();
+        $room = Conversation::factory()->line()->create(['bot_id' => $bot->id]);
+        $tagged = $this->seedOutageTurn($room, 'สวัสดี');
+        BotSetting::query()->create(['bot_id' => $bot->id, 'outage_recovery_enabled' => false]);
+
+        Http::fake([
+            'openrouter.test/api/v1/key' => Http::response(['data' => []], 200),
+            'api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]]),
+            'api.line.me/*' => Http::response([], 200),
+        ]);
+
+        $this->runRecovery();
+
+        $tagged->refresh();
+        $this->assertSame('disabled', $tagged->metadata['recovery_notice']);
+        $this->assertSame([], $this->pushTexts(), 'disabled winner must not push');
+        $this->assertSame(0, $this->noticeRows()->count(), 'disabled winner must create no notice row');
+        $alerts = $this->telegramAlerts();
+        $this->assertCount(1, $alerts, 'the disabled-winner run counts its one disabled room');
+        $this->assertStringContainsString('· ไม่ได้ส่ง 1 ห้อง (ปิดการส่งข้อความตามลูกค้าไว้)', $alerts[0]['text']);
+
+        BotSetting::query()->where('bot_id', $bot->id)->update(['outage_recovery_enabled' => true]);
+        $this->runRecovery();
+
+        $this->assertSame([], $this->pushTexts(), 'the losing enabled run cannot send the disabled room');
+        $this->assertSame(0, $this->noticeRows()->count());
+        $this->assertSame('disabled', $tagged->refresh()->metadata['recovery_notice']);
+        $this->assertCount(1, $this->telegramAlerts(), 'a run with no waiting room sends no Back alert');
+    }
+
+    #[Test]
     public function test_a_custom_down_text_is_found_by_tag_but_the_same_text_without_a_tag_is_not(): void
     {
         $this->fakeAllWorking();
