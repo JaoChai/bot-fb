@@ -58,7 +58,7 @@ class ConfigTest extends TestCase
         $this->assertSame(3, $config['http_connect_timeout_seconds']);
         $this->assertSame(5, $config['line_timeout_seconds']);
         $this->assertSame(400, $config['max_text_code_points']);
-        $this->assertSame(256, $config['writer_max_tokens']);
+        $this->assertSame(1024, $config['writer_max_tokens']);
         $this->assertSame(10, $config['daily_draft_cap']);
         $this->assertSame(3, $config['payment_wait_hours']);
         $this->assertSame(24, $config['sale_wait_hours']);
