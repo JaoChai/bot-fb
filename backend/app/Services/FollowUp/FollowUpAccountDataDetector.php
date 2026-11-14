@@ -36,8 +36,15 @@ use Normalizer;
  */
 class FollowUpAccountDataDetector
 {
-    /** label ที่ตามด้วยค่า ([:=]) ถือว่าเป็น credential — ASCII + ไทย "รหัสผ่าน" */
+    /** label ที่ตามด้วยค่า ([:=/]) ถือว่าเป็น credential — ASCII + ไทย "รหัสผ่าน" (Lead รอบ 6 เพิ่ม /) */
     private const LABELS = 'password|passwd|pass|pwd|token|secret|authorization|cookie|otp|2fa';
+
+    /**
+     * label พูดไทยที่ลูกค้าพิมพ์ตามด้วยค่าจริง (Lead D25, รอบ 6 — วัดจาก prod 90 วัน:
+     * 8 ข้อความ 3 ห้อง เดิมไม่จับเลย เพราะไม่มี pipe และไม่มี label+คั่นติดกัน)
+     * เรียงยาวไปสั้นเพื่อให้ alternation จับคำเต็ม (พาสเวิร์ด ก่อน พาส, รหัสผ่าน ก่อน รหัส)
+     */
+    private const THAI_LABELS = 'พาสเวิร์ด|พาส|รหัสผ่าน|รหัส';
 
     /**
      * ขอบหน้า label/cookie — บล็อกเฉพาะ "ตัวอักษร ASCII" (A-Z a-z _; ใช้กับ pattern /i)
@@ -50,10 +57,17 @@ class FollowUpAccountDataDetector
     private const LABEL_START = '(?<![a-z_])';
 
     /**
-     * span สำหรับการแทนที่: label + ค่า ถึงท้ายบรรทัด (ต้องมีอย่างน้อย 1 ตัวอักษรหลังคั่น —
-     * ทริกเกอร์เดิมของ LABEL_VALUE จึงไม่เปลี่ยน แต่ค่าทั้งค่าถูกแทนที่ ไม่เหลือเศษ)
+     * span สำหรับการแทนที่ — สามกลุ่ม:
+     * (1) label ASCII (LABEL_START + LABELS + \b): คั่น [=:]+ค่าถึงท้ายบรรทัด (เดิม) หรือ '/'
+     *     เว้นวรรครอบได้ + ค่า ≥6 printable ASCII non-space (Lead รอบ 6 — รูปร่างจริงจาก prod:
+     *     "<เลข>⏎pass / <password>")
+     * (2) "รหัสผ่าน" เดิม: คั่น [=:]+ค่าถึงท้ายบรรทัด — คงพฤติกรรมเดิมทุกไบต์
+     * (3) Lead D25 (รอบ 6): label พูดไทย (THAI_LABELS) + (คือ|เป็น)? + คั่น [=: / ช่องว่าง]
+     *     แล้วค่า ≥6 printable ASCII non-space — marker ครอบทั้ง label และค่า
+     * kept ตามที่ Lead วัด: ค่าสั้น (รหัส 2fa, รหัส 1234, pass/fail), รหัสติดคำอื่น
+     * (รหัสสินค้า A12, รหัสโปร SALE2026, พาสไม่ได้ครับ), ค่าไทย (รหัสผ่าน ลืมครับ, รหัส/ชื่อ)
      */
-    private const LABEL_VALUE_SPAN = '/(?:'.self::LABEL_START.'(?:'.self::LABELS.')\b|รหัสผ่าน)\s*[=:]\s*\S[^\r\n]*/iu';
+    private const LABEL_VALUE_SPAN = '/(?:'.self::LABEL_START.'(?:'.self::LABELS.')\b(?:\s*[=:]\s*\S[^\r\n]*|\s*\/\s*[!-~]{6,})|รหัสผ่าน\s*[=:]\s*\S[^\r\n]*|(?:'.self::THAI_LABELS.')(?:คือ|เป็น)?(?:\s*[=:]\s*|\s*\/\s*|\s+)[!-~]{6,})/iu';
 
     /** segment ที่เป็น label ล้วน ("otp|482913") ก็นับเป็นบรรทัด credential */
     private const BARE_LABEL = '/^(?:'.self::LABELS.'|รหัสผ่าน)$/iu';
