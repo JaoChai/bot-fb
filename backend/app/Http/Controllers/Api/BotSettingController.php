@@ -5,11 +5,20 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Bot;
 use App\Models\BotSetting;
+use App\Rules\PlainOutageText;
+use App\Support\OutageMessageText;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class BotSettingController extends Controller
 {
+    /** ช่องข้อความ outage — ค่าว่าง (whitespace ยูนิโคด) normalize เป็น null ก่อน validate */
+    private const OUTAGE_TEXT_FIELDS = [
+        'outage_recovery_message_th',
+        'outage_recovery_message_en',
+        'outage_down_message',
+    ];
+
     /**
      * Get bot settings.
      *
@@ -53,7 +62,7 @@ class BotSettingController extends Controller
         $settings = $bot->settings ?? $this->createDefaultSettings($bot);
 
         return response()->json([
-            'data' => $settings->toArray(),
+            'data' => $this->settingsData($settings),
         ]);
     }
 
@@ -128,6 +137,15 @@ class BotSettingController extends Controller
     public function update(Request $request, Bot $bot): JsonResponse
     {
         $this->authorize('update', $bot);
+
+        // ค่าว่างทุกแบบ (รวม whitespace ยูนิโคด) = null ก่อน validate — ช่องว่าง 501 ตัวอักษร
+        // จึงเป็น "ใช้ค่าเริ่มต้น" ไม่ใช่ข้อความยาวเกิน (Lead D1: sanitizer รันก่อนหน้านี้แล้วเสมอ)
+        foreach (self::OUTAGE_TEXT_FIELDS as $field) {
+            $value = $request->input($field);
+            if (array_key_exists($field, $request->all()) && is_string($value) && OutageMessageText::isBlank($value)) {
+                $request->merge([$field => null]);
+            }
+        }
 
         $validated = $request->validate([
             // Usage limits
@@ -205,6 +223,12 @@ class BotSettingController extends Controller
             'slip_amount_tolerance' => 'numeric|min:0|max:10000',
             'slip_success_message' => 'nullable|string|max:1000',
             'slip_fail_message' => 'nullable|string|max:1000',
+
+            // Outage settings ("เมื่อบอทล่ม") — ค่าว่างเก็บ null เพื่อ inherit ค่าเริ่มต้นโค้ด
+            'outage_recovery_enabled' => 'sometimes|boolean',
+            'outage_recovery_message_th' => ['sometimes', 'nullable', 'string', 'max:500', new PlainOutageText],
+            'outage_recovery_message_en' => ['sometimes', 'nullable', 'string', 'max:500', new PlainOutageText],
+            'outage_down_message' => ['sometimes', 'nullable', 'string', 'max:500', new PlainOutageText],
         ]);
 
         // Validate smart_max_wait_ms >= smart_min_wait_ms
@@ -227,7 +251,20 @@ class BotSettingController extends Controller
 
         return response()->json([
             'message' => 'Settings updated successfully',
-            'data' => $settings->fresh(),
+            'data' => $this->settingsData($settings->fresh()),
+        ]);
+    }
+
+    /**
+     * รูปทรงข้อมูล settings ร่วมของ GET และ PUT/PATCH — เพิ่ม outage_defaults (response-only,
+     * ห้ามเก็บลง DB) ต่อท้ายคอลัมน์จริงของแถว
+     *
+     * @return array<string, mixed>
+     */
+    private function settingsData(BotSetting $settings): array
+    {
+        return array_merge($settings->toArray(), [
+            'outage_defaults' => OutageMessageText::defaults(),
         ]);
     }
 
@@ -250,6 +287,11 @@ class BotSettingController extends Controller
             'save_conversations' => true,
             'language' => 'th',
             'response_style' => 'professional',
+            // Outage settings — เขียนชัดเจนให้ response ครบโดยไม่ต้องอ่านซ้ำจาก DB
+            'outage_recovery_enabled' => true,
+            'outage_recovery_message_th' => null,
+            'outage_recovery_message_en' => null,
+            'outage_down_message' => null,
             // Note: multiple_bubbles and auto_assignment fields use database defaults
         ]);
     }
