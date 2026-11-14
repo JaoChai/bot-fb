@@ -14,8 +14,6 @@ const defaults: OutageTextDefaults = {
 const baseProps = {
   outage_recovery_enabled: true,
   outage_recovery_message_th: defaults.outage_recovery_message_th,
-  // RED-only: main still requires this prop; GREEN drops it from the interface
-  outage_recovery_message_en: defaults.outage_recovery_message_en,
   outage_down_message: defaults.outage_down_message,
   defaults,
   onChange: vi.fn(),
