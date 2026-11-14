@@ -58,7 +58,7 @@ function OutageTextField({
   const error = serverError ?? (overLimit ? OVER_LIMIT_MESSAGE : undefined);
 
   return (
-    <div className="space-y-2 min-w-0">
+    <div className="space-y-2 min-w-0 scroll-mb-24">
       <div className="flex items-start justify-between gap-3 min-w-0">
         <div className="space-y-0.5 min-w-0">
           <label htmlFor={id} className="text-sm font-medium text-foreground">
@@ -84,6 +84,7 @@ function OutageTextField({
         value={value}
         rows={3}
         disabled={disabled}
+        className="scroll-mb-24"
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${id}-hint ${id}-error` : `${id}-hint`}
         onChange={(e) => onChange(e.target.value)}
