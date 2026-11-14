@@ -20,6 +20,7 @@ import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/types/api';
+import { OutageNoticeBadge } from './OutageNoticeBadge';
 import { useChannel } from './adapters';
 
 const senderIcons = {
@@ -208,6 +209,9 @@ export const MessageBubble = memo(function MessageBubble({
             shouldUseAdapter={!!shouldUseAdapter}
             adapter={adapter}
           />
+
+          {/* Automated outage recovery notice label */}
+          <OutageNoticeBadge message={message} />
 
           {/* AI metadata */}
           {message.model_used && (

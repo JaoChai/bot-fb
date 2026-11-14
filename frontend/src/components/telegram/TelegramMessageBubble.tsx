@@ -19,6 +19,7 @@ import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn, toSafeArray } from '@/lib/utils';
 import type { Message } from '@/types/api';
+import { OutageNoticeBadge } from '@/components/chat/OutageNoticeBadge';
 
 interface TelegramMessageBubbleProps {
   message: Message;
@@ -311,6 +312,7 @@ export const TelegramMessageBubble = memo(function TelegramMessageBubble({
 
           {/* Message content */}
           {renderContent()}
+          <OutageNoticeBadge message={message} />
         </div>
 
         {/* Agent avatar */}

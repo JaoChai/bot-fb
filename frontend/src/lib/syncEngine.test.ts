@@ -97,4 +97,36 @@ describe('syncConversation via syncBot', () => {
     expect(cached.pages[0].data.map((m) => m.id)).toEqual([7, 6, 5]);
     expect(useSyncCursors.getState().lastMessageId['1:10']).toBe(7);
   });
+
+  it('outage_notice_flag_survives_the_sync_cache_insert', async () => {
+    const queryClient = new QueryClient();
+    const meta = { current_page: 1, from: 1, last_page: 1, per_page: 50, to: 1, total: 1 };
+    const initial: InfiniteMessages = {
+      pages: [{ data: [makeMessage(5, '2026-07-09T10:00:00Z')], meta }],
+      pageParams: [1],
+    };
+    queryClient.setQueryData(messageKeys.infinite(1, 10), initial);
+
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: { data: [], synced_at: '2026-07-09T12:00:00Z' } } as never)
+      .mockResolvedValueOnce({
+        data: {
+          data: [
+            makeMessage(8, '2026-07-09T11:00:00Z', {
+              sender: 'bot',
+              content: 'ระบบกลับมาใช้งานได้แล้ว',
+              is_outage_notice: true,
+            }),
+          ],
+          has_more: false,
+          synced_at: '2026-07-09T12:00:00Z',
+        },
+      } as never);
+
+    await syncBot(1, queryClient, 10);
+
+    const cached = queryClient.getQueryData<InfiniteMessages>(messageKeys.infinite(1, 10))!;
+    expect(cached.pages[0].data.find((m) => m.id === 8)?.is_outage_notice).toBe(true);
+    expect(cached.pages[0].data.find((m) => m.id === 5)?.is_outage_notice).toBeUndefined();
+  });
 });

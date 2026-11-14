@@ -18,6 +18,7 @@ import { format, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/types/api';
+import { OutageNoticeBadge } from '@/components/chat/OutageNoticeBadge';
 
 interface LINEMessageBubbleProps {
   message: Message;
@@ -269,6 +270,7 @@ export const LINEMessageBubble = memo(function LINEMessageBubble({
           )}
         >
           {renderContent()}
+          <OutageNoticeBadge message={message} />
         </div>
       </div>
 
