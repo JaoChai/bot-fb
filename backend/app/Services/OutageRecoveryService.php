@@ -161,7 +161,8 @@ class OutageRecoveryService
             }
 
             $text = $this->noticeText($conversation, $tagged, $settings);
-            $sent = $this->leadRecovery->sendStaticFollowUp($conversation, $text);
+            // F18: ข้อความแจ้งลูกค้าเป็นข้อความที่เจ้าของแก้เองได้ → plain text
+            $sent = $this->leadRecovery->sendStaticFollowUp($conversation, $text, true);
 
             if ($sent) {
                 // แถวแจ้งลูกค้า: content = ข้อความที่ถูก push จริงทุกตัวอักษร

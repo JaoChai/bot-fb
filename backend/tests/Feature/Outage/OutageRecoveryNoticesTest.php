@@ -9,6 +9,7 @@ use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\LeadRecoveryService;
 use App\Services\OutageRecoveryService;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -1014,5 +1015,100 @@ class OutageRecoveryNoticesTest extends TestCase
     private function esc(string $value): string
     {
         return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+    }
+
+    // ------------------------------------------------------------------
+    // F18 — ข้อความที่เจ้าของแก้เองได้ (ข้อความแจ้งลูกค้า) ต้องไปถึง Telegram
+    // แบบ plain text (ไม่มี parse_mode) — ส่วน lead recovery ปกติคง parse_mode=HTML
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_outage_recovery_passes_the_plain_text_flag_to_the_transport(): void
+    {
+        $this->fakeAllWorking();
+        [$bot, $conversation, $tagged] = $this->roomWithOutage('สวัสดีครับ', Carbon::now()->subMinutes(10));
+
+        $this->mock(LeadRecoveryService::class, function ($mock) use ($conversation) {
+            $mock->shouldReceive('sendStaticFollowUp')
+                ->once()
+                ->with(
+                    \Mockery::on(fn ($c) => $c->is($conversation)),
+                    \Mockery::type('string'),
+                    true,
+                )
+                ->andReturnTrue();
+        });
+
+        $this->runRecovery();
+
+        $tagged->refresh();
+        $this->assertSame('sent', $tagged->metadata['recovery_notice']);
+    }
+
+    #[Test]
+    public function test_outage_notice_telegram_send_omits_parse_mode(): void
+    {
+        Http::fake([
+            'api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]]),
+        ]);
+
+        $bot = Bot::factory()->create([
+            'channel_type' => 'telegram',
+            'channel_access_token' => 'test-telegram-token',
+        ]);
+        $conversation = new Conversation([
+            'channel_type' => 'telegram',
+            'external_customer_id' => '777888',
+        ]);
+        $conversation->setRelation('bot', $bot);
+
+        $sent = app(LeadRecoveryService::class)
+            ->sendStaticFollowUp($conversation, 'ขออภัยครับพี่ ระบบกลับมาใช้ได้แล้ว รบกวนพิมพ์ใหม่อีกครั้งนะครับ', plainText: true);
+
+        $this->assertTrue($sent);
+
+        $plainSent = false;
+        $withParseMode = false;
+        Http::assertSent(function ($request) use (&$plainSent, &$withParseMode) {
+            if (! str_contains($request->url(), '/sendMessage')) {
+                return false;
+            }
+            if (array_key_exists('parse_mode', $request->data())) {
+                $withParseMode = true;
+            } else {
+                $plainSent = true;
+            }
+
+            return true;
+        });
+
+        $this->assertTrue($plainSent, 'outage notice must be sent without parse_mode');
+        $this->assertFalse($withParseMode, 'outage notice must not carry parse_mode');
+    }
+
+    #[Test]
+    public function test_ordinary_lead_recovery_telegram_send_keeps_parse_mode_html(): void
+    {
+        Http::fake([
+            'api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]]),
+        ]);
+
+        $bot = Bot::factory()->create([
+            'channel_type' => 'telegram',
+            'channel_access_token' => 'test-telegram-token',
+        ]);
+        $conversation = new Conversation([
+            'channel_type' => 'telegram',
+            'external_customer_id' => '999111',
+        ]);
+        $conversation->setRelation('bot', $bot);
+
+        $sent = app(LeadRecoveryService::class)
+            ->sendStaticFollowUp($conversation, 'ทักทายลูกค้าที่ยังไม่ตอบกลับครับ');
+
+        $this->assertTrue($sent);
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/sendMessage')
+            && ($request->data()['parse_mode'] ?? null) === 'HTML');
     }
 }

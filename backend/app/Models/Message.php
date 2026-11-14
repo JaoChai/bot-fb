@@ -12,6 +12,17 @@ class Message extends Model
 {
     use HasFactory, HasNeighbors;
 
+    /**
+     * R11 — ป้าย "ส่งอัตโนมัติหลังบอทล่ม": true เฉพาะแถวบอทที่ metadata
+     * ติด tag outage_notice === true เท่านั้น (string "true"/null/แถวอื่น = false)
+     * เจาะจงเป็น predicate ไว้ใช้จาก resource/broadcast — ไม่ append ลง serialization ทั่วไป
+     */
+    public function isOutageNotice(): bool
+    {
+        return $this->sender === 'bot'
+            && ($this->metadata['outage_notice'] ?? false) === true;
+    }
+
     protected $fillable = [
         'conversation_id',
         'sender',
