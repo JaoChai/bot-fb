@@ -398,6 +398,103 @@ class RedactorTest extends TestCase
     }
 
     #[Test]
+    public function test_normalize_fixpoint_and_properties_on_invisible_split_inputs(): void
+    {
+        // รีวิวรอบ 4 ข้อ 1 — normalize ต้องเป็น fixed point: ตัดอักขระมองไม่เห็น "ก่อน" NFKC
+        // (แบบเดิม NFKC ก่อนแล้วค่อยตัด: อักขระมองไม่เห็นที่คั่นฐานออกจากวรรณยุกต์ถูกตัดทีหลัง
+        //  ทิ้งลำดับที่ยังไม่ normalize ไว้ → redact รอบสอง compose ต่อ → ละเมิด
+        //  property redact(redact(x)) = redact(x) และ containsAccountData(redact(x)) = false)
+        $inputs = [
+            "e\u{200B}\u{0301}",
+            "ท\u{0E4D}\u{200B}\u{0E32}",
+            "a\u{00AD}\u{0308}",
+            'd|'."\u{FF50}\u{00AD}\u{0301}".'e'.'yJ1@',
+            'e'."\u{034F}\u{0301}",
+            'ก'."\u{FEFF}\u{0E33}",
+        ];
+
+        foreach ($inputs as $input) {
+            $label = bin2hex($input);
+
+            $once = FollowUpAccountDataDetector::normalize($input);
+            $this->assertNotNull($once, 'อินพุต valid UTF-8 ต้อง normalize ได้: '.$label);
+            $this->assertSame(
+                $once,
+                FollowUpAccountDataDetector::normalize($once),
+                'normalize ต้องเป็น fixed point — input '.$label,
+            );
+
+            $redacted = FollowUpRedactor::redact($input);
+            $this->assertFalse(
+                FollowUpRedactor::containsAccountData($redacted),
+                'property 1: หลัง redact ต้องไม่เหลือ account data — input '.$label.' redacted='.bin2hex($redacted),
+            );
+            $this->assertSame(
+                $redacted,
+                FollowUpRedactor::redact($redacted),
+                'property 2: redact ต้อง idempotent — input '.$label.' redacted='.bin2hex($redacted),
+            );
+        }
+    }
+
+    #[Test]
+    public function test_seeded_property_fuzz_fixpoint_idempotence_and_no_account_data(): void
+    {
+        // รีวิวรอบ 4 ข้อ 3 (Lead 02:30) — property fuzz แบบ seed ตายตัว 20,000 สตริง:
+        // normalize(normalize(x)) = normalize(x), redact(redact(x)) = redact(x),
+        // containsAccountData(redact(x)) = false ต้องครบทุกสตริง พิมพ์ตัวแรกที่ละเมิดเป็น hex
+        mt_srand(20261115);
+
+        $alphabet = [
+            'a', 'b', 'c', 'x', 'y', 'z', 'E', 'G', '0', '1', '7', '9',
+            'ก', 'ข', 'จ', 'ด', 'ต', 'น', 'บ', 'ป', 'ม', 'ร', 'ล', 'ส', 'อ', 'า', 'เ', 'แ',
+            '่', '้', '๊', '๋', 'ิ', 'ี', 'ึ', 'ื', 'ุ', 'ู', '็', 'ใ', 'ไ',
+            'ำ', 'ํ', 'า',
+            "\u{0301}", "\u{0308}", "\u{0327}", "\u{034F}",
+            "\u{00AD}", "\u{061C}", "\u{180E}", "\u{200B}", "\u{200C}", "\u{200D}", "\u{200E}", "\u{200F}",
+            "\u{202A}", "\u{202B}", "\u{202C}", "\u{202D}", "\u{202E}", "\u{2060}", "\u{FEFF}", "\u{E0001}", "\u{E0020}",
+            'ｐ', 'Ａ', '＠', '｜', '１', '：', '＝',
+            '|', '@', ':', '=', '.', '/', '#', '?', ' ',
+        ];
+        $max = count($alphabet) - 1;
+        $failures = [];
+        $start = hrtime(true);
+
+        for ($i = 0; $i < 20000 && count($failures) < 3; $i++) {
+            $input = '';
+            $length = mt_rand(1, 8);
+            for ($j = 0; $j < $length; $j++) {
+                $input .= $alphabet[mt_rand(0, $max)];
+            }
+
+            $normalized = FollowUpAccountDataDetector::normalize($input);
+            if ($normalized === null || FollowUpAccountDataDetector::normalize($normalized) !== $normalized) {
+                $failures[] = 'fixpoint: normalize(normalize(input)) != normalize(input), input='.bin2hex($input);
+                continue;
+            }
+
+            $redacted = FollowUpRedactor::redact($input);
+            if (FollowUpRedactor::containsAccountData($redacted)) {
+                $failures[] = 'property 1: containsAccountData(redact(input)) != false, input='.bin2hex($input)
+                    .' redacted='.bin2hex($redacted);
+                continue;
+            }
+
+            if (FollowUpRedactor::redact($redacted) !== $redacted) {
+                $failures[] = 'property 2: redact(redact(input)) != redact(input), input='.bin2hex($input)
+                    .' redacted='.bin2hex($redacted);
+                continue;
+            }
+        }
+
+        $elapsedMs = (hrtime(true) - $start) / 1e6;
+        fwrite(STDERR, sprintf("[fuzz] seed=20261115 n=20000 violations=%d ms=%.0f\n", count($failures), $elapsedMs));
+
+        $this->assertSame([], $failures, 'property ละเมิด (ตัวแรก): '.($failures[0] ?? '-'));
+        $this->assertLessThan(5000, $elapsedMs, 'fuzz 20,000 สตริงต้องจบภายใน 5 วินาที');
+    }
+
+    #[Test]
     public function test_url_port_numeric_host_localhost_and_glued_www_per_lead_round3(): void
     {
         // รีวิวรอบ 3 — ขยาย D21 ตามคำสั่ง Lead 02:01: URL รูปร่างที่ยังหลุด ต้องจบด้วย
@@ -426,6 +523,9 @@ class RedactorTest extends TestCase
             'foo'.'@'.'mail.com|p@ssw0rd9',
             'foo'.'@'.'mail.com | p@ssw0rd9 | otp',
             'foo'.'@'.'mail.com｜p@ssw0rd9',
+            // รีวิวรอบ 4 ข้อ 2 — รหัสผ่านไทยมีสระ/วรรณยุกต์ (\p{M}) ต้องหยุดก่อนเรียก model
+            '100012345678901|'.'น้ำใส2024',
+            '100012345678901|'.'ใจดี5555',
         ];
 
         foreach ($credentialLines as $line) {

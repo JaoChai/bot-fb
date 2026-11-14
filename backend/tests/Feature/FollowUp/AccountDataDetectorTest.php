@@ -177,6 +177,22 @@ class AccountDataDetectorTest extends TestCase
         $this->assertFalse($this->detector->containsAccountData('๐๑๒๓๔๕๖๗๘๙'));
     }
 
+    #[Test]
+    public function test_pipe_line_with_thai_marked_password_matches(): void
+    {
+        // รีวิวรอบ 4 ข้อ 2 — PASSWORD_LIKE ต้องยอมรับสระ/วรรณยุกต์ไทย (\p{M}):
+        // บรรทัด uid|รหัสผ่านไทยที่มีวรรณยุกต์ ต้องนับเป็นบรรทัด credential ทั้งบรรทัด
+        // (เดิมคลาสมีแต่ \p{L} ทำให้ น้ำใส2024 / ใจดี5555 ไม่ match และรหัสหลุดเข้า snapshot)
+        $this->assertTrue(
+            $this->detector->containsAccountData('100012345678901|'.'น้ำใส2024'),
+            'รหัสผ่านไทยมีวรรณยุกต์ (น้ำ) ในบรรทัด pipe ต้องถูกจับ',
+        );
+        $this->assertTrue(
+            $this->detector->containsAccountData('100012345678901|'.'ใจดี5555'),
+            'รหัสผ่านไทยมีสระบน (ใจดี) ในบรรทัด pipe ต้องถูกจับ',
+        );
+    }
+
     /**
      * Fixture สำหรับ parity loop ของ RedactorTest (การ์ด B3a): detector กับ redactor
      * ต้องตอบ is_account_data ตรงกันทุกกรณีด้วยข้อมูลชุดเดียวกัน
@@ -236,6 +252,9 @@ class AccountDataDetectorTest extends TestCase
             ['text' => '', 'is_account_data' => false],
             // รีวิวรอบ 3 — D22: label ที่ข้อความรอบตัวมีสระอำ ยังต้องจับ
             ['text' => 'สำหรับคำสั่ง pass'.'word: Sup3rSecret', 'is_account_data' => true],
+            // รีวิวรอบ 4 ข้อ 2 — รหัสผ่านไทยที่มีสระ/วรรณยุกต์ (\p{M}) ในบรรทัด pipe ต้องจับ
+            ['text' => '100012345678901|'.'น้ำใส2024', 'is_account_data' => true],
+            ['text' => '100012345678901|'.'ใจดี5555', 'is_account_data' => true],
             // fail closed (D20)
             ['text' => "\xC3\x28", 'is_account_data' => true],
         ];
