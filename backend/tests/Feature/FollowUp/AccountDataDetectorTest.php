@@ -226,6 +226,53 @@ class AccountDataDetectorTest extends TestCase
         );
     }
 
+    #[Test]
+    public function test_thai_spoken_label_values_match_per_lead_d25(): void
+    {
+        // Lead D25 (รอบ 6) — label พูดไทยที่ลูกค้าพิมพ์ตามด้วยค่าจริง (วัดจาก prod 90 วัน:
+        // 8 ข้อความ 3 ห้อง เดิมไม่จับเลย เพราะไม่มี pipe และไม่มี label+คั่นติดกัน): ต้องจับทั้งหมด
+        $value = 'Sup'.'3rSecret'; // สร้าง runtime: ผ่าน gitleaks
+        $this->assertTrue($this->detector->containsAccountData('พาส '.$value), 'พาส <ค่า> ต้องจับ');
+        $this->assertTrue($this->detector->containsAccountData('รหัส '.$value), 'รหัส <ค่า> ต้องจับ');
+        $this->assertTrue($this->detector->containsAccountData('รหัสผ่าน '.$value), 'รหัสผ่าน <ค่า> (ช่องว่างล้วน) ต้องจับ');
+        $this->assertTrue($this->detector->containsAccountData('พาสเวิร์ด '.$value), 'พาสเวิร์ด <ค่า> ต้องจับ');
+        $this->assertTrue($this->detector->containsAccountData('รหัส: '.$value), 'รหัส: <ค่า> ต้องจับ');
+        $this->assertTrue($this->detector->containsAccountData('พาส='.$value), 'พาส=<ค่า> ต้องจับ');
+        $this->assertTrue($this->detector->containsAccountData('รหัส : '.$value), 'เว้นวรรครอบ : ต้องจับ');
+        $this->assertTrue($this->detector->containsAccountData('รหัสคือ '.$value), 'รหัส + คือ + ค่า ต้องจับ');
+        $this->assertTrue($this->detector->containsAccountData('พาสเป็น '.$value), 'พาส + เป็น + ค่า ต้องจับ');
+    }
+
+    #[Test]
+    public function test_slash_separator_after_any_label_matches_per_lead_round6(): void
+    {
+        // Lead รอบ 6 — '/' (เว้นวรรครอบได้) เท่ากับ : และ = หลัง label ทุกภาษา เมื่อค่าเป็น
+        // printable ASCII non-space ≥6 ตัว; รูปร่างจริงจาก prod: "<เลข>⏎pass / <password>"
+        $value = 'Sup'.'3rSecret';
+        $this->assertTrue($this->detector->containsAccountData('pass / '.$value), 'pass / <ค่า> ต้องจับ');
+        $this->assertTrue($this->detector->containsAccountData('pass/'.$value), 'pass/<ค่า> ต้องจับ');
+        $this->assertTrue($this->detector->containsAccountData('token / '.$value), 'token / <ค่า> ต้องจับ');
+        $this->assertTrue($this->detector->containsAccountData('รหัส/'.$value), 'รหัส/<ค่า> ต้องจับ');
+        $this->assertTrue($this->detector->containsAccountData("100012345678901\npass / ".$value), 'รูปร่าง prod: <เลข>⏎pass / <ค่า> ต้องจับ');
+    }
+
+    #[Test]
+    public function test_d25_spoken_label_shapes_stay_not_account_data(): void
+    {
+        // Lead D25 + รอบ 6 — รูปร่างที่วัดแล้วต้อง "คงเดิม" (ค่าสั้น / รหัสติดคำอื่น / ค่าไทย)
+        $this->assertFalse($this->detector->containsAccountData('รหัส 2fa'), 'ค่า 3 ตัว — รูปร่างที่พบบ่อยที่สุด ต้องคงเดิม');
+        $this->assertFalse($this->detector->containsAccountData('รหัส 1234'), 'ค่า 4 ตัว ต้องคงเดิม');
+        $this->assertFalse($this->detector->containsAccountData('รหัสสินค้า A12'), 'รหัสติดคำอื่น + ค่าสั้น ต้องคงเดิม');
+        $this->assertFalse($this->detector->containsAccountData('รหัสโปร SALE2026'), 'รหัสติดคำอื่น ต้องคงเดิม');
+        $this->assertFalse($this->detector->containsAccountData('ขอรหัส OTP ใหม่ครับ'), 'ขอ OTP ใหม่ ต้องคงเดิม');
+        $this->assertFalse($this->detector->containsAccountData('พาสไม่ได้ครับ'), 'พาสติดคำอื่น ต้องคงเดิม');
+        $this->assertFalse($this->detector->containsAccountData('รหัสผ่าน ลืมครับ'), 'ค่าเป็นภาษาไทย ต้องคงเดิม');
+        $this->assertFalse($this->detector->containsAccountData('เปลี่ยนรหัสยังไงครับ'), 'รหัสติดท้ายคำ ต้องคงเดิม');
+        $this->assertFalse($this->detector->containsAccountData('pass/fail'), 'ค่า 4 ตัวหลัง / ต้องคงเดิม');
+        $this->assertFalse($this->detector->containsAccountData('รหัส/ชื่อ'), 'ค่าไทยหลัง / ต้องคงเดิม');
+        $this->assertFalse($this->detector->containsAccountData('OTP / ยังไม่มา'), 'ค่าไทยหลัง / ต้องคงเดิม');
+    }
+
     /**
      * Fixture สำหรับ parity loop ของ RedactorTest (การ์ด B3a): detector กับ redactor
      * ต้องตอบ is_account_data ตรงกันทุกกรณีด้วยข้อมูลชุดเดียวกัน
@@ -296,6 +343,25 @@ class AccountDataDetectorTest extends TestCase
             ['text' => '1000123456xs='.'35:abc123def:2', 'is_account_data' => true],
             ['text' => 'xpass'.'word: Sup3rSecret', 'is_account_data' => false],
             ['text' => 'สมชายpass'.'word: Sup3rSecret', 'is_account_data' => true],
+            // Lead D25 + รอบ 6 — label พูดไทย + คั่น [ := ช่องว่าง / ] + ค่า ≥6 printable ASCII;
+            // รูปร่าง kept ต้องยังตอบ false เท่ากันทั้ง detector และ redactor
+            ['text' => 'พาส '.'Sup'.'3rSecret', 'is_account_data' => true],
+            ['text' => 'รหัสผ่าน '.'Sup'.'3rSecret', 'is_account_data' => true],
+            ['text' => 'รหัส: '.'Sup'.'3rSecret', 'is_account_data' => true],
+            ['text' => 'รหัสคือ '.'Sup'.'3rSecret', 'is_account_data' => true],
+            ['text' => 'pass / '.'Sup'.'3rSecret', 'is_account_data' => true],
+            ['text' => 'รหัส/'.'Sup'.'3rSecret', 'is_account_data' => true],
+            ['text' => 'รหัส 2fa', 'is_account_data' => false],
+            ['text' => 'รหัส 1234', 'is_account_data' => false],
+            ['text' => 'รหัสสินค้า A12', 'is_account_data' => false],
+            ['text' => 'รหัสโปร SALE2026', 'is_account_data' => false],
+            ['text' => 'ขอรหัส OTP ใหม่ครับ', 'is_account_data' => false],
+            ['text' => 'พาสไม่ได้ครับ', 'is_account_data' => false],
+            ['text' => 'รหัสผ่าน ลืมครับ', 'is_account_data' => false],
+            ['text' => 'เปลี่ยนรหัสยังไงครับ', 'is_account_data' => false],
+            ['text' => 'pass/fail', 'is_account_data' => false],
+            ['text' => 'รหัส/ชื่อ', 'is_account_data' => false],
+            ['text' => 'OTP / ยังไม่มา', 'is_account_data' => false],
             // fail closed (D20)
             ['text' => "\xC3\x28", 'is_account_data' => true],
         ];

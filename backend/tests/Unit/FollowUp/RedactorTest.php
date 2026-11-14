@@ -240,6 +240,31 @@ class RedactorTest extends TestCase
                 'input' => 'https://[redacted:'.$this->canary('g7').'@xs=#@www.eyJรหัสผ่าน',
                 'canaries' => [$this->canary('g7')],
             ],
+            // ==== รอบ 6 — Lead D25: label พูดไทย + คั่น [:= ช่องว่าง] และ '/' หลัง label ทุกภาษา ====
+            'thai_spoken_label_space' => [
+                'input' => 'พาส '.$this->canary('t1'),
+                'canaries' => [$this->canary('t1')],
+            ],
+            'thai_spoken_label_colon' => [
+                'input' => 'รหัส: '.$this->canary('t2'),
+                'canaries' => [$this->canary('t2')],
+            ],
+            'thai_spoken_label_kue' => [
+                'input' => 'รหัสคือ '.$this->canary('t3'),
+                'canaries' => [$this->canary('t3')],
+            ],
+            'slash_sep_english_label' => [
+                'input' => 'pass / '.$this->canary('t4'),
+                'canaries' => [$this->canary('t4')],
+            ],
+            'slash_sep_thai_label' => [
+                'input' => 'รหัส/'.$this->canary('t5'),
+                'canaries' => [$this->canary('t5')],
+            ],
+            'prod_shape_digits_newline_pass_slash' => [
+                'input' => "100012345678901\npass / ".$this->canary('t6'),
+                'canaries' => [$this->canary('t6')],
+            ],
             'unreadable' => [
                 'input' => "\xC3\x28",
                 'canaries' => [],
@@ -268,6 +293,18 @@ class RedactorTest extends TestCase
             'สนใจครับ เดี๋ยวผมทำรายการเองครับ',
             'น้ำมันเครื่อง จำนวน 2 ขวด สำหรับรถเก๋งครับ',
             'คำสั่งซื้อนี้ยืนยันแล้วครับ',
+            // ==== รอบ 6 — Lead D25 + คั่น '/': รูปร่างที่วัดจาก prod แล้วต้องคงเดิมทุกไบต์ ====
+            'รหัส 2fa',
+            'รหัส 1234',
+            'รหัสสินค้า A12',
+            'รหัสโปร SALE2026',
+            'ขอรหัส OTP ใหม่ครับ',
+            'พาสไม่ได้ครับ',
+            'รหัสผ่าน ลืมครับ',
+            'เปลี่ยนรหัสยังไงครับ',
+            'pass/fail',
+            'รหัส/ชื่อ',
+            'OTP / ยังไม่มา',
             '',
         ];
     }
@@ -496,6 +533,8 @@ class RedactorTest extends TestCase
             // รีวิวรอบ 4 ข้อ 1+2 (Lead รอบ 5 รับตามที่เขียน) — ขยายด้วย token รูปร่างลับจริง:
             // 10 หลักติด, label words, cookie names, www., Bearer, และ marker string
             '1000123456', 'pass'.'word', 'token', 'OTP', 'c_user'.'=', 'xs'.'=', 'www.', 'Bearer ', '[redacted:url]',
+            // Lead D25 (รอบ 6) — label พูดไทยแบบมีช่องว่าง ตามที่ Lead สั่งเพิ่มใน fuzz alphabet
+            'พาส ', 'รหัส ',
         ];
         $max = count($alphabet) - 1;
         $failures = [];
@@ -623,6 +662,36 @@ class RedactorTest extends TestCase
         }
 
         $this->assertStringNotContainsString($canary, FollowUpRedactor::redact($inputs[2]), 'canary ใน marker-shape ต้องหาย');
+    }
+
+    #[Test]
+    public function test_thai_spoken_labels_and_slash_separator_per_lead_d25(): void
+    {
+        // Lead D25 (รอบ 6) — label พูดไทย + คั่น [:= ช่องว่าง] และ '/' หลัง label ทุกภาษา เมื่อค่า
+        // เป็น printable ASCII non-space ≥6 ตัว: marker เดียวครอบทั้ง label และค่า;
+        // snapshot ต้อง null ก่อนเรียก model; assertSafeOutbound ต้องโยน account_data
+        $this->assertSame('[redacted:label_value]', FollowUpRedactor::redact('พาส '.$this->canary('t1')), 'พาส <ค่า>');
+        $this->assertSame('[redacted:label_value]', FollowUpRedactor::redact('รหัสผ่าน '.$this->canary('t2')), 'รหัสผ่าน <ค่า> (ช่องว่างล้วน)');
+        $this->assertSame('[redacted:label_value]', FollowUpRedactor::redact('รหัส: '.$this->canary('t3')), 'รหัส: <ค่า>');
+        $this->assertSame('[redacted:label_value]', FollowUpRedactor::redact('รหัสคือ '.$this->canary('t4')), 'รหัสคือ <ค่า>');
+        $this->assertSame(
+            'ได้รับ [redacted:label_value] ครับ',
+            FollowUpRedactor::redact('ได้รับ pass / '.$this->canary('t5').' ครับ'),
+            'pass / <ค่า> กลางประโยค',
+        );
+        $this->assertSame('[redacted:label_value]', FollowUpRedactor::redact('รหัส/'.$this->canary('t6')), 'รหัส/<ค่า>');
+
+        $this->assertNull(
+            FollowUpRedactor::snapshot([['sender' => 'user', 'type' => 'text', 'content' => 'พาส '.$this->canary('t7')]]),
+            'D25 เป็น account data → snapshot ต้อง null ก่อนเรียก model',
+        );
+
+        try {
+            FollowUpRedactor::assertSafeOutbound('รหัสผ่าน '.$this->canary('t8'));
+            $this->fail('D25 ต้องโยน account_data');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('account_data', $exception->getMessage(), 'message ต้องเป็นโค้ดล้วน');
+        }
     }
 
     #[Test]
