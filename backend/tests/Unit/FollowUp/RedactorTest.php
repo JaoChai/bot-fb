@@ -202,6 +202,44 @@ class RedactorTest extends TestCase
                 'input' => 'ดูที่www.'.$this->canary('v5').'.com จ้า',
                 'canaries' => [$this->canary('v5')],
             ],
+            // ==== รอบ 5 — รีวิวรอบ 4 ข้อ 1: เลขติดหน้า label/cookie/www (\b เดิมนับเลขเป็น word char → ลับหลุด) ====
+            'digit_glued_label' => [
+                'input' => '0812345678pass'.'word: '.$this->canary('g1'),
+                'canaries' => [$this->canary('g1')],
+            ],
+            'digit_glued_token' => [
+                'input' => '0812345678token='.$this->canary('g2'),
+                'canaries' => [$this->canary('g2')],
+            ],
+            'digit_glued_c_user' => [
+                'input' => '0812345678c_user='.$this->canary('g3'),
+                'canaries' => [$this->canary('g3')],
+            ],
+            'digit_glued_xs' => [
+                'input' => '1000123456xs='.$this->canary('g4'),
+                'canaries' => [$this->canary('g4')],
+            ],
+            'digit_glued_www' => [
+                'input' => '0812345678www.'.$this->canary('g5').'.com',
+                'canaries' => [$this->canary('g5')],
+            ],
+            'thai_glued_digit_www' => [
+                'input' => 'โทร0812345678www.'.$this->canary('g6').'.com',
+                'canaries' => [$this->canary('g6')],
+            ],
+            // ==== รอบ 5 — รีวิวรอบ 4 ข้อ 2: input ที่ span/marker ที่ถูกแทน "สร้าง match ใหม่" ใน pass ถัดไป ====
+            'reshuffle_bearer_pipe' => [
+                'input' => "(xs=\r\nBearer 9｜๑cookie\npass\t?Z1000123456",
+                'canaries' => [],
+            ],
+            'reshuffle_zwsp_cookie_line' => [
+                'input' => "c_user=\u{200B}\r\nwordeyJshop.test:8080/ | \u{E0020}น้ำใสZ๙token",
+                'canaries' => [],
+            ],
+            'reshuffle_marker_userinfo' => [
+                'input' => 'https://[redacted:'.$this->canary('g7').'@xs=#@www.eyJรหัสผ่าน',
+                'canaries' => [$this->canary('g7')],
+            ],
             'unreadable' => [
                 'input' => "\xC3\x28",
                 'canaries' => [],
@@ -455,6 +493,9 @@ class RedactorTest extends TestCase
             "\u{202A}", "\u{202B}", "\u{202C}", "\u{202D}", "\u{202E}", "\u{2060}", "\u{FEFF}", "\u{E0001}", "\u{E0020}",
             'ｐ', 'Ａ', '＠', '｜', '１', '：', '＝',
             '|', '@', ':', '=', '.', '/', '#', '?', ' ',
+            // รีวิวรอบ 4 ข้อ 1+2 (Lead รอบ 5 รับตามที่เขียน) — ขยายด้วย token รูปร่างลับจริง:
+            // 10 หลักติด, label words, cookie names, www., Bearer, และ marker string
+            '1000123456', 'pass'.'word', 'token', 'OTP', 'c_user'.'=', 'xs'.'=', 'www.', 'Bearer ', '[redacted:url]',
         ];
         $max = count($alphabet) - 1;
         $failures = [];
@@ -517,6 +558,85 @@ class RedactorTest extends TestCase
         $this->assertSame('นัดรับของ 14.30 น. ครับ', FollowUpRedactor::redact('นัดรับของ 14.30 น. ครับ'));
         $this->assertSame('นัดคุย 10:30 ครับ', FollowUpRedactor::redact('นัดคุย 10:30 ครับ'));
         $this->assertSame('อัปเดตเป็นเวอร์ชัน 1.2.3 แล้วครับ', FollowUpRedactor::redact('อัปเดตเป็นเวอร์ชัน 1.2.3 แล้วครับ'));
+    }
+
+    #[Test]
+    public function test_digit_glued_label_cookie_and_www_are_closed_per_review_round4(): void
+    {
+        // รีวิวรอบ 4 ข้อ 1 — \b เดิมนับเลขเป็น word char (ASCII \w) ขอบเลข→อักษรจึงไม่มี boundary
+        // ลับที่ติดกับเลขหน้า label/cookie/www หลุดทั้ง redact และ snapshot ต้องปิดทั้งหมด
+        $accountDataCases = [
+            '0812345678pass'.'word: '.$this->canary('r1'),
+            '0812345678token='.$this->canary('r2'),
+            '0812345678c_user='.$this->canary('r3'),
+            '1000123456xs='.$this->canary('r4'),
+        ];
+        foreach ($accountDataCases as $input) {
+            $this->assertTrue(
+                FollowUpRedactor::containsAccountData($input),
+                'เลขติดหน้า label/cookie ต้องถูกจับ: '.var_export($input, true),
+            );
+            $this->assertNull(
+                FollowUpRedactor::snapshot([['sender' => 'user', 'type' => 'text', 'content' => $input]]),
+                'snapshot ต้อง null ก่อนเรียก model: '.var_export($input, true),
+            );
+        }
+
+        $urlCases = [
+            '0812345678www.'.$this->canary('r5').'.com',
+            'โทร0812345678www.'.$this->canary('r6').'.com',
+        ];
+        foreach ($urlCases as $index => $input) {
+            $canary = $this->canary('r'.(5 + $index));
+            $output = FollowUpRedactor::redact($input);
+
+            $this->assertStringNotContainsString($canary, $output, 'ลิงก์ที่ติดเลขต้องโดนตัดทั้ง token: '.var_export($input, true));
+            $this->assertFalse(FollowUpRedactor::containsAccountData($output), 'property 1 — '.var_export($input, true));
+            $this->assertSame($output, FollowUpRedactor::redact($output), 'property 2 — '.var_export($input, true));
+        }
+    }
+
+    #[Test]
+    public function test_redact_settles_or_fails_closed_on_marker_reshuffle_inputs(): void
+    {
+        // รีวิวรอบ 4 ข้อ 2 — input ที่ span/marker ที่ถูกแทนแล้ว "สร้าง match ใหม่": redact ต้อง
+        // วนซ้ำจนนิ่ง (งบ pass จำกัด) หรือคืน [redacted:unreadable] — property 1+2 ต้องคงอยู่เสมอ
+        $canary = $this->canary('r7');
+        $inputs = [
+            "(xs=\r\nBearer 9｜๑cookie\npass\t?Z1000123456",
+            "c_user=\u{200B}\r\nwordeyJshop.test:8080/ | \u{E0020}น้ำใสZ๙token",
+            'https://[redacted:'.$canary.'@xs=#@www.eyJรหัสผ่าน',
+        ];
+
+        foreach ($inputs as $input) {
+            $output = FollowUpRedactor::redact($input);
+
+            $this->assertFalse(
+                FollowUpRedactor::containsAccountData($output),
+                'property 1: หลัง redact ต้องไม่เหลือ account data — input='.bin2hex($input).' redacted='.bin2hex($output),
+            );
+            $this->assertSame(
+                $output,
+                FollowUpRedactor::redact($output),
+                'property 2: redact ต้อง idempotent — input='.bin2hex($input).' redacted='.bin2hex($output),
+            );
+        }
+
+        $this->assertStringNotContainsString($canary, FollowUpRedactor::redact($inputs[2]), 'canary ใน marker-shape ต้องหาย');
+    }
+
+    #[Test]
+    public function test_kept_texts_never_collapse_to_unreadable(): void
+    {
+        // Lead รอบ 5 — fail-closed ต้องไม่กลืนข้อความปกติ: kept fixture ห้ามจบด้วย
+        // [redacted:unreadable] (คาดหมาย = 0 fixture, รายงานจำนวนจริงใน PR body)
+        foreach ($this->keptTexts() as $text) {
+            $this->assertNotSame(
+                '[redacted:unreadable]',
+                FollowUpRedactor::redact($text),
+                'ข้อความปกติต้องไม่ล้มลงเป็น unreadable: '.var_export($text, true),
+            );
+        }
     }
 
     #[Test]

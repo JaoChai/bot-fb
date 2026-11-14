@@ -193,6 +193,39 @@ class AccountDataDetectorTest extends TestCase
         );
     }
 
+    #[Test]
+    public function test_digit_glued_labels_and_cookies_match(): void
+    {
+        // รีวิวรอบ 4 ข้อ 1 — \b เดิมนับเลขเป็น word char (ASCII \w) ขอบเลข→อักษรจึงไม่มี boundary
+        // ลับติดเลขหน้า label/cookie ต้องถูกจับ โดยไม่เปลี่ยนพฤติกรรมเดิมฝั่งอักษร:
+        // ตัวอักษร ASCII ติดหน้า = คำอื่น (ยังไม่จับเหมือนเดิม), อักษรไทยติดหน้า = เคยผ่าน \b
+        // (\w เป็น ASCII จึงเห็นขอบ) ต้องยังจับเหมือนเดิม
+        $this->assertTrue(
+            $this->detector->containsAccountData('0812345678pass'.'word: Sup3rSecret'),
+            'เลขติดหน้า password: ต้องจับ',
+        );
+        $this->assertTrue(
+            $this->detector->containsAccountData('0812345678token='.'Sup3rSecret'),
+            'เลขติดหน้า token= ต้องจับ',
+        );
+        $this->assertTrue(
+            $this->detector->containsAccountData('0812345678c_user='.'100001234567890'),
+            'เลขติดหน้า c_user= ต้องจับ',
+        );
+        $this->assertTrue(
+            $this->detector->containsAccountData('1000123456xs='.'35:abc123def:2'),
+            'เลขติดหน้า xs= ต้องจับ',
+        );
+        $this->assertFalse(
+            $this->detector->containsAccountData('xpass'.'word: Sup3rSecret'),
+            'ตัวอักษร ASCII ติดหน้า = คำอื่น ยังไม่จับ (คงเดิม)',
+        );
+        $this->assertTrue(
+            $this->detector->containsAccountData('สมชายpass'.'word: Sup3rSecret'),
+            'อักษรไทยติดหน้า label ยังจับเหมือนเดิม (\b เดิมเห็นขอบไทย→ASCII)',
+        );
+    }
+
     /**
      * Fixture สำหรับ parity loop ของ RedactorTest (การ์ด B3a): detector กับ redactor
      * ต้องตอบ is_account_data ตรงกันทุกกรณีด้วยข้อมูลชุดเดียวกัน
@@ -255,6 +288,14 @@ class AccountDataDetectorTest extends TestCase
             // รีวิวรอบ 4 ข้อ 2 — รหัสผ่านไทยที่มีสระ/วรรณยุกต์ (\p{M}) ในบรรทัด pipe ต้องจับ
             ['text' => '100012345678901|'.'น้ำใส2024', 'is_account_data' => true],
             ['text' => '100012345678901|'.'ใจดี5555', 'is_account_data' => true],
+            // รีวิวรอบ 4 ข้อ 1 — เลขติดหน้า label/cookie ต้องจับเท่ากันทั้ง detector และ redactor;
+            // ตัวอักษร ASCII ติดหน้ายังไม่จับ, อักษรไทยติดหน้ายังจับ (คงพฤติกรรมเดิมของ \b)
+            ['text' => '0812345678pass'.'word: Sup3rSecret', 'is_account_data' => true],
+            ['text' => '0812345678token='.'Sup3rSecret', 'is_account_data' => true],
+            ['text' => '0812345678c_user='.'100001234567890', 'is_account_data' => true],
+            ['text' => '1000123456xs='.'35:abc123def:2', 'is_account_data' => true],
+            ['text' => 'xpass'.'word: Sup3rSecret', 'is_account_data' => false],
+            ['text' => 'สมชายpass'.'word: Sup3rSecret', 'is_account_data' => true],
             // fail closed (D20)
             ['text' => "\xC3\x28", 'is_account_data' => true],
         ];
