@@ -19,7 +19,8 @@ import { ResponseHoursTab } from '@/components/bot-settings/ResponseHoursTab';
 import { BehaviorTab } from '@/components/bot-settings/BehaviorTab';
 import { StickerReplyTab } from '@/components/bot-settings/StickerReplyTab';
 import { SlipVerificationTab } from '@/components/bot-settings/SlipVerificationTab';
-import { OutageSettingsTab, isOverOutageLimit } from '@/components/bot-settings/OutageSettingsTab';
+import { OutageSettingsTab } from '@/components/bot-settings/OutageSettingsTab';
+import { isOverOutageLimit } from '@/components/bot-settings/outageTextRules';
 import { cn } from '@/lib/utils';
 import type { BotSettings, OutageTextDefaults } from '@/types/api';
 

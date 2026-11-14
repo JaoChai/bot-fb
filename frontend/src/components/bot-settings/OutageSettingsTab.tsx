@@ -6,19 +6,11 @@ import { Panel } from '@/components/common';
 import { SettingRow } from '@/components/connections';
 import { cn } from '@/lib/utils';
 import type { OutageTextDefaults } from '@/types/api';
-
-export const OUTAGE_MAX_CODE_POINTS = 500;
-
-const OVER_LIMIT_MESSAGE = 'ข้อความยาวเกิน 500 ตัวอักษร';
-
-/** Counter (and limit) counts Unicode code points, so 500 emoji are 500. */
-export function countCodePoints(value: string): number {
-  return Array.from(value).length;
-}
-
-export function isOverOutageLimit(value: string): boolean {
-  return countCodePoints(value) > OUTAGE_MAX_CODE_POINTS;
-}
+import {
+  OUTAGE_MAX_CODE_POINTS,
+  OVER_LIMIT_MESSAGE,
+  countCodePoints,
+} from './outageTextRules';
 
 interface OutageSettingsTabProps {
   outage_recovery_enabled: boolean;
