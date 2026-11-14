@@ -146,11 +146,17 @@ class FollowUpEligibility
             }
         });
 
-        // 153: ลูกค้าเดียวกันไม่ควรถูกตามซ้ำใน 7 วัน — รวม sending/retry ที่ push แล้ว
-        $builder->whereNotExists(function ($q) use ($ownLogId, $gapStart, $bot): void {
+        // 153: ลูกค้าเดียวกันไม่ควรถูกตามซ้ำใน 7 วัน — ผูกกับลูกค้า "ของห้องนี้" ผ่าน
+        // conversation ของ log เอง (bots เดียวกัน + LINE + external_customer_id เดียวกัน),
+        // ไม่ใช่ IN(keys ของลูกค้าทุกคนของบอท) — ส่งหาลูกค้า B ต้องไม่บล็อกห้องของลูกค้า A
+        // และจำนวน bind ต้องคงที่ไม่โตตามจำนวนลูกค้า (รวม log รุ่นเก่าที่ customer_key เป็น null)
+        $builder->whereNotExists(function ($q) use ($ownLogId, $gapStart): void {
             $q->selectRaw(1)
                 ->from('lead_recovery_logs as l3')
-                ->whereIn('l3.customer_key', self::customerKeys($bot))
+                ->join('conversations as c4', 'c4.id', '=', 'l3.conversation_id')
+                ->whereColumn('l3.bot_id', 'bots.id')
+                ->where('c4.channel_type', 'line')
+                ->whereColumn('c4.external_customer_id', 'conversations.external_customer_id')
                 ->where(function ($q2) use ($gapStart): void {
                     $q2->where(function ($q3) use ($gapStart): void {
                         $q3->where('l3.delivery_status', 'sent')
@@ -283,24 +289,6 @@ class FollowUpEligibility
         [$hour, $minute] = array_map(intval(...), explode(':', $hourMinute));
 
         return $hour * 3600 + $minute * 60;
-    }
-
-    /**
-     * key ของลูกค้าทุกคนบนบอทนี้ (bot|line|external_customer_id → sha256) —
-     * เทียบด้วย IN(...) ให้เหมือนกันทั้ง SQLite/PostgreSQL
-     *
-     * @return list<string>
-     */
-    private static function customerKeys(Bot $bot): array
-    {
-        return Conversation::query()
-            ->where('bot_id', $bot->id)
-            ->where('channel_type', 'line')
-            ->whereNotNull('external_customer_id')
-            ->distinct()
-            ->pluck('external_customer_id')
-            ->map(fn (string $externalId): string => hash('sha256', $bot->id.'|line|'.$externalId))
-            ->all();
     }
 
     private static function orderExistsSince(int $botId, Conversation $conversation, ?string $since): bool
