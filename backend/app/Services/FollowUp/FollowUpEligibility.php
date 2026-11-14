@@ -101,8 +101,15 @@ class FollowUpEligibility
         // 148: span ปัจจุบันต้องมี ≥ 2 ข้อความลูกค้า
         $builder->where('s.customer_message_count', '>=', 2);
 
-        // 149-150: เงียบครบตามสาย (ขอบ <= นับว่าครบ)
-        $builder->whereRaw('s.last_message_at <= (case when s.payment_step then ? else ? end)', [$paymentCut, $saleCut]);
+        // 149-150: เงียบครบตามสาย (ขอบ <= นับว่าครบ) — เขียนเป็น OR ให้พารามิเตอร์
+        // เทียบตรงกับคอลัมน์ timestamp (PostgreSQL อนุมานชนิดได้, ไม่ต้องใช้ cast เฉพาะฐานข้อมูล)
+        $builder->where(function ($q) use ($paymentCut, $saleCut): void {
+            $q->where(function ($q2) use ($paymentCut): void {
+                $q2->where('s.payment_step', true)->where('s.last_message_at', '<=', $paymentCut);
+            })->orWhere(function ($q2) use ($saleCut): void {
+                $q2->where('s.payment_step', false)->where('s.last_message_at', '<=', $saleCut);
+            });
+        });
 
         // 151: ไม่มีออเดอร์/สลิป "เงินเข้าจริง" หลังข้อความลูกค้าสุดท้าย (ข้ามห้องของลูกค้าเดียวกัน)
         $builder->whereNotExists(function ($q): void {
@@ -162,16 +169,15 @@ class FollowUpEligibility
         // 154: แบ็คล็อกตอนเปิดครั้งแรก — anchor เก่ากว่า high-water ต้องเงียบอยู่แล้ว 1-7 วัน ณ activated
         // และห้ามมีข้อความใดหลัง high-water (ไม่งั้นไม่ใช่เงียบเดิม); anchor ใหม่ใช้ 3h/24h ปกติ
         $builder->where(function ($q) use ($activationMessageId, $activatedAt): void {
-            $backlogFrom = $activatedAt->subDays(7)->format('Y-m-d H:i:s');
-            $backlogTo = $activatedAt->subDays(1)->format('Y-m-d H:i:s');
+            $observedAtActivation = '(select m3.created_at from messages m3 where m3.conversation_id = conversations.id and m3.id <= ? order by m3.id desc limit 1)';
 
             $q->where('s.last_user_message_id', '>', $activationMessageId)
-                ->orWhere(function ($q2) use ($activationMessageId, $backlogFrom, $backlogTo): void {
+                ->orWhere(function ($q2) use ($activationMessageId, $activatedAt, $observedAtActivation): void {
+                    // เทียบตรงกับคอลัมน์สองข้าง (>= / <=) ให้ PostgreSQL อนุมานชนิดได้ทุกฐานข้อมูล
+                    // (raw แต่ละตัวมี 2 placeholder: high-water ใน subquery + ขอบหน้าต่าง)
                     $q2->where('s.last_message_id', '<=', $activationMessageId)
-                        ->whereRaw(
-                            '(select m3.created_at from messages m3 where m3.conversation_id = conversations.id and m3.id <= ? order by m3.id desc limit 1) between ? and ?',
-                            [$activationMessageId, $backlogFrom, $backlogTo]
-                        );
+                        ->whereRaw("{$observedAtActivation} >= ?", [$activationMessageId, $activatedAt->subDays(7)->format('Y-m-d H:i:s')])
+                        ->whereRaw("{$observedAtActivation} <= ?", [$activationMessageId, $activatedAt->subDays(1)->format('Y-m-d H:i:s')]);
                 });
         });
 
