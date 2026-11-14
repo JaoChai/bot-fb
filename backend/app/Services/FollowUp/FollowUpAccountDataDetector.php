@@ -11,9 +11,10 @@ use Normalizer;
  * การ์ด B3a: redactor ใช้ findAccountData() เพื่อแทนที่ span ที่จับได้ และใช้
  * normalize() เพื่อให้ข้อความกับ offset อยู่บน string ฉบับเดียวกัน (plan §3.4)
  *
- * ก่อนจับทุกครั้ง (D20): แปลงเป็น NFKC แล้วตัด zero-width / control /
- * bidi-override ออก (line break คงเดิม) — fullwidth pipe/label/เลข/เครื่องหมาย
- * จึงถูกจับเท่าตัว ASCII และ label ที่ถูกคั่นด้วยอักขระมองไม่เห็นก็ยังถูกจับ
+ * ก่อนจับทุกครั้ง (D20): แปลงเป็น NFKC แล้วตัดอักขระควบคุม/มองไม่เห็น (\p{Cc} ยกเว้น
+ * \r \n, \p{Cf}, U+034F — INVISIBLE_CHARS ออกแบบเป็นคลาส รอบ 1 ข้อ 2 ของรีวิว) —
+ * fullwidth pipe/label/เลข/เครื่องหมาย จึงถูกจับเท่าตัว ASCII และ label ที่ถูกคั่นด้วย
+ * อักขระมองไม่เห็น (รวม soft hyphen, U+061C ฯลฯ) ก็ยังถูกจับ
  * อ่านข้อความไม่ได้ (invalid UTF-8 หรือ preg error ใดๆ) = ถือว่ามีข้อมูลบัญชี (fail closed)
  *
  * จับ (plan §3.4):
@@ -57,8 +58,15 @@ class FollowUpAccountDataDetector
     /** ชิ้น password-like: ตัวอักษร+ตัวเลข ≥6 ตัว ไม่มีเว้นวรรค (ในบรรทัด pipe เท่านั้น) */
     private const PASSWORD_LIKE = '/^(?=.*\p{L})(?=.*\d)[\p{L}\p{N}@._-]{6,}$/u';
 
-    /** zero-width / control / bidi-override ที่ตัดทิ้งก่อนจับ — line break (\r \n) คงเดิม */
-    private const INVISIBLE_CHARS = '/[\x{00}-\x{08}\x{0B}\x{0C}\x{0E}-\x{1F}\x{7F}-\x{9F}\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}-\x{2069}\x{FFFE}\x{FFFF}\x{FEFF}]/u';
+    /**
+     * อักขระควบคุม/มองไม่เห็นที่ตัดทิ้งก่อนจับ (line break \r \n คงเดิม) —
+     * รีวิวรอบ 1 ข้อ 2: ตัดด้วย "คลาส" ไม่ใช่ลิสต์ตัวอักษร เพื่อไม่มี format character หลุด
+     * \p{Cc} ยกเว้น \r \n + \p{Cf} (ครอบ soft hyphen U+00AD, U+061C, U+180E,
+     * zero-width/bidi 200B-200F, 202A-202E, 2060-206F, FEFF, tag chars) + U+034F
+     * (combining grapheme joiner) + tag characters U+E0001-E007F + noncharacters FFFE/FFFF.
+     * คอนสแตนต์เดียวแชร์กับ FollowUpRedactor::assertSafeOutbound (โค้ด control_character)
+     */
+    public const INVISIBLE_CHARS = '/(?![\r\n])[\p{Cc}\p{Cf}\x{034F}\x{E0001}-\x{E007F}\x{FFFE}\x{FFFF}]/u';
 
     /**
      * ข้อความฉบับ normalized (NFKC + ตัด zero-width/control/bidi, line break คงเดิม)

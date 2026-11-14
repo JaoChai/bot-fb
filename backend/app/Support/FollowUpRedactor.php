@@ -9,10 +9,11 @@ use InvalidArgumentException;
  * ตัวปิดข้อมูลลับก่อนส่งแชตให้ AI (plan §3.4, การ์ด B3a) — pure text:
  * ไม่มี database ไม่มี HTTP ไม่มี config ไม่มี log ไม่มี model call (D18)
  *
- * - redact(): NFKC + ตัด zero-width/control/bidi (ผ่าน detector::normalize ที่เดียว D15)
+ * - redact(): NFKC + ตัดอักขระควบคุม/มองไม่เห็น (ผ่าน detector::normalize ที่เดียว D15)
  *   แล้วแทนที่ทุกชิ้นของลับด้วย marker รูปแบบคงที่ [redacted:<kind>] —
- *   pattern ฝั่ง detector อยู่กับ FollowUpAccountDataDetector; อีเมล/เลข ≥10 หลัก/
- *   ค่าใน query+fragment ของ URL อยู่ที่นี่ (ไม่ซ้ำกับ detector)
+ *   pattern ฝั่ง detector อยู่กับ FollowUpAccountDataDetector; อีเมล (รวมไทย IDN),
+ *   URL ทั้ง token (Lead D21, รีวิวรอบ 1), เลข ≥10 หลัก และกลุ่มเลขคั่น อยู่ที่นี่
+ *   (ไม่ซ้ำกับ detector)
  * - containsAccountData(): delegate ไป detector อย่างเดียว
  * - assertSafeOutbound(): สำหรับข้อความที่จะส่ง/แสดง "ตามที่เขียน" — โยนโค้ดล้วน ไม่แตะข้อความ
  * - snapshot(): บริบทแชตสำหรับ model — มี account data ใน message ใด = null (หยุดก่อน model)
@@ -33,26 +34,31 @@ class FollowUpRedactor
 
     private const UNREADABLE_MARKER = '[redacted:unreadable]';
 
-    /** อีเมลล้วน — detector ยืนยันแล้วว่าไม่ใช่ account data แต่ต้องถูกตัดก่อนออกนอกระบบ */
-    private const EMAIL = '/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i';
+    /**
+     * อีเมลล้วน — detector ยืนยันแล้วว่าไม่ใช่ account data แต่ต้องถูกตัดก่อนออกนอกระบบ;
+     * รีวิวรอบ 1 ข้อ 5: รองรับอักษรไม่ใช่ ASCII (ไทย IDN) ทั้ง local และ domain — \p{M}
+     * ครอบสระ/วรรณยุกต์ไทย; คำไทยติดหน้า address ถูกกินรวมได้ (Lead รับข้อ 5)
+     */
+    private const EMAIL = '/[\p{L}\p{M}\p{N}a-z0-9._%+\-]+@(?:[\p{L}\p{M}\p{N}a-z0-9\-]+\.)+[a-z\p{L}]{2,}/iu';
 
     /** เลขติดกัน ≥10 หลัก — เลขไทย ๐-๙ นับด้วย (NFKC ไม่แปลง) */
     private const DIGIT_RUN = '/[0-9\x{0E50}-\x{0E59}]{10,}/u';
 
-    /** กลุ่มเลขคั่นช่องว่าง/จุด/ขีด แต่ละกลุ่ม ≥2 หลัก (นับยอดรวมหลัง callback) */
-    private const DIGIT_GROUPS = '/[0-9\x{0E50}-\x{0E59}]{2,}(?:[ .\-][0-9\x{0E50}-\x{0E59}]{2,})+/u';
+    /**
+     * กลุ่มเลขคั่นช่องว่าง/จุด/ขีด/ทับ/วงเล็บ (คั่นหลายตัวต่อจุดได้ เช่น ") ") —
+     * แต่ละกลุ่ม ≥1 หลัก (รีวิวรอบ 1 ข้อ 3+4: เลขธนาคาร xxx-x-xxxxx-x, เบอร์ (08x) xxx-xxxx);
+     * นับยอดรวมหลัง callback — คอมม่าไม่อยู่ในชุดคั่น ราคา 1,299 จึงคงเดิม
+     */
+    private const DIGIT_GROUPS = '/[0-9\x{0E50}-\x{0E59}]{1,}(?:[ .\-\/()]+[0-9\x{0E50}-\x{0E59}]{1,})+/u';
 
     /**
-     * ค่าหลัง = ใน query และ fragment ของ URL: ต้องมีตัวอักษร URL นำหน้า ?/# เพื่อไม่โดน
-     * ประโยคไทย/แฮชแท็ก และ name ยาวไม่เกิน 64; ค่าจบที่ช่องว่าง & หรือ #
+     * รีวิวรอบ 1 ข้อ 1 — Lead D21 (แทนกฎ query/fragment เดิม): model ไม่ต้องใช้ URL เลย
+     * จึงแทนที่ "ทั้ง token" ด้วย [redacted:url] เดียว ไม่จับเป็นชิ้น (แบบเดิมเศษหลุด):
+     * (a) scheme:// ถึงช่องว่าง, (b) token ขึ้นต้น www. (คงช่องว่างข้างหน้าไว้),
+     * (c) schemeless host.tld ที่ TLD เป็นอักษร ตามด้วย / ? # ถึงช่องว่าง
+     * ไม่จับ: 1.500/ชิ้น, ราคา 1,500 บาท, ประโยคไทยที่มี # หรือ ?, hashtag
      */
-    private const URL_PARAM_VALUE = '/(?<=[a-z0-9\/._~%\-])([?&][^\s&#=]{0,64}=|#[^\s&#=]{0,64}=)([^\s&#]+)/iu';
-
-    /** fragment ไม่มี = เช่น #top — เนื้อหาเป็น ASCII charset ของ URL fragment เท่านั้น */
-    private const URL_BARE_FRAGMENT = '/(?<=[a-z0-9\/._~%\-])#[^\s#&]*/iu';
-
-    /** control / zero-width / bidi ที่ห้ามออกของจริงตามที่เขียน (line break ผ่านได้) */
-    private const OUTBOUND_INVISIBLE = '/[\x{00}-\x{08}\x{0B}\x{0C}\x{0E}-\x{1F}\x{7F}-\x{9F}\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}-\x{2069}\x{FFFE}\x{FFFF}\x{FEFF}]/u';
+    private const URL_TOKENS = '/[a-z][a-z0-9+.\-]*:\/\/\S*|(?:^|\s)www\.\S*|[a-z0-9\-]+(?:\.[a-z0-9\-]+)*\.[a-z]{2,}(?=[\/?#])\S*/iu';
 
     /** ตัวอักษรเลข: ASCII + เลขไทย */
     private const DIGITS = '/[^0-9\x{0E50}-\x{0E59}]/u';
@@ -68,24 +74,21 @@ class FollowUpRedactor
         // findAccountData คืน span ได้แปลว่าอ่านได้ → normalize ไม่เป็น null ณ จุดนี้
         $text = self::spliceAccountData((string) $normalized, $spans);
 
-        $text = self::replaceUrlParamValues($text);
+        // EMAIL ก่อน URL_TOKENS: อีเมลที่ต่อท้ายด้วย / หรือ ? ต้องจบด้วย email marker
+        // ไม่ใช่ค้าง local part ไว้หน้า url marker
+        $text = self::replaceMatches(self::EMAIL, '[redacted:email]', $text);
         if ($text === null) {
             return self::UNREADABLE_MARKER;
         }
 
-        $text = self::replaceUrlBareFragments($text);
+        $text = self::replaceUrlTokens($text);
         if ($text === null) {
             return self::UNREADABLE_MARKER;
         }
 
-        foreach ([
-            self::EMAIL => '[redacted:email]',
-            self::DIGIT_RUN => '[redacted:digits]',
-        ] as $pattern => $marker) {
-            $text = self::replaceMatches($pattern, $marker, $text);
-            if ($text === null) {
-                return self::UNREADABLE_MARKER;
-            }
+        $text = self::replaceMatches(self::DIGIT_RUN, '[redacted:digits]', $text);
+        if ($text === null) {
+            return self::UNREADABLE_MARKER;
         }
 
         return self::replaceDigitGroups($text) ?? self::UNREADABLE_MARKER;
@@ -109,7 +112,9 @@ class FollowUpRedactor
             throw new InvalidArgumentException('unreadable');
         }
 
-        $hasInvisible = self::pregMatch(self::OUTBOUND_INVISIBLE, $text);
+        // รีวิวรอบ 1 ข้อ 2: ชุดอักขระเดียวกับ detector::normalize — \p{Cc} (ยกเว้น \r \n)
+        // + \p{Cf} + U+034F ฯลฯ soft hyphen/U+061C จึงไม่หลุด control_character
+        $hasInvisible = self::pregMatch(FollowUpAccountDataDetector::INVISIBLE_CHARS, $text);
         if ($hasInvisible === null) {
             throw new InvalidArgumentException('unreadable');
         }
@@ -180,42 +185,16 @@ class FollowUpRedactor
     }
 
     /**
-     * ค่าหลัง = ใน query/fragment — ค่าที่เป็น marker อยู่แล้ว (เช่น jwt ที่ detector ตัดไป)
-     * ไม่ทับซ้ำ; คืน null เมื่อ preg error
+     * D21 — แทนที่ URL ทั้ง token ด้วย [redacted:url]; alternative (b) จับพร้อมช่องว่าง
+     * ข้างหน้า จึงคืนช่องว่างตัวนั้นคืน; คืน null เมื่อ preg error
      */
-    private static function replaceUrlParamValues(string $text): ?string
+    private static function replaceUrlTokens(string $text): ?string
     {
-        $replaced = preg_replace_callback(self::URL_PARAM_VALUE, function (array $match): string {
-            [$full, $prefix, $value] = $match;
+        $replaced = preg_replace_callback(self::URL_TOKENS, function (array $match): string {
+            // \s ของ PCRE (ไม่มี UCP) เป็นช่องว่าง ASCII ไบต์เดียวเท่านั้น
+            $leadingWhitespace = str_contains(" \t\n\v\f\r", $match[0][0]) ? $match[0][0] : '';
 
-            if (str_starts_with($value, '[redacted:')) {
-                return $full;
-            }
-
-            return $prefix.'[redacted:'.(str_starts_with($prefix, '#') ? 'url_fragment' : 'url_query').']';
-        }, $text);
-
-        if ($replaced === null || preg_last_error() !== PREG_NO_ERROR) {
-            return null;
-        }
-
-        return $replaced;
-    }
-
-    /**
-     * fragment ไม่มี = (#top, #section) — เนื้อหาเป็น charset URL เท่านั้นถึงจับ,
-     * มี = ให้กฎค่าหลัง = จัดการ; คืน null เมื่อ preg error
-     */
-    private static function replaceUrlBareFragments(string $text): ?string
-    {
-        $replaced = preg_replace_callback(self::URL_BARE_FRAGMENT, function (array $match): string {
-            $content = substr($match[0], 1);
-
-            if ($content === '' || str_contains($content, '=')) {
-                return $match[0];
-            }
-
-            return '#[redacted:url_fragment]';
+            return $leadingWhitespace.'[redacted:url]';
         }, $text);
 
         if ($replaced === null || preg_last_error() !== PREG_NO_ERROR) {
