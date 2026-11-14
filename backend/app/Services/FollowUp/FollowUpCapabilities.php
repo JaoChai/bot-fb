@@ -93,7 +93,8 @@ class FollowUpCapabilities
             return false;
         }
 
-        $started = CarbonImmutable::parse($startedAt)->startOfSecond();
+        // เวลาในตารางเป็นกรุงเทพฯ ไม่มีโซน — parse ในโซนกรุงเทพฯ
+        $started = CarbonImmutable::parse($startedAt, self::TIMEZONE)->startOfSecond();
 
         return $started->lessThanOrEqualTo($now->startOfSecond()->subDays(self::AUTOMATIC_AGE_DAYS));
     }

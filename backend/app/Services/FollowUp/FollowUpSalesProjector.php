@@ -28,13 +28,14 @@ class FollowUpSalesProjector
 
     public static function refresh(Conversation $conversation, CarbonImmutable $now): FollowUpSalesSignal
     {
-        $now = $now->startOfSecond();
+        // เวลากรุงเทพฯ ทุกจุด (คอลัมน์ตารางไม่มีโซน) — โซนไหนที่ caller ส่งมาก็เท่ากัน
+        $now = $now->tz(FollowUpCapabilities::TIMEZONE)->startOfSecond();
         $roomId = $conversation->id;
 
         $latestOrder = self::latestCustomerOrder($conversation);
         $hasOrders = $latestOrder !== null;
         $boundary = $hasOrders
-            ? CarbonImmutable::parse($latestOrder->created_at)->startOfSecond()
+            ? CarbonImmutable::parse($latestOrder->created_at, FollowUpCapabilities::TIMEZONE)->startOfSecond()
             : $now->subDays(self::NEVER_BOUGHT_WINDOW_DAYS);
 
         // หลังออเดอร์ = "หลังกว่า" เข้มงวด; กรอบ 30 วัน = "ตั้งแต่" (>=) — plan line 148
@@ -85,7 +86,7 @@ class FollowUpSalesProjector
     /** scan ทั้งบอท (ได้บอทในลิสต์เท่านั้น) แบบ keyset chunks — ห้ามกินหน่วยรายใหญ่ */
     public static function refreshBot(Bot $bot, CarbonImmutable $now): void
     {
-        $now = $now->startOfSecond();
+        $now = $now->tz(FollowUpCapabilities::TIMEZONE)->startOfSecond();
 
         if (! in_array((int) $bot->id, array_map(intval(...), (array) config('customer_follow_up.bot_ids', [])), true)) {
             return;

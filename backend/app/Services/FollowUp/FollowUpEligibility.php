@@ -42,7 +42,9 @@ class FollowUpEligibility
 
     public static function query(Bot $bot, CarbonImmutable $now, ?int $ownLogId = null): Builder
     {
-        $now = $now->startOfSecond();
+        // คอลัมน์เวลาทุกตารางเป็นเวลากรุงเทพฯ ไม่มีโซน — normalize ที่ประตูเดียว
+        // ให้ caller ส่ง $now มาในโซนไหนก็ได้ ผล SQL bound ต้องเท่ากัน (review r1 item 2)
+        $now = $now->tz(FollowUpCapabilities::TIMEZONE)->startOfSecond();
 
         $builder = Conversation::query()
             ->select('conversations.*')
@@ -79,7 +81,8 @@ class FollowUpEligibility
         }
 
         $activationMessageId = (int) $settings->follow_up_activation_message_id;
-        $activatedAt = CarbonImmutable::parse($settings->follow_up_activated_at)->startOfSecond();
+        // เวลาในตารางเป็นกรุงเทพฯ ไม่มีโซน — parse ในโซนกรุงเทพฯ ไม่ใช่โซนแอป
+        $activatedAt = CarbonImmutable::parse($settings->follow_up_activated_at, FollowUpCapabilities::TIMEZONE)->startOfSecond();
 
         $paymentCut = $now->subHours((int) config('customer_follow_up.payment_wait_hours'))->format('Y-m-d H:i:s');
         $saleCut = $now->subHours((int) config('customer_follow_up.sale_wait_hours'))->format('Y-m-d H:i:s');
@@ -208,7 +211,7 @@ class FollowUpEligibility
      */
     public static function recheck(LeadRecoveryLog $log, CarbonImmutable $now): ?string
     {
-        $now = $now->startOfSecond();
+        $now = $now->tz(FollowUpCapabilities::TIMEZONE)->startOfSecond();
 
         if (! self::withinSendingHours($now)) {
             return 'outside_hours';
