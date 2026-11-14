@@ -166,4 +166,35 @@ describe('MessageList empty bot text suppression', () => {
     );
     expect(countBubbles(container)).toBe(0);
   });
+
+  it('shows the outage notice badge on a flagged bot row only (chat/MessageBubble path)', () => {
+    const { container } = render(
+      <MessageList
+        messages={[
+          makeMessage({ id: 21, sender: 'user', content: 'สวัสดีครับ' }),
+          makeMessage({
+            id: 22,
+            sender: 'bot',
+            content: 'ระบบกลับมาใช้งานได้แล้ว',
+            is_outage_notice: true,
+          }),
+          makeMessage({ id: 23, sender: 'bot', content: 'ตอบปกติ' }),
+        ]}
+      />
+    );
+
+    expect(screen.getByText('ส่งอัตโนมัติหลังบอทล่ม')).toBeInTheDocument();
+    expect(container.querySelectorAll('[data-slot="badge"]')).toHaveLength(1);
+  });
+
+  it('never shows the badge when the flag is absent even if the text matches the label', () => {
+    const { container } = render(
+      <MessageList
+        messages={[makeMessage({ id: 24, sender: 'bot', content: 'ส่งอัตโนมัติหลังบอทล่ม' })]}
+      />
+    );
+
+    screen.getByText('ส่งอัตโนมัติหลังบอทล่ม');
+    expect(container.querySelector('[data-slot="badge"]')).toBeNull();
+  });
 });

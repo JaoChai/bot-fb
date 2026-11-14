@@ -109,3 +109,26 @@ describe('e2e messages list fixture vs contract', () => {
     expectInvalid(validateMessagesList, broken)
   })
 })
+
+describe('e2e messages fixture vs contract: outage notice flag', () => {
+  function cloneMessagesList(): { data: Record<string, unknown>[] } {
+    return structuredClone(messagesListResponse) as { data: Record<string, unknown>[] }
+  }
+
+  it('optional_notice_boolean_is_compatible_and_metadata_stays_rejected', () => {
+    // The flag is optional on the contract Message: true and explicit false both validate.
+    const flagged = cloneMessagesList()
+    flagged.data[0].is_outage_notice = true
+    expectValid(validateMessagesList, flagged)
+
+    const explicitFalse = cloneMessagesList()
+    explicitFalse.data[0].is_outage_notice = false
+    expectValid(validateMessagesList, explicitFalse)
+
+    // metadata stays rejected: the notice must never smuggle structured extras.
+    const withMetadata = cloneMessagesList()
+    withMetadata.data[0].is_outage_notice = true
+    withMetadata.data[0].metadata = { extra: true }
+    expectInvalid(validateMessagesList, withMetadata)
+  })
+})

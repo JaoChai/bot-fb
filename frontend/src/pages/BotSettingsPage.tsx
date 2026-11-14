@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router';
-import { Loader2, Gauge, Clock, Bot as BotIcon, Smile, Receipt } from 'lucide-react';
+import { Loader2, Gauge, Clock, Bot as BotIcon, Smile, Receipt, TriangleAlert, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -19,8 +19,10 @@ import { ResponseHoursTab } from '@/components/bot-settings/ResponseHoursTab';
 import { BehaviorTab } from '@/components/bot-settings/BehaviorTab';
 import { StickerReplyTab } from '@/components/bot-settings/StickerReplyTab';
 import { SlipVerificationTab } from '@/components/bot-settings/SlipVerificationTab';
+import { OutageSettingsTab } from '@/components/bot-settings/OutageSettingsTab';
+import { isOverOutageLimit } from '@/components/bot-settings/outageTextRules';
 import { cn } from '@/lib/utils';
-import type { BotSettings } from '@/types/api';
+import type { BotSettings, OutageTextDefaults } from '@/types/api';
 
 const TABS = [
   { value: 'rate-limit', label: 'ข้อจำกัด', icon: Gauge },
@@ -28,6 +30,7 @@ const TABS = [
   { value: 'behavior', label: 'พฤติกรรม', icon: BotIcon },
   { value: 'sticker', label: 'สติกเกอร์', icon: Smile },
   { value: 'slip', label: 'ตรวจสลิป', icon: Receipt },
+  { value: 'outage', label: 'เมื่อบอทล่ม', icon: TriangleAlert },
 ] as const;
 
 type TabValue = (typeof TABS)[number]['value'];
@@ -62,6 +65,10 @@ interface BotSettingsFormData {
   slip_amount_tolerance: number;
   slip_success_message: string;
   slip_fail_message: string;
+  outage_recovery_enabled: boolean;
+  outage_recovery_message_th: string;
+  outage_recovery_message_en: string;
+  outage_down_message: string;
   response_hours_enabled: boolean;
   response_hours: ResponseHoursConfig;
   response_hours_timezone: string;
@@ -98,6 +105,10 @@ const DEFAULT_FORM: BotSettingsFormData = {
   slip_amount_tolerance: 0,
   slip_success_message: '',
   slip_fail_message: '',
+  outage_recovery_enabled: true,
+  outage_recovery_message_th: '',
+  outage_recovery_message_en: '',
+  outage_down_message: '',
   response_hours_enabled: false,
   response_hours: createDefaultResponseHours(),
   response_hours_timezone: 'Asia/Bangkok',
@@ -109,12 +120,15 @@ export function BotSettingsPage() {
   const { toast } = useToast();
   const numericBotId = botId ? Number(botId) : null;
 
-  const { data: serverSettings, isLoading } = useBotSettings(numericBotId);
+  const { data: serverSettings, isLoading, isError, refetch: refetchSettings } = useBotSettings(numericBotId);
   const updateMutation = useUpdateBotSettings(numericBotId);
   const isSaving = updateMutation.isPending;
 
   const [formData, setFormData] = useState<BotSettingsFormData>(DEFAULT_FORM);
   const [tab, setTab] = useState<TabValue>('rate-limit');
+  const [outageDefaults, setOutageDefaults] = useState<OutageTextDefaults | null>(null);
+  // 422 field errors from the last failed save (shown under the outage editors)
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof OutageTextDefaults, string>>>({});
 
   // Sync form data from server settings
   const [prevServerSettings, setPrevServerSettings] = useState<typeof serverSettings>(undefined);
@@ -152,11 +166,25 @@ export function BotSettingsPage() {
         slip_amount_tolerance: (s.slip_amount_tolerance as number) ?? 0,
         slip_success_message: (s.slip_success_message as string) ?? '',
         slip_fail_message: (s.slip_fail_message as string) ?? '',
+        outage_recovery_enabled: (s.outage_recovery_enabled as boolean) ?? true,
+        outage_recovery_message_th:
+          (s.outage_recovery_message_th as string | null) ??
+          (s.outage_defaults as OutageTextDefaults | undefined)?.outage_recovery_message_th ??
+          '',
+        outage_recovery_message_en:
+          (s.outage_recovery_message_en as string | null) ??
+          (s.outage_defaults as OutageTextDefaults | undefined)?.outage_recovery_message_en ??
+          '',
+        outage_down_message:
+          (s.outage_down_message as string | null) ??
+          (s.outage_defaults as OutageTextDefaults | undefined)?.outage_down_message ??
+          '',
         response_hours_enabled: (s.response_hours_enabled as boolean) ?? false,
         response_hours: parseResponseHours(s.response_hours as Record<string, TimeSlot[]> | null),
         response_hours_timezone: (s.response_hours_timezone as string) ?? 'Asia/Bangkok',
         offline_message: (s.offline_message as string) ?? '',
       });
+      setOutageDefaults((s.outage_defaults as OutageTextDefaults | undefined) ?? null);
     }
   }
 
@@ -180,9 +208,28 @@ export function BotSettingsPage() {
       formData.slip_receiver_account !== ((s.slip_receiver_account as string) ?? '') ||
       formData.slip_amount_tolerance !== ((s.slip_amount_tolerance as number) ?? 0) ||
       formData.slip_success_message !== ((s.slip_success_message as string) ?? '') ||
-      formData.slip_fail_message !== ((s.slip_fail_message as string) ?? '')
+      formData.slip_fail_message !== ((s.slip_fail_message as string) ?? '') ||
+      formData.outage_recovery_enabled !== ((s.outage_recovery_enabled as boolean) ?? true) ||
+      formData.outage_recovery_message_th !==
+        ((s.outage_recovery_message_th as string | null) ?? outageDefaults?.outage_recovery_message_th ?? '') ||
+      formData.outage_recovery_message_en !==
+        ((s.outage_recovery_message_en as string | null) ?? outageDefaults?.outage_recovery_message_en ?? '') ||
+      formData.outage_down_message !==
+        ((s.outage_down_message as string | null) ?? outageDefaults?.outage_down_message ?? '')
     );
   })();
+
+  // Outage save gate: over-limit texts or a failed/defaults-less load block every save
+  const outageOverLimit =
+    isOverOutageLimit(formData.outage_recovery_message_th) ||
+    isOverOutageLimit(formData.outage_recovery_message_en) ||
+    isOverOutageLimit(formData.outage_down_message);
+  const outageDefaultsMissing = !!serverSettings && !outageDefaults;
+  const saveBlocked = outageOverLimit || outageDefaultsMissing || isError;
+
+  // Blank or exact-default override saves as null (inherit outage_defaults)
+  const outageTextOrNull = (value: string, defaultValue: string | undefined) =>
+    value.trim() === '' || value === defaultValue ? null : value;
 
   const onFieldChange = (field: string, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }) as BotSettingsFormData);
@@ -264,7 +311,8 @@ export function BotSettingsPage() {
   };
 
   const handleSave = async () => {
-    if (!numericBotId) return;
+    if (!numericBotId || saveBlocked) return;
+    setFieldErrors({});
     try {
       await updateMutation.mutateAsync({
         daily_message_limit: formData.daily_message_limit,
@@ -295,9 +343,37 @@ export function BotSettingsPage() {
         slip_amount_tolerance: formData.slip_amount_tolerance,
         slip_success_message: formData.slip_success_message || null,
         slip_fail_message: formData.slip_fail_message || null,
+        outage_recovery_enabled: formData.outage_recovery_enabled,
+        outage_recovery_message_th: outageTextOrNull(
+          formData.outage_recovery_message_th,
+          outageDefaults?.outage_recovery_message_th
+        ),
+        outage_recovery_message_en: outageTextOrNull(
+          formData.outage_recovery_message_en,
+          outageDefaults?.outage_recovery_message_en
+        ),
+        outage_down_message: outageTextOrNull(
+          formData.outage_down_message,
+          outageDefaults?.outage_down_message
+        ),
       });
       toast({ title: 'บันทึกสำเร็จ', description: 'ตั้งค่าบอทได้รับการบันทึกแล้ว' });
-    } catch {
+    } catch (saveError) {
+      const apiError = saveError as { errors?: Record<string, unknown> } | undefined;
+      const errorMap = apiError?.errors;
+      const nextErrors: Partial<Record<keyof OutageTextDefaults, string>> = {};
+      if (errorMap) {
+        for (const field of [
+          'outage_recovery_message_th',
+          'outage_recovery_message_en',
+          'outage_down_message',
+        ] as const) {
+          const entry = errorMap[field];
+          if (typeof entry === 'string') nextErrors[field] = entry;
+          else if (Array.isArray(entry) && typeof entry[0] === 'string') nextErrors[field] = entry[0];
+        }
+      }
+      setFieldErrors(nextErrors);
       toast({
         title: 'ข้อผิดพลาด',
         description: 'ไม่สามารถบันทึกตั้งค่าบอทได้',
@@ -334,6 +410,26 @@ export function BotSettingsPage() {
           ) : null
         }
       />
+
+      {(isError || outageDefaultsMissing) && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3">
+          <p className="text-sm text-destructive">
+            {isError
+              ? 'โหลดการตั้งค่าไม่สำเร็จ ยังไม่สามารถบันทึกได้'
+              : 'ไม่พบค่ามาตรฐานของระบบ — ลองโหลดใหม่ก่อนบันทึก'}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-11 shrink-0"
+            onClick={() => refetchSettings()}
+          >
+            <RotateCcw className="size-3.5" strokeWidth={1.5} />
+            ลองโหลดอีกครั้ง
+          </Button>
+        </div>
+      )}
 
       <div className="grid gap-6 md:grid-cols-[220px_1fr] md:gap-8">
         <aside className="min-w-0 md:border-r md:pr-6">
@@ -428,6 +524,23 @@ export function BotSettingsPage() {
               onChange={onFieldChange}
             />
           )}
+          {tab === 'outage' && (
+            <OutageSettingsTab
+              outage_recovery_enabled={formData.outage_recovery_enabled}
+              outage_recovery_message_th={formData.outage_recovery_message_th}
+              outage_recovery_message_en={formData.outage_recovery_message_en}
+              outage_down_message={formData.outage_down_message}
+              defaults={
+                outageDefaults ?? {
+                  outage_recovery_message_th: '',
+                  outage_recovery_message_en: '',
+                  outage_down_message: '',
+                }
+              }
+              errors={fieldErrors}
+              onChange={onFieldChange}
+            />
+          )}
         </div>
       </div>
 
@@ -435,7 +548,7 @@ export function BotSettingsPage() {
         <span className="text-sm text-muted-foreground hidden sm:block">
           {isDirty ? 'มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก' : 'การเปลี่ยนแปลงจะมีผลทันทีหลังบันทึก'}
         </span>
-        <Button onClick={handleSave} disabled={isSaving} className="min-w-[100px]">
+        <Button onClick={handleSave} disabled={isSaving || saveBlocked} className="min-w-[100px]">
           {isSaving ? (
             <>
               <Loader2 className="size-4 mr-2 animate-spin" />

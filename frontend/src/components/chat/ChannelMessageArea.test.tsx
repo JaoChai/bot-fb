@@ -144,3 +144,48 @@ describe.each([
     expect(container.querySelectorAll('[data-message-id]')).toHaveLength(0);
   });
 });
+
+describe.each([
+  { channelType: 'line' as const },
+  { channelType: 'telegram' as const },
+])('ChannelMessageArea outage badge ($channelType)', ({ channelType }) => {
+  function renderArea(messages: Message[]) {
+    return render(
+      <ChannelMessageArea
+        messages={messages}
+        conversation={CONVERSATION}
+        isLoading={false}
+        channelType={channelType}
+      />
+    );
+  }
+
+  it('all_three_bubbles_render_the_same_notice_label: flagged bot row shows the badge, neighbours do not', () => {
+    const { container } = renderArea([
+      makeMessage(21, '2026-11-12T09:00:00Z', { sender: 'user', content: 'สวัสดีครับ' }),
+      makeMessage(22, '2026-11-12T09:00:05Z', {
+        sender: 'bot',
+        content: 'ระบบกลับมาใช้งานได้แล้ว',
+        is_outage_notice: true,
+      }),
+      makeMessage(23, '2026-11-12T09:01:00Z', { sender: 'bot', content: 'ตอบปกติ' }),
+    ]);
+
+    // Exactly one badge in the whole list — never on the user row / other bot row.
+    expect(screen.getAllByText('ส่งอัตโนมัติหลังบอทล่ม')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-slot="badge"]')).toHaveLength(1);
+  });
+
+  it('never shows the badge from matching the text alone', () => {
+    const { container } = renderArea([
+      makeMessage(24, '2026-11-12T09:00:05Z', {
+        sender: 'bot',
+        content: 'ส่งอัตโนมัติหลังบอทล่ม',
+      }),
+    ]);
+
+    // The content text is visible, but no badge element exists without the flag.
+    screen.getByText('ส่งอัตโนมัติหลังบอทล่ม');
+    expect(container.querySelector('[data-slot="badge"]')).toBeNull();
+  });
+});
