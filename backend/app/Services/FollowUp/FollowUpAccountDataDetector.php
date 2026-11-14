@@ -15,6 +15,8 @@ use Normalizer;
  * \r \n, \p{Cf}, U+034F — INVISIBLE_CHARS ออกแบบเป็นคลาส รอบ 1 ข้อ 2 ของรีวิว) —
  * fullwidth pipe/label/เลข/เครื่องหมาย จึงถูกจับเท่าตัว ASCII และ label ที่ถูกคั่นด้วย
  * อักขระมองไม่เห็น (รวม soft hyphen, U+061C ฯลฯ) ก็ยังถูกจับ
+ * รีวิวรอบ 3 (D22): หลัง NFKC คืนสระอำ U+0E4D U+0E32 → U+0E33 (และ Lao U+0ECD U+0EB2
+ * → U+0EB3) ข้อความไทยที่ไม่ลับจึงคงการสะกดตรงตามที่พิมพ์
  * อ่านข้อความไม่ได้ (invalid UTF-8 หรือ preg error ใดๆ) = ถือว่ามีข้อมูลบัญชี (fail closed)
  *
  * จับ (plan §3.4):
@@ -82,6 +84,17 @@ class FollowUpAccountDataDetector
         if ($normalized === false) {
             return null;
         }
+
+        // D22 (รีวิวรอบ 3): NFKC เป็น compatibility mapping ที่แยกสระอำ U+0E33 ออกเป็น
+        // U+0E4D (nikhahit) + U+0E32 (สระอา) — และคู่ Lao U+0ECD U+0EB2 — ทำให้ข้อความไทย
+        // ที่ไม่ลับออกจาก redact/snapshot เปลี่ยนการสะกด คืนสภาพเดิมทันทีหลัง NFKC
+        // เพื่อให้ข้อความที่พิมพ์ด้วยสระอำออกมาตรงตามเดิมทุกไบต์ และ pattern ทั้งหมด
+        // ยังทำงานบนฉบับ normalized ชุดเดียวกัน
+        $normalized = str_replace(
+            ["\u{0E4D}\u{0E32}", "\u{0ECD}\u{0EB2}"],
+            ["\u{0E33}", "\u{0EB3}"],
+            $normalized,
+        );
 
         $cleaned = preg_replace(self::INVISIBLE_CHARS, '', $normalized);
         if ($cleaned === null || preg_last_error() !== PREG_NO_ERROR) {
