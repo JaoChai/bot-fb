@@ -31,9 +31,9 @@ class RedactorTest extends TestCase
         '[redacted:bearer]',
         '[redacted:fb_cookie]',
         '[redacted:url_userinfo]',
-        '[redacted:url_query]',
-        '[redacted:url_fragment]',
+        '[redacted:url]',
         '[redacted:email]',
+        '[redacted:email_pair]',
         '[redacted:digits]',
         '[redacted:digit_groups]',
         '[redacted:unreadable]',
@@ -108,6 +108,79 @@ class RedactorTest extends TestCase
                 'input' => 'โอนเข้า 12 345 '.$digitGroupsCanary.' 555 ครับ',
                 'canaries' => [$digitGroupsCanary],
             ],
+            // ==== รอบ 2 — Lead D21 (URL ทั้ง token) + เลขกลุ่ม ≥1 หลัก/คั่นใหม่ + อีเมล IDN ====
+            'url_query_then_fragment' => [
+                'input' => 'https://shop.test/pay?ok=1#'.$this->canary('u1'),
+                'canaries' => [$this->canary('u1')],
+            ],
+            'url_paren_fragment' => [
+                'input' => 'https://shop.test/a(b)#'.$this->canary('u2'),
+                'canaries' => [$this->canary('u2')],
+            ],
+            'url_query_no_equals' => [
+                'input' => 'https://shop.test/pay?'.$this->canary('u3'),
+                'canaries' => [$this->canary('u3')],
+            ],
+            'url_query_key_kept' => [
+                'input' => 'https://shop.test/pay?'.$this->canary('u4').'=1',
+                'canaries' => [$this->canary('u4')],
+            ],
+            'url_path_token' => [
+                'input' => 'https://shop.test/reset/'.$this->canary('u5'),
+                'canaries' => [$this->canary('u5')],
+            ],
+            'url_www_token' => [
+                'input' => 'ดู www.shop.test/pay?a=1&b='.$this->canary('u6').' จ้า',
+                'canaries' => [$this->canary('u6')],
+            ],
+            'url_schemeless_slash' => [
+                'input' => 'ลิงก์ shop.test/pay?code='.$this->canary('u7').' ครับ',
+                'canaries' => [$this->canary('u7')],
+            ],
+            'url_schemeless_hash' => [
+                'input' => 'shop.test/page#'.$this->canary('u8'),
+                'canaries' => [$this->canary('u8')],
+            ],
+            'url_mid_thai_sentence' => [
+                'input' => 'ดูที่https://shop.test/pay?code='.$this->canary('u9').'ครับ',
+                'canaries' => [$this->canary('u9')],
+            ],
+            'url_email_in_query' => [
+                'input' => 'https://shop.test/pay?mail='.$this->canary('ua').'@mail.test',
+                'canaries' => [$this->canary('ua')],
+            ],
+            'url_digits_in_path' => [
+                'input' => 'ออเดอร์ https://shop.test/order/007202611 ครับ',
+                'canaries' => ['007202611'],
+            ],
+            'url_userinfo_full_replace' => [
+                'input' => 'ล็อกอินที่ https://admin:'.$this->canary('ub').'@shop.example.com/login',
+                'canaries' => [$this->canary('ub')],
+            ],
+            'phone_groups_slash' => [
+                'input' => 'โอนเข้า 081/234/'.('5678'.'11').' ครับ',
+                'canaries' => [('5678'.'11')],
+            ],
+            'phone_groups_parens' => [
+                'input' => 'เบอร์ (081) 234-'.('5678'.'22').' ครับ',
+                'canaries' => [('5678'.'22')],
+            ],
+            'bank_groups_single_digit' => [
+                'input' => 'โอนเข้าใหม่ '.('123'.'-'.'4'.'-'.'56789'.'-'.'0').' ครับ',
+                'canaries' => [('123'.'-'.'4'.'-'.'56789'.'-'.'0')],
+            ],
+            'id_groups_edge_digits' => [
+                'input' => 'บัตร '.('1'.'-'.'2345'.'-'.'67890'.'-'.'12'.'-'.'3').' ครับ',
+                'canaries' => [('1'.'-'.'2345'.'-'.'67890'.'-'.'12'.'-'.'3')],
+            ],
+            'email_idn_thai_domain' => [
+                'input' => 'ติดต่อ สมชาย'.$this->canary('ei').'@'.'ตัวอย่าง.ไทย ครับ',
+                'canaries' => [$this->canary('ei')],
+            ],
+            'email_glued_thai_local' => [
+                'input' => 'ดูที่สมชาย'.$this->canary('ej').'@shop.example.com',
+                'canaries' => [$this->canary('ej')],
+            ],
             'unreadable' => [
                 'input' => "\xC3\x28",
                 'canaries' => [],
@@ -126,6 +199,12 @@ class RedactorTest extends TestCase
             'สนใจ Nolimit BM ครับ',
             'สวัสดีครับพี่ 🙏 ขอบคุณครับ',
             'ขอใบเสนอราคาทางอีเมลหน่อยครับ พอไหมครับ',
+            // ==== รอบ 2 — คงเดิมตาม D21/เลขกลุ่มใหม่: ราคา, สัดส่วน, ประโยคไทยมี #?, hashtag, วันที่ 8 หลัก ====
+            'ราคา 1.500/ชิ้น ครับ',
+            'ราคา 1,500 บาท ครับ',
+            'ประเภทไหนดีครับ?#ตอบหน่อยครับ',
+            '#ลดแรง โปรโมชันวันนี้ครับ',
+            '15/11/2026 ส่งได้ไหมครับ',
             '',
         ];
     }
@@ -198,6 +277,69 @@ class RedactorTest extends TestCase
         $this->assertSame('[redacted:digits]', FollowUpRedactor::redact('１２３４５６７８９０'), 'fullwidth เลข 10 หลัก → NFKC → digit run');
         $this->assertSame('[redacted:digits]', FollowUpRedactor::redact('๐๑๒๓๔๕๖๗๘๙'), 'เลขไทย 10 หลัก นับเป็น digit run');
         $this->assertSame('โอน ๐๑๒ ๐๓๔ ครับ', FollowUpRedactor::redact('โอน ๐๑๒ ๐๓๔ ครับ'), 'เลขไทยรวมไม่ถึง 10 หลัก คงเดิม');
+    }
+
+    #[Test]
+    public function test_redacts_whole_url_token_per_lead_d21(): void
+    {
+        // รอบ 2 ข้อ 1 — Lead D21 แทนกฎ query/fragment เดิม: redact แทนที่ URL ทั้ง token
+        // ด้วย [redacted:url] เดียว เพราะแบบจับเป็นชิ้นเศษหลุด (probe ของ Lead 01:27)
+        // (a) scheme:// ถึงช่องว่าง — fragment ต่อท้าย query ก็หายไปกับทั้งลิงก์
+        $this->assertSame('[redacted:url]', FollowUpRedactor::redact('https://shop.test/pay?ok=1#'.$this->canary('d1')));
+        $this->assertSame('[redacted:url]', FollowUpRedactor::redact('https://shop.test/a(b)#'.$this->canary('d2')));
+        $this->assertSame('[redacted:url]', FollowUpRedactor::redact('https://shop.test/pay?'.$this->canary('d3')));
+        $this->assertSame('[redacted:url]', FollowUpRedactor::redact('https://shop.test/pay?'.$this->canary('d4').'=1'));
+        $this->assertSame('[redacted:url]', FollowUpRedactor::redact('https://shop.test/reset/'.$this->canary('d5')));
+        // (b) token ขึ้นต้น www. — ช่องว่างข้างหน้าคงเดิม
+        $this->assertSame('ดู [redacted:url] จ้า', FollowUpRedactor::redact('ดู www.shop.test/pay?a=1&b='.$this->canary('d6').' จ้า'));
+        // (c) schemeless host.tld (TLD อักษร) ตามด้วย / ? # — ถึงช่องว่าง
+        $this->assertSame('ลิงก์ [redacted:url] ครับ', FollowUpRedactor::redact('ลิงก์ shop.test/pay?code='.$this->canary('d7').' ครับ'));
+        $this->assertSame('[redacted:url]', FollowUpRedactor::redact('shop.test/page#'.$this->canary('d8')));
+        // URL ติดกลางประโยคไทย (ไม่มีช่องว่างรอบ) — กินถึงช่องว่าง ตาม D21
+        $this->assertSame('ดูที่[redacted:url]', FollowUpRedactor::redact('ดูที่https://shop.test/pay?code='.$this->canary('d9').'ครับ'));
+        // email ใน query — ทั้ง token จบด้วย url marker เดียว
+        $this->assertSame('[redacted:url]', FollowUpRedactor::redact('https://shop.test/pay?mail='.$this->canary('da').'@mail.test'));
+        // เลขใน path — หายไปพร้อมลิงก์
+        $this->assertSame('ออเดอร์ [redacted:url] ครับ', FollowUpRedactor::redact('ออเดอร์ https://shop.test/order/007202611 ครับ'));
+        // userinfo URL — detector ตัด span ไปแล้ว ส่วน host/path ที่เหลือต้องถูกแทนจนไม่เหลือ :// หรือ host
+        $this->assertSame(
+            'ล็อกอินที่ [redacted:url_userinfo][redacted:url]',
+            FollowUpRedactor::redact('ล็อกอินที่ https://admin:'.$this->canary('db').'@shop.example.com/login'),
+        );
+    }
+
+    #[Test]
+    public function test_digit_groups_with_single_digit_group_and_new_separators(): void
+    {
+        // รอบ 2 ข้อ 3+4 — กลุ่มเลขกลุ่มเดียวก็นับ (ธนาคาร xxx-x-xxxxx-x, เลขบัตร) และคั่นใหม่ / ( )
+        $this->assertSame('โอนเข้าใหม่ [redacted:digit_groups] ครับ', FollowUpRedactor::redact('โอนเข้าใหม่ 123-4-56789-0 ครับ'));
+        $this->assertSame('บัตร [redacted:digit_groups] ครับ', FollowUpRedactor::redact('บัตร 1-2345-67890-12-3 ครับ'));
+        $this->assertSame('โอนเข้า [redacted:digit_groups] ครับ', FollowUpRedactor::redact('โอนเข้า 081/234/567811 ครับ'));
+        $this->assertSame('เบอร์ ([redacted:digit_groups] ครับ', FollowUpRedactor::redact('เบอร์ (081) 234-5678 ครับ'));
+        // ต้องคงเดิม: ราคา (คั่น ,), วันที่ 8 หลัก, ปริมาณ, เลขออเดอร์ 9 หลัก
+        $this->assertSame('ราคา 1,299 บาท', FollowUpRedactor::redact('ราคา 1,299 บาท'));
+        $this->assertSame('15/11/2026 ส่งได้ไหมครับ', FollowUpRedactor::redact('15/11/2026 ส่งได้ไหมครับ'));
+        $this->assertSame('เอา 3 ตัว ครับ', FollowUpRedactor::redact('เอา 3 ตัว ครับ'));
+        $this->assertSame('หมายเลขออเดอร์ 123456789 ครับ', FollowUpRedactor::redact('หมายเลขออเดอร์ 123456789 ครับ'));
+    }
+
+    #[Test]
+    public function test_email_with_non_ascii_letters_redacted(): void
+    {
+        // รอบ 2 ข้อ 5 — อีเมลอักษรไทย (IDN) ต้องถูกตัด; คำไทยติดหน้า address ถูกกินรวมได้ (Lead รับข้อ 5)
+        $this->assertSame(
+            'ติดต่อ [redacted:email] ครับ',
+            FollowUpRedactor::redact('ติดต่อ สมชาย'.$this->canary('ei').'@'.'ตัวอย่าง.ไทย ครับ'),
+        );
+        $this->assertSame(
+            '[redacted:email]',
+            FollowUpRedactor::redact('ดูที่สมชาย'.$this->canary('ej').'@shop.example.com'),
+            'คำไทยติดกับ address ถูกกินรวม — over-redaction ยอมรับได้ตาม Lead',
+        );
+        $this->assertSame(
+            'ส่งที่ [redacted:email] จ้า',
+            FollowUpRedactor::redact('ส่งที่ somchai'.$this->canary('ek').'@shop.example.com จ้า'),
+        );
     }
 
     #[Test]
@@ -276,6 +418,8 @@ class RedactorTest extends TestCase
             ['pass'.'word: '.'Sup3rSecret', 'account_data'],
             ['ลูกค้าพิมพ์มาว่า [redacted:email] ครับ', 'redaction_marker'],
             ["สวัสดีครับ\x01พี่", 'control_character'],
+            ['ราคา'."\u{00AD}".'โปรช่วงลดครับ', 'control_character'],
+            ['พิมพ์'."\u{061C}".'ต่อได้ครับ', 'control_character'],
             ['ข้อความ'."\u{202E}".'อ่านยาก', 'control_character'],
             ['ก'."\u{200B}".'ข', 'control_character'],
             ["\xC3\x28", 'unreadable'],

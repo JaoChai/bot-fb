@@ -135,6 +135,22 @@ class AccountDataDetectorTest extends TestCase
     }
 
     #[Test]
+    public function test_label_hidden_by_format_characters_match(): void
+    {
+        // รอบ 2 ข้อ 2 — format/ควบคุมนอกชุด zero-width เดิม ต้องไม่ทำให้ label หลุด
+        foreach (["\u{00AD}", "\u{034F}", "\u{180E}", "\u{061C}", "\u{E0020}"] as $invisible) {
+            $this->assertTrue(
+                $this->detector->containsAccountData('pass'.$invisible.'word: '.'Sup3rSecret'),
+                sprintf('อักขระ format U+%04X คั่น label ต้องจับ', mb_ord($invisible, 'UTF-8')),
+            );
+        }
+        $this->assertTrue(
+            $this->detector->containsAccountData('รหัส'."\u{00AD}".'ผ่าน : ทดสอบ123'),
+            'soft hyphen คั่น label ไทยต้องจับ',
+        );
+    }
+
+    #[Test]
     public function test_invalid_utf8_counts_as_account_data(): void
     {
         $this->assertTrue($this->detector->containsAccountData("\xC3\x28"), 'invalid UTF-8 ต้อง fail closed (D20)');
@@ -181,6 +197,8 @@ class AccountDataDetectorTest extends TestCase
             ['text' => 'ｐａｓｓｗｏｒｄ：Sup3rSecret', 'is_account_data' => true],
             ['text' => 'p'."\u{200B}".'assword: Sup3rSecret', 'is_account_data' => true],
             ['text' => 'p'."\u{202E}".'assword: Sup3rSecret', 'is_account_data' => true],
+            ['text' => 'pass'."\u{00AD}".'word: Sup3rSecret', 'is_account_data' => true],
+            ['text' => 'pass'."\u{061C}".'word: Sup3rSecret', 'is_account_data' => true],
             ['text' => 'c_user=100001234567890', 'is_account_data' => true],
             ['text' => 'c_user : 100001234567890; xs=3:abcdef:0:1', 'is_account_data' => true],
             ['text' => 'datr=X; xs=35:abc123def:2', 'is_account_data' => true],
