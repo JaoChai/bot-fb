@@ -676,6 +676,47 @@ class EligibilityTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // 8b) instant เดียวกัน ส่งมาในโซนไหนก็ต้องได้ผลเดียวกัน (review round 1 item 2)
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_utc_instant_matches_bangkok_instant(): void
+    {
+        // (ก) ขอบเปิดชั่วโมงส่ง 08:00 กรุงเทพฯ (เงียบยาว) — instant เดียวกันใน UTC ต้องได้ 1 เหมือนกัน
+        $seed = $this->seedBase();
+        DB::table('messages')->where('conversation_id', $seed['room']->id)->delete();
+        $this->addMessage($seed['room']->id, 'user', '2026-11-14 08:55:00', 'สนใจครับ');
+        $this->addMessage($seed['room']->id, 'bot', '2026-11-14 08:56:00', 'ต้องการกี่ตัวครับ');
+        $this->addMessage($seed['room']->id, 'user', '2026-11-14 08:57:00', 'เอา 2 ตัวครับ');
+        $this->addMessage($seed['room']->id, 'bot', '2026-11-14 08:58:00', 'ได้ครับ');
+        $this->addMessage($seed['room']->id, 'user', '2026-11-14 08:59:00', 'ประเมินราคาให้หน่อยครับ');
+
+        $bangkok08 = CarbonImmutable::parse('2026-11-16 08:00:00', 'Asia/Bangkok');
+        FollowUpSalesProjector::refresh($seed['room'], $bangkok08);
+        $this->assertSame(1, $this->eligibleCount($seed['bot'], $bangkok08));
+        $this->assertSame(1, $this->eligibleCount($seed['bot'], $bangkok08->tz('UTC')), 'instant เดียวกัน (UTC) ที่ขอบ 08:00 ต้องได้ผลเดียวกัน');
+
+        // (ข) ขอบปิดชั่วโมงส่ง 22:00 — ทั้งสองโซนต้องได้ 0
+        $bangkok22 = CarbonImmutable::parse('2026-11-16 22:00:00', 'Asia/Bangkok');
+        FollowUpSalesProjector::refresh($seed['room'], $bangkok22);
+        $this->assertSame(0, $this->eligibleCount($seed['bot'], $bangkok22));
+        $this->assertSame(0, $this->eligibleCount($seed['bot'], $bangkok22->tz('UTC')), 'instant เดียวกัน (UTC) ที่ 22:00 ต้องได้ผลเดียวกัน');
+
+        // (ค) ขอบครบ 24 ชม. พอดี (ข้อความสุดท้าย 2026-11-15 08:59 → ตรวจ 2026-11-16 08:59)
+        //     instant เดียวกันใน UTC ต้องได้ 1 เหมือนกัน — ที่นี่ผล SQL bound ต่างโซนจะเห็นชัด
+        $boundary = $this->seedBase();
+        $at = CarbonImmutable::parse('2026-11-16 08:59:00', 'Asia/Bangkok');
+        FollowUpSalesProjector::refresh($boundary['room'], $at);
+        $this->assertSame(1, $this->eligibleCount($boundary['bot'], $at));
+        $this->assertSame(1, $this->eligibleCount($boundary['bot'], $at->tz('UTC')), 'instant เดียวกัน (UTC) ที่ขอบครบ 24 ชม. พอดี ต้องได้ผลเดียวกัน');
+
+        // (ง) projector เก็บ projected_at เป็นเวลากรุงเทพฯ เสมอ ไม่ว่า caller ส่งโซนไหน
+        FollowUpSalesProjector::refresh($boundary['room'], $at->tz('UTC'));
+        $this->assertSame('2026-11-16 08:59:00',
+            DB::table('follow_up_sales_signals')->where('conversation_id', $boundary['room']->id)->value('projected_at'));
+    }
+
+    // ------------------------------------------------------------------
     // 9) recheck: null เมื่อห้องยังผ่าน / reason code เสถียรเมื่อไม่ผ่าน
     // ------------------------------------------------------------------
 
