@@ -16,7 +16,9 @@ export function useBotSettings(botId: number | null) {
 }
 
 // Update bot settings mutation
-export type UpdateSettingsPayload = Partial<Omit<BotSettings, 'id' | 'bot_id' | 'created_at' | 'updated_at'>>;
+export type UpdateSettingsPayload = Partial<
+  Omit<BotSettings, 'id' | 'bot_id' | 'created_at' | 'updated_at' | 'outage_defaults'>
+>;
 
 export function useUpdateBotSettings(botId: number | null) {
   const queryClient = useQueryClient();

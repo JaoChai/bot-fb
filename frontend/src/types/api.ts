@@ -148,6 +148,16 @@ export interface UpdateConnectionData {
   auto_delivery_enabled?: boolean;
 }
 
+/**
+ * Server defaults for the outage texts (response-only). Stored overrides that
+ * are null mean "inherit from here"; outage_defaults itself is never sent on PUT.
+ */
+export interface OutageTextDefaults {
+  outage_recovery_message_th: string;
+  outage_recovery_message_en: string;
+  outage_down_message: string;
+}
+
 // Bot Settings Types
 export interface BotSettings {
   id: number;
@@ -212,6 +222,13 @@ export interface BotSettings {
   slip_amount_tolerance: number;
   slip_success_message: string | null;
   slip_fail_message: string | null;
+  // Outage notices (null override = inherit outage_defaults)
+  outage_recovery_enabled: boolean;
+  outage_recovery_message_th: string | null;
+  outage_recovery_message_en: string | null;
+  outage_down_message: string | null;
+  // Response-only: server defaults for null overrides (never part of the PUT payload)
+  outage_defaults: OutageTextDefaults;
   // Auto-assignment settings
   auto_assignment_enabled: boolean;
   auto_assignment_mode: 'round_robin' | 'load_balanced';
