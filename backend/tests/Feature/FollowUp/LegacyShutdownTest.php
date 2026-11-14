@@ -294,15 +294,26 @@ class LegacyShutdownTest extends TestCase
             ],
             'unsent row inside the window' => [
                 function (self $t, Conversation $room): LeadRecoveryLog {
-                    // A pending row is claimed with a timestamp but never pushed:
+                    // Same timing as the failed case: the reply guard passes, so
                     // only the delivery_status says it was not sent.
-                    $log = $t->makeLog($room, now(), 'pending');
-                    $t->makeUserMessage($room, now());
+                    $log = $t->makeLog($room, now()->subHours(24), 'pending');
+                    $t->makeUserMessage($room, now()->subHours(23));
 
                     return $log;
                 },
                 false,
                 'unsent row',
+            ],
+            'blocked row inside the window' => [
+                function (self $t, Conversation $room): LeadRecoveryLog {
+                    // Same timing again: only delivery_status='blocked' must exclude it.
+                    $log = $t->makeLog($room, now()->subHours(24), 'blocked');
+                    $t->makeUserMessage($room, now()->subHours(23));
+
+                    return $log;
+                },
+                false,
+                'blocked row',
             ],
             'only bot output after the follow-up' => [
                 function (self $t, Conversation $room): LeadRecoveryLog {
