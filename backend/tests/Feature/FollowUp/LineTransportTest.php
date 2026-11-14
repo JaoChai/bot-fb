@@ -19,6 +19,7 @@ use Tests\TestCase;
  * - pushFollowUp: POST push ครั้งเดียวพร้อม X-Line-Retry-Key ไม่ throw ไม่ retry เอง
  *   คืน outcome accepted/retryable/rejected + status + request_id
  * - ทุกเคส HTTP โดน fake + preventStrayRequests: เทสนี้ไม่ส่งอะไรออกนอกเครื่องจริง
+ *   (Http::fake เรียกซ้ำในเทสเดียวจะ "เติม" stub ไม่แทนที่ จึงใช้ closure นับ attempt แทน)
  * - user id/ข้อความ/retry key/token/body ทั้งหมดเป็น canary — ต้องไม่ปรากฏใน log
  */
 class LineTransportTest extends TestCase
@@ -59,10 +60,10 @@ class LineTransportTest extends TestCase
         ], $result);
 
         Http::assertSent(fn ($request) => $request->url() === self::QUOTA_URL
-            && $request->isGet()
+            && $request->method() === 'GET'
             && $request->hasHeader('Authorization', 'Bearer '.$this->token()));
         Http::assertSent(fn ($request) => $request->url() === self::CONSUMPTION_URL
-            && $request->isGet()
+            && $request->method() === 'GET'
             && $request->hasHeader('Authorization', 'Bearer '.$this->token()));
         Http::assertSentCount(2);
     }
@@ -132,19 +133,22 @@ class LineTransportTest extends TestCase
     #[Test]
     public function test_quota_failure_on_first_get_stops_the_second(): void
     {
-        $firstStubs = [
-            'quota_unreachable' => function () { throw new ConnectionException('cURL error 28'); },
-            'quota_http_error' => Http::response('{"message":"Internal server error"}', 500),
-            'quota_malformed' => Http::response('ok', 200),
-        ];
+        $attempt = 0;
+        Http::fake([
+            self::QUOTA_URL => function () use (&$attempt) {
+                $attempt++;
 
-        foreach ($firstStubs as $reason => $stub) {
-            Http::fake([
-                self::QUOTA_URL => $stub,
-                self::CONSUMPTION_URL => Http::response('{"totalUsage":1}', 200),
-            ]);
-            Http::preventStrayRequests();
+                return match ($attempt) {
+                    1 => throw new ConnectionException('cURL error 28'),
+                    2 => Http::response('{"message":"Internal server error"}', 500),
+                    default => Http::response('ok', 200),
+                };
+            },
+            self::CONSUMPTION_URL => Http::response('{"totalUsage":1}', 200),
+        ]);
+        Http::preventStrayRequests();
 
+        foreach (['quota_unreachable', 'quota_http_error', 'quota_malformed'] as $reason) {
             $result = (new LINEService)->followUpQuota($this->bot());
 
             $this->assertSame([
@@ -154,26 +158,34 @@ class LineTransportTest extends TestCase
                 'value' => null,
                 'total_usage' => null,
             ], $result, "GET แรกล้มเหลวแบบ {$reason} ต้องไม่ยิง request ที่สอง");
-            Http::assertNotSent(fn ($request) => $request->url() === self::CONSUMPTION_URL);
         }
+
+        // สามครั้งยิง GET แรกครบ แต่ GET ที่สองไม่ถูกยิงเลย
+        $this->assertSame(3, $attempt);
+        $this->assertTrue(
+            Http::recorded(fn ($request) => $request->url() === self::CONSUMPTION_URL)->isEmpty()
+        );
     }
 
     #[Test]
     public function test_quota_failure_on_second_get(): void
     {
-        $secondStubs = [
-            'quota_unreachable' => function () { throw new ConnectionException('cURL error 28'); },
-            'quota_http_error' => Http::response('{"message":"Service unavailable"}', 503),
-            'quota_malformed' => Http::response('{"nope":true}', 200),
-        ];
+        $attempt = 0;
+        Http::fake([
+            self::QUOTA_URL => Http::response('{"type":"limited","value":10}', 200),
+            self::CONSUMPTION_URL => function () use (&$attempt) {
+                $attempt++;
 
-        foreach ($secondStubs as $reason => $stub) {
-            Http::fake([
-                self::QUOTA_URL => Http::response('{"type":"limited","value":10}', 200),
-                self::CONSUMPTION_URL => $stub,
-            ]);
-            Http::preventStrayRequests();
+                return match ($attempt) {
+                    1 => throw new ConnectionException('cURL error 28'),
+                    2 => Http::response('{"message":"Service unavailable"}', 503),
+                    default => Http::response('{"nope":true}', 200),
+                };
+            },
+        ]);
+        Http::preventStrayRequests();
 
+        foreach (['quota_unreachable', 'quota_http_error', 'quota_malformed'] as $reason) {
             $result = (new LINEService)->followUpQuota($this->bot());
 
             $this->assertSame([
@@ -182,9 +194,15 @@ class LineTransportTest extends TestCase
                 'type' => null,
                 'value' => null,
                 'total_usage' => null,
-            ], $result);
-            Http::assertSentCount(2);
+            ], $result, "GET ที่สองล้มเหลวแบบ {$reason} ต้องคืนเหตุผลนั้น");
         }
+
+        // แต่ละครั้งยิงครบสอง request
+        $this->assertSame(3, $attempt);
+        $this->assertSame(
+            3,
+            Http::recorded(fn ($request) => $request->url() === self::QUOTA_URL)->count()
+        );
     }
 
     // ------------------------------------------------------------------
@@ -327,11 +345,9 @@ class LineTransportTest extends TestCase
 
         Http::assertSent(function ($request) use ($text) {
             return $request->url() === self::PUSH_URL
-                && $request->isPost()
+                && $request->method() === 'POST'
                 && $request->hasHeader('X-Line-Retry-Key', $this->retryKey())
                 && $request->hasHeader('Authorization', 'Bearer '.$this->token())
-                && $request->json('to') === self::CANARY_USER_ID
-                && $request->json('messages') === [['type' => 'text', 'text' => $text]]
                 && json_decode($request->body(), true) === [
                     'to' => self::CANARY_USER_ID,
                     'messages' => [['type' => 'text', 'text' => $text]],
@@ -384,12 +400,21 @@ class LineTransportTest extends TestCase
             'request id only' => ['x-line-request-id' => 'req-new'],
         ];
 
-        foreach ($headerCases as $case => $headers) {
-            Http::fake([
-                self::PUSH_URL => Http::response('{"message":"The retry key is already accepted"}', 409, $headers),
-            ]);
-            Http::preventStrayRequests();
+        $attempt = 0;
+        Http::fake([
+            self::PUSH_URL => function () use (&$attempt, $headerCases) {
+                $attempt++;
 
+                return Http::response(
+                    '{"message":"The retry key is already accepted"}',
+                    409,
+                    array_values($headerCases)[$attempt - 1]
+                );
+            },
+        ]);
+        Http::preventStrayRequests();
+
+        foreach ($headerCases as $case => $headers) {
             $result = (new LINEService)->pushFollowUp($this->bot(), self::CANARY_USER_ID, 'ทดสอบ', $this->retryKey());
 
             $this->assertSame(
@@ -398,17 +423,24 @@ class LineTransportTest extends TestCase
                 "409 แบบ {$case} ต้องเป็น rejected ไม่ใช่ accepted"
             );
         }
+
+        $this->assertSame(4, $attempt);
     }
 
     #[Test]
     public function test_push_retryable_statuses(): void
     {
-        foreach ([429, 500, 502, 503] as $status) {
-            Http::fake([
-                self::PUSH_URL => Http::response('{"message":"Internal server error"}', $status),
-            ]);
-            Http::preventStrayRequests();
+        $attempt = 0;
+        Http::fake([
+            self::PUSH_URL => function () use (&$attempt) {
+                $attempt++;
 
+                return Http::response('{"message":"Internal server error"}', [429, 500, 502, 503][$attempt - 1]);
+            },
+        ]);
+        Http::preventStrayRequests();
+
+        foreach ([429, 500, 502, 503] as $status) {
             $result = (new LINEService)->pushFollowUp($this->bot(), self::CANARY_USER_ID, 'ทดสอบ', $this->retryKey());
 
             $this->assertSame(
@@ -417,31 +449,43 @@ class LineTransportTest extends TestCase
                 "สถานะ {$status} ต้องเป็น retryable"
             );
         }
+
+        $this->assertSame(4, $attempt);
     }
 
     #[Test]
     public function test_push_connection_error_is_retryable_without_status(): void
     {
+        $reachedTransport = false;
         Http::fake([
-            self::PUSH_URL => function () { throw new ConnectionException('cURL error 28'); },
+            self::PUSH_URL => function () use (&$reachedTransport) {
+                $reachedTransport = true;
+
+                throw new ConnectionException('cURL error 28');
+            },
         ]);
         Http::preventStrayRequests();
 
         $result = (new LINEService)->pushFollowUp($this->bot(), self::CANARY_USER_ID, 'ทดสอบ', $this->retryKey());
 
         $this->assertSame(['outcome' => 'retryable', 'status' => null, 'request_id' => null], $result);
-        Http::assertSentCount(1);
+        $this->assertTrue($reachedTransport, 'request ต้องถึงชั้น transport จริงก่อนโดน connection error');
     }
 
     #[Test]
     public function test_push_other_4xx_is_rejected(): void
     {
-        foreach ([400, 401, 403, 418] as $status) {
-            Http::fake([
-                self::PUSH_URL => Http::response('{"message":"Forbidden"}', $status),
-            ]);
-            Http::preventStrayRequests();
+        $attempt = 0;
+        Http::fake([
+            self::PUSH_URL => function () use (&$attempt) {
+                $attempt++;
 
+                return Http::response('{"message":"Forbidden"}', [400, 401, 403, 418][$attempt - 1]);
+            },
+        ]);
+        Http::preventStrayRequests();
+
+        foreach ([400, 401, 403, 418] as $status) {
             $result = (new LINEService)->pushFollowUp($this->bot(), self::CANARY_USER_ID, 'ทดสอบ', $this->retryKey());
 
             $this->assertSame(
@@ -450,6 +494,8 @@ class LineTransportTest extends TestCase
                 "สถานะ {$status} ต้องเป็น rejected"
             );
         }
+
+        $this->assertSame(4, $attempt);
     }
 
     #[Test]
@@ -486,15 +532,20 @@ class LineTransportTest extends TestCase
     #[Test]
     public function test_push_has_no_automatic_http_retry(): void
     {
+        $attempt = 0;
         Http::fake([
-            self::PUSH_URL => Http::response('{"message":"Internal server error"}', 500),
+            self::PUSH_URL => function () use (&$attempt) {
+                $attempt++;
+
+                return Http::response('{"message":"Internal server error"}', 500);
+            },
         ]);
         Http::preventStrayRequests();
 
         $result = (new LINEService)->pushFollowUp($this->bot(), self::CANARY_USER_ID, 'ทดสอบ', $this->retryKey());
 
         $this->assertSame('retryable', $result['outcome']);
-        Http::assertSentCount(1);
+        $this->assertSame(1, $attempt, 'ไม่มี retry อัตโนมัติ — ยิงครั้งเดียว');
     }
 
     // ------------------------------------------------------------------
@@ -514,8 +565,12 @@ class LineTransportTest extends TestCase
         (new LINEService)->pushFollowUp($this->bot(), self::CANARY_USER_ID, $canary, $this->retryKey());
 
         Http::assertSent(function ($request) use ($canary) {
-            return $request->json('messages.0.text') === $canary
-                && json_decode($request->body(), true)['messages'][0]['text'] === $canary;
+            $body = json_decode($request->body(), true);
+
+            return $body === [
+                'to' => self::CANARY_USER_ID,
+                'messages' => [['type' => 'text', 'text' => $canary]],
+            ];
         });
     }
 
@@ -532,7 +587,11 @@ class LineTransportTest extends TestCase
 
         (new LINEService)->pushFollowUp($this->bot(), self::CANARY_USER_ID, $longText, $this->retryKey());
 
-        Http::assertSent(fn ($request) => $request->json('messages.0.text') === $longText);
+        Http::assertSent(function ($request) use ($longText) {
+            $body = json_decode($request->body(), true);
+
+            return $body['messages'][0]['text'] === $longText;
+        });
     }
 
     // ------------------------------------------------------------------
@@ -549,9 +608,19 @@ class LineTransportTest extends TestCase
             });
         }
 
+        $pushAttempt = 0;
         Http::fake([
             self::QUOTA_URL => Http::response('{"type":"limited","value":9}', 200),
             self::CONSUMPTION_URL => Http::response('{"totalUsage":1}', 200),
+            self::PUSH_URL => function () use (&$pushAttempt) {
+                $pushAttempt++;
+
+                return match ($pushAttempt) {
+                    1 => Http::response('{}', 200, ['x-line-request-id' => 'req-ok']),
+                    2 => Http::response('{"message":"CanaryBodyLeak"}', 409),
+                    default => Http::response('{"message":"CanaryBodyLeak"}', 500),
+                };
+            },
         ]);
         Http::preventStrayRequests();
 
@@ -563,26 +632,10 @@ class LineTransportTest extends TestCase
 
         $text = 'ข้อความ canary ห้ามเข้า log';
 
-        Http::fake([
-            self::QUOTA_URL => Http::response('{"type":"limited","value":9}', 200),
-            self::CONSUMPTION_URL => Http::response('{"totalUsage":1}', 200),
-            self::PUSH_URL => Http::response('{}', 200, ['x-line-request-id' => 'req-ok']),
-        ]);
-        $line->pushFollowUp($this->bot(), self::CANARY_USER_ID, $text, $this->retryKey()); // accepted
-
-        Http::fake([
-            self::QUOTA_URL => Http::response('{"type":"limited","value":9}', 200),
-            self::CONSUMPTION_URL => Http::response('{"totalUsage":1}', 200),
-            self::PUSH_URL => Http::response('{"message":"CanaryBodyLeak"}', 409),
-        ]);
-        $line->pushFollowUp($this->bot(), self::CANARY_USER_ID, $text, $this->retryKey()); // rejected
-
-        Http::fake([
-            self::QUOTA_URL => Http::response('{"type":"limited","value":9}', 200),
-            self::CONSUMPTION_URL => Http::response('{"totalUsage":1}', 200),
-            self::PUSH_URL => Http::response('{"message":"CanaryBodyLeak"}', 500),
-        ]);
-        $line->pushFollowUp($this->bot(), self::CANARY_USER_ID, $text, $this->retryKey()); // retryable
+        // push: accepted / rejected (409 ไม่มี header) / retryable
+        $line->pushFollowUp($this->bot(), self::CANARY_USER_ID, $text, $this->retryKey());
+        $line->pushFollowUp($this->bot(), self::CANARY_USER_ID, $text, $this->retryKey());
+        $line->pushFollowUp($this->bot(), self::CANARY_USER_ID, $text, $this->retryKey());
 
         $canaries = [$this->token(), $this->retryKey(), self::CANARY_USER_ID, $text, 'CanaryBodyLeak', 'req-ok'];
 
@@ -616,6 +669,11 @@ class LineTransportTest extends TestCase
             $this->assertSame(['bot_id', 'outcome', 'status'], $keys);
             $this->assertSame(77, $entry['context']['bot_id']);
         }
+
+        $this->assertSame(['accepted', 'rejected', 'retryable'], array_map(
+            fn (array $entry) => $entry['context']['outcome'],
+            $pushLines
+        ));
     }
 
     // ------------------------------------------------------------------
@@ -635,13 +693,16 @@ class LineTransportTest extends TestCase
 
     private function bot(?string $token = null): Bot
     {
-        return new Bot([
-            'id' => 77,
+        $bot = new Bot([
             'user_id' => 1,
             'name' => 'Follow-up transport test bot',
             'channel_type' => 'line',
             'channel_access_token' => $token ?? $this->token(),
         ]);
+        // id ไม่อยู่ใน $fillable ของ Bot ต้อง set ตรง ๆ ให้ log เห็น bot_id เดิม
+        $bot->id = 77;
+
+        return $bot;
     }
 
     /** @return array{0: LINEService, 1: object} */

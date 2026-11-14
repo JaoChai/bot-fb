@@ -89,19 +89,22 @@ class QuotaTest extends TestCase
         $bot = $this->bot();
         config(['customer_follow_up.quota_reserve_messages' => 100]);
 
-        $cases = [
-            'quota_unreachable' => function () { throw new ConnectionException('cURL error 28'); },
-            'quota_http_error' => Http::response('{"message":"Internal server error"}', 500),
-            'quota_malformed' => Http::response('{}', 200),
-        ];
+        $attempt = 0;
+        Http::fake([
+            self::QUOTA_URL => function () use (&$attempt) {
+                $attempt++;
 
-        foreach ($cases as $reason => $stub) {
-            Http::fake([
-                self::QUOTA_URL => $stub,
-                self::CONSUMPTION_URL => Http::response('{"totalUsage":1}', 200),
-            ]);
-            Http::preventStrayRequests();
+                return match ($attempt) {
+                    1 => throw new ConnectionException('cURL error 28'),
+                    2 => Http::response('{"message":"Internal server error"}', 500),
+                    default => Http::response('{}', 200),
+                };
+            },
+            self::CONSUMPTION_URL => Http::response('{"totalUsage":1}', 200),
+        ]);
+        Http::preventStrayRequests();
 
+        foreach (['quota_unreachable', 'quota_http_error', 'quota_malformed'] as $reason) {
             $result = $this->service->check($bot, $this->now());
 
             $this->assertSame([
@@ -113,8 +116,9 @@ class QuotaTest extends TestCase
                 'local_pending' => 0,
                 'reserve' => 100,
             ], $result, "transport ล้มเหลวแบบ {$reason} ต้องบล็อกด้วยเหตุผลเดียวกัน");
-            Http::assertNotSent(fn ($request) => $request->url() === self::CONSUMPTION_URL);
         }
+
+        $this->assertCount(0, Http::recorded(fn ($request) => $request->url() === self::CONSUMPTION_URL));
     }
 
     // ------------------------------------------------------------------
@@ -127,8 +131,13 @@ class QuotaTest extends TestCase
         $bot = $this->bot();
         config(['customer_follow_up.quota_reserve_messages' => 100]);
 
-        // 1000 - 899 - 0 - 1 = 100 = reserve → ผ่านพอดี
-        $this->fakeQuota('{"type":"limited","value":1000}', '{"totalUsage":899}');
+        $this->fakeQuotaCalls([
+            // 1000 - 899 - 0 - 1 = 100 = reserve → ผ่านพอดี
+            ['{"type":"limited","value":1000}', '{"totalUsage":899}'],
+            // 1000 - 900 - 0 - 1 = 99 < reserve → หยุด
+            ['{"type":"limited","value":1000}', '{"totalUsage":900}'],
+        ]);
+
         $result = $this->service->check($bot, $this->now());
         $this->assertSame([
             'allowed' => true,
@@ -141,7 +150,6 @@ class QuotaTest extends TestCase
         ], $result);
 
         // 1000 - 900 - 0 - 1 = 99 < reserve → หยุด
-        $this->fakeQuota('{"type":"limited","value":1000}', '{"totalUsage":900}');
         $result = $this->service->check($bot, $this->now());
         $this->assertSame([
             'allowed' => false,
@@ -227,8 +235,10 @@ class QuotaTest extends TestCase
     {
         $bot = $this->bot();
 
+        $firstRowId = null;
         for ($i = 0; $i < 10; $i++) {
-            $this->pushRow($bot, LeadRecoveryLog::DELIVERY_STATUS_SENT, '2026-11-16 0'.$i.':30:00');
+            $id = $this->pushRow($bot, LeadRecoveryLog::DELIVERY_STATUS_SENT, '2026-11-16 0'.$i.':30:00');
+            $firstRowId ??= $id;
         }
 
         config(['customer_follow_up.quota_reserve_messages' => 100]);
@@ -241,7 +251,8 @@ class QuotaTest extends TestCase
         $this->assertSame('below_reserve', $result['reason']);
 
         // ตัดแถวหนึ่งออก (เช่นแถวที่กำลังจะส่ง) → 9 แถว → 100 >= reserve → ส่งได้
-        $resultWithException = $this->service->check($bot, $this->now(), 1);
+        // (ใช้ id จริงจาก insert เอง เพราะ PG sequence ไม่รีเซ็ตข้ามเทส)
+        $resultWithException = $this->service->check($bot, $this->now(), $firstRowId);
         $this->assertSame(9, $resultWithException['local_pending']);
         $this->assertTrue($resultWithException['allowed']);
     }
@@ -285,10 +296,11 @@ class QuotaTest extends TestCase
         $utcEvening = new CarbonImmutable('2026-11-15 17:30:00', new \DateTimeZone('UTC'));
         $this->assertSame(2, $this->service->check($bot, $utcEvening)['local_pending']);
 
-        // now ยังเป็น 15 พ.ย. 22:00 กรุงเทพฯ → แถว 23:59:59 เป็น "วันนี้" แถวเดียว
-        // (แถว 16 พ.ย. เป็นอนาคต ไม่ใช่วันนี้ และ status จบแล้วจึงไม่นับ)
+        // now ยังเป็น 15 พ.ย. 22:00 กรุงเทพฯ → เทียบกับ 15 พ.ย. 00:00:00
+        // สูตร D42 เทียบ >= วันนี้ 00:00:00 โดยไม่มีขอบบน — แถวเวลาอนาคตก็ถูกนับ
+        // (conservative: นับเกินได้ น้อยไม่ได้) จึงครบทั้งสามแถว
         $bangkokNight = CarbonImmutable::parse('2026-11-15 22:00:00', FollowUpCapabilities::TIMEZONE);
-        $this->assertSame(1, $this->service->check($bot, $bangkokNight)['local_pending']);
+        $this->assertSame(3, $this->service->check($bot, $bangkokNight)['local_pending']);
     }
 
     // ------------------------------------------------------------------
@@ -328,10 +340,13 @@ class QuotaTest extends TestCase
             });
         }
 
-        $this->fakeQuota('{"type":"limited","value":100}', '{"totalUsage":0}');
+        $this->fakeQuotaCalls([
+            // 1000 - 0 - 0 - 1 = 999 >= 100 → ผ่าน
+            ['{"type":"limited","value":1000}', '{"totalUsage":0}'],
+            // 100 - 0 - 0 - 1 = 99 < 100 → หยุด
+            ['{"type":"limited","value":100}', '{"totalUsage":0}'],
+        ]);
         $this->service->check($bot, $this->now()); // allowed
-
-        $this->fakeQuota('{"type":"limited","value":100}', '{"totalUsage":100}');
         $this->service->check($bot, $this->now()); // below_reserve
 
         config(['customer_follow_up.quota_reserve_messages' => null]);
@@ -382,13 +397,36 @@ class QuotaTest extends TestCase
         ]);
     }
 
-    private function fakeQuota(string $quotaBody, string $consumptionBody): void
+    /**
+     * จำลอง endpoint โควต้า — pair ที่ n ใช้กับการเรียกครั้งที่ n
+     * (Http::fake เรียกซ้ำในเทสเดียวจะ "เติม" stub ไม่แทนที่ จึงต้องจัดลำดับใน closure เดียว)
+     * อ่านเกินจำนวน pair ที่เตรียม = คืน pair สุดท้ายซ้ำ เพราะโควต้าไม่ควรเปลี่ยนระหว่างเทส
+     *
+     * @param  array<int, array{0: string, 1: string}>  $pairs  [quotaBody, consumptionBody]
+     */
+    private function fakeQuotaCalls(array $pairs): void
     {
+        $quotaAttempt = 0;
+        $consumptionAttempt = 0;
+
         Http::fake([
-            self::QUOTA_URL => Http::response($quotaBody, 200),
-            self::CONSUMPTION_URL => Http::response($consumptionBody, 200),
+            self::QUOTA_URL => function () use (&$quotaAttempt, $pairs) {
+                $quotaAttempt++;
+
+                return Http::response($pairs[min($quotaAttempt, count($pairs)) - 1][0], 200);
+            },
+            self::CONSUMPTION_URL => function () use (&$consumptionAttempt, $pairs) {
+                $consumptionAttempt++;
+
+                return Http::response($pairs[min($consumptionAttempt, count($pairs)) - 1][1], 200);
+            },
         ]);
         Http::preventStrayRequests();
+    }
+
+    private function fakeQuota(string $quotaBody, string $consumptionBody): void
+    {
+        $this->fakeQuotaCalls([[$quotaBody, $consumptionBody]]);
     }
 
     private function pushRow(Bot $bot, string $status, ?string $firstPushAt): int

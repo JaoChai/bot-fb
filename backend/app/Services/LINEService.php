@@ -569,4 +569,194 @@ class LINEService
             ->timeout(30)
             ->acceptJson();
     }
+
+    /**
+     * อ่านโควต้าข้อความของบอทสำหรับ "ตามลูกค้า" — GET quota + consumption (D40)
+     *
+     * ไม่ throw ทุกกรณี; ไม่ retry อัตโนมัติ; GET แรกล้มเหลวแล้วไม่ยิง GET ที่สอง;
+     * จำนวนเต็มจาก JSON เท่านั้น (float/string/bool/null = malformed);
+     * log บรรทัดเดียวต่อ call มีแค่ bot_id/reason/status ไม่มี token หรือ body
+     */
+    public function followUpQuota(Bot $bot): array
+    {
+        $notOk = function (string $reason, ?int $status = null) use ($bot) {
+            Log::info('LINE follow-up quota read', [
+                'bot_id' => $bot->id,
+                'reason' => $reason,
+                'status' => $status,
+            ]);
+
+            return [
+                'ok' => false,
+                'reason' => $reason,
+                'type' => null,
+                'value' => null,
+                'total_usage' => null,
+            ];
+        };
+
+        if (empty($bot->channel_access_token)) {
+            return $notOk('no_token');
+        }
+
+        try {
+            $quotaResponse = $this->followUpClient($bot)->get('/bot/message/quota');
+        } catch (\Throwable) {
+            return $notOk('quota_unreachable');
+        }
+
+        if ($quotaResponse->failed()) {
+            return $notOk('quota_http_error', $quotaResponse->status());
+        }
+
+        $quotaBody = $quotaResponse->json();
+        $type = is_array($quotaBody) ? ($quotaBody['type'] ?? null) : null;
+        $value = null;
+
+        if ($type === 'limited') {
+            $value = $quotaBody['value'] ?? null;
+
+            if (! is_int($value) || $value < 0) {
+                return $notOk('quota_malformed', $quotaResponse->status());
+            }
+        } elseif ($type !== 'none') {
+            return $notOk('quota_malformed', $quotaResponse->status());
+        }
+
+        try {
+            $consumptionResponse = $this->followUpClient($bot)->get('/bot/message/quota/consumption');
+        } catch (\Throwable) {
+            return $notOk('quota_unreachable');
+        }
+
+        if ($consumptionResponse->failed()) {
+            return $notOk('quota_http_error', $consumptionResponse->status());
+        }
+
+        $consumptionBody = $consumptionResponse->json();
+        $totalUsage = is_array($consumptionBody) ? ($consumptionBody['totalUsage'] ?? null) : null;
+
+        if (! is_int($totalUsage) || $totalUsage < 0) {
+            return $notOk('quota_malformed', $consumptionResponse->status());
+        }
+
+        Log::info('LINE follow-up quota read', [
+            'bot_id' => $bot->id,
+            'reason' => 'ok',
+            'status' => $consumptionResponse->status(),
+        ]);
+
+        return [
+            'ok' => true,
+            'reason' => null,
+            'type' => $type,
+            'value' => $value,
+            'total_usage' => $totalUsage,
+        ];
+    }
+
+    /**
+     * ส่งข้อความตามลูกค้าหนึ่งข้อความ — POST /bot/message/push พร้อม X-Line-Retry-Key (D41)
+     *
+     * ไม่ throw ทุกกรณี; ไม่ retry อัตโนมัติ (ผู้เรียกตัดสินใจจาก outcome เอง);
+     * 2xx = accepted, 409 รับได้เฉพาะมี x-line-accepted-request-id ไม่ว่าง,
+     * 429/5xx/timeout/connection error = retryable, ที่เหลือ = rejected;
+     * key ไม่ใช่ UUID หรือบอทไม่มี token = rejected โดยไม่ยิงอะไรออกไป;
+     * ข้อความส่งตรงตามที่ได้รับ ไม่ตัด ไม่เปลี่ยน; log บรรทัดเดียวต่อ call
+     * มีแค่ bot_id/outcome/status ไม่มี user id/retry key/token/body
+     */
+    public function pushFollowUp(Bot $bot, string $userId, string $text, string $retryKey): array
+    {
+        $log = function (string $outcome, ?int $status) use ($bot) {
+            Log::info('LINE follow-up push', [
+                'bot_id' => $bot->id,
+                'outcome' => $outcome,
+                'status' => $status,
+            ]);
+        };
+
+        $noRequest = function (string $outcome) use ($log) {
+            $log($outcome, null);
+
+            return ['outcome' => $outcome, 'status' => null, 'request_id' => null];
+        };
+
+        if (! Str::isUuid($retryKey)) {
+            return $noRequest('rejected');
+        }
+
+        if (empty($bot->channel_access_token)) {
+            return $noRequest('rejected');
+        }
+
+        try {
+            $response = $this->followUpClient($bot, ['X-Line-Retry-Key' => $retryKey])
+                ->post('/bot/message/push', [
+                    'to' => $userId,
+                    'messages' => [
+                        ['type' => 'text', 'text' => $text],
+                    ],
+                ]);
+        } catch (\Throwable) {
+            return $noRequest('retryable');
+        }
+
+        $status = $response->status();
+
+        if ($response->successful()) {
+            $requestId = $response->header('x-line-request-id');
+
+            $log('accepted', $status);
+
+            return [
+                'outcome' => 'accepted',
+                'status' => $status,
+                'request_id' => $requestId !== '' ? $requestId : null,
+            ];
+        }
+
+        if ($status === 409) {
+            $acceptedRequestId = trim($response->header('x-line-accepted-request-id'));
+
+            if ($acceptedRequestId !== '') {
+                $log('accepted', $status);
+
+                return ['outcome' => 'accepted', 'status' => $status, 'request_id' => $acceptedRequestId];
+            }
+
+            $log('rejected', $status);
+
+            return ['outcome' => 'rejected', 'status' => $status, 'request_id' => null];
+        }
+
+        if ($status === 429 || $status >= 500) {
+            $log('retryable', $status);
+
+            return ['outcome' => 'retryable', 'status' => $status, 'request_id' => null];
+        }
+
+        $log('rejected', $status);
+
+        return ['outcome' => 'rejected', 'status' => $status, 'request_id' => null];
+    }
+
+    /**
+     * HTTP client ของสองเมธอด "ตามลูกค้า" — timeout/connect timeout อ่านจาก
+     * config ขณะเรียก ไม่มี retry อัตโนมัติ (ต่างจาก client() ของทราฟฟิกปกติ)
+     *
+     * @param  Bot  $bot  The bot instance with channel access token
+     * @param  array  $additionalHeaders  Optional headers (e.g., X-Line-Retry-Key)
+     */
+    protected function followUpClient(Bot $bot, array $additionalHeaders = []): PendingRequest
+    {
+        $headers = array_merge([
+            'Authorization' => 'Bearer '.$bot->channel_access_token,
+        ], $additionalHeaders);
+
+        return Http::baseUrl(self::API_BASE_URL)
+            ->withHeaders($headers)
+            ->timeout((int) config('customer_follow_up.line_timeout_seconds'))
+            ->connectTimeout((int) config('customer_follow_up.http_connect_timeout_seconds'))
+            ->acceptJson();
+    }
 }
