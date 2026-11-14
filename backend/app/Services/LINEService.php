@@ -605,7 +605,7 @@ class LINEService
             return $notOk('quota_unreachable');
         }
 
-        if ($quotaResponse->failed()) {
+        if (! $quotaResponse->successful()) {
             return $notOk('quota_http_error', $quotaResponse->status());
         }
 
@@ -629,7 +629,7 @@ class LINEService
             return $notOk('quota_unreachable');
         }
 
-        if ($consumptionResponse->failed()) {
+        if (! $consumptionResponse->successful()) {
             return $notOk('quota_http_error', $consumptionResponse->status());
         }
 
@@ -743,6 +743,8 @@ class LINEService
     /**
      * HTTP client ของสองเมธอด "ตามลูกค้า" — timeout/connect timeout อ่านจาก
      * config ขณะเรียก ไม่มี retry อัตโนมัติ (ต่างจาก client() ของทราฟฟิกปกติ)
+     * และไม่ตาม redirect (D44): 3xx ต้องกลับมาเป็นคำตอบที่ผู้เรียกตัดสินเอง
+     * เพราะการตาม redirect ของ push จะส่ง body ไป url อื่น
      *
      * @param  Bot  $bot  The bot instance with channel access token
      * @param  array  $additionalHeaders  Optional headers (e.g., X-Line-Retry-Key)
@@ -757,6 +759,7 @@ class LINEService
             ->withHeaders($headers)
             ->timeout((int) config('customer_follow_up.line_timeout_seconds'))
             ->connectTimeout((int) config('customer_follow_up.http_connect_timeout_seconds'))
+            ->withoutRedirecting()
             ->acceptJson();
     }
 }
