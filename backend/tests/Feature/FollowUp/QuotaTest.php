@@ -121,6 +121,30 @@ class QuotaTest extends TestCase
         $this->assertCount(0, Http::recorded(fn ($request) => $request->url() === self::CONSUMPTION_URL));
     }
 
+    #[Test]
+    public function test_no_token_blocks_without_http(): void
+    {
+        $bot = $this->bot();
+        $bot->channel_access_token = '';
+
+        config(['customer_follow_up.quota_reserve_messages' => 100]);
+        Http::fake();
+        Http::preventStrayRequests();
+
+        $result = $this->service->check($bot, $this->now());
+
+        $this->assertSame([
+            'allowed' => false,
+            'reason' => 'no_token',
+            'type' => null,
+            'value' => null,
+            'total_usage' => null,
+            'local_pending' => 0,
+            'reserve' => 100,
+        ], $result);
+        Http::assertNothingSent();
+    }
+
     // ------------------------------------------------------------------
     // เส้นตัดสิน: value - usage - local_pending - 1 >= reserve (เท่ากันผ่าน)
     // ------------------------------------------------------------------
@@ -177,6 +201,27 @@ class QuotaTest extends TestCase
     }
 
     #[Test]
+    public function test_usage_above_value_stops_below_reserve(): void
+    {
+        $bot = $this->bot();
+        config(['customer_follow_up.quota_reserve_messages' => 100]);
+
+        // 1000 - 1500 - 0 - 1 = -501 < reserve → หยุด แม้ usage ทะลุ value
+        $this->fakeQuota('{"type":"limited","value":1000}', '{"totalUsage":1500}');
+        $result = $this->service->check($bot, $this->now());
+
+        $this->assertSame([
+            'allowed' => false,
+            'reason' => 'below_reserve',
+            'type' => 'limited',
+            'value' => 1000,
+            'total_usage' => 1500,
+            'local_pending' => 0,
+            'reserve' => 100,
+        ], $result);
+    }
+
+    #[Test]
     public function test_none_type_allows(): void
     {
         $bot = $this->bot();
@@ -192,6 +237,30 @@ class QuotaTest extends TestCase
             'value' => null,
             'total_usage' => 99999,
             'local_pending' => 0,
+            'reserve' => 100,
+        ], $result);
+    }
+
+    #[Test]
+    public function test_none_type_allows_even_with_local_pending_rows(): void
+    {
+        $bot = $this->bot();
+
+        $this->pushRow($bot, LeadRecoveryLog::DELIVERY_STATUS_SENDING, '2026-11-16 00:10:00');
+        $this->pushRow($bot, LeadRecoveryLog::DELIVERY_STATUS_SENT, '2026-11-16 08:00:00');
+
+        config(['customer_follow_up.quota_reserve_messages' => 100]);
+        $this->fakeQuota('{"type":"none"}', '{"totalUsage":50}');
+
+        $result = $this->service->check($bot, $this->now());
+
+        $this->assertSame([
+            'allowed' => true,
+            'reason' => null,
+            'type' => 'none',
+            'value' => null,
+            'total_usage' => 50,
+            'local_pending' => 2,
             'reserve' => 100,
         ], $result);
     }
@@ -321,6 +390,28 @@ class QuotaTest extends TestCase
         $after = (array) DB::table('lead_recovery_logs')->where('id', $id)->first();
 
         $this->assertSame($before, $after);
+    }
+
+    #[Test]
+    public function test_check_reads_fresh_four_requests_and_changes_answer(): void
+    {
+        $bot = $this->bot();
+        config(['customer_follow_up.quota_reserve_messages' => 100]);
+
+        // ครั้งแรกผ่าน ครั้งที่สอง LINE ตอบเปลี่ยน → ผลต้องเปลี่ยน ไม่มีแคช (D43)
+        $this->fakeQuotaCalls([
+            ['{"type":"limited","value":1000}', '{"totalUsage":100}'],
+            ['{"type":"limited","value":100}', '{"totalUsage":100}'],
+        ]);
+
+        $first = $this->service->check($bot, $this->now());
+        $this->assertTrue($first['allowed']); // 1000 - 100 - 0 - 1 = 899 >= 100
+
+        $second = $this->service->check($bot, $this->now());
+        $this->assertFalse($second['allowed']); // 100 - 100 - 0 - 1 = -1 < 100
+        $this->assertSame('below_reserve', $second['reason']);
+
+        Http::assertSentCount(4); // สอง call × สอง GET ทุกครั้ง
     }
 
     // ------------------------------------------------------------------
