@@ -92,6 +92,7 @@ class ConfigTest extends TestCase
         $this->assertNull($read(['CUSTOMER_FOLLOW_UP_LINE_RESERVE' => '0']), 'zero is not positive: null');
         $this->assertNull($read(['CUSTOMER_FOLLOW_UP_LINE_RESERVE' => '-5']), 'negative is not positive: null');
         $this->assertSame(100, $read(['CUSTOMER_FOLLOW_UP_LINE_RESERVE' => '100']), 'positive integer passes through');
+        $this->assertNull($read(['CUSTOMER_FOLLOW_UP_LINE_RESERVE' => true]), 'env() parses "true" as bool: bool must never become 1, null');
     }
 
     #[Test]
@@ -112,5 +113,11 @@ class ConfigTest extends TestCase
         $this->assertNull($read([]), 'absent env must give null (capability blocked)');
         $this->assertNull($read(['CUSTOMER_FOLLOW_UP_ADMIN_WEB_URL' => 'http://admin.example.com']), 'http is not an https origin: null');
         $this->assertSame('https://admin.example.com', $read(['CUSTOMER_FOLLOW_UP_ADMIN_WEB_URL' => 'https://admin.example.com']), 'https origin passes through');
+        $this->assertSame('https://admin.example.com:8443', $read(['CUSTOMER_FOLLOW_UP_ADMIN_WEB_URL' => 'https://admin.example.com:8443']), 'https origin with port is kept');
+        $this->assertNull($read(['CUSTOMER_FOLLOW_UP_ADMIN_WEB_URL' => 'https://admin.example.com/chats?x=1']), 'path+query is not an origin: null');
+        $this->assertNull($read(['CUSTOMER_FOLLOW_UP_ADMIN_WEB_URL' => 'https://admin.example.com/path']), 'path is not an origin: null');
+        $this->assertNull($read(['CUSTOMER_FOLLOW_UP_ADMIN_WEB_URL' => 'https://admin.example.com/#frag']), 'fragment is not an origin: null');
+        $this->assertNull($read(['CUSTOMER_FOLLOW_UP_ADMIN_WEB_URL' => 'https://u:p@admin.example.com']), 'userinfo is not an origin: null');
+        $this->assertSame('https://admin.example.com', $read(['CUSTOMER_FOLLOW_UP_ADMIN_WEB_URL' => 'https://admin.example.com/']), 'a lone trailing slash is accepted and stored without it');
     }
 }
