@@ -40,10 +40,20 @@ class FollowUpAccountDataDetector
     private const LABELS = 'password|passwd|pass|pwd|token|secret|authorization|cookie|otp|2fa';
 
     /**
+     * ขอบหน้า label/cookie — บล็อกเฉพาะ "ตัวอักษร ASCII" (A-Z a-z _; ใช้กับ pattern /i)
+     * รีวิวรอบ 4 ข้อ 1: \b เดิมนับเลขเป็น word char (\w แบบ ASCII) ขอบเลข→อักษรไม่มี boundary
+     * เลขติดหน้า label/cookie จึงกลบลับ (เช่น เบอร์โทรติด "password: ...") — lookbehind นี้
+     * ปลดล็อกเฉพาะ "เลขนำหน้า" และคงพฤติกรรมเดิมทุกกรณีอื่นของ \b: ตัวอักษร ASCII ติดหน้า
+     * ยังบล็อก (xpassword = คำอื่น), อักษรไทย/เครื่องหมายไม่บล็อก (สมชายpassword: เคยจับผ่าน
+     * \b เพราะ \w เป็น ASCII จึงเห็นขอบไทย→ASCII — ยังจับเหมือนเดิม)
+     */
+    private const LABEL_START = '(?<![a-z_])';
+
+    /**
      * span สำหรับการแทนที่: label + ค่า ถึงท้ายบรรทัด (ต้องมีอย่างน้อย 1 ตัวอักษรหลังคั่น —
      * ทริกเกอร์เดิมของ LABEL_VALUE จึงไม่เปลี่ยน แต่ค่าทั้งค่าถูกแทนที่ ไม่เหลือเศษ)
      */
-    private const LABEL_VALUE_SPAN = '/(?:\b(?:'.self::LABELS.')\b|รหัสผ่าน)\s*[=:]\s*\S[^\r\n]*/iu';
+    private const LABEL_VALUE_SPAN = '/(?:'.self::LABEL_START.'(?:'.self::LABELS.')\b|รหัสผ่าน)\s*[=:]\s*\S[^\r\n]*/iu';
 
     /** segment ที่เป็น label ล้วน ("otp|482913") ก็นับเป็นบรรทัด credential */
     private const BARE_LABEL = '/^(?:'.self::LABELS.'|รหัสผ่าน)$/iu';
@@ -54,7 +64,7 @@ class FollowUpAccountDataDetector
 
     private const URL_USERINFO = '#[a-z][a-z0-9+.-]*://[^\s/@]+:[^\s/@]+@#i';
 
-    private const FB_COOKIE_SPAN = '/(?:\bc_user\s*[=:]\s*|\bxs\s*[=:;]\s*)\S+/i';
+    private const FB_COOKIE_SPAN = '/(?:'.self::LABEL_START.'c_user\s*[=:]\s*|'.self::LABEL_START.'xs\s*[=:;]\s*)\S+/i';
 
     /** คู่แบบ combolist: อีเมล ตามด้วย : หรือ ; ทันที (ไม่เว้นวรรค) แล้วมีค่า */
     private const EMAIL_PAIR_SPAN = '#[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}[:;](?!\s)\S+#i';

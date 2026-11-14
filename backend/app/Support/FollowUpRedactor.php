@@ -33,6 +33,9 @@ class FollowUpRedactor
     /** งบ code points รวมของ snapshot ทั้งก้อน — เกินเมื่อไหร่ทิ้งบรรทัดเก่าสุด */
     public const MAX_TOTAL_CODEPOINTS = 8000;
 
+    /** งบ pass สูงสุดของ redact (รีวิวรอบ 4 ข้อ 2 — Lead รอบ 5 รับ "at most 3 passes") */
+    public const MAX_REDACT_PASSES = 3;
+
     private const UNREADABLE_MARKER = '[redacted:unreadable]';
 
     /**
@@ -56,22 +59,61 @@ class FollowUpRedactor
      * รีวิวรอบ 1 ข้อ 1 — Lead D21 (แทนกฎ query/fragment เดิม): model ไม่ต้องใช้ URL เลย
      * จึงแทนที่ "ทั้ง token" ด้วย [redacted:url] เดียว ไม่จับเป็นชิ้น (แบบเดิมเศษหลุด):
      * (a) scheme:// ถึงช่องว่าง, (b) token ขึ้นต้น www. — รีวิวรอบ 3 (Lead 02:01) ขยายให้
-     * จับ www. ที่เกาข้อความอื่นด้วย (ไม่ต้องมีช่องว่างข้างหน้า แต่ห้ามติดตัวอักษร/เลข ASCII),
+     * จับ www. ที่เกาข้อความอื่นด้วย (ไม่ต้องมีช่องว่างข้างหน้า และรีวิวรอบ 4 ข้อ 1: ติดเลข
+     * หน้า www. ต้องจับ — lookbehind จึงบล็อกเฉพาะตัวอักษร ASCII, ตัวอักษรติดหน้ายังบล็อก),
      * (c) localhost มี/ไม่มีพอร์ต ตามด้วย / ? #, (d) โฮสต์เลข (IPv4) มี/ไม่มีพอร์ต,
      * และโฮสต์ทั่วไปแบบมีพอร์ต (host:port) — ทุกแบบตามด้วย / ? # แล้วกินถึงช่องว่าง
      * ไม่จับ: 1.500/ชิ้น, ราคา 1,500 บาท, 15/11/2026, 14.30 น., 10:30, เวอร์ชัน 1.2.3
      * (ไม่มี / ? # ต่อท้ายโฮสต์), ประโยคไทยที่มี # หรือ ?, hashtag
      */
-    private const URL_TOKENS = '/[a-z][a-z0-9+.\-]*:\/\/\S*|(?<![a-z0-9])www\.\S*|localhost(?::\d+)?(?=[\/?#])\S*|(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?=[\/?#])\S*|[a-z0-9\-]+(?:\.[a-z0-9\-]+)*\.[a-z]{2,}(?::\d+)?(?=[\/?#])\S*/iu';
+    private const URL_TOKENS = '/[a-z][a-z0-9+.\-]*:\/\/\S*|(?<![a-z])www\.\S*|localhost(?::\d+)?(?=[\/?#])\S*|(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?=[\/?#])\S*|[a-z0-9\-]+(?:\.[a-z0-9\-]+)*\.[a-z]{2,}(?::\d+)?(?=[\/?#])\S*/iu';
 
     /** ตัวอักษรเลข: ASCII + เลขไทย */
     private const DIGITS = '/[^0-9\x{0E50}-\x{0E59}]/u';
 
+    /**
+     * รีวิวรอบ 4 ข้อ 2 (Lead รอบ 5) — redact ต้องเป็น fixed point "โดยสร้าง":
+     * ทำ pass ซ้ำจนข้อความไม่เปลี่ยน (งบไม่เกิน MAX_REDACT_PASSES) เพราะ marker ของ pass
+     * ก่อนหน้าอาจสร้าง match ใหม่ (เช่น span ข้าม line break กลืน marker เข้าไป)
+     * ถ้าไม่นิ่งภายในงบ หรือผลลัพธ์ยังตรวจเจอ account data = ปิดลับไม่สำเร็จ → คืน
+     * [redacted:unreadable] เพียง marker เดียว (fail closed) — property
+     * containsAccountData(redact(x)) = false และ redact(redact(x)) = redact(x)
+     * จึงคงอยู่ทุกอินพุต และ snapshot ใช้ redact ตัวนี้ บรรทัดจึงได้ guarantee เดียวกัน
+     */
     public static function redact(string $text): string
+    {
+        $output = $text;
+
+        for ($pass = 0; $pass < self::MAX_REDACT_PASSES; $pass++) {
+            $next = self::redactPass($output);
+
+            if ($next === null) {
+                return self::UNREADABLE_MARKER; // invalid UTF-8 / preg error → fail closed (D20)
+            }
+
+            if ($next === $output) {
+                // นิ่งแล้ว — กันชั้นสุดท้าย: ถ้ายังตรวจเจอ account data = ปิดไม่สำเร็จ
+                return FollowUpAccountDataDetector::containsAccountData($output)
+                    ? self::UNREADABLE_MARKER
+                    : $output;
+            }
+
+            $output = $next;
+        }
+
+        // ไม่นิ่งภายในงบ pass — marker สร้าง match ใหม่ไม่จบ → fail closed
+        return self::UNREADABLE_MARKER;
+    }
+
+    /**
+     * หนึ่งรอบของ redact: normalize + แทนที่ span detector + email + url + เลข
+     * คืน null เมื่อ preg error (caller ต้อง fail closed)
+     */
+    private static function redactPass(string $text): ?string
     {
         $spans = FollowUpAccountDataDetector::findAccountData($text);
         if ($spans === null) {
-            return self::UNREADABLE_MARKER;
+            return null;
         }
 
         $normalized = FollowUpAccountDataDetector::normalize($text);
@@ -82,20 +124,20 @@ class FollowUpRedactor
         // ไม่ใช่ค้าง local part ไว้หน้า url marker
         $text = self::replaceMatches(self::EMAIL, '[redacted:email]', $text);
         if ($text === null) {
-            return self::UNREADABLE_MARKER;
+            return null;
         }
 
         $text = self::replaceUrlTokens($text);
         if ($text === null) {
-            return self::UNREADABLE_MARKER;
+            return null;
         }
 
         $text = self::replaceMatches(self::DIGIT_RUN, '[redacted:digits]', $text);
         if ($text === null) {
-            return self::UNREADABLE_MARKER;
+            return null;
         }
 
-        return self::replaceDigitGroups($text) ?? self::UNREADABLE_MARKER;
+        return self::replaceDigitGroups($text);
     }
 
     public static function containsAccountData(string $text): bool
