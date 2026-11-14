@@ -377,14 +377,18 @@ class PipelineTest extends TestCase
         $room = $this->makeRoom($bot, 'UEMP');
 
         // แถวเก่าที่ไม่มีขอบเขตการขาย (sales_started_at null) — ห้ามยิง query ไม่มีขอบ
+        $silenceId = DB::table('messages')->where('conversation_id', $room->id)
+            ->where('sender', 'user')->orderByDesc('id')->value('id');
+        $observedId = DB::table('messages')->where('conversation_id', $room->id)
+            ->orderByDesc('id')->value('id');
         $logId = DB::table('lead_recovery_logs')->insertGetId([
             'conversation_id' => $room->id,
             'bot_id' => $bot->id,
             'attempt_number' => 0,
             'message_mode' => 'ai',
             'delivery_status' => 'candidate',
-            'silence_user_message_id' => 1,
-            'observed_last_message_id' => 2,
+            'silence_user_message_id' => $silenceId,
+            'observed_last_message_id' => $observedId,
             'sales_started_at' => null,
             'created_at' => self::NOW,
             'updated_at' => self::NOW,

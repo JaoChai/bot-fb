@@ -17,7 +17,7 @@ use RuntimeException;
  * claim (UPDATE เดียว, D32) → recheck (D34) → context (D31) → sort → reserve (D36) →
  * draft → check แล้วบันทึกทั้งหมดใน transaction เดียว (D35)
  *
- * ขอบเขตตายตัว: ไม่ส่งอะไรออกนอกระบบ (ไม่มี LINE/Telegram/Route/Schedule),
+ * ขอบเขตตายตัว: ไม่ส่งอะไรออกนอกระบบ (โค้ดส่งข้อความจริงเป็นของการ์ดถัดไป),
  * ไม่สร้าง candidate (โดยหัวการ์ด scheduler), ไม่มี transaction ค้างตอน model ยิง,
  * ทุกเวลาเขียนเป็นสตริงกรุงเทพฯ ผ่าน query builder เท่านั้น (แบบเดียวกับ B2)
  */
