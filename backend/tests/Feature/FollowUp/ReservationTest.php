@@ -251,6 +251,41 @@ class ReservationTest extends TestCase
     }
 
     #[Test]
+    public function test_produced_draft_never_reserves_again_same_or_next_day(): void
+    {
+        $bot = $this->seedBot();
+        $dayD = $this->at('2026-11-16 21:00:00');
+
+        $log = $this->service->candidate($this->makeRoom($bot, 'UPROD'), $dayD);
+        $this->assertTrue($this->service->reserveDraft($log, $dayD), 'pre-condition: the day-D reservation succeeds');
+        $this->assertTrue(
+            $this->service->markDraftProduced($log, $this->logRow($log->id)->claim_token, $dayD),
+            'pre-condition: markDraftProduced succeeds with the stored token'
+        );
+        $rowAfterMark = $this->logRow($log->id);
+        $this->assertSame('2026-11-16', $rowAfterMark->draft_day, 'pre-condition: the produced slot stays on day D');
+
+        // (a) วันถัดไป: ร่างที่ผลิตแล้วห้ามจองใหม่ — false แถวคงเดิม slot วัน D ยังนับอยู่ วัน D+1 ยังว่าง
+        $nextMorning = $this->at('2026-11-17 09:00:00');
+        $this->assertFalse(
+            $this->service->reserveDraft($log, $nextMorning),
+            'a produced draft must never take a new slot, not even the next day'
+        );
+        $this->assertRowUnchanged($rowAfterMark, $log->id, 'a refused re-reserve must leave the produced row unchanged');
+        $this->assertSame(1, $this->usedSlots($bot->id, '2026-11-16'), "day D's produced slot must stay counted on day D");
+        $this->assertSame(0, $this->usedSlots($bot->id, '2026-11-17'), 'day D+1 must stay empty');
+
+        // (b) วันเดียวกัน: จองซ้ำหลังผลิตแล้วก็ false เช่นกัน (one draft per silence)
+        $this->assertFalse(
+            $this->service->reserveDraft($log, $dayD),
+            'a produced draft must never re-reserve on its own day either'
+        );
+        $this->assertRowUnchanged($rowAfterMark, $log->id, 'same-day re-reserve after production must change nothing');
+        $this->assertSame(1, $this->usedSlots($bot->id, '2026-11-16'));
+        $this->assertSame(0, $this->usedSlots($bot->id, '2026-11-17'));
+    }
+
+    #[Test]
     public function test_gate_and_reservation_agree_on_daily_cap(): void
     {
         $seeded = $this->seedGateRoom();
