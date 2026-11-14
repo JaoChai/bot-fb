@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
  * ตัวตัดสิน "บอทนี้ส่งข้อความตามลูกค้าอีกได้ไหม" — การ์ด B4a (D42/D43)
  *
  * ไม่มีแคช (D43): ทุกครั้งอ่านโควต้าใหม่จาก LINE ผ่าน LINEService::followUpQuota
- * ไม่ส่งข้อความเอง ไม่มี Telegram ไม่มี schedule ไม่มี HTTP client ของตัวเอง —
+ * ไม่ส่งข้อความเอง ไม่มีการแจ้งเตือน ไม่มีตารางงาน ไม่มี HTTP client ของตัวเอง —
  * มีหน้าที่อ่านโควต้า + นับ local_pending แล้วตัดสินตามสูตรของ D42
  */
 class FollowUpQuotaService
