@@ -536,6 +536,13 @@ components:
         updated_at:
           type: string
           format: date-time
+        is_outage_notice:
+          description: >-
+            True only for bot rows that are automated "recovered" notices sent
+            after an outage. Surfaces the auto-reply badge without exposing raw
+            metadata. Optional so old payloads (pre-rollout caches, optimistic
+            messages) stay valid; treat absent as false (the safe default).
+          type: boolean
 
     PaginationLinks:
       type: object
@@ -784,6 +791,12 @@ components:
         created_at:
           type: string
           format: date-time
+        is_outage_notice:
+          description: >-
+            True only for bot rows that are automated "recovered" notices sent
+            after an outage. Optional so old payloads stay valid; treat absent
+            as false (the safe default).
+          type: boolean
         conversation:
           $ref: "#/components/schemas/MessageSentConversationSnapshot"
 

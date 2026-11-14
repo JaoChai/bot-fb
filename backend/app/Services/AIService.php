@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\OpenRouterException;
 use App\Jobs\ExtractEntitiesJob;
 use App\Models\Bot;
+use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\Guardrail\GuardrailOutputSanitizer;
@@ -12,6 +13,7 @@ use App\Services\Guardrail\OffTopicCircuitBreaker;
 use App\Services\Guardrail\OffTopicSignalExtractor;
 use App\Services\Payment\OrderPayloadExtractor;
 use App\Services\SupportRouter\SupportRouterService;
+use App\Support\OutageMessageText;
 use Illuminate\Support\Facades\Log;
 
 class AIService
@@ -384,7 +386,7 @@ class AIService
             // Create error message
             $botMessage = $conversation->messages()->create([
                 'sender' => 'bot',
-                'content' => $this->getErrorMessage($e),
+                'content' => $this->getErrorMessage($e, $bot),
                 'type' => 'text',
             ]);
 
@@ -503,15 +505,27 @@ PROMPT;
      *
      * Public so webhook jobs that call generateResponse() directly can reuse the same
      * copy instead of sending silence (or a raw English error) on failure.
+     *
+     * $bot: ผู้ถือการตั้งค่า "เมื่อบอทล่ม" — ข้อความ down อ่านสดจาก bot_settings ต่อบอท
+     * (การ์ด outage-settings B2) แต่ต้องไม่มีทางโยนออกจาก method นี้: อ่านล้ม = ใช้
+     * ข้อความเริ่มต้น แถวคำตอบยังถูกบันทึก ติด tag และส่งให้ลูกค้าตามปกติ (card addition #1)
      */
-    public function getErrorMessage(OpenRouterException $e): string
+    public function getErrorMessage(OpenRouterException $e, ?Bot $bot = null): string
     {
         if ($e->isRateLimited()) {
             return 'ตอนนี้มีข้อความเข้ามาเยอะมากครับ 🙏 รบกวนพี่รอสักครู่แล้วส่งใหม่อีกครั้งนะครับ';
         }
 
         if ($e->isAuthError()) {
-            return 'ระบบขัดข้องชั่วคราวครับ 🙏 เดี๋ยวแอดมินรีบตรวจสอบให้นะครับ';
+            try {
+                $stored = $bot === null
+                    ? null
+                    : BotSetting::query()->where('bot_id', $bot->id)->value('outage_down_message');
+
+                return OutageMessageText::resolve(is_string($stored) ? $stored : null, OutageMessageText::DOWN_REPLY);
+            } catch (\Throwable) {
+                return OutageMessageText::DOWN_REPLY;
+            }
         }
 
         return 'ขอโทษครับ ระบบใช้เวลาประมวลผลนานกว่าปกติ 🙏 รบกวนพี่พิมพ์เข้ามาอีกครั้งนะครับ เดี๋ยวตอบให้เลยครับ';

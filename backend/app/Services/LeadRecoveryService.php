@@ -119,7 +119,7 @@ class LeadRecoveryService
      *
      * @return bool Success status
      */
-    public function sendStaticFollowUp(Conversation $conversation, string $message): bool
+    public function sendStaticFollowUp(Conversation $conversation, string $message, bool $plainText = false): bool
     {
         $bot = $conversation->bot;
         $channelType = $conversation->channel_type;
@@ -136,7 +136,7 @@ class LeadRecoveryService
         try {
             return match ($channelType) {
                 'line' => $this->sendViaLINE($bot, $externalCustomerId, $message),
-                'telegram' => $this->sendViaTelegram($bot, $externalCustomerId, $message),
+                'telegram' => $this->sendViaTelegram($bot, $externalCustomerId, $message, $plainText),
                 'facebook' => $this->sendViaFacebook($bot, $externalCustomerId, $message),
                 default => $this->handleUnsupportedChannel($channelType, $conversation->id),
             };
@@ -165,10 +165,13 @@ class LeadRecoveryService
 
     /**
      * Send message via Telegram channel.
+     *
+     * $plainText (F18): ข้อความที่เจ้าของตั้งเองได้ (ป้าย/แจ้งหลังบอทล่ม) ต้องไป
+     * ตรงตัวทุกตัวอักษร จึงตัด parse_mode ออก — lead recovery ปกติคง parse_mode=HTML
      */
-    protected function sendViaTelegram(Bot $bot, string $chatId, string $message): bool
+    protected function sendViaTelegram(Bot $bot, string $chatId, string $message, bool $plainText = false): bool
     {
-        $this->telegramService->sendMessage($bot, $chatId, $message);
+        $this->telegramService->sendMessage($bot, $chatId, $message, $plainText ? ['parse_mode' => null] : []);
 
         return true;
     }

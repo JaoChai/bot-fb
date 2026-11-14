@@ -76,4 +76,65 @@ class SyncControllerTest extends TestCase
         $response->assertJsonCount(1, 'data');
         $response->assertJsonPath('data.0.id', $msg2->id);
     }
+
+    /** R11 + F9: sync ข้อความต้องฉายผ่าน resource — บูลีนป้าย ไม่มี metadata ดิบ */
+    public function test_messages_sync_projects_resource_shape_with_flag_and_no_metadata(): void
+    {
+        $conversation = Conversation::factory()->create(['bot_id' => $this->bot->id]);
+        $notice = $conversation->messages()->create([
+            'sender' => 'bot',
+            'content' => 'ข้อความแจ้งหลังบอทกลับมา',
+            'type' => 'text',
+            'metadata' => ['outage_notice' => true],
+        ]);
+        $ordinary = $conversation->messages()->create([
+            'sender' => 'bot',
+            'content' => 'ตอบปกติ',
+            'type' => 'text',
+            'metadata' => ['model_error' => 'auth'],
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->getJson("/api/bots/{$this->bot->id}/conversations/{$conversation->id}/messages/sync");
+
+        $response->assertOk();
+        // envelope เดิมคงไว้
+        $response->assertJsonStructure(['data', 'has_more', 'synced_at']);
+
+        $noticeRow = collect($response->json('data'))->firstWhere('id', $notice->id);
+        $this->assertNotNull($noticeRow);
+        $this->assertSame(true, data_get($noticeRow, 'is_outage_notice'));
+        $this->assertFalse(array_key_exists('metadata', $noticeRow));
+
+        $ordinaryRow = collect($response->json('data'))->firstWhere('id', $ordinary->id);
+        $this->assertNotNull($ordinaryRow);
+        $this->assertSame(false, data_get($ordinaryRow, 'is_outage_notice'));
+        $this->assertFalse(array_key_exists('metadata', $ordinaryRow));
+    }
+
+    /** R11 + F9: sync รายการแชทต้องฉาย last_message ผ่าน resource เท่านั้น */
+    public function test_conversations_sync_projects_last_message_with_flag_and_no_metadata(): void
+    {
+        $conversation = Conversation::factory()->create(['bot_id' => $this->bot->id]);
+        $notice = $conversation->messages()->create([
+            'sender' => 'bot',
+            'content' => 'ข้อความแจ้งหลังบอทกลับมา',
+            'type' => 'text',
+            'metadata' => ['outage_notice' => true],
+        ]);
+        $conversation->forceFill(['last_message_id' => $notice->id])->save();
+
+        $response = $this->actingAs($this->user)
+            ->getJson("/api/bots/{$this->bot->id}/conversations/sync");
+
+        $response->assertOk();
+
+        $item = collect($response->json('data'))->firstWhere('id', $conversation->id);
+        $this->assertNotNull($item);
+        // ฟิลด์แชทเดิมยังอยู่ครบ (ห้ามเปลี่ยนรูปทั้ง object)
+        $this->assertArrayHasKey('customer_profile', $item);
+        $this->assertArrayHasKey('last_message', $item);
+        $this->assertSame(true, data_get($item, 'last_message.is_outage_notice'));
+        $this->assertFalse(array_key_exists('metadata', (array) data_get($item, 'last_message')));
+    }
 }

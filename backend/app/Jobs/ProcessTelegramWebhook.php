@@ -507,10 +507,15 @@ class ProcessTelegramWebhook implements ShouldQueue
 
             // Send response to Telegram
             if ($botMessage && $botMessage->content) {
+                // F18: คำตอบตอนบอทล่ม (แถว tag model_error = auth) ส่งแบบ plain text
+                // เพื่อให้ข้อความที่เจ้าของตั้งเองได้ไปถึงลูกค้าตรงตัว; คำตอบปกติคง parse_mode=HTML
+                $isAuthDownReply = ($botMessage->metadata['model_error'] ?? null) === 'auth';
+
                 $telegramService->sendMessage(
                     $this->bot,
                     $chatId,
-                    $botMessage->content
+                    $botMessage->content,
+                    $isAuthDownReply ? ['parse_mode' => null] : [],
                 );
 
                 Log::info('Telegram AI response sent', [

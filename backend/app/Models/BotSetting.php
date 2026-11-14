@@ -59,6 +59,11 @@ class BotSetting extends Model
         'slip_amount_tolerance',
         'slip_success_message',
         'slip_fail_message',
+        // Outage settings feature
+        'outage_recovery_enabled',
+        'outage_recovery_message_th',
+        'outage_recovery_message_en',
+        'outage_down_message',
     ];
 
     protected $casts = [
@@ -81,6 +86,7 @@ class BotSetting extends Model
         'auto_assignment_enabled' => 'boolean',
         'slip_verification_enabled' => 'boolean',
         'slip_amount_tolerance' => 'float',
+        'outage_recovery_enabled' => 'boolean',
     ];
 
     public function bot(): BelongsTo

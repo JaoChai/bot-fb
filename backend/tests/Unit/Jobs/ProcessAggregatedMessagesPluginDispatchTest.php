@@ -116,7 +116,7 @@ class ProcessAggregatedMessagesPluginDispatchTest extends TestCase
         $failure = new OpenRouterException('upstream failed', 503);
         $ai = Mockery::mock(AIService::class);
         $ai->shouldReceive('generateResponse')->once()->andThrow($failure);
-        $ai->shouldReceive('getErrorMessage')->once()->with($failure)->andReturn('ขออภัย ระบบขัดข้อง');
+        $ai->shouldReceive('getErrorMessage')->once()->with($failure, $bot)->andReturn('ขออภัย ระบบขัดข้อง');
 
         $delivery = Mockery::mock(AggregatedMessageDeliveryService::class);
         $delivery->shouldReceive('deliver')->once()->withArgs(

@@ -84,6 +84,8 @@ class MessageSent implements ShouldBroadcast
             'media_url' => $this->message->media_url,
             'media_type' => $this->message->media_type,
             'created_at' => $this->message->created_at->toISOString(),
+            // R11: ป้ายแจ้งลูกค้าหลังบอทล่ม — บูลีนที่ได้มา ไม่ใช่ metadata ดิบ
+            'is_outage_notice' => $this->message->isOutageNotice(),
             // Conversation data captured at dispatch time (not fresh() to avoid race conditions)
             'conversation' => [
                 'id' => $this->conversationData['id'],

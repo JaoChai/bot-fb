@@ -4,6 +4,7 @@ namespace Tests\Feature\Outage;
 
 use App\Jobs\ProcessAggregatedMessages;
 use App\Models\Bot;
+use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
@@ -16,6 +17,7 @@ use Illuminate\Cache\ArrayStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
@@ -442,6 +444,163 @@ class OutageAuthTagAndAlertTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // Part 3 — ข้อความ down ต่อบอทอ่านจาก bot_settings (การ์ด outage-settings B2)
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_both_down_reply_paths_read_current_bot_settings(): void
+    {
+        // เส้นทาง sync: AIService::generateAndSaveResponse
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        BotSetting::query()->create(['bot_id' => $bot->id, 'outage_down_message' => 'ทีมงานกำลังเปลี่ยนกุญแจครับ']);
+        $this->fakeOpenRouterFailure(401);
+        $row = $this->failAReply($bot, $conversation);
+        $this->assertSame('ทีมงานกำลังเปลี่ยนกุญแจครับ', $row->content);
+        $row->refresh();
+        $this->assertSame('auth', $row->metadata['model_error']);
+
+        // เส้นทาง aggregated: ProcessAggregatedMessages
+        [$bot2, $conversation2] = $this->makeBotWithConversation();
+        BotSetting::query()->create(['bot_id' => $bot2->id, 'outage_down_message' => 'บอทสองกำลังซ่อมครับ']);
+        $this->fakeOpenRouterFailure(401);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+        $row2 = $this->runAggregatedJob($bot2, $conversation2);
+        $this->assertSame('บอทสองกำลังซ่อมครับ', $row2->content);
+        $row2->refresh();
+        $this->assertSame('auth', $row2->metadata['model_error']);
+    }
+
+    #[Test]
+    public function test_blank_down_setting_falls_back_to_the_default_on_both_paths(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        BotSetting::query()->create(['bot_id' => $bot->id, 'outage_down_message' => null]);
+        $this->fakeOpenRouterFailure(401);
+        $row = $this->failAReply($bot, $conversation);
+        $this->assertSame(self::AUTH_TEXT, $row->content);
+
+        [$bot2, $conversation2] = $this->makeBotWithConversation();
+        BotSetting::query()->create(['bot_id' => $bot2->id, 'outage_down_message' => '   ']);
+        $this->fakeOpenRouterFailure(401);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+        $row2 = $this->runAggregatedJob($bot2, $conversation2);
+        $this->assertSame(self::AUTH_TEXT, $row2->content);
+    }
+
+    #[Test]
+    public function test_other_bots_settings_are_not_used_on_either_path(): void
+    {
+        [$otherBot] = $this->makeBotWithConversation();
+        BotSetting::query()->create(['bot_id' => $otherBot->id, 'outage_down_message' => 'ข้อความของบอทอื่น']);
+
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $this->fakeOpenRouterFailure(401);
+        $row = $this->failAReply($bot, $conversation);
+        $this->assertSame(self::AUTH_TEXT, $row->content);
+        $this->assertStringNotContainsString('ข้อความของบอทอื่น', $row->content);
+
+        [$bot2, $conversation2] = $this->makeBotWithConversation();
+        $this->fakeOpenRouterFailure(401);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+        $row2 = $this->runAggregatedJob($bot2, $conversation2);
+        $this->assertSame(self::AUTH_TEXT, $row2->content);
+        $this->assertStringNotContainsString('ข้อความของบอทอื่น', $row2->content);
+    }
+
+    #[Test]
+    public function test_rate_limit_text_survives_custom_settings_on_both_paths(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        BotSetting::query()->create(['bot_id' => $bot->id, 'outage_down_message' => 'ข้อความกำหนดเอง']);
+        $this->fakeOpenRouterFailure(429);
+        $row = $this->failAReply($bot, $conversation);
+        $this->assertSame(self::RATE_LIMIT_TEXT, $row->content);
+        $row->refresh();
+        $this->assertNull($row->metadata);
+
+        [$bot2, $conversation2] = $this->makeBotWithConversation();
+        BotSetting::query()->create(['bot_id' => $bot2->id, 'outage_down_message' => 'ข้อความกำหนดเอง']);
+        $this->fakeOpenRouterFailure(429);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+        $row3 = $this->runAggregatedJob($bot2, $conversation2);
+        $this->assertSame(self::RATE_LIMIT_TEXT, $row3->content);
+        $row3->refresh();
+        $this->assertNull($row3->metadata);
+    }
+
+    #[Test]
+    public function test_generic_text_survives_custom_settings_on_both_paths(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        BotSetting::query()->create(['bot_id' => $bot->id, 'outage_down_message' => 'ข้อความกำหนดเอง']);
+        $this->fakeOpenRouterFailure(500);
+        $row2 = $this->failAReply($bot, $conversation);
+        $this->assertSame(self::GENERIC_TEXT, $row2->content);
+        $row2->refresh();
+        $this->assertNull($row2->metadata);
+
+        [$bot2, $conversation2] = $this->makeBotWithConversation();
+        BotSetting::query()->create(['bot_id' => $bot2->id, 'outage_down_message' => 'ข้อความกำหนดเอง']);
+        $this->fakeOpenRouterFailure(500);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+        $row3 = $this->runAggregatedJob($bot2, $conversation2);
+        $this->assertSame(self::GENERIC_TEXT, $row3->content);
+        $row3->refresh();
+        $this->assertNull($row3->metadata);
+    }
+
+    #[Test]
+    public function test_settings_lookup_failure_on_sync_path_still_saves_the_default_tagged_row(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $this->breakBotSettingsReadsAfterOpenRouterFailure();
+
+        $row = $this->failAReply($bot, $conversation);
+
+        $this->assertSame(self::AUTH_TEXT, $row->content, 'failed lookup must fall back to the default text');
+        $row->refresh();
+        $this->assertSame('auth', $row->metadata['model_error'], 'row must still be tagged');
+        $this->assertSame(1, count($this->telegramAlerts()), 'owner alert must still go out');
+    }
+
+    #[Test]
+    public function test_settings_lookup_failure_on_aggregated_path_still_saves_delivers_and_alerts(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $this->breakBotSettingsReadsAfterOpenRouterFailure();
+
+        $row = null;
+        try {
+            $row = $this->runAggregatedJob($bot, $conversation);
+        } catch (\TypeError) {
+            // main: job ยังไม่สร้างแถวเมื่ออ่าน settings ล้ม — เป็น RED ที่คาดหมาย
+        }
+
+        $this->assertInstanceOf(Message::class, $row, 'the reply row must exist even when the settings lookup fails');
+        $this->assertSame(self::AUTH_TEXT, $row->content, 'failed lookup must fall back to the default text');
+        $row->refresh();
+        $this->assertSame('auth', $row->metadata['model_error'], 'row must still be tagged');
+        $this->assertSame(1, count($this->linePushes()), 'the reply must still be delivered');
+        $this->assertSame(1, count($this->telegramAlerts()), 'owner alert must still go out');
+    }
+
+    #[Test]
+    public function test_owner_down_alert_last_line_carries_the_d3_wording(): void
+    {
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $this->fakeOpenRouterFailure(401);
+        $this->fakeOwnerAlertAndCustomerDelivery();
+
+        $this->failAReply($bot, $conversation);
+
+        $expected = '🚨 <b>บอทตอบลูกค้าไม่ได้</b> ('.$this->esc($bot->name).")\n"
+            .'OpenRouter ปฏิเสธกุญแจ (HTTP 401)'."\n"
+            .'ลูกค้าได้ข้อความแจ้งระบบขัดข้องตามที่ตั้งไว้ ต้องเปลี่ยน OPENROUTER_API_KEY';
+        $texts = collect($this->telegramAlerts())->map(fn ($request) => $request['text'])->all();
+        $this->assertSame([$expected], $texts);
+    }
+
+    // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
 
@@ -534,10 +693,63 @@ class OutageAuthTagAndAlertTest extends TestCase
 
     private function telegramAlerts(): array
     {
-        return Http::recorded(fn ($r) => str_contains($r->url(), 'api.telegram.org') && str_contains($r->url(), 'sendMessage'))
+        return collect(Http::recorded(fn ($r) => str_contains($r->url(), 'api.telegram.org') && str_contains($r->url(), 'sendMessage')))
             ->map(fn ($pair) => $pair[0])
             ->values()
             ->all();
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function linePushes(): array
+    {
+        return collect(Http::recorded(fn ($r) => str_contains($r->url(), 'api.line.me') && str_contains($r->url(), 'message/push')))
+            ->map(fn ($pair) => $pair[0])
+            ->values()
+            ->all();
+    }
+
+    private function esc(string $value): string
+    {
+        return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+    }
+
+    /**
+     * จำลอง "อ่าน bot_settings ล้ม" — ทุก query ที่แตะตารางนี้โยน exception
+     * (ตารางอื่นและส่วนอื่นของระบบทำงานปกติหมด)
+     */
+    private function breakBotSettingsReads(): void
+    {
+        DB::beforeExecuting(function (string $sql): void {
+            if (str_contains($sql, 'bot_settings')) {
+                throw new RuntimeException('bot_settings lookup failed');
+            }
+        });
+    }
+
+    /**
+     * แบบติดอาวุธ: อ่าน bot_settings ล้ม "หลังจาก" OpenRouter ตอบ 401 เท่านั้น
+     * การอ่าน settings ก่อนหน้า (เช่น aggregation gate) ทำงานปกติ — ตรงกับสิ่งที่
+     * failure path ของ getErrorMessage ต้องรอด
+     */
+    private function breakBotSettingsReadsAfterOpenRouterFailure(): void
+    {
+        $armed = false;
+        Http::fake([
+            'openrouter.test/api/v1/chat/completions' => function () use (&$armed) {
+                $armed = true;
+
+                return Http::response(['error' => ['message' => 'User not found.', 'code' => 401]], 401);
+            },
+            'api.line.me/*' => Http::response([], 200),
+            'api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]]),
+        ]);
+        DB::beforeExecuting(function (string $sql) use (&$armed): void {
+            // เจาะเฉพาะ "การอ่าน outage_down_message ใน getErrorMessage" —
+            // การอ่าน bot_settings อื่นใน failure path (เช่น multiple bubbles) เป็นพฤติกรรมเดิม
+            if ($armed && str_contains($sql, 'select "outage_down_message"')) {
+                throw new RuntimeException('bot_settings lookup failed');
+            }
+        });
     }
 
     /** จำลอง cache store ที่ add('outage:auth-alert') โยน exception ทุกครั้ง (key อื่นทำงานปกติ) */

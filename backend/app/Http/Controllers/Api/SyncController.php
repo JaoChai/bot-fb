@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\MessageResource;
 use App\Models\Bot;
 use App\Models\Conversation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 class SyncController extends Controller
 {
@@ -28,8 +30,19 @@ class SyncController extends Controller
             $query->where('updated_at', '>', $sinceDate);
         }
 
+        // F9: คงรูป envelope/ฟิลด์แชทเดิมทุกอย่าง แต่ "last_message" ต้องเป็น
+        // รูป resource (มี is_outage_notice) ไม่ใช่ JSON ดิบของโมเดล (มี metadata)
+        $data = $query->get()->map(function (Conversation $conversation) {
+            $array = $conversation->toArray();
+            $array['last_message'] = $conversation->lastMessage !== null
+                ? MessageResource::make($conversation->lastMessage)->resolve()
+                : null;
+
+            return $array;
+        });
+
         return response()->json([
-            'data' => $query->get(),
+            'data' => $data,
             'synced_at' => now()->toISOString(),
         ]);
     }
@@ -49,8 +62,14 @@ class SyncController extends Controller
 
         $hasMore = $messages->count() === 200;
 
+        // F9: ฉายผ่าน resource — since_id/ลำดับ/limit/has_more/synced_at คงเดิมทั้งหมด
+        /** @var Collection<int, array<string, mixed>> $projected */
+        $projected = $messages
+            ->map(fn ($message) => MessageResource::make($message)->resolve())
+            ->values();
+
         return response()->json([
-            'data' => $messages,
+            'data' => $projected,
             'has_more' => $hasMore,
             'synced_at' => now()->toISOString(),
         ]);

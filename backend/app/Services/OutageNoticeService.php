@@ -71,10 +71,11 @@ class OutageNoticeService
 
     /**
      * "กลับมาแล้ว" — เรียกโดย OutageRecoveryService ต่อบอท 1 ข้อความต่อการรัน
+     * $disabled = ห้องที่ถูกปิดท้ายเพราะสวิตช์ปิด (R6) — ไม่ใช่ความล้มเหลวในการส่ง
      */
-    public function alertOwnerRecovered(Bot $bot, int $sent, int $failed): void
+    public function alertOwnerRecovered(Bot $bot, int $sent, int $failed, int $disabled = 0): void
     {
-        $this->telegram->notifyOutageRecovered($bot, $sent, $failed);
+        $this->telegram->notifyOutageRecovered($bot, $sent, $failed, $disabled);
     }
 
     private function tagAuthFailure(Message $botMessage): void

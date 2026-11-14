@@ -64,7 +64,7 @@ class TelegramAlertBotService
 
     /**
      * แจ้งเจ้าของว่า "บอทล่ม — OpenRouter ปฏิเสธกุญแจ" (การ์ด t_44675510)
-     * ลูกค้าได้แต่ข้อความ "ระบบขัดข้องชั่วคราว" ต้องรีบเปลี่ยน OPENROUTER_API_KEY
+     * ลูกค้าได้ข้อความแจ้งระบบขัดข้องตามที่ตั้งไว้ ต้องรีบเปลี่ยน OPENROUTER_API_KEY
      * ไม่มีทางโยน exception — ไม่มี plugin / config หาย / API ล่ม = log แล้วจบ
      */
     public function notifyOutageDown(Bot $bot, int $httpStatus): void
@@ -79,7 +79,7 @@ class TelegramAlertBotService
 
             $text = '🚨 <b>บอทตอบลูกค้าไม่ได้</b> ('.self::esc($bot->name).")\n"
                 .'OpenRouter ปฏิเสธกุญแจ (HTTP '.self::esc((string) $httpStatus).")\n"
-                .'ลูกค้าได้ข้อความ "ระบบขัดข้องชั่วคราว" ต้องเปลี่ยน OPENROUTER_API_KEY';
+                .'ลูกค้าได้ข้อความแจ้งระบบขัดข้องตามที่ตั้งไว้ ต้องเปลี่ยน OPENROUTER_API_KEY';
 
             $this->sendMessage($token, $chatId, $text);
         } catch (\Throwable $e) {
@@ -104,8 +104,10 @@ class TelegramAlertBotService
     /**
      * บอกเจ้าของว่า "บอทกลับมาตอบได้แล้ว" พร้อมยอดต่อบอท (การ์ด t_44675510)
      * $sent = ส่งข้อความขอให้ลูกค้าพิมพ์ใหม่สำเร็จ, $failed = ส่งไม่สำเร็จ (ไม่ retry แล้ว)
+     * $disabled = ห้องที่ถูกปิดท้ายเพราะสวิตช์ "เมื่อบอทล่ม" ปิดอยู่ (D3: > 0 เติมท้าย
+     * บรรทัดยอด ไม่ใช่ส่งไม่สำเร็จ; = 0 ข้อความคงเดิมทุกไบต์)
      */
-    public function notifyOutageRecovered(Bot $bot, int $sent, int $failed): void
+    public function notifyOutageRecovered(Bot $bot, int $sent, int $failed, int $disabled = 0): void
     {
         try {
             $targets = $this->alertTargets($bot, 'Outage recovery alert');
@@ -118,12 +120,17 @@ class TelegramAlertBotService
             $text = '✅ <b>บอทกลับมาตอบได้แล้ว</b> ('.self::esc($bot->name).")\n"
                 .'ส่งข้อความขอให้ลูกค้าพิมพ์ใหม่ '.self::esc((string) $sent).' ห้อง · ส่งไม่สำเร็จ '.self::esc((string) $failed).' ห้อง';
 
+            if ($disabled > 0) {
+                $text .= ' · ไม่ได้ส่ง '.self::esc((string) $disabled).' ห้อง (ปิดการส่งข้อความตามลูกค้าไว้)';
+            }
+
             $this->sendMessage($token, $chatId, $text);
         } catch (\Throwable $e) {
             Log::warning('Outage recovery alert failed', [
                 'bot_id' => $bot->id,
                 'sent' => $sent,
                 'failed' => $failed,
+                'disabled' => $disabled,
                 'error' => $e->getMessage(),
             ]);
         }

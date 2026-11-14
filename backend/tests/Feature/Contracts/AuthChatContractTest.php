@@ -307,6 +307,38 @@ class AuthChatContractTest extends TestCase
         $this->assertValidAgainstContract($event->broadcastWith(), 'MessageSentPayload', 'postback MessageSent payload');
     }
 
+    /** R11: ป้าย is_outage_notice ต้องอยู่ทั้ง resource และ broadcast และตรงสัญญา */
+    public function test_outage_notice_flag_matches_contract_on_resource_and_broadcast(): void
+    {
+        $owner = User::factory()->owner()->create();
+        $bot = Bot::factory()->for($owner)->create();
+        $conversation = Conversation::factory()->for($bot)->create();
+
+        $notice = $conversation->messages()->create([
+            'sender' => 'bot',
+            'content' => 'ขออภัยครับพี่ ระบบกลับมาใช้ได้แล้ว รบกวนพิมพ์ใหม่อีกครั้งนะครับ',
+            'type' => 'text',
+            'metadata' => ['outage_notice' => true],
+        ]);
+
+        $resourcePayload = MessageResource::make($notice)->resolve();
+        $this->assertSame(true, data_get($resourcePayload, 'is_outage_notice'));
+        $this->assertValidAgainstContract($resourcePayload, 'Message', 'tagged outage notice via MessageResource');
+
+        $broadcastPayload = (new MessageSent($notice))->broadcastWith();
+        $this->assertSame(true, data_get($broadcastPayload, 'is_outage_notice'));
+        $this->assertValidAgainstContract($broadcastPayload, 'MessageSentPayload', 'tagged outage notice via MessageSent');
+
+        // แถวปกติต้องพาค่า false ตามสัญญา (optional non-null, default false)
+        $ordinary = $conversation->messages()->create([
+            'sender' => 'bot',
+            'content' => 'ตอบปกติ',
+            'type' => 'text',
+            'metadata' => null,
+        ]);
+        $this->assertSame(false, data_get(MessageResource::make($ordinary)->resolve(), 'is_outage_notice'));
+    }
+
     // ------------------------------------------------------------------
     // Broadcast channel authorization
     // ------------------------------------------------------------------

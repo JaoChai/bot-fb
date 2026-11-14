@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Support\OutageMessageText;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -35,9 +37,9 @@ class OutageRecoveryService
     /** ข้อความลูกค้าไม่มีตัวอักษรไทยตัวไหน = แถบภาษาอังกฤษท้ายข้อความ */
     private const THAI_CHAR_REGEX = '/[\x{0E00}-\x{0E7F}]/u';
 
-    public const CUSTOMER_TEXT_THAI = 'ขออภัยครับพี่ 🙏 ก่อนหน้านี้ระบบขัดข้องชั่วคราว ตอนนี้กลับมาใช้งานได้ปกติแล้วครับ รบกวนพี่พิมพ์ข้อความเข้ามาใหม่อีกครั้งนะครับ';
+    public const CUSTOMER_TEXT_THAI = OutageMessageText::RECOVERY_THAI;
 
-    public const CUSTOMER_TEXT_ENGLISH = 'Sorry for the inconvenience 🙏 Our system had a temporary issue and is working again now. Please send your message again.';
+    public const CUSTOMER_TEXT_ENGLISH = OutageMessageText::RECOVERY_ENGLISH;
 
     public function __construct(
         private readonly LeadRecoveryService $leadRecovery,
@@ -130,13 +132,37 @@ class OutageRecoveryService
             $conversation = $tagged->conversation;
             $bot = $conversation->bot;
 
+            // อ่านการตั้งค่า "สด" ต่อห้อง ก่อนจอง (การ์ด outage-settings B2) —
+            // อ่านล้ม = ไม่จอง ไม่ส่ง ไม่นับ ห้องยังรอรอบหน้า (card addition #2)
+            try {
+                $settings = BotSetting::query()->where('bot_id', $bot->id)->first();
+            } catch (\Throwable $e) {
+                Log::warning('Outage recovery: settings lookup failed — room stays unclaimed', [
+                    'conversation_id' => $conversation->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                continue;
+            }
+
+            // สวิตช์ปิด (R6): ปิดห้องแบบ terminal ด้วย "disabled" — ไม่ push, ไม่เขียนแถวแจ้งลูกค้า
+            if (($settings?->outage_recovery_enabled ?? true) !== true) {
+                if ($this->claimDisabled($tagged)) {
+                    $countsByBot[$bot->id] ??= ['bot' => $bot, 'sent' => 0, 'failed' => 0, 'disabled' => 0];
+                    $countsByBot[$bot->id]['disabled']++;
+                }
+
+                continue;
+            }
+
             // จองแบบ atomic ก่อนส่ง — ผู้ชนะเท่านั้นส่งได้; ตายหลังจองก็ไม่ retry
             if (! $this->claim($tagged)) {
                 continue;
             }
 
-            $text = $this->noticeText($conversation, $tagged);
-            $sent = $this->leadRecovery->sendStaticFollowUp($conversation, $text);
+            $text = $this->noticeText($conversation, $tagged, $settings);
+            // F18: ข้อความแจ้งลูกค้าเป็นข้อความที่เจ้าของแก้เองได้ → plain text
+            $sent = $this->leadRecovery->sendStaticFollowUp($conversation, $text, true);
 
             if ($sent) {
                 // แถวแจ้งลูกค้า: content = ข้อความที่ถูก push จริงทุกตัวอักษร
@@ -151,23 +177,40 @@ class OutageRecoveryService
                 $this->mark($tagged, 'failed');
             }
 
-            $countsByBot[$bot->id] ??= ['bot' => $bot, 'sent' => 0, 'failed' => 0];
+            $countsByBot[$bot->id] ??= ['bot' => $bot, 'sent' => 0, 'failed' => 0, 'disabled' => 0];
             $countsByBot[$bot->id][$sent ? 'sent' : 'failed']++;
         }
 
         // "Back" — ต่อบอท 1 ข้อความ เฉพาะรอบที่พยายามส่งอย่างน้อย 1 ห้อง
         foreach ($countsByBot as $entry) {
-            $this->outageNotice->alertOwnerRecovered($entry['bot'], $entry['sent'], $entry['failed']);
+            $this->outageNotice->alertOwnerRecovered($entry['bot'], $entry['sent'], $entry['failed'], $entry['disabled']);
         }
     }
 
     private function claim(Message $tagged): bool
     {
+        return $this->claimWith($tagged, 'sending');
+    }
+
+    /**
+     * ปิดห้องแบบ terminal (R6): recovery_notice = "disabled" แบบ atomic เดียวกับ
+     * claim ปกติ — ผู้ชนะเท่านั้นถูกนับยอด disabled ของ "Back"
+     */
+    private function claimDisabled(Message $tagged): bool
+    {
+        return $this->claimWith($tagged, 'disabled');
+    }
+
+    /**
+     * จอง status ใดๆ ของ recovery_notice แบบ atomic: SET ทั้งค่า JSON เพื่อรองรับ
+     * PostgreSQL metadata ที่เป็น json (ไม่ใช่ jsonb)
+     */
+    private function claimWith(Message $tagged, string $status): bool
+    {
         $metadata = $tagged->metadata ?? [];
-        $metadata['recovery_notice'] = 'sending';
+        $metadata['recovery_notice'] = $status;
         $tagged->forceFill(['metadata' => $metadata]);
 
-        // SET the whole cast JSON value: PostgreSQL metadata is json, not jsonb.
         return $tagged->newQuery()
             ->whereKey($tagged->getKey())
             ->whereJsonDoesntContainKey('metadata->recovery_notice')
@@ -183,9 +226,10 @@ class OutageRecoveryService
 
     /**
      * ข้อความลูกค้า: ไทยเสมอ + แถบอังกฤษต่อท้ายเมื่อข้อความ (type=text) ล่าสุดของ
-     * ลูกค้าก่อนแถวติด tag ไม่มีตัวอักษรไทยเลย
+     * ลูกค้าก่อนแถวติด tag ไม่มีตัวอักษรไทยเลย — ข้อความจริงอ่านจาก $settings
+     * ที่อ่านสดก่อนจอง (ค่าว่าง/null = ใช้ค่าเริ่มต้นของโค้ด)
      */
-    private function noticeText(Conversation $conversation, Message $tagged): string
+    private function noticeText(Conversation $conversation, Message $tagged, ?BotSetting $settings): string
     {
         $lastCustomerText = $conversation->messages()
             ->where('sender', 'user')
@@ -198,8 +242,12 @@ class OutageRecoveryService
             && $lastCustomerText !== ''
             && preg_match(self::THAI_CHAR_REGEX, $lastCustomerText) !== 1;
 
-        return $needsEnglish
-            ? self::CUSTOMER_TEXT_THAI."\n\n".self::CUSTOMER_TEXT_ENGLISH
-            : self::CUSTOMER_TEXT_THAI;
+        if (! $needsEnglish) {
+            return OutageMessageText::resolve($settings?->outage_recovery_message_th, OutageMessageText::RECOVERY_THAI);
+        }
+
+        return OutageMessageText::resolve($settings?->outage_recovery_message_th, OutageMessageText::RECOVERY_THAI)
+            ."\n\n"
+            .OutageMessageText::resolve($settings?->outage_recovery_message_en, OutageMessageText::RECOVERY_ENGLISH);
     }
 }
