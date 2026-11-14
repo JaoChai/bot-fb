@@ -159,9 +159,11 @@ class CapabilitiesTest extends TestCase
         $missing = $this->makeReadyBot(['access_token' => 'tok-123', 'chat_id' => '999']);
         $empty = $this->makeReadyBot(['access_token' => 'tok-123', 'chat_id' => '999', 'authorized_user_ids' => []]);
         $nonList = $this->makeReadyBot(['access_token' => 'tok-123', 'chat_id' => '999', 'authorized_user_ids' => '555']);
-        config(['customer_follow_up.bot_ids' => [$missing->id, $empty->id, $nonList->id]]);
+        $assocList = $this->makeReadyBot(['access_token' => 'tok-123', 'chat_id' => '999', 'authorized_user_ids' => ['a' => '555']]);
+        $listOfBlank = $this->makeReadyBot(['access_token' => 'tok-123', 'chat_id' => '999', 'authorized_user_ids' => ['']]);
+        config(['customer_follow_up.bot_ids' => [$missing->id, $empty->id, $nonList->id, $assocList->id, $listOfBlank->id]]);
 
-        foreach ([$missing, $empty, $nonList] as $bot) {
+        foreach ([$missing, $empty, $nonList, $assocList, $listOfBlank] as $bot) {
             $caps = FollowUpCapabilities::forBot($bot, $this->now());
 
             $this->assertSame('telegram_allowlist_missing', $caps['blocked_reason']);
