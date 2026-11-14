@@ -155,6 +155,17 @@ describe('BotSettingsPage (outage tab)', () => {
     expect(second.outage_recovery_message_th).toBeNull();
     expect(second.outage_down_message).toBe('ตอบไม่ได้ตอนนี้');
     expect(second).not.toHaveProperty('outage_recovery_message_en');
+
+    // Blank/whitespace-only overrides also save as null (inherit outage_defaults)
+    fireEvent.change(TH_EDITOR(), { target: { value: '   ' } });
+    fireEvent.change(DOWN_EDITOR(), { target: { value: '' } });
+    fireEvent.click(getSaveButton());
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalledTimes(3));
+
+    const third = h.mutateAsync.mock.calls[2][0] as Record<string, unknown>;
+    expect(third.outage_recovery_message_th).toBeNull();
+    expect(third.outage_down_message).toBeNull();
+    expect(third).not.toHaveProperty('outage_recovery_message_en');
   });
 
   it('stored_english_text_is_never_sent_back', async () => {
