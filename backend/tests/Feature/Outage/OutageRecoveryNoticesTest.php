@@ -697,15 +697,40 @@ class OutageRecoveryNoticesTest extends TestCase
     #[Test]
     public function test_recovery_reads_latest_settings_despite_cached_relation(): void
     {
-        $this->fakeAllWorking();
-        [$bot, $conversation] = $this->roomWithOutage('เอา2ชุดครับ');
+        // การตั้งค่าต้องถูกอ่าน "สด" ต่อห้อง ไม่แคชต่อรอบ: สองห้องบอทเดียว —
+        // หลัง push แรกพอดี (ใน callback ของ push เอง) เจ้าของแก้ข้อความ
+        // → push ของห้องสองต้องใช้ฉบับล่าสุดแล้ว ไม่ใช่ฉบับที่แคชไว้ตั้งแต่ต้นรอบ
+        $bot = $this->makeBot();
+        $first = Conversation::factory()->line()->create(['bot_id' => $bot->id]);
+        $this->seedOutageTurn($first, 'สวัสดี');
+        $second = Conversation::factory()->line()->create(['bot_id' => $bot->id]);
+        $this->seedOutageTurn($second, 'สวัสดี');
         BotSetting::query()->create(['bot_id' => $bot->id, 'outage_recovery_message_th' => 'ฉบับแรก']);
-        $bot->load('settings'); // อย่างใจ: cache ฉบับแรกไว้ใน relation ก่อนรอบส่ง
-        BotSetting::query()->where('bot_id', $bot->id)->update(['outage_recovery_message_th' => 'ฉบับล่าสุด']);
+        $bot->load('settings'); // cache ฉบับแรกไว้ใน relation ก่อนรอบส่ง (ต้องไม่มีผลต่อการอ่านของ service)
+
+        $mutated = false;
+        Http::fake([
+            'openrouter.test/api/v1/key' => Http::response(['data' => []], 200),
+            'api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]]),
+            'api.line.me/*' => function () use (&$mutated, $bot) {
+                if (! $mutated) {
+                    // แก้การตั้งค่า "ระหว่างรอบ" หลัง push แรกพอดี — เขียนผ่าน query ใหม่
+                    // เหมือนที่เจ้าของทำจากหน้าเว็บ ไม่ผ่าน relation ที่ถูก cache ไว้
+                    $mutated = true;
+                    BotSetting::query()->where('bot_id', $bot->id)->update(['outage_recovery_message_th' => 'ฉบับล่าสุด']);
+                }
+
+                return Http::response([], 200);
+            },
+        ]);
 
         $this->runRecovery();
 
-        $this->assertSame(['ฉบับล่าสุด'], $this->pushTexts(), 'must read settings fresh at send time');
+        $this->assertSame(['ฉบับแรก', 'ฉบับล่าสุด'], $this->pushTexts(), 'each room must read the settings fresh at its own send time');
+        $rows = $this->noticeRows();
+        $this->assertCount(2, $rows);
+        $this->assertSame('ฉบับแรก', $rows[0]->content);
+        $this->assertSame('ฉบับล่าสุด', $rows[1]->content);
     }
 
     #[Test]
@@ -872,42 +897,114 @@ class OutageRecoveryNoticesTest extends TestCase
         $this->assertSame([], $this->pushTexts());
         $tagged->refresh();
         $this->assertArrayNotHasKey('recovery_notice', $tagged->metadata ?? []);
+
+        // สวิตช์ปิดยังต้องผ่าน gate อื่น: ห้อง handover บนบอทที่ปิด → gate handover ตัดก่อน
+        // settings/claim (แถวหลักอายุเกิน 24 ชม. ไม่ใช่ห้องรอแล้ว) → ไม่มี marker ไม่มี Back
+        Carbon::setTestNow(Carbon::parse('2026-11-15 10:00:00'));
+        $handover = Conversation::factory()->line()->create(['bot_id' => $bot->id, 'is_handover' => true]);
+        $handoverTagged = $this->seedOutageTurn($handover, 'ห้องโอนแอดมิน');
+        $this->runRecovery();
+
+        $this->assertSame([], $this->pushTexts());
+        $this->assertCount(0, $this->telegramAlerts(), 'a handover room on a disabled bot must not trigger a Back alert');
+        $handoverTagged->refresh();
+        $this->assertArrayNotHasKey('recovery_notice', $handoverTagged->metadata ?? []);
+        $tagged->refresh();
+        $this->assertArrayNotHasKey('recovery_notice', $tagged->metadata ?? []);
+
+        // ขอบเขตลบ 08:00:00 พอดี (probe ผ่าน อายุสด) → claim disabled และ Back นับ 1 ห้อง
+        Carbon::setTestNow(Carbon::parse('2026-11-16 08:00:00'));
+        $tagged->forceFill([
+            'created_at' => Carbon::now()->subMinutes(30),
+            'updated_at' => Carbon::now()->subMinutes(30),
+        ])->save();
+        $this->runRecovery();
+
+        $tagged->refresh();
+        $this->assertSame('disabled', $tagged->metadata['recovery_notice'], 'the disabled claim must happen at exactly 08:00:00');
+        $alerts = $this->telegramAlerts();
+        $this->assertCount(1, $alerts);
+        $this->assertStringContainsString('· ไม่ได้ส่ง 1 ห้อง (ปิดการส่งข้อความตามลูกค้าไว้)', $alerts[0]['text']);
+
+        // อายุ 24 ชม. พอดียังนับ (เทียบเท่า enabled path) → claim disabled + Back อีกฉบับ
+        $boundary = Conversation::factory()->line()->create(['bot_id' => $bot->id]);
+        $boundaryTagged = $this->seedOutageTurn($boundary, 'อีกห้องหนึ่ง', Carbon::now()->subHours(24));
+        $this->runRecovery();
+
+        $boundaryTagged->refresh();
+        $this->assertSame('disabled', $boundaryTagged->metadata['recovery_notice'], 'a row aged exactly 24 h still counts');
+        $alerts = $this->telegramAlerts();
+        $this->assertCount(2, $alerts);
+        $this->assertStringContainsString('· ไม่ได้ส่ง 1 ห้อง (ปิดการส่งข้อความตามลูกค้าไว้)', $alerts[1]['text']);
     }
 
     #[Test]
     public function test_disabled_claim_is_atomic_and_only_winners_are_counted(): void
     {
-        // R6 + แผนแถว 265: สวิตช์ปิด — ผู้ชนะ claim "disabled" มีตัวเดียว ไม่สร้างแถวแจ้งลูกค้า
-        // รันถัดไป (สวิตช์เปิด) ตามห้องที่ถูก claim แบบ terminal ไปแล้ว → ส่งไม่ได้ นับไม่ได้
-        // และรอบที่ไม่มีห้องรอเลยไม่ส่ง "Back" ให้ใคร
+        // R6 + แผนแถว 265: claim "disabled" ต้อง atomic เทียบเท่า claim ปกติ —
+        // รอบซ้อนกันได้ จึงต้องมีนักเขียนคู่แข่งยึดห้องหลัง snapshot ก่อนรอบนอกจอง:
+        // แพ้จองทุกห้อง = ไม่ claim ทับ ไม่นับ ไม่ส่ง "Back" (แพทเทิร์น overlap injection เดียวกับข้างบน)
         $bot = $this->makeBot();
-        $room = Conversation::factory()->line()->create(['bot_id' => $bot->id]);
-        $tagged = $this->seedOutageTurn($room, 'สวัสดี');
+        $taggedByMarker = [];
+        foreach (['sending', 'sent', 'failed', 'disabled', 'json-null'] as $marker) {
+            $room = Conversation::factory()->line()->create(['bot_id' => $bot->id]);
+            $taggedByMarker[$marker] = $this->seedOutageTurn($room, 'สวัสดี');
+        }
         BotSetting::query()->create(['bot_id' => $bot->id, 'outage_recovery_enabled' => false]);
 
+        $competed = false;
+        $nested = false;
         Http::fake([
-            'openrouter.test/api/v1/key' => Http::response(['data' => []], 200),
+            'openrouter.test/api/v1/key' => function () use (&$competed, &$nested, $taggedByMarker, $bot) {
+                if (! $competed) {
+                    // นักเขียนคู่แข่ง: หลัง snapshot (waitingRooms) แต่ก่อนรอบนอกจอง — ยึดทุกห้องคนละค่า
+                    $competed = true;
+                    foreach ($taggedByMarker as $marker => $tagged) {
+                        $tagged->update([
+                            'metadata' => ['model_error' => 'auth', 'recovery_notice' => $marker === 'json-null' ? null : $marker],
+                        ]);
+                    }
+
+                    return Http::response(['data' => []], 200);
+                }
+
+                if (! $nested) {
+                    // รอบซ้อน disabled-vs-enabled: nested อ่านสวิตช์ = ปิด → claim "disabled" ได้ก่อน
+                    // แล้วเปิดสวิตช์ก่อนรอบนอกอ่าน — รอบนอกเจอ "เปิด" แต่จองไม่ได้ (แพ้ atomic)
+                    $nested = true;
+                    $this->runRecovery();
+                    BotSetting::query()->where('bot_id', $bot->id)->update(['outage_recovery_enabled' => true]);
+                }
+
+                return Http::response(['data' => []], 200);
+            },
             'api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]]),
             'api.line.me/*' => Http::response([], 200),
         ]);
 
         $this->runRecovery();
 
-        $tagged->refresh();
-        $this->assertSame('disabled', $tagged->metadata['recovery_notice']);
-        $this->assertSame([], $this->pushTexts(), 'disabled winner must not push');
-        $this->assertSame(0, $this->noticeRows()->count(), 'disabled winner must create no notice row');
-        $alerts = $this->telegramAlerts();
-        $this->assertCount(1, $alerts, 'the disabled-winner run counts its one disabled room');
-        $this->assertStringContainsString('· ไม่ได้ส่ง 1 ห้อง (ปิดการส่งข้อความตามลูกค้าไว้)', $alerts[0]['text']);
+        // รอบปิดสวิตช์แพ้จองทุกห้อง: ค่าคู่แข่งต้องอยู่ครบ ไม่มี push ไม่มีแถวแจ้ง ไม่มี "Back"
+        foreach ($taggedByMarker as $marker => $tagged) {
+            $fresh = $tagged->refresh()->metadata;
+            $this->assertArrayHasKey('recovery_notice', $fresh, "room marker {$marker}: a lost claim must not overwrite the competing value");
+            $this->assertSame($marker === 'json-null' ? null : $marker, $fresh['recovery_notice'], "room marker {$marker}");
+        }
+        $this->assertSame([], $this->pushTexts(), 'a disabled run that loses every claim pushes nothing');
+        $this->assertNoNoticeRow();
+        $this->assertCount(0, $this->telegramAlerts(), 'a disabled run that loses every claim sends no Back alert');
 
-        BotSetting::query()->where('bot_id', $bot->id)->update(['outage_recovery_enabled' => true]);
+        // รอบซ้อน disabled-vs-enabled: ผล terminal มีตัวเดียว — nested ชนะ "disabled" และนับรอบเดียว
+        $raceRoom = Conversation::factory()->line()->create(['bot_id' => $bot->id]);
+        $raceTagged = $this->seedOutageTurn($raceRoom, 'อีกห้องหนึ่ง');
         $this->runRecovery();
 
-        $this->assertSame([], $this->pushTexts(), 'the losing enabled run cannot send the disabled room');
-        $this->assertSame(0, $this->noticeRows()->count());
-        $this->assertSame('disabled', $tagged->refresh()->metadata['recovery_notice']);
-        $this->assertCount(1, $this->telegramAlerts(), 'a run with no waiting room sends no Back alert');
+        $this->assertSame('disabled', $raceTagged->refresh()->metadata['recovery_notice'], 'the race must end with exactly one terminal outcome');
+        $this->assertSame([], $this->pushTexts(), 'neither side of the race pushes the room');
+        $this->assertNoNoticeRow();
+        $alerts = $this->telegramAlerts();
+        $this->assertCount(1, $alerts, 'only the winning disabled run counts and sends the Back alert');
+        $this->assertStringContainsString('· ไม่ได้ส่ง 1 ห้อง (ปิดการส่งข้อความตามลูกค้าไว้)', $alerts[0]['text']);
     }
 
     #[Test]
