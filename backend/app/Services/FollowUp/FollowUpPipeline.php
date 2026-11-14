@@ -14,8 +14,8 @@ use RuntimeException;
  * ขั้นเตรียมร่าง "ตามลูกค้า" ทีละแถว — การ์ด B3c (plan brief B3, D18 ฉบับแก้, D31-D36)
  *
  * แถวเดียวเดินจาก candidate ไป "ร่างรอเจ้าของอนุมัติ" หรือจบด้วยเหตุที่บันทึกไว้:
- * claim (UPDATE เดียว, D32) → recheck (D34) → context (D31) → sort → reserve (D36) →
- * draft → check แล้วบันทึกทั้งหมดใน transaction เดียว (D35)
+ * claim (UPDATE เดียว, D32) → คืน slot ค้างถ้ามี (D37) → recheck (D34) → context (D31) →
+ * sort → reserve (D36) → draft → check แล้วบันทึกทั้งหมดใน transaction เดียว (D35)
  *
  * ขอบเขตตายตัว: ไม่ส่งอะไรออกนอกระบบ (โค้ดส่งข้อความจริงเป็นของการ์ดถัดไป),
  * ไม่สร้าง candidate (โดยหัวการ์ด scheduler), ไม่มี transaction ค้างตอน model ยิง,
@@ -68,6 +68,8 @@ class FollowUpPipeline
             return;
         }
         $claimedFrom = (string) $before->delivery_status;
+        // ค่าสะสมของแถว — ทุกเส้นทาง (failRow ทุกสาเหตุ และทุก stop) ต้องบวกค่านี้ไว้
+        $earlierCost = $before->model_cost === null ? null : (float) $before->model_cost;
         $staleCutoff = $now->subMinutes(self::STALE_CLAIM_MINUTES)->format('Y-m-d H:i:s');
 
         $claimed = DB::table('lead_recovery_logs')
@@ -99,8 +101,15 @@ class FollowUpPipeline
             return;
         }
 
-        // ---- ขั้น 2: recheck (D34) ----
         $log = LeadRecoveryLog::query()->findOrFail($logId);
+
+        // D37: แถวที่ยังถือ slot ค้างของวันนี้ (worker ตายก่อนได้ร่าง) — คืน slot ก่อนเสมอ
+        // ไม่งั้นรอบที่จบโดยไม่มีร่างก็กินโควตาร่างรายวันไปจนถึงเที่ยงคืน
+        if ($log->draft_reserved_at !== null && $log->drafted_at === null) {
+            $this->reservations->releaseDraft($log, (string) $log->claim_token, $now);
+        }
+
+        // ---- ขั้น 2: recheck (D34) ----
         $reason = FollowUpEligibility::recheck($log, $now);
         if ($reason !== null) {
             if (in_array($reason, self::CANCEL_REASONS, true)) {
@@ -158,7 +167,8 @@ class FollowUpPipeline
         $boughtBefore = $signal !== null && $signal->latest_order_id !== null;
         $sort = $this->decisions->sort($lines, $boughtBefore, (bool) $before->transfer_summary_sent);
         if ($sort === null) {
-            $this->failRow($logId, self::DRAFT_FAILURE_REASON_SORT, $now);
+            // sort ล้ม — ไม่มีขั้นไหนรายงาน cost/usage ของรอบนี้ แต่ค่าสะสมเดิมต้องคงอยู่
+            $this->failRow($logId, self::DRAFT_FAILURE_REASON_SORT, $now, $earlierCost);
 
             return;
         }
@@ -186,7 +196,6 @@ class FollowUpPipeline
             $stopReason = 'declined';
         }
 
-        $earlierCost = $before->model_cost === null ? null : (float) $before->model_cost;
         $sortCosts = [$sort['cost']];
         $sortUsage = ['sort' => $sort['usage']];
 
@@ -290,6 +299,9 @@ class FollowUpPipeline
                     'check_overridden' => false,
                     'expires_at' => $expiry,
                     'telegram_delivery_state' => FollowUpApproval::TELEGRAM_STATE_NEW,
+                    // D38: เวลาของแถวอนุมัติ = สตริงกรุงเทพฯ เดียวกับ updated_at ของ log รอบนี้
+                    'created_at' => $nowStr,
+                    'updated_at' => $nowStr,
                 ]);
             });
         } catch (RuntimeException $claimLost) {
@@ -367,7 +379,8 @@ class FollowUpPipeline
 
     /**
      * ค่าใช้จ่ายรวม (D31 เสริม): ค่าโทรครั้งนี้ที่ไม่ null + ค่าเดิมของแถว;
-     * null เมื่อทุกค่าจนถึงตอนนี้เป็น null; usage เก็บเฉพาะเลข ขั้นที่ไม่ได้ยิงไม่มี key
+     * null เมื่อทุกค่าจนถึงตอนนี้เป็น null; usage_totals เล่ารอบล่าสุดที่มีอย่างน้อย
+     * หนึ่งขั้นรายงาน — รอบที่ไม่มีขั้นไหนรายงานเลย คงค่าเดิมในแถวไว้ (ไม่เขียนทับ)
      *
      * @param  list<?float>  $runCosts
      * @param  array<string, array<string, mixed>>  $usageSteps
@@ -375,10 +388,13 @@ class FollowUpPipeline
      */
     private function costWrites(?float $earlierCost, array $runCosts, array $usageSteps): array
     {
-        return [
-            'model_cost' => $this->modelCost($earlierCost, $runCosts),
-            'usage_totals' => json_encode($this->usageTotals($usageSteps), JSON_UNESCAPED_UNICODE),
-        ];
+        $writes = ['model_cost' => $this->modelCost($earlierCost, $runCosts)];
+        $usage = $this->usageTotals($usageSteps);
+        if ($usage !== []) {
+            $writes['usage_totals'] = json_encode($usage, JSON_UNESCAPED_UNICODE);
+        }
+
+        return $writes;
     }
 
     /**
@@ -395,7 +411,9 @@ class FollowUpPipeline
     }
 
     /**
-     * เลขอย่างเดียว — cost ที่เป็น null ถูกทิ้ง ขั้นที่ไม่มี usage ไม่มี key
+     * เลขอย่างเดียว — cost ที่เป็น null ถูกทิ้ง ขั้นที่ไม่มี usage ไม่มี key;
+     * ขั้น draft ได้ usage ดิบจาก OpenRouterService::parseResponse (prompt_tokens/
+     * completion_tokens) — แปลงเป็นชื่อเดียวกับ Decisions ที่ประตูนี้ ไม่คัดลอก key อื่น
      *
      * @param  array<string, array<string, mixed>>  $usageSteps
      * @return array<string, array<string, int|float>>
@@ -407,9 +425,11 @@ class FollowUpPipeline
             if (! is_array($usage)) {
                 continue;
             }
+            $input = $usage['input_tokens'] ?? ($step === 'draft' ? ($usage['prompt_tokens'] ?? null) : null);
+            $output = $usage['output_tokens'] ?? ($step === 'draft' ? ($usage['completion_tokens'] ?? null) : null);
             $entry = [
-                'input_tokens' => (int) ($usage['input_tokens'] ?? 0),
-                'output_tokens' => (int) ($usage['output_tokens'] ?? 0),
+                'input_tokens' => is_numeric($input) ? (int) $input : 0,
+                'output_tokens' => is_numeric($output) ? (int) $output : 0,
             ];
             if (isset($usage['cost']) && is_numeric($usage['cost'])) {
                 $entry['cost'] = (float) $usage['cost'];
