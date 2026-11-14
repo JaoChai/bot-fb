@@ -561,6 +561,44 @@ class EligibilityTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // 6b) ช่องว่างลูกค้า 7 วัน ผูกกับลูกค้า "ของห้องนี้" เท่านั้น (review round 1 item 1)
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_customer_gap_is_correlated_to_the_rooms_customer(): void
+    {
+        // (ก) ส่งหาลูกค้าอื่น (U222) เมื่อเร็ว ๆ นี้ ต้องไม่บล็อกห้องของลูกค้า U111
+        $seed = $this->seedBase();
+        $roomB = Conversation::factory()->line()->create([
+            'bot_id' => $seed['bot']->id,
+            'external_customer_id' => 'U222',
+        ]);
+        $this->addLog($roomB, null, null, 'sent', ['sent_at' => '2026-11-14 10:00:00']);
+        $this->assertSame(1, $this->eligibleCount($seed['bot'], $this->now()), 'ส่งหาลูกค้าอื่น (U222) ต้องไม่บล็อกห้องของ U111');
+
+        // (ข) ส่งหาลูกค้าเดียวกันจากห้องอื่นของ A ยังบล็อกห้องนี้
+        $seed2 = $this->seedBase();
+        $roomA2 = Conversation::factory()->line()->create([
+            'bot_id' => $seed2['bot']->id,
+            'external_customer_id' => $seed2['room']->external_customer_id,
+        ]);
+        $this->addLog($roomA2, null, null, 'sent', ['sent_at' => '2026-11-14 10:00:00']);
+        $this->assertSame(0, $this->eligibleCount($seed2['bot'], $this->now()), 'ส่งหาลูกค้า A จากห้องอื่นของ A ภายใน 7 วัน ต้องบล็อก');
+
+        // (ค) gate SELECT ต้องมี bind คงที่ ไม่ว่าบอทมีลูกค้ากี่คน (ห้าม IN(...key...) ต่อลูกค้า)
+        $seed3 = $this->seedBase();
+        $sqlOne = FollowUpEligibility::query($seed3['bot'], $this->now())->toSql();
+        foreach (range(1, 10) as $i) {
+            Conversation::factory()->line()->create([
+                'bot_id' => $seed3['bot']->id,
+                'external_customer_id' => 'U30'.$i,
+            ]);
+        }
+        $sqlEleven = FollowUpEligibility::query($seed3['bot'], $this->now())->toSql();
+        $this->assertSame($sqlOne, $sqlEleven, 'SQL ของ gate ต้องเหมือนเดิม (bind คงที่) ไม่ว่าบอทมี 1 หรือ 11 ลูกค้า');
+    }
+
+    // ------------------------------------------------------------------
     // 7) projection เก่า / ข้อความใหม่ / ออเดอร์ใหม่ = ไม่ผ่านเด็ดขาด
     // ------------------------------------------------------------------
 
