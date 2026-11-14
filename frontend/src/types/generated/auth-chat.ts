@@ -172,11 +172,8 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
-            /**
-             * @description True only for bot rows that are automated "recovered" notices sent after an outage. Surfaces the auto-reply badge without exposing raw metadata. Optional so old payloads (pre-rollout caches, optimistic messages) stay valid; treat absent as false.
-             * @default false
-             */
-            is_outage_notice: boolean;
+            /** @description True only for bot rows that are automated "recovered" notices sent after an outage. Surfaces the auto-reply badge without exposing raw metadata. Optional so old payloads (pre-rollout caches, optimistic messages) stay valid; treat absent as false (the safe default). */
+            is_outage_notice?: boolean;
         };
         PaginationLinks: {
             first: string | null;
@@ -282,11 +279,8 @@ export interface components {
             media_type: string | null;
             /** Format: date-time */
             created_at: string;
-            /**
-             * @description True only for bot rows that are automated "recovered" notices sent after an outage. Optional so old payloads stay valid; treat absent as false.
-             * @default false
-             */
-            is_outage_notice: boolean;
+            /** @description True only for bot rows that are automated "recovered" notices sent after an outage. Optional so old payloads stay valid; treat absent as false (the safe default). */
+            is_outage_notice?: boolean;
             conversation: components["schemas"]["MessageSentConversationSnapshot"];
         };
         /**
