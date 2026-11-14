@@ -59,6 +59,9 @@ class PipelineTest extends TestCase
     /** @var list<array{message: string, context: mixed}> */
     private array $logCalls = [];
 
+    /** @var list<array{messages: list<array{role: string, content: string}>}> */
+    private array $writerCalls = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -147,6 +150,9 @@ class PipelineTest extends TestCase
         $expectedExpiry = CarbonImmutable::parse((string) $row->drafted_at, 'Asia/Bangkok')
             ->addHours(12)->format('Y-m-d H:i:s');
         $this->assertSame($expectedExpiry, (string) $approval->expires_at);
+        // D38: เวลาสร้าง/แก้ของแถวอนุมัติ = สตริงกรุงเทพฯ ของรอบนี้เอง
+        $this->assertSame('2026-11-16 10:00:00', (string) $approval->created_at);
+        $this->assertSame('2026-11-16 10:00:00', (string) $approval->updated_at);
 
         $this->assertSame(2, count($this->decisionRequests));
         $this->assertSame(1, $this->usedSlots($bot->id, '2026-11-16'));
@@ -165,6 +171,15 @@ class PipelineTest extends TestCase
             ['bought_from_this_shop_before' => false, 'transfer_summary_was_sent' => false],
             $sortRequest['body']['state']['known_facts']
         );
+
+        // ตัวร่างได้บริบทชุดเดียวกับที่เก็บ — conversation ใน user message ต้องตรง context_redacted พอดี
+        $this->assertCount(1, $this->writerCalls);
+        $writerMessages = $this->writerCalls[0]['messages'];
+        $this->assertCount(2, $writerMessages);
+        $this->assertSame('user', $writerMessages[1]['role']);
+        $writerUser = json_decode((string) $writerMessages[1]['content'], true);
+        $this->assertSame('G3', $writerUser['group']);
+        $this->assertSame($context, $writerUser['conversation']);
     }
 
     #[Test]
@@ -749,6 +764,43 @@ class PipelineTest extends TestCase
         $this->assertEqualsWithDelta(0.0007, (float) $row->model_cost, 0.0000001);
     }
 
+    #[Test]
+    public function test_sort_failure_after_draft_failure_keeps_earlier_cost_and_usage(): void
+    {
+        // model_cost สะสมทุกเส้นทาง; usage_totals คงของรอบล่าสุดที่มีขั้นรายงาน —
+        // รอบ sort ล้ม (ไม่มีขั้นไหนรายงาน usage) ต้องไม่ล้างทั้งสองค่า
+        $bot = $this->seedBot();
+        $room = $this->makeRoom($bot, 'UCSF');
+        $logId = $this->makeLog($room);
+        // รอบแรก: sort ผ่าน (cost 0.0001 + usage) แต่ร่างล้ม
+        $this->fakeDecisions();
+        $this->fakeWriter(text: '   ');
+        $this->runPrepare($logId);
+
+        $row = $this->logRow($logId);
+        $this->assertSame('sort_retry', $row->delivery_status);
+        $this->assertSame('draft_failed', $row->reason_code);
+        $this->assertEqualsWithDelta(0.0001, (float) $row->model_cost, 0.0000001);
+        $this->assertSame(
+            ['sort' => ['input_tokens' => 100, 'output_tokens' => 20, 'cost' => 0.0001]],
+            json_decode((string) $row->usage_totals, true)
+        );
+
+        // รอบสอง: sort ล้ม 500 — cost คงสะสม, usage_totals ไม่ถูกล้าง
+        $this->fakeDecisions(sortStatus: 500);
+        $this->runPrepare($logId, $this->at('2026-11-16 10:30:00'));
+
+        $row = $this->logRow($logId);
+        $this->assertSame('sort_retry', $row->delivery_status);
+        $this->assertSame('sort_failed', $row->reason_code);
+        $this->assertSame(2, $row->attempt_count);
+        $this->assertEqualsWithDelta(0.0001, (float) $row->model_cost, 0.0000001);
+        $this->assertSame(
+            ['sort' => ['input_tokens' => 100, 'output_tokens' => 20, 'cost' => 0.0001]],
+            json_decode((string) $row->usage_totals, true)
+        );
+    }
+
     // ------------------------------------------------------------------
     // งบร่างรายวัน (D36)
     // ------------------------------------------------------------------
@@ -922,6 +974,97 @@ class PipelineTest extends TestCase
         $this->assertSame(1, $this->usedSlots($bot->id, '2026-11-16'));
     }
 
+    #[Test]
+    public function test_stale_drafting_row_releases_held_slot_before_its_final_end(): void
+    {
+        // D37: แถวที่ยังถือ slot ค้างของวันนี้ (worker ตายก่อนได้ร่าง) ต้องคืน slot ก่อนเสมอ
+        // ไม่ว่ารอบนี้จะจบด้วยเหตุใด — ไม่งั้นโควตาร่างรายวันหายไปจนถึงเที่ยงคืน
+
+        // (a) จบ cancelled — ลูกค้ากลับมาคุยเอง
+        $bot = $this->seedBot();
+        $room = $this->makeRoom($bot, 'URSA');
+        $logId = $this->makeLog($room);
+        $this->holdStaleDraftingRow($logId);
+        $this->addMessage($room->id, 'user', '2026-11-15 09:30:00', 'ลูกค้ากลับมาคุยเองครับ');
+        $this->fakeDecisions();
+        $this->fakeWriter(null);
+        $this->runPrepare($logId);
+
+        $row = $this->logRow($logId);
+        $this->assertSame('cancelled', $row->delivery_status);
+        $this->assertSame('new_customer_message', $row->reason_code);
+        $this->assertSame(0, $this->usedSlots($bot->id, '2026-11-16'));
+        $this->assertNull($row->draft_day);
+        $this->assertNull($row->draft_reserved_at);
+        $this->assertNull($row->claim_token);
+        $this->assertSame(0, DB::table('follow_up_approvals')->count());
+
+        // (b) จบ excluded/group_g1 — sort ตัดกลุ่ม
+        $bot = $this->seedBot();
+        $room = $this->makeRoom($bot, 'URSB');
+        $logId = $this->makeLog($room);
+        $this->holdStaleDraftingRow($logId);
+        $this->fakeDecisions(sort: ['group' => ['choice' => 'G1', 'confidence' => 0.9], 'declined' => ['noul' => 0.1]]);
+        $this->fakeWriter(null);
+        $this->runPrepare($logId);
+
+        $row = $this->logRow($logId);
+        $this->assertSame('excluded', $row->delivery_status);
+        $this->assertSame('group_g1', $row->reason_code);
+        $this->assertSame(0, $this->usedSlots($bot->id, '2026-11-16'));
+        $this->assertNull($row->draft_day);
+        $this->assertNull($row->draft_reserved_at);
+        $this->assertNull($row->claim_token);
+
+        // (c) จบ excluded/sort_failed — ล้มครบ 3 ครั้ง (attempt_count เริ่มที่ 2)
+        $bot = $this->seedBot();
+        $room = $this->makeRoom($bot, 'URSC');
+        $logId = $this->makeLog($room);
+        DB::table('lead_recovery_logs')->where('id', $logId)->update([
+            'attempt_count' => 2,
+            'reason_code' => 'sort_failed',
+        ]);
+        $this->holdStaleDraftingRow($logId);
+        $this->fakeDecisions(sortStatus: 500);
+        $this->fakeWriter(null);
+        $this->runPrepare($logId);
+
+        $row = $this->logRow($logId);
+        $this->assertSame('excluded', $row->delivery_status);
+        $this->assertSame('sort_failed', $row->reason_code);
+        $this->assertSame(3, $row->attempt_count);
+        $this->assertSame(0, $this->usedSlots($bot->id, '2026-11-16'));
+        $this->assertNull($row->draft_day);
+        $this->assertNull($row->draft_reserved_at);
+        $this->assertNull($row->claim_token);
+
+        // (d) แถว sorting stale ที่ไม่มีการจอง — ไม่กระทบ เดินจบถึง pending ตามเดิม
+        $bot = $this->seedBot();
+        $room = $this->makeRoom($bot, 'URSD');
+        $logId = $this->makeLog($room);
+        DB::table('lead_recovery_logs')->where('id', $logId)->update([
+            'delivery_status' => 'sorting',
+            'updated_at' => '2026-11-16 09:45:00',
+        ]);
+        $this->fakeDecisions();
+        $this->fakeWriter();
+        $this->runPrepare($logId);
+
+        $row = $this->logRow($logId);
+        $this->assertSame('pending', $row->delivery_status);
+        $this->assertSame(1, $this->usedSlots($bot->id, '2026-11-16'));
+    }
+
+    /** จอง slot ให้แถวแล้วทิ้งสถานะ drafting เกินเวลา — แถวถือ slot ของวันนี้ค้างไว้ */
+    private function holdStaleDraftingRow(int $logId): void
+    {
+        app(FollowUpReservationService::class)->reserveDraft(LeadRecoveryLog::query()->findOrFail($logId), $this->now());
+        DB::table('lead_recovery_logs')->where('id', $logId)->update([
+            'delivery_status' => 'drafting',
+            'updated_at' => '2026-11-16 09:45:00',
+        ]);
+    }
+
     // ------------------------------------------------------------------
     // ค่าใช้จ่ายและ usage (D31 เสริม)
     // ------------------------------------------------------------------
@@ -1017,6 +1160,9 @@ class PipelineTest extends TestCase
         $this->assertSame('2026-11-16 10:00:00', (string) $row2->updated_at);
         $approval = DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId2)->first();
         $this->assertSame('2026-11-16 22:00:00', (string) $approval->expires_at);
+        // D38: เวลาสร้าง/แก้ของแถวอนุมัติเป็นสตริงกรุงเทพฯ แม้ $now มาจาก UTC
+        $this->assertSame('2026-11-16 10:00:00', (string) $approval->created_at);
+        $this->assertSame('2026-11-16 10:00:00', (string) $approval->updated_at);
         $expectedExpiry = CarbonImmutable::parse((string) $row2->drafted_at, 'Asia/Bangkok')
             ->addHours(12)->format('Y-m-d H:i:s');
         $this->assertSame($expectedExpiry, (string) $approval->expires_at);
@@ -1205,6 +1351,9 @@ class PipelineTest extends TestCase
 
     /**
      * mock OpenRouterService (writer) — ผูกเข้า container ให้ FollowUpDraftService ใช้
+     * payload ลอกรูปร่างเดียวกับ OpenRouterService::parseResponse จริง (usage เป็น
+     * prompt_tokens/completion_tokens และส่ง key อื่นมาด้วย เพื่อพิสูจน์ว่า pipeline
+     * ไม่คัดลอก key อื่นเข้า usage_totals) — จับ messages ทุกครั้งไว้ใน writerCalls
      *
      * @return MockInterface&OpenRouterService
      */
@@ -1215,6 +1364,7 @@ class PipelineTest extends TestCase
     ): MockInterface {
         $mock = $this->mock(OpenRouterService::class);
         $expectation = $mock->shouldReceive('chat');
+        $this->writerCalls = [];
 
         if ($text === null) {
             $expectation->never();
@@ -1224,20 +1374,28 @@ class PipelineTest extends TestCase
 
         $payload = static fn (): array => [
             'content' => $text,
-            'finish_reason' => 'stop',
+            'reasoning' => null,
             'model' => 'openai/gpt-6-luna-writer',
-            'usage' => ['input_tokens' => 50, 'output_tokens' => 12, 'cost' => $cost],
+            'usage' => [
+                'prompt_tokens' => 50,
+                'completion_tokens' => 12,
+                'total_tokens' => 62,
+                'cached_tokens' => 0,
+                'reasoning_tokens' => 0,
+                'cost' => $cost,
+            ],
+            'id' => 'chatcmpl-'.'fake-b3c',
+            'finish_reason' => 'stop',
         ];
 
-        if ($onCall !== null) {
-            $expectation->once()->andReturnUsing(function () use ($onCall, $payload) {
+        $expectation->once()->andReturnUsing(function (array $messages) use ($onCall, $payload): array {
+            $this->writerCalls[] = ['messages' => $messages];
+            if ($onCall !== null) {
                 $onCall();
+            }
 
-                return $payload();
-            });
-        } else {
-            $expectation->once()->andReturn($payload());
-        }
+            return $payload();
+        });
 
         return $mock;
     }
