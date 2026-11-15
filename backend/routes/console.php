@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\ProcessCustomerFollowUps;
 use App\Jobs\ProcessLeadRecovery;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -47,6 +48,11 @@ Schedule::command('rag:cleanup-cache')
 // Process lead recovery to re-engage inactive leads
 // Runs hourly to check for leads needing follow-up
 Schedule::job(new ProcessLeadRecovery)->hourly()->name('lead-recovery');
+
+// Customer follow-up scan (B6d) — silent rooms get their projection refreshed,
+// candidate rows created, drafting jobs queued, and left-behind cards offered.
+// expiresAt 5: every 15 minutes, worst run is the 151-room refresh (~seconds).
+Schedule::job(new ProcessCustomerFollowUps)->everyFifteenMinutes()->name('customer-follow-up-scan')->withoutOverlapping(5);
 
 // Failed jobs cleanup - daily at 3:30am
 // Deletes failed jobs older than 7 days (168 hours) to manage storage

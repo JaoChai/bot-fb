@@ -94,7 +94,7 @@ class ScanJobTest extends TestCase
 
     #[Test]
     #[DataProvider('gateClosingConditions')]
-    public function test_closed_gate_scan_touches_nothing_until_condition_lifted(string $name, Closure $close, Closure $lift): void
+    public function test_closed_gate_scan_touches_nothing_until_condition_lifted(Closure $close, Closure $lift): void
     {
         $bot = $this->seedOpenBot();
         $close();
@@ -106,11 +106,11 @@ class ScanJobTest extends TestCase
         $this->captureQueries();
         $this->runScan();
 
-        $this->assertScanTouchedNothing($name);
+        $this->assertScanTouchedNothing('gate');
         $this->assertSame(
             [],
             array_values(array_filter($this->logCalls, fn (array $call): bool => in_array($call['level'], ['notice', 'warning', 'error', 'critical', 'alert', 'emergency'], true))),
-            "[{$name}] a closed bot must not log above debug"
+            'a closed bot must not log above debug'
         );
 
         $lift();
@@ -118,11 +118,11 @@ class ScanJobTest extends TestCase
         $this->runScan();
 
         $rows = DB::table('lead_recovery_logs')->where('bot_id', $bot->id)->where('delivery_status', 'candidate')->get();
-        $this->assertCount(1, $rows, "[{$name}] lifting the closing condition must create the candidate row");
+        $this->assertCount(1, $rows, 'lifting the closing condition must create the candidate row');
         Queue::assertPushed(GenerateCustomerFollowUp::class, 1);
     }
 
-    /** @return array<string, array{string, Closure, Closure}> */
+    /** @return array<string, array{Closure, Closure}> */
     public static function gateClosingConditions(): array
     {
         $botId = static function (): int {
@@ -220,7 +220,7 @@ class ScanJobTest extends TestCase
                 },
             ],
             'telegram plugin missing' => [
-                'close' => function () use ($botId): void {
+                'close' => function (): void {
                     DB::table('flow_plugins')->where('type', 'telegram')->update(['enabled' => false]);
                 },
                 'lift' => function (): void {
@@ -270,6 +270,7 @@ class ScanJobTest extends TestCase
     public function test_scan_opens_exactly_at_08_00_and_still_at_21_59_59(): void
     {
         foreach (['2026-11-16 08:00:00', '2026-11-16 21:59:59'] as $clock) {
+            config(['customer_follow_up.bot_ids' => []]);
             $bot = $this->seedOpenBot();
             $this->setClock($clock);
             $room = $this->makeSilentPaymentRoom($bot, 'UOPEN', $this->clock());
@@ -322,11 +323,11 @@ class ScanJobTest extends TestCase
         Queue::fake();
 
         $boundaryRoom = Conversation::factory()->line()->create(['bot_id' => $bot->id, 'external_customer_id' => 'UB30']);
-        $this->addMessage($boundaryRoom->id, 'user', '2026-10-15 09:00:00', 'หายไปนานเลยครับ');
-        $this->addMessage($boundaryRoom->id, 'user', '2026-10-17 10:00:00', 'สนใจสินค้าครับ ประเมินราคาให้หน่อย');
+        $this->addMessage($boundaryRoom->id, 'user', '2026-10-17 10:00:00', 'สนใจสินค้าครับ');
+        $this->addMessage($boundaryRoom->id, 'user', '2026-10-17 10:00:00', 'ประเมินราคาให้หน่อยครับ');
 
         $beyondRoom = Conversation::factory()->line()->create(['bot_id' => $bot->id, 'external_customer_id' => 'UB31']);
-        $this->addMessage($beyondRoom->id, 'user', '2026-10-16 09:00:00', 'สนใจสินค้าครับ');
+        $this->addMessage($beyondRoom->id, 'user', '2026-10-17 09:59:58', 'สนใจสินค้าครับ');
         $this->addMessage($beyondRoom->id, 'user', '2026-10-17 09:59:59', 'ประเมินราคาให้หน่อยครับ');
 
         $handoverRoom = $this->makeSilentSaleRoom($bot, 'UB32');
@@ -340,6 +341,8 @@ class ScanJobTest extends TestCase
         DB::table('conversations')->where('id', $webRoom->id)->update(['channel_type' => 'web']);
         $otherBot = $this->seedOpenBot();
         $otherRoom = $this->makeSilentSaleRoom($otherBot, 'UB37');
+        // ห้องของบอทอื่นอยู่นอกลิสต์สแกนรอบนี้ — ล็อกลิสต์ไว้ที่บอทหลักบอทเดียว
+        config(['customer_follow_up.bot_ids' => [$bot->id]]);
 
         // ห้องที่ถูกเว้นต้องมีแถว signal เดิมค้างไว้และต้องคงเดิม byte-equal หลังสแกน
         $excluded = [$beyondRoom, $handoverRoom, $inactiveRoom, $deletedRoom, $anonymousRoom, $webRoom, $otherRoom];
@@ -375,7 +378,7 @@ class ScanJobTest extends TestCase
         DB::table('conversations')->where('id', $deletedRoom->id)->update(['deleted_at' => null]);
         DB::table('conversations')->where('id', $anonymousRoom->id)->update(['external_customer_id' => 'UB35']);
         DB::table('conversations')->where('id', $webRoom->id)->update(['channel_type' => 'line']);
-        DB::table('messages')->where('id', DB::table('messages')->where('conversation_id', $beyondRoom->id)->max('id'))
+        DB::table('messages')->where('conversation_id', $beyondRoom->id)
             ->update(['created_at' => '2026-10-17 10:00:00']);
 
         $this->runScan();
@@ -401,8 +404,10 @@ class ScanJobTest extends TestCase
         $saleRoom = $this->makeSilentSaleRoom($bot, 'USALE');
         $youngPaymentRoom = $this->makeSilentPaymentRoom($bot, 'UPAY2', $this->clock());
         $youngSaleRoom = $this->makeSilentSaleRoom($bot, 'USALE2');
-        $lastUser = DB::table('messages')->where('conversation_id', $youngPaymentRoom->id)->where('sender', 'user')->max('id');
-        DB::table('messages')->where('id', $lastUser)->update(['created_at' => '2026-11-16 07:00:01']);
+        // เงียบไม่ครบ: ห้องจ่ายเงินเลื่อนข้อความบอท (anchor ของ payment) ไปที่ 2:59:59 ก่อนขอบ,
+        // ห้องขายเลื่อนข้อความลูกค้าสุดท้ายไปที่ 23:59:59 ก่อนขอบ
+        $youngPaymentAnchor = DB::table('messages')->where('conversation_id', $youngPaymentRoom->id)->where('sender', 'bot')->max('id');
+        DB::table('messages')->where('id', $youngPaymentAnchor)->update(['created_at' => '2026-11-16 07:00:01']);
         DB::table('messages')->where('conversation_id', $youngSaleRoom->id)->where('sender', 'user')->orderByDesc('id')->limit(1)
             ->update(['created_at' => '2026-11-16 10:00:01']);
         $this->fakeModelApis();
@@ -413,7 +418,10 @@ class ScanJobTest extends TestCase
 
         $rows = DB::table('lead_recovery_logs')->where('bot_id', $bot->id)->orderBy('id')->get();
         $this->assertCount(2, $rows, 'only rooms past their wait time get a candidate row');
-        $this->assertSame([$paymentRoom->id, $saleRoom->id], array_values(array_unique($rows->pluck('conversation_id')->all())));
+        $this->assertSame(
+            collect([$paymentRoom->id, $saleRoom->id])->sort()->values()->all(),
+            array_values(array_unique($rows->pluck('conversation_id')->sort()->values()->all())),
+        );
         $queuedIds = array_map(fn (array $pushed): int => $pushed['job']->logId, Queue::pushedJobs()[GenerateCustomerFollowUp::class] ?? []);
         $this->assertSame($rows->pluck('id')->all(), $queuedIds, 'each candidate row queues exactly one drafting job with its own id');
 
@@ -431,15 +439,15 @@ class ScanJobTest extends TestCase
         $this->assertSame(2, $infoLines[0]['context']['jobs_queued']);
 
         // control: ขยับข้อความสุดท้ายให้เงียบครบ → ห้องใต้เพดานได้แถวจริง
-        DB::table('messages')->where('id', $lastUser)->update(['created_at' => '2026-11-16 05:00:00']);
+        DB::table('messages')->where('id', $youngPaymentAnchor)->update(['created_at' => '2026-11-16 05:00:00']);
         DB::table('messages')->where('conversation_id', $youngSaleRoom->id)->where('sender', 'user')->orderByDesc('id')->limit(1)
             ->update(['created_at' => '2026-11-15 08:59:00']);
         $this->runScan();
 
         $rowsAfter = DB::table('lead_recovery_logs')->where('bot_id', $bot->id)->get();
         $this->assertSame(
-            [$paymentRoom->id, $saleRoom->id, $youngPaymentRoom->id, $youngSaleRoom->id],
-            array_values(array_unique($rowsAfter->pluck('conversation_id')->all())),
+            collect([$paymentRoom->id, $saleRoom->id, $youngPaymentRoom->id, $youngSaleRoom->id])->sort()->values()->all(),
+            array_values(array_unique($rowsAfter->pluck('conversation_id')->sort()->values()->all())),
             'the lifted under-threshold rooms gain their own candidate rows'
         );
     }
@@ -458,6 +466,7 @@ class ScanJobTest extends TestCase
         $this->assertCount(2, $firstIds);
 
         $this->setClock('2026-11-16 10:15:00');
+        Queue::fake();
         $this->captureQueries();
         $this->runScan();
 
@@ -575,8 +584,8 @@ class ScanJobTest extends TestCase
         $rooms = [];
         foreach (range(0, 100) as $index) {
             $room = Conversation::factory()->line()->create(['bot_id' => $bot->id, 'external_customer_id' => 'UL'.$index]);
-            $this->addMessage($room->id, 'user', $this->at('2026-11-15 08:00:00')->addMinutes($index)->format('Y-m-d H:i:s'), 'สนใจสินค้าครับ');
-            $this->addMessage($room->id, 'user', $this->at('2026-11-15 08:59:00')->addMinutes($index)->format('Y-m-d H:i:s'), 'ประเมินราคาให้หน่อยครับ');
+            $this->addMessage($room->id, 'user', $this->at('2026-11-15 08:00:00')->subMinutes($index)->format('Y-m-d H:i:s'), 'สนใจสินค้าครับ');
+            $this->addMessage($room->id, 'user', $this->at('2026-11-15 08:59:00')->subMinutes($index)->format('Y-m-d H:i:s'), 'ประเมินราคาให้หน่อยครับ');
             $rooms[] = $room;
         }
         $this->fakeModelApis();
@@ -585,7 +594,7 @@ class ScanJobTest extends TestCase
         $this->runScan();
 
         $this->assertSame(100, DB::table('lead_recovery_logs')->where('bot_id', $bot->id)->count(), 'at most 100 candidate rows per scan');
-        $newestRoom = $rooms[100];
+        $newestRoom = $rooms[0];
         $this->assertSame(
             0,
             DB::table('lead_recovery_logs')->where('conversation_id', $newestRoom->id)->count(),
@@ -595,6 +604,7 @@ class ScanJobTest extends TestCase
         $approvalIds = [];
         foreach (range(0, 5) as $index) {
             $room = $this->makeSilentSaleRoom($bot, 'UA'.$index);
+            FollowUpSalesProjector::refresh($room, $this->clock());
             $log = app(FollowUpReservationService::class)->candidate($room, $this->clock());
             DB::table('lead_recovery_logs')->where('id', $log->id)->update(['delivery_status' => 'pending']);
             $approvalIds[] = $this->makeApproval((int) $log->id);
@@ -624,10 +634,11 @@ class ScanJobTest extends TestCase
 
     #[Test]
     #[DataProvider('stepDOfferCases')]
-    public function test_step_d_offer_matrix(string $name, array $overrides, int $expectedRequests, ?string $expectedState, bool $expectByteEqual): void
+    public function test_step_d_offer_matrix(array $overrides, int $expectedRequests, ?string $expectedState, bool $expectByteEqual): void
     {
         $bot = $this->seedOpenBot();
-        $room = $this->makeSilentSaleRoom($bot, 'UD'.$name);
+        $room = $this->makeSilentSaleRoom($bot, 'UD');
+        FollowUpSalesProjector::refresh($room, $this->clock());
         $log = app(FollowUpReservationService::class)->candidate($room, $this->clock());
         DB::table('lead_recovery_logs')->where('id', $log->id)->update(['delivery_status' => 'pending']);
         $approvalId = $this->makeApproval((int) $log->id, $overrides);
@@ -637,17 +648,17 @@ class ScanJobTest extends TestCase
 
         $this->runScan();
 
-        $this->assertCount($expectedRequests, $this->sendMessageRequests(), "[{$name}] wrong number of sendMessage requests");
+        $this->assertCount($expectedRequests, $this->sendMessageRequests(), 'wrong number of sendMessage requests');
         $after = DB::table('follow_up_approvals')->where('id', $approvalId)->first();
         if ($expectedState !== null) {
-            $this->assertSame($expectedState, (string) $after->telegram_delivery_state, "[{$name}] wrong final telegram_delivery_state");
+            $this->assertSame($expectedState, (string) $after->telegram_delivery_state, 'wrong final telegram_delivery_state');
         }
         if ($expectByteEqual) {
-            $this->assertSame((array) $before, (array) $after, "[{$name}] the approval row must stay byte-equal");
+            $this->assertSame((array) $before, (array) $after, 'the approval row must stay byte-equal');
         }
     }
 
-    /** @return array<string, array{string, array, int, ?string, bool}> */
+    /** @return array<string, array{array, int, ?string, bool}> */
     public static function stepDOfferCases(): array
     {
         return [
@@ -675,6 +686,7 @@ class ScanJobTest extends TestCase
         DB::table('bot_settings')->where('bot_id', $closed->id)->update(['follow_up_enabled' => false]);
         config(['customer_follow_up.bot_ids' => [$bot->id, $closed->id]]);
         $room = $this->makeSilentSaleRoom($closed, 'UDCLOSED');
+        FollowUpSalesProjector::refresh($room, $this->clock());
         $log = app(FollowUpReservationService::class)->candidate($room, $this->clock());
         DB::table('lead_recovery_logs')->where('id', $log->id)->update(['delivery_status' => 'pending']);
         $approvalId = $this->makeApproval((int) $log->id);
@@ -760,9 +772,12 @@ class ScanJobTest extends TestCase
     {
         $bot = $this->seedOpenBot();
         $room = $this->makeSilentPaymentRoom($bot, 'UJ1', $this->clock());
+        FollowUpSalesProjector::refresh($room, $this->clock());
         $log = app(FollowUpReservationService::class)->candidate($room, $this->clock());
         $draft = 'ทางร้านขออนุญาตถามหน่อยครับ ยังสนใจรายการเดิมอยู่ไหมครับ';
         $this->fakeModelApis();
+        // ห้องจ่ายเงินต้อง sort ออกมาเป็น G2 (กลุ่มจ่ายเงิน) — G3 จะโดนหน่วงรอกรอบขาย
+        self::setSortAnswer(['group' => ['choice' => 'G2', 'confidence' => 0.9], 'declined' => ['noul' => 0.1]]);
         $this->fakeWriterMany($draft);
 
         (new GenerateCustomerFollowUp($log->id))->handle(app(FollowUpPipeline::class), app(FollowUpTelegramService::class));
@@ -778,10 +793,11 @@ class ScanJobTest extends TestCase
 
     #[Test]
     #[DataProvider('draftingJobSilentOutcomes')]
-    public function test_drafting_job_outcomes_without_approval_stay_silent(string $name, Closure $fixture, array $expectedStatusReason): void
+    public function test_drafting_job_outcomes_without_approval_stay_silent(Closure $fixture, array $expectedStatusReason): void
     {
         $bot = $this->seedOpenBot();
         $room = $this->makeSilentPaymentRoom($bot, 'UJ2', $this->clock());
+        FollowUpSalesProjector::refresh($room, $this->clock());
         $log = app(FollowUpReservationService::class)->candidate($room, $this->clock());
         $this->fakeModelApis();
         $this->fakeWriterMany();
@@ -789,28 +805,26 @@ class ScanJobTest extends TestCase
 
         (new GenerateCustomerFollowUp($log->id))->handle(app(FollowUpPipeline::class), app(FollowUpTelegramService::class));
 
-        $this->assertSame([], $this->sendMessageRequests(), "[{$name}] no Telegram request");
+        $this->assertSame([], $this->sendMessageRequests(), 'no Telegram request');
         $row = DB::table('lead_recovery_logs')->where('id', $log->id)->first();
-        $this->assertSame($expectedStatusReason['status'], (string) $row->delivery_status, "[{$name}] wrong final status");
+        $this->assertSame($expectedStatusReason['status'], (string) $row->delivery_status, 'wrong final status');
         if (array_key_exists('reason', $expectedStatusReason)) {
-            $this->assertSame($expectedStatusReason['reason'], (string) $row->reason_code, "[{$name}] wrong reason");
+            $this->assertSame($expectedStatusReason['reason'], (string) $row->reason_code, 'wrong reason');
         }
-        $this->assertNull(DB::table('follow_up_approvals')->where('lead_recovery_log_id', $log->id)->first(), "[{$name}] no approval row");
+        $this->assertNull(DB::table('follow_up_approvals')->where('lead_recovery_log_id', $log->id)->first(), 'no approval row');
     }
 
-    /** @return array<string, array{string, Closure, array}> */
+    /** @return array<string, array{Closure, array}> */
     public static function draftingJobSilentOutcomes(): array
     {
         return [
             'excluded by sort G1' => [
-                'excluded',
                 function (int $logId): void {
                     self::setSortAnswer(['group' => ['choice' => 'G1', 'confidence' => 0.9], 'declined' => ['noul' => 0.1]]);
                 },
                 ['status' => 'excluded', 'reason' => 'group_g1'],
             ],
             'cancelled by new bot message' => [
-                'cancelled',
                 function (int $logId): void {
                     $conversationId = (int) DB::table('lead_recovery_logs')->where('id', $logId)->value('conversation_id');
                     DB::table('messages')->insertGetId([
@@ -825,21 +839,18 @@ class ScanJobTest extends TestCase
                 ['status' => 'cancelled', 'reason' => 'new_bot_message'],
             ],
             'deferred waiting for sale window' => [
-                'deferred',
                 function (int $logId): void {
                     // ห้องจ่ายเงินเงียบ 5 ชม. + sort G3 → ยังไม่ครบกรอบขาย 24 ชม. = deferred
                 },
                 ['status' => 'deferred', 'reason' => 'wait_for_sale_window'],
             ],
             'sort retry after decision failure' => [
-                'sort_retry',
                 function (int $logId): void {
                     self::setSortStatus(500);
                 },
                 ['status' => 'sort_retry'],
             ],
             'candidate put back outside hours' => [
-                'candidate',
                 function (int $logId): void {
                     self::setClockStatic('2026-11-16 23:00:00');
                 },
@@ -854,8 +865,11 @@ class ScanJobTest extends TestCase
         foreach (['sent', 'sending', 'failed', 'unknown'] as $state) {
             $bot = $this->seedOpenBot();
             $room = $this->makeSilentPaymentRoom($bot, 'UJ3', $this->clock());
+            FollowUpSalesProjector::refresh($room, $this->clock());
             $log = app(FollowUpReservationService::class)->candidate($room, $this->clock());
             $this->fakeModelApis();
+            // ห้องจ่ายเงิน + G2 → เดินต่อถึง pending (G3 จะโดนหน่วงรอกรอบขาย)
+            self::setSortAnswer(['group' => ['choice' => 'G2', 'confidence' => 0.9], 'declined' => ['noul' => 0.1]]);
             $this->fakeWriterMany();
 
             app(FollowUpPipeline::class)->prepare($log->id, $this->clock());
@@ -921,6 +935,8 @@ class ScanJobTest extends TestCase
         $bot = $this->seedOpenBot();
         $room = $this->makeSilentPaymentRoom($bot, 'UE2E', $this->clock());
         $this->fakeModelApis();
+        // ห้องจ่ายเงิน + G2 → เดินต่อถึง pending (G3 จะโดนหน่วงรอกรอบขาย)
+        self::setSortAnswer(['group' => ['choice' => 'G2', 'confidence' => 0.9], 'declined' => ['noul' => 0.1]]);
         $this->fakeWriterMany();
 
         dispatch(new ProcessCustomerFollowUps);
@@ -1094,8 +1110,10 @@ class ScanJobTest extends TestCase
             if (str_contains($request->url(), 'openrouter')) {
                 $body = $request->data();
                 if (isset($body['questions']['group'])) {
+                    $sortAnswer = self::$sortAnswerOverride ?? ['group' => ['choice' => 'G3', 'confidence' => 0.9], 'declined' => ['noul' => 0.1]];
+
                     return self::$sortStatusOverride === 200
-                        ? Http::response(['answers' => self::$sortAnswerOverride, 'usage' => $sortUsage])
+                        ? Http::response(['answers' => $sortAnswer, 'usage' => $sortUsage])
                         : Http::response([], self::$sortStatusOverride);
                 }
 
