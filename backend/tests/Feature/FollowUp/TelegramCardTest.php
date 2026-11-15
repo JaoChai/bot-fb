@@ -183,7 +183,7 @@ TEXT;
         self::assertSame('การ์ดทดสอบ '.self::HTML_CANARY, $request['text']);
         self::assertSame('HTML', $request['parse_mode']);
         self::assertSame(
-            [['text' => 'ส่ง', 'callback_data' => 'fs|1|1|'.self::NONCE]],
+            ['inline_keyboard' => [['text' => 'ส่ง', 'callback_data' => 'fs|1|1|'.self::NONCE]]],
             json_decode($request['reply_markup'], true),
         );
         self::assertSame(['is_disabled' => true], json_decode($request['link_preview_options'], true));
@@ -484,7 +484,7 @@ TEXT;
         [$result, $requests] = $this->transportCall($stub);
 
         [$outcome, $messageId, $status, $retryAfter] = match ($case) {
-            'ok_accepted' => ['accepted', 77, null, null],
+            'ok_accepted' => ['accepted', 77, 200, null],
             'mid_string', 'mid_zero', 'result_true', 'result_missing', 'result_empty' => ['unknown', null, 200, null],
             'ok_false', 'html_200' => ['unknown', null, 200, null],
             'rejected_400' => ['rejected', null, 400, null],
@@ -534,10 +534,18 @@ TEXT;
         });
 
         $result = (new TelegramAlertBotService)->sendFollowUpCard(
-            match ($which) { 'token' => '', default => $this->fakeToken() },
-            match ($which) { 'chat' => '', default => self::CHAT_ID },
-            match ($which) { 'text' => '', default => 'การ์ดทดสอบ' },
-            match ($which) { 'keyboard' => [], default => [['text' => 'ส่ง', 'callback_data' => 'fs|1|1|'.self::NONCE]] },
+            match ($which) {
+                'token' => '', default => $this->fakeToken()
+            },
+            match ($which) {
+                'chat' => '', default => self::CHAT_ID
+            },
+            match ($which) {
+                'text' => '', default => 'การ์ดทดสอบ'
+            },
+            match ($which) {
+                'keyboard' => [], default => [['text' => 'ส่ง', 'callback_data' => 'fs|1|1|'.self::NONCE]]
+            },
         );
 
         $this->assertOutcome([
@@ -833,7 +841,11 @@ TEXT;
         $this->assertRowChangedOnly($logBefore, $this->logRow($seed['log_id']), []);
         self::assertSame($messagesBefore, $this->messageCount($seed['room']->id));
 
-        $this->assertSingleSendMessageRequest($requests[0]);
+        self::assertSame('https://api.telegram.org/bot'.'tg-plugin-token-'.self::TOKEN_TAIL.'/sendMessage', (string) $requests[0]->url());
+        self::assertSame('999', $requests[0]['chat_id']);
+        self::assertSame('HTML', $requests[0]['parse_mode']);
+        self::assertSame(['is_disabled' => true], json_decode($requests[0]['link_preview_options'], true));
+        self::assertStringContainsString('ลูกค้าพิมพ์ล่าสุด: ขอคิดดูก่อนนะครับ'."\n", $requests[0]['text']);
     }
 
     // ------------------------------------------------- 5) ข้อความ golden
@@ -872,9 +884,11 @@ TEXT;
         $keyboard = json_decode($requests[0]['reply_markup'], true);
         self::assertSame(
             [
-                ['text' => 'ส่ง', 'callback_data' => 'fs|'.$seed['approval_id'].'|1|'.self::NONCE],
-                ['text' => 'ข้าม', 'callback_data' => 'fk|'.$seed['approval_id'].'|1|'.self::NONCE],
-                ['text' => 'แก้ข้อความ', 'callback_data' => 'fe|'.$seed['approval_id'].'|1|'.self::NONCE],
+                [
+                    ['text' => 'ส่ง', 'callback_data' => 'fs|'.$seed['approval_id'].'|1|'.self::NONCE],
+                    ['text' => 'ข้าม', 'callback_data' => 'fk|'.$seed['approval_id'].'|1|'.self::NONCE],
+                    ['text' => 'แก้ข้อความ', 'callback_data' => 'fe|'.$seed['approval_id'].'|1|'.self::NONCE],
+                ],
             ],
             $keyboard['inline_keyboard'],
         );
@@ -886,14 +900,14 @@ TEXT;
         $seed = $this->seedPending(['approval_id' => 9223372036854775807, 'revision' => 2147483647]);
         [, $requests] = $this->publishCapturing($seed['approval_id'], $this->okStub());
 
-        $keyboard = json_decode($requests[0]['reply_markup'], true)['inline_keyboard'];
-        self::assertCount(3, $keyboard);
-        foreach ($keyboard as $button) {
+        $row = json_decode($requests[0]['reply_markup'], true)['inline_keyboard'][0];
+        self::assertCount(3, $row);
+        foreach ($row as $button) {
             self::assertLessThanOrEqual(64, strlen($button['callback_data']), $button['callback_data']);
         }
-        self::assertSame('fs|9223372036854775807|2147483647|'.self::NONCE, $keyboard[0]['callback_data']);
-        self::assertSame('fk|9223372036854775807|2147483647|'.self::NONCE, $keyboard[1]['callback_data']);
-        self::assertSame('fe|9223372036854775807|2147483647|'.self::NONCE, $keyboard[2]['callback_data']);
+        self::assertSame('fs|9223372036854775807|2147483647|'.self::NONCE, $row[0]['callback_data']);
+        self::assertSame('fk|9223372036854775807|2147483647|'.self::NONCE, $row[1]['callback_data']);
+        self::assertSame('fe|9223372036854775807|2147483647|'.self::NONCE, $row[2]['callback_data']);
     }
 
     // ------------------------------------------------- 7) การ escape
@@ -930,8 +944,8 @@ TEXT;
             'profile missing' => ['__null__', 'ลูกค้า #{conversation}'],
             'empty name' => ['', 'ลูกค้า #{conversation}'],
             'spaces only' => ['   ', 'ลูกค้า #{conversation}'],
-            '41 code points' => [str_repeat('ก', 41), 'ลูกค้า '.str_repeat('ก', 40)],
-            'name with url' => ['ดูที่ https://evil.test/token', 'ลูกค้า ดูที่ [redacted:url]'],
+            '41 code points' => [str_repeat('ก', 41), 'ลูกค้า: '.str_repeat('ก', 40)],
+            'name with url' => ['ดูที่ https://evil.test/token', 'ลูกค้า: ดูที่ [redacted:url]'],
         ];
     }
 
@@ -1026,13 +1040,13 @@ TEXT;
     #[Test]
     public function draft_of_400_code_points_on_three_lines_is_sent_whole(): void
     {
-        $draft = str_repeat('ก', 134)."\n".str_repeat('ข', 133)."\n".str_repeat('ค', 133);
+        $draft = str_repeat('ก', 134)."\n".str_repeat('ข', 132)."\n".str_repeat('ค', 132);
         self::assertSame(400, mb_strlen($draft, 'UTF-8'));
         $seed = $this->seedPending(['draft' => $draft]);
 
         [, $requests] = $this->publishCapturing($seed['approval_id'], $this->okStub());
 
-        self::assertStringContainsString("\n".str_repeat('ก', 134)."\n".str_repeat('ข', 133)."\n".str_repeat('ค', 133)."\n", $requests[0]['text']);
+        self::assertStringContainsString("\n".str_repeat('ก', 134)."\n".str_repeat('ข', 132)."\n".str_repeat('ค', 132)."\n", $requests[0]['text']);
         self::assertLessThanOrEqual(4096, mb_strlen($requests[0]['text'], 'UTF-8'));
     }
 

@@ -252,4 +252,81 @@ class TelegramAlertBotService
             return null;
         }
     }
+
+    /**
+     * ส่งบัตรอนุมัติ "ตามลูกค้า" ใบแรก (การ์ด B6a) — เส้นทางพิเศษ ห้ามใช้ call() เดิม (D71)
+     *
+     * ต่างจาก sendMessage เดิมทุกจุดที่การ์ดกำหนด: timeout รวม 10 วิ, connect timeout ตาม config,
+     * ไม่ retry, ไม่ตาม redirect, ไม่มีทางโยน exception และ "ยอมรับ" ได้ต้องมี result.message_id
+     * เป็นจำนวนเต็มบวกจริง (ต่างจากเดิมที่คืน [] แล้วดูเหมือนสำเร็จ)
+     * คืน array เดียว: outcome accepted|rejected|unknown + message_id + status + retry_after
+     * log บรรทัดเดียวต่อการเรียก เอาแค่ outcome + HTTP status — ห้ามมี token / chat id /
+     * ข้อความ / body / exception message (exception message มี token เต็ม URL, วัดแล้ว)
+     */
+    public function sendFollowUpCard(string $token, string $chatId, string $html, array $inlineKeyboard): array
+    {
+        $result = ['outcome' => 'unknown', 'message_id' => null, 'status' => null, 'retry_after' => null];
+
+        if ($token === '' || $chatId === '' || $html === '' || $inlineKeyboard === []) {
+            $result['outcome'] = 'rejected';
+            $this->logFollowUpCardCall($result);
+
+            return $result;
+        }
+
+        try {
+            $res = Http::connectTimeout((int) config('customer_follow_up.http_connect_timeout_seconds', 3))
+                ->timeout(10)
+                ->withoutRedirecting()
+                ->post($this->followUpBase().$token.'/sendMessage', [
+                    'chat_id' => $chatId,
+                    'text' => $html,
+                    'parse_mode' => 'HTML',
+                    'reply_markup' => json_encode(['inline_keyboard' => $inlineKeyboard]),
+                    'link_preview_options' => json_encode(['is_disabled' => true]),
+                ]);
+        } catch (\Throwable) {
+            $this->logFollowUpCardCall($result);
+
+            return $result;
+        }
+
+        $result['status'] = $res->status();
+
+        $messageId = $res->json('result.message_id');
+        if ($res->status() === 200 && $res->json('ok') === true && is_int($messageId) && $messageId > 0) {
+            $result['outcome'] = 'accepted';
+            $result['message_id'] = $messageId;
+            $this->logFollowUpCardCall($result);
+
+            return $result;
+        }
+
+        if ($res->status() >= 400 && $res->status() <= 499 && $res->json('ok') === false) {
+            $result['outcome'] = 'rejected';
+            $retryAfter = $res->json('parameters.retry_after');
+            if (is_int($retryAfter) && $retryAfter > 0) {
+                $result['retry_after'] = $retryAfter;
+            }
+        }
+
+        $this->logFollowUpCardCall($result);
+
+        return $result;
+    }
+
+    /** base URL ของ Telegram Bot API สำหรับบัตรตามลูกค้า — test ล้อง override เป็น port ปิดในเครื่องได้ */
+    protected function followUpBase(): string
+    {
+        return self::BASE;
+    }
+
+    /** log เดียวต่อการเรียก: outcome + HTTP status เท่านั้น */
+    private function logFollowUpCardCall(array $result): void
+    {
+        Log::info('Follow-up card send', [
+            'outcome' => $result['outcome'],
+            'status' => $result['status'],
+        ]);
+    }
 }

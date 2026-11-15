@@ -103,7 +103,7 @@ class FollowUpCapabilities
      * plugin telegram ที่เปิดใช้อยู่ของ default flow พร้อม token+chat_id —
      * เงื่อนไขเดียวกับ TelegramAlertBotService::alertTargets (อ่านอย่างเดียว)
      */
-    private static function alertPlugin(Bot $bot): ?FlowPlugin
+    public static function alertPlugin(Bot $bot): ?FlowPlugin
     {
         $flow = $bot->defaultFlow;
 

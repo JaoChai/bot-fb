@@ -552,7 +552,7 @@ class FollowUpSendService
      * decode ได้ object, `failed` เป็น JSON list ว่าง ([]) พอดี และ `error` เป็น boolean false เป๊ะ
      * ({} ไม่ใช่ list; error เป็น missing/null/0/""/ "false" ล้วนไม่สะอาด)
      */
-    private static function checkFlagged(string $rawAnswers): bool
+    public static function checkFlagged(string $rawAnswers): bool
     {
         $answers = json_decode($rawAnswers);
 
