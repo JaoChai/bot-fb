@@ -94,8 +94,12 @@ class FollowUpApprovalService
         }
         [$code, $approvalId, $revision, $nonce] = $parsed;
 
-        // 2) ห้อง — การ์ดถูกกดในห้องอื่น = เงียบ
-        $chatId = (string) ($callback['message']['chat']['id'] ?? '');
+        // 2) ห้อง — การ์ดถูกกดในห้องอื่น = เงียบ; chat.id ต้องเป็นจำนวนเต็มหรือข้อความเท่านั้น (array อื่นๆ = เงียบ)
+        $rawChatId = $callback['message']['chat']['id'] ?? null;
+        if (! is_int($rawChatId) && ! is_string($rawChatId)) {
+            return $this->finish(null, null, $botId, $code, 'ignored', 'room', null);
+        }
+        $chatId = (string) $rawChatId;
         if ($chatId === '' || $chatId !== (string) ($plugin->config['chat_id'] ?? '')) {
             return $this->finish(null, null, $botId, $code, 'ignored', 'room', null);
         }
