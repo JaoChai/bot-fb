@@ -2,6 +2,7 @@
 
 use App\Jobs\ProcessCustomerFollowUps;
 use App\Jobs\ProcessLeadRecovery;
+use App\Jobs\ReconcileCustomerFollowUps;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -53,6 +54,10 @@ Schedule::job(new ProcessLeadRecovery)->hourly()->name('lead-recovery');
 // candidate rows created, drafting jobs queued, and left-behind cards offered.
 // expiresAt 5: every 15 minutes, worst run is the 151-room refresh (~seconds).
 Schedule::job(new ProcessCustomerFollowUps)->everyFifteenMinutes()->name('customer-follow-up-scan')->withoutOverlapping(5);
+
+// Close expired cards, obsolete pre-draft work and outcome windows (B6f).
+// expiresAt 5: every five minutes; bounded batches, no overlapping runs.
+Schedule::job(new ReconcileCustomerFollowUps)->everyFiveMinutes()->name('customer-follow-up-reconcile')->withoutOverlapping(5);
 
 // Failed jobs cleanup - daily at 3:30am
 // Deletes failed jobs older than 7 days (168 hours) to manage storage
