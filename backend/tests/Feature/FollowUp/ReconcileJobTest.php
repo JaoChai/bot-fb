@@ -133,7 +133,7 @@ class ReconcileJobTest extends TestCase
         $closed = $this->card('approved');
         $twin = $this->card('approved');
         $before = $this->snapshot($closed);
-        $this->assertSame('expired', app(FollowUpSendService::class)->send($twin['approvalId'], $this->now()));
+        $this->assertSame('blocked', app(FollowUpSendService::class)->send($twin['approvalId'], $this->now()));
         $this->runJob();
         $this->assertExpired($closed, $before, false);
         $fields = ['delivery_status', 'reason_code', 'owner_action', 'owner_action_at', 'owner_telegram_user_id'];
