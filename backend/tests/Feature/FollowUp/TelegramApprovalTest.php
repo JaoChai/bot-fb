@@ -999,6 +999,9 @@ TEXT;
             'different message_id' => [['message' => ['message_id' => 78, 'chat' => ['id' => 888]]], null, 'not_found', 1, ['not_found']],
             'state new' => [[], 'state_new', 'not_found', 1, ['not_found']],
             'state failed' => [[], 'state_failed', 'not_found', 1, ['not_found']],
+            'state failed without message id' => [[], 'state_failed_no_msg', 'not_found', 1, ['not_found']],
+            'chat.id as list' => [['message' => ['message_id' => 77, 'chat' => ['id' => ['900', '901']]]], null, 'ignored', 0, []],
+            'chat.id as map' => [['message' => ['message_id' => 77, 'chat' => ['id' => ['key' => 900]]]], null, 'ignored', 0, []],
         ];
     }
 
@@ -1019,6 +1022,7 @@ TEXT;
             'wrong_nonce' => ['nonce' => 'ffff1111ffff1111'],
             'state_new' => ['telegram_delivery_state' => 'new', 'telegram_message_id' => null],
             'state_failed' => ['telegram_delivery_state' => 'failed'],
+            'state_failed_no_msg' => ['telegram_delivery_state' => 'failed', 'telegram_message_id' => null],
             default => [],
         };
         $seed = $this->seedWorld($options);
@@ -1492,6 +1496,53 @@ TEXT;
         $this->assertSingleAnswer($requests, 'ปุ่มนี้ยังไม่เปิดใช้', true);
         self::assertCount(1, $requests);
         $this->noRowChanged($beforeApproval, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
+    }
+
+    #[Test]
+    public function send_on_revision_1_with_text_different_from_draft_answers_not_ready(): void
+    {
+        // revision ยังเป็น 1 แต่ร่างบนบัตรไม่ตรง draft ใน log — ยังไม่พร้อมส่งจนกว่า B6c
+        $seed = $this->seedWorld(['approval_text' => self::DRAFT."\nแก้เองบางส่วน"]);
+        $beforeApproval = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
+
+        [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])));
+
+        $response->assertOk()->assertExactJson(['ok' => true]);
+        $this->assertSingleAnswer($requests, 'ปุ่มนี้ยังไม่เปิดใช้', true);
+        self::assertCount(1, $requests);
+        $this->noRowChanged($beforeApproval, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
+    }
+
+    #[Test]
+    public function send_on_pending_approval_with_non_pending_log_answers_not_found(): void
+    {
+        // approval ยัง pending แต่ log โดนตัดสินไปแล้ว (cancelled) — ธุรกรรมต้องไม่เขียน และตอบ not_found จากแถวที่อ่านล่าสุด
+        $seed = $this->seedWorld(['log_delivery_status' => 'cancelled']);
+        $beforeApproval = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
+
+        [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])));
+
+        $response->assertOk()->assertExactJson(['ok' => true]);
+        $this->assertSingleAnswer($requests, 'ไม่พบรายการนี้ หรือการ์ดนี้ใช้ไม่ได้แล้ว', true);
+        self::assertCount(1, $requests, 'ต้องมีแค่คำตอบ ไม่มีการแก้การ์ด');
+        $this->noRowChanged($beforeApproval, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
+    }
+
+    #[Test]
+    public function send_without_update_id_leaves_last_update_id_null(): void
+    {
+        // update ไม่มี update_id — controller ส่ง 0 เข้า service และบัตรต้องไม่จำ 0
+        $seed = $this->seedWorld();
+
+        [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])), updateId: null);
+
+        $response->assertOk()->assertExactJson(['ok' => true]);
+        $this->assertSingleAnswer($requests, 'รับคำสั่งแล้ว กำลังส่งให้ลูกค้า', false);
+        $approval = $this->approvalRow($seed['approval_id']);
+        self::assertSame('approved', $approval->status);
+        self::assertNull($approval->last_update_id, 'update_id เป็น 0 ห้ามลง last_update_id');
     }
 
     #[Test]
