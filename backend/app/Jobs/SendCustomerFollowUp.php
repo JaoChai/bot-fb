@@ -77,7 +77,7 @@ class SendCustomerFollowUp implements ShouldQueue
         $now = CarbonImmutable::now(FollowUpCapabilities::TIMEZONE)->startOfSecond();
         $nextAttemptAt = CarbonImmutable::parse((string) $log->next_attempt_at, FollowUpCapabilities::TIMEZONE)
             ->startOfSecond();
-        $delaySeconds = (int) ceil($nextAttemptAt->diffInSeconds($now, true));
+        $delaySeconds = (int) ceil($now->diffInSeconds($nextAttemptAt, false));
 
         self::dispatch($this->approvalId)->delay(max(1, $delaySeconds));
     }
