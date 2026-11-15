@@ -821,6 +821,23 @@ TEXT;
     }
 
     #[Test]
+    public function edit_reply_one_second_before_expiry_still_saves(): void
+    {
+        // ขอบเขตการรับ: หมดอายุที่ now+1s ยังเซฟได้ (ตารางข้างบนมีแต่ now กับ now-1s)
+        $seed = $this->bindPrompt(['expires_at' => '2026-11-16 10:00:01']);
+        $requests = [];
+
+        [$response, $requests] = $this->postReply($this->replyMessage(), stub: $this->stubWithMessageIds($requests));
+
+        $response->assertOk();
+        self::assertCount(2, $requests, 'เซฟ = ระบายการ์ดก่อนแล้วแจ้งคน');
+        $this->assertSingleSend($requests, str_replace('{log_id}', (string) $seed['log_id'], self::NOTICE_EDIT_SAVED), 900);
+        $after = $this->approvalRow($seed['approval_id']);
+        self::assertSame(2, (int) $after->revision, 'เหลือหนึ่งวินาทียังเซฟได้');
+        self::assertSame(self::EDITED_TEXT, $after->text);
+    }
+
+    #[Test]
     public function edit_reply_to_the_previous_prompt_after_a_second_edit_tap_gets_edit_gone(): void
     {
         $seed = $this->bindPrompt();
@@ -911,8 +928,8 @@ TEXT;
     {
         return [
             'command' => ['command', '/start', self::INVALID_COMMAND],
-            // TrimStrings + ConvertEmptyStringsToNull ของ Laravel แปลงข้อความที่เป็นวรรคล้วนเป็น null ก่อนถึง controller — จริงทั้งใน production
-            'only spaces' => ['spaces', '   ', self::INVALID_NOT_TYPED],
+            // D91: ข้อความเข้า editReply จาก raw body — วรรคล้วนไม่โดน ConvertEmptyStringsToNull อีกแล้ว ถึงกฎความยาว
+            'only spaces' => ['spaces', '   ', self::INVALID_LENGTH],
             '401 code points' => ['too long', str_repeat('ก', 401), self::INVALID_LENGTH],
             '400 code points saved' => ['max length', str_repeat('ก', 400), null],
             '4 lines' => ['4 lines', "บรรทัดหนึ่ง\nบรรทัดสอง\nบรรทัดสาม\nบรรทัดสี่", self::INVALID_LINES],
@@ -922,6 +939,10 @@ TEXT;
             'zero width space' => ['zero width', "ผม\u{200B}เช็กแล้ว", self::INVALID_CHARACTERS],
             'soft hyphen' => ['soft hyphen', "ผม\u{00AD}เช็กแล้ว", self::INVALID_CHARACTERS],
             'tab' => ['tab', "ผม\tเช็กแล้ว", self::INVALID_CHARACTERS],
+            // D91: ขอบสตริงไม่ถูกตัดก่อนถึง controller อีกแล้ว — อักขระมองไม่เห็นทุกตำแหน่งถึง guard
+            'NUL at the edges' => ['nul edges', "\u{0}ผมเช็กแล้ว\u{0}", self::INVALID_CHARACTERS],
+            'zero width space at the edges' => ['zwsp edges', "\u{200B}ผมเช็กแล้ว\u{200B}", self::INVALID_CHARACTERS],
+            'BOM at the edge' => ['bom edge', "\u{FEFF}ผมเช็กแล้ว", self::INVALID_CHARACTERS],
             'redaction marker' => ['marker', '[redacted:email]', self::INVALID_CHARACTERS],
             'password shaped text' => ['password', 'รหัสผ่าน: abc12345', self::INVALID_ACCOUNT_DATA],
             'forgot password phrasing' => ['forgot password', 'ลืมรหัส facebook ไหมครับ', self::INVALID_ACCOUNT_DATA],
@@ -970,6 +991,96 @@ TEXT;
         $this->postReply($this->replyMessage(['text' => "  สวัสดีครับพี่ \r\nยังสนใจอยู่ไหมครับ\r\n\r\n  "]));
 
         self::assertSame("สวัสดีครับพี่ \nยังสนใจอยู่ไหมครับ", $this->approvalRow($seed['approval_id'])->text);
+    }
+
+    // ------------------------------------------------- 4b) D91 — ข้อความตรงจาก raw body
+
+    /** @return array<string, array{0: string}> */
+    public static function d91RawTextProvider(): array
+    {
+        return [
+            // คำตัดสิน D91 — ข้อความพวกนี้เคยโดน SanitizeInput กิน ("โบนัส b บาท ครับ" ฯลฯ) ต้องบันทึกตรงตามที่พิมพ์
+            'bonus pattern' => ['โบนัส bonus=100 บาท ครับ'],
+            'online pattern' => ['ร้านเปิด online=ทุกวัน'],
+            'data colon pattern' => ['ดูข้อมูล data: ใหม่, ครับ'],
+            'html bold as typed' => ['ตัวหนา <b>ลด</b> ครับ'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('d91RawTextProvider')]
+    public function d91_typed_text_reaches_editreply_byte_equal_through_the_raw_body(string $text): void
+    {
+        $seed = $this->bindPrompt();
+        $requests = [];
+
+        [$response, $requests] = $this->postReply($this->replyMessage(['text' => $text]), stub: $this->stubWithMessageIds($requests));
+
+        $response->assertOk();
+        self::assertCount(2, $requests, 'เซฟ = ระบายการ์ด + แจ้งคน');
+        $this->assertSingleSend($requests, str_replace('{log_id}', (string) $seed['log_id'], self::NOTICE_EDIT_SAVED), 900);
+        $after = $this->approvalRow($seed['approval_id']);
+        self::assertSame(2, (int) $after->revision);
+        self::assertSame($text, $after->text, 'D91: บันทึกตรงตามที่พิมพ์');
+        if (str_contains($text, '<b>')) {
+            // การ์ดไม่ตีความ HTML ของข้อความที่พิมพ์ — ตัวหนาต้องโผล่บนการ์ดแบบ escape แล้ว
+            $edits = array_values(array_filter($requests, fn ($r) => $this->methodOf($r) === 'editMessageText'));
+            self::assertStringContainsString('&lt;b&gt;ลด&lt;/b&gt;', (string) $edits[0]['text']);
+        }
+        $this->assertNoSecretsInLog();
+    }
+
+    #[Test]
+    public function d91_nbsp_at_the_edges_is_saved_as_typed(): void
+    {
+        $text = "\u{00A0}สวัสดีครับพี่\u{00A0}";
+        $seed = $this->bindPrompt();
+        $requests = [];
+
+        [$response, $requests] = $this->postReply($this->replyMessage(['text' => $text]), stub: $this->stubWithMessageIds($requests));
+
+        $response->assertOk();
+        self::assertCount(2, $requests);
+        $this->assertSingleSend($requests, str_replace('{log_id}', (string) $seed['log_id'], self::NOTICE_EDIT_SAVED), 900);
+        self::assertSame($text, $this->approvalRow($seed['approval_id'])->text, 'D91: NBSP ที่ขอบเก็บตรงตามที่พิมพ์');
+    }
+
+    #[Test]
+    public function d91_body_that_does_not_decode_to_an_update_calls_nothing(): void
+    {
+        $seed = $this->bindPrompt();
+        $beforeApproval = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
+
+        // D91: body ที่ decode ไม่ได้ต้องไม่เรียกอะไร —
+        // JSON พังจริงๆ โดน ValidateJsonContent middleware ของระบบตอบ 400 ก่อนถึง controller (พฤติกรรม production)
+        // ส่วน JSON ถูกไวยากรณ์แต่ไม่มี message เป็น array ถึง controller และตอบ {ok:true} เงียบๆ ตาม D91
+        $responses = [];
+        foreach (['{not-json' => 400, '{"message":"not-an-array","update_id":5}' => 200] as $body => $expectedStatus) {
+            $requests = [];
+            $this->resetLogCaptures();
+            Http::swap(new Factory);
+            Http::fake(function ($request) use (&$requests) {
+                $requests[] = $request;
+
+                return Http::response(json_encode(['ok' => true, 'result' => true]), 200);
+            });
+
+            $response = $this->call('POST', '/api/webhook/telegram-alert/'.$this->worldToken, [], [], [], [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN' => 'webhook-secret-test',
+            ], $body);
+
+            $response->assertStatus($expectedStatus);
+            if ($expectedStatus === 200) {
+                $response->assertExactJson(['ok' => true]);
+            }
+            self::assertCount(0, $requests, $body.' ต้องไม่ยิงออก');
+            $responses[] = $expectedStatus;
+        }
+
+        self::assertSame([400, 200], $responses, 'ต้องครอบทั้งสองกรณี');
+        $this->noRowChanged($beforeApproval, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
     }
 
     #[Test]
@@ -1175,34 +1286,52 @@ TEXT;
         self::assertNull($this->approvalRow($seed['approval_id'])->edit_prompt_message_id);
     }
 
-    /** @return array<string, array{0: string, 1: int}> */
+    /** @return array<string, array{0: string, 1: int, 2: string}> */
     public static function editTapNonPendingProvider(): array
     {
         return [
-            'approved' => ['approved', 2],
-            'sending' => ['sending', 2],
-            'sent' => ['sent', 2],
-            'skipped' => ['skipped', 2],
-            'expired status' => ['expired', 2],
-            'cancelled' => ['cancelled', 2],
-            'editing' => ['editing', 1],
+            'approved' => ['approved', 2, 'กดส่งไปแล้ว กำลังส่งให้ลูกค้า'],
+            'sending' => ['sending', 2, 'กดส่งไปแล้ว กำลังส่งให้ลูกค้า'],
+            'sent' => ['sent', 2, 'ส่งให้ลูกค้าไปแล้ว'],
+            'skipped' => ['skipped', 2, 'ข้ามไปแล้ว ไม่ได้ส่ง'],
+            'expired status' => ['expired', 2, 'หมดอายุแล้ว ไม่ได้ส่ง'],
+            'cancelled' => ['cancelled', 2, 'รายการนี้ถูกยกเลิกแล้ว ไม่ได้ส่ง'],
+            'editing' => ['editing', 1, 'กำลังแก้ข้อความอยู่'],
         ];
     }
 
     #[Test]
     #[DataProvider('editTapNonPendingProvider')]
-    public function edit_tap_on_non_pending_status_answers_not_ready_and_repaints(string $status, int $expectedRequests): void
+    public function edit_tap_on_non_pending_status_answers_the_status_found_and_repaints(string $status, int $expectedRequests, string $expectedAnswer): void
     {
         $seed = $this->seedWorld(['approval_status' => $status]);
+        $beforeApproval = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
 
         [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fe', $seed['approval_id'])));
 
         $response->assertOk();
         self::assertCount($expectedRequests, $requests);
-        $this->assertSingleAnswer($requests, 'ปุ่มนี้ยังไม่เปิดใช้', true);
+        $this->assertSingleAnswer($requests, $expectedAnswer, true);
         $sends = array_values(array_filter($requests, fn ($r) => $this->methodOf($r) === 'sendMessage'));
         self::assertCount(0, $sends, 'สถานะที่ปิดแล้วห้ามเปิดช่องแก้');
-        self::assertSame(1, (int) $this->approvalRow($seed['approval_id'])->revision);
+        $this->noRowChanged($beforeApproval, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
+    }
+
+    #[Test]
+    #[DataProvider('editTapNonPendingProvider')]
+    public function confirm_tap_on_non_pending_status_answers_the_status_found_and_repaints(string $status, int $expectedRequests, string $expectedAnswer): void
+    {
+        $seed = $this->seedWorld(['approval_status' => $status]);
+        $beforeApproval = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
+
+        [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fc', $seed['approval_id'])));
+
+        $response->assertOk();
+        self::assertCount($expectedRequests, $requests);
+        $this->assertSingleAnswer($requests, $expectedAnswer, true);
+        $this->noRowChanged($beforeApproval, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
     }
 
     #[Test]
@@ -1246,7 +1375,78 @@ TEXT;
         self::assertNull($after->last_update_id);
         self::assertSame(1, (int) $after->revision);
         self::assertCount(3, $requests, 'โพสต์ช่องสำเร็จ + ตอบจากสถานะที่เจอ + ระบายการ์ด (D82)');
-        $this->assertSingleAnswer($requests, 'ปุ่มนี้ยังไม่เปิดใช้', true);
+        $this->assertSingleAnswer($requests, 'กดส่งไปแล้ว กำลังส่งให้ลูกค้า', true);
+    }
+
+    /** D90: fe แพ้แข่งแบบ nonce ย้ายใต้ UPDATE มีเงื่อนไข — บัตรยัง pending มีชีวิต = stale แล้ว syncCard (D87) */
+    #[Test]
+    public function edit_tap_losing_the_nonce_race_answers_stale_and_syncs_the_card(): void
+    {
+        $seed = $this->seedWorld();
+        $requests = [];
+        $stub = $this->stubWithMessageIds($requests);
+        $seen = 0;
+        DB::listen(function (QueryExecuted $query) use (&$seen, $seed): void {
+            if (str_contains($query->sql, 'from "follow_up_approvals"') && str_contains($query->sql, 'where "id" = ?')) {
+                $seen++;
+                if ($seen === 1) {
+                    // นักเขียนอื่นเปลี่ยน nonce ระหว่างอ่านครั้งแรกกับ UPDATE มีเงื่อนไข
+                    DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->update(['nonce' => self::NEW_NONCE]);
+                }
+            }
+        });
+
+        [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fe', $seed['approval_id'])), stub: $stub);
+        app('events')->forget(QueryExecuted::class);
+
+        $response->assertOk();
+        self::assertGreaterThanOrEqual(1, $seen, 'ต้อง inject ได้จริง');
+        $after = $this->approvalRow($seed['approval_id']);
+        self::assertSame(self::NEW_NONCE, $after->nonce, 'nonce ของนักเขียนอื่นคงอยู่');
+        self::assertSame('pending', $after->status);
+        self::assertNull($after->edit_prompt_message_id, 'fe แพ้แข่งต้องไม่ผูกช่อง');
+        self::assertNull($after->last_update_id);
+        self::assertSame(1, (int) $after->revision);
+        self::assertCount(3, $requests, 'โพสต์ช่องสำเร็จ + ตอบ stale + syncCard (D90)');
+        $this->assertSingleAnswer($requests, 'การ์ดนี้เป็นรุ่นเก่า ใช้การ์ดล่าสุดแทน', true);
+        $this->assertSingleEdit($requests);
+    }
+
+    /** D90: fc แพ้แข่งก่อนล็อก — บัตรยัง pending มีชีวิตแต่รุ่นย้าย = stale, เขียนอะไรไม่ลง, syncCard */
+    #[Test]
+    public function confirm_tap_losing_the_revision_race_before_the_lock_answers_stale_and_syncs(): void
+    {
+        $seed = $this->seedWorld($this->editedCard());
+        $beforeApproval = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
+        $requests = [];
+        $stub = $this->stubWithMessageIds($requests);
+        $seen = 0;
+        DB::listen(function (QueryExecuted $query) use (&$seen, $seed): void {
+            if (str_contains($query->sql, 'from "follow_up_approvals"') && str_contains($query->sql, 'where "id" = ?')) {
+                $seen++;
+                if ($seen === 1) {
+                    // การแก้อื่นเซฟระหว่างอ่านครั้งแรกกับตอนล็อก — รุ่นย้ายก่อนธุรกรรม
+                    DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->update(['revision' => 3]);
+                }
+            }
+        });
+
+        [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fc', 777, 2, self::NONCE)), stub: $stub);
+        app('events')->forget(QueryExecuted::class);
+
+        $response->assertOk();
+        self::assertGreaterThanOrEqual(1, $seen, 'ต้อง inject ได้จริง');
+        $after = $this->approvalRow($seed['approval_id']);
+        self::assertSame(3, (int) $after->revision, 'รุ่นของการแก้อื่นคงอยู่');
+        self::assertSame('pending', $after->status);
+        self::assertNull($after->confirmed_revision);
+        self::assertNull($after->last_update_id);
+        self::assertCount(2, $requests, 'ตอบ stale + syncCard เท่านั้น — ไม่เขียนอะไร');
+        $this->assertSingleAnswer($requests, 'การ์ดนี้เป็นรุ่นเก่า ใช้การ์ดล่าสุดแทน', true);
+        $this->assertSingleEdit($requests);
+        $this->assertRowChangedOnly($beforeApproval, $after, ['revision']);
+        $this->assertRowChangedOnly($beforeLog, $this->logRow($seed['log_id']), []);
     }
 
     // ---------------------------------------------------------------- 6) ตอบช่องแล้วเซฟรุ่นใหม่
