@@ -197,16 +197,19 @@ TEXT;
      */
     private function seedPending(array $options = []): array
     {
-        $get = fn (string $key, mixed $default) => array_key_exists($key, $options) ? $options[$key] : $default;
+        $get = fn (string $key, mixed $default = null) => array_key_exists($key, $options) ? $options[$key] : $default;
 
         $user = User::factory()->owner()->create();
-        $bot = Bot::factory()->active()->line()->create([
-            'id' => $get('bot_id', null),
+        $botAttributes = [
             'user_id' => $user->id,
             'name' => $get('bot_name', 'บอททดสอบการ์ด'),
             'primary_chat_model' => 'openai/gpt-6-luna',
             'channel_access_token' => 'line-token-'.self::TOKEN_TAIL,
-        ]);
+        ];
+        if ($get('bot_id', null) !== null) {
+            $botAttributes['id'] = $get('bot_id');
+        }
+        $bot = Bot::factory()->active()->line()->create($botAttributes);
         config(['customer_follow_up.bot_ids' => [$bot->id]]);
         config(['customer_follow_up.admin_web_url' => $get('admin_web_url', 'https://admin.example.test')]);
         config(['services.telegram_alert.secret' => 'webhook-secret-test']);
@@ -247,12 +250,15 @@ TEXT;
                 'channel_type' => 'line',
                 'display_name' => $get('display_name', 'สมชาย ใจดี'),
             ]);
-        $room = Conversation::factory()->line()->create([
-            'id' => $get('conversation_id', null),
+        $roomAttributes = [
             'bot_id' => $bot->id,
             'customer_profile_id' => $profile?->id,
             'external_customer_id' => 'U'.self::TOKEN_TAIL.'canary',
-        ]);
+        ];
+        if ($get('conversation_id', null) !== null) {
+            $roomAttributes['id'] = $get('conversation_id');
+        }
+        $room = Conversation::factory()->line()->create($roomAttributes);
 
         $anchorId = $this->addMessage($room->id, 'user', '2026-11-15 08:59:00', 'ประเมินราคาให้หน่อยครับ');
         $this->addMessage($room->id, 'bot', '2026-11-15 09:00:00', 'ได้ครับ กำลังเตรียมใบเสนอราคาให้ครับ');
@@ -364,9 +370,15 @@ TEXT;
         }
 
         foreach (['bots', 'conversations', 'customer_profiles', 'lead_recovery_logs', 'follow_up_approvals'] as $table) {
+            $max = DB::table($table)->max('id');
+            // id ทดสอบขนาด 9223372036854775807 ห้าม setval ตาม — sequence ไม่ย้อนกลับตาม
+            // transaction พอทับแล้ว nextval ทุกแถวถัดไปตายทั้งชุด ให้เว้นไว้
+            if ($max === null || $max >= 9223372036854775807) {
+                continue;
+            }
             $sequence = DB::selectOne("SELECT pg_get_serial_sequence(?, 'id') AS seq", [$table])->seq;
             if ($sequence !== null) {
-                DB::statement(sprintf('SELECT setval(?, COALESCE((SELECT MAX(id) FROM %s), 1))', $table), [$sequence]);
+                DB::statement('SELECT setval(?, ?)', [$sequence, $max]);
             }
         }
     }
