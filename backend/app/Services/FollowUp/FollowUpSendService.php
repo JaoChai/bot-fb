@@ -38,7 +38,7 @@ use Throwable;
  */
 class FollowUpSendService
 {
-    /** ส่งได้สูงสุด 3 ครั้งต่อแถว (นับที่ attempt_number — attempt_count เป็นของสายร่าง, D50) */
+    /** ส่งได้สูงสุด 3 ครั้งต่อแถว (นับที่ attempt_number — ตัวนับฝั่งสายร่างเป็นอีกคอลัมน์, D50) */
     private const MAX_PUSHES = 3;
 
     /** รอหลังคำตอบ retryable ครั้งแรก (วินาที) */
