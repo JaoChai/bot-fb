@@ -4,6 +4,7 @@ namespace Tests\Feature\FollowUp;
 
 use App\Http\Resources\BotResource;
 use App\Models\Bot;
+use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
@@ -801,6 +802,9 @@ class SettingsApiTest extends TestCase
             'updated_at' => self::NOW,
         ]);
 
+        // เรียกแบบไม่ล็อกอินก่อน actingAs ตัวแรก — actingAs ค้างทั้งเทสต์
+        $this->getJson("/api/bots/{$bot->id}/settings")->assertUnauthorized();
+
         $byAdmin = $this->actingAs($admin)->getJson("/api/bots/{$bot->id}/settings");
         $byAdmin->assertOk();
         $data = $byAdmin->json('data');
@@ -812,7 +816,6 @@ class SettingsApiTest extends TestCase
 
         [$otherUser] = $this->makeBaseline();
         $this->actingAs($otherUser)->getJson("/api/bots/{$bot->id}/settings")->assertForbidden();
-        $this->getJson("/api/bots/{$bot->id}/settings")->assertUnauthorized();
     }
 
     #[Test]
@@ -999,6 +1002,8 @@ class SettingsApiTest extends TestCase
         $resource = (new BotResource($bot))->toArray(Request::create("/api/bots/{$bot->id}", 'GET'));
 
         $this->assertArrayHasKey('settings', $resource);
-        $this->assertInternalKeysAbsent($resource['settings'], 'BotResource settings serialisation');
+        // JsonResource คืนโมเดลตามที่เป็น — serialise แบบเดียวกับ response จริง
+        $this->assertInstanceOf(BotSetting::class, $resource['settings']);
+        $this->assertInternalKeysAbsent($resource['settings']->toArray(), 'BotResource settings serialisation');
     }
 }

@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Bot;
 use App\Models\BotSetting;
 use App\Rules\PlainOutageText;
+use App\Services\FollowUp\FollowUpCapabilities;
 use App\Support\OutageMessageText;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -257,14 +259,25 @@ class BotSettingController extends Controller
 
     /**
      * รูปทรงข้อมูล settings ร่วมของ GET และ PUT/PATCH — เพิ่ม outage_defaults (response-only,
-     * ห้ามเก็บลง DB) ต่อท้ายคอลัมน์จริงของแถว
+     * ห้ามเก็บลง DB) ต่อท้ายคอลัมน์จริงของแถว และสี่คีย์ของสวิตช์ตามลูกค้า (B5a)
+     * ที่ต้องอยู่ในทุก response: enabled (JSON bool), mode, started_at (ISO 8601
+     * ของ instant เดียวกับเวลากรุงเทพฯ ที่เก็บ) และ capabilities จาก FollowUpCapabilities;
+     * คอลัมน์ภายในสองตัวถูกซ่อนที่ $hidden ของโมเดล
      *
      * @return array<string, mixed>
      */
     private function settingsData(BotSetting $settings): array
     {
+        $startedAt = $settings->follow_up_started_at;
+
         return array_merge($settings->toArray(), [
             'outage_defaults' => OutageMessageText::defaults(),
+            'follow_up_enabled' => (bool) $settings->follow_up_enabled,
+            'follow_up_mode' => (string) ($settings->follow_up_mode ?? 'approve'),
+            'follow_up_started_at' => $startedAt === null
+                ? null
+                : CarbonImmutable::parse($startedAt, 'Asia/Bangkok')->toISOString(),
+            'follow_up_capabilities' => FollowUpCapabilities::forBot($settings->bot, CarbonImmutable::now()),
         ]);
     }
 
@@ -273,7 +286,7 @@ class BotSettingController extends Controller
      */
     private function createDefaultSettings(Bot $bot): BotSetting
     {
-        return BotSetting::create([
+        $settings = BotSetting::create([
             'bot_id' => $bot->id,
             'daily_message_limit' => 1000,
             'per_user_limit' => 100,
@@ -293,6 +306,11 @@ class BotSettingController extends Controller
             'outage_recovery_message_en' => null,
             'outage_down_message' => null,
             // Note: multiple_bubbles and auto_assignment fields use database defaults
+            // follow_up_* (B5a) ใช้ default ของ DB — refresh เพื่อให้ response แรกมีคีย์ครบ
         ]);
+
+        $settings->refresh();
+
+        return $settings;
     }
 }

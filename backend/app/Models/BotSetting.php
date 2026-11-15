@@ -64,6 +64,17 @@ class BotSetting extends Model
         'outage_recovery_message_th',
         'outage_recovery_message_en',
         'outage_down_message',
+        // NOTE: คอลัมน์ follow_up_* (การ์ด B5a) ตั้งใจไม่อยู่ใน fillable —
+        // สวิตช์/โหมด/snapshot เขียนผ่าน query builder ใน BotSettingController เท่านั้น
+    ];
+
+    /**
+     * คอลัมน์ภายในของระบบตามลูกค้า (B5a): ระบบตั้งตอนเปิดครั้งแรกเท่านั้น
+     * ห้ามออก response ที่ serialise โมเดลนี้ทุกจุด (GET settings, BotResource)
+     */
+    protected $hidden = [
+        'follow_up_activation_message_id',
+        'follow_up_activated_at',
     ];
 
     protected $casts = [
@@ -87,6 +98,8 @@ class BotSetting extends Model
         'slip_verification_enabled' => 'boolean',
         'slip_amount_tolerance' => 'float',
         'outage_recovery_enabled' => 'boolean',
+        // Customer follow-up switch (B5a) — คอลัมน์อยู่บน head แล้ว การ์ดนี้แค่ wire อ่าน/เขียน
+        'follow_up_enabled' => 'boolean',
     ];
 
     public function bot(): BelongsTo
