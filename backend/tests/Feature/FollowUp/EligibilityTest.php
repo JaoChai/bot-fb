@@ -91,7 +91,7 @@ class EligibilityTest extends TestCase
 
         $room = Conversation::factory()->line()->create([
             'bot_id' => $bot->id,
-            'external_customer_id' => 'U111',
+            'external_customer_id' => 'U'.str_repeat('a1', 16), // รูปร่างจริงตาม D52: ^U[0-9a-f]{32}$
         ]);
 
         foreach ($prepend as [$sender, $at, $content]) {
@@ -583,11 +583,11 @@ class EligibilityTest extends TestCase
         $seed = $seedWithLog(null); // ไม่เคยยิง
         $this->assertSame(1, $this->eligibleCount($seed['bot'], $this->now()), 'send_failed ที่ไม่เคยยิงไม่นับ');
 
-        // แถว send_failed ของลูกค้าอื่น (ห้อง U222) ต้องไม่บล็อกห้อง U111
+        // แถว send_failed ของลูกค้าอื่น (ห้อง U222-รูปร่าง) ต้องไม่บล็อกห้องของลูกค้านี้
         $seed = $this->seedBase();
         $roomB = Conversation::factory()->line()->create([
             'bot_id' => $seed['bot']->id,
-            'external_customer_id' => 'U222',
+            'external_customer_id' => 'U'.str_repeat('b2', 16),
         ]);
         $this->addLog($roomB, null, null, 'send_failed', ['first_push_at' => '2026-11-15 09:00:00']);
         $this->assertSame(1, $this->eligibleCount($seed['bot'], $this->now()), 'ลูกค้าอื่นไม่เกี่ยวกับช่องว่างของลูกค้านี้');
@@ -602,6 +602,8 @@ class EligibilityTest extends TestCase
     {
         config(['customer_follow_up.quota_reserve_messages' => 100]);
         $seed = $this->seedBase();
+        // ส่งจริงต้องมี token (quota + push) — ประกอบจากหลายชิ้นกัน canary หลุด source
+        $seed['bot']->update(['channel_access_token' => implode('', ['fake', 'Line', 'Access', 'Token', '777'])]);
         $logId = $this->addLog($seed['room'], $seed['anchorId'], $seed['anchorId'], 'approved', [
             'attempt_number' => 0,
             'draft' => 'สวัสดีครับ ยังสนใจสินค้าอยู่ไหมครับ',
@@ -657,11 +659,11 @@ class EligibilityTest extends TestCase
     #[Test]
     public function test_customer_gap_is_correlated_to_the_rooms_customer(): void
     {
-        // (ก) ส่งหาลูกค้าอื่น (U222) เมื่อเร็ว ๆ นี้ ต้องไม่บล็อกห้องของลูกค้า U111
+        // (ก) ส่งหาลูกค้าอื่น (ห้องรูปร่าง U222) เมื่อเร็ว ๆ นี้ ต้องไม่บล็อกห้องนี้
         $seed = $this->seedBase();
         $roomB = Conversation::factory()->line()->create([
             'bot_id' => $seed['bot']->id,
-            'external_customer_id' => 'U222',
+            'external_customer_id' => 'U'.str_repeat('b2', 16),
         ]);
         $this->addLog($roomB, null, null, 'sent', ['sent_at' => '2026-11-14 10:00:00']);
         $this->assertSame(1, $this->eligibleCount($seed['bot'], $this->now()), 'ส่งหาลูกค้าอื่น (U222) ต้องไม่บล็อกห้องของ U111');
