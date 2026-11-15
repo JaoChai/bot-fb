@@ -1195,6 +1195,7 @@ class ScanJobTest extends TestCase
             'approved_1m59' => [array_merge($approvedBase, ['updated_at' => '2026-11-16 09:58:01']), ['status' => 'approved']],
             'log_approved_appr_pending' => [array_merge($approvedBase, ['updated_at' => '2026-11-16 09:00:00']), ['status' => 'pending']],
             'log_retry_appr_approved' => [array_merge($retryBase, ['next_attempt_at' => '2026-11-16 09:00:00', 'updated_at' => '2026-11-16 09:00:00']), ['status' => 'approved']],
+            'log_sending_appr_approved' => [$sendingBase, ['status' => 'approved']],
             'pending_pair' => [['delivery_status' => 'pending'], ['status' => 'pending']],
             'sent_pair' => [['delivery_status' => 'sent', 'sent_at' => '2026-11-16 09:00:00'], ['status' => 'sent']],
             'send_failed_pair' => [['delivery_status' => 'send_failed'], ['status' => 'cancelled']],

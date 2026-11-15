@@ -369,15 +369,16 @@ class SendJobTest extends TestCase
     public function test_pending_skipped_and_missing_rows_do_nothing(): void
     {
         // คู่ pending: claim ปฏิเสธ ทุกคอลัมน์คงเดิมทุกไบต์
-        $pendingSeed = $this->seedReady([], ['status' => 'pending']);
+        $pendingSeed = $this->seedReady(['updated_at' => '2026-11-16 09:40:00'], ['status' => 'pending', 'updated_at' => '2026-11-16 09:41:00']);
         $pendingLogBefore = (array) $this->logRow($pendingSeed);
         $pendingApprovalBefore = (array) $this->approvalRow($pendingSeed);
         // คู่ skipped: owner gate ตีกลับก่อน claim
-        $skippedSeed = $this->seedReady(['delivery_status' => 'skipped', 'owner_action' => 'skipped'], ['status' => 'skipped']);
+        $skippedSeed = $this->seedReady(['delivery_status' => 'skipped', 'owner_action' => 'skipped', 'updated_at' => '2026-11-16 09:42:00'], ['status' => 'skipped', 'updated_at' => '2026-11-16 09:43:00']);
         $skippedLogBefore = (array) $this->logRow($skippedSeed);
         $skippedApprovalBefore = (array) $this->approvalRow($skippedSeed);
         Queue::fake();
         $this->fakeHttp();
+        $this->spyTelegram();
 
         $this->handleJob($pendingSeed['approvalId']);
         $this->handleJob($skippedSeed['approvalId']);
@@ -731,6 +732,140 @@ class SendJobTest extends TestCase
         $this->assertStringEndsWith('✅ ส่งให้ลูกค้าแล้ว', $edits[0]);
     }
 
+    // B6e run B: caller-boundary regressions; transport remains faked.
+
+    #[Test]
+    public function test_repaint_uses_fresh_terminal_state_not_the_sender_result(): void
+    {
+        $seed = $this->seedReady();
+        Queue::fake();
+        $this->fakeHttp();
+        $real = app(FollowUpSendService::class);
+        $this->mock(FollowUpSendService::class, function (MockInterface $mock) use ($real, $seed): void {
+            $mock->shouldReceive('send')->once()->with($seed['approvalId'])->andReturnUsing(function (int $id) use ($real): string {
+                $this->assertSame('sent', $real->send($id));
+
+                // A caller must read durable state, not infer it from a result string.
+                return 'blocked';
+            });
+        });
+        $this->spyTelegram();
+
+        $this->handleJob($seed['approvalId']);
+
+        $this->assertSame([$seed['approvalId']], $this->repaintIds);
+        $this->assertSame('sent', $this->approvalRow($seed)->status);
+        $this->assertCount(1, $this->editTexts());
+        $this->assertSame([], $this->pushedSendIds());
+    }
+
+    #[Test]
+    public function test_retry_reaching_its_due_second_is_delayed_at_least_one_second(): void
+    {
+        $seed = $this->seedReady();
+        Queue::fake();
+        $this->fakeHttp([['{}', 500]]);
+        $real = app(FollowUpSendService::class);
+        $this->mock(FollowUpSendService::class, function (MockInterface $mock) use ($real, $seed): void {
+            $mock->shouldReceive('send')->once()->with($seed['approvalId'])->andReturnUsing(function (int $id) use ($real): string {
+                $result = $real->send($id);
+                $this->freeze('2026-11-16 10:01:00');
+
+                return $result;
+            });
+        });
+        $this->spyTelegram();
+
+        $this->handleJob($seed['approvalId']);
+
+        $this->assertSame([$seed['approvalId']], $this->pushedSendIds());
+        $this->assertSame(1, Queue::pushedJobs()[SendCustomerFollowUp::class][0]['job']->delay);
+        $this->assertSame([], $this->repaintIds);
+        $this->assertSame(['quota', 'consumption', 'push'], array_map($this->methodOf(...), $this->httpRequests));
+    }
+
+    #[Test]
+    public function test_telegram_http_failure_leaves_sent_rows_and_two_scans_do_not_repaint(): void
+    {
+        $seed = $this->seedReady();
+        Queue::fake();
+        // Only the repaint transport fails; LINE and the durable send stay real.
+        $this->fakeHttp(telegramEditStatus: 500);
+        $this->spyTelegram();
+
+        $this->handleJob($seed['approvalId']);
+
+        $this->assertSame('sent', $this->logRow($seed)->delivery_status);
+        $this->assertSame('sent', $this->approvalRow($seed)->status);
+        $this->assertSame([$seed['approvalId']], $this->repaintIds);
+        $this->assertSame([], $this->pushedSendIds());
+        $warnings = array_values(array_filter($this->logEvents, fn (MessageLogged $event): bool => $event->level === 'warning'));
+        $this->assertSame([], $warnings, 'a returned failed result does not throw or log a job warning');
+        $beforeLog = (array) $this->logRow($seed);
+        $beforeApproval = (array) $this->approvalRow($seed);
+        Http::assertSentCount(4);
+
+        $this->freeze('2026-11-16 10:15:00');
+        $this->runScan();
+        $this->freeze('2026-11-16 10:30:00');
+        $this->runScan();
+
+        Http::assertSentCount(4);
+        $this->assertSame([$seed['approvalId']], $this->repaintIds, 'sent rows have no step E recovery actor');
+        $this->assertSame([], $this->pushedSendIds());
+        $this->assertSame($beforeLog, (array) $this->logRow($seed));
+        $this->assertSame($beforeApproval, (array) $this->approvalRow($seed));
+    }
+
+    #[Test]
+    public function test_sync_500_tap_pushes_once_and_does_not_loop(): void
+    {
+        $seed = $this->seedTelegramWorld();
+        $this->fakeHttp([['{}', 500]]);
+        $this->spySend(maximumCalls: 2);
+        $this->spyTelegram();
+
+        $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])))->assertOk();
+
+        $this->assertSame([$seed['approval_id'], $seed['approval_id']], $this->sendIds, 'sync executes the delayed job once; claim refuses the future attempt');
+        $this->assertSame([$seed['approval_id']], $this->repaintIds, 'only the tap paints the waiting card');
+        $this->assertSame(['answerCallbackQuery', 'editMessageText', 'quota', 'consumption', 'push'], array_map($this->methodOf(...), $this->httpRequests));
+        $log = DB::table('lead_recovery_logs')->where('id', $seed['log_id'])->first();
+        $this->assertSame('retry', $log->delivery_status);
+        $this->assertSame(1, (int) $log->attempt_number);
+        $this->assertSame('2026-11-16 10:01:00', $log->next_attempt_at);
+        $this->assertSame('sending', DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->value('status'));
+    }
+
+    #[Test]
+    public function test_closed_bot_scan_finishes_pushed_retry_as_acceptance_unknown(): void
+    {
+        $seed = $this->seedReady([
+            'delivery_status' => 'retry',
+            'next_attempt_at' => '2026-11-16 10:00:00',
+            'updated_at' => '2026-11-16 09:52:00',
+            'first_push_at' => '2026-11-16 09:52:00',
+            'message_sent' => self::TEXT,
+            'attempt_number' => 1,
+            'retry_key' => self::RECOVERY_KEY,
+        ], ['status' => 'sending']);
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
+        $this->fakeHttp();
+        $this->spySend();
+        $this->spyTelegram();
+
+        $this->runScan();
+
+        $this->assertSame([$seed['approvalId']], $this->sendIds);
+        $this->assertSame([$seed['approvalId']], $this->repaintIds);
+        $this->assertSame('send_failed', $this->logRow($seed)->delivery_status);
+        $this->assertSame('acceptance_unknown_gate_changed', $this->logRow($seed)->reason_code);
+        $this->assertSame('cancelled', $this->approvalRow($seed)->status);
+        $this->assertSame(['editMessageText'], array_map($this->methodOf(...), $this->httpRequests));
+        $this->assertStringEndsWith('⚠️ ส่งแล้วแต่ยืนยันผลไม่ได้ โปรดเปิดห้องตรวจ', $this->editTexts()[0]);
+        $this->assertSame(1, $this->infoSendJobsQueued());
+    }
+
     // ------------------------------------------------------------------
     // Fixtures
     // ------------------------------------------------------------------
@@ -971,7 +1106,7 @@ class SendJobTest extends TestCase
      *
      * @param  list<array{0: string, 1: int, 2?: array}|string>  $push
      */
-    private function fakeHttp(array $push = []): void
+    private function fakeHttp(array $push = [], int $telegramEditStatus = 200): void
     {
         $push = $push === [] ? [['{}', 200, ['x-line-request-id' => self::REQUEST_ID]]] : $push;
         $pushIndex = 0;
@@ -981,7 +1116,7 @@ class SendJobTest extends TestCase
         $this->queuedAtCardEdit = null;
         $nextMessageId = 55;
 
-        Http::fake(function ($request) use ($push, &$pushIndex, &$nextMessageId) {
+        Http::fake(function ($request) use ($push, &$pushIndex, &$nextMessageId, $telegramEditStatus) {
             $url = (string) $request->url();
             $this->httpRequests[] = $request;
             $this->hits[$url] = ($this->hits[$url] ?? 0) + 1;
@@ -1015,6 +1150,9 @@ class SendJobTest extends TestCase
                 if (str_contains($text, '⏳ กดส่งแล้ว')) {
                     $this->queuedAtCardEdit = Queue::pushedJobs()[SendCustomerFollowUp::class] ?? [];
                 }
+                if ($telegramEditStatus !== 200) {
+                    return Http::response(['ok' => false], $telegramEditStatus);
+                }
             }
 
             return Http::response(json_encode(['ok' => true, 'result' => true]), 200);
@@ -1022,12 +1160,15 @@ class SendJobTest extends TestCase
     }
 
     /** spy ตัวส่ง — จับ id ที่ผ่านแล้วส่งต่อให้ของจริง */
-    private function spySend(): void
+    private function spySend(?int $maximumCalls = null): void
     {
         $real = app(FollowUpSendService::class);
-        $this->mock(FollowUpSendService::class, function (MockInterface $mock) use ($real): void {
-            $mock->shouldReceive('send')->andReturnUsing(function (int $approvalId, ?CarbonImmutable $now = null) use ($real): string {
+        $this->mock(FollowUpSendService::class, function (MockInterface $mock) use ($real, $maximumCalls): void {
+            $mock->shouldReceive('send')->andReturnUsing(function (int $approvalId, ?CarbonImmutable $now = null) use ($real, $maximumCalls): string {
                 $this->sendIds[] = $approvalId;
+                if ($maximumCalls !== null && count($this->sendIds) > $maximumCalls) {
+                    throw new RuntimeException('unexpected send loop');
+                }
 
                 return $real->send($approvalId, $now);
             });
