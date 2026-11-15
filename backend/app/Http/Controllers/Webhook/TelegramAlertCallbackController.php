@@ -43,8 +43,19 @@ class TelegramAlertCallbackController extends Controller
             return response()->json(['ok' => false], 404);
         }
 
+        // B6c: update แบบ message (เช่น ตอบช่องแก้ข้อความ) เข้า editReply ของบัตรตามลูกค้า —
+        // ตอบ {ok:true} 200 เสมอ ไม่ว่า service จะตัดสินอย่างไร (D80); update อื่นคงคำตอบเดิม
         $cb = $request->input('callback_query');
         if (! is_array($cb)) {
+            $message = $request->input('message');
+            if (is_array($message)) {
+                app(FollowUpApprovalService::class)->editReply(
+                    $plugin,
+                    $message,
+                    (int) ($request->input('update_id') ?? 0),
+                );
+            }
+
             return response()->json(['ok' => true]);
         }
 

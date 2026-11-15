@@ -211,7 +211,7 @@ class TelegramAlertBotService
             $res = Http::timeout(10)->post(self::BASE.$token.'/setWebhook', [
                 'url' => $url,
                 'secret_token' => $secret,
-                'allowed_updates' => ['callback_query'],
+                'allowed_updates' => ['callback_query', 'message'],
             ]);
 
             return $res->successful() && ($res->json('ok') === true);
@@ -311,6 +311,64 @@ class TelegramAlertBotService
         }
 
         $this->logFollowUpCardCall($result);
+
+        return $result;
+    }
+
+    /**
+     * ข้อความล้วนของการ์ดตามลูกค้า (B6c) — ช่องแก้และข้อความแจ้ง การขนส่งตัวเอง ไม่แตะ call():
+     * connect timeout ตาม config, timeout 10 วิ, ไม่ retry, ไม่ตาม redirect, ไม่มี parse_mode,
+     * ไม่มีทางโยน exception; คืน ['outcome' => accepted|rejected|unknown, 'status' => ?int, 'message_id' => ?int]
+     * accepted = HTTP 200 + ok true + result.message_id เป็นจำนวนเต็ม > 0 (กฎเดียวกับ sendFollowUpCard)
+     * replyToMessageId = ตอบกลับข้อความนั้น (reply_parameters + allow_sending_without_reply)
+     * placeholder ไม่ null = ช่อง ForceReply ที่มีคำใบ้ในช่องพิมพ์
+     * log บรรทัดเดียวต่อการเรียก: label + outcome + HTTP status เท่านั้น
+     */
+    public function sendFollowUpText(string $token, string $chatId, string $text, ?int $replyToMessageId = null, ?string $placeholder = null): array
+    {
+        $result = ['outcome' => 'unknown', 'status' => null, 'message_id' => null];
+
+        if ($token === '' || $chatId === '' || $text === '' || ($replyToMessageId !== null && $replyToMessageId < 1)) {
+            $result['outcome'] = 'rejected';
+            $this->logFollowUpTransportCall('Follow-up text send', $result);
+
+            return $result;
+        }
+
+        $params = [
+            'chat_id' => $chatId,
+            'text' => $text,
+            'link_preview_options' => json_encode(['is_disabled' => true]),
+        ];
+        if ($replyToMessageId !== null) {
+            $params['reply_parameters'] = json_encode(['message_id' => $replyToMessageId, 'allow_sending_without_reply' => true]);
+        }
+        if ($placeholder !== null) {
+            $params['reply_markup'] = json_encode(['force_reply' => true, 'input_field_placeholder' => $placeholder]);
+        }
+
+        try {
+            $res = Http::connectTimeout((int) config('customer_follow_up.http_connect_timeout_seconds', 3))
+                ->timeout(10)
+                ->withoutRedirecting()
+                ->post($this->followUpBase().$token.'/sendMessage', $params);
+        } catch (\Throwable) {
+            $this->logFollowUpTransportCall('Follow-up text send', $result);
+
+            return $result;
+        }
+
+        $result['status'] = $res->status();
+
+        $messageId = $res->json('result.message_id');
+        if ($res->status() === 200 && $res->json('ok') === true && is_int($messageId) && $messageId > 0) {
+            $result['outcome'] = 'accepted';
+            $result['message_id'] = $messageId;
+        } elseif ($res->status() >= 400 && $res->status() <= 499 && $res->json('ok') === false) {
+            $result['outcome'] = 'rejected';
+        }
+
+        $this->logFollowUpTransportCall('Follow-up text send', $result);
 
         return $result;
     }

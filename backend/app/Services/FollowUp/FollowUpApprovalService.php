@@ -5,9 +5,11 @@ namespace App\Services\FollowUp;
 use App\Models\FlowPlugin;
 use App\Models\LeadRecoveryLog;
 use App\Services\Payment\TelegramAlertBotService;
+use App\Support\FollowUpRedactor;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
 
 /**
  * ปุ่มส่ง/ข้ามบนการ์ดตามลูกค้าใน Telegram — การ์ด B6b (plan §3.6, คำตัดสิน D75-D80)
@@ -69,6 +71,47 @@ class FollowUpApprovalService
 
     /** คำตอบที่เด้งเป็น toast (show_alert false) — ที่เหลือเด้งกล่องเตือน */
     private const TOAST_KEYS = ['send_ok', 'send_ok_flagged', 'skip_ok'];
+
+    /** คำตอบใหม่ของ B6c — ตรงตัวกับ b6c-strings.json (sha256 d58ff51c…) ห้ามแก้ลอยๆ */
+    private const ANSWERS_B6C = [
+        'edit_started' => 'ตอบกลับข้อความถัดไปในห้องนี้เพื่อพิมพ์ข้อความใหม่',
+        'edit_prompt_failed' => 'เปิดช่องแก้ข้อความไม่สำเร็จ กดปุ่ม แก้ข้อความ อีกครั้ง',
+        'confirm_needed' => 'ข้อความนี้แก้เองและยังไม่ผ่านการตรวจ กดปุ่ม ยืนยันส่ง บนการ์ดถ้าจะส่ง',
+        'send_ok_confirmed' => 'รับคำสั่งแล้ว กำลังส่งข้อความที่แก้ให้ลูกค้า',
+    ];
+
+    /** ช่องแก้และข้อความแจ้ง (B6c) — ตรงตัวกับ b6c-strings.json */
+    private const PROMPT_MARKER = '✏️ แก้ข้อความ #';
+
+    private const PROMPT_TEMPLATE = "✏️ แก้ข้อความ #{log_id}\nตอบกลับ (Reply) ข้อความนี้ด้วยข้อความใหม่ที่จะส่งให้ลูกค้า\nไม่เกิน 400 ตัวอักษร 3 บรรทัด · หมดอายุ {dd}/{mm} {HH}:{MM}\nเปลี่ยนใจ: กด ส่ง หรือ ข้าม บนการ์ดได้เลย";
+
+    private const PROMPT_PLACEHOLDER = 'พิมพ์ข้อความใหม่ที่จะส่งให้ลูกค้า';
+
+    private const NOTICE_EDIT_SAVED = '✅ บันทึกข้อความใหม่ของ #{log_id} แล้ว ดูที่การ์ดด้านบน';
+
+    private const NOTICE_EDIT_GONE = 'ข้อความแก้นี้ใช้ไม่ได้แล้ว กดปุ่ม แก้ข้อความ บนการ์ดอีกครั้ง';
+
+    private const NOTICE_EDIT_CLOSED = 'รายการนี้ปิดไปแล้ว แก้ข้อความไม่ได้';
+
+    private const NOTICE_EDIT_NOT_EDITOR = 'ตอบได้เฉพาะคนที่กดปุ่ม แก้ข้อความ ถ้าจะแก้เอง กดปุ่มบนการ์ดก่อน';
+
+    private const NOTICE_EDIT_EXPIRED = 'รายการนี้หมดอายุแล้ว ไม่ได้ส่ง';
+
+    private const INVALID_NOT_TYPED = 'รับเฉพาะข้อความที่พิมพ์เอง (ไม่รับรูป สติกเกอร์ หรือข้อความที่ส่งต่อมา)';
+
+    private const INVALID_COMMAND = 'ข้อความขึ้นต้นด้วย / ใช้ไม่ได้';
+
+    private const INVALID_LENGTH = 'ข้อความต้องยาว 1–400 ตัวอักษร';
+
+    private const INVALID_LINES = 'ข้อความต้องไม่เกิน 3 บรรทัด';
+
+    private const INVALID_CHARACTERS = 'ข้อความมีอักขระที่ส่งไม่ได้ เช่น อีโมจิแบบผสมหลายตัว แท็บ หรืออักขระที่มองไม่เห็น';
+
+    private const INVALID_ACCOUNT_DATA = 'ข้อความมีคำที่ดูเหมือนรหัสหรือข้อมูลบัญชี ส่งให้ลูกค้าไม่ได้';
+
+    private const INVALID_CONTACT = 'ข้อความมีลิงก์ อีเมล หรือเบอร์โทร ส่งไม่ได้';
+
+    private const EDIT_RETRY_SUFFIX = ' — ตอบกลับข้อความ แก้ข้อความ เดิมอีกครั้งได้เลย';
 
     public function __construct(
         private readonly TelegramAlertBotService $telegram,
@@ -140,6 +183,8 @@ class FollowUpApprovalService
         if ((int) $revision !== (int) $approval->revision
             || ! hash_equals((string) $approval->nonce, $nonce)) {
             $this->answer($token, $cbId, self::ANSWERS['stale_card']);
+            // D87: ปุ่มเก่าต้องได้การ์ดรุ่นล่าสุดกลับมาด้วยหนึ่งครั้ง
+            $this->followUpTelegram->syncCard((int) $approval->id, $now);
 
             return $this->finish((int) $approval->id, (int) $log->id, $botId, $code, 'refused', 'stale', $fromId);
         }
@@ -179,16 +224,12 @@ class FollowUpApprovalService
         }
 
         // 8) ปุ่ม ตามโค้ดและสถานะบัตร
-        if ($code === 'fe' || $code === 'fc') {
-            $this->answer($token, $cbId, self::ANSWERS['not_ready']);
-
-            return $this->finish((int) $approval->id, (int) $log->id, $botId, $code, 'refused', 'not_ready', $fromId);
-        }
-
         $status = (string) $approval->status;
         if ($status !== 'pending') {
             $answer = $this->answerForState($code, $log, $approval, $nowStr);
             $this->answer($token, $cbId, $answer);
+            // D82: บัตรตัดสินแล้วต้องมีปุ่มใช้ — ระบายสถานะทับการ์ดเดิมหนึ่งครั้ง
+            $this->followUpTelegram->refreshCard((int) $approval->id, $now);
 
             return $this->finish((int) $approval->id, (int) $log->id, $botId, $code, 'refused', 'status_'.$status, $fromId);
         }
@@ -203,11 +244,28 @@ class FollowUpApprovalService
             return $this->writeTap((int) $approval->id, (int) $log->id, 'skipped', $token, $cbId, $code, $updateId, $fromIdStr, $fromId, $botId, (int) $revision, $nonce, $nowStr);
         }
 
-        // fs — บัตรที่แก้แล้วยังไม่พร้อมส่งจนกว่า B6c
-        if ((int) $approval->revision !== 1 || (string) $approval->text !== (string) $log->draft) {
-            $this->answer($token, $cbId, self::ANSWERS['not_ready']);
+        // คำตัดสิน E (แก้แล้ว) และ C (ผ่านการตรวจ) — ตัดสินครั้งแรกจากแถวที่อ่าน, ธุรกรรมตัดสินใหม่จากแถวใต้ล็อก
+        $edited = (int) $approval->revision !== 1 || (string) $approval->text !== (string) $log->draft;
+        $clean = ! FollowUpSendService::checkFlagged((string) $approval->check_answers);
 
-            return $this->finish((int) $approval->id, (int) $log->id, $botId, $code, 'refused', 'edited', $fromId);
+        if ($code === 'fe') {
+            return $this->startEdit($approval, $log, $token, $cbId, $updateId, $fromIdStr, $fromId, $botId, (int) $revision, $nonce, $now, $nowStr);
+        }
+
+        if ($code === 'fc') {
+            if (! $edited || $clean) {
+                // ยืนยันส่งมีไว้สำหรับบัตรแก้ที่ยังไม่ผ่านการตรวจเท่านั้น (D84) — บัตรนี้ปุ่มเดิมยังใช้อยู่
+                $this->answer($token, $cbId, self::ANSWERS['stale_card']);
+                $this->followUpTelegram->syncCard((int) $approval->id, $now);
+
+                return $this->finish((int) $approval->id, (int) $log->id, $botId, $code, 'refused', 'confirm_wrong_card', $fromId);
+            }
+        } elseif ($edited && ! $clean) {
+            // fs บนบัตรแก้ที่ยังไม่ผ่านการตรวจ — ต้องกด ยืนยันส่ง หนึ่งแตะ (D84) บัตรยัง pending
+            $this->answer($token, $cbId, self::ANSWERS_B6C['confirm_needed']);
+            $this->followUpTelegram->syncCard((int) $approval->id, $now);
+
+            return $this->finish((int) $approval->id, (int) $log->id, $botId, $code, 'refused', 'confirm_needed', $fromId);
         }
 
         // ประตูอัตโนมัติ (D78) — ตันตอบแจ้งแล้วค้าง pending ห้ามส่งเงียบๆ
@@ -225,6 +283,322 @@ class FollowUpApprovalService
         }
 
         return $this->writeTap((int) $approval->id, (int) $log->id, 'approved', $token, $cbId, $code, $updateId, $fromIdStr, $fromId, $botId, (int) $revision, $nonce, $nowStr);
+    }
+
+    /**
+     * ปุ่ม แก้ข้อความ (fe, B6c) — โพสต์ช่อง ForceReply ตอบกลับการ์ดหนึ่งครั้งแล้วผูก (editor, prompt id)
+     * สถานะบัตรคง pending (D83): ส่ง/ข้ามยังทำงาน และ Edit รอบใหม่แทนที่การผูกเสมอ (D88)
+     */
+    private function startEdit(object $approval, object $log, string $token, string $cbId, int $updateId, string $fromIdStr, int $fromId, int $botId, int $revision, string $nonce, CarbonImmutable $now, string $nowStr): string
+    {
+        $approvalId = (int) $approval->id;
+        $logId = (int) $log->id;
+
+        // update เดิมส่งซ้ำ — ตอบเหมือนเดิม ไม่โพสต์ช่องใหม่
+        if ($updateId > 0 && (int) $approval->last_update_id === $updateId) {
+            $this->answer($token, $cbId, self::ANSWERS_B6C['edit_started']);
+
+            return $this->finish($approvalId, $logId, $botId, 'fe', 'refused', 'repeat_update', $fromId);
+        }
+
+        $expires = (string) $approval->expires_at;
+        $prompt = str_replace(
+            ['{log_id}', '{dd}', '{mm}', '{HH}', '{MM}'],
+            [(string) $logId, substr($expires, 8, 2), substr($expires, 5, 2), substr($expires, 11, 2), substr($expires, 14, 2)],
+            self::PROMPT_TEMPLATE,
+        );
+
+        $outcome = $this->telegram->sendFollowUpText(
+            $token,
+            (string) $approval->telegram_chat_id,
+            $prompt,
+            (int) $approval->telegram_message_id,
+            self::PROMPT_PLACEHOLDER,
+        );
+        if ($outcome['outcome'] !== 'accepted') {
+            $this->answer($token, $cbId, self::ANSWERS_B6C['edit_prompt_failed']);
+
+            return $this->finish($approvalId, $logId, $botId, 'fe', 'refused', 'prompt_'.$outcome['outcome'], $fromId);
+        }
+
+        // UPDATE มีเงื่อนไขครั้งเดียว — แพ้แข่งอ่านซ้ำแล้วใช้กฎของสถานะที่เจอ
+        $updates = [
+            'editor_telegram_user_id' => $fromIdStr,
+            'edit_prompt_message_id' => (int) $outcome['message_id'],
+            'updated_at' => $nowStr,
+        ];
+        if ($updateId > 0) {
+            $updates['last_update_id'] = $updateId;
+        }
+        $written = DB::table('follow_up_approvals')
+            ->where('id', $approvalId)
+            ->where('status', 'pending')
+            ->where('revision', $revision)
+            ->where('nonce', $nonce)
+            ->update($updates) === 1;
+
+        if (! $written) {
+            $fresh = $this->approvalRow($approvalId);
+            $freshLog = $fresh === null ? null : $this->logRow((int) $fresh->lead_recovery_log_id);
+            $answer = $fresh === null ? self::ANSWERS['not_found'] : $this->answerForState('fe', $freshLog, $fresh, $nowStr);
+            $this->answer($token, $cbId, $answer);
+            if ($fresh !== null && (string) $fresh->status !== 'pending') {
+                $this->followUpTelegram->refreshCard($approvalId, $now);
+            }
+
+            return $this->finish($approvalId, $logId, $botId, 'fe', 'refused', 'bind_race', $fromId);
+        }
+
+        $this->answer($token, $cbId, self::ANSWERS_B6C['edit_started']);
+
+        return $this->finish($approvalId, $logId, $botId, 'fe', 'prompted', 'prompt_open', $fromId);
+    }
+
+    /**
+     * ข้อความที่ตอบช่องแก้ (B6c) — route ส่ง update แบบ message เข้ามาเท่านั้น
+     * คืน saved | refused | ignored; ตอบ 200 ที่ route เสมอ (D80)
+     * ข้อความที่พิมพ์ห้ามลง log ห้าม echo ในข้อความแจ้ง เข้า Telegram เฉพาะบนการ์ดหลังเซฟ (D88)
+     */
+    public function editReply(FlowPlugin $plugin, array $message, int $updateId, ?CarbonImmutable $now = null): string
+    {
+        $now = ($now ?? CarbonImmutable::now(FollowUpCapabilities::TIMEZONE))
+            ->tz(FollowUpCapabilities::TIMEZONE)
+            ->startOfSecond();
+        $nowStr = $now->format('Y-m-d H:i:s');
+        $botId = (int) DB::table('flows')->where('id', $plugin->flow_id)->value('bot_id');
+
+        // 1) ห้อง — ต่างห้องเงียบ
+        $rawChatId = $message['chat']['id'] ?? null;
+        if (! is_int($rawChatId) && ! is_string($rawChatId)) {
+            return $this->finishEdit(null, null, $botId, 'ignored', 'room', null);
+        }
+        $chatId = (string) $rawChatId;
+        if ($chatId === '' || $chatId !== (string) ($plugin->config['chat_id'] ?? '')) {
+            return $this->finishEdit(null, null, $botId, 'ignored', 'room', null);
+        }
+
+        // 2) รูปร่างการตอบกลับ — ต้องตอบช่องแก้ของบอทเอง
+        $reply = $message['reply_to_message'] ?? null;
+        $replyId = is_array($reply) ? ($reply['message_id'] ?? null) : null;
+        if (
+            ! is_array($reply)
+            || ! is_int($replyId) || $replyId <= 0
+            || (($reply['from']['is_bot'] ?? null) !== true)
+            || ! is_string($reply['text'] ?? null)
+            || ! str_starts_with($reply['text'], self::PROMPT_MARKER)
+        ) {
+            return $this->finishEdit(null, null, $botId, 'ignored', 'reply_shape', null);
+        }
+
+        // 3) คน — from.id เป็นจำนวนเต็ม > 0 และอยู่ใน allowlist ที่ชัดเจน (D77)
+        $fromId = $message['from']['id'] ?? null;
+        if (! is_int($fromId) || $fromId <= 0 || ! $this->personAllowed($plugin, $fromId)) {
+            return $this->finishEdit(null, null, $botId, 'ignored', 'person', is_int($fromId) && $fromId > 0 ? $fromId : null);
+        }
+        $fromIdStr = (string) $fromId;
+
+        $token = (string) ($plugin->config['access_token'] ?? '');
+        $noticeReplyId = is_int($message['message_id'] ?? null) && $message['message_id'] > 0 ? $message['message_id'] : null;
+
+        // 4) การผูก — บัตรเดียวเท่านั้นที่ผูกช่องนี้ไว้กับ plugin นี้ ห้องนี้ บอทนี้
+        $bound = $botId === 0 ? collect() : DB::table('follow_up_approvals as a')
+            ->join('lead_recovery_logs as l', 'l.id', '=', 'a.lead_recovery_log_id')
+            ->where('a.telegram_plugin_id', (int) $plugin->id)
+            ->where('a.telegram_chat_id', $chatId)
+            ->where('a.edit_prompt_message_id', $replyId)
+            ->where('l.bot_id', $botId)
+            ->orderBy('a.id')
+            ->get(['a.id as approval_id', 'l.id as log_id']);
+        if (count($bound) !== 1) {
+            $this->notice($token, $chatId, $noticeReplyId, self::NOTICE_EDIT_GONE);
+
+            return $this->finishEdit(null, null, $botId, 'refused', 'binding', $fromId);
+        }
+        $approvalId = (int) $bound[0]->approval_id;
+        $logId = (int) $bound[0]->log_id;
+
+        $approval = $this->approvalRow($approvalId);
+        $log = $this->logRow($logId);
+        if ($approval === null || $log === null) {
+            $this->notice($token, $chatId, $noticeReplyId, self::NOTICE_EDIT_GONE);
+
+            return $this->finishEdit($approvalId, $logId, $botId, 'refused', 'binding', $fromId);
+        }
+
+        // 5) ส่งซ้ำ — update เดิมเงียบๆ ไม่ตอบไม่เขียน
+        if ($updateId > 0 && (int) $approval->last_update_id === $updateId) {
+            return $this->finishEdit($approvalId, $logId, $botId, 'ignored', 'repeat_update', $fromId);
+        }
+
+        // 6+7) คนแก้ / ยังเปิดไหม
+        $refusal = $this->editOpenRefusal($approval, $log, $fromIdStr, $nowStr);
+        if ($refusal !== null) {
+            $this->notice($token, $chatId, $noticeReplyId, $refusal);
+
+            return $this->finishEdit($approvalId, $logId, $botId, 'refused', 'not_open', $fromId);
+        }
+
+        // 8) ชนิด — ข้อความพิมพ์เองเท่านั้น ไม่รับรูป/สติกเกอร์/ข้อความส่งต่อ/ผ่านบอท
+        $raw = $message['text'] ?? null;
+        $forwarded = isset($message['forward_origin'])
+            || isset($message['forward_from'])
+            || isset($message['forward_date'])
+            || isset($message['via_bot']);
+        if (! is_string($raw) || $forwarded) {
+            $this->notice($token, $chatId, $noticeReplyId, self::INVALID_NOT_TYPED.self::EDIT_RETRY_SUFFIX);
+
+            return $this->finishEdit($approvalId, $logId, $botId, 'refused', 'invalid_kind', $fromId);
+        }
+
+        // 9) กติกาข้อความของเจ้านาย (D86) — ตัดสินที่กฎแรกที่ผิด การผูกคงอยู่
+        $invalid = $this->editInvalidReason($raw);
+        if ($invalid !== null) {
+            $this->notice($token, $chatId, $noticeReplyId, $invalid.self::EDIT_RETRY_SUFFIX);
+
+            return $this->finishEdit($approvalId, $logId, $botId, 'refused', 'invalid_text', $fromId);
+        }
+        $text = $this->normalizeEditText($raw);
+
+        // 10) เซฟรุ่นใหม่ — ธุรกรรมเดียว ล็อก log ก่อนแล้ว approval
+        $saveNotice = DB::transaction(function () use ($approvalId, $logId, $fromIdStr, $replyId, $updateId, $text, $nowStr) {
+            $lockedLog = DB::table('lead_recovery_logs')->where('id', $logId)->lockForUpdate()->first();
+            $locked = DB::table('follow_up_approvals')->where('id', $approvalId)->lockForUpdate()->first();
+            if ($locked === null || $lockedLog === null) {
+                return self::NOTICE_EDIT_GONE;
+            }
+
+            if ((string) $locked->editor_telegram_user_id !== $fromIdStr) {
+                return self::NOTICE_EDIT_NOT_EDITOR;
+            }
+            if ((string) $locked->status !== 'pending' || (string) $lockedLog->delivery_status !== 'pending') {
+                return self::NOTICE_EDIT_CLOSED;
+            }
+            if ($nowStr >= (string) $locked->expires_at) {
+                return self::NOTICE_EDIT_EXPIRED;
+            }
+            if ((int) $locked->edit_prompt_message_id !== $replyId) {
+                // ปุ่ม Edit ใหม่แทนที่การผูกแล้ว — ช่องที่ตอบคือช่องเก่า
+                return self::NOTICE_EDIT_GONE;
+            }
+
+            $updates = [
+                'text' => $text,
+                'revision' => (int) $locked->revision + 1,
+                'nonce' => $this->newNonce(),
+                'check_answers' => null,
+                'check_overridden' => false,
+                'confirmed_revision' => null,
+                'updated_at' => $nowStr,
+            ];
+            if ($updateId > 0) {
+                $updates['last_update_id'] = $updateId;
+            }
+            DB::table('follow_up_approvals')->where('id', $approvalId)->update($updates);
+
+            return null;
+        });
+
+        if ($saveNotice !== null) {
+            $this->notice($token, $chatId, $noticeReplyId, $saveNotice);
+
+            return $this->finishEdit($approvalId, $logId, $botId, 'refused', 'save_race', $fromId);
+        }
+
+        // 11) ระบายการ์ดก่อนแจ้งคน — ล้มทั้งที่ไม่เปลี่ยนแถวและไม่เปลี่ยนผลคืน
+        $this->followUpTelegram->syncCard($approvalId, $now);
+        $this->notice($token, $chatId, $noticeReplyId, str_replace('{log_id}', (string) $logId, self::NOTICE_EDIT_SAVED));
+
+        return $this->finishEdit($approvalId, $logId, $botId, 'saved', 'saved', $fromId);
+    }
+
+    /** ข้อความปฏิเสธจากแถวที่อ่าน — editor ไม่ตรง / ปิดแล้ว / หมดอายุ; null = เปิดให้แก้ */
+    private function editOpenRefusal(object $approval, object $log, string $fromIdStr, string $nowStr): ?string
+    {
+        if ((string) $approval->editor_telegram_user_id !== $fromIdStr) {
+            return self::NOTICE_EDIT_NOT_EDITOR;
+        }
+        if ((string) $approval->status !== 'pending' || (string) $log->delivery_status !== 'pending') {
+            return self::NOTICE_EDIT_CLOSED;
+        }
+        if ($nowStr >= (string) $approval->expires_at) {
+            return self::NOTICE_EDIT_EXPIRED;
+        }
+
+        return null;
+    }
+
+    /** กฎข้อความของเจ้านาย (D86) — คืนข้อความแจ้งของกฎแรกที่ผิด, null = ผ่านทุกข้อ */
+    private function editInvalidReason(string $raw): ?string
+    {
+        if (str_starts_with($raw, '/')) {
+            return self::INVALID_COMMAND;
+        }
+
+        $text = $this->normalizeEditText($raw);
+
+        $codePoints = mb_strlen($text, 'UTF-8');
+        $max = (int) config('customer_follow_up.max_text_code_points', 400);
+        if ($codePoints < 1 || $codePoints > $max) {
+            return self::INVALID_LENGTH;
+        }
+
+        $lines = 0;
+        foreach (explode("\n", $text) as $line) {
+            if (trim($line) !== '') {
+                $lines++;
+            }
+        }
+        if ($lines > 3) {
+            return self::INVALID_LINES;
+        }
+
+        try {
+            FollowUpRedactor::assertSafeOutbound($text);
+        } catch (InvalidArgumentException $e) {
+            return $e->getMessage() === 'account_data'
+                ? self::INVALID_ACCOUNT_DATA
+                : self::INVALID_CHARACTERS; // unreadable / control_character / redaction_marker
+        }
+
+        // เจ้านายเขียน @ กับราคาได้ (D86) แต่ลิงก์/อีเมล/เบอร์โทรยังห้าม — redact เปลี่ยนข้อความ = มีชิ้นที่ห้าม
+        if (FollowUpRedactor::redact($text) !== $text) {
+            return self::INVALID_CONTACT;
+        }
+
+        return null;
+    }
+
+    /** ปรับข้อความก่อนตรวจและก่อนเซฟ: CRLF และ CR เดี่ยว → LF แล้ว trim */
+    private function normalizeEditText(string $raw): string
+    {
+        return trim(str_replace(["\r\n", "\r"], "\n", $raw));
+    }
+
+    /** แจ้งคนหนึ่งข้อความ ตอบกลับข้อความของเขา — ข้อความล้วน ไม่มี parse_mode */
+    private function notice(string $token, string $chatId, ?int $replyToMessageId, string $text): void
+    {
+        $this->telegram->sendFollowUpText($token, $chatId, $text, $replyToMessageId, null);
+    }
+
+    /** nonce รุ่นใหม่หลังเซฟข้อความที่แก้ — seam สำหรับ test ให้ pin ค่าได้ */
+    protected function newNonce(): string
+    {
+        return bin2hex(random_bytes(8));
+    }
+
+    /** log เดียวต่อการเรียก editReply — ไม่มี token / chat id / nonce / ข้อความที่พิมพ์ */
+    private function finishEdit(?int $approvalId, ?int $logId, ?int $botId, string $result, string $reason, ?int $personId): string
+    {
+        Log::info('Follow-up edit reply', [
+            'approval_id' => $approvalId,
+            'log_id' => $logId,
+            'bot_id' => $botId,
+            'result' => $result,
+            'reason' => $reason,
+            'person_id' => $personId,
+        ]);
+
+        return $result;
     }
 
     /** ตรวจข้อมูลปุ่มเต็มรูป + id ไม่เกินค่าที่ฐานข้อมูลรับได้ */
@@ -320,12 +694,12 @@ class FollowUpApprovalService
      */
     private function writeTap(int $approvalId, int $logId, string $action, string $token, string $cbId, string $code, int $updateId, string $fromIdStr, int $fromId, int $botId, int $revision, string $nonce, string $nowStr): string
     {
-        [$answerKey, $written] = DB::transaction(function () use ($approvalId, $logId, $action, $code, $updateId, $fromIdStr, $nowStr, $revision, $nonce) {
+        [$answerKey, $written, $repaint] = DB::transaction(function () use ($approvalId, $logId, $action, $code, $updateId, $fromIdStr, $nowStr, $revision, $nonce) {
             $log = DB::table('lead_recovery_logs')->where('id', $logId)->lockForUpdate()->first();
             $approval = DB::table('follow_up_approvals')->where('id', $approvalId)->lockForUpdate()->first();
 
             if ($approval === null || $log === null) {
-                return [self::ANSWERS['not_found'], false];
+                return [self::ANSWERS['not_found'], false, false];
             }
 
             if ((string) $approval->status !== 'pending'
@@ -333,30 +707,55 @@ class FollowUpApprovalService
                 || (int) $approval->revision !== $revision
                 || ! hash_equals((string) $approval->nonce, $nonce)
                 || $nowStr >= (string) $approval->expires_at) {
-                return [$this->answerForState($code, $log, $approval, $nowStr), false];
+                $answer = $this->answerForState($code, $log, $approval, $nowStr);
+
+                // D82: สถานะตัดสินแล้วที่เจอใต้ล็อก — ตอบแล้วระบายการ์ดให้ปุ่มใช้ได้
+                return [$answer, false, (string) $approval->status !== 'pending'];
             }
 
             $lastUpdateId = $updateId > 0 ? ['last_update_id' => $updateId] : [];
 
             if ($action === 'approved') {
-                // F มาจากแถวที่อ่านใต้ล็อก — การ์ดกับผู้ส่งเห็นค่าเดียวกันเสมอ
-                $flagged = FollowUpSendService::checkFlagged((string) $approval->check_answers);
+                // E/C ตัดสินจากแถวที่อ่านใต้ล็อก — การ์ดกับผู้ส่งเห็นค่าเดียวกันเสมอ
+                $edited = (int) $approval->revision !== 1 || (string) $approval->text !== (string) $log->draft;
+                $clean = ! FollowUpSendService::checkFlagged((string) $approval->check_answers);
+
+                if ($code === 'fs' && $edited && ! $clean) {
+                    // การ์ดแก้ใหม่และยังไม่ผ่านตรวจตอนกด — ยืนยันก่อน ห้ามเขียน (D84)
+                    return [self::ANSWERS_B6C['confirm_needed'], false, false];
+                }
+                if ($code === 'fc' && (! $edited || $clean)) {
+                    // ยืนยันส่งใช้กับบัตรแก้ที่ยังไม่ผ่านตรวจเท่านั้น — ใช้การ์ดล่าสุดแทน
+                    return [self::ANSWERS['stale_card'], false, false];
+                }
+
+                $ownerAction = $edited ? LeadRecoveryLog::OWNER_ACTION_EDITED : LeadRecoveryLog::OWNER_ACTION_SENT;
+                $overridden = $edited ? false : ! $clean;
+                if ($code === 'fc') {
+                    // แตะเดียวส่งทั้งที่ยังไม่ผ่านตรวจ — บันทึกว่าเจ้านายยอมรับเอง (D84)
+                    $overridden = true;
+                }
 
                 DB::table('lead_recovery_logs')->where('id', $logId)->update([
                     'delivery_status' => 'approved',
-                    'owner_action' => 'sent',
+                    'owner_action' => $ownerAction,
                     'owner_telegram_user_id' => $fromIdStr,
                     'owner_action_at' => $nowStr,
-                    'check_overridden' => $flagged,
+                    'check_overridden' => $overridden,
                     'updated_at' => $nowStr,
                 ]);
                 DB::table('follow_up_approvals')->where('id', $approvalId)->update(array_merge([
                     'status' => 'approved',
-                    'check_overridden' => $flagged,
+                    'check_overridden' => $overridden,
+                    'confirmed_revision' => $code === 'fc' ? (int) $approval->revision : null,
                     'updated_at' => $nowStr,
                 ], $lastUpdateId));
 
-                return [$flagged ? 'send_ok_flagged' : 'send_ok', true];
+                $answerKey = $code === 'fc'
+                    ? 'send_ok_confirmed'
+                    : ($edited || $clean ? 'send_ok' : 'send_ok_flagged');
+
+                return [$answerKey, true, true];
             }
 
             DB::table('lead_recovery_logs')->where('id', $logId)->update([
@@ -371,17 +770,23 @@ class FollowUpApprovalService
                 'updated_at' => $nowStr,
             ], $lastUpdateId));
 
-            return ['skip_ok', true];
+            return ['skip_ok', true, true];
         });
 
-        $this->answer($token, $cbId, self::ANSWERS[$answerKey] ?? $answerKey);
+        $this->answer($token, $cbId, $this->answerText($answerKey));
 
-        if ($written) {
+        if ($written || $repaint) {
             // ล้มเหลวที่นี่ไม่เปลี่ยนแถวและไม่เปลี่ยนผลคืน
             $this->followUpTelegram->refreshCard($approvalId);
         }
 
         return $this->finish($approvalId, $logId, $botId, $code, $written ? $action : 'refused', $written ? 'written' : 'race', $fromId);
+    }
+
+    /** คำตอบจาก key — รวมคำตอบเดิม (B6b) และคำตอบใหม่ (B6c) */
+    private function answerText(string $key): string
+    {
+        return self::ANSWERS[$key] ?? self::ANSWERS_B6C[$key] ?? $key;
     }
 
     private function approvalRow(int $id): ?object
@@ -406,6 +811,8 @@ class FollowUpApprovalService
             self::ANSWERS['send_ok'],
             self::ANSWERS['send_ok_flagged'],
             self::ANSWERS['skip_ok'],
+            self::ANSWERS_B6C['edit_started'],
+            self::ANSWERS_B6C['send_ok_confirmed'],
         ];
     }
 

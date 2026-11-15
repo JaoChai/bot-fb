@@ -102,6 +102,18 @@ class FollowUpTelegramService
         ],
     ];
 
+    /** ข้อความใหม่ของบัตรแก้แล้ว (B6c) — ตรงตัวกับ b6c-strings.json (sha256 d58ff51c…) ห้ามแก้ลอยๆ */
+    private const STRINGS_B6C = [
+        'draft_heading_edited' => '<b>ร่างข้อความ</b> · ✏️ แก้แล้ว',
+        'check_not_run' => '⏳ ยังไม่ได้ตรวจ',
+        'confirm_note' => 'ข้อความนี้เจ้านายแก้เอง กด ยืนยันส่ง ถ้าจะส่งทั้งที่ยังไม่ผ่านการตรวจ',
+        'buttons_confirm' => [
+            ['fc', 'ยืนยันส่ง'],
+            ['fk', 'ข้าม'],
+            ['fe', 'แก้ข้อความ'],
+        ],
+    ];
+
     public function __construct(private readonly TelegramAlertBotService $telegram) {}
 
     /**
@@ -223,34 +235,11 @@ class FollowUpTelegramService
      */
     public function refreshCard(int $approvalId, ?CarbonImmutable $now = null): string
     {
-        $approval = DB::table('follow_up_approvals')->where('id', $approvalId)->first();
-        if ($approval === null) {
+        $target = $this->cardTarget($approvalId);
+        if ($target === null) {
             return 'blocked';
         }
-
-        $log = DB::table('lead_recovery_logs')->where('id', $approval->lead_recovery_log_id)->first();
-        if ($log === null) {
-            return 'blocked';
-        }
-
-        $bot = Bot::query()->find((int) $log->bot_id);
-        if ($bot === null) {
-            return 'blocked';
-        }
-
-        $state = (string) $approval->telegram_delivery_state;
-        if ($state !== FollowUpApproval::TELEGRAM_STATE_SENT || $approval->telegram_message_id === null) {
-            return 'blocked';
-        }
-
-        $plugin = FlowPlugin::query()->find((int) $approval->telegram_plugin_id);
-        if ($plugin === null || (string) $plugin->type !== 'telegram' || ! (bool) $plugin->enabled) {
-            return 'blocked';
-        }
-        $token = (string) ($plugin->config['access_token'] ?? '');
-        if ($token === '' || (string) ($plugin->config['chat_id'] ?? '') !== (string) $approval->telegram_chat_id) {
-            return 'blocked';
-        }
+        [$approval, $log, $bot, , $token] = $target;
 
         $status = (string) $approval->status;
         if ($status === FollowUpApproval::STATUS_PENDING || $status === FollowUpApproval::STATUS_EDITING) {
@@ -279,6 +268,79 @@ class FollowUpTelegramService
             'rejected' => 'failed',
             default => 'unknown',
         };
+    }
+
+    /**
+     * ระบายการ์ดด้วยปุ่มปัจจุบัน (B6c) — เขียนฐานข้อมูลไม่ลงเลย
+     * pending = การ์ดเต็มรูป (ข้อความ + ปุ่มที่ใช้ได้ตอนนี้), อื่นๆ = ผลเดียวกับ refreshCard
+     * เหตุผล blocked เดียวกับ refreshCard; คืน refreshed|failed|unknown|unchanged|blocked
+     */
+    public function syncCard(int $approvalId, ?CarbonImmutable $now = null): string
+    {
+        $target = $this->cardTarget($approvalId);
+        if ($target === null) {
+            return 'blocked';
+        }
+        [$approval, $log, $bot, , $token] = $target;
+
+        $status = (string) $approval->status;
+        if ($status === FollowUpApproval::STATUS_EDITING) {
+            return 'unchanged';
+        }
+        if ($status !== FollowUpApproval::STATUS_PENDING) {
+            return $this->refreshCard($approvalId, $now);
+        }
+
+        [$html, $keyboard] = $this->renderCard($approval, $log, $bot);
+
+        $outcome = $this->telegram->editFollowUpCard(
+            $token,
+            (string) $approval->telegram_chat_id,
+            (int) $approval->telegram_message_id,
+            $html,
+            $keyboard,
+        );
+
+        return match ($outcome['outcome']) {
+            'accepted' => 'refreshed',
+            'rejected' => 'failed',
+            default => 'unknown',
+        };
+    }
+
+    /** แถวที่ยันการ์ดได้ — null = blocked (เหตุผลเดียวกันทั้ง refreshCard และ syncCard) */
+    private function cardTarget(int $approvalId): ?array
+    {
+        $approval = DB::table('follow_up_approvals')->where('id', $approvalId)->first();
+        if ($approval === null) {
+            return null;
+        }
+
+        $log = DB::table('lead_recovery_logs')->where('id', $approval->lead_recovery_log_id)->first();
+        if ($log === null) {
+            return null;
+        }
+
+        $bot = Bot::query()->find((int) $log->bot_id);
+        if ($bot === null) {
+            return null;
+        }
+
+        $state = (string) $approval->telegram_delivery_state;
+        if ($state !== FollowUpApproval::TELEGRAM_STATE_SENT || $approval->telegram_message_id === null) {
+            return null;
+        }
+
+        $plugin = FlowPlugin::query()->find((int) $approval->telegram_plugin_id);
+        if ($plugin === null || (string) $plugin->type !== 'telegram' || ! (bool) $plugin->enabled) {
+            return null;
+        }
+        $token = (string) ($plugin->config['access_token'] ?? '');
+        if ($token === '' || (string) ($plugin->config['chat_id'] ?? '') !== (string) $approval->telegram_chat_id) {
+            return null;
+        }
+
+        return [$approval, $log, $bot, $plugin, $token];
     }
 
     /** บรรทัดสถานะของ cancelled — acceptance_unknown ต้องต่างจาก "ยกเลิก" ธรรมดา */
@@ -396,14 +458,20 @@ class FollowUpTelegramService
             $s['last_bot_line'],
         );
         $lines[] = '';
-        $lines[] = $s['draft_heading'];
+        $edited = (int) $approval->revision !== 1 || (string) $approval->text !== (string) $log->draft;
+        $lines[] = $edited ? self::STRINGS_B6C['draft_heading_edited'] : $s['draft_heading'];
         $lines[] = TelegramAlertBotService::esc((string) $approval->text);
         $lines[] = '';
 
-        [$checkResult, $flagged] = $this->checkResult($approval->check_answers);
+        // ยังไม่ได้ตรวจ (check_answers ว่าง) แสดงผลรอตรวจเท่านั้น — กฎไม่สะอาดเดิมไม่เปลี่ยน
+        if ($edited && $approval->check_answers === null) {
+            [$checkResult, $flagged] = [self::STRINGS_B6C['check_not_run'], true];
+        } else {
+            [$checkResult, $flagged] = $this->checkResult($approval->check_answers);
+        }
         $lines[] = str_replace('{result}', TelegramAlertBotService::esc($checkResult), $s['check_line']);
         if ($flagged) {
-            $lines[] = $s['flag_note'];
+            $lines[] = $edited ? self::STRINGS_B6C['confirm_note'] : $s['flag_note'];
         }
 
         $expires = (string) $approval->expires_at;
@@ -423,8 +491,11 @@ class FollowUpTelegramService
             .'/chat?botId='.$bot->id.'&conversationId='.$log->conversation_id;
         $lines[] = str_replace('{url}', TelegramAlertBotService::esc($roomUrl), $s['room_line']);
 
+        $buttonSpec = $edited && FollowUpSendService::checkFlagged((string) $approval->check_answers)
+            ? self::STRINGS_B6C['buttons_confirm']
+            : $s['buttons'];
         $buttons = [];
-        foreach ($s['buttons'] as [$code, $buttonLabel]) {
+        foreach ($buttonSpec as [$code, $buttonLabel]) {
             $buttons[] = [
                 'text' => $buttonLabel,
                 'callback_data' => $code.'|'.$approval->id.'|'.$approval->revision.'|'.$approval->nonce,
