@@ -22,10 +22,13 @@ use Throwable;
  * ตัวส่งข้อความตามลูกค้าตัวเดียวของระบบ (การ์ด B4c — D46-D52, plan §3.6)
  *
  * เส้นทางหนึ่ง call:
- *  Step A  อ่านอย่างเดียว: บัตร/แถว/owner_action/revision/flag → blocked หรือ already_sent โดยไม่เขียน ไม่ยิงอะไร
- *  Step B  claim แบบ compare-and-set ใน transaction เดียว: approved→sending, retry ถึงคิว→sending,
- *          sending ค้าง 10 นาที (worker ตาย)→sending; เขียน claim_token ใหม่ + retry_key เดิมหรือ UUID ใหม่
- *  Step C  gate ตามลำดับ: expiry → recheck(forSend: true) → ผู้รับ → ข้อความ (ยังไม่ยิงเท่านั้น) → โควต้า → ข้อความใหม่ล่าสุด
+ *  Step A  อ่านอย่างเดียว: บัตร/แถว + (เฉพาะแถวที่ยังไม่ยิง) owner_action/revision/flag → blocked หรือ already_sent
+ *          โดยไม่เขียน ไม่ยิงอะไร; แถวที่ยิงแล้วเลื่อนเช็ค owner ไปหลัง claim เป็น gate แรก (D54) จบ send_failed เสมอ
+ *  Step B  claim แบบ compare-and-set all-or-nothing (D55) ใน transaction เดียว ล็อกทั้งสองแถว:
+ *          approved→sending, retry ถึงคิว→sending, sending ค้าง 10 นาที (worker ตาย)→sending;
+ *          เขียน claim_token ใหม่ + retry_key เดิมหรือ UUID ใหม่ — อัปเดตไหนไม่ครบ 1 แถว = ย้อนทั้งหมด
+ *  Step C  gate ตามลำดับ: owner (แถวยิงแล้ว, D54) → expiry → recheck(forSend: true) → ผู้รับ → ข้อความ (ยังไม่ยิงเท่านั้น)
+ *          → โควต้า → ข้อความใหม่ล่าสุด
  *  Step D  freeze (first_push_at / message_sent / attempt_number) ก่อน POST เสมอ แล้ว pushFollowUp นอก transaction
  *          payload แช่งตาย (D49): ยิงซ้ำใช้ message_sent + retry_key ที่เก็บไว้ ห้ามอ่าน approval.text อีก
  *
@@ -87,25 +90,13 @@ class FollowUpSendService
             return $this->finish($approvalId, $logId, $botId, 'already_sent', null);
         }
 
-        if ($log->owner_action === LeadRecoveryLog::OWNER_ACTION_AUTOMATIC) {
-            // D47: เส้นทาง automatic ยังไม่อยู่ในการ์ดนี้ — มาพร้อมการ์ดที่สร้างบัตร automatic
-            return $this->finish($approvalId, $logId, $botId, 'blocked', 'automatic_action');
-        }
-
-        if (! in_array($log->owner_action, [LeadRecoveryLog::OWNER_ACTION_SENT, LeadRecoveryLog::OWNER_ACTION_EDITED], true)
-            || $log->owner_action_at === null
-            || trim((string) $log->owner_telegram_user_id) === '') {
-            return $this->finish($approvalId, $logId, $botId, 'blocked', 'owner_action_invalid');
-        }
-
-        if ($log->owner_action === LeadRecoveryLog::OWNER_ACTION_SENT
-            && ((int) $approval->revision !== 1 || $approval->text !== $log->draft)) {
-            return $this->finish($approvalId, $logId, $botId, 'blocked', 'revision_mismatch');
-        }
-
-        if (self::checkFlagged((string) $approval->check_answers)
-            && ! self::checkConfirmed($log->owner_action, $approval)) {
-            return $this->finish($approvalId, $logId, $botId, 'blocked', 'flag_not_confirmed');
+        // D54: แถวที่ยิงแล้ว (first_push_at ไม่ว่าง) เช็ค owner หลัง claim เป็น gate แรก —
+        // บล็อกแบบไม่เขียนตรงนี้จะทิ้งแถวค้าง retry กินสล็อตโควต้าตลอด; already_sent/missing row ยังตรวจข้างบน
+        if ($log->first_push_at === null) {
+            $ownerReason = self::ownerGateReason($log, $approval);
+            if ($ownerReason !== null) {
+                return $this->finish($approvalId, $logId, $botId, 'blocked', $ownerReason);
+            }
         }
 
         // ---- Step B: claim (transaction เดียว, compare-and-set) ----
@@ -126,6 +117,12 @@ class FollowUpSendService
         $logModel = LeadRecoveryLog::query()->find($logId);
         $conversation = $logModel?->conversation()->first();
         $recipient = (string) ($conversation->external_customer_id ?? '');
+
+        // 0) owner gate ของแถวที่ยิงแล้ว (D54) — gate แรกหลัง claim: พังที่ไหนก็จบ send_failed
+        //    เพราะยิงออกไปแล้วผลรับไม่ได้รู้ผล ห้ามปล่อยแถวค้าง retry แบบไม่เขียนอะไรเลย
+        if ($pushed && self::ownerGateReason($fresh, $freshApproval) !== null) {
+            return $this->endWrite($approvalId, $logId, $botId, $token, 'send_failed', 'cancelled', 'acceptance_unknown_gate_changed', 'failed', $nowStr);
+        }
 
         // 1) expiry — วินาทีเท่ากันนับว่าหมดอายุ
         if ($nowStr >= (string) $freshApproval->expires_at) {
@@ -237,7 +234,8 @@ class FollowUpSendService
     }
 
     /**
-     * claim — รับแถวเข้า sending เฉพาะสามทาง (transaction เดียว, เขียนยึดสถานะเดิมเท่านั้น):
+     * claim — รับแถวเข้า sending เฉพาะสามทาง (transaction เดียว all-or-nothing, D55):
+     * ล็อกทั้ง log และบัตรด้วย row lock อัปเดตไหนไม่ครบ 1 แถวโยน ClaimLostException = ย้อนทั้งหมด
      * (a) approved บนบัตร approved, (b) retry ที่ถึงคิว บนบัตร sending,
      * (c) sending ที่ updated_at ค้างเกิน 10 นาที (worker ตาย) บนบัตร sending
      */
@@ -246,47 +244,57 @@ class FollowUpSendService
         $newKey = (string) Str::uuid();
         $staleCutoff = $now->subMinutes(self::CLAIM_STALE_MINUTES)->format('Y-m-d H:i:s');
 
-        return DB::transaction(function () use ($approvalId, $logId, $token, $nowStr, $newKey, $staleCutoff): bool {
-            $row = DB::table('lead_recovery_logs')->where('id', $logId)->lockForUpdate()->first();
-            $approval = DB::table('follow_up_approvals')->where('id', $approvalId)->first();
+        try {
+            return DB::transaction(function () use ($approvalId, $logId, $token, $nowStr, $newKey, $staleCutoff): bool {
+                $row = DB::table('lead_recovery_logs')->where('id', $logId)->lockForUpdate()->first();
+                $approval = DB::table('follow_up_approvals')->where('id', $approvalId)->lockForUpdate()->first();
 
-            if ($row === null || $approval === null) {
-                return false;
-            }
+                if ($row === null || $approval === null) {
+                    return false;
+                }
 
-            $from = $row->delivery_status;
-            $canClaim =
-                ($from === LeadRecoveryLog::DELIVERY_STATUS_APPROVED && $approval->status === 'approved')
-                || ($from === LeadRecoveryLog::DELIVERY_STATUS_RETRY
-                    && $approval->status === 'sending'
-                    && $row->next_attempt_at !== null
-                    && (string) $row->next_attempt_at <= $nowStr)
-                || ($from === LeadRecoveryLog::DELIVERY_STATUS_SENDING
-                    && $approval->status === 'sending'
-                    && (string) $row->updated_at <= $staleCutoff);
+                $from = $row->delivery_status;
+                $canClaim =
+                    ($from === LeadRecoveryLog::DELIVERY_STATUS_APPROVED && $approval->status === 'approved')
+                    || ($from === LeadRecoveryLog::DELIVERY_STATUS_RETRY
+                        && $approval->status === 'sending'
+                        && $row->next_attempt_at !== null
+                        && (string) $row->next_attempt_at <= $nowStr)
+                    || ($from === LeadRecoveryLog::DELIVERY_STATUS_SENDING
+                        && $approval->status === 'sending'
+                        && (string) $row->updated_at <= $staleCutoff);
 
-            if (! $canClaim) {
-                return false;
-            }
+                if (! $canClaim) {
+                    return false;
+                }
 
-            DB::table('lead_recovery_logs')
-                ->where('id', $logId)
-                ->where('delivery_status', $from)
-                ->update([
-                    'delivery_status' => LeadRecoveryLog::DELIVERY_STATUS_SENDING,
-                    'claim_token' => $token,
-                    'claimed_at' => $nowStr,
-                    'updated_at' => $nowStr,
-                    'retry_key' => filled($row->retry_key) ? $row->retry_key : $newKey,
-                ]);
+                $logMoved = DB::table('lead_recovery_logs')
+                    ->where('id', $logId)
+                    ->where('delivery_status', $from)
+                    ->update([
+                        'delivery_status' => LeadRecoveryLog::DELIVERY_STATUS_SENDING,
+                        'claim_token' => $token,
+                        'claimed_at' => $nowStr,
+                        'updated_at' => $nowStr,
+                        'retry_key' => filled($row->retry_key) ? $row->retry_key : $newKey,
+                    ]) === 1;
 
-            $approvalMoved = DB::table('follow_up_approvals')
-                ->where('id', $approvalId)
-                ->where('status', $approval->status)
-                ->update(['status' => 'sending', 'updated_at' => $nowStr]);
+                $approvalMoved = DB::table('follow_up_approvals')
+                    ->where('id', $approvalId)
+                    ->where('status', $approval->status)
+                    ->update(['status' => 'sending', 'updated_at' => $nowStr]) === 1;
 
-            return $approvalMoved === 1;
-        });
+                // D55: claim ต้อง all-or-nothing — ทิ้งครึ่งเดียวไว้ (log sending + token แต่บัตรไม่ sending)
+                // = แถวติดตายเพราะ claim (a) ต้องการ approved ส่วน (b)/(c) ต้องการบัตร sending
+                if ($logMoved !== true || $approvalMoved !== true) {
+                    throw new ClaimLostException;
+                }
+
+                return true;
+            });
+        } catch (ClaimLostException) {
+            return false;
+        }
     }
 
     /**
@@ -435,34 +443,47 @@ class FollowUpSendService
     /**
      * เขียนจุดจบของ gate — log สถานะใหม่ + reason + เคลียร์ claim, approval ไปสถานะใหม่
      * ทุกคอลัมน์ owner_action/retry_key/first_push_at/message_sent/draft_* คงเดิม
-     * เสีย claim ระหว่างทาง = หยุด คืน blocked ไม่เขียนต่อ
+     * (D55) log + approval เขียนเป็น transaction เดียว all-or-nothing — บัตรเปลี่ยนกลางทาง = ย้อนทั้งคู่
+     * log คงแบบก่อนเขียนเป๊ะ; เสีย claim ระหว่างทาง = หยุด คืน blocked ไม่เขียนต่อ
      */
     private function endWrite(int $approvalId, int $logId, int $botId, string $token, string $logStatus, string $approvalStatus, string $reason, string $result, string $nowStr): string
     {
-        $logMoved = DB::table('lead_recovery_logs')
-            ->where('id', $logId)
-            ->where('claim_token', $token)
-            ->update([
-                'delivery_status' => $logStatus,
-                'reason_code' => $reason,
-                'claim_token' => null,
-                'claimed_at' => null,
-                'updated_at' => $nowStr,
-            ]) === 1;
+        try {
+            DB::transaction(function () use ($approvalId, $logId, $token, $logStatus, $approvalStatus, $reason, $nowStr): void {
+                $locked = DB::table('lead_recovery_logs')->where('id', $logId)->lockForUpdate()->first();
 
-        if (! $logMoved) {
+                if ($locked === null || ! hash_equals((string) ($locked->claim_token ?? ''), $token)) {
+                    throw new ClaimLostException;
+                }
+
+                $logMoved = DB::table('lead_recovery_logs')
+                    ->where('id', $logId)
+                    ->where('claim_token', $token)
+                    ->update([
+                        'delivery_status' => $logStatus,
+                        'reason_code' => $reason,
+                        'claim_token' => null,
+                        'claimed_at' => null,
+                        'updated_at' => $nowStr,
+                    ]) === 1;
+
+                if (! $logMoved) {
+                    throw new ClaimLostException;
+                }
+
+                if ($approvalStatus !== 'sending') {
+                    $approvalMoved = DB::table('follow_up_approvals')
+                        ->where('id', $approvalId)
+                        ->where('status', 'sending')
+                        ->update(['status' => $approvalStatus, 'updated_at' => $nowStr]) === 1;
+
+                    if (! $approvalMoved) {
+                        throw new ClaimLostException;
+                    }
+                }
+            });
+        } catch (ClaimLostException) {
             return $this->finish($approvalId, $logId, $botId, 'blocked', 'claim_lost');
-        }
-
-        if ($approvalStatus !== 'sending') {
-            $approvalMoved = DB::table('follow_up_approvals')
-                ->where('id', $approvalId)
-                ->where('status', 'sending')
-                ->update(['status' => $approvalStatus, 'updated_at' => $nowStr]) === 1;
-
-            if (! $approvalMoved) {
-                return $this->finish($approvalId, $logId, $botId, 'blocked', 'claim_lost');
-            }
         }
 
         return $this->finish($approvalId, $logId, $botId, $result, $reason);
@@ -493,21 +514,49 @@ class FollowUpSendService
         return $this->finish($approvalId, $logId, $botId, 'retry', $reason);
     }
 
-    /** check_answers มีข้อห้าม (failed ไม่ว่าง หรือ error = true) หรือไม่ */
+    /** เหตุผลฝั่ง owner ที่ห้ามส่งบัตรนี้ — null = ผ่านทุกข้อ (ใช้ทั้ง Step A และ owner gate หลัง claim ของแถวยิงแล้ว) */
+    private static function ownerGateReason(object $log, object $approval): ?string
+    {
+        if ($log->owner_action === LeadRecoveryLog::OWNER_ACTION_AUTOMATIC) {
+            // D47: เส้นทาง automatic ยังไม่อยู่ในการ์ดนี้ — มาพร้อมการ์ดที่สร้างบัตร automatic
+            return 'automatic_action';
+        }
+
+        if (! in_array($log->owner_action, [LeadRecoveryLog::OWNER_ACTION_SENT, LeadRecoveryLog::OWNER_ACTION_EDITED], true)
+            || $log->owner_action_at === null
+            || trim((string) $log->owner_telegram_user_id) === '') {
+            return 'owner_action_invalid';
+        }
+
+        if ($log->owner_action === LeadRecoveryLog::OWNER_ACTION_SENT
+            && ((int) $approval->revision !== 1 || $approval->text !== $log->draft)) {
+            return 'revision_mismatch';
+        }
+
+        if (self::checkFlagged((string) $approval->check_answers)
+            && ! self::checkConfirmed((string) $log->owner_action, $approval)) {
+            return 'flag_not_confirmed';
+        }
+
+        return null;
+    }
+
+    /**
+     * check_answers มีข้อห้ามหรือไม่ (D53) — สะอาดทางเดียว: decode ได้ object ที่ failed เป็น list ว่าง
+     * และ error เป็น boolean false เป๊ะเท่านั้น รูปร่างอื่นทั้งหมด (อ่านไม่ได้/คีย์หาย/ชนิดผิด) = มีข้อห้าม
+     */
     private static function checkFlagged(string $rawAnswers): bool
     {
         $answers = json_decode($rawAnswers, true);
 
         if (! is_array($answers)) {
-            return false;
-        }
-
-        $failed = $answers['failed'] ?? null;
-        if (is_array($failed) && $failed !== []) {
             return true;
         }
 
-        return ($answers['error'] ?? false) == true;
+        $failed = $answers['failed'] ?? null;
+        $error = $answers['error'] ?? null;
+
+        return ! (is_array($failed) && $failed === [] && $error === false);
     }
 
     /** เจ้าของยอมรับข้อห้ามหรือยัง: sent = check_overridden, edited = confirmed_revision ตรง revision */
