@@ -4,9 +4,11 @@ namespace App\Services;
 
 use App\Models\Bot;
 use App\Models\Conversation;
-use App\Models\LeadRecoveryLog;
+use App\Services\FollowUp\FollowUpOutcomeService;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class LeadRecoveryService
 {
@@ -136,48 +138,23 @@ class LeadRecoveryService
     /**
      * Mark that a customer has responded to a lead recovery attempt.
      *
-     * B1 rule: only the newest log row that was actually SENT, at most 72
-     * hours old and not yet marked may flip to responded — and only when a
-     * real customer message arrived after that row was sent. Failed and
-     * unsent rows never count, bot output never counts, and a second call
-     * finds nothing left to mark (idempotent).
+     * B4d (D57): one writer — this method keeps its name, signature and all
+     * call sites, and only delegates to FollowUpOutcomeService::recordReply.
+     * It sits on the path that answers customers, so it never throws and
+     * never logs message text or customer ids. The reply window is measured
+     * from the customer message's created_at against the newest open sent
+     * row across the customer's rooms (72 hours, Bangkok time).
      */
     public function markCustomerResponded(Conversation $conversation): void
     {
-        $log = LeadRecoveryLog::query()
-            ->where('conversation_id', $conversation->id)
-            ->where('customer_responded', false)
-            ->where('delivery_status', 'sent')
-            ->where('sent_at', '>=', now()->subHours(self::RESPONSE_WINDOW_HOURS))
-            ->orderByDesc('sent_at')
-            ->first();
-
-        if ($log === null) {
-            return;
+        try {
+            app(FollowUpOutcomeService::class)->recordReply($conversation, CarbonImmutable::now());
+        } catch (Throwable) {
+            // ตอบลูกค้าต้องไม่พังเพราะตัวนับผล — เก็บเฉพาะ id ไม่มีข้อความ exception หรือ customer id
+            Log::warning('Lead recovery: reply outcome recording failed', [
+                'conversation_id' => $conversation->id,
+            ]);
         }
-
-        // Only an actual customer message newer than the follow-up counts
-        // as the reply; the row carries that real message's timestamp.
-        $reply = $conversation->messages()
-            ->where('sender', 'user')
-            ->where('created_at', '>', $log->sent_at)
-            ->orderBy('created_at')
-            ->first();
-
-        if ($reply === null) {
-            return;
-        }
-
-        $log->update([
-            'customer_responded' => true,
-            'responded_at' => $reply->created_at,
-        ]);
-
-        Log::info('Lead recovery: customer responded', [
-            'conversation_id' => $conversation->id,
-            'log_id' => $log->id,
-            'attempt_number' => $log->attempt_number,
-        ]);
     }
 
     /**
