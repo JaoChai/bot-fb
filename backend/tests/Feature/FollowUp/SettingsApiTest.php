@@ -20,6 +20,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -213,7 +214,7 @@ class SettingsApiTest extends TestCase
     /**
      * ห้าคอลัมน์ follow-up ของแถว ตรงค่าที่กำหนดเป๊ะ (byte-equal)
      *
-     * @param array{enabled: bool, mode: string, started_at: ?string, activation_id: ?int, activated_at: ?string} $expected
+     * @param  array{enabled: bool, mode: string, started_at: ?string, activation_id: ?int, activated_at: ?string}  $expected
      */
     private function assertColumns(object $row, array $expected, string $message = ''): void
     {
@@ -231,12 +232,12 @@ class SettingsApiTest extends TestCase
         $this->assertArrayNotHasKey('follow_up_activated_at', $data, $context);
     }
 
-    private function putSettings(User $user, Bot $bot, array $payload): \Illuminate\Testing\TestResponse
+    private function putSettings(User $user, Bot $bot, array $payload): TestResponse
     {
         return $this->actingAs($user)->putJson("/api/bots/{$bot->id}/settings", $payload);
     }
 
-    private function patchSettings(User $user, Bot $bot, array $payload): \Illuminate\Testing\TestResponse
+    private function patchSettings(User $user, Bot $bot, array $payload): TestResponse
     {
         return $this->actingAs($user)->patchJson("/api/bots/{$bot->id}/settings", $payload);
     }
@@ -380,7 +381,7 @@ class SettingsApiTest extends TestCase
         foreach ([1, 0, '1', 'true', 'false', null, []] as $shape) {
             $put = $this->putSettings($user, $bot, ['follow_up_enabled' => $shape]);
 
-            $put->assertStatus(422, "shape ".var_export($shape, true).' must be refused');
+            $put->assertStatus(422, 'shape '.var_export($shape, true).' must be refused');
             $this->assertArrayHasKey('follow_up_enabled', $put->json('errors'), 'errors must point at follow_up_enabled for '.var_export($shape, true));
         }
 
