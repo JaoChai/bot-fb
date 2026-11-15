@@ -25,6 +25,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -177,6 +178,8 @@ class ReconcileJobTest extends TestCase
             $this->spyTelegram($first['approvalId']);
         } else {
             $n = 0;
+            Http::swap(new Factory);
+            Http::preventStrayRequests();
             Http::fake(function ($request) use ($failure, &$n) {
                 $this->requests[] = $request;
                 if (++$n === 1) {
@@ -234,7 +237,7 @@ class ReconcileJobTest extends TestCase
                 'update_id' => 999002,
                 'message' => [
                     'message_id' => 900, 'from' => ['id' => 555], 'chat' => ['id' => 888, 'type' => 'private'],
-                    'reply_to_message' => ['message_id' => 55, 'from' => ['id' => 777000, 'is_bot' => true], 'chat' => ['id' => 888]],
+                    'reply_to_message' => ['message_id' => 55, 'from' => ['id' => 777000, 'is_bot' => true], 'chat' => ['id' => 888], 'text' => '✏️ แก้ข้อความ #'.$pending['logId']],
                     'text' => 'ข้อความที่เจ้านายแก้เองแล้ว',
                 ],
             ])->assertOk();
@@ -478,6 +481,7 @@ class ReconcileJobTest extends TestCase
     public function test_real_outcomes_close_only_after_reply_and_order_grace_boundaries(): void
     {
         $this->seedWorld();
+        DB::table('messages')->where('conversation_id', $this->world['room']->id)->update(['created_at' => '2026-11-01 10:00:00']);
         $reply = $this->waiting('sent', ['sent_at' => '2026-11-13 09:50:01']);
         $order = $this->waiting('sent', ['sent_at' => '2026-11-09 09:50:01', 'replied_within_72h' => true, 'response_window_closed_at' => self::OLD]);
         $this->runJob();
@@ -771,6 +775,8 @@ class ReconcileJobTest extends TestCase
 
     private function fakeHttp(?callable $inspect = null): void
     {
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
         Http::fake(function ($request) use ($inspect) {
             $this->assertSame('api.telegram.org', parse_url($request->url(), PHP_URL_HOST), 'no LINE/model call is allowed');
             $this->requests[] = $request;
