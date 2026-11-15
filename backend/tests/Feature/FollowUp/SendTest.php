@@ -1392,6 +1392,137 @@ class SendTest extends TestCase
         $this->assertPushCount(1);
     }
 
+    // ------------------------------------------------------------------
+    // รอบแก้ review — B4d (6a: owner เช็คซ้ำใน claim, 6b/6c: failed ต้องเป็น JSON list)
+    // ------------------------------------------------------------------
+
+    /**
+     * 6b/6c — failed ต้องเป็น JSON list ว่าง `[]` เท่านั้น; `{}` ไม่ใช่ list (B4d)
+     * และ error ต้องเป็น boolean false เป๊ะ (missing/null/0/"" ล้วนนับเป็นมีข้อห้าม)
+     */
+    public static function notJsonListCheckShapes(): array
+    {
+        return [
+            'failed_is_json_object' => ['{"failed":{},"error":false}'],
+            'failed_list_error_missing' => [
+                json_encode(['scores' => ['safe_to_send' => 0.9], 'failed' => [], 'version' => 1]),
+            ],
+            'failed_list_error_null' => [
+                json_encode(['scores' => ['safe_to_send' => 0.9], 'failed' => [], 'error' => null, 'version' => 1]),
+            ],
+            'failed_list_error_zero' => [
+                json_encode(['scores' => ['safe_to_send' => 0.9], 'failed' => [], 'error' => 0, 'version' => 1]),
+            ],
+            'failed_list_error_empty_string' => [
+                json_encode(['scores' => ['safe_to_send' => 0.9], 'failed' => [], 'error' => '', 'version' => 1]),
+            ],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('notJsonListCheckShapes')]
+    public function test_check_answers_failed_must_be_a_json_list_blocks_like_a_flag(string $shape): void
+    {
+        // B4d 6b/6c: owner sent ไม่ยืนยัน → blocked ไม่เขียน ไม่ยิง
+        $seed = $this->seedReady([], ['check_answers' => $shape]);
+        $before = $this->snapshot($seed);
+        $this->fakeNothing();
+
+        $this->assertSame('blocked', $this->send($seed), 'รูปร่าง failed ที่ไม่ใช่ JSON list [] ต้องนับเป็นมีข้อห้าม');
+        Http::assertNothingSent();
+        $this->assertSame($before, $this->snapshot($seed), 'ห้ามเขียนคอลัมน์ใด');
+    }
+
+    #[Test]
+    #[DataProvider('notJsonListCheckShapes')]
+    public function test_check_answers_failed_must_be_a_json_list_blocks_edited_without_confirmation(string $shape): void
+    {
+        // B4d 6b/6c: กฎเดียวกันบน owner_action edited โดยไม่มี confirmed_revision ตรง
+        $seed = $this->seedReady(['owner_action' => 'edited'], ['check_answers' => $shape]);
+        $before = $this->snapshot($seed);
+        $this->fakeNothing();
+
+        $this->assertSame('blocked', $this->send($seed));
+        Http::assertNothingSent();
+        $this->assertSame($before, $this->snapshot($seed));
+    }
+
+    #[Test]
+    public function test_owner_checks_rerun_inside_the_claim_block_an_edited_flagged_card(): void
+    {
+        // B4d 6a: คนอื่นแก้บัตร "ระหว่าง Step A กับ claim" (probe ของ reviewer) —
+        // owner เช็คต้องวิ่งซ้ำบนแถวที่ล็อกแล้วใน claim ไม่อย่างนั้นข้อความที่ถูกแก้+มีข้อห้ามหลุดยิงออกไป
+        $seed = $this->seedReady();
+        $before = $this->snapshot($seed);
+        $this->fakeNothing();
+        $armed = true;
+        $logSelects = 0;
+        DB::connection()->beforeExecuting(function ($query) use (&$armed, &$logSelects, $seed): void {
+            if ($armed && str_contains($query, 'lead_recovery_logs') && str_starts_with(strtolower(trim($query)), 'select')) {
+                $logSelects++;
+                if ($logSelects === 2) { // #1 = Step A, #2 = select ของ claim (ก่อน claim อ่าน/เขียน)
+                    $armed = false;
+                    // การแก้พอดีคาบ: บัตรเป็น revision 2 + check_answers มีข้อห้าม + เจ้าของแก้เอง
+                    DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update([
+                        'revision' => 2,
+                        'check_answers' => $this->flaggedCheck(),
+                        'confirmed_revision' => null,
+                    ]);
+                    DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update([
+                        'owner_action' => 'edited',
+                        'owner_action_at' => '2026-11-16 09:55:30',
+                    ]);
+                }
+            }
+        });
+
+        $result = $this->send($seed);
+
+        DB::connection()->beforeExecuting(function (): void {});
+        $this->assertSame('blocked', $result, 'claim ต้องปฏิเสธบัตรที่ถูกแก้เป็นมีข้อห้ามกลางคัน');
+        Http::assertNothingSent();
+        $this->assertPushCount(0);
+
+        // แถวทั้งคู่ต้องเป็นแบบที่ "การแก้กลางคัน" ทิ้งไว้เป๊ะ — ไม่มี claim token ไม่มีคอลัมน์อื่นเปลี่ยน
+        $expected = [
+            'log' => array_merge($before['log'], ['owner_action' => 'edited', 'owner_action_at' => '2026-11-16 09:55:30']),
+            'approval' => array_merge($before['approval'], ['revision' => 2, 'check_answers' => $this->flaggedCheck(), 'confirmed_revision' => null]),
+        ];
+        $this->assertSame($expected, $this->snapshot($seed));
+        $this->assertNull($this->logRow($seed)->claim_token, 'claim ถูกปฏิเสธ = ไม่มี claim token');
+        $this->assertSame('approved', $this->logRow($seed)->delivery_status, 'log คง approved (claim ไม่เขียน)');
+    }
+
+    #[Test]
+    public function test_owner_checks_rerun_inside_the_claim_pass_a_card_that_stays_valid(): void
+    {
+        // twin ของ 6a: การเขียนกลางคันที่ไม่ทำให้ owner เช็คพัง → claim เดินหน้าจน sent ตามปกติ
+        $seed = $this->seedReady();
+        $this->fakeLine();
+        $armed = true;
+        $logSelects = 0;
+        DB::connection()->beforeExecuting(function ($query) use (&$armed, &$logSelects, $seed): void {
+            if ($armed && str_contains($query, 'lead_recovery_logs') && str_starts_with(strtolower(trim($query)), 'select')) {
+                $logSelects++;
+                if ($logSelects === 2) {
+                    $armed = false;
+                    DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update([
+                        'telegram_delivery_state' => 'delivered',
+                    ]);
+                    DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update([
+                        'owner_action_at' => '2026-11-16 09:55:30',
+                    ]);
+                }
+            }
+        });
+
+        $result = $this->send($seed);
+
+        DB::connection()->beforeExecuting(function (): void {});
+        $this->assertSame('sent', $result, 'บัตรที่ยังผ่าน owner เช็คต้องส่งได้');
+        $this->assertPushCount(1);
+    }
+
     #[Test]
     public function test_claim_refusal_writes_nothing_when_the_approval_changes_mid_claim(): void
     {

@@ -272,15 +272,18 @@ class LegacyShutdownTest extends TestCase
                 true,
                 'exactly 72h',
             ],
-            'sent row older than 72h' => [
+            'sent row older than 72h at call time, reply inside its own 72h window' => [
                 function (self $t, Conversation $room): LeadRecoveryLog {
+                    // B4d moved the window to the message's created_at (probe 2):
+                    // the reply 1 min after the send is inside (sent_at, sent_at+72h]
+                    // even though the row itself is older than 72h when the call runs.
                     $log = $t->makeLog($room, now()->subHours(72)->subMinute(), 'sent');
                     $t->makeUserMessage($room, now()->subHours(72)->addMinute());
 
                     return $log;
                 },
-                false,
-                'past 72h',
+                true,
+                'past 72h at call time, reply in window',
             ],
             'failed row inside the window' => [
                 function (self $t, Conversation $room): LeadRecoveryLog {
