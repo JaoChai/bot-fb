@@ -14,6 +14,7 @@ use App\Services\FollowUp\FollowUpPipeline;
 use App\Services\FollowUp\FollowUpPrompts;
 use App\Services\FollowUp\FollowUpReservationService;
 use App\Services\FollowUp\FollowUpSalesProjector;
+use App\Services\FollowUp\FollowUpTelegramService;
 use App\Services\OpenRouterService;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -1203,10 +1204,13 @@ class PipelineTest extends TestCase
             $this->assertStringNotContainsString($serialised, $forbidden);
         }
 
-        // handle เรียก prepare ครั้งเดียวด้วย id นั้น
+        // handle เรียก prepare ครั้งเดียวด้วย id นั้น — B6d: ร่างพร้อม = เสนอการ์ดทันที,
+        // mock นี้ไม่สร้าง approval จึงต้องไม่มีการเรียก publish
         $pipeline = $this->mock(FollowUpPipeline::class);
         $pipeline->shouldReceive('prepare')->once()->with(7);
-        (new GenerateCustomerFollowUp(7))->handle($pipeline);
+        $telegram = $this->mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->never();
+        (new GenerateCustomerFollowUp(7))->handle($pipeline, $telegram);
     }
 
     // ------------------------------------------------------------------
