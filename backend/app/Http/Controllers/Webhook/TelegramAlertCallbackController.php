@@ -47,12 +47,15 @@ class TelegramAlertCallbackController extends Controller
         // ตอบ {ok:true} 200 เสมอ ไม่ว่า service จะตัดสินอย่างไร (D80); update อื่นคงคำตอบเดิม
         $cb = $request->input('callback_query');
         if (! is_array($cb)) {
-            $message = $request->input('message');
+            // D91: SanitizeInput ของ api middleware แก้ข้อความที่พิมพ์ก่อนถึงนี่ — ข้อความแก้ต้องอ่านจาก
+            // raw body ตรงที่พิมพ์ (input() ใช้กับ tap callback_query เท่านั้น); decode ไม่ได้ = เงียบๆ ตามเดิม
+            $rawUpdate = json_decode($request->getContent(), true);
+            $message = is_array($rawUpdate) ? ($rawUpdate['message'] ?? null) : null;
             if (is_array($message)) {
                 app(FollowUpApprovalService::class)->editReply(
                     $plugin,
                     $message,
-                    (int) ($request->input('update_id') ?? 0),
+                    (int) ($rawUpdate['update_id'] ?? 0),
                 );
             }
 

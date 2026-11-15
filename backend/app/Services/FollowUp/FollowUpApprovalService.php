@@ -342,8 +342,14 @@ class FollowUpApprovalService
             $freshLog = $fresh === null ? null : $this->logRow((int) $fresh->lead_recovery_log_id);
             $answer = $fresh === null ? self::ANSWERS['not_found'] : $this->answerForState('fe', $freshLog, $fresh, $nowStr);
             $this->answer($token, $cbId, $answer);
-            if ($fresh !== null && (string) $fresh->status !== 'pending') {
-                $this->followUpTelegram->refreshCard($approvalId, $now);
+            if ($fresh !== null) {
+                if ((string) $fresh->status !== 'pending') {
+                    // D82: สถานะตัดสินแล้วที่เจอ — ระบายการ์ดให้ปุ่มใช้ได้
+                    $this->followUpTelegram->refreshCard($approvalId, $now);
+                } elseif ($answer === self::ANSWERS['stale_card']) {
+                    // D90: บัตรยัง pending มีชีวิตแต่รุ่น/nonce ย้ายไปแล้ว — การ์ดเปลี่ยนใต้มือ ใช้บัตรล่าสุดแทน
+                    $this->followUpTelegram->syncCard($approvalId, $now);
+                }
             }
 
             return $this->finish($approvalId, $logId, $botId, 'fe', 'refused', 'bind_race', $fromId);
@@ -561,17 +567,21 @@ class FollowUpApprovalService
         }
 
         // เจ้านายเขียน @ กับราคาได้ (D86) แต่ลิงก์/อีเมล/เบอร์โทรยังห้าม — redact เปลี่ยนข้อความ = มีชิ้นที่ห้าม
-        if (FollowUpRedactor::redact($text) !== $text) {
+        // D91: ช่องว่าง (NBSP ฯลฯ ที่ redact จัดเป็นวรรคปกติ) ไม่นับเป็นชิ้นที่ห้าม — เทียบแบบตัดช่องว่างก่อน
+        $compact = static fn (string $value): string => (string) preg_replace('/[\s\p{Z}]+/u', '', $value);
+        if ($compact(FollowUpRedactor::redact($text)) !== $compact($text)) {
             return self::INVALID_CONTACT;
         }
 
         return null;
     }
 
-    /** ปรับข้อความก่อนตรวจและก่อนเซฟ: CRLF และ CR เดี่ยว → LF แล้ว trim */
+    /** ปรับข้อความก่อนตรวจและก่อนเซฟ: CRLF และ CR เดี่ยว → LF แล้ว trim
+     * D91: trim ระบุชุดตัวอักษรเอง ไม่ตัด NUL (\0) ที่ขอบ — อักขระที่ส่งไม่ได้ทุกตำแหน่งต้องถึง guard
+     */
     private function normalizeEditText(string $raw): string
     {
-        return trim(str_replace(["\r\n", "\r"], "\n", $raw));
+        return trim(str_replace(["\r\n", "\r"], "\n", $raw), " \t\n\r\x0B");
     }
 
     /** แจ้งคนหนึ่งข้อความ ตอบกลับข้อความของเขา — ข้อความล้วน ไม่มี parse_mode */
@@ -642,13 +652,11 @@ class FollowUpApprovalService
         return false;
     }
 
-    /** คำตอบจากแถวที่เพิ่งอ่าน — ใช้ทั้งก่อนเขียนและหลังแพ้แข่งในธุรกรรม */
+    /** คำตอบจากแถวที่เพิ่งอ่าน — ใช้ทั้งก่อนเขียนและหลังแพ้แข่งในธุรกรรม
+     * D90: fe/fc ใช้ลำดับเดียวกับ fs — สถานะ → หมดอายุ → log → stale_card (คำว่า not_ready ไม่มีทางถึงอีกแล้ว)
+     */
     private function answerForState(string $code, ?object $log, object $approval, string $nowStr): string
     {
-        if ($code === 'fe' || $code === 'fc') {
-            return self::ANSWERS['not_ready'];
-        }
-
         $status = (string) $approval->status;
         if ($status !== 'pending') {
             if ($code === 'fk' && in_array($status, ['approved', 'sending'], true)) {
@@ -694,12 +702,12 @@ class FollowUpApprovalService
      */
     private function writeTap(int $approvalId, int $logId, string $action, string $token, string $cbId, string $code, int $updateId, string $fromIdStr, int $fromId, int $botId, int $revision, string $nonce, string $nowStr): string
     {
-        [$answerKey, $written, $repaint] = DB::transaction(function () use ($approvalId, $logId, $action, $code, $updateId, $fromIdStr, $nowStr, $revision, $nonce) {
+        [$answerKey, $written, $repaint, $resync] = DB::transaction(function () use ($approvalId, $logId, $action, $code, $updateId, $fromIdStr, $nowStr, $revision, $nonce) {
             $log = DB::table('lead_recovery_logs')->where('id', $logId)->lockForUpdate()->first();
             $approval = DB::table('follow_up_approvals')->where('id', $approvalId)->lockForUpdate()->first();
 
             if ($approval === null || $log === null) {
-                return [self::ANSWERS['not_found'], false, false];
+                return [self::ANSWERS['not_found'], false, false, false];
             }
 
             if ((string) $approval->status !== 'pending'
@@ -710,7 +718,8 @@ class FollowUpApprovalService
                 $answer = $this->answerForState($code, $log, $approval, $nowStr);
 
                 // D82: สถานะตัดสินแล้วที่เจอใต้ล็อก — ตอบแล้วระบายการ์ดให้ปุ่มใช้ได้
-                return [$answer, false, (string) $approval->status !== 'pending'];
+                // D90: fe/fc บนบัตรยัง pending มีชีวิตที่รุ่น/nonce ย้าย = stale — syncCard ให้ใช้บัตรล่าสุด (D87)
+                return [$answer, false, (string) $approval->status !== 'pending', in_array($code, ['fe', 'fc'], true) && $answer === self::ANSWERS['stale_card']];
             }
 
             $lastUpdateId = $updateId > 0 ? ['last_update_id' => $updateId] : [];
@@ -722,11 +731,11 @@ class FollowUpApprovalService
 
                 if ($code === 'fs' && $edited && ! $clean) {
                     // การ์ดแก้ใหม่และยังไม่ผ่านตรวจตอนกด — ยืนยันก่อน ห้ามเขียน (D84)
-                    return [self::ANSWERS_B6C['confirm_needed'], false, false];
+                    return [self::ANSWERS_B6C['confirm_needed'], false, false, false];
                 }
                 if ($code === 'fc' && (! $edited || $clean)) {
                     // ยืนยันส่งใช้กับบัตรแก้ที่ยังไม่ผ่านตรวจเท่านั้น — ใช้การ์ดล่าสุดแทน
-                    return [self::ANSWERS['stale_card'], false, false];
+                    return [self::ANSWERS['stale_card'], false, false, false];
                 }
 
                 $ownerAction = $edited ? LeadRecoveryLog::OWNER_ACTION_EDITED : LeadRecoveryLog::OWNER_ACTION_SENT;
@@ -755,7 +764,7 @@ class FollowUpApprovalService
                     ? 'send_ok_confirmed'
                     : ($edited || $clean ? 'send_ok' : 'send_ok_flagged');
 
-                return [$answerKey, true, true];
+                return [$answerKey, true, true, false];
             }
 
             DB::table('lead_recovery_logs')->where('id', $logId)->update([
@@ -770,12 +779,15 @@ class FollowUpApprovalService
                 'updated_at' => $nowStr,
             ], $lastUpdateId));
 
-            return ['skip_ok', true, true];
+            return ['skip_ok', true, true, false];
         });
 
         $this->answer($token, $cbId, $this->answerText($answerKey));
 
-        if ($written || $repaint) {
+        if ($resync) {
+            // D90: fe/fc แพ้แข่งบนบัตรยัง pending มีชีวิต — การ์ดเปลี่ยนใต้มือ ใช้บัตรล่าสุดแทน (D87)
+            $this->followUpTelegram->syncCard($approvalId);
+        } elseif ($written || $repaint) {
             // ล้มเหลวที่นี่ไม่เปลี่ยนแถวและไม่เปลี่ยนผลคืน
             $this->followUpTelegram->refreshCard($approvalId);
         }
