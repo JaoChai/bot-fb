@@ -268,6 +268,12 @@ class FollowUpSendService
                     return false;
                 }
 
+                // B4d (6a): owner เช็คซ้ำบนแถวที่ล็อกอยู่ เฉพาะแถวที่ยังไม่เคยยิง —
+                // คนอื่นแก้บัตรพอดีระหว่าง Step A กับ claim ต้องจบ blocked ที่นี่ ไม่เขียน ไม่ยิง
+                if ($row->first_push_at === null && self::ownerGateReason($row, $approval) !== null) {
+                    return false;
+                }
+
                 $logMoved = DB::table('lead_recovery_logs')
                     ->where('id', $logId)
                     ->where('delivery_status', $from)
@@ -542,19 +548,20 @@ class FollowUpSendService
     }
 
     /**
-     * check_answers มีข้อห้ามหรือไม่ (D53) — สะอาดทางเดียว: decode ได้ object ที่ failed เป็น list ว่าง
-     * และ error เป็น boolean false เป๊ะเท่านั้น รูปร่างอื่นทั้งหมด (อ่านไม่ได้/คีย์หาย/ชนิดผิด) = มีข้อห้าม
+     * D53 + B4d (6b): อ่านบันทึกเช็คไม่ได้ = มีข้อห้าม — รูปร่างสะอาดมีทางเดียว:
+     * decode ได้ object, `failed` เป็น JSON list ว่าง ([]) พอดี และ `error` เป็น boolean false เป๊ะ
+     * ({} ไม่ใช่ list; error เป็น missing/null/0/""/ "false" ล้วนไม่สะอาด)
      */
     private static function checkFlagged(string $rawAnswers): bool
     {
-        $answers = json_decode($rawAnswers, true);
+        $answers = json_decode($rawAnswers);
 
-        if (! is_array($answers)) {
+        if (! is_object($answers)) {
             return true;
         }
 
-        $failed = $answers['failed'] ?? null;
-        $error = $answers['error'] ?? null;
+        $failed = $answers->failed ?? null;
+        $error = $answers->error ?? null;
 
         return ! (is_array($failed) && $failed === [] && $error === false);
     }
