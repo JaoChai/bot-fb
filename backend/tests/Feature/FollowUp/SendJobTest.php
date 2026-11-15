@@ -16,6 +16,7 @@ use App\Services\FollowUp\FollowUpSendService;
 use App\Services\FollowUp\FollowUpTelegramService;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Log\Events\MessageLogged;
@@ -611,6 +612,44 @@ class SendJobTest extends TestCase
         Queue::fake();
         $this->tap($this->baseCallback(data: $this->cbData('fs', $repeat['approval_id'])), self::UPDATE_ID + 2)->assertOk();
         $this->assertSame([], $this->pushedSendIds(), 'แท็ปซ้ำบนบัตร approved ไม่คิวงานเพิ่ม');
+    }
+
+    #[Test]
+    public function test_lost_race_approved_tap_never_queues_a_send_job(): void
+    {
+        $seed = $this->seedTelegramWorld();
+        Queue::fake();
+        $this->fakeHttp();
+        $beforeLog = (array) DB::table('lead_recovery_logs')->where('id', $seed['log_id'])->first();
+        $beforeApproval = (array) DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->first();
+        $selects = 0;
+        DB::listen(function (QueryExecuted $query) use (&$selects, $seed): void {
+            // After the first snapshot was read, another writer wins before the locked read.
+            if (str_starts_with($query->sql, 'select * from "follow_up_approvals" where "id" = ?')
+                && ++$selects === 1) {
+                DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->update([
+                    'status' => 'approved',
+                    'updated_at' => '2026-11-16 09:59:59',
+                ]);
+            }
+        });
+
+        try {
+            $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])))
+                ->assertOk()->assertExactJson(['ok' => true]);
+        } finally {
+            app('events')->forget(QueryExecuted::class);
+        }
+
+        $this->assertGreaterThanOrEqual(2, $selects, 'the transaction must re-read the changed approval');
+        $this->assertSame(['answerCallbackQuery', 'editMessageText'], array_map($this->methodOf(...), $this->httpRequests));
+        $this->assertSame('กดส่งไปแล้ว กำลังส่งให้ลูกค้า', $this->httpRequests[0]['text']);
+        $this->assertSame([], $this->pushedSendIds(), 'a losing writer must not enqueue another send');
+        $this->assertSame($beforeLog, (array) DB::table('lead_recovery_logs')->where('id', $seed['log_id'])->first());
+        $this->assertSame(array_replace($beforeApproval, [
+            'status' => 'approved',
+            'updated_at' => '2026-11-16 09:59:59',
+        ]), (array) DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->first());
     }
 
     #[Test]
