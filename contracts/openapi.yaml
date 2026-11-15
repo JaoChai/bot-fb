@@ -26,6 +26,7 @@ servers:
 tags:
   - name: Auth
   - name: Chat
+  - name: Settings
 
 x-broadcast:
   MessageSent:
@@ -280,6 +281,174 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RateLimitError"
+
+  /bots/{bot}/settings:
+    get:
+      operationId: getBotSettings
+      tags: [Settings]
+      summary: One bot's settings; every response carries the four follow-up keys.
+      description: |
+        Sanctum bearer auth + BotPolicy::view (bot owner, or admin assigned to
+        the bot). The response `data` has the same key set on every response —
+        for a bot with no settings row yet the row is created first, with
+        follow_up_enabled false, follow_up_mode "approve", follow_up_started_at
+        null and the capability object of the fresh bot.
+
+        The four follow-up keys: `follow_up_enabled` (JSON boolean),
+        `follow_up_mode` ("approve" or "automatic"), `follow_up_started_at`
+        (null, or an ISO 8601 instant equal to the stored Bangkok wall time —
+        stored "2026-11-16 10:00:00" is the instant "2026-11-16T03:00:00Z")
+        and `follow_up_capabilities` (FollowUpCapabilities::forBot, unchanged).
+        The internal columns `follow_up_activation_message_id` and
+        `follow_up_activated_at` are absent from every response.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      responses:
+        "200":
+          description: The settings row (created on first call when missing).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetBotSettingsResponse"
+        "401":
+          description: No or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+        "403":
+          description: Authenticated user that is neither the owner nor an assigned admin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+        "404":
+          description: Unknown bot id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+    put:
+      operationId: updateBotSettings
+      tags: [Settings]
+      summary: Save settings; the follow-up switch with its capability gate and snapshot.
+      description: |
+        Sanctum bearer auth + BotPolicy::update (bot owner only). Full save —
+        the settings page sends ~30 named fields with none of them a follow-up
+        key; a request without follow-up keys behaves exactly as before.
+
+        `follow_up_enabled` accepts JSON true/false only (1, 0, "1", "true",
+        "false", null and lists are 422). false -> true is refused with 422 and
+        errors.follow_up_enabled[0] set to the blocked_reason code when
+        capabilities.supported is false. When allowed, the snapshot
+        (follow_up_started_at = follow_up_activated_at = the Bangkok wall time
+        of the request, follow_up_activation_message_id = max(messages.id)
+        read in the same transaction) is written once, guarded by "started_at
+        is null" — it never moves on later off/on cycles. true -> true is a
+        no-op with no capability check (the page sends the key on every save).
+        true -> false is always allowed and resets follow_up_mode to approve.
+        Any refusal writes nothing, other fields included; a refused request on
+        a bot with no settings row leaves bot_settings without a row.
+
+        `follow_up_mode` ("approve" | "automatic") accepts automatic only when
+        the switch is on and capabilities.automatic_allowed is true (both
+        evaluated with this same request applied); a stored automatic repeated
+        is a no-op. The internal snapshot keys and follow_up_capabilities are
+        refused with 422 in body or query, null included.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBotSettingsRequest"
+      responses:
+        "200":
+          description: Saved; `data` mirrors the GET body shape.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateBotSettingsResponse"
+        "401":
+          description: No or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+        "403":
+          description: Non-owner (assigned admins may read, only the owner may save).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+        "404":
+          description: Unknown bot id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "422":
+          description: |
+            A refused follow-up change, a bad value shape (strict JSON boolean
+            for follow_up_enabled; approve/automatic for follow_up_mode), an
+            internal key present, or any pre-existing field validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+    patch:
+      operationId: patchBotSettings
+      tags: [Settings]
+      summary: Partial save — same contract as PUT.
+      description: |
+        Sanctum bearer auth + BotPolicy::update (bot owner only). Identical
+        follow-up semantics to PUT; fields not sent keep their stored values.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBotSettingsRequest"
+      responses:
+        "200":
+          description: Saved; `data` mirrors the GET body shape.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateBotSettingsResponse"
+        "401":
+          description: No or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+        "403":
+          description: Non-owner.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+        "404":
+          description: Unknown bot id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "422":
+          description: Same validation and refusal rules as PUT.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
 
 components:
   securitySchemes:
@@ -867,3 +1036,97 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    # ---------- customer follow-up switch (B5a) ----------
+    CustomerFollowUpRules:
+      type: object
+      additionalProperties: false
+      description: Numbers the follow-up feature runs on; no secrets (FollowUpCapabilities::forBot).
+      required: [payment_wait_hours, sale_wait_hours, customer_gap_days, daily_draft_cap, approval_ttl_hours, send_start, send_end, timezone]
+      properties:
+        payment_wait_hours:
+          type: integer
+        sale_wait_hours:
+          type: integer
+        customer_gap_days:
+          type: integer
+        daily_draft_cap:
+          type: integer
+        approval_ttl_hours:
+          type: integer
+        send_start:
+          type: string
+        send_end:
+          type: string
+        timezone:
+          type: string
+
+    CustomerFollowUpCapabilities:
+      type: object
+      additionalProperties: false
+      description: Bot-level readiness from FollowUpCapabilities::forBot — no token, chat id, user id or URL leaves it.
+      required: [supported, telegram_ready, automatic_allowed, blocked_reason, rules]
+      properties:
+        supported:
+          type: boolean
+        telegram_ready:
+          type: boolean
+        automatic_allowed:
+          type: boolean
+        blocked_reason:
+          type: [string, "null"]
+          enum: [null, line_only, bot_not_in_pilot, telegram_missing, telegram_allowlist_missing, webhook_secret_missing, writer_missing, admin_url_missing]
+        rules:
+          $ref: "#/components/schemas/CustomerFollowUpRules"
+
+    CustomerFollowUpSettingsFields:
+      type: object
+      additionalProperties: true
+      description: |
+        The four follow-up keys every settings response carries. Other settings
+        fields of the row are allowed here without being listed.
+      required: [follow_up_enabled, follow_up_mode, follow_up_started_at, follow_up_capabilities]
+      properties:
+        follow_up_enabled:
+          type: boolean
+        follow_up_mode:
+          type: string
+          enum: [approve, automatic]
+        follow_up_started_at:
+          type: [string, "null"]
+          format: date-time
+          description: ISO 8601 instant of the stored Bangkok wall time; null until the first successful enable.
+        follow_up_capabilities:
+          $ref: "#/components/schemas/CustomerFollowUpCapabilities"
+
+    GetBotSettingsResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CustomerFollowUpSettingsFields"
+
+    UpdateBotSettingsRequest:
+      type: object
+      additionalProperties: true
+      description: |
+        Any subset of the savable settings fields; only the two follow-up keys
+        are listed here. The internal snapshot keys and follow_up_capabilities
+        are never valid anywhere in the request (body or query), null included.
+      properties:
+        follow_up_enabled:
+          type: boolean
+        follow_up_mode:
+          type: string
+          enum: [approve, automatic]
+
+    UpdateBotSettingsResponse:
+      type: object
+      additionalProperties: false
+      required: [message, data]
+      properties:
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/CustomerFollowUpSettingsFields"
