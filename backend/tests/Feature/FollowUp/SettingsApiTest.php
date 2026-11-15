@@ -553,6 +553,93 @@ class SettingsApiTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // B5b — คีย์รุ่นเก่า lead_recovery_* ห้ามส่ง (สวิตช์เก่าที่ยังไม่มีอะไรส่ง)
+    // ------------------------------------------------------------------
+
+    /** ชุดคีย์/ค่ารุ่นเก่า: ทุกตัวที่ขึ้นต้น lead_recovery_ ต้องถูกปฏิเสธ ไม่สนค่าใด ๆ รวม null */
+    private function legacyKeyCases(): array
+    {
+        return [
+            ['lead_recovery_enabled', true],
+            ['lead_recovery_enabled', false],
+            ['lead_recovery_enabled', null],
+            ['lead_recovery_mode', 'approve'],
+            ['lead_recovery_message', 'ข้อความตามลูกค้า (ของสังเคราะห์)'],
+            ['lead_recovery_timeout_hours', 4],
+            ['lead_recovery_max_attempts', 2],
+            ['lead_recovery_anything', ['x' => 1]],
+        ];
+    }
+
+    #[Test]
+    public function test_legacy_lead_recovery_keys_are_refused_on_put_and_patch(): void
+    {
+        [$user, $bot] = $this->makeBaseline();
+
+        foreach ($this->legacyKeyCases() as [$key, $value]) {
+            foreach (['alone', 'beside_offline_message'] as $mode) {
+                foreach (['put', 'patch'] as $method) {
+                    $payload = $mode === 'alone'
+                        ? [$key => $value]
+                        : [$key => $value, 'offline_message' => 'x'];
+                    $before = $this->row($bot->id);
+
+                    $response = $method === 'put'
+                        ? $this->putSettings($user, $bot, $payload)
+                        : $this->patchSettings($user, $bot, $payload);
+
+                    $label = "{$method} {$key} (".var_export($value, true).") {$mode}";
+                    $response->assertStatus(422, "{$label} must be refused");
+                    $this->assertSame(
+                        "The {$key} field must not be sent.",
+                        $response->json("errors.{$key}.0"),
+                        "{$label} must point errors at the key with the exact message"
+                    );
+                    $this->assertSame((array) $before, (array) $this->row($bot->id), "{$label} must leave the row byte-equal");
+                    $this->assertNull($this->row($bot->id)->offline_message, "{$label} must not save offline_message");
+                }
+            }
+        }
+    }
+
+    #[Test]
+    public function test_legacy_key_refusal_on_bot_without_settings_row_creates_no_row(): void
+    {
+        [$user, $bot] = $this->makeSupportedBot();
+
+        $put = $this->putSettings($user, $bot, ['lead_recovery_enabled' => true]);
+        $patch = $this->patchSettings($user, $bot, ['lead_recovery_anything' => 1]);
+
+        $put->assertStatus(422, 'PUT lead_recovery_enabled on a bot without a settings row must be refused');
+        $patch->assertStatus(422, 'PATCH lead_recovery_anything on a bot without a settings row must be refused');
+        $this->assertNull($this->row($bot->id), 'a refused legacy request must not create the settings row');
+    }
+
+    #[Test]
+    public function test_keys_without_the_exact_prefix_are_not_refused_by_this_rule(): void
+    {
+        [$user, $bot] = $this->makeBaseline();
+
+        foreach (['leadrecovery_enabled', 'my_lead_recovery_enabled'] as $key) {
+            $before = $this->row($bot->id);
+
+            $put = $this->putSettings($user, $bot, [$key => true, 'offline_message' => 'x']);
+
+            $put->assertOk("{$key} must not be refused by the lead_recovery_ prefix rule");
+            $put->assertJsonMissingValidationErrors([$key], "{$key} must not be a validation error");
+            $after = $this->row($bot->id);
+            $this->assertSame('x', $after->offline_message, "{$key} beside offline_message must still save offline_message");
+            $this->assertColumns($after, [
+                'enabled' => (bool) $before->follow_up_enabled,
+                'mode' => $before->follow_up_mode,
+                'started_at' => $before->follow_up_started_at,
+                'activation_id' => $this->castId($before->follow_up_activation_message_id),
+                'activated_at' => $before->follow_up_activated_at,
+            ], "{$key} must not touch the five follow-up columns");
+        }
+    }
+
+    // ------------------------------------------------------------------
     // ทุกอย่างหรือไม่มีอะไรเลย
     // ------------------------------------------------------------------
 
