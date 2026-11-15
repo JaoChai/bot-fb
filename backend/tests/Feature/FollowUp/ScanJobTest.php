@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\User;
+use App\Services\FollowUp\FollowUpCapabilities;
 use App\Services\FollowUp\FollowUpPipeline;
 use App\Services\FollowUp\FollowUpPrompts;
 use App\Services\FollowUp\FollowUpReservationService;
@@ -59,6 +60,9 @@ class ScanJobTest extends TestCase
     /** @var list<array{url: string, data: array}> */
     private array $httpRequests = [];
 
+    /** @var list<int> Approval ids offered by the real jobs, in call order. */
+    private array $publishedIds = [];
+
     /** @var list<string> */
     private array $queries = [];
 
@@ -79,6 +83,16 @@ class ScanJobTest extends TestCase
             'services.openrouter.api_key' => 'test-key-'.'b6d',
             'services.telegram_alert.secret' => 'webhook-secret-'.'b6d',
         ]);
+
+        // Observe the caller boundary without replacing publish's DB/HTTP effects.
+        $telegram = app(FollowUpTelegramService::class);
+        $this->mock(FollowUpTelegramService::class, function (MockInterface $mock) use ($telegram): void {
+            $mock->shouldReceive('publish')->andReturnUsing(function (int $id, ?CarbonImmutable $now = null) use ($telegram): string {
+                $this->publishedIds[] = $id;
+
+                return $telegram->publish($id, $now);
+            });
+        });
     }
 
     protected function tearDown(): void
@@ -309,6 +323,29 @@ class ScanJobTest extends TestCase
             'a closed bot must not be refreshed'
         );
         $this->assertSame(0, DB::table('lead_recovery_logs')->where('bot_id', $closed->id)->count());
+    }
+
+    #[Test]
+    public function test_non_line_bot_is_also_blocked_by_capabilities_line_only(): void
+    {
+        $bot = $this->seedOpenBot();
+        $this->makeSilentSaleRoom($bot, 'UNONLINE');
+        $bot->update(['channel_type' => 'telegram']);
+        $this->assertSame('line_only', FollowUpCapabilities::forBot($bot->fresh(), $this->clock())['blocked_reason']);
+        $this->fakeModelApis();
+        Queue::fake();
+        $this->captureQueries();
+
+        $this->runScan();
+
+        $this->assertScanTouchedNothing('non-line capabilities');
+        $this->assertSame([], $this->publishedIds);
+
+        $bot->update(['channel_type' => 'line']);
+        $this->assertNull(FollowUpCapabilities::forBot($bot->fresh(), $this->clock())['blocked_reason']);
+        $this->runScan();
+        $this->assertSame(1, DB::table('lead_recovery_logs')->where('bot_id', $bot->id)->count());
+        Queue::assertPushed(GenerateCustomerFollowUp::class, 1);
     }
 
     // ------------------------------------------------------------------
@@ -628,13 +665,41 @@ class ScanJobTest extends TestCase
         $this->assertCount(6, $this->sendMessageRequests());
     }
 
+    #[Test]
+    public function test_step_c_queues_only_the_lowest_100_of_101_claimable_rows_on_both_scans(): void
+    {
+        $bot = $this->seedOpenBot();
+        $ids = [];
+        foreach (range(0, 100) as $index) {
+            $room = $this->makeSilentSaleRoom($bot, 'UCLAIM'.$index);
+            FollowUpSalesProjector::refresh($room, $this->clock());
+            $ids[] = app(FollowUpReservationService::class)->candidate($room, $this->clock())->id;
+        }
+        $before = DB::table('lead_recovery_logs')->where('bot_id', $bot->id)->orderBy('id')->get()->map(fn (object $row): array => (array) $row)->all();
+        $expectedIds = array_slice($ids, 0, 100);
+        $this->fakeModelApis();
+
+        foreach ([self::NOW, '2026-11-16 10:15:00'] as $clock) {
+            $this->setClock($clock);
+            Queue::fake();
+            $this->runScan();
+
+            $queuedIds = array_map(fn (array $pushed): int => $pushed['job']->logId, Queue::pushedJobs()[GenerateCustomerFollowUp::class] ?? []);
+            $this->assertSame($expectedIds, $queuedIds, '100 lowest ids only, including on the next scan while they remain candidate');
+            $this->assertNotContains($ids[100], $queuedIds, 'the highest id must be left out');
+            $this->assertSame($before, DB::table('lead_recovery_logs')->where('bot_id', $bot->id)->orderBy('id')->get()->map(fn (object $row): array => (array) $row)->all());
+        }
+        $this->assertSame([], $this->publishedIds);
+        $this->assertSame([], $this->httpRequests);
+    }
+
     // ------------------------------------------------------------------
     // Offer matrix (step D)
     // ------------------------------------------------------------------
 
     #[Test]
     #[DataProvider('stepDOfferCases')]
-    public function test_step_d_offer_matrix(array $overrides, int $expectedRequests, ?string $expectedState, bool $expectByteEqual): void
+    public function test_step_d_offer_matrix(array $overrides, int $expectedRequests, ?string $expectedState, bool $expectByteEqual, bool $expectPublish): void
     {
         $bot = $this->seedOpenBot();
         $room = $this->makeSilentSaleRoom($bot, 'UD');
@@ -649,6 +714,7 @@ class ScanJobTest extends TestCase
         $this->runScan();
 
         $this->assertCount($expectedRequests, $this->sendMessageRequests(), 'wrong number of sendMessage requests');
+        $this->assertSame($expectPublish ? [$approvalId] : [], $this->publishedIds, 'only eligible ids may consume a publish slot');
         $after = DB::table('follow_up_approvals')->where('id', $approvalId)->first();
         if ($expectedState !== null) {
             $this->assertSame($expectedState, (string) $after->telegram_delivery_state, 'wrong final telegram_delivery_state');
@@ -658,23 +724,66 @@ class ScanJobTest extends TestCase
         }
     }
 
-    /** @return array<string, array{array, int, ?string, bool}> */
+    /** @return array<string, array{array, int, ?string, bool, bool}> */
     public static function stepDOfferCases(): array
     {
         return [
-            'pending new unexpired' => [['status' => 'pending', 'telegram_delivery_state' => 'new'], 1, 'sent', false],
-            'pending sending young' => [['status' => 'pending', 'telegram_delivery_state' => 'sending', 'updated_at' => '2026-11-16 09:59:30'], 0, null, true],
-            'pending sending old' => [['status' => 'pending', 'telegram_delivery_state' => 'sending', 'updated_at' => '2026-11-16 09:57:59'], 0, 'unknown', false],
-            'pending sent state' => [['status' => 'pending', 'telegram_delivery_state' => 'sent'], 0, null, true],
-            'pending failed state' => [['status' => 'pending', 'telegram_delivery_state' => 'failed'], 0, null, true],
-            'pending unknown state' => [['status' => 'pending', 'telegram_delivery_state' => 'unknown'], 0, null, true],
-            'expires exactly at now' => [['status' => 'pending', 'expires_at' => '2026-11-16 10:00:00'], 0, null, true],
-            'approved new' => [['status' => 'approved'], 0, null, true],
-            'skipped new' => [['status' => 'skipped'], 0, null, true],
-            'expired new' => [['status' => 'expired'], 0, null, true],
-            'cancelled new' => [['status' => 'cancelled'], 0, null, true],
-            'sent approval new' => [['status' => 'sent'], 0, null, true],
-            'editing new' => [['status' => 'editing'], 0, null, true],
+            'pending new unexpired' => [['status' => 'pending', 'telegram_delivery_state' => 'new'], 1, 'sent', false, true],
+            'pending sending young' => [['status' => 'pending', 'telegram_delivery_state' => 'sending', 'updated_at' => '2026-11-16 09:59:30'], 0, null, true, true],
+            'pending sending old' => [['status' => 'pending', 'telegram_delivery_state' => 'sending', 'updated_at' => '2026-11-16 09:57:59'], 0, 'unknown', false, true],
+            'pending sent state' => [['status' => 'pending', 'telegram_delivery_state' => 'sent'], 0, null, true, false],
+            'pending failed state' => [['status' => 'pending', 'telegram_delivery_state' => 'failed'], 0, null, true, false],
+            'pending unknown state' => [['status' => 'pending', 'telegram_delivery_state' => 'unknown'], 0, null, true, false],
+            'expires exactly at now' => [['status' => 'pending', 'expires_at' => '2026-11-16 10:00:00'], 0, null, true, false],
+            'expires before now' => [['status' => 'pending', 'expires_at' => '2026-11-16 09:59:59'], 0, null, true, false],
+            'approved new' => [['status' => 'approved'], 0, null, true, false],
+            'skipped new' => [['status' => 'skipped'], 0, null, true, false],
+            'expired new' => [['status' => 'expired'], 0, null, true, false],
+            'cancelled new' => [['status' => 'cancelled'], 0, null, true, false],
+            'sent approval new' => [['status' => 'sent'], 0, null, true, false],
+            'editing new' => [['status' => 'editing'], 0, null, true, false],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('ineligibleLowIdCards')]
+    public function test_ineligible_low_ids_do_not_take_the_five_card_slots(array $overrides): void
+    {
+        $bot = $this->seedOpenBot();
+        $before = [];
+        foreach ($overrides as $index => $override) {
+            $id = $this->seedPendingApproval($bot, 'USLOT'.$index, $override + ['updated_at' => '2026-11-16 09:00:00']);
+            $before[$id] = (array) $this->approvalRow($id);
+        }
+        $this->assertCount(5, $before);
+        $readyId = $this->seedPendingApproval($bot, 'USLOTREADY');
+        $this->assertGreaterThan(max(array_keys($before)), $readyId);
+        $this->fakeModelApis();
+        Queue::fake();
+
+        $this->runScan();
+
+        $this->assertSame([$readyId], $this->publishedIds, 'ineligible older rows must not consume any of the five publish slots');
+        $this->assertCount(1, $this->sendMessageRequests(), 'the newer ready card must be sent in this same scan');
+        $this->assertSame('sent', $this->approvalRow($readyId)->telegram_delivery_state);
+        foreach ($before as $id => $row) {
+            $this->assertSame($row, (array) $this->approvalRow($id), "ineligible approval {$id} must stay byte-equal");
+        }
+        Queue::assertNothingPushed();
+    }
+
+    /** @return array<string, array{array}> */
+    public static function ineligibleLowIdCards(): array
+    {
+        return [
+            'five expire exactly now' => [array_fill(0, 5, ['expires_at' => self::NOW])],
+            'five non-pending statuses with new state' => [[
+                ['status' => 'expired'],
+                ['status' => 'skipped'],
+                ['status' => 'cancelled'],
+                ['status' => 'approved'],
+                ['status' => 'sent'],
+            ]],
         ];
     }
 
@@ -697,6 +806,7 @@ class ScanJobTest extends TestCase
         $this->runScan();
 
         $this->assertSame([], $this->sendMessageRequests(), 'a closed bot gets no card offer');
+        $this->assertSame([], $this->publishedIds, 'a closed bot must not call publish');
         $this->assertSame((array) $before, (array) DB::table('follow_up_approvals')->where('id', $approvalId)->first());
     }
 
@@ -788,6 +898,7 @@ class ScanJobTest extends TestCase
         $this->assertSame('sent', (string) $approval->telegram_delivery_state);
         $this->assertSame(4242, $approval->telegram_message_id === null ? null : (int) $approval->telegram_message_id, 'the accepted card message id must be stored');
         $this->assertCount(1, $this->sendMessageRequests(), 'exactly one sendMessage');
+        $this->assertSame([(int) $approval->id], $this->publishedIds);
         $this->assertStringContainsString($draft, (string) $this->sendMessageRequests()[0]['data']['text']);
     }
 
@@ -806,6 +917,7 @@ class ScanJobTest extends TestCase
         (new GenerateCustomerFollowUp($log->id))->handle(app(FollowUpPipeline::class), app(FollowUpTelegramService::class));
 
         $this->assertSame([], $this->sendMessageRequests(), 'no Telegram request');
+        $this->assertSame([], $this->publishedIds);
         $row = DB::table('lead_recovery_logs')->where('id', $log->id)->first();
         $this->assertSame($expectedStatusReason['status'], (string) $row->delivery_status, 'wrong final status');
         if (array_key_exists('reason', $expectedStatusReason)) {
@@ -860,33 +972,76 @@ class ScanJobTest extends TestCase
     }
 
     #[Test]
-    public function test_duplicate_drafting_job_states_are_not_republished(): void
+    #[DataProvider('duplicateDeliveryStates')]
+    public function test_duplicate_drafting_job_states_are_not_republished(string $state, string $updatedAt): void
     {
-        foreach (['sent', 'sending', 'failed', 'unknown'] as $state) {
-            $bot = $this->seedOpenBot();
-            $room = $this->makeSilentPaymentRoom($bot, 'UJ3', $this->clock());
-            FollowUpSalesProjector::refresh($room, $this->clock());
-            $log = app(FollowUpReservationService::class)->candidate($room, $this->clock());
-            $this->fakeModelApis();
-            // ห้องจ่ายเงิน + G2 → เดินต่อถึง pending (G3 จะโดนหน่วงรอกรอบขาย)
-            self::setSortAnswer(['group' => ['choice' => 'G2', 'confidence' => 0.9], 'declined' => ['noul' => 0.1]]);
-            $this->fakeWriterMany();
+        $bot = $this->seedOpenBot();
+        $room = $this->makeSilentPaymentRoom($bot, 'UJ3', $this->clock());
+        FollowUpSalesProjector::refresh($room, $this->clock());
+        $log = app(FollowUpReservationService::class)->candidate($room, $this->clock());
+        $this->fakeModelApis();
+        self::setSortAnswer(['group' => ['choice' => 'G2', 'confidence' => 0.9], 'declined' => ['noul' => 0.1]]);
+        $this->fakeWriterMany();
 
-            app(FollowUpPipeline::class)->prepare($log->id, $this->clock());
-            $approval = DB::table('follow_up_approvals')->where('lead_recovery_log_id', $log->id)->first();
-            $this->assertNotNull($approval, "state {$state}");
-            $update = ['telegram_delivery_state' => $state];
-            if ($state === 'sending') {
-                $update['updated_at'] = self::NOW;
-            }
-            DB::table('follow_up_approvals')->where('id', $approval->id)->update($update);
-            $before = DB::table('follow_up_approvals')->where('id', $approval->id)->first();
+        app(FollowUpPipeline::class)->prepare($log->id, $this->clock());
+        $approval = DB::table('follow_up_approvals')->where('lead_recovery_log_id', $log->id)->first();
+        $this->assertNotNull($approval);
+        DB::table('follow_up_approvals')->where('id', $approval->id)->update([
+            'telegram_delivery_state' => $state,
+            'updated_at' => $updatedAt,
+        ]);
+        $before = DB::table('follow_up_approvals')->where('id', $approval->id)->first();
 
-            (new GenerateCustomerFollowUp($log->id))->handle(app(FollowUpPipeline::class), app(FollowUpTelegramService::class));
+        $this->app->call([new GenerateCustomerFollowUp($log->id), 'handle']);
 
-            $this->assertSame([], $this->sendMessageRequests(), "state {$state} must not republish");
-            $this->assertSame((array) $before, (array) DB::table('follow_up_approvals')->where('id', $approval->id)->first(), "state {$state} row must stay untouched");
-        }
+        $this->assertSame([], $this->sendMessageRequests(), "state {$state} must not republish");
+        $this->assertSame([], $this->publishedIds, "state {$state} must not call publish even when the service would make no request");
+        $this->assertSame((array) $before, (array) DB::table('follow_up_approvals')->where('id', $approval->id)->first(), "state {$state} row must stay untouched");
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function duplicateDeliveryStates(): array
+    {
+        return [
+            'sent' => ['sent', '2026-11-16 09:00:00'],
+            'sending young' => ['sending', '2026-11-16 09:59:30'],
+            'sending older than 120 seconds' => ['sending', '2026-11-16 09:57:59'],
+            'failed' => ['failed', '2026-11-16 09:00:00'],
+            'unknown' => ['unknown', '2026-11-16 09:00:00'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('nonPendingApprovalStatuses')]
+    public function test_drafting_job_does_not_publish_a_non_pending_new_approval(string $status): void
+    {
+        $bot = $this->seedOpenBot();
+        $approvalId = $this->seedPendingApproval($bot, 'UJOBSTATUS', [
+            'status' => $status,
+            'updated_at' => '2026-11-16 09:00:00',
+        ]);
+        $approval = $this->approvalRow($approvalId);
+        $before = (array) $approval;
+        $this->fakeModelApis();
+
+        $this->app->call([new GenerateCustomerFollowUp((int) $approval->lead_recovery_log_id), 'handle']);
+
+        $this->assertSame([], $this->publishedIds, 'the job must filter non-pending approvals before publish');
+        $this->assertSame([], $this->httpRequests);
+        $this->assertSame($before, (array) $this->approvalRow($approvalId));
+    }
+
+    /** @return array<string, array{string}> */
+    public static function nonPendingApprovalStatuses(): array
+    {
+        return [
+            'approved' => ['approved'],
+            'skipped' => ['skipped'],
+            'expired' => ['expired'],
+            'cancelled' => ['cancelled'],
+            'sent' => ['sent'],
+            'editing' => ['editing'],
+        ];
     }
 
     #[Test]
@@ -1060,6 +1215,16 @@ class ScanJobTest extends TestCase
         return $room;
     }
 
+    private function seedPendingApproval(Bot $bot, string $externalCustomerId, array $overrides = []): int
+    {
+        $room = $this->makeSilentSaleRoom($bot, $externalCustomerId);
+        FollowUpSalesProjector::refresh($room, $this->clock());
+        $log = app(FollowUpReservationService::class)->candidate($room, $this->clock());
+        DB::table('lead_recovery_logs')->where('id', $log->id)->update(['delivery_status' => 'pending']);
+
+        return $this->makeApproval((int) $log->id, $overrides);
+    }
+
     private function makeApproval(int $logId, array $overrides = []): int
     {
         $row = array_merge([
@@ -1100,6 +1265,7 @@ class ScanJobTest extends TestCase
     private function fakeModelApis(): void
     {
         $this->httpRequests = [];
+        $this->publishedIds = [];
         $checkAnswer = array_fill_keys(array_keys(FollowUpPrompts::checkQuestions()), ['noul' => 0.1]);
         $sortUsage = ['input_tokens' => 100, 'output_tokens' => 20, 'cost' => 0.0001];
         $checkUsage = ['input_tokens' => 30, 'output_tokens' => 8, 'cost' => 0.0003];
