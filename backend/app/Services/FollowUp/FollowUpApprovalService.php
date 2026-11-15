@@ -2,6 +2,7 @@
 
 namespace App\Services\FollowUp;
 
+use App\Jobs\SendCustomerFollowUp;
 use App\Models\FlowPlugin;
 use App\Models\LeadRecoveryLog;
 use App\Services\Payment\TelegramAlertBotService;
@@ -10,6 +11,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
+use Throwable;
 
 /**
  * ปุ่มส่ง/ข้ามบนการ์ดตามลูกค้าใน Telegram — การ์ด B6b (plan §3.6, คำตัดสิน D75-D80)
@@ -794,6 +796,19 @@ class FollowUpApprovalService
         } elseif ($written || $repaint) {
             // ล้มเหลวที่นี่ไม่เปลี่ยนแถวและไม่เปลี่ยนผลคืน
             $this->followUpTelegram->refreshCard($approvalId);
+        }
+
+        // B6e: แท็ปอนุมัติ = คิวงานส่งทันทีหลังแก้การ์ด — dispatch พังไม่เปลี่ยน
+        // คำตอบ/แถว/ผลคืน เตือนบรรทัดเดียวเฉพาะชื่อ class (D105) สแกนเก็บงานแทน
+        if ($written && $action === 'approved') {
+            try {
+                SendCustomerFollowUp::dispatch($approvalId);
+            } catch (Throwable $dispatchFailure) {
+                Log::warning('Customer follow-up send job dispatch failed', [
+                    'approval_id' => $approvalId,
+                    'exception_class' => $dispatchFailure::class,
+                ]);
+            }
         }
 
         return $this->finish($approvalId, $logId, $botId, $code, $written ? $action : 'refused', $written ? 'written' : 'race', $fromId);

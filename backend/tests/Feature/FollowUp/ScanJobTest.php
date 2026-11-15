@@ -1162,6 +1162,7 @@ class ScanJobTest extends TestCase
     /** เมทริกซ์เคส step E — คืน case => approval id */
     private function seedMatrix(Bot $bot): array
     {
+        $keySuffix = bin2hex(random_bytes(4));
         $retryBase = [
             'delivery_status' => 'retry',
             'next_attempt_at' => '2026-11-16 10:00:00',
@@ -1169,7 +1170,7 @@ class ScanJobTest extends TestCase
             'first_push_at' => '2026-11-16 09:52:00',
             'message_sent' => 'ร่างทดสอบ step E ส่งงาน',
             'attempt_number' => 1,
-            'retry_key' => 'uuid-retry-base',
+            'retry_key' => '9e'.$keySuffix.'-0000-4000-8000-000000000001',
         ];
         $sendingBase = [
             'delivery_status' => 'sending',
@@ -1179,7 +1180,7 @@ class ScanJobTest extends TestCase
             'first_push_at' => '2026-11-16 09:50:00',
             'message_sent' => 'ร่างทดสอบ step E ส่งงาน',
             'attempt_number' => 1,
-            'retry_key' => 'uuid-sending-base',
+            'retry_key' => '9e'.$keySuffix.'-0000-4000-8000-000000000002',
         ];
         $approvedBase = ['delivery_status' => 'approved', 'updated_at' => '2026-11-16 09:58:00'];
         $sendingApproval = ['status' => 'sending'];
@@ -1204,6 +1205,8 @@ class ScanJobTest extends TestCase
 
         $ids = [];
         foreach ($cases as $name => [$logOverrides, $approvalOverrides]) {
+            // คีย์ต้องไม่ซ้ำระหว่างเคส — เคสต่าง ๆ คร่อม base เดียวกัน
+            $logOverrides['retry_key'] = bin2hex(random_bytes(16));
             $ids[$name] = $this->seedFollowPair($bot, $logOverrides, $approvalOverrides);
         }
 
@@ -1295,7 +1298,7 @@ class ScanJobTest extends TestCase
             'first_push_at' => '2026-11-16 09:52:00',
             'message_sent' => 'ร่างทดสอบ step E ส่งงาน',
             'attempt_number' => 1,
-            'retry_key' => 'uuid-other-bot',
+            'retry_key' => '9f'.bin2hex(random_bytes(4)).'-0000-4000-8000-000000000003',
         ], ['status' => 'sending']);
         config(['customer_follow_up.bot_ids' => [$bot->id]]);
 
@@ -1308,7 +1311,7 @@ class ScanJobTest extends TestCase
             $this->pushedSendIds(),
             'คิวเฉพาะแถวที่ถึงคิว/ค้าง/อนุมัติค้าง เรียง id น้อยไปมาก'
         );
-        $infoLines = array_values(array_filter($this->logCalls, fn (array $call): bool => $call['level'] === 'info'));
+        $infoLines = array_values(array_filter($this->logCalls, fn (array $call): bool => $call['level'] === 'info' && $call['message'] === 'Follow-up scan'));
         $this->assertSame(3, $infoLines[0]['context']['send_jobs_queued'] ?? -1);
 
         // พิสูจน์ที่สอง: send ในวินาทีเดียวกัน claims ชุดเดียวกับที่ step E คิว
@@ -1317,9 +1320,11 @@ class ScanJobTest extends TestCase
             fn (array $row): bool => $row['claimed'],
         ));
         $this->assertSame(
-            ['retry_due', 'sending_10m', 'approved_2m'],
+            ['retry_due', 'sending_10m', 'approved_2m', 'approved_1m59'],
             array_column($claimed, 'name'),
-            'send claims exactly the rows step E queued',
+            // approved_1m59 ไม่โดน step E คิว (ยังไม่ข้าม 2 นาที) แต่ send เรียกตรง ๆ claim ได้ —
+            // claim (a) ไม่มีหน้าต่างเวลา (B4 claim: approved+approved)
+            'send claims exactly the rows step E queued (plus fresh approved)',
         );
     }
 
@@ -1367,13 +1372,21 @@ class ScanJobTest extends TestCase
         // บอทเปิดสวิตช์แต่เลยเวลา 23:00 → เหมือนปิด: (r)+(s) เท่านั้น
         $night = $this->seedOpenBot();
         $nightIds = $this->seedMatrix($night);
+        // เคสเวลาสัมพัทธ์ (ยังไม่ถึงคิว / ยังไม่ค้าง) ต้องวัดจากนาฬิกา 23:00 ของบททดสอบนี้
+        $nightLogIds = DB::table('follow_up_approvals')
+            ->whereIn('id', [$nightIds['retry_not_due'], $nightIds['sending_9m59']])
+            ->pluck('lead_recovery_log_id', 'id');
+        DB::table('lead_recovery_logs')->where('id', $nightLogIds[$nightIds['retry_not_due']])
+            ->update(['next_attempt_at' => '2026-11-16 23:05:00']);
+        DB::table('lead_recovery_logs')->where('id', $nightLogIds[$nightIds['sending_9m59']])
+            ->update(['updated_at' => '2026-11-16 22:50:01']);
         config(['customer_follow_up.bot_ids' => [$night->id]]);
         $this->setClock('2026-11-16 23:00:00');
         Queue::fake();
         $this->startLogCapture();
         $this->runScan();
         $this->assertSame([$nightIds['retry_due'], $nightIds['sending_10m']], $this->pushedSendIds(), 'นอกเวลา: คิว (r)+(s) เท่านั้น');
-        $nightLines = array_values(array_filter($this->logCalls, fn (array $call): bool => $call['level'] === 'info'));
+        $nightLines = array_values(array_filter($this->logCalls, fn (array $call): bool => $call['level'] === 'info' && $call['message'] === 'Follow-up scan'));
         $this->assertCount(1, $nightLines);
         $this->assertSame(2, $nightLines[0]['context']['send_jobs_queued']);
     }
@@ -1382,15 +1395,16 @@ class ScanJobTest extends TestCase
     public function test_step_e_limit_does_not_take_non_qualifying_slots(): void
     {
         $bot = $this->seedOpenBot();
-        $blockers = [
-            [['delivery_status' => 'retry', 'next_attempt_at' => '2026-11-16 23:00:00', 'updated_at' => '2026-11-16 09:52:00', 'first_push_at' => '2026-11-16 09:52:00', 'message_sent' => 'ร่าง', 'attempt_number' => 1, 'retry_key' => 'k'], ['status' => 'sending']],
-            [['delivery_status' => 'sending', 'updated_at' => '2026-11-16 09:51:01', 'first_push_at' => '2026-11-16 09:51:01', 'message_sent' => 'ร่าง', 'attempt_number' => 1, 'retry_key' => 'k'], ['status' => 'sending']],
+        $blockerTemplates = [
+            [['delivery_status' => 'retry', 'next_attempt_at' => '2026-11-16 23:00:00', 'updated_at' => '2026-11-16 09:52:00', 'first_push_at' => '2026-11-16 09:52:00', 'message_sent' => 'ร่าง', 'attempt_number' => 1], ['status' => 'sending']],
+            [['delivery_status' => 'sending', 'updated_at' => '2026-11-16 09:51:01', 'first_push_at' => '2026-11-16 09:51:01', 'message_sent' => 'ร่าง', 'attempt_number' => 1], ['status' => 'sending']],
             [['delivery_status' => 'approved', 'updated_at' => '2026-11-16 09:59:01'], ['status' => 'approved']],
             [['delivery_status' => 'approved', 'updated_at' => '2026-11-16 09:00:00'], ['status' => 'pending']],
         ];
         $blockerIds = [];
         for ($i = 0; $i < 20; $i++) {
-            [$logOverrides, $approvalOverrides] = $blockers[$i % 4];
+            [$logOverrides, $approvalOverrides] = $blockerTemplates[$i % 4];
+            $logOverrides['retry_key'] = bin2hex(random_bytes(16));
             $blockerIds[] = $this->seedFollowPair($bot, $logOverrides, $approvalOverrides);
         }
         $due = $this->seedFollowPair($bot, [
@@ -1400,7 +1414,7 @@ class ScanJobTest extends TestCase
             'first_push_at' => '2026-11-16 09:52:00',
             'message_sent' => 'ร่าง',
             'attempt_number' => 1,
-            'retry_key' => 'k-due',
+            'retry_key' => '83'.bin2hex(random_bytes(4)).'-0000-4000-8000-000000000006',
         ], ['status' => 'sending']);
 
         sort($blockerIds);

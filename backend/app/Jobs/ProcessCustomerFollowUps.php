@@ -73,6 +73,15 @@ class ProcessCustomerFollowUps implements ShouldQueue
     /** แถวที่รอเกินกว่านี้ไม่เข้าคิวอีก — B6f คือคนปิด (D97) */
     private const WAITING_MAX_DAYS = 7;
 
+    /** งานส่งสูงสุดต่อบอทต่อสแกน (step E) */
+    private const MAX_SEND_JOBS = 20;
+
+    /** sending ที่ค้างไม่น้อยกว่านี้ถือว่า worker ตาย — step E ชนิด s (นาที) */
+    private const SEND_STALE_MINUTES = 10;
+
+    /** approved ที่ค้างไม่น้อยกว่านี้ถึงเก็บ — แท็ปมีงานของตัวเองแล้ว (นาที) */
+    private const SEND_APPROVED_MIN_AGE = 2;
+
     public function handle(FollowUpReservationService $reservations, FollowUpTelegramService $telegram): void
     {
         // นาฬิกาครั้งเดียวต่อการทำงาน — ทุกขั้นใช้วินาทีนี้ตลอด (การ์ด B6d)
@@ -87,6 +96,21 @@ class ProcessCustomerFollowUps implements ShouldQueue
     {
         $bot = Bot::query()->find($botId);
 
+        if ($bot === null) {
+            return;
+        }
+
+        // ---- E. เก็บงานส่งค้างก่อน gate (D104): แถวที่ยิงแล้วต้องถึงจุดจบแม้
+        // บอทปิดอยู่ — (r) ถึงคิว และ (s) ค้าง 10 นาที คิวเสมอ, (a) อนุมัติค้าง
+        // 2 นาที เมื่อบอทเปิดเท่านั้น (gate เดียวกับ A-D) ----
+        $scanStartedAt = microtime(true);
+        $botOpen = (string) $bot->status === 'active'
+            && (string) $bot->channel_type === 'line'
+            && $this->switchIsOn($botId)
+            && $this->withinSendingHours($now)
+            && (FollowUpCapabilities::forBot($bot, $now)['blocked_reason'] === null);
+        $sendJobsQueued = $this->queueSendJobs($botId, $now, $botOpen);
+
         if ($bot === null
             || (string) $bot->status !== 'active'
             || (string) $bot->channel_type !== 'line'
@@ -94,7 +118,23 @@ class ProcessCustomerFollowUps implements ShouldQueue
             || ! $this->withinSendingHours($now)
             || (FollowUpCapabilities::forBot($bot, $now)['blocked_reason'] !== null)
         ) {
-            // D97: บอทปิด = SELECT เท่านั้น ไม่เขียน ไม่คิว ไม่ HTTP ไม่ log เหนือ debug
+            // D104: บอทปิดที่คิวงานส่ง = info line ครั้งเดียว นับเฉพาะงาน step E
+            if ($sendJobsQueued > 0) {
+                Log::info('Follow-up scan', [
+                    'bot_id' => $botId,
+                    'rooms_refreshed' => 0,
+                    'rooms_failed' => 0,
+                    'eligible_rooms' => 0,
+                    'candidates_created' => 0,
+                    'jobs_queued' => 0,
+                    'cards_offered' => 0,
+                    'card_results' => [],
+                    'send_jobs_queued' => $sendJobsQueued,
+                    'milliseconds' => (int) round((microtime(true) - $scanStartedAt) * 1000),
+                ]);
+            }
+
+            // D97: บอทปิด = SELECT เท่านั้น ไม่เขียน ไม่ HTTP ไม่ log เหนือ debug
             return;
         }
 
@@ -141,8 +181,58 @@ class ProcessCustomerFollowUps implements ShouldQueue
             'jobs_queued' => $queued,
             'cards_offered' => $cards['offered'],
             'card_results' => $cards['results'],
+            'send_jobs_queued' => $sendJobsQueued,
             'milliseconds' => (int) round((microtime(true) - $startedAt) * 1000),
         ]);
+    }
+
+    /**
+     * E. งานส่งค้างของบอท (D104) — SELECT แล้วคิว SendCustomerFollowUp เท่านั้น
+     * เขียนอะไรลงตารางไม่ลง ยิง HTTP ไม่มี คิว id น้อยไปมากไม่เกิน 20 ต่อบอทต่อสแกน
+     *
+     * @return int จำนวนงานที่คิวรอบนี้
+     */
+    private function queueSendJobs(int $botId, CarbonImmutable $now, bool $botOpen): int
+    {
+        $nowString = $now->format('Y-m-d H:i:s');
+        $sendingCutoff = $now->subMinutes(self::SEND_STALE_MINUTES)->format('Y-m-d H:i:s');
+        $approvedCutoff = $now->subMinutes(self::SEND_APPROVED_MIN_AGE)->format('Y-m-d H:i:s');
+
+        $ids = DB::table('follow_up_approvals as a')
+            ->join('lead_recovery_logs as l', 'l.id', '=', 'a.lead_recovery_log_id')
+            ->where('l.bot_id', $botId)
+            ->where(function ($query) use ($nowString, $sendingCutoff, $approvedCutoff, $botOpen): void {
+                // (r) ยิงไม่เข้า (LINE 500/timeout) และถึงคิวรอบใหม่แล้ว
+                $query->where(function ($retry) use ($nowString): void {
+                    $retry->where('l.delivery_status', LeadRecoveryLog::DELIVERY_STATUS_RETRY)
+                        ->where('a.status', FollowUpApproval::STATUS_SENDING)
+                        ->whereNotNull('l.next_attempt_at')
+                        ->where('l.next_attempt_at', '<=', $nowString);
+                });
+                // (s) งานส่งค้าง — worker ตายทิ้ง
+                $query->orWhere(function ($stale) use ($sendingCutoff): void {
+                    $stale->where('l.delivery_status', LeadRecoveryLog::DELIVERY_STATUS_SENDING)
+                        ->where('a.status', FollowUpApproval::STATUS_SENDING)
+                        ->where('l.updated_at', '<=', $sendingCutoff);
+                });
+                // (a) อนุมัติแล้วแต่งานไม่มา — บอทเปิดเท่านั้น
+                if ($botOpen) {
+                    $query->orWhere(function ($approved) use ($approvedCutoff): void {
+                        $approved->where('l.delivery_status', LeadRecoveryLog::DELIVERY_STATUS_APPROVED)
+                            ->where('a.status', FollowUpApproval::STATUS_APPROVED)
+                            ->where('l.updated_at', '<=', $approvedCutoff);
+                    });
+                }
+            })
+            ->orderBy('a.id')
+            ->limit(self::MAX_SEND_JOBS)
+            ->pluck('a.id');
+
+        foreach ($ids as $id) {
+            SendCustomerFollowUp::dispatch((int) $id);
+        }
+
+        return count($ids);
     }
 
     /** สวิตช์ของบอท — ต้องมี bot_settings เปิดครบสามคอลัมน์ (D97) */

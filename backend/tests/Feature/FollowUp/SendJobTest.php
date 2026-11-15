@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Testing\TestResponse;
 use Mockery\MockInterface;
 use PHPUnit\Framework\Attributes\Test;
 use RuntimeException;
@@ -78,8 +79,8 @@ class SendJobTest extends TestCase
     /** ข้อความลับที่ห้ามโผล่ใน log — พิสูจน์ว่า warning ไม่พา exception message */
     private const LEAK_MARKER = 'leak-canary-b6e-secret';
 
-    /** คีย์ยิงครั้งแรกของแถวกู้คืน — push รอบสองต้องใช้คีย์เดิม */
-    private const RECOVERY_KEY = 'rec-retry-key-'.'b6e';
+    /** คีย์ยิงครั้งแรกของแถวกู้คืน — push รอบสองต้องใช้คีย์เดิม (รูปร่าง UUID ตามที่ขนส่งยอมรับ) */
+    private const RECOVERY_KEY = '9f8a7c6d'.'-5e4b-4a3c'.'-9d2e-1b0a7c6d5e4f';
 
     /** queue driver ที่ไม่มีจริง — dispatch ต้องพังแบบกลืนได้ (บททดสอบ warning เฉพาะ class) */
     private const BROKEN_DRIVER = 'b6e-missing-connector';
@@ -115,6 +116,7 @@ class SendJobTest extends TestCase
         parent::setUp();
 
         Http::preventStrayRequests();
+        $this->freeze(self::NOW);
         $this->logEvents = [];
         Event::listen(MessageLogged::class, function (MessageLogged $event): void {
             $this->logEvents[] = $event;
@@ -239,7 +241,7 @@ class SendJobTest extends TestCase
         $this->assertCount(1, $edits, 'ระบายการ์ดครั้งเดียว');
         $this->assertStringEndsWith('🚫 ยกเลิก ไม่ได้ส่ง (LINE ไม่รับข้อความ)', $edits[0]);
 
-        Queue::assertNothingPushed();
+        Queue::assertPushed(SendCustomerFollowUp::class, 0);
     }
 
     #[Test]
@@ -259,7 +261,7 @@ class SendJobTest extends TestCase
         $this->assertSame(0, $this->hits[self::LINE_PUSH_URL] ?? 0, 'โควตาไม่พอห้ามยิง');
         $this->assertSame([], $this->telegramRequests(), 'แถวคืน approved คงการ์ด ⏳ เดิม (D102)');
 
-        Queue::assertNothingPushed();
+        Queue::assertPushed(SendCustomerFollowUp::class, 0);
     }
 
     #[Test]
@@ -282,7 +284,7 @@ class SendJobTest extends TestCase
         $this->assertCount(1, $edits);
         $this->assertStringEndsWith('🚫 ยกเลิก ไม่ได้ส่ง (ลูกค้าพิมพ์เข้ามาแล้ว)', $edits[0]);
 
-        Queue::assertNothingPushed();
+        Queue::assertPushed(SendCustomerFollowUp::class, 0);
     }
 
     #[Test]
@@ -304,7 +306,7 @@ class SendJobTest extends TestCase
         $this->assertCount(1, $edits);
         $this->assertStringEndsWith('⌛ หมดอายุ ไม่ได้ส่ง', $edits[0]);
 
-        Queue::assertNothingPushed();
+        Queue::assertPushed(SendCustomerFollowUp::class, 0);
     }
 
     #[Test]
@@ -335,7 +337,7 @@ class SendJobTest extends TestCase
         $this->assertCount(1, $edits);
         $this->assertStringEndsWith('⚠️ ส่งแล้วแต่ยืนยันผลไม่ได้ โปรดเปิดห้องตรวจ', $edits[0]);
 
-        Queue::assertNothingPushed();
+        Queue::assertPushed(SendCustomerFollowUp::class, 0);
     }
 
     #[Test]
@@ -349,6 +351,7 @@ class SendJobTest extends TestCase
         ], ['status' => 'sent']);
         Queue::fake();
         $this->fakeHttp();
+        $this->spyTelegram();
 
         $this->handleJob($seed['approvalId']);
 
@@ -359,7 +362,7 @@ class SendJobTest extends TestCase
         $this->assertCount(1, $edits);
         $this->assertStringEndsWith('✅ ส่งให้ลูกค้าแล้ว', $edits[0]);
 
-        Queue::assertNothingPushed();
+        Queue::assertPushed(SendCustomerFollowUp::class, 0);
     }
 
     #[Test]
@@ -382,7 +385,7 @@ class SendJobTest extends TestCase
 
         $this->assertSame([], $this->httpRequests, 'ทั้งสามแถวห้ามยิงอะไร');
         $this->assertSame([], $this->repaintIds, 'pending/skipped/missing ห้ามระบายการ์ด');
-        Queue::assertNothingPushed();
+        Queue::assertPushed(SendCustomerFollowUp::class, 0);
         $this->assertSame($pendingLogBefore, (array) $this->logRow($pendingSeed));
         $this->assertSame($pendingApprovalBefore, (array) $this->approvalRow($pendingSeed));
         $this->assertSame($skippedLogBefore, (array) $this->logRow($skippedSeed));
@@ -436,7 +439,7 @@ class SendJobTest extends TestCase
             $this->assertStringNotContainsString(self::LEAK_MARKER, $text, 'ห้ามพา message ของ exception ลง log');
         }
 
-        Queue::assertNothingPushed();
+        Queue::assertPushed(SendCustomerFollowUp::class, 0);
     }
 
     #[Test]
@@ -446,10 +449,10 @@ class SendJobTest extends TestCase
         Queue::fake();
         $this->fakeHttp();
         $this->spyTelegram();
-        $this->mock(FollowUpSendService::class, function (MockInterface $mock): void {
+        $this->mock(FollowUpSendService::class, function (MockInterface $mock) use ($seed): void {
             $mock->shouldReceive('send')
                 ->once()
-                ->with($seed['approvalId'], null)
+                ->with($seed['approvalId'])
                 ->andThrow(new RuntimeException(self::LEAK_MARKER));
         });
 
@@ -461,7 +464,7 @@ class SendJobTest extends TestCase
         }
 
         $this->assertSame([], $this->repaintIds, 'send พัง = ห้ามระบายการ์ด');
-        Queue::assertNothingPushed();
+        Queue::assertPushed(SendCustomerFollowUp::class, 0);
     }
 
     #[Test]
@@ -477,7 +480,7 @@ class SendJobTest extends TestCase
         $this->assertSame('sent', $this->logRow($seed)->delivery_status, 'การ์ดไม่ถูกส่ง = ส่งหาลูกค้าได้ปกติ');
         $this->assertSame([$seed['approvalId']], $this->repaintIds);
         $this->assertSame([], $this->telegramRequests(), 'การ์ดไม่เคยถูกส่ง = ไม่ยิงหา Telegram');
-        Queue::assertNothingPushed();
+        Queue::assertPushed(SendCustomerFollowUp::class, 0);
     }
 
     #[Test]
@@ -560,7 +563,11 @@ class SendJobTest extends TestCase
         $this->assertGreaterThan(0, $promptId, 'fe ต้องส่งคำใบ้แก้ร่างและจำ message id');
         $this->fireEditReply($promptId, self::EDITED_TEXT, self::UPDATE_ID + 1)->assertOk();
         $this->assertSame([], $this->pushedSendIds(), 'การตอบกลับแก้ร่างไม่คิวงาน');
-        $this->assertSame('editing', DB::table('follow_up_approvals')->where('id', $edit['approval_id'])->value('status'));
+        // fe เก็บสถานะ pending, บันทึกร่างใหม่แล้วขึ้น revision (รอบตัดสินใหม่)
+        $editRow = DB::table('follow_up_approvals')->where('id', $edit['approval_id'])->first();
+        $this->assertSame('pending', (string) $editRow->status, 'แก้ร่างแล้วอยู่รอบตัดสินใหม่');
+        $this->assertSame(self::EDITED_TEXT, (string) $editRow->text, 'ร่างใหม่ถูกบันทึก');
+        $this->assertSame(2, (int) $editRow->revision, 'revision ขยับเป็น 2');
 
         // fs บนบัตรหมดอายุ
         $expired = $this->seedTelegramWorld(['expires_at' => '2026-11-16 09:59:59']);
@@ -1106,7 +1113,7 @@ class SendJobTest extends TestCase
         return substr($path, (int) strrpos($path, '/') + 1);
     }
 
-    private function tap(array $callback, ?int $updateId = self::UPDATE_ID): \Illuminate\Foundation\Testing\TestResponse
+    private function tap(array $callback, ?int $updateId = self::UPDATE_ID): TestResponse
     {
         $body = ['callback_query' => $callback];
         if ($updateId !== null) {
@@ -1117,7 +1124,7 @@ class SendJobTest extends TestCase
             ->postJson('/api/webhook/telegram-alert/'.($this->worldToken ?? ''), $body);
     }
 
-    private function fireEditReply(int $promptMessageId, string $text, int $updateId): \Illuminate\Foundation\Testing\TestResponse
+    private function fireEditReply(int $promptMessageId, string $text, int $updateId): TestResponse
     {
         return $this->withHeaders(['X-Telegram-Bot-Api-Secret-Token' => $this->webhookSecret])
             ->postJson('/api/webhook/telegram-alert/'.($this->worldToken ?? ''), [

@@ -1243,9 +1243,9 @@ TEXT;
         $this->assertRowChangedOnly($beforeLog, $log, ['delivery_status', 'owner_action', 'owner_telegram_user_id', 'owner_action_at', 'check_overridden', 'updated_at']);
 
         // ไม่มีการยิงหาลูกค้า งานส่งคิวหนึ่งตัวของบัตรนี้พอดี ไม่มีแถวข้อความ (B6e)
-        Queue::assertPushed(SendCustomerFollowUp::class, 1);
-        Queue::assertPushed(SendCustomerFollowUp::class, fn (SendCustomerFollowUp $job): bool => $job->approvalId === $seed['approval_id']);
-        Bus::assertNothingDispatched();
+        Bus::assertDispatched(SendCustomerFollowUp::class, 1);
+        Bus::assertDispatched(SendCustomerFollowUp::class, fn (SendCustomerFollowUp $job): bool => $job->approvalId === $seed['approval_id']);
+        Queue::assertNothingPushed();
         self::assertSame(5, DB::table('messages')->where('conversation_id', $seed['room']->id)->count(), 'ห้ามเพิ่มแถวข้อความ');
     }
 
