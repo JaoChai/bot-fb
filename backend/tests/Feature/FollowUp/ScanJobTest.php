@@ -338,7 +338,7 @@ class ScanJobTest extends TestCase
         DB::table('conversations')->where('id', $deletedRoom->id)->update(['deleted_at' => '2026-11-16 09:00:00']);
         $anonymousRoom = $this->makeSilentSaleRoom($bot, '');
         $webRoom = $this->makeSilentSaleRoom($bot, 'UB36');
-        DB::table('conversations')->where('id', $webRoom->id)->update(['channel_type' => 'web']);
+        DB::table('conversations')->where('id', $webRoom->id)->update(['channel_type' => 'facebook']);
         $otherBot = $this->seedOpenBot();
         $otherRoom = $this->makeSilentSaleRoom($otherBot, 'UB37');
         // ห้องของบอทอื่นอยู่นอกลิสต์สแกนรอบนี้ — ล็อกลิสต์ไว้ที่บอทหลักบอทเดียว
