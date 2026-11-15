@@ -4,6 +4,7 @@ namespace Tests\Feature\FollowUp;
 
 use App\Jobs\GenerateCustomerFollowUp;
 use App\Jobs\ProcessCustomerFollowUps;
+use App\Jobs\SendCustomerFollowUp;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Flow;
@@ -14,6 +15,7 @@ use App\Services\FollowUp\FollowUpPipeline;
 use App\Services\FollowUp\FollowUpPrompts;
 use App\Services\FollowUp\FollowUpReservationService;
 use App\Services\FollowUp\FollowUpSalesProjector;
+use App\Services\FollowUp\FollowUpSendService;
 use App\Services\FollowUp\FollowUpTelegramService;
 use App\Services\OpenRouterService;
 use Carbon\Carbon;
@@ -465,7 +467,7 @@ class ScanJobTest extends TestCase
         $infoLines = array_values(array_filter($this->logCalls, fn (array $call): bool => $call['level'] === 'info'));
         $this->assertCount(1, $infoLines, 'one info line per open bot per scan');
         $this->assertSame(
-            ['bot_id', 'rooms_refreshed', 'rooms_failed', 'eligible_rooms', 'candidates_created', 'jobs_queued', 'cards_offered', 'card_results', 'milliseconds'],
+            ['bot_id', 'rooms_refreshed', 'rooms_failed', 'eligible_rooms', 'candidates_created', 'jobs_queued', 'cards_offered', 'card_results', 'send_jobs_queued', 'milliseconds'],
             array_keys($infoLines[0]['context'])
         );
         $this->assertSame($bot->id, $infoLines[0]['context']['bot_id']);
@@ -1152,6 +1154,306 @@ class ScanJobTest extends TestCase
     // ------------------------------------------------------------------
     // Fixtures and helpers
     // ------------------------------------------------------------------
+
+    // ------------------------------------------------------------------
+    // Step E — งานส่งค้าง (D104): รันก่อน gate, (r)/(s) เสมอ, (a) เมื่อบอทเปิดเท่านั้น
+    // ------------------------------------------------------------------
+
+    /** เมทริกซ์เคส step E — คืน case => approval id */
+    private function seedMatrix(Bot $bot): array
+    {
+        $retryBase = [
+            'delivery_status' => 'retry',
+            'next_attempt_at' => '2026-11-16 10:00:00',
+            'updated_at' => '2026-11-16 09:52:00',
+            'first_push_at' => '2026-11-16 09:52:00',
+            'message_sent' => 'ร่างทดสอบ step E ส่งงาน',
+            'attempt_number' => 1,
+            'retry_key' => 'uuid-retry-base',
+        ];
+        $sendingBase = [
+            'delivery_status' => 'sending',
+            'updated_at' => '2026-11-16 09:50:00',
+            'claimed_at' => '2026-11-16 09:50:00',
+            'claim_token' => 'claim-token-base',
+            'first_push_at' => '2026-11-16 09:50:00',
+            'message_sent' => 'ร่างทดสอบ step E ส่งงาน',
+            'attempt_number' => 1,
+            'retry_key' => 'uuid-sending-base',
+        ];
+        $approvedBase = ['delivery_status' => 'approved', 'updated_at' => '2026-11-16 09:58:00'];
+        $sendingApproval = ['status' => 'sending'];
+
+        $cases = [
+            'retry_due' => [$retryBase, $sendingApproval],
+            'retry_not_due' => [array_merge($retryBase, ['next_attempt_at' => '2026-11-16 23:00:00']), $sendingApproval],
+            'retry_null_next' => [array_merge($retryBase, ['next_attempt_at' => null]), $sendingApproval],
+            'sending_10m' => [$sendingBase, $sendingApproval],
+            'sending_9m59' => [array_merge($sendingBase, ['updated_at' => '2026-11-16 09:50:01']), $sendingApproval],
+            'approved_2m' => [$approvedBase, ['status' => 'approved']],
+            'approved_1m59' => [array_merge($approvedBase, ['updated_at' => '2026-11-16 09:58:01']), ['status' => 'approved']],
+            'log_approved_appr_pending' => [array_merge($approvedBase, ['updated_at' => '2026-11-16 09:00:00']), ['status' => 'pending']],
+            'log_retry_appr_approved' => [array_merge($retryBase, ['next_attempt_at' => '2026-11-16 09:00:00', 'updated_at' => '2026-11-16 09:00:00']), ['status' => 'approved']],
+            'pending_pair' => [['delivery_status' => 'pending'], ['status' => 'pending']],
+            'sent_pair' => [['delivery_status' => 'sent', 'sent_at' => '2026-11-16 09:00:00'], ['status' => 'sent']],
+            'send_failed_pair' => [['delivery_status' => 'send_failed'], ['status' => 'cancelled']],
+            'skipped_pair' => [['delivery_status' => 'skipped'], ['status' => 'skipped']],
+            'expired_pair' => [['delivery_status' => 'expired'], ['status' => 'expired']],
+            'cancelled_pair' => [['delivery_status' => 'cancelled'], ['status' => 'cancelled']],
+        ];
+
+        $ids = [];
+        foreach ($cases as $name => [$logOverrides, $approvalOverrides]) {
+            $ids[$name] = $this->seedFollowPair($bot, $logOverrides, $approvalOverrides);
+        }
+
+        return $ids;
+    }
+
+    /** คู่ log + approval สำหรับ step E — คืน approval id */
+    private function seedFollowPair(Bot $bot, array $logOverrides = [], array $approvalOverrides = []): int
+    {
+        $room = Conversation::factory()->line()->create([
+            'bot_id' => $bot->id,
+            'external_customer_id' => 'UE'.bin2hex(random_bytes(8)),
+        ]);
+        $logId = (int) DB::table('lead_recovery_logs')->insertGetId(array_merge([
+            'conversation_id' => $room->id,
+            'bot_id' => $bot->id,
+            'attempt_number' => 0,
+            'attempt_count' => 0,
+            'message_mode' => 'ai',
+            'delivery_status' => 'approved',
+            'customer_key' => hash('sha256', $bot->id.'|line|'.$room->external_customer_id),
+            'draft' => 'ร่างทดสอบ step E ส่งงาน',
+            'drafted_at' => '2026-11-16 09:30:00',
+            'draft_day' => '2026-11-16',
+            'draft_model' => 'openai/gpt-6-luna-writer',
+            'check_answers' => json_encode(['scores' => [], 'failed' => [], 'error' => false, 'version' => 1]),
+            'owner_action' => 'sent',
+            'owner_action_at' => '2026-11-16 09:55:00',
+            'owner_telegram_user_id' => '555',
+            'created_at' => '2026-11-16 09:55:00',
+            'updated_at' => '2026-11-16 09:55:00',
+        ], $logOverrides));
+
+        return (int) DB::table('follow_up_approvals')->insertGetId(array_merge([
+            'lead_recovery_log_id' => $logId,
+            'status' => 'approved',
+            'revision' => 1,
+            'nonce' => 'ef12cd34ab56ab78',
+            'text' => 'ร่างทดสอบ step E ส่งงาน',
+            'check_answers' => json_encode(['scores' => [], 'failed' => [], 'error' => false, 'version' => 1]),
+            'expires_at' => '2026-11-16 22:00:00',
+            'telegram_delivery_state' => 'new',
+            'created_at' => self::NOW,
+            'updated_at' => self::NOW,
+        ], $approvalOverrides));
+    }
+
+    /** @return list<int> approval id ของงาน SendCustomerFollowUp ที่ถูก push ตามจังหวะ */
+    private function pushedSendIds(): array
+    {
+        return array_map(
+            fn (array $pushed): int => $pushed['job']->approvalId,
+            Queue::pushedJobs()[SendCustomerFollowUp::class] ?? [],
+        );
+    }
+
+    /** @return array<int, array{name: string, claimed: bool}> ผล send ต่อเคสเมทริกซ์ */
+    private function sendProof(Bot $bot): array
+    {
+        $proofIds = $this->seedMatrix($bot);
+        $rows = [];
+        foreach ($proofIds as $name => $approvalId) {
+            $result = app(FollowUpSendService::class)->send($approvalId, $this->clock());
+            $reason = null;
+            foreach (array_reverse($this->logCalls) as $call) {
+                if ($call['level'] === 'info' && $call['message'] === 'Customer follow-up send'
+                    && ($call['context']['approval_id'] ?? null) === $approvalId) {
+                    $reason = $call['context']['reason'] ?? null;
+                    break;
+                }
+            }
+            $rows[] = ['name' => $name, 'claimed' => $result !== 'blocked' || $reason !== 'claim_refused'];
+        }
+
+        return $rows;
+    }
+
+    #[Test]
+    public function test_step_e_open_bot_queues_exactly_the_claimable_rows_in_order(): void
+    {
+        $bot = $this->seedOpenBot();
+        $ids = $this->seedMatrix($bot);
+        // แถวของบอทอื่น: สแกนของบอทนี้ห้ามแตะ (join ตาม bot_id)
+        $other = $this->seedOpenBot();
+        $ids['other_bot'] = $this->seedFollowPair($other, [
+            'delivery_status' => 'retry',
+            'next_attempt_at' => '2026-11-16 09:59:00',
+            'updated_at' => '2026-11-16 09:52:00',
+            'first_push_at' => '2026-11-16 09:52:00',
+            'message_sent' => 'ร่างทดสอบ step E ส่งงาน',
+            'attempt_number' => 1,
+            'retry_key' => 'uuid-other-bot',
+        ], ['status' => 'sending']);
+        config(['customer_follow_up.bot_ids' => [$bot->id]]);
+
+        Queue::fake();
+        $this->startLogCapture();
+        $this->runScan();
+
+        $this->assertSame(
+            [$ids['retry_due'], $ids['sending_10m'], $ids['approved_2m']],
+            $this->pushedSendIds(),
+            'คิวเฉพาะแถวที่ถึงคิว/ค้าง/อนุมัติค้าง เรียง id น้อยไปมาก'
+        );
+        $infoLines = array_values(array_filter($this->logCalls, fn (array $call): bool => $call['level'] === 'info'));
+        $this->assertSame(3, $infoLines[0]['context']['send_jobs_queued'] ?? -1);
+
+        // พิสูจน์ที่สอง: send ในวินาทีเดียวกัน claims ชุดเดียวกับที่ step E คิว
+        $claimed = array_values(array_filter(
+            $this->sendProof($bot),
+            fn (array $row): bool => $row['claimed'],
+        ));
+        $this->assertSame(
+            ['retry_due', 'sending_10m', 'approved_2m'],
+            array_column($claimed, 'name'),
+            'send claims exactly the rows step E queued',
+        );
+    }
+
+    #[Test]
+    public function test_step_e_closed_bot_queues_only_due_retry_and_stale_sending(): void
+    {
+        // บอทปิดแต่ไม่มีแถว (r)/(s) — เหมือน B6d เดิม: SELECT เท่านั้น ไม่คิว ไม่มี info line
+        $quiet = $this->seedOpenBot();
+        DB::table('bot_settings')->where('bot_id', $quiet->id)->update(['follow_up_enabled' => false]);
+        $this->seedFollowPair($quiet, ['delivery_status' => 'approved', 'updated_at' => '2026-11-16 09:00:00']);
+        $this->seedFollowPair($quiet, ['delivery_status' => 'pending'], ['status' => 'pending']);
+        config(['customer_follow_up.bot_ids' => [$quiet->id]]);
+        Queue::fake();
+        $this->captureQueries();
+        $this->startLogCapture();
+        $this->runScan();
+        $this->assertSame([], $this->pushedSendIds(), 'บอทปิดไม่มีแถวค้าง = ไม่คิวงาน');
+        $this->assertSame([], array_values(array_filter($this->logCalls, fn (array $call): bool => $call['level'] === 'info')), 'ไม่มี info line');
+        $this->assertSame([], $this->writeTableNames(), 'บอทปิด SELECT เท่านั้น');
+
+        // บอทปิดด้วยสวิตช์ + มีแถว (r) ถึงคิว และ (s) ค้าง → คิวทั้งคู่ ไม่รับ (a)
+        $switch = $this->seedOpenBot();
+        DB::table('bot_settings')->where('bot_id', $switch->id)->update(['follow_up_enabled' => false]);
+        $ids = $this->seedMatrix($switch);
+        config(['customer_follow_up.bot_ids' => [$switch->id]]);
+        Queue::fake();
+        $this->captureQueries();
+        $this->startLogCapture();
+        $this->runScan();
+        $this->assertSame([$ids['retry_due'], $ids['sending_10m']], $this->pushedSendIds(), 'ปิดสวิตช์: คิว (r)+(s) เท่านั้น');
+        $this->assertSame([], $this->writeTableNames(), 'การคิวงานเขียนอะไรลงตารางไม่ได้');
+        $infoLines = array_values(array_filter($this->logCalls, fn (array $call): bool => $call['level'] === 'info'));
+        $this->assertCount(1, $infoLines, 'คิวแล้วต้องมี info line หนึ่งบรรทัด');
+        $context = $infoLines[0]['context'];
+        $this->assertSame($switch->id, $context['bot_id']);
+        $this->assertSame(0, $context['rooms_refreshed']);
+        $this->assertSame(0, $context['rooms_failed']);
+        $this->assertSame(0, $context['eligible_rooms']);
+        $this->assertSame(0, $context['candidates_created']);
+        $this->assertSame(0, $context['jobs_queued']);
+        $this->assertSame(0, $context['cards_offered']);
+        $this->assertSame([], $context['card_results']);
+        $this->assertSame(2, $context['send_jobs_queued']);
+
+        // บอทเปิดสวิตช์แต่เลยเวลา 23:00 → เหมือนปิด: (r)+(s) เท่านั้น
+        $night = $this->seedOpenBot();
+        $nightIds = $this->seedMatrix($night);
+        config(['customer_follow_up.bot_ids' => [$night->id]]);
+        $this->setClock('2026-11-16 23:00:00');
+        Queue::fake();
+        $this->startLogCapture();
+        $this->runScan();
+        $this->assertSame([$nightIds['retry_due'], $nightIds['sending_10m']], $this->pushedSendIds(), 'นอกเวลา: คิว (r)+(s) เท่านั้น');
+        $nightLines = array_values(array_filter($this->logCalls, fn (array $call): bool => $call['level'] === 'info'));
+        $this->assertCount(1, $nightLines);
+        $this->assertSame(2, $nightLines[0]['context']['send_jobs_queued']);
+    }
+
+    #[Test]
+    public function test_step_e_limit_does_not_take_non_qualifying_slots(): void
+    {
+        $bot = $this->seedOpenBot();
+        $blockers = [
+            [['delivery_status' => 'retry', 'next_attempt_at' => '2026-11-16 23:00:00', 'updated_at' => '2026-11-16 09:52:00', 'first_push_at' => '2026-11-16 09:52:00', 'message_sent' => 'ร่าง', 'attempt_number' => 1, 'retry_key' => 'k'], ['status' => 'sending']],
+            [['delivery_status' => 'sending', 'updated_at' => '2026-11-16 09:51:01', 'first_push_at' => '2026-11-16 09:51:01', 'message_sent' => 'ร่าง', 'attempt_number' => 1, 'retry_key' => 'k'], ['status' => 'sending']],
+            [['delivery_status' => 'approved', 'updated_at' => '2026-11-16 09:59:01'], ['status' => 'approved']],
+            [['delivery_status' => 'approved', 'updated_at' => '2026-11-16 09:00:00'], ['status' => 'pending']],
+        ];
+        $blockerIds = [];
+        for ($i = 0; $i < 20; $i++) {
+            [$logOverrides, $approvalOverrides] = $blockers[$i % 4];
+            $blockerIds[] = $this->seedFollowPair($bot, $logOverrides, $approvalOverrides);
+        }
+        $due = $this->seedFollowPair($bot, [
+            'delivery_status' => 'retry',
+            'next_attempt_at' => '2026-11-16 09:59:00',
+            'updated_at' => '2026-11-16 09:52:00',
+            'first_push_at' => '2026-11-16 09:52:00',
+            'message_sent' => 'ร่าง',
+            'attempt_number' => 1,
+            'retry_key' => 'k-due',
+        ], ['status' => 'sending']);
+
+        sort($blockerIds);
+        $before = DB::table('follow_up_approvals')->whereIn('id', $blockerIds)->orderBy('id')->get()
+            ->map(fn (object $row): array => (array) $row)->all();
+        Queue::fake();
+        $this->runScan();
+
+        $this->assertSame([$due], $this->pushedSendIds(), 'ตำแหน่ง 20 ตัวต้องไม่รับแถวที่ไม่เข้าเงื่อนไข');
+        $after = DB::table('follow_up_approvals')->whereIn('id', $blockerIds)->orderBy('id')->get()
+            ->map(fn (object $row): array => (array) $row)->all();
+        $this->assertSame($before, $after, 'แถวที่ไม่เข้าเงื่อนไขคงเดิมทุกไบต์');
+    }
+
+    #[Test]
+    public function test_step_e_queues_the_20_lowest_due_ids_and_starts_from_the_lowest_next_scan(): void
+    {
+        $bot = $this->seedOpenBot();
+        $ids = [];
+        for ($i = 0; $i < 21; $i++) {
+            $ids[] = $this->seedFollowPair($bot, [
+                'delivery_status' => 'retry',
+                'next_attempt_at' => '2026-11-16 09:59:00',
+                'updated_at' => '2026-11-16 09:52:00',
+                'first_push_at' => '2026-11-16 09:52:00',
+                'message_sent' => 'ร่าง',
+                'attempt_number' => 1,
+                'retry_key' => 'k'.$i,
+            ], ['status' => 'sending']);
+        }
+        $expected = array_slice($ids, 0, 20);
+
+        Queue::fake();
+        $this->runScan();
+        $this->assertSame($expected, $this->pushedSendIds(), 'ยี่สิบ id น้อยสุด ตัวใหญ่สุดตกคิว');
+
+        Queue::fake();
+        $this->runScan();
+        $this->assertSame($expected, $this->pushedSendIds(), 'สแกนรอบถัดไปยังเริ่มจาก id น้อยสุด');
+    }
+
+    #[Test]
+    public function test_step_e_bot_id_without_a_bots_row_is_silent(): void
+    {
+        config(['customer_follow_up.bot_ids' => [424242]]);
+        Queue::fake();
+        $this->startLogCapture();
+
+        $this->runScan();
+
+        $this->assertSame([], $this->pushedSendIds());
+        $this->assertSame([], array_values(array_filter($this->logCalls, fn (array $call): bool => $call['level'] === 'info')), 'ไม่มี bots row = เงียบทั้งหมด');
+    }
 
     private function seedOpenBot(): Bot
     {
