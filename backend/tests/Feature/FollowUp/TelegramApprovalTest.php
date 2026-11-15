@@ -952,24 +952,28 @@ TEXT;
     }
 
     #[Test]
-    public function new_codes_reach_the_new_service_and_answer_not_ready(): void
+    public function fe_and_fc_reach_the_new_service(): void
     {
         $seed = $this->seedWorld();
         $beforeApproval = $this->approvalRow($seed['approval_id']);
         $beforeLog = $this->logRow($seed['log_id']);
 
+        // fe: stub เดิมไม่คืน message id ช่องจึงเปิดไม่สำเร็จ — ตอบแจ้งแล้วเขียนอะไรไม่ลง
         [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fe', $seed['approval_id'])));
 
         $response->assertOk()->assertExactJson(['ok' => true]);
-        $this->assertSingleAnswer($requests, 'ปุ่มนี้ยังไม่เปิดใช้', true);
-        self::assertCount(1, $requests, 'fe ต้องตอบแล้วจบ ไม่มี request อื่น');
+        $sends = array_values(array_filter($requests, fn ($r) => str_ends_with((string) $r->url(), '/sendMessage')));
+        self::assertCount(1, $sends, 'fe ต้องพยายามโพสต์ช่องแก้หนึ่งครั้ง');
+        $this->assertSingleAnswer($requests, 'เปิดช่องแก้ข้อความไม่สำเร็จ กดปุ่ม แก้ข้อความ อีกครั้ง', true);
+        self::assertCount(2, $requests);
         $this->noRowChanged($beforeApproval, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
 
+        // fc บนบัตรที่ยังไม่แก้: stale แล้วระบายการ์ดให้ปุ่มใช้ได้ (D87)
         [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fc', $seed['approval_id'])));
 
         $response->assertOk()->assertExactJson(['ok' => true]);
-        $this->assertSingleAnswer($requests, 'ปุ่มนี้ยังไม่เปิดใช้', true);
-        self::assertCount(1, $requests);
+        $this->assertSingleAnswer($requests, 'การ์ดนี้เป็นรุ่นเก่า ใช้การ์ดล่าสุดแทน', true);
+        self::assertCount(2, $requests);
     }
 
     // ------------------------------------------------- 3) ตารางอัตลักษณ์ (identity)
@@ -993,8 +997,8 @@ TEXT;
             'approval of another plugin' => [[], 'other_plugin_id', 'not_found', 1, ['not_found']],
             'stored chat differs' => [[], 'other_chat_id', 'not_found', 1, ['not_found']],
             'log bot differs from plugin bot' => [[], 'other_bot_log', 'not_found', 1, ['not_found']],
-            'wrong revision' => [[], 'wrong_revision', 'stale_card', 1, ['stale_card']],
-            'wrong nonce' => [[], 'wrong_nonce', 'stale_card', 1, ['stale_card']],
+            'wrong revision' => [[], 'wrong_revision', 'stale_card', 2, ['stale_card']],
+            'wrong nonce' => [[], 'wrong_nonce', 'stale_card', 2, ['stale_card']],
             'message_id as string' => [['message' => ['message_id' => '77', 'chat' => ['id' => 888]]], null, 'not_found', 1, ['not_found']],
             'different message_id' => [['message' => ['message_id' => 78, 'chat' => ['id' => 888]]], null, 'not_found', 1, ['not_found']],
             'state new' => [[], 'state_new', 'not_found', 1, ['not_found']],
@@ -1484,7 +1488,7 @@ TEXT;
     }
 
     #[Test]
-    public function send_on_edited_revision_answers_not_ready(): void
+    public function send_on_edited_revision_with_clean_check_approves_as_edited(): void
     {
         $seed = $this->seedWorld(['revision' => 2, 'approval_text' => self::DRAFT."\nบรรทัดแก้ไข"]);
         $beforeApproval = $this->approvalRow($seed['approval_id']);
@@ -1493,15 +1497,24 @@ TEXT;
         [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'], 2)));
 
         $response->assertOk()->assertExactJson(['ok' => true]);
-        $this->assertSingleAnswer($requests, 'ปุ่มนี้ยังไม่เปิดใช้', true);
-        self::assertCount(1, $requests);
-        $this->noRowChanged($beforeApproval, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
+        $this->assertSingleAnswer($requests, 'รับคำสั่งแล้ว กำลังส่งให้ลูกค้า', false);
+        self::assertCount(2, $requests, 'ตอบคนกดแล้วระบายสถานะทับการ์ด');
+        $this->assertSingleEdit($requests);
+        $afterLog = $this->logRow($seed['log_id']);
+        self::assertSame('approved', $afterLog->delivery_status);
+        self::assertSame('edited', $afterLog->owner_action);
+        self::assertSame(0, (int) $afterLog->check_overridden);
+        $afterApproval = $this->approvalRow($seed['approval_id']);
+        self::assertSame('approved', $afterApproval->status);
+        self::assertNull($afterApproval->confirmed_revision);
+        $this->assertRowChangedOnly($beforeApproval, $afterApproval, ['status', 'check_overridden', 'updated_at', 'last_update_id']);
+        $this->assertRowChangedOnly($beforeLog, $afterLog, ['delivery_status', 'owner_action', 'owner_telegram_user_id', 'owner_action_at', 'check_overridden', 'updated_at']);
     }
 
     #[Test]
-    public function send_on_revision_1_with_text_different_from_draft_answers_not_ready(): void
+    public function send_on_revision_1_with_text_different_from_draft_approves_as_edited(): void
     {
-        // revision ยังเป็น 1 แต่ร่างบนบัตรไม่ตรง draft ใน log — ยังไม่พร้อมส่งจนกว่า B6c
+        // revision ยังเป็น 1 แต่ร่างบนบัตรไม่ตรง draft ใน log — ถือเป็นบัตรแก้แล้ว (E)
         $seed = $this->seedWorld(['approval_text' => self::DRAFT."\nแก้เองบางส่วน"]);
         $beforeApproval = $this->approvalRow($seed['approval_id']);
         $beforeLog = $this->logRow($seed['log_id']);
@@ -1509,9 +1522,12 @@ TEXT;
         [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])));
 
         $response->assertOk()->assertExactJson(['ok' => true]);
-        $this->assertSingleAnswer($requests, 'ปุ่มนี้ยังไม่เปิดใช้', true);
-        self::assertCount(1, $requests);
-        $this->noRowChanged($beforeApproval, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
+        $this->assertSingleAnswer($requests, 'รับคำสั่งแล้ว กำลังส่งให้ลูกค้า', false);
+        self::assertCount(2, $requests);
+        $afterLog = $this->logRow($seed['log_id']);
+        self::assertSame('approved', $afterLog->delivery_status);
+        self::assertSame('edited', $afterLog->owner_action);
+        $this->assertRowChangedOnly($beforeLog, $afterLog, ['delivery_status', 'owner_action', 'owner_telegram_user_id', 'owner_action_at', 'check_overridden', 'updated_at']);
     }
 
     #[Test]
@@ -1658,7 +1674,7 @@ TEXT;
 
         $response->assertOk()->assertExactJson(['ok' => true]);
         $this->assertSingleAnswer($requests, 'กดส่งไปแล้ว กำลังส่งให้ลูกค้า', true);
-        self::assertCount(1, $requests, 'การกดซ้ำต้องตอบอย่างเดียว ไม่แก้การ์ดซ้ำ');
+        self::assertCount(2, $requests, 'การกดซ้ำต้องตอบแล้วระบายสถานะทับการ์ดเดิม (D82)');
         $afterSecond = $this->approvalRow($seed['approval_id']);
         $this->assertRowChangedOnly($afterFirst, $afterSecond, []);
         self::assertSame('approved', $afterSecond->status);
@@ -1690,7 +1706,9 @@ TEXT;
 
         $response->assertOk()->assertExactJson(['ok' => true]);
         $this->assertSingleAnswer($requests, $expectedAnswer, true);
-        self::assertCount(1, $requests);
+        self::assertCount(2, $requests, 'กดซ้ำต้องตอบแล้วระบายสถานะทับการ์ดเดิม (D82)');
+        $edits = array_values(array_filter($requests, fn ($r) => str_ends_with((string) $r->url(), '/editMessageText')));
+        self::assertCount(1, $edits, 'ระบายสถานะครั้งเดียว');
         $afterSecond = $this->approvalRow($seed['approval_id']);
         $this->assertRowChangedOnly($afterFirst, $afterSecond, []);
         $this->assertRowChangedOnly($beforeLog, $this->logRow($seed['log_id']), []);
@@ -1701,23 +1719,23 @@ TEXT;
     public static function statusTableCases(): array
     {
         return [
-            'fs on sending' => ['fs', 'sending', 'กดส่งไปแล้ว กำลังส่งให้ลูกค้า'],
-            'fs on sent' => ['fs', 'sent', 'ส่งให้ลูกค้าไปแล้ว'],
-            'fs on expired' => ['fs', 'expired', 'หมดอายุแล้ว ไม่ได้ส่ง'],
-            'fs on cancelled' => ['fs', 'cancelled', 'รายการนี้ถูกยกเลิกแล้ว ไม่ได้ส่ง'],
-            'fs on editing' => ['fs', 'editing', 'กำลังแก้ข้อความอยู่'],
-            'fk on sending' => ['fk', 'sending', 'กดส่งไปแล้ว ข้ามไม่ได้'],
-            'fk on approved' => ['fk', 'approved', 'กดส่งไปแล้ว ข้ามไม่ได้'],
-            'fk on sent' => ['fk', 'sent', 'ส่งให้ลูกค้าไปแล้ว'],
-            'fk on expired' => ['fk', 'expired', 'หมดอายุแล้ว ไม่ได้ส่ง'],
-            'fk on cancelled' => ['fk', 'cancelled', 'รายการนี้ถูกยกเลิกแล้ว ไม่ได้ส่ง'],
-            'fk on editing' => ['fk', 'editing', 'กำลังแก้ข้อความอยู่'],
+            'fs on sending' => ['fs', 'sending', 'กดส่งไปแล้ว กำลังส่งให้ลูกค้า', 2],
+            'fs on sent' => ['fs', 'sent', 'ส่งให้ลูกค้าไปแล้ว', 2],
+            'fs on expired' => ['fs', 'expired', 'หมดอายุแล้ว ไม่ได้ส่ง', 2],
+            'fs on cancelled' => ['fs', 'cancelled', 'รายการนี้ถูกยกเลิกแล้ว ไม่ได้ส่ง', 2],
+            'fs on editing' => ['fs', 'editing', 'กำลังแก้ข้อความอยู่', 1],
+            'fk on sending' => ['fk', 'sending', 'กดส่งไปแล้ว ข้ามไม่ได้', 2],
+            'fk on approved' => ['fk', 'approved', 'กดส่งไปแล้ว ข้ามไม่ได้', 2],
+            'fk on sent' => ['fk', 'sent', 'ส่งให้ลูกค้าไปแล้ว', 2],
+            'fk on expired' => ['fk', 'expired', 'หมดอายุแล้ว ไม่ได้ส่ง', 2],
+            'fk on cancelled' => ['fk', 'cancelled', 'รายการนี้ถูกยกเลิกแล้ว ไม่ได้ส่ง', 2],
+            'fk on editing' => ['fk', 'editing', 'กำลังแก้ข้อความอยู่', 1],
         ];
     }
 
     #[Test]
     #[DataProvider('statusTableCases')]
-    public function fs_and_fk_on_other_statuses_answer_the_status(string $code, string $status, string $expectedAnswer): void
+    public function fs_and_fk_on_other_statuses_answer_the_status(string $code, string $status, string $expectedAnswer, int $expectedRequests): void
     {
         $seed = $this->seedWorld(['approval_status' => $status]);
         $beforeApproval = $this->approvalRow($seed['approval_id']);
@@ -1726,31 +1744,38 @@ TEXT;
 
         $response->assertOk()->assertExactJson(['ok' => true]);
         $this->assertSingleAnswer($requests, $expectedAnswer, true);
-        self::assertCount(1, $requests);
+        self::assertCount($expectedRequests, $requests, 'สถานะที่ระบายได้ต้องตอบแล้วระบายการ์ด (D82), editing = ตอบอย่างเดียว');
         $this->assertRowChangedOnly($beforeApproval, $this->approvalRow($seed['approval_id']), []);
         self::assertSame($status, $this->approvalRow($seed['approval_id'])->status);
     }
 
     #[Test]
-    public function fe_and_fc_by_allowed_person_on_live_card_answer_not_ready(): void
+    public function fe_opens_the_prompt_and_fc_on_an_unedited_card_answers_stale(): void
     {
         $seed = $this->seedWorld();
         $beforeApproval = $this->approvalRow($seed['approval_id']);
         $beforeLog = $this->logRow($seed['log_id']);
 
-        foreach (['fe', 'fc'] as $code) {
-            [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData($code, $seed['approval_id'])));
-            $response->assertOk()->assertExactJson(['ok' => true]);
-            $this->assertSingleAnswer($requests, 'ปุ่มนี้ยังไม่เปิดใช้', true);
-            self::assertCount(1, $requests);
-            $this->noRowChanged($beforeApproval, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
-        }
+        // fe: stub เดิมไม่คืน message id ช่องเปิดไม่สำเร็จ — ตอบแจ้งและเขียนอะไรไม่ลง
+        [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fe', $seed['approval_id'])));
+        $response->assertOk()->assertExactJson(['ok' => true]);
+        $this->assertSingleAnswer($requests, 'เปิดช่องแก้ข้อความไม่สำเร็จ กดปุ่ม แก้ข้อความ อีกครั้ง', true);
+        self::assertCount(2, $requests);
+        $this->noRowChanged($beforeApproval, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
 
-        // คนนอกกด fe ยังไงก็ได้คำตอบ no_permission
+        // fc บนบัตรที่ยังไม่แก้ = การ์ดรุ่นเก่า ระบายการ์ดใหม่ให้ปุ่มใช้ได้ (D87)
+        [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fc', $seed['approval_id'])));
+        $response->assertOk()->assertExactJson(['ok' => true]);
+        $this->assertSingleAnswer($requests, 'การ์ดนี้เป็นรุ่นเก่า ใช้การ์ดล่าสุดแทน', true);
+        self::assertCount(2, $requests);
+
+        // คนนอกกด fe ยังไงก็ได้คำตอบ no_permission และไม่มีช่องแก้
         $outsider = ['from' => ['id' => 666, 'first_name' => 'คนแปลกหน้า']];
         [$response, $requests] = $this->tap($this->baseCallback($outsider, $this->cbData('fe', $seed['approval_id'])));
         $response->assertOk()->assertExactJson(['ok' => true]);
         $this->assertSingleAnswer($requests, 'ไม่มีสิทธิ์กดปุ่มนี้', true);
+        $sends = array_values(array_filter($requests, fn ($r) => str_ends_with((string) $r->url(), '/sendMessage')));
+        self::assertCount(0, $sends);
     }
 
     // ------------------------------------------------- 8) แข่งกับ writer อื่น
@@ -1784,7 +1809,7 @@ TEXT;
 
         $response->assertOk()->assertExactJson(['ok' => true]);
         $this->assertSingleAnswer($requests, 'กดส่งไปแล้ว กำลังส่งให้ลูกค้า', true);
-        self::assertCount(1, $requests);
+        self::assertCount(2, $requests, 'แพ้แข่งต้องตอบแล้วระบายสถานะทับการ์ดเดิมด้วย (D82)');
 
         $after = $this->approvalRow($seed['approval_id']);
         self::assertSame('approved', $after->status);

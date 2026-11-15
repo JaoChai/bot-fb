@@ -8,6 +8,7 @@ use App\Models\FlowPlugin;
 use App\Models\User;
 use App\Services\Payment\TelegramAlertBotService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class SetTelegramAlertWebhookTest extends TestCase
@@ -43,5 +44,21 @@ class SetTelegramAlertWebhookTest extends TestCase
         });
 
         $this->artisan('telegram:alert-webhook')->assertExitCode(0);
+    }
+
+    public function test_set_webhook_request_holds_allowed_updates_for_both_update_types(): void
+    {
+        config(['app.url' => 'https://ex.com', 'services.telegram_alert.secret' => 'SEC']);
+        $this->seedTelegramPlugin('TOK');
+        Http::fake(['https://api.telegram.org/botTOK/setWebhook' => Http::response(['ok' => true], 200)]);
+
+        $this->artisan('telegram:alert-webhook')->assertExitCode(0);
+
+        Http::assertSent(function ($request) {
+            return $request->url() === 'https://api.telegram.org/botTOK/setWebhook'
+                && $request['url'] === 'https://ex.com/api/webhook/telegram-alert/TOK'
+                && $request['secret_token'] === 'SEC'
+                && $request['allowed_updates'] === ['callback_query', 'message'];
+        });
     }
 }
