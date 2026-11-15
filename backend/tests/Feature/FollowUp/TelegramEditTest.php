@@ -1030,19 +1030,95 @@ TEXT;
         $this->assertNoSecretsInLog();
     }
 
-    #[Test]
-    public function d91_nbsp_at_the_edges_is_saved_as_typed(): void
+    // ------------------------- 4c) D93 — ปรับช่องว่าง/ตัวคั่นบรรทัด และกฎติดต่อแบบ marker
+
+    /** @return array<string, array{0: string, 1: string}> */
+    public static function d93WhitespaceNoticeProvider(): array
     {
-        $text = "\u{00A0}สวัสดีครับพี่\u{00A0}";
+        return [
+            // F1: NBSP สองตัวว่างหลังปรับ — ต้องโดนกฎความยาว ไม่ใช่เซฟเป็นข้อความใหม่
+            'two nbsp' => ["\u{00A0}\u{00A0}", self::INVALID_LENGTH],
+            'ideographic space only' => ["\u{3000}", self::INVALID_LENGTH],
+            // F1: U+2028 ต้องนับเป็นตัวคั่นบรรทัด — กฎ 3 บรรทัดต้องเห็น 5 วรรคนี้
+            'five parts joined by U+2028' => ["ก\u{2028}ข\u{2028}ค\u{2028}ง\u{2028}จ", self::INVALID_LINES],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('d93WhitespaceNoticeProvider')]
+    public function d93_blank_after_normalizing_or_too_many_lines_gets_its_notice(string $text, string $expectedNotice): void
+    {
+        $seed = $this->bindPrompt();
+
+        [$response, $requests] = $this->postReply($this->replyMessage(['text' => $text]));
+
+        $response->assertOk();
+        $this->assertSingleSend($requests, $expectedNotice.self::EDIT_RETRY_SUFFIX, 900);
+        self::assertSame(1, (int) $this->approvalRow($seed['approval_id'])->revision, 'D93: ข้อความที่ปรับแล้วว่างหมดหรือบรรทัดเกิน ห้ามเซฟ');
+        $this->assertNoSecretsInLog();
+    }
+
+    /** @return array<string, array{0: string, 1: string}> */
+    public static function d93SavedTextProvider(): array
+    {
+        return [
+            // เทสต์เดิมของ D91 (d91_nbsp_at_the_edges_is_saved_as_typed, :1034) → D93: เก็บแบบตัดขอบเป็นช่องว่างธรรมดา
+            'nbsp at both edges' => ["\u{00A0}สวัสดีครับพี่\u{00A0}", 'สวัสดีครับพี่'],
+            'nbsp between words becomes a plain space' => ["สวัสดี\u{00A0}ครับพี่", "สวัสดี ครับพี่"],
+            'U+2028 becomes a newline' => ["ก\u{2028}ข", "ก\nข"],
+            // F2: redact แค่แปลงรูปอักขระ (…, ＡＢＣ, ½) — ไม่ใช่ของที่ห้าม ต้องเซฟตรงตามที่พิมพ์
+            'ellipsis as typed' => ['จุดไข่ปลา… ครับ', 'จุดไข่ปลา… ครับ'],
+            'fullwidth letters as typed' => ['ＡＢＣ ตัวเต็ม', 'ＡＢＣ ตัวเต็ม'],
+            'vulgar fraction half as typed' => ['ครึ่ง ½ ราคา', 'ครึ่ง ½ ราคา'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('d93SavedTextProvider')]
+    public function d93_normalizes_separators_and_saves_harmless_typing_byte_equal(string $text, string $expectedSaved): void
+    {
         $seed = $this->bindPrompt();
         $requests = [];
 
         [$response, $requests] = $this->postReply($this->replyMessage(['text' => $text]), stub: $this->stubWithMessageIds($requests));
 
         $response->assertOk();
-        self::assertCount(2, $requests);
+        self::assertCount(2, $requests, 'เซฟ = ระบายการ์ด + แจ้งคน');
         $this->assertSingleSend($requests, str_replace('{log_id}', (string) $seed['log_id'], self::NOTICE_EDIT_SAVED), 900);
-        self::assertSame($text, $this->approvalRow($seed['approval_id'])->text, 'D91: NBSP ที่ขอบเก็บตรงตามที่พิมพ์');
+        $after = $this->approvalRow($seed['approval_id']);
+        self::assertSame(2, (int) $after->revision);
+        self::assertSame($expectedSaved, $after->text, 'D93: เซฟหลังปรับช่องว่าง/ตัวคั่น — เนื้อความตรงตามที่พิมพ์');
+        $this->assertNoSecretsInLog();
+    }
+
+    /** @return array<string, array{0: string}> */
+    public static function d93ContactProvider(): array
+    {
+        return [
+            // เลขเต็ม/เลขไทย/เบอร์คั่น NBSP — redact ทับด้วย marker [redacted: ต้องโดนกฎติดต่อเหมือนเดิม
+            'fullwidth digits phone' => ['โทร '."\u{FF10}\u{FF18}\u{FF11}\u{FF12}\u{FF13}\u{FF14}\u{FF15}\u{FF16}\u{FF17}\u{FF18}".' ครับ'],
+            'thai digits phone' => ['ไทยเลข '."\u{0E51}\u{0E52}\u{0E53}\u{0E54}\u{0E55}\u{0E56}\u{0E57}\u{0E58}\u{0E59}\u{0E50}".' ครับ'],
+            'phone joined by nbsp' => ["โทร 081\u{00A0}234\u{00A0}5678 ครับ"],
+            'url' => ['ดูที่ https://example.co/x ครับ'],
+            'email' => ['ส่งที่ a@b.co ครับ'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('d93ContactProvider')]
+    public function d93_redact_marker_cases_get_the_contact_notice(string $text): void
+    {
+        $seed = $this->bindPrompt();
+
+        [$response, $requests] = $this->postReply($this->replyMessage(['text' => $text]));
+
+        $response->assertOk();
+        $this->assertSingleSend($requests, self::INVALID_CONTACT.self::EDIT_RETRY_SUFFIX, 900);
+        self::assertSame(1, (int) $this->approvalRow($seed['approval_id'])->revision, 'D93: เบอร์/ลิงก์/อีเมลยังห้ามเซฟ');
+        foreach ($requests as $request) {
+            self::assertStringNotContainsString($text, (string) $request['text'], 'D93: ห้าม echo ข้อความที่พิมพ์');
+        }
+        $this->assertNoSecretsInLog();
     }
 
     #[Test]
