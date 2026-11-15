@@ -2455,4 +2455,65 @@ TEXT;
         $this->assertNoBotMarkerInLog();
         $this->assertNoSecretsInLog();
     }
+
+    #[Test]
+    public function saving_an_edit_invalidates_the_previous_clean_check_and_confirmation(): void
+    {
+        $this->bindPinnedNonce(self::NEW_NONCE);
+        $seed = $this->bindPrompt([
+            'golden_ids' => true,
+            'check_answers' => self::CLEAN_CHECK,
+            'approval_updated_at' => '2026-11-16 09:59:00',
+            'approval_overrides' => [
+                'check_overridden' => true,
+                'confirmed_revision' => 1,
+                'last_update_id' => self::UPDATE_ID - 1,
+            ],
+        ]);
+        $before = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
+        self::assertSame(self::DRAFT, $before->text);
+        self::assertSame(1, (int) $before->revision);
+        self::assertSame(self::NONCE, $before->nonce);
+        self::assertNotNull($before->check_answers);
+        self::assertFalse(FollowUpSendService::checkFlagged((string) $before->check_answers));
+        self::assertSame(1, (int) $before->check_overridden);
+        self::assertSame(1, (int) $before->confirmed_revision);
+        self::assertSame('2026-11-16 09:59:00', $before->updated_at);
+        $requests = [];
+
+        [$response, $requests] = $this->postReply($this->replyMessage(), stub: $this->stubWithMessageIds($requests));
+
+        $response->assertOk()->assertExactJson(['ok' => true]);
+        $after = $this->approvalRow($seed['approval_id']);
+        self::assertSame(self::EDITED_TEXT, $after->text);
+        self::assertSame(2, (int) $after->revision);
+        self::assertSame(self::NEW_NONCE, $after->nonce);
+        self::assertNull($after->check_answers, 'The old clean check must not apply to the new wording');
+        self::assertSame(0, (int) $after->check_overridden);
+        self::assertNull($after->confirmed_revision);
+        self::assertSame(self::NOW, $after->updated_at);
+        self::assertSame(self::UPDATE_ID, (int) $after->last_update_id);
+        $this->assertRowChangedOnly($before, $after, [
+            'text', 'revision', 'nonce', 'check_answers', 'check_overridden', 'confirmed_revision', 'updated_at', 'last_update_id',
+        ]);
+        $this->assertRowChangedOnly($beforeLog, $this->logRow($seed['log_id']), []);
+
+        self::assertCount(2, $requests);
+        self::assertSame('editMessageText', $this->methodOf($requests[0]));
+        self::assertSame('sendMessage', $this->methodOf($requests[1]));
+        $this->assertSingleEdit($requests, self::GOLDEN_AFTER_EDIT, [
+            [
+                ['text' => 'ยืนยันส่ง', 'callback_data' => 'fc|777|2|'.self::NEW_NONCE],
+                ['text' => 'ข้าม', 'callback_data' => 'fk|777|2|'.self::NEW_NONCE],
+                ['text' => 'แก้ข้อความ', 'callback_data' => 'fe|777|2|'.self::NEW_NONCE],
+            ],
+        ]);
+        $this->assertSingleSend($requests, str_replace('{log_id}', (string) $seed['log_id'], self::NOTICE_EDIT_SAVED), 900);
+        $this->assertOnlyTelegramHost($requests);
+        Queue::assertNothingPushed();
+        Bus::assertNothingDispatched();
+        self::assertSame(2, DB::table('messages')->where('sender', 'bot')->count());
+        $this->assertNoSecretsInLog();
+    }
 }
