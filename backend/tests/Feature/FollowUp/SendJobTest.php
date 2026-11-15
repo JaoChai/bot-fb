@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Mockery\MockInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use RuntimeException;
 use Tests\TestCase;
@@ -970,6 +971,44 @@ class SendJobTest extends TestCase
         $this->assertSame(1, Queue::pushedJobs()[SendCustomerFollowUp::class][0]['job']->delay);
         $this->assertSame([], $this->repaintIds);
         $this->assertSame([], $this->httpRequests);
+    }
+
+    #[Test]
+    #[DataProvider('retryInstantProvider')]
+    public function test_retry_delay_uses_signed_remaining_seconds(string $nextAttemptAt, int $expectedDelay): void
+    {
+        $seed = $this->seedReady([
+            'delivery_status' => 'retry',
+            'next_attempt_at' => $nextAttemptAt,
+            'updated_at' => '2026-11-16 09:50:00',
+        ], ['status' => 'sending']);
+        $beforeLog = (array) $this->logRow($seed);
+        $beforeApproval = (array) $this->approvalRow($seed);
+        Queue::fake();
+        $this->fakeHttp();
+        $this->spyTelegram();
+        // Isolate the job's clock edge: a sender pause can leave its retry instant overdue.
+        $this->mock(FollowUpSendService::class, function (MockInterface $mock) use ($seed): void {
+            $mock->shouldReceive('send')->once()->with($seed['approvalId'])->andReturn('retry');
+        });
+
+        $this->handleJob($seed['approvalId']);
+
+        $this->assertSame([$seed['approvalId']], $this->pushedSendIds());
+        $this->assertSame($expectedDelay, Queue::pushedJobs()[SendCustomerFollowUp::class][0]['job']->delay);
+        $this->assertSame([], $this->repaintIds);
+        $this->assertSame([], $this->httpRequests);
+        $this->assertSame($beforeLog, (array) $this->logRow($seed));
+        $this->assertSame($beforeApproval, (array) $this->approvalRow($seed));
+    }
+
+    public static function retryInstantProvider(): array
+    {
+        return [
+            'one minute overdue' => ['2026-11-16 09:59:00', 1],
+            'one hour overdue' => ['2026-11-16 09:00:00', 1],
+            'one minute remaining' => ['2026-11-16 10:01:00', 60],
+        ];
     }
 
     // ------------------------------------------------------------------
