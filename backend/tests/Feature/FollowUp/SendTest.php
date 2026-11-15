@@ -631,7 +631,7 @@ class SendTest extends TestCase
         // sending ที่ยังสด (updated_at 9 นาที 59 วินาทีก่อน now) → blocked
         $seed = $this->seedReady([
             'delivery_status' => 'sending',
-            'claim_token' => 'other-worker-token',
+            'claim_token' => (string) Str::uuid(),
             'claimed_at' => '2026-11-16 09:50:01',
             'updated_at' => '2026-11-16 09:50:01',
         ], ['status' => 'sending']);
@@ -641,7 +641,7 @@ class SendTest extends TestCase
         // sending ค้าง 10 นาทีพอดี → ชิงจาก worker ตายได้ (dead worker, first_push_at ยังว่าง = ยิงครั้งแรก)
         $seed = $this->seedReady([
             'delivery_status' => 'sending',
-            'claim_token' => 'other-worker-token',
+            'claim_token' => (string) Str::uuid(),
             'claimed_at' => '2026-11-16 09:50:00',
             'updated_at' => '2026-11-16 09:50:00',
         ], ['status' => 'sending']);
@@ -843,7 +843,8 @@ class SendTest extends TestCase
             ],
             'text_with_invisible_control_character' => [
                 'mutate' => function (array $seed): array {
-                    $dirty = "ยังสนใจอยู่ไหมครับ.\u{0}";
+                    // \u{07} (bell) อยู่ใน \p{Cc} — PG เก็บได้ (ต่างจาก \u{0} ที่ text column ของ PG ห้าม)
+                    $dirty = "ยังสนใจอยู่ไหมครับ.\u{07}";
                     DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['draft' => $dirty]);
                     DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['text' => $dirty]);
 
