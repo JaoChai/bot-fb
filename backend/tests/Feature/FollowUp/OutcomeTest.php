@@ -2,8 +2,6 @@
 
 namespace Tests\Feature\FollowUp;
 
-use App\Events\ConversationUpdated;
-use App\Events\MessageSent;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\LeadRecoveryLog;
@@ -104,10 +102,11 @@ class OutcomeTest extends TestCase
 
     private function room(Bot $bot, ?string $externalCustomerId, string $channelType = 'line'): Conversation
     {
+        // external_customer_id ในตารางเป็น NOT NULL — ห้องไร้ตัวตนลูกค้า = ค่าว่าง ('')
         return Conversation::factory()->create([
             'bot_id' => $bot->id,
             'channel_type' => $channelType,
-            'external_customer_id' => $externalCustomerId,
+            'external_customer_id' => $externalCustomerId ?? '',
         ]);
     }
 
@@ -181,7 +180,7 @@ class OutcomeTest extends TestCase
 
     private function markResponded(Conversation $room): void
     {
-        app(LeadRecoveryService::class)->markCustomerResponded($room->fresh());
+        app(LeadRecoveryService::class)->markCustomerResponded($room);
     }
 
     private function service(): FollowUpOutcomeService
@@ -194,7 +193,7 @@ class OutcomeTest extends TestCase
     // ------------------------------------------------------------------
 
     #[Test]
-    public function test_baseline_reply_and_order_via_recordReply_markCustomerResponded_and_reconcile(): void
+    public function test_baseline_reply_and_order_via_record_reply_mark_customer_responded_and_reconcile(): void
     {
         // (ก) recordReply — ตอบกลับ true, คอลัมน์ออเดอร์ทั้งสี่ยัง null
         $botA = $this->newBot();
@@ -202,7 +201,7 @@ class OutcomeTest extends TestCase
         $rowA = $this->sentRow($roomA, self::T);
         $this->addMessage($roomA->id, self::T_PLUS_1H);
 
-        $this->service()->recordReply($roomA->fresh(), $this->at('2026-11-16 11:00:05'));
+        $this->service()->recordReply($roomA, $this->at('2026-11-16 11:00:05'));
 
         $a = $this->outcomes($rowA->id);
         $this->assertTrue((bool) $a->replied_within_72h);
@@ -303,7 +302,7 @@ class OutcomeTest extends TestCase
 
     #[Test]
     #[DataProvider('replyWindowCases')]
-    public function test_reply_window_boundaries_senders_and_types_via_markCustomerResponded(
+    public function test_reply_window_boundaries_senders_and_types_via_mark_customer_responded(
         string $messageAt,
         string $sender,
         string $type,
@@ -378,7 +377,7 @@ class OutcomeTest extends TestCase
             ],
             'own-null-room' => [
                 $this->room($bot, null),
-                $this->room($bot, null),
+                null, // เติมด้านล่าง — ไร้ตัวตนลูกค้า = ขอบเขตเป็นห้องตัวเองห้องเดียว
             ],
             'other-null-room' => [
                 $this->room($bot, null),
@@ -389,7 +388,8 @@ class OutcomeTest extends TestCase
         $row = $this->sentRow($mainRoom, self::T);
 
         if ($replyRoom === null) {
-            $replyRoom = $this->room($bot, null);
+            // own-null-room: ไร้ตัวตนลูกค้า = ข้อความต้องนับเฉพาะที่ลงห้องตัวเอง
+            $replyRoom = $case === 'own-null-room' ? $mainRoom : $this->room($bot, null);
         }
 
         return [$row, $mainRoom, $replyRoom];
@@ -417,7 +417,7 @@ class OutcomeTest extends TestCase
 
     #[Test]
     #[DataProvider('customerScopeCases')]
-    public function test_customer_scope_across_rooms_bots_and_channels_via_markCustomerResponded(string $case, bool $expectReply): void
+    public function test_customer_scope_across_rooms_bots_and_channels_via_mark_customer_responded(string $case, bool $expectReply): void
     {
         [$row, , $replyRoom] = $this->seedScopeCase($case);
         $this->addMessage($replyRoom->id, self::T_PLUS_1H);
@@ -489,23 +489,24 @@ class OutcomeTest extends TestCase
 
         // ใส่ข้อความหลังก่อน (T+2h) แล้วค่อยใส่ข้อความเร็วกว่า (T+1h)
         $this->addMessage($room->id, '2026-11-16 12:00:00');
-        $earlyReplyId = $this->addMessage($room->id, '2026-11-16 11:00:00');
+        $this->addMessage($room->id, '2026-11-16 11:00:00');
 
-        // ออเดอร์เช่นเดียวกัน + สองใบ created_at เท่ากัน ตัดสินด้วย id ต่ำสุด
+        // ออเดอร์เช่นเดียวกัน + สามใบ created_at เท่ากัน ตัดสินด้วย id ต่ำสุด
         $this->addOrder($room, '2026-11-17 12:00:00');
         $earlyOrderId = $this->addOrder($room, '2026-11-17 11:00:00');
-        $tieIdA = $this->addOrder($room, '2026-11-17 11:00:00');
-        $tieIdB = $this->addOrder($room, '2026-11-17 11:00:00');
+        $this->addOrder($room, '2026-11-17 11:00:00');
+        $this->addOrder($room, '2026-11-17 11:00:00');
 
         $this->service()->reconcile($this->at('2026-11-16 13:00:00'));
 
         $o = $this->outcomes($row->id);
         $this->assertSame('2026-11-16 11:00:00', (string) $o->responded_at, 'responded_at ต้องเป็นข้อความแรกสุด');
-        $this->assertSame($earlyReplyId, (int) DB::table('messages')->where('created_at', '2026-11-16 11:00:00')->min('id'));
         $this->assertTrue((bool) $o->ordered_within_7d);
         $this->assertSame($earlyOrderId, (int) $o->order_id, 'order ต้องเป็นใบแรกสุด (created_at แล้ว id ต่ำสุด)');
         $this->assertSame('2026-11-17 11:00:00', (string) $o->ordered_at);
-        $this->assertContains($earlyOrderId, [$tieIdA, $tieIdB], 'ออเดอร์ที่สร้างก่อนมี id ต่ำกว่า');
+        // สามใบ created_at เท่ากัน — ผู้ชนะต้องเป็น id ต่ำสุดของกลุ่ม
+        $lowestTieId = (int) DB::table('orders')->where('created_at', '2026-11-17 11:00:00')->min('id');
+        $this->assertSame($lowestTieId, (int) $o->order_id, 'created_at เท่ากันตัดสินด้วย id ต่ำสุด');
     }
 
     // ------------------------------------------------------------------
@@ -513,7 +514,7 @@ class OutcomeTest extends TestCase
     // ------------------------------------------------------------------
 
     #[Test]
-    public function test_reply_pending_then_closes_false_and_recordReply_never_closes(): void
+    public function test_reply_pending_then_closes_false_and_record_reply_never_closes(): void
     {
         $bot = $this->newBot();
         $room = $this->room($bot, 'U03b2c3d4e5f60718293a4b5c6d7e8f90');
@@ -631,7 +632,7 @@ class OutcomeTest extends TestCase
         $row = $this->sentRow($room, self::T);
         $this->addMessage($room->id, '2026-11-16 12:00:00');
 
-        $this->service()->recordReply($room->fresh(), $this->at('2026-11-16 12:00:05'));
+        $this->service()->recordReply($room, $this->at('2026-11-16 12:00:05'));
         $this->assertSame('2026-11-16 12:00:00', (string) $this->outcomes($row->id)->responded_at);
 
         // ข้อความที่เร็วกว่าถูกย้อนหลังเข้ามาทีหลัง — responded_at ต้องคงเดิม
@@ -888,13 +889,16 @@ class OutcomeTest extends TestCase
             $this->assertNull($o->order_id);
         }
 
-        // ปิดหน้าต่างแล้ว reconcile รอบสอง — กรณี "ใช่" คง true เดิม กรณี "ไม่ใช่" ปิดเป็น false
-        $afterFirst = $this->snapshotRow($row->id);
+        // ปิดหน้าต่างแล้ว reconcile รอบสอง — กรณี "ใช่" คงคอลัมน์ออเดอร์เดิมทั้งหมด
+        // (ผลตอบกลับที่ยัง null ในรอบแรก ปิดได้ตามปกติในรอบสอง — คนละผลกัน)
         $this->service()->reconcile($this->at(self::T_ORDER_CLOSE));
         $o = $this->outcomes($row->id);
 
         if ($expectOrder) {
-            $this->assertSame($afterFirst, $this->snapshotRow($row->id), 'ordered true ห้ามเขียนทับในรอบหลัง');
+            $this->assertTrue((bool) $o->ordered_within_7d, 'ordered true ห้ามเขียนทับในรอบหลัง');
+            $this->assertSame($orderId, (int) $o->order_id);
+            $this->assertSame($orderAt, (string) $o->ordered_at);
+            $this->assertSame('2026-11-16 11:05:00', (string) $o->order_window_closed_at, 'order_window_closed_at คงของรอบแรก');
         } else {
             $this->assertNotNull($o->ordered_within_7d);
             $this->assertFalse((bool) $o->ordered_within_7d, $roomKind.' / '.$orderAt);
@@ -921,7 +925,8 @@ class OutcomeTest extends TestCase
         $o = $this->outcomes($row->id);
         $this->assertNotNull($o->replied_within_72h);
         $this->assertFalse((bool) $o->replied_within_72h);
-        $this->assertSame(self::T_REPLY_CLOSE, (string) $o->response_window_closed_at);
+        // ปิดรอบแรกใน call นี้ — closed_at = now ของ call ('2026-11-19 19:00:00')
+        $this->assertSame('2026-11-19 19:00:00', (string) $o->response_window_closed_at);
         $this->assertTrue((bool) $o->ordered_within_7d);
         $this->assertSame($orderId, (int) $o->order_id);
     }
@@ -931,14 +936,14 @@ class OutcomeTest extends TestCase
     // ------------------------------------------------------------------
 
     #[Test]
-    public function test_recordReply_never_touches_order_columns_or_writes_false_on_a_row_past_both_windows(): void
+    public function test_record_reply_never_touches_order_columns_or_writes_false_on_a_row_past_both_windows(): void
     {
         $bot = $this->newBot();
         $room = $this->room($bot, 'U15b2c3d4e5f60718293a4b5c6d7e8f90');
         $row = $this->sentRow($room, '2026-11-12 10:00:00'); // 96 ชม. ก่อน T — ทั้งสองหน้าต่างปิดหมด
         $before = $this->snapshotRow($row->id);
 
-        $this->service()->recordReply($room->fresh(), $this->at(self::T));
+        $this->service()->recordReply($room, $this->at(self::T));
 
         $after = $this->snapshotRow($row->id);
         $this->assertSame($before, $after, 'recordReply บนแถวที่ไม่มีตอบกลับ ห้ามเขียนแม้คอลัมน์เดียว');
@@ -957,7 +962,7 @@ class OutcomeTest extends TestCase
     // ------------------------------------------------------------------
 
     #[Test]
-    public function test_markCustomerResponded_swallows_service_throws_and_logs_ids_only(): void
+    public function test_mark_customer_responded_swallows_service_throws_and_logs_ids_only(): void
     {
         $canaryException = 'boom-canary-exception-secret';
         $canaryCustomer = 'U-canary-customer-secret-1234567890';
@@ -995,7 +1000,7 @@ class OutcomeTest extends TestCase
     }
 
     #[Test]
-    public function test_markCustomerResponded_costs_one_select_and_no_write_when_nothing_is_open(): void
+    public function test_mark_customer_responded_costs_one_select_and_no_write_when_nothing_is_open(): void
     {
         $bot = $this->newBot();
         $room = $this->room($bot, 'U17b2c3d4e5f60718293a4b5c6d7e8f90');
