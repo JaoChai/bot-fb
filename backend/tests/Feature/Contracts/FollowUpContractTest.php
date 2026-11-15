@@ -84,7 +84,11 @@ class FollowUpContractTest extends TestCase
             'primary_chat_model' => 'openai/gpt-6-luna',
         ]);
 
-        config(['customer_follow_up.bot_ids' => [$bot->id]]);
+        // append เข้ารายชื่อ pilot — makeBaseline ตัวที่สองต้องไม่ทับบอทตัวแรก
+        config(['customer_follow_up.bot_ids' => array_values(array_unique(array_merge(
+            (array) config('customer_follow_up.bot_ids'),
+            [$bot->id]
+        )))]);
         config(['customer_follow_up.admin_web_url' => 'https://admin.example.test']);
         config(['services.telegram_alert.secret' => 'whsec-'.'b5ac'.'-webhook-secret']);
 

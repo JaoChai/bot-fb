@@ -136,7 +136,11 @@ class SettingsApiTest extends TestCase
             'primary_chat_model' => 'openai/gpt-6-luna',
         ]);
 
-        config(['customer_follow_up.bot_ids' => [$bot->id]]);
+        // append เข้ารายชื่อ pilot — makeBaseline ตัวที่สองต้องไม่ทับบอทตัวแรก
+        config(['customer_follow_up.bot_ids' => array_values(array_unique(array_merge(
+            (array) config('customer_follow_up.bot_ids'),
+            [$bot->id]
+        )))]);
         config(['customer_follow_up.admin_web_url' => 'https://admin.example.test']);
         config(['services.telegram_alert.secret' => 'whsec-'.'b5a'.'-webhook-secret']);
 
@@ -396,10 +400,12 @@ class SettingsApiTest extends TestCase
     public function test_snapshot_is_written_once_across_off_on_cycles_and_second_bot_untouched(): void
     {
         [$user, $bot] = $this->makeBaseline();
-        $highWater = (int) DB::table('messages')->max('id');
 
         // บอทที่สอง: แถว snapshot null ต้องเหมือนเดิมทั้งการทดสอบ
         [$userB, $botB] = $this->makeBaseline();
+
+        // high-water อ่านก่อนเปิด (max ทั้งตาราง รวมข้อความของบอทที่สองด้วย)
+        $highWater = (int) DB::table('messages')->max('id');
         $rowBBefore = $this->row($botB->id);
 
         $this->putSettings($user, $bot, ['follow_up_enabled' => true])->assertOk();
