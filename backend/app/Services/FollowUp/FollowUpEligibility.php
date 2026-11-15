@@ -34,13 +34,13 @@ use Illuminate\Support\Facades\DB;
  */
 class FollowUpEligibility
 {
-    /** สถานะ log ที่ "เงียบนี้ถูกดูแลแล้ว" — คงที่ตาม plan line 152 */
-    private const SILENCE_BLOCKING_STATUSES = ['pending', 'approved', 'sending', 'retry', 'sent', 'skipped', 'expired', 'cancelled', 'excluded'];
+    /** สถานะ log ที่ "เงียบนี้ถูกดูแลแล้ว" — คงที่ตาม plan line 152; send_failed เพิ่มโดย D48 (B4c) */
+    private const SILENCE_BLOCKING_STATUSES = ['pending', 'approved', 'sending', 'retry', 'sent', 'send_failed', 'skipped', 'expired', 'cancelled', 'excluded'];
 
     /** สถานะสลิปที่ถือว่า "เงินเข้าจริง" — เดียวกับ SlipController::MONEY_IN */
     private const MONEY_IN_STATUSES = ['passed', 'manual_confirmed'];
 
-    public static function query(Bot $bot, CarbonImmutable $now, ?int $ownLogId = null): Builder
+    public static function query(Bot $bot, CarbonImmutable $now, ?int $ownLogId = null, bool $forSend = false): Builder
     {
         // คอลัมน์เวลาทุกตารางเป็นเวลากรุงเทพฯ ไม่มีโซน — normalize ที่ประตูเดียว
         // ให้ caller ส่ง $now มาในโซนไหนก็ได้ ผล SQL bound ต้องเท่ากัน (review r1 item 2)
@@ -168,6 +168,12 @@ class FollowUpEligibility
                     })->orWhere(function ($q3): void {
                         $q3->whereIn('l3.delivery_status', ['sending', 'retry'])
                             ->whereNotNull('l3.first_push_at');
+                    })->orWhere(function ($q3) use ($gapStart): void {
+                        // D48 (B4c): send_failed ที่ยิงแล้ว (first_push_at ไม่ว่าง) นับในหน้าต่าง
+                        // 7 วันเดียวกับ sent_at — ขอบ "ครบ 7 วันพอดี = ผ่าน"; ไม่เคยยิง = ไม่นับ
+                        $q3->where('l3.delivery_status', 'send_failed')
+                            ->whereNotNull('l3.first_push_at')
+                            ->where('l3.first_push_at', '>', $gapStart);
                     });
                 });
             if ($ownLogId !== null) {
@@ -191,12 +197,15 @@ class FollowUpEligibility
         });
 
         // 155: งบร่างรายวันของบอทนี้ (วันที่กรุงเทพฯ) — แถวที่ยังจองหรือมีร่างจริงเท่านั้น
-        $ownExclusion = $ownLogId !== null ? ' and lc.id != '.((int) $ownLogId) : '';
-        $builder->whereRaw(
-            '(select count(*) from lead_recovery_logs lc where lc.bot_id = ? and lc.draft_day = ?'
-            .' and (lc.drafted_at is not null or lc.draft_reserved_at is not null)'.$ownExclusion.') < ?',
-            [$bot->id, $today, $dailyCap]
-        );
+        // D46 (B4c): forSend = ตอนส่งจริง ข้ามงบร่างรายวัน (งบผูกกับตอนร่าง ไม่ผูกกับตอนยิง)
+        if (! $forSend) {
+            $ownExclusion = $ownLogId !== null ? ' and lc.id != '.((int) $ownLogId) : '';
+            $builder->whereRaw(
+                '(select count(*) from lead_recovery_logs lc where lc.bot_id = ? and lc.draft_day = ?'
+                .' and (lc.drafted_at is not null or lc.draft_reserved_at is not null)'.$ownExclusion.') < ?',
+                [$bot->id, $today, $dailyCap]
+            );
+        }
 
         // 157: ห้องที่ span มี account/credential = ทำหน้าที่หลังการขาย ห้ามตาม
         $builder->where('s.sensitive_account_data', false);
@@ -209,7 +218,7 @@ class FollowUpEligibility
      * ไม่ผ่าน = reason code เสถียร (ตารางโค้ดอยู่ใน PR body)
      * refresh projection ก่อนเสมอ แล้วเทียบ anchor/observed-last กับ log ตาม plan line 139
      */
-    public static function recheck(LeadRecoveryLog $log, CarbonImmutable $now): ?string
+    public static function recheck(LeadRecoveryLog $log, CarbonImmutable $now, bool $forSend = false): ?string
     {
         $now = $now->tz(FollowUpCapabilities::TIMEZONE)->startOfSecond();
 
@@ -265,7 +274,7 @@ class FollowUpEligibility
             return 'passed_slip';
         }
 
-        $stillPasses = self::query($bot, $now, $log->id)
+        $stillPasses = self::query($bot, $now, $log->id, $forSend)
             ->where('conversations.id', $conversation->id)
             ->exists();
 
