@@ -636,49 +636,50 @@ class LeadRecoveryTest extends TestCase
 
     public function test_stats_internal_failure_returns_fixed_body_and_canary_stays_in_log(): void
     {
-        $canary = 'b5b_stats_canary_table';
-        Schema::rename('lead_recovery_logs', $canary);
+        // เปลี่ยนชื่อตารางเพื่อบังคับให้ query throw — sqlite รายงาน "no such table: lead_recovery_logs"
+        // (ชื่อตารางที่ query หา) — ข้อความ exception นี้คือ canary: ต้องอยู่ใน Log::error เท่านั้น
+        $canary = 'no such table: lead_recovery_logs';
+        Schema::rename('lead_recovery_logs', 'b5b_stats_hidden_table');
 
         try {
-            Log::spy();
+            Log::shouldReceive('error')->atLeast()->once()->withArgs(
+                function ($message, $context) use ($canary) {
+                    return str_contains(json_encode([$message, $context]), $canary);
+                }
+            );
 
             $response = $this->actingAs($this->user)->getJson("/api/bots/{$this->bot->id}/lead-recovery/stats");
 
             $response->assertStatus(500);
             $this->assertSame(['error' => 'Internal server error'], $response->json(), '500 body must be the fixed message only');
-            $this->assertStringNotContainsString($canary, $response->getContent(), 'the canary must not leak into the body');
-
-            Log::shouldHaveReceived('error')->atLeast()->once()->withArgs(
-                function (string $message, array $context) use ($canary) {
-                    return str_contains(json_encode([$message, $context]), $canary);
-                }
-            );
+            $this->assertStringNotContainsString($canary, $response->getContent(), 'the exception message must not leak into the body');
+            $this->assertStringNotContainsString('Connection.php', $response->getContent(), 'the exception file must not leak into the body');
         } finally {
-            Schema::rename($canary, 'lead_recovery_logs');
+            Schema::rename('b5b_stats_hidden_table', 'lead_recovery_logs');
         }
     }
 
     public function test_logs_internal_failure_returns_fixed_body_and_canary_stays_in_log(): void
     {
-        $canary = 'b5b_logs_canary_table';
-        Schema::rename('lead_recovery_logs', $canary);
+        // เปลี่ยนชื่อตารางเพื่อบังคับให้ query throw — ข้อความ exception คือ canary: ต้องอยู่ใน Log::error เท่านั้น
+        $canary = 'no such table: lead_recovery_logs';
+        Schema::rename('lead_recovery_logs', 'b5b_logs_hidden_table');
 
         try {
-            Log::spy();
+            Log::shouldReceive('error')->atLeast()->once()->withArgs(
+                function ($message, $context) use ($canary) {
+                    return str_contains(json_encode([$message, $context]), $canary);
+                }
+            );
 
             $response = $this->actingAs($this->user)->getJson("/api/bots/{$this->bot->id}/lead-recovery/logs");
 
             $response->assertStatus(500);
             $this->assertSame(['error' => 'Internal server error'], $response->json(), '500 body must be the fixed message only');
-            $this->assertStringNotContainsString($canary, $response->getContent(), 'the canary must not leak into the body');
-
-            Log::shouldHaveReceived('error')->atLeast()->once()->withArgs(
-                function (string $message, array $context) use ($canary) {
-                    return str_contains(json_encode([$message, $context]), $canary);
-                }
-            );
+            $this->assertStringNotContainsString($canary, $response->getContent(), 'the exception message must not leak into the body');
+            $this->assertStringNotContainsString('Connection.php', $response->getContent(), 'the exception file must not leak into the body');
         } finally {
-            Schema::rename($canary, 'lead_recovery_logs');
+            Schema::rename('b5b_logs_hidden_table', 'lead_recovery_logs');
         }
     }
 }

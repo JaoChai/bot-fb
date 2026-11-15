@@ -164,6 +164,16 @@ class BotSettingController extends Controller
             }
         }
 
+        // คีย์สวิตช์รุ่นเก่า (B5b): คีย์ใด ๆ ที่ขึ้นต้น lead_recovery_ → 422 เสมอ
+        // (ยังไม่มีอะไรส่งคีย์เหล่านี้; เช็คทั้ง body และ query เหมือนคีย์ภายในด้านบน)
+        foreach (array_keys($request->all()) as $requestKey) {
+            if (is_string($requestKey) && str_starts_with($requestKey, 'lead_recovery_')) {
+                throw ValidationException::withMessages([
+                    $requestKey => ['The '.$requestKey.' field must not be sent.'],
+                ]);
+            }
+        }
+
         $validated = $request->validate([
             // Usage limits
             'daily_message_limit' => 'integer|min:0|max:100000',
