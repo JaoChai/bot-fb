@@ -315,6 +315,97 @@ class TelegramAlertBotService
         return $result;
     }
 
+    /**
+     * แก้การ์ดตามลูกค้า (B6b) — การขนส่งของตัวเอง ไม่แตะ call()/เมธอดเดิม:
+     * connect timeout ตาม config, timeout 10 วิ, ไม่ retry, ไม่ตาม redirect,
+     * ไม่มีทางโยน exception, คืน ['outcome' => accepted|rejected|unknown, 'status' => ?int]
+     * log บรรทัดเดียวต่อการเรียก: label + outcome + HTTP status เท่านั้น
+     * keyboard ว่าง = ลบปุ่มออกจากการ์ด (reply_markup {"inline_keyboard":[]})
+     */
+    public function editFollowUpCard(string $token, string $chatId, int $messageId, string $html, array $inlineKeyboard = []): array
+    {
+        $result = ['outcome' => 'unknown', 'status' => null];
+
+        if ($token === '' || $chatId === '' || $html === '' || $messageId < 1) {
+            $result['outcome'] = 'rejected';
+            $this->logFollowUpTransportCall('Follow-up card edit', $result);
+
+            return $result;
+        }
+
+        return $this->postFollowUpCall('Follow-up card edit', 'editMessageText', $token, [
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+            'text' => $html,
+            'parse_mode' => 'HTML',
+            'reply_markup' => json_encode(['inline_keyboard' => $inlineKeyboard]),
+            'link_preview_options' => json_encode(['is_disabled' => true]),
+        ], 10, false);
+    }
+
+    /**
+     * ตอบปุ่มที่กดบนการ์ดตามลูกค้า (B6b) — timeout 5 วิ, ไม่ retry, ไม่ตาม redirect,
+     * ไม่มีทางโยน exception, คืน ['outcome' => accepted|rejected|unknown, 'status' => ?int]
+     * show_alert เป็น JSON boolean (true = เด้งกล่องเตือน, false = toast มุมจอ)
+     */
+    public function answerFollowUpCallback(string $token, string $callbackQueryId, string $text, bool $alert = false): array
+    {
+        $result = ['outcome' => 'unknown', 'status' => null];
+
+        if ($token === '' || $callbackQueryId === '' || $text === '') {
+            $result['outcome'] = 'rejected';
+            $this->logFollowUpTransportCall('Follow-up callback answer', $result);
+
+            return $result;
+        }
+
+        return $this->postFollowUpCall('Follow-up callback answer', 'answerCallbackQuery', $token, [
+            'callback_query_id' => $callbackQueryId,
+            'text' => $text,
+            'show_alert' => $alert,
+        ], 5, true);
+    }
+
+    /** โพสต์หนึ่งครั้งแบบไม่ retry — ใช้โดย editFollowUpCard/answerFollowUpCallback เท่านั้น */
+    private function postFollowUpCall(string $label, string $method, string $token, array $params, int $timeoutSeconds, bool $asJson): array
+    {
+        $result = ['outcome' => 'unknown', 'status' => null];
+
+        try {
+            $client = Http::connectTimeout((int) config('customer_follow_up.http_connect_timeout_seconds', 3))
+                ->timeout($timeoutSeconds)
+                ->withoutRedirecting();
+            $res = $asJson
+                ? $client->asJson()->post($this->followUpBase().$token.'/'.$method, $params)
+                : $client->post($this->followUpBase().$token.'/'.$method, $params);
+        } catch (\Throwable) {
+            $this->logFollowUpTransportCall($label, $result);
+
+            return $result;
+        }
+
+        $result['status'] = $res->status();
+
+        if ($res->status() === 200 && $res->json('ok') === true) {
+            $result['outcome'] = 'accepted';
+        } elseif ($res->status() >= 400 && $res->status() <= 499 && $res->json('ok') === false) {
+            $result['outcome'] = 'rejected';
+        }
+
+        $this->logFollowUpTransportCall($label, $result);
+
+        return $result;
+    }
+
+    /** log เดียวต่อการเรียก: label + outcome + HTTP status เท่านั้น */
+    private function logFollowUpTransportCall(string $label, array $result): void
+    {
+        Log::info($label, [
+            'outcome' => $result['outcome'],
+            'status' => $result['status'],
+        ]);
+    }
+
     /** base URL ของ Telegram Bot API สำหรับบัตรตามลูกค้า — test ล้อง override เป็น port ปิดในเครื่องได้ */
     protected function followUpBase(): string
     {

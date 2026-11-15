@@ -15,6 +15,7 @@ use App\Services\Payment\ManualPaymentConfirmService;
 use App\Services\Payment\TelegramAlertBotService;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Log\Events\MessageLogged;
@@ -64,6 +65,8 @@ class TelegramApprovalTest extends TestCase
     private const UPDATE_ID = 999001;
 
     private const NONCE = 'abcd1234abcd1234';
+
+    private const RECIPIENT = 'Ub6b000112233445566778899aabbccdd';
 
     private const CLEAN_CHECK = '{"scores":{"safe_to_send":0.9},"failed":[],"error":false,"version":1}';
 
@@ -152,6 +155,7 @@ TEXT;
         });
         Queue::fake();
         Bus::fake();
+        $this->freeze(self::NOW);
     }
 
     protected function tearDown(): void
@@ -167,6 +171,8 @@ TEXT;
     {
         return self::TOKEN_HEAD.self::TOKEN_TAIL;
     }
+
+    private ?string $worldToken = null;
 
     private function pluginToken(): string
     {
@@ -199,6 +205,9 @@ TEXT;
             $text = $event->message.' '.json_encode($event->context, JSON_UNESCAPED_UNICODE);
             self::assertStringNotContainsString($this->fakeToken(), $text, 'token ห้ามลง log');
             self::assertStringNotContainsString($this->pluginToken(), $text, 'token ห้ามลง log');
+            if ($this->worldToken !== null) {
+                self::assertStringNotContainsString($this->worldToken, $text, 'token ห้ามลง log');
+            }
             self::assertStringNotContainsString(self::CHAT_ID, $text, 'chat id ห้ามลง log');
             self::assertStringNotContainsString(self::PLUGIN_CHAT, $text, 'chat id ห้ามลง log');
             self::assertStringNotContainsString(self::CB_ID, $text, 'callback id ห้ามลง log');
@@ -259,7 +268,7 @@ TEXT;
         }
 
         $response = $this->withHeaders($headers)
-            ->postJson('/api/webhook/telegram-alert/'.($pluginToken ?? $this->pluginToken()), $body);
+            ->postJson('/api/webhook/telegram-alert/'.($pluginToken ?? $this->worldToken ?? $this->pluginToken()), $body);
 
         return [$response, $requests];
     }
@@ -351,19 +360,23 @@ TEXT;
      *
      * @return array<string, mixed>
      */
-    private function seedWorld(array $options = []): array
+    protected function seedWorld(array $options = []): array
     {
         $get = fn (string $key, mixed $default = null) => array_key_exists($key, $options) ? $options[$key] : $default;
 
         $user = User::factory()->owner()->create();
-        $bot = Bot::factory()->active()->line()->create([
-            'id' => 26,
+        $golden = (bool) $get('golden_ids', false);
+        $botAttributes = [
             'user_id' => $user->id,
             'name' => $get('bot_name', 'Line - Adsvance'),
             'primary_chat_model' => 'openai/gpt-6-luna',
             'channel_access_token' => $this->lineToken(),
-        ]);
-        config(['customer_follow_up.bot_ids' => $get('bot_ids', [26])]);
+        ];
+        if ($golden) {
+            $botAttributes['id'] = 26;
+        }
+        $bot = Bot::factory()->active()->line()->create($botAttributes);
+        config(['customer_follow_up.bot_ids' => $get('bot_ids', [$bot->id])]);
         config(['customer_follow_up.automatic_bot_ids' => []]);
         config(['customer_follow_up.admin_web_url' => 'https://admin.example.test']);
         config(['services.telegram_alert.secret' => 'webhook-secret-test']);
@@ -373,7 +386,8 @@ TEXT;
         $bot->update(['default_flow_id' => $flow->id]);
 
         $pluginConfig = [
-            'access_token' => $this->pluginToken(),
+            // token ต่อโลกทดสอบ — กัน route เจอ plugin ของ seed ก่อนหน้าเมื่อเทสต์หลายโลก
+            'access_token' => $this->worldToken = $this->pluginToken().'-b'.$bot->id,
             'chat_id' => self::PLUGIN_CHAT,
         ];
         if (! $get('allowlist_missing', false)) {
@@ -403,28 +417,31 @@ TEXT;
             'channel_type' => 'line',
             'display_name' => $get('display_name', 'สมชาย <ร้าน A&B>'),
         ]);
-        $room = Conversation::factory()->line()->create([
-            'id' => 1317,
+        $roomAttributes = [
             'bot_id' => $bot->id,
             'customer_profile_id' => $profile->id,
-            'external_customer_id' => 'U'.self::TOKEN_TAIL.'canary',
+            'external_customer_id' => self::RECIPIENT,
             'is_handover' => $get('is_handover', false),
             'status' => $get('room_status', 'active'),
-        ]);
+        ];
+        if ($golden) {
+            $roomAttributes['id'] = 1317;
+        }
+        $room = Conversation::factory()->line()->create($roomAttributes);
 
         // ข้อความลูกค้า (anchor) ต้องเป็นข้อความสุดท้าย เพื่อให้ recheck ผ่าน
-        $this->addMessage($room->id, 'user', '2026-11-15 08:55:00', 'สนใจ Nolimit Personal ครับ');
-        $this->addMessage($room->id, 'bot', '2026-11-15 08:56:00', 'ต้องการกี่ตัวครับ');
-        $this->addMessage($room->id, 'user', '2026-11-15 08:57:00', 'เอา 2 ตัวครับ');
-        $this->addMessage($room->id, 'bot', '2026-11-15 08:58:00', 'ได้ครับ กำลังเตรียมสินค้าให้ครับ');
-        $anchorId = $this->addMessage($room->id, 'user', '2026-11-15 08:59:00', 'ประเมินราคาให้หน่อยครับ');
+        // เผื่อเงียบ 24 ชม. ทั้งที่ 08:00:00 (saleCut = ข้อความสุดท้ายต้อง <= 15 พ.ย. 08:00)
+        $this->addMessage($room->id, 'user', '2026-11-15 07:55:00', 'สนใจ Nolimit Personal ครับ');
+        $this->addMessage($room->id, 'bot', '2026-11-15 07:56:00', 'ต้องการกี่ตัวครับ');
+        $this->addMessage($room->id, 'user', '2026-11-15 07:57:00', 'เอา 2 ตัวครับ');
+        $this->addMessage($room->id, 'bot', '2026-11-15 07:58:00', 'ได้ครับ กำลังเตรียมสินค้าให้ครับ');
+        $anchorId = $this->addMessage($room->id, 'user', '2026-11-15 07:59:00', 'ประเมินราคาให้หน่อยครับ');
 
         $context = $get('context_redacted', ['C: ขอคิดดูก่อนนะครับ', 'B: ได้เลยครับพี่ สนใจตัวไหนทักมาได้เลยครับ']);
 
         $check = $get('check_answers', self::CLEAN_CHECK);
         $draft = $get('draft', self::DRAFT);
-        DB::table('lead_recovery_logs')->insert(array_merge([
-            'id' => 123,
+        $logPayload = [
             'conversation_id' => $room->id,
             'bot_id' => $bot->id,
             'attempt_number' => 0,
@@ -447,11 +464,17 @@ TEXT;
             'draft_model' => 'openai/gpt-6-luna',
             'created_at' => '2026-11-15 09:35:00',
             'updated_at' => '2026-11-15 09:35:00',
-        ], $get('log_overrides', [])));
+        ];
+        if ($golden) {
+            $logPayload['id'] = 123;
+            DB::table('lead_recovery_logs')->insert(array_merge($logPayload, $get('log_overrides', [])));
+            $logId = 123;
+        } else {
+            $logId = (int) DB::table('lead_recovery_logs')->insertGetId(array_merge($logPayload, $get('log_overrides', [])));
+        }
 
-        DB::table('follow_up_approvals')->insert(array_merge([
-            'id' => $get('approval_id', 777),
-            'lead_recovery_log_id' => 123,
+        $approvalPayload = [
+            'lead_recovery_log_id' => $logId,
             'status' => $get('approval_status', 'pending'),
             'revision' => $get('revision', 1),
             'nonce' => $get('nonce', self::NONCE),
@@ -466,7 +489,14 @@ TEXT;
             'last_update_id' => null,
             'created_at' => self::NOW,
             'updated_at' => $get('approval_updated_at', self::NOW),
-        ], $get('approval_overrides', [])));
+        ];
+        if ($golden || $get('approval_id') !== null) {
+            $approvalPayload['id'] = $golden ? 777 : $get('approval_id');
+            DB::table('follow_up_approvals')->insert(array_merge($approvalPayload, $get('approval_overrides', [])));
+            $approvalId = (int) $approvalPayload['id'];
+        } else {
+            $approvalId = (int) DB::table('follow_up_approvals')->insertGetId(array_merge($approvalPayload, $get('approval_overrides', [])));
+        }
 
         $this->bumpPgSequences();
 
@@ -476,8 +506,8 @@ TEXT;
             'flow' => $flow,
             'plugin' => $plugin->refresh(),
             'room' => $room->refresh(),
-            'log_id' => 123,
-            'approval_id' => (int) DB::table('follow_up_approvals')->max('id'),
+            'log_id' => $logId,
+            'approval_id' => $approvalId,
             'anchor_id' => $anchorId,
         ];
     }
@@ -835,7 +865,6 @@ TEXT;
             '15 hex nonce' => ['fs|777|1|abcd1234abcd123'],
             '17 hex nonce' => ['fs|777|1|abcd1234abcd12345'],
             'uppercase hex nonce' => ['fs|777|1|ABCD1234ABCD1234'],
-            'nonce with newline' => ['fs|777|1|'.self::NONCE."\n"],
             '5 parts' => ['fs|777|1|'.self::NONCE.'|x'],
             'unknown code zz' => ['zz|777|1|'.self::NONCE],
             '20-digit approval id' => ['fs|99999999999999999999|1|'.self::NONCE],
@@ -869,6 +898,21 @@ TEXT;
 
         $response->assertOk()->assertExactJson(['ok' => true]);
         self::assertCount(0, $requests);
+    }
+
+    #[Test]
+    public function parse_data_rejects_trailing_newline_and_empty_callback_id(): void
+    {
+        // ผ่าน method เอง — route จริงมี TrimStrings ตัดช่องว่างหัวท้ายก่อนถึง controller
+        // กฎยังต้องแน่นที่ parseData: /D ทำให้ \n ต่อท้ายไม่ผ่าน
+        $svc = app(FollowUpApprovalService::class);
+        $m = new \ReflectionMethod(FollowUpApprovalService::class, 'parseData');
+        $m->setAccessible(true);
+
+        self::assertNull($m->invoke($svc, ['id' => self::CB_ID, 'data' => $this->cbData('fs', 777)."\n"]));
+        self::assertNull($m->invoke($svc, ['id' => self::CB_ID, 'data' => $this->cbData('fs', 777)." \n"]));
+        self::assertNull($m->invoke($svc, ['id' => '', 'data' => $this->cbData('fs', 777)]));
+        self::assertSame(['fs', 777, 1, self::NONCE], $m->invoke($svc, ['id' => self::CB_ID, 'data' => $this->cbData('fs', 777)]));
     }
 
     /** @return array<string, array{0: string}> */
@@ -945,9 +989,9 @@ TEXT;
             'from.id as string' => [['from' => ['id' => '555']], null, 'no_permission', 1, ['no_permission']],
             'from.id as 0' => [['from' => ['id' => 0]], null, 'no_permission', 1, ['no_permission']],
             'from.id missing' => [['from' => ['first_name' => 'ใครสักคน']], null, 'no_permission', 1, ['no_permission']],
-            'unknown approval id' => [[], null, 'not_found', 1, ['not_found']],
-            'approval of another plugin' => [[], 'other_plugin', 'not_found', 1, ['not_found']],
-            'stored chat differs' => [[], 'other_chat', 'not_found', 1, ['not_found']],
+            'unknown approval id' => [[], 'unknown_approval_id', 'not_found', 1, ['not_found']],
+            'approval of another plugin' => [[], 'other_plugin_id', 'not_found', 1, ['not_found']],
+            'stored chat differs' => [[], 'other_chat_id', 'not_found', 1, ['not_found']],
             'log bot differs from plugin bot' => [[], 'other_bot_log', 'not_found', 1, ['not_found']],
             'wrong revision' => [[], 'wrong_revision', 'stale_card', 1, ['stale_card']],
             'wrong nonce' => [[], 'wrong_nonce', 'stale_card', 1, ['stale_card']],
@@ -1258,10 +1302,7 @@ TEXT;
     {
         $seed = $this->seedWorld();
 
-        [$response] = $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])));
-        $response->assertOk();
-
-        // LINE fake ตาม SendTest — push ตอบรับ
+        // LINE fake ต้องลงทะเบียนก่อน tap — Http::fake สะสม stub และ stub แรกชนะเสมอ
         $pushHits = 0;
         Http::fake(function ($request) use (&$pushHits) {
             $url = $request->url();
@@ -1280,6 +1321,9 @@ TEXT;
             return Http::response('', 404);
         });
 
+        [$response] = $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])));
+        $response->assertOk();
+
         $result = app(FollowUpSendService::class)->send($seed['approval_id'], $this->now());
 
         self::assertSame('sent', $result, 'sender ต้องรับคู่ที่ผ่านการกดส่ง');
@@ -1293,10 +1337,7 @@ TEXT;
     {
         $seed = $this->seedWorld(['check_answers' => self::FLAGGED_CHECK]);
 
-        [$response] = $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])));
-        $response->assertOk();
-        self::assertSame('approved', $this->approvalRow($seed['approval_id'])->status);
-
+        // LINE fake ต้องลงทะเบียนก่อน tap — Http::fake สะสม stub และ stub แรกชนะเสมอ
         Http::fake(function ($request) {
             $url = $request->url();
             if ($url === self::LINE_QUOTA_URL) {
@@ -1311,6 +1352,10 @@ TEXT;
 
             return Http::response('', 404);
         });
+
+        [$response] = $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])));
+        $response->assertOk();
+        self::assertSame('approved', $this->approvalRow($seed['approval_id'])->status);
 
         $result = app(FollowUpSendService::class)->send($seed['approval_id'], $this->now());
 
@@ -1377,21 +1422,21 @@ TEXT;
     public function send_gate_table(string $case, string $when, ?string $expectedAnswer, bool $expectedSend): void
     {
         $options = match ($case) {
-            'switch off' => ['follow_up_enabled' => false],
-            'handover on' => ['is_handover' => true],
-            'room closed' => ['room_status' => 'closed'],
-            'capabilities blocked' => ['bot_ids' => []],
+            'switch' => ['follow_up_enabled' => false],
+            'handover' => ['is_handover' => true],
+            'room' => ['room_status' => 'closed'],
+            'capabilities' => ['bot_ids' => []],
             default => [],
         };
         $seed = $this->seedWorld($options);
 
-        if ($case === 'new customer message') {
+        if ($case === 'customer') {
             $this->addMessage($seed['room']->id, 'user', '2026-11-16 09:30:00', 'ตกลงเอาครับ');
         }
-        if ($case === 'new bot message') {
+        if ($case === 'bot') {
             $this->addMessage($seed['room']->id, 'bot', '2026-11-16 09:30:00', 'ตอบกลับแล้วครับ');
         }
-        if ($case === 'order created') {
+        if ($case === 'order') {
             DB::table('orders')->insert([
                 'bot_id' => $seed['bot']->id,
                 'conversation_id' => $seed['room']->id,
@@ -1401,7 +1446,7 @@ TEXT;
                 'updated_at' => '2026-11-16 09:00:00',
             ]);
         }
-        if ($case === 'passed slip') {
+        if ($case === 'slip') {
             DB::table('slip_verifications')->insert([
                 'bot_id' => $seed['bot']->id,
                 'conversation_id' => $seed['room']->id,
@@ -1452,11 +1497,12 @@ TEXT;
     #[Test]
     public function send_at_expiry_boundary_answers_expired_and_writes_nothing(): void
     {
-        $seed = $this->seedWorld(['expires_at' => self::EXPIRES]);
+        // หมดอายุ 21:00 (อยู่ในชั่วโมงส่ง) — เท่าวินาที = หมดอายุ ก่อนชั่วโมงส่งตัดสิน
+        $seed = $this->seedWorld(['expires_at' => '2026-11-16 21:00:00']);
         $beforeApproval = $this->approvalRow($seed['approval_id']);
         $beforeLog = $this->logRow($seed['log_id']);
 
-        $this->freeze('2026-11-16 22:12:00'); // เท่าวินาทีหมดอายุ = หมดอายุ
+        $this->freeze('2026-11-16 21:00:00');
         [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])));
 
         $response->assertOk()->assertExactJson(['ok' => true]);
@@ -1482,9 +1528,9 @@ TEXT;
     #[Test]
     public function send_one_second_before_expiry_goes_through(): void
     {
-        $seed = $this->seedWorld();
+        $seed = $this->seedWorld(['expires_at' => '2026-11-16 21:00:00']);
 
-        $this->freeze('2026-11-16 22:11:59');
+        $this->freeze('2026-11-16 20:59:59');
         [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])));
 
         $response->assertOk()->assertExactJson(['ok' => true]);
@@ -1525,20 +1571,20 @@ TEXT;
     #[Test]
     public function skip_has_no_gate_outside_hours_switch_off_or_handover(): void
     {
-        $seedOff = $this->seedWorld(['follow_up_enabled' => false]);
+        $seedOff = $this->seedWorld(['follow_up_enabled' => false, 'expires_at' => '2026-11-17 12:00:00']);
         $this->freeze('2026-11-16 23:30:00');
         [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fk', $seedOff['approval_id'])));
         $response->assertOk()->assertExactJson(['ok' => true]);
         $this->assertSingleAnswer($requests, 'ข้ามแล้ว ไม่ส่งข้อความนี้', false);
         self::assertSame('skipped', $this->approvalRow($seedOff['approval_id'])->status);
 
-        $seedHandover = $this->seedWorld(['is_handover' => true]);
+        $seedHandover = $this->seedWorld(['is_handover' => true, 'expires_at' => '2026-11-17 12:00:00']);
         [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fk', $seedHandover['approval_id'])));
         $response->assertOk()->assertExactJson(['ok' => true]);
         $this->assertSingleAnswer($requests, 'ข้ามแล้ว ไม่ส่งข้อความนี้', false);
         self::assertSame('skipped', $this->approvalRow($seedHandover['approval_id'])->status);
 
-        $seedClosed = $this->seedWorld(['room_status' => 'closed']);
+        $seedClosed = $this->seedWorld(['room_status' => 'closed', 'expires_at' => '2026-11-17 12:00:00']);
         [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fk', $seedClosed['approval_id'])));
         $response->assertOk()->assertExactJson(['ok' => true]);
         $this->assertSingleAnswer($requests, 'ข้ามแล้ว ไม่ส่งข้อความนี้', false);
@@ -1669,9 +1715,11 @@ TEXT;
 
         $selects = 0;
         $listen = function ($query) use (&$selects, $seed): void {
+            // จุดเชื่อม: หลัง service อ่านครั้งแรก (นอกธุรกรรม) และ "ก่อน" อ่าครั้งที่สองในธุรกรรม
+            // writer อื่นพลิกสถานะเป็น approved ตรงนั้นพอดี
             if (str_starts_with($query->sql, 'select * from "follow_up_approvals" where "id" = ?')) {
                 $selects++;
-                if ($selects === 2) {
+                if ($selects === 1) {
                     DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->update([
                         'status' => 'approved',
                         'updated_at' => '2026-11-16 09:59:59',
@@ -1693,7 +1741,8 @@ TEXT;
         $this->assertRowChangedOnly($beforeApproval, $after, ['status', 'updated_at']);
         $this->assertRowChangedOnly($beforeLog, $this->logRow($seed['log_id']), []);
 
-        DB::withoutListening();
+        // ถอด listener แข่งรันออกให้หมด — DB::listen ของ Laravel ผูกกับ app event dispatcher
+        app('events')->forget(QueryExecuted::class);
     }
 
     // ------------------------------------------------- 9) คำตอบหรือการแก้การ์ดล้ม
@@ -1796,6 +1845,9 @@ TEXT;
         };
         $seed = $this->seedWorld(array_merge($options, ['approval_status' => $case === 'status_bogus' ? 'bogus' : 'sent']));
 
+        if ($case === 'approval_missing') {
+            DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->delete();
+        }
         if ($case === 'log_missing') {
             DB::table('lead_recovery_logs')->where('id', $seed['log_id'])->delete();
         }
@@ -1815,7 +1867,11 @@ TEXT;
             DB::table('flow_plugins')->where('id', $seed['plugin']->id)->update(['config' => json_encode(['access_token' => $this->pluginToken(), 'chat_id' => '777', 'authorized_user_ids' => [self::PERSON_ID]])]);
         }
 
-        $beforeApproval = $this->approvalRow($seed['approval_id']);
+        if ($case === 'approval_missing') {
+            $beforeApproval = null;
+        } else {
+            $beforeApproval = $this->approvalRow($seed['approval_id']);
+        }
         $beforeLog = $case === 'log_missing' ? null : $this->logRow($seed['log_id']);
 
         $requests = [];
@@ -1829,7 +1885,9 @@ TEXT;
 
         self::assertSame('blocked', $result, $case);
         self::assertCount(0, $requests, 'blocked ต้องไม่ยิงออก');
-        $this->assertRowChangedOnly($beforeApproval, $this->approvalRow($seed['approval_id']), []);
+        if ($beforeApproval !== null) {
+            $this->assertRowChangedOnly($beforeApproval, $this->approvalRow($seed['approval_id']), []);
+        }
         if ($beforeLog !== null) {
             $this->assertRowChangedOnly($beforeLog, $this->logRow($seed['log_id']), []);
         }
@@ -1885,16 +1943,17 @@ TEXT;
     #[DataProvider('refreshStatusLineCases')]
     public function refresh_card_status_lines_table(string $approvalStatus, string $logStatus, ?string $reasonCode, string $expectedLine): void
     {
-        $seed = $this->seedWorld(['approval_status' => $approvalStatus]);
+        // จับข้อความที่ publish ยิง "ก่อน" — บัตรต้องยัง new (publish ทำงานได้เฉพาะ new+pending)
+        $seed = $this->seedWorld(['telegram_delivery_state' => 'new', 'telegram_message_id' => null]);
         $publishText = $this->publishTextForSameRows($seed['approval_id']);
-        $beforeApproval = $this->approvalRow($seed['approval_id']);
-        $beforeLog = $this->logRow($seed['log_id']);
 
         DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->update(['status' => $approvalStatus]);
         DB::table('lead_recovery_logs')->where('id', $seed['log_id'])->update([
             'delivery_status' => $logStatus,
             'reason_code' => $reasonCode,
         ]);
+        $beforeApproval = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
 
         $requests = [];
         Http::fake(function ($request) use (&$requests) {
@@ -1916,7 +1975,7 @@ TEXT;
     #[Test]
     public function refresh_card_golden_after_send_tap(): void
     {
-        $seed = $this->seedWorld();
+        $seed = $this->seedWorld(['golden_ids' => true]);
 
         [$response] = $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])));
         $response->assertOk()->assertExactJson(['ok' => true]);
@@ -1938,7 +1997,7 @@ TEXT;
     #[Test]
     public function refresh_card_golden_after_skip_tap(): void
     {
-        $seed = $this->seedWorld();
+        $seed = $this->seedWorld(['golden_ids' => true]);
 
         [$response] = $this->tap($this->baseCallback(data: $this->cbData('fk', $seed['approval_id'])));
         $response->assertOk()->assertExactJson(['ok' => true]);
@@ -1960,7 +2019,8 @@ TEXT;
     #[Test]
     public function refresh_card_golden_cancelled_with_reason(): void
     {
-        $seed = $this->seedWorld(['approval_status' => 'pending']);
+        // บัตรรุ่น golden + ยัง new เพื่อให้ publish ยิงข้อความตั้งต้นได้ (แล้วแถวถึงสถานะ sent)
+        $seed = $this->seedWorld(['golden_ids' => true, 'telegram_delivery_state' => 'new', 'telegram_message_id' => null]);
         $publishText = $this->publishTextForSameRows($seed['approval_id']);
 
         DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->update(['status' => 'cancelled']);
@@ -2012,7 +2072,7 @@ TEXT;
 
         $result = app(FollowUpTelegramService::class)->refreshCard($seed['approval_id'], $this->now());
 
-        self::assertSame($case, $result);
+        self::assertSame($case === 'rejected' ? 'failed' : 'unknown', $result);
         self::assertCount(1, $requests);
         $this->assertRowChangedOnly($beforeApproval, $this->approvalRow($seed['approval_id']), []);
         $this->assertRowChangedOnly($beforeLog, $this->logRow($seed['log_id']), []);

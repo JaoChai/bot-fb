@@ -11,6 +11,7 @@ use App\Models\Conversation;
 use App\Models\FlowPlugin;
 use App\Models\SlipVerification;
 use App\Services\Delivery\AccountDeliveryService;
+use App\Services\FollowUp\FollowUpApprovalService;
 use App\Services\Payment\ManualPaymentConfirmService;
 use App\Services\Payment\PaymentMessageDetector;
 use App\Services\Payment\TelegramAlertBotService;
@@ -45,6 +46,20 @@ class TelegramAlertCallbackController extends Controller
         $cb = $request->input('callback_query');
         if (! is_array($cb)) {
             return response()->json(['ok' => true]);
+        }
+
+        // บัตรตามลูกค้า (B6b): ปุ่ม fs|fk|fe|fc ไปทาง FollowUpApprovalService ก่อน parser เดิม —
+        // parser เดิมเห็นแค่โค้ด 3 ช่วง และ fs|... มี 4 ช่วงเสมอ ต้องไม่หลุดเข้าทางเดิม
+        // route ตอบ {ok:true} 200 เสมอ ไม่ว่า service จะตัดสินอย่างไร (D80)
+        $data = $cb['data'] ?? null;
+        if (is_string($data) && preg_match('/^(fs|fk|fe|fc)\|/', $data) === 1) {
+            app(FollowUpApprovalService::class)->callback(
+                $plugin,
+                $cb,
+                (int) ($request->input('update_id') ?? 0),
+            );
+
+            return response()->json(['ok' => true], 200);
         }
 
         $chatId = (string) ($cb['message']['chat']['id'] ?? '');
