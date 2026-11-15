@@ -821,6 +821,36 @@ TEXT;
         $this->assertNoSecretsInLog();
     }
 
+    #[Test]
+    public function publish_claim_refused_by_racing_writer_is_busy_and_sends_nothing(): void
+    {
+        $seed = $this->seedPending();
+        $this->resetLogCaptures();
+        $interfered = false;
+        DB::listen(function ($query) use ($seed, &$interfered): void {
+            if ($interfered || ! str_contains(strtolower($query->sql), 'follow_up_approvals')) {
+                return;
+            }
+            $interfered = true;
+            // นักเขียนคนอื่นยึดแถวระหว่างที่ publisher อ่านแถวกับยิง claim UPDATE
+            DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->update([
+                'telegram_delivery_state' => 'sending',
+                'telegram_chat_id' => 'racer-chat',
+                'telegram_plugin_id' => $seed['plugin']->id,
+                'updated_at' => '2026-11-16 09:59:30',
+            ]);
+        });
+        [$result, $requests] = $this->publishCapturing($seed['approval_id'], $this->okStub());
+
+        self::assertSame('busy', $result);
+        self::assertCount(0, $requests);
+        $row = $this->approvalRow($seed['approval_id']);
+        self::assertSame('sending', $row['telegram_delivery_state']);
+        self::assertSame('racer-chat', $row['telegram_chat_id']);
+        self::assertSame('2026-11-16 09:59:30', $row['updated_at']);
+        $this->assertNoSecretsInLog();
+    }
+
     // ------------------------------------------------- 4) happy path + คอลัมน์ที่เขียนได้
 
     #[Test]
