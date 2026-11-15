@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use RuntimeException;
 use Tests\TestCase;
@@ -1299,14 +1300,225 @@ class SendTest extends TestCase
     #[Test]
     public function test_owner_edit_on_the_card_after_first_push_cannot_leak_into_a_retry(): void
     {
-        // D49 + Step A: หลังยิงแรก approval.text เพี้ยนจาก draft = บัตรไม่ตรงที่เจ้าของอนุมัติ → blocked เงียบ ไม่ยิง
+        // D49 + D54: หลังยิงแรก approval.text เพี้ยนจาก draft = บัตรไม่ตรงที่เจ้าของอนุมัติ —
+        // เช็ค owner รันหลัง claim เป็น gate แรก แล้วจบ send_failed ไม่ปล่อยแถวค้าง retry กินสล็อตโควต้าตลอด
         $seed = $this->seededPushed();
         DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['text' => 'ข้อความที่แก้หลังยิงแรก']);
         $this->fakeNothing();
 
-        $this->assertSame('blocked', $this->send($seed, '2026-11-16 10:01:00'));
+        $this->assertSame('failed', $this->send($seed, '2026-11-16 10:01:00'));
         Http::assertNothingSent();
-        $this->assertNull($this->logRow($seed)->message_id, 'ไม่มีแถวประวัติ');
+        $log = $this->logRow($seed);
+        $this->assertSame('send_failed', $log->delivery_status, 'แถวที่ยิงแล้วต้องจบ send_failed ไม่ค้าง retry');
+        $this->assertSame('acceptance_unknown_gate_changed', $log->reason_code);
+        $this->assertSame('cancelled', $this->approvalRow($seed)->status);
+        $this->assertClaimCleared($seed);
+        $this->assertSame(self::NOW, $log->first_push_at, 'คอลัมน์ freeze คงของเดิม (gate ตัดก่อน freeze)');
+        $this->assertSame(self::TEXT, $log->message_sent);
+        $this->assertSame(1, (int) $log->attempt_number);
+        $this->assertNull($log->message_id, 'ไม่มีแถวประวัติ');
+    }
+
+    // ------------------------------------------------------------------
+    // รอบแก้ review — D53/D54/D55
+    // ------------------------------------------------------------------
+
+    /** รูปร่าง check_answers ที่อ่านไม่ได้ = นับเป็นมีข้อห้าม (D53) */
+    public static function unreadableCheckShapes(): array
+    {
+        return [
+            'sql_null' => [null],
+            'json_null' => ['null'],
+            'json_empty_list' => ['[]'],
+            'json_empty_object' => ['{}'],
+            'failed_is_string' => [json_encode(['scores' => ['safe_to_send' => 0.9], 'failed' => 'no_pressure', 'error' => false, 'version' => 1])],
+            'failed_and_error_missing' => [json_encode(['scores' => ['safe_to_send' => 0.9], 'version' => 1])],
+            'error_is_string_false' => [json_encode(['scores' => ['safe_to_send' => 0.9], 'failed' => [], 'error' => 'false', 'version' => 1])],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('unreadableCheckShapes')]
+    public function test_unreadable_check_record_blocks_like_a_flag(?string $shape): void
+    {
+        // D53: อ่านบันทึกเช็คไม่ได้ = ถือว่ามีข้อห้าม — owner sent ไม่ยืนยัน → blocked ไม่เขียน ไม่ยิง
+        $seed = $this->seedReady([], ['check_answers' => $shape]);
+        $before = $this->snapshot($seed);
+        $this->fakeNothing();
+
+        $this->assertSame('blocked', $this->send($seed), 'รูปร่าง '.var_export($shape, true).' ต้องนับเป็นมีข้อห้าม');
+        Http::assertNothingSent();
+        $this->assertSame($before, $this->snapshot($seed), 'บันทึกอ่านไม่ได้ห้ามเขียนคอลัมน์ใด');
+    }
+
+    #[Test]
+    #[DataProvider('unreadableCheckShapes')]
+    public function test_unreadable_check_record_blocks_edited_without_confirmed_revision(?string $shape): void
+    {
+        // D53: กฎเดียวกันบน owner_action edited — ต้องมี confirmed_revision ตรง revision จึงผ่าน
+        $seed = $this->seedReady(['owner_action' => 'edited'], ['check_answers' => $shape]);
+        $before = $this->snapshot($seed);
+        $this->fakeNothing();
+
+        $this->assertSame('blocked', $this->send($seed));
+        Http::assertNothingSent();
+        $this->assertSame($before, $this->snapshot($seed));
+    }
+
+    #[Test]
+    #[DataProvider('unreadableCheckShapes')]
+    public function test_unreadable_check_record_with_confirmation_sends(?string $shape): void
+    {
+        // D53: รูปร่างเดิมแต่เจ้าของยืนยันแล้ว → ยังส่งได้ (sent = check_overridden, edited = confirmed_revision)
+        $this->fakeLine();
+
+        $seed = $this->seedReady([], ['check_answers' => $shape, 'check_overridden' => true]);
+        $this->assertSame('sent', $this->send($seed));
+
+        $seed = $this->seedReady(['owner_action' => 'edited'], ['check_answers' => $shape, 'confirmed_revision' => 1]);
+        $this->assertSame('sent', $this->send($seed));
+
+        $this->assertPushCount(2);
+    }
+
+    #[Test]
+    public function test_clean_check_record_sends_without_any_confirmation(): void
+    {
+        // D53: รูปร่างจริงที่สะอาด (failed = [] และ error = false พอดี) ส่งได้โดยไม่ต้องยืนยัน
+        $seed = $this->seedReady();
+        $this->fakeLine();
+
+        $this->assertSame('sent', $this->send($seed));
+        $this->assertPushCount(1);
+    }
+
+    #[Test]
+    public function test_claim_refusal_writes_nothing_when_the_approval_changes_mid_claim(): void
+    {
+        // D55 (reviewer item 1): คนอื่นแก้บัตรพอดีระหว่าง claim → claim ต้อง all-or-nothing —
+        // ห้ามเหลือ log sending + claim_token (แถวจะติดค้างตลอดเพราะ claim (a) ต้องการ approved)
+        $seed = $this->seedReady();
+        $before = $this->snapshot($seed);
+        $this->fakeNothing();
+        $armed = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$armed, $seed): void {
+            if ($armed && str_starts_with(strtolower($query), 'update "follow_up_approvals"')) {
+                $armed = false;
+                // เจ้าของยกเลิกบัตรคาบระหว่าง SELECT กับ UPDATE ของ claim (PG read-committed)
+                DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['status' => 'cancelled']);
+            }
+        });
+
+        $result = $this->send($seed);
+
+        DB::connection()->beforeExecuting(function (): void {});
+        $this->assertSame('blocked', $result, 'claim ที่ approval เปลี่ยนกลางทางต้องถูกปฏิเสธ');
+        Http::assertNothingSent();
+        $this->assertPushCount(0);
+        $this->assertSame($before, $this->snapshot($seed), 'claim ถูกปฏิเสธ = log คง approved ไม่มี claim_token ไม่มีคอลัมน์ใดเปลี่ยน');
+    }
+
+    #[Test]
+    public function test_end_write_refused_by_approval_change_leaves_the_log_exactly_as_before(): void
+    {
+        // D55: end write (log + approval) ต้อง transaction เดียว — บัตรเปลี่ยนกลางทาง = rollback ทั้งคู่
+        // log ต้องเป็นแบบเดียวกับก่อน end write เป๊ะ (sending + claim token ที่เพิ่งได้มา)
+        $seed = $this->seededPushed();
+        DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['expires_at' => '2026-11-16 10:00:30']);
+        $this->fakeNothing();
+        $approvalsUpdates = 0;
+        DB::connection()->beforeExecuting(function ($query) use (&$approvalsUpdates, $seed): void {
+            if (str_starts_with(strtolower($query), 'update "follow_up_approvals"')) {
+                $approvalsUpdates++;
+                if ($approvalsUpdates === 2) {
+                    // ครั้งแรกคือ claim ของ call นี้ (ต้องผ่าน) — ครั้งที่สองคือ approval CAS ของ end write
+                    DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['status' => 'cancelled']);
+                }
+            }
+        });
+
+        $result = $this->send($seed, '2026-11-16 10:01:00');
+
+        DB::connection()->beforeExecuting(function (): void {});
+        $this->assertSame('blocked', $result, 'end write ที่ approval เปลี่ยนกลางทาง = blocked');
+        $this->assertPushCount(0);
+        $log = $this->logRow($seed);
+        $this->assertSame('sending', $log->delivery_status, 'log ต้องคง sending ก่อน end write');
+        $this->assertNotNull($log->claim_token, 'claim token ที่ claim ให้มาต้องคงอยู่');
+        $this->assertNotNull($log->claimed_at);
+        $this->assertSame('line_retryable', $log->reason_code, 'คอลัมน์อื่นต้องคงค่าก่อน end write ทั้งหมด');
+        $this->assertSame(1, (int) $log->attempt_number);
+        $this->assertSame(self::NOW, $log->first_push_at);
+        $this->assertSame('sending', $this->approvalRow($seed)->status, 'rollback ต้องคืนบัตรกลับ sending');
+    }
+
+    #[Test]
+    public function test_pushed_row_owner_evidence_changes_end_acceptance_unknown(): void
+    {
+        // D54: แถวที่ยิงแล้วเช็ค owner หลัง claim (gate แรก) — พังที่ไหนก็จบ send_failed/cancelled
+        // เหมือนกันหมด ไม่ปล่อยแถวค้าง retry แบบไม่เขียนอะไรเลย
+        $cases = [
+            'owner_action_null' => function (array $seed): array {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['owner_action' => null]);
+
+                return $seed;
+            },
+            'owner_action_automatic' => function (array $seed): array {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update([
+                    'owner_action' => 'automatic',
+                    'owner_action_at' => '2026-11-16 10:00:30',
+                    'owner_telegram_user_id' => '555',
+                ]);
+
+                return $seed;
+            },
+            'owner_telegram_user_id_null' => function (array $seed): array {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['owner_telegram_user_id' => null]);
+
+                return $seed;
+            },
+            'flag_confirmation_removed' => function (array $seed): array {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['check_overridden' => false]);
+                DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['check_answers' => $this->flaggedCheck()]);
+
+                return $seed;
+            },
+        ];
+
+        foreach ($cases as $label => $mutate) {
+            $seed = $this->seededPushed();
+            $seed = $mutate($seed);
+            $this->fakeNothing();
+
+            $result = $this->send($seed, '2026-11-16 10:01:00');
+
+            $log = $this->logRow($seed);
+            $this->assertSame('failed', $result, "เคส {$label} ต้องจบ failed");
+            Http::assertNothingSent();
+            $this->assertSame('send_failed', $log->delivery_status, "เคส {$label}: log send_failed");
+            $this->assertSame('acceptance_unknown_gate_changed', $log->reason_code, "เคส {$label}: reason");
+            $this->assertSame('cancelled', $this->approvalRow($seed)->status, "เคส {$label}: approval cancelled");
+            $this->assertClaimCleared($seed);
+            $this->assertSame(self::NOW, $log->first_push_at, "เคส {$label}: freeze คงเดิม");
+            $this->assertSame(self::TEXT, $log->message_sent);
+            $this->assertSame(1, (int) $log->attempt_number);
+            $this->assertNull($log->message_id, "เคส {$label}: ไม่มีแถวประวัติ");
+        }
+    }
+
+    #[Test]
+    public function test_pushed_row_owner_gate_ending_frees_the_quota_slot_the_next_day(): void
+    {
+        // D54: แถวที่จบด้วย owner gate ต้องไม่ค้าง retry — วันถัดมาโควต้าต้องไม่นับแถวนี้อีก
+        $this->fakeLine();
+        $seed = $this->seededPushed();
+        DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['text' => 'ข้อความที่แก้หลังยิงแรก']);
+
+        $this->assertSame('failed', $this->send($seed, '2026-11-16 10:01:00'));
+        $this->assertPushCount(0);
+
+        $check = app(FollowUpQuotaService::class)->check($seed['bot'], $this->at('2026-11-17 10:00:00'));
+        $this->assertSame(0, $check['local_pending'], 'แถวจบ send_failed ต้องปล่อยสล็อตโควต้าวันถัดมา (D54)');
     }
 
     // ------------------------------------------------------------------
