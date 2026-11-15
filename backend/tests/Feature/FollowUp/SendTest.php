@@ -1,0 +1,1535 @@
+<?php
+
+namespace Tests\Feature\FollowUp;
+
+use App\Events\ConversationUpdated;
+use App\Events\MessageSent;
+use App\Http\Resources\MessageResource;
+use App\Models\Bot;
+use App\Models\Conversation;
+use App\Models\Flow;
+use App\Models\FlowPlugin;
+use App\Models\Message;
+use App\Models\User;
+use App\Services\FollowUp\FollowUpQuotaService;
+use App\Services\FollowUp\FollowUpSalesProjector;
+use App\Services\FollowUp\FollowUpSendService;
+use App\Services\LINEService;
+use Carbon\CarbonImmutable;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Mockery;
+use PHPUnit\Framework\Attributes\Test;
+use RuntimeException;
+use Tests\TestCase;
+
+/**
+ * การ์ด B4c — ตัวส่งข้อความตามลูกค้า (D46-D52): FollowUpSendService::send
+ *
+ * - Step A อ่านอย่างเดียว เขียนไม่ได้ ยิง HTTP ไม่ได้
+ * - claim แบบ compare-and-set รับเฉพาะ approved/retry(ถึงคิว)/sending(ค้าง 10 นาที)
+ * - gate ตามลำดับ expiry → recheck(forSend) → ผู้รับ → ข้อความ(ยังไม่ยิง) → โควต้า → ข้อความใหม่
+ * - freeze ก่อน POST เสมอ (first_push_at/message_sent/attempt_number) แล้ว pushFollowUp นอก transaction
+ * - payload แช่งตาย ห้ามอ่าน approval.text ซ้ำหลังยิงครั้งแรก (D49); key เดิมรีไลน์ 24 ชม.
+ * - ทุก HTTP โดน fake — ไม่มี request จริง
+ */
+class SendTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private const NOW = '2026-11-16 10:00:00'; // จันทร์ 16 พ.ย. 2026 กรุงเทพฯ อยู่ในชั่วโมงส่ง
+
+    private const QUOTA_URL = 'https://api.line.me/v2/bot/message/quota';
+
+    private const CONSUMPTION_URL = 'https://api.line.me/v2/bot/message/quota/consumption';
+
+    private const PUSH_URL = 'https://api.line.me/v2/bot/message/push';
+
+    private const TEXT = 'สวัสดีครับ ยังสนใจสินค้าอยู่ไหมครับ 🙏';
+
+    private const RECIPIENT = 'Ua1b2c3d4e5f60718293a4b5c6d7e8f90';
+
+    private const REQUEST_ID = 'req-accept-1';
+
+    /** @var array<string, int> */
+    private array $hits = [];
+
+    /** @var list<array{0: string, 1: string}> คู่ [X-Line-Retry-Key, body] ของทุก push */
+    private array $pushes = [];
+
+    /** @var list<MessageLogged> */
+    private array $logLines = [];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Event::listen(MessageLogged::class, function (MessageLogged $event): void {
+            $this->logLines[] = $event;
+        });
+    }
+
+    private function now(): CarbonImmutable
+    {
+        return CarbonImmutable::parse(self::NOW, 'Asia/Bangkok');
+    }
+
+    private function at(string $localBangkok): CarbonImmutable
+    {
+        return CarbonImmutable::parse($localBangkok, 'Asia/Bangkok');
+    }
+
+    private function token(): string
+    {
+        return implode('', ['fake', 'Line', 'Access', 'Token', '777']);
+    }
+
+    private function retryKey(): string
+    {
+        return implode('-', ['6f8fa5d0', 'c5de', '4a0b', '9e26', '6f55c1b2d3aa']);
+    }
+
+    // ------------------------------------------------------------------
+    // Fixtures
+    // ------------------------------------------------------------------
+
+    /**
+     * ห้องสะอาดผ่านทุก gate: m1-m5 จบที่ข้อความลูกค้า 08:59 เงียบ > 24 ชม.,
+     * log approved + บัตร approved (revision 1, ข้อความตรงร่าง, check สะอาด, ไม่หมดอายุ)
+     */
+    private function seedReady(array $logOverrides = [], array $approvalOverrides = []): array
+    {
+        $user = User::factory()->owner()->create();
+        $bot = Bot::factory()->active()->line()->create([
+            'user_id' => $user->id,
+            'primary_chat_model' => 'openai/gpt-6-luna',
+            'channel_access_token' => $this->token(),
+        ]);
+
+        config(['customer_follow_up.bot_ids' => [$bot->id]]);
+        config(['customer_follow_up.admin_web_url' => 'https://admin.example.test']);
+        config(['services.telegram_alert.secret' => 'webhook-secret-test']);
+        config(['customer_follow_up.quota_reserve_messages' => 100]);
+
+        $flow = Flow::factory()->create(['bot_id' => $bot->id]);
+        $bot->update(['default_flow_id' => $flow->id]);
+        FlowPlugin::create([
+            'flow_id' => $flow->id,
+            'type' => 'telegram',
+            'name' => 'แจ้งเตือน',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => ['access_token' => 'tok-123', 'chat_id' => '999', 'authorized_user_ids' => ['555']],
+        ]);
+
+        DB::table('bot_settings')->insert([
+            'bot_id' => $bot->id,
+            'follow_up_enabled' => true,
+            'follow_up_mode' => 'approve',
+            'follow_up_started_at' => '2026-10-17 10:00:00',
+            'follow_up_activation_message_id' => 0,
+            'follow_up_activated_at' => '2026-10-17 10:00:00',
+            'created_at' => self::NOW,
+            'updated_at' => self::NOW,
+        ]);
+
+        $room = Conversation::factory()->line()->create([
+            'bot_id' => $bot->id,
+            'external_customer_id' => self::RECIPIENT,
+        ]);
+
+        $this->addMessage($room->id, 'user', '2026-11-15 08:55:00', 'สนใจ Nolimit Personal ครับ');
+        $this->addMessage($room->id, 'bot', '2026-11-15 08:56:00', 'ต้องการกี่ตัวครับ');
+        $this->addMessage($room->id, 'user', '2026-11-15 08:57:00', 'เอา 2 ตัวครับ');
+        $this->addMessage($room->id, 'bot', '2026-11-15 08:58:00', 'ได้ครับ กำลังเตรียมสินค้าให้ครับ');
+        $anchorId = $this->addMessage($room->id, 'user', '2026-11-15 08:59:00', 'ประเมินราคาให้หน่อยครับ');
+
+        FollowUpSalesProjector::refresh($room, $this->now());
+
+        $logId = $this->insertLog($room, $anchorId, $logOverrides);
+        $approvalId = $this->insertApproval($logId, $approvalOverrides);
+
+        return ['bot' => $bot, 'room' => $room, 'anchorId' => $anchorId, 'logId' => $logId, 'approvalId' => $approvalId];
+    }
+
+    private function insertLog(Conversation $room, int $anchorId, array $overrides = []): int
+    {
+        return DB::table('lead_recovery_logs')->insertGetId(array_merge([
+            'conversation_id' => $room->id,
+            'bot_id' => $room->bot_id,
+            'attempt_number' => 0,
+            'attempt_count' => 0,
+            'message_mode' => 'ai',
+            'delivery_status' => 'approved',
+            'silence_user_message_id' => $anchorId,
+            'observed_last_message_id' => $anchorId,
+            'customer_key' => hash('sha256', $room->bot_id.'|line|'.$room->external_customer_id),
+            'draft' => self::TEXT,
+            'drafted_at' => '2026-11-15 09:00:00',
+            'draft_day' => '2026-11-15',
+            'draft_model' => 'openai/gpt-6-luna',
+            'check_answers' => $this->cleanCheck(),
+            'owner_action' => 'sent',
+            'owner_action_at' => '2026-11-16 09:55:00',
+            'owner_telegram_user_id' => '555',
+            'check_overridden' => false,
+            'created_at' => self::NOW,
+            'updated_at' => self::NOW,
+        ], $overrides));
+    }
+
+    private function insertApproval(int $logId, array $overrides = []): int
+    {
+        return DB::table('follow_up_approvals')->insertGetId(array_merge([
+            'lead_recovery_log_id' => $logId,
+            'status' => 'approved',
+            'revision' => 1,
+            'nonce' => 'abcd1234abcd1234',
+            'text' => self::TEXT,
+            'check_answers' => $this->cleanCheck(),
+            'check_overridden' => false,
+            'expires_at' => '2026-11-16 12:00:00',
+            'telegram_delivery_state' => 'sent',
+            'created_at' => self::NOW,
+            'updated_at' => self::NOW,
+        ], $overrides));
+    }
+
+    private function addMessage(int $conversationId, string $sender, string $at, string $content): int
+    {
+        return DB::table('messages')->insertGetId([
+            'conversation_id' => $conversationId,
+            'sender' => $sender,
+            'content' => $content,
+            'type' => 'text',
+            'created_at' => $at,
+            'updated_at' => $at,
+        ]);
+    }
+
+    private function cleanCheck(): string
+    {
+        return json_encode(['scores' => ['safe_to_send' => 0.9], 'failed' => [], 'error' => false, 'version' => 1], JSON_UNESCAPED_UNICODE);
+    }
+
+    private function flaggedCheck(): string
+    {
+        return json_encode(['scores' => ['safe_to_send' => 0.9], 'failed' => ['no_pressure'], 'error' => false, 'version' => 1], JSON_UNESCAPED_UNICODE);
+    }
+
+    private function errorCheck(): string
+    {
+        return json_encode(['scores' => ['safe_to_send' => 0.9], 'failed' => [], 'error' => true, 'version' => 1], JSON_UNESCAPED_UNICODE);
+    }
+
+    // ------------------------------------------------------------------
+    // HTTP fakes
+    // ------------------------------------------------------------------
+
+    /**
+     * จำลอง LINE ครบสาม endpoint พร้อมนับ hit ทุก url
+     * $quota: [quota => array|'500'|'timeout', consumption => array|'500'|'timeout']
+     * $push: รายการคำตอบเรียงตามจังหวะ [body, status, headers] หรือ 'timeout' (โยน ConnectionException)
+     */
+    private function fakeLine(array $quota = [], array $push = []): void
+    {
+        $quota = array_merge([
+            self::QUOTA_URL => ['type' => 'limited', 'value' => 200],
+            self::CONSUMPTION_URL => ['totalUsage' => 10],
+        ], $quota);
+
+        $push = $push === [] ? [['{}', 200, ['x-line-request-id' => self::REQUEST_ID]]] : $push;
+        $pushIndex = 0;
+        $this->hits = [];
+        $this->pushes = [];
+
+        Http::fake(function ($request) use ($quota, $push, &$pushIndex) {
+            $url = $request->url();
+            $this->hits[$url] = ($this->hits[$url] ?? 0) + 1;
+
+            if ($url === self::QUOTA_URL || $url === self::CONSUMPTION_URL) {
+                $answer = $quota[$url];
+
+                if ($answer === 'timeout') {
+                    throw new ConnectionException('cURL error 28');
+                }
+
+                if ($answer === '500') {
+                    return Http::response('{"message":"Internal server error"}', 500);
+                }
+
+                return Http::response(json_encode($answer, JSON_UNESCAPED_UNICODE), 200);
+            }
+
+            if ($url === self::PUSH_URL) {
+                $entry = $push[min($pushIndex, count($push) - 1)];
+                $pushIndex++;
+                $this->pushes[] = [$request->hasHeader('X-Line-Retry-Key') ? $request->header('X-Line-Retry-Key')[0] : '', $request->body()];
+
+                if ($entry === 'timeout') {
+                    throw new ConnectionException('cURL error 28');
+                }
+
+                return Http::response($entry[0], $entry[1], $entry[2] ?? []);
+            }
+
+            return Http::response('', 404);
+        });
+    }
+
+    /** กับดัก request หลุด: อะไรยิงออกนอกแผน = ConnectionException */
+    private function fakeNothing(): void
+    {
+        Http::fake();
+        Http::preventStrayRequests();
+    }
+
+    private function send(array $seed, ?string $at = null): string
+    {
+        return app(FollowUpSendService::class)->send($seed['approvalId'], $at === null ? $this->now() : $this->at($at));
+    }
+
+    private function snapshot(array $seed): array
+    {
+        return [
+            'log' => (array) DB::table('lead_recovery_logs')->where('id', $seed['logId'])->first(),
+            'approval' => (array) DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->first(),
+        ];
+    }
+
+    private function logRow(array $seed): object
+    {
+        return DB::table('lead_recovery_logs')->where('id', $seed['logId'])->first();
+    }
+
+    private function approvalRow(array $seed): object
+    {
+        return DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->first();
+    }
+
+    private function assertPushCount(int $expected): void
+    {
+        $this->assertSame($expected, $this->hits[self::PUSH_URL] ?? 0, "จำนวน request push ต้องเท่ากับ {$expected}");
+    }
+
+    private function assertFreezeUntouched(array $seed): void
+    {
+        $log = $this->logRow($seed);
+        $this->assertNull($log->first_push_at, 'first_push_at ต้องยังว่าง');
+        $this->assertNull($log->message_sent, 'message_sent ต้องยังว่าง');
+        $this->assertSame(0, (int) $log->attempt_number, 'attempt_number ต้องยังเป็น 0');
+    }
+
+    private function assertClaimCleared(array $seed): void
+    {
+        $log = $this->logRow($seed);
+        $this->assertNull($log->claim_token, 'claim_token ต้องถูกเคลียร์');
+        $this->assertNull($log->claimed_at, 'claimed_at ต้องถูกเคลียร์');
+    }
+
+    private function assertNoMessagesAdded(array $seed, int $expectedCount): void
+    {
+        $this->assertSame($expectedCount, (int) DB::table('messages')->where('conversation_id', $seed['room']->id)->count());
+    }
+
+    // ------------------------------------------------------------------
+    // Baseline
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_baseline_sends_exactly_one_push_with_exact_body_and_quota_reads(): void
+    {
+        $seed = $this->seedReady();
+        $this->fakeLine();
+
+        $this->assertSame('sent', $this->send($seed));
+
+        $this->assertSame(1, $this->hits[self::QUOTA_URL] ?? 0, 'อ่านโควต้าครั้งเดียว');
+        $this->assertSame(1, $this->hits[self::CONSUMPTION_URL] ?? 0, 'อ่านยอดใช้ครั้งเดียว');
+        $this->assertPushCount(1);
+        // อ่านโควต้าเสร็จก่อนยิง push เสมอ (hits เรียงตามเวลาที่ fake เห็น)
+        $this->assertSame([self::QUOTA_URL, self::CONSUMPTION_URL, self::PUSH_URL], array_keys($this->hits));
+
+        $this->assertCount(1, $this->pushes);
+        $this->assertSame(json_encode(['to' => self::RECIPIENT, 'messages' => [['type' => 'text', 'text' => self::TEXT]]], JSON_UNESCAPED_UNICODE), $this->pushes[0][1], 'body ต้องตรงทุกตัวอักษร ไทย+อิโมจิไม่เพี้ยน');
+
+        $log = $this->logRow($seed);
+        $this->assertSame('sent', $log->delivery_status);
+        $this->assertSame(self::TEXT, $log->message_sent);
+        $this->assertSame('2026-11-16 10:00:00', $log->first_push_at);
+        $this->assertSame(1, (int) $log->attempt_number);
+        $this->assertClaimCleared($seed);
+    }
+
+    // ------------------------------------------------------------------
+    // Step A — อ่านอย่างเดียว: blocked ไม่เขียน ไม่ยิงอะไร
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_step_a_blocks_without_writing_or_calling_line(): void
+    {
+        $cases = [
+            'approval_pending' => function (array $seed): array {
+                DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['status' => 'pending']);
+
+                return $seed;
+            },
+            'owner_action_null' => function (array $seed): array {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['owner_action' => null]);
+
+                return $seed;
+            },
+            'owner_action_automatic_all_other_conditions_met' => function (array $seed): array {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update([
+                    'owner_action' => 'automatic',
+                    'owner_action_at' => '2026-11-16 09:55:00',
+                    'owner_telegram_user_id' => '555',
+                ]);
+
+                return $seed;
+            },
+            'owner_action_at_null' => function (array $seed): array {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['owner_action_at' => null]);
+
+                return $seed;
+            },
+            'owner_telegram_user_id_null' => function (array $seed): array {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['owner_telegram_user_id' => null]);
+
+                return $seed;
+            },
+            'owner_telegram_user_id_empty_string' => function (array $seed): array {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['owner_telegram_user_id' => '']);
+
+                return $seed;
+            },
+            'sent_with_revision_2' => function (array $seed): array {
+                DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['revision' => 2]);
+
+                return $seed;
+            },
+            'sent_with_text_one_char_off_the_draft' => function (array $seed): array {
+                DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['text' => self::TEXT.'?']);
+
+                return $seed;
+            },
+            'flagged_failed_without_override' => function (array $seed): array {
+                DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['check_answers' => $this->flaggedCheck()]);
+
+                return $seed;
+            },
+            'flagged_error_without_override' => function (array $seed): array {
+                DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['check_answers' => $this->errorCheck()]);
+
+                return $seed;
+            },
+            'edited_flagged_with_stale_confirmed_revision' => function (array $seed): array {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['owner_action' => 'edited']);
+                DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update([
+                    'check_answers' => $this->flaggedCheck(),
+                    'confirmed_revision' => 0, // revision - 1
+                ]);
+
+                return $seed;
+            },
+        ];
+
+        foreach ($cases as $label => $mutate) {
+            $seed = $this->seedReady();
+            $before = $this->snapshot($seed);
+            $mutate($seed);
+            $this->fakeNothing();
+
+            $result = $this->send($seed);
+
+            $this->assertSame('blocked', $result, "เคส {$label} ต้อง blocked");
+            Http::assertNothingSent();
+            $this->assertSame($before, $this->snapshot($seed), "เคส {$label} ห้ามแตะคอลัมน์ใดของ log/approval");
+        }
+    }
+
+    #[Test]
+    public function test_step_a_blocks_when_approval_row_missing(): void
+    {
+        $this->seedReady();
+        $this->fakeNothing();
+
+        $this->assertSame('blocked', app(FollowUpSendService::class)->send(99999999, $this->now()));
+        Http::assertNothingSent();
+        $this->assertSame(1, DB::table('follow_up_approvals')->count());
+    }
+
+    #[Test]
+    public function test_step_a_blocks_when_log_row_missing(): void
+    {
+        $seed = $this->seedReady();
+
+        // FK บังคับความสมบูรณ์ ปกติทำให้สถานะนี้เกิดไม่ได้ — ปิดชั่วคราวเพื่อจำลอง log หาย
+        Schema::disableForeignKeyConstraints();
+        try {
+            DB::table('follow_up_approvals')->where('lead_recovery_log_id', $seed['logId'])->delete();
+            DB::table('lead_recovery_logs')->where('id', $seed['logId'])->delete();
+            $approvalId = DB::table('follow_up_approvals')->insertGetId([
+                'lead_recovery_log_id' => $seed['logId'],
+                'status' => 'approved',
+                'revision' => 1,
+                'nonce' => 'abcd1234abcd1234',
+                'text' => self::TEXT,
+                'check_answers' => $this->cleanCheck(),
+                'check_overridden' => false,
+                'expires_at' => '2026-11-16 12:00:00',
+                'telegram_delivery_state' => 'sent',
+                'created_at' => self::NOW,
+                'updated_at' => self::NOW,
+            ]);
+        } finally {
+            Schema::enableForeignKeyConstraints();
+        }
+
+        $this->fakeNothing();
+
+        $this->assertSame('blocked', app(FollowUpSendService::class)->send($approvalId, $this->now()));
+        Http::assertNothingSent();
+        $this->assertSame(0, DB::table('lead_recovery_logs')->count());
+    }
+
+    #[Test]
+    public function test_step_a_twins_flagged_overridden_and_edited_all_send(): void
+    {
+        // (ก) flagged + check_overridden = ผ่าน
+        $seed = $this->seedReady([], ['check_answers' => $this->flaggedCheck(), 'check_overridden' => true]);
+        $this->fakeLine();
+        $this->assertSame('sent', $this->send($seed));
+        $message = DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->first();
+        $this->assertSame('openai/gpt-6-luna', $message->model_used, 'owner_action sent ติด model_used ตาม draft_model');
+
+        // (ข) edited revision 2 clean → ส่งได้ model_used null
+        $seed = $this->seedReady(
+            ['owner_action' => 'edited'],
+            ['revision' => 2, 'confirmed_revision' => 2, 'text' => 'แก้ไขข้อความตามลูกค้าแล้วครับ'],
+        );
+        $this->fakeLine();
+        $this->assertSame('sent', $this->send($seed));
+        $message = DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->orderByDesc('id')->first();
+        $this->assertNull($message->model_used, 'owner_action edited ต้องไม่ติด model_used');
+        $this->assertSame('แก้ไขข้อความตามลูกค้าแล้วครับ', $message->content);
+
+        // (ค) edited flagged + confirmed_revision ตรง revision → ผ่าน
+        $seed = $this->seedReady(
+            ['owner_action' => 'edited'],
+            ['check_answers' => $this->flaggedCheck(), 'confirmed_revision' => 1],
+        );
+        $this->fakeLine();
+        $this->assertSame('sent', $this->send($seed));
+    }
+
+    // ------------------------------------------------------------------
+    // Claim — เข้าสถานะ sending ได้เฉพาะ 3 ทาง
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_claim_refuses_unexpected_states(): void
+    {
+        $cases = [
+            'pending' => ['pending', 'pending'],
+            'editing' => ['approved', 'editing'],
+            'skipped' => ['approved', 'skipped'],
+            'expired' => ['approved', 'expired'],
+            'cancelled' => ['approved', 'cancelled'],
+            'send_failed' => ['send_failed', 'cancelled'],
+            'candidate' => ['candidate', 'approved'],
+        ];
+
+        foreach ($cases as $label => [$logStatus, $approvalStatus]) {
+            $seed = $this->seedReady(
+                ['delivery_status' => $logStatus],
+                ['status' => $approvalStatus],
+            );
+            $before = $this->snapshot($seed);
+            $this->fakeNothing();
+
+            $result = $this->send($seed);
+
+            $this->assertSame('blocked', $result, "สถานะ {$label} ต้อง claim ไม่ผ่าน");
+            Http::assertNothingSent();
+            $this->assertSame($before, $this->snapshot($seed), "สถานะ {$label} ห้ามเขียนอะไรเลย");
+        }
+    }
+
+    #[Test]
+    public function test_claim_time_boundaries(): void
+    {
+        // retry ที่ยังไม่ถึงคิว (+1 วินาที) → blocked
+        $seed = $this->seedReady([
+            'delivery_status' => 'retry',
+            'retry_key' => $this->retryKey(),
+            'first_push_at' => '2026-11-16 09:59:00',
+            'message_sent' => self::TEXT,
+            'attempt_number' => 1,
+            'next_attempt_at' => '2026-11-16 10:00:01',
+        ], ['status' => 'sending']);
+        $before = $this->snapshot($seed);
+        $this->fakeNothing();
+        $this->assertSame('blocked', $this->send($seed));
+        Http::assertNothingSent();
+        $this->assertSame($before, $this->snapshot($seed));
+
+        // retry ถึงคิวพอดี (= now) → เดินหน้าจน sent
+        $seed = $this->seedReady([
+            'delivery_status' => 'retry',
+            'retry_key' => $this->retryKey(),
+            'first_push_at' => '2026-11-16 09:59:00',
+            'message_sent' => self::TEXT,
+            'attempt_number' => 1,
+            'next_attempt_at' => self::NOW,
+        ], ['status' => 'sending']);
+        $this->fakeLine();
+        $this->assertSame('sent', $this->send($seed), 'next_attempt_at = now พอดีต้องถึงคิว');
+
+        // sending ที่ยังสด (updated_at 9 นาที 59 วินาทีก่อน now) → blocked
+        $seed = $this->seedReady([
+            'delivery_status' => 'sending',
+            'claim_token' => 'other-worker-token',
+            'claimed_at' => '2026-11-16 09:50:01',
+            'updated_at' => '2026-11-16 09:50:01',
+        ], ['status' => 'sending']);
+        $before = $this->snapshot($seed);
+        $this->fakeNothing();
+        $this->assertSame('blocked', $this->send($seed), 'sending ที่แรง 9:59 ยังไม่ถือว่าค้าง');
+        Http::assertNothingSent();
+        $this->assertSame($before, $this->snapshot($seed));
+
+        // sending ค้าง 10 นาทีพอดี → ชิงจาก worker ตายได้ (dead worker, first_push_at ยังว่าง = ยิงครั้งแรก)
+        $seed = $this->seedReady([
+            'delivery_status' => 'sending',
+            'claim_token' => 'other-worker-token',
+            'claimed_at' => '2026-11-16 09:50:00',
+            'updated_at' => '2026-11-16 09:50:00',
+        ], ['status' => 'sending']);
+        $this->fakeLine();
+        $this->assertSame('sent', $this->send($seed), 'sending ค้าง 10:00 พอดีต้อง claim ได้');
+        $this->assertSame(1, (int) $this->logRow($seed)->attempt_number, 'ครั้งแรกของ dead worker ที่ยังไม่เคยยิง');
+    }
+
+    #[Test]
+    public function test_second_send_while_sending_blocked_and_after_sent_already_sent(): void
+    {
+        $seed = $this->seedReady();
+
+        // ครั้งแรกส่งสำเร็จ
+        $this->fakeLine();
+        $this->assertSame('sent', $this->send($seed));
+
+        // ครั้งที่สอง: already_sent, ไม่ยิงซ้ำ
+        $this->fakeNothing();
+        $this->assertSame('already_sent', $this->send($seed));
+        Http::assertNothingSent();
+
+        $this->assertSame(1, (int) DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->count(), 'แถวประวัติต้องมีแถวเดียว');
+        $this->assertSame(1, (int) DB::table('conversations')->where('id', $seed['room']->id)->value('recovery_attempts'), 'recovery_attempts ต้องนับครั้งเดียว');
+    }
+
+    // ------------------------------------------------------------------
+    // Gate table — ฝั่งยังไม่ยิง
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_not_pushed_gates_end_before_any_push(): void
+    {
+        $cases = [
+            'expiry_at_exact_second' => [
+                'mutate' => function (array $seed): array {
+                    DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['expires_at' => self::NOW]);
+
+                    return $seed;
+                },
+                'send_at' => null,
+                'log_status' => 'expired',
+                'approval_status' => 'expired',
+                'reason' => 'expired_before_send',
+                'result' => 'blocked',
+            ],
+            'customer_message_added_after_approval' => [
+                'mutate' => function (array $seed): array {
+                    $this->addMessage($seed['room']->id, 'user', '2026-11-16 09:30:00', 'ตามอีกครับ');
+
+                    return $seed;
+                },
+                'send_at' => null,
+                'log_status' => 'cancelled',
+                'approval_status' => 'cancelled',
+                'reason' => 'new_customer_message',
+                'result' => 'blocked',
+            ],
+            'order_created_after_approval' => [
+                'mutate' => function (array $seed): array {
+                    DB::table('orders')->insertGetId([
+                        'bot_id' => $seed['bot']->id,
+                        'conversation_id' => $seed['room']->id,
+                        'total_amount' => 100,
+                        'status' => 'completed',
+                        'created_at' => '2026-11-16 09:30:00',
+                        'updated_at' => '2026-11-16 09:30:00',
+                    ]);
+
+                    return $seed;
+                },
+                'send_at' => null,
+                'log_status' => 'cancelled',
+                'approval_status' => 'cancelled',
+                'reason' => 'order_created',
+                'result' => 'blocked',
+            ],
+            'passed_slip_after_approval' => [
+                'mutate' => function (array $seed): array {
+                    DB::table('slip_verifications')->insertGetId([
+                        'bot_id' => $seed['bot']->id,
+                        'conversation_id' => $seed['room']->id,
+                        'status' => 'passed',
+                        'created_at' => '2026-11-16 09:30:00',
+                        'updated_at' => '2026-11-16 09:30:00',
+                    ]);
+
+                    return $seed;
+                },
+                'send_at' => null,
+                'log_status' => 'cancelled',
+                'approval_status' => 'cancelled',
+                'reason' => 'passed_slip',
+                'result' => 'blocked',
+            ],
+            'outside_hours_at_22_00' => [
+                'mutate' => fn (array $seed): array => $seed,
+                'send_at' => '2026-11-16 22:00:00',
+                'log_status' => 'approved',
+                'approval_status' => 'approved',
+                'reason' => 'outside_hours',
+                'result' => 'blocked',
+            ],
+            'bot_switch_off' => [
+                'mutate' => function (array $seed): array {
+                    DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
+
+                    return $seed;
+                },
+                'send_at' => null,
+                'log_status' => 'approved',
+                'approval_status' => 'approved',
+                'reason' => 'bot_switched_off',
+                'result' => 'blocked',
+            ],
+            'room_in_handover' => [
+                'mutate' => function (array $seed): array {
+                    $seed['room']->update(['is_handover' => true]);
+
+                    return $seed;
+                },
+                'send_at' => null,
+                'log_status' => 'approved',
+                'approval_status' => 'approved',
+                'reason' => 'handover_switched_on',
+                'result' => 'blocked',
+            ],
+            'recipient_other_shape_c_prefix' => [
+                'mutate' => function (array $seed): array {
+                    $seed['room']->update(['external_customer_id' => 'C'.'a1b2c3d4e5f60718293a4b5c6d7e8f90']);
+
+                    return $seed;
+                },
+                'send_at' => null,
+                'log_status' => 'send_failed',
+                'approval_status' => 'cancelled',
+                'reason' => 'recipient_invalid',
+                'result' => 'failed',
+            ],
+            'recipient_uppercase_hex' => [
+                'mutate' => function (array $seed): array {
+                    $seed['room']->update(['external_customer_id' => 'UA1B2C3D4E5F60718293A4B5C6D7E8F90']);
+
+                    return $seed;
+                },
+                'send_at' => null,
+                'log_status' => 'send_failed',
+                'approval_status' => 'cancelled',
+                'reason' => 'recipient_invalid',
+                'result' => 'failed',
+            ],
+            'recipient_empty' => [
+                'mutate' => function (array $seed): array {
+                    $seed['room']->update(['external_customer_id' => '']);
+
+                    return $seed;
+                },
+                'send_at' => null,
+                'log_status' => 'send_failed',
+                'approval_status' => 'cancelled',
+                'reason' => 'recipient_invalid',
+                'result' => 'failed',
+            ],
+            'text_401_code_points' => [
+                'mutate' => function (array $seed): array {
+                    DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['text' => str_repeat('ก', 401)]);
+
+                    return $seed;
+                },
+                'send_at' => null,
+                'log_status' => 'send_failed',
+                'approval_status' => 'cancelled',
+                'reason' => 'unsafe_text',
+                'result' => 'failed',
+            ],
+            'text_four_non_empty_lines' => [
+                'mutate' => function (array $seed): array {
+                    DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['text' => "หนึ่ง\nสอง\nสาม\nสี่"]);
+
+                    return $seed;
+                },
+                'send_at' => null,
+                'log_status' => 'send_failed',
+                'approval_status' => 'cancelled',
+                'reason' => 'unsafe_text',
+                'result' => 'failed',
+            ],
+            'text_with_invisible_control_character' => [
+                'mutate' => function (array $seed): array {
+                    DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['text' => "ยังสนใจอยู่ไหมครับ.\u{0}"]);
+
+                    return $seed;
+                },
+                'send_at' => null,
+                'log_status' => 'send_failed',
+                'approval_status' => 'cancelled',
+                'reason' => 'unsafe_text',
+                'result' => 'failed',
+            ],
+            'text_with_account_data_built_at_runtime' => [
+                'mutate' => function (array $seed): array {
+                    $email = implode('@', ['foo', 'mail.com']);
+                    $password = implode('', ['p', '@', 'ssw0rd9']);
+                    DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['text' => $email.'|'.$password]);
+
+                    return $seed;
+                },
+                'send_at' => null,
+                'log_status' => 'send_failed',
+                'approval_status' => 'cancelled',
+                'reason' => 'unsafe_text',
+                'result' => 'failed',
+            ],
+        ];
+
+        foreach ($cases as $label => $case) {
+            $seed = $this->seedReady();
+            $messagesBefore = (int) DB::table('messages')->where('conversation_id', $seed['room']->id)->count();
+            $seed = $case['mutate']($seed);
+            $this->fakeNothing();
+
+            $result = $this->send($seed, $case['send_at']);
+
+            $this->assertSame($case['result'], $result, "เคส {$label} ต้องคืน {$case['result']}");
+            Http::assertNothingSent();
+
+            $log = $this->logRow($seed);
+            $approval = $this->approvalRow($seed);
+            $this->assertSame($case['log_status'], $log->delivery_status, "เคส {$label}: สถานะ log");
+            $this->assertSame($case['approval_status'], $approval->status, "เคส {$label}: สถานะ approval");
+            $this->assertSame($case['reason'], $log->reason_code, "เคส {$label}: reason_code");
+            $this->assertClaimCleared($seed);
+            $this->assertFreezeUntouched($seed);
+            $this->assertNoMessagesAdded($seed, $messagesBefore);
+        }
+    }
+
+    #[Test]
+    public function test_not_pushed_quota_gate_returns_row_to_approved(): void
+    {
+        $variants = [
+            'below_reserve' => [
+                'config' => ['customer_follow_up.quota_reserve_messages' => 250],
+                'quota' => [],
+                'reason' => 'below_reserve',
+            ],
+            'quota_http_error' => [
+                'config' => [],
+                'quota' => [self::CONSUMPTION_URL => '500'],
+                'reason' => 'quota_http_error',
+            ],
+            'reserve_not_configured' => [
+                'config' => ['customer_follow_up.quota_reserve_messages' => null],
+                'quota' => [],
+                'reason' => 'reserve_not_configured',
+            ],
+        ];
+
+        foreach ($variants as $label => $variant) {
+            $seed = $this->seedReady();
+            foreach ($variant['config'] as $key => $value) {
+                config([$key => $value]);
+            }
+            $this->fakeLine(quota: $variant['quota']);
+
+            $result = $this->send($seed);
+
+            $this->assertSame('blocked', $result, "เคส {$label} ต้อง blocked");
+            $this->assertPushCount(0);
+
+            $log = $this->logRow($seed);
+            $this->assertSame('approved', $log->delivery_status, "เคส {$label}: log กลับไป approved");
+            $this->assertSame('approved', $this->approvalRow($seed)->status, "เคส {$label}: approval กลับไป approved");
+            $this->assertSame($variant['reason'], $log->reason_code, "เคส {$label}: reason ต้องตามโควต้า");
+            $this->assertClaimCleared($seed);
+            $this->assertFreezeUntouched($seed);
+        }
+    }
+
+    #[Test]
+    public function test_not_pushed_gate_6_last_look_blocks_before_freeze(): void
+    {
+        $seed = $this->seedReady();
+        $messagesBefore = (int) DB::table('messages')->where('conversation_id', $seed['room']->id)->count();
+        $this->fakeNothing();
+
+        // จำลองข้อความใหม่แลนด์ระหว่างทาง: ฉีดก่อน query max(id) ของ last look (จุดเดียวที่มี SQL รูปร่างนี้)
+        DB::connection()->beforeExecuting(function ($query) use ($seed): void {
+            if (str_contains($query, 'select max("id") as aggregate from "messages"')) {
+                $this->addMessage($seed['room']->id, 'user', '2026-11-16 10:00:00', 'ตอบแล้วครับ');
+            }
+        });
+
+        $result = $this->send($seed);
+
+        DB::connection()->beforeExecuting(function (): void {});
+
+        $this->assertSame('blocked', $result, 'last look เจอข้อความใหม่ต้องหยุดก่อนยิง');
+        $this->assertPushCount(0);
+
+        $log = $this->logRow($seed);
+        $this->assertSame('cancelled', $log->delivery_status);
+        $this->assertSame('cancelled', $this->approvalRow($seed)->status);
+        $this->assertSame('message_arrived', $log->reason_code);
+        $this->assertClaimCleared($seed);
+        $this->assertFreezeUntouched($seed);
+        // แถวที่เพิ่มมาคือของ hook (จำลอง webhook) ไม่ใช่ของ service — ยังไม่มีแถวบอทติด tag
+        $this->assertNoMessagesAdded($seed, $messagesBefore + 1);
+        $this->assertSame(0, (int) DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->count());
+    }
+
+    #[Test]
+    public function test_expiry_one_second_before_expires_still_sends(): void
+    {
+        $seed = $this->seedReady();
+        DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['expires_at' => '2026-11-16 10:00:01']);
+        $this->fakeLine();
+
+        $this->assertSame('sent', $this->send($seed, '2026-11-16 10:00:00'), 'ก่อนหมดอายุ 1 วินาทีต้องยังยิงได้');
+    }
+
+    #[Test]
+    public function test_inside_hours_one_second_before_close_sends(): void
+    {
+        $seed = $this->seedReady();
+        $this->fakeLine();
+
+        $this->assertSame('sent', $this->send($seed, '2026-11-16 21:59:59'), '21:59:59 ยังอยู่ในชั่วโมงส่ง');
+    }
+
+    // ------------------------------------------------------------------
+    // Gate table — ฝั่งยิงไปแล้ว (acceptance ไม่รู้ผล)
+    // ------------------------------------------------------------------
+
+    private function seededPushed(array $overrides = []): array
+    {
+        $seed = $this->seedReady(array_merge([
+            'delivery_status' => 'retry',
+            'retry_key' => $this->retryKey(),
+            'first_push_at' => self::NOW,
+            'message_sent' => self::TEXT,
+            'attempt_number' => 1,
+            'next_attempt_at' => '2026-11-16 10:01:00',
+            'reason_code' => 'line_retryable',
+        ], $overrides), ['status' => 'sending']);
+
+        return $seed;
+    }
+
+    #[Test]
+    public function test_pushed_row_gates_end_send_failed_or_wait(): void
+    {
+        // (ก) หมดอายุ → send_failed + approval expired + acceptance_unknown_expired
+        $seed = $this->seededPushed();
+        DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['expires_at' => '2026-11-16 10:00:30']);
+        $this->fakeNothing();
+
+        $this->assertSame('failed', $this->send($seed, '2026-11-16 10:01:00'));
+        Http::assertNothingSent();
+        $log = $this->logRow($seed);
+        $this->assertSame('send_failed', $log->delivery_status);
+        $this->assertSame('expired', $this->approvalRow($seed)->status);
+        $this->assertSame('acceptance_unknown_expired', $log->reason_code);
+        $this->assertSame(1, (int) $log->attempt_number, 'attempt_number คงเดิม เพราะ gate ตัดก่อน freeze');
+        $this->assertClaimCleared($seed);
+
+        // (ข) ลูกค้าพิมพ์ใหม่ (gate 2 ผ่าน projection ก่อน แล้ว last look เห็น) → send_failed + cancelled + acceptance_unknown_gate_changed
+        $seed = $this->seededPushed();
+        $this->addMessage($seed['room']->id, 'user', '2026-11-16 10:00:30', 'ตอบแล้วครับ');
+        $this->fakeNothing();
+
+        $this->assertSame('failed', $this->send($seed, '2026-11-16 10:01:00'));
+        Http::assertNothingSent();
+        $log = $this->logRow($seed);
+        $this->assertSame('send_failed', $log->delivery_status);
+        $this->assertSame('cancelled', $this->approvalRow($seed)->status);
+        $this->assertSame('acceptance_unknown_gate_changed', $log->reason_code);
+        $this->assertSame(0, $this->hits[self::PUSH_URL] ?? 0);
+
+        // (ค) นอกชั่วโมงส่ง → send_failed + cancelled + acceptance_unknown_gate_changed
+        $seed = $this->seededPushed(['next_attempt_at' => '2026-11-16 22:00:00']);
+        $this->fakeNothing();
+
+        $this->assertSame('failed', $this->send($seed, '2026-11-16 22:00:00'));
+        Http::assertNothingSent();
+        $log = $this->logRow($seed);
+        $this->assertSame('send_failed', $log->delivery_status);
+        $this->assertSame('cancelled', $this->approvalRow($seed)->status);
+        $this->assertSame('acceptance_unknown_gate_changed', $log->reason_code);
+    }
+
+    #[Test]
+    public function test_pushed_row_quota_gate_waits_then_sends(): void
+    {
+        $seed = $this->seededPushed();
+        $this->fakeLine(quota: [self::CONSUMPTION_URL => '500']);
+
+        $this->assertSame('retry', $this->send($seed, '2026-11-16 10:01:00'), 'โควต้าฝั่งยิงแล้วต้องรอ ไม่ยิงซ้ำ');
+        $this->assertPushCount(0);
+        $log = $this->logRow($seed);
+        $this->assertSame('retry', $log->delivery_status);
+        $this->assertSame('2026-11-16 10:06:00', $log->next_attempt_at, 'รอบรอ 300 วินาทีจากตอนเช็ค');
+        $this->assertSame('quota_http_error', $log->reason_code);
+        $this->assertSame('sending', $this->approvalRow($seed)->status, 'approval ยังค้าง sending');
+        $this->assertSame(self::NOW, $log->first_push_at, 'first_push_at คงของเดิม');
+
+        // รอบถัดมาโควต้าว่าง → ส่งสำเร็จ
+        $this->fakeLine();
+        $this->assertSame('sent', $this->send($seed, '2026-11-16 10:06:00'));
+        $this->assertSame('sent', $this->logRow($seed)->delivery_status);
+    }
+
+    #[Test]
+    public function test_pushed_row_gate_6_last_look_ends_acceptance_unknown(): void
+    {
+        $seed = $this->seededPushed();
+        $this->fakeNothing();
+
+        // ฉีดข้อความใหม่ตรงจุด last look (หลัง recheck ผ่าน) — จำลอง webhook แลนด์ระหว่างทาง
+        DB::connection()->beforeExecuting(function ($query) use ($seed): void {
+            if (str_contains($query, 'select max("id") as aggregate from "messages"')) {
+                $this->addMessage($seed['room']->id, 'user', '2026-11-16 10:01:00', 'ตอบแล้วครับ');
+            }
+        });
+
+        $result = $this->send($seed, '2026-11-16 10:01:00');
+
+        DB::connection()->beforeExecuting(function (): void {});
+
+        $this->assertSame('failed', $result);
+        $this->assertPushCount(0);
+        $log = $this->logRow($seed);
+        $this->assertSame('send_failed', $log->delivery_status);
+        $this->assertSame('cancelled', $this->approvalRow($seed)->status);
+        $this->assertSame('acceptance_unknown_gate_changed', $log->reason_code);
+        $this->assertClaimCleared($seed);
+    }
+
+    // ------------------------------------------------------------------
+    // D46 — งบร่างรายวันห้ามตัดตอนส่ง
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_busy_day_with_full_draft_cap_still_sends(): void
+    {
+        $seed = $this->seedReady();
+        for ($i = 0; $i < 10; $i++) {
+            DB::table('lead_recovery_logs')->insertGetId([
+                'conversation_id' => $seed['room']->id,
+                'bot_id' => $seed['bot']->id,
+                'attempt_number' => 0,
+                'attempt_count' => 0,
+                'message_mode' => 'ai',
+                'delivery_status' => 'pending',
+                'silence_user_message_id' => null,
+                'observed_last_message_id' => null,
+                'drafted_at' => '2026-11-16 09:00:00',
+                'draft_day' => '2026-11-16',
+                'created_at' => self::NOW,
+                'updated_at' => self::NOW,
+            ]);
+        }
+        $this->fakeLine();
+
+        $this->assertSame('sent', $this->send($seed), 'สิบร่างวันนี้ห้ามตัดการส่ง (D46)');
+    }
+
+    // ------------------------------------------------------------------
+    // สาย retry บนนาฬิกาเดินจริง (D50)
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_retry_chain_travels_the_clock_with_same_key_and_body(): void
+    {
+        $seed = $this->seedReady();
+        $this->fakeLine(push: [['{}', 503], 'timeout', ['{}', 200, ['x-line-request-id' => 'req-third']]]);
+
+        $this->assertSame('retry', $this->send($seed), 'ครั้งแรก 503 → retry');
+        $log = $this->logRow($seed);
+        $this->assertSame('retry', $log->delivery_status);
+        $this->assertSame(1, (int) $log->attempt_number);
+        $this->assertSame('2026-11-16 10:01:00', $log->next_attempt_at, 'รอ 60 วินาที');
+        $this->assertSame('line_retryable', $log->reason_code);
+        $this->assertSame(self::NOW, $log->first_push_at);
+        $this->assertSame(self::TEXT, $log->message_sent);
+        $this->assertSame('sending', $this->approvalRow($seed)->status);
+
+        // เรียกก่อนคิว 59 วินาที → blocked ไม่ยิงอะไร
+        $this->assertSame('blocked', $this->send($seed, '2026-11-16 10:00:59'));
+        $this->assertPushCount(1);
+
+        // ถึงคิว +60 → timeout → retry รอ 300 วินาที
+        $this->assertSame('retry', $this->send($seed, '2026-11-16 10:01:00'));
+        $log = $this->logRow($seed);
+        $this->assertSame(2, (int) $log->attempt_number);
+        $this->assertSame('2026-11-16 10:06:00', $log->next_attempt_at, 'รอบสองรอ 300 วินาที');
+
+        // ถึงคิว +360 → 200 → sent
+        $this->assertSame('sent', $this->send($seed, '2026-11-16 10:06:00'));
+        $this->assertPushCount(3);
+
+        // สาม request คีย์เดิม เนื้อความเดิมทุกตัวอักษร
+        $this->assertCount(3, $this->pushes);
+        foreach ($this->pushes as $index => $push) {
+            $n = $index + 1;
+            $this->assertSame($this->pushes[0][0], $push[0], "request ที่ {$n} ต้องใช้ key เดิม");
+            $this->assertSame(json_encode(['to' => self::RECIPIENT, 'messages' => [['type' => 'text', 'text' => self::TEXT]]], JSON_UNESCAPED_UNICODE), $push[1], "request ที่ {$n} ต้องมี body เดิม");
+        }
+
+        $log = $this->logRow($seed);
+        $this->assertSame('sent', $log->delivery_status);
+        $this->assertSame(1, (int) DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->count(), 'ประวัติแถวเดียว');
+        $this->assertSame(self::NOW, $log->first_push_at, 'first_push_at คงเวลายิงแรก');
+        $this->assertSame('req-third', $log->line_request_id);
+    }
+
+    #[Test]
+    public function test_429_behaves_like_503(): void
+    {
+        $seed = $this->seedReady();
+        $this->fakeLine(push: [['{}', 429]]);
+
+        $this->assertSame('retry', $this->send($seed));
+        $log = $this->logRow($seed);
+        $this->assertSame('retry', $log->delivery_status);
+        $this->assertSame('2026-11-16 10:01:00', $log->next_attempt_at);
+        $this->assertSame('line_retryable', $log->reason_code);
+    }
+
+    #[Test]
+    public function test_three_retryable_answers_end_failed_and_fourth_call_is_silent(): void
+    {
+        $seed = $this->seedReady();
+        $this->fakeLine(push: [['{}', 503], ['{}', 503], ['{}', 503]]);
+
+        $this->assertSame('retry', $this->send($seed, self::NOW));
+        $this->assertSame('retry', $this->send($seed, '2026-11-16 10:01:00'));
+        $this->assertSame('failed', $this->send($seed, '2026-11-16 10:06:00'), 'ยิงครบ 3 ครั้งแล้วคำตอบยัง retryable = จบ');
+
+        $log = $this->logRow($seed);
+        $this->assertSame('send_failed', $log->delivery_status);
+        $this->assertSame('cancelled', $this->approvalRow($seed)->status);
+        $this->assertSame('acceptance_unknown_attempts', $log->reason_code);
+        $this->assertSame(3, (int) $log->attempt_number);
+
+        // ครั้งที่สี่: send_failed → claim ปฏิเสธ ไม่ยิงอะไร
+        $this->assertSame('blocked', $this->send($seed, '2026-11-16 10:11:00'));
+        $this->assertPushCount(3);
+    }
+
+    // ------------------------------------------------------------------
+    // D49 — payload แช่งตาย
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_payload_is_frozen_after_first_push(): void
+    {
+        $seed = $this->seedReady();
+        $this->fakeLine(push: [['{}', 503]]);
+        $this->assertSame('retry', $this->send($seed));
+        $firstBody = $this->pushes[0][1];
+        $firstKey = $this->pushes[0][0];
+
+        // เจ้าของแก้ข้อความบนบัตรหลังยิงแรก — ห้ามมีผลกับรอบถัดไป
+        DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['text' => 'ข้อความใหม่ที่แก้หลังยิงแรก']);
+
+        $this->fakeLine(push: [['{}', 200, ['x-line-request-id' => 'req-second']]]);
+        $this->assertSame('sent', $this->send($seed, '2026-11-16 10:01:00'));
+
+        $this->assertSame($firstBody, $this->pushes[1][1], 'request ที่สองต้องยิงข้อความเดิม');
+        $this->assertSame($firstKey, $this->pushes[1][0], 'request ที่สองต้องใช้ key เดิม');
+        $log = $this->logRow($seed);
+        $this->assertSame(self::TEXT, $log->message_sent, 'message_sent คงข้อความยิงแรก');
+        $message = DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->first();
+        $this->assertSame(self::TEXT, $message->content, 'ประวัติต้องเก็บข้อความยิงแรก');
+    }
+
+    // ------------------------------------------------------------------
+    // Rejected — จบทันที ไม่มีประวัติ ครั้งถัดไปเงียบ
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_rejected_statuses_fail_without_history_and_stay_quiet(): void
+    {
+        foreach ([[400, 'line_rejected_400'], [401, 'line_rejected_401'], [403, 'line_rejected_403'], [404, 'line_rejected_404'], [409, 'line_rejected_409'], [302, 'line_rejected_302']] as [$status, $reason]) {
+            $seed = $this->seedReady();
+            $this->fakeLine(push: [['{}', $status]]);
+
+            $this->assertSame('failed', $this->send($seed), "สถานะ {$status} ต้อง failed");
+
+            $log = $this->logRow($seed);
+            $this->assertSame('send_failed', $log->delivery_status, "สถานะ {$status}: log send_failed");
+            $this->assertSame('cancelled', $this->approvalRow($seed)->status);
+            $this->assertSame($reason, $log->reason_code);
+            $this->assertNull($log->first_push_at, "สถานะ {$status}: ไม่มีการยิงจริง → ไม่ติด first_push_at");
+            $this->assertSame(0, (int) DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->count(), "สถานะ {$status}: ไม่มีแถวประวัติ");
+            $this->assertSame(0, (int) DB::table('conversations')->where('id', $seed['room']->id)->value('recovery_attempts'));
+
+            // ครั้งถัดไป: send_failed → claim ปฏิเสธ เงียบสนิท
+            $this->fakeNothing();
+            $this->assertSame('blocked', $this->send($seed));
+            Http::assertNothingSent();
+        }
+    }
+
+    #[Test]
+    public function test_bot_without_token_fails_with_no_request(): void
+    {
+        $seed = $this->seedReady();
+        $seed['bot']->update(['channel_access_token' => '']);
+        $this->fakeLine();
+
+        $this->assertSame('failed', $this->send($seed));
+        $this->assertPushCount(0, 'ไม่มี token = ไม่ยิงอะไรออกไป');
+        $log = $this->logRow($seed);
+        $this->assertSame('send_failed', $log->delivery_status);
+        $this->assertSame('line_rejected_no_request', $log->reason_code);
+        $this->assertSame(0, (int) DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->count());
+    }
+
+    // ------------------------------------------------------------------
+    // Accept แล้ว crash — คีย์เดิมรีไลน์ ประวัติซ้ำไม่ได้
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_accept_then_crash_recovers_with_same_key_and_single_history_row(): void
+    {
+        $seed = $this->seedReady();
+        $this->fakeLine(push: [['{}', 200, ['x-line-request-id' => 'req-crash-1']]]);
+
+        // กลไก: hook โยน exception ก่อน INSERT messages ตัวแรกของ acceptance transaction (รอบเดียว)
+        $armed = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$armed): void {
+            if ($armed && str_contains(strtolower($query), 'insert into "messages"')) {
+                $armed = false;
+                throw new RuntimeException('boom-acceptance-crash-7f3a9c2');
+            }
+        });
+
+        $result = $this->send($seed);
+
+        $this->assertSame('retry', $result, 'accept แล้ว DB ล้ม ต้องรอรอบหน้าด้วยคีย์เดิม');
+        $log = $this->logRow($seed);
+        $this->assertContains($log->delivery_status, ['retry', 'sending'], 'log ต้องเป็น retry หรือ sending');
+        $this->assertSame(0, (int) DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->count(), 'ยังไม่มีแถวประวัติ');
+        $this->assertSame(self::NOW, $log->first_push_at);
+        $this->assertSame(self::TEXT, $log->message_sent);
+        $firstKey = $this->pushes[0][0];
+        $this->assertSame($firstKey, $log->retry_key, 'คีย์คงอยู่หลัง crash');
+        $this->assertSame('2026-11-16 10:01:00', $log->next_attempt_at);
+
+        // รอบสอง: LINE ตอบ 409 พร้อม header ยอมรับ → เขียนประวัติจากคีย์เดิม
+        $this->fakeLine(push: [['{}', 409, ['x-line-accepted-request-id' => 'req-crash-2']]]);
+        $this->assertSame('sent', $this->send($seed, '2026-11-16 10:01:00'));
+
+        $log = $this->logRow($seed);
+        $this->assertSame('sent', $log->delivery_status);
+        $this->assertSame('req-crash-2', $log->line_request_id, 'line_request_id ต้องจาก header 409');
+        $this->assertSame(1, (int) DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->count(), 'ประวัติแถวเดียว');
+        $this->assertCount(2, $this->pushes);
+        $this->assertSame($firstKey, $this->pushes[1][0], 'สอง request ต้องใช้คีย์เดียวกัน');
+        $this->assertSame($this->pushes[0][1], $this->pushes[1][1], 'สอง request ต้องมี body เดียวกัน');
+    }
+
+    #[Test]
+    public function test_accept_then_crash_with_409_without_header_ends_failed(): void
+    {
+        $seed = $this->seedReady();
+        $this->fakeLine(push: [['{}', 200, ['x-line-request-id' => 'req-crash-1']]]);
+
+        $armed = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$armed): void {
+            if ($armed && str_contains(strtolower($query), 'insert into "messages"')) {
+                $armed = false;
+                throw new RuntimeException('boom-acceptance-crash-7f3a9c2');
+            }
+        });
+
+        $this->assertSame('retry', $this->send($seed));
+
+        $this->fakeLine(push: [['{}', 409]]);
+        $this->assertSame('failed', $this->send($seed, '2026-11-16 10:01:00'), '409 ไร้ header ยอมรับ = จบแบบไม่รู้ผล');
+
+        $log = $this->logRow($seed);
+        $this->assertSame('send_failed', $log->delivery_status);
+        $this->assertSame('line_rejected_409', $log->reason_code);
+        $this->assertSame(0, (int) DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->count(), 'ยังไม่มีประวัติ');
+    }
+
+    // ------------------------------------------------------------------
+    // Dead worker — sending ค้างพร้อม first_push_at
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_dead_worker_resumes_with_stored_key_and_text_or_caps_out(): void
+    {
+        $shared = [
+            'delivery_status' => 'sending',
+            'retry_key' => $this->retryKey(),
+            'first_push_at' => '2026-11-16 09:50:00',
+            'message_sent' => self::TEXT,
+            'attempt_number' => 1,
+            'claimed_at' => '2026-11-16 09:50:00',
+            'updated_at' => '2026-11-16 09:50:00',
+        ];
+
+        // (ก) attempt 1 → ยิงซ้ำด้วยคีย์/ข้อความที่เก็บไว้ แล้วสำเร็จ
+        $seed = $this->seedReady($shared, ['status' => 'sending']);
+        $this->fakeLine();
+        $this->assertSame('sent', $this->send($seed), 'worker ตายทิ้ง attempt 1 ต้องรีไลน์ได้');
+        $this->assertSame($this->retryKey(), $this->pushes[0][0], 'ใช้คีย์ที่เก็บไว้');
+        $this->assertSame(2, (int) $this->logRow($seed)->attempt_number, 'attempt นับต่อจากเดิม');
+
+        // (ข) attempt 3 ครบแล้ว → ไม่ยิง จบ acceptance_unknown_attempts
+        $seed = $this->seedReady(array_merge($shared, ['attempt_number' => 3]), ['status' => 'sending']);
+        $this->fakeNothing();
+        $this->assertSame('failed', $this->send($seed));
+        Http::assertNothingSent();
+        $log = $this->logRow($seed);
+        $this->assertSame('send_failed', $log->delivery_status);
+        $this->assertSame('cancelled', $this->approvalRow($seed)->status);
+        $this->assertSame('acceptance_unknown_attempts', $log->reason_code);
+        $this->assertSame(3, (int) $log->attempt_number, 'ห้ามเพิ่ม attempt เมื่อไม่ยิง');
+
+        // (ค) sending ค้าง 10 นาที แต่ยังไม่เคยยิง → ยิงครั้งแรก
+        $seed = $this->seedReady([
+            'delivery_status' => 'sending',
+            'claimed_at' => '2026-11-16 09:50:00',
+            'updated_at' => '2026-11-16 09:50:00',
+        ], ['status' => 'sending']);
+        $this->fakeLine();
+        $this->assertSame('sent', $this->send($seed));
+        $this->assertSame(1, (int) $this->logRow($seed)->attempt_number, 'attempt แรกของการยิงจริง');
+        $this->assertSame(self::NOW, $this->logRow($seed)->first_push_at);
+    }
+
+    // ------------------------------------------------------------------
+    // แถวประวัติ ตัวชี้ห้อง และ event
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_history_row_columns_conversation_pointers_and_events(): void
+    {
+        Event::fake([MessageSent::class, ConversationUpdated::class]);
+
+        $seed = $this->seedReady();
+        $countBefore = (int) DB::table('conversations')->where('id', $seed['room']->id)->value('message_count');
+        $this->fakeLine();
+
+        $this->assertSame('sent', $this->send($seed));
+
+        $log = $this->logRow($seed);
+        $message = DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->first();
+
+        // ทุกคอลัมน์ของ Task item 4
+        $this->assertSame($seed['room']->id, (int) $message->conversation_id);
+        $this->assertSame('bot', $message->sender);
+        $this->assertSame('text', $message->type);
+        $this->assertSame(self::TEXT, $message->content, 'content ตรง message_sent ทุกตัวอักษร');
+        $this->assertSame('openai/gpt-6-luna', $message->model_used, 'owner_action sent → model_used = draft_model');
+        $this->assertNull($message->prompt_tokens);
+        $this->assertNull($message->completion_tokens);
+        $this->assertNull($message->cost);
+        $this->assertSame(json_encode(['follow_up' => true, 'follow_up_log_id' => $seed['logId']]), $message->metadata);
+        $this->assertSame('2026-11-16 10:00:00', $message->created_at);
+        $this->assertSame('2026-11-16 10:00:00', $message->updated_at);
+        $this->assertSame((int) $message->id, (int) $log->message_id);
+        $this->assertSame('2026-11-16 10:00:00', $log->sent_at);
+        $this->assertSame(self::REQUEST_ID, $log->line_request_id);
+        $this->assertNull($log->reason_code);
+        $this->assertNull($log->next_attempt_at);
+        $this->assertClaimCleared($seed);
+        $this->assertSame('sent', $this->approvalRow($seed)->status);
+
+        // ตัวชี้ห้อง
+        $conversation = DB::table('conversations')->where('id', $seed['room']->id)->first();
+        $this->assertSame($countBefore + 1, (int) $conversation->message_count);
+        $this->assertSame(1, (int) $conversation->recovery_attempts);
+        $this->assertSame('2026-11-16 10:00:00', $conversation->last_recovery_at);
+        $this->assertSame((int) $message->id, (int) $conversation->last_message_id);
+        $this->assertSame('2026-11-16 10:00:00', $conversation->last_message_at);
+
+        // tag ฝั่ง resource (B4b)
+        $model = Message::query()->findOrFail((int) $message->id);
+        $this->assertTrue((new MessageResource($model))->resolve()['is_follow_up'], 'MessageResource ต้องติด is_follow_up true');
+
+        // event หนึ่งครั้งต่อชนิด และยิงหลังแถวมีอยู่จริง
+        Event::assertDispatched(MessageSent::class, 1);
+        Event::assertDispatched(ConversationUpdated::class, 1);
+        Event::assertDispatched(MessageSent::class, function (MessageSent $event): bool {
+            return DB::table('messages')->where('id', $event->message->id)->exists();
+        });
+    }
+
+    #[Test]
+    public function test_concurrent_higher_id_message_keeps_last_message_id_untouched(): void
+    {
+        $seed = $this->seedReady();
+        $this->fakeLine();
+
+        // จำลองข้อความแลนด์ระหว่าง push กับ acceptance: ฉีดตรง query max(id) ครั้งที่สอง (ครั้งแรกคือ last look ต้องผ่าน)
+        $seen = 0;
+        DB::connection()->beforeExecuting(function ($query) use ($seed, &$seen): void {
+            if (str_contains($query, 'select max("id") as aggregate from "messages"')) {
+                $seen++;
+                if ($seen === 2) {
+                    $this->addMessage($seed['room']->id, 'user', '2026-11-16 10:00:00', 'ตอบแล้วครับ');
+                }
+            }
+        });
+
+        $this->assertSame('sent', $this->send($seed));
+
+        $conversation = DB::table('conversations')->where('id', $seed['room']->id)->first();
+        $botMessage = DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->first();
+        $this->assertNotSame((int) $botMessage->id, (int) $conversation->last_message_id, 'last_message_id ห้ามโดนเขียนทับเมื่อมีข้อความใหม่ id สูงกว่า');
+        $this->assertNull($conversation->last_message_id, 'last_message_id ต้องคงค่า null เดิม');
+        $this->assertSame('2026-11-16 10:00:00', $conversation->last_message_at, 'แถวที่ฉีดมี created_at ไม่ใหม่กว่า now → last_message_at ยังตั้งเป็น now');
+    }
+
+    #[Test]
+    public function test_later_stored_last_message_at_is_not_overwritten(): void
+    {
+        $seed = $this->seedReady();
+        DB::table('conversations')->where('id', $seed['room']->id)->update(['last_message_at' => '2026-11-16 11:00:00']);
+        $this->fakeLine();
+
+        $this->assertSame('sent', $this->send($seed));
+
+        $conversation = DB::table('conversations')->where('id', $seed['room']->id)->first();
+        $this->assertSame('2026-11-16 11:00:00', $conversation->last_message_at, 'ค่าที่เก็บใหม่กว่า now ต้องคงอยู่');
+        $this->assertSame('2026-11-16 10:00:00', $conversation->last_recovery_at);
+    }
+
+    #[Test]
+    public function test_broadcast_throw_keeps_result_sent(): void
+    {
+        $seed = $this->seedReady();
+        $this->fakeLine();
+
+        $service = Mockery::mock(FollowUpSendService::class, [app(LINEService::class), app(FollowUpQuotaService::class)])
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods()
+            ->shouldReceive('broadcastAccepted')
+            ->once()
+            ->andThrow(new RuntimeException('boom-broadcast-7f3a9c2'))
+            ->getMock();
+        app()->instance(FollowUpSendService::class, $service);
+
+        $this->assertSame('sent', $this->send($seed), 'broadcast พังห้ามพาผลลัพธ์หาย');
+        $this->assertSame('sent', $this->logRow($seed)->delivery_status);
+        $this->assertSame(1, (int) DB::table('messages')->where('conversation_id', $seed['room']->id)->where('sender', 'bot')->count());
+    }
+
+    // ------------------------------------------------------------------
+    // โควต้านับแถวที่ยิงจริงเท่านั้น
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_quota_local_pending_counts_only_rows_that_pushed(): void
+    {
+        // (ก) sent → local_pending 1
+        $seed = $this->seedReady();
+        $this->fakeLine();
+        $this->assertSame('sent', $this->send($seed));
+        $check = app(FollowUpQuotaService::class)->check($seed['bot'], $this->now()->addMinute());
+        $this->assertSame(1, $check['local_pending'], 'แถว sent ของวันนี้ต้องยังนับ pending ของ LINE');
+
+        // (ข) send_failed หลังยิงแล้ว → local_pending 1
+        $seed = $this->seededPushed();
+        $this->addMessage($seed['room']->id, 'user', '2026-11-16 10:00:30', 'ตอบแล้วครับ');
+        $this->fakeNothing();
+        $this->assertSame('failed', $this->send($seed, '2026-11-16 10:01:00'));
+        $check = app(FollowUpQuotaService::class)->check($seed['bot'], $this->at('2026-11-16 10:01:00'));
+        $this->assertSame(1, $check['local_pending'], 'แถวยิงไปแล้วแม้รู้ผล send_failed ก็นับ');
+
+        // (ค) send_failed ที่ไม่เคยยิง (recipient พัง) → local_pending 0
+        $seed = $this->seedReady();
+        $seed['room']->update(['external_customer_id' => '']);
+        $this->fakeNothing();
+        $this->assertSame('failed', $this->send($seed));
+        $check = app(FollowUpQuotaService::class)->check($seed['bot'], $this->now());
+        $this->assertSame(0, $check['local_pending'], 'แถวที่จบก่อนยิงห้ามนับ');
+    }
+
+    // ------------------------------------------------------------------
+    // Logs — ไม่หลือด canary / คีย์ / exception และบรรทัดเดียวต่อ call
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_logs_never_leak_canaries_retry_key_or_exception_messages(): void
+    {
+        $canary = '7f3a9c2';
+        $canaryRecipient = 'U'.str_pad($canary, 32, 'a0');
+        $this->assertMatchesRegularExpression('/^U[0-9a-f]{32}$/', $canaryRecipient);
+
+        $seed = $this->seedReady([
+            'draft' => 'ทดสอบตามลูกค้า '.$canary.' ยังสนใจอยู่ไหมครับ',
+        ], ['text' => 'ทดสอบตามลูกค้า '.$canary.' ยังสนใจอยู่ไหมครับ']);
+        DB::table('conversations')->where('id', $seed['room']->id)->update(['external_customer_id' => $canaryRecipient]);
+        FollowUpSalesProjector::refresh($seed['room'], $this->now());
+        $seed['bot']->update(['channel_access_token' => implode('', ['fake', $canary, 'Line', 'Token'])]);
+        $this->fakeLine();
+
+        $this->assertSame('sent', $this->send($seed));
+
+        $retryKey = $this->pushes[0][0];
+
+        foreach ($this->logLines as $line) {
+            $rendered = json_encode(array_merge([$line->message], $line->context), JSON_UNESCAPED_UNICODE);
+            $this->assertStringNotContainsString($canary, $rendered, 'ห้ามมี canary หลุดลง log');
+            $this->assertStringNotContainsString($retryKey, $rendered, 'ห้ามมี retry key หลุดลง log');
+            $this->assertStringNotContainsString('boom', $rendered, 'ห้ามมีข้อความ exception หลุดลง log');
+        }
+
+        $sendLines = array_filter($this->logLines, fn (MessageLogged $line) => $line->message === 'Customer follow-up send');
+        $this->assertCount(1, $sendLines, 'หนึ่ง call ต้อง log บรรทัดเดียว');
+        $context = array_values($sendLines)[0]->context;
+        $this->assertSame(['approval_id', 'log_id', 'bot_id', 'result', 'reason'], array_keys($context));
+        $this->assertSame($seed['approvalId'], $context['approval_id']);
+        $this->assertSame($seed['logId'], $context['log_id']);
+        $this->assertSame('sent', $context['result']);
+    }
+}

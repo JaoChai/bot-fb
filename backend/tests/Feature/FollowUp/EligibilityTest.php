@@ -11,9 +11,11 @@ use App\Models\LeadRecoveryLog;
 use App\Models\User;
 use App\Services\FollowUp\FollowUpEligibility;
 use App\Services\FollowUp\FollowUpSalesProjector;
+use App\Services\FollowUp\FollowUpSendService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -506,7 +508,7 @@ class EligibilityTest extends TestCase
     public function test_same_silence_and_customer_gap(): void
     {
         // เงียบเดิม (anchor เดียวกัน) มี log สถานะติดขัดแล้ว → ไม่ผ่าน
-        foreach (['pending' => 0, 'approved' => 0, 'sending' => 0, 'retry' => 0, 'sent' => 0, 'skipped' => 0, 'expired' => 0, 'cancelled' => 0, 'excluded' => 0, 'deferred' => 1, 'candidate' => 1] as $status => $expected) {
+        foreach (['pending' => 0, 'approved' => 0, 'sending' => 0, 'retry' => 0, 'sent' => 0, 'send_failed' => 0, 'skipped' => 0, 'expired' => 0, 'cancelled' => 0, 'excluded' => 0, 'deferred' => 1, 'candidate' => 1] as $status => $expected) {
             $seed = $this->seedBase();
             $this->addLog($seed['room'], $seed['anchorId'], $seed['anchorId'], $status);
             $this->assertSame($expected, $this->eligibleCount($seed['bot'], $this->now()), "สถานะ {$status} ของเงียบเดิมต้องได้ {$expected}");
@@ -558,6 +560,94 @@ class EligibilityTest extends TestCase
         $seed = $this->seedBase();
         $inFlight = $this->addLog($seed['room'], null, null, 'sending', ['first_push_at' => '2026-11-15 09:00:00']);
         $this->assertSame(1, $this->eligibleCount($seed['bot'], $this->now(), $inFlight), 'ownLogId ยกเว้นแถวกำลังส่งของตัวเอง');
+    }
+
+    // ------------------------------------------------------------------
+    // 6c) D48 — send_failed ที่ยิงแล้ว นับในช่องว่างลูกค้า 7 วัน เหมือน sent
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_send_failed_rows_count_for_the_seven_day_gap(): void
+    {
+        $seedWithLog = fn (?string $firstPushAt) => tap($this->seedBase(), function ($seed) use ($firstPushAt) {
+            $extra = $firstPushAt === null ? [] : ['first_push_at' => $firstPushAt];
+            $this->addLog($seed['room'], null, null, 'send_failed', $extra);
+        });
+
+        $seed = $seedWithLog('2026-11-09 10:01:00'); // ยิงไป 6 วัน 23:59 ก่อน now
+        $this->assertSame(0, $this->eligibleCount($seed['bot'], $this->now()), 'send_failed ที่ยิงไป 6d23:59 ยังบล็อกลูกค้า');
+
+        $seed = $seedWithLog('2026-11-09 10:00:00'); // ครบ 7 วันพอดี
+        $this->assertSame(1, $this->eligibleCount($seed['bot'], $this->now()), 'send_failed ครบ 7 วันพอดี = ผ่าน ขอบเดียวกับ sent');
+
+        $seed = $seedWithLog(null); // ไม่เคยยิง
+        $this->assertSame(1, $this->eligibleCount($seed['bot'], $this->now()), 'send_failed ที่ไม่เคยยิงไม่นับ');
+
+        // แถว send_failed ของลูกค้าอื่น (ห้อง U222) ต้องไม่บล็อกห้อง U111
+        $seed = $this->seedBase();
+        $roomB = Conversation::factory()->line()->create([
+            'bot_id' => $seed['bot']->id,
+            'external_customer_id' => 'U222',
+        ]);
+        $this->addLog($roomB, null, null, 'send_failed', ['first_push_at' => '2026-11-15 09:00:00']);
+        $this->assertSame(1, $this->eligibleCount($seed['bot'], $this->now()), 'ลูกค้าอื่นไม่เกี่ยวกับช่องว่างของลูกค้านี้');
+    }
+
+    // ------------------------------------------------------------------
+    // 6d) D48 — ห่วงโซ่จากโค้ดจริง: ส่งจบ acceptance_unknown_attempts แล้วเงียบใหม่
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_real_send_chain_blocks_new_silence_until_seven_days_after_first_push(): void
+    {
+        config(['customer_follow_up.quota_reserve_messages' => 100]);
+        $seed = $this->seedBase();
+        $logId = $this->addLog($seed['room'], $seed['anchorId'], $seed['anchorId'], 'approved', [
+            'attempt_number' => 0,
+            'draft' => 'สวัสดีครับ ยังสนใจสินค้าอยู่ไหมครับ',
+            'drafted_at' => '2026-11-15 09:00:00',
+            'draft_day' => '2026-11-15',
+            'owner_action' => 'sent',
+            'owner_action_at' => '2026-11-16 09:55:00',
+            'owner_telegram_user_id' => '555',
+        ]);
+        $approvalId = DB::table('follow_up_approvals')->insertGetId([
+            'lead_recovery_log_id' => $logId,
+            'status' => 'approved',
+            'revision' => 1,
+            'nonce' => 'abcd1234abcd1234',
+            'text' => 'สวัสดีครับ ยังสนใจสินค้าอยู่ไหมครับ',
+            'check_answers' => json_encode(['scores' => [], 'failed' => [], 'error' => false, 'version' => 1]),
+            'check_overridden' => false,
+            'expires_at' => '2026-11-16 22:00:00',
+            'telegram_delivery_state' => 'sent',
+            'created_at' => self::NOW,
+            'updated_at' => self::NOW,
+        ]);
+
+        Http::fake([
+            'https://api.line.me/v2/bot/message/push' => Http::sequence()
+                ->push('{}', 503)
+                ->push('{}', 503)
+                ->push('{}', 503),
+            'https://api.line.me/v2/bot/message/quota' => Http::response('{"type":"limited","value":200}', 200),
+            'https://api.line.me/v2/bot/message/quota/consumption' => Http::response('{"totalUsage":10}', 200),
+        ]);
+        $service = app(FollowUpSendService::class);
+
+        $this->assertSame('retry', $service->send($approvalId, $this->now()));
+        $this->assertSame('retry', $service->send($approvalId, $this->at('2026-11-16 10:01:00')));
+        $this->assertSame('failed', $service->send($approvalId, $this->at('2026-11-16 10:06:00')));
+        $this->assertSame('2026-11-16 10:00:00', DB::table('lead_recovery_logs')->where('id', $logId)->value('first_push_at'), 'first_push_at คือเวลายิงแรกของโค้ดจริง');
+
+        // เงียบใหม่เริ่ม +2 วัน (ลูกค้าทัก 2026-11-18 09:00) — เช็คที่ 24 ชม.หลังทัก ยังไม่ผ่านเพราะยิงไป 3 วัน
+        $this->addMessage($seed['room']->id, 'user', '2026-11-18 09:00:00', 'ทักใหม่ครับ');
+        FollowUpSalesProjector::refresh($seed['room'], $this->at('2026-11-19 09:00:00'));
+        $this->assertSame(0, $this->eligibleCount($seed['bot'], $this->at('2026-11-19 09:00:00')), 'send_failed ที่ยิงไป 3 วันยังบล็อกเงียบใหม่');
+
+        // ครบ 7 วันนับจาก first_push_at (2026-11-16 10:00:00) → ตามได้อีก
+        FollowUpSalesProjector::refresh($seed['room'], $this->at('2026-11-23 10:00:00'));
+        $this->assertSame(1, $this->eligibleCount($seed['bot'], $this->at('2026-11-23 10:00:00')), 'ครบ 7 วันนับจาก first_push_at = เงียบใหม่ผ่าน');
     }
 
     // ------------------------------------------------------------------
@@ -784,5 +874,57 @@ class EligibilityTest extends TestCase
         $this->assertSame('outside_hours', $codes[6]);
 
         $this->assertCount(7, array_unique($codes), 'แต่ละเหตุผลต้องมีโค้ดต่างกัน: '.json_encode($codes));
+    }
+
+    #[Test]
+    public function test_recheck_for_send_leaves_out_the_daily_draft_cap(): void
+    {
+        // D46 (เจ้าของวัดไว้ 07:29): approved เมื่อวาน + ร่างอื่นวันนี้ครบ 10 → recheck ปกติติด cap, forSend ผ่าน
+        $seed = $this->seedBase();
+        $log = LeadRecoveryLog::query()->findOrFail($this->addLog($seed['room'], $seed['anchorId'], $seed['anchorId'], 'approved', [
+            'draft_day' => '2026-11-15',
+            'drafted_at' => '2026-11-15 09:00:00',
+        ]));
+        for ($i = 0; $i < 10; $i++) {
+            $this->addLog($seed['room'], null, null, 'pending', [
+                'draft_day' => '2026-11-16',
+                'drafted_at' => '2026-11-16 09:00:00',
+            ]);
+        }
+
+        $this->assertSame('condition_not_met', FollowUpEligibility::recheck($log, $this->now()), 'cap ครบ 10 ต้องตัดแบบเดิมตอน draft');
+        $this->assertSame(null, FollowUpEligibility::recheck($log, $this->now(), true), 'ตอนส่ง (forSend) งบร่างรายวันห้ามตัด');
+
+        // forSend ยังคืนเหตุผลอื่นครบ ทุกข้อเท่า recheck ปกติ
+        $fresh = fn () => $this->seedBase();
+
+        $seed = $fresh();
+        $log = LeadRecoveryLog::query()->findOrFail($this->addLog($seed['room'], $seed['anchorId'], $seed['anchorId'], 'approved', ['draft_day' => '2026-11-15']));
+        $this->assertSame('outside_hours', FollowUpEligibility::recheck($log, $this->at('2026-11-16 22:30:00'), true));
+
+        $seed = $fresh();
+        $log = LeadRecoveryLog::query()->findOrFail($this->addLog($seed['room'], $seed['anchorId'], $seed['anchorId'], 'approved', ['draft_day' => '2026-11-15']));
+        $this->addMessage($seed['room']->id, 'user', '2026-11-16 09:59:00', 'ตามอีกครับ');
+        $this->assertSame('new_customer_message', FollowUpEligibility::recheck($log, $this->now(), true));
+
+        $seed = $fresh();
+        $log = LeadRecoveryLog::query()->findOrFail($this->addLog($seed['room'], $seed['anchorId'], $seed['anchorId'], 'approved', ['draft_day' => '2026-11-15']));
+        $this->addOrder($seed['bot']->id, $seed['room']->id, '2026-11-16 09:30:00');
+        $this->assertSame('order_created', FollowUpEligibility::recheck($log, $this->now(), true));
+
+        $seed = $fresh();
+        $log = LeadRecoveryLog::query()->findOrFail($this->addLog($seed['room'], $seed['anchorId'], $seed['anchorId'], 'approved', ['draft_day' => '2026-11-15']));
+        $this->addSlip($seed['bot']->id, $seed['room']->id, 'passed', '2026-11-16 09:30:00');
+        $this->assertSame('passed_slip', FollowUpEligibility::recheck($log, $this->now(), true));
+
+        $seed = $fresh();
+        $log = LeadRecoveryLog::query()->findOrFail($this->addLog($seed['room'], $seed['anchorId'], $seed['anchorId'], 'approved', ['draft_day' => '2026-11-15']));
+        $seed['room']->update(['is_handover' => true]);
+        $this->assertSame('handover_switched_on', FollowUpEligibility::recheck($log, $this->now(), true));
+
+        $seed = $fresh();
+        $log = LeadRecoveryLog::query()->findOrFail($this->addLog($seed['room'], $seed['anchorId'], $seed['anchorId'], 'approved', ['draft_day' => '2026-11-15']));
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
+        $this->assertSame('bot_switched_off', FollowUpEligibility::recheck($log, $this->now(), true));
     }
 }
