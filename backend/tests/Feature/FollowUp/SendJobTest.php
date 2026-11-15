@@ -905,6 +905,73 @@ class SendJobTest extends TestCase
         $this->assertSame(1, $this->infoSendJobsQueued());
     }
 
+    #[Test]
+    public function test_future_retry_claim_refusal_never_queues_or_repaints(): void
+    {
+        $seed = $this->seedReady([
+            'delivery_status' => 'retry',
+            'next_attempt_at' => '2026-11-16 10:01:00',
+            'updated_at' => '2026-11-16 09:59:00',
+        ], ['status' => 'sending', 'updated_at' => '2026-11-16 09:58:00']);
+        $beforeLog = (array) $this->logRow($seed);
+        $beforeApproval = (array) $this->approvalRow($seed);
+        Queue::fake();
+        $this->fakeHttp();
+        $this->spySend();
+        $this->spyTelegram();
+
+        $this->handleJob($seed['approvalId']);
+
+        $this->assertSame([$seed['approvalId']], $this->sendIds);
+        $this->assertSame([], $this->repaintIds);
+        $this->assertSame([], $this->pushedSendIds());
+        $this->assertSame([], $this->httpRequests);
+        $this->assertSame($beforeLog, (array) $this->logRow($seed));
+        $this->assertSame($beforeApproval, (array) $this->approvalRow($seed));
+    }
+
+    #[Test]
+    public function test_retry_result_with_null_next_attempt_never_queues(): void
+    {
+        $seed = $this->seedReady(['next_attempt_at' => null, 'updated_at' => '2026-11-16 09:50:00']);
+        $beforeLog = (array) $this->logRow($seed);
+        $beforeApproval = (array) $this->approvalRow($seed);
+        Queue::fake();
+        $this->fakeHttp();
+        $this->spyTelegram();
+        // Explicit job contract edge: the real sender never returns retry without a due instant.
+        $this->mock(FollowUpSendService::class, function (MockInterface $mock) use ($seed): void {
+            $mock->shouldReceive('send')->once()->with($seed['approvalId'])->andReturn('retry');
+        });
+
+        $this->handleJob($seed['approvalId']);
+
+        $this->assertSame([], $this->pushedSendIds());
+        $this->assertSame([], $this->repaintIds);
+        $this->assertSame([], $this->httpRequests);
+        $this->assertSame($beforeLog, (array) $this->logRow($seed));
+        $this->assertSame($beforeApproval, (array) $this->approvalRow($seed));
+    }
+
+    #[Test]
+    public function test_retry_result_due_now_queues_one_job_with_delay_one(): void
+    {
+        $seed = $this->seedReady(['next_attempt_at' => self::NOW, 'updated_at' => '2026-11-16 09:50:00']);
+        Queue::fake();
+        $this->fakeHttp();
+        $this->spyTelegram();
+        $this->mock(FollowUpSendService::class, function (MockInterface $mock) use ($seed): void {
+            $mock->shouldReceive('send')->once()->with($seed['approvalId'])->andReturn('retry');
+        });
+
+        $this->handleJob($seed['approvalId']);
+
+        $this->assertSame([$seed['approvalId']], $this->pushedSendIds());
+        $this->assertSame(1, Queue::pushedJobs()[SendCustomerFollowUp::class][0]['job']->delay);
+        $this->assertSame([], $this->repaintIds);
+        $this->assertSame([], $this->httpRequests);
+    }
+
     // ------------------------------------------------------------------
     // Fixtures
     // ------------------------------------------------------------------

@@ -32,6 +32,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Mockery\MockInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -1162,7 +1163,6 @@ class ScanJobTest extends TestCase
     /** เมทริกซ์เคส step E — คืน case => approval id */
     private function seedMatrix(Bot $bot): array
     {
-        $keySuffix = bin2hex(random_bytes(4));
         $retryBase = [
             'delivery_status' => 'retry',
             'next_attempt_at' => '2026-11-16 10:00:00',
@@ -1170,17 +1170,17 @@ class ScanJobTest extends TestCase
             'first_push_at' => '2026-11-16 09:52:00',
             'message_sent' => 'ร่างทดสอบ step E ส่งงาน',
             'attempt_number' => 1,
-            'retry_key' => '9e'.$keySuffix.'-0000-4000-8000-000000000001',
+            'retry_key' => (string) Str::uuid(),
         ];
         $sendingBase = [
             'delivery_status' => 'sending',
             'updated_at' => '2026-11-16 09:50:00',
             'claimed_at' => '2026-11-16 09:50:00',
-            'claim_token' => 'claim-token-base',
+            'claim_token' => (string) Str::uuid(),
             'first_push_at' => '2026-11-16 09:50:00',
             'message_sent' => 'ร่างทดสอบ step E ส่งงาน',
             'attempt_number' => 1,
-            'retry_key' => '9e'.$keySuffix.'-0000-4000-8000-000000000002',
+            'retry_key' => (string) Str::uuid(),
         ];
         $approvedBase = ['delivery_status' => 'approved', 'updated_at' => '2026-11-16 09:58:00'];
         $sendingApproval = ['status' => 'sending'];
@@ -1299,7 +1299,7 @@ class ScanJobTest extends TestCase
             'first_push_at' => '2026-11-16 09:52:00',
             'message_sent' => 'ร่างทดสอบ step E ส่งงาน',
             'attempt_number' => 1,
-            'retry_key' => '9f'.bin2hex(random_bytes(4)).'-0000-4000-8000-000000000003',
+            'retry_key' => (string) Str::uuid(),
         ], ['status' => 'sending']);
         config(['customer_follow_up.bot_ids' => [$bot->id]]);
 
@@ -1415,7 +1415,7 @@ class ScanJobTest extends TestCase
             'first_push_at' => '2026-11-16 09:52:00',
             'message_sent' => 'ร่าง',
             'attempt_number' => 1,
-            'retry_key' => '83'.bin2hex(random_bytes(4)).'-0000-4000-8000-000000000006',
+            'retry_key' => (string) Str::uuid(),
         ], ['status' => 'sending']);
 
         sort($blockerIds);
@@ -1443,7 +1443,7 @@ class ScanJobTest extends TestCase
                 'first_push_at' => '2026-11-16 09:52:00',
                 'message_sent' => 'ร่าง',
                 'attempt_number' => 1,
-                'retry_key' => 'k'.$i,
+                'retry_key' => (string) Str::uuid(),
             ], ['status' => 'sending']);
         }
         $expected = array_slice($ids, 0, 20);
@@ -1468,6 +1468,63 @@ class ScanJobTest extends TestCase
 
         $this->assertSame([], $this->pushedSendIds());
         $this->assertSame([], array_values(array_filter($this->logCalls, fn (array $call): bool => $call['level'] === 'info')), 'ไม่มี bots row = เงียบทั้งหมด');
+    }
+
+    #[Test]
+    #[DataProvider('sendRecoveryBotStates')]
+    public function test_step_e_recovery_matrix_keeps_mismatched_rows_unchanged(string $botState): void
+    {
+        $bot = $this->seedOpenBot();
+        $ids = $this->seedMatrix($bot);
+        $ids['log_sending_appr_pending'] = $this->seedFollowPair($bot, [
+            'delivery_status' => 'sending',
+            'updated_at' => '2026-11-16 09:50:00',
+        ], ['status' => 'pending']);
+        // Exclude step D deliberately: this regression observes only step E selection.
+        DB::table('follow_up_approvals')->whereIn('id', array_values($ids))->update([
+            'telegram_delivery_state' => 'sent',
+            'updated_at' => '2026-11-16 09:47:00',
+        ]);
+        config(['customer_follow_up.bot_ids' => [$bot->id]]);
+        if ($botState === 'switch off') {
+            DB::table('bot_settings')->where('bot_id', $bot->id)->update(['follow_up_enabled' => false]);
+        } elseif ($botState === 'inactive') {
+            $bot->update(['status' => 'paused']);
+        } elseif ($botState === 'capabilities blocked') {
+            config(['customer_follow_up.admin_web_url' => '']);
+            $this->assertSame('admin_url_missing', FollowUpCapabilities::forBot($bot->fresh(), $this->clock())['blocked_reason']);
+        } elseif ($botState === 'non-LINE') {
+            $bot->update(['channel_type' => 'telegram']);
+            $this->assertSame('line_only', FollowUpCapabilities::forBot($bot->fresh(), $this->clock())['blocked_reason']);
+        }
+        $beforeLogs = DB::table('lead_recovery_logs')->orderBy('id')->get()->map(fn (object $row): array => (array) $row)->all();
+        $beforeApprovals = DB::table('follow_up_approvals')->orderBy('id')->get()->map(fn (object $row): array => (array) $row)->all();
+        Queue::fake();
+        $this->captureQueries();
+        $this->startLogCapture();
+
+        $this->runScan();
+
+        $expected = [$ids['retry_due'], $ids['sending_10m']];
+        if ($botState === 'open') {
+            $expected[] = $ids['approved_2m'];
+        }
+        $this->assertSame($expected, $this->pushedSendIds(), 'only due retry/stale sending survive a closed bot; mismatched approval statuses never qualify');
+        $this->assertSame([], $this->writeTableNames());
+        $this->assertSame([], $this->httpRequests);
+        $this->assertSame($beforeLogs, DB::table('lead_recovery_logs')->orderBy('id')->get()->map(fn (object $row): array => (array) $row)->all());
+        $this->assertSame($beforeApprovals, DB::table('follow_up_approvals')->orderBy('id')->get()->map(fn (object $row): array => (array) $row)->all());
+    }
+
+    public static function sendRecoveryBotStates(): array
+    {
+        return [
+            'open' => ['open'],
+            'switch off' => ['switch off'],
+            'inactive' => ['inactive'],
+            'capabilities blocked' => ['capabilities blocked'],
+            'non-LINE' => ['non-LINE'],
+        ];
     }
 
     private function seedOpenBot(): Bot
