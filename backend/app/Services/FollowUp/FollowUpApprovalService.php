@@ -566,22 +566,26 @@ class FollowUpApprovalService
                 : self::INVALID_CHARACTERS; // unreadable / control_character / redaction_marker
         }
 
-        // เจ้านายเขียน @ กับราคาได้ (D86) แต่ลิงก์/อีเมล/เบอร์โทรยังห้าม — redact เปลี่ยนข้อความ = มีชิ้นที่ห้าม
-        // D91: ช่องว่าง (NBSP ฯลฯ ที่ redact จัดเป็นวรรคปกติ) ไม่นับเป็นชิ้นที่ห้าม — เทียบแบบตัดช่องว่างก่อน
-        $compact = static fn (string $value): string => (string) preg_replace('/[\s\p{Z}]+/u', '', $value);
-        if ($compact(FollowUpRedactor::redact($text)) !== $compact($text)) {
+        // เจ้านายเขียน @ กับราคาได้ (D86) แต่ลิงก์/อีเมล/เบอร์โทรยังห้าม (D93)
+        // redact ทับชิ้นที่ห้ามด้วย marker [redacted:… — ตัวอักษรที่ redact แค่แปลงรูป (…, ＡＢＣ, ½ ฯลฯ) ไม่มี marker = ผ่าน
+        // กฎอักขระปฏิเสธ "[redacted:" ที่พิมพ์เองไปก่อนหน้าแล้ว marker ที่นี่จึงมาจาก redact เท่านั้น
+        if (str_contains(FollowUpRedactor::redact($text), '[redacted:')) {
             return self::INVALID_CONTACT;
         }
 
         return null;
     }
 
-    /** ปรับข้อความก่อนตรวจและก่อนเซฟ: CRLF และ CR เดี่ยว → LF แล้ว trim
+    /** ปรับข้อความก่อนตรวจและก่อนเซฟ (D93): CRLF/CR เดี่ยว + U+2028/U+2029 → LF,
+     * ช่องว่างคลาส Zs ทุกตัว (NBSP, U+3000, U+2000–U+200A ฯลฯ) → เว้นวรรคธรรมดา แล้ว trim
      * D91: trim ระบุชุดตัวอักษรเอง ไม่ตัด NUL (\0) ที่ขอบ — อักขระที่ส่งไม่ได้ทุกตำแหน่งต้องถึง guard
      */
     private function normalizeEditText(string $raw): string
     {
-        return trim(str_replace(["\r\n", "\r"], "\n", $raw), " \t\n\r\x0B");
+        $lines = str_replace(["\r\n", "\r", "\u{2028}", "\u{2029}"], "\n", $raw);
+        $spaces = (string) preg_replace('/\p{Zs}/u', ' ', $lines);
+
+        return trim($spaces, " \t\n\r\x0B");
     }
 
     /** แจ้งคนหนึ่งข้อความ ตอบกลับข้อความของเขา — ข้อความล้วน ไม่มี parse_mode */

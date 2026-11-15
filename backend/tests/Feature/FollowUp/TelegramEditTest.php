@@ -1064,7 +1064,7 @@ TEXT;
         return [
             // เทสต์เดิมของ D91 (d91_nbsp_at_the_edges_is_saved_as_typed, :1034) → D93: เก็บแบบตัดขอบเป็นช่องว่างธรรมดา
             'nbsp at both edges' => ["\u{00A0}สวัสดีครับพี่\u{00A0}", 'สวัสดีครับพี่'],
-            'nbsp between words becomes a plain space' => ["สวัสดี\u{00A0}ครับพี่", "สวัสดี ครับพี่"],
+            'nbsp between words becomes a plain space' => ["สวัสดี\u{00A0}ครับพี่", 'สวัสดี ครับพี่'],
             'U+2028 becomes a newline' => ["ก\u{2028}ข", "ก\nข"],
             // F2: redact แค่แปลงรูปอักขระ (…, ＡＢＣ, ½) — ไม่ใช่ของที่ห้าม ต้องเซฟตรงตามที่พิมพ์
             'ellipsis as typed' => ['จุดไข่ปลา… ครับ', 'จุดไข่ปลา… ครับ'],
