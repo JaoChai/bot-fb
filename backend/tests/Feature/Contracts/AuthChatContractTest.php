@@ -339,6 +339,43 @@ class AuthChatContractTest extends TestCase
         $this->assertSame(false, data_get(MessageResource::make($ordinary)->resolve(), 'is_outage_notice'));
     }
 
+    /** B4b (D45): ป้าย is_follow_up ต้องอยู่ทั้ง resource และ broadcast และตรงสัญญา (optional boolean) */
+    public function test_follow_up_flag_matches_contract_on_resource_and_broadcast(): void
+    {
+        $owner = User::factory()->owner()->create();
+        $bot = Bot::factory()->for($owner)->create();
+        $conversation = Conversation::factory()->for($bot)->create();
+
+        $tagged = $conversation->messages()->create([
+            'sender' => 'bot',
+            'content' => 'คุณลูกค้าครับ เข้ามาดูต่อได้เลยครับ มีทางเลือกให้ครับ',
+            'type' => 'text',
+            'metadata' => ['follow_up' => true, 'follow_up_log_id' => 987654321],
+        ]);
+
+        $resourcePayload = MessageResource::make($tagged)->resolve();
+        $this->assertSame(true, data_get($resourcePayload, 'is_follow_up'));
+        $this->assertValidAgainstContract($resourcePayload, 'Message', 'tagged follow-up via MessageResource');
+
+        $broadcastPayload = (new MessageSent($tagged))->broadcastWith();
+        $this->assertSame(true, data_get($broadcastPayload, 'is_follow_up'));
+        $this->assertValidAgainstContract($broadcastPayload, 'MessageSentPayload', 'tagged follow-up via MessageSent');
+
+        // is_follow_up เป็น string 'true' ต้องไม่ผ่านสัญญา (boolean เท่านั้น)
+        $resourcePayload['is_follow_up'] = 'true';
+        $this->assertInvalidAgainstContract($resourcePayload, 'Message', 'string is_follow_up via MessageResource');
+
+        $broadcastPayload['is_follow_up'] = 'true';
+        $this->assertInvalidAgainstContract($broadcastPayload, 'MessageSentPayload', 'string is_follow_up via MessageSent');
+
+        // key หายได้ (optional — payload เก่า/cache เก่ายัง valid)
+        unset($resourcePayload['is_follow_up']);
+        $this->assertValidAgainstContract($resourcePayload, 'Message', 'payload without is_follow_up (Message)');
+
+        unset($broadcastPayload['is_follow_up']);
+        $this->assertValidAgainstContract($broadcastPayload, 'MessageSentPayload', 'payload without is_follow_up (MessageSentPayload)');
+    }
+
     // ------------------------------------------------------------------
     // Broadcast channel authorization
     // ------------------------------------------------------------------
