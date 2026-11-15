@@ -1101,6 +1101,65 @@ class SendTest extends TestCase
         $this->assertClaimCleared($seed);
     }
 
+    #[Test]
+    public function test_expiry_at_the_equal_second_counts_as_expired(): void
+    {
+        $seed = $this->seedReady();
+        DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['expires_at' => self::NOW]);
+        $this->fakeNothing();
+
+        $this->assertSame('blocked', $this->send($seed), 'วินาทีเท่ากับ expires_at นับหมดอายุ (>=)');
+        Http::assertNothingSent();
+        $log = $this->logRow($seed);
+        $this->assertSame('expired', $log->delivery_status);
+        $this->assertSame('expired_before_send', $log->reason_code);
+        $this->assertSame('expired', $this->approvalRow($seed)->status);
+        $this->assertClaimCleared($seed);
+    }
+
+    #[Test]
+    public function test_owner_reedit_confirmed_after_push_still_sends_frozen_text(): void
+    {
+        // edited + confirmed_revision = revision: ยิงแรก 503 → เจ้าของแก้ข้อความบนบัตรอีกรอบ →
+        // retry ต้องยิง message_sent ที่แช่งไว้ ไม่อ่าน approval.text ใหม่ (D49)
+        $seed = $this->seedReady(['owner_action' => 'edited'], ['confirmed_revision' => 1]);
+        $this->fakeLine(push: [['{}', 503], ['{}', 200, ['x-line-request-id' => 'req-frozen']]]);
+
+        $this->assertSame('retry', $this->send($seed));
+        DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['text' => 'ข้อความแก้รอบสองที่ห้ามหลุดออกไป']);
+        $this->assertSame('sent', $this->send($seed, '2026-11-16 10:01:00'));
+
+        $this->assertSame(self::TEXT, json_decode($this->pushes[1][1], true)['messages'][0]['text'], 'รอบ retry ยิงข้อความที่แช่งไว้');
+    }
+
+    #[Test]
+    public function test_acceptance_with_history_row_already_set_reuses_it(): void
+    {
+        // กันซ้ำแบบสุดท้าย: acceptance ที่ message_id มีอยู่แล้ว (sending ค้างสมมุติหลังเขียนประวัติ) ต้องใช้แถวเดิม
+        $seed = $this->seedReady([
+            'delivery_status' => 'sending',
+            'first_push_at' => '2026-11-16 09:50:00',
+            'message_sent' => self::TEXT,
+            'attempt_number' => 1,
+            'claimed_at' => '2026-11-16 09:50:00',
+            'updated_at' => '2026-11-16 09:50:00',
+        ], ['status' => 'sending']);
+        $messagesBefore = (int) DB::table('messages')->count();
+        // แถวเก่าที่เคยถูกเขียนไว้ — ต้องเป็น bot เพื่อไม่ให้ projector มองว่ามีลูกค้าทักใหม่
+        $existingId = $this->addMessage($seed['room']->id, 'bot', '2026-11-15 08:59:30', 'ได้เตรียมส่งให้ครับ');
+        DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update([
+            'message_id' => $existingId,
+            'observed_last_message_id' => $existingId,
+        ]);
+        // projection ต้องตามข้อความที่เพิ่งแทรก ไม่งั้น recheck ตัดด้วย projection เก่า
+        FollowUpSalesProjector::refresh($seed['room'], $this->now());
+        $this->fakeLine();
+
+        $this->assertSame('sent', $this->send($seed));
+        $this->assertSame($existingId, (int) $this->logRow($seed)->message_id, 'ใช้แถวประวัติเดิม ไม่แทรกใหม่');
+        $this->assertSame($messagesBefore + 1, (int) DB::table('messages')->count(), 'จำนวนแถวประวัติคงเดิม');
+    }
+
     // ------------------------------------------------------------------
     // D46 — งบร่างรายวันห้ามตัดตอนส่ง
     // ------------------------------------------------------------------
