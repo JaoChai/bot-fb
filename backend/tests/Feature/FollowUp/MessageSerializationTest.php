@@ -128,7 +128,8 @@ class MessageSerializationTest extends TestCase
         $this->assertBodyHidesFollowUpMetadata($syncMessages->getContent());
 
         // 6) resource เดี่ยว (MessageResource::make → resolve)
-        foreach ($this->rowsByExpected($tagged, $ordinary, $customer, $expected) as $row => $expectedFlag) {
+        foreach ([$tagged, $ordinary, $customer] as $row) {
+            $expectedFlag = $expected[$row->id];
             $payload = MessageResource::make($row)->resolve();
             $this->assertSame($expectedFlag, data_get($payload, 'is_follow_up'), "resource flag row {$row->id}");
             $this->assertFalse(array_key_exists('metadata', $payload), "metadata leaked in resource row {$row->id}");
@@ -136,7 +137,8 @@ class MessageSerializationTest extends TestCase
         }
 
         // 7) broadcast (MessageSent::broadcastWith) + JSON ที่จะถูกส่งจริง
-        foreach ($this->rowsByExpected($tagged, $ordinary, $customer, $expected) as $row => $expectedFlag) {
+        foreach ([$tagged, $ordinary, $customer] as $row) {
+            $expectedFlag = $expected[$row->id];
             $payload = (new MessageSent($row))->broadcastWith();
             $this->assertSame($expectedFlag, data_get($payload, 'is_follow_up'), "broadcast flag row {$row->id}");
             $this->assertFalse(array_key_exists('metadata', $payload), "metadata leaked in broadcast row {$row->id}");
@@ -274,15 +276,6 @@ class MessageSerializationTest extends TestCase
         $this->assertSame(false, data_get(MessageResource::make($followUpOnly)->resolve(), 'is_outage_notice'), 'follow-up-only row must not be outage notice');
         $this->assertSame(true, data_get(MessageResource::make($followUpOnly)->resolve(), 'is_follow_up'));
         $this->assertSame(false, data_get((new MessageSent($followUpOnly))->broadcastWith(), 'is_outage_notice'), 'follow-up-only row must not be outage notice (broadcast)');
-    }
-
-    /**
-     * @param  array<int, bool>  $expected
-     * @return array<Message, bool>
-     */
-    private function rowsByExpected(Message $tagged, Message $ordinary, Message $customer, array $expected): array
-    {
-        return [$tagged => $expected[$tagged->id], $ordinary => $expected[$ordinary->id], $customer => $expected[$customer->id]];
     }
 
     /**

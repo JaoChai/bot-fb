@@ -174,6 +174,8 @@ export interface components {
             updated_at: string;
             /** @description True only for bot rows that are automated "recovered" notices sent after an outage. Surfaces the auto-reply badge without exposing raw metadata. Optional so old payloads (pre-rollout caches, optimistic messages) stay valid; treat absent as false (the safe default). */
             is_outage_notice?: boolean;
+            /** @description True only for bot rows that are automated "customer follow-up" messages sent by the follow-up feature. Surfaces the follow-up badge without exposing raw metadata (follow_up_log_id never leaves the backend). Optional so old payloads (pre-rollout caches, optimistic messages) stay valid; treat absent as false (the safe default). */
+            is_follow_up?: boolean;
         };
         PaginationLinks: {
             first: string | null;
@@ -281,6 +283,8 @@ export interface components {
             created_at: string;
             /** @description True only for bot rows that are automated "recovered" notices sent after an outage. Optional so old payloads stay valid; treat absent as false (the safe default). */
             is_outage_notice?: boolean;
+            /** @description True only for bot rows that are automated "customer follow-up" messages sent by the follow-up feature. Surfaces the follow-up badge without exposing raw metadata (follow_up_log_id never leaves the backend). Optional so old payloads stay valid; treat absent as false (the safe default). */
+            is_follow_up?: boolean;
             conversation: components["schemas"]["MessageSentConversationSnapshot"];
         };
         /**
