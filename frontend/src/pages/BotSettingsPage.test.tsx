@@ -567,6 +567,18 @@ describe('BotSettingsPage (customer follow-up tab)', () => {
     h.mutateAsync.mockRejectedValueOnce({
       message: 'The given data was invalid.',
       status: 422,
+      errors: { follow_up_enabled: ['writer_missing'] },
+    });
+    fireEvent.click(getSaveButton());
+    await waitFor(() =>
+      expect(screen.getByTestId('follow-up-enabled-error')).toHaveTextContent(
+        'ระบบยังตั้งค่าไม่ครบ ติดต่อผู้ดูแลระบบ',
+      ),
+    );
+
+    h.mutateAsync.mockRejectedValueOnce({
+      message: 'The given data was invalid.',
+      status: 422,
       errors: { follow_up_enabled: ['mystery_code'] },
     });
     fireEvent.click(getSaveButton());

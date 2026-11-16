@@ -273,13 +273,13 @@ describe('follow-up reason tables (shared by notice and 422 mapping)', () => {
       'บอทนี้ยังไม่ได้ตั้งรายชื่อคนที่กดอนุมัติได้',
     );
     expect(followUpSaveErrorLine('follow_up_enabled', 'webhook_secret_missing')).toBe(
-      FOLLOW_UP_SAVE_FAILED_LINE,
+      'ระบบยังตั้งค่าไม่ครบ ติดต่อผู้ดูแลระบบ',
     );
     expect(followUpSaveErrorLine('follow_up_enabled', 'writer_missing')).toBe(
-      FOLLOW_UP_SAVE_FAILED_LINE,
+      'ระบบยังตั้งค่าไม่ครบ ติดต่อผู้ดูแลระบบ',
     );
     expect(followUpSaveErrorLine('follow_up_enabled', 'admin_url_missing')).toBe(
-      FOLLOW_UP_SAVE_FAILED_LINE,
+      'ระบบยังตั้งค่าไม่ครบ ติดต่อผู้ดูแลระบบ',
     );
     expect(followUpSaveErrorLine('follow_up_enabled', 'totally_unknown')).toBe(
       FOLLOW_UP_SAVE_FAILED_LINE,
