@@ -413,7 +413,7 @@ test.describe(`customer follow-up settings journeys`, () => {
 const LINK_ROOM_ID = 77
 const LINK_ROOM_NAME = 'E2E Link Customer'
 
-function linkRoom(unreadCount: number): Record<string, unknown> {
+function linkRoom(unreadCount: number, isHandover = false): Record<string, unknown> {
   return {
     id: LINK_ROOM_ID,
     bot_id: 1,
@@ -421,7 +421,7 @@ function linkRoom(unreadCount: number): Record<string, unknown> {
     external_customer_id: 'e2e-link-customer',
     channel_type: 'line',
     status: 'active',
-    is_handover: false,
+    is_handover: isHandover,
     assigned_user_id: null,
     memory_notes: null,
     tags: [],
@@ -494,21 +494,68 @@ test.describe('customer follow-up room link journeys', () => {
       }, testInfo) => {
         void loggedIn
         await setViewportAndTheme(page, combo)
+        // Review 1 (e2e L1): seed the chat store with room 1 as the stored
+        // selection — the link must open room 77 without ever fetching or
+        // mounting room 1 (chat-store persists only selectedConversationId).
+        await page.addInitScript(() => {
+          localStorage.setItem(
+            'chat-store',
+            JSON.stringify({ state: { selectedConversationId: 1 }, version: 0 }),
+          )
+        })
         const markReadHits = { count: 0 }
         await registerLinkRoomRoutes(page, { unreadCount: 1, markReadHits })
+        // Review 1 (e2e L1): request observers. Registered LAST they run
+        // FIRST; each only records and route.fallback()s into the mocks above
+        // (never fulfills), so the serving behavior is unchanged.
+        // `*` does not cross '/', so /conversations/77* sees exactly the room
+        // GETs (?messages_limit=1), not /77/mark-as-read or /77/messages.
+        const roomGets: string[] = []
+        await page.route('**/api/bots/1/conversations/77*', async (route) => {
+          roomGets.push(route.request().url())
+          await route.fallback()
+        })
+        const room1MessageGets: string[] = []
+        await page.route('**/api/bots/1/conversations/1/messages*', async (route) => {
+          room1MessageGets.push(route.request().url())
+          await route.fallback()
+        })
+        const writes: string[] = []
+        await page.route('**/api/**', async (route) => {
+          if (route.request().method() !== 'GET') {
+            writes.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`)
+          }
+          await route.fallback()
+        })
 
         await page.goto('/chat?botId=1&conversationId=77')
 
         // The linked room opens — its customer name appears in the chat header
         // (scoped to the centre panel: at 1280 the info panel carries an h3
-        // with the same name)
+        // with the same name) — and room 1 ('E2E Customer') never shows there.
         await expect(
           page
             .getByTestId('chat-center-panel')
             .getByRole('heading', { name: LINK_ROOM_NAME }),
         ).toBeVisible()
+        await expect(
+          page
+            .getByTestId('chat-center-panel')
+            .getByRole('heading', { name: 'E2E Customer' }),
+        ).toHaveCount(0)
         await expect.poll(() => markReadHits.count).toBe(1)
         expect(new URL(page.url()).searchParams.get('conversationId')).toBe('77')
+
+        // Exactly ONE room GET opens the link (?messages_limit=1); the D133
+        // fresh-copy subscription adds exactly ONE more after the mark-as-read
+        // mutation succeeds. No room-1 messages request ever fires (the stored
+        // selection must not mount), and mark-as-read is the ONLY write.
+        await expect.poll(() => roomGets.length).toBe(2)
+        for (const url of roomGets) {
+          expect(url).toContain('/api/bots/1/conversations/77?messages_limit=1')
+        }
+        expect(room1MessageGets).toHaveLength(0)
+        expect(writes).toEqual(['POST /api/bots/1/conversations/77/mark-as-read'])
 
         const overflow = await page.evaluate(() => ({
           sw: document.documentElement.scrollWidth,
@@ -558,6 +605,128 @@ test.describe('customer follow-up room link journeys', () => {
         } else {
           await expect(list).toBeVisible()
         }
+        expect(pageErrors).toEqual([])
+      })
+
+      // Review 1 (e2e L3): a non-numeric conversationId is a bad link — the
+      // error panel shows and NO room request is ever made.
+      test('link_invalid_param_shows_panel_and_makes_no_room_request', async ({
+        page,
+        loggedIn,
+        pageErrors,
+      }, testInfo) => {
+        void loggedIn
+        await setViewportAndTheme(page, combo)
+        // Observer scoped to THIS link's room endpoint only (single segment
+        // after /conversations/): /conversations/tags is a real endpoint the
+        // page may call and must not pollute the count. `*` does not cross '/',
+        // so /abc/messages or /abc/mark-as-read are separate routes anyway.
+        const roomDetailGets: string[] = []
+        await page.route('**/api/bots/1/conversations/abc*', async (route) => {
+          roomDetailGets.push(route.request().url())
+          await route.fallback()
+        })
+        const writes: string[] = []
+        await page.route('**/api/**', async (route) => {
+          if (route.request().method() !== 'GET') {
+            writes.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`)
+          }
+          await route.fallback()
+        })
+
+        await page.goto('/chat?botId=1&conversationId=abc')
+
+        await expect(page.getByText('เปิดห้องแชตนี้ไม่ได้')).toBeVisible()
+        await expect(page.getByText('ห้องนี้อาจถูกลบ หรือบัญชีนี้ไม่มีสิทธิ์ดู')).toBeVisible()
+        await expect(page.getByRole('button', { name: 'กลับไปที่รายการแชต' })).toBeVisible()
+        // no room of any kind rendered (the panel's own title IS a heading —
+        // so assert room names only)
+        await expect(page.getByRole('heading', { name: LINK_ROOM_NAME })).toHaveCount(0)
+        await expect(
+          page
+            .getByTestId('chat-center-panel')
+            .getByRole('heading', { name: 'E2E Customer' }),
+        ).toHaveCount(0)
+        // settle: a bad link never calls the room endpoint and writes nothing
+        await page.waitForTimeout(300)
+        expect(roomDetailGets).toHaveLength(0)
+        expect(writes).toEqual([])
+        // the parameter stays — the bot auto-redirect must not wipe it
+        const url = new URL(page.url())
+        expect(url.searchParams.get('conversationId')).toBe('abc')
+        expect(url.searchParams.get('botId')).toBe('1')
+
+        const overflow = await page.evaluate(() => ({
+          sw: document.documentElement.scrollWidth,
+          cw: document.documentElement.clientWidth,
+        }))
+        expect(overflow.sw).toBeLessThanOrEqual(overflow.cw)
+        await shot(page, testInfo, `link-error-invalid-${combo.width}-${combo.theme}`)
+        expect(pageErrors).toEqual([])
+      })
+
+      // Review 1 (e2e L4): the handover tap updates the header of a room that
+      // is NOT in the loaded list — no reload, only the toggle POST plus the
+      // D133 fresh-copy refetch.
+      test('link_handover_toggle_updates_header_without_reload', async ({
+        page,
+        loggedIn,
+        pageErrors,
+      }, testInfo) => {
+        void loggedIn
+        await setViewportAndTheme(page, combo)
+        let handoverOn = false
+        const markReadHits = { count: 0 }
+        // stateful room routes: the detail answers is_handover per the toggle
+        await page.route('**/api/bots/1/conversations/77*', async (route) => {
+          await route.fulfill({ json: { data: linkRoom(1, handoverOn) } })
+        })
+        await page.route('**/api/bots/1/conversations/77/messages*', (route) =>
+          route.fulfill({ json: messagesListResponse }),
+        )
+        await page.route('**/api/bots/1/conversations/77/notes', (route) =>
+          route.fulfill({ json: { data: [] } }),
+        )
+        await page.route('**/api/bots/1/conversations/77/mark-as-read', async (route) => {
+          markReadHits.count += 1
+          await route.fulfill({ json: { data: linkRoom(0, handoverOn) } })
+        })
+        await page.route('**/api/bots/1/conversations/77/toggle-handover', async (route) => {
+          handoverOn = !handoverOn
+          await route.fulfill({ json: { data: linkRoom(1, handoverOn) } })
+        })
+        // detail-GET observer (registered last -> runs first, then falls back)
+        const roomGets: string[] = []
+        await page.route('**/api/bots/1/conversations/77*', async (route) => {
+          roomGets.push(route.request().url())
+          await route.fallback()
+        })
+
+        await page.goto('/chat?botId=1&conversationId=77')
+
+        const centre = page.getByTestId('chat-center-panel')
+        await expect(centre.getByRole('heading', { name: LINK_ROOM_NAME })).toBeVisible()
+        await expect(centre.getByRole('button', { name: 'Take Over' })).toBeVisible()
+
+        await centre.getByRole('button', { name: 'Take Over' }).click()
+
+        // the header flips WITHOUT any reload — the toggle POST succeeded and
+        // the D133 subscription refetched the room (is_handover true)
+        await expect(centre.getByRole('button', { name: 'Enable Bot' })).toBeVisible()
+        // room GETs: open + mark-as-read fresh-copy refetch + toggle refetch
+        await expect.poll(() => roomGets.length).toBe(3)
+        for (const url of roomGets) {
+          expect(url).toContain('/api/bots/1/conversations/77?messages_limit=1')
+        }
+        expect(markReadHits.count).toBe(1)
+        expect(new URL(page.url()).searchParams.get('conversationId')).toBe('77')
+
+        const overflow = await page.evaluate(() => ({
+          sw: document.documentElement.scrollWidth,
+          cw: document.documentElement.clientWidth,
+        }))
+        expect(overflow.sw).toBeLessThanOrEqual(overflow.cw)
+        await shot(page, testInfo, `link-handover-${combo.width}-${combo.theme}`)
         expect(pageErrors).toEqual([])
       })
 
