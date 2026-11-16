@@ -1,5 +1,10 @@
 import { test, expect } from './fixtures'
-import { messagesListResponse } from './mock-data'
+import {
+  conversation,
+  message as messageFixture,
+  messagesListResponse,
+  pagination,
+} from './mock-data'
 import type { Page, TestInfo } from '@playwright/test'
 
 // Customer follow-up settings journeys (F1a, D128). Pattern =
@@ -779,6 +784,171 @@ test.describe('customer follow-up room link journeys', () => {
         expect(markReadHits.count).toBe(0)
         expect(pageErrors).toEqual([])
       })
+    })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// F2: the follow-up label (ข้อความตามลูกค้า) under the bot's follow-up
+// messages. Same shape as outage-settings.spec.ts's badge journey: local
+// envelope helpers (shared fixture files stay untouched), four width/theme
+// combos, three channel types, a flagged row, an unflagged row whose TEXT
+// equals the label, and an outage row (the two labels are independent,
+// D136). The flagged message text is synthetic — never a production text.
+const FU_LABEL = 'ข้อความตามลูกค้า'
+const FU_OUTAGE_LABEL = 'ส่งอัตโนมัติหลังบอทล่ม'
+const FU_MESSAGE_TEXT = 'E2E-FU ตอบกลับลูกค้าครับ'
+
+function fuConversationsEnvelope(conv: Record<string, unknown>) {
+  return {
+    data: [conv],
+    links: { first: null, last: null, prev: null, next: null },
+    meta: {
+      ...pagination,
+      from: 1,
+      to: 1,
+      path: 'http://localhost/api/bots/1/conversations',
+      links: [],
+      status_counts: {
+        active: 1,
+        closed: 0,
+        handover: 0,
+        needs_response: 0,
+        waiting_customer: 0,
+        total: 1,
+      },
+    },
+  }
+}
+
+function fuMessagesEnvelope(messages: Record<string, unknown>[]) {
+  return {
+    data: messages,
+    links: { first: null, last: null, prev: null, next: null },
+    meta: {
+      ...pagination,
+      from: messages.length,
+      to: messages.length,
+      path: 'http://localhost/api/bots/1/conversations/1/messages',
+      links: [],
+    },
+  }
+}
+
+test.describe(`follow-up badge journeys (F2)`, () => {
+  for (const combo of COMBOS) {
+    test.describe(`${combo.width}-${combo.theme}`, () => {
+      for (const channelType of ['line', 'telegram', 'testing'] as const) {
+        test(`badge_${channelType}_on_flagged_row_only_and_survives_reload`, async ({
+          page,
+          loggedIn,
+          pageErrors,
+        }, testInfo) => {
+          void loggedIn
+          await setViewportAndTheme(page, combo)
+          const conv = { ...conversation, channel_type: channelType }
+          const messages = [
+            {
+              ...messageFixture,
+              id: 1,
+              sender: 'user',
+              content: 'สอบถามราคาครับ',
+              created_at: '2026-11-17T09:00:00Z',
+              updated_at: '2026-11-17T09:00:00Z',
+            },
+            {
+              ...messageFixture,
+              id: 2,
+              sender: 'bot',
+              content: FU_MESSAGE_TEXT,
+              is_follow_up: true,
+              created_at: '2026-11-17T09:10:00Z',
+              updated_at: '2026-11-17T09:10:00Z',
+            },
+            {
+              ...messageFixture,
+              id: 3,
+              sender: 'bot',
+              content: FU_LABEL, // text matches the label but carries NO flag
+              created_at: '2026-11-17T09:11:00Z',
+              updated_at: '2026-11-17T09:11:00Z',
+            },
+            {
+              ...messageFixture,
+              id: 4,
+              sender: 'bot',
+              content: 'ระบบกลับมาใช้งานได้แล้วครับ',
+              is_outage_notice: true,
+              created_at: '2026-11-17T09:12:00Z',
+              updated_at: '2026-11-17T09:12:00Z',
+            },
+          ]
+          await page.route('**/api/bots/1/conversations*', (route) =>
+            route.fulfill({
+              json: fuConversationsEnvelope(conv as unknown as Record<string, unknown>),
+            }),
+          )
+          await page.route('**/api/bots/1/conversations/1/messages*', (route) =>
+            route.fulfill({ json: fuMessagesEnvelope(messages) }),
+          )
+
+          await page.goto('/chat?botId=1')
+          await page.getByRole('button', { name: /E2E Customer/ }).click()
+          await expect(page.getByText(FU_MESSAGE_TEXT)).toBeVisible()
+
+          // Exactly one element with the label text inside a badge, and it
+          // sits in the flagged row (the raw-text row and the outage row
+          // never carry it). Two badges in total: follow-up + outage (D136).
+          const fuBadges = page.locator('[data-slot="badge"]', { hasText: FU_LABEL })
+          await expect(fuBadges).toHaveCount(1)
+          const badges = page.locator('[data-slot="badge"]')
+          await expect(badges).toHaveCount(2)
+          await expect(badges.filter({ hasText: FU_OUTAGE_LABEL })).toHaveCount(1)
+
+          // The badge's parent element is its bubble container in all three
+          // bubble components: the flagged text and the badge share it.
+          const fuBubble = fuBadges.first().locator('xpath=..')
+          await expect(fuBubble.getByText(FU_MESSAGE_TEXT)).toBeVisible()
+
+          // Bounding box: the badge sits inside its bubble.
+          const badgeBox = await fuBadges.first().boundingBox()
+          const bubbleBox = await fuBubble.boundingBox()
+          expect(badgeBox).not.toBeNull()
+          expect(bubbleBox).not.toBeNull()
+          expect(badgeBox!.x).toBeGreaterThanOrEqual(bubbleBox!.x)
+          expect(badgeBox!.y).toBeGreaterThanOrEqual(bubbleBox!.y)
+          expect(badgeBox!.x + badgeBox!.width).toBeLessThanOrEqual(
+            bubbleBox!.x + bubbleBox!.width + 1,
+          )
+          expect(badgeBox!.y + badgeBox!.height).toBeLessThanOrEqual(
+            bubbleBox!.y + bubbleBox!.height + 1,
+          )
+
+          // Wraps without horizontal scroll.
+          const overflow = await page.evaluate(() => ({
+            sw: document.documentElement.scrollWidth,
+            cw: document.documentElement.clientWidth,
+          }))
+          expect(overflow.sw).toBeLessThanOrEqual(overflow.cw)
+
+          await shot(page, testInfo, `badge-${channelType}-${combo.width}-${combo.theme}`)
+
+          // B2: history from REST — the same badges after a full reload. On
+          // phone the reload lands on the list (the room does not reopen on
+          // its own, as F1b's link journeys document), so the room is tapped
+          // again first; desktop auto-selects room 1.
+          await page.reload()
+          if (combo.width < 768) {
+            await page.getByRole('button', { name: /E2E Customer/ }).click()
+          }
+          await expect(page.getByText(FU_MESSAGE_TEXT)).toBeVisible()
+          await expect(page.locator('[data-slot="badge"]', { hasText: FU_LABEL })).toHaveCount(1)
+          await expect(page.locator('[data-slot="badge"]')).toHaveCount(2)
+          await expect(badges.filter({ hasText: FU_OUTAGE_LABEL })).toHaveCount(1)
+
+          expect(pageErrors).toEqual([])
+        })
+      }
     })
   }
 })
