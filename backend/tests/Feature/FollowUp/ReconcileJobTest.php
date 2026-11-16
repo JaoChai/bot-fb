@@ -319,6 +319,48 @@ class ReconcileJobTest extends TestCase
         }
     }
 
+    public static function xSaturatingPredicates(): array
+    {
+        return [
+            'pending log status' => ['approved', ['status' => 'pending', 'expires_at' => self::OLD], []],
+            'pending approval status' => ['pending', ['status' => 'approved', 'expires_at' => self::OLD], []],
+            'approved first push' => ['approved', ['expires_at' => self::OLD], ['first_push_at' => self::OLD]],
+            'approved log status' => ['sending', ['status' => 'approved', 'expires_at' => self::OLD], []],
+            'approved approval status' => ['approved', ['status' => 'sending', 'expires_at' => self::OLD], []],
+            'future expiry' => ['pending', ['expires_at' => '2026-11-16 10:00:01'], []],
+        ];
+    }
+
+    #[DataProvider('xSaturatingPredicates')]
+    public function test_each_x_list_predicate_keeps_fifty_ineligible_low_ids_from_starving_a_due_card(string $status, array $approval, array $log): void
+    {
+        $this->seedWorld();
+        $protected = [];
+        // Each dataset saturates the entire batch with ONE invalid predicate.
+        // Mixed fillers cannot expose starvation when just one filter is dropped.
+        for ($i = 0; $i < 50; $i++) {
+            $row = $this->card($status, $approval, $log);
+            $protected[] = [$row, $this->snapshot($row)];
+        }
+        $due = $this->card('pending', ['expires_at' => self::OLD]);
+        $before = $this->snapshot($due);
+        $this->assertGreaterThan($protected[49][0]['approvalId'], $due['approvalId']);
+
+        $this->runJob();
+
+        $this->assertExpired($due, $before, true);
+        $this->assertSame([$due['approvalId']], $this->refreshIds);
+        $this->assertSame(['refreshed'], $this->refreshResults);
+        $this->assertSame(['editMessageText'], $this->methods());
+        $this->assertStringEndsWith('⌛ หมดอายุ ไม่ได้ส่ง', $this->requests[0]['text']);
+        $this->assertSame(['inline_keyboard' => []], json_decode($this->requests[0]['reply_markup'], true));
+        foreach ($protected as [$row, $snapshot]) {
+            $this->assertSame($snapshot, $this->snapshot($row));
+        }
+        $this->assertInfo(1, 0);
+        Queue::assertNothingPushed();
+    }
+
     public function test_x_limit_is_fifty_lowest_approval_ids_then_next_run(): void
     {
         $this->seedWorld();
@@ -431,6 +473,42 @@ class ReconcileJobTest extends TestCase
         foreach ($protected as [$row, $snapshot]) {
             $this->assertSame($snapshot, $this->snapshot($row));
         }
+        $this->assertInfo(0, 1);
+    }
+
+    public static function ySaturatingPredicates(): array
+    {
+        return [
+            'pending status' => ['pending', []],
+            'exact seven day cutoff' => ['candidate', ['created_at' => '2026-11-09 10:00:00']],
+            'fresh sorting claim' => ['sorting', ['updated_at' => '2026-11-16 09:50:01']],
+            'fresh drafting claim' => ['drafting', ['updated_at' => '2026-11-16 09:50:01']],
+            'terminal excluded status' => ['excluded', []],
+        ];
+    }
+
+    #[DataProvider('ySaturatingPredicates')]
+    public function test_each_y_list_predicate_keeps_one_hundred_ineligible_low_ids_from_starving_waiting_work(string $status, array $changes): void
+    {
+        $this->seedWorld();
+        $protected = [];
+        for ($i = 0; $i < 100; $i++) {
+            $row = $this->waiting($status, $changes);
+            $protected[] = [$row, $this->snapshot($row)];
+        }
+        $due = $this->waiting('candidate');
+        $before = $this->snapshot($due);
+        $this->assertGreaterThan($protected[99][0]['logId'], $due['logId']);
+
+        $this->runJob();
+
+        $this->assertWaitingClosed($due, $before);
+        foreach ($protected as [$row, $snapshot]) {
+            $this->assertSame($snapshot, $this->snapshot($row));
+        }
+        $this->assertSame([], $this->refreshIds);
+        Http::assertNothingSent();
+        Queue::assertNothingPushed();
         $this->assertInfo(0, 1);
     }
 
