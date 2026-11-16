@@ -19,6 +19,7 @@ import {
 import { useToggleHandover } from './useConversationActions';
 import { useAddTags } from './useTags';
 import { conversationDetailKeys } from './useConversationDetails';
+import { shouldDehydrateQuery } from '@/lib/query';
 import type { Conversation } from '@/types/api';
 
 const apiGetMock = vi.fn();
@@ -145,6 +146,43 @@ describe('useLinkedConversation — query behaviour', () => {
 
     expect(queryClient.getQueryData(['conversation', 3, 42])).toBeDefined();
     expect(queryClient.getQueryData(['conversation', 3, 43])).toBeUndefined();
+  });
+
+  // Review 1, item 2b: the same room id under a DIFFERENT botId is a different
+  // cache entry — two requests, two cache entries, no cross-bot reuse.
+  it('does not reuse one bot\'s cached room for another bot (two requests, two cache entries)', async () => {
+    const roomOfBot1 = makeConversation(77, { bot_id: 1, unread_count: 1 });
+    const roomOfBot2 = makeConversation(77, {
+      bot_id: 2,
+      unread_count: 2,
+      customer_profile: { display_name: 'ลูกค้าของบอท 2' },
+    });
+    apiGetMock.mockImplementation((url: string) =>
+      Promise.resolve({ data: url.startsWith('/bots/1/') ? roomOfBot1 : roomOfBot2 })
+    );
+    const { queryClient, wrapper } = createWrapper();
+
+    const first = renderHook(() => useLinkedConversation(1, 77), { wrapper });
+    await waitFor(() => expect(first.result.current.isSuccess).toBe(true));
+    const second = renderHook(() => useLinkedConversation(2, 77), { wrapper });
+    await waitFor(() => expect(second.result.current.isSuccess).toBe(true));
+
+    expect(apiGetMock).toHaveBeenCalledTimes(2);
+    expect(apiGetMock).toHaveBeenNthCalledWith(1, '/bots/1/conversations/77?messages_limit=1');
+    expect(apiGetMock).toHaveBeenNthCalledWith(2, '/bots/2/conversations/77?messages_limit=1');
+    expect(queryClient.getQueryData(conversationDetailKeys.detail(1, 77))).toBe(roomOfBot1);
+    expect(queryClient.getQueryData(conversationDetailKeys.detail(2, 77))).toBe(roomOfBot2);
+    expect(first.result.current.data).toBe(roomOfBot1);
+    expect(second.result.current.data).toBe(roomOfBot2);
+    first.unmount();
+    second.unmount();
+  });
+
+  // Review 1, item 2c (privacy): the linked-room copy carries the customer's
+  // profile — it must never be dehydrated into session storage.
+  it('is excluded from session-cache dehydration (shouldDehydrateQuery false for the detail key)', () => {
+    expect(shouldDehydrateQuery({ queryKey: conversationDetailKeys.detail(1, 2) })).toBe(false);
+    expect(shouldDehydrateQuery({ queryKey: ['conversation', 1, 2] })).toBe(false);
   });
 
   it('does not retry a failed room request (retry: false)', async () => {

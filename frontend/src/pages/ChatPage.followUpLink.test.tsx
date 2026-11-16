@@ -25,6 +25,14 @@ import { ChatPage } from './ChatPage';
 import { useChatStore } from '@/stores/chatStore';
 import type { Conversation } from '@/types/api';
 
+// Review 1 (item 1): record every ChatWindow / CustomerInfoPanel MOUNT id.
+// The stored-room flash defect is visible only in mount history — by the time
+// an assertion runs the link has already applied and room 77 is on screen.
+const mountProbe = vi.hoisted(() => ({
+  chatWindow: [] as string[],
+  infoPanel: [] as string[],
+}));
+
 const listState = {
   conversations: [] as Conversation[],
   isLoading: false,
@@ -63,33 +71,47 @@ vi.mock('@/lib/api', () => ({
     (error as { message?: string })?.message ?? String(error),
 }));
 
-vi.mock('@/components/chat/ChatWindow', () => ({
-  ChatWindow: ({
-    conversation,
-    onBack,
-  }: {
-    conversation: Conversation;
-    onBack?: () => void;
-  }) => (
-    <div
-      data-testid="chat-window"
-      data-conversation-id={conversation.id}
-      data-unread={conversation.unread_count}
-    >
-      {onBack && (
-        <button type="button" onClick={onBack}>
-          mock-back
-        </button>
-      )}
-    </div>
-  ),
-}));
+vi.mock('@/components/chat/ChatWindow', async () => {
+  const { useEffect } = await import('react');
+  return {
+    ChatWindow: ({
+      conversation,
+      onBack,
+    }: {
+      conversation: Conversation;
+      onBack?: () => void;
+    }) => {
+      useEffect(() => {
+        mountProbe.chatWindow.push(String(conversation.id));
+      }, [conversation.id]);
+      return (
+        <div
+          data-testid="chat-window"
+          data-conversation-id={conversation.id}
+          data-unread={conversation.unread_count}
+        >
+          {onBack && (
+            <button type="button" onClick={onBack}>
+              mock-back
+            </button>
+          )}
+        </div>
+      );
+    },
+  };
+});
 
-vi.mock('@/components/chat/CustomerInfoPanel', () => ({
-  CustomerInfoPanel: ({ conversation }: { conversation: Conversation }) => (
-    <div data-testid="info-panel" data-conversation-id={conversation.id} />
-  ),
-}));
+vi.mock('@/components/chat/CustomerInfoPanel', async () => {
+  const { useEffect } = await import('react');
+  return {
+    CustomerInfoPanel: ({ conversation }: { conversation: Conversation }) => {
+      useEffect(() => {
+        mountProbe.infoPanel.push(String(conversation.id));
+      }, [conversation.id]);
+      return <div data-testid="info-panel" data-conversation-id={conversation.id} />;
+    },
+  };
+});
 
 vi.mock('@/components/chat/BotSelectorPanel', () => ({
   BotSelectorPanel: ({ onBotSelect }: { onBotSelect: (value: string) => void }) => (
@@ -331,6 +353,57 @@ describe('ChatPage room link — success', () => {
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(apiPostMock).not.toHaveBeenCalled();
   });
+
+  // Review 1, item 2d: opening a link for unread_count 3 marks read EXACTLY
+  // once and performs no other write (no handover, no send, no edit).
+  it('marks the linked room read exactly once for unread_count 3 and fires no other mutation', async () => {
+    apiGetMock.mockResolvedValue({ data: room77({ unread_count: 3 }) });
+    apiPostMock.mockResolvedValue({ data: room77({ unread_count: 0 }) });
+
+    renderPage('/chat?botId=1&conversationId=77');
+
+    await screen.findByTestId('chat-window');
+    await waitFor(() => expect(apiPostMock).toHaveBeenCalledTimes(1));
+    expect(apiPostMock).toHaveBeenCalledWith('/bots/1/conversations/77/mark-as-read');
+    // settle: opening a link writes nothing else through the POST transport
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(apiPostMock).toHaveBeenCalledTimes(1);
+  });
+
+  // Review 1, item 2e: the link applies ONCE — selectConversation is called
+  // exactly once per link value; rerenders and list refreshes never re-select.
+  it('calls selectConversation exactly once for the link; rerenders never re-select', async () => {
+    apiGetMock.mockResolvedValue({ data: room77() });
+    apiPostMock.mockResolvedValue({ data: room77({ unread_count: 0 }) });
+    const originalSelect = useChatStore.getState().selectConversation;
+    const selectSpy = vi.fn(originalSelect);
+    useChatStore.setState({ selectConversation: selectSpy });
+
+    try {
+      const view = renderPage('/chat?botId=1&conversationId=77');
+      await screen.findByTestId('chat-window');
+      expect(selectSpy).toHaveBeenCalledTimes(1);
+      expect(selectSpy).toHaveBeenCalledWith(77);
+
+      // a later list refresh with fresh object identities must not re-select
+      act(() => {
+        listState.conversations = [room9(), room77({ unread_count: 2 })];
+        view.rerender(
+          <QueryClientProvider client={view.queryClient}>
+            <MemoryRouter initialEntries={['/chat?botId=1&conversationId=77']}>
+              <ChatPage />
+              <LocationProbe />
+            </MemoryRouter>
+          </QueryClientProvider>
+        );
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(selectSpy).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('chat-window').getAttribute('data-conversation-id')).toBe('77');
+    } finally {
+      useChatStore.setState({ selectConversation: originalSelect });
+    }
+  });
 });
 
 describe('ChatPage room link — leaving the room', () => {
@@ -395,7 +468,7 @@ describe('ChatPage room link — leaving the room', () => {
   });
 });
 
-describe('ChatPage room link — bad link / not found / no access', () => {
+describe('invalid_or_cross_bot_room_link_shows_error_not_another_room (rule 5)', () => {
   beforeEach(() => {
     stubViewport(false); // phone
     apiGetMock.mockReset();
@@ -420,7 +493,7 @@ describe('ChatPage room link — bad link / not found / no access', () => {
     '9007199254740993',
     '', // empty value is still a present parameter
   ])(
-    'shows the not-found panel and makes no room request for a bad conversationId %j',
+    'bad conversationId %j: exact panel, zero room requests, no ChatWindow',
     async (bad) => {
       renderPage(`/chat?botId=1&conversationId=${bad}`);
 
@@ -428,6 +501,7 @@ describe('ChatPage room link — bad link / not found / no access', () => {
       expect(screen.getByText('ห้องนี้อาจถูกลบ หรือบัญชีนี้ไม่มีสิทธิ์ดู')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'กลับไปที่รายการแชต' })).toBeInTheDocument();
       expect(screen.queryByTestId('chat-window')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('info-panel')).not.toBeInTheDocument();
       // settle: a bad link never calls the room endpoint
       await new Promise((resolve) => setTimeout(resolve, 25));
       expect(apiGetMock).not.toHaveBeenCalled();
@@ -444,31 +518,37 @@ describe('ChatPage room link — bad link / not found / no access', () => {
     expect(search()).toBe('?conversationId=77');
   });
 
-  it('shows the not-found panel on 404 and restores the normal page from its button', async () => {
+  it('cross-bot room link answers 404: exact panel, no ChatWindow, button restores the page', async () => {
+    // room 9 belongs to bot 1; the link carries botId=2 -> the endpoint 404s
+    // (ValidatesConversationOwnership) and no room may render instead
     apiGetMock.mockRejectedValue({ message: 'Not found.', status: 404 });
     listState.conversations = [room9()];
     useChatStore.setState({ selectedConversationId: 9, showMobileChat: false });
 
-    renderPage('/chat?botId=1&conversationId=404');
+    renderPage('/chat?botId=2&conversationId=404');
 
     expect(await screen.findByText('เปิดห้องแชตนี้ไม่ได้')).toBeInTheDocument();
+    expect(screen.getByText('ห้องนี้อาจถูกลบ หรือบัญชีนี้ไม่มีสิทธิ์ดู')).toBeInTheDocument();
     expect(screen.queryByTestId('chat-window')).not.toBeInTheDocument();
     expect(screen.queryByTestId('info-panel')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'กลับไปที่รายการแชต' }));
 
-    await waitFor(() => expect(search()).toBe('?botId=1'));
+    await waitFor(() => expect(search()).toBe('?botId=2'));
     // normal page back: stored selection renders again
     expect(await screen.findByTestId('chat-window')).toHaveAttribute('data-conversation-id', '9');
   });
 
-  it('shows the same not-found panel on 403', async () => {
+  it('403 no-access link: same panel, no ChatWindow', async () => {
     apiGetMock.mockRejectedValue({ message: 'Forbidden.', status: 403 });
 
     renderPage('/chat?botId=1&conversationId=55');
 
     expect(await screen.findByText('เปิดห้องแชตนี้ไม่ได้')).toBeInTheDocument();
     expect(screen.getByText('ห้องนี้อาจถูกลบ หรือบัญชีนี้ไม่มีสิทธิ์ดู')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'กลับไปที่รายการแชต' })).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-window')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('info-panel')).not.toBeInTheDocument();
   });
 });
 
@@ -571,5 +651,67 @@ describe('ChatPage room link — error panel layout', () => {
     expect(listPanel().classList.contains('md:flex')).toBe(true);
     expect(screen.queryByTestId('chat-window')).not.toBeInTheDocument();
     expect(screen.queryByTestId('info-panel')).not.toBeInTheDocument();
+  });
+});
+
+// Review 1, item 1 (acceptance `deep_link_opens_room_outside_first_page`):
+// list = rooms 1..30, chat-store seeded with the stored selection 5, link to
+// room 77 (outside the first page). ChatWindow / CustomerInfoPanel must never
+// mount with room 1 (auto-select) or the stored selection — not even for the
+// one commit between `linkState === 'ready'` and the post-commit apply.
+describe('ChatPage room link — deep_link_opens_room_outside_first_page', () => {
+  beforeEach(() => {
+    stubViewport(false); // phone by default
+    apiGetMock.mockReset();
+    apiPostMock.mockReset();
+    listState.conversations = [];
+    listState.isLoading = false;
+    useChatStore.setState({
+      selectedConversationId: null,
+      showMobileChat: false,
+      isCustomerPanelOpen: false,
+      searchQuery: '',
+    });
+    mountProbe.chatWindow.length = 0;
+    mountProbe.infoPanel.length = 0;
+  });
+
+  const firstThirtyRooms = () =>
+    Array.from({ length: 30 }, (_, i) => makeRoom(i + 1, `E2E ลูกค้า ${i + 1}`));
+
+  it('deep_link_opens_room_outside_first_page (desktop: stored room 5 and room 1 never mount)', async () => {
+    stubViewport(true); // desktop
+    listState.conversations = firstThirtyRooms();
+    useChatStore.setState({ selectedConversationId: 5, showMobileChat: false });
+    apiGetMock.mockResolvedValue({ data: room77({ unread_count: 1 }) });
+    apiPostMock.mockResolvedValue({ data: room77({ unread_count: 0 }) });
+
+    renderPage('/chat?botId=1&conversationId=77');
+
+    const chatWindow = await screen.findByTestId('chat-window');
+    expect(chatWindow.getAttribute('data-conversation-id')).toBe('77');
+    // the ONLY rooms ever mounted are the linked one — room 1 (auto-select)
+    // and the stored selection 5 must not mount even for one commit
+    expect(mountProbe.chatWindow).toEqual(['77']);
+    expect(mountProbe.infoPanel).toEqual(['77']);
+    expect(useChatStore.getState().selectedConversationId).toBe(77);
+  });
+
+  it('deep_link_opens_room_outside_first_page (phone: stored room never mounts, chat view opens)', async () => {
+    listState.conversations = firstThirtyRooms();
+    useChatStore.setState({ selectedConversationId: 5, showMobileChat: true });
+    apiGetMock.mockResolvedValue({ data: room77({ unread_count: 1 }) });
+    apiPostMock.mockResolvedValue({ data: room77({ unread_count: 0 }) });
+
+    renderPage('/chat?botId=1&conversationId=77');
+
+    const chatWindow = await screen.findByTestId('chat-window');
+    expect(chatWindow.getAttribute('data-conversation-id')).toBe('77');
+    expect(mountProbe.chatWindow).toEqual(['77']);
+    expect(useChatStore.getState().selectedConversationId).toBe(77);
+    // phone: the link opens the chat view and marks the room read once
+    expect(useChatStore.getState().showMobileChat).toBe(true);
+    await waitFor(() => expect(apiPostMock).toHaveBeenCalledTimes(1));
+    expect(apiPostMock).toHaveBeenCalledWith('/bots/1/conversations/77/mark-as-read');
   });
 });

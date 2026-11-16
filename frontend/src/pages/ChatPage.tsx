@@ -102,17 +102,6 @@ export function ChatPage() {
   // ids are positive safe integers, so a bad link makes no request).
   const linkedRoom = useLinkedConversation(linkedBotId, linkedConversationId);
 
-  // Selected conversation: the list copy wins when the list holds the id,
-  // otherwise the deep-link copy stands in for a room outside the loaded pages.
-  const selectedConversation = useMemo(() => {
-    const fromList = conversations.find((c) => c.id === selectedConversationId);
-    if (fromList) return fromList;
-    if (hasConversationLink && selectedConversationId === linkedConversationId && linkedRoom.data) {
-      return linkedRoom.data;
-    }
-    return undefined;
-  }, [conversations, selectedConversationId, hasConversationLink, linkedConversationId, linkedRoom.data]);
-
   // Link state machine (D132/D134): pending shows a loader, never another
   // room; a 404/403 or a malformed link shows the not-found panel; anything
   // else failing shows the retry panel.
@@ -136,6 +125,27 @@ export function ChatPage() {
   ]);
   const isLinkPending = linkState === 'pending';
   const isLinkError = linkState === 'not-found' || linkState === 'load-failed';
+  // F1b (review 1, item 1): `ready` but the selection not yet applied — the
+  // link applies in a post-commit effect, so this one commit would otherwise
+  // mount the STORED selection's ChatWindow (wrong-room messages fetch).
+  // Hold the pending presentation until the selection is the linked room.
+  const isLinkSelectionUnapplied =
+    linkState === 'ready' && selectedConversationId !== linkedConversationId;
+  const isLinkHeld = isLinkPending || isLinkSelectionUnapplied;
+
+  // Selected conversation: the list copy wins when the list holds the id,
+  // otherwise the deep-link copy stands in for a room outside the loaded pages.
+  // F1b (review 1): while a link holds the page — pending, or ready but not
+  // yet applied — NO room may render, not the stored selection, not room 1.
+  const selectedConversation = useMemo(() => {
+    if (isLinkHeld) return undefined;
+    const fromList = conversations.find((c) => c.id === selectedConversationId);
+    if (fromList) return fromList;
+    if (hasConversationLink && selectedConversationId === linkedConversationId && linkedRoom.data) {
+      return linkedRoom.data;
+    }
+    return undefined;
+  }, [isLinkHeld, conversations, selectedConversationId, hasConversationLink, linkedConversationId, linkedRoom.data]);
 
   // Mutations
   const markAsRead = useMarkAsRead(botId ?? undefined);
@@ -340,12 +350,13 @@ export function ChatPage() {
       style={keyboardInset > 0 ? { height: `calc(100% - ${keyboardInset}px)` } : undefined}
     >
       {/* Left Panel: Conversation List — phone: hidden when a room shows or a
-          link error replaces the list; stays visible while a link is pending */}
+          link error replaces the list; stays visible while a link holds the
+          page (pending or not yet applied) */}
       <div
         data-testid="chat-list-panel"
         className={cn(
           'w-full md:w-80 flex-shrink-0 border-r flex flex-col',
-          !isLinkPending && (showMobileChat || isLinkError) && 'hidden md:flex'
+          !isLinkHeld && (showMobileChat || isLinkError) && 'hidden md:flex'
         )}
       >
         {/* Bot Selector */}
@@ -378,12 +389,12 @@ export function ChatPage() {
         data-testid="chat-center-panel"
         className={cn(
           'flex-1 flex flex-col min-w-0 min-h-0',
-          !isLinkError && (isLinkPending || !showMobileChat) && 'hidden md:flex'
+          !isLinkError && (isLinkHeld || !showMobileChat) && 'hidden md:flex'
         )}
       >
         {isLinkError ? (
           linkErrorPanel
-        ) : isLinkPending ? (
+        ) : isLinkHeld ? (
           <div className="flex-1 flex items-center justify-center p-6">
             <EmptyState
               size="lg"
@@ -412,10 +423,10 @@ export function ChatPage() {
         )}
       </div>
 
-      {/* Right Panel: Customer Info (Desktop) — gated while a link is pending
-          or errored so no room's info panel renders */}
+      {/* Right Panel: Customer Info (Desktop) — gated while a link holds the
+          page or errored so no room's info panel renders */}
       <div className="w-96 flex-shrink-0 border-l hidden xl:block overflow-y-auto">
-        {selectedConversation && !isLinkPending && !isLinkError && (
+        {selectedConversation && !isLinkHeld && !isLinkError && (
           <CustomerInfoPanel
             botId={botId}
             conversation={selectedConversation}
@@ -431,7 +442,7 @@ export function ChatPage() {
               <SheetTitle>Customer Information</SheetTitle>
               <SheetDescription>View customer details and conversation information</SheetDescription>
             </VisuallyHidden.Root>
-            {selectedConversation && !isLinkPending && !isLinkError && (
+            {selectedConversation && !isLinkHeld && !isLinkError && (
               <CustomerInfoPanel
                 botId={botId}
                 conversation={selectedConversation}
