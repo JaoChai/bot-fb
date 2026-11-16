@@ -22,20 +22,23 @@ interface FollowUpSettingsTabProps {
   onChange: (field: string, value: unknown) => void;
 }
 
-// Reason lines (D129). The notice table maps blocked_reason codes; the
-// save-error table maps a 422 on the two follow-up keys.
+// Reason lines (D129). ONE table holds all 7 known codes and is shared by
+// the notice (blocked_reason) and the 422 mapping (follow_up_enabled).
+const SYSTEM_UNSET_LINE = 'ระบบยังตั้งค่าไม่ครบ ติดต่อผู้ดูแลระบบ';
 const REASON_LINES: Record<string, string> = {
   line_only: 'ตอนนี้ตามลูกค้าได้เฉพาะบอท LINE',
   bot_not_in_pilot: 'ช่วงทดลองเปิดใช้เฉพาะบอทที่กำหนด',
   telegram_missing: 'บอทนี้ยังไม่ได้ตั้งห้อง Telegram สำหรับแจ้งเตือน',
   telegram_allowlist_missing: 'บอทนี้ยังไม่ได้ตั้งรายชื่อคนที่กดอนุมัติได้',
+  webhook_secret_missing: SYSTEM_UNSET_LINE,
+  writer_missing: SYSTEM_UNSET_LINE,
+  admin_url_missing: SYSTEM_UNSET_LINE,
 };
-const SYSTEM_UNSET_LINE = 'ระบบยังตั้งค่าไม่ครบ ติดต่อผู้ดูแลระบบ';
 
 export const FOLLOW_UP_UNAVAILABLE_LINE = 'ยังโหลดข้อมูลตามลูกค้าไม่ได้ ลองโหลดหน้าใหม่';
 export const FOLLOW_UP_SAVE_FAILED_LINE = 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง';
 
-/** Notice line for a capabilities.blocked_reason code (system codes fall back). */
+/** Notice line for a capabilities.blocked_reason code (unknown codes fall back). */
 export function followUpBlockedNoticeLine(code: string | null | undefined): string {
   return (code && REASON_LINES[code]) || SYSTEM_UNSET_LINE;
 }
