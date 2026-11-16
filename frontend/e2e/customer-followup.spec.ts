@@ -161,7 +161,7 @@ async function assertFollowUpHealth(page: Page, hasRules: boolean) {
   // panel is absent, the mode rows). scroll-mb-24 sits on the ul/fieldset, and
   // scrollIntoView honors the TARGET's own margin — so scroll that container
   // and then measure its last row.
-  let rowBox: { y: number; height: number } | null = null
+  let rowBox: { y: number; height: number } | null
   if (hasRules) {
     const list = page.getByRole('list').filter({ hasText: 'ห้องที่ปิดบอท และลูกค้าที่จ่ายแล้ว' })
     await list.evaluate((el) => el.scrollIntoView({ block: 'end', behavior: 'instant' }))
@@ -335,7 +335,7 @@ test.describe(`customer follow-up settings journeys`, () => {
         page,
         loggedIn,
         pageErrors,
-      }, testInfo) => {
+      }) => {
         void loggedIn
         const state = await openFollowUpTab(
           page,

@@ -1,3 +1,7 @@
+/* eslint-disable react-refresh/only-export-components -- the reason tables
+   (D129) are one source of truth shared by this tab and the page's 422
+   mapping; the same file-top disable pattern is used by ui/badge.tsx and
+   ui/button.tsx. */
 import { Check, Info, MessageCircle } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Panel } from '@/components/common';
