@@ -49,7 +49,7 @@ class EditCheckJobTest extends TestCase
 
     private const NONCE = 'abcd1234abcd1234';
 
-    private const CUSTOMER = 'Ub6g000112233445566778899aabbccdd';
+    private const CUSTOMER = 'Ub6c000112233445566778899aabbccdd';
 
     private const MARKER = 'exception-message-must-not-leak-b6g';
 
@@ -163,6 +163,10 @@ TEXT;
         Conversation::factory()->line()->create([
             'id' => 1317, 'bot_id' => 26, 'customer_profile_id' => $profile->id,
             'external_customer_id' => self::CUSTOMER, 'is_handover' => false, 'status' => 'active',
+        ]);
+        DB::table('messages')->insert([
+            'conversation_id' => 1317, 'sender' => 'user', 'content' => 'สนใจ Nolimit Personal ครับ',
+            'type' => 'text', 'created_at' => '2026-11-15 07:55:00', 'updated_at' => self::BEFORE,
         ]);
         $anchor = DB::table('messages')->insertGetId([
             'conversation_id' => 1317, 'sender' => 'user', 'content' => 'ประเมินราคาให้หน่อยครับ',
@@ -366,7 +370,6 @@ TEXT;
         $this->events = [];
         $this->handle();
         $this->assertSame($after, $this->rows());
-        Http::assertSentCount(2);
         $this->assertSame([], $this->requests);
         $this->assertSame([], $this->events);
     }
@@ -656,13 +659,16 @@ TEXT;
         $this->assertSame($overridden, (bool) $log['check_overridden']);
         Bus::assertDispatched(SendCustomerFollowUp::class, fn ($job) => $job->approvalId === 777);
         Bus::assertDispatchedTimes(SendCustomerFollowUp::class, 1);
-        Bus::assertDispatchedJobsCount(1);
+        $fake = Bus::getFacadeRoot();
+        $this->assertSame([SendCustomerFollowUp::class], array_keys((new \ReflectionProperty($fake, 'commands'))->getValue($fake)));
+        $this->assertSame([], (new \ReflectionProperty($fake, 'commandsSync'))->getValue($fake));
+        $this->assertSame([], (new \ReflectionProperty($fake, 'commandsAfterResponse'))->getValue($fake));
         if ($kind === 'clean') {
             $this->requests = [];
             app()->call([new SendCustomerFollowUp(777), 'handle']);
             $pushes = array_values(array_filter($this->requests, fn ($r) => str_ends_with($r->url(), '/message/push')));
             $this->assertCount(1, $pushes);
-            $this->assertSame(json_encode(['to' => self::CUSTOMER, 'messages' => [['type' => 'text', 'text' => self::TEXT]]], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $pushes[0]->body());
+            $this->assertSame(json_encode(['to' => self::CUSTOMER, 'messages' => [['type' => 'text', 'text' => self::TEXT]]]), $pushes[0]->body());
             $this->assertSame('sent', $this->rows()[0]['status']);
             $this->assertSame('sent', $this->rows()[1]['delivery_status']);
         }

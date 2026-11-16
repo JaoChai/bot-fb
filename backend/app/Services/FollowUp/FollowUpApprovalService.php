@@ -2,6 +2,7 @@
 
 namespace App\Services\FollowUp;
 
+use App\Jobs\CheckEditedFollowUp;
 use App\Jobs\SendCustomerFollowUp;
 use App\Models\FlowPlugin;
 use App\Models\LeadRecoveryLog;
@@ -468,7 +469,8 @@ class FollowUpApprovalService
         $text = $this->normalizeEditText($raw);
 
         // 10) เซฟรุ่นใหม่ — ธุรกรรมเดียว ล็อก log ก่อนแล้ว approval
-        $saveNotice = DB::transaction(function () use ($approvalId, $logId, $fromIdStr, $replyId, $updateId, $text, $nowStr) {
+        $savedRevision = null;
+        $saveNotice = DB::transaction(function () use ($approvalId, $logId, $fromIdStr, $replyId, $updateId, $text, $nowStr, &$savedRevision) {
             $lockedLog = DB::table('lead_recovery_logs')->where('id', $logId)->lockForUpdate()->first();
             $locked = DB::table('follow_up_approvals')->where('id', $approvalId)->lockForUpdate()->first();
             if ($locked === null || $lockedLog === null) {
@@ -502,6 +504,7 @@ class FollowUpApprovalService
                 $updates['last_update_id'] = $updateId;
             }
             DB::table('follow_up_approvals')->where('id', $approvalId)->update($updates);
+            $savedRevision = $updates['revision'];
 
             return null;
         });
@@ -510,6 +513,15 @@ class FollowUpApprovalService
             $this->notice($token, $chatId, $noticeReplyId, $saveNotice);
 
             return $this->finishEdit($approvalId, $logId, $botId, 'refused', 'save_race', $fromId);
+        }
+
+        try {
+            CheckEditedFollowUp::dispatch($approvalId, $savedRevision);
+        } catch (Throwable $exception) {
+            Log::warning('Follow-up edit check dispatch failed', [
+                'approval_id' => $approvalId,
+                'exception_class' => $exception::class,
+            ]);
         }
 
         // 11) ระบายการ์ดก่อนแจ้งคน — ล้มทั้งที่ไม่เปลี่ยนแถวและไม่เปลี่ยนผลคืน

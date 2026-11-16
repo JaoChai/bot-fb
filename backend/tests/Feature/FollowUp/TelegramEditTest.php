@@ -1576,7 +1576,7 @@ TEXT;
         Queue::assertNothingPushed();
         Bus::assertDispatched(CheckEditedFollowUp::class, fn ($job) => $job->approvalId === $seed['approval_id'] && $job->revision === 2);
         Bus::assertDispatchedTimes(CheckEditedFollowUp::class, 1);
-        Bus::assertDispatchedJobsCount(1);
+        $this->assertOnlyEditChecks(1);
         self::assertSame(2, DB::table('messages')->where('sender', 'bot')->count(), 'ห้ามสร้างแถวข้อความลูกค้า');
         $this->assertNoSecretsInLog();
     }
@@ -2518,7 +2518,7 @@ TEXT;
         Queue::assertNothingPushed();
         Bus::assertDispatched(CheckEditedFollowUp::class, fn ($job) => $job->approvalId === $seed['approval_id'] && $job->revision === 2);
         Bus::assertDispatchedTimes(CheckEditedFollowUp::class, 1);
-        Bus::assertDispatchedJobsCount(1);
+        $this->assertOnlyEditChecks(1);
         self::assertSame(2, DB::table('messages')->where('sender', 'bot')->count());
         $this->assertNoSecretsInLog();
     }
@@ -2532,7 +2532,18 @@ TEXT;
 
         $jobs = Bus::dispatched(CheckEditedFollowUp::class);
         self::assertSame([[$seed['approval_id'], 2], [$seed['approval_id'], 3]], $jobs->map(fn ($job) => [$job->approvalId, $job->revision])->all());
-        Bus::assertDispatchedJobsCount(2);
+        $this->assertOnlyEditChecks(2);
+    }
+
+    private function assertOnlyEditChecks(int $count): void
+    {
+        $fake = Bus::getFacadeRoot();
+        // This installed BusFake has no total-count API; inspect all three dispatch paths.
+        $commands = (new \ReflectionProperty($fake, 'commands'))->getValue($fake);
+        self::assertSame([CheckEditedFollowUp::class], array_keys($commands));
+        self::assertCount($count, $commands[CheckEditedFollowUp::class]);
+        self::assertSame([], (new \ReflectionProperty($fake, 'commandsSync'))->getValue($fake));
+        self::assertSame([], (new \ReflectionProperty($fake, 'commandsAfterResponse'))->getValue($fake));
     }
 
     public static function noEditCheckDispatchCases(): iterable
@@ -2602,6 +2613,50 @@ TEXT;
         [$response] = $this->postReply($this->replyMessage(), stub: $this->stubWithMessageIds($requests));
         $response->assertOk()->assertExactJson(['ok' => true]);
         self::assertCount(2, $requests);
+    }
+
+    #[Test]
+    public function check_dispatch_carries_the_revision_written_under_the_lock_not_the_first_read(): void
+    {
+        $seed = $this->bindPrompt();
+        $raced = false;
+        DB::listen(function (QueryExecuted $query) use ($seed, &$raced): void {
+            if (! $raced && str_starts_with($query->sql, 'select * from "follow_up_approvals" ')) {
+                $raced = true;
+                DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->update(['revision' => 5]);
+            }
+        });
+        try {
+            $this->postReply($this->replyMessage())[0]->assertOk();
+        } finally {
+            app('events')->forget(QueryExecuted::class);
+        }
+        self::assertTrue($raced);
+        self::assertSame(6, (int) $this->approvalRow($seed['approval_id'])->revision);
+        Bus::assertDispatched(CheckEditedFollowUp::class, fn ($job) => $job->approvalId === $seed['approval_id'] && $job->revision === 6);
+        $this->assertOnlyEditChecks(1);
+    }
+
+    #[Test]
+    public function check_dispatch_does_not_reread_a_revision_changed_after_the_save_write(): void
+    {
+        $seed = $this->bindPrompt();
+        $raced = false;
+        DB::listen(function (QueryExecuted $query) use ($seed, &$raced): void {
+            if (! $raced && str_starts_with($query->sql, 'update "follow_up_approvals"')) {
+                $raced = true;
+                DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->update(['revision' => 3]);
+            }
+        });
+        try {
+            $this->postReply($this->replyMessage())[0]->assertOk();
+        } finally {
+            app('events')->forget(QueryExecuted::class);
+        }
+        self::assertTrue($raced);
+        self::assertSame(3, (int) $this->approvalRow($seed['approval_id'])->revision);
+        Bus::assertDispatched(CheckEditedFollowUp::class, fn ($job) => $job->approvalId === $seed['approval_id'] && $job->revision === 2);
+        $this->assertOnlyEditChecks(1);
     }
 
     #[Test]
