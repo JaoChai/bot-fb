@@ -12,13 +12,20 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useMutation } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { useLinkedConversation, parseConversationLinkParam } from './useLinkedConversation';
+import {
+  useLinkedConversation,
+  parseConversationLinkParam,
+} from './useLinkedConversation';
+import { useToggleHandover } from './useConversationActions';
+import { useAddTags } from './useTags';
 import { conversationDetailKeys } from './useConversationDetails';
 import type { Conversation } from '@/types/api';
 
 const apiGetMock = vi.fn();
+const apiPostMock = vi.fn();
 vi.mock('@/lib/api', () => ({
   apiGet: (...args: unknown[]) => apiGetMock(...args),
+  api: { post: (...args: unknown[]) => apiPostMock(...args) },
 }));
 
 function makeConversation(id: number, overrides: Partial<Conversation> = {}): Conversation {
@@ -233,5 +240,60 @@ describe('useLinkedConversation — invalidation subscription (D133)', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(apiGetMock).not.toHaveBeenCalled();
+  });
+
+  // Acceptance "Fresh copy": real app mutations (handover, tags) that only
+  // write the LIST cache must be followed by exactly ONE new room request,
+  // after which the hook serves the fresh is_handover / tags.
+  it('refetches the room once after a real useToggleHandover success and serves the new is_handover', async () => {
+    apiGetMock
+      .mockResolvedValueOnce({ data: makeConversation(77, { is_handover: false }) })
+      .mockResolvedValue({ data: makeConversation(77, { is_handover: true }) });
+    apiPostMock.mockResolvedValue({ data: makeConversation(77, { is_handover: true }) });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const link = renderHook(() => useLinkedConversation(1, 77), { wrapper });
+    const handover = renderHook(() => useToggleHandover(1), { wrapper });
+    await waitFor(() => expect(link.result.current.isSuccess).toBe(true));
+    expect(link.result.current.data?.is_handover).toBe(false);
+    apiGetMock.mockClear();
+
+    handover.result.current.mutate({ conversationId: 77 });
+    await waitFor(() => expect(handover.result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(link.result.current.data?.is_handover).toBe(true));
+
+    // exactly ONE new room request followed the mutation
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+    expect(apiGetMock).toHaveBeenCalledWith('/bots/1/conversations/77?messages_limit=1');
+  });
+
+  it('refetches the room once after a real useAddTags success and serves the new tags', async () => {
+    apiGetMock
+      .mockResolvedValueOnce({ data: makeConversation(77) })
+      .mockResolvedValue({ data: makeConversation(77, { tags: ['vip'] }) });
+    apiPostMock.mockResolvedValue({ data: { tags: ['vip'] } });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const link = renderHook(() => useLinkedConversation(1, 77), { wrapper });
+    const addTags = renderHook(() => useAddTags(1), { wrapper });
+    await waitFor(() => expect(link.result.current.isSuccess).toBe(true));
+    expect(link.result.current.data?.tags).toEqual([]);
+    apiGetMock.mockClear();
+
+    addTags.result.current.mutate({ conversationId: 77, data: { tags: ['vip'] } });
+    await waitFor(() => expect(addTags.result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(link.result.current.data?.tags).toEqual(['vip']));
+
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
   });
 });
