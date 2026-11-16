@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures'
+import { messagesListResponse } from './mock-data'
 import type { Page, TestInfo } from '@playwright/test'
 
 // Customer follow-up settings journeys (F1a, D128). Pattern =
@@ -394,6 +395,202 @@ test.describe(`customer follow-up settings journeys`, () => {
         expect(state.puts[0].outage_down_message).toBe('บันทึกได้ตามปกติ')
         expect('follow_up_enabled' in state.puts[0]).toBe(false)
         expect('follow_up_mode' in state.puts[0]).toBe(false)
+        expect(pageErrors).toEqual([])
+      })
+    })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// F1b: the Telegram card link /chat?botId=1&conversationId=77 opens exactly
+// that room. Room 77 is OUTSIDE the fixtures' list (which carries room 1
+// only), so the room must come from the deep-link fetch, never from falling
+// back to another room. All room-77 routes are registered here — fixtures.ts
+// does not mock them and its fail-closed teardown fails the test on any
+// unmocked request. Synthetic customer names only.
+// ---------------------------------------------------------------------------
+
+const LINK_ROOM_ID = 77
+const LINK_ROOM_NAME = 'E2E Link Customer'
+
+function linkRoom(unreadCount: number): Record<string, unknown> {
+  return {
+    id: LINK_ROOM_ID,
+    bot_id: 1,
+    customer_profile_id: LINK_ROOM_ID,
+    external_customer_id: 'e2e-link-customer',
+    channel_type: 'line',
+    status: 'active',
+    is_handover: false,
+    assigned_user_id: null,
+    memory_notes: null,
+    tags: [],
+    context: null,
+    current_flow_id: null,
+    message_count: 3,
+    unread_count: unreadCount,
+    last_message_at: '2026-01-02T00:00:00.000000Z',
+    bot_auto_enable_at: null,
+    bot_auto_enable_remaining_seconds: null,
+    context_cleared_at: null,
+    created_at: '2026-01-02T00:00:00.000000Z',
+    updated_at: '2026-01-02T00:00:00.000000Z',
+    customer_profile: {
+      id: LINK_ROOM_ID,
+      external_id: 'e2e-link-customer',
+      channel_type: 'line',
+      display_name: LINK_ROOM_NAME,
+      picture_url: null,
+      phone: null,
+      email: null,
+      interaction_count: 3,
+    },
+    assigned_user: null,
+    last_message: null,
+    needs_response: false,
+  }
+}
+
+async function registerLinkRoomRoutes(
+  page: Page,
+  options: {
+    status?: number
+    unreadCount?: number
+    markReadHits?: { count: number }
+  } = {},
+) {
+  const { status, unreadCount = 1, markReadHits } = options
+  await page.route(`**/api/bots/1/conversations/${LINK_ROOM_ID}`, async (route) => {
+    if (status !== undefined) {
+      await route.fulfill({ status, json: { message: 'E2E link room failure.' } })
+      return
+    }
+    await route.fulfill({ json: { data: linkRoom(unreadCount) } })
+  })
+  await page.route(`**/api/bots/1/conversations/${LINK_ROOM_ID}/messages*`, (route) =>
+    route.fulfill({ json: messagesListResponse }),
+  )
+  await page.route(`**/api/bots/1/conversations/${LINK_ROOM_ID}/notes`, (route) =>
+    route.fulfill({ json: { data: [] } }),
+  )
+  await page.route(`**/api/bots/1/conversations/${LINK_ROOM_ID}/mark-as-read`, async (route) => {
+    if (markReadHits) markReadHits.count += 1
+    await route.fulfill({ json: { data: linkRoom(0) } })
+  })
+}
+
+test.describe('customer follow-up room link journeys', () => {
+  for (const combo of COMBOS) {
+    test.describe(`link-${combo.width}-${combo.theme}`, () => {
+      test('link_open_opens_room77_and_marks_read_once', async ({
+        page,
+        loggedIn,
+        pageErrors,
+      }, testInfo) => {
+        void loggedIn
+        await setViewportAndTheme(page, combo)
+        const markReadHits = { count: 0 }
+        await registerLinkRoomRoutes(page, { unreadCount: 1, markReadHits })
+
+        await page.goto('/chat?botId=1&conversationId=77')
+
+        // The linked room opens — its customer name appears in the chat header
+        await expect(
+          page.getByRole('heading', { name: LINK_ROOM_NAME }),
+        ).toBeVisible()
+        await expect.poll(() => markReadHits.count).toBe(1)
+        expect(new URL(page.url()).searchParams.get('conversationId')).toBe('77')
+
+        const overflow = await page.evaluate(() => ({
+          sw: document.documentElement.scrollWidth,
+          cw: document.documentElement.clientWidth,
+        }))
+        expect(overflow.sw).toBeLessThanOrEqual(overflow.cw)
+        await shot(page, testInfo, `link-open-${combo.width}-${combo.theme}`)
+        expect(pageErrors).toEqual([])
+      })
+
+      test('link_not_found_shows_panel_and_button_returns_to_list', async ({
+        page,
+        loggedIn,
+        pageErrors,
+      }, testInfo) => {
+        void loggedIn
+        await setViewportAndTheme(page, combo)
+        await registerLinkRoomRoutes(page, { status: 404 })
+
+        await page.goto('/chat?botId=1&conversationId=404')
+
+        await expect(page.getByText('เปิดห้องแชตนี้ไม่ได้')).toBeVisible()
+        await expect(page.getByText('ห้องนี้อาจถูกลบ หรือบัญชีนี้ไม่มีสิทธิ์ดู')).toBeVisible()
+        // No room opened: neither the linked customer nor any other room
+        await expect(page.getByRole('heading', { name: LINK_ROOM_NAME })).toHaveCount(0)
+        await expect(page.getByRole('heading', { name: 'E2E Customer' })).toHaveCount(0)
+        // phone: the panel replaces the list; desktop: the list stays beside it
+        const list = page.getByTestId('chat-list-panel')
+        if (combo.width < 768) {
+          await expect(list).toBeHidden()
+        } else {
+          await expect(list).toBeVisible()
+        }
+        await shot(page, testInfo, `link-error-notfound-${combo.width}-${combo.theme}`)
+
+        await page.getByRole('button', { name: 'กลับไปที่รายการแชต' }).click()
+        const url = new URL(page.url())
+        expect(url.searchParams.get('conversationId')).toBeNull()
+        expect(url.searchParams.get('botId')).toBe('1')
+        // Normal page back: desktop auto-selects room 1, phone shows the list
+        if (combo.width >= 768) {
+          await expect(page.getByRole('heading', { name: 'E2E Customer' })).toBeVisible()
+        } else {
+          await expect(list).toBeVisible()
+        }
+        expect(pageErrors).toEqual([])
+      })
+
+      test('link_load_failure_shows_retry_panel_and_retry_recovers', async ({
+        page,
+        loggedIn,
+        pageErrors,
+      }, testInfo) => {
+        void loggedIn
+        await setViewportAndTheme(page, combo)
+        let failing = true
+        const markReadHits = { count: 0 }
+        await page.route(`**/api/bots/1/conversations/${LINK_ROOM_ID}`, async (route) => {
+          if (failing) {
+            await route.fulfill({ status: 500, json: { message: 'E2E link room failure.' } })
+            return
+          }
+          await route.fulfill({ json: { data: linkRoom(0) } })
+        })
+        await page.route(`**/api/bots/1/conversations/${LINK_ROOM_ID}/messages*`, (route) =>
+          route.fulfill({ json: messagesListResponse }),
+        )
+        await page.route(`**/api/bots/1/conversations/${LINK_ROOM_ID}/notes`, (route) =>
+          route.fulfill({ json: { data: [] } }),
+        )
+        await page.route(`**/api/bots/1/conversations/${LINK_ROOM_ID}/mark-as-read`, async (route) => {
+          markReadHits.count += 1
+          await route.fulfill({ json: { data: linkRoom(0) } })
+        })
+
+        await page.goto('/chat?botId=1&conversationId=77')
+
+        await expect(page.getByText('โหลดห้องแชตไม่สำเร็จ')).toBeVisible()
+        await expect(page.getByText('ลองอีกครั้ง หรือกลับไปเลือกห้องจากรายการ')).toBeVisible()
+        await shot(page, testInfo, `link-error-load-${combo.width}-${combo.theme}`)
+
+        // Retry while still failing: the panel stays (second request happened)
+        await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click()
+        await expect(page.getByText('โหลดห้องแชตไม่สำเร็จ')).toBeVisible()
+
+        // Retry after the server recovers: the room opens, no mark-as-read
+        // (the recovered copy is already read)
+        failing = false
+        await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click()
+        await expect(page.getByRole('heading', { name: LINK_ROOM_NAME })).toBeVisible()
+        expect(markReadHits.count).toBe(0)
         expect(pageErrors).toEqual([])
       })
     })
