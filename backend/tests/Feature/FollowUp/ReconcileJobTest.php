@@ -449,6 +449,7 @@ class ReconcileJobTest extends TestCase
         $this->assertSame($racer, $this->snapshot($row));
         $this->assertSame([], $this->refreshIds);
         Http::assertNothingSent();
+        $this->assertSame([], $this->jobLogs());
     }
 
     public function test_y_list_filters_before_limit(): void

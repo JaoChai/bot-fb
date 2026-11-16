@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\FollowUp;
 
+use App\Jobs\CheckEditedFollowUp;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\CustomerProfile;
@@ -14,6 +15,7 @@ use App\Services\FollowUp\FollowUpTelegramService;
 use App\Services\Payment\TelegramAlertBotService;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
@@ -1572,7 +1574,9 @@ TEXT;
             self::assertStringNotContainsString('api.line.me', (string) $request->url(), 'การ์ดนี้ห้ามส่งหาลูกค้า');
         }
         Queue::assertNothingPushed();
-        Bus::assertNothingDispatched();
+        Bus::assertDispatched(CheckEditedFollowUp::class, fn ($job) => $job->approvalId === $seed['approval_id'] && $job->revision === 2);
+        Bus::assertDispatchedTimes(CheckEditedFollowUp::class, 1);
+        Bus::assertDispatchedJobsCount(1);
         self::assertSame(2, DB::table('messages')->where('sender', 'bot')->count(), 'ห้ามสร้างแถวข้อความลูกค้า');
         $this->assertNoSecretsInLog();
     }
@@ -2512,8 +2516,125 @@ TEXT;
         $this->assertSingleSend($requests, str_replace('{log_id}', (string) $seed['log_id'], self::NOTICE_EDIT_SAVED), 900);
         $this->assertOnlyTelegramHost($requests);
         Queue::assertNothingPushed();
-        Bus::assertNothingDispatched();
+        Bus::assertDispatched(CheckEditedFollowUp::class, fn ($job) => $job->approvalId === $seed['approval_id'] && $job->revision === 2);
+        Bus::assertDispatchedTimes(CheckEditedFollowUp::class, 1);
+        Bus::assertDispatchedJobsCount(1);
         self::assertSame(2, DB::table('messages')->where('sender', 'bot')->count());
+        $this->assertNoSecretsInLog();
+    }
+
+    #[Test]
+    public function two_saved_edits_dispatch_only_their_new_revisions(): void
+    {
+        $seed = $this->bindPrompt();
+        $this->postReply($this->replyMessage())[0]->assertOk();
+        $this->postReply($this->replyMessage(['text' => 'รบกวนอีกทีครับ']), updateId: self::UPDATE_ID + 1)[0]->assertOk();
+
+        $jobs = Bus::dispatched(CheckEditedFollowUp::class);
+        self::assertSame([[$seed['approval_id'], 2], [$seed['approval_id'], 3]], $jobs->map(fn ($job) => [$job->approvalId, $job->revision])->all());
+        Bus::assertDispatchedJobsCount(2);
+    }
+
+    public static function noEditCheckDispatchCases(): iterable
+    {
+        yield 'not editor' => [['approval_overrides' => ['editor_telegram_user_id' => '777']], [], false];
+        yield 'closed approval' => [['approval_status' => 'skipped'], [], false];
+        yield 'closed log' => [['log_delivery_status' => 'approved'], [], false];
+        yield 'expired' => [['expires_at' => self::NOW], [], false];
+        yield 'duplicate update' => [['approval_overrides' => ['last_update_id' => self::UPDATE_ID]], [], false];
+        yield 'save race' => [[], [], true];
+        foreach (self::editReplyKindProvider() as $label => [$message]) {
+            yield 'kind / '.$label => [[], $message, false];
+        }
+        foreach (self::editReplyTextRulesProvider() as $label => [, $text, $notice]) {
+            if ($notice !== null) {
+                yield 'text / '.$label => [[], ['text' => $text], false];
+            }
+        }
+        yield 'wrong room' => [[], ['chat' => ['id' => 999]], false];
+        yield 'unauthorized person' => [[], ['from' => ['id' => 999]], false];
+        yield 'wrong prompt' => [[], ['reply_to_message' => ['message_id' => 999, 'from' => ['is_bot' => true], 'text' => self::GOLDEN_PROMPT]], false];
+    }
+
+    #[Test]
+    #[DataProvider('noEditCheckDispatchCases')]
+    public function refused_or_duplicate_edit_never_dispatches_a_check(array $options, array $message, bool $race): void
+    {
+        $seed = $this->bindPrompt($options);
+        $before = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
+        $raced = false;
+        if ($race) {
+            DB::listen(function (QueryExecuted $query) use ($seed, &$raced): void {
+                if (! $raced && str_starts_with($query->sql, 'select') && str_contains($query->sql, 'from "follow_up_approvals"')) {
+                    $raced = true;
+                    DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->update(['status' => 'skipped']);
+                }
+            });
+        }
+        try {
+            $this->postReply($this->replyMessage($message))[0]->assertOk();
+        } finally {
+            app('events')->forget(QueryExecuted::class);
+        }
+        Bus::assertNothingDispatched();
+        $this->assertRowChangedOnly($before, $this->approvalRow($seed['approval_id']), $race ? ['status'] : []);
+        $this->assertRowChangedOnly($beforeLog, $this->logRow($seed['log_id']), []);
+        self::assertSame($race, $raced);
+    }
+
+    #[Test]
+    public function check_dispatch_observes_committed_revision_before_any_repaint_or_notice(): void
+    {
+        $seed = $this->bindPrompt();
+        $level = DB::transactionLevel();
+        $requests = [];
+        $dispatcher = \Mockery::mock(Dispatcher::class);
+        $dispatcher->shouldReceive('dispatch')->once()->andReturnUsing(function ($job) use ($seed, $level, &$requests): void {
+            self::assertInstanceOf(CheckEditedFollowUp::class, $job);
+            self::assertSame([$seed['approval_id'], 2], [$job->approvalId, $job->revision]);
+            self::assertSame($level, DB::transactionLevel(), 'Dispatch must follow the save commit');
+            self::assertSame(2, (int) $this->approvalRow($seed['approval_id'])->revision);
+            self::assertSame(self::EDITED_TEXT, $this->approvalRow($seed['approval_id'])->text);
+            self::assertSame([], $requests, 'Dispatch precedes both repaint and notice');
+        });
+        Bus::swap($dispatcher);
+        [$response] = $this->postReply($this->replyMessage(), stub: $this->stubWithMessageIds($requests));
+        $response->assertOk()->assertExactJson(['ok' => true]);
+        self::assertCount(2, $requests);
+    }
+
+    #[Test]
+    public function check_dispatch_failure_preserves_edit_repaint_notice_and_class_only_warning(): void
+    {
+        $this->bindPinnedNonce(self::NEW_NONCE);
+        $seed = $this->bindPrompt(['golden_ids' => true, 'check_answers' => self::CLEAN_CHECK, 'approval_updated_at' => '2026-11-16 09:59:00']);
+        $beforeLog = $this->logRow($seed['log_id']);
+        $marker = 'exception-message-must-not-leak-b6g';
+        $dispatcher = \Mockery::mock(Dispatcher::class);
+        $dispatcher->shouldReceive('dispatch')->once()->with(\Mockery::type(CheckEditedFollowUp::class))->andThrow(new \RuntimeException($marker));
+        Bus::swap($dispatcher);
+        $requests = [];
+        [$response, $requests] = $this->postReply($this->replyMessage(), stub: $this->stubWithMessageIds($requests));
+        $response->assertOk()->assertExactJson(['ok' => true]);
+        $row = $this->approvalRow($seed['approval_id']);
+        self::assertSame(self::EDITED_TEXT, $row->text);
+        self::assertSame(2, (int) $row->revision);
+        self::assertSame(self::NEW_NONCE, $row->nonce);
+        self::assertNull($row->check_answers);
+        self::assertSame(self::NOW, $row->updated_at);
+        $this->assertRowChangedOnly($beforeLog, $this->logRow($seed['log_id']), []);
+        $this->assertSingleEdit($requests, self::GOLDEN_AFTER_EDIT);
+        $this->assertSingleSend($requests, str_replace('{log_id}', (string) $seed['log_id'], self::NOTICE_EDIT_SAVED), 900);
+        $warnings = array_values(array_filter($this->logEvents, fn ($e) => $e->level === 'warning'));
+        self::assertCount(1, $warnings);
+        self::assertSame(['approval_id' => $seed['approval_id'], 'exception_class' => \RuntimeException::class], $warnings[0]->context);
+        foreach ($this->logEvents as $event) {
+            $line = $event->message.' '.json_encode($event->context, JSON_UNESCAPED_UNICODE);
+            foreach ([$marker, self::EDITED_TEXT, $this->pluginToken(), self::NONCE, self::NEW_NONCE, 'Ub6c000112233445566778899aabbccdd', '0.9'] as $private) {
+                self::assertStringNotContainsString($private, $line);
+            }
+        }
         $this->assertNoSecretsInLog();
     }
 }
