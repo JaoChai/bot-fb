@@ -454,13 +454,18 @@ function linkRoom(unreadCount: number): Record<string, unknown> {
 async function registerLinkRoomRoutes(
   page: Page,
   options: {
+    roomId?: number
     status?: number
     unreadCount?: number
     markReadHits?: { count: number }
   } = {},
 ) {
-  const { status, unreadCount = 1, markReadHits } = options
-  await page.route(`**/api/bots/1/conversations/${LINK_ROOM_ID}`, async (route) => {
+  const { roomId = LINK_ROOM_ID, status, unreadCount = 1, markReadHits } = options
+  // The detail request carries ?messages_limit=1, so the pattern must end in
+  // '*' — a bare '/77' glob never matches a URL with a query string, and the
+  // fail-closed catch-all would swallow the call. '*' does not cross '/', so
+  // /conversations/77/mark-as-read and /notes still need their own routes.
+  await page.route(`**/api/bots/1/conversations/${roomId}*`, async (route) => {
     if (status !== undefined) {
       await route.fulfill({ status, json: { message: 'E2E link room failure.' } })
       return
@@ -495,8 +500,12 @@ test.describe('customer follow-up room link journeys', () => {
         await page.goto('/chat?botId=1&conversationId=77')
 
         // The linked room opens — its customer name appears in the chat header
+        // (scoped to the centre panel: at 1280 the info panel carries an h3
+        // with the same name)
         await expect(
-          page.getByRole('heading', { name: LINK_ROOM_NAME }),
+          page
+            .getByTestId('chat-center-panel')
+            .getByRole('heading', { name: LINK_ROOM_NAME }),
         ).toBeVisible()
         await expect.poll(() => markReadHits.count).toBe(1)
         expect(new URL(page.url()).searchParams.get('conversationId')).toBe('77')
@@ -517,7 +526,7 @@ test.describe('customer follow-up room link journeys', () => {
       }, testInfo) => {
         void loggedIn
         await setViewportAndTheme(page, combo)
-        await registerLinkRoomRoutes(page, { status: 404 })
+        await registerLinkRoomRoutes(page, { roomId: 404, status: 404 })
 
         await page.goto('/chat?botId=1&conversationId=404')
 
@@ -541,7 +550,11 @@ test.describe('customer follow-up room link journeys', () => {
         expect(url.searchParams.get('botId')).toBe('1')
         // Normal page back: desktop auto-selects room 1, phone shows the list
         if (combo.width >= 768) {
-          await expect(page.getByRole('heading', { name: 'E2E Customer' })).toBeVisible()
+          await expect(
+            page
+              .getByTestId('chat-center-panel')
+              .getByRole('heading', { name: 'E2E Customer' }),
+          ).toBeVisible()
         } else {
           await expect(list).toBeVisible()
         }
@@ -557,7 +570,7 @@ test.describe('customer follow-up room link journeys', () => {
         await setViewportAndTheme(page, combo)
         let failing = true
         const markReadHits = { count: 0 }
-        await page.route(`**/api/bots/1/conversations/${LINK_ROOM_ID}`, async (route) => {
+        await page.route(`**/api/bots/1/conversations/${LINK_ROOM_ID}*`, async (route) => {
           if (failing) {
             await route.fulfill({ status: 500, json: { message: 'E2E link room failure.' } })
             return
@@ -589,7 +602,11 @@ test.describe('customer follow-up room link journeys', () => {
         // (the recovered copy is already read)
         failing = false
         await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click()
-        await expect(page.getByRole('heading', { name: LINK_ROOM_NAME })).toBeVisible()
+        await expect(
+          page
+            .getByTestId('chat-center-panel')
+            .getByRole('heading', { name: LINK_ROOM_NAME }),
+        ).toBeVisible()
         expect(markReadHits.count).toBe(0)
         expect(pageErrors).toEqual([])
       })
