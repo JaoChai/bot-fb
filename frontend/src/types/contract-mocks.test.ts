@@ -132,3 +132,76 @@ describe('e2e messages fixture vs contract: outage notice flag', () => {
     expectInvalid(validateMessagesList, withMetadata)
   })
 })
+
+const validateMessageSentPayload = validatorFor('#/components/schemas/MessageSentPayload')
+
+describe('e2e messages fixture vs contract: follow-up flag', () => {
+  function cloneMessagesList(): { data: Record<string, unknown>[] } {
+    return structuredClone(messagesListResponse) as { data: Record<string, unknown>[] }
+  }
+
+  // Synthetic broadcast payload built here with synthetic names — never a
+  // recorded production payload. Shape = the contract's required list on
+  // MessageSentPayload + MessageSentConversationSnapshot.
+  function syntheticSentPayload(extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id: 1,
+      conversation_id: 10,
+      sender: 'bot',
+      content: 'E2E-FU ทักทายลูกค้าครับ',
+      type: 'text',
+      media_url: null,
+      media_type: null,
+      created_at: '2026-11-17T09:00:00Z',
+      is_follow_up: true,
+      conversation: {
+        id: 10,
+        message_count: 1,
+        last_message_at: '2026-11-17T09:00:00Z',
+        needs_response: false,
+        unread_count: 0,
+      },
+      ...extra,
+    }
+  }
+
+  it('follow_up_boolean_is_compatible_and_private_fields_stay_rejected', () => {
+    // The flag is optional on the contract Message: true and explicit false both validate.
+    const flagged = cloneMessagesList()
+    flagged.data[0].is_follow_up = true
+    expectValid(validateMessagesList, flagged)
+
+    const explicitFalse = cloneMessagesList()
+    explicitFalse.data[0].is_follow_up = false
+    expectValid(validateMessagesList, explicitFalse)
+
+    // follow_up_log_id never leaves the backend: metadata and the raw log id
+    // are both rejected on the REST message.
+    const withMetadata = cloneMessagesList()
+    withMetadata.data[0].is_follow_up = true
+    withMetadata.data[0].metadata = { extra: true }
+    expectInvalid(validateMessagesList, withMetadata)
+
+    const withLogId = cloneMessagesList()
+    withLogId.data[0].is_follow_up = true
+    withLogId.data[0].follow_up_log_id = 42
+    expectInvalid(validateMessagesList, withLogId)
+  })
+
+  it('synthetic_message_sent_payload_accepts_follow_up_and_rejects_private_fields', () => {
+    expectValid(validateMessageSentPayload, syntheticSentPayload())
+
+    const explicitFalse = syntheticSentPayload()
+    explicitFalse.is_follow_up = false
+    expectValid(validateMessageSentPayload, explicitFalse)
+
+    // The flag stays optional: a payload without it (old producer) is valid.
+    const without = syntheticSentPayload()
+    delete without.is_follow_up
+    expectValid(validateMessageSentPayload, without)
+
+    // Raw log metadata is rejected on the broadcast too.
+    expectInvalid(validateMessageSentPayload, syntheticSentPayload({ metadata: { extra: true } }))
+    expectInvalid(validateMessageSentPayload, syntheticSentPayload({ follow_up_log_id: 42 }))
+  })
+})
