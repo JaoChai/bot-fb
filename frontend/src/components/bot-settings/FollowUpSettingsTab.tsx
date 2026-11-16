@@ -134,7 +134,7 @@ export function FollowUpSettingsTab({
 
           <fieldset
             disabled={!follow_up_enabled}
-            className="ml-4 pl-4 border-l-2 border-muted space-y-3 mt-2 min-w-0"
+            className="ml-4 scroll-mb-24 pl-4 border-l-2 border-muted space-y-3 mt-2 min-w-0"
           >
             <legend className="px-1 text-xs font-semibold text-muted-foreground">วิธีส่ง</legend>
 
@@ -213,7 +213,7 @@ export function FollowUpSettingsTab({
           title="ระบบทำงานอย่างไร"
           description="กติกาเหล่านี้ตั้งไว้ตายตัว แก้ในหน้านี้ไม่ได้"
         >
-          <ul className="space-y-3">
+          <ul className="space-y-3 scroll-mb-24">
             {followUpFacts(capabilities.rules).map((fact) => (
               <li key={fact.strong} className="flex items-start gap-2 text-sm text-muted-foreground">
                 <Check className="size-4 shrink-0 mt-0.5 text-foreground" strokeWidth={2} />
