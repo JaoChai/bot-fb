@@ -21,7 +21,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
 import { ChatPage } from './ChatPage';
 import { useChatStore } from '@/stores/chatStore';
 import type { Conversation } from '@/types/api';
@@ -299,7 +298,7 @@ describe('ChatPage room link — success', () => {
       return Promise.resolve({ data: room77({ id, unread_count: 0 }) });
     });
 
-    const view = renderPage('/chat?botId=1&conversationId=77', {
+    renderPage('/chat?botId=1&conversationId=77', {
       navTo: '/chat?botId=1&conversationId=88',
     });
     await waitFor(() =>

@@ -113,7 +113,9 @@ describe('useLinkedConversation — query behaviour', () => {
       [-1, 77],
       [1, -5],
       [1.5, 77],
-      [9007199254740993, 77], // not a safe integer
+      // Not a safe integer: the literal would lose precision, so build it at
+      // runtime — this is exactly the value a bad Telegram link can carry.
+      [Number('9007199254740993'), 77],
     ];
     apiGetMock.mockResolvedValue({ data: makeConversation(77) });
 

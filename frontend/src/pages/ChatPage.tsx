@@ -201,7 +201,7 @@ export function ChatPage() {
 
   const handleLinkRetry = useCallback(() => {
     void linkedRoom.refetch();
-  }, [linkedRoom.refetch]);
+  }, [linkedRoom]);
 
   // Handle conversation selection
   const handleConversationSelect = useCallback((conversation: Conversation) => {
