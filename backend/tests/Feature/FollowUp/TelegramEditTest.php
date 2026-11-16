@@ -1689,6 +1689,7 @@ TEXT;
         $this->assertRowChangedOnly($beforeApproval, $after, ['status', 'updated_at']);
         self::assertCount(1, $requests, 'แพ้แข่ง = ข้อความแจ้งเดียว ไม่ระบายการ์ด');
         $this->assertSingleSend($requests, self::NOTICE_EDIT_CLOSED, 900);
+        Bus::assertNothingDispatched();
     }
 
     // ---------------------------------------------------------------- 7) ส่ง/ยืนยันส่งบนบัตรที่แก้แล้ว
@@ -2548,50 +2549,96 @@ TEXT;
 
     public static function noEditCheckDispatchCases(): iterable
     {
-        yield 'not editor' => [['approval_overrides' => ['editor_telegram_user_id' => '777']], [], false];
-        yield 'closed approval' => [['approval_status' => 'skipped'], [], false];
-        yield 'closed log' => [['log_delivery_status' => 'approved'], [], false];
-        yield 'expired' => [['expires_at' => self::NOW], [], false];
-        yield 'duplicate update' => [['approval_overrides' => ['last_update_id' => self::UPDATE_ID]], [], false];
-        yield 'save race' => [[], [], true];
+        yield 'not editor' => [['approval_overrides' => ['editor_telegram_user_id' => '777']], [], false, self::NOTICE_EDIT_NOT_EDITOR, 'refused', 'not_open'];
+        yield 'closed approval' => [['approval_status' => 'skipped'], [], false, self::NOTICE_EDIT_CLOSED, 'refused', 'not_open'];
+        yield 'closed log' => [['log_delivery_status' => 'approved'], [], false, self::NOTICE_EDIT_CLOSED, 'refused', 'not_open'];
+        yield 'expired' => [['expires_at' => self::NOW], [], false, self::NOTICE_EDIT_EXPIRED, 'refused', 'not_open'];
+        yield 'duplicate update' => [['approval_overrides' => ['last_update_id' => self::UPDATE_ID]], [], false, null, 'ignored', 'repeat_update'];
+        yield 'save race' => [[], [], true, self::NOTICE_EDIT_CLOSED, 'refused', 'save_race'];
         foreach (self::editReplyKindProvider() as $label => [$message]) {
-            yield 'kind / '.$label => [[], $message, false];
+            yield 'kind / '.$label => [[], $message, false, self::INVALID_NOT_TYPED.self::EDIT_RETRY_SUFFIX, 'refused', 'invalid_kind'];
         }
         foreach (self::editReplyTextRulesProvider() as $label => [, $text, $notice]) {
             if ($notice !== null) {
-                yield 'text / '.$label => [[], ['text' => $text], false];
+                yield 'text / '.$label => [[], ['text' => $text], false, $notice.self::EDIT_RETRY_SUFFIX, 'refused', 'invalid_text'];
             }
         }
-        yield 'wrong room' => [[], ['chat' => ['id' => 999]], false];
-        yield 'unauthorized person' => [[], ['from' => ['id' => 999]], false];
-        yield 'wrong prompt' => [[], ['reply_to_message' => ['message_id' => 999, 'from' => ['is_bot' => true], 'text' => self::GOLDEN_PROMPT]], false];
+        yield 'malformed room' => [[], ['chat' => ['id' => null]], false, null, 'ignored', 'room'];
+        yield 'wrong room' => [[], ['chat' => ['id' => 999]], false, null, 'ignored', 'room'];
+        yield 'malformed reply' => [[], ['reply_to_message' => null], false, null, 'ignored', 'reply_shape'];
+        yield 'unauthorized person' => [[], ['from' => ['id' => 999]], false, null, 'ignored', 'person'];
+        yield 'wrong prompt' => [[], ['reply_to_message' => ['message_id' => 999, 'from' => ['is_bot' => true], 'text' => self::GOLDEN_PROMPT]], false, self::NOTICE_EDIT_GONE, 'refused', 'binding'];
+        yield 'binding lost after lookup' => [[], [], false, self::NOTICE_EDIT_GONE, 'refused', 'binding', true];
     }
 
     #[Test]
     #[DataProvider('noEditCheckDispatchCases')]
-    public function refused_or_duplicate_edit_never_dispatches_a_check(array $options, array $message, bool $race): void
+    public function refused_or_duplicate_edit_never_dispatches_a_check(array $options, array $message, bool $race, ?string $expectedNotice, string $expectedResult, string $expectedReason, bool $loseBinding = false): void
     {
         $seed = $this->bindPrompt($options);
         $before = $this->approvalRow($seed['approval_id']);
         $beforeLog = $this->logRow($seed['log_id']);
         $raced = false;
+        $bindingLost = false;
+        if ($loseBinding) {
+            DB::listen(function (QueryExecuted $query) use ($seed, &$bindingLost): void {
+                if (! $bindingLost && str_starts_with($query->sql, 'select') && str_contains($query->sql, 'from "follow_up_approvals" as "a"')) {
+                    // The join returned the binding ids, but the initial row read loses it.
+                    $bindingLost = true;
+                    DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->delete();
+                }
+            });
+        }
+        $transactionLevel = DB::transactionLevel();
         if ($race) {
-            DB::listen(function (QueryExecuted $query) use ($seed, &$raced): void {
-                if (! $raced && str_starts_with($query->sql, 'select') && str_contains($query->sql, 'from "follow_up_approvals"')) {
+            DB::listen(function (QueryExecuted $query) use ($seed, &$raced, $transactionLevel): void {
+                if (! $raced
+                    && str_starts_with($query->sql, 'select')
+                    && str_contains($query->sql, 'from "lead_recovery_logs"')
+                    && str_contains($query->sql, 'where "id" = ?')
+                    && DB::transactionLevel() === $transactionLevel + 1
+                ) {
+                    // QueryExecuted runs after the read: change the approval after the
+                    // locked log read, but BEFORE the locked approval is fetched.
+                    self::assertSame([$seed['log_id']], $query->bindings);
                     $raced = true;
                     DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->update(['status' => 'skipped']);
                 }
             });
         }
         try {
-            $this->postReply($this->replyMessage($message))[0]->assertOk();
+            [$response, $requests] = $this->postReply($this->replyMessage($message));
+            $response->assertOk();
         } finally {
             app('events')->forget(QueryExecuted::class);
         }
+        $editLogs = array_values(array_filter($this->logEvents, fn ($event) => $event->message === 'Follow-up edit reply'));
+        self::assertCount(1, $editLogs);
+        self::assertSame($expectedResult, $editLogs[0]->context['result']);
+        self::assertSame($expectedReason, $editLogs[0]->context['reason']);
+        $hasBinding = $loseBinding || in_array($expectedReason, ['repeat_update', 'not_open', 'invalid_kind', 'invalid_text', 'save_race'], true);
+        self::assertSame($hasBinding ? $seed['approval_id'] : null, $editLogs[0]->context['approval_id']);
+        self::assertSame($hasBinding ? $seed['log_id'] : null, $editLogs[0]->context['log_id']);
+        if ($expectedNotice === null) {
+            self::assertSame([], $requests, 'Ignored edits must be silent');
+        } else {
+            self::assertCount(1, $requests, 'Refused edits send only their notice');
+            $this->assertSingleSend($requests, $expectedNotice, 900);
+        }
         Bus::assertNothingDispatched();
-        $this->assertRowChangedOnly($before, $this->approvalRow($seed['approval_id']), $race ? ['status'] : []);
+        $after = $this->approvalRow($seed['approval_id']);
+        if ($loseBinding) {
+            self::assertNull($after, 'The racer deleted the approval; the edit must not recreate it');
+        } else {
+            self::assertSame((int) $before->revision, (int) $after->revision);
+            $this->assertRowChangedOnly($before, $after, $race ? ['status'] : []);
+            if ($race) {
+                self::assertSame('skipped', $after->status);
+            }
+        }
         $this->assertRowChangedOnly($beforeLog, $this->logRow($seed['log_id']), []);
         self::assertSame($race, $raced);
+        self::assertSame($loseBinding, $bindingLost);
     }
 
     #[Test]
