@@ -211,7 +211,9 @@ describe('ChatPage room link — pending', () => {
     renderPage('/chat?botId=1&conversationId=77');
 
     expect(screen.getByText('กำลังเปิดห้องแชต')).toBeInTheDocument();
-    expect(centerPanel().classList.contains('hidden')).toBe(false);
+    // 'hidden md:flex' hides below md only — the md:flex lift means the
+    // desktop centre panel stays visible (real visibility is e2e-verified)
+    expect(centerPanel().classList.contains('md:flex')).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(useChatStore.getState().selectedConversationId).toBeNull();
     expect(screen.queryByTestId('chat-window')).not.toBeInTheDocument();
@@ -321,6 +323,7 @@ describe('ChatPage room link — success', () => {
     const first = renderPage('/chat?botId=1&conversationId=77');
     await screen.findByTestId('chat-window');
     first.unmount();
+    apiPostMock.mockClear();
 
     const second = renderPage('/chat?botId=1&conversationId=77');
     const chatWindow = await second.findByTestId('chat-window');
@@ -564,7 +567,9 @@ describe('ChatPage room link — error panel layout', () => {
     renderPage('/chat?botId=1&conversationId=404');
 
     expect(await screen.findByText('เปิดห้องแชตนี้ไม่ได้')).toBeInTheDocument();
-    expect(listPanel().classList.contains('hidden')).toBe(false);
+    // 'hidden md:flex' hides below md only — the md:flex lift means the list
+    // stays visible beside the error panel on desktop (e2e-verified)
+    expect(listPanel().classList.contains('md:flex')).toBe(true);
     expect(screen.queryByTestId('chat-window')).not.toBeInTheDocument();
     expect(screen.queryByTestId('info-panel')).not.toBeInTheDocument();
   });

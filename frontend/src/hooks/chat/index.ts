@@ -36,5 +36,8 @@ export { useBotTags, useAddTags, useRemoveTag } from './useTags';
 export { useToggleHandover, useClearContext, useClearContextAll } from './useConversationActions';
 export { useSendAgentMessage } from './useSendAgentMessage';
 
+// Deep-link room fetch (F1b): /chat?botId=<b>&conversationId=<c>
+export { useLinkedConversation } from './useLinkedConversation';
+
 // Real-time (T042, T043)
 export { useRealtime } from './useRealtime';
