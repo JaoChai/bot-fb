@@ -158,6 +158,16 @@ export interface OutageTextDefaults {
   outage_down_message: string;
 }
 
+// Customer follow-up — contract-derived aliases (backend B5/B6, web F1a).
+// Shapes come from the generated contract only; nothing hand-copied here.
+export type CustomerFollowUpRules = components['schemas']['CustomerFollowUpRules'];
+export type CustomerFollowUpCapabilities = components['schemas']['CustomerFollowUpCapabilities'];
+
+// The settings response carries these four keys since the backend feature
+// (CustomerFollowUpSettingsFields). The production API predates the feature,
+// so every consumer treats them as optional (D123).
+type FollowUpSettingsFields = components['schemas']['CustomerFollowUpSettingsFields'];
+
 // Bot Settings Types
 export interface BotSettings {
   id: number;
@@ -229,6 +239,12 @@ export interface BotSettings {
   outage_down_message: string | null;
   // Response-only: server defaults for null overrides (never part of the PUT payload)
   outage_defaults: OutageTextDefaults;
+  // Customer follow-up, optional: the API returns none of the four keys before
+  // the backend feature ships; absent keys read off/approve (D123)
+  follow_up_enabled?: FollowUpSettingsFields['follow_up_enabled'];
+  follow_up_mode?: FollowUpSettingsFields['follow_up_mode'];
+  follow_up_started_at?: FollowUpSettingsFields['follow_up_started_at'];
+  follow_up_capabilities?: FollowUpSettingsFields['follow_up_capabilities'];
   // Auto-assignment settings
   auto_assignment_enabled: boolean;
   auto_assignment_mode: 'round_robin' | 'load_balanced';

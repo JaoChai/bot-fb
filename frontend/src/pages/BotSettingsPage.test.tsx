@@ -579,6 +579,19 @@ describe('BotSettingsPage (customer follow-up tab)', () => {
   });
 
   it('save_500_keeps_follow_up_values_and_shows_the_failure_toast', async () => {
+    // jsdom lacks matchMedia, which sonner's Toaster needs to mount
+    if (!window.matchMedia) {
+      window.matchMedia = ((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      })) as unknown as typeof window.matchMedia;
+    }
     h.state.settings = makeSettings({
       follow_up_enabled: false,
       follow_up_mode: 'approve',

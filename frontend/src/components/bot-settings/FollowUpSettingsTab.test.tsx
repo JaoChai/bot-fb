@@ -71,7 +71,7 @@ describe('FollowUpSettingsTab', () => {
     expect(screen.getByText('ปิดอยู่เป็นค่าเริ่มต้น เปิดเมื่อพร้อมเท่านั้น')).toBeInTheDocument();
 
     // One radio group with two rows, labels clickable, helpers visible
-    const group = screen.getByRole('radiogroup', { name: 'วิธีส่ง' });
+    const group = screen.getByRole('group', { name: 'วิธีส่ง' });
     expect(within(group).getByRole('radio', { name: 'เจ้านายอนุมัติทุกข้อความ' })).toBeInTheDocument();
     expect(within(group).getByRole('radio', { name: 'ส่งเองเมื่อ Luna มั่นใจ' })).toBeInTheDocument();
     expect(
@@ -215,9 +215,21 @@ describe('FollowUpSettingsTab', () => {
   });
 
   it('clicking_a_mode_label_selects_that_radio', () => {
-    const { onChange } = renderTab({ follow_up_enabled: true, capabilities: caps() });
+    const { onChange, view } = renderTab({ follow_up_enabled: true, capabilities: caps() });
     fireEvent.click(screen.getByText('ส่งเองเมื่อ Luna มั่นใจ'));
     expect(onChange).toHaveBeenCalledWith('follow_up_mode', 'automatic');
+
+    // An already-checked radio fires no change event, so select FROM automatic:
+    // rerender with automatic stored and click the approve label.
+    view.rerender(
+      <FollowUpSettingsTab
+        follow_up_enabled
+        follow_up_mode="automatic"
+        storedMode="automatic"
+        onChange={onChange}
+        capabilities={caps()}
+      />,
+    );
     fireEvent.click(screen.getByText('เจ้านายอนุมัติทุกข้อความ'));
     expect(onChange).toHaveBeenCalledWith('follow_up_mode', 'approve');
   });
