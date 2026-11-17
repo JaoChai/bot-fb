@@ -74,6 +74,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bots/{bot}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One bot's settings; every response carries the four follow-up keys.
+         * @description Sanctum bearer auth + BotPolicy::view (bot owner, or admin assigned to
+         *     the bot). The response `data` has the same key set on every response —
+         *     for a bot with no settings row yet the row is created first, with
+         *     follow_up_enabled false, follow_up_mode "approve", follow_up_started_at
+         *     null and the capability object of the fresh bot.
+         *
+         *     The four follow-up keys: `follow_up_enabled` (JSON boolean),
+         *     `follow_up_mode` ("approve" or "automatic"), `follow_up_started_at`
+         *     (null, or an ISO 8601 instant equal to the stored Bangkok wall time —
+         *     stored "2026-11-16 10:00:00" is the instant "2026-11-16T03:00:00Z")
+         *     and `follow_up_capabilities` (FollowUpCapabilities::forBot, unchanged).
+         *     The internal columns `follow_up_activation_message_id` and
+         *     `follow_up_activated_at` are absent from every response.
+         */
+        get: operations["getBotSettings"];
+        /**
+         * Save settings; the follow-up switch with its capability gate and snapshot.
+         * @description Sanctum bearer auth + BotPolicy::update (bot owner only). Full save —
+         *     the settings page sends ~30 named fields with none of them a follow-up
+         *     key; a request without follow-up keys behaves exactly as before.
+         *
+         *     `follow_up_enabled` accepts JSON true/false only (1, 0, "1", "true",
+         *     "false", null and lists are 422). false -> true is refused with 422 and
+         *     errors.follow_up_enabled[0] set to the blocked_reason code when
+         *     capabilities.supported is false. When allowed, the snapshot
+         *     (follow_up_started_at = follow_up_activated_at = the Bangkok wall time
+         *     of the request, follow_up_activation_message_id = max(messages.id)
+         *     read in the same transaction) is written once, guarded by "started_at
+         *     is null" — it never moves on later off/on cycles. true -> true is a
+         *     no-op with no capability check (the page sends the key on every save).
+         *     true -> false is always allowed and resets follow_up_mode to approve.
+         *     Any refusal writes nothing, other fields included; a refused request on
+         *     a bot with no settings row leaves bot_settings without a row.
+         *
+         *     `follow_up_mode` ("approve" | "automatic") accepts automatic only when
+         *     the switch is on and capabilities.automatic_allowed is true (both
+         *     evaluated with this same request applied); a stored automatic repeated
+         *     is a no-op. The internal snapshot keys and follow_up_capabilities are
+         *     refused with 422 in body or query, null included.
+         */
+        put: operations["updateBotSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Partial save — same contract as PUT.
+         * @description Sanctum bearer auth + BotPolicy::update (bot owner only). Identical
+         *     follow-up semantics to PUT; fields not sent keep their stored values.
+         */
+        patch: operations["patchBotSettings"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -174,6 +236,8 @@ export interface components {
             updated_at: string;
             /** @description True only for bot rows that are automated "recovered" notices sent after an outage. Surfaces the auto-reply badge without exposing raw metadata. Optional so old payloads (pre-rollout caches, optimistic messages) stay valid; treat absent as false (the safe default). */
             is_outage_notice?: boolean;
+            /** @description True only for bot rows that are automated "customer follow-up" messages sent by the follow-up feature. Surfaces the follow-up badge without exposing raw metadata (follow_up_log_id never leaves the backend). Optional so old payloads (pre-rollout caches, optimistic messages) stay valid; treat absent as false (the safe default). */
+            is_follow_up?: boolean;
         };
         PaginationLinks: {
             first: string | null;
@@ -281,6 +345,8 @@ export interface components {
             created_at: string;
             /** @description True only for bot rows that are automated "recovered" notices sent after an outage. Optional so old payloads stay valid; treat absent as false (the safe default). */
             is_outage_notice?: boolean;
+            /** @description True only for bot rows that are automated "customer follow-up" messages sent by the follow-up feature. Surfaces the follow-up badge without exposing raw metadata (follow_up_log_id never leaves the backend). Optional so old payloads stay valid; treat absent as false (the safe default). */
+            is_follow_up?: boolean;
             conversation: components["schemas"]["MessageSentConversationSnapshot"];
         };
         /**
@@ -308,6 +374,62 @@ export interface components {
             update_type: "updated" | "created" | "message_received";
             /** Format: date-time */
             updated_at: string;
+        };
+        /** @description Numbers the follow-up feature runs on; no secrets (FollowUpCapabilities::forBot). */
+        CustomerFollowUpRules: {
+            payment_wait_hours: number;
+            sale_wait_hours: number;
+            customer_gap_days: number;
+            daily_draft_cap: number;
+            approval_ttl_hours: number;
+            send_start: string;
+            send_end: string;
+            timezone: string;
+        };
+        /** @description Bot-level readiness from FollowUpCapabilities::forBot — no token, chat id, user id or URL leaves it. */
+        CustomerFollowUpCapabilities: {
+            supported: boolean;
+            telegram_ready: boolean;
+            automatic_allowed: boolean;
+            /** @enum {string|null} */
+            blocked_reason: null | "line_only" | "bot_not_in_pilot" | "telegram_missing" | "telegram_allowlist_missing" | "webhook_secret_missing" | "writer_missing" | "admin_url_missing";
+            rules: components["schemas"]["CustomerFollowUpRules"];
+        };
+        /**
+         * @description The four follow-up keys every settings response carries. Other settings
+         *     fields of the row are allowed here without being listed.
+         */
+        CustomerFollowUpSettingsFields: {
+            follow_up_enabled: boolean;
+            /** @enum {string} */
+            follow_up_mode: "approve" | "automatic";
+            /**
+             * Format: date-time
+             * @description ISO 8601 instant of the stored Bangkok wall time; null until the first successful enable.
+             */
+            follow_up_started_at: string | null;
+            follow_up_capabilities: components["schemas"]["CustomerFollowUpCapabilities"];
+        } & {
+            [key: string]: unknown;
+        };
+        GetBotSettingsResponse: {
+            data: components["schemas"]["CustomerFollowUpSettingsFields"];
+        };
+        /**
+         * @description Any subset of the savable settings fields; only the two follow-up keys
+         *     are listed here. The internal snapshot keys and follow_up_capabilities
+         *     are never valid anywhere in the request (body or query), null included.
+         */
+        UpdateBotSettingsRequest: {
+            follow_up_enabled?: boolean;
+            /** @enum {string} */
+            follow_up_mode?: "approve" | "automatic";
+        } & {
+            [key: string]: unknown;
+        };
+        UpdateBotSettingsResponse: {
+            message: string;
+            data: components["schemas"]["CustomerFollowUpSettingsFields"];
         };
     };
     responses: never;
@@ -505,6 +627,183 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RateLimitError"];
+                };
+            };
+        };
+    };
+    getBotSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot: components["parameters"]["BotId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The settings row (created on first call when missing). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetBotSettingsResponse"];
+                };
+            };
+            /** @description No or invalid bearer token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthorizedError"];
+                };
+            };
+            /** @description Authenticated user that is neither the owner nor an assigned admin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForbiddenError"];
+                };
+            };
+            /** @description Unknown bot id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFoundError"];
+                };
+            };
+        };
+    };
+    updateBotSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot: components["parameters"]["BotId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateBotSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved; `data` mirrors the GET body shape. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateBotSettingsResponse"];
+                };
+            };
+            /** @description No or invalid bearer token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthorizedError"];
+                };
+            };
+            /** @description Non-owner (assigned admins may read, only the owner may save). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForbiddenError"];
+                };
+            };
+            /** @description Unknown bot id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFoundError"];
+                };
+            };
+            /**
+             * @description A refused follow-up change, a bad value shape (strict JSON boolean
+             *     for follow_up_enabled; approve/automatic for follow_up_mode), an
+             *     internal key present, or any pre-existing field validation.
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"];
+                };
+            };
+        };
+    };
+    patchBotSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot: components["parameters"]["BotId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateBotSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved; `data` mirrors the GET body shape. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateBotSettingsResponse"];
+                };
+            };
+            /** @description No or invalid bearer token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthorizedError"];
+                };
+            };
+            /** @description Non-owner. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForbiddenError"];
+                };
+            };
+            /** @description Unknown bot id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFoundError"];
+                };
+            };
+            /** @description Same validation and refusal rules as PUT. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"];
                 };
             };
         };

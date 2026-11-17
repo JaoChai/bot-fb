@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router';
-import { Loader2, Gauge, Clock, Bot as BotIcon, Smile, Receipt, TriangleAlert, RotateCcw } from 'lucide-react';
+import { Loader2, Gauge, Clock, Bot as BotIcon, Smile, Receipt, TriangleAlert, RotateCcw, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -20,6 +20,7 @@ import { BehaviorTab } from '@/components/bot-settings/BehaviorTab';
 import { StickerReplyTab } from '@/components/bot-settings/StickerReplyTab';
 import { SlipVerificationTab } from '@/components/bot-settings/SlipVerificationTab';
 import { OutageSettingsTab } from '@/components/bot-settings/OutageSettingsTab';
+import { FollowUpSettingsTab, followUpSaveErrorLine } from '@/components/bot-settings/FollowUpSettingsTab';
 import { isOverOutageLimit } from '@/components/bot-settings/outageTextRules';
 import { cn } from '@/lib/utils';
 import type { BotSettings, OutageTextDefaults } from '@/types/api';
@@ -31,6 +32,7 @@ const TABS = [
   { value: 'sticker', label: 'สติกเกอร์', icon: Smile },
   { value: 'slip', label: 'ตรวจสลิป', icon: Receipt },
   { value: 'outage', label: 'เมื่อบอทล่ม', icon: TriangleAlert },
+  { value: 'follow-up', label: 'ตามลูกค้า', icon: Users },
 ] as const;
 
 type TabValue = (typeof TABS)[number]['value'];
@@ -44,8 +46,8 @@ interface BotSettingsFormData {
   hitl_enabled: boolean;
   reply_when_called_only: boolean;
   reply_when_called_only_override_hitl: boolean;
-  lead_recovery_enabled: boolean;
-  lead_recovery_description: string;
+  follow_up_enabled: boolean;
+  follow_up_mode: 'approve' | 'automatic';
   multiple_bubbles_enabled: boolean;
   multiple_bubbles_min: number;
   multiple_bubbles_max: number;
@@ -83,8 +85,8 @@ const DEFAULT_FORM: BotSettingsFormData = {
   hitl_enabled: false,
   reply_when_called_only: false,
   reply_when_called_only_override_hitl: false,
-  lead_recovery_enabled: false,
-  lead_recovery_description: 'ติดตามลูกค้าอัตโนมัติเมื่อบทสนทนาเงียบ',
+  follow_up_enabled: false,
+  follow_up_mode: 'approve',
   multiple_bubbles_enabled: false,
   multiple_bubbles_min: 1,
   multiple_bubbles_max: 3,
@@ -125,8 +127,11 @@ export function BotSettingsPage() {
   const [formData, setFormData] = useState<BotSettingsFormData>(DEFAULT_FORM);
   const [tab, setTab] = useState<TabValue>('rate-limit');
   const [outageDefaults, setOutageDefaults] = useState<OutageTextDefaults | null>(null);
-  // 422 field errors from the last failed save (shown under the outage editors)
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof OutageTextDefaults, string>>>({});
+  // 422 field errors from the last failed save (shown under the outage editors
+  // and the follow-up controls)
+  const [fieldErrors, setFieldErrors] = useState<
+    Partial<Record<keyof OutageTextDefaults | 'follow_up_enabled' | 'follow_up_mode', string>>
+  >({});
 
   // Sync form data from server settings
   const [prevServerSettings, setPrevServerSettings] = useState<typeof serverSettings>(undefined);
@@ -143,8 +148,9 @@ export function BotSettingsPage() {
         hitl_enabled: (s.hitl_enabled as boolean) ?? false,
         reply_when_called_only: false,
         reply_when_called_only_override_hitl: false,
-        lead_recovery_enabled: false,
-        lead_recovery_description: 'ติดตามลูกค้าอัตโนมัติเมื่อบทสนทนาเงียบ',
+        // Absent follow-up keys hydrate off/approve (D123)
+        follow_up_enabled: (s.follow_up_enabled as boolean) ?? false,
+        follow_up_mode: (s.follow_up_mode as 'approve' | 'automatic') ?? 'approve',
         multiple_bubbles_enabled: (s.multiple_bubbles_enabled as boolean) ?? false,
         multiple_bubbles_min: (s.multiple_bubbles_min as number) ?? 1,
         multiple_bubbles_max: (s.multiple_bubbles_max as number) ?? 3,
@@ -182,6 +188,13 @@ export function BotSettingsPage() {
     }
   }
 
+  // Customer follow-up: the values as loaded from the server. Absent keys read
+  // off/approve (D123); a PUT carries a key only when the form differs from
+  // these (D124), and nothing follow-up is sent when capabilities are absent.
+  const loadedFollowUpEnabled = !!serverSettings?.follow_up_enabled;
+  const loadedFollowUpMode: 'approve' | 'automatic' = serverSettings?.follow_up_mode ?? 'approve';
+  const followUpKeysPresent = serverSettings?.follow_up_capabilities != null;
+
   // Derived dirty state
   const isDirty = (() => {
     if (!serverSettings) return false;
@@ -207,7 +220,9 @@ export function BotSettingsPage() {
       formData.outage_recovery_message_th !==
         ((s.outage_recovery_message_th as string | null) ?? outageDefaults?.outage_recovery_message_th ?? '') ||
       formData.outage_down_message !==
-        ((s.outage_down_message as string | null) ?? outageDefaults?.outage_down_message ?? '')
+        ((s.outage_down_message as string | null) ?? outageDefaults?.outage_down_message ?? '') ||
+      formData.follow_up_enabled !== loadedFollowUpEnabled ||
+      formData.follow_up_mode !== loadedFollowUpMode
     );
   })();
 
@@ -343,12 +358,23 @@ export function BotSettingsPage() {
           formData.outage_down_message,
           outageDefaults?.outage_down_message
         ),
+        // Follow-up keys leave the page only when capabilities exist AND the
+        // form value differs from the loaded one (D124). started_at and
+        // capabilities are response-only and never sent.
+        ...(followUpKeysPresent && formData.follow_up_enabled !== loadedFollowUpEnabled
+          ? { follow_up_enabled: formData.follow_up_enabled }
+          : {}),
+        ...(followUpKeysPresent && formData.follow_up_mode !== loadedFollowUpMode
+          ? { follow_up_mode: formData.follow_up_mode }
+          : {}),
       });
       toast({ title: 'บันทึกสำเร็จ', description: 'ตั้งค่าบอทได้รับการบันทึกแล้ว' });
     } catch (saveError) {
       const apiError = saveError as { errors?: Record<string, unknown> } | undefined;
       const errorMap = apiError?.errors;
-      const nextErrors: Partial<Record<keyof OutageTextDefaults, string>> = {};
+      const nextErrors: Partial<
+        Record<keyof OutageTextDefaults | 'follow_up_enabled' | 'follow_up_mode', string>
+      > = {};
       if (errorMap) {
         for (const field of [
           'outage_recovery_message_th',
@@ -357,6 +383,18 @@ export function BotSettingsPage() {
           const entry = errorMap[field];
           if (typeof entry === 'string') nextErrors[field] = entry;
           else if (Array.isArray(entry) && typeof entry[0] === 'string') nextErrors[field] = entry[0];
+        }
+        // Follow-up 422s carry reason CODES (not Thai text); map them through
+        // the same table the tab's notice uses (D129)
+        for (const field of ['follow_up_enabled', 'follow_up_mode'] as const) {
+          const entry = errorMap[field];
+          const raw =
+            typeof entry === 'string'
+              ? entry
+              : Array.isArray(entry) && typeof entry[0] === 'string'
+                ? entry[0]
+                : undefined;
+          if (raw) nextErrors[field] = followUpSaveErrorLine(field, raw);
         }
       }
       setFieldErrors(nextErrors);
@@ -517,6 +555,19 @@ export function BotSettingsPage() {
               outage_down_message={formData.outage_down_message}
               defaults={outageDefaults ?? undefined}
               errors={fieldErrors}
+              onChange={onFieldChange}
+            />
+          )}
+          {tab === 'follow-up' && (
+            <FollowUpSettingsTab
+              follow_up_enabled={formData.follow_up_enabled}
+              follow_up_mode={formData.follow_up_mode}
+              capabilities={serverSettings?.follow_up_capabilities}
+              storedMode={loadedFollowUpMode}
+              errors={{
+                follow_up_enabled: fieldErrors.follow_up_enabled,
+                follow_up_mode: fieldErrors.follow_up_mode,
+              }}
               onChange={onFieldChange}
             />
           )}

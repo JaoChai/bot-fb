@@ -81,7 +81,9 @@ class LeadRecoveryController extends Controller
 
             // Get base query for the period
             $logsQuery = LeadRecoveryLog::where('bot_id', $botId)
-                ->whereBetween('sent_at', [$dateRange['start'], $dateRange['end']]);
+                ->whereBetween('sent_at', [$dateRange['start'], $dateRange['end']])
+                // B5b (D59/D68): สถิตินับเฉพาะแถวที่ส่งสำเร็จจริง
+                ->where('delivery_status', 'sent');
 
             // Calculate totals
             $totalSent = (clone $logsQuery)->count();
@@ -149,11 +151,8 @@ class LeadRecoveryController extends Controller
                 'line' => $e->getLine(),
             ]);
 
-            return response()->json([
-                'error' => $e->getMessage(),
-                'file' => basename($e->getFile()),
-                'line' => $e->getLine(),
-            ], 500);
+            // B5b: ไม่เปิดเผย message/file/line ใน body — เก็บไว้ใน log เท่านั้น
+            return response()->json(['error' => 'Internal server error'], 500);
         }
     }
 
@@ -231,7 +230,11 @@ class LeadRecoveryController extends Controller
 
             $logs = LeadRecoveryLog::where('bot_id', $botId)
                 ->with(['conversation.customerProfile'])
+                // B5b (D59/D68): แสดงเฉพาะแถวที่ส่งสำเร็จจริง เรียง sent_at ล่าสุดก่อน เสมอ id สูงก่อนเมื่อเวลาเท่ากัน
+                ->where('delivery_status', 'sent')
+                ->whereNotNull('sent_at')
                 ->orderByDesc('sent_at')
+                ->orderByDesc('id')
                 ->paginate($perPage);
 
             $transformedLogs = $logs->getCollection()->map(function ($log) {
@@ -276,11 +279,8 @@ class LeadRecoveryController extends Controller
                 'line' => $e->getLine(),
             ]);
 
-            return response()->json([
-                'error' => $e->getMessage(),
-                'file' => basename($e->getFile()),
-                'line' => $e->getLine(),
-            ], 500);
+            // B5b: ไม่เปิดเผย message/file/line ใน body — เก็บไว้ใน log เท่านั้น
+            return response()->json(['error' => 'Internal server error'], 500);
         }
     }
 

@@ -39,6 +39,8 @@ class MessageResource extends JsonResource
             'updated_at' => $this->updated_at->toIso8601String(),
             // R11: ป้ายแจ้งลูกค้าหลังบอทล่ม — บูลีนที่ได้มา ไม่ใช่ metadata ดิบ
             'is_outage_notice' => $this->resource->isOutageNotice(),
+            // B4b (D45): ป้ายข้อความตามลูกค้า — บูลีนที่ได้มา ไม่ใช่ metadata ดิบ (log id ไม่หลุด)
+            'is_follow_up' => $this->resource->isFollowUp(),
         ];
     }
 }

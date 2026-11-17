@@ -29,3 +29,45 @@ describe('realtimeUtils outage notice flag', () => {
     expect(explicitFalse.is_outage_notice).toBe(false);
   });
 });
+
+describe('realtimeUtils follow-up flag', () => {
+  it('realtime_flag_survives_normalization_and_is_not_metadata', () => {
+    const flagged = createMessageFromEvent({ ...baseEvent, is_follow_up: true });
+    expect(flagged.is_follow_up).toBe(true);
+
+    // Any non-true value becomes exactly false, never undefined.
+    expect(
+      createMessageFromEvent({ ...baseEvent, is_follow_up: false }).is_follow_up,
+    ).toBe(false);
+    expect(createMessageFromEvent(baseEvent).is_follow_up).toBe(false);
+    expect(
+      createMessageFromEvent({ ...baseEvent, is_follow_up: null as unknown as boolean })
+        .is_follow_up,
+    ).toBe(false);
+    expect(
+      createMessageFromEvent({ ...baseEvent, is_follow_up: 'true' as unknown as boolean })
+        .is_follow_up,
+    ).toBe(false);
+    expect(
+      createMessageFromEvent({ ...baseEvent, is_follow_up: 1 as unknown as boolean })
+        .is_follow_up,
+    ).toBe(false);
+
+    // The outage flag of the same event is unchanged by the follow-up copy.
+    const both = createMessageFromEvent({
+      ...baseEvent,
+      is_outage_notice: true,
+      is_follow_up: true,
+    });
+    expect(both.is_outage_notice).toBe(true);
+    expect(both.is_follow_up).toBe(true);
+    const outageOnly = createMessageFromEvent({ ...baseEvent, is_outage_notice: true });
+    expect(outageOnly.is_outage_notice).toBe(true);
+    expect(outageOnly.is_follow_up).toBe(false);
+
+    // Raw metadata never leaks through normalization.
+    const keys = Object.keys(flagged);
+    expect(keys).not.toContain('metadata');
+    expect(keys).not.toContain('follow_up_log_id');
+  });
+});

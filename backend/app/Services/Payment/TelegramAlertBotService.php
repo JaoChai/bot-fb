@@ -211,7 +211,7 @@ class TelegramAlertBotService
             $res = Http::timeout(10)->post(self::BASE.$token.'/setWebhook', [
                 'url' => $url,
                 'secret_token' => $secret,
-                'allowed_updates' => ['callback_query'],
+                'allowed_updates' => ['callback_query', 'message'],
             ]);
 
             return $res->successful() && ($res->json('ok') === true);
@@ -251,5 +251,231 @@ class TelegramAlertBotService
 
             return null;
         }
+    }
+
+    /**
+     * ส่งบัตรอนุมัติ "ตามลูกค้า" ใบแรก (การ์ด B6a) — เส้นทางพิเศษ ห้ามใช้ call() เดิม (D71)
+     *
+     * ต่างจาก sendMessage เดิมทุกจุดที่การ์ดกำหนด: timeout รวม 10 วิ, connect timeout ตาม config,
+     * ไม่ retry, ไม่ตาม redirect, ไม่มีทางโยน exception และ "ยอมรับ" ได้ต้องมี result.message_id
+     * เป็นจำนวนเต็มบวกจริง (ต่างจากเดิมที่คืน [] แล้วดูเหมือนสำเร็จ)
+     * คืน array เดียว: outcome accepted|rejected|unknown + message_id + status + retry_after
+     * log บรรทัดเดียวต่อการเรียก เอาแค่ outcome + HTTP status — ห้ามมี token / chat id /
+     * ข้อความ / body / exception message (exception message มี token เต็ม URL, วัดแล้ว)
+     */
+    public function sendFollowUpCard(string $token, string $chatId, string $html, array $inlineKeyboard): array
+    {
+        $result = ['outcome' => 'unknown', 'message_id' => null, 'status' => null, 'retry_after' => null];
+
+        if ($token === '' || $chatId === '' || $html === '' || $inlineKeyboard === []) {
+            $result['outcome'] = 'rejected';
+            $this->logFollowUpCardCall($result);
+
+            return $result;
+        }
+
+        try {
+            $res = Http::connectTimeout((int) config('customer_follow_up.http_connect_timeout_seconds', 3))
+                ->timeout(10)
+                ->withoutRedirecting()
+                ->post($this->followUpBase().$token.'/sendMessage', [
+                    'chat_id' => $chatId,
+                    'text' => $html,
+                    'parse_mode' => 'HTML',
+                    'reply_markup' => json_encode(['inline_keyboard' => $inlineKeyboard]),
+                    'link_preview_options' => json_encode(['is_disabled' => true]),
+                ]);
+        } catch (\Throwable) {
+            $this->logFollowUpCardCall($result);
+
+            return $result;
+        }
+
+        $result['status'] = $res->status();
+
+        $messageId = $res->json('result.message_id');
+        if ($res->status() === 200 && $res->json('ok') === true && is_int($messageId) && $messageId > 0) {
+            $result['outcome'] = 'accepted';
+            $result['message_id'] = $messageId;
+            $this->logFollowUpCardCall($result);
+
+            return $result;
+        }
+
+        if ($res->status() >= 400 && $res->status() <= 499 && $res->json('ok') === false) {
+            $result['outcome'] = 'rejected';
+            $retryAfter = $res->json('parameters.retry_after');
+            if (is_int($retryAfter) && $retryAfter > 0) {
+                $result['retry_after'] = $retryAfter;
+            }
+        }
+
+        $this->logFollowUpCardCall($result);
+
+        return $result;
+    }
+
+    /**
+     * ข้อความล้วนของการ์ดตามลูกค้า (B6c) — ช่องแก้และข้อความแจ้ง การขนส่งตัวเอง ไม่แตะ call():
+     * connect timeout ตาม config, timeout 10 วิ, ไม่ retry, ไม่ตาม redirect, ไม่มี parse_mode,
+     * ไม่มีทางโยน exception; คืน ['outcome' => accepted|rejected|unknown, 'status' => ?int, 'message_id' => ?int]
+     * accepted = HTTP 200 + ok true + result.message_id เป็นจำนวนเต็ม > 0 (กฎเดียวกับ sendFollowUpCard)
+     * replyToMessageId = ตอบกลับข้อความนั้น (reply_parameters + allow_sending_without_reply)
+     * placeholder ไม่ null = ช่อง ForceReply ที่มีคำใบ้ในช่องพิมพ์
+     * log บรรทัดเดียวต่อการเรียก: label + outcome + HTTP status เท่านั้น
+     */
+    public function sendFollowUpText(string $token, string $chatId, string $text, ?int $replyToMessageId = null, ?string $placeholder = null): array
+    {
+        $result = ['outcome' => 'unknown', 'status' => null, 'message_id' => null];
+
+        if ($token === '' || $chatId === '' || $text === '' || ($replyToMessageId !== null && $replyToMessageId < 1)) {
+            $result['outcome'] = 'rejected';
+            $this->logFollowUpTransportCall('Follow-up text send', $result);
+
+            return $result;
+        }
+
+        $params = [
+            'chat_id' => $chatId,
+            'text' => $text,
+            'link_preview_options' => json_encode(['is_disabled' => true]),
+        ];
+        if ($replyToMessageId !== null) {
+            $params['reply_parameters'] = json_encode(['message_id' => $replyToMessageId, 'allow_sending_without_reply' => true]);
+        }
+        if ($placeholder !== null) {
+            $params['reply_markup'] = json_encode(['force_reply' => true, 'input_field_placeholder' => $placeholder]);
+        }
+
+        try {
+            $res = Http::connectTimeout((int) config('customer_follow_up.http_connect_timeout_seconds', 3))
+                ->timeout(10)
+                ->withoutRedirecting()
+                ->post($this->followUpBase().$token.'/sendMessage', $params);
+        } catch (\Throwable) {
+            $this->logFollowUpTransportCall('Follow-up text send', $result);
+
+            return $result;
+        }
+
+        $result['status'] = $res->status();
+
+        $messageId = $res->json('result.message_id');
+        if ($res->status() === 200 && $res->json('ok') === true && is_int($messageId) && $messageId > 0) {
+            $result['outcome'] = 'accepted';
+            $result['message_id'] = $messageId;
+        } elseif ($res->status() >= 400 && $res->status() <= 499 && $res->json('ok') === false) {
+            $result['outcome'] = 'rejected';
+        }
+
+        $this->logFollowUpTransportCall('Follow-up text send', $result);
+
+        return $result;
+    }
+
+    /**
+     * แก้การ์ดตามลูกค้า (B6b) — การขนส่งของตัวเอง ไม่แตะ call()/เมธอดเดิม:
+     * connect timeout ตาม config, timeout 10 วิ, ไม่ retry, ไม่ตาม redirect,
+     * ไม่มีทางโยน exception, คืน ['outcome' => accepted|rejected|unknown, 'status' => ?int]
+     * log บรรทัดเดียวต่อการเรียก: label + outcome + HTTP status เท่านั้น
+     * keyboard ว่าง = ลบปุ่มออกจากการ์ด (reply_markup {"inline_keyboard":[]})
+     */
+    public function editFollowUpCard(string $token, string $chatId, int $messageId, string $html, array $inlineKeyboard = []): array
+    {
+        $result = ['outcome' => 'unknown', 'status' => null];
+
+        if ($token === '' || $chatId === '' || $html === '' || $messageId < 1) {
+            $result['outcome'] = 'rejected';
+            $this->logFollowUpTransportCall('Follow-up card edit', $result);
+
+            return $result;
+        }
+
+        return $this->postFollowUpCall('Follow-up card edit', 'editMessageText', $token, [
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+            'text' => $html,
+            'parse_mode' => 'HTML',
+            'reply_markup' => json_encode(['inline_keyboard' => $inlineKeyboard]),
+            'link_preview_options' => json_encode(['is_disabled' => true]),
+        ], 10, false);
+    }
+
+    /**
+     * ตอบปุ่มที่กดบนการ์ดตามลูกค้า (B6b) — timeout 5 วิ, ไม่ retry, ไม่ตาม redirect,
+     * ไม่มีทางโยน exception, คืน ['outcome' => accepted|rejected|unknown, 'status' => ?int]
+     * show_alert เป็น JSON boolean (true = เด้งกล่องเตือน, false = toast มุมจอ)
+     */
+    public function answerFollowUpCallback(string $token, string $callbackQueryId, string $text, bool $alert = false): array
+    {
+        $result = ['outcome' => 'unknown', 'status' => null];
+
+        if ($token === '' || $callbackQueryId === '' || $text === '') {
+            $result['outcome'] = 'rejected';
+            $this->logFollowUpTransportCall('Follow-up callback answer', $result);
+
+            return $result;
+        }
+
+        return $this->postFollowUpCall('Follow-up callback answer', 'answerCallbackQuery', $token, [
+            'callback_query_id' => $callbackQueryId,
+            'text' => $text,
+            'show_alert' => $alert,
+        ], 5, true);
+    }
+
+    /** โพสต์หนึ่งครั้งแบบไม่ retry — ใช้โดย editFollowUpCard/answerFollowUpCallback เท่านั้น */
+    private function postFollowUpCall(string $label, string $method, string $token, array $params, int $timeoutSeconds, bool $asJson): array
+    {
+        $result = ['outcome' => 'unknown', 'status' => null];
+
+        try {
+            $client = Http::connectTimeout((int) config('customer_follow_up.http_connect_timeout_seconds', 3))
+                ->timeout($timeoutSeconds)
+                ->withoutRedirecting();
+            $res = $asJson
+                ? $client->asJson()->post($this->followUpBase().$token.'/'.$method, $params)
+                : $client->post($this->followUpBase().$token.'/'.$method, $params);
+        } catch (\Throwable) {
+            $this->logFollowUpTransportCall($label, $result);
+
+            return $result;
+        }
+
+        $result['status'] = $res->status();
+
+        if ($res->status() === 200 && $res->json('ok') === true) {
+            $result['outcome'] = 'accepted';
+        } elseif ($res->status() >= 400 && $res->status() <= 499 && $res->json('ok') === false) {
+            $result['outcome'] = 'rejected';
+        }
+
+        $this->logFollowUpTransportCall($label, $result);
+
+        return $result;
+    }
+
+    /** log เดียวต่อการเรียก: label + outcome + HTTP status เท่านั้น */
+    private function logFollowUpTransportCall(string $label, array $result): void
+    {
+        Log::info($label, [
+            'outcome' => $result['outcome'],
+            'status' => $result['status'],
+        ]);
+    }
+
+    /** base URL ของ Telegram Bot API สำหรับบัตรตามลูกค้า — test ล้อง override เป็น port ปิดในเครื่องได้ */
+    protected function followUpBase(): string
+    {
+        return self::BASE;
+    }
+
+    /** log เดียวต่อการเรียก: outcome + HTTP status เท่านั้น */
+    private function logFollowUpCardCall(array $result): void
+    {
+        Log::info('Follow-up card send', [
+            'outcome' => $result['outcome'],
+            'status' => $result['status'],
+        ]);
     }
 }

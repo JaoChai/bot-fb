@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { BotSettingsPage } from './BotSettingsPage';
+import { Toaster } from '@/components/ui/sonner';
 import type { OutageTextDefaults } from '@/types/api';
 
 // Mutable harness state shared with the vi.mock factories (vi.hoisted so the
@@ -71,6 +72,54 @@ function goToOutageTab() {
   fireEvent.click(screen.getByRole('button', { name: 'เมื่อบอทล่ม' }));
 }
 
+function goToFollowUpTab() {
+  fireEvent.click(screen.getByRole('button', { name: 'ตามลูกค้า' }));
+}
+
+// Synthetic follow-up capability — never the production numbers (D127).
+const FOLLOW_UP_RULES = {
+  payment_wait_hours: 5,
+  sale_wait_hours: 30,
+  customer_gap_days: 9,
+  daily_draft_cap: 12,
+  approval_ttl_hours: 6,
+  send_start: '09:30',
+  send_end: '21:15',
+  timezone: 'Asia/Bangkok',
+};
+
+const READY_CAPS = {
+  supported: true,
+  telegram_ready: true,
+  automatic_allowed: true,
+  blocked_reason: null,
+  rules: { ...FOLLOW_UP_RULES },
+};
+
+// Keys that must NEVER leave the page on a PUT (D124)
+const NEVER_SENT_KEYS = [
+  'follow_up_started_at',
+  'follow_up_capabilities',
+  'lead_recovery_enabled',
+  'lead_recovery_timeout_hours',
+  'lead_recovery_mode',
+  'lead_recovery_message',
+  'lead_recovery_max_attempts',
+];
+
+function forbiddenKeys(payload: Record<string, unknown>, extraForbidden: string[] = []) {
+  return Object.keys(payload).filter(
+    (k) =>
+      k.startsWith('follow_up_') ||
+      k.startsWith('lead_recovery_') ||
+      extraForbidden.includes(k),
+  );
+}
+
+function neverSentKeys(payload: Record<string, unknown>) {
+  return NEVER_SENT_KEYS.filter((k) => k in payload);
+}
+
 function getSaveButton() {
   return screen.getByRole('button', { name: 'บันทึกตั้งค่า' });
 }
@@ -105,16 +154,20 @@ describe('BotSettingsPage (outage tab)', () => {
     expect(fade).toHaveAttribute('aria-hidden', 'true');
   });
 
-  it('shows_six_tabs_and_hydrates_nulls_from_api_defaults', () => {
+  it('shows_seven_tabs_with_follow_up_after_outage_and_hydrates_nulls_from_api_defaults', () => {
     h.state.settings = makeSettings();
     const { container } = renderPage();
 
-    const labels = ['ข้อจำกัด', 'เวลาตอบกลับ', 'พฤติกรรม', 'สติกเกอร์', 'ตรวจสลิป', 'เมื่อบอทล่ม'];
+    const labels = ['ข้อจำกัด', 'เวลาตอบกลับ', 'พฤติกรรม', 'สติกเกอร์', 'ตรวจสลิป', 'เมื่อบอทล่ม', 'ตามลูกค้า'];
     const buttons = labels.map((l) => screen.getByRole('button', { name: l }));
-    expect(buttons).toHaveLength(6);
+    expect(buttons).toHaveLength(7);
     // เมื่อบอทล่ม comes right after ตรวจสลิป in DOM order
     expect(
       buttons[5].compareDocumentPosition(buttons[4]) & Node.DOCUMENT_POSITION_PRECEDING
+    ).toBeTruthy();
+    // ตามลูกค้า is the seventh tab, right after เมื่อบอทล่ม (F1a)
+    expect(
+      buttons[5].compareDocumentPosition(buttons[6]) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     void container;
 
@@ -351,5 +404,242 @@ describe('BotSettingsPage (outage tab)', () => {
     expect(saving).toBeDisabled();
     fireEvent.click(saving);
     expect(h.mutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('BotSettingsPage (customer follow-up tab)', () => {
+  it('saves_from_another_tab_without_any_follow_up_or_legacy_key', async () => {
+    // (a)/(f): ready bot, nothing changed on the follow-up tab, another tab edited
+    h.state.settings = makeSettings({
+      follow_up_enabled: false,
+      follow_up_mode: 'approve',
+      follow_up_started_at: null,
+      follow_up_capabilities: { ...READY_CAPS },
+    });
+    renderPage();
+    goToOutageTab();
+    fireEvent.change(TH_EDITOR(), { target: { value: 'แก้จากแท็บอื่น' } });
+    fireEvent.click(getSaveButton());
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalledTimes(1));
+
+    const payload = h.mutateAsync.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.outage_recovery_message_th).toBe('แก้จากแท็บอื่น');
+    expect(forbiddenKeys(payload)).toEqual([]);
+  });
+
+  it('switch_off_to_on_sends_only_follow_up_enabled_true', async () => {
+    // (b): the only follow-up change is off -> on
+    h.state.settings = makeSettings({
+      follow_up_enabled: false,
+      follow_up_mode: 'approve',
+      follow_up_started_at: null,
+      follow_up_capabilities: { ...READY_CAPS },
+    });
+    renderPage();
+    goToFollowUpTab();
+    fireEvent.click(screen.getByRole('switch'));
+    fireEvent.click(getSaveButton());
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalledTimes(1));
+
+    const payload = h.mutateAsync.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.follow_up_enabled).toBe(true);
+    expect(payload).not.toHaveProperty('follow_up_mode');
+    expect(neverSentKeys(payload)).toEqual([]);
+  });
+
+  it('stored_automatic_switch_off_sends_enabled_false_and_mode_approve', async () => {
+    // (c): stored automatic + automatic_allowed false; switching off resets the mode
+    h.state.settings = makeSettings({
+      follow_up_enabled: true,
+      follow_up_mode: 'automatic',
+      follow_up_started_at: '2026-11-01T10:00:00+07:00',
+      follow_up_capabilities: { ...READY_CAPS, automatic_allowed: false },
+    });
+    renderPage();
+    goToFollowUpTab();
+    const automatic = screen.getByRole('radio', { name: 'ส่งเองเมื่อ Luna มั่นใจ' });
+    expect(automatic).toBeChecked();
+    expect(automatic).toBeEnabled(); // stored automatic stays selectable (D125)
+    fireEvent.click(screen.getByRole('switch'));
+    fireEvent.click(getSaveButton());
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalledTimes(1));
+
+    const payload = h.mutateAsync.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.follow_up_enabled).toBe(false);
+    expect(payload.follow_up_mode).toBe('approve');
+    expect(neverSentKeys(payload)).toEqual([]);
+  });
+
+  it('changing_only_the_mode_sends_only_follow_up_mode', async () => {
+    // (d): on -> on with only the mode changed
+    h.state.settings = makeSettings({
+      follow_up_enabled: true,
+      follow_up_mode: 'approve',
+      follow_up_started_at: '2026-11-01T10:00:00+07:00',
+      follow_up_capabilities: { ...READY_CAPS },
+    });
+    renderPage();
+    goToFollowUpTab();
+    fireEvent.click(screen.getByRole('radio', { name: 'ส่งเองเมื่อ Luna มั่นใจ' }));
+    fireEvent.click(getSaveButton());
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalledTimes(1));
+
+    const payload = h.mutateAsync.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.follow_up_mode).toBe('automatic');
+    expect(payload).not.toHaveProperty('follow_up_enabled');
+    expect(neverSentKeys(payload)).toEqual([]);
+  });
+
+  it('absent_follow_up_keys_show_unavailable_and_other_tab_save_has_no_follow_up_key', async () => {
+    // (e): production API today returns none of the four keys (D123)
+    h.state.settings = makeSettings();
+    renderPage();
+    goToFollowUpTab();
+    expect(screen.getByText('ยังเปิดไม่ได้')).toBeInTheDocument();
+    expect(screen.getByText('ยังโหลดข้อมูลตามลูกค้าไม่ได้ ลองโหลดหน้าใหม่')).toBeInTheDocument();
+    expect(screen.getByRole('switch')).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'เจ้านายอนุมัติทุกข้อความ' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'ส่งเองเมื่อ Luna มั่นใจ' })).toBeDisabled();
+    expect(screen.queryByText('ระบบทำงานอย่างไร')).toBeNull();
+
+    // Another tab still saves, and no follow-up key leaves the page
+    goToOutageTab();
+    fireEvent.change(DOWN_EDITOR(), { target: { value: 'ยังบันทึกได้' } });
+    fireEvent.click(getSaveButton());
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalledTimes(1));
+
+    const payload = h.mutateAsync.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.outage_down_message).toBe('ยังบันทึกได้');
+    expect(forbiddenKeys(payload)).toEqual([]);
+  });
+
+  it('follow_up_422_maps_reason_codes_under_their_controls_and_stays_dirty', async () => {
+    h.state.settings = makeSettings({
+      follow_up_enabled: false,
+      follow_up_mode: 'approve',
+      follow_up_started_at: null,
+      follow_up_capabilities: { ...READY_CAPS },
+    });
+    renderPage();
+    goToFollowUpTab();
+    fireEvent.click(screen.getByRole('switch'));
+    expect(screen.getByText('มีการเปลี่ยนแปลง')).toBeInTheDocument();
+
+    h.mutateAsync.mockRejectedValueOnce({
+      message: 'The given data was invalid.',
+      status: 422,
+      errors: { follow_up_enabled: ['telegram_missing'] },
+    });
+    fireEvent.click(getSaveButton());
+    await waitFor(() =>
+      expect(screen.getByTestId('follow-up-enabled-error')).toHaveTextContent(
+        'บอทนี้ยังไม่ได้ตั้งห้อง Telegram สำหรับแจ้งเตือน',
+      ),
+    );
+    // Values kept, page stays dirty
+    expect(screen.getByRole('switch')).toBeChecked();
+    expect(screen.getByText('มีการเปลี่ยนแปลง')).toBeInTheDocument();
+
+    h.mutateAsync.mockRejectedValueOnce({
+      message: 'The given data was invalid.',
+      status: 422,
+      errors: { follow_up_mode: ['switch_off'] },
+    });
+    fireEvent.click(getSaveButton());
+    await waitFor(() =>
+      expect(screen.getByTestId('follow-up-mode-error')).toHaveTextContent(
+        'ต้องเปิดตามลูกค้าก่อน จึงเลือกส่งเองได้',
+      ),
+    );
+
+    h.mutateAsync.mockRejectedValueOnce({
+      message: 'The given data was invalid.',
+      status: 422,
+      errors: { follow_up_mode: ['automatic_not_allowed'] },
+    });
+    fireEvent.click(getSaveButton());
+    await waitFor(() =>
+      expect(screen.getByTestId('follow-up-mode-error')).toHaveTextContent(
+        'ยังเลือกส่งเองไม่ได้ ต้องครบช่วงทดลองก่อน',
+      ),
+    );
+
+    h.mutateAsync.mockRejectedValueOnce({
+      message: 'The given data was invalid.',
+      status: 422,
+      errors: { follow_up_enabled: ['writer_missing'] },
+    });
+    fireEvent.click(getSaveButton());
+    await waitFor(() =>
+      expect(screen.getByTestId('follow-up-enabled-error')).toHaveTextContent(
+        'ระบบยังตั้งค่าไม่ครบ ติดต่อผู้ดูแลระบบ',
+      ),
+    );
+
+    h.mutateAsync.mockRejectedValueOnce({
+      message: 'The given data was invalid.',
+      status: 422,
+      errors: { follow_up_enabled: ['mystery_code'] },
+    });
+    fireEvent.click(getSaveButton());
+    await waitFor(() =>
+      expect(screen.getByTestId('follow-up-enabled-error')).toHaveTextContent(
+        'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง',
+      ),
+    );
+    expect(screen.getByText('มีการเปลี่ยนแปลง')).toBeInTheDocument();
+  });
+
+  it('save_500_keeps_follow_up_values_and_shows_the_failure_toast', async () => {
+    // jsdom lacks matchMedia, which sonner's Toaster needs to mount
+    if (!window.matchMedia) {
+      window.matchMedia = ((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      })) as unknown as typeof window.matchMedia;
+    }
+    h.state.settings = makeSettings({
+      follow_up_enabled: false,
+      follow_up_mode: 'approve',
+      follow_up_started_at: null,
+      follow_up_capabilities: { ...READY_CAPS },
+    });
+    const view = render(
+      <MemoryRouter initialEntries={['/bots/28/settings']}>
+        <Toaster />
+        <BotSettingsPage />
+      </MemoryRouter>,
+    );
+    goToFollowUpTab();
+    fireEvent.click(screen.getByRole('switch'));
+    h.mutateAsync.mockRejectedValueOnce({ message: 'Server Error', status: 500 });
+    fireEvent.click(getSaveButton());
+    expect(await screen.findByText('ไม่สามารถบันทึกตั้งค่าบอทได้')).toBeInTheDocument();
+    expect(screen.getByRole('switch')).toBeChecked();
+    expect(screen.getByText('มีการเปลี่ยนแปลง')).toBeInTheDocument();
+    view.unmount();
+  });
+
+  it('follow_up_fields_drive_the_dirty_badge', () => {
+    h.state.settings = makeSettings({
+      follow_up_enabled: false,
+      follow_up_mode: 'approve',
+      follow_up_started_at: null,
+      follow_up_capabilities: { ...READY_CAPS },
+    });
+    renderPage();
+    goToFollowUpTab();
+    expect(screen.queryByText('มีการเปลี่ยนแปลง')).toBeNull();
+    fireEvent.click(screen.getByRole('switch'));
+    expect(screen.getByText('มีการเปลี่ยนแปลง')).toBeInTheDocument();
+    // Back to the stored value restores clean state
+    fireEvent.click(screen.getByRole('switch'));
+    expect(screen.queryByText('มีการเปลี่ยนแปลง')).toBeNull();
   });
 });

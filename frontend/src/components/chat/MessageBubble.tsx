@@ -21,6 +21,7 @@ import { th } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/types/api';
 import { OutageNoticeBadge } from './OutageNoticeBadge';
+import { FollowUpBadge } from './FollowUpBadge';
 import { useChannel } from './adapters';
 
 const senderIcons = {
@@ -212,6 +213,7 @@ export const MessageBubble = memo(function MessageBubble({
 
           {/* Automated outage recovery notice label */}
           <OutageNoticeBadge message={message} />
+          <FollowUpBadge message={message} />
 
           {/* AI metadata */}
           {message.model_used && (

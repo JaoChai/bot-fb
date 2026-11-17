@@ -11,6 +11,9 @@ use App\Models\LeadRecoveryLog;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class LeadRecoveryTest extends TestCase
@@ -26,6 +29,13 @@ class LeadRecoveryTest extends TestCase
         parent::setUp();
         $this->user = User::factory()->create(['role' => 'owner']);
         $this->bot = Bot::factory()->create(['user_id' => $this->user->id]);
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+
+        parent::tearDown();
     }
 
     /**
@@ -458,5 +468,213 @@ class LeadRecoveryTest extends TestCase
 
         $response->assertOk()
             ->assertJsonCount(2, 'data');
+    }
+
+    // ===== B5b: reports count and list sent rows only (D59/D68) =====
+
+    private const B5B_NOW = '2026-11-16 10:00:00';
+
+    /** เวลาทดสอบคงที่ — เลี่ยงสับสนขอบ period/วันที่รายวันกับเวลาจริง */
+    private function freezeB5bNow(): void
+    {
+        Carbon::setTestNow(Carbon::parse(self::B5B_NOW, 'Asia/Bangkok'));
+    }
+
+    /** สองแถว sent (ส่ง 2 ชม. และ 1 ชม. ก่อน) — พื้นฐานร่วมของเคส logs/stats */
+    private function createB5bSentBaseline(): array
+    {
+        $this->freezeB5bNow();
+
+        $older = $this->createLeadRecoveryLog([
+            'sent_at' => now()->subHours(2),
+            'message_mode' => 'static',
+            'customer_responded' => true,
+            'responded_at' => now()->subMinutes(30),
+        ]);
+        $newer = $this->createLeadRecoveryLog([
+            'sent_at' => now()->subHours(1),
+            'message_mode' => 'ai',
+            'customer_responded' => false,
+        ]);
+
+        return [$older, $newer];
+    }
+
+    public function test_logs_baseline_lists_two_sent_rows_newer_first(): void
+    {
+        [$older, $newer] = $this->createB5bSentBaseline();
+
+        $response = $this->actingAs($this->user)->getJson("/api/bots/{$this->bot->id}/lead-recovery/logs");
+
+        $response->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.id', $newer->id)
+            ->assertJsonPath('data.1.id', $older->id)
+            ->assertJsonPath('meta.total', 2)
+            ->assertJsonPath('meta.last_page', 1);
+    }
+
+    /**
+     * พื้นฐาน 2 แถว sent + แถวเพิ่ม "ตัวเดียว" ตามชุดข้อมูล — แถวที่ไม่ใช่ sent
+     * (หรือ sent แต่ sent_at null) ต้องไม่ถูกนับและไม่ถูกแสดงเลย
+     */
+    #[DataProvider('extraUnlistedLogRowProvider')]
+    public function test_logs_ignores_one_extra_row(string $status, bool $withSentAt, bool $responded): void
+    {
+        [$older, $newer] = $this->createB5bSentBaseline();
+        $this->createLeadRecoveryLog([
+            'delivery_status' => $status,
+            'sent_at' => $withSentAt ? now() : null,
+            'customer_responded' => $responded,
+            'responded_at' => $responded ? now() : null,
+        ]);
+
+        $response = $this->actingAs($this->user)->getJson("/api/bots/{$this->bot->id}/lead-recovery/logs");
+
+        $response->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.id', $newer->id)
+            ->assertJsonPath('data.1.id', $older->id)
+            ->assertJsonPath('meta.total', 2)
+            ->assertJsonPath('meta.last_page', 1);
+    }
+
+    public static function extraUnlistedLogRowProvider(): array
+    {
+        $sets = [];
+
+        foreach ([
+            'candidate', 'sorting', 'excluded', 'sort_retry', 'deferred', 'drafting',
+            'pending', 'approved', 'sending', 'retry', 'send_failed', 'skipped',
+            'expired', 'cancelled',
+        ] as $status) {
+            $sets["pipeline_row_{$status}_with_sent_at_null"] = [$status, false, false];
+        }
+
+        $sets['send_failed_row_with_sent_at_set'] = ['send_failed', true, true];
+        $sets['sent_row_with_sent_at_null'] = ['sent', false, false];
+
+        return $sets;
+    }
+
+    public function test_logs_same_sent_at_orders_higher_id_first_and_pages_split_the_rows(): void
+    {
+        $this->freezeB5bNow();
+        $earlier = $this->createLeadRecoveryLog(['sent_at' => Carbon::parse('2026-11-16 08:00:00')]);
+        $later = $this->createLeadRecoveryLog(['sent_at' => Carbon::parse('2026-11-16 08:00:00')]);
+        $this->assertGreaterThan($earlier->id, $later->id, 'precondition: the second insert holds the higher id');
+
+        $page1 = $this->actingAs($this->user)->getJson("/api/bots/{$this->bot->id}/lead-recovery/logs?per_page=1&page=1");
+        $page2 = $this->actingAs($this->user)->getJson("/api/bots/{$this->bot->id}/lead-recovery/logs?per_page=1&page=2");
+
+        $page1->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $later->id);
+        $page2->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $earlier->id);
+    }
+
+    public function test_stats_baseline_two_sent_rows_one_responded(): void
+    {
+        $this->createB5bSentBaseline();
+
+        $response = $this->actingAs($this->user)->getJson("/api/bots/{$this->bot->id}/lead-recovery/stats");
+
+        $response->assertOk()
+            ->assertJsonPath('data.total_sent', 2)
+            ->assertJsonPath('data.total_responded', 1)
+            ->assertJsonPath('data.response_rate', 50)
+            ->assertJsonPath('data.by_mode.static.sent', 1)
+            ->assertJsonPath('data.by_mode.static.responded', 1)
+            ->assertJsonPath('data.by_mode.static.response_rate', 100)
+            ->assertJsonPath('data.by_mode.ai.sent', 1)
+            ->assertJsonPath('data.by_mode.ai.responded', 0)
+            ->assertJsonPath('data.by_mode.ai.response_rate', 0)
+            ->assertJsonPath('data.daily_breakdown.2026-11-16.sent', 2)
+            ->assertJsonPath('data.daily_breakdown.2026-11-16.responded', 1);
+    }
+
+    /**
+     * พื้นฐานสถิติ + แถวเพิ่ม "ตัวเดียว" — ทุกตัวเลขต้องคงเดิมทั้งหมด
+     */
+    #[DataProvider('extraIgnoredStatsRowProvider')]
+    public function test_stats_ignores_one_extra_row(string $status, bool $withSentAt, bool $responded): void
+    {
+        $this->createB5bSentBaseline();
+        $this->createLeadRecoveryLog([
+            'delivery_status' => $status,
+            'sent_at' => $withSentAt ? now() : null,
+            'customer_responded' => $responded,
+            'responded_at' => $responded ? now() : null,
+        ]);
+
+        $response = $this->actingAs($this->user)->getJson("/api/bots/{$this->bot->id}/lead-recovery/stats");
+
+        $response->assertOk()
+            ->assertJsonPath('data.total_sent', 2)
+            ->assertJsonPath('data.total_responded', 1)
+            ->assertJsonPath('data.response_rate', 50)
+            ->assertJsonPath('data.by_mode.static.sent', 1)
+            ->assertJsonPath('data.by_mode.static.responded', 1)
+            ->assertJsonPath('data.by_mode.static.response_rate', 100)
+            ->assertJsonPath('data.by_mode.ai.sent', 1)
+            ->assertJsonPath('data.by_mode.ai.responded', 0)
+            ->assertJsonPath('data.by_mode.ai.response_rate', 0)
+            ->assertJsonPath('data.daily_breakdown.2026-11-16.sent', 2)
+            ->assertJsonPath('data.daily_breakdown.2026-11-16.responded', 1);
+    }
+
+    public static function extraIgnoredStatsRowProvider(): array
+    {
+        return [
+            'send_failed_row_with_sent_at_set_and_responded_true' => ['send_failed', true, true],
+            'retry_row_with_sent_at_set' => ['retry', true, false],
+            'sent_row_with_sent_at_null' => ['sent', false, false],
+        ];
+    }
+
+    public function test_stats_internal_failure_returns_fixed_body_and_canary_stays_in_log(): void
+    {
+        // เปลี่ยนชื่อตารางเพื่อบังคับให้ query throw — ชื่อตารางในข้อความ exception
+        // (sqlite "no such table: …" / PostgreSQL "relation … does not exist") คือ canary
+        $canary = 'lead_recovery_logs';
+        // rename อยู่ในธุรกรรมของ RefreshDatabase — rollback ตอนจบ test คืนชื่อตารางเอง
+        // (PostgreSQL หลัง query ล้มเหลวจะ abort ธุรกรรม จึงห้ามมี DDL ถัดจากนี้ใน test เดียวกัน)
+        Schema::rename('lead_recovery_logs', 'b5b_stats_hidden_table');
+
+        Log::shouldReceive('error')->atLeast()->once()->withArgs(
+            function ($message, $context) use ($canary) {
+                return str_contains(json_encode([$message, $context]), $canary);
+            }
+        );
+
+        $response = $this->actingAs($this->user)->getJson("/api/bots/{$this->bot->id}/lead-recovery/stats");
+
+        $response->assertStatus(500);
+        $this->assertSame(['error' => 'Internal server error'], $response->json(), '500 body must be the fixed message only');
+        $this->assertStringNotContainsString($canary, $response->getContent(), 'the exception message must not leak into the body');
+        $this->assertStringNotContainsString('Connection.php', $response->getContent(), 'the exception file must not leak into the body');
+    }
+
+    public function test_logs_internal_failure_returns_fixed_body_and_canary_stays_in_log(): void
+    {
+        // เปลี่ยนชื่อตารางเพื่อบังคับให้ query throw — ชื่อตารางในข้อความ exception คือ canary
+        $canary = 'lead_recovery_logs';
+        // rename อยู่ในธุรกรรมของ RefreshDatabase — rollback ตอนจบ test คืนชื่อตารางเอง
+        Schema::rename('lead_recovery_logs', 'b5b_logs_hidden_table');
+
+        Log::shouldReceive('error')->atLeast()->once()->withArgs(
+            function ($message, $context) use ($canary) {
+                return str_contains(json_encode([$message, $context]), $canary);
+            }
+        );
+
+        $response = $this->actingAs($this->user)->getJson("/api/bots/{$this->bot->id}/lead-recovery/logs");
+
+        $response->assertStatus(500);
+        $this->assertSame(['error' => 'Internal server error'], $response->json(), '500 body must be the fixed message only');
+        $this->assertStringNotContainsString($canary, $response->getContent(), 'the exception message must not leak into the body');
+        $this->assertStringNotContainsString('Connection.php', $response->getContent(), 'the exception file must not leak into the body');
     }
 }

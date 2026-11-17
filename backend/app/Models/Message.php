@@ -23,6 +23,19 @@ class Message extends Model
             && ($this->metadata['outage_notice'] ?? false) === true;
     }
 
+    /**
+     * B4b (D45) — ป้าย "ข้อความตามลูกค้า": true เฉพาะแถวบอทที่ metadata
+     * ติด tag follow_up === true (string "true"/1/false/null/key ไม่มี/
+     * metadata ไม่ใช่ array = false, ไม่เคย throw)
+     * เจาะจงเป็น predicate ไว้ใช้จาก resource/broadcast — ไม่ append ลง serialization ทั่วไป
+     */
+    public function isFollowUp(): bool
+    {
+        return $this->sender === 'bot'
+            && is_array($this->metadata)
+            && ($this->metadata['follow_up'] ?? false) === true;
+    }
+
     protected $fillable = [
         'conversation_id',
         'sender',

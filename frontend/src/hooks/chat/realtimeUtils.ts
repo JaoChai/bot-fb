@@ -36,6 +36,7 @@ export function createMessageFromEvent(event: MessageSentEvent): Message {
     sentiment: null,
     intents: null,
     is_outage_notice: event.is_outage_notice === true,
+    is_follow_up: event.is_follow_up === true,
     created_at: event.created_at,
     updated_at: event.created_at,
   };

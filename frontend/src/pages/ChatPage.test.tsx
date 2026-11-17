@@ -23,6 +23,15 @@ vi.mock('@/hooks/chat', () => ({
   useRealtime: () => {},
   useMarkAsRead: () => ({ mutate: vi.fn() }),
   useClearContextAll: () => ({ mutate: vi.fn(), isPending: false }),
+  // F1b: ChatPage calls the deep-link hook unconditionally. This suite's URLs
+  // never carry conversationId, so an idle link state is enough here.
+  useLinkedConversation: () => ({
+    data: undefined,
+    error: null,
+    isPending: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
 }));
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock('@/components/chat/ChatWindow', () => ({
