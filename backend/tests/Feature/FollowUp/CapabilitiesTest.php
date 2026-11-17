@@ -10,16 +10,18 @@ use App\Services\FollowUp\FollowUpCapabilities;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
  * การ์ด B2b — FollowUpCapabilities::forBot
  *
- * สัญญาจาก plan §3.7 (lines 289-290) + b2b.md:
+ * สัญญาจาก plan §3.7 (lines 289-290) + b2b.md + D150:
  * - blocked_reason เช็คตามลำดับ: line_only, bot_not_in_pilot, telegram_missing,
  *   telegram_allowlist_missing, webhook_secret_missing, writer_missing, admin_url_missing
- * - telegram_allowlist_missing เมื่อ authorized_user_ids ขาด/ไม่ใช่ list/ว่าง
+ * - telegram_allowlist_missing เมื่อ authorized_user_ids เป็นรูปร่างที่ปิด (D150):
+ *   string, map, list ที่ไม่มี id ใช้ได้, false, 0 — ขาด/null/[] = ห้องเปิด ทุกคนกดได้
  * - automatic_allowed เมื่อ id อยู่ใน automatic_bot_ids และ follow_up_started_at
  *   น้อยกว่าหรือเท่ากับ now - 14 วันเท่านั้น
  * - ผลลัพธ์ต้องไม่มี token, chat id, user id หรือ URL หลุดออกมา
@@ -153,22 +155,52 @@ class CapabilitiesTest extends TestCase
         $this->assertSame('telegram_missing', FollowUpCapabilities::forBot($noChat, $this->now())['blocked_reason']);
     }
 
-    #[Test]
-    public function test_missing_empty_or_non_list_allowlist_blocks(): void
+    /** @return iterable<string, array{0: array<string, mixed>, 1: bool, 2: ?string}> */
+    public static function allowlistRuleD150Provider(): iterable
     {
-        $missing = $this->makeReadyBot(['access_token' => 'tok-123', 'chat_id' => '999']);
-        $empty = $this->makeReadyBot(['access_token' => 'tok-123', 'chat_id' => '999', 'authorized_user_ids' => []]);
-        $nonList = $this->makeReadyBot(['access_token' => 'tok-123', 'chat_id' => '999', 'authorized_user_ids' => '555']);
-        $assocList = $this->makeReadyBot(['access_token' => 'tok-123', 'chat_id' => '999', 'authorized_user_ids' => ['a' => '555']]);
-        $listOfBlank = $this->makeReadyBot(['access_token' => 'tok-123', 'chat_id' => '999', 'authorized_user_ids' => ['']]);
-        config(['customer_follow_up.bot_ids' => [$missing->id, $empty->id, $nonList->id, $assocList->id, $listOfBlank->id]]);
+        $base = ['access_token' => 'tok-123', 'chat_id' => '999'];
+        $with = fn (mixed $allow): array => ['authorized_user_ids' => $allow] + $base;
 
-        foreach ([$missing, $empty, $nonList, $assocList, $listOfBlank] as $bot) {
-            $caps = FollowUpCapabilities::forBot($bot, $this->now());
+        // OPEN ROOM (D150) — ไม่มี list = ห้องแจ้งเตือนคือสิทธิ์ ทุกคนในห้องกดได้
+        yield 'key absent' => [$base, true, null];
+        yield 'json null' => [$with(null), true, null];
+        yield 'empty list' => [$with([]), true, null];
 
-            $this->assertSame('telegram_allowlist_missing', $caps['blocked_reason']);
-            $this->assertFalse($caps['telegram_ready']);
-        }
+        // LIST — list ที่มี id ใช้ได้อย่างน้อยหนึ่ง = พร้อม (ความหมายเดิม)
+        yield 'string id' => [$with(['555']), true, null];
+        yield 'int id' => [$with([555]), true, null];
+        yield 'padded id' => [$with([' 555 ']), true, null];
+        yield 'blank first usable second' => [$with(['', '555']), true, null];
+
+        // CLOSED (D150) — รูปร่างอื่นทั้งหมด
+        yield 'bare string' => [$with('555'), false, 'telegram_allowlist_missing'];
+        yield 'map' => [$with(['a' => '555']), false, 'telegram_allowlist_missing'];
+        yield 'int key map' => [$with([7 => 7]), false, 'telegram_allowlist_missing'];
+        yield 'list of empty' => [$with(['']), false, 'telegram_allowlist_missing'];
+        yield 'list of blank' => [$with([' ']), false, 'telegram_allowlist_missing'];
+        yield 'false' => [$with(false), false, 'telegram_allowlist_missing'];
+        yield 'zero' => [$with(0), false, 'telegram_allowlist_missing'];
+    }
+
+    #[Test]
+    #[DataProvider('allowlistRuleD150Provider')]
+    public function test_allowlist_rule_d150_open_room_list_and_closed(array $pluginConfig, bool $expectedReady, ?string $expectedReason): void
+    {
+        $bot = $this->makeReadyBot($pluginConfig);
+        config(['customer_follow_up.bot_ids' => [$bot->id]]);
+
+        $caps = FollowUpCapabilities::forBot($bot, $this->now());
+
+        $this->assertSame($expectedReady, $caps['supported']);
+        $this->assertSame($expectedReady, $caps['telegram_ready']);
+        $this->assertSame($expectedReason, $caps['blocked_reason']);
+
+        // ผลลัพธ์ต้องไม่มี token / chat id / user id หลุดออกมา
+        $this->assertSame(['supported', 'telegram_ready', 'automatic_allowed', 'blocked_reason', 'rules'], array_keys($caps));
+        $json = json_encode($caps, JSON_UNESCAPED_UNICODE);
+        $this->assertStringNotContainsString('tok-123', $json);
+        $this->assertStringNotContainsString('999', $json);
+        $this->assertStringNotContainsString('555', $json);
     }
 
     #[Test]

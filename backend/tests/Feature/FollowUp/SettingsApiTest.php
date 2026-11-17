@@ -180,9 +180,11 @@ class SettingsApiTest extends TestCase
 
                 break;
             case 'telegram_allowlist_missing':
+                // D150: รูปร่าง CLOSED (map) — supported เป็น false เหมือนเดิม
                 FlowPlugin::query()->update(['config' => json_encode([
                     'access_token' => 'tgk-'.'b5a'.'-alert-token',
                     'chat_id' => '-100'.'4567',
+                    'authorized_user_ids' => ['a' => '555'],
                 ])]);
 
                 break;
@@ -345,7 +347,7 @@ class SettingsApiTest extends TestCase
     }
 
     #[Test]
-    public function test_enable_refused_when_plugin_has_no_allowlist(): void
+    public function test_enable_refused_when_plugin_allowlist_shape_is_closed(): void
     {
         $this->refuseEnable('telegram_allowlist_missing', fn (Bot $bot) => $this->mutateBot($bot, 'telegram_allowlist_missing'));
     }
@@ -455,10 +457,11 @@ class SettingsApiTest extends TestCase
         $this->putSettings($user, $bot, ['follow_up_enabled' => true])->assertOk();
         $afterEnable = $this->row($bot->id);
 
-        // ถอด allowlist ทำให้ supported เป็น false แล้ว
+        // เปลี่ยนเป็นรูปร่าง CLOSED (D150: string ไม่ใช่ list) ทำให้ supported เป็น false แล้ว
         FlowPlugin::query()->update(['config' => json_encode([
             'access_token' => 'tgk-'.'b5a'.'-alert-token',
             'chat_id' => '-100'.'4567',
+            'authorized_user_ids' => '555',
         ])]);
 
         // true→true เป็น no-op ไม่เช็ค capabilities — ช่องอื่นยังบันทึกได้
@@ -481,6 +484,38 @@ class SettingsApiTest extends TestCase
         $refused = $this->putSettings($user, $bot, ['follow_up_enabled' => true]);
         $refused->assertStatus(422);
         $this->assertSame('telegram_allowlist_missing', $refused->json('errors.follow_up_enabled.0'));
+    }
+
+    #[Test]
+    public function test_owner_enables_when_plugin_is_open_room_for_each_open_shape(): void
+    {
+        foreach ([
+            'key absent' => ['access_token' => 'tgk-'.'b5a'.'-alert-token', 'chat_id' => '-100'.'4567'],
+            'json null' => ['access_token' => 'tgk-'.'b5a'.'-alert-token', 'chat_id' => '-100'.'4567', 'authorized_user_ids' => null],
+            'empty list' => ['access_token' => 'tgk-'.'b5a'.'-alert-token', 'chat_id' => '-100'.'4567', 'authorized_user_ids' => []],
+        ] as $label => $config) {
+            [$user, $bot] = $this->makeBaseline();
+            FlowPlugin::query()->update(['config' => json_encode($config)]);
+            $highWater = (int) DB::table('messages')->max('id');
+
+            $get = $this->actingAs($user)->getJson("/api/bots/{$bot->id}/settings");
+            $get->assertOk();
+            $this->assertTrue($get->json('data.follow_up_capabilities.supported'), $label.': capabilities of the settings GET must be supported');
+            $this->assertNull($get->json('data.follow_up_capabilities.blocked_reason'), $label.': capabilities of the settings GET must have no reason');
+
+            $put = $this->putSettings($user, $bot, ['follow_up_enabled' => true]);
+
+            $put->assertStatus(200, $label);
+            $this->assertTrue($put->json('data.follow_up_enabled'), $label.': the switch must be on');
+            $this->assertTrue($put->json('data.follow_up_capabilities.supported'), $label.': capabilities in the PUT response must be supported');
+            $this->assertColumns($this->row($bot->id), [
+                'enabled' => true,
+                'mode' => 'approve',
+                'started_at' => self::NOW,
+                'activation_id' => $highWater,
+                'activated_at' => self::NOW,
+            ], $label.': columns of a normal first enable');
+        }
     }
 
     // ------------------------------------------------------------------

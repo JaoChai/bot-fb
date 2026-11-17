@@ -985,11 +985,10 @@ TEXT;
         return [
             'another chat id' => [['message' => ['message_id' => 77, 'chat' => ['id' => 777]]], null, 'ignored', 0, []],
             'message missing' => [['message' => null], null, 'ignored', 0, []],
-            'allowlist missing' => [[], 'allowlist_missing', 'no_permission', 1, ['no_permission']],
-            'allowlist empty list' => [[], 'allowlist_empty', 'no_permission', 1, ['no_permission']],
             'allowlist map' => [[], 'allowlist_map', 'no_permission', 1, ['no_permission']],
             'allowlist string' => [[], 'allowlist_string', 'no_permission', 1, ['no_permission']],
             'allowlist blank entry' => [[], 'allowlist_blank', 'no_permission', 1, ['no_permission']],
+            'map key person on closed map' => [['from' => ['id' => 7, 'first_name' => 'คนแปลกหน้า']], 'allowlist_map', 'no_permission', 1, ['no_permission']],
             'person not in list' => [['from' => ['id' => 666, 'first_name' => 'คนแปลกหน้า']], null, 'no_permission', 1, ['no_permission']],
             'from.id as string' => [['from' => ['id' => '555']], null, 'no_permission', 1, ['no_permission']],
             'from.id as 0' => [['from' => ['id' => 0]], null, 'no_permission', 1, ['no_permission']],
@@ -1120,6 +1119,138 @@ TEXT;
 
         $response->assertOk()->assertExactJson(['ok' => true]);
         $this->assertSingleAnswer($requests, 'รับคำสั่งแล้ว กำลังส่งให้ลูกค้า', false);
+    }
+
+    // ------------------------------------------------- กฎ D150 — ห้องคือสิทธิ์
+
+    /** @return array<string, array<int, mixed>> */
+    public static function openRoomShapes(): array
+    {
+        return [
+            'key absent' => [['allowlist_missing' => true]],
+            'json null' => [['allowlist' => null]],
+            'empty list' => [['allowlist' => []]],
+        ];
+    }
+
+    /** @return array<string, array<int, mixed>> */
+    public static function listAndClosedRuleCases(): array
+    {
+        return [
+            'list string entry allows 555' => [['allowlist' => ['555']], 555, 'allowed'],
+            'list refuses 556' => [['allowlist' => ['555']], 556, 'no_permission'],
+            'closed string refuses 555' => [['allowlist' => '555'], 555, 'no_permission'],
+            'closed map refuses key person 7' => [['allowlist' => [7 => 7]], 7, 'no_permission'],
+            'closed blank list refuses 555' => [['allowlist' => [' ']], 555, 'no_permission'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('listAndClosedRuleCases')]
+    public function list_rule_unchanged_and_closed_shapes_refuse(array $options, int $personId, string $expectation): void
+    {
+        $seed = $this->seedWorld($options);
+        $beforeApproval = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
+
+        [$response, $requests] = $this->tap($this->baseCallback(
+            ['from' => ['id' => $personId, 'first_name' => 'คนกด']],
+            $this->cbData('fs', $seed['approval_id'])
+        ));
+
+        $response->assertOk()->assertExactJson(['ok' => true]);
+        if ($expectation === 'allowed') {
+            $this->assertSingleAnswer($requests, 'รับคำสั่งแล้ว กำลังส่งให้ลูกค้า', false);
+            self::assertSame('approved', $this->approvalRow($seed['approval_id'])->status);
+            self::assertSame((string) $personId, $this->logRow($seed['log_id'])->owner_telegram_user_id);
+        } else {
+            $this->assertSingleAnswer($requests, 'ไม่มีสิทธิ์กดปุ่มนี้', true);
+            $this->noRowChanged($beforeApproval, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
+        }
+    }
+
+    #[Test]
+    #[DataProvider('openRoomShapes')]
+    public function open_room_fs_tap_by_a_person_in_no_list_is_allowed(array $options): void
+    {
+        $seed = $this->seedWorld($options);
+        $beforeApproval = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
+
+        [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fs', $seed['approval_id'])));
+
+        $response->assertOk()->assertExactJson(['ok' => true]);
+        self::assertCount(2, $requests, 'fs = ตอบปุ่มหนึ่งครั้งแล้วระบายการ์ดหนึ่งครั้ง');
+        $this->assertSingleAnswer($requests, 'รับคำสั่งแล้ว กำลังส่งให้ลูกค้า', false);
+        $this->assertSingleEdit($requests);
+        $this->assertOnlyTelegramHost($requests);
+
+        $approval = $this->approvalRow($seed['approval_id']);
+        self::assertSame('approved', $approval->status);
+        $this->assertRowChangedOnly($beforeApproval, $approval, ['status', 'check_overridden', 'last_update_id', 'updated_at']);
+
+        $log = $this->logRow($seed['log_id']);
+        self::assertSame('approved', $log->delivery_status);
+        self::assertSame('sent', $log->owner_action);
+        self::assertSame('555', $log->owner_telegram_user_id);
+        self::assertSame(self::NOW, $log->owner_action_at);
+        $this->assertRowChangedOnly($beforeLog, $log, ['delivery_status', 'owner_action', 'owner_telegram_user_id', 'owner_action_at', 'check_overridden', 'updated_at']);
+    }
+
+    #[Test]
+    #[DataProvider('openRoomShapes')]
+    public function open_room_fk_tap_by_a_person_in_no_list_is_allowed(array $options): void
+    {
+        $seed = $this->seedWorld($options);
+        $beforeApproval = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
+
+        [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fk', $seed['approval_id'])));
+
+        $response->assertOk()->assertExactJson(['ok' => true]);
+        self::assertCount(2, $requests);
+        $this->assertSingleAnswer($requests, 'ข้ามแล้ว ไม่ส่งข้อความนี้', false);
+        $this->assertSingleEdit($requests);
+
+        $approval = $this->approvalRow($seed['approval_id']);
+        self::assertSame('skipped', $approval->status);
+        $this->assertRowChangedOnly($beforeApproval, $approval, ['status', 'last_update_id', 'updated_at']);
+
+        $log = $this->logRow($seed['log_id']);
+        self::assertSame('skipped', $log->delivery_status);
+        self::assertSame('skipped', $log->owner_action);
+        self::assertSame('555', $log->owner_telegram_user_id);
+        self::assertSame(self::NOW, $log->owner_action_at);
+        $this->assertRowChangedOnly($beforeLog, $log, ['delivery_status', 'owner_action', 'owner_telegram_user_id', 'owner_action_at', 'updated_at']);
+    }
+
+    #[Test]
+    public function open_room_room_and_person_rules_stay_in_front(): void
+    {
+        $cases = [
+            'another chat id' => [['message' => ['message_id' => 77, 'chat' => ['id' => 777]]], 'ignored'],
+            'from.id missing' => [['from' => ['first_name' => 'ใครสักคน']], 'refused'],
+            'from.id as 0' => [['from' => ['id' => 0]], 'refused'],
+            'from.id negative' => [['from' => ['id' => -5]], 'refused'],
+            'from.id as string' => [['from' => ['id' => '555']], 'refused'],
+        ];
+
+        foreach ($cases as $label => [$overrides, $kind]) {
+            $seed = $this->seedWorld(['allowlist_missing' => true]);
+            $beforeApproval = $this->approvalRow($seed['approval_id']);
+            $beforeLog = $this->logRow($seed['log_id']);
+
+            [$response, $requests] = $this->tap($this->baseCallback($overrides, $this->cbData('fs', $seed['approval_id'])));
+
+            $response->assertOk()->assertExactJson(['ok' => true]);
+            if ($kind === 'ignored') {
+                self::assertCount(0, $requests, $label.' ต้องเงียบไม่ตอบ');
+            } else {
+                self::assertCount(1, $requests, $label.' ต้องตอบปุ่มเดียว');
+                $this->assertSingleAnswer($requests, 'ไม่มีสิทธิ์กดปุ่มนี้', true);
+            }
+            $this->noRowChanged($beforeApproval, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
+        }
     }
 
     // ------------------------------------------------- 4) การ adopt message id (D76)
