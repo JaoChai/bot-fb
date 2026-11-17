@@ -10,6 +10,8 @@ import type { CustomerFollowUpCapabilities } from '@/types/api';
 
 type FollowUpMode = 'approve' | 'automatic';
 type FollowUpField = 'follow_up_enabled' | 'follow_up_mode';
+/** FX2 (D149): visual state of a mode row, driven by its own radio. */
+type FollowUpRowState = 'selected' | 'locked' | 'idle';
 
 interface FollowUpSettingsTabProps {
   follow_up_enabled: boolean;
@@ -90,24 +92,46 @@ export function FollowUpSettingsTab({
   // A stored automatic stays selectable even when the pilot window closed (D125)
   const automaticSelectable = !!capabilities?.automatic_allowed || storedMode === 'automatic';
 
+  // FX2 (D149): locked ⇔ the row's own radio is disabled; selected ⇔ that
+  // radio is checked and usable; otherwise idle. The mock's whole-row opacity
+  // is rejected — the helper line explains the lock at full contrast.
+  const rowState = (locked: boolean, checked: boolean): FollowUpRowState =>
+    locked ? 'locked' : checked ? 'selected' : 'idle';
+  const approveState = rowState(!follow_up_enabled, follow_up_mode === 'approve');
+  const automaticState = rowState(
+    !follow_up_enabled || !automaticSelectable,
+    follow_up_mode === 'automatic',
+  );
+  const rowClasses = (state: FollowUpRowState): string =>
+    state === 'selected'
+      ? 'flex min-h-11 items-start gap-3 rounded-lg border border-primary bg-primary/5 px-3 py-2'
+      : state === 'locked'
+        ? 'flex min-h-11 items-start gap-3 rounded-lg border bg-muted px-3 py-2'
+        : 'flex min-h-11 items-start gap-3 rounded-lg border bg-card px-3 py-2';
+  const labelClasses = (state: FollowUpRowState): string =>
+    state === 'locked'
+      ? 'block cursor-not-allowed text-sm font-medium text-muted-foreground'
+      : 'block cursor-pointer text-sm font-medium text-foreground';
+
   return (
     <div className="space-y-6">
-      {!ready && (
-        <div
-          data-testid="follow-up-unavailable"
-          className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3"
-        >
-          <p className="text-sm font-semibold text-amber-800 dark:text-amber-400">ยังเปิดไม่ได้</p>
-          <p className="mt-0.5 text-sm text-muted-foreground">{noticeLine}</p>
-        </div>
-      )}
-
       <Panel
         icon={MessageCircle}
         title="ตามลูกค้าที่เงียบไป"
         description="ร่างข้อความให้เจ้านายตรวจ ก่อนตามลูกค้าที่คุยค้างไว้"
       >
         <div className="space-y-5">
+          {/* FX2 (D148): the notice sits INSIDE the panel (mock frame 2), above
+              the switch row — same element, classes and data-testid as before. */}
+          {!ready && (
+            <div
+              data-testid="follow-up-unavailable"
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3"
+            >
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-400">ยังเปิดไม่ได้</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">{noticeLine}</p>
+            </div>
+          )}
           <div className="space-y-1">
             <SettingRow
               label="เปิดตามลูกค้า"
@@ -147,7 +171,8 @@ export function FollowUpSettingsTab({
 
             <div
               data-testid="follow-up-mode-approve-row"
-              className="flex min-h-11 items-start gap-3 rounded-lg border bg-card px-3 py-2"
+              data-state={approveState}
+              className={rowClasses(approveState)}
             >
               <input
                 id="follow-up-mode-approve"
@@ -163,7 +188,7 @@ export function FollowUpSettingsTab({
               <div className="min-w-0">
                 <label
                   htmlFor="follow-up-mode-approve"
-                  className="block cursor-pointer text-sm font-medium text-foreground"
+                  className={labelClasses(approveState)}
                 >
                   เจ้านายอนุมัติทุกข้อความ
                 </label>
@@ -175,7 +200,8 @@ export function FollowUpSettingsTab({
 
             <div
               data-testid="follow-up-mode-automatic-row"
-              className="flex min-h-11 items-start gap-3 rounded-lg border bg-card px-3 py-2"
+              data-state={automaticState}
+              className={rowClasses(automaticState)}
             >
               <input
                 id="follow-up-mode-automatic"
@@ -191,7 +217,7 @@ export function FollowUpSettingsTab({
               <div className="min-w-0">
                 <label
                   htmlFor="follow-up-mode-automatic"
-                  className="block cursor-pointer text-sm font-medium text-foreground"
+                  className={labelClasses(automaticState)}
                 >
                   ส่งเองเมื่อ Luna มั่นใจ
                 </label>

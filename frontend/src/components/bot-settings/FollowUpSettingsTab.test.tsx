@@ -354,7 +354,8 @@ describe('FollowUpSettingsTab', () => {
     expect(row.classList.contains('bg-primary/5')).toBe(state === 'selected');
     // locked: muted bg instead of card; never a primary border
     expect(row.classList.contains('bg-muted')).toBe(state === 'locked');
-    expect(row.classList.contains('bg-card')).toBe(state !== 'selected');
+    // bg-card only on idle (selected drops it, locked replaces it)
+    expect(row.classList.contains('bg-card')).toBe(state === 'idle');
     // the mock's whole-row opacity .55 is rejected (D149)
     expect(row.className, 'no whole-row opacity').not.toMatch(/opacity-/);
     const label = row.querySelector('label');
