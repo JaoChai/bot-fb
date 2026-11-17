@@ -952,3 +952,137 @@ test.describe(`follow-up badge journeys (F2)`, () => {
     })
   }
 })
+
+// ---------------------------------------------------------------------------
+// FX1 (D146): the blocked notice's title (ยังเปิดไม่ได้) and its reason line
+// must read at 4.5:1 in BOTH themes. The ratio is measured from RENDERED
+// PIXELS, never from a float blend: QA (q2-report §5) measured 4.493:1 in
+// light mode from 8-bit pixels, while a float blend of the translucent
+// background gives 4.51 and hides the miss. The element screenshot is decoded
+// inside the page with canvas.getImageData (8-bit sRGB), the background is
+// the modal pixel of the shot and the ink is the pixel furthest from it in
+// WCAG luminance (the strongest glyph pixel).
+// ---------------------------------------------------------------------------
+
+const NOTICE_TITLE_TEXT = 'ยังเปิดไม่ได้'
+const TELEGRAM_MISSING_REASON = 'บอทนี้ยังไม่ได้ตั้งห้อง Telegram สำหรับแจ้งเตือน'
+const CONTRAST_FLOOR = 4.5
+
+interface RenderedContrast {
+  ink: string
+  bg: string
+  ratio: number
+}
+
+async function renderedContrast(
+  page: Page,
+  elementShotBase64: string,
+): Promise<RenderedContrast> {
+  return page.evaluate(async (base64) => {
+    const img = new Image()
+    img.src = `data:image/png;base64,${base64}`
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error('element screenshot could not be decoded'))
+    })
+    const canvas = document.createElement('canvas')
+    canvas.width = img.naturalWidth
+    canvas.height = img.naturalHeight
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    if (!ctx) throw new Error('canvas 2d context unavailable')
+    ctx.drawImage(img, 0, 0)
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+
+    // Histogram over the 8-bit RGB triplets as rendered.
+    const counts = new Map<string, number>()
+    for (let i = 0; i < data.length; i += 4) {
+      const key = `${data[i]},${data[i + 1]},${data[i + 2]}`
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    let bgKey = ''
+    let bgCount = 0
+    for (const [key, count] of counts) {
+      if (count > bgCount) {
+        bgKey = key
+        bgCount = count
+      }
+    }
+    const channel = (value: number) => {
+      const s = value / 255
+      return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+    }
+    const luminance = (r: number, g: number, b: number) =>
+      0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+    const [br, bgc, bb] = bgKey.split(',').map(Number)
+    const bgLum = luminance(br, bgc, bb)
+    // Ink = the rendered pixel furthest from the background (glyph core, in
+    // either theme direction).
+    let inkKey = bgKey
+    let furthest = -1
+    for (const [key] of counts) {
+      const [r, g, b] = key.split(',').map(Number)
+      const distance = Math.abs(luminance(r, g, b) - bgLum)
+      if (distance > furthest) {
+        furthest = distance
+        inkKey = key
+      }
+    }
+    const [ir, ig, ib] = inkKey.split(',').map(Number)
+    const inkLum = luminance(ir, ig, ib)
+    const lighter = Math.max(bgLum, inkLum)
+    const darker = Math.min(bgLum, inkLum)
+    return {
+      ink: `rgb(${inkKey})`,
+      bg: `rgb(${bgKey})`,
+      ratio: (lighter + 0.05) / (darker + 0.05),
+    }
+  }, elementShotBase64)
+}
+
+test.describe('blocked notice contrast (FX1)', () => {
+  test('blocked_notice_title_contrast_at_least_4_5', async ({
+    page,
+    loggedIn,
+    pageErrors,
+  }) => {
+    void loggedIn
+    const measurements: string[] = []
+    const under: string[] = []
+    for (const combo of COMBOS) {
+      await openFollowUpTab(
+        page,
+        combo,
+        initialSettings({
+          follow_up_enabled: false,
+          follow_up_mode: 'approve',
+          follow_up_started_at: null,
+          follow_up_capabilities: capabilities({
+            supported: false,
+            telegram_ready: false,
+            automatic_allowed: false,
+            blocked_reason: 'telegram_missing',
+          }),
+        }),
+      )
+      const notice = page.getByTestId('follow-up-unavailable')
+      const label = `${combo.width}-${combo.theme}`
+      const targets = [
+        ['title', notice.getByText(NOTICE_TITLE_TEXT, { exact: true })],
+        ['reason', notice.getByText(TELEGRAM_MISSING_REASON, { exact: true })],
+      ] as const
+      for (const [what, element] of targets) {
+        const shot = await element.screenshot()
+        const { ink, bg, ratio } = await renderedContrast(page, shot.toString('base64'))
+        const line = `${what} ${label}: ink ${ink} on bg ${bg} = ${ratio.toFixed(4)}:1`
+        console.log(`[contrast] ${line}`)
+        measurements.push(line)
+        if (ratio < CONTRAST_FLOOR) under.push(`${line} — UNDER ${CONTRAST_FLOOR}`)
+      }
+    }
+    expect(
+      under,
+      `measured from rendered pixels (element screenshots, 8-bit sRGB):\n${measurements.join('\n')}`,
+    ).toEqual([])
+    expect(pageErrors).toEqual([])
+  })
+})
