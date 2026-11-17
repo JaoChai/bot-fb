@@ -139,7 +139,10 @@ class FollowUpContractTest extends TestCase
                 'access_token' => 'tgk-'.'b5ac'.'-alert-token',
                 'chat_id' => '-100'.'4568',
             ];
-            if ($reason !== 'telegram_allowlist_missing') {
+            if ($reason === 'telegram_allowlist_missing') {
+                // D150: รูปร่าง CLOSED (string) ยังให้ telegram_allowlist_missing เหมือนเดิม
+                $config['authorized_user_ids'] = '555';
+            } else {
                 $config['authorized_user_ids'] = ['987'.'65433'];
             }
             FlowPlugin::create([
@@ -268,9 +271,11 @@ class FollowUpContractTest extends TestCase
     public function test_refused_enable_422_matches_contract(): void
     {
         [$user, $bot] = $this->makeBaseline();
+        // D150: รูปร่าง CLOSED (map) — ยังปฏิเสธการเปิดด้วย telegram_allowlist_missing เหมือนเดิม
         FlowPlugin::query()->update(['config' => json_encode([
             'access_token' => 'tgk-'.'b5ac'.'-alert-token',
             'chat_id' => '-100'.'4568',
+            'authorized_user_ids' => ['a' => '555'],
         ])]);
 
         $response = $this->actingAs($user)->putJson("/api/bots/{$bot->id}/settings", ['follow_up_enabled' => true]);

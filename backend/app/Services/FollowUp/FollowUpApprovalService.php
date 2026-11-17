@@ -153,7 +153,7 @@ class FollowUpApprovalService
         $token = (string) ($plugin->config['access_token'] ?? '');
         $cbId = (string) ($callback['id'] ?? '');
 
-        // 3) คน — from.id ต้องเป็นจำนวนเต็ม > 0 และอยู่ใน allowlist ที่ชัดเจน (D77)
+        // 3) คน — from.id ต้องเป็นจำนวนเต็ม > 0 และผ่านกฎสิทธิ์ (D150: ไม่มี list = ทุกคนในห้อง, มี list = ใน list เท่านั้น)
         $fromId = $callback['from']['id'] ?? null;
         $personAllowed = is_int($fromId) && $fromId > 0 && $this->personAllowed($plugin, $fromId);
         if (! $personAllowed) {
@@ -399,7 +399,7 @@ class FollowUpApprovalService
             return $this->finishEdit(null, null, $botId, 'ignored', 'reply_shape', null);
         }
 
-        // 3) คน — from.id เป็นจำนวนเต็ม > 0 และอยู่ใน allowlist ที่ชัดเจน (D77)
+        // 3) คน — from.id เป็นจำนวนเต็ม > 0 และผ่านกฎสิทธิ์ (D150: ไม่มี list = ทุกคนในห้อง, มี list = ใน list เท่านั้น)
         $fromId = $message['from']['id'] ?? null;
         if (! is_int($fromId) || $fromId <= 0 || ! $this->personAllowed($plugin, $fromId)) {
             return $this->finishEdit(null, null, $botId, 'ignored', 'person', is_int($fromId) && $fromId > 0 ? $fromId : null);
@@ -652,12 +652,16 @@ class FollowUpApprovalService
         return [$m[1], (int) $m[2], (int) $m[3], $m[4]];
     }
 
-    /** allowlist ต้องเป็น list ที่มีสมาชิก — ขาด/ว่าง/map/string = ไม่มีใครกดได้ (D77) */
+    /** สิทธิ์ของคนกด (D150) — ห้องคือสิทธิ์: ขาด/null/[] = ทุกคนในห้องกดได้; list ที่ใช้ได้ = เฉพาะ id ใน list; รูปร่างอื่น = ไม่มีใครกดได้ */
     private function personAllowed(FlowPlugin $plugin, int $fromId): bool
     {
         $allow = $plugin->config['authorized_user_ids'] ?? null;
 
-        if (! is_array($allow) || ! array_is_list($allow) || $allow === []) {
+        if ($allow === null || $allow === []) {
+            return true;
+        }
+
+        if (! is_array($allow) || ! array_is_list($allow)) {
             return false;
         }
 

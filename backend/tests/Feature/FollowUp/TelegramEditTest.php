@@ -706,8 +706,8 @@ TEXT;
             'from.id zero' => ['from zero', [], ['from' => ['id' => 0]]],
             'from.id string' => ['from string', [], ['from' => ['id' => '555']]],
             'person outside allowlist' => ['outside allowlist', ['allowlist' => [999]], []],
-            'allowlist missing' => ['allowlist missing', ['allowlist_missing' => true], []],
-            'allowlist empty list' => ['allowlist empty', ['allowlist' => []], []],
+            'allowlist string' => ['allowlist string', ['allowlist' => '555'], []],
+            'allowlist map' => ['allowlist map', ['allowlist' => ['a' => '555']], []],
         ];
     }
 
@@ -875,6 +875,98 @@ TEXT;
         $response->assertOk();
         $this->assertSingleSend($requests, self::NOTICE_EDIT_NOT_EDITOR, 900);
         $this->noRowChanged($before, $this->approvalRow($seed['approval_id']), $this->logRow($seed['log_id']), $this->logRow($seed['log_id']));
+    }
+
+    // ---------------------------------------------------------------- กฎ D150 — ห้องเปิด = ช่องแก้ใช้ได้
+
+    /** @return array<string, array<int, mixed>> */
+    public static function openRoomShapes(): array
+    {
+        return [
+            'key absent' => [['allowlist_missing' => true]],
+            'json null' => [['allowlist' => null]],
+            'empty list' => [['allowlist' => []]],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('openRoomShapes')]
+    public function edit_tap_in_open_room_binds_the_prompt_to_the_person(array $options): void
+    {
+        $seed = $this->seedWorld(array_merge($options, ['golden_ids' => true]));
+        $before = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
+        $requests = [];
+
+        [$response, $requests] = $this->tap($this->baseCallback(data: $this->cbData('fe', $seed['approval_id'])), stub: $this->stubWithMessageIds($requests));
+
+        $response->assertOk();
+        self::assertCount(2, $requests, 'fe = โพสต์ช่องก่อนแล้วตอบปุ่ม');
+        self::assertSame('sendMessage', $this->methodOf($requests[0]));
+        self::assertSame('answerCallbackQuery', $this->methodOf($requests[1]));
+        $this->assertSingleSend($requests, self::GOLDEN_PROMPT, 77, 'พิมพ์ข้อความใหม่ที่จะส่งให้ลูกค้า');
+        $this->assertSingleAnswer($requests, 'ตอบกลับข้อความถัดไปในห้องนี้เพื่อพิมพ์ข้อความใหม่', false);
+        $after = $this->approvalRow($seed['approval_id']);
+        self::assertSame('555', $after->editor_telegram_user_id);
+        self::assertSame(55, $after->edit_prompt_message_id);
+        self::assertSame(999001, $after->last_update_id);
+        $this->assertRowChangedOnly($before, $after, ['editor_telegram_user_id', 'edit_prompt_message_id', 'last_update_id', 'updated_at']);
+        $this->noRowChanged($beforeLog, $this->logRow($seed['log_id']), $beforeLog, $this->logRow($seed['log_id']));
+        $this->assertNoSecretsInLog();
+    }
+
+    #[Test]
+    #[DataProvider('openRoomShapes')]
+    public function edit_reply_in_open_room_by_the_editor_saves_as_today(array $options): void
+    {
+        $this->bindPinnedNonce(self::NEW_NONCE);
+        $seed = $this->bindPrompt($options);
+        $requests = [];
+
+        [$response, $requests] = $this->postReply($this->replyMessage(), stub: $this->stubWithMessageIds($requests));
+
+        $response->assertOk()->assertExactJson(['ok' => true]);
+        $this->assertOnlyTelegramHost($requests);
+        self::assertCount(2, $requests, 'เซฟต้องระบายการ์ดหนึ่งครั้งแล้วแจ้งคนหนึ่งครั้ง');
+        self::assertSame('editMessageText', $this->methodOf($requests[0]));
+        self::assertSame('sendMessage', $this->methodOf($requests[1]));
+
+        $approval = $this->approvalRow($seed['approval_id']);
+        self::assertSame(2, (int) $approval->revision);
+        self::assertSame(self::EDITED_TEXT, $approval->text);
+        $this->assertNoSecretsInLog();
+    }
+
+    #[Test]
+    #[DataProvider('openRoomShapes')]
+    public function edit_reply_in_open_room_by_a_non_editor_gets_the_not_editor_notice(array $options): void
+    {
+        $seed = $this->bindPrompt(array_merge($options, ['approval_overrides' => [
+            'editor_telegram_user_id' => '999',
+            'edit_prompt_message_id' => 55,
+        ]]));
+        $before = $this->approvalRow($seed['approval_id']);
+
+        [$response, $requests] = $this->postReply($this->replyMessage());
+
+        $response->assertOk();
+        $this->assertSingleSend($requests, self::NOTICE_EDIT_NOT_EDITOR, 900);
+        $this->noRowChanged($before, $this->approvalRow($seed['approval_id']), $this->logRow($seed['log_id']), $this->logRow($seed['log_id']));
+    }
+
+    #[Test]
+    #[DataProvider('openRoomShapes')]
+    public function edit_reply_in_open_room_from_another_chat_is_ignored(array $options): void
+    {
+        $seed = $this->bindPrompt($options);
+        $before = $this->approvalRow($seed['approval_id']);
+        $beforeLog = $this->logRow($seed['log_id']);
+
+        [$response, $requests] = $this->postReply($this->replyMessage(['chat' => ['id' => 999]]));
+
+        $response->assertOk();
+        self::assertCount(0, $requests);
+        $this->noRowChanged($before, $this->approvalRow($seed['approval_id']), $beforeLog, $this->logRow($seed['log_id']));
     }
 
     // ---------------------------------------------------------------- 4) editReply ชนิดข้อความและกติกา

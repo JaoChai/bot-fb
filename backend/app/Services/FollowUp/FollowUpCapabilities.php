@@ -13,7 +13,9 @@ use Illuminate\Support\Facades\DB;
  * ผลลัพธ์มีแค่ object นี้ ห้ามมี token / chat id / user id / URL หลุดออกมา:
  * [
  *   'supported'         => bool   (blocked_reason === null),
- *   'telegram_ready'    => bool   (plugin telegram เปิด มี token+chat_id และ allowlist ชัดเจน),
+ *   'telegram_ready'    => bool   (plugin telegram เปิด มี token+chat_id และสิทธิ์เปิดตาม D150:
+ *                                  ไม่มี list (ขาด/null/[]) = ห้องเปิด ทุกคนกดได้, มี list = ใช้ list,
+ *                                  รูปร่างอื่น = ปิด),
  *   'automatic_allowed' => bool   (บอทอยู่ใน automatic_bot_ids ฝั่ง host + started_at >= 14 วัน),
  *   'blocked_reason'    => ?string (เช็คตามลำดับด้านล่าง, null เมื่อผ่านหมด),
  *   'rules'             => array  (ตัวเลขที่ตัวอื่นต้องใช้ ไม่มี secret),
@@ -37,7 +39,7 @@ class FollowUpCapabilities
     public static function forBot(Bot $bot, CarbonImmutable $now): array
     {
         $plugin = self::alertPlugin($bot);
-        $allowlistOk = $plugin !== null && self::hasExplicitAllowlist($plugin);
+        $allowlistOk = $plugin !== null && self::telegramGateOpen($plugin);
 
         $reason = null;
         if ($bot->channel_type !== 'line') {
@@ -123,13 +125,17 @@ class FollowUpCapabilities
     }
 
     /**
-     * allowlist ต้อง "ชัดเจน" — ขาด / ไม่ใช่ list / ว่าง / มีแต่ id ว่าง ต้อง block ทั้งหมด
-     * (ต่างจาก TelegramAlertCallbackController ที่ยอมรับค่าว่างเป็น "ทุกคน" ได้ —
-     * การตามลูกค้าเข้มกว่าเพราะเป็นการส่งออกนอกห้อง)
+     * สิทธิ์ของการ์ดตามลูกค้า (D150) — ห้องแจ้งเตือนคือสิทธิ์:
+     * ขาด/null/[] = ห้องเปิด ทุกคนในห้องกดได้; list ที่มี id ใช้ได้อย่างน้อยหนึ่ง = ใช้ list;
+     * รูปร่างอื่น (string, map, list ไม่มี id ใช้ได้, false, 0) = ปิด telegram_allowlist_missing
      */
-    private static function hasExplicitAllowlist(FlowPlugin $plugin): bool
+    private static function telegramGateOpen(FlowPlugin $plugin): bool
     {
         $allow = $plugin->config['authorized_user_ids'] ?? null;
+
+        if ($allow === null || $allow === []) {
+            return true;
+        }
 
         if (! is_array($allow) || ! array_is_list($allow)) {
             return false;

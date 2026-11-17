@@ -139,6 +139,30 @@ class ScanJobTest extends TestCase
         Queue::assertPushed(GenerateCustomerFollowUp::class, 1);
     }
 
+    #[Test]
+    public function test_open_room_plugin_is_not_a_closed_gate(): void
+    {
+        foreach ([
+            'key absent' => ['access_token' => 'tok-'.'gate', 'chat_id' => '999'],
+            'json null' => ['access_token' => 'tok-'.'gate', 'chat_id' => '999', 'authorized_user_ids' => null],
+            'empty list' => ['access_token' => 'tok-'.'gate', 'chat_id' => '999', 'authorized_user_ids' => []],
+        ] as $label => $config) {
+            $bot = $this->seedOpenBot();
+            config(['customer_follow_up.bot_ids' => [$bot->id]]);
+            DB::table('flow_plugins')->where('type', 'telegram')->update(['config' => json_encode($config)]);
+            $this->makeSilentPaymentRoom($bot, 'UOPEN'.$bot->id, $this->clock());
+            $this->fakeModelApis();
+            Queue::fake();
+            $this->startLogCapture();
+
+            $this->runScan();
+
+            $rows = DB::table('lead_recovery_logs')->where('bot_id', $bot->id)->where('delivery_status', 'candidate')->get();
+            $this->assertCount(1, $rows, $label.': an open room must scan like a ready bot');
+            Queue::assertPushed(GenerateCustomerFollowUp::class, 1);
+        }
+    }
+
     /** @return array<string, array{Closure, Closure}> */
     public static function gateClosingConditions(): array
     {
@@ -244,10 +268,10 @@ class ScanJobTest extends TestCase
                     DB::table('flow_plugins')->where('type', 'telegram')->update(['enabled' => true]);
                 },
             ],
-            'telegram allowlist empty' => [
+            'telegram allowlist closed shape' => [
                 'close' => function (): void {
                     DB::table('flow_plugins')->where('type', 'telegram')->update([
-                        'config' => json_encode(['access_token' => 'tok-'.'gate', 'chat_id' => '999', 'authorized_user_ids' => []]),
+                        'config' => json_encode(['access_token' => 'tok-'.'gate', 'chat_id' => '999', 'authorized_user_ids' => '555']),
                     ]);
                 },
                 'lift' => function (): void {

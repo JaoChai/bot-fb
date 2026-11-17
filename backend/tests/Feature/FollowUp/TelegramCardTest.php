@@ -222,7 +222,8 @@ TEXT;
             'chat_id' => '999',
         ];
         if (! $get('allowlist_missing', false)) {
-            $pluginConfig['authorized_user_ids'] = ['555'];
+            // option 'allowlist' = ค่าที่ต้องการ (D150: null / [] / '555' / map ได้) — ค่าเริ่มคือ list ['555']
+            $pluginConfig['authorized_user_ids'] = $get('allowlist', ['555']);
         }
         $plugin = FlowPlugin::create([
             'flow_id' => $flow->id,
@@ -685,9 +686,9 @@ TEXT;
     }
 
     #[Test]
-    public function publish_blocked_when_allowlist_missing(): void
+    public function publish_blocked_when_allowlist_closed_shape(): void
     {
-        $seed = $this->seedPending(['allowlist_missing' => true]);
+        $seed = $this->seedPending(['allowlist' => '555']);
         $before = $this->approvalRow($seed['approval_id']);
 
         [$result, $requests] = $this->publishCounting($seed['approval_id'], $this->okStub());
@@ -695,6 +696,29 @@ TEXT;
         self::assertSame('blocked', $result);
         self::assertSame(0, $requests);
         $this->assertRowChangedOnly($before, $this->approvalRow($seed['approval_id']), []);
+    }
+
+    /** @return array<string, array<int, mixed>> */
+    public static function openRoomShapes(): array
+    {
+        return [
+            'key absent' => [['allowlist_missing' => true]],
+            'json null' => [['allowlist' => null]],
+            'empty list' => [['allowlist' => []]],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('openRoomShapes')]
+    public function publish_open_room_plugin_sends_like_a_normal_publish(array $options): void
+    {
+        $seed = $this->seedPending($options);
+
+        [$result, $requests] = $this->publishCounting($seed['approval_id'], $this->okStub());
+
+        self::assertSame('sent', $result);
+        self::assertSame(1, $requests);
+        self::assertSame('sent', $this->approvalRow($seed['approval_id'])['telegram_delivery_state']);
     }
 
     #[Test]
