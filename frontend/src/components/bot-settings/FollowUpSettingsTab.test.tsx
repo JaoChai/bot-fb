@@ -256,6 +256,126 @@ describe('FollowUpSettingsTab', () => {
       'ยังเลือกส่งเองไม่ได้ ต้องครบช่วงทดลองก่อน',
     );
   });
+
+  // FX2 (D148): the blocked notice moves INSIDE the first panel (mock frame
+  // 2) — same element, same classes, same data-testid, nothing above the panel.
+  it('notice_sits_inside_the_first_panel_above_the_switch', () => {
+    // Blocked capabilities (supported: false)
+    const blocked = renderTab({
+      capabilities: caps({ supported: false, blocked_reason: 'telegram_missing' }),
+    });
+    const notice = screen.getByTestId('follow-up-unavailable');
+    const switchEl = document.getElementById('follow-up-enabled') as HTMLElement;
+    const noticeSection = notice.closest('section');
+    expect(noticeSection, 'notice must live inside the first panel section').not.toBeNull();
+    expect(noticeSection).toContainElement(switchEl);
+    expect(
+      notice.compareDocumentPosition(switchEl) & Node.DOCUMENT_POSITION_FOLLOWING,
+      'notice must come before the switch in document order',
+    ).toBeTruthy();
+    // No notice rendered outside a section anywhere in the tab root
+    const root = blocked.view.container.firstElementChild as HTMLElement;
+    const notices = root.querySelectorAll('[data-testid="follow-up-unavailable"]');
+    expect(notices).toHaveLength(1);
+    expect(notices[0].closest('section')).not.toBeNull();
+    blocked.view.unmount();
+
+    // Capabilities absent entirely — the API did not send the key (D123)
+    const absent = renderTab({});
+    const absentNotice = screen.getByTestId('follow-up-unavailable');
+    const absentSection = absentNotice.closest('section');
+    expect(absentSection, 'notice must live inside the first panel section').not.toBeNull();
+    expect(absentSection).toContainElement(document.getElementById('follow-up-enabled'));
+    absent.view.unmount();
+
+    // A ready bot shows no notice at all
+    renderTab({ capabilities: caps() });
+    expect(screen.queryByTestId('follow-up-unavailable')).toBeNull();
+  });
+
+  // FX2 (D149): each row's look follows ITS OWN radio — checked+usable →
+  // selected (primary border + tint), disabled → locked (muted bg, muted
+  // label, no cursor), otherwise idle (card bg as today). No whole-row
+  // opacity: the helper line explains the lock and must stay readable.
+  type RowState = 'selected' | 'locked' | 'idle';
+  const ROW_CASES: {
+    label: string;
+    props: Partial<TabProps>;
+    approve: RowState;
+    automatic: RowState;
+  }[] = [
+    { label: 'switch_off', props: {}, approve: 'locked', automatic: 'locked' },
+    {
+      label: 'switch_on_approve_chosen_automatic_not_selectable',
+      props: {
+        follow_up_enabled: true,
+        storedMode: 'approve',
+        capabilities: caps({ automatic_allowed: false }),
+      },
+      approve: 'selected',
+      automatic: 'locked',
+    },
+    {
+      label: 'switch_on_approve_chosen_automatic_selectable',
+      props: { follow_up_enabled: true, capabilities: caps() },
+      approve: 'selected',
+      automatic: 'idle',
+    },
+    {
+      label: 'switch_on_automatic_chosen',
+      props: {
+        follow_up_enabled: true,
+        follow_up_mode: 'automatic',
+        storedMode: 'automatic',
+        capabilities: caps(),
+      },
+      approve: 'idle',
+      automatic: 'selected',
+    },
+    {
+      // A stored automatic stays selectable (D125): by the chosen mode it is
+      // selected or idle — never locked.
+      label: 'switch_on_stored_automatic_not_allowed',
+      props: {
+        follow_up_enabled: true,
+        follow_up_mode: 'automatic',
+        storedMode: 'automatic',
+        capabilities: caps({ automatic_allowed: false }),
+      },
+      approve: 'idle',
+      automatic: 'selected',
+    },
+  ];
+
+  function expectRowState(row: HTMLElement, state: RowState) {
+    expect(row, `row must report data-state=${state}`).toHaveAttribute('data-state', state);
+    // selected: primary border + primary tint, card bg dropped
+    expect(row.classList.contains('border-primary')).toBe(state === 'selected');
+    expect(row.classList.contains('bg-primary/5')).toBe(state === 'selected');
+    // locked: muted bg instead of card; never a primary border
+    expect(row.classList.contains('bg-muted')).toBe(state === 'locked');
+    expect(row.classList.contains('bg-card')).toBe(state !== 'selected');
+    // the mock's whole-row opacity .55 is rejected (D149)
+    expect(row.className, 'no whole-row opacity').not.toMatch(/opacity-/);
+    const label = row.querySelector('label');
+    expect(label, 'row must carry its label').not.toBeNull();
+    expect(label!.classList.contains('cursor-not-allowed')).toBe(state === 'locked');
+    expect(label!.classList.contains('cursor-pointer')).toBe(state !== 'locked');
+    expect(label!.classList.contains('text-muted-foreground')).toBe(state === 'locked');
+    expect(label!.classList.contains('text-foreground')).toBe(state !== 'locked');
+  }
+
+  it.each(ROW_CASES)('mode_rows_show_selected_locked_and_idle_states ($label)', (c) => {
+    renderTab(c.props);
+    expectRowState(
+      screen.getByTestId('follow-up-mode-approve-row') as HTMLElement,
+      c.approve,
+    );
+    expectRowState(
+      screen.getByTestId('follow-up-mode-automatic-row') as HTMLElement,
+      c.automatic,
+    );
+  });
 });
 
 describe('follow-up reason tables (shared by notice and 422 mapping)', () => {

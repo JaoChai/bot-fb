@@ -1086,3 +1086,169 @@ test.describe('blocked notice contrast (FX1)', () => {
     expect(pageErrors).toEqual([])
   })
 })
+
+// ---------------------------------------------------------------------------
+// FX2 (D148/D149): the blocked notice moves INSIDE the first panel (mock
+// frame 2) and the mode rows take the mock's states by their own radio:
+// selected = border-primary bg-primary/5, locked = bg-muted + muted label,
+// idle = card bg as today. data-state on each row lets the assertions read
+// the state without class names.
+// ---------------------------------------------------------------------------
+
+const LOCKED_ROW_TITLE_TEXT = 'ส่งเองเมื่อ Luna มั่นใจ'
+const LOCKED_ROW_HELPER_TEXT = 'เปิดได้หลังครบช่วงทดลอง'
+
+test.describe('FX2 notice placement and option row states', () => {
+  test('notice_inside_panel_and_rows_styled', async ({
+    page,
+    loggedIn,
+    pageErrors,
+    unmockedCalls,
+  }) => {
+    void loggedIn
+    for (const combo of COMBOS) {
+      // (a) Blocked bot: the notice sits inside the first panel, above the
+      // switch, and nothing overflows horizontally.
+      await openFollowUpTab(
+        page,
+        combo,
+        initialSettings({
+          follow_up_enabled: false,
+          follow_up_mode: 'approve',
+          follow_up_started_at: null,
+          follow_up_capabilities: capabilities({
+            supported: false,
+            telegram_ready: false,
+            automatic_allowed: false,
+            blocked_reason: 'telegram_missing',
+          }),
+        }),
+      )
+      const notice = page.getByTestId('follow-up-unavailable')
+      const switchEl = page.locator('#follow-up-enabled')
+      const panel = page.locator('section').filter({ has: switchEl }).first()
+      const [nb, pb, sb] = await Promise.all([
+        notice.boundingBox(),
+        panel.boundingBox(),
+        switchEl.boundingBox(),
+      ])
+      expect(nb, 'notice box').not.toBeNull()
+      expect(pb, 'first panel box').not.toBeNull()
+      expect(sb, 'switch box').not.toBeNull()
+      expect(nb!.x).toBeGreaterThanOrEqual(pb!.x - 1)
+      expect(nb!.y).toBeGreaterThanOrEqual(pb!.y - 1)
+      expect(
+        nb!.x + nb!.width,
+        'notice must sit inside the panel horizontally',
+      ).toBeLessThanOrEqual(pb!.x + pb!.width + 1)
+      expect(nb!.y + nb!.height, 'notice must sit inside the panel').toBeLessThanOrEqual(
+        pb!.y + pb!.height + 1,
+      )
+      expect(nb!.y + nb!.height, 'notice must sit above the switch').toBeLessThanOrEqual(
+        sb!.y + 1,
+      )
+      const overflow = await page.evaluate(() => ({
+        sw: document.documentElement.scrollWidth,
+        cw: document.documentElement.clientWidth,
+      }))
+      expect(
+        overflow.sw,
+        `document scrollWidth ${overflow.sw} must not exceed clientWidth ${overflow.cw}`,
+      ).toBeLessThanOrEqual(overflow.cw)
+
+      // (b) Ready bot, switch on, automatic locked by the pilot window: the
+      // selected approve row carries the primary border and a tint, and the
+      // locked automatic row the muted background.
+      await openFollowUpTab(
+        page,
+        combo,
+        initialSettings({
+          follow_up_enabled: true,
+          follow_up_mode: 'approve',
+          follow_up_started_at: null,
+          follow_up_capabilities: capabilities({ automatic_allowed: false }),
+        }),
+      )
+      const approveRow = page.getByTestId('follow-up-mode-approve-row')
+      const automaticRow = page.getByTestId('follow-up-mode-automatic-row')
+      await expect(approveRow).toHaveAttribute('data-state', 'selected')
+      await expect(automaticRow).toHaveAttribute('data-state', 'locked')
+      const tokens = await page.evaluate(() => {
+        const probe = document.createElement('div')
+        probe.style.display = 'none'
+        probe.style.borderTopColor = 'var(--primary)'
+        probe.style.backgroundColor = 'var(--muted)'
+        document.body.appendChild(probe)
+        const cs = getComputedStyle(probe)
+        const resolved = { primary: cs.borderTopColor, muted: cs.backgroundColor }
+        probe.remove()
+        return resolved
+      })
+      const approveColors = await approveRow.evaluate((el) => {
+        const cs = getComputedStyle(el)
+        return { border: cs.borderTopColor, bg: cs.backgroundColor }
+      })
+      const automaticBg = await automaticRow.evaluate((el) => getComputedStyle(el).backgroundColor)
+      expect(approveColors.border, 'selected border must be --primary').toBe(tokens.primary)
+      expect(approveColors.bg, 'selected bg must differ from the locked row').not.toBe(
+        automaticBg,
+      )
+      expect(automaticBg, 'locked bg must be --muted').toBe(tokens.muted)
+
+      // (c) Switch off through the real switch: both rows report locked.
+      await page.getByRole('switch', { name: 'เปิดตามลูกค้า' }).click()
+      await expect(approveRow).toHaveAttribute('data-state', 'locked')
+      await expect(automaticRow).toHaveAttribute('data-state', 'locked')
+    }
+    expect(pageErrors).toEqual([])
+    expect(unmockedCalls).toEqual([])
+  })
+
+  test('locked_row_text_contrast_at_least_4_5', async ({
+    page,
+    loggedIn,
+    pageErrors,
+    unmockedCalls,
+  }) => {
+    void loggedIn
+    const measurements: string[] = []
+    const under: string[] = []
+    for (const combo of COMBOS) {
+      await openFollowUpTab(
+        page,
+        combo,
+        initialSettings({
+          follow_up_enabled: true,
+          follow_up_mode: 'approve',
+          follow_up_started_at: null,
+          follow_up_capabilities: capabilities({ automatic_allowed: false }),
+        }),
+      )
+      const row = page.getByTestId('follow-up-mode-automatic-row')
+      // Positive control: measure the LOCKED styling only.
+      await expect(row, 'the measured row must be the locked design').toHaveAttribute(
+        'data-state',
+        'locked',
+      )
+      const label = `${combo.width}-${combo.theme}`
+      const targets = [
+        ['title', row.getByText(LOCKED_ROW_TITLE_TEXT, { exact: true })],
+        ['helper', row.getByText(LOCKED_ROW_HELPER_TEXT, { exact: true })],
+      ] as const
+      for (const [what, element] of targets) {
+        const shot = await element.screenshot()
+        const { ink, bg, ratio } = await renderedContrast(page, shot.toString('base64'))
+        const line = `${what} ${label}: ink ${ink} on bg ${bg} = ${ratio.toFixed(4)}:1`
+        console.log(`[contrast] ${line}`)
+        measurements.push(line)
+        if (ratio < CONTRAST_FLOOR) under.push(`${line} — UNDER ${CONTRAST_FLOOR}`)
+      }
+    }
+    expect(
+      under,
+      `measured from rendered pixels (element screenshots, 8-bit sRGB):\n${measurements.join('\n')}`,
+    ).toEqual([])
+    expect(pageErrors).toEqual([])
+    expect(unmockedCalls).toEqual([])
+  })
+})
