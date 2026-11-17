@@ -145,6 +145,7 @@ class SendTest extends TestCase
         $room = Conversation::factory()->line()->create([
             'bot_id' => $bot->id,
             'external_customer_id' => self::RECIPIENT,
+            'last_message_at' => '2026-11-15 08:59:00', // เวลาของข้อความ user ล่าสุดที่ seed — คงที่เสมอ ไม่สุ่มตามเครื่อง
         ]);
 
         $this->addMessage($room->id, 'user', '2026-11-15 08:55:00', 'สนใจ Nolimit Personal ครับ');
