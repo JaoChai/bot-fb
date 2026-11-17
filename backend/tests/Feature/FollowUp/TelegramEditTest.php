@@ -893,7 +893,7 @@ TEXT;
     #[DataProvider('openRoomShapes')]
     public function edit_tap_in_open_room_binds_the_prompt_to_the_person(array $options): void
     {
-        $seed = $this->seedWorld($options);
+        $seed = $this->seedWorld(array_merge($options, ['golden_ids' => true]));
         $before = $this->approvalRow($seed['approval_id']);
         $beforeLog = $this->logRow($seed['log_id']);
         $requests = [];
