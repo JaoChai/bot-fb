@@ -97,7 +97,7 @@ export function FollowUpSettingsTab({
           data-testid="follow-up-unavailable"
           className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3"
         >
-          <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">ยังเปิดไม่ได้</p>
+          <p className="text-sm font-semibold text-amber-800 dark:text-amber-400">ยังเปิดไม่ได้</p>
           <p className="mt-0.5 text-sm text-muted-foreground">{noticeLine}</p>
         </div>
       )}
